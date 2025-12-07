@@ -107,12 +107,10 @@ namespace MeshFactory.Data
         /// </summary>
         public Vertex Clone()
         {
-            return new Vertex
-            {
-                Position = Position,
-                UVs = new List<Vector2>(UVs),
-                Normals = new List<Vector3>(Normals)
-            };
+            var clone = new Vertex(this.Position);
+            clone.UVs = new List<Vector2>(this.UVs);
+            clone.Normals = new List<Vector3>(this.Normals);
+            return clone;
         }
     }
 
@@ -293,13 +291,12 @@ namespace MeshFactory.Data
         /// </summary>
         public Face Clone()
         {
-            return new Face
-            {
-                VertexIndices = new List<int>(VertexIndices),
-                UVIndices = new List<int>(UVIndices),
-                NormalIndices = new List<int>(NormalIndices),
-                MaterialIndex = MaterialIndex
-            };
+            var clone = new Face();
+            clone.VertexIndices = new List<int>(this.VertexIndices);
+            clone.UVIndices = new List<int>(this.UVIndices);
+            clone.NormalIndices = new List<int>(this.NormalIndices);
+            clone.MaterialIndex = this.MaterialIndex;
+            return clone;
         }
     }
 

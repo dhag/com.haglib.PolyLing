@@ -2,7 +2,6 @@
 // メッシュ入出力（読み込み、保存、エクスポート、インポート）
 // Phase2: マルチマテリアル対応版
 // DefaultMaterials対応版
-// 追加モード・自動マージ対応版
 
 using System.Collections.Generic;
 using System.Linq;
@@ -11,7 +10,6 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.Serialization;
-using MeshFactory.UndoSystem;
 
 public partial class SimpleMeshFactory
 {
@@ -230,22 +228,6 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void OnMeshDataCreated(MeshData meshData, string name)
     {
-        // 追加モードかつ有効なメッシュが選択されている場合
-        if (_addToCurrentMesh && _selectedIndex >= 0 && _selectedIndex < _meshList.Count)
-        {
-            AddMeshDataToCurrent(meshData, name);
-        }
-        else
-        {
-            CreateNewMeshEntry(meshData, name);
-        }
-    }
-
-    /// <summary>
-    /// 新しいメッシュエントリを作成
-    /// </summary>
-    private void CreateNewMeshEntry(MeshData meshData, string name)
-    {
         var entry = new MeshEntry
         {
             Name = name,
@@ -269,25 +251,13 @@ public partial class SimpleMeshFactory
             }
         }
 
-        // 自動マージ（全頂点対象）
-        if (_autoMergeOnCreate && entry.Data.VertexCount >= 2)
-        {
-            var result = MergeVerticesTool.MergeAllVerticesAtSamePosition(entry.Data, _autoMergeThreshold);
-            if (result.RemovedVertexCount > 0)
-            {
-                Debug.Log($"[CreateNewMeshEntry] Auto-merged {result.RemovedVertexCount} vertices");
-            }
-            // OriginalPositionsを更新
-            entry.OriginalPositions = entry.Data.Vertices.Select(v => v.Position).ToArray();
-        }
-
         // MeshDataから表示用Unity Meshを生成（MaterialIndex適用後）
         Mesh mesh = entry.Data.ToUnityMesh();
         mesh.name = name;
         mesh.hideFlags = HideFlags.HideAndDontSave;
         entry.Mesh = mesh;
 
-        Debug.Log($"[CreateNewMeshEntry] name={name}, vertices={entry.Data.VertexCount}, faces={entry.Data.FaceCount}");
+        Debug.Log($"[OnMeshDataCreated] name={name}, defaultMaterials={_defaultMaterials?.Count ?? 0}, currentIndex={entry.CurrentMaterialIndex}, faces={entry.Data?.FaceCount ?? 0}");
 
         _meshList.Add(entry);
         _selectedIndex = _meshList.Count - 1;
@@ -299,93 +269,12 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// 現在選択中のメッシュにMeshDataを追加
-    /// </summary>
-    private void AddMeshDataToCurrent(MeshData meshData, string name)
-    {
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null)
-        {
-            entry.Data = new MeshData(entry.Name);
-        }
-
-        // Undo用スナップショット
-        MeshDataSnapshot beforeSnapshot = default;
-        if (_undoController != null)
-        {
-            beforeSnapshot = MeshDataSnapshot.Capture(_undoController.MeshContext);
-        }
-
-        // 追加前の頂点数を記録
-        int baseVertexIndex = entry.Data.VertexCount;
-
-        // 頂点を追加
-        foreach (var vertex in meshData.Vertices)
-        {
-            entry.Data.Vertices.Add(new Vertex(vertex.Position));
-        }
-
-        // 面を追加（頂点インデックスをオフセット）
-        int materialIndex = entry.CurrentMaterialIndex;
-        foreach (var face in meshData.Faces)
-        {
-            var newFace = new Face();
-            newFace.VertexIndices = face.VertexIndices.Select(i => i + baseVertexIndex).ToList();
-            newFace.UVIndices = new List<int>(face.UVIndices);
-            newFace.NormalIndices = new List<int>(face.NormalIndices);
-            newFace.MaterialIndex = materialIndex;  // 現在のマテリアルを適用
-            entry.Data.Faces.Add(newFace);
-        }
-
-        // 自動マージ（追加した頂点と既存頂点の境界をマージ）
-        if (_autoMergeOnCreate && entry.Data.VertexCount >= 2)
-        {
-            // 全頂点を対象にして、追加頂点と既存頂点の接合部をマージ
-            var allVertices = new HashSet<int>(Enumerable.Range(0, entry.Data.VertexCount));
-            var result = MergeVerticesTool.MergeVerticesAtSamePosition(entry.Data, allVertices, _autoMergeThreshold);
-
-            if (result.RemovedVertexCount > 0)
-            {
-                Debug.Log($"[AddMeshDataToCurrent] Auto-merged {result.RemovedVertexCount} vertices at boundaries");
-            }
-        }
-
-        // OriginalPositionsを更新
-        entry.OriginalPositions = entry.Data.Vertices.Select(v => v.Position).ToArray();
-
-        // メッシュ更新
-        SyncMeshFromData(entry);
-
-        // Undo記録
-        if (_undoController != null)
-        {
-            _undoController.MeshContext.MeshData = entry.Data;
-            var afterSnapshot = MeshDataSnapshot.Capture(_undoController.MeshContext);
-            _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, $"Add {name}");
-        }
-
-        // 選択更新
-        InitVertexOffsets();
-        LoadEntryToUndoController(entry);
-
-        Debug.Log($"[AddMeshDataToCurrent] Added {name} to {entry.Name}, total vertices={entry.Data.VertexCount}, faces={entry.Data.FaceCount}");
-
-        Repaint();
-    }
-
-    /// <summary>
     /// 空のメッシュを作成
     /// </summary>
     private void CreateEmptyMesh()
     {
-        // 空メッシュは常に新規作成（追加モードでも）
-        bool wasAddMode = _addToCurrentMesh;
-        _addToCurrentMesh = false;
-
         var meshData = new MeshData("Empty");
         OnMeshDataCreated(meshData, "Empty");
-
-        _addToCurrentMesh = wasAddMode;
     }
 
     /// <summary>

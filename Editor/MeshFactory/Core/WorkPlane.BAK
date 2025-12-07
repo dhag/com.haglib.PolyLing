@@ -469,9 +469,11 @@ namespace MeshFactory.Tools
 
                 GUILayout.FlexibleSpace();
 
-                // コンパクト表示（折りたたみ時のみテキスト表示、展開時は空）
-                string compactText = workPlane.IsExpanded ? "" : ModeNames[(int)workPlane.Mode];
-                EditorGUILayout.LabelField(compactText, _compactLabelStyle, GUILayout.Width(70));
+                // コンパクト表示（折りたたみ時）
+                if (!workPlane.IsExpanded)
+                {
+                    EditorGUILayout.LabelField($"{ModeNames[(int)workPlane.Mode]}", _compactLabelStyle, GUILayout.Width(70));
+                }
 
                 // ロックボタン
                 string lockLabel = workPlane.IsLocked ? "🔒" : "🔓";

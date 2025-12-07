@@ -336,8 +336,6 @@ public partial class SimpleMeshFactory
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         DrawToolButton(_edgeBevelTool, "Bevel");
-                        DrawToolButton(_lineExtrudeTool, "Line Ext");  // ← 追加(5)
-
                     }
 
                     // 現在のツールの設定UI

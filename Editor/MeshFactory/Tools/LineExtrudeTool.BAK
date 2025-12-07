@@ -1,0 +1,593 @@
+// Tools/LineExtrudeTool.cs
+// ライン（2頂点の補助線）を押し出して面を生成するツール
+// 選択されたラインを閉曲線として扱い、Poly2Triで三角形分割
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+using MeshFactory.Data;
+using MeshFactory.Selection;
+using MeshFactory.UndoSystem;
+using Poly2Tri;
+
+namespace MeshFactory.Tools
+{
+    /// <summary>
+    /// ライン押し出しツール
+    /// 選択されたライン（2頂点Face）を閉曲線として扱い、面を生成
+    /// </summary>
+    public class LineExtrudeTool : IEditTool
+    {
+        public string Name => "Line Extrude";
+
+        // === 設定 ===
+        private float _thickness = 0.1f;
+        private bool _deleteOriginalLines = true;
+
+        // 角処理
+        private int _edgeSegments = 0;    // 0=なし, 1=ベベル, 2+=ラウンド
+        private float _edgeSize = 0.02f;
+
+        // === 状態 ===
+        private List<int> _selectedLineIndices = new List<int>();
+        private ToolContext _lastContext;
+
+        // ================================================================
+        // IEditTool 実装
+        // ================================================================
+
+        public bool OnMouseDown(ToolContext ctx, Vector2 mousePos) => false;
+        public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) => false;
+        public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) => false;
+
+        public void DrawGizmo(ToolContext ctx)
+        {
+            if (ctx.MeshData == null) return;
+            if (_selectedLineIndices.Count == 0) return;
+
+            Handles.BeginGUI();
+
+            // 選択ラインをハイライト
+            Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+            foreach (int lineIdx in _selectedLineIndices)
+            {
+                if (lineIdx < 0 || lineIdx >= ctx.MeshData.FaceCount) continue;
+                var face = ctx.MeshData.Faces[lineIdx];
+                if (face.VertexCount != 2) continue;
+
+                Vector3 p0 = ctx.MeshData.Vertices[face.VertexIndices[0]].Position;
+                Vector3 p1 = ctx.MeshData.Vertices[face.VertexIndices[1]].Position;
+
+                Vector2 sp0 = ctx.WorldToScreen(p0);
+                Vector2 sp1 = ctx.WorldToScreen(p1);
+
+                Handles.DrawAAPolyLine(4f, sp0, sp1);
+            }
+
+            GUI.color = Color.white;
+            Handles.EndGUI();
+        }
+
+        public void DrawSettingsUI()
+        {
+            EditorGUILayout.LabelField("Line Extrude Tool", EditorStyles.boldLabel);
+
+            EditorGUILayout.HelpBox(
+                "Select lines (2-vertex faces) that form a closed loop.\n" +
+                "Then click 'Generate Face' to create a filled face.",
+                MessageType.Info);
+
+            EditorGUILayout.Space(5);
+
+            // 選択ライン数
+            EditorGUILayout.LabelField($"Selected Lines: {_selectedLineIndices.Count}", EditorStyles.miniLabel);
+
+            EditorGUILayout.Space(5);
+
+            // 厚み設定
+            EditorGUILayout.LabelField("Extrusion Settings", EditorStyles.miniBoldLabel);
+            _thickness = EditorGUILayout.FloatField("Thickness", _thickness);
+            _thickness = Mathf.Max(0f, _thickness);
+
+            _deleteOriginalLines = EditorGUILayout.Toggle("Delete Original Lines", _deleteOriginalLines);
+
+            EditorGUILayout.Space(5);
+
+            // 角処理
+            EditorGUILayout.LabelField("Edge Treatment", EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+            _edgeSegments = EditorGUILayout.IntSlider("Segments", _edgeSegments, 0, 8);
+            if (_edgeSegments > 0)
+            {
+                _edgeSize = EditorGUILayout.FloatField("Edge Size", _edgeSize);
+                _edgeSize = Mathf.Clamp(_edgeSize, 0.001f, _thickness * 0.4f);
+            }
+            EditorGUI.indentLevel--;
+
+            EditorGUILayout.Space(10);
+
+            // 実行ボタン
+            EditorGUI.BeginDisabledGroup(_selectedLineIndices.Count < 3);
+            
+            // 表面のみ生成
+            if (GUILayout.Button("Generate Face (Front Only)", GUILayout.Height(25)))
+            {
+                ExecuteGenerateFrontFace();
+            }
+
+            EditorGUILayout.Space(3);
+
+            // 厚み付き押し出し
+            EditorGUI.BeginDisabledGroup(_thickness <= 0.001f);
+            if (GUILayout.Button("Extrude with Thickness", GUILayout.Height(25)))
+            {
+                ExecuteFullExtrude();
+            }
+            EditorGUI.EndDisabledGroup();
+
+            EditorGUI.EndDisabledGroup();
+
+            if (_selectedLineIndices.Count < 3)
+            {
+                EditorGUILayout.HelpBox("Select at least 3 connected lines to form a closed loop.", MessageType.Warning);
+            }
+        }
+
+        public void OnActivate(ToolContext ctx)
+        {
+            _lastContext = ctx;
+            UpdateSelectedLines(ctx);
+        }
+
+        public void OnDeactivate(ToolContext ctx)
+        {
+            _selectedLineIndices.Clear();
+        }
+
+        public void Reset()
+        {
+            _selectedLineIndices.Clear();
+        }
+
+        public void Update(ToolContext ctx)
+        {
+            _lastContext = ctx;
+            UpdateSelectedLines(ctx);
+        }
+
+        public void OnSelectionChanged()
+        {
+            if (_lastContext != null)
+            {
+                UpdateSelectedLines(_lastContext);
+            }
+        }
+
+        // ================================================================
+        // 内部処理
+        // ================================================================
+
+        private void UpdateSelectedLines(ToolContext ctx)
+        {
+            _selectedLineIndices.Clear();
+
+            if (ctx.MeshData == null || ctx.SelectionState == null)
+                return;
+
+            foreach (int lineIdx in ctx.SelectionState.Lines)
+            {
+                if (lineIdx >= 0 && lineIdx < ctx.MeshData.FaceCount)
+                {
+                    var face = ctx.MeshData.Faces[lineIdx];
+                    if (face.VertexCount == 2)
+                    {
+                        _selectedLineIndices.Add(lineIdx);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 選択されたラインから閉じたループを構築
+        /// </summary>
+        private List<int> BuildClosedLoop(MeshData meshData)
+        {
+            if (_selectedLineIndices.Count < 3) return null;
+
+            // ラインの端点を集める
+            // Key: 頂点Index, Value: 接続しているラインのリスト
+            var vertexToLines = new Dictionary<int, List<int>>();
+
+            foreach (int lineIdx in _selectedLineIndices)
+            {
+                var face = meshData.Faces[lineIdx];
+                int v0 = face.VertexIndices[0];
+                int v1 = face.VertexIndices[1];
+
+                if (!vertexToLines.ContainsKey(v0))
+                    vertexToLines[v0] = new List<int>();
+                if (!vertexToLines.ContainsKey(v1))
+                    vertexToLines[v1] = new List<int>();
+
+                vertexToLines[v0].Add(lineIdx);
+                vertexToLines[v1].Add(lineIdx);
+            }
+
+            // 各頂点が2つのラインに接続されているか確認（閉じたループの条件）
+            foreach (var kvp in vertexToLines)
+            {
+                if (kvp.Value.Count != 2)
+                {
+                    Debug.LogWarning($"[LineExtrudeTool] Vertex {kvp.Key} is connected to {kvp.Value.Count} lines (expected 2)");
+                    return null;
+                }
+            }
+
+            // ループを構築（頂点インデックスの順序リスト）
+            var loop = new List<int>();
+            var usedLines = new HashSet<int>();
+
+            // 最初のラインから開始
+            int firstLineIdx = _selectedLineIndices[0];
+            var firstFace = meshData.Faces[firstLineIdx];
+            int currentVertex = firstFace.VertexIndices[0];
+            int startVertex = currentVertex;
+
+            loop.Add(currentVertex);
+            usedLines.Add(firstLineIdx);
+            currentVertex = firstFace.VertexIndices[1];
+
+            // ループを辿る
+            while (currentVertex != startVertex && loop.Count < _selectedLineIndices.Count + 1)
+            {
+                loop.Add(currentVertex);
+
+                // 次のラインを探す
+                var connectedLines = vertexToLines[currentVertex];
+                int nextLineIdx = -1;
+                foreach (int lineIdx in connectedLines)
+                {
+                    if (!usedLines.Contains(lineIdx))
+                    {
+                        nextLineIdx = lineIdx;
+                        break;
+                    }
+                }
+
+                if (nextLineIdx < 0)
+                {
+                    Debug.LogWarning("[LineExtrudeTool] Failed to find next line in loop");
+                    return null;
+                }
+
+                usedLines.Add(nextLineIdx);
+
+                // 次の頂点を決定
+                var nextFace = meshData.Faces[nextLineIdx];
+                if (nextFace.VertexIndices[0] == currentVertex)
+                    currentVertex = nextFace.VertexIndices[1];
+                else
+                    currentVertex = nextFace.VertexIndices[0];
+            }
+
+            if (currentVertex != startVertex)
+            {
+                Debug.LogWarning("[LineExtrudeTool] Loop is not closed");
+                return null;
+            }
+
+            Debug.Log($"[LineExtrudeTool] Built closed loop with {loop.Count} vertices");
+            return loop;
+        }
+
+        /// <summary>
+        /// 表面（おもて面キャップ）のみを生成
+        /// </summary>
+        private void ExecuteGenerateFrontFace()
+        {
+            if (_lastContext == null || _lastContext.MeshData == null)
+                return;
+
+            var meshData = _lastContext.MeshData;
+
+            // 閉じたループを構築
+            var loop = BuildClosedLoop(meshData);
+            if (loop == null || loop.Count < 3)
+            {
+                Debug.LogError("[LineExtrudeTool] Failed to build closed loop from selected lines");
+                return;
+            }
+
+            // Undo用スナップショット
+            MeshDataSnapshot beforeSnapshot = default;
+            if (_lastContext.UndoController != null)
+            {
+                beforeSnapshot = MeshDataSnapshot.Capture(_lastContext.UndoController.MeshContext);
+            }
+
+            // ループの頂点座標を取得（2D: XY平面を仮定）
+            var points2D = new List<Vector2>();
+            float avgZ = 0f;
+            foreach (int vIdx in loop)
+            {
+                Vector3 pos = meshData.Vertices[vIdx].Position;
+                points2D.Add(new Vector2(pos.x, pos.y));
+                avgZ += pos.z;
+            }
+            avgZ /= loop.Count;
+
+            // Poly2Triで三角形分割
+            try
+            {
+                var polyPoints = new List<PolygonPoint>();
+                foreach (var pt in points2D)
+                {
+                    polyPoints.Add(new PolygonPoint(pt.x, pt.y));
+                }
+
+                var polygon = new Polygon(polyPoints);
+                P2T.Triangulate(polygon);
+
+                // 頂点マップ（Poly2Tri座標 → MeshData頂点Index）
+                var vertexMap = new Dictionary<TriangulationPoint, int>();
+
+                // 既存頂点を登録
+                for (int i = 0; i < loop.Count; i++)
+                {
+                    vertexMap[polyPoints[i]] = loop[i];
+                }
+
+                // 法線計算（ループの向きから）
+                Vector3 normal = CalculateLoopNormal(meshData, loop);
+
+                int materialIndex = _lastContext.CurrentMaterialIndex;
+
+                // 三角形を追加
+                foreach (var tri in polygon.Triangles)
+                {
+                    int[] indices = new int[3];
+                    for (int i = 0; i < 3; i++)
+                    {
+                        TriangulationPoint p = tri.Points[i];
+                        if (!vertexMap.TryGetValue(p, out int idx))
+                        {
+                            // 新しい頂点（内部点、通常は発生しない）
+                            idx = meshData.VertexCount;
+                            Vector3 pos = new Vector3((float)p.X, (float)p.Y, avgZ);
+                            meshData.Vertices.Add(new Vertex(pos, new Vector2((float)p.X, (float)p.Y), normal));
+                            vertexMap[p] = idx;
+                        }
+                        indices[i] = idx;
+                    }
+
+                    // 三角形を追加（法線方向に応じてwinding調整）
+                    var face = new Face();
+                    face.VertexIndices = new List<int> { indices[0], indices[2], indices[1] };
+                    face.MaterialIndex = materialIndex;
+                    meshData.Faces.Add(face);
+                }
+
+                Debug.Log($"[LineExtrudeTool] Generated {polygon.Triangles.Count} triangles");
+
+                // 元のラインを削除
+                if (_deleteOriginalLines)
+                {
+                    DeleteOriginalLines(meshData);
+                }
+
+                // 選択クリア
+                _lastContext.SelectionState?.Lines.Clear();
+                _selectedLineIndices.Clear();
+
+                // Undo記録
+                if (_lastContext.UndoController != null)
+                {
+                    var afterSnapshot = MeshDataSnapshot.Capture(_lastContext.UndoController.MeshContext);
+                    _lastContext.UndoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, "Generate Face from Lines");
+                }
+
+                // メッシュ更新
+                _lastContext.SyncMesh?.Invoke();
+                _lastContext.Repaint?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[LineExtrudeTool] Poly2Tri triangulation failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 厚み付き押し出しを実行
+        /// </summary>
+        private void ExecuteFullExtrude()
+        {
+            if (_lastContext == null || _lastContext.MeshData == null)
+                return;
+
+            var meshData = _lastContext.MeshData;
+
+            // 閉じたループを構築
+            var loop = BuildClosedLoop(meshData);
+            if (loop == null || loop.Count < 3)
+            {
+                Debug.LogError("[LineExtrudeTool] Failed to build closed loop from selected lines");
+                return;
+            }
+
+            // Undo用スナップショット
+            MeshDataSnapshot beforeSnapshot = default;
+            if (_lastContext.UndoController != null)
+            {
+                beforeSnapshot = MeshDataSnapshot.Capture(_lastContext.UndoController.MeshContext);
+            }
+
+            // ループの頂点座標を取得
+            var points2D = new List<Vector2>();
+            float avgZ = 0f;
+            foreach (int vIdx in loop)
+            {
+                Vector3 pos = meshData.Vertices[vIdx].Position;
+                points2D.Add(new Vector2(pos.x, pos.y));
+                avgZ += pos.z;
+            }
+            avgZ /= loop.Count;
+
+            float halfThick = _thickness * 0.5f;
+            int materialIndex = _lastContext.CurrentMaterialIndex;
+
+            try
+            {
+                // === 表面（Z = avgZ - halfThick）===
+                GenerateFlatFace(meshData, points2D, avgZ - halfThick, Vector3.back, false, materialIndex);
+
+                // === 裏面（Z = avgZ + halfThick）===
+                GenerateFlatFace(meshData, points2D, avgZ + halfThick, Vector3.forward, true, materialIndex);
+
+                // === 側面 ===
+                GenerateSideFaces(meshData, points2D, avgZ - halfThick, avgZ + halfThick, materialIndex);
+
+                Debug.Log($"[LineExtrudeTool] Generated extruded mesh with thickness {_thickness}");
+
+                // 元のラインを削除
+                if (_deleteOriginalLines)
+                {
+                    DeleteOriginalLines(meshData);
+                }
+
+                // 選択クリア
+                _lastContext.SelectionState?.Lines.Clear();
+                _selectedLineIndices.Clear();
+
+                // Undo記録
+                if (_lastContext.UndoController != null)
+                {
+                    var afterSnapshot = MeshDataSnapshot.Capture(_lastContext.UndoController.MeshContext);
+                    _lastContext.UndoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, "Extrude Lines");
+                }
+
+                // メッシュ更新
+                _lastContext.SyncMesh?.Invoke();
+                _lastContext.Repaint?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[LineExtrudeTool] Extrusion failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Poly2Triで平面を生成
+        /// </summary>
+        private void GenerateFlatFace(MeshData md, List<Vector2> points2D, float z, Vector3 normal, bool flipWinding, int materialIndex)
+        {
+            var polyPoints = new List<PolygonPoint>();
+            foreach (var pt in points2D)
+            {
+                polyPoints.Add(new PolygonPoint(pt.x, pt.y));
+            }
+
+            var polygon = new Polygon(polyPoints);
+            P2T.Triangulate(polygon);
+
+            var vertexMap = new Dictionary<TriangulationPoint, int>();
+
+            foreach (var tri in polygon.Triangles)
+            {
+                int[] indices = new int[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    TriangulationPoint p = tri.Points[i];
+                    if (!vertexMap.TryGetValue(p, out int idx))
+                    {
+                        idx = md.VertexCount;
+                        Vector3 pos = new Vector3((float)p.X, (float)p.Y, z);
+                        Vector2 uv = new Vector2((float)p.X, (float)p.Y);
+                        md.Vertices.Add(new Vertex(pos, uv, normal));
+                        vertexMap[p] = idx;
+                    }
+                    indices[i] = idx;
+                }
+
+                var face = new Face();
+                if (flipWinding)
+                    face.VertexIndices = new List<int> { indices[0], indices[1], indices[2] };
+                else
+                    face.VertexIndices = new List<int> { indices[0], indices[2], indices[1] };
+                face.MaterialIndex = materialIndex;
+                md.Faces.Add(face);
+            }
+        }
+
+        /// <summary>
+        /// 側面を生成
+        /// </summary>
+        private void GenerateSideFaces(MeshData md, List<Vector2> points2D, float frontZ, float backZ, int materialIndex)
+        {
+            int n = points2D.Count;
+
+            for (int i = 0; i < n; i++)
+            {
+                int next = (i + 1) % n;
+
+                Vector2 p0 = points2D[i];
+                Vector2 p1 = points2D[next];
+
+                // 法線計算（エッジに垂直、外向き）
+                Vector2 edge = p1 - p0;
+                Vector3 sideNormal = new Vector3(edge.y, -edge.x, 0).normalized;
+
+                // 4頂点
+                Vector3 v0 = new Vector3(p0.x, p0.y, frontZ);
+                Vector3 v1 = new Vector3(p1.x, p1.y, frontZ);
+                Vector3 v2 = new Vector3(p1.x, p1.y, backZ);
+                Vector3 v3 = new Vector3(p0.x, p0.y, backZ);
+
+                int idx = md.VertexCount;
+                md.Vertices.Add(new Vertex(v0, new Vector2(0, 0), sideNormal));
+                md.Vertices.Add(new Vertex(v1, new Vector2(1, 0), sideNormal));
+                md.Vertices.Add(new Vertex(v2, new Vector2(1, 1), sideNormal));
+                md.Vertices.Add(new Vertex(v3, new Vector2(0, 1), sideNormal));
+
+                var face = new Face();
+                face.VertexIndices = new List<int> { idx, idx + 1, idx + 2, idx + 3 };
+                face.MaterialIndex = materialIndex;
+                md.Faces.Add(face);
+            }
+        }
+
+        /// <summary>
+        /// ループの法線を計算
+        /// </summary>
+        private Vector3 CalculateLoopNormal(MeshData meshData, List<int> loop)
+        {
+            if (loop.Count < 3) return Vector3.back;
+
+            Vector3 p0 = meshData.Vertices[loop[0]].Position;
+            Vector3 p1 = meshData.Vertices[loop[1]].Position;
+            Vector3 p2 = meshData.Vertices[loop[2]].Position;
+
+            Vector3 v1 = p1 - p0;
+            Vector3 v2 = p2 - p0;
+
+            return Vector3.Cross(v1, v2).normalized;
+        }
+
+        /// <summary>
+        /// 元のラインを削除
+        /// </summary>
+        private void DeleteOriginalLines(MeshData meshData)
+        {
+            // 降順でソートして削除
+            var sortedIndices = _selectedLineIndices.OrderByDescending(i => i).ToList();
+            foreach (int lineIdx in sortedIndices)
+            {
+                if (lineIdx >= 0 && lineIdx < meshData.FaceCount)
+                {
+                    meshData.Faces.RemoveAt(lineIdx);
+                }
+            }
+        }
+    }
+}

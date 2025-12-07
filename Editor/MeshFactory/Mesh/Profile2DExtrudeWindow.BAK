@@ -478,24 +478,24 @@ public class Profile2DExtrudeWindow : EditorWindow
 
         EditorGUILayout.BeginHorizontal();
 
-        // 左側：パラメータ、ループリスト、3Dプレビュー（スクロール可能）
-        using (new EditorGUILayout.VerticalScope(GUILayout.Width(320)))
+        // 左側：3Dプレビュー
+        using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true)))
+        {
+            Draw3DPreview();
+        }
+
+        EditorGUILayout.Space(10);
+
+        // 右側：パラメータと2Dエディタ
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(350)))
         {
             _leftScrollPos = EditorGUILayout.BeginScrollView(_leftScrollPos, GUILayout.ExpandHeight(true));
             DrawParameters();
             EditorGUILayout.Space(10);
             DrawLoopList();
             EditorGUILayout.Space(10);
-            Draw3DPreviewSmall();
+            Draw2DEditor();
             EditorGUILayout.EndScrollView();
-        }
-
-        EditorGUILayout.Space(10);
-
-        // 右側：2Dエディタ（大きく）
-        using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true)))
-        {
-            Draw2DEditorLarge();
         }
 
         EditorGUILayout.EndHorizontal();
@@ -823,57 +823,6 @@ public class Profile2DExtrudeWindow : EditorWindow
 
         // 2Dエディタ領域
         Rect rect = GUILayoutUtility.GetRect(330, 250);
-        DrawEditorContent(rect);
-        HandleEditorInput(rect);
-    }
-
-    /// <summary>
-    /// 大きな2Dエディタ（右側パネル用）
-    /// </summary>
-    private void Draw2DEditorLarge()
-    {
-        // ヘッダーと選択点の座標編集
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            EditorGUILayout.LabelField("2D Editor", EditorStyles.boldLabel);
-            
-            GUILayout.FlexibleSpace();
-            
-            // 選択点の座標編集（コンパクト）
-            if (_selectedLoopIndex >= 0 && _selectedLoopIndex < _loops.Count)
-            {
-                var loop = _loops[_selectedLoopIndex];
-                if (_selectedPointIndex >= 0 && _selectedPointIndex < loop.Points.Count)
-                {
-                    EditorGUILayout.LabelField($"Pt{_selectedPointIndex}:", GUILayout.Width(30));
-                    EditorGUI.BeginChangeCheck();
-                    float newX = EditorGUILayout.FloatField(loop.Points[_selectedPointIndex].x, GUILayout.Width(60));
-                    float newY = EditorGUILayout.FloatField(loop.Points[_selectedPointIndex].y, GUILayout.Width(60));
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        loop.Points[_selectedPointIndex] = new Vector2(newX, newY);
-                        _undoHelper?.RecordImmediate("Edit Point");
-                        UpdatePreviewMesh();
-                    }
-                }
-                
-                // Remove Pointボタン
-                GUI.enabled = _selectedPointIndex >= 0 && loop.Points.Count > 3;
-                if (GUILayout.Button("Del", GUILayout.Width(35)))
-                {
-                    loop.Points.RemoveAt(_selectedPointIndex);
-                    _selectedPointIndex = Mathf.Clamp(_selectedPointIndex, 0, loop.Points.Count - 1);
-                    _undoHelper?.RecordImmediate("Remove Point");
-                    UpdatePreviewMesh();
-                }
-                GUI.enabled = true;
-            }
-        }
-
-        EditorGUILayout.LabelField("Click edge to insert, Drag point to move", EditorStyles.miniLabel);
-
-        // 2Dエディタ領域（大きく）
-        Rect rect = GUILayoutUtility.GetRect(400, 400, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
         DrawEditorContent(rect);
         HandleEditorInput(rect);
     }
@@ -1222,66 +1171,6 @@ public class Profile2DExtrudeWindow : EditorWindow
     //======================================================================
     // 3D プレビュー
     //======================================================================
-
-    /// <summary>
-    /// 小さな3Dプレビュー（左側パネル用）
-    /// </summary>
-    private void Draw3DPreviewSmall()
-    {
-        EditorGUILayout.LabelField("3D Preview (Right-drag to rotate)", EditorStyles.boldLabel);
-
-        Rect rect = GUILayoutUtility.GetRect(280, 200);
-
-        if (_preview == null || _previewMesh == null)
-        {
-            EditorGUI.DrawRect(rect, new Color(0.15f, 0.15f, 0.18f));
-            return;
-        }
-
-        Event e = Event.current;
-        if (rect.Contains(e.mousePosition))
-        {
-            if (e.type == EventType.MouseDrag && e.button == 1)
-            {
-                _rotationY += e.delta.x * 0.5f;
-                _rotationX += e.delta.y * 0.5f;
-                _rotationX = Mathf.Clamp(_rotationX, -89f, 89f);
-                e.Use();
-                Repaint();
-            }
-        }
-
-        if (e.type != EventType.Repaint)
-            return;
-
-        _preview.BeginPreview(rect, GUIStyle.none);
-
-        _preview.camera.clearFlags = CameraClearFlags.SolidColor;
-        _preview.camera.backgroundColor = new Color(0.15f, 0.15f, 0.18f, 1f);
-
-        Bounds bounds = _previewMesh.bounds;
-        float maxExtent = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
-        if (maxExtent < 0.001f) maxExtent = 1f;
-
-        float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad * 0.5f;
-        float dist = maxExtent / Mathf.Tan(fovRad) * 2.0f;
-
-        Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, 0);
-        Vector3 camPos = rot * new Vector3(0, 0, -dist) + bounds.center;
-
-        _preview.camera.transform.position = camPos;
-        _preview.camera.transform.LookAt(bounds.center);
-
-        if (_previewMaterial != null)
-        {
-            _preview.DrawMesh(_previewMesh, Matrix4x4.identity, _previewMaterial, 0);
-        }
-
-        _preview.camera.Render();
-
-        Texture result = _preview.EndPreview();
-        GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
-    }
 
     private void Draw3DPreview()
     {

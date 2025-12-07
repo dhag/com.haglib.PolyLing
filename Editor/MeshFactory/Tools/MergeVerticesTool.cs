@@ -24,7 +24,9 @@ namespace MeshFactory.Tools
 
         // === プレビュー ===
         private MergePreviewInfo _preview = new MergePreviewInfo { Groups = new List<List<int>>() };
-        private bool _previewDirty = true;
+#pragma warning disable CS0414
+        private bool _previewDirty = true;  // 将来の最適化用
+#pragma warning restore CS0414
 
         // ================================================================
         // IEditTool 実装
@@ -94,7 +96,7 @@ namespace MeshFactory.Tools
                     // 重心にマーカー
                     GUI.color = color;
                     float size = 10f;
-                    GUI.DrawTexture(new Rect(centroidScreen.x - size/2, centroidScreen.y - size/2, size, size), 
+                    GUI.DrawTexture(new Rect(centroidScreen.x - size / 2, centroidScreen.y - size / 2, size, size),
                         EditorGUIUtility.whiteTexture);
                 }
 
@@ -105,7 +107,7 @@ namespace MeshFactory.Tools
                     if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount) continue;
                     Vector2 sp = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
                     float size = 8f;
-                    GUI.DrawTexture(new Rect(sp.x - size/2, sp.y - size/2, size, size), 
+                    GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size),
                         EditorGUIUtility.whiteTexture);
                 }
             }
@@ -238,32 +240,35 @@ namespace MeshFactory.Tools
         }
 
         // ================================================================
-        // マージ処理
+        // マージ実行（UIボタンから）
         // ================================================================
 
         private void ExecuteMerge(ToolContext ctx)
         {
-            if (ctx.MeshData == null || ctx.SelectedVertices == null || ctx.SelectedVertices.Count < 2)
-                return;
+            if (ctx.MeshData == null || ctx.SelectedVertices == null) return;
+            if (ctx.SelectedVertices.Count < 2) return;
+
+            // Undo用スナップショット
+            var before = ctx.UndoController?.VertexEditStack != null
+                ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext)
+                : default;
 
             var result = MergeVertices(ctx.MeshData, ctx.SelectedVertices, _threshold);
 
             if (result.Success)
             {
-                // 選択をクリア（頂点インデックスが変わるため）
+                // 選択をクリア
                 ctx.SelectedVertices.Clear();
 
-                // メッシュ更新
-                ctx.SyncMesh?.Invoke();
+                // Undo記録
+                if (ctx.UndoController != null)
+                {
+                    var after = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                    ctx.UndoController.RecordTopologyChange(before, after, "Merge Vertices");
+                }
 
-                // Undo記録（MeshDataが変更されたのでトポロジ変更として記録）
-                // ※ 呼び出し元でUndo処理を行う想定
-
-                Debug.Log($"[MergeVertices] {result.Message}");
+                Debug.Log($"[MergeTool] {result.Message}");
             }
-
-            _previewDirty = true;
-            ctx.Repaint?.Invoke();
         }
 
         // ================================================================
@@ -272,12 +277,7 @@ namespace MeshFactory.Tools
 
         private MergePreviewInfo CalculatePreview(MeshData meshData, HashSet<int> selectedVertices, float threshold)
         {
-            var result = new MergePreviewInfo
-            {
-                GroupCount = 0,
-                TotalVerticesToMerge = 0,
-                Groups = new List<List<int>>()
-            };
+            var result = new MergePreviewInfo { Groups = new List<List<int>>() };
 
             if (meshData == null || selectedVertices == null || selectedVertices.Count < 2)
                 return result;
@@ -339,7 +339,7 @@ namespace MeshFactory.Tools
         }
 
         // ================================================================
-        // マージ実行
+        // マージ実行（内部）
         // ================================================================
 
         public struct MergeResult
@@ -350,6 +350,45 @@ namespace MeshFactory.Tools
         }
 
         private MergeResult MergeVertices(MeshData meshData, HashSet<int> selectedVertices, float threshold)
+        {
+            return MergeVerticesInternal(meshData, selectedVertices, threshold);
+        }
+
+        // ================================================================
+        // 静的マージメソッド（外部から呼び出し可能）
+        // ================================================================
+
+        /// <summary>
+        /// 指定された頂点のうち、しきい値以下の距離にあるものをマージする（静的版）
+        /// </summary>
+        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="targetVertices">マージ対象の頂点インデックス</param>
+        /// <param name="threshold">距離しきい値</param>
+        /// <returns>マージ結果</returns>
+        public static MergeResult MergeVerticesAtSamePosition(MeshData meshData, HashSet<int> targetVertices, float threshold = 0.001f)
+        {
+            return MergeVerticesInternal(meshData, targetVertices, threshold);
+        }
+
+        /// <summary>
+        /// メッシュ内の全頂点を対象に、しきい値以下の距離にあるものをマージする
+        /// </summary>
+        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="threshold">距離しきい値</param>
+        /// <returns>マージ結果</returns>
+        public static MergeResult MergeAllVerticesAtSamePosition(MeshData meshData, float threshold = 0.001f)
+        {
+            if (meshData == null || meshData.VertexCount < 2)
+                return new MergeResult { Success = false, Message = "Not enough vertices" };
+
+            var allVertices = new HashSet<int>(Enumerable.Range(0, meshData.VertexCount));
+            return MergeVerticesInternal(meshData, allVertices, threshold);
+        }
+
+        /// <summary>
+        /// マージ処理の内部実装
+        /// </summary>
+        private static MergeResult MergeVerticesInternal(MeshData meshData, HashSet<int> selectedVertices, float threshold)
         {
             var result = new MergeResult { Success = false };
 
@@ -418,6 +457,8 @@ namespace MeshFactory.Tools
             if (mergeGroups.Count == 0)
             {
                 result.Message = "No vertices within threshold";
+                result.Success = true;  // エラーではない
+                result.RemovedVertexCount = 0;
                 return result;
             }
 
@@ -471,7 +512,7 @@ namespace MeshFactory.Tools
             return result;
         }
 
-        private void RemoveDegenerateFaces(MeshData meshData)
+        private static void RemoveDegenerateFaces(MeshData meshData)
         {
             var toRemove = new List<int>();
 
@@ -491,7 +532,7 @@ namespace MeshFactory.Tools
                 Debug.Log($"[MergeVertices] Removed {toRemove.Count} degenerate faces");
         }
 
-        private void RemoveVertices(MeshData meshData, HashSet<int> verticesToRemove)
+        private static void RemoveVertices(MeshData meshData, HashSet<int> verticesToRemove)
         {
             var indexRemap = new Dictionary<int, int>();
             int newIndex = 0;

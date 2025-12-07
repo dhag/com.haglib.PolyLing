@@ -102,6 +102,7 @@ public partial class SimpleMeshFactory : EditorWindow
                     entry.Materials[entry.CurrentMaterialIndex] = value;
             }
         }
+
     }
 
     // ================================================================
@@ -112,6 +113,21 @@ public partial class SimpleMeshFactory : EditorWindow
     private float _rotationX = 20f;
     private float _cameraDistance = 2f;
     private Vector3 _cameraTarget = Vector3.zero;
+
+    // ============================================================================
+    // === メッシュ追加モード ===
+    // ============================================================================
+    // 
+    [SerializeField]
+    private bool _addToCurrentMesh = true;  // デフォルトでON
+
+    [SerializeField]
+    private bool _autoMergeOnCreate = true;  // 生成時に自動マージ
+
+    [SerializeField]
+    private float _autoMergeThreshold = 0.001f;  // マージしきい値
+
+
 
     // ================================================================
     // 頂点編集
@@ -159,6 +175,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private EdgeExtrudeTool _extrudeTool;
     private FaceExtrudeTool _faceExtrudeTool;
     private EdgeBevelTool _edgeBevelTool;
+    private LineExtrudeTool _lineExtrudeTool;  // ← Tool用に追加(1/5)5か所の1つはGUTボタン
     private ToolContext _toolContext;
 
     // ツール設定（シリアライズ対象）
@@ -199,6 +216,12 @@ public partial class SimpleMeshFactory : EditorWindow
     private float _cameraStartDistance;
     private Vector3 _cameraStartTarget;
     private WorkPlaneSnapshot? _cameraStartWorkPlaneSnapshot;
+    
+    
+    
+    
+    
+    
 
     private SelectionSnapshot _lastSelectionSnapshot;  // Undo用スナップショット
     // ================================================================
@@ -323,6 +346,7 @@ public partial class SimpleMeshFactory : EditorWindow
         _extrudeTool = new EdgeExtrudeTool();
         _faceExtrudeTool = new FaceExtrudeTool();
         _edgeBevelTool = new EdgeBevelTool();
+        _lineExtrudeTool = new LineExtrudeTool();  // ← 追加(2)
         _currentTool = _selectTool;
 
         // MoveToolに保存された設定を反映
@@ -434,6 +458,12 @@ public partial class SimpleMeshFactory : EditorWindow
         if (_currentTool == _edgeBevelTool)
         {
             _edgeBevelTool.OnSelectionChanged(_toolContext);
+        }
+        
+         // LineExtrudeToolの選択更新  ← 追加(3)
+        if (_currentTool == _lineExtrudeTool)
+        {
+            _lineExtrudeTool.OnSelectionChanged();
         }
     }
 
@@ -631,6 +661,9 @@ public partial class SimpleMeshFactory : EditorWindow
                 break;
             case "Bevel":
                 newTool = _edgeBevelTool;
+                break;
+            case "Line Extrude":  // ← 追加(4)
+                newTool = _lineExtrudeTool;
                 break;
             default:
                 newTool = _selectTool;
