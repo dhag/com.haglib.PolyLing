@@ -99,6 +99,11 @@ public partial class SimpleMeshFactory
                     _cameraDistance = newDist;
                 }
 
+                EditorGUILayout.Space(3);
+
+                // ★対称モードUI
+                DrawSymmetryUI();
+
                 EditorGUI.indentLevel--;
             }
 

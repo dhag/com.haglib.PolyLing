@@ -448,11 +448,6 @@ public partial class SimpleMeshFactory : EditorWindow
             DestroyImmediate(_previewMaterial);
             _previewMaterial = null;
         }
-        
-        // ★ミラーリソースのクリーンアップ
-        CleanupMirrorResources();
-        
-
 
         // WorkPlane UIイベントハンドラ解除
         CleanupWorkPlaneEventHandlers();

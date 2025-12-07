@@ -50,6 +50,13 @@ public partial class SimpleMeshFactory
 
         // マルチマテリアル対応描画
         DrawMeshWithMaterials(entry, mesh);
+        
+
+        // ★ミラーメッシュ描画を追加
+        if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
+        {
+            DrawMirroredMesh(entry, mesh);
+        }
 
         _preview.camera.Render();
 
@@ -58,7 +65,14 @@ public partial class SimpleMeshFactory
 
         if (_showWireframe)
         {
+            // ワイヤーフレーム描画
             DrawWireframeOverlay(rect, entry.Data, camPos, _cameraTarget);
+            // ★ミラーワイヤーフレーム描画
+            if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
+            {
+                DrawMirroredWireframe(rect, entry.Data, camPos, _cameraTarget);
+            }
+
         }
         // 選択状態のオーバーレイ描画（追加）
         DrawSelectionOverlay(rect, entry.Data, camPos, _cameraTarget);
@@ -77,6 +91,12 @@ public partial class SimpleMeshFactory
         if (_showWorkPlaneGizmo && _vertexEditMode)
         {
             DrawWorkPlaneGizmo(rect, camPos, _cameraTarget);
+        }
+        // ★対称平面ギズモ描画
+        if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
+        {
+            Bounds meshBounds = entry.Data != null ? entry.Data.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
+            DrawSymmetryPlane(rect, camPos, _cameraTarget, meshBounds);
         }
     }
 
