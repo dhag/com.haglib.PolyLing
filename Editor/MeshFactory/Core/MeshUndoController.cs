@@ -1,4 +1,4 @@
-// Assets/Editor/UndoSystem/MeshEditor/MeshFactoryUndoController.cs
+// Assets/Editor/UndoSystem/MeshEditor/MeshUndoController.cs
 // SimpleMeshEditorに組み込むためのUndoコントローラー
 // MeshData（Vertex/Face）ベースに対応
 
@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
+using static MeshFactory.UndoSystem.KnifeCutOperationRecord;
 
 namespace MeshFactory.UndoSystem
 {
@@ -15,7 +16,7 @@ namespace MeshFactory.UndoSystem
     /// SimpleMeshEditorに組み込んで使用
     /// MeshDataベースの新構造対応
     /// </summary>
-    public class MeshFactoryUndoController : IDisposable
+    public partial class  MeshUndoController : IDisposable
     {
         // === Undoノード構造 ===
         private UndoGroup _mainGroup;
@@ -66,7 +67,7 @@ namespace MeshFactory.UndoSystem
         public event Action OnUndoRedoPerformed;
 
         // === コンストラクタ ===
-        public MeshFactoryUndoController(string windowId = "MainEditor")
+        public MeshUndoController(string windowId = "MainEditor")
         {
             // メイングループ作成
             _mainGroup = new UndoGroup(windowId, "Mesh Editor");
@@ -434,7 +435,29 @@ namespace MeshFactory.UndoSystem
                 oldFaces, newFaces);
             _vertexEditStack.Record(record, "Change Selection");
         }
+        /// <summary>
+        /// 拡張選択変更を記録（Edge/Face/Line対応）
+        /// </summary>
+        public void RecordExtendedSelectionChange(
+            MeshFactory.Selection.SelectionSnapshot oldSnapshot,
+            MeshFactory.Selection.SelectionSnapshot newSnapshot,
+            HashSet<int> oldLegacyVertices,
+            HashSet<int> newLegacyVertices,
+            WorkPlaneSnapshot? oldWorkPlane = null,
+            WorkPlaneSnapshot? newWorkPlane = null)
+        {
+            var record = new ExtendedSelectionChangeRecord(
+                oldSnapshot,
+                newSnapshot,
+                oldLegacyVertices,
+                newLegacyVertices,
+                oldWorkPlane,
+                newWorkPlane
+            );
 
+            string desc = newSnapshot?.Mode.ToString() ?? "Selection";
+            _vertexEditStack.Record(record, $"Change {desc} Selection");
+        }
         // === スナップショット（トポロジー変更用） ===
 
         /// <summary>
@@ -456,13 +479,7 @@ namespace MeshFactory.UndoSystem
             FocusVertexEdit();
         }
 
-        /// <summary>
-        /// トポロジー変更前にスナップショットを取得（後方互換）
-        /// </summary>
-        public MeshSnapshot CaptureSnapshot()
-        {
-            return MeshSnapshot.Capture(_meshContext);
-        }
+
 
         /// <summary>
         /// トポロジー変更を記録（後方互換）
@@ -576,6 +593,27 @@ namespace MeshFactory.UndoSystem
             var record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, "Delete Vertices");
             FocusVertexEdit();
+        }
+
+        /// <summary>
+        /// メッシュトポロジー変更を記録（スナップショット方式）
+        /// ナイフツールの複数面切断、面マージなど汎用的に使用
+        /// </summary>
+        public void RecordMeshTopologyChange(MeshDataSnapshot before, MeshDataSnapshot after, string description = "Mesh Topology Change")
+        {
+            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            
+            var record = new MeshSnapshotRecord(before, after);
+            _vertexEditStack.Record(record, description);
+            FocusVertexEdit();
+        }
+        /// <summary>
+        /// トポロジー変更前にスナップショットを取得（後方互換）
+        /// 現在のMeshDataのスナップショットを取得
+        /// </summary>
+        public MeshSnapshot CaptureSnapshot()
+        {
+            return MeshSnapshot.Capture(_meshContext);
         }
 
         // === 表示操作の記録 ===

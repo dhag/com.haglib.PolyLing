@@ -1,0 +1,613 @@
+// Assets/Editor/MeshFactory/Selection/SelectionOperations.cs
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using MeshFactory.Data;
+
+namespace MeshFactory.Selection
+{
+    /// <summary>
+    /// 選択操作を行うクラス
+    /// </summary>
+    public class SelectionOperations
+    {
+        private SelectionState _state;
+        private TopologyCache _topology;
+        
+        public float VertexHitRadius { get; set; } = 10f;
+        public float EdgeHitDistance { get; set; } = 8f;
+        public bool EnableFaceHit { get; set; } = true;
+
+        public SelectionOperations(SelectionState state, TopologyCache topology)
+        {
+            _state = state ?? throw new ArgumentNullException(nameof(state));
+            _topology = topology ?? throw new ArgumentNullException(nameof(topology));
+        }
+
+        public void SetState(SelectionState state)
+        {
+            _state = state ?? throw new ArgumentNullException(nameof(state));
+        }
+
+        public void SetTopology(TopologyCache topology)
+        {
+            _topology = topology ?? throw new ArgumentNullException(nameof(topology));
+        }
+
+        // === ヒットテスト ===
+
+        public int FindVertexAt(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen)
+        {
+            if (meshData == null || worldToScreen == null) return -1;
+
+            float minDist = VertexHitRadius;
+            int nearest = -1;
+
+            for (int i = 0; i < meshData.VertexCount; i++)
+            {
+                Vector2 vScreen = worldToScreen(meshData.Vertices[i].Position);
+                float dist = Vector2.Distance(screenPos, vScreen);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    nearest = i;
+                }
+            }
+
+            return nearest;
+        }
+
+        public VertexPair? FindEdgeAt(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen)
+        {
+            if (meshData == null || worldToScreen == null) return null;
+
+            float minDist = EdgeHitDistance;
+            VertexPair? nearest = null;
+
+            foreach (var pair in _topology.AllEdgePairs)
+            {
+                Vector2 p1 = worldToScreen(meshData.Vertices[pair.V1].Position);
+                Vector2 p2 = worldToScreen(meshData.Vertices[pair.V2].Position);
+                
+                float dist = DistanceToLineSegment(screenPos, p1, p2);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    nearest = pair;
+                }
+            }
+
+            return nearest;
+        }
+
+        public int FindLineAt(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen)
+        {
+            if (meshData == null || worldToScreen == null) return -1;
+
+            float minDist = EdgeHitDistance;
+            int nearest = -1;
+
+            foreach (int faceIdx in _topology.AuxLineIndices)
+            {
+                var face = meshData.Faces[faceIdx];
+                if (face.VertexCount != 2) continue;
+
+                Vector2 p1 = worldToScreen(meshData.Vertices[face.VertexIndices[0]].Position);
+                Vector2 p2 = worldToScreen(meshData.Vertices[face.VertexIndices[1]].Position);
+                
+                float dist = DistanceToLineSegment(screenPos, p1, p2);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    nearest = faceIdx;
+                }
+            }
+
+            return nearest;
+        }
+
+        public int FindFaceAt(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen,
+            Vector3 cameraPosition)
+        {
+            if (!EnableFaceHit || meshData == null || worldToScreen == null) return -1;
+
+            int nearest = -1;
+            float nearestDepth = float.MaxValue;
+
+            foreach (int faceIdx in _topology.RealFaceIndices)
+            {
+                var face = meshData.Faces[faceIdx];
+                if (face.VertexCount < 3) continue;
+
+                var screenPoints = new Vector2[face.VertexCount];
+                Vector3 centroid = Vector3.zero;
+                
+                for (int i = 0; i < face.VertexCount; i++)
+                {
+                    var worldPos = meshData.Vertices[face.VertexIndices[i]].Position;
+                    screenPoints[i] = worldToScreen(worldPos);
+                    centroid += worldPos;
+                }
+                centroid /= face.VertexCount;
+
+                if (IsPointInPolygon(screenPos, screenPoints))
+                {
+                    float depth = Vector3.Distance(cameraPosition, centroid);
+                    if (depth < nearestDepth)
+                    {
+                        nearestDepth = depth;
+                        nearest = faceIdx;
+                    }
+                }
+            }
+
+            return nearest;
+        }
+
+        /// <summary>
+        /// 有効なモードに対してヒットテストを行う（優先順位: 頂点 > エッジ > ライン > 面）
+        /// </summary>
+        public HitResult FindAtEnabledModes(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen,
+            Vector3 cameraPosition)
+        {
+            var result = HitResult.None;
+            var mode = _state.Mode;
+
+            // 優先順位: Vertex > Edge > Line > Face
+            
+            // 1. Vertex
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                int vertexIdx = FindVertexAt(screenPos, meshData, worldToScreen);
+                if (vertexIdx >= 0)
+                {
+                    result.HitType = MeshSelectMode.Vertex;
+                    result.VertexIndex = vertexIdx;
+                    return result;
+                }
+            }
+
+            // 2. Edge
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                var edgePair = FindEdgeAt(screenPos, meshData, worldToScreen);
+                if (edgePair.HasValue)
+                {
+                    result.HitType = MeshSelectMode.Edge;
+                    result.EdgePair = edgePair;
+                    return result;
+                }
+            }
+
+            // 3. Line
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                int lineIdx = FindLineAt(screenPos, meshData, worldToScreen);
+                if (lineIdx >= 0)
+                {
+                    result.HitType = MeshSelectMode.Line;
+                    result.LineIndex = lineIdx;
+                    return result;
+                }
+            }
+
+            // 4. Face
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                int faceIdx = FindFaceAt(screenPos, meshData, worldToScreen, cameraPosition);
+                if (faceIdx >= 0)
+                {
+                    result.HitType = MeshSelectMode.Face;
+                    result.FaceIndex = faceIdx;
+                    return result;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 後方互換: FindAtCurrentMode
+        /// </summary>
+        public HitResult FindAtCurrentMode(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen,
+            Vector3 cameraPosition)
+        {
+            return FindAtEnabledModes(screenPos, meshData, worldToScreen, cameraPosition);
+        }
+
+        // === 選択操作 ===
+
+        public bool SelectAt(
+            Vector2 screenPos,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen,
+            Vector3 cameraPosition,
+            bool additive = false)
+        {
+            var hit = FindAtEnabledModes(screenPos, meshData, worldToScreen, cameraPosition);
+            return ApplyHitResult(hit, additive);
+        }
+
+        /// <summary>
+        /// ヒット結果を適用（混在選択対応）
+        /// </summary>
+        public bool ApplyHitResult(HitResult hit, bool additive = false)
+        {
+            // ヒットなしの場合
+            if (hit.HitType == MeshSelectMode.None)
+            {
+                if (!additive)
+                {
+                    // 非加算モードで空クリック: 有効モードの選択をクリア
+                    _state.ClearEnabledModes();
+                    return true;
+                }
+                return false;
+            }
+
+            // ヒットした要素の種類に応じて処理
+            switch (hit.HitType)
+            {
+                case MeshSelectMode.Vertex:
+                    if (hit.VertexIndex >= 0)
+                    {
+                        if (additive)
+                            return _state.ToggleVertex(hit.VertexIndex);
+                        else
+                        {
+                            // 非加算モード: 他のモードの選択はクリアしない（混在選択対応）
+                            bool wasSelected = _state.Vertices.Contains(hit.VertexIndex);
+                            _state.Vertices.Clear();
+                            _state.Vertices.Add(hit.VertexIndex);
+                            return !wasSelected || _state.Vertices.Count != 1;
+                        }
+                    }
+                    break;
+
+                case MeshSelectMode.Edge:
+                    if (hit.EdgePair.HasValue)
+                    {
+                        if (additive)
+                            return _state.ToggleEdge(hit.EdgePair.Value);
+                        else
+                        {
+                            bool wasSelected = _state.Edges.Contains(hit.EdgePair.Value);
+                            _state.Edges.Clear();
+                            _state.Edges.Add(hit.EdgePair.Value);
+                            return !wasSelected || _state.Edges.Count != 1;
+                        }
+                    }
+                    break;
+
+                case MeshSelectMode.Face:
+                    if (hit.FaceIndex >= 0)
+                    {
+                        if (additive)
+                            return _state.ToggleFace(hit.FaceIndex);
+                        else
+                        {
+                            bool wasSelected = _state.Faces.Contains(hit.FaceIndex);
+                            _state.Faces.Clear();
+                            _state.Faces.Add(hit.FaceIndex);
+                            return !wasSelected || _state.Faces.Count != 1;
+                        }
+                    }
+                    break;
+
+                case MeshSelectMode.Line:
+                    if (hit.LineIndex >= 0)
+                    {
+                        if (additive)
+                            return _state.ToggleLine(hit.LineIndex);
+                        else
+                        {
+                            bool wasSelected = _state.Lines.Contains(hit.LineIndex);
+                            _state.Lines.Clear();
+                            _state.Lines.Add(hit.LineIndex);
+                            return !wasSelected || _state.Lines.Count != 1;
+                        }
+                    }
+                    break;
+            }
+
+            return false;
+        }
+
+        // === 矩形選択 ===
+
+        /// <summary>
+        /// 矩形内の要素を選択（有効な全モード対応）
+        /// </summary>
+        public bool SelectInRect(
+            Rect screenRect,
+            MeshData meshData,
+            Func<Vector3, Vector2> worldToScreen,
+            bool additive = false)
+        {
+            if (meshData == null || worldToScreen == null) return false;
+
+            bool changed = false;
+            var mode = _state.Mode;
+
+            // 有効な各モードで選択
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                changed |= SelectVerticesInRect(screenRect, meshData, worldToScreen, additive);
+            }
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                changed |= SelectEdgesInRect(screenRect, meshData, worldToScreen, additive);
+            }
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                changed |= SelectFacesInRect(screenRect, meshData, worldToScreen, additive);
+            }
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                changed |= SelectLinesInRect(screenRect, meshData, worldToScreen, additive);
+            }
+
+            return changed;
+        }
+
+        private bool SelectVerticesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        {
+            if (!additive) _state.Vertices.Clear();
+
+            bool changed = false;
+            for (int i = 0; i < meshData.VertexCount; i++)
+            {
+                Vector2 sp = worldToScreen(meshData.Vertices[i].Position);
+                if (rect.Contains(sp))
+                {
+                    if (_state.Vertices.Add(i))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        private bool SelectEdgesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        {
+            if (!additive) _state.Edges.Clear();
+
+            bool changed = false;
+            foreach (var pair in _topology.AllEdgePairs)
+            {
+                Vector2 p1 = worldToScreen(meshData.Vertices[pair.V1].Position);
+                Vector2 p2 = worldToScreen(meshData.Vertices[pair.V2].Position);
+                
+                if (rect.Contains(p1) && rect.Contains(p2))
+                {
+                    if (_state.Edges.Add(pair))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        private bool SelectFacesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        {
+            if (!additive) _state.Faces.Clear();
+
+            bool changed = false;
+            foreach (int faceIdx in _topology.RealFaceIndices)
+            {
+                var face = meshData.Faces[faceIdx];
+                
+                bool allInside = true;
+                foreach (int vIdx in face.VertexIndices)
+                {
+                    Vector2 sp = worldToScreen(meshData.Vertices[vIdx].Position);
+                    if (!rect.Contains(sp))
+                    {
+                        allInside = false;
+                        break;
+                    }
+                }
+
+                if (allInside)
+                {
+                    if (_state.Faces.Add(faceIdx))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        private bool SelectLinesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        {
+            if (!additive) _state.Lines.Clear();
+
+            bool changed = false;
+            foreach (int faceIdx in _topology.AuxLineIndices)
+            {
+                var face = meshData.Faces[faceIdx];
+                if (face.VertexCount != 2) continue;
+
+                Vector2 p1 = worldToScreen(meshData.Vertices[face.VertexIndices[0]].Position);
+                Vector2 p2 = worldToScreen(meshData.Vertices[face.VertexIndices[1]].Position);
+                
+                if (rect.Contains(p1) && rect.Contains(p2))
+                {
+                    if (_state.Lines.Add(faceIdx))
+                        changed = true;
+                }
+            }
+
+            return changed || !additive;
+        }
+
+        // === 全選択・反転 ===
+
+        /// <summary>
+        /// 有効なモードの全要素を選択
+        /// </summary>
+        public void SelectAll(MeshData meshData)
+        {
+            if (meshData == null) return;
+
+            var mode = _state.Mode;
+
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                for (int i = 0; i < meshData.VertexCount; i++)
+                    _state.Vertices.Add(i);
+            }
+
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                foreach (var pair in _topology.AllEdgePairs)
+                    _state.Edges.Add(pair);
+            }
+
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                foreach (int idx in _topology.RealFaceIndices)
+                    _state.Faces.Add(idx);
+            }
+
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                foreach (int idx in _topology.AuxLineIndices)
+                    _state.Lines.Add(idx);
+            }
+        }
+
+        /// <summary>
+        /// 有効なモードの選択を反転
+        /// </summary>
+        public void InvertSelection(MeshData meshData)
+        {
+            if (meshData == null) return;
+
+            var mode = _state.Mode;
+
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                var allVerts = new HashSet<int>(Enumerable.Range(0, meshData.VertexCount));
+                allVerts.ExceptWith(_state.Vertices);
+                _state.Vertices.Clear();
+                foreach (int v in allVerts) _state.Vertices.Add(v);
+            }
+
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                var allEdges = new HashSet<VertexPair>(_topology.AllEdgePairs);
+                allEdges.ExceptWith(_state.Edges);
+                _state.Edges.Clear();
+                foreach (var e in allEdges) _state.Edges.Add(e);
+            }
+
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                var allFaces = new HashSet<int>(_topology.RealFaceIndices);
+                allFaces.ExceptWith(_state.Faces);
+                _state.Faces.Clear();
+                foreach (int f in allFaces) _state.Faces.Add(f);
+            }
+
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                var allLines = new HashSet<int>(_topology.AuxLineIndices);
+                allLines.ExceptWith(_state.Lines);
+                _state.Lines.Clear();
+                foreach (int l in allLines) _state.Lines.Add(l);
+            }
+        }
+
+        // === ユーティリティ ===
+
+        private static float DistanceToLineSegment(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+        {
+            Vector2 line = lineEnd - lineStart;
+            float len = line.magnitude;
+            if (len < 0.001f) return Vector2.Distance(point, lineStart);
+
+            float t = Mathf.Clamp01(Vector2.Dot(point - lineStart, line) / (len * len));
+            Vector2 projection = lineStart + t * line;
+            return Vector2.Distance(point, projection);
+        }
+
+        private static bool IsPointInPolygon(Vector2 point, Vector2[] polygon)
+        {
+            if (polygon == null || polygon.Length < 3) return false;
+
+            bool inside = false;
+            int j = polygon.Length - 1;
+
+            for (int i = 0; i < polygon.Length; i++)
+            {
+                if ((polygon[i].y > point.y) != (polygon[j].y > point.y) &&
+                    point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / 
+                              (polygon[j].y - polygon[i].y) + polygon[i].x)
+                {
+                    inside = !inside;
+                }
+                j = i;
+            }
+
+            return inside;
+        }
+    }
+
+    /// <summary>
+    /// ヒットテスト結果
+    /// </summary>
+    public struct HitResult
+    {
+        /// <summary>ヒットした要素の種類</summary>
+        public MeshSelectMode HitType;
+        
+        public int VertexIndex;
+        public VertexPair? EdgePair;
+        public int FaceIndex;
+        public int LineIndex;
+
+        /// <summary>
+        /// 何かヒットしたか
+        /// </summary>
+        public bool HasHit => HitType != MeshSelectMode.None;
+
+        /// <summary>
+        /// 後方互換: Mode
+        /// </summary>
+        public MeshSelectMode Mode
+        {
+            get => HitType;
+            set => HitType = value;
+        }
+
+        public static HitResult None => new HitResult
+        {
+            HitType = MeshSelectMode.None,
+            VertexIndex = -1,
+            EdgePair = null,
+            FaceIndex = -1,
+            LineIndex = -1
+        };
+    }
+}

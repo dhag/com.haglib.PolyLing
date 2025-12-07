@@ -1,11 +1,13 @@
 // Tools/ToolContext.cs
 // 編集ツールに渡されるコンテキスト
+// SelectionState/TopologyCache対応版
 
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
+using MeshFactory.Selection;
 
 namespace MeshFactory.Tools
 {
@@ -37,7 +39,7 @@ namespace MeshFactory.Tools
 
         // === 選択状態 ===
 
-        /// <summary>選択中の頂点インデックス</summary>
+        /// <summary>選択中の頂点インデックス（後方互換）</summary>
         public HashSet<int> SelectedVertices { get; set; }
 
         /// <summary>頂点オフセット配列</summary>
@@ -46,15 +48,34 @@ namespace MeshFactory.Tools
         /// <summary>グループオフセット配列</summary>
         public Vector3[] GroupOffsets { get; set; }
 
+        // === 新選択システム ===
+
+        /// <summary>選択状態（Vertex/Edge/Face/Line）</summary>
+        public SelectionState SelectionState { get; set; }
+
+        /// <summary>トポロジキャッシュ</summary>
+        public TopologyCache TopologyCache { get; set; }
+
+        /// <summary>選択操作ヘルパー</summary>
+        public SelectionOperations SelectionOps { get; set; }
+
         // === Undoシステム ===
 
         /// <summary>Undoコントローラー</summary>
-        public MeshFactoryUndoController UndoController { get; set; }
+        public MeshUndoController UndoController { get; set; }
 
         // === 作業平面 ===
 
         /// <summary>作業平面</summary>
         public WorkPlane WorkPlane { get; set; }
+
+        // === マテリアル ===
+
+        /// <summary>カレントマテリアルインデックス（面生成時に使用）</summary>
+        public int CurrentMaterialIndex { get; set; } = 0;
+
+        /// <summary>マテリアルリスト（読み取り専用参照）</summary>
+        public IReadOnlyList<Material> Materials { get; set; }
 
         // === コールバック ===
 
@@ -98,5 +119,21 @@ namespace MeshFactory.Tools
         /// ハンドル半径
         /// </summary>
         public float HandleRadius { get; set; } = 10f;
+
+        // === 便利メソッド ===
+
+        /// <summary>
+        /// ワールド座標をスクリーン座標に変換（簡易版）
+        /// </summary>
+        public Vector2 WorldToScreen(Vector3 worldPos)
+        {
+            if (WorldToScreenPos == null) return Vector2.zero;
+            return WorldToScreenPos(worldPos, PreviewRect, CameraPosition, CameraTarget);
+        }
+
+        /// <summary>
+        /// 現在の選択モードを取得
+        /// </summary>
+        public MeshSelectMode CurrentSelectMode => SelectionState?.Mode ?? MeshSelectMode.Vertex;
     }
 }

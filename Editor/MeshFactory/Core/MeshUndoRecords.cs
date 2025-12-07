@@ -1,12 +1,15 @@
 // Assets/Editor/UndoSystem/MeshEditor/MeshUndoRecords.cs
 // メッシュエディタ専用のUndo記録クラス群
 // MeshData（Vertex/Face）ベースに対応
+// Phase6: マルチマテリアル対応版
+// DefaultMaterials対応版
 
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
+using MeshFactory.Selection;
 
 namespace MeshFactory.UndoSystem
 {
@@ -49,6 +52,30 @@ namespace MeshFactory.UndoSystem
         /// <summary>WorkPlane参照（選択と連動してUndo/Redoするため）</summary>
         public WorkPlane WorkPlane;
 
+        // === 拡張選択システム用 ===
+
+        /// <summary>Undo/Redo時に復元すべきSelectionSnapshot</summary>
+        public SelectionSnapshot CurrentSelectionSnapshot;
+
+        // === マテリアル（マルチマテリアル対応） ===
+
+        /// <summary>マテリアルリスト（MeshEntry.Materialsと同期）</summary>
+        public List<Material> Materials = new List<Material> { null };
+
+        /// <summary>現在選択中のマテリアルインデックス</summary>
+        public int CurrentMaterialIndex = 0;
+
+        // === デフォルトマテリアル（グローバル設定） ===
+
+        /// <summary>新規メッシュ作成時に適用されるデフォルトマテリアルリスト</summary>
+        public List<Material> DefaultMaterials = new List<Material> { null };
+
+        /// <summary>新規メッシュ作成時に適用されるデフォルトカレントマテリアルインデックス</summary>
+        public int DefaultCurrentMaterialIndex = 0;
+
+        /// <summary>マテリアル変更時に自動でデフォルトに設定するか</summary>
+        public bool AutoSetDefaultMaterials = true;
+
         // === 後方互換プロパティ ===
 
         /// <summary>頂点位置リスト（後方互換）</summary>
@@ -79,6 +106,11 @@ namespace MeshFactory.UndoSystem
             MeshData = new MeshData();
             SelectedVertices = new HashSet<int>();
             SelectedFaces = new HashSet<int>();
+            Materials = new List<Material> { null };
+            CurrentMaterialIndex = 0;
+            DefaultMaterials = new List<Material> { null };
+            DefaultCurrentMaterialIndex = 0;
+            AutoSetDefaultMaterials = true;
         }
 
         // === メッシュ読み込み/適用 ===
@@ -395,12 +427,22 @@ namespace MeshFactory.UndoSystem
 
     /// <summary>
     /// MeshDataのスナップショット
+    /// マルチマテリアル対応版
     /// </summary>
     public class MeshDataSnapshot
     {
         public MeshData MeshData;
         public HashSet<int> SelectedVertices;
         public HashSet<int> SelectedFaces;
+
+        // マテリアル（マルチマテリアル対応）
+        public List<Material> Materials;
+        public int CurrentMaterialIndex;
+
+        // デフォルトマテリアル
+        public List<Material> DefaultMaterials;
+        public int DefaultCurrentMaterialIndex;
+        public bool AutoSetDefaultMaterials;
 
         /// <summary>
         /// コンテキストからスナップショットを作成
@@ -411,7 +453,12 @@ namespace MeshFactory.UndoSystem
             {
                 MeshData = ctx.MeshData?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
-                SelectedFaces = new HashSet<int>(ctx.SelectedFaces)
+                SelectedFaces = new HashSet<int>(ctx.SelectedFaces),
+                Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
+                CurrentMaterialIndex = ctx.CurrentMaterialIndex,
+                DefaultMaterials = ctx.DefaultMaterials != null ? new List<Material>(ctx.DefaultMaterials) : new List<Material> { null },
+                DefaultCurrentMaterialIndex = ctx.DefaultCurrentMaterialIndex,
+                AutoSetDefaultMaterials = ctx.AutoSetDefaultMaterials
             };
         }
 
@@ -423,6 +470,21 @@ namespace MeshFactory.UndoSystem
             ctx.MeshData = MeshData?.Clone();
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
+
+            // マテリアル復元
+            if (Materials != null)
+            {
+                ctx.Materials = new List<Material>(Materials);
+                ctx.CurrentMaterialIndex = CurrentMaterialIndex;
+            }
+
+            // デフォルトマテリアル復元
+            if (DefaultMaterials != null)
+            {
+                ctx.DefaultMaterials = new List<Material>(DefaultMaterials);
+            }
+            ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
+            ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
         }
     }
 
@@ -476,7 +538,7 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
-        /// スナップショットをコンテキストに適用
+        /// スナップショットをコンテキストに適用（後方互換用）
         /// </summary>
         public void ApplyTo(MeshEditContext ctx)
         {
@@ -695,6 +757,11 @@ namespace MeshFactory.UndoSystem
         // 現在のツール
         public string CurrentToolName = "Select";
 
+        // ツール設定
+        public KnifeMode KnifeMode = KnifeMode.Cut;
+        public bool KnifeEdgeSelect = false;
+        public bool KnifeChainMode = false;
+
         // WorkPlane参照（カメラ連動Undo用）
         public WorkPlane WorkPlane;
 
@@ -712,7 +779,10 @@ namespace MeshFactory.UndoSystem
                 ShowWireframe = ShowWireframe,
                 ShowVertices = ShowVertices,
                 VertexEditMode = VertexEditMode,
-                CurrentToolName = CurrentToolName
+                CurrentToolName = CurrentToolName,
+                KnifeMode = KnifeMode,
+                KnifeEdgeSelect = KnifeEdgeSelect,
+                KnifeChainMode = KnifeChainMode
             };
         }
 
@@ -729,6 +799,9 @@ namespace MeshFactory.UndoSystem
             ShowVertices = snapshot.ShowVertices;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
+            KnifeMode = snapshot.KnifeMode;
+            KnifeEdgeSelect = snapshot.KnifeEdgeSelect;
+            KnifeChainMode = snapshot.KnifeChainMode;
         }
     }
 
@@ -741,6 +814,9 @@ namespace MeshFactory.UndoSystem
         public Vector3 CameraTarget;
         public bool ShowWireframe, ShowVertices, VertexEditMode;
         public string CurrentToolName;
+        public KnifeMode KnifeMode;
+        public bool KnifeEdgeSelect;
+        public bool KnifeChainMode;
 
         public bool IsDifferentFrom(EditorStateSnapshot other)
         {
@@ -751,7 +827,10 @@ namespace MeshFactory.UndoSystem
                    ShowWireframe != other.ShowWireframe ||
                    ShowVertices != other.ShowVertices ||
                    VertexEditMode != other.VertexEditMode ||
-                   CurrentToolName != other.CurrentToolName;
+                   CurrentToolName != other.CurrentToolName ||
+                   KnifeMode != other.KnifeMode ||
+                   KnifeEdgeSelect != other.KnifeEdgeSelect ||
+                   KnifeChainMode != other.KnifeChainMode;
         }
     }
 
@@ -1033,8 +1112,6 @@ namespace MeshFactory.UndoSystem
             }
 
             // 追加された頂点を削除（逆順で、末尾から）
-            // Note: Knife Cutで追加される頂点は常に末尾に追加されるため、
-            // 他の面のインデックスには影響しない。AdjustFaceIndicesは不要。
             var sortedVertices = AddedVertices.OrderByDescending(v => v.Index).ToList();
             foreach (var (idx, _) in sortedVertices)
             {
@@ -1052,8 +1129,6 @@ namespace MeshFactory.UndoSystem
             if (ctx.MeshData == null) return;
 
             // 頂点を追加（末尾に追加）
-            // Note: Knife Cutで追加される頂点は常に末尾に追加されるため、
-            // 記録時のインデックス順に末尾に追加すれば正しい状態に戻る。
             var sortedVertices = AddedVertices.OrderBy(v => v.Index).ToList();
             foreach (var (_, vtx) in sortedVertices)
             {
@@ -1073,6 +1148,75 @@ namespace MeshFactory.UndoSystem
             }
 
             ctx.ApplyToMesh();
+        }
+    }
+
+    // ============================================================
+    // 拡張選択変更記録（Edge/Line対応）
+    // ============================================================
+
+    /// <summary>
+    /// 拡張選択変更記録（Edge/Face/Line全モード対応）
+    /// SelectionSnapshotを使用して全選択状態を保存
+    /// </summary>
+    public class ExtendedSelectionChangeRecord : MeshUndoRecord
+    {
+        // 新選択システムのスナップショット
+        public MeshFactory.Selection.SelectionSnapshot OldSnapshot;
+        public MeshFactory.Selection.SelectionSnapshot NewSnapshot;
+
+        // レガシー互換用（_selectedVertices との同期用）
+        public HashSet<int> OldLegacyVertices;
+        public HashSet<int> NewLegacyVertices;
+
+        // WorkPlane連動
+        public WorkPlaneSnapshot? OldWorkPlaneSnapshot;
+        public WorkPlaneSnapshot? NewWorkPlaneSnapshot;
+
+        public ExtendedSelectionChangeRecord(
+            MeshFactory.Selection.SelectionSnapshot oldSnapshot,
+            MeshFactory.Selection.SelectionSnapshot newSnapshot,
+            HashSet<int> oldLegacyVertices = null,
+            HashSet<int> newLegacyVertices = null,
+            WorkPlaneSnapshot? oldWorkPlane = null,
+            WorkPlaneSnapshot? newWorkPlane = null)
+        {
+            OldSnapshot = oldSnapshot?.Clone();
+            NewSnapshot = newSnapshot?.Clone();
+            OldLegacyVertices = oldLegacyVertices != null ? new HashSet<int>(oldLegacyVertices) : new HashSet<int>();
+            NewLegacyVertices = newLegacyVertices != null ? new HashSet<int>(newLegacyVertices) : new HashSet<int>();
+            OldWorkPlaneSnapshot = oldWorkPlane;
+            NewWorkPlaneSnapshot = newWorkPlane;
+        }
+
+        public override void Undo(MeshEditContext ctx)
+        {
+            // レガシー選択を復元（MeshEditContext用）
+            ctx.SelectedVertices = new HashSet<int>(OldLegacyVertices);
+
+            // 拡張選択スナップショットを設定
+            ctx.CurrentSelectionSnapshot = OldSnapshot?.Clone();
+
+            // WorkPlane連動復元
+            if (OldWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
+            {
+                ctx.WorkPlane.ApplySnapshot(OldWorkPlaneSnapshot.Value);
+            }
+        }
+
+        public override void Redo(MeshEditContext ctx)
+        {
+            // レガシー選択を復元（MeshEditContext用）
+            ctx.SelectedVertices = new HashSet<int>(NewLegacyVertices);
+
+            // 拡張選択スナップショットを設定
+            ctx.CurrentSelectionSnapshot = NewSnapshot?.Clone();
+
+            // WorkPlane連動復元
+            if (NewWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
+            {
+                ctx.WorkPlane.ApplySnapshot(NewWorkPlaneSnapshot.Value);
+            }
         }
     }
 }

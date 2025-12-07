@@ -40,10 +40,12 @@ namespace MeshFactory.Tools
         private Vector2 _currentScreenPos;
 
         // === 検出結果 ===
-        private EdgeInfo _hoveredEdge;
+        private EdgeInfo? _hoveredEdge;
         private int _hoveredFaceIndex = -1;
-        private int _startVertexIndex = -1;  // Split用
-        private int _endVertexIndex = -1;    // Split用
+        private int _hoveredVertexIndex = -1; // Split用ホバー頂点
+        private Vector3? _startWorldPos;      // Split用：開始位置（同位置の複数頂点に対応）
+        private int _startVertexIndex = -1;   // Split用：スナップ確定時の開始頂点
+        private int _endVertexIndex = -1;     // Split用
 
         // === 定数 ===
         private const float EDGE_CLICK_THRESHOLD = 10f;  // 辺クリック判定の距離（ピクセル）
@@ -65,6 +67,15 @@ namespace MeshFactory.Tools
             public Vector2 ScreenPos1;  // スクリーン座標1
             public Vector2 ScreenPos2;  // スクリーン座標2
             public bool IsShared => FaceIndex2 >= 0;
+
+            /// <summary>Flip可能か（両面が三角形）</summary>
+            public bool CanFlip(MeshData meshData)
+            {
+                if (!IsShared) return false;
+                var face1 = meshData.Faces[FaceIndex1];
+                var face2 = meshData.Faces[FaceIndex2];
+                return face1.VertexIndices.Count == 3 && face2.VertexIndices.Count == 3;
+            }
         }
 
         // ================================================================
@@ -82,23 +93,35 @@ namespace MeshFactory.Tools
             switch (_mode)
             {
                 case EdgeTopoMode.Flip:
+                    // 辺をクリックで即時実行
+                    var flipEdge = FindNearestEdge(ctx, mousePos);
+                    if (flipEdge.HasValue && flipEdge.Value.IsShared && flipEdge.Value.CanFlip(ctx.MeshData))
+                    {
+                        ExecuteFlip(ctx, flipEdge.Value);
+                    }
+                    _isDragging = false;
+                    return true;
+
                 case EdgeTopoMode.Dissolve:
                     // 辺をクリックで即時実行
-                    var edge = FindNearestEdge(ctx, mousePos);
-                    if (edge.HasValue && edge.Value.IsShared)
+                    var dissolveEdge = FindNearestEdge(ctx, mousePos);
+                    if (dissolveEdge.HasValue && dissolveEdge.Value.IsShared)
                     {
-                        if (_mode == EdgeTopoMode.Flip)
-                            ExecuteFlip(ctx, edge.Value);
-                        else
-                            ExecuteDissolve(ctx, edge.Value);
+                        ExecuteDissolve(ctx, dissolveEdge.Value);
                     }
                     _isDragging = false;
                     return true;
 
                 case EdgeTopoMode.Split:
-                    // 四角形面の頂点をクリック
-                    _startVertexIndex = FindNearestVertexInQuad(ctx, mousePos, out _hoveredFaceIndex);
-                    if (_startVertexIndex < 0)
+                    // 距離ベースで最も近い四角形頂点を検索
+                    var (faceIdx, vertIdx) = FindNearestQuadVertex(ctx, mousePos, 30f);
+
+                    if (vertIdx >= 0)
+                    {
+                        _startWorldPos = ctx.MeshData.Vertices[vertIdx].Position;
+                        _currentScreenPos = mousePos;
+                    }
+                    else
                     {
                         _isDragging = false;
                     }
@@ -114,11 +137,7 @@ namespace MeshFactory.Tools
 
             _currentScreenPos = mousePos;
 
-            if (_mode == EdgeTopoMode.Split && _startVertexIndex >= 0)
-            {
-                // 対角頂点を検出
-                _endVertexIndex = FindOppositeVertex(ctx, _hoveredFaceIndex, _startVertexIndex, mousePos);
-            }
+            // Split: DrawSplitPreview内で_endVertexIndexと_hoveredFaceIndexを更新
 
             ctx.Repaint?.Invoke();
             return true;
@@ -135,6 +154,7 @@ namespace MeshFactory.Tools
                 ExecuteSplit(ctx, _hoveredFaceIndex, _startVertexIndex, _endVertexIndex);
             }
 
+            _startWorldPos = null;
             _startVertexIndex = -1;
             _endVertexIndex = -1;
             _hoveredFaceIndex = -1;
@@ -151,16 +171,11 @@ namespace MeshFactory.Tools
             {
                 case EdgeTopoMode.Flip:
                 case EdgeTopoMode.Dissolve:
-                    var edge = FindNearestEdge(ctx, mousePos);
-                    _hoveredEdge = edge ?? default;
+                    _hoveredEdge = FindNearestEdge(ctx, mousePos);
                     break;
 
                 case EdgeTopoMode.Split:
-                    if (!_isDragging)
-                    {
-                        // 四角形面をホバー検出
-                        FindNearestVertexInQuad(ctx, mousePos, out _hoveredFaceIndex);
-                    }
+                    // DrawGizmo内で処理
                     break;
             }
 
@@ -174,8 +189,11 @@ namespace MeshFactory.Tools
             switch (_mode)
             {
                 case EdgeTopoMode.Flip:
+                    DrawFlipPreview(ctx);
+                    break;
+
                 case EdgeTopoMode.Dissolve:
-                    DrawEdgeHighlight(ctx);
+                    DrawDissolvePreview(ctx);
                     break;
 
                 case EdgeTopoMode.Split:
@@ -194,6 +212,7 @@ namespace MeshFactory.Tools
             if (newIndex != currentIndex && newIndex >= 0 && newIndex < ModeValues.Length)
             {
                 _mode = ModeValues[newIndex];
+                Reset();
             }
 
             EditorGUILayout.Space(3);
@@ -211,20 +230,60 @@ namespace MeshFactory.Tools
                     EditorGUILayout.HelpBox("共有辺をクリックして2つの面を結合", MessageType.Info);
                     break;
             }
+
+            // ステータス表示
+            EditorGUILayout.Space(5);
+            DrawStatusUI();
+        }
+
+        /// <summary>
+        /// ステータス表示
+        /// </summary>
+        private void DrawStatusUI()
+        {
+            // ステータスはDrawOverlay内で視覚的に表示されるため、
+            // ここでは追加の説明のみ表示
         }
 
         public void Reset()
         {
             _isDragging = false;
+            _startWorldPos = null;
             _startVertexIndex = -1;
             _endVertexIndex = -1;
             _hoveredFaceIndex = -1;
-            _hoveredEdge = default;
+            _hoveredEdge = null;
         }
 
         public void DrawGizmo(ToolContext ctx)
         {
-            // DrawOverlayで描画しているため、ここでは何もしない
+            if (ctx.MeshData == null) return;
+
+            var mousePos = Event.current.mousePosition;
+
+            switch (_mode)
+            {
+                case EdgeTopoMode.Flip:
+                    _hoveredEdge = FindNearestEdge(ctx, mousePos);
+                    DrawFlipPreview(ctx);
+                    break;
+
+                case EdgeTopoMode.Dissolve:
+                    _hoveredEdge = FindNearestEdge(ctx, mousePos);
+                    DrawDissolvePreview(ctx);
+                    break;
+
+                case EdgeTopoMode.Split:
+                    // ドラッグ中でなければホバー状態を更新
+                    if (!_isDragging && _startVertexIndex < 0)
+                    {
+                        var (_, vert) = FindNearestQuadVertex(ctx, mousePos, 30f);
+                        _hoveredVertexIndex = vert;
+                    }
+                    _currentScreenPos = mousePos;
+                    DrawSplitPreview(ctx);
+                    break;
+            }
         }
 
         public void OnActivate(ToolContext ctx)
@@ -333,18 +392,19 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
-        /// 四角形面内で最も近い頂点を検索
+        /// 最も近い四角形面の頂点を検索（距離ベース）
+        /// 返される頂点は必ずその面に属している
         /// </summary>
-        private int FindNearestVertexInQuad(ToolContext ctx, Vector2 mousePos, out int faceIndex)
+        private (int faceIndex, int vertexIndex) FindNearestQuadVertex(ToolContext ctx, Vector2 mousePos, float threshold)
         {
-            faceIndex = -1;
-            float minDist = VERTEX_CLICK_THRESHOLD;
+            float minDist = threshold;
+            int resultFace = -1;
             int resultVertex = -1;
 
             for (int f = 0; f < ctx.MeshData.FaceCount; f++)
             {
                 var face = ctx.MeshData.Faces[f];
-                if (face.VertexIndices.Count != 4) continue; // 四角形のみ
+                if (face.VertexIndices.Count != 4) continue;
 
                 for (int i = 0; i < 4; i++)
                 {
@@ -356,13 +416,157 @@ namespace MeshFactory.Tools
                     if (dist < minDist)
                     {
                         minDist = dist;
+                        resultFace = f;
                         resultVertex = vIdx;
-                        faceIndex = f;
                     }
                 }
             }
 
+            // 検証：resultVertexがresultFaceに属しているか
+            if (resultFace >= 0 && resultVertex >= 0)
+            {
+                var face = ctx.MeshData.Faces[resultFace];
+                if (!face.VertexIndices.Contains(resultVertex))
+                {
+                    Debug.LogError($"[Split] BUG: vertex {resultVertex} not in face {resultFace}");
+                    return (-1, -1);
+                }
+            }
+
+            return (resultFace, resultVertex);
+        }
+
+        /// <summary>
+        /// マウス位置が含まれる四角形面を検索
+        /// </summary>
+        private int FindQuadFaceContainingPoint(ToolContext ctx, Vector2 mousePos)
+        {
+            for (int f = 0; f < ctx.MeshData.FaceCount; f++)
+            {
+                var face = ctx.MeshData.Faces[f];
+                if (face.VertexIndices.Count != 4) continue;
+
+                var screenPositions = new Vector2[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    int vIdx = face.VertexIndices[i];
+                    Vector3 worldPos = ctx.MeshData.Vertices[vIdx].Position;
+                    screenPositions[i] = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                }
+
+                if (IsPointInQuad(mousePos, screenPositions))
+                {
+                    return f;
+                }
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 四角形面内で最も近い頂点を検索（内外判定を使用）
+        /// </summary>
+        private int FindNearestVertexInQuad(ToolContext ctx, Vector2 mousePos, out int faceIndex)
+        {
+            faceIndex = FindQuadFaceContainingPoint(ctx, mousePos);
+            if (faceIndex < 0) return -1;
+
+            return FindNearestVertexInFace(ctx, mousePos, faceIndex);
+        }
+
+        /// <summary>
+        /// 点が四角形の内側にあるか判定（Winding Number法）
+        /// </summary>
+        private bool IsPointInQuad(Vector2 point, Vector2[] quad)
+        {
+            float windingNumber = 0;
+
+            for (int i = 0; i < 4; i++)
+            {
+                Vector2 v1 = quad[i];
+                Vector2 v2 = quad[(i + 1) % 4];
+
+                if (v1.y <= point.y)
+                {
+                    if (v2.y > point.y)
+                    {
+                        // 上向き交差
+                        if (IsLeft(v1, v2, point) > 0)
+                            windingNumber++;
+                    }
+                }
+                else
+                {
+                    if (v2.y <= point.y)
+                    {
+                        // 下向き交差
+                        if (IsLeft(v1, v2, point) < 0)
+                            windingNumber--;
+                    }
+                }
+            }
+
+            return windingNumber != 0;
+        }
+
+        /// <summary>
+        /// 点が線分の左側にあるかを判定（外積の符号）
+        /// </summary>
+        private float IsLeft(Vector2 p0, Vector2 p1, Vector2 p2)
+        {
+            return (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y);
+        }
+
+        /// <summary>
+        /// 特定の面内で最も近い頂点を検索（閾値なし）
+        /// </summary>
+        private int FindNearestVertexInFace(ToolContext ctx, Vector2 mousePos, int faceIndex)
+        {
+            if (faceIndex < 0 || faceIndex >= ctx.MeshData.FaceCount) return -1;
+
+            var face = ctx.MeshData.Faces[faceIndex];
+            if (face.VertexIndices.Count != 4) return -1;
+
+            float minDist = float.MaxValue;
+            int resultVertex = -1;
+
+            for (int i = 0; i < 4; i++)
+            {
+                int vIdx = face.VertexIndices[i];
+                Vector3 worldPos = ctx.MeshData.Vertices[vIdx].Position;
+                Vector2 screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+                float dist = Vector2.Distance(mousePos, screenPos);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    resultVertex = vIdx;
+                }
+            }
+
             return resultVertex;
+        }
+
+        /// <summary>
+        /// 点が三角形の内側にあるか判定
+        /// </summary>
+        private bool IsPointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+        {
+            float d1 = CrossSign(p, a, b);
+            float d2 = CrossSign(p, b, c);
+            float d3 = CrossSign(p, c, a);
+
+            bool hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            bool hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+            return !(hasNeg && hasPos);
+        }
+
+        /// <summary>
+        /// 外積の符号を計算
+        /// </summary>
+        private float CrossSign(Vector2 p1, Vector2 p2, Vector2 p3)
+        {
+            return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
         }
 
         /// <summary>
@@ -377,7 +581,11 @@ namespace MeshFactory.Tools
 
             // 開始頂点の位置を探す
             int startIdx = face.VertexIndices.IndexOf(startVertex);
-            if (startIdx < 0) return -1;
+            if (startIdx < 0)
+            {
+                Debug.LogError($"[Split] FindOpposite: startVertex {startVertex} not in face {faceIndex}, verts=[{string.Join(",", face.VertexIndices)}]");
+                return -1;
+            }
 
             // 対角は+2の位置
             int oppositeIdx = (startIdx + 2) % 4;
@@ -386,8 +594,10 @@ namespace MeshFactory.Tools
             // マウスが対角頂点の近くにあるか確認
             Vector3 worldPos = ctx.MeshData.Vertices[oppositeVertex].Position;
             Vector2 screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            float dist = Vector2.Distance(mousePos, screenPos);
 
-            if (Vector2.Distance(mousePos, screenPos) < VERTEX_CLICK_THRESHOLD * 2)
+            // 閾値を緩めにする（50px）
+            if (dist < 50f)
             {
                 return oppositeVertex;
             }
@@ -614,32 +824,189 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
-        /// 辺ハイライト描画
+        /// Flip用プレビュー描画
         /// </summary>
-        private void DrawEdgeHighlight(ToolContext ctx)
+        private void DrawFlipPreview(ToolContext ctx)
         {
-            if (_hoveredEdge.ScreenPos1 == Vector2.zero && _hoveredEdge.ScreenPos2 == Vector2.zero)
-                return;
+            if (!_hoveredEdge.HasValue) return;
 
-            // 共有辺かどうかで色を変える
-            Color edgeColor = _hoveredEdge.IsShared ? Color.yellow : Color.gray;
+            var edge = _hoveredEdge.Value;
 
             Handles.BeginGUI();
 
+            // 辺の状態に応じた色を決定
+            Color edgeColor;
+            float lineWidth;
+
+            if (!edge.IsShared)
+            {
+                // 境界辺（操作不可）
+                edgeColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                lineWidth = 2f;
+            }
+            else if (edge.CanFlip(ctx.MeshData))
+            {
+                // Flip可能（緑）
+                edgeColor = Color.green;
+                lineWidth = 5f;
+
+                // 隣接する2つの三角形をハイライト
+                DrawFaceHighlight(ctx, edge.FaceIndex1, new Color(0f, 1f, 0f, 0.2f));
+                DrawFaceHighlight(ctx, edge.FaceIndex2, new Color(0f, 1f, 0f, 0.2f));
+
+                // 新しい対角線をプレビュー
+                DrawNewDiagonalPreview(ctx, edge);
+            }
+            else
+            {
+                // 共有辺だが三角形でない（黄色警告）
+                edgeColor = new Color(1f, 0.7f, 0f, 0.8f);
+                lineWidth = 3f;
+            }
+
             // 辺を描画
             Handles.color = edgeColor;
-            Handles.DrawAAPolyLine(4f, _hoveredEdge.ScreenPos1, _hoveredEdge.ScreenPos2);
+            Handles.DrawAAPolyLine(lineWidth,
+                new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0),
+                new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
 
             // 端点を描画
-            GUI.color = edgeColor;
-            float size = 6f;
-            GUI.DrawTexture(new Rect(_hoveredEdge.ScreenPos1.x - size / 2, _hoveredEdge.ScreenPos1.y - size / 2, size, size),
-                EditorGUIUtility.whiteTexture);
-            GUI.DrawTexture(new Rect(_hoveredEdge.ScreenPos2.x - size / 2, _hoveredEdge.ScreenPos2.y - size / 2, size, size),
-                EditorGUIUtility.whiteTexture);
+            float size = edge.IsShared && edge.CanFlip(ctx.MeshData) ? 8f : 5f;
+            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
+            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
 
-            GUI.color = Color.white;
             Handles.EndGUI();
+        }
+
+        /// <summary>
+        /// Flip後の新しい対角線をプレビュー
+        /// </summary>
+        private void DrawNewDiagonalPreview(ToolContext ctx, EdgeInfo edge)
+        {
+            var face1 = ctx.MeshData.Faces[edge.FaceIndex1];
+            var face2 = ctx.MeshData.Faces[edge.FaceIndex2];
+
+            // 共有辺以外の頂点を見つける
+            int opposite1 = -1, opposite2 = -1;
+            foreach (int v in face1.VertexIndices)
+            {
+                if (v != edge.VertexIndex1 && v != edge.VertexIndex2)
+                {
+                    opposite1 = v;
+                    break;
+                }
+            }
+            foreach (int v in face2.VertexIndices)
+            {
+                if (v != edge.VertexIndex1 && v != edge.VertexIndex2)
+                {
+                    opposite2 = v;
+                    break;
+                }
+            }
+
+            if (opposite1 >= 0 && opposite2 >= 0)
+            {
+                Vector2 sp1 = ctx.WorldToScreenPos(ctx.MeshData.Vertices[opposite1].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 sp2 = ctx.WorldToScreenPos(ctx.MeshData.Vertices[opposite2].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+                // 新しい対角線を点線で描画
+                Handles.color = new Color(0f, 1f, 1f, 0.8f);
+                DrawDashedLine(sp1, sp2, 4f, 8f);
+            }
+        }
+
+        /// <summary>
+        /// Dissolve用プレビュー描画
+        /// </summary>
+        private void DrawDissolvePreview(ToolContext ctx)
+        {
+            if (!_hoveredEdge.HasValue) return;
+
+            var edge = _hoveredEdge.Value;
+
+            Handles.BeginGUI();
+
+            Color edgeColor;
+            float lineWidth;
+
+            if (!edge.IsShared)
+            {
+                // 境界辺（操作不可）
+                edgeColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+                lineWidth = 2f;
+            }
+            else
+            {
+                // Dissolve可能（マゼンタ）
+                edgeColor = new Color(1f, 0f, 1f, 1f);
+                lineWidth = 5f;
+
+                // 結合される面をハイライト
+                DrawFaceHighlight(ctx, edge.FaceIndex1, new Color(1f, 0f, 1f, 0.2f));
+                DrawFaceHighlight(ctx, edge.FaceIndex2, new Color(1f, 0f, 1f, 0.2f));
+            }
+
+            // 辺を描画
+            Handles.color = edgeColor;
+            Handles.DrawAAPolyLine(lineWidth,
+                new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0),
+                new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
+
+            // 端点
+            float size = edge.IsShared ? 8f : 5f;
+            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
+            Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
+
+            Handles.EndGUI();
+        }
+
+        /// <summary>
+        /// 面をハイライト描画
+        /// </summary>
+        private void DrawFaceHighlight(ToolContext ctx, int faceIndex, Color color)
+        {
+            if (faceIndex < 0 || faceIndex >= ctx.MeshData.FaceCount) return;
+
+            var face = ctx.MeshData.Faces[faceIndex];
+            var screenPoints = new Vector3[face.VertexIndices.Count];
+
+            for (int i = 0; i < face.VertexIndices.Count; i++)
+            {
+                var worldPos = ctx.MeshData.Vertices[face.VertexIndices[i]].Position;
+                var sp = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                screenPoints[i] = new Vector3(sp.x, sp.y, 0);
+            }
+
+            Handles.color = color;
+            Handles.DrawAAConvexPolygon(screenPoints);
+        }
+
+        /// <summary>
+        /// 点線を描画
+        /// </summary>
+        private void DrawDashedLine(Vector2 start, Vector2 end, float dashLength, float gapLength)
+        {
+            Vector2 dir = (end - start).normalized;
+            float totalLength = Vector2.Distance(start, end);
+            float current = 0f;
+            bool drawing = true;
+
+            while (current < totalLength)
+            {
+                float segmentLength = drawing ? dashLength : gapLength;
+                float nextPos = Mathf.Min(current + segmentLength, totalLength);
+
+                if (drawing)
+                {
+                    Vector2 p1 = start + dir * current;
+                    Vector2 p2 = start + dir * nextPos;
+                    Handles.DrawAAPolyLine(3f, new Vector3(p1.x, p1.y, 0), new Vector3(p2.x, p2.y, 0));
+                }
+
+                current = nextPos;
+                drawing = !drawing;
+            }
         }
 
         /// <summary>
@@ -647,54 +1014,168 @@ namespace MeshFactory.Tools
         /// </summary>
         private void DrawSplitPreview(ToolContext ctx)
         {
-            if (_hoveredFaceIndex < 0) return;
-
-            var face = ctx.MeshData.Faces[_hoveredFaceIndex];
-            if (face.VertexIndices.Count != 4) return;
-
             Handles.BeginGUI();
 
-            // 四角形の辺を描画
-            Color quadColor = new Color(0f, 1f, 1f, 0.5f);
-            Handles.color = quadColor;
-
-            for (int i = 0; i < 4; i++)
+            // 開始位置が選択されている場合
+            if (_startWorldPos.HasValue)
             {
-                int v1 = face.VertexIndices[i];
-                int v2 = face.VertexIndices[(i + 1) % 4];
-                Vector2 sp1 = ctx.WorldToScreenPos(ctx.MeshData.Vertices[v1].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Vector2 sp2 = ctx.WorldToScreenPos(ctx.MeshData.Vertices[v2].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Handles.DrawAAPolyLine(3f, sp1, sp2);
-            }
+                Vector3 startWorldPos = _startWorldPos.Value;
+                Vector2 startScreen = ctx.WorldToScreenPos(startWorldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
-            // ドラッグ中なら対角線プレビュー
-            if (_isDragging && _startVertexIndex >= 0)
-            {
-                Vector2 startScreen = ctx.WorldToScreenPos(ctx.MeshData.Vertices[_startVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                // 開始位置を黄色で表示
+                Handles.color = Color.yellow;
+                Handles.DrawSolidDisc(new Vector3(startScreen.x, startScreen.y, 0), Vector3.forward, 6f);
 
-                if (_endVertexIndex >= 0)
+                // 対角頂点候補を取得（開始位置と同位置の全頂点から）
+                var candidates = GetOppositeVertexCandidates(ctx, startWorldPos);
+
+                if (candidates.Count == 0)
                 {
-                    // 対角線（確定）
-                    Vector2 endScreen = ctx.WorldToScreenPos(ctx.MeshData.Vertices[_endVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                    Handles.color = Color.green;
-                    Handles.DrawAAPolyLine(4f, startScreen, endScreen);
-                }
-                else
-                {
-                    // マウスまでの線
-                    Handles.color = Color.yellow;
-                    Handles.DrawAAPolyLine(2f, startScreen, _currentScreenPos);
+                    Handles.EndGUI();
+                    return;
                 }
 
-                // 開始点を描画
-                GUI.color = Color.yellow;
-                float size = 8f;
-                GUI.DrawTexture(new Rect(startScreen.x - size / 2, startScreen.y - size / 2, size, size),
-                    EditorGUIUtility.whiteTexture);
+                // 最も近い候補を見つける
+                int nearestCandidate = -1;
+                int nearestFace = -1;
+                int nearestStartVertex = -1;
+                float minDist = float.MaxValue;
+
+                foreach (var (faceIdx, oppVertex, startVertex) in candidates)
+                {
+                    Vector2 oppScreen = ctx.WorldToScreenPos(ctx.MeshData.Vertices[oppVertex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                    float dist = Vector2.Distance(_currentScreenPos, oppScreen);
+
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                        nearestCandidate = oppVertex;
+                        nearestFace = faceIdx;
+                        nearestStartVertex = startVertex;
+                    }
+                }
+
+                // 距離による状態判定
+                const float SNAP_THRESHOLD = 20f;   // この距離以内で確定（白）
+                const float NEAR_THRESHOLD = 50f;   // この距離以内で接近中（緑）
+
+                bool isSnapped = minDist < SNAP_THRESHOLD;
+                bool isNear = minDist < NEAR_THRESHOLD;
+
+                // 候補頂点を描画
+                foreach (var (faceIdx, oppVertex, startVertex) in candidates)
+                {
+                    Vector2 oppScreen = ctx.WorldToScreenPos(ctx.MeshData.Vertices[oppVertex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+                    if (oppVertex == nearestCandidate && faceIdx == nearestFace)
+                    {
+                        if (isSnapped)
+                        {
+                            // スナップ状態：白で大きく
+                            Handles.color = Color.white;
+                            Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 8f);
+
+                            // 対角線を太く
+                            Handles.color = Color.white;
+                            Handles.DrawAAPolyLine(4f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
+                        }
+                        else if (isNear)
+                        {
+                            // 接近中：緑
+                            Handles.color = Color.green;
+                            Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 6f);
+
+                            // 対角線プレビュー（細め）
+                            Handles.color = new Color(0f, 1f, 0f, 0.6f);
+                            Handles.DrawAAPolyLine(2f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
+                        }
+                        else
+                        {
+                            // 遠い：灰色（線なし）
+                            Handles.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+                            Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 5f);
+                        }
+                    }
+                    else
+                    {
+                        // その他の候補は小さく灰色
+                        Handles.color = new Color(0.6f, 0.6f, 0.6f, 0.4f);
+                        Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 3f);
+                    }
+                }
+
+                // ドラッグ中の情報を更新（スナップ時のみ有効）
+                if (_isDragging)
+                {
+                    if (isSnapped)
+                    {
+                        _startVertexIndex = nearestStartVertex;
+                        _endVertexIndex = nearestCandidate;
+                        _hoveredFaceIndex = nearestFace;
+                    }
+                    else
+                    {
+                        _startVertexIndex = -1;
+                        _endVertexIndex = -1;
+                        _hoveredFaceIndex = -1;
+                    }
+                }
+            }
+            // 開始頂点未選択時：ホバー中の頂点を表示
+            else if (_hoveredVertexIndex >= 0)
+            {
+                Vector2 hoverScreen = ctx.WorldToScreenPos(ctx.MeshData.Vertices[_hoveredVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Handles.color = Color.white;
+                Handles.DrawSolidDisc(new Vector3(hoverScreen.x, hoverScreen.y, 0), Vector3.forward, 7f);
             }
 
-            GUI.color = Color.white;
             Handles.EndGUI();
+        }
+
+        /// <summary>
+        /// 指定頂点が属する全四角形面の対角頂点を取得
+        /// 開始頂点と同じ位置にある頂点は除外
+        /// </summary>
+        private List<(int faceIndex, int oppositeVertex, int startVertex)> GetOppositeVertexCandidates(ToolContext ctx, Vector3 startWorldPos)
+        {
+            var result = new List<(int, int, int)>();
+            const float POSITION_EPSILON = 0.0001f;
+
+            // 開始位置と同じ位置にある全ての頂点を収集
+            var startVertices = new List<int>();
+            for (int v = 0; v < ctx.MeshData.Vertices.Count; v++)
+            {
+                if (Vector3.Distance(ctx.MeshData.Vertices[v].Position, startWorldPos) < POSITION_EPSILON)
+                {
+                    startVertices.Add(v);
+                }
+            }
+
+            // 各開始頂点について、属する四角形の対角頂点を収集
+            for (int f = 0; f < ctx.MeshData.FaceCount; f++)
+            {
+                var face = ctx.MeshData.Faces[f];
+                if (face.VertexIndices.Count != 4) continue;
+
+                foreach (int startVertex in startVertices)
+                {
+                    int localIdx = face.VertexIndices.IndexOf(startVertex);
+                    if (localIdx < 0) continue;
+
+                    // 対角は+2の位置
+                    int oppositeIdx = (localIdx + 2) % 4;
+                    int oppositeVertex = face.VertexIndices[oppositeIdx];
+
+                    // 対角頂点が開始位置と同じ位置なら除外
+                    Vector3 oppWorldPos = ctx.MeshData.Vertices[oppositeVertex].Position;
+                    if (Vector3.Distance(startWorldPos, oppWorldPos) < POSITION_EPSILON)
+                        continue;
+
+                    result.Add((f, oppositeVertex, startVertex));
+                }
+            }
+
+            return result;
         }
     }
 }

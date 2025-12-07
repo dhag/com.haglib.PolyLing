@@ -1,0 +1,371 @@
+// Assets/Editor/MeshFactory/Serialization/ModelData.cs
+// モデルファイル (.mfmodel) のシリアライズ用データ構造
+// Phase7: マルチマテリアル対応版
+
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace MeshFactory.Serialization
+{
+    // ================================================================
+    // モデルファイル全体
+    // ================================================================
+
+    /// <summary>
+    /// モデルファイルのルートデータ
+    /// </summary>
+    [Serializable]
+    public class ModelData
+    {
+        /// <summary>ファイルフォーマットバージョン</summary>
+        public string version = "1.1";  // バージョンアップ: マテリアル対応
+
+        /// <summary>モデル名</summary>
+        public string name;
+
+        /// <summary>作成日時（ISO 8601形式）</summary>
+        public string createdAt;
+
+        /// <summary>更新日時（ISO 8601形式）</summary>
+        public string updatedAt;
+
+        /// <summary>メッシュエントリリスト</summary>
+        public List<MeshEntryData> meshEntries = new List<MeshEntryData>();
+
+        /// <summary>WorkPlane設定</summary>
+        public WorkPlaneData workPlane;
+
+        /// <summary>エディタ状態</summary>
+        public EditorStateData editorState;
+
+        // === ファクトリメソッド ===
+
+        public static ModelData Create(string modelName)
+        {
+            var now = DateTime.Now.ToString("o");
+            return new ModelData
+            {
+                version = "1.1",
+                name = modelName,
+                createdAt = now,
+                updatedAt = now
+            };
+        }
+    }
+
+    // ================================================================
+    // メッシュエントリ
+    // ================================================================
+
+    /// <summary>
+    /// 個別メッシュエントリのデータ
+    /// </summary>
+    [Serializable]
+    public class MeshEntryData
+    {
+        /// <summary>メッシュ名</summary>
+        public string name;
+
+        /// <summary>エクスポート時のトランスフォーム設定</summary>
+        public ExportSettingsData exportSettings;
+
+        /// <summary>頂点データ</summary>
+        public List<VertexData> vertices = new List<VertexData>();
+
+        /// <summary>面データ</summary>
+        public List<FaceData> faces = new List<FaceData>();
+
+        /// <summary>選択中の頂点インデックス</summary>
+        public List<int> selectedVertices = new List<int>();
+
+        /// <summary>マテリアルリスト（アセットパス）</summary>
+        public List<string> materials = new List<string>();
+
+        /// <summary>現在選択中のマテリアルインデックス</summary>
+        public int currentMaterialIndex = 0;
+    }
+
+    // ================================================================
+    // 頂点データ
+    // ================================================================
+
+    /// <summary>
+    /// 頂点データ（効率的な配列形式）
+    /// </summary>
+    [Serializable]
+    public class VertexData
+    {
+        /// <summary>位置 [x, y, z]</summary>
+        public float[] p;
+
+        /// <summary>UV座標リスト [[u,v], [u,v], ...]</summary>
+        public List<float[]> uv;
+
+        /// <summary>法線リスト [[x,y,z], [x,y,z], ...]</summary>
+        public List<float[]> n;
+
+        // === 変換ヘルパー ===
+
+        public Vector3 GetPosition()
+        {
+            if (p == null || p.Length < 3) return Vector3.zero;
+            return new Vector3(p[0], p[1], p[2]);
+        }
+
+        public void SetPosition(Vector3 pos)
+        {
+            p = new float[] { pos.x, pos.y, pos.z };
+        }
+
+        public List<Vector2> GetUVs()
+        {
+            var result = new List<Vector2>();
+            if (uv != null)
+            {
+                foreach (var u in uv)
+                {
+                    if (u != null && u.Length >= 2)
+                        result.Add(new Vector2(u[0], u[1]));
+                }
+            }
+            return result;
+        }
+
+        public void SetUVs(List<Vector2> uvs)
+        {
+            uv = new List<float[]>();
+            foreach (var u in uvs)
+            {
+                uv.Add(new float[] { u.x, u.y });
+            }
+        }
+
+        public List<Vector3> GetNormals()
+        {
+            var result = new List<Vector3>();
+            if (n != null)
+            {
+                foreach (var normal in n)
+                {
+                    if (normal != null && normal.Length >= 3)
+                        result.Add(new Vector3(normal[0], normal[1], normal[2]));
+                }
+            }
+            return result;
+        }
+
+        public void SetNormals(List<Vector3> normals)
+        {
+            n = new List<float[]>();
+            foreach (var normal in normals)
+            {
+                n.Add(new float[] { normal.x, normal.y, normal.z });
+            }
+        }
+    }
+
+    // ================================================================
+    // 面データ
+    // ================================================================
+
+    /// <summary>
+    /// 面データ
+    /// </summary>
+    [Serializable]
+    public class FaceData
+    {
+        /// <summary>頂点インデックスリスト</summary>
+        public List<int> v;
+
+        /// <summary>UVサブインデックスリスト</summary>
+        public List<int> uvi;
+
+        /// <summary>法線サブインデックスリスト</summary>
+        public List<int> ni;
+
+        /// <summary>マテリアルインデックス（省略時は0）</summary>
+        public int? mi;
+    }
+
+    // ================================================================
+    // エクスポート設定
+    // ================================================================
+
+    /// <summary>
+    /// エクスポート時のトランスフォーム設定
+    /// </summary>
+    [Serializable]
+    public class ExportSettingsData
+    {
+        /// <summary>ローカルトランスフォームを使用するか</summary>
+        public bool useLocalTransform;
+
+        /// <summary>位置 [x, y, z]</summary>
+        public float[] position;
+
+        /// <summary>回転（オイラー角） [x, y, z]</summary>
+        public float[] rotation;
+
+        /// <summary>スケール [x, y, z]</summary>
+        public float[] scale;
+
+        // === 変換ヘルパー ===
+
+        public Vector3 GetPosition()
+        {
+            if (position == null || position.Length < 3) return Vector3.zero;
+            return new Vector3(position[0], position[1], position[2]);
+        }
+
+        public void SetPosition(Vector3 pos)
+        {
+            position = new float[] { pos.x, pos.y, pos.z };
+        }
+
+        public Vector3 GetRotation()
+        {
+            if (rotation == null || rotation.Length < 3) return Vector3.zero;
+            return new Vector3(rotation[0], rotation[1], rotation[2]);
+        }
+
+        public void SetRotation(Vector3 rot)
+        {
+            rotation = new float[] { rot.x, rot.y, rot.z };
+        }
+
+        public Vector3 GetScale()
+        {
+            if (scale == null || scale.Length < 3) return Vector3.one;
+            return new Vector3(scale[0], scale[1], scale[2]);
+        }
+
+        public void SetScale(Vector3 s)
+        {
+            scale = new float[] { s.x, s.y, s.z };
+        }
+
+        public static ExportSettingsData CreateDefault()
+        {
+            return new ExportSettingsData
+            {
+                useLocalTransform = false,
+                position = new float[] { 0, 0, 0 },
+                rotation = new float[] { 0, 0, 0 },
+                scale = new float[] { 1, 1, 1 }
+            };
+        }
+    }
+
+    // ================================================================
+    // WorkPlane設定
+    // ================================================================
+
+    /// <summary>
+    /// WorkPlane設定データ
+    /// </summary>
+    [Serializable]
+    public class WorkPlaneData
+    {
+        /// <summary>モード ("CameraParallel", "WorldXY", "WorldXZ", "WorldYZ", "Custom")</summary>
+        public string mode;
+
+        /// <summary>原点 [x, y, z]</summary>
+        public float[] origin;
+
+        /// <summary>U軸 [x, y, z]</summary>
+        public float[] axisU;
+
+        /// <summary>V軸 [x, y, z]</summary>
+        public float[] axisV;
+
+        /// <summary>ロック状態</summary>
+        public bool isLocked;
+
+        /// <summary>軸ロック</summary>
+        public bool lockOrientation;
+
+        /// <summary>選択時の原点自動更新</summary>
+        public bool autoUpdateOriginOnSelection;
+
+        public static WorkPlaneData CreateDefault()
+        {
+            return new WorkPlaneData
+            {
+                mode = "CameraParallel",
+                origin = new float[] { 0, 0, 0 },
+                axisU = new float[] { 1, 0, 0 },
+                axisV = new float[] { 0, 1, 0 },
+                isLocked = false,
+                lockOrientation = false,
+                autoUpdateOriginOnSelection = true
+            };
+        }
+    }
+
+    // ================================================================
+    // エディタ状態
+    // ================================================================
+
+    /// <summary>
+    /// エディタ状態データ
+    /// </summary>
+    [Serializable]
+    public class EditorStateData
+    {
+        /// <summary>カメラ回転X</summary>
+        public float rotationX;
+
+        /// <summary>カメラ回転Y</summary>
+        public float rotationY;
+
+        /// <summary>カメラ距離</summary>
+        public float cameraDistance;
+
+        /// <summary>カメラターゲット [x, y, z]</summary>
+        public float[] cameraTarget;
+
+        /// <summary>ワイヤーフレーム表示</summary>
+        public bool showWireframe;
+
+        /// <summary>頂点表示</summary>
+        public bool showVertices;
+
+        /// <summary>頂点編集モード</summary>
+        public bool vertexEditMode;
+
+        /// <summary>現在のツール名</summary>
+        public string currentToolName;
+
+        /// <summary>選択中のメッシュインデックス</summary>
+        public int selectedMeshIndex;
+
+        /// <summary>ナイフツールのモード</summary>
+        public string knifeMode;
+
+        /// <summary>ナイフツールのEdgeSelect</summary>
+        public bool knifeEdgeSelect;
+
+        /// <summary>ナイフツールのChainMode</summary>
+        public bool knifeChainMode;
+
+        public static EditorStateData CreateDefault()
+        {
+            return new EditorStateData
+            {
+                rotationX = 20f,
+                rotationY = 0f,
+                cameraDistance = 2f,
+                cameraTarget = new float[] { 0, 0, 0 },
+                showWireframe = true,
+                showVertices = true,
+                vertexEditMode = true,
+                currentToolName = "Select",
+                selectedMeshIndex = -1,
+                knifeMode = "Cut",
+                knifeEdgeSelect = false,
+                knifeChainMode = false
+            };
+        }
+    }
+}

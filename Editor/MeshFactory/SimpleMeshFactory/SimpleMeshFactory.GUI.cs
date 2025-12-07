@@ -1,0 +1,573 @@
+// Assets/Editor/SimpleMeshFactory.GUI.cs
+// 左ペインUI描画（DrawMeshList、ツールバー）
+
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+using MeshFactory.Tools;
+using MeshFactory.Selection;
+
+public partial class SimpleMeshFactory
+{
+    // ================================================================
+    // 左ペイン：メッシュリスト
+    // ================================================================
+    private void DrawMeshList()
+    {
+        using (new EditorGUILayout.VerticalScope(GUILayout.Width(350)))
+        {
+            EditorGUILayout.LabelField("Mesh Factory", EditorStyles.boldLabel);
+
+            // ================================================================
+            // Undo/Redo ボタン（上部固定）
+            // ================================================================
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanUndo))
+            {
+                if (GUILayout.Button("↶ Undo"))
+                {
+                    _undoController?.Undo();
+                }
+            }
+            using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanRedo))
+            {
+                if (GUILayout.Button("Redo ↷"))
+                {
+                    _undoController?.Redo();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(5);
+
+            // ================================================================
+            // スクロール領域開始（常にスクロールバー表示）
+            // ================================================================
+            _leftPaneScroll = EditorGUILayout.BeginScrollView(
+                _leftPaneScroll,
+                true,//false,  // horizontal
+                true,   // vertical - 常に表示
+                GUIStyle.none,
+                GUI.skin.verticalScrollbar,
+                GUI.skin.scrollView);
+
+            // ================================================================
+            // Display セクション
+            // ================================================================
+            _foldDisplay = EditorGUILayout.Foldout(_foldDisplay, "Display", true);
+            if (_foldDisplay)
+            {
+                EditorGUI.indentLevel++;
+
+                EditorGUI.BeginChangeCheck();
+                bool newShowWireframe = EditorGUILayout.Toggle("Wireframe", _showWireframe);
+                bool newShowVertices = EditorGUILayout.Toggle("Show Vertices", _showVertices);
+                bool newVertexEditMode = newShowVertices;
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    bool hasDisplayChange =
+                        newShowWireframe != _showWireframe ||
+                        newShowVertices != _showVertices ||
+                        newVertexEditMode != _vertexEditMode;
+
+                    if (hasDisplayChange && _undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                    }
+
+                    _showWireframe = newShowWireframe;
+                    _showVertices = newShowVertices;
+                    _vertexEditMode = newVertexEditMode;
+
+                    if (_undoController != null)
+                    {
+                        _undoController.EditorState.ShowWireframe = _showWireframe;
+                        _undoController.EditorState.ShowVertices = _showVertices;
+                        _undoController.EditorState.VertexEditMode = _vertexEditMode;
+                        _undoController.EndEditorStateDrag("Change Display Settings");
+                    }
+                }
+
+                EditorGUILayout.Space(2);
+                EditorGUILayout.LabelField("Zoom", EditorStyles.miniLabel);
+                EditorGUI.BeginChangeCheck();
+                float newDist = EditorGUILayout.Slider(_cameraDistance, 0.1f, 10f);
+                if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newDist, _cameraDistance))
+                {
+                    if (!_isCameraDragging) BeginCameraDrag();
+                    _cameraDistance = newDist;
+                }
+
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.Space(3);
+
+            // ================================================================
+            // Primitive セクション
+            // ================================================================
+            _foldPrimitive = EditorGUILayout.Foldout(_foldPrimitive, "Primitive", true);
+            if (_foldPrimitive)
+            {
+                EditorGUI.indentLevel++;
+
+                // Empty Mesh
+                if (GUILayout.Button("+ Empty Mesh"))
+                {
+                    CreateEmptyMesh();
+                }
+
+                // Clear All
+                if (GUILayout.Button("Clear All"))
+                {
+                    CleanupMeshes();
+                    _selectedIndex = -1;
+                    _vertexOffsets = null;
+                    _groupOffsets = null;
+                    _undoController?.VertexEditStack.Clear();
+                }
+
+                EditorGUILayout.Space(3);
+
+                // Load Mesh
+                EditorGUILayout.LabelField("Load Mesh", EditorStyles.miniBoldLabel);
+                if (GUILayout.Button("From Mesh Asset..."))
+                {
+                    LoadMeshFromAsset();
+                }
+                if (GUILayout.Button("From Prefab..."))
+                {
+                    LoadMeshFromPrefab();
+                }
+                if (GUILayout.Button("From Selection"))
+                {
+                    LoadMeshFromSelection();
+                }
+
+                EditorGUILayout.Space(3);
+
+                // Create Mesh
+                EditorGUILayout.LabelField("Create Mesh", EditorStyles.miniBoldLabel);
+                if (GUILayout.Button("+ Cube..."))
+                {
+                    CubeMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ Plane..."))
+                {
+                    PlaneMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ Pyramid..."))
+                {
+                    PyramidMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ Capsule..."))
+                {
+                    CapsuleMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ Cylinder..."))
+                {
+                    CylinderMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ Sphere..."))
+                {
+                    SphereMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ Revolution..."))
+                {
+                    RevolutionMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ 2D Profile..."))
+                {
+                    Profile2DExtrudeWindow.Open(OnMeshDataCreated);
+                }
+                if (GUILayout.Button("+ NohMask..."))
+                {
+                    NohMaskMeshCreatorWindow.Open(OnMeshDataCreated);
+                }
+
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.Space(3);
+
+            // ================================================================
+            // Selection セクション（編集モード時のみ）
+            // ================================================================
+            if (_vertexEditMode)
+            {
+                _undoController?.FocusVertexEdit();
+
+                _foldSelection = EditorGUILayout.Foldout(_foldSelection, "Selection", true);
+                if (_foldSelection)
+                {
+                    EditorGUI.indentLevel++;
+
+                    // === 選択モード切り替え ===
+                    DrawSelectionModeToolbar();
+
+                    int totalVertices = 0;
+
+
+                    if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+                    {
+                        var entry = _meshList[_selectedIndex];
+                        if (entry.Data != null)
+                        {
+                            totalVertices = entry.Data.VertexCount;
+                        }
+                    }
+
+                    //EditorGUILayout.LabelField($"Selected: {_selectedVertices.Count} / {totalVertices}", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField($"Selected: {_selectionState.SelectionCount} / {totalVertices}", EditorStyles.miniLabel);
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        if (GUILayout.Button("All", GUILayout.Width(40)))
+                        {
+                            SelectAllVertices();
+                        }
+                        if (GUILayout.Button("None", GUILayout.Width(40)))
+                        {
+                            ClearSelection();
+                        }
+                        if (GUILayout.Button("Invert", GUILayout.Width(50)))
+                        {
+                            InvertSelection();
+                        }
+                    }
+
+                    // 削除ボタン（選択があるときのみ有効）
+                    using (new EditorGUI.DisabledScope(_selectedVertices.Count == 0))
+                    {
+                        var oldColor = GUI.backgroundColor;
+                        GUI.backgroundColor = new Color(1f, 0.6f, 0.6f); // 薄い赤
+                        if (GUILayout.Button("Delete Selected"))
+                        {
+                            DeleteSelectedVertices();
+                        }
+                        GUI.backgroundColor = oldColor;
+                    }
+
+                    // マージボタン（2つ以上選択があるときのみ有効）
+                    using (new EditorGUI.DisabledScope(_selectedVertices.Count < 2))
+                    {
+                        var oldColor = GUI.backgroundColor;
+                        GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // 薄い青
+                        if (GUILayout.Button("Merge Selected"))
+                        {
+                            MergeSelectedVertices();
+                        }
+                        GUI.backgroundColor = oldColor;
+                    }
+
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.Space(3);
+
+                // ================================================================
+                // Tools セクション
+                // ================================================================
+                _foldTools = EditorGUILayout.Foldout(_foldTools, "Tools", true);
+                if (_foldTools)
+                {
+                    EditorGUI.indentLevel++;
+
+                    // ツールボタン（排他選択）
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawToolButton(_selectTool, "Select");
+                        DrawToolButton(_moveTool, "Move");
+                    }
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawToolButton(_addFaceTool, "AddFace");
+                        DrawToolButton(_knifeTool, "Knife");
+                    }
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawToolButton(_edgeTopoTool, "EdgeTopo");
+                        DrawToolButton(_advancedSelectTool, "Sel+");
+                    }
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawToolButton(_sculptTool, "Sculpt");
+                        DrawToolButton(_mergeTool, "Merge");
+                    }
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawToolButton(_extrudeTool, "Extrude edge");
+                        DrawToolButton(_faceExtrudeTool, "Extrude face");
+                    }
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        DrawToolButton(_edgeBevelTool, "Bevel");
+                    }
+
+                    // 現在のツールの設定UI
+                    EditorGUILayout.Space(3);
+
+                    // KnifeToolの設定変更をUndo対応
+                    if (_currentTool == _knifeTool)
+                    {
+                        var oldMode = _knifeTool.Mode;
+                        var oldEdgeSelect = _knifeTool.EdgeSelect;
+                        var oldChainMode = _knifeTool.ChainMode;
+
+                        _currentTool.DrawSettingsUI();
+
+                        // 設定が変更されたらUndo記録
+                        if (_knifeTool.Mode != oldMode ||
+                            _knifeTool.EdgeSelect != oldEdgeSelect ||
+                            _knifeTool.ChainMode != oldChainMode)
+                        {
+                            _undoController.EditorState.KnifeMode = oldMode;
+                            _undoController.EditorState.KnifeEdgeSelect = oldEdgeSelect;
+                            _undoController.EditorState.KnifeChainMode = oldChainMode;
+                            _undoController.BeginEditorStateDrag();
+                            _undoController.EditorState.KnifeMode = _knifeTool.Mode;
+                            _undoController.EditorState.KnifeEdgeSelect = _knifeTool.EdgeSelect;
+                            _undoController.EditorState.KnifeChainMode = _knifeTool.ChainMode;
+                            _undoController.EndEditorStateDrag("Change Knife Settings");
+                        }
+                    }
+                    else
+                    {
+                        _currentTool?.DrawSettingsUI();
+                    }
+
+                    // ツール設定をシリアライズ用に同期
+                    SyncSettingsFromTool();
+
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.Space(3);
+
+                // ================================================================
+                // Work Plane セクション
+                // ================================================================
+                // WorkPlane UIは内部でFoldout管理
+                DrawWorkPlaneUI();
+
+                // ギズモ表示トグル（WorkPlane展開時のみ表示）
+                if (_undoController?.WorkPlane?.IsExpanded == true)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    _showWorkPlaneGizmo = EditorGUILayout.ToggleLeft("Show Gizmo", _showWorkPlaneGizmo);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Repaint();
+                    }
+                }
+            }
+            else
+            {
+                _undoController?.FocusView();
+            }
+
+            EditorGUILayout.Space(5);
+
+            // ================================================================
+            // メッシュリスト
+            // ================================================================
+            EditorGUILayout.LabelField("Mesh List", EditorStyles.miniBoldLabel);
+
+            for (int i = 0; i < _meshList.Count; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+
+                bool isSelected = (i == _selectedIndex);
+                bool newSelected = GUILayout.Toggle(isSelected, _meshList[i].Name, "Button");
+
+                if (newSelected && !isSelected)
+                {
+                    _selectedIndex = i;
+                    _selectedVertices.Clear();
+                    ResetEditState();
+                    InitVertexOffsets();
+
+                    var entry = _meshList[_selectedIndex];
+                    LoadEntryToUndoController(entry);
+                    UpdateTopology();  // 
+                }
+
+                if (GUILayout.Button("×", GUILayout.Width(20)))
+                {
+                    EditorGUILayout.EndHorizontal();
+                    RemoveMesh(i);
+                    break;
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+    }
+
+    /// <summary>
+    /// 選択モード切り替えツールバーを描画（複数選択可能なトグル形式）
+    /// </summary>
+    private void DrawSelectionModeToolbar()
+    {
+        if (_selectionState == null) return;
+
+        EditorGUILayout.BeginHorizontal();
+
+        var mode = _selectionState.Mode;
+        var buttonStyle = EditorStyles.miniButton;
+        var oldColor = GUI.backgroundColor;
+
+        // Vertex モード（トグル）
+        bool vertexOn = mode.Has(MeshSelectMode.Vertex);
+        if (vertexOn) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
+        if (GUILayout.Button("V", buttonStyle, GUILayout.Width(28)))
+        {
+            ToggleSelectionMode(MeshSelectMode.Vertex);
+        }
+        GUI.backgroundColor = oldColor;
+
+        // Edge モード（トグル）
+        bool edgeOn = mode.Has(MeshSelectMode.Edge);
+        if (edgeOn) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
+        if (GUILayout.Button("E", buttonStyle, GUILayout.Width(28)))
+        {
+            ToggleSelectionMode(MeshSelectMode.Edge);
+        }
+        GUI.backgroundColor = oldColor;
+
+        // Face モード（トグル）
+        bool faceOn = mode.Has(MeshSelectMode.Face);
+        if (faceOn) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
+        if (GUILayout.Button("F", buttonStyle, GUILayout.Width(28)))
+        {
+            ToggleSelectionMode(MeshSelectMode.Face);
+        }
+        GUI.backgroundColor = oldColor;
+
+        // Line モード（トグル）
+        bool lineOn = mode.Has(MeshSelectMode.Line);
+        if (lineOn) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
+        if (GUILayout.Button("L", buttonStyle, GUILayout.Width(28)))
+        {
+            ToggleSelectionMode(MeshSelectMode.Line);
+        }
+        GUI.backgroundColor = oldColor;
+
+        // 有効モード数表示
+        int modeCount = mode.Count();
+        EditorGUILayout.LabelField($"({modeCount})", EditorStyles.miniLabel, GUILayout.Width(24));
+
+        // デバッグ情報
+        string debugInfo = $"V:{_selectionState.Vertices.Count} E:{_selectionState.Edges.Count} F:{_selectionState.Faces.Count} L:{_selectionState.Lines.Count}";
+        EditorGUILayout.LabelField(debugInfo, EditorStyles.miniLabel, GUILayout.Width(120));
+
+        EditorGUILayout.EndHorizontal();
+    }
+
+    /// <summary>
+    /// 選択モードをトグル（Undo対応）
+    /// </summary>
+    private void ToggleSelectionMode(MeshSelectMode toggleMode)
+    {
+        if (_selectionState == null) return;
+
+        var oldSnapshot = _selectionState.CreateSnapshot();
+        var oldLegacySelection = new HashSet<int>(_selectedVertices);
+
+        // 現在のモードにフラグをトグル
+        if (_selectionState.Mode.Has(toggleMode))
+        {
+            // OFFにする（最低1つは残す）
+            var newMode = _selectionState.Mode & ~toggleMode;
+            if (newMode == MeshSelectMode.None)
+            {
+                // 全てOFFになるならVertexに戻す
+                newMode = MeshSelectMode.Vertex;
+            }
+            _selectionState.Mode = newMode;
+        }
+        else
+        {
+            // ONにする
+            _selectionState.Mode |= toggleMode;
+        }
+
+        // Undo記録
+        RecordExtendedSelectionChange(oldSnapshot, oldLegacySelection);
+    }
+
+    /// <summary>
+    /// 選択モードを変更（Undo対応）- 後方互換
+    /// </summary>
+    private void SetSelectionMode(MeshSelectMode newMode)
+    {
+        if (_selectionState == null) return;
+        if (_selectionState.Mode == newMode) return;
+
+        var oldSnapshot = _selectionState.CreateSnapshot();
+        var oldLegacySelection = new HashSet<int>(_selectedVertices);
+
+        _selectionState.Mode = newMode;
+
+        // Undo記録
+        RecordExtendedSelectionChange(oldSnapshot, oldLegacySelection);
+    }
+
+    /// <summary>
+    /// ツールボタンを描画（トグル形式）
+    /// </summary>
+    private void DrawToolButton(IEditTool tool, string label)
+    {
+        bool isActive = (_currentTool == tool);
+
+        // アクティブなツールは色を変える
+        var oldColor = GUI.backgroundColor;
+        if (isActive)
+        {
+            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
+        }
+
+        if (GUILayout.Toggle(isActive, label, "Button") && !isActive)
+        {
+            // ツール変更をUndo記録
+            if (_undoController != null)
+            {
+                string oldToolName = _currentTool?.Name ?? "Select";
+                _undoController.EditorState.CurrentToolName = oldToolName;
+                _undoController.BeginEditorStateDrag();
+            }
+
+            _currentTool?.OnDeactivate(_toolContext);
+            _currentTool = tool;
+            _currentTool?.OnActivate(_toolContext);
+
+            // 新しいツール名を記録
+            if (_undoController != null)
+            {
+                _undoController.EditorState.CurrentToolName = tool.Name;
+                _undoController.EndEditorStateDrag($"Switch to {tool.Name} Tool");
+            }
+        }
+
+        GUI.backgroundColor = oldColor;
+    }
+
+    /// <summary>
+    /// MeshEntryをUndoコントローラーに読み込む
+    /// </summary>
+    private void LoadEntryToUndoController(MeshEntry entry)
+    {
+        if (_undoController == null || entry == null)
+            return;
+
+        // 参照を共有（Cloneしない）- AddFaceToolなどで直接変更されるため
+        _undoController.SetMeshData(entry.Data, entry.Mesh);
+        _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+        // 選択状態を同期
+        _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+    }
+
+}

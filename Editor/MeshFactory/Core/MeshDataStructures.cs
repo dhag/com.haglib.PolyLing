@@ -1,8 +1,8 @@
 // Assets/Editor/MeshData/MeshDataStructures.cs
 // 頂点ベースのメッシュデータ構造
 // - Vertex: 位置 + 複数UV + 複数法線
-// - Face: N角形対応（三角形、四角形、Nゴン）
-// - MeshData: Unity Mesh との相互変換
+// - Face: N角形対応（三角形、四角形、Nゴン）+ マテリアルインデックス
+// - MeshData: Unity Mesh との相互変換（サブメッシュ対応）
 
 using System;
 using System.Collections.Generic;
@@ -122,7 +122,7 @@ namespace MeshFactory.Data
 
     /// <summary>
     /// 面データ（N角形対応）
-    /// 頂点インデックスと、各頂点のUV/法線サブインデックスを保持
+    /// 頂点インデックスと、各頂点のUV/法線サブインデックス、マテリアルインデックスを保持
     /// </summary>
     [Serializable]
     public class Face
@@ -135,6 +135,9 @@ namespace MeshFactory.Data
 
         /// <summary>各頂点の法線サブインデックス（Vertex.Normals[n]への参照）</summary>
         public List<int> NormalIndices = new List<int>();
+
+        /// <summary>マテリアルインデックス（MeshEntry.Materialsへの参照）</summary>
+        public int MaterialIndex = 0;
 
         // === プロパティ ===
 
@@ -157,21 +160,23 @@ namespace MeshFactory.Data
         /// <summary>
         /// 三角形を作成（UV/法線インデックスは全て0）
         /// </summary>
-        public Face(int v0, int v1, int v2)
+        public Face(int v0, int v1, int v2, int materialIndex = 0)
         {
             VertexIndices.AddRange(new[] { v0, v1, v2 });
             UVIndices.AddRange(new[] { 0, 0, 0 });
             NormalIndices.AddRange(new[] { 0, 0, 0 });
+            MaterialIndex = materialIndex;
         }
 
         /// <summary>
         /// 四角形を作成（UV/法線インデックスは全て0）
         /// </summary>
-        public Face(int v0, int v1, int v2, int v3)
+        public Face(int v0, int v1, int v2, int v3, int materialIndex = 0)
         {
             VertexIndices.AddRange(new[] { v0, v1, v2, v3 });
             UVIndices.AddRange(new[] { 0, 0, 0, 0 });
             NormalIndices.AddRange(new[] { 0, 0, 0, 0 });
+            MaterialIndex = materialIndex;
         }
 
         /// <summary>
@@ -180,13 +185,15 @@ namespace MeshFactory.Data
         public static Face CreateTriangle(
             int v0, int v1, int v2,
             int uv0, int uv1, int uv2,
-            int n0, int n1, int n2)
+            int n0, int n1, int n2,
+            int materialIndex = 0)
         {
             return new Face
             {
                 VertexIndices = new List<int> { v0, v1, v2 },
                 UVIndices = new List<int> { uv0, uv1, uv2 },
-                NormalIndices = new List<int> { n0, n1, n2 }
+                NormalIndices = new List<int> { n0, n1, n2 },
+                MaterialIndex = materialIndex
             };
         }
 
@@ -196,13 +203,15 @@ namespace MeshFactory.Data
         public static Face CreateQuad(
             int v0, int v1, int v2, int v3,
             int uv0, int uv1, int uv2, int uv3,
-            int n0, int n1, int n2, int n3)
+            int n0, int n1, int n2, int n3,
+            int materialIndex = 0)
         {
             return new Face
             {
                 VertexIndices = new List<int> { v0, v1, v2, v3 },
                 UVIndices = new List<int> { uv0, uv1, uv2, uv3 },
-                NormalIndices = new List<int> { n0, n1, n2, n3 }
+                NormalIndices = new List<int> { n0, n1, n2, n3 },
+                MaterialIndex = materialIndex
             };
         }
 
@@ -232,7 +241,7 @@ namespace MeshFactory.Data
         }
 
         /// <summary>
-        /// 三角形に分解してFaceリストを返す
+        /// 三角形に分解してFaceリストを返す（MaterialIndex引き継ぎ）
         /// </summary>
         public List<Face> Triangulate()
         {
@@ -247,14 +256,16 @@ namespace MeshFactory.Data
                 return result;
             }
 
-            // 扇形分割
+            // 扇形分割（MaterialIndexを引き継ぐ）
             for (int i = 1; i < VertexCount - 1; i++)
             {
-                result.Add(Face.CreateTriangle(
+                var tri = Face.CreateTriangle(
                     VertexIndices[0], VertexIndices[i], VertexIndices[i + 1],
                     UVIndices[0], UVIndices[i], UVIndices[i + 1],
-                    NormalIndices[0], NormalIndices[i], NormalIndices[i + 1]
-                ));
+                    NormalIndices[0], NormalIndices[i], NormalIndices[i + 1],
+                    MaterialIndex  // マテリアルインデックスを引き継ぐ
+                );
+                result.Add(tri);
             }
 
             return result;
@@ -286,7 +297,8 @@ namespace MeshFactory.Data
             {
                 VertexIndices = new List<int>(VertexIndices),
                 UVIndices = new List<int>(UVIndices),
-                NormalIndices = new List<int>(NormalIndices)
+                NormalIndices = new List<int>(NormalIndices),
+                MaterialIndex = MaterialIndex
             };
         }
     }
@@ -297,7 +309,7 @@ namespace MeshFactory.Data
 
     /// <summary>
     /// メッシュデータ（頂点 + 面）
-    /// Unity Mesh との相互変換機能付き
+    /// Unity Mesh との相互変換機能付き（サブメッシュ対応）
     /// </summary>
     [Serializable]
     public class MeshData
@@ -321,6 +333,16 @@ namespace MeshFactory.Data
 
         /// <summary>三角形数（全ての面を三角形化した場合）</summary>
         public int TriangleCount => Faces.Sum(f => f.TriangleCount);
+
+        /// <summary>使用されているマテリアルインデックスの最大値+1（サブメッシュ数）</summary>
+        public int SubMeshCount
+        {
+            get
+            {
+                if (Faces.Count == 0) return 1;
+                return Faces.Max(f => f.MaterialIndex) + 1;
+            }
+        }
 
         // === コンストラクタ ===
 
@@ -365,17 +387,17 @@ namespace MeshFactory.Data
         /// <summary>
         /// 三角形を追加
         /// </summary>
-        public void AddTriangle(int v0, int v1, int v2)
+        public void AddTriangle(int v0, int v1, int v2, int materialIndex = 0)
         {
-            Faces.Add(new Face(v0, v1, v2));
+            Faces.Add(new Face(v0, v1, v2, materialIndex));
         }
 
         /// <summary>
         /// 四角形を追加
         /// </summary>
-        public void AddQuad(int v0, int v1, int v2, int v3)
+        public void AddQuad(int v0, int v1, int v2, int v3, int materialIndex = 0)
         {
-            Faces.Add(new Face(v0, v1, v2, v3));
+            Faces.Add(new Face(v0, v1, v2, v3, materialIndex));
         }
 
         /// <summary>
@@ -389,8 +411,13 @@ namespace MeshFactory.Data
         // === Unity Mesh 変換 ===
 
         /// <summary>
-        /// Unity Mesh に変換
+        /// Unity Mesh に変換（サブメッシュ対応）
         /// 全ての面を三角形に展開し、頂点を複製してUnity形式に変換
+        /// MaterialIndexごとにサブメッシュを生成
+        /// </summary>
+        /// <summary>
+        /// Unity Mesh に変換（サブメッシュ対応）
+        /// Face.MaterialIndex に基づいてサブメッシュを分割
         /// </summary>
         public Mesh ToUnityMesh()
         {
@@ -400,12 +427,22 @@ namespace MeshFactory.Data
             var unityVertices = new List<Vector3>();
             var unityNormals = new List<Vector3>();
             var unityUVs = new List<Vector2>();
-            var unityTriangles = new List<int>();
+
+            // サブメッシュごとの三角形インデックス
+            var subMeshTriangles = new Dictionary<int, List<int>>();
 
             foreach (var face in Faces)
             {
                 if (!face.IsValid)
                     continue;
+
+                int matIndex = face.MaterialIndex;
+
+                // サブメッシュリストを確保
+                if (!subMeshTriangles.ContainsKey(matIndex))
+                {
+                    subMeshTriangles[matIndex] = new List<int>();
+                }
 
                 // 三角形に分解
                 var triangles = face.Triangulate();
@@ -440,6 +477,94 @@ namespace MeshFactory.Data
                         else
                             unityNormals.Add(Vector3.zero);
 
+                        subMeshTriangles[matIndex].Add(startIdx + i);
+                    }
+                }
+            }
+
+            mesh.vertices = unityVertices.ToArray();
+            mesh.uv = unityUVs.ToArray();
+
+            // 法線: 有効なデータがあれば設定、なければ自動計算
+            if (unityNormals.Any(n => n != Vector3.zero))
+                mesh.normals = unityNormals.ToArray();
+
+            // サブメッシュ数を決定（使用されている最大MaterialIndex + 1）
+            int subMeshCount = subMeshTriangles.Count > 0
+                ? subMeshTriangles.Keys.Max() + 1
+                : 1;
+
+            mesh.subMeshCount = subMeshCount;
+
+            // 各サブメッシュに三角形を設定
+            for (int i = 0; i < subMeshCount; i++)
+            {
+                if (subMeshTriangles.TryGetValue(i, out var tris))
+                {
+                    mesh.SetTriangles(tris, i);
+                }
+                else
+                {
+                    // 空のサブメッシュ
+                    mesh.SetTriangles(new int[0], i);
+                }
+            }
+
+            // 法線が無効だった場合は再計算
+            if (!unityNormals.Any(n => n != Vector3.zero))
+                mesh.RecalculateNormals();
+
+            mesh.RecalculateBounds();
+
+            return mesh;
+        }
+        /// <summary>
+        /// Unity Mesh に変換（単一マテリアル、後方互換用）
+        /// </summary>
+        public Mesh ToUnityMeshSingleMaterial()
+        {
+            var mesh = new Mesh { name = Name };
+
+            var unityVertices = new List<Vector3>();
+            var unityNormals = new List<Vector3>();
+            var unityUVs = new List<Vector2>();
+            var unityTriangles = new List<int>();
+
+            foreach (var face in Faces)
+            {
+                if (!face.IsValid)
+                    continue;
+
+                var triangles = face.Triangulate();
+
+                foreach (var tri in triangles)
+                {
+                    int startIdx = unityVertices.Count;
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        int vIdx = tri.VertexIndices[i];
+                        int uvIdx = tri.UVIndices[i];
+                        int nIdx = tri.NormalIndices[i];
+
+                        var vertex = Vertices[vIdx];
+
+                        unityVertices.Add(vertex.Position);
+
+                        if (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
+                            unityUVs.Add(vertex.UVs[uvIdx]);
+                        else if (vertex.UVs.Count > 0)
+                            unityUVs.Add(vertex.UVs[0]);
+                        else
+                            unityUVs.Add(Vector2.zero);
+
+                        if (nIdx >= 0 && nIdx < vertex.Normals.Count)
+                            unityNormals.Add(vertex.Normals[nIdx]);
+                        else if (vertex.Normals.Count > 0)
+                            unityNormals.Add(vertex.Normals[0]);
+                        else
+                            unityNormals.Add(Vector3.zero);
+
                         unityTriangles.Add(startIdx + i);
                     }
                 }
@@ -449,115 +574,134 @@ namespace MeshFactory.Data
             mesh.uv = unityUVs.ToArray();
             mesh.triangles = unityTriangles.ToArray();
 
-            // 法線: 有効なデータがあれば設定、なければ自動計算
-            if (unityNormals.Any(n => n != Vector3.zero))
+            bool hasValidNormals = unityNormals.Any(n => n.sqrMagnitude > 0.001f);
+            if (hasValidNormals)
+            {
                 mesh.normals = unityNormals.ToArray();
+            }
             else
+            {
                 mesh.RecalculateNormals();
+            }
 
             mesh.RecalculateBounds();
 
             return mesh;
         }
 
+        // === Unity Mesh からインポート ===
+
         /// <summary>
-        /// Unity Mesh から読み込み
-        /// 三角形ベースで読み込み、同一位置の頂点をマージ
+        /// Unity Mesh からインポート
         /// </summary>
+        /// <param name="mesh">ソースメッシュ</param>
+        /// <param name="mergeVertices">同一位置の頂点をマージするか</param>
         public void FromUnityMesh(Mesh mesh, bool mergeVertices = true)
         {
+            Clear();
+
             if (mesh == null)
                 return;
 
-            Clear();
             Name = mesh.name;
 
             var srcVertices = mesh.vertices;
-            var srcUVs = mesh.uv;
             var srcNormals = mesh.normals;
-            var srcTriangles = mesh.triangles;
+            var srcUVs = mesh.uv;
 
             if (mergeVertices)
             {
-                FromUnityMeshMerged(srcVertices, srcUVs, srcNormals, srcTriangles);
+                FromUnityMeshMerged(srcVertices, srcUVs, srcNormals, mesh);
             }
             else
             {
-                FromUnityMeshDirect(srcVertices, srcUVs, srcNormals, srcTriangles);
+                FromUnityMeshDirect(srcVertices, srcUVs, srcNormals, mesh);
             }
         }
 
         /// <summary>
-        /// 頂点マージしてインポート
+        /// 同一位置の頂点をマージしてインポート（サブメッシュ対応）
         /// </summary>
         private void FromUnityMeshMerged(
-            Vector3[] srcVertices, Vector2[] srcUVs, Vector3[] srcNormals, int[] srcTriangles)
+            Vector3[] srcVertices, Vector2[] srcUVs, Vector3[] srcNormals, Mesh mesh)
         {
-            // 位置でグループ化して頂点をマージ
-            var positionToVertex = new Dictionary<Vector3, int>(new Vector3Comparer());
+            // 位置→ローカル頂点インデックスのマップ
+            var positionToIndex = new Dictionary<Vector3, int>(new Vector3Comparer());
             var unityToLocalIndex = new int[srcVertices.Length];
 
+            // 頂点をマージ
             for (int i = 0; i < srcVertices.Length; i++)
             {
                 Vector3 pos = srcVertices[i];
 
-                if (!positionToVertex.TryGetValue(pos, out int localIdx))
+                if (!positionToIndex.TryGetValue(pos, out int localIdx))
                 {
                     localIdx = Vertices.Count;
-                    Vertices.Add(new Vertex(pos));
-                    positionToVertex[pos] = localIdx;
+                    positionToIndex[pos] = localIdx;
+
+                    var vertex = new Vertex(pos);
+                    Vertices.Add(vertex);
                 }
 
                 unityToLocalIndex[i] = localIdx;
 
-                // UV追加
-                var vertex = Vertices[localIdx];
-                Vector2 uv = (srcUVs != null && i < srcUVs.Length) ? srcUVs[i] : Vector2.zero;
-                vertex.GetOrAddUV(uv);
+                // UV/法線を追加（頂点側に保存）
+                var localVertex = Vertices[localIdx];
 
-                // 法線追加
-                Vector3 normal = (srcNormals != null && i < srcNormals.Length) ? srcNormals[i] : Vector3.zero;
-                if (normal != Vector3.zero)
-                    vertex.GetOrAddNormal(normal);
+                if (srcUVs != null && i < srcUVs.Length)
+                {
+                    localVertex.GetOrAddUV(srcUVs[i]);
+                }
+
+                if (srcNormals != null && i < srcNormals.Length)
+                {
+                    localVertex.GetOrAddNormal(srcNormals[i]);
+                }
             }
 
-            // 三角形を面に変換
-            for (int i = 0; i < srcTriangles.Length; i += 3)
+            // サブメッシュごとに三角形を面に変換
+            for (int subMesh = 0; subMesh < mesh.subMeshCount; subMesh++)
             {
-                int ui0 = srcTriangles[i];
-                int ui1 = srcTriangles[i + 1];
-                int ui2 = srcTriangles[i + 2];
+                var srcTriangles = mesh.GetTriangles(subMesh);
 
-                int v0 = unityToLocalIndex[ui0];
-                int v1 = unityToLocalIndex[ui1];
-                int v2 = unityToLocalIndex[ui2];
+                for (int i = 0; i < srcTriangles.Length; i += 3)
+                {
+                    int ui0 = srcTriangles[i];
+                    int ui1 = srcTriangles[i + 1];
+                    int ui2 = srcTriangles[i + 2];
 
-                // UV/法線インデックスを検索
-                Vector2 uv0 = (srcUVs != null && ui0 < srcUVs.Length) ? srcUVs[ui0] : Vector2.zero;
-                Vector2 uv1 = (srcUVs != null && ui1 < srcUVs.Length) ? srcUVs[ui1] : Vector2.zero;
-                Vector2 uv2 = (srcUVs != null && ui2 < srcUVs.Length) ? srcUVs[ui2] : Vector2.zero;
+                    int v0 = unityToLocalIndex[ui0];
+                    int v1 = unityToLocalIndex[ui1];
+                    int v2 = unityToLocalIndex[ui2];
 
-                int uvIdx0 = FindUVIndex(Vertices[v0], uv0);
-                int uvIdx1 = FindUVIndex(Vertices[v1], uv1);
-                int uvIdx2 = FindUVIndex(Vertices[v2], uv2);
+                    // UV/法線インデックスを検索
+                    Vector2 uv0 = (srcUVs != null && ui0 < srcUVs.Length) ? srcUVs[ui0] : Vector2.zero;
+                    Vector2 uv1 = (srcUVs != null && ui1 < srcUVs.Length) ? srcUVs[ui1] : Vector2.zero;
+                    Vector2 uv2 = (srcUVs != null && ui2 < srcUVs.Length) ? srcUVs[ui2] : Vector2.zero;
 
-                Vector3 n0 = (srcNormals != null && ui0 < srcNormals.Length) ? srcNormals[ui0] : Vector3.zero;
-                Vector3 n1 = (srcNormals != null && ui1 < srcNormals.Length) ? srcNormals[ui1] : Vector3.zero;
-                Vector3 n2 = (srcNormals != null && ui2 < srcNormals.Length) ? srcNormals[ui2] : Vector3.zero;
+                    int uvIdx0 = FindUVIndex(Vertices[v0], uv0);
+                    int uvIdx1 = FindUVIndex(Vertices[v1], uv1);
+                    int uvIdx2 = FindUVIndex(Vertices[v2], uv2);
 
-                int nIdx0 = FindNormalIndex(Vertices[v0], n0);
-                int nIdx1 = FindNormalIndex(Vertices[v1], n1);
-                int nIdx2 = FindNormalIndex(Vertices[v2], n2);
+                    Vector3 n0 = (srcNormals != null && ui0 < srcNormals.Length) ? srcNormals[ui0] : Vector3.zero;
+                    Vector3 n1 = (srcNormals != null && ui1 < srcNormals.Length) ? srcNormals[ui1] : Vector3.zero;
+                    Vector3 n2 = (srcNormals != null && ui2 < srcNormals.Length) ? srcNormals[ui2] : Vector3.zero;
 
-                Faces.Add(Face.CreateTriangle(v0, v1, v2, uvIdx0, uvIdx1, uvIdx2, nIdx0, nIdx1, nIdx2));
+                    int nIdx0 = FindNormalIndex(Vertices[v0], n0);
+                    int nIdx1 = FindNormalIndex(Vertices[v1], n1);
+                    int nIdx2 = FindNormalIndex(Vertices[v2], n2);
+
+                    // サブメッシュインデックスをMaterialIndexとして設定
+                    Faces.Add(Face.CreateTriangle(v0, v1, v2, uvIdx0, uvIdx1, uvIdx2, nIdx0, nIdx1, nIdx2, subMesh));
+                }
             }
         }
 
         /// <summary>
-        /// そのままインポート（頂点マージなし）
+        /// そのままインポート（頂点マージなし、サブメッシュ対応）
         /// </summary>
         private void FromUnityMeshDirect(
-            Vector3[] srcVertices, Vector2[] srcUVs, Vector3[] srcNormals, int[] srcTriangles)
+            Vector3[] srcVertices, Vector2[] srcUVs, Vector3[] srcNormals, Mesh mesh)
         {
             for (int i = 0; i < srcVertices.Length; i++)
             {
@@ -574,13 +718,19 @@ namespace MeshFactory.Data
                 Vertices.Add(vertex);
             }
 
-            for (int i = 0; i < srcTriangles.Length; i += 3)
+            // サブメッシュごとに処理
+            for (int subMesh = 0; subMesh < mesh.subMeshCount; subMesh++)
             {
-                int v0 = srcTriangles[i];
-                int v1 = srcTriangles[i + 1];
-                int v2 = srcTriangles[i + 2];
+                var srcTriangles = mesh.GetTriangles(subMesh);
 
-                Faces.Add(Face.CreateTriangle(v0, v1, v2, 0, 0, 0, 0, 0, 0));
+                for (int i = 0; i < srcTriangles.Length; i += 3)
+                {
+                    int v0 = srcTriangles[i];
+                    int v1 = srcTriangles[i + 1];
+                    int v2 = srcTriangles[i + 2];
+
+                    Faces.Add(Face.CreateTriangle(v0, v1, v2, 0, 0, 0, 0, 0, 0, subMesh));
+                }
             }
         }
 
@@ -734,6 +884,48 @@ namespace MeshFactory.Data
         }
 
         /// <summary>
+        /// マテリアル使用状況を取得
+        /// </summary>
+        /// <returns>Key: MaterialIndex, Value: 使用面数</returns>
+        public Dictionary<int, int> GetMaterialUsage()
+        {
+            var usage = new Dictionary<int, int>();
+            foreach (var face in Faces)
+            {
+                if (!usage.ContainsKey(face.MaterialIndex))
+                    usage[face.MaterialIndex] = 0;
+                usage[face.MaterialIndex]++;
+            }
+            return usage;
+        }
+
+        /// <summary>
+        /// 指定マテリアルインデックスの面を取得
+        /// </summary>
+        public IEnumerable<int> GetFacesByMaterial(int materialIndex)
+        {
+            for (int i = 0; i < Faces.Count; i++)
+            {
+                if (Faces[i].MaterialIndex == materialIndex)
+                    yield return i;
+            }
+        }
+
+        /// <summary>
+        /// 選択した面のマテリアルインデックスを変更
+        /// </summary>
+        public void SetFacesMaterial(IEnumerable<int> faceIndices, int materialIndex)
+        {
+            foreach (int idx in faceIndices)
+            {
+                if (idx >= 0 && idx < Faces.Count)
+                {
+                    Faces[idx].MaterialIndex = materialIndex;
+                }
+            }
+        }
+
+        /// <summary>
         /// デバッグ情報
         /// </summary>
         public string GetDebugInfo()
@@ -741,9 +933,10 @@ namespace MeshFactory.Data
             int triCount = Faces.Where(f => f.IsTriangle).Count();
             int quadCount = Faces.Where(f => f.IsQuad).Count();
             int nGonCount = Faces.Count - triCount - quadCount;
+            int subMeshCount = SubMeshCount;
 
             return $"[{Name}] Vertices: {VertexCount}, Faces: {FaceCount} " +
-                   $"(Tri: {triCount}, Quad: {quadCount}, NGon: {nGonCount})";
+                   $"(Tri: {triCount}, Quad: {quadCount}, NGon: {nGonCount}), SubMeshes: {subMeshCount}";
         }
     }
 

@@ -1,5 +1,6 @@
 // Tools/AddFaceTool.cs
-// 面追加ツール（2点=Edge、3点=Triangle、4点=Quad）
+// 面追加ツール（2点=Line、3点=Triangle、4点=Quad）
+// マルチマテリアル対応 + Line描画対応
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -14,7 +15,7 @@ namespace MeshFactory.Tools
     /// </summary>
     public enum AddFaceMode
     {
-        Edge = 2,       // 2点（線分）
+        Line = 2,       // 2点（補助線）
         Triangle = 3,   // 3点（三角形）
         Quad = 4        // 4点（四角形）
     }
@@ -59,16 +60,18 @@ namespace MeshFactory.Tools
         // === 設定 ===
         private AddFaceMode _mode = AddFaceMode.Triangle;
         private float _defaultDistance = 1.5f;  // WorkPlaneと交差しない場合のカメラからの距離
+        private bool _continuousLine = false;   // 連続線分モード
 
         // === 状態 ===
         private List<PointInfo> _points = new List<PointInfo>();
+        private PointInfo? _lastLinePoint = null;  // 連続線分の最後の点
         private Vector3 _previewPoint;          // 現在のマウス位置での候補点
         private bool _previewValid = false;
         private int _previewHitVertex = -1;     // プレビュー時に既存頂点にヒットしている場合
 
         // === モード名 ===
-        private static readonly string[] ModeNames = { "Edge (2)", "Triangle (3)", "Quad (4)" };
-        private static readonly AddFaceMode[] ModeValues = { AddFaceMode.Edge, AddFaceMode.Triangle, AddFaceMode.Quad };
+        private static readonly string[] ModeNames = { "Line (2)", "Triangle (3)", "Quad (4)" };
+        private static readonly AddFaceMode[] ModeValues = { AddFaceMode.Line, AddFaceMode.Triangle, AddFaceMode.Quad };
 
         // === プロパティ ===
         public AddFaceMode Mode
@@ -91,6 +94,12 @@ namespace MeshFactory.Tools
                     _points.RemoveAt(_points.Count - 1);
                     ctx.Repaint?.Invoke();
                 }
+                else if (_lastLinePoint.HasValue)
+                {
+                    // 連続線分モードの開始点もクリア
+                    _lastLinePoint = null;
+                    ctx.Repaint?.Invoke();
+                }
                 return true;
             }
 
@@ -100,11 +109,32 @@ namespace MeshFactory.Tools
 
             // 点を追加
             PointInfo point = GetPointAtScreenPos(ctx, mousePos);
+
+            // 連続線分モードの場合
+            if (_mode == AddFaceMode.Line && _continuousLine && _lastLinePoint.HasValue)
+            {
+                // 前回の最後の点と今回の点で線分を作成
+                _points.Clear();
+                _points.Add(_lastLinePoint.Value);
+                _points.Add(point);
+                CreateFace(ctx);
+                _lastLinePoint = point;  // 今回の点を次の開始点に
+                _points.Clear();
+                ctx.Repaint?.Invoke();
+                return true;
+            }
+
             _points.Add(point);
 
             // 必要な点数に達したら面を作成
             if (_points.Count >= RequiredPoints)
             {
+                // 連続線分モードの場合、最後の点を保存
+                if (_mode == AddFaceMode.Line && _continuousLine)
+                {
+                    _lastLinePoint = _points[_points.Count - 1];
+                }
+
                 CreateFace(ctx);
                 _points.Clear();
             }
@@ -132,15 +162,47 @@ namespace MeshFactory.Tools
 
             Handles.BeginGUI();
 
+            // 連続線分モードの開始点を描画
+            if (_mode == AddFaceMode.Line && _continuousLine && _lastLinePoint.HasValue && _points.Count == 0)
+            {
+                Vector2 startScreen = ctx.WorldToScreenPos(
+                    _lastLinePoint.Value.Position, ctx.PreviewRect,
+                    ctx.CameraPosition, ctx.CameraTarget);
+
+                // 開始点（オレンジ）
+                Color startColor = new Color(1f, 0.5f, 0f, 0.9f);
+                float size = 12f;
+                EditorGUI.DrawRect(new Rect(
+                    startScreen.x - size / 2,
+                    startScreen.y - size / 2,
+                    size, size), startColor);
+
+                GUI.Label(new Rect(startScreen.x + 10, startScreen.y - 8, 50, 16),
+                    "START", EditorStyles.whiteBoldLabel);
+
+                // プレビュー点への線
+                if (_previewValid)
+                {
+                    Vector2 previewScreen = ctx.WorldToScreenPos(
+                        _previewPoint, ctx.PreviewRect,
+                        ctx.CameraPosition, ctx.CameraTarget);
+
+                    Handles.color = new Color(1f, 0.5f, 0f, 0.5f);
+                    Handles.DrawAAPolyLine(2f,
+                        new Vector3(startScreen.x, startScreen.y, 0),
+                        new Vector3(previewScreen.x, previewScreen.y, 0));
+                }
+            }
+
             // 確定済みの点を描画
             for (int i = 0; i < _points.Count; i++)
             {
                 Vector2 screenPos = ctx.WorldToScreenPos(
-                    _points[i].Position, ctx.PreviewRect, 
+                    _points[i].Position, ctx.PreviewRect,
                     ctx.CameraPosition, ctx.CameraTarget);
 
                 // 点の色（既存=シアン、新規=黄色）
-                Color pointColor = _points[i].IsExistingVertex 
+                Color pointColor = _points[i].IsExistingVertex
                     ? new Color(0f, 1f, 1f, 0.9f)  // シアン
                     : new Color(1f, 1f, 0f, 0.9f); // 黄色
 
@@ -152,7 +214,7 @@ namespace MeshFactory.Tools
                     size, size), pointColor);
 
                 // 番号を表示
-                GUI.Label(new Rect(screenPos.x + 8, screenPos.y - 8, 20, 16), 
+                GUI.Label(new Rect(screenPos.x + 8, screenPos.y - 8, 20, 16),
                     (i + 1).ToString(), EditorStyles.whiteBoldLabel);
 
                 // 前の点との線を描画
@@ -161,7 +223,7 @@ namespace MeshFactory.Tools
                     Vector2 prevScreen = ctx.WorldToScreenPos(
                         _points[i - 1].Position, ctx.PreviewRect,
                         ctx.CameraPosition, ctx.CameraTarget);
-                    
+
                     Handles.color = new Color(1f, 0.8f, 0.2f, 0.8f);
                     Handles.DrawAAPolyLine(2f,
                         new Vector3(prevScreen.x, prevScreen.y, 0),
@@ -200,8 +262,8 @@ namespace MeshFactory.Tools
                         new Vector3(previewScreen.x, previewScreen.y, 0));
                 }
 
-                // 閉じる線（最後の点から最初の点へ）のプレビュー
-                if (_points.Count == RequiredPoints - 1 && _points.Count >= 2)
+                // 閉じる線（最後の点から最初の点へ）のプレビュー（三角形/四角形の場合のみ）
+                if (_mode != AddFaceMode.Line && _points.Count == RequiredPoints - 1 && _points.Count >= 2)
                 {
                     Vector2 firstScreen = ctx.WorldToScreenPos(
                         _points[0].Position, ctx.PreviewRect,
@@ -227,47 +289,62 @@ namespace MeshFactory.Tools
             {
                 _mode = ModeValues[newIndex];
                 _points.Clear();  // モード変更時はリセット
+                _lastLinePoint = null;
+            }
+
+            // Lineモード専用オプション
+            if (_mode == AddFaceMode.Line)
+            {
+                EditorGUILayout.Space(4);
+                EditorGUI.BeginChangeCheck();
+                _continuousLine = EditorGUILayout.Toggle("Continuous Line", _continuousLine);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    _lastLinePoint = null;  // モード変更時はリセット
+                }
+
+                if (_continuousLine && _lastLinePoint.HasValue)
+                {
+                    EditorGUILayout.LabelField("  ↳ Click to continue from last point", EditorStyles.miniLabel);
+                }
             }
 
             EditorGUILayout.Space(4);
 
             // 進捗表示
-            EditorGUILayout.LabelField($"Points: {_points.Count} / {RequiredPoints}", EditorStyles.miniLabel);
+            string progressText = $"Points: {_points.Count} / {RequiredPoints}";
+            if (_mode == AddFaceMode.Line && _continuousLine && _lastLinePoint.HasValue)
+            {
+                progressText = "Click to add next line segment";
+            }
+            EditorGUILayout.LabelField(progressText, EditorStyles.miniLabel);
 
             // 配置済み点の座標表示
             if (_points.Count > 0)
             {
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Placed Points:", EditorStyles.miniBoldLabel);
-                
+
                 for (int i = 0; i < _points.Count; i++)
                 {
                     var p = _points[i];
-                    string label = p.IsExistingVertex 
+                    string label = p.IsExistingVertex
                         ? $"  {i + 1}: V{p.ExistingVertexIndex}"
                         : $"  {i + 1}: NEW";
-                    string coords = $"({p.Position.x:F2}, {p.Position.y:F2}, {p.Position.z:F2})";
-                    
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField(label, EditorStyles.miniLabel, GUILayout.Width(60));
-                    EditorGUILayout.LabelField(coords, EditorStyles.miniLabel);
-                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.LabelField(label, EditorStyles.miniLabel);
                 }
             }
 
             EditorGUILayout.Space(4);
 
-            // 操作説明
-            EditorGUILayout.LabelField("Left Click: Add point", EditorStyles.miniLabel);
-            EditorGUILayout.LabelField("Right Click: Remove last point", EditorStyles.miniLabel);
-
             // クリアボタン
-            if (_points.Count > 0)
+            bool hasData = _points.Count > 0 || (_continuousLine && _lastLinePoint.HasValue);
+            if (hasData)
             {
-                EditorGUILayout.Space(4);
                 if (GUILayout.Button("Clear Points"))
                 {
                     _points.Clear();
+                    _lastLinePoint = null;
                 }
             }
         }
@@ -276,12 +353,14 @@ namespace MeshFactory.Tools
         {
             _points.Clear();
             _previewValid = false;
+            _lastLinePoint = null;
         }
 
         public void OnDeactivate(ToolContext ctx)
         {
             _points.Clear();
             _previewValid = false;
+            _lastLinePoint = null;
         }
 
         public void Reset()
@@ -289,6 +368,7 @@ namespace MeshFactory.Tools
             _points.Clear();
             _previewValid = false;
             _previewHitVertex = -1;
+            _lastLinePoint = null;
         }
 
         // === 内部メソッド ===
@@ -411,9 +491,19 @@ namespace MeshFactory.Tools
             Face newFace = null;
             switch (_mode)
             {
-                case AddFaceMode.Edge:
-                    // 2点の場合は面を作成しない（将来的にエッジとして扱う可能性）
-                    // 現時点では退化三角形として作成しない
+                case AddFaceMode.Line:
+                    // 2点の補助線を作成（2頂点のFace）
+                    if (newVertexIndices.Count >= 2)
+                    {
+                        newFace = new Face();
+                        newFace.VertexIndices.Add(newVertexIndices[0]);
+                        newFace.VertexIndices.Add(newVertexIndices[1]);
+                        newFace.UVIndices.Add(0);
+                        newFace.UVIndices.Add(0);
+                        newFace.NormalIndices.Add(0);
+                        newFace.NormalIndices.Add(0);
+                        newFace.MaterialIndex = ctx.CurrentMaterialIndex;
+                    }
                     break;
 
                 case AddFaceMode.Triangle:
@@ -422,7 +512,8 @@ namespace MeshFactory.Tools
                         newFace = new Face(
                             newVertexIndices[0],
                             newVertexIndices[1],
-                            newVertexIndices[2]);
+                            newVertexIndices[2],
+                            ctx.CurrentMaterialIndex);
                     }
                     break;
 
@@ -433,50 +524,44 @@ namespace MeshFactory.Tools
                             newVertexIndices[0],
                             newVertexIndices[1],
                             newVertexIndices[2],
-                            newVertexIndices[3]);
+                            newVertexIndices[3],
+                            ctx.CurrentMaterialIndex);
                     }
                     break;
             }
 
             if (newFace != null)
             {
-                // 法線を計算して設定
-                Vector3 faceNormal = CalculateFaceNormal(meshData, newFace);
-                foreach (int vi in newFace.VertexIndices)
+                // 3頂点以上の場合は法線を計算
+                if (newFace.VertexCount >= 3)
                 {
-                    var vertex = meshData.Vertices[vi];
-                    if (vertex.Normals.Count == 0)
+                    Vector3 faceNormal = CalculateFaceNormal(meshData, newFace);
+                    foreach (int vi in newFace.VertexIndices)
                     {
-                        vertex.Normals.Add(faceNormal);
-                    }
-                    else
-                    {
-                        vertex.Normals[0] = faceNormal;
+                        var vertex = meshData.Vertices[vi];
+                        if (vertex.Normals.Count == 0)
+                        {
+                            vertex.Normals.Add(faceNormal);
+                        }
+                        else
+                        {
+                            vertex.Normals[0] = faceNormal;
+                        }
                     }
                 }
 
                 int faceIndex = meshData.Faces.Count;
                 meshData.Faces.Add(newFace);
 
+                Debug.Log($"[AddFaceTool] Created {_mode}: VertexCount={newFace.VertexCount}, MaterialIndex={newFace.MaterialIndex}");
+
                 // メッシュを更新
                 ctx.SyncMesh?.Invoke();
 
-                // Undo記録（面と頂点を1つの操作としてまとめて記録）
+                // Undo記録
                 if (ctx.UndoController != null)
                 {
                     ctx.UndoController.RecordAddFaceOperation(newFace, faceIndex, addedVertices);
-                }
-            }
-            else if (_mode == AddFaceMode.Edge && newVertexIndices.Count >= 2)
-            {
-                // Edge モードの場合は頂点のみ追加（面は作らない）
-                ctx.SyncMesh?.Invoke();
-                
-                // Undo記録（頂点のみ）
-                if (ctx.UndoController != null && addedVertices.Count > 0)
-                {
-                    // 面なしで頂点追加を記録
-                    ctx.UndoController.RecordAddFaceOperation(null, -1, addedVertices);
                 }
             }
 
