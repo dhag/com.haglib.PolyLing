@@ -13,6 +13,7 @@ using MeshFactory.Transforms;
 using MeshFactory.Tools;
 using MeshFactory.Serialization;
 using MeshFactory.Selection;
+using MeshFactory.Model;
 
 
 
@@ -20,12 +21,16 @@ using MeshFactory.Selection;
 public partial class SimpleMeshFactory : EditorWindow
 {
     // ================================================================
-    // メッシュデータ（MeshDataと名前衝突を避けるためリネーム）
+    // メッシュコンテキスト（MeshDataと名前衝突を避けるためリネーム）
     // ================================================================
-    public class MeshEntry
+    public class MeshContext
     {
-        public string Name;
-        public Mesh Mesh;                           // Unity Mesh（表示用）
+        public string Name
+        {
+            get => Data?.Name ?? "Untitled";
+            set { if (Data != null) Data.Name = value; }
+        }
+        public Mesh UnityMesh;                      // Unity UnityMesh（表示用）
         public MeshData Data;                       // 新構造データ
         public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
         public ExportSettings ExportSettings;       // エクスポート時のトランスフォーム設定
@@ -34,7 +39,7 @@ public partial class SimpleMeshFactory : EditorWindow
         public List<Material> Materials = new List<Material>();
         public int CurrentMaterialIndex = 0;
 
-        public MeshEntry()
+        public MeshContext()
         {
             ExportSettings = new ExportSettings();
             Materials.Add(null); // デフォルトマテリアルスロット（slot 0）
@@ -67,8 +72,19 @@ public partial class SimpleMeshFactory : EditorWindow
     }
 
 
-    private List<MeshEntry> _meshList = new List<MeshEntry>();
-    private int _selectedIndex = -1;
+    // ================================================================
+    // モデルコンテキスト（Phase 1: ModelContext導入）
+    // ================================================================
+    private ModelContext _model = new ModelContext();
+
+    // 後方互換プロパティ（既存コードを壊さない）
+    private List<MeshContext> _meshList => _model.MeshList;
+    private int _selectedIndex
+    {
+        get => _model.SelectedIndex;
+        set => _model.SelectedIndex = value;
+    }
+
     private Vector2 _vertexScroll;
 
     // ================================================================
@@ -77,12 +93,12 @@ public partial class SimpleMeshFactory : EditorWindow
     private List<Material> _defaultMaterials = new List<Material> { null };
     private int _defaultCurrentMaterialIndex = 0;
     private bool _autoSetDefaultMaterials = true;
-
+    /*
     // ================================================================
     // マテリアル管理（後方互換）
     // ================================================================
     // 旧: private Material _registeredMaterial;
-    // 新: MeshEntry.Materialsに移行。以下は後方互換用プロパティ
+    // 新: MeshContext.Materialsに移行。以下は後方互換用プロパティ
 
     /// <summary>
     /// 登録マテリアル（後方互換）- 選択中メッシュのカレントマテリアルを参照
@@ -91,22 +107,19 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         get
         {
-            if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
-                return _meshList[_selectedIndex].GetCurrentMaterial();
-            return null;
+            return _model.CurrentEntry?.GetCurrentMaterial();
         }
         set
         {
-            if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+            var entry = _model.CurrentEntry;
+            if (entry != null && entry.CurrentMaterialIndex >= 0 && entry.CurrentMaterialIndex < entry.Materials.Count)
             {
-                var entry = _meshList[_selectedIndex];
-                if (entry.CurrentMaterialIndex >= 0 && entry.CurrentMaterialIndex < entry.Materials.Count)
-                    entry.Materials[entry.CurrentMaterialIndex] = value;
+                entry.Materials[entry.CurrentMaterialIndex] = value;
             }
         }
 
     }
-
+    */
     // ================================================================
     // プレビュー
     // ================================================================
@@ -255,6 +268,9 @@ public partial class SimpleMeshFactory : EditorWindow
         // MeshListをUndoコントローラーに設定
         _undoController.SetMeshList(_meshList, OnMeshListChanged);
 
+        // ModelContextにWorkPlaneを設定
+        _model.WorkPlane = _undoController.WorkPlane;
+
         // Show Verticesと編集モードを同期
         _vertexEditMode = _showVertices;
 
@@ -343,10 +359,10 @@ public partial class SimpleMeshFactory : EditorWindow
         if (_meshTopology == null)
             return;
 
-        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        var entry = _model.CurrentEntry;
+        if (entry != null)
         {
-            var entry = _meshList[_selectedIndex];
-            _meshTopology.SetMeshData(entry?.Data);
+            _meshTopology.SetMeshData(entry.Data);
         }
         else
         {
@@ -407,9 +423,9 @@ public partial class SimpleMeshFactory : EditorWindow
     private void OnUndoRedoPerformed()
     {
         // コンテキストからメッシュに反映
-        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        var entry = _model.CurrentEntry;
+        if (entry != null)
         {
-            var entry = _meshList[_selectedIndex];
             var ctx = _undoController.MeshContext;
 
             if (ctx.MeshData != null)
@@ -498,17 +514,17 @@ public partial class SimpleMeshFactory : EditorWindow
             if (newIndex != _selectedIndex && newIndex >= -1 && newIndex < _meshList.Count)
             {
                 _selectedIndex = newIndex;
-                if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+                var newEntry = _model.CurrentEntry;
+                if (newEntry != null)
                 {
-                    var entry = _meshList[_selectedIndex];
                     // MeshContextに必要な情報だけを設定
-                    _undoController.MeshContext.MeshData = entry.Data;
-                    _undoController.MeshContext.TargetMesh = entry.Mesh;
-                    _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
-                    _undoController.MeshContext.Materials = entry.Materials != null 
-                        ? new List<Material>(entry.Materials) 
+                    _undoController.MeshContext.MeshData = newEntry.Data;
+                    _undoController.MeshContext.TargetMesh = newEntry.UnityMesh;
+                    _undoController.MeshContext.OriginalPositions = newEntry.OriginalPositions;
+                    _undoController.MeshContext.Materials = newEntry.Materials != null 
+                        ? new List<Material>(newEntry.Materials) 
                         : new List<Material>();
-                    _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+                    _undoController.MeshContext.CurrentMaterialIndex = newEntry.CurrentMaterialIndex;
                 }
             }
         }
@@ -529,15 +545,14 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // 選択中のエントリをMeshContextに設定
         // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
-        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        var entry = _model.CurrentEntry;
+        if (entry != null)
         {
-            var entry = _meshList[_selectedIndex];
-            
             // MeshContextに必要な情報だけを設定
             if (_undoController != null)
             {
                 _undoController.MeshContext.MeshData = entry.Data;
-                _undoController.MeshContext.TargetMesh = entry.Mesh;
+                _undoController.MeshContext.TargetMesh = entry.UnityMesh;
                 _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
                 _undoController.MeshContext.Materials = entry.Materials != null 
                     ? new List<Material>(entry.Materials) 
@@ -550,19 +565,18 @@ public partial class SimpleMeshFactory : EditorWindow
         else
         {
             _selectedIndex = _meshList.Count > 0 ? 0 : -1;
-            if (_selectedIndex >= 0)
+            var fallbackEntry = _model.CurrentEntry;
+            if (fallbackEntry != null)
             {
-                var entry = _meshList[_selectedIndex];
-                
                 if (_undoController != null)
                 {
-                    _undoController.MeshContext.MeshData = entry.Data;
-                    _undoController.MeshContext.TargetMesh = entry.Mesh;
-                    _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
-                    _undoController.MeshContext.Materials = entry.Materials != null 
-                        ? new List<Material>(entry.Materials) 
+                    _undoController.MeshContext.MeshData = fallbackEntry.Data;
+                    _undoController.MeshContext.TargetMesh = fallbackEntry.UnityMesh;
+                    _undoController.MeshContext.OriginalPositions = fallbackEntry.OriginalPositions;
+                    _undoController.MeshContext.Materials = fallbackEntry.Materials != null 
+                        ? new List<Material>(fallbackEntry.Materials) 
                         : new List<Material>();
-                    _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+                    _undoController.MeshContext.CurrentMaterialIndex = fallbackEntry.CurrentMaterialIndex;
                 }
                 
                 InitVertexOffsets(updateCamera: false);
@@ -583,25 +597,25 @@ public partial class SimpleMeshFactory : EditorWindow
 
 
 
-    private void SyncMeshFromData(MeshEntry entry)
+    private void SyncMeshFromData(MeshContext entry)
     {
-        if (entry.Data == null || entry.Mesh == null)
+        if (entry.Data == null || entry.UnityMesh == null)
             return;
 
         var newMesh = entry.Data.ToUnityMesh();
-        entry.Mesh.Clear();
-        entry.Mesh.vertices = newMesh.vertices;
-        entry.Mesh.uv = newMesh.uv;
-        entry.Mesh.normals = newMesh.normals;
+        entry.UnityMesh.Clear();
+        entry.UnityMesh.vertices = newMesh.vertices;
+        entry.UnityMesh.uv = newMesh.uv;
+        entry.UnityMesh.normals = newMesh.normals;
 
         // サブメッシュ対応
-        entry.Mesh.subMeshCount = newMesh.subMeshCount;
+        entry.UnityMesh.subMeshCount = newMesh.subMeshCount;
         for (int i = 0; i < newMesh.subMeshCount; i++)
         {
-            entry.Mesh.SetTriangles(newMesh.GetTriangles(i), i);
+            entry.UnityMesh.SetTriangles(newMesh.GetTriangles(i), i);
         }
 
-        entry.Mesh.RecalculateBounds();
+        entry.UnityMesh.RecalculateBounds();
 
         DestroyImmediate(newMesh);
 
@@ -617,7 +631,7 @@ public partial class SimpleMeshFactory : EditorWindow
     /// <summary>
     /// MeshDataからオフセットを更新
     /// </summary>
-    private void UpdateOffsetsFromData(MeshEntry entry)
+    private void UpdateOffsetsFromData(MeshContext entry)
     {
         if (entry.Data == null || _vertexOffsets == null)
             return;
@@ -662,8 +676,8 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         foreach (var entry in _meshList)
         {
-            if (entry.Mesh != null)
-                DestroyImmediate(entry.Mesh);
+            if (entry.UnityMesh != null)
+                DestroyImmediate(entry.UnityMesh);
         }
         _meshList.Clear();
     }

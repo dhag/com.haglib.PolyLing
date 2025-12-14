@@ -99,7 +99,7 @@ public class NohMaskMeshCreatorWindow : EditorWindow
     // ================================================================
     public static NohMaskMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<NohMaskMeshCreatorWindow>(true, "Create Noh Mask Mesh", true);
+        var window = GetWindow<NohMaskMeshCreatorWindow>(true, "Create Noh Mask UnityMesh", true);
         window.minSize = new Vector2(420, 750);
         window.maxSize = new Vector2(500, 900);
         window._onMeshDataCreated = onMeshDataCreated;

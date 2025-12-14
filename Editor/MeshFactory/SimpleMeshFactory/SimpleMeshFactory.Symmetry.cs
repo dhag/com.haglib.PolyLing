@@ -14,8 +14,8 @@ public partial class SimpleMeshFactory
     // フィールド
     // ================================================================
 
-    [SerializeField]
-    private SymmetrySettings _symmetrySettings = new SymmetrySettings();
+    // 後方互換プロパティ（ModelContextに移行）
+    private SymmetrySettings _symmetrySettings => _model.SymmetrySettings;
 
     // ミラー描画用マテリアル
     private Material _mirrorMaterial;
@@ -30,7 +30,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 対称設定へのアクセス
     /// </summary>
-    public SymmetrySettings SymmetrySettings => _symmetrySettings;
+    public SymmetrySettings SymmetrySettings => _model.SymmetrySettings;
 
     // ================================================================
     // UI描画
@@ -97,7 +97,7 @@ public partial class SimpleMeshFactory
             EditorGUILayout.LabelField("Display Options", EditorStyles.miniLabel);
 
             EditorGUI.BeginChangeCheck();
-            bool showMesh = EditorGUILayout.Toggle("Mirror Mesh", _symmetrySettings.ShowMirrorMesh);
+            bool showMesh = EditorGUILayout.Toggle("Mirror UnityMesh", _symmetrySettings.ShowMirrorMesh);
             bool showWire = EditorGUILayout.Toggle("Mirror Wireframe", _symmetrySettings.ShowMirrorWireframe);
             bool showPlane = EditorGUILayout.Toggle("Symmetry Plane", _symmetrySettings.ShowSymmetryPlane);
             float alpha = EditorGUILayout.Slider("Mirror Alpha", _symmetrySettings.MirrorAlpha, 0.1f, 1f);
@@ -122,7 +122,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ミラーメッシュを描画（PreviewRenderUtility用）
     /// </summary>
-    private void DrawMirroredMesh(MeshEntry entry, Mesh mesh)
+    private void DrawMirroredMesh(MeshContext entry, Mesh mesh)
     {
         if (!_symmetrySettings.IsEnabled || !_symmetrySettings.ShowMirrorMesh)
             return;

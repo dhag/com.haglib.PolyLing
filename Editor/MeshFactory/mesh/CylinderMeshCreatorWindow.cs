@@ -86,7 +86,7 @@ public class CylinderMeshCreatorWindow : EditorWindow
     // ================================================================
     public static CylinderMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<CylinderMeshCreatorWindow>(true, "Create Cylinder Mesh", true);
+        var window = GetWindow<CylinderMeshCreatorWindow>(true, "Create Cylinder UnityMesh", true);
         window.minSize = new Vector2(400, 600);
         window.maxSize = new Vector2(500, 800);
         window._onMeshDataCreated = onMeshDataCreated;

@@ -77,7 +77,7 @@ public class SphereMeshCreatorWindow : EditorWindow
     // ================================================================
     public static SphereMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<SphereMeshCreatorWindow>(true, "Create Sphere Mesh", true);
+        var window = GetWindow<SphereMeshCreatorWindow>(true, "Create Sphere UnityMesh", true);
         window.minSize = new Vector2(400, 500);
         window.maxSize = new Vector2(500, 700);
         window._onMeshDataCreated = onMeshDataCreated;

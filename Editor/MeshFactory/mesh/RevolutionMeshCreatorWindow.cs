@@ -177,7 +177,7 @@ public class RevolutionMeshCreatorWindow : EditorWindow
     // ================================================================
     public static RevolutionMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<RevolutionMeshCreatorWindow>(true, "Create Revolution Mesh", true);
+        var window = GetWindow<RevolutionMeshCreatorWindow>(true, "Create Revolution UnityMesh", true);
         window.minSize = new Vector2(750, 650);
         window.maxSize = new Vector2(1000, 900);
         window._onMeshDataCreated = onMeshDataCreated;

@@ -21,13 +21,13 @@ public partial class SimpleMeshFactory
         {
             EditorGUILayout.LabelField("Vertex Editor", EditorStyles.boldLabel);
 
-            if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count)
+            var entry = _model.CurrentEntry;
+            if (entry == null)
             {
                 EditorGUILayout.HelpBox("メッシュを選択してください", MessageType.Info);
                 return;
             }
 
-            var entry = _meshList[_selectedIndex];
             var meshData = entry.Data;
 
             if (meshData == null)
@@ -58,7 +58,7 @@ public partial class SimpleMeshFactory
                 if (_undoController != null && before != null)
                 {
                     var after = _undoController.CaptureMeshDataSnapshot();
-                    _undoController.RecordTopologyChange(before, after, "Reset Mesh");
+                    _undoController.RecordTopologyChange(before, after, "Reset UnityMesh");
                 }
             }
 
@@ -83,7 +83,7 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(4);
             }
 
-            if (GUILayout.Button("Save Mesh Asset..."))
+            if (GUILayout.Button("Save UnityMesh Asset..."))
             {
                 SaveMesh(entry);
             }
@@ -219,7 +219,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マテリアルUIを描画
     /// </summary>
-    private void DrawMaterialUI(MeshEntry entry)
+    private void DrawMaterialUI(MeshContext entry)
     {
         EditorGUILayout.LabelField("Materials", EditorStyles.miniBoldLabel);
 
@@ -326,7 +326,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 選択面へのマテリアル適用UI
     /// </summary>
-    private void DrawApplyMaterialToSelectionUI(MeshEntry entry)
+    private void DrawApplyMaterialToSelectionUI(MeshContext entry)
     {
         if (entry.Data == null || _selectionState == null)
             return;
@@ -368,7 +368,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 選択された面にマテリアルを適用
     /// </summary>
-    private void ApplyMaterialToSelectedFaces(MeshEntry entry, int materialIndex)
+    private void ApplyMaterialToSelectedFaces(MeshContext entry, int materialIndex)
     {
         if (entry.Data == null || _selectionState == null)
             return;
@@ -418,7 +418,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マテリアルスロットを削除
     /// </summary>
-    private void RemoveMaterialSlot(MeshEntry entry, int index)
+    private void RemoveMaterialSlot(MeshContext entry, int index)
     {
         // 最後の1つは削除不可
         if (entry.Materials.Count <= 1)
@@ -496,9 +496,8 @@ public partial class SimpleMeshFactory
         _isSliderDragging = false;
 
         if (_sliderDragStartOffsets == null || _vertexOffsets == null) return;
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
-
-        var entry = _meshList[_selectedIndex];
+        var entry = _model.CurrentEntry;
+        if (entry == null) return;
 
         // 変更された頂点を検出
         var changedIndices = new List<int>();
@@ -531,7 +530,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// メッシュをリセット
     /// </summary>
-    private void ResetMesh(MeshEntry entry)
+    private void ResetMesh(MeshContext entry)
     {
         if (entry.Data == null || entry.OriginalPositions == null)
             return;
@@ -567,7 +566,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マテリアル一括追加ドロップエリア
     /// </summary>
-    private void DrawMaterialDropArea(MeshEntry entry)
+    private void DrawMaterialDropArea(MeshContext entry)
     {
         EditorGUILayout.Space(4);
 
@@ -653,7 +652,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マテリアル情報をUndoコンテキストに同期
     /// </summary>
-    private void SyncMaterialsToUndoContext(MeshEntry entry)
+    private void SyncMaterialsToUndoContext(MeshContext entry)
     {
         if (_undoController?.MeshContext != null && entry != null)
         {
@@ -678,16 +677,17 @@ public partial class SimpleMeshFactory
         Debug.Log($"[MaterialUndo] Recorded: {description}");
 
         // 自動デフォルト設定がONの場合、デフォルトを更新
-        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        var currentEntry = _model.CurrentEntry;
+        if (currentEntry != null)
         {
-            AutoUpdateDefaultMaterials(_meshList[_selectedIndex]);
+            AutoUpdateDefaultMaterials(currentEntry);
         }
     }
 
     /// <summary>
     /// 現在のマテリアルリストをデフォルトに設定
     /// </summary>
-    private void SetCurrentMaterialsAsDefault(MeshEntry entry)
+    private void SetCurrentMaterialsAsDefault(MeshContext entry)
     {
         if (entry == null || entry.Materials == null)
             return;
@@ -739,7 +739,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 自動デフォルト設定がONの場合、現在のマテリアルをデフォルトに設定（Undo記録なし、内部用）
     /// </summary>
-    private void AutoUpdateDefaultMaterials(MeshEntry entry)
+    private void AutoUpdateDefaultMaterials(MeshContext entry)
     {
         if (!_autoSetDefaultMaterials || entry == null || entry.Materials == null)
             return;

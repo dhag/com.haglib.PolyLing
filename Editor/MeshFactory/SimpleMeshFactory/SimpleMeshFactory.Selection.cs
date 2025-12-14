@@ -15,11 +15,8 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void SelectAllVertices()
     {
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count)
-            return;
-
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null)
+        var entry = _model.CurrentEntry;
+        if (entry?.Data == null)
             return;
 
         var oldSelection = new HashSet<int>(_selectedVertices);
@@ -39,11 +36,8 @@ public partial class SimpleMeshFactory
 
     private void InvertSelection()
     {
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count)
-            return;
-
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null)
+        var entry = _model.CurrentEntry;
+        if (entry?.Data == null)
             return;
 
         var oldSelection = new HashSet<int>(_selectedVertices);
@@ -82,10 +76,8 @@ public partial class SimpleMeshFactory
     private void DeleteSelectedVertices()
     {
         if (_selectedVertices.Count == 0) return;
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
-
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null) return;
+        var entry = _model.CurrentEntry;
+        if (entry?.Data == null) return;
 
         // スナップショット取得（操作前）
         var before = MeshDataSnapshot.Capture(_undoController.MeshContext);
@@ -186,10 +178,8 @@ public partial class SimpleMeshFactory
     private void MergeSelectedVertices()
     {
         if (_selectedVertices.Count < 2) return;
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
-
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null) return;
+        var entry = _model.CurrentEntry;
+        if (entry?.Data == null) return;
 
         // スナップショット取得（操作前）
         var before = MeshDataSnapshot.Capture(_undoController.MeshContext);
@@ -335,7 +325,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// キーボードショートカット処理
     /// </summary>
-    private void HandleKeyboardShortcuts(Event e, MeshEntry entry)
+    private void HandleKeyboardShortcuts(Event e, MeshContext entry)
     {
         switch (e.keyCode)
         {

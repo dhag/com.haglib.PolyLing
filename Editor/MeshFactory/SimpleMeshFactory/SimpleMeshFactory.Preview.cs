@@ -21,15 +21,15 @@ public partial class SimpleMeshFactory
             GUILayout.ExpandWidth(true),
             GUILayout.ExpandHeight(true));
 
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count || _preview == null)
+        var entry = _model.CurrentEntry;
+        if (entry == null || _preview == null)
         {
             EditorGUI.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
             EditorGUI.LabelField(rect, "Select a mesh", EditorStyles.centeredGreyMiniLabel);
             return;
         }
 
-        var entry = _meshList[_selectedIndex];
-        var mesh = entry.Mesh;
+        var mesh = entry.UnityMesh;
 
         float dist = _cameraDistance;
         Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
@@ -106,7 +106,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マルチマテリアル対応でメッシュを描画
     /// </summary>
-    private void DrawMeshWithMaterials(MeshEntry entry, Mesh mesh)
+    private void DrawMeshWithMaterials(MeshContext entry, Mesh mesh)
     {
         if (mesh == null)
             return;

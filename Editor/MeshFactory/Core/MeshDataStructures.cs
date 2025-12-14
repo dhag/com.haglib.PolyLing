@@ -2,7 +2,7 @@
 // 頂点ベースのメッシュデータ構造
 // - Vertex: 位置 + 複数UV + 複数法線
 // - Face: N角形対応（三角形、四角形、Nゴン）+ マテリアルインデックス
-// - MeshData: Unity Mesh との相互変換（サブメッシュ対応）
+// - MeshData: Unity UnityMesh との相互変換（サブメッシュ対応）
 
 using System;
 using System.Collections.Generic;
@@ -134,7 +134,7 @@ namespace MeshFactory.Data
         /// <summary>各頂点の法線サブインデックス（Vertex.Normals[n]への参照）</summary>
         public List<int> NormalIndices = new List<int>();
 
-        /// <summary>マテリアルインデックス（MeshEntry.Materialsへの参照）</summary>
+        /// <summary>マテリアルインデックス（MeshContext.Materialsへの参照）</summary>
         public int MaterialIndex = 0;
 
         // === プロパティ ===
@@ -306,7 +306,7 @@ namespace MeshFactory.Data
 
     /// <summary>
     /// メッシュデータ（頂点 + 面）
-    /// Unity Mesh との相互変換機能付き（サブメッシュ対応）
+    /// Unity UnityMesh との相互変換機能付き（サブメッシュ対応）
     /// </summary>
     [Serializable]
     public class MeshData
@@ -317,8 +317,8 @@ namespace MeshFactory.Data
         /// <summary>面リスト</summary>
         public List<Face> Faces = new List<Face>();
 
-        /// <summary>メッシュ名</summary>
-        public string Name = "Mesh";
+        /// <summary>メッシュデータ名</summary>
+        public string Name = "UnityMesh";
 
         // === プロパティ ===
 
@@ -405,7 +405,7 @@ namespace MeshFactory.Data
             Faces.Add(face);
         }
 
-        // === Unity Mesh 変換 ===
+        // === Unity UnityMesh 変換 ===
 
         /// <summary>
         /// Unity Mesh に変換（サブメッシュ対応）
@@ -420,7 +420,7 @@ namespace MeshFactory.Data
         {
             var mesh = new Mesh { name = Name };
 
-            // Unity Mesh 用のリスト（展開後）
+            // Unity UnityMesh 用のリスト（展開後）
             var unityVertices = new List<Vector3>();
             var unityNormals = new List<Vector3>();
             var unityUVs = new List<Vector2>();
@@ -516,7 +516,7 @@ namespace MeshFactory.Data
             return mesh;
         }
         /// <summary>
-        /// Unity Mesh に変換（単一マテリアル、後方互換用）
+        /// Unity UnityMesh に変換（単一マテリアル、後方互換用）
         /// </summary>
         public Mesh ToUnityMeshSingleMaterial()
         {
@@ -586,7 +586,7 @@ namespace MeshFactory.Data
             return mesh;
         }
 
-        // === Unity Mesh からインポート ===
+        // === Unity UnityMesh からインポート ===
 
         /// <summary>
         /// Unity Mesh からインポート

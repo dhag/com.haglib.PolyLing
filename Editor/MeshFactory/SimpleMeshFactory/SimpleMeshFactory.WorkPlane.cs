@@ -85,9 +85,8 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void OnExportSettingsFromSelectionClicked()
     {
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
-        var entry = _meshList[_selectedIndex];
-        if (entry.ExportSettings == null) return;
+        var entry = _model.CurrentEntry;
+        if (entry?.ExportSettings == null) return;
 
         entry.ExportSettings.CopyFromSelection();
         Repaint();
@@ -98,9 +97,8 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void OnExportSettingsResetClicked()
     {
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
-        var entry = _meshList[_selectedIndex];
-        if (entry.ExportSettings == null) return;
+        var entry = _model.CurrentEntry;
+        if (entry?.ExportSettings == null) return;
 
         entry.ExportSettings.Reset();
         Repaint();
@@ -116,9 +114,8 @@ public partial class SimpleMeshFactory
         var workPlane = _undoController.WorkPlane;
         if (workPlane == null || workPlane.IsLocked) return;
 
-        if (_selectedIndex < 0 || _selectedIndex >= _meshList.Count) return;
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null || _selectedVertices.Count == 0) return;
+        var entry = _model.CurrentEntry;
+        if (entry?.Data == null || _selectedVertices.Count == 0) return;
 
         var before = workPlane.CreateSnapshot();
 
@@ -181,14 +178,11 @@ public partial class SimpleMeshFactory
 
         // グリッドサイズ（バウンディングボックスに基づく）
         float gridSize = 0.5f;
-        if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+        var entry = _model.CurrentEntry;
+        if (entry?.Data != null)
         {
-            var entry = _meshList[_selectedIndex];
-            if (entry.Data != null)
-            {
-                var bounds = entry.Data.CalculateBounds();
-                gridSize = Mathf.Max(bounds.size.magnitude * 0.3f, 0.3f);
-            }
+            var bounds = entry.Data.CalculateBounds();
+            gridSize = Mathf.Max(bounds.size.magnitude * 0.3f, 0.3f);
         }
 
         Handles.BeginGUI();

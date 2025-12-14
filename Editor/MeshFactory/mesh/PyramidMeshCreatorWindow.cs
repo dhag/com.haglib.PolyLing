@@ -75,7 +75,7 @@ public class PyramidMeshCreatorWindow : EditorWindow
     // ================================================================
     public static PyramidMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<PyramidMeshCreatorWindow>(true, "Create Pyramid Mesh", true);
+        var window = GetWindow<PyramidMeshCreatorWindow>(true, "Create Pyramid UnityMesh", true);
         window.minSize = new Vector2(400, 520);
         window.maxSize = new Vector2(500, 720);
         window._onMeshDataCreated = onMeshDataCreated;

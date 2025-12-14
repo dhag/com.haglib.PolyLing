@@ -42,7 +42,7 @@ namespace MeshFactory.UndoSystem
         /// <summary>元の頂点位置（リセット用）</summary>
         public Vector3[] OriginalPositions;
 
-        // === Unity Mesh 参照 ===
+        // === Unity UnityMesh 参照 ===
 
         /// <summary>実際のMeshオブジェクト</summary>
         public Mesh TargetMesh;
@@ -59,7 +59,7 @@ namespace MeshFactory.UndoSystem
 
         // === マテリアル（マルチマテリアル対応） ===
 
-        /// <summary>マテリアルリスト（MeshEntry.Materialsと同期）</summary>
+        /// <summary>マテリアルリスト（MeshContext.Materialsと同期）</summary>
         public List<Material> Materials = new List<Material> { null };
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
@@ -1479,7 +1479,7 @@ namespace MeshFactory.UndoSystem
     public class MeshListContext
     {
         /// <summary>メッシュエントリリスト（SimpleMeshFactoryから参照を受け取る）</summary>
-        public List<SimpleMeshFactory.MeshEntry> MeshList;
+        public List<SimpleMeshFactory.MeshContext> MeshList;
 
         /// <summary>現在の選択インデックス</summary>
         public int SelectedIndex;
@@ -1489,9 +1489,9 @@ namespace MeshFactory.UndoSystem
     }
 
     /// <summary>
-    /// MeshEntryの完全なスナップショット
+    /// MeshContextの完全なスナップショット
     /// </summary>
-    public class MeshEntrySnapshot
+    public class MeshContextSnapshot
     {
         public string Name;
         public MeshData Data;                    // Clone
@@ -1501,13 +1501,13 @@ namespace MeshFactory.UndoSystem
         public Vector3[] OriginalPositions;
 
         /// <summary>
-        /// MeshEntryからスナップショットを作成
+        /// MeshContextからスナップショットを作成
         /// </summary>
-        public static MeshEntrySnapshot Capture(SimpleMeshFactory.MeshEntry entry)
+        public static MeshContextSnapshot Capture(SimpleMeshFactory.MeshContext entry)
         {
             if (entry == null) return null;
 
-            return new MeshEntrySnapshot
+            return new MeshContextSnapshot
             {
                 Name = entry.Name,
                 Data = entry.Data?.Clone(),
@@ -1521,11 +1521,11 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
-        /// スナップショットからMeshEntryを復元
+        /// スナップショットからMeshContextを復元
         /// </summary>
-        public SimpleMeshFactory.MeshEntry ToMeshEntry()
+        public SimpleMeshFactory.MeshContext ToMeshContext()
         {
-            var entry = new SimpleMeshFactory.MeshEntry
+            var entry = new SimpleMeshFactory.MeshContext
             {
                 Name = Name,
                 Data = Data?.Clone(),
@@ -1540,9 +1540,9 @@ namespace MeshFactory.UndoSystem
             // Unity Meshを再生成
             if (entry.Data != null)
             {
-                entry.Mesh = entry.Data.ToUnityMesh();
-                entry.Mesh.name = Name;
-                entry.Mesh.hideFlags = HideFlags.HideAndDontSave;
+                entry.UnityMesh = entry.Data.ToUnityMesh();
+                entry.UnityMesh.name = Name;
+                entry.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             }
 
             return entry;
@@ -1566,10 +1566,10 @@ namespace MeshFactory.UndoSystem
     public class MeshListChangeRecord : MeshListUndoRecord
     {
         /// <summary>削除されたエントリ（インデックス + スナップショット）</summary>
-        public List<(int Index, MeshEntrySnapshot Snapshot)> RemovedEntries = new List<(int, MeshEntrySnapshot)>();
+        public List<(int Index, MeshContextSnapshot Snapshot)> RemovedEntries = new List<(int, MeshContextSnapshot)>();
 
         /// <summary>追加されたエントリ（インデックス + スナップショット）</summary>
-        public List<(int Index, MeshEntrySnapshot Snapshot)> AddedEntries = new List<(int, MeshEntrySnapshot)>();
+        public List<(int Index, MeshContextSnapshot Snapshot)> AddedEntries = new List<(int, MeshContextSnapshot)>();
 
         /// <summary>変更前の選択インデックス</summary>
         public int OldSelectedIndex;
@@ -1587,9 +1587,9 @@ namespace MeshFactory.UndoSystem
                 {
                     // Meshを破棄
                     var entry = ctx.MeshList[index];
-                    if (entry.Mesh != null)
+                    if (entry.UnityMesh != null)
                     {
-                        Object.DestroyImmediate(entry.Mesh);
+                        Object.DestroyImmediate(entry.UnityMesh);
                     }
                     ctx.MeshList.RemoveAt(index);
                 }
@@ -1599,7 +1599,7 @@ namespace MeshFactory.UndoSystem
             var sortedRemoved = RemovedEntries.OrderBy(e => e.Index).ToList();
             foreach (var (index, snapshot) in sortedRemoved)
             {
-                var entry = snapshot.ToMeshEntry();
+                var entry = snapshot.ToMeshContext();
                 int insertIndex = Mathf.Clamp(index, 0, ctx.MeshList.Count);
                 ctx.MeshList.Insert(insertIndex, entry);
             }
@@ -1621,9 +1621,9 @@ namespace MeshFactory.UndoSystem
                 {
                     // Meshを破棄
                     var entry = ctx.MeshList[index];
-                    if (entry.Mesh != null)
+                    if (entry.UnityMesh != null)
                     {
-                        Object.DestroyImmediate(entry.Mesh);
+                        Object.DestroyImmediate(entry.UnityMesh);
                     }
                     ctx.MeshList.RemoveAt(index);
                 }
@@ -1633,7 +1633,7 @@ namespace MeshFactory.UndoSystem
             var sortedAdded = AddedEntries.OrderBy(e => e.Index).ToList();
             foreach (var (index, snapshot) in sortedAdded)
             {
-                var entry = snapshot.ToMeshEntry();
+                var entry = snapshot.ToMeshContext();
                 int insertIndex = Mathf.Clamp(index, 0, ctx.MeshList.Count);
                 ctx.MeshList.Insert(insertIndex, entry);
             }

@@ -80,7 +80,7 @@ public class PlaneMeshCreatorWindow : EditorWindow
     // ================================================================
     public static PlaneMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<PlaneMeshCreatorWindow>(true, "Create Plane Mesh", true);
+        var window = GetWindow<PlaneMeshCreatorWindow>(true, "Create Plane UnityMesh", true);
         window.minSize = new Vector2(400, 520);
         window.maxSize = new Vector2(500, 720);
         window._onMeshDataCreated = onMeshDataCreated;

@@ -157,7 +157,7 @@ public partial class SimpleMeshFactory : EditorWindow
     // ToolContext更新
     // ================================================================
 
-    private void UpdateToolContext(MeshEntry entry, Rect rect, Vector3 camPos, float camDist)
+    private void UpdateToolContext(MeshContext entry, Rect rect, Vector3 camPos, float camDist)
     {
         var ctx = _toolManager.Context;
 
@@ -182,6 +182,14 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.SelectionState = _selectionState;
         ctx.TopologyCache = _meshTopology;
         ctx.SelectionOps = _selectionOps;
+
+        // ModelContext（Phase 3追加）
+        ctx.Model = _model;
+        ctx.AddMeshContext = AddMeshContextWithUndo;
+        ctx.RemoveMeshContext = RemoveMeshContextWithUndo;
+        ctx.SelectMeshContext = SelectMeshContentWithUndo;
+        ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
+        ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
 
         // UndoコンテキストにもMaterialsを同期
         if (_undoController?.MeshContext != null && entry != null)
@@ -271,5 +279,200 @@ public partial class SimpleMeshFactory : EditorWindow
             _toolManager.OnToolChanged -= OnToolChanged;
             _toolManager = null;
         }
+    }
+
+    // ================================================================
+    // メッシュリスト操作（Undo対応）- Phase 3追加
+    // ================================================================
+
+    /// <summary>
+    /// メッシュエントリを追加（Undo対応）
+    /// </summary>
+    private void AddMeshContextWithUndo(MeshContext entry)
+    {
+        if (entry == null) return;
+
+        int oldIndex = _selectedIndex;
+        int insertIndex = _meshList.Count;
+
+        _meshList.Add(entry);
+        _selectedIndex = insertIndex;
+
+        // Undo記録
+        if (_undoController != null)
+        {
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshContextAdd(entry, insertIndex, oldIndex, _selectedIndex);
+        }
+
+        InitVertexOffsets();
+        LoadEntryToUndoController(_model.CurrentEntry);
+        Repaint();
+    }
+
+    /// <summary>
+    /// メッシュエントリを削除（Undo対応）
+    /// </summary>
+    private void RemoveMeshContextWithUndo(int index)
+    {
+        if (index < 0 || index >= _meshList.Count) return;
+
+        var entry = _meshList[index];
+        int oldIndex = _selectedIndex;
+
+        // メッシュリソース解放
+        if (entry.UnityMesh != null)
+        {
+            DestroyImmediate(entry.UnityMesh);
+        }
+
+        _meshList.RemoveAt(index);
+
+        // インデックス調整
+        if (_selectedIndex >= _meshList.Count)
+            _selectedIndex = _meshList.Count - 1;
+        else if (_selectedIndex > index)
+            _selectedIndex--;
+
+        // Undo記録
+        if (_undoController != null)
+        {
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            var removedList = new List<(int Index, MeshContext Entry)> { (index, entry) };
+            _undoController.RecordMeshEntriesRemove(removedList, oldIndex, _selectedIndex);
+        }
+
+        // 選択クリア
+        _selectedVertices.Clear();
+        _selectionState?.ClearAll();
+
+        if (_model.HasValidSelection)
+        {
+            InitVertexOffsets();
+            LoadEntryToUndoController(_model.CurrentEntry);
+        }
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// メッシュを選択（Undo対応）
+    /// </summary>
+    private void SelectMeshContentWithUndo(int index)
+    {
+        if (index < -1 || index >= _meshList.Count) return;
+        if (index == _selectedIndex) return;
+
+        int oldIndex = _selectedIndex;
+        _selectedIndex = index;
+
+        // Undo記録（選択変更のみ）
+        if (_undoController != null)
+        {
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            // MeshListChangeRecordで選択変更を記録
+            var record = new MeshListChangeRecord
+            {
+                OldSelectedIndex = oldIndex,
+                NewSelectedIndex = _selectedIndex
+            };
+            _undoController.MeshListStack.Record(record, "Select UnityMesh");
+        }
+
+        // 選択クリア
+        _selectedVertices.Clear();
+        _selectionState?.ClearAll();
+
+        if (_model.HasValidSelection)
+        {
+            InitVertexOffsets();
+            LoadEntryToUndoController(_model.CurrentEntry);
+        }
+
+        Repaint();
+    }
+
+    /// <summary>
+    /// メッシュを複製（Undo対応）
+    /// </summary>
+    private void DuplicateMeshContentWithUndo(int index)
+    {
+        if (index < 0 || index >= _meshList.Count) return;
+
+        var original = _meshList[index];
+
+        // MeshContextを複製
+        var clone = new MeshContext
+        {
+            Name = original.Name + " (Copy)",
+            Data = original.Data?.Clone(),
+            UnityMesh = original.Data?.ToUnityMesh(),
+            OriginalPositions = original.OriginalPositions?.ToArray(),
+            ExportSettings = new ExportSettings
+            {
+                UseLocalTransform = original.ExportSettings?.UseLocalTransform ?? false,
+                Position = original.ExportSettings?.Position ?? Vector3.zero,
+                Rotation = original.ExportSettings?.Rotation ?? Vector3.zero,
+                Scale = original.ExportSettings?.Scale ?? Vector3.one
+            },
+            Materials = new List<Material>(original.Materials ?? new List<Material> { null }),
+            CurrentMaterialIndex = original.CurrentMaterialIndex
+        };
+
+        int oldIndex = _selectedIndex;
+        int insertIndex = index + 1;
+
+        _meshList.Insert(insertIndex, clone);
+        _selectedIndex = insertIndex;
+
+        // Undo記録
+        if (_undoController != null)
+        {
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshContextAdd(clone, insertIndex, oldIndex, _selectedIndex);
+        }
+
+        InitVertexOffsets();
+        LoadEntryToUndoController(_model.CurrentEntry);
+        Repaint();
+    }
+
+    /// <summary>
+    /// メッシュの順序を変更（Undo対応）
+    /// </summary>
+    private void ReorderMeshContentWithUndo(int fromIndex, int toIndex)
+    {
+        if (fromIndex < 0 || fromIndex >= _meshList.Count) return;
+        if (toIndex < 0 || toIndex >= _meshList.Count) return;
+        if (fromIndex == toIndex) return;
+
+        int oldSelectedIndex = _selectedIndex;
+
+        var entry = _meshList[fromIndex];
+        _meshList.RemoveAt(fromIndex);
+        _meshList.Insert(toIndex, entry);
+
+        // 選択インデックス調整
+        if (_selectedIndex == fromIndex)
+        {
+            _selectedIndex = toIndex;
+        }
+        else if (fromIndex < _selectedIndex && toIndex >= _selectedIndex)
+        {
+            _selectedIndex--;
+        }
+        else if (fromIndex > _selectedIndex && toIndex <= _selectedIndex)
+        {
+            _selectedIndex++;
+        }
+
+        // Undo記録
+        if (_undoController != null)
+        {
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshContextReorder(entry, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
+        }
+
+        Repaint();
     }
 }

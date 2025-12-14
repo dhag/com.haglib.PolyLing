@@ -14,7 +14,7 @@ public partial class SimpleMeshFactory
     // ================================================================
     // 入力処理（MeshDataベース）
     // ================================================================
-    private void HandleInput(Rect rect, MeshEntry entry, Vector3 camPos, Vector3 lookAt, float camDist)
+    private void HandleInput(Rect rect, MeshContext entry, Vector3 camPos, Vector3 lookAt, float camDist)
     {
         Event e = Event.current;
         Vector2 mousePos = e.mousePosition;
@@ -132,7 +132,7 @@ public partial class SimpleMeshFactory
     /// MouseDown処理（共通の選択処理）
     /// </summary>
     private void OnMouseDown(Event e, Vector2 mousePos, MeshData meshData, Rect rect,
-        Vector3 camPos, Vector3 lookAt, float handleRadius, MeshEntry entry)
+        Vector3 camPos, Vector3 lookAt, float handleRadius, MeshContext entry)
     {
         if (_editState != VertexEditState.Idle)
             return;
@@ -169,7 +169,7 @@ public partial class SimpleMeshFactory
     /// MouseDrag処理
     /// </summary>
     private void OnMouseDrag(Event e, Vector2 mousePos, MeshData meshData, Rect rect,
-        Vector3 camPos, Vector3 lookAt, float camDist, MeshEntry entry)
+        Vector3 camPos, Vector3 lookAt, float camDist, MeshContext entry)
     {
         switch (_editState)
         {
@@ -207,7 +207,7 @@ public partial class SimpleMeshFactory
     /// MouseUp処理（共通の選択処理）
     /// </summary>
     private void OnMouseUp(Event e, Vector2 mousePos, MeshData meshData, Rect rect,
-        Vector3 camPos, Vector3 lookAt, float handleRadius, MeshEntry entry)
+        Vector3 camPos, Vector3 lookAt, float handleRadius, MeshContext entry)
     {
         bool shiftHeld = e.shift;
         bool ctrlHeld = e.control;
@@ -233,7 +233,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// プレビュー外でのMouseUp処理
     /// </summary>
-    private void HandleMouseUpOutside(MeshEntry entry, Rect rect, Vector3 camPos, Vector3 lookAt)
+    private void HandleMouseUpOutside(MeshContext entry, Rect rect, Vector3 camPos, Vector3 lookAt)
     {
         // ツールの状態をリセット
         _currentTool?.Reset();
@@ -304,13 +304,10 @@ public partial class SimpleMeshFactory
             oldWorkPlane = workPlane.CreateSnapshot();
 
             // WorkPlane原点を更新
-            if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+            var entry = _model.CurrentEntry;
+            if (entry?.Data != null && newSelection.Count > 0)
             {
-                var entry = _meshList[_selectedIndex];
-                if (entry.Data != null && newSelection.Count > 0)
-                {
-                    workPlane.UpdateOriginFromSelection(entry.Data, newSelection);
-                }
+                workPlane.UpdateOriginFromSelection(entry.Data, newSelection);
             }
 
             // 変更後のスナップショット
@@ -353,14 +350,11 @@ public partial class SimpleMeshFactory
         {
             oldWorkPlane = workPlane.CreateSnapshot();
 
-            if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+            var entry = _model.CurrentEntry;
+            var affectedVertices = _selectionState.GetAllAffectedVertices(entry?.Data);
+            if (entry?.Data != null && affectedVertices.Count > 0)
             {
-                var entry = _meshList[_selectedIndex];
-                var affectedVertices = _selectionState.GetAllAffectedVertices(entry?.Data);
-                if (entry?.Data != null && affectedVertices.Count > 0)
-                {
-                    workPlane.UpdateOriginFromSelection(entry.Data, affectedVertices);
-                }
+                workPlane.UpdateOriginFromSelection(entry.Data, affectedVertices);
             }
 
             newWorkPlane = workPlane.CreateSnapshot();
@@ -525,14 +519,11 @@ public partial class SimpleMeshFactory
             workPlane.AutoUpdateOriginOnSelection &&
             !workPlane.IsLocked)
         {
-            if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+            var entry = _model.CurrentEntry;
+            var affectedVertices = _selectionState.GetAllAffectedVertices(entry?.Data);
+            if (entry?.Data != null && affectedVertices.Count > 0)
             {
-                var entry = _meshList[_selectedIndex];
-                var affectedVertices = _selectionState.GetAllAffectedVertices(entry?.Data);
-                if (entry?.Data != null && affectedVertices.Count > 0)
-                {
-                    workPlane.UpdateOriginFromSelection(entry.Data, affectedVertices);
-                }
+                workPlane.UpdateOriginFromSelection(entry.Data, affectedVertices);
             }
 
             newWorkPlane = workPlane.CreateSnapshot();

@@ -77,7 +77,7 @@ public class CapsuleMeshCreatorWindow : EditorWindow
     // ================================================================
     public static CapsuleMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<CapsuleMeshCreatorWindow>(true, "Create Capsule Mesh", true);
+        var window = GetWindow<CapsuleMeshCreatorWindow>(true, "Create Capsule UnityMesh", true);
         window.minSize = new Vector2(400, 580);
         window.maxSize = new Vector2(500, 780);
         window._onMeshDataCreated = onMeshDataCreated;

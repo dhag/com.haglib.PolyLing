@@ -16,7 +16,7 @@ public partial class SimpleMeshFactory
     {
         using (new EditorGUILayout.VerticalScope(GUILayout.Width(350)))
         {
-            EditorGUILayout.LabelField("Mesh Factory", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("UnityMesh Factory", EditorStyles.boldLabel);
 
             // ================================================================
             // Undo/Redo ボタン（上部固定）
@@ -117,8 +117,8 @@ public partial class SimpleMeshFactory
             {
                 EditorGUI.indentLevel++;
 
-                // Empty Mesh
-                if (GUILayout.Button("+ Empty Mesh"))
+                // Empty UnityMesh
+                if (GUILayout.Button("+ Empty UnityMesh"))
                 {
                     CreateEmptyMesh();
                 }
@@ -135,9 +135,9 @@ public partial class SimpleMeshFactory
 
                 EditorGUILayout.Space(3);
 
-                // Load Mesh
-                EditorGUILayout.LabelField("Load Mesh", EditorStyles.miniBoldLabel);
-                if (GUILayout.Button("From Mesh Asset..."))
+                // Load UnityMesh
+                EditorGUILayout.LabelField("Load UnityMesh", EditorStyles.miniBoldLabel);
+                if (GUILayout.Button("From UnityMesh Asset..."))
                 {
                     LoadMeshFromAsset();
                 }
@@ -152,8 +152,8 @@ public partial class SimpleMeshFactory
 
                 EditorGUILayout.Space(3);
 
-                // Create Mesh
-                EditorGUILayout.LabelField("Create Mesh", EditorStyles.miniBoldLabel);
+                // Create UnityMesh
+                EditorGUILayout.LabelField("Create UnityMesh", EditorStyles.miniBoldLabel);
 
                 // ★追加モードUI（Undo対応）
                 EditorGUILayout.BeginHorizontal();
@@ -174,7 +174,7 @@ public partial class SimpleMeshFactory
                 }
 
                 // 追加先がない場合は警告
-                if (_addToCurrentMesh && (_selectedIndex < 0 || _selectedIndex >= _meshList.Count))
+                if (_addToCurrentMesh && !_model.HasValidSelection)
                 {
                     EditorGUILayout.LabelField("(No mesh selected)", EditorStyles.miniLabel);
                 }
@@ -278,14 +278,10 @@ public partial class SimpleMeshFactory
 
                     int totalVertices = 0;
 
-
-                    if (_selectedIndex >= 0 && _selectedIndex < _meshList.Count)
+                    var entry = _model.CurrentEntry;
+                    if (entry?.Data != null)
                     {
-                        var entry = _meshList[_selectedIndex];
-                        if (entry.Data != null)
-                        {
-                            totalVertices = entry.Data.VertexCount;
-                        }
+                        totalVertices = entry.Data.VertexCount;
                     }
 
                     //EditorGUILayout.LabelField($"Selected: {_selectedVertices.Count} / {totalVertices}", EditorStyles.miniLabel);
@@ -344,6 +340,13 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(3);
 
                 // ================================================================
+                // Tool Windows セクション（Phase 4追加）
+                // ================================================================
+                DrawToolWindowsSection();
+
+                EditorGUILayout.Space(3);
+
+                // ================================================================
                 // Work Plane セクション
                 // ================================================================
                 // WorkPlane UIは内部でFoldout管理
@@ -370,7 +373,7 @@ public partial class SimpleMeshFactory
             // ================================================================
             // メッシュリスト
             // ================================================================
-            EditorGUILayout.LabelField("Mesh List", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField("UnityMesh List", EditorStyles.miniBoldLabel);
 
             for (int i = 0; i < _meshList.Count; i++)
             {
@@ -554,15 +557,15 @@ public partial class SimpleMeshFactory
     }
     */
     /// <summary>
-    /// MeshEntryをUndoコントローラーに読み込む
+    /// MeshContextをUndoコントローラーに読み込む
     /// </summary>
-    private void LoadEntryToUndoController(MeshEntry entry)
+    private void LoadEntryToUndoController(MeshContext entry)
     {
         if (_undoController == null || entry == null)
             return;
 
         // 参照を共有（Cloneしない）- AddFaceToolなどで直接変更されるため
-        _undoController.SetMeshData(entry.Data, entry.Mesh);
+        _undoController.SetMeshData(entry.Data, entry.UnityMesh);
         _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
         // 選択状態を同期
         _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);

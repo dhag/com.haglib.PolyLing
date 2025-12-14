@@ -32,6 +32,7 @@ public class CubeMeshCreatorWindow : EditorWindow
         public Vector3 Pivot;
         public float RotationX, RotationY;
         public bool LinkTopBottom;  // Top/Bottom連動フラグ
+        public bool LinkWHD;        // Width/Height/Depth連動フラグ
 
         public static CubeParams Default => new CubeParams
         {
@@ -47,7 +48,8 @@ public class CubeMeshCreatorWindow : EditorWindow
             Pivot = Vector3.zero,
             RotationX = 20f,
             RotationY = 30f,
-            LinkTopBottom = false
+            LinkTopBottom = false,
+            LinkWHD = false
         };
 
         public bool Equals(CubeParams o) =>
@@ -63,7 +65,8 @@ public class CubeMeshCreatorWindow : EditorWindow
             Pivot == o.Pivot &&
             Mathf.Approximately(RotationX, o.RotationX) &&
             Mathf.Approximately(RotationY, o.RotationY) &&
-            LinkTopBottom == o.LinkTopBottom;
+            LinkTopBottom == o.LinkTopBottom &&
+            LinkWHD == o.LinkWHD;
 
         public override bool Equals(object obj) => obj is CubeParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
@@ -81,12 +84,17 @@ public class CubeMeshCreatorWindow : EditorWindow
     private Vector2 _scrollPos;
     private ParameterUndoHelper<CubeParams> _undoHelper;
 
+    // WHD連動時の前回値（どの値が変化したか検出用）
+    private float _prevWidthForWHD;
+    private float _prevHeightForWHD;
+    private float _prevDepthForWHD;
+
     // ================================================================
     // ウインドウ初期化
     // ================================================================
     public static CubeMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
     {
-        var window = GetWindow<CubeMeshCreatorWindow>(true, "Create Rounded Cube Mesh", true);
+        var window = GetWindow<CubeMeshCreatorWindow>(true, "Create Rounded Cube UnityMesh", true);
         window.minSize = new Vector2(400, 700);
         window.maxSize = new Vector2(500, 900);
         window._onMeshDataCreated = onMeshDataCreated;
@@ -99,6 +107,7 @@ public class CubeMeshCreatorWindow : EditorWindow
         InitPreview();
         InitUndo();
         UpdatePreviewMesh();
+        SyncPrevWHDValues();
     }
 
     private void OnDisable()
@@ -113,9 +122,19 @@ public class CubeMeshCreatorWindow : EditorWindow
             "CubeCreator",
             "Cube Parameters",
             () => _params,
-            (p) => { _params = p; UpdatePreviewMesh(); },
+            (p) => { _params = p; SyncPrevWHDValues(); UpdatePreviewMesh(); },
             () => Repaint()
         );
+    }
+
+    /// <summary>
+    /// WHD連動用の前回値を同期
+    /// </summary>
+    private void SyncPrevWHDValues()
+    {
+        _prevWidthForWHD = _params.WidthTop;
+        _prevHeightForWHD = _params.Height;
+        _prevDepthForWHD = _params.DepthTop;
     }
 
     private void InitPreview()
@@ -174,22 +193,86 @@ public class CubeMeshCreatorWindow : EditorWindow
         _params.MeshName = EditorGUILayout.TextField("Name", _params.MeshName);
         EditorGUILayout.Space(5);
 
-        // Top/Bottom連動チェックボックス
-        bool prevLink = _params.LinkTopBottom;
-        _params.LinkTopBottom = EditorGUILayout.Toggle("Link Top/Bottom Size", _params.LinkTopBottom);
+        // ====== 連動オプション ======
+        EditorGUILayout.LabelField("Link Options", EditorStyles.miniBoldLabel);
 
-        // 連動ONに切り替わった瞬間、Top優先でBottomを同期
-        if (_params.LinkTopBottom && !prevLink)
+        // WHD連動チェックボックス
+        bool prevLinkWHD = _params.LinkWHD;
+        _params.LinkWHD = EditorGUILayout.Toggle("Link W/H/D (Cube Mode)", _params.LinkWHD);
+
+        // WHD連動ONに切り替わった瞬間、Width優先で全て同期
+        if (_params.LinkWHD && !prevLinkWHD)
         {
-            _params.WidthBottom = _params.WidthTop;
-            _params.DepthBottom = _params.DepthTop;
+            float unifiedSize = _params.WidthTop;
+            _params.WidthTop = _params.WidthBottom = unifiedSize;
+            _params.DepthTop = _params.DepthBottom = unifiedSize;
+            _params.Height = unifiedSize;
+            SyncPrevWHDValues();
+        }
+
+        // WHD連動がOFFの場合のみTop/Bottom連動を表示
+        if (!_params.LinkWHD)
+        {
+            // Top/Bottom連動チェックボックス
+            bool prevLink = _params.LinkTopBottom;
+            _params.LinkTopBottom = EditorGUILayout.Toggle("Link Top/Bottom Size", _params.LinkTopBottom);
+
+            // 連動ONに切り替わった瞬間、Top優先でBottomを同期
+            if (_params.LinkTopBottom && !prevLink)
+            {
+                _params.WidthBottom = _params.WidthTop;
+                _params.DepthBottom = _params.DepthTop;
+            }
+        }
+        else
+        {
+            // WHD連動時はTop/Bottomも強制連動
+            _params.LinkTopBottom = true;
         }
 
         EditorGUILayout.Space(5);
 
-        if (_params.LinkTopBottom)
+        // ====== サイズ入力 ======
+        if (_params.LinkWHD)
         {
-            // 連動モード: Size（共通）
+            // WHD連動モード: 単一のSizeスライダー群
+            EditorGUILayout.LabelField("Size (Linked)", EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                float newWidth = EditorGUILayout.Slider("Width (X)", _params.WidthTop, 0.1f, 10f);
+                float newHeight = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);
+                float newDepth = EditorGUILayout.Slider("Depth (Z)", _params.DepthTop, 0.1f, 10f);
+
+                // どの値が変化したか検出して、変化した値で全てを同期
+                float targetSize = _params.WidthTop; // デフォルト
+
+                if (!Mathf.Approximately(newWidth, _prevWidthForWHD))
+                {
+                    targetSize = newWidth;
+                }
+                else if (!Mathf.Approximately(newHeight, _prevHeightForWHD))
+                {
+                    targetSize = newHeight;
+                }
+                else if (!Mathf.Approximately(newDepth, _prevDepthForWHD))
+                {
+                    targetSize = newDepth;
+                }
+
+                // 全ての値を同期
+                _params.WidthTop = _params.WidthBottom = targetSize;
+                _params.DepthTop = _params.DepthBottom = targetSize;
+                _params.Height = targetSize;
+
+                // 前回値を更新
+                _prevWidthForWHD = targetSize;
+                _prevHeightForWHD = targetSize;
+                _prevDepthForWHD = targetSize;
+            }
+        }
+        else if (_params.LinkTopBottom)
+        {
+            // Top/Bottom連動モード: Size（共通）
             EditorGUILayout.LabelField("Size", EditorStyles.miniBoldLabel);
             using (new EditorGUI.IndentLevelScope())
             {
@@ -220,8 +303,12 @@ public class CubeMeshCreatorWindow : EditorWindow
             }
         }
 
-        EditorGUILayout.Space(5);
-        _params.Height = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);
+        // Height (WHD連動時以外)
+        if (!_params.LinkWHD)
+        {
+            EditorGUILayout.Space(5);
+            _params.Height = EditorGUILayout.Slider("Height (Y)", _params.Height, 0.1f, 10f);
+        }
 
         EditorGUILayout.Space(5);
         EditorGUILayout.LabelField("Corner", EditorStyles.miniBoldLabel);

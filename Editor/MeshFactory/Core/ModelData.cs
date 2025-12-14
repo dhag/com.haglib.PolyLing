@@ -31,7 +31,7 @@ namespace MeshFactory.Serialization
         public string updatedAt;
 
         /// <summary>メッシュエントリリスト</summary>
-        public List<MeshEntryData> meshEntries = new List<MeshEntryData>();
+        public List<MeshContextData> meshContexts = new List<MeshContextData>();
 
         /// <summary>WorkPlane設定</summary>
         public WorkPlaneData workPlane;
@@ -62,7 +62,7 @@ namespace MeshFactory.Serialization
     /// 個別メッシュエントリのデータ
     /// </summary>
     [Serializable]
-    public class MeshEntryData
+    public class MeshContextData
     {
         /// <summary>メッシュ名</summary>
         public string name;

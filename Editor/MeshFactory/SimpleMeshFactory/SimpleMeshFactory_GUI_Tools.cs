@@ -2,11 +2,13 @@
 // ToolManager統合版
 // Phase 1: UI描画をToolManagerと連携
 // ToolButtonLayoutを削除し、登録順で2列自動レイアウト
+// Phase 4: ToolWindow対応
 
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Tools;
+using MeshFactory.Tools.Windows;
 using MeshFactory.Selection;
 
 
@@ -175,6 +177,47 @@ public partial class SimpleMeshFactory
         _undoController.EndEditorStateDrag($"Change {tool.DisplayName} Settings");
 
         Repaint();
+    }
+
+    // ================================================================
+    // ToolWindows セクション（Phase 4追加）
+    // ================================================================
+
+    private bool _foldToolWindows = false;
+
+    /// <summary>
+    /// ToolWindowsセクションを描画
+    /// </summary>
+    private void DrawToolWindowsSection()
+    {
+        _foldToolWindows = EditorGUILayout.Foldout(_foldToolWindows, "Tool Windows", true);
+        if (!_foldToolWindows)
+            return;
+
+        EditorGUI.indentLevel++;
+
+        // UnityMesh List Window（統合版）
+        if (GUILayout.Button("Open UnityMesh List Window"))
+        {
+            MeshListWindow.Open(_toolManager?.Context);
+        }
+
+        // 登録されたToolWindow
+        var windows = ToolWindowRegistry.Windows;
+        if (windows != null && windows.Length > 0)
+        {
+            EditorGUILayout.Space(3);
+
+            foreach (var (title, open) in windows)
+            {
+                if (GUILayout.Button($"Open {title}"))
+                {
+                    open?.Invoke(_toolManager?.Context);
+                }
+            }
+        }
+
+        EditorGUI.indentLevel--;
     }
 
 }

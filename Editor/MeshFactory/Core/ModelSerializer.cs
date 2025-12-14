@@ -1,6 +1,7 @@
 // Assets/Editor/MeshFactory/Serialization/ModelSerializer.cs
 // モデルファイル (.mfmodel) のインポート/エクスポート
 // Phase7: マルチマテリアル対応版
+// Phase5: ModelContext統合
 
 using System;
 using System.Collections.Generic;
@@ -11,6 +12,10 @@ using UnityEditor;
 using Unity.Plastic.Newtonsoft.Json;
 using MeshFactory.Data;
 using MeshFactory.Tools;
+using MeshFactory.Model;
+
+// MeshContextはSimpleMeshFactoryのネストクラスを参照
+using MeshContext = SimpleMeshFactory.MeshContext;
 
 namespace MeshFactory.Serialization
 {
@@ -156,13 +161,13 @@ namespace MeshFactory.Serialization
         }
 
         // ================================================================
-        // 変換: MeshData → MeshEntryData
+        // 変換: MeshData → MeshContextData
         // ================================================================
 
         /// <summary>
-        /// MeshDataをMeshEntryDataに変換
+        /// MeshDataをMeshContextDataに変換
         /// </summary>
-        public static MeshEntryData ToMeshEntryData(
+        public static MeshContextData ToMeshContextData(
             MeshData meshData,
             string name,
             ExportSettings exportSettings,
@@ -173,7 +178,7 @@ namespace MeshFactory.Serialization
             if (meshData == null)
                 return null;
 
-            var entryData = new MeshEntryData
+            var entryData = new MeshContextData
             {
                 name = name ?? meshData.Name ?? "Untitled"
             };
@@ -272,13 +277,13 @@ namespace MeshFactory.Serialization
         }
 
         // ================================================================
-        // 変換: MeshEntryData → MeshData
+        // 変換: MeshContextData → MeshData
         // ================================================================
 
         /// <summary>
-        /// MeshEntryDataをMeshDataに変換
+        /// MeshContextDataをMeshDataに変換
         /// </summary>
-        public static MeshData ToMeshData(MeshEntryData entryData)
+        public static MeshData ToMeshData(MeshContextData entryData)
         {
             if (entryData == null)
                 return null;
@@ -313,7 +318,7 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// マテリアルリストを復元
         /// </summary>
-        public static List<Material> ToMaterials(MeshEntryData entryData)
+        public static List<Material> ToMaterials(MeshContextData entryData)
         {
             var result = new List<Material>();
 
@@ -407,12 +412,206 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// 選択状態を復元
         /// </summary>
-        public static HashSet<int> ToSelectedVertices(MeshEntryData entryData)
+        public static HashSet<int> ToSelectedVertices(MeshContextData entryData)
         {
             if (entryData?.selectedVertices == null)
                 return new HashSet<int>();
 
             return new HashSet<int>(entryData.selectedVertices);
+        }
+
+        // ================================================================
+        // ModelContext統合（Phase 5追加）
+        // ================================================================
+
+        /// <summary>
+        /// ModelContextからModelDataを作成（エクスポート用）
+        /// </summary>
+        /// <param name="model">ModelContext</param>
+        /// <param name="workPlane">WorkPlane（オプション）</param>
+        /// <param name="editorState">EditorStateData（オプション）</param>
+        /// <returns>シリアライズ可能なModelData</returns>
+        public static ModelData FromModelContext(
+            ModelContext model,
+            WorkPlane workPlane = null,
+            EditorStateData editorState = null)
+        {
+            if (model == null)
+                return null;
+
+            var modelData = new ModelData
+            {
+                version = CurrentVersion,
+                name = model.Name ?? "Untitled",
+                createdAt = DateTime.Now.ToString("o"),
+                updatedAt = DateTime.Now.ToString("o")
+            };
+
+            // MeshContextをMeshContextDataに変換
+            for (int i = 0; i < model.MeshCount; i++)
+            {
+                var entry = model.GetEntry(i);
+                if (entry == null) continue;
+
+                var entryData = ToMeshContextData(
+                    entry.Data,
+                    entry.Name,
+                    entry.ExportSettings,
+                    null,  // 選択は後で設定
+                    entry.Materials,
+                    entry.CurrentMaterialIndex
+                );
+
+                if (entryData != null)
+                {
+                    modelData.meshContexts.Add(entryData);
+                }
+            }
+
+            // WorkPlane
+            if (workPlane != null)
+            {
+                modelData.workPlane = ToWorkPlaneData(workPlane);
+            }
+
+            // EditorState
+            modelData.editorState = editorState;
+
+            return modelData;
+        }
+
+        /// <summary>
+        /// ModelDataからModelContextを復元（インポート用）
+        /// </summary>
+        /// <param name="modelData">インポートしたModelData</param>
+        /// <param name="model">復元先のModelContext（nullの場合は新規作成）</param>
+        /// <returns>復元されたModelContext</returns>
+        public static ModelContext ToModelContext(ModelData modelData, ModelContext model = null)
+        {
+            if (modelData == null)
+                return null;
+
+            // ModelContextを準備
+            if (model == null)
+            {
+                model = new ModelContext();
+            }
+            else
+            {
+                model.Clear();
+            }
+
+            model.Name = modelData.name;
+            model.FilePath = null;  // 呼び出し元で設定
+
+            // MeshContextDataからMeshContextを復元
+            foreach (var entryData in modelData.meshContexts)
+            {
+                var meshData = ToMeshData(entryData);
+                if (meshData == null) continue;
+
+                var entry = new MeshContext
+                {
+                    Name = entryData.name ?? "UnityMesh",
+                    Data = meshData,
+                    UnityMesh = meshData.ToUnityMesh(),
+                    OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
+                    ExportSettings = ToExportSettings(entryData.exportSettings),
+                    Materials = ToMaterials(entryData),
+                    CurrentMaterialIndex = entryData.currentMaterialIndex
+                };
+
+                model.Add(entry);
+            }
+
+            return model;
+        }
+
+        /// <summary>
+        /// MeshContextをMeshContextDataに変換（簡易版）
+        /// </summary>
+        public static MeshContextData FromMeshContext(MeshContext entry, HashSet<int> selectedVertices = null)
+        {
+            if (entry == null)
+                return null;
+
+            return ToMeshContextData(
+                entry.Data,
+                entry.Name,
+                entry.ExportSettings,
+                selectedVertices,
+                entry.Materials,
+                entry.CurrentMaterialIndex
+            );
+        }
+
+        /// <summary>
+        /// MeshContextDataからMeshContextを復元（簡易版）
+        /// </summary>
+        public static MeshContext ToMeshContext(MeshContextData entryData)
+        {
+            if (entryData == null)
+                return null;
+
+            var meshData = ToMeshData(entryData);
+            if (meshData == null)
+                return null;
+
+            return new MeshContext
+            {
+                Name = entryData.name ?? "UnityMesh",
+                Data = meshData,
+                UnityMesh = meshData.ToUnityMesh(),
+                OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
+                ExportSettings = ToExportSettings(entryData.exportSettings),
+                Materials = ToMaterials(entryData),
+                CurrentMaterialIndex = entryData.currentMaterialIndex
+            };
+        }
+
+        /// <summary>
+        /// EditorStateDataを作成
+        /// </summary>
+        public static EditorStateData CreateEditorStateData(
+            float rotationX,
+            float rotationY,
+            float cameraDistance,
+            Vector3 cameraTarget,
+            bool showWireframe,
+            bool showVertices,
+            bool vertexEditMode,
+            int selectedMeshIndex,
+            string currentToolName = null)
+        {
+            return new EditorStateData
+            {
+                rotationX = rotationX,
+                rotationY = rotationY,
+                cameraDistance = cameraDistance,
+                cameraTarget = new float[] { cameraTarget.x, cameraTarget.y, cameraTarget.z },
+                showWireframe = showWireframe,
+                showVertices = showVertices,
+                vertexEditMode = vertexEditMode,
+                selectedMeshIndex = selectedMeshIndex,
+                currentToolName = currentToolName
+            };
+        }
+
+        /// <summary>
+        /// MeshContextに選択頂点情報を含めてMeshContextDataに変換し、ModelDataに設定
+        /// </summary>
+        public static void SetSelectedVerticesForEntry(
+            ModelData modelData,
+            int meshIndex,
+            HashSet<int> selectedVertices)
+        {
+            if (modelData == null || meshIndex < 0 || meshIndex >= modelData.meshContexts.Count)
+                return;
+
+            if (selectedVertices != null && selectedVertices.Count > 0)
+            {
+                modelData.meshContexts[meshIndex].selectedVertices = selectedVertices.ToList();
+            }
         }
     }
 }

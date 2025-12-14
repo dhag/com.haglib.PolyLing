@@ -1,6 +1,7 @@
 // Tools/ToolContext.cs
 // 編集ツールに渡されるコンテキスト
 // SelectionState/TopologyCache対応版
+// Phase 3: ModelContext統合
 
 using System;
 using System.Collections.Generic;
@@ -8,6 +9,10 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using MeshFactory.Selection;
+using MeshFactory.Model;
+
+// MeshContentはSimpleMeshFactoryのネストクラスを参照
+using MeshContext = SimpleMeshFactory.MeshContext;
 
 namespace MeshFactory.Tools
 {
@@ -76,6 +81,40 @@ namespace MeshFactory.Tools
 
         /// <summary>マテリアルリスト（読み取り専用参照）</summary>
         public IReadOnlyList<Material> Materials { get; set; }
+
+        // === モデルコンテキスト（Phase 3追加） ===
+
+        /// <summary>モデルコンテキスト（メッシュリスト管理）</summary>
+        public ModelContext Model { get; set; }
+
+        /// <summary>現在選択中のメッシュエントリ（便利プロパティ）</summary>
+        public MeshContext CurrentMeshContent => Model?.CurrentEntry;
+
+        /// <summary>メッシュリスト（読み取り専用）</summary>
+        public IReadOnlyList<MeshContext> MeshList => Model?.MeshList;
+
+        /// <summary>選択中のメッシュインデックス</summary>
+        public int SelectedMeshIndex => Model?.SelectedIndex ?? -1;
+
+        /// <summary>有効なメッシュが選択されているか</summary>
+        public bool HasValidMeshSelection => Model?.HasValidSelection ?? false;
+
+        // === メッシュリスト操作コールバック（Undo対応） ===
+
+        /// <summary>メッシュエントリを追加（Undo対応）</summary>
+        public Action<MeshContext> AddMeshContext { get; set; }
+
+        /// <summary>メッシュエントリを削除（Undo対応）</summary>
+        public Action<int> RemoveMeshContext { get; set; }
+
+        /// <summary>メッシュを選択（Undo対応）</summary>
+        public Action<int> SelectMeshContext { get; set; }
+
+        /// <summary>メッシュを複製（Undo対応）</summary>
+        public Action<int> DuplicateMeshContent { get; set; }
+
+        /// <summary>メッシュの順序を変更（Undo対応）</summary>
+        public Action<int, int> ReorderMeshContext { get; set; }
 
         // === コールバック ===
 
