@@ -294,7 +294,7 @@ namespace MeshFactory.Tools
 
         private void StartExtrude(ToolContext ctx)
         {
-            bool selectionChanged = false;
+            //bool selectionChanged = false;
 
             if (_hitEdgeOnMouseDown.HasValue)
             {
@@ -304,7 +304,7 @@ namespace MeshFactory.Tools
                     ctx.SelectionState.Edges.Clear();
                     ctx.SelectionState.Lines.Clear();
                     ctx.SelectionState.Edges.Add(edge);
-                    selectionChanged = true;
+                    //selectionChanged = true;
                 }
             }
 
@@ -315,7 +315,7 @@ namespace MeshFactory.Tools
                     ctx.SelectionState.Edges.Clear();
                     ctx.SelectionState.Lines.Clear();
                     ctx.SelectionState.Lines.Add(_hitLineOnMouseDown);
-                    selectionChanged = true;
+                    //selectionChanged = true;
                 }
             }
 

@@ -326,17 +326,17 @@ public partial class SimpleMeshFactory
 
             // 面のスクリーン座標を取得
             var screenPoints = new Vector2[face.VertexCount];
-            bool allVisible = true;
+            //bool allVisible = true;
 
             for (int i = 0; i < face.VertexCount; i++)
             {
                 var worldPos = meshData.Vertices[face.VertexIndices[i]].Position;
                 screenPoints[i] = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
 
-                if (!previewRect.Contains(screenPoints[i]))
-                {
-                    allVisible = false;
-                }
+                //if (!previewRect.Contains(screenPoints[i]))
+                //{
+                //    allVisible = false;
+                //}
             }
 
             // 塗りつぶし（部分的に見える場合も描画）

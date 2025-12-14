@@ -185,7 +185,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private bool _foldPrimitive = true;
 
     // ペイン幅
-    private float _leftPaneWidth = 280f;
+    //private float _leftPaneWidth = 280f;
     private float _rightPaneWidth = 220f;
     private bool _foldSelection = true;
     private bool _foldTools = true;
