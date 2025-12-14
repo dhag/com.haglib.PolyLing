@@ -85,10 +85,10 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void OnExportSettingsFromSelectionClicked()
     {
-        var entry = _model.CurrentEntry;
-        if (entry?.ExportSettings == null) return;
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.ExportSettings == null) return;
 
-        entry.ExportSettings.CopyFromSelection();
+        meshContext.ExportSettings.CopyFromSelection();
         Repaint();
     }
 
@@ -97,10 +97,10 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void OnExportSettingsResetClicked()
     {
-        var entry = _model.CurrentEntry;
-        if (entry?.ExportSettings == null) return;
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.ExportSettings == null) return;
 
-        entry.ExportSettings.Reset();
+        meshContext.ExportSettings.Reset();
         Repaint();
     }
 
@@ -114,12 +114,12 @@ public partial class SimpleMeshFactory
         var workPlane = _undoController.WorkPlane;
         if (workPlane == null || workPlane.IsLocked) return;
 
-        var entry = _model.CurrentEntry;
-        if (entry?.Data == null || _selectedVertices.Count == 0) return;
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.Data == null || _selectedVertices.Count == 0) return;
 
         var before = workPlane.CreateSnapshot();
 
-        if (workPlane.UpdateOriginFromSelection(entry.Data, _selectedVertices))
+        if (workPlane.UpdateOriginFromSelection(meshContext.Data, _selectedVertices))
         {
             var after = workPlane.CreateSnapshot();
             if (before.IsDifferentFrom(after))
@@ -178,10 +178,10 @@ public partial class SimpleMeshFactory
 
         // グリッドサイズ（バウンディングボックスに基づく）
         float gridSize = 0.5f;
-        var entry = _model.CurrentEntry;
-        if (entry?.Data != null)
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.Data != null)
         {
-            var bounds = entry.Data.CalculateBounds();
+            var bounds = meshContext.Data.CalculateBounds();
             gridSize = Mathf.Max(bounds.size.magnitude * 0.3f, 0.3f);
         }
 

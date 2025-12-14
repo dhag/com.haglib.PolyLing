@@ -178,13 +178,13 @@ namespace MeshFactory.Serialization
             if (meshData == null)
                 return null;
 
-            var entryData = new MeshContextData
+            var contextData = new MeshContextData
             {
                 name = name ?? meshData.Name ?? "Untitled"
             };
 
             // ExportSettings
-            entryData.exportSettings = ToExportSettingsData(exportSettings);
+            contextData.exportSettings = ToExportSettingsData(exportSettings);
 
             // Vertices
             foreach (var vertex in meshData.Vertices)
@@ -193,7 +193,7 @@ namespace MeshFactory.Serialization
                 vertexData.SetPosition(vertex.Position);
                 vertexData.SetUVs(vertex.UVs);
                 vertexData.SetNormals(vertex.Normals);
-                entryData.vertices.Add(vertexData);
+                contextData.vertices.Add(vertexData);
             }
 
             // Faces（MaterialIndex含む）
@@ -206,13 +206,13 @@ namespace MeshFactory.Serialization
                     ni = new List<int>(face.NormalIndices),
                     mi = face.MaterialIndex != 0 ? face.MaterialIndex : (int?)null  // 0はデフォルトなので省略
                 };
-                entryData.faces.Add(faceData);
+                contextData.faces.Add(faceData);
             }
 
             // Selection
             if (selectedVertices != null && selectedVertices.Count > 0)
             {
-                entryData.selectedVertices = selectedVertices.ToList();
+                contextData.selectedVertices = selectedVertices.ToList();
             }
 
             // Materials（アセットパスとして保存）
@@ -223,18 +223,18 @@ namespace MeshFactory.Serialization
                     if (mat != null)
                     {
                         string assetPath = AssetDatabase.GetAssetPath(mat);
-                        entryData.materials.Add(assetPath ?? "");
+                        contextData.materials.Add(assetPath ?? "");
                     }
                     else
                     {
-                        entryData.materials.Add("");  // null は空文字列
+                        contextData.materials.Add("");  // null は空文字列
                     }
                 }
             }
 
-            entryData.currentMaterialIndex = currentMaterialIndex;
+            contextData.currentMaterialIndex = currentMaterialIndex;
 
-            return entryData;
+            return contextData;
         }
 
         /// <summary>
@@ -283,15 +283,15 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// MeshContextDataをMeshDataに変換
         /// </summary>
-        public static MeshData ToMeshData(MeshContextData entryData)
+        public static MeshData ToMeshData(MeshContextData meshContext)
         {
-            if (entryData == null)
+            if (meshContext == null)
                 return null;
 
-            var meshData = new MeshData(entryData.name);
+            var meshData = new MeshData(meshContext.name);
 
             // Vertices
-            foreach (var vd in entryData.vertices)
+            foreach (var vd in meshContext.vertices)
             {
                 var vertex = new Vertex(vd.GetPosition());
                 vertex.UVs = vd.GetUVs();
@@ -300,7 +300,7 @@ namespace MeshFactory.Serialization
             }
 
             // Faces（MaterialIndex含む）
-            foreach (var fd in entryData.faces)
+            foreach (var fd in meshContext.faces)
             {
                 var face = new Face
                 {
@@ -318,18 +318,18 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// マテリアルリストを復元
         /// </summary>
-        public static List<Material> ToMaterials(MeshContextData entryData)
+        public static List<Material> ToMaterials(MeshContextData meshContextData)
         {
             var result = new List<Material>();
 
-            if (entryData?.materials == null || entryData.materials.Count == 0)
+            if (meshContextData?.materials == null || meshContextData.materials.Count == 0)
             {
                 // デフォルトでスロット0を追加
                 result.Add(null);
                 return result;
             }
 
-            foreach (var path in entryData.materials)
+            foreach (var path in meshContextData.materials)
             {
                 if (string.IsNullOrEmpty(path))
                 {
@@ -412,12 +412,12 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// 選択状態を復元
         /// </summary>
-        public static HashSet<int> ToSelectedVertices(MeshContextData entryData)
+        public static HashSet<int> ToSelectedVertices(MeshContextData meshContext)
         {
-            if (entryData?.selectedVertices == null)
+            if (meshContext?.selectedVertices == null)
                 return new HashSet<int>();
 
-            return new HashSet<int>(entryData.selectedVertices);
+            return new HashSet<int>(meshContext.selectedVertices);
         }
 
         // ================================================================
@@ -448,23 +448,23 @@ namespace MeshFactory.Serialization
             };
 
             // MeshContextをMeshContextDataに変換
-            for (int i = 0; i < model.MeshCount; i++)
+            for (int i = 0; i < model.MeshContextCount; i++)
             {
-                var entry = model.GetEntry(i);
-                if (entry == null) continue;
+                var meshContext = model.GetMeshContext(i);
+                if (meshContext == null) continue;
 
-                var entryData = ToMeshContextData(
-                    entry.Data,
-                    entry.Name,
-                    entry.ExportSettings,
+                var meshContextData = ToMeshContextData(
+                    meshContext.Data,
+                    meshContext.Name,
+                    meshContext.ExportSettings,
                     null,  // 選択は後で設定
-                    entry.Materials,
-                    entry.CurrentMaterialIndex
+                    meshContext.Materials,
+                    meshContext.CurrentMaterialIndex
                 );
 
-                if (entryData != null)
+                if (meshContextData != null)
                 {
-                    modelData.meshContexts.Add(entryData);
+                    modelData.meshContextList.Add(meshContextData);
                 }
             }
 
@@ -505,23 +505,23 @@ namespace MeshFactory.Serialization
             model.FilePath = null;  // 呼び出し元で設定
 
             // MeshContextDataからMeshContextを復元
-            foreach (var entryData in modelData.meshContexts)
+            foreach (var meshContextData in modelData.meshContextList)
             {
-                var meshData = ToMeshData(entryData);
+                var meshData = ToMeshData(meshContextData);
                 if (meshData == null) continue;
 
-                var entry = new MeshContext
+                var context = new MeshContext
                 {
-                    Name = entryData.name ?? "UnityMesh",
+                    Name = meshContextData.name ?? "UnityMesh",
                     Data = meshData,
                     UnityMesh = meshData.ToUnityMesh(),
                     OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
-                    ExportSettings = ToExportSettings(entryData.exportSettings),
-                    Materials = ToMaterials(entryData),
-                    CurrentMaterialIndex = entryData.currentMaterialIndex
+                    ExportSettings = ToExportSettings(meshContextData.exportSettings),
+                    Materials = ToMaterials(meshContextData),
+                    CurrentMaterialIndex = meshContextData.currentMaterialIndex
                 };
 
-                model.Add(entry);
+                model.Add(context);
             }
 
             return model;
@@ -530,42 +530,42 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// MeshContextをMeshContextDataに変換（簡易版）
         /// </summary>
-        public static MeshContextData FromMeshContext(MeshContext entry, HashSet<int> selectedVertices = null)
+        public static MeshContextData FromMeshContext(MeshContext meshContext, HashSet<int> selectedVertices = null)
         {
-            if (entry == null)
+            if (meshContext == null)
                 return null;
 
             return ToMeshContextData(
-                entry.Data,
-                entry.Name,
-                entry.ExportSettings,
+                meshContext.Data,
+                meshContext.Name,
+                meshContext.ExportSettings,
                 selectedVertices,
-                entry.Materials,
-                entry.CurrentMaterialIndex
+                meshContext.Materials,
+                meshContext.CurrentMaterialIndex
             );
         }
 
         /// <summary>
         /// MeshContextDataからMeshContextを復元（簡易版）
         /// </summary>
-        public static MeshContext ToMeshContext(MeshContextData entryData)
+        public static MeshContext ToMeshContext(MeshContextData contextData)
         {
-            if (entryData == null)
+            if (contextData == null)
                 return null;
 
-            var meshData = ToMeshData(entryData);
+            var meshData = ToMeshData(contextData);
             if (meshData == null)
                 return null;
 
             return new MeshContext
             {
-                Name = entryData.name ?? "UnityMesh",
+                Name = contextData.name ?? "UnityMesh",
                 Data = meshData,
                 UnityMesh = meshData.ToUnityMesh(),
                 OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
-                ExportSettings = ToExportSettings(entryData.exportSettings),
-                Materials = ToMaterials(entryData),
-                CurrentMaterialIndex = entryData.currentMaterialIndex
+                ExportSettings = ToExportSettings(contextData.exportSettings),
+                Materials = ToMaterials(contextData),
+                CurrentMaterialIndex = contextData.currentMaterialIndex
             };
         }
 
@@ -600,17 +600,17 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// MeshContextに選択頂点情報を含めてMeshContextDataに変換し、ModelDataに設定
         /// </summary>
-        public static void SetSelectedVerticesForEntry(
+        public static void SetSelectedVerticesForMeshContext(
             ModelData modelData,
             int meshIndex,
             HashSet<int> selectedVertices)
         {
-            if (modelData == null || meshIndex < 0 || meshIndex >= modelData.meshContexts.Count)
+            if (modelData == null || meshIndex < 0 || meshIndex >= modelData.meshContextList.Count)
                 return;
 
             if (selectedVertices != null && selectedVertices.Count > 0)
             {
-                modelData.meshContexts[meshIndex].selectedVertices = selectedVertices.ToList();
+                modelData.meshContextList[meshIndex].selectedVertices = selectedVertices.ToList();
             }
         }
     }

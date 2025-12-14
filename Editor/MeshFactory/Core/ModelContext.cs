@@ -37,25 +37,25 @@ namespace MeshFactory.Model
         // メッシュリスト
         // ================================================================
 
-        /// <summary>メッシュエントリリスト</summary>
-        public List<MeshContext> MeshList { get; } = new List<MeshContext>();
+        /// <summary>メッシュコンテキストリスト</summary>
+        public List<MeshContext> MeshContextList { get; } = new List<MeshContext>();
 
         /// <summary>選択中のメッシュインデックス</summary>
         public int SelectedIndex { get; set; } = -1;
 
-        /// <summary>現在選択中のエントリ（便利プロパティ）</summary>
-        public MeshContext CurrentEntry =>
-            (SelectedIndex >= 0 && SelectedIndex < MeshList.Count)
-                ? MeshList[SelectedIndex] : null;
+        /// <summary>現在選択中のメッシュコンテキスト（便利プロパティ）</summary>
+        public MeshContext CurrentMeshContext =>
+            (SelectedIndex >= 0 && SelectedIndex < MeshContextList.Count)
+                ? MeshContextList[SelectedIndex] : null;
 
         /// <summary>現在のMeshData（便利プロパティ）</summary>
-        public MeshData CurrentMeshData => CurrentEntry?.Data;
+        public MeshData CurrentMeshData => CurrentMeshContext?.Data;
 
-        /// <summary>有効なエントリが選択されているか</summary>
-        public bool HasValidSelection => CurrentEntry != null;
+        /// <summary>有効なメッシュコンテキストが選択されているか</summary>
+        public bool HasValidSelection => CurrentMeshContext != null;
 
         /// <summary>メッシュ数</summary>
-        public int MeshCount => MeshList.Count;
+        public int MeshContextCount => MeshContextList.Count;
 
         // ================================================================
         // WorkPlane
@@ -90,25 +90,25 @@ namespace MeshFactory.Model
 
         /// <summary>メッシュを追加</summary>
         /// <returns>追加されたインデックス</returns>
-        public int Add(MeshContext entry)
+        public int Add(MeshContext meshContext)
         {
-            if (entry == null)
-                throw new ArgumentNullException(nameof(entry));
+            if (meshContext == null)
+                throw new ArgumentNullException(nameof(meshContext));
 
-            MeshList.Add(entry);
+            MeshContextList.Add(meshContext);
             IsDirty = true;
-            return MeshList.Count - 1;
+            return MeshContextList.Count - 1;
         }
 
         /// <summary>メッシュを挿入</summary>
-        public void Insert(int index, MeshContext entry)
+        public void Insert(int index, MeshContext meshContext)
         {
-            if (entry == null)
-                throw new ArgumentNullException(nameof(entry));
-            if (index < 0 || index > MeshList.Count)
+            if (meshContext == null)
+                throw new ArgumentNullException(nameof(meshContext));
+            if (index < 0 || index > MeshContextList.Count)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
-            MeshList.Insert(index, entry);
+            MeshContextList.Insert(index, meshContext);
             IsDirty = true;
 
             // 選択インデックス調整（挿入位置以降は+1）
@@ -120,15 +120,15 @@ namespace MeshFactory.Model
         /// <returns>削除成功したか</returns>
         public bool RemoveAt(int index)
         {
-            if (index < 0 || index >= MeshList.Count)
+            if (index < 0 || index >= MeshContextList.Count)
                 return false;
 
-            MeshList.RemoveAt(index);
+            MeshContextList.RemoveAt(index);
             IsDirty = true;
 
             // 選択インデックス調整
-            if (SelectedIndex >= MeshList.Count)
-                SelectedIndex = MeshList.Count - 1;
+            if (SelectedIndex >= MeshContextList.Count)
+                SelectedIndex = MeshContextList.Count - 1;
             else if (SelectedIndex > index)
                 SelectedIndex--;
 
@@ -139,16 +139,16 @@ namespace MeshFactory.Model
         /// <returns>移動成功したか</returns>
         public bool Move(int fromIndex, int toIndex)
         {
-            if (fromIndex < 0 || fromIndex >= MeshList.Count)
+            if (fromIndex < 0 || fromIndex >= MeshContextList.Count)
                 return false;
-            if (toIndex < 0 || toIndex >= MeshList.Count)
+            if (toIndex < 0 || toIndex >= MeshContextList.Count)
                 return false;
             if (fromIndex == toIndex)
                 return false;
 
-            var entry = MeshList[fromIndex];
-            MeshList.RemoveAt(fromIndex);
-            MeshList.Insert(toIndex, entry);
+            var meshContext = MeshContextList[fromIndex];
+            MeshContextList.RemoveAt(fromIndex);
+            MeshContextList.Insert(toIndex, meshContext);
 
             // 選択インデックス調整
             if (SelectedIndex == fromIndex)
@@ -172,7 +172,7 @@ namespace MeshFactory.Model
         /// <returns>選択変更成功したか</returns>
         public bool Select(int index)
         {
-            if (index < -1 || index >= MeshList.Count)
+            if (index < -1 || index >= MeshContextList.Count)
                 return false;
 
             if (SelectedIndex != index)
@@ -183,18 +183,18 @@ namespace MeshFactory.Model
             return false;
         }
 
-        /// <summary>インデックスでエントリを取得</summary>
-        public MeshContext GetEntry(int index)
+        /// <summary>インデックスでメッシュコンテキストを取得</summary>
+        public MeshContext GetMeshContext(int index)
         {
-            if (index < 0 || index >= MeshList.Count)
+            if (index < 0 || index >= MeshContextList.Count)
                 return null;
-            return MeshList[index];
+            return MeshContextList[index];
         }
 
-        /// <summary>エントリのインデックスを取得</summary>
-        public int IndexOf(MeshContext entry)
+        /// <summary>メッシュコンテキストのインデックスを取得</summary>
+        public int IndexOf(MeshContext meshContext)
         {
-            return MeshList.IndexOf(entry);
+            return MeshContextList.IndexOf(meshContext);
         }
 
         // ================================================================
@@ -207,14 +207,14 @@ namespace MeshFactory.Model
         {
             if (destroyMeshes)
             {
-                foreach (var entry in MeshList)
+                foreach (var meshContext in MeshContextList)
                 {
-                    if (entry.UnityMesh != null)
-                        UnityEngine.Object.DestroyImmediate(entry.UnityMesh);
+                    if (meshContext.UnityMesh != null)
+                        UnityEngine.Object.DestroyImmediate(meshContext.UnityMesh);
                 }
             }
 
-            MeshList.Clear();
+            MeshContextList.Clear();
             SelectedIndex = -1;
             IsDirty = true;
         }
@@ -234,8 +234,8 @@ namespace MeshFactory.Model
         // 複製
         // ================================================================
 
-        /// <summary>指定エントリを複製</summary>
-        /// <returns>複製されたエントリのインデックス、失敗時は-1</returns>
+        /// <summary>指定メッシュコンテキストを複製</summary>
+        /// <returns>複製されたメッシュコンテキストのインデックス、失敗時は-1</returns>
         /// <remarks>MeshContext.Clone()が必要。Phase 2以降で実装</remarks>
         public int Duplicate(int index)
         {
@@ -250,26 +250,26 @@ namespace MeshFactory.Model
         /// <summary>全メッシュのバウンディングボックスを計算</summary>
         public Bounds CalculateBounds()
         {
-            if (MeshList.Count == 0)
+            if (MeshContextList.Count == 0)
                 return new Bounds(Vector3.zero, Vector3.one);
 
             Bounds? combinedBounds = null;
 
-            foreach (var entry in MeshList)
+            foreach (var meshContext in MeshContextList)
             {
-                if (entry.Data == null)
+                if (meshContext.Data == null)
                     continue;
 
-                var entryBounds = entry.Data.CalculateBounds();
+                var meshContextBounds = meshContext.Data.CalculateBounds();
 
                 if (!combinedBounds.HasValue)
                 {
-                    combinedBounds = entryBounds;
+                    combinedBounds = meshContextBounds;
                 }
                 else
                 {
                     var bounds = combinedBounds.Value;
-                    bounds.Encapsulate(entryBounds);
+                    bounds.Encapsulate(meshContextBounds);
                     combinedBounds = bounds;
                 }
             }
@@ -280,10 +280,10 @@ namespace MeshFactory.Model
         /// <summary>現在選択中のメッシュのバウンディングボックス</summary>
         public Bounds CalculateCurrentBounds()
         {
-            if (CurrentEntry?.Data == null)
+            if (CurrentMeshContext?.Data == null)
                 return new Bounds(Vector3.zero, Vector3.one);
 
-            return CurrentEntry.Data.CalculateBounds();
+            return CurrentMeshContext.Data.CalculateBounds();
         }
     }
 }

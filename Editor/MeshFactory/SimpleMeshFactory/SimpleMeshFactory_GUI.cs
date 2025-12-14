@@ -278,10 +278,10 @@ public partial class SimpleMeshFactory
 
                     int totalVertices = 0;
 
-                    var entry = _model.CurrentEntry;
-                    if (entry?.Data != null)
+                    var meshContext = _model.CurrentMeshContext;
+                    if (meshContext?.Data != null)
                     {
-                        totalVertices = entry.Data.VertexCount;
+                        totalVertices = meshContext.Data.VertexCount;
                     }
 
                     //EditorGUILayout.LabelField($"Selected: {_selectedVertices.Count} / {totalVertices}", EditorStyles.miniLabel);
@@ -375,12 +375,12 @@ public partial class SimpleMeshFactory
             // ================================================================
             EditorGUILayout.LabelField("UnityMesh List", EditorStyles.miniBoldLabel);
 
-            for (int i = 0; i < _meshList.Count; i++)
+            for (int i = 0; i < _meshContextList.Count; i++)
             {
                 EditorGUILayout.BeginHorizontal();
 
                 bool isSelected = (i == _selectedIndex);
-                bool newSelected = GUILayout.Toggle(isSelected, _meshList[i].Name, "Button");
+                bool newSelected = GUILayout.Toggle(isSelected, _meshContextList[i].Name, "Button");
 
                 if (newSelected && !isSelected)
                 {
@@ -389,8 +389,8 @@ public partial class SimpleMeshFactory
                     ResetEditState();
                     InitVertexOffsets();
 
-                    var entry = _meshList[_selectedIndex];
-                    LoadEntryToUndoController(entry);
+                    var meshContext = _meshContextList[_selectedIndex];
+                    LoadMeshContextToUndoController(meshContext);
                     UpdateTopology();  // 
                 }
 
@@ -559,14 +559,14 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// MeshContextをUndoコントローラーに読み込む
     /// </summary>
-    private void LoadEntryToUndoController(MeshContext entry)
+    private void LoadMeshContextToUndoController(MeshContext meshContext)
     {
-        if (_undoController == null || entry == null)
+        if (_undoController == null || meshContext == null)
             return;
 
         // 参照を共有（Cloneしない）- AddFaceToolなどで直接変更されるため
-        _undoController.SetMeshData(entry.Data, entry.UnityMesh);
-        _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+        _undoController.SetMeshData(meshContext.Data, meshContext.UnityMesh);
+        _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
         // 選択状態を同期
         _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
     }

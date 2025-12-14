@@ -20,7 +20,7 @@ namespace MeshFactory.Tools.Windows
         // IToolWindow実装
         // ================================================================
 
-        public override string Name => "MeshList";
+        public override string Name => "MeshContextList";
         public override string Title => "UnityMesh List";
         public override IToolSettings Settings => null;
 
@@ -67,7 +67,7 @@ namespace MeshFactory.Tools.Windows
             // メッシュリスト
             _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
 
-            for (int i = 0; i < model.MeshCount; i++)
+            for (int i = 0; i < model.MeshContextCount; i++)
             {
                 DrawMeshContext(i, model);
             }
@@ -87,7 +87,7 @@ namespace MeshFactory.Tools.Windows
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
-            EditorGUILayout.LabelField($"Meshes: {model.MeshCount}", EditorStyles.boldLabel, GUILayout.Width(80));
+            EditorGUILayout.LabelField($"Meshes: {model.MeshContextCount}", EditorStyles.boldLabel, GUILayout.Width(80));
 
             GUILayout.FlexibleSpace();
 
@@ -104,17 +104,17 @@ namespace MeshFactory.Tools.Windows
         }
 
         // ================================================================
-        // メッシュエントリ描画
+        // メッシュコンテキスト描画
         // ================================================================
 
         private void DrawMeshContext(int index, ModelContext model)
         {
-            var entry = model.GetEntry(index);
-            if (entry == null) return;
+            var meshContext = model.GetMeshContext(index);
+            if (meshContext == null) return;
 
             bool isSelected = (model.SelectedIndex == index);
             bool isFirst = (index == 0);
-            bool isLast = (index == model.MeshCount - 1);
+            bool isLast = (index == model.MeshContextCount - 1);
 
             // 選択中は背景色を変える
             if (isSelected)
@@ -136,15 +136,15 @@ namespace MeshFactory.Tools.Windows
             }
 
             // 名前（クリックで選択）
-            if (GUILayout.Button(entry.Name, EditorStyles.label, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(meshContext.Name, EditorStyles.label, GUILayout.ExpandWidth(true)))
             {
                 SelectMesh(index);
             }
 
             // 情報表示
-            if (_showInfo && entry.Data != null)
+            if (_showInfo && meshContext.Data != null)
             {
-                EditorGUILayout.LabelField($"V:{entry.Data.VertexCount}", EditorStyles.miniLabel, GUILayout.Width(50));
+                EditorGUILayout.LabelField($"V:{meshContext.Data.VertexCount}", EditorStyles.miniLabel, GUILayout.Width(50));
             }
 
             // ↑ 上に移動
@@ -175,7 +175,7 @@ namespace MeshFactory.Tools.Windows
             if (GUILayout.Button("X", GUILayout.Width(22)))
             {
                 if (EditorUtility.DisplayDialog("Delete UnityMesh",
-                    $"Delete '{entry.Name}'?", "Delete", "Cancel"))
+                    $"Delete '{meshContext.Name}'?", "Delete", "Cancel"))
                 {
                     RemoveMesh(index);
                 }
@@ -191,8 +191,8 @@ namespace MeshFactory.Tools.Windows
 
         private void DrawSelectedMeshInfo()
         {
-            var entry = CurrentMeshContent;
-            if (entry == null)
+            var meshContext = CurrentMeshContent;
+            if (meshContext == null)
             {
                 EditorGUILayout.HelpBox("No mesh selected", MessageType.Info);
                 return;
@@ -204,22 +204,22 @@ namespace MeshFactory.Tools.Windows
             {
                 // 名前（編集可能）
                 EditorGUI.BeginChangeCheck();
-                string newName = EditorGUILayout.TextField("Name", entry.Name);
+                string newName = EditorGUILayout.TextField("Name", meshContext.Name);
                 if (EditorGUI.EndChangeCheck() && !string.IsNullOrEmpty(newName))
                 {
-                    entry.Name = newName;
+                    meshContext.Name = newName;
                     Repaint();
                 }
 
                 // 統計情報
-                if (entry.Data != null)
+                if (meshContext.Data != null)
                 {
-                    EditorGUILayout.LabelField("Vertices", entry.Data.VertexCount.ToString());
-                    EditorGUILayout.LabelField("Faces", entry.Data.FaceCount.ToString());
+                    EditorGUILayout.LabelField("Vertices", meshContext.Data.VertexCount.ToString());
+                    EditorGUILayout.LabelField("Faces", meshContext.Data.FaceCount.ToString());
 
                     // 面タイプ内訳
                     int triCount = 0, quadCount = 0, nGonCount = 0;
-                    foreach (var face in entry.Data.Faces)
+                    foreach (var face in meshContext.Data.Faces)
                     {
                         if (face.IsTriangle) triCount++;
                         else if (face.IsQuad) quadCount++;
@@ -230,7 +230,7 @@ namespace MeshFactory.Tools.Windows
                     if (nGonCount > 0)
                         EditorGUILayout.LabelField("  N-Gons", nGonCount.ToString());
 
-                    EditorGUILayout.LabelField("Materials", (entry.Materials?.Count ?? 0).ToString());
+                    EditorGUILayout.LabelField("Materials", (meshContext.Materials?.Count ?? 0).ToString());
                 }
 
                 EditorGUILayout.Space();
@@ -250,7 +250,7 @@ namespace MeshFactory.Tools.Windows
                 if (GUILayout.Button("Move to Bottom"))
                 {
                     int current = _context.SelectedMeshIndex;
-                    int last = Model.MeshCount - 1;
+                    int last = Model.MeshContextCount - 1;
                     if (current < last)
                     {
                         ReorderMesh(current, last);
@@ -269,7 +269,7 @@ namespace MeshFactory.Tools.Windows
                 if (GUILayout.Button("Delete"))
                 {
                     if (EditorUtility.DisplayDialog("Delete UnityMesh",
-                        $"Delete '{entry.Name}'?", "Delete", "Cancel"))
+                        $"Delete '{meshContext.Name}'?", "Delete", "Cancel"))
                     {
                         RemoveMesh(_context.SelectedMeshIndex);
                     }
@@ -289,7 +289,7 @@ namespace MeshFactory.Tools.Windows
 
             menu.AddItem(new GUIContent("Empty UnityMesh"), false, () =>
             {
-                var newEntry = new MeshContext
+                var newMeshContext = new MeshContext
                 {
                     Name = "New UnityMesh",
                     Data = new MeshData("New UnityMesh"),
@@ -297,7 +297,7 @@ namespace MeshFactory.Tools.Windows
                     OriginalPositions = new Vector3[0],
                     Materials = new System.Collections.Generic.List<Material> { null }
                 };
-                AddMesh(newEntry);
+                AddMesh(newMeshContext);
             });
 
             menu.AddSeparator("");

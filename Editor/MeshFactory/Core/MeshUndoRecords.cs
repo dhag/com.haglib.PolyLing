@@ -1474,12 +1474,13 @@ namespace MeshFactory.UndoSystem
     // ============================================================
 
     /// <summary>
-    /// メッシュリスト操作用コンテキスト
+    /// メッシュリスト操作用
+   
     /// </summary>
     public class MeshListContext
     {
-        /// <summary>メッシュエントリリスト（SimpleMeshFactoryから参照を受け取る）</summary>
-        public List<SimpleMeshFactory.MeshContext> MeshList;
+        /// <summary>メッシュコンテキストリスト（SimpleMeshFactoryから参照を受け取る）</summary>
+        public List<SimpleMeshFactory.MeshContext> MeshContextList;
 
         /// <summary>現在の選択インデックス</summary>
         public int SelectedIndex;
@@ -1503,19 +1504,19 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// MeshContextからスナップショットを作成
         /// </summary>
-        public static MeshContextSnapshot Capture(SimpleMeshFactory.MeshContext entry)
+        public static MeshContextSnapshot Capture(SimpleMeshFactory.MeshContext ｍeshContext)
         {
-            if (entry == null) return null;
+            if (ｍeshContext == null) return null;
 
             return new MeshContextSnapshot
             {
-                Name = entry.Name,
-                Data = entry.Data?.Clone(),
-                Materials = entry.Materials != null ? new List<Material>(entry.Materials) : new List<Material>(),
-                CurrentMaterialIndex = entry.CurrentMaterialIndex,
-                ExportSettings = entry.ExportSettings != null ? new ExportSettings(entry.ExportSettings) : null,
-                OriginalPositions = entry.OriginalPositions != null 
-                    ? (Vector3[])entry.OriginalPositions.Clone() 
+                Name = ｍeshContext.Name,
+                Data = ｍeshContext.Data?.Clone(),
+                Materials = ｍeshContext.Materials != null ? new List<Material>(ｍeshContext.Materials) : new List<Material>(),
+                CurrentMaterialIndex = ｍeshContext.CurrentMaterialIndex,
+                ExportSettings = ｍeshContext.ExportSettings != null ? new ExportSettings(ｍeshContext.ExportSettings) : null,
+                OriginalPositions = ｍeshContext.OriginalPositions != null 
+                    ? (Vector3[])ｍeshContext.OriginalPositions.Clone() 
                     : null
             };
         }
@@ -1525,7 +1526,7 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public SimpleMeshFactory.MeshContext ToMeshContext()
         {
-            var entry = new SimpleMeshFactory.MeshContext
+            var meshContext = new SimpleMeshFactory.MeshContext
             {
                 Name = Name,
                 Data = Data?.Clone(),
@@ -1538,14 +1539,14 @@ namespace MeshFactory.UndoSystem
             };
 
             // Unity Meshを再生成
-            if (entry.Data != null)
+            if (meshContext.Data != null)
             {
-                entry.UnityMesh = entry.Data.ToUnityMesh();
-                entry.UnityMesh.name = Name;
-                entry.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+                meshContext.UnityMesh = meshContext.Data.ToUnityMesh();
+                meshContext.UnityMesh.name = Name;
+                meshContext.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             }
 
-            return entry;
+            return meshContext;
         }
     }
 
@@ -1566,10 +1567,10 @@ namespace MeshFactory.UndoSystem
     public class MeshListChangeRecord : MeshListUndoRecord
     {
         /// <summary>削除されたエントリ（インデックス + スナップショット）</summary>
-        public List<(int Index, MeshContextSnapshot Snapshot)> RemovedEntries = new List<(int, MeshContextSnapshot)>();
+        public List<(int Index, MeshContextSnapshot Snapshot)> RemovedMeshContexts = new List<(int, MeshContextSnapshot)>();
 
         /// <summary>追加されたエントリ（インデックス + スナップショット）</summary>
-        public List<(int Index, MeshContextSnapshot Snapshot)> AddedEntries = new List<(int, MeshContextSnapshot)>();
+        public List<(int Index, MeshContextSnapshot Snapshot)> AddedMeshContexts = new List<(int, MeshContextSnapshot)>();
 
         /// <summary>変更前の選択インデックス</summary>
         public int OldSelectedIndex;
@@ -1579,33 +1580,33 @@ namespace MeshFactory.UndoSystem
 
         public override void Undo(MeshListContext ctx)
         {
-            // 1. AddedEntriesを降順で削除（大きいインデックスから）
-            var sortedAdded = AddedEntries.OrderByDescending(e => e.Index).ToList();
+            // 1. AddedMeshContextsを降順で削除（大きいインデックスから）
+            var sortedAdded = AddedMeshContexts.OrderByDescending(e => e.Index).ToList();
             foreach (var (index, _) in sortedAdded)
             {
-                if (index >= 0 && index < ctx.MeshList.Count)
+                if (index >= 0 && index < ctx.MeshContextList.Count)
                 {
                     // Meshを破棄
-                    var entry = ctx.MeshList[index];
-                    if (entry.UnityMesh != null)
+                    var meshContext = ctx.MeshContextList[index];
+                    if (meshContext.UnityMesh != null)
                     {
-                        Object.DestroyImmediate(entry.UnityMesh);
+                        Object.DestroyImmediate(meshContext.UnityMesh);
                     }
-                    ctx.MeshList.RemoveAt(index);
+                    ctx.MeshContextList.RemoveAt(index);
                 }
             }
 
-            // 2. RemovedEntriesを昇順で挿入（小さいインデックスから）
-            var sortedRemoved = RemovedEntries.OrderBy(e => e.Index).ToList();
+            // 2. RemovedMeshContextsを昇順で挿入（小さいインデックスから）
+            var sortedRemoved = RemovedMeshContexts.OrderBy(e => e.Index).ToList();
             foreach (var (index, snapshot) in sortedRemoved)
             {
-                var entry = snapshot.ToMeshContext();
-                int insertIndex = Mathf.Clamp(index, 0, ctx.MeshList.Count);
-                ctx.MeshList.Insert(insertIndex, entry);
+                var meshContext = snapshot.ToMeshContext();
+                int insertIndex = Mathf.Clamp(index, 0, ctx.MeshContextList.Count);
+                ctx.MeshContextList.Insert(insertIndex, meshContext);
             }
 
             // 3. 選択インデックスを復元
-            ctx.SelectedIndex = Mathf.Clamp(OldSelectedIndex, -1, ctx.MeshList.Count - 1);
+            ctx.SelectedIndex = Mathf.Clamp(OldSelectedIndex, -1, ctx.MeshContextList.Count - 1);
 
             // 4. コールバック
             ctx.OnListChanged?.Invoke();
@@ -1613,33 +1614,33 @@ namespace MeshFactory.UndoSystem
 
         public override void Redo(MeshListContext ctx)
         {
-            // 1. RemovedEntriesを降順で削除（大きいインデックスから）
-            var sortedRemoved = RemovedEntries.OrderByDescending(e => e.Index).ToList();
+            // 1. RemovedMeshContextsを降順で削除（大きいインデックスから）
+            var sortedRemoved = RemovedMeshContexts.OrderByDescending(e => e.Index).ToList();
             foreach (var (index, _) in sortedRemoved)
             {
-                if (index >= 0 && index < ctx.MeshList.Count)
+                if (index >= 0 && index < ctx.MeshContextList.Count)
                 {
                     // Meshを破棄
-                    var entry = ctx.MeshList[index];
-                    if (entry.UnityMesh != null)
+                    var meshContext = ctx.MeshContextList[index];
+                    if (meshContext.UnityMesh != null)
                     {
-                        Object.DestroyImmediate(entry.UnityMesh);
+                        Object.DestroyImmediate(meshContext.UnityMesh);
                     }
-                    ctx.MeshList.RemoveAt(index);
+                    ctx.MeshContextList.RemoveAt(index);
                 }
             }
 
-            // 2. AddedEntriesを昇順で挿入（小さいインデックスから）
-            var sortedAdded = AddedEntries.OrderBy(e => e.Index).ToList();
+            // 2. AddedMeshContextsを昇順で挿入（小さいインデックスから）
+            var sortedAdded = AddedMeshContexts.OrderBy(e => e.Index).ToList();
             foreach (var (index, snapshot) in sortedAdded)
             {
-                var entry = snapshot.ToMeshContext();
-                int insertIndex = Mathf.Clamp(index, 0, ctx.MeshList.Count);
-                ctx.MeshList.Insert(insertIndex, entry);
+                var meshContext = snapshot.ToMeshContext();
+                int insertIndex = Mathf.Clamp(index, 0, ctx.MeshContextList.Count);
+                ctx.MeshContextList.Insert(insertIndex, meshContext);
             }
 
             // 3. 選択インデックスを復元
-            ctx.SelectedIndex = Mathf.Clamp(NewSelectedIndex, -1, ctx.MeshList.Count - 1);
+            ctx.SelectedIndex = Mathf.Clamp(NewSelectedIndex, -1, ctx.MeshContextList.Count - 1);
 
             // 4. コールバック
             ctx.OnListChanged?.Invoke();

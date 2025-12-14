@@ -30,8 +30,8 @@ namespace MeshFactory.Serialization
         /// <summary>更新日時（ISO 8601形式）</summary>
         public string updatedAt;
 
-        /// <summary>メッシュエントリリスト</summary>
-        public List<MeshContextData> meshContexts = new List<MeshContextData>();
+        /// <summary>メッシュコンテキストリスト</summary>
+        public List<MeshContextData> meshContextList = new List<MeshContextData>();
 
         /// <summary>WorkPlane設定</summary>
         public WorkPlaneData workPlane;
@@ -55,11 +55,11 @@ namespace MeshFactory.Serialization
     }
 
     // ================================================================
-    // メッシュエントリ
+    // メッシュコンテキスト
     // ================================================================
 
     /// <summary>
-    /// 個別メッシュエントリのデータ
+    /// 個別メッシュコンテキストのデータ
     /// </summary>
     [Serializable]
     public class MeshContextData

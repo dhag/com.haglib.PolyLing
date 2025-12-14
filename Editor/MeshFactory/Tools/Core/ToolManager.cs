@@ -27,7 +27,7 @@ namespace MeshFactory.Tools
         private IEditTool _currentTool;
 
         /// <summary>共有ToolContext</summary>
-        private ToolContext _context;
+        private ToolContext _toolContext;
 
         /// <summary>デフォルトツール名</summary>
         private string _defaultToolName = "Select";
@@ -50,7 +50,7 @@ namespace MeshFactory.Tools
         public string CurrentToolName => _currentTool?.Name ?? "";
 
         /// <summary>ToolContext</summary>
-        public ToolContext Context => _context;
+        public ToolContext toolContext => _toolContext;
 
         /// <summary>登録されているツール数</summary>
         public int ToolCount => _tools.Count;
@@ -67,7 +67,7 @@ namespace MeshFactory.Tools
         /// </summary>
         public ToolManager()
         {
-            _context = new ToolContext();
+            _toolContext = new ToolContext();
         }
 
         /// <summary>
@@ -219,13 +219,13 @@ namespace MeshFactory.Tools
             var oldTool = _currentTool;
 
             // 旧ツールを非アクティブ化
-            oldTool?.OnDeactivate(_context);
+            oldTool?.OnDeactivate(_toolContext);
 
             // 切り替え
             _currentTool = newTool;
 
             // 新ツールをアクティブ化
-            _currentTool?.OnActivate(_context);
+            _currentTool?.OnActivate(_toolContext);
 
             // イベント発火
             OnToolChanged?.Invoke(oldTool, _currentTool);
@@ -320,7 +320,7 @@ namespace MeshFactory.Tools
         /// </summary>
         public bool OnMouseDown(Vector2 mousePos)
         {
-            return _currentTool?.OnMouseDown(_context, mousePos) ?? false;
+            return _currentTool?.OnMouseDown(_toolContext, mousePos) ?? false;
         }
 
         /// <summary>
@@ -328,7 +328,7 @@ namespace MeshFactory.Tools
         /// </summary>
         public bool OnMouseDrag(Vector2 mousePos, Vector2 delta)
         {
-            return _currentTool?.OnMouseDrag(_context, mousePos, delta) ?? false;
+            return _currentTool?.OnMouseDrag(_toolContext, mousePos, delta) ?? false;
         }
 
         /// <summary>
@@ -336,7 +336,7 @@ namespace MeshFactory.Tools
         /// </summary>
         public bool OnMouseUp(Vector2 mousePos)
         {
-            return _currentTool?.OnMouseUp(_context, mousePos) ?? false;
+            return _currentTool?.OnMouseUp(_toolContext, mousePos) ?? false;
         }
 
         // ================================================================
@@ -348,7 +348,7 @@ namespace MeshFactory.Tools
         /// </summary>
         public void DrawGizmo()
         {
-            _currentTool?.DrawGizmo(_context);
+            _currentTool?.DrawGizmo(_toolContext);
         }
 
         /// <summary>

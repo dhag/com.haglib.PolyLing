@@ -199,7 +199,7 @@ public partial class SimpleMeshFactory
         // UnityMesh List Window（統合版）
         if (GUILayout.Button("Open UnityMesh List Window"))
         {
-            MeshListWindow.Open(_toolManager?.Context);
+            MeshListWindow.Open(_toolManager?.toolContext);
         }
 
         // 登録されたToolWindow
@@ -212,7 +212,7 @@ public partial class SimpleMeshFactory
             {
                 if (GUILayout.Button($"Open {title}"))
                 {
-                    open?.Invoke(_toolManager?.Context);
+                    open?.Invoke(_toolManager?.toolContext);
                 }
             }
         }

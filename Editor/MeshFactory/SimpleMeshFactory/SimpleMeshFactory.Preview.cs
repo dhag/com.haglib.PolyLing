@@ -21,21 +21,21 @@ public partial class SimpleMeshFactory
             GUILayout.ExpandWidth(true),
             GUILayout.ExpandHeight(true));
 
-        var entry = _model.CurrentEntry;
-        if (entry == null || _preview == null)
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext == null || _preview == null)
         {
             EditorGUI.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
             EditorGUI.LabelField(rect, "Select a mesh", EditorStyles.centeredGreyMiniLabel);
             return;
         }
 
-        var mesh = entry.UnityMesh;
+        var mesh = meshContext.UnityMesh;
 
         float dist = _cameraDistance;
         Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
         Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -dist);
 
-        HandleInput(rect, entry, camPos, _cameraTarget, dist);
+        HandleInput(rect, meshContext, camPos, _cameraTarget, dist);
 
         if (Event.current.type != EventType.Repaint)
             return;
@@ -52,13 +52,13 @@ public partial class SimpleMeshFactory
         _preview.camera.transform.rotation = lookRot * rollRot;
 
         // マルチマテリアル対応描画
-        DrawMeshWithMaterials(entry, mesh);
+        DrawMeshWithMaterials(meshContext, mesh);
 
 
         // ★ミラーメッシュ描画を追加
         if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
         {
-            DrawMirroredMesh(entry, mesh);
+            DrawMirroredMesh(meshContext, mesh);
         }
 
         _preview.camera.Render();
@@ -69,25 +69,25 @@ public partial class SimpleMeshFactory
         if (_showWireframe)
         {
             // ワイヤーフレーム描画
-            DrawWireframeOverlay(rect, entry.Data, camPos, _cameraTarget);
+            DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget);
             // ★ミラーワイヤーフレーム描画
             if (_symmetrySettings != null && _symmetrySettings.IsEnabled)
             {
-                DrawMirroredWireframe(rect, entry.Data, camPos, _cameraTarget);
+                DrawMirroredWireframe(rect, meshContext.Data, camPos, _cameraTarget);
             }
 
         }
         // 選択状態のオーバーレイ描画（追加）
-        DrawSelectionOverlay(rect, entry.Data, camPos, _cameraTarget);
+        DrawSelectionOverlay(rect, meshContext.Data, camPos, _cameraTarget);
 
 
-        DrawVertexHandles(rect, entry.Data, camPos, _cameraTarget);
+        DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget);
 
         // ローカル原点マーカー（点線、ドラッグ不可）
         DrawOriginMarker(rect, camPos, _cameraTarget);
 
         // ツールのギズモ描画
-        UpdateToolContext(entry, rect, camPos, dist);
+        UpdateToolContext(meshContext, rect, camPos, dist);
         _currentTool?.DrawGizmo(_toolContext);
 
         // WorkPlaneギズモ描画（AddFaceTool時のみ）
@@ -98,7 +98,7 @@ public partial class SimpleMeshFactory
         // ★対称平面ギズモ描画
         if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
         {
-            Bounds meshBounds = entry.Data != null ? entry.Data.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
+            Bounds meshBounds = meshContext.Data != null ? meshContext.Data.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
             DrawSymmetryPlane(rect, camPos, _cameraTarget, meshBounds);
         }
     }
@@ -106,7 +106,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// マルチマテリアル対応でメッシュを描画
     /// </summary>
-    private void DrawMeshWithMaterials(MeshContext entry, Mesh mesh)
+    private void DrawMeshWithMaterials(MeshContext meshContext, Mesh mesh)
     {
         if (mesh == null)
             return;
@@ -116,11 +116,11 @@ public partial class SimpleMeshFactory
 
         for (int i = 0; i < subMeshCount; i++)
         {
-            // エントリのマテリアルリストから取得、なければデフォルト
+            // メッシュコンテキストのマテリアルリストから取得、なければデフォルト
             Material mat = null;
-            if (entry != null && i < entry.Materials.Count)
+            if (meshContext != null && i < meshContext.Materials.Count)
             {
-                mat = entry.Materials[i];
+                mat = meshContext.Materials[i];
             }
 
             // nullの場合はデフォルトマテリアル

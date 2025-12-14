@@ -124,7 +124,7 @@ namespace MeshFactory.UndoSystem
                 _undoStack.OnRedoPerformed -= _redoHandler;
 
                 // Contextは残す（次回Open時に復元するため）
-                // _undoStack.Context = default;  ← しない
+                // _undoStack.toolContext = default;  ← しない
                 _undoStack = null;
             }
             _undoHandler = null;

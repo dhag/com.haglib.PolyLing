@@ -166,7 +166,7 @@ public partial class SimpleMeshFactory
         var meshData = new MeshData(name);
         meshData.FromUnityMesh(sourceMesh, true);
 
-        var entry = new MeshContext
+        var meshContext = new MeshContext
         {
             Name = name,
             Data = meshData,
@@ -177,59 +177,59 @@ public partial class SimpleMeshFactory
         if (materials != null && materials.Length > 0)
         {
             // 引数で指定されたマテリアルを使用（読み込み元のマテリアル）
-            entry.Materials.Clear();
+            meshContext.Materials.Clear();
             foreach (var mat in materials)
             {
-                entry.Materials.Add(mat);
+                meshContext.Materials.Add(mat);
             }
             // 引数指定の場合はCurrentMaterialIndexは0のまま、FaceのMaterialIndexもそのまま
         }
         else if (_defaultMaterials != null && _defaultMaterials.Count > 0)
         {
             // デフォルトマテリアルをコピー
-            entry.Materials = new List<Material>(_defaultMaterials);
-            entry.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, entry.Materials.Count - 1);
+            meshContext.Materials = new List<Material>(_defaultMaterials);
+            meshContext.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, meshContext.Materials.Count - 1);
 
             // 全FaceにカレントマテリアルIndexを適用
-            if (entry.Data != null && entry.CurrentMaterialIndex > 0)
+            if (meshContext.Data != null && meshContext.CurrentMaterialIndex > 0)
             {
-                foreach (var face in entry.Data.Faces)
+                foreach (var face in meshContext.Data.Faces)
                 {
-                    face.MaterialIndex = entry.CurrentMaterialIndex;
+                    face.MaterialIndex = meshContext.CurrentMaterialIndex;
                 }
             }
         }
 
         // 表示用Unity Meshを作成（MaterialIndex適用後）
-        Mesh displayMesh = entry.Data.ToUnityMesh();
+        Mesh displayMesh = meshContext.Data.ToUnityMesh();
         displayMesh.name = name;
         displayMesh.hideFlags = HideFlags.HideAndDontSave;
-        entry.UnityMesh = displayMesh;
+        meshContext.UnityMesh = displayMesh;
 
         // Undo記録用に変更前の状態を保存
         int oldSelectedIndex = _selectedIndex;
-        int insertIndex = _meshList.Count;
+        int insertIndex = _meshContextList.Count;
 
-        _meshList.Add(entry);
-        _selectedIndex = _meshList.Count - 1;
+        _meshContextList.Add(meshContext);
+        _selectedIndex = _meshContextList.Count - 1;
         InitVertexOffsets();
 
-        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
         // MeshContextに必要な情報だけを設定
         if (_undoController != null)
         {
-            _undoController.MeshContext.MeshData = entry.Data;
-            _undoController.MeshContext.TargetMesh = entry.UnityMesh;
-            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.MeshData = meshContext.Data;
+            _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
+            _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshContext.SelectedVertices = new HashSet<int>();
-            _undoController.MeshContext.Materials = entry.Materials != null 
-                ? new List<Material>(entry.Materials) 
+            _undoController.MeshContext.Materials = meshContext.Materials != null 
+                ? new List<Material>(meshContext.Materials) 
                 : new List<Material>();
-            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+            _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
 
             // Undo記録（メッシュリスト追加）
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextAdd(entry, insertIndex, oldSelectedIndex, _selectedIndex);
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
         Repaint();
@@ -252,11 +252,11 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// 新しいメッシュエントリを作成
+    /// 新しいメッシュコンテキストを作成
     /// </summary>
     private void CreateNewMeshContext(MeshData meshData, string name)
     {
-        var entry = new MeshContext
+        var meshContext = new MeshContext
         {
             Name = name,
             Data = meshData.Clone(),
@@ -266,64 +266,64 @@ public partial class SimpleMeshFactory
         // デフォルトマテリアルをコピー
         if (_defaultMaterials != null && _defaultMaterials.Count > 0)
         {
-            entry.Materials = new List<Material>(_defaultMaterials);
-            entry.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, entry.Materials.Count - 1);
+            meshContext.Materials = new List<Material>(_defaultMaterials);
+            meshContext.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, meshContext.Materials.Count - 1);
 
             // 全FaceにカレントマテリアルIndexを適用
-            if (entry.Data != null && entry.CurrentMaterialIndex > 0)
+            if (meshContext.Data != null && meshContext.CurrentMaterialIndex > 0)
             {
-                foreach (var face in entry.Data.Faces)
+                foreach (var face in meshContext.Data.Faces)
                 {
-                    face.MaterialIndex = entry.CurrentMaterialIndex;
+                    face.MaterialIndex = meshContext.CurrentMaterialIndex;
                 }
             }
         }
 
         // 自動マージ（全頂点対象）
-        if (_autoMergeOnCreate && entry.Data.VertexCount >= 2)
+        if (_autoMergeOnCreate && meshContext.Data.VertexCount >= 2)
         {
-            var result = MergeVerticesTool.MergeAllVerticesAtSamePosition(entry.Data, _autoMergeThreshold);
+            var result = MergeVerticesTool.MergeAllVerticesAtSamePosition(meshContext.Data, _autoMergeThreshold);
             if (result.RemovedVertexCount > 0)
             {
                 Debug.Log($"[CreateNewMeshContext] Auto-merged {result.RemovedVertexCount} vertices");
             }
             // OriginalPositionsを更新
-            entry.OriginalPositions = entry.Data.Vertices.Select(v => v.Position).ToArray();
+            meshContext.OriginalPositions = meshContext.Data.Vertices.Select(v => v.Position).ToArray();
         }
 
         // MeshDataから表示用Unity Meshを生成（MaterialIndex適用後）
-        Mesh mesh = entry.Data.ToUnityMesh();
+        Mesh mesh = meshContext.Data.ToUnityMesh();
         mesh.name = name;
         mesh.hideFlags = HideFlags.HideAndDontSave;
-        entry.UnityMesh = mesh;
+        meshContext.UnityMesh = mesh;
 
-        Debug.Log($"[CreateNewMeshContext] name={name}, vertices={entry.Data.VertexCount}, faces={entry.Data.FaceCount}");
+        Debug.Log($"[CreateNewMeshContext] name={name}, vertices={meshContext.Data.VertexCount}, faces={meshContext.Data.FaceCount}");
 
         // Undo記録用に変更前の状態を保存
         int oldSelectedIndex = _selectedIndex;
-        int insertIndex = _meshList.Count;
+        int insertIndex = _meshContextList.Count;
 
         // リストに追加
-        _meshList.Add(entry);
-        _selectedIndex = _meshList.Count - 1;
+        _meshContextList.Add(meshContext);
+        _selectedIndex = _meshContextList.Count - 1;
         InitVertexOffsets();
 
-        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
         // MeshContextに必要な情報だけを設定
         if (_undoController != null)
         {
-            _undoController.MeshContext.MeshData = entry.Data;
-            _undoController.MeshContext.TargetMesh = entry.UnityMesh;
-            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.MeshData = meshContext.Data;
+            _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
+            _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshContext.SelectedVertices = new HashSet<int>();
-            _undoController.MeshContext.Materials = entry.Materials != null 
-                ? new List<Material>(entry.Materials) 
+            _undoController.MeshContext.Materials = meshContext.Materials != null 
+                ? new List<Material>(meshContext.Materials) 
                 : new List<Material>();
-            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+            _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
             
-            // Undo記録（メッシュエントリ追加）
+            // Undo記録（メッシュコンテキスト追加）
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextAdd(entry, insertIndex, oldSelectedIndex, _selectedIndex);
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
         Repaint();
@@ -334,10 +334,10 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void AddMeshDataToCurrent(MeshData meshData, string name)
     {
-        var entry = _meshList[_selectedIndex];
-        if (entry.Data == null)
+        var meshContext = _meshContextList[_selectedIndex];
+        if (meshContext.Data == null)
         {
-            entry.Data = new MeshData(entry.Name);
+            meshContext.Data = new MeshData(meshContext.Name);
         }
 
         // ================================================================
@@ -346,21 +346,21 @@ public partial class SimpleMeshFactory
         MeshDataSnapshot snapshotBefore = null;
         if (_undoController != null)
         {
-            _undoController.MeshContext.MeshData = entry.Data;
+            _undoController.MeshContext.MeshData = meshContext.Data;
             snapshotBefore = MeshDataSnapshot.Capture(_undoController.MeshContext);
         }
 
         // 追加前の頂点数を記録
-        int baseVertexIndex = entry.Data.VertexCount;
+        int baseVertexIndex = meshContext.Data.VertexCount;
 
         // 頂点を追加
         foreach (var vertex in meshData.Vertices)
         {
-            entry.Data.Vertices.Add(new Vertex(vertex.Position));
+            meshContext.Data.Vertices.Add(new Vertex(vertex.Position));
         }
 
         // 面を追加（頂点インデックスをオフセット）
-        int materialIndex = entry.CurrentMaterialIndex;
+        int materialIndex = meshContext.CurrentMaterialIndex;
         foreach (var face in meshData.Faces)
         {
             var newFace = new Face();
@@ -368,14 +368,14 @@ public partial class SimpleMeshFactory
             newFace.UVIndices = new List<int>(face.UVIndices);
             newFace.NormalIndices = new List<int>(face.NormalIndices);
             newFace.MaterialIndex = materialIndex;  // 現在のマテリアルを適用
-            entry.Data.Faces.Add(newFace);
+            meshContext.Data.Faces.Add(newFace);
         }
 
         // 自動マージ（追加した頂点と既存頂点の境界をマージ）
-        if (_autoMergeOnCreate && entry.Data.VertexCount >= 2)
+        if (_autoMergeOnCreate && meshContext.Data.VertexCount >= 2)
         {
-            var allVertices = new HashSet<int>(Enumerable.Range(0, entry.Data.VertexCount));
-            var result = MergeVerticesTool.MergeVerticesAtSamePosition(entry.Data, allVertices, _autoMergeThreshold);
+            var allVertices = new HashSet<int>(Enumerable.Range(0, meshContext.Data.VertexCount));
+            var result = MergeVerticesTool.MergeVerticesAtSamePosition(meshContext.Data, allVertices, _autoMergeThreshold);
 
             if (result.RemovedVertexCount > 0)
             {
@@ -384,17 +384,17 @@ public partial class SimpleMeshFactory
         }
 
         // OriginalPositionsを更新
-        entry.OriginalPositions = entry.Data.Vertices.Select(v => v.Position).ToArray();
+        meshContext.OriginalPositions = meshContext.Data.Vertices.Select(v => v.Position).ToArray();
 
         // メッシュ更新
-        SyncMeshFromData(entry);
+        SyncMeshFromData(meshContext);
 
         // ================================================================
         // Undo: 終了時スナップショット + 記録（ツール標準方式）
         // ================================================================
         if (_undoController != null && snapshotBefore != null)
         {
-            _undoController.MeshContext.MeshData = entry.Data;
+            _undoController.MeshContext.MeshData = meshContext.Data;
             var snapshotAfter = MeshDataSnapshot.Capture(_undoController.MeshContext);
             
             // 直接VertexEditStackに記録（RecordTopologyChangeのEndGroup副作用を回避）
@@ -405,18 +405,18 @@ public partial class SimpleMeshFactory
 
         // 選択更新（カメラは変更しない）
         InitVertexOffsets(updateCamera: false);
-        
-        // 注意: LoadEntryToUndoControllerは呼ばない
+
+        // 注意: LoadMeshContextToUndoControllerは呼ばない
         // SetMeshData内で_vertexEditStack.Clear()が呼ばれるため、Undo記録が消えてしまう
         // MeshContextは既に上で設定済み、追加で必要な設定のみ行う
         if (_undoController != null)
         {
-            _undoController.MeshContext.TargetMesh = entry.UnityMesh;
-            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
+            _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
         }
 
-        Debug.Log($"[AddMeshDataToCurrent] Added {name} to {entry.Name}, total vertices={entry.Data.VertexCount}, faces={entry.Data.FaceCount}");
+        Debug.Log($"[AddMeshDataToCurrent] Added {name} to {meshContext.Name}, total vertices={meshContext.Data.VertexCount}, faces={meshContext.Data.FaceCount}");
 
         Repaint();
     }
@@ -449,7 +449,7 @@ public partial class SimpleMeshFactory
         mesh.hideFlags = HideFlags.HideAndDontSave;
 
         // 元のMeshはそのまま表示用に使用
-        var entry = new MeshContext
+        var meshContext = new MeshContext
         {
             Name = name,
             UnityMesh = mesh,
@@ -460,49 +460,49 @@ public partial class SimpleMeshFactory
         // デフォルトマテリアルをコピー
         if (_defaultMaterials != null && _defaultMaterials.Count > 0)
         {
-            entry.Materials = new List<Material>(_defaultMaterials);
-            entry.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, entry.Materials.Count - 1);
+            meshContext.Materials = new List<Material>(_defaultMaterials);
+            meshContext.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, meshContext.Materials.Count - 1);
 
             // 全FaceにカレントマテリアルIndexを適用
-            if (entry.Data != null && entry.CurrentMaterialIndex > 0)
+            if (meshContext.Data != null && meshContext.CurrentMaterialIndex > 0)
             {
-                foreach (var face in entry.Data.Faces)
+                foreach (var face in meshContext.Data.Faces)
                 {
-                    face.MaterialIndex = entry.CurrentMaterialIndex;
+                    face.MaterialIndex = meshContext.CurrentMaterialIndex;
                 }
                 // Meshを再生成してサブメッシュを反映
-                var newMesh = entry.Data.ToUnityMesh();
+                var newMesh = meshContext.Data.ToUnityMesh();
                 newMesh.name = name;
                 newMesh.hideFlags = HideFlags.HideAndDontSave;
-                if (entry.UnityMesh != null) DestroyImmediate(entry.UnityMesh);
-                entry.UnityMesh = newMesh;
+                if (meshContext.UnityMesh != null) DestroyImmediate(meshContext.UnityMesh);
+                meshContext.UnityMesh = newMesh;
             }
         }
 
         // Undo記録用に変更前の状態を保存
         int oldSelectedIndex = _selectedIndex;
-        int insertIndex = _meshList.Count;
+        int insertIndex = _meshContextList.Count;
 
-        _meshList.Add(entry);
-        _selectedIndex = _meshList.Count - 1;
+        _meshContextList.Add(meshContext);
+        _selectedIndex = _meshContextList.Count - 1;
         InitVertexOffsets();
 
-        // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+        // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
         // MeshContextに必要な情報だけを設定
         if (_undoController != null)
         {
-            _undoController.MeshContext.MeshData = entry.Data;
-            _undoController.MeshContext.TargetMesh = entry.UnityMesh;
-            _undoController.MeshContext.OriginalPositions = entry.OriginalPositions;
+            _undoController.MeshContext.MeshData = meshContext.Data;
+            _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
+            _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshContext.SelectedVertices = new HashSet<int>();
-            _undoController.MeshContext.Materials = entry.Materials != null 
-                ? new List<Material>(entry.Materials) 
+            _undoController.MeshContext.Materials = meshContext.Materials != null 
+                ? new List<Material>(meshContext.Materials) 
                 : new List<Material>();
-            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+            _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
 
             // Undo記録（メッシュリスト追加）
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextAdd(entry, insertIndex, oldSelectedIndex, _selectedIndex);
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
         }
 
         Repaint();
@@ -510,53 +510,53 @@ public partial class SimpleMeshFactory
 
     private void RemoveMesh(int index)
     {
-        if (index < 0 || index >= _meshList.Count)
+        if (index < 0 || index >= _meshContextList.Count)
             return;
 
-        var entry = _meshList[index];
+        var meshContext = _meshContextList[index];
         
         // Undo記録用にスナップショットを削除前に保存
         int oldSelectedIndex = _selectedIndex;
         MeshContextSnapshot snapshot = null;
         if (_undoController != null)
         {
-            snapshot = MeshContextSnapshot.Capture(entry);
+            snapshot = MeshContextSnapshot.Capture(meshContext);
         }
 
         // Meshの破棄
-        if (entry.UnityMesh != null)
+        if (meshContext.UnityMesh != null)
         {
-            DestroyImmediate(entry.UnityMesh);
+            DestroyImmediate(meshContext.UnityMesh);
         }
 
-        _meshList.RemoveAt(index);
+        _meshContextList.RemoveAt(index);
 
         // 頂点選択と編集状態をリセット
         _selectedVertices.Clear();
         ResetEditState();
 
-        if (_selectedIndex >= _meshList.Count)
+        if (_selectedIndex >= _meshContextList.Count)
         {
-            _selectedIndex = _meshList.Count - 1;
+            _selectedIndex = _meshContextList.Count - 1;
         }
 
         if (_selectedIndex >= 0)
         {
             InitVertexOffsets();
-            var newEntry = _meshList[_selectedIndex];
-            
-            // 注意: LoadEntryToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
+            var newMeshContext = _meshContextList[_selectedIndex];
+
+            // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
             // MeshContextに必要な情報だけを設定
             if (_undoController != null)
             {
-                _undoController.MeshContext.MeshData = newEntry.Data;
-                _undoController.MeshContext.TargetMesh = newEntry.UnityMesh;
-                _undoController.MeshContext.OriginalPositions = newEntry.OriginalPositions;
+                _undoController.MeshContext.MeshData = newMeshContext.Data;
+                _undoController.MeshContext.TargetMesh = newMeshContext.UnityMesh;
+                _undoController.MeshContext.OriginalPositions = newMeshContext.OriginalPositions;
                 _undoController.MeshContext.SelectedVertices = new HashSet<int>();
-                _undoController.MeshContext.Materials = newEntry.Materials != null 
-                    ? new List<Material>(newEntry.Materials) 
+                _undoController.MeshContext.Materials = newMeshContext.Materials != null 
+                    ? new List<Material>(newMeshContext.Materials) 
                     : new List<Material>();
-                _undoController.MeshContext.CurrentMaterialIndex = newEntry.CurrentMaterialIndex;
+                _undoController.MeshContext.CurrentMaterialIndex = newMeshContext.CurrentMaterialIndex;
             }
         }
         else
@@ -572,11 +572,11 @@ public partial class SimpleMeshFactory
         {
             var record = new MeshListChangeRecord
             {
-                RemovedEntries = new List<(int, MeshContextSnapshot)> { (index, snapshot) },
+                RemovedMeshContexts = new List<(int, MeshContextSnapshot)> { (index, snapshot) },
                 OldSelectedIndex = oldSelectedIndex,
                 NewSelectedIndex = _selectedIndex
             };
-            _undoController.MeshListStack.Record(record, $"Remove UnityMesh: {entry.Name}");
+            _undoController.MeshListStack.Record(record, $"Remove UnityMesh: {meshContext.Name}");
             _undoController.FocusMeshList();
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
         }
@@ -590,15 +590,15 @@ public partial class SimpleMeshFactory
     /// <param name="updateCamera">trueの場合、カメラをメッシュに合わせて調整する</param>
     private void InitVertexOffsets(bool updateCamera = true)
     {
-        var entry = _model.CurrentEntry;
-        if (entry == null)
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext == null)
         {
             _vertexOffsets = null;
             _groupOffsets = null;
             return;
         }
 
-        var meshData = entry.Data;
+        var meshData = meshContext.Data;
 
         if (meshData == null)
         {
@@ -628,12 +628,12 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// メッシュアセットとして保存
     /// </summary>
-    private void SaveMesh(MeshContext entry)
+    private void SaveMesh(MeshContext meshContext)
     {
-        if (entry == null || entry.Data == null)
+        if (meshContext == null || meshContext.Data == null)
             return;
 
-        string defaultName = string.IsNullOrEmpty(entry.Name) ? "UnityMesh" : entry.Name;
+        string defaultName = string.IsNullOrEmpty(meshContext.Name) ? "UnityMesh" : meshContext.Name;
         string path = EditorUtility.SaveFilePanelInProject(
             "Save UnityMesh",
             defaultName,
@@ -644,7 +644,7 @@ public partial class SimpleMeshFactory
             return;
 
         // MeshDataからUnity Meshを生成
-        Mesh meshToSave = entry.Data.ToUnityMesh();
+        Mesh meshToSave = meshContext.Data.ToUnityMesh();
         meshToSave.name = System.IO.Path.GetFileNameWithoutExtension(path);
 
         AssetDatabase.DeleteAsset(path);
@@ -665,12 +665,12 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// プレファブとして保存
     /// </summary>
-    private void SaveAsPrefab(MeshContext entry)
+    private void SaveAsPrefab(MeshContext meshContext)
     {
-        if (entry == null || entry.Data == null)
+        if (meshContext == null || meshContext.Data == null)
             return;
 
-        string defaultName = string.IsNullOrEmpty(entry.Name) ? "MeshObject" : entry.Name;
+        string defaultName = string.IsNullOrEmpty(meshContext.Name) ? "MeshObject" : meshContext.Name;
         string path = EditorUtility.SaveFilePanelInProject(
             "Save as Prefab",
             defaultName,
@@ -681,13 +681,13 @@ public partial class SimpleMeshFactory
             return;
 
         // GameObjectを作成
-        GameObject go = new GameObject(entry.Name);
+        GameObject go = new GameObject(meshContext.Name);
         MeshFilter mf = go.AddComponent<MeshFilter>();
         MeshRenderer mr = go.AddComponent<MeshRenderer>();
 
         // MeshDataからUnity Meshを生成して保存
-        Mesh meshCopy = entry.Data.ToUnityMesh();
-        meshCopy.name = entry.Name;
+        Mesh meshCopy = meshContext.Data.ToUnityMesh();
+        meshCopy.name = meshContext.Name;
 
         // メッシュを同じディレクトリに保存
         string meshPath = System.IO.Path.ChangeExtension(path, null) + "_Mesh.asset";
@@ -697,10 +697,10 @@ public partial class SimpleMeshFactory
         mf.sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
 
         // マテリアル設定（マルチマテリアル対応）
-        mr.sharedMaterials = GetMaterialsForSave(entry);
+        mr.sharedMaterials = GetMaterialsForSave(meshContext);
 
         // ExportSettings を適用
-        entry.ExportSettings?.ApplyToGameObject(go, asLocal: false);
+        meshContext.ExportSettings?.ApplyToGameObject(go, asLocal: false);
 
         // プレファブとして保存
         AssetDatabase.DeleteAsset(path);
@@ -725,23 +725,23 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ヒエラルキーに追加
     /// </summary>
-    private void AddToHierarchy(MeshContext entry)
+    private void AddToHierarchy(MeshContext meshContext)
     {
-        if (entry == null || entry.Data == null)
+        if (meshContext == null || meshContext.Data == null)
             return;
 
         // GameObjectを作成
-        GameObject go = new GameObject(entry.Name);
+        GameObject go = new GameObject(meshContext.Name);
         MeshFilter mf = go.AddComponent<MeshFilter>();
         MeshRenderer mr = go.AddComponent<MeshRenderer>();
 
         // MeshDataからUnity Meshを生成
-        Mesh meshCopy = entry.Data.ToUnityMesh();
-        meshCopy.name = entry.Name;
+        Mesh meshCopy = meshContext.Data.ToUnityMesh();
+        meshCopy.name = meshContext.Name;
         mf.sharedMesh = meshCopy;
 
         // マテリアル設定（マルチマテリアル対応）
-        mr.sharedMaterials = GetMaterialsForSave(entry);
+        mr.sharedMaterials = GetMaterialsForSave(meshContext);
 
         // 選択中のオブジェクトがあれば子として追加
         Transform parent = null;
@@ -756,9 +756,9 @@ public partial class SimpleMeshFactory
         }
 
         // ExportSettings を適用
-        if (entry.ExportSettings != null)
+        if (meshContext.ExportSettings != null)
         {
-            entry.ExportSettings.ApplyToGameObject(go, asLocal: parent != null);
+            meshContext.ExportSettings.ApplyToGameObject(go, asLocal: parent != null);
         }
         else
         {
@@ -768,7 +768,7 @@ public partial class SimpleMeshFactory
         }
 
         // Undo登録（Unity標準のUndo）
-        Undo.RegisterCreatedObjectUndo(go, $"Create {entry.Name}");
+        Undo.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
 
         // 選択
         Selection.activeGameObject = go;
@@ -786,31 +786,31 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void ExportModel()
     {
-        if (_meshList.Count == 0)
+        if (_meshContextList.Count == 0)
         {
             EditorUtility.DisplayDialog("Export Model", "エクスポートするメッシュがありません。", "OK");
             return;
         }
 
         // モデルデータを作成
-        string modelName = _meshList.Count > 0 ? _meshList[0].Name : "Model";
+        string modelName = _meshContextList.Count > 0 ? _meshContextList[0].Name : "Model";
         var modelData = ModelData.Create(modelName);
 
-        // メッシュエントリを追加
-        for (int i = 0; i < _meshList.Count; i++)
+        // メッシュコンテキストを追加
+        for (int i = 0; i < _meshContextList.Count; i++)
         {
-            var entry = _meshList[i];
+            var meshContext = _meshContextList[i];
             var selectedVerts = (i == _selectedIndex) ? _selectedVertices : new HashSet<int>();
 
-            var entryData = ModelSerializer.ToMeshContextData(
-                entry.Data,
-                entry.Name,
-                entry.ExportSettings,
+            var meshContextData = ModelSerializer.ToMeshContextData(
+                meshContext.Data,
+                meshContext.Name,
+                meshContext.ExportSettings,
                 selectedVerts,
-                entry.Materials,              // マテリアルリスト
-                entry.CurrentMaterialIndex    // カレントマテリアルインデックス
+                meshContext.Materials,              // マテリアルリスト
+                meshContext.CurrentMaterialIndex    // カレントマテリアルインデックス
             );
-            modelData.meshContexts.Add(entryData);
+            modelData.meshContextList.Add(meshContextData);
         }
 
         // WorkPlane
@@ -854,7 +854,7 @@ public partial class SimpleMeshFactory
         if (modelData == null) return;
 
         // 確認ダイアログ
-        if (_meshList.Count > 0)
+        if (_meshContextList.Count > 0)
         {
             bool result = EditorUtility.DisplayDialog(
                 "Import Model",
@@ -866,28 +866,28 @@ public partial class SimpleMeshFactory
 
         // 既存データをクリア
         CleanupMeshes();
-        _meshList.Clear();
+        _meshContextList.Clear();
         _selectedIndex = -1;
         _selectedVertices.Clear();
         _undoController?.VertexEditStack?.Clear();
 
-        // メッシュエントリを復元
-        foreach (var entryData in modelData.meshContexts)
+        // メッシュコンテキストを復元
+        foreach (var meshContextData in modelData.meshContextList)
         {
-            var meshData = ModelSerializer.ToMeshData(entryData);
+            var meshData = ModelSerializer.ToMeshData(meshContextData);
             if (meshData == null) continue;
 
-            var currentEntry = new MeshContext
+            var currentMeshContext = new MeshContext
             {
-                Name = entryData.name ?? "UnityMesh",
+                Name = meshContextData.name ?? "UnityMesh",
                 Data = meshData,
                 UnityMesh = meshData.ToUnityMesh(),
                 OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
-                ExportSettings = ModelSerializer.ToExportSettings(entryData.exportSettings),
-                Materials = ModelSerializer.ToMaterials(entryData),           // マテリアルリスト復元
-                CurrentMaterialIndex = entryData.currentMaterialIndex         // カレントインデックス復元
+                ExportSettings = ModelSerializer.ToExportSettings(meshContextData.exportSettings),
+                Materials = ModelSerializer.ToMaterials(meshContextData),           // マテリアルリスト復元
+                CurrentMaterialIndex = meshContextData.currentMaterialIndex         // カレントインデックス復元
             };
-            _meshList.Add(currentEntry);
+            _meshContextList.Add(currentMeshContext);
         }
 
         // WorkPlane復元
@@ -912,15 +912,15 @@ public partial class SimpleMeshFactory
             _vertexEditMode = state.vertexEditMode;
 
             // 選択メッシュを復元
-            if (state.selectedMeshIndex >= 0 && state.selectedMeshIndex < _meshList.Count)
+            if (state.selectedMeshIndex >= 0 && state.selectedMeshIndex < _meshContextList.Count)
             {
                 _selectedIndex = state.selectedMeshIndex;
 
                 // 選択頂点を復元
-                var selectedEntryData = modelData.meshContexts[state.selectedMeshIndex];
-                _selectedVertices = ModelSerializer.ToSelectedVertices(selectedEntryData);
+                var selectedMeshContextData = modelData.meshContextList[state.selectedMeshIndex];
+                _selectedVertices = ModelSerializer.ToSelectedVertices(selectedMeshContextData);
             }
-            else if (_meshList.Count > 0)
+            else if (_meshContextList.Count > 0)
             {
                 _selectedIndex = 0;
             }
@@ -954,7 +954,7 @@ public partial class SimpleMeshFactory
             }
             */
         }
-        else if (_meshList.Count > 0)
+        else if (_meshContextList.Count > 0)
         {
             _selectedIndex = 0;
         }
@@ -963,14 +963,14 @@ public partial class SimpleMeshFactory
         InitVertexOffsets();
 
         // UndoContextを更新
-        var entry = _model.CurrentEntry;
-        if (entry != null)
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext != null)
         {
-            _undoController?.SetMeshData(entry.Data, entry.UnityMesh);
+            _undoController?.SetMeshData(meshContext.Data, meshContext.UnityMesh);
             _undoController.MeshContext.SelectedVertices = _selectedVertices;
         }
 
-        Debug.Log($"[SimpleMeshFactory] Imported model: {modelData.name} ({_meshList.Count} meshes)");
+        Debug.Log($"[SimpleMeshFactory] Imported model: {modelData.name} ({_meshContextList.Count} meshes)");
         Repaint();
     }
 
@@ -979,14 +979,14 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 保存用のマテリアル配列を取得（マルチマテリアル対応）
     /// </summary>
-    private Material[] GetMaterialsForSave(MeshContext entry)
+    private Material[] GetMaterialsForSave(MeshContext meshContext)
     {
-        if (entry != null && entry.Materials.Count > 0)
+        if (meshContext != null && meshContext.Materials.Count > 0)
         {
-            var result = new Material[entry.Materials.Count];
-            for (int i = 0; i < entry.Materials.Count; i++)
+            var result = new Material[meshContext.Materials.Count];
+            for (int i = 0; i < meshContext.Materials.Count; i++)
             {
-                result[i] = entry.Materials[i] ?? GetOrCreateDefaultMaterial();
+                result[i] = meshContext.Materials[i] ?? GetOrCreateDefaultMaterial();
             }
             return result;
         }
@@ -996,12 +996,12 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 保存用のマテリアルを取得（単一、後方互換用）
     /// </summary>
-    private Material GetMaterialForSave(MeshContext entry)
+    private Material GetMaterialForSave(MeshContext meshContext)
     {
-        // エントリのマテリアルがあればそれを使用
-        if (entry != null && entry.Materials.Count > 0 && entry.Materials[0] != null)
+        // メッシュコンテキストのマテリアルがあればそれを使用
+        if (meshContext != null && meshContext.Materials.Count > 0 && meshContext.Materials[0] != null)
         {
-            return entry.Materials[0];
+            return meshContext.Materials[0];
         }
 
         // なければデフォルトマテリアルを作成/取得

@@ -15,14 +15,14 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void SelectAllVertices()
     {
-        var entry = _model.CurrentEntry;
-        if (entry?.Data == null)
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.Data == null)
             return;
 
         var oldSelection = new HashSet<int>(_selectedVertices);
 
         _selectedVertices.Clear();
-        for (int i = 0; i < entry.Data.VertexCount; i++)
+        for (int i = 0; i < meshContext.Data.VertexCount; i++)
         {
             _selectedVertices.Add(i);
         }
@@ -36,14 +36,14 @@ public partial class SimpleMeshFactory
 
     private void InvertSelection()
     {
-        var entry = _model.CurrentEntry;
-        if (entry?.Data == null)
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.Data == null)
             return;
 
         var oldSelection = new HashSet<int>(_selectedVertices);
 
         var newSelection = new HashSet<int>();
-        for (int i = 0; i < entry.Data.VertexCount; i++)
+        for (int i = 0; i < meshContext.Data.VertexCount; i++)
         {
             if (!_selectedVertices.Contains(i))
             {
@@ -76,14 +76,14 @@ public partial class SimpleMeshFactory
     private void DeleteSelectedVertices()
     {
         if (_selectedVertices.Count == 0) return;
-        var entry = _model.CurrentEntry;
-        if (entry?.Data == null) return;
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.Data == null) return;
 
         // スナップショット取得（操作前）
         var before = MeshDataSnapshot.Capture(_undoController.MeshContext);
 
         // 削除処理
-        ExecuteDeleteVertices(entry.Data, new HashSet<int>(_selectedVertices));
+        ExecuteDeleteVertices(meshContext.Data, new HashSet<int>(_selectedVertices));
 
         // 選択クリア
         _selectedVertices.Clear();
@@ -96,7 +96,7 @@ public partial class SimpleMeshFactory
         _undoController.RecordDeleteVertices(before, after);
 
         // メッシュ更新
-        SyncMeshFromData(entry);
+        SyncMeshFromData(meshContext);
         Repaint();
     }
 
@@ -178,14 +178,14 @@ public partial class SimpleMeshFactory
     private void MergeSelectedVertices()
     {
         if (_selectedVertices.Count < 2) return;
-        var entry = _model.CurrentEntry;
-        if (entry?.Data == null) return;
+        var meshContext = _model.CurrentMeshContext;
+        if (meshContext?.Data == null) return;
 
         // スナップショット取得（操作前）
         var before = MeshDataSnapshot.Capture(_undoController.MeshContext);
 
         // マージ処理
-        int mergedVertex = ExecuteMergeVertices(entry.Data, new HashSet<int>(_selectedVertices));
+        int mergedVertex = ExecuteMergeVertices(meshContext.Data, new HashSet<int>(_selectedVertices));
 
         // 選択を更新（マージ後の1頂点のみ選択）
         _selectedVertices.Clear();
@@ -202,7 +202,7 @@ public partial class SimpleMeshFactory
         _undoController.RecordTopologyChange(before, after, "Merge Vertices");
 
         // メッシュ更新
-        SyncMeshFromData(entry);
+        SyncMeshFromData(meshContext);
         Repaint();
     }
 
@@ -325,15 +325,15 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// キーボードショートカット処理
     /// </summary>
-    private void HandleKeyboardShortcuts(Event e, MeshContext entry)
+    private void HandleKeyboardShortcuts(Event e, MeshContext meshContext)
     {
         switch (e.keyCode)
         {
             case KeyCode.A:
                 // A: 全選択トグル
-                if (entry.Data != null)
+                if (meshContext.Data != null)
                 {
-                    if (_selectedVertices.Count == entry.Data.VertexCount)
+                    if (_selectedVertices.Count == meshContext.Data.VertexCount)
                     {
                         ClearSelection();
                     }

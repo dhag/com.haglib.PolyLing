@@ -122,7 +122,7 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// ミラーメッシュを描画（PreviewRenderUtility用）
     /// </summary>
-    private void DrawMirroredMesh(MeshContext entry, Mesh mesh)
+    private void DrawMirroredMesh(MeshContext meshContext, Mesh mesh)
     {
         if (!_symmetrySettings.IsEnabled || !_symmetrySettings.ShowMirrorMesh)
             return;
@@ -137,11 +137,11 @@ public partial class SimpleMeshFactory
 
         for (int i = 0; i < subMeshCount; i++)
         {
-            // エントリのマテリアルがあればそれを使用、なければミラー用マテリアル
+            // メッシュコンテキストのマテリアルがあればそれを使用、なければミラー用マテリアル
             Material baseMat = null;
-            if (entry != null && i < entry.Materials.Count)
+            if (meshContext != null && i < meshContext.Materials.Count)
             {
-                baseMat = entry.Materials[i];
+                baseMat = meshContext.Materials[i];
             }
 
             Material mat = (baseMat != null) ? baseMat : mirrorMat;

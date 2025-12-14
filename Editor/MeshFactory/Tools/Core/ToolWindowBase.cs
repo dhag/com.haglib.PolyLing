@@ -245,15 +245,15 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
-        /// メッシュエントリを追加
+        /// メッシュコンテキストを追加
         /// </summary>
-        protected void AddMesh(MeshContext entry)
+        protected void AddMesh(MeshContext meshContext)
         {
-            _context?.AddMeshContext?.Invoke(entry);
+            _context?.AddMeshContext?.Invoke(meshContext);
         }
 
         /// <summary>
-        /// メッシュエントリを削除
+        /// メッシュコンテキストを削除
         /// </summary>
         protected void RemoveMesh(int index)
         {
@@ -306,7 +306,7 @@ namespace MeshFactory.Tools
         /// コンテキストが設定されていない場合の警告を表示
         /// </summary>
         /// <returns>コンテキストが有効であればtrue</returns>
-        protected bool DrawNoContextWarning(string message = "Context not set. Open from MeshFactory window.")
+        protected bool DrawNoContextWarning(string message = "toolContext not set. Open from MeshFactory window.")
         {
             if (_context == null)
             {

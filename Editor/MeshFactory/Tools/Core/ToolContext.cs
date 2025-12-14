@@ -87,11 +87,11 @@ namespace MeshFactory.Tools
         /// <summary>モデルコンテキスト（メッシュリスト管理）</summary>
         public ModelContext Model { get; set; }
 
-        /// <summary>現在選択中のメッシュエントリ（便利プロパティ）</summary>
-        public MeshContext CurrentMeshContent => Model?.CurrentEntry;
+        /// <summary>現在選択中のメッシュコンテキスト（便利プロパティ）</summary>
+        public MeshContext CurrentMeshContent => Model?.CurrentMeshContext;
 
         /// <summary>メッシュリスト（読み取り専用）</summary>
-        public IReadOnlyList<MeshContext> MeshList => Model?.MeshList;
+        public IReadOnlyList<MeshContext> MeshList => Model?.MeshContextList;
 
         /// <summary>選択中のメッシュインデックス</summary>
         public int SelectedMeshIndex => Model?.SelectedIndex ?? -1;
@@ -101,10 +101,10 @@ namespace MeshFactory.Tools
 
         // === メッシュリスト操作コールバック（Undo対応） ===
 
-        /// <summary>メッシュエントリを追加（Undo対応）</summary>
+        /// <summary>メッシュコンテキストを追加（Undo対応）</summary>
         public Action<MeshContext> AddMeshContext { get; set; }
 
-        /// <summary>メッシュエントリを削除（Undo対応）</summary>
+        /// <summary>メッシュコンテキストを削除（Undo対応）</summary>
         public Action<int> RemoveMeshContext { get; set; }
 
         /// <summary>メッシュを選択（Undo対応）</summary>

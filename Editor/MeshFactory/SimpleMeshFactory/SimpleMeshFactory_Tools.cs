@@ -28,7 +28,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private IEditTool _currentTool => _toolManager?.CurrentTool;
 
     /// <summary>ToolContext（後方互換）</summary>
-    private ToolContext _toolContext => _toolManager?.Context;
+    private ToolContext _toolContext => _toolManager?.toolContext;
 
     // ================================================================
     // 型付きアクセス用プロパティ（後方互換）
@@ -84,7 +84,7 @@ public partial class SimpleMeshFactory : EditorWindow
     /// </summary>
     private void SetupToolContext()
     {
-        var ctx = _toolManager.Context;
+        var ctx = _toolManager.toolContext;
 
         // コールバック設定（エディタ機能への橋渡し）
         ctx.RecordSelectionChange = RecordSelectionChange;
@@ -157,12 +157,12 @@ public partial class SimpleMeshFactory : EditorWindow
     // ToolContext更新
     // ================================================================
 
-    private void UpdateToolContext(MeshContext entry, Rect rect, Vector3 camPos, float camDist)
+    private void UpdateToolContext(MeshContext meshContext, Rect rect, Vector3 camPos, float camDist)
     {
-        var ctx = _toolManager.Context;
+        var ctx = _toolManager.toolContext;
 
-        ctx.MeshData = entry?.Data;
-        ctx.OriginalPositions = entry?.OriginalPositions;
+        ctx.MeshData = meshContext?.Data;
+        ctx.OriginalPositions = meshContext?.OriginalPositions;
         ctx.PreviewRect = rect;
         ctx.CameraPosition = camPos;
         ctx.CameraTarget = _cameraTarget;
@@ -172,11 +172,11 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.GroupOffsets = _groupOffsets;
         ctx.UndoController = _undoController;
         ctx.WorkPlane = _undoController?.WorkPlane;
-        ctx.SyncMesh = () => SyncMeshFromData(entry);
+        ctx.SyncMesh = () => SyncMeshFromData(meshContext);
 
         // マルチマテリアル対応
-        ctx.CurrentMaterialIndex = entry?.CurrentMaterialIndex ?? 0;
-        ctx.Materials = entry?.Materials;
+        ctx.CurrentMaterialIndex = meshContext?.CurrentMaterialIndex ?? 0;
+        ctx.Materials = meshContext?.Materials;
 
         // 選択システム
         ctx.SelectionState = _selectionState;
@@ -192,10 +192,10 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
 
         // UndoコンテキストにもMaterialsを同期
-        if (_undoController?.MeshContext != null && entry != null)
+        if (_undoController?.MeshContext != null && meshContext != null)
         {
-            _undoController.MeshContext.Materials = entry.Materials;
-            _undoController.MeshContext.CurrentMaterialIndex = entry.CurrentMaterialIndex;
+            _undoController.MeshContext.Materials = meshContext.Materials;
+            _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
         }
 
         // デフォルトマテリアルを同期
@@ -215,7 +215,7 @@ public partial class SimpleMeshFactory : EditorWindow
     /// </summary>
     private void NotifyToolOfContextUpdate()
     {
-        var ctx = _toolManager.Context;
+        var ctx = _toolManager.toolContext;
         var current = _toolManager.CurrentTool;
 
         // MergeToolの更新
@@ -286,51 +286,51 @@ public partial class SimpleMeshFactory : EditorWindow
     // ================================================================
 
     /// <summary>
-    /// メッシュエントリを追加（Undo対応）
+    /// メッシュコンテキストを追加（Undo対応）
     /// </summary>
-    private void AddMeshContextWithUndo(MeshContext entry)
+    private void AddMeshContextWithUndo(MeshContext meshContext)
     {
-        if (entry == null) return;
+        if (meshContext == null) return;
 
         int oldIndex = _selectedIndex;
-        int insertIndex = _meshList.Count;
+        int insertIndex = _meshContextList.Count;
 
-        _meshList.Add(entry);
+        _meshContextList.Add(meshContext);
         _selectedIndex = insertIndex;
 
         // Undo記録
         if (_undoController != null)
         {
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextAdd(entry, insertIndex, oldIndex, _selectedIndex);
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldIndex, _selectedIndex);
         }
 
         InitVertexOffsets();
-        LoadEntryToUndoController(_model.CurrentEntry);
+        LoadMeshContextToUndoController(_model.CurrentMeshContext);
         Repaint();
     }
 
     /// <summary>
-    /// メッシュエントリを削除（Undo対応）
+    /// メッシュコンテキストを削除（Undo対応）
     /// </summary>
     private void RemoveMeshContextWithUndo(int index)
     {
-        if (index < 0 || index >= _meshList.Count) return;
+        if (index < 0 || index >= _meshContextList.Count) return;
 
-        var entry = _meshList[index];
+        var meshContext = _meshContextList[index];
         int oldIndex = _selectedIndex;
 
         // メッシュリソース解放
-        if (entry.UnityMesh != null)
+        if (meshContext.UnityMesh != null)
         {
-            DestroyImmediate(entry.UnityMesh);
+            DestroyImmediate(meshContext.UnityMesh);
         }
 
-        _meshList.RemoveAt(index);
+        _meshContextList.RemoveAt(index);
 
         // インデックス調整
-        if (_selectedIndex >= _meshList.Count)
-            _selectedIndex = _meshList.Count - 1;
+        if (_selectedIndex >= _meshContextList.Count)
+            _selectedIndex = _meshContextList.Count - 1;
         else if (_selectedIndex > index)
             _selectedIndex--;
 
@@ -338,8 +338,8 @@ public partial class SimpleMeshFactory : EditorWindow
         if (_undoController != null)
         {
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            var removedList = new List<(int Index, MeshContext Entry)> { (index, entry) };
-            _undoController.RecordMeshEntriesRemove(removedList, oldIndex, _selectedIndex);
+            var removedList = new List<(int Index, MeshContext meshContext)> { (index, meshContext) };
+            _undoController.RecordMeshContextsRemove(removedList, oldIndex, _selectedIndex);
         }
 
         // 選択クリア
@@ -349,7 +349,7 @@ public partial class SimpleMeshFactory : EditorWindow
         if (_model.HasValidSelection)
         {
             InitVertexOffsets();
-            LoadEntryToUndoController(_model.CurrentEntry);
+            LoadMeshContextToUndoController(_model.CurrentMeshContext);
         }
 
         Repaint();
@@ -360,7 +360,7 @@ public partial class SimpleMeshFactory : EditorWindow
     /// </summary>
     private void SelectMeshContentWithUndo(int index)
     {
-        if (index < -1 || index >= _meshList.Count) return;
+        if (index < -1 || index >= _meshContextList.Count) return;
         if (index == _selectedIndex) return;
 
         int oldIndex = _selectedIndex;
@@ -386,7 +386,7 @@ public partial class SimpleMeshFactory : EditorWindow
         if (_model.HasValidSelection)
         {
             InitVertexOffsets();
-            LoadEntryToUndoController(_model.CurrentEntry);
+            LoadMeshContextToUndoController(_model.CurrentMeshContext);
         }
 
         Repaint();
@@ -397,9 +397,9 @@ public partial class SimpleMeshFactory : EditorWindow
     /// </summary>
     private void DuplicateMeshContentWithUndo(int index)
     {
-        if (index < 0 || index >= _meshList.Count) return;
+        if (index < 0 || index >= _meshContextList.Count) return;
 
-        var original = _meshList[index];
+        var original = _meshContextList[index];
 
         // MeshContextを複製
         var clone = new MeshContext
@@ -422,7 +422,7 @@ public partial class SimpleMeshFactory : EditorWindow
         int oldIndex = _selectedIndex;
         int insertIndex = index + 1;
 
-        _meshList.Insert(insertIndex, clone);
+        _meshContextList.Insert(insertIndex, clone);
         _selectedIndex = insertIndex;
 
         // Undo記録
@@ -433,7 +433,7 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         InitVertexOffsets();
-        LoadEntryToUndoController(_model.CurrentEntry);
+        LoadMeshContextToUndoController(_model.CurrentMeshContext);
         Repaint();
     }
 
@@ -442,15 +442,15 @@ public partial class SimpleMeshFactory : EditorWindow
     /// </summary>
     private void ReorderMeshContentWithUndo(int fromIndex, int toIndex)
     {
-        if (fromIndex < 0 || fromIndex >= _meshList.Count) return;
-        if (toIndex < 0 || toIndex >= _meshList.Count) return;
+        if (fromIndex < 0 || fromIndex >= _meshContextList.Count) return;
+        if (toIndex < 0 || toIndex >= _meshContextList.Count) return;
         if (fromIndex == toIndex) return;
 
         int oldSelectedIndex = _selectedIndex;
 
-        var entry = _meshList[fromIndex];
-        _meshList.RemoveAt(fromIndex);
-        _meshList.Insert(toIndex, entry);
+        var meshContext = _meshContextList[fromIndex];
+        _meshContextList.RemoveAt(fromIndex);
+        _meshContextList.Insert(toIndex, meshContext);
 
         // 選択インデックス調整
         if (_selectedIndex == fromIndex)
@@ -470,7 +470,7 @@ public partial class SimpleMeshFactory : EditorWindow
         if (_undoController != null)
         {
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextReorder(entry, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
+            _undoController.RecordMeshContextReorder(meshContext, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
         }
 
         Repaint();
