@@ -951,6 +951,25 @@ namespace MeshFactory.UndoSystem
         // WorkPlane参照（カメラ連動Undo用）
         public WorkPlane WorkPlane;
 
+        // === Foldout状態 ===
+        /// <summary>Foldout開閉をUndo記録するか</summary>
+        public bool RecordFoldoutChanges = false;
+        
+        /// <summary>Foldout状態辞書</summary>
+        public Dictionary<string, bool> FoldoutStates = new Dictionary<string, bool>();
+        
+        /// <summary>Foldout状態を取得（未設定ならデフォルト値を返す）</summary>
+        public bool GetFoldout(string key, bool defaultValue = true)
+        {
+            return FoldoutStates.TryGetValue(key, out var value) ? value : defaultValue;
+        }
+        
+        /// <summary>Foldout状態を設定</summary>
+        public void SetFoldout(string key, bool value)
+        {
+            FoldoutStates[key] = value;
+        }
+
         /// <summary>
         /// スナップショットを作成
         /// </summary>
@@ -969,6 +988,8 @@ namespace MeshFactory.UndoSystem
                 AddToCurrentMesh = AddToCurrentMesh,
                 AutoMergeOnCreate = AutoMergeOnCreate,
                 AutoMergeThreshold = AutoMergeThreshold,
+                RecordFoldoutChanges = RecordFoldoutChanges,
+                FoldoutStates = new Dictionary<string, bool>(FoldoutStates),
             };
             /*
             // KnifeProperty（既存）
@@ -999,6 +1020,17 @@ namespace MeshFactory.UndoSystem
             AddToCurrentMesh = snapshot.AddToCurrentMesh;
             AutoMergeOnCreate = snapshot.AutoMergeOnCreate;
             AutoMergeThreshold = snapshot.AutoMergeThreshold;
+            RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
+            
+            // FoldoutStates復元
+            FoldoutStates.Clear();
+            if (snapshot.FoldoutStates != null)
+            {
+                foreach (var kvp in snapshot.FoldoutStates)
+                {
+                    FoldoutStates[kvp.Key] = kvp.Value;
+                }
+            }
 
             // KnifeProperty（既存）
             /*knifeProperty.Mode = snapshot.knifeProperty.Mode;
@@ -1035,6 +1067,10 @@ namespace MeshFactory.UndoSystem
 
         // 汎用ツール設定（新規追加）
         public ToolSettingsStorage ToolSettings;
+        
+        // Foldout状態
+        public bool RecordFoldoutChanges;
+        public Dictionary<string, bool> FoldoutStates;
 
         public bool IsDifferentFrom(EditorStateSnapshot other)
         {
@@ -1049,7 +1085,14 @@ namespace MeshFactory.UndoSystem
                 CurrentToolName != other.CurrentToolName ||
                 AddToCurrentMesh != other.AddToCurrentMesh ||
                 AutoMergeOnCreate != other.AutoMergeOnCreate ||
-                !Mathf.Approximately(AutoMergeThreshold, other.AutoMergeThreshold))
+                !Mathf.Approximately(AutoMergeThreshold, other.AutoMergeThreshold) ||
+                RecordFoldoutChanges != other.RecordFoldoutChanges)
+            {
+                return true;
+            }
+            
+            // Foldout状態の比較
+            if (!AreFoldoutStatesEqual(FoldoutStates, other.FoldoutStates))
             {
                 return true;
             }
@@ -1079,6 +1122,20 @@ namespace MeshFactory.UndoSystem
             }
 
             return false;
+        }
+        
+        private static bool AreFoldoutStatesEqual(Dictionary<string, bool> a, Dictionary<string, bool> b)
+        {
+            if (a == null && b == null) return true;
+            if (a == null || b == null) return false;
+            if (a.Count != b.Count) return false;
+            
+            foreach (var kvp in a)
+            {
+                if (!b.TryGetValue(kvp.Key, out var bValue) || kvp.Value != bValue)
+                    return false;
+            }
+            return true;
         }
     }
 

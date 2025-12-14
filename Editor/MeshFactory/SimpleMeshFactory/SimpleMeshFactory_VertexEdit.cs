@@ -10,6 +10,8 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.UndoSystem;
+using MeshFactory.Localization;
+
 public partial class SimpleMeshFactory
 {
     // ================================================================
@@ -19,12 +21,12 @@ public partial class SimpleMeshFactory
     {
         using (new EditorGUILayout.VerticalScope(GUILayout.Width(_rightPaneWidth)))
         {
-            EditorGUILayout.LabelField("Vertex Editor", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(L.Get("VertexEditor"), EditorStyles.boldLabel);
 
             var meshContext = _model.CurrentMeshContext;
             if (meshContext == null)
             {
-                EditorGUILayout.HelpBox("メッシュを選択してください", MessageType.Info);
+                EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
                 return;
             }
 
@@ -32,24 +34,24 @@ public partial class SimpleMeshFactory
 
             if (meshData == null)
             {
-                EditorGUILayout.HelpBox("MeshDataが無効です", MessageType.Warning);
+                EditorGUILayout.HelpBox(L.Get("InvalidMeshData"), MessageType.Warning);
                 return;
             }
 
             // メッシュ情報表示
-            EditorGUILayout.LabelField($"Vertices: {meshData.VertexCount}");
-            EditorGUILayout.LabelField($"Faces: {meshData.FaceCount}");
-            EditorGUILayout.LabelField($"Triangles: {meshData.TriangleCount}");
+            EditorGUILayout.LabelField($"{L.Get("Vertices")}: {meshData.VertexCount}");
+            EditorGUILayout.LabelField($"{L.Get("Faces")}: {meshData.FaceCount}");
+            EditorGUILayout.LabelField($"{L.Get("Triangles")}: {meshData.TriangleCount}");
 
             // 面タイプ内訳
             int triCount = meshData.Faces.Count(f => f.IsTriangle);
             int quadCount = meshData.Faces.Count(f => f.IsQuad);
             int nGonCount = meshData.FaceCount - triCount - quadCount;
-            EditorGUILayout.LabelField($"  (Tri:{triCount}, Quad:{quadCount}, NGon:{nGonCount})", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField($"  ({L.Get("Tri")}:{triCount}, {L.Get("Quad")}:{quadCount}, {L.Get("NGon")}:{nGonCount})", EditorStyles.miniLabel);
 
             EditorGUILayout.Space(5);
 
-            if (GUILayout.Button("Reset to Original"))
+            if (GUILayout.Button(L.Get("ResetToOriginal")))
             {
                 var before = _undoController?.CaptureMeshDataSnapshot();
 
@@ -74,7 +76,7 @@ public partial class SimpleMeshFactory
             // ================================================================
             // 保存機能
             // ================================================================
-            EditorGUILayout.LabelField("Save", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField(L.Get("Save"), EditorStyles.miniBoldLabel);
 
             // Export Transform設定（メッシュコンテキストごと）
             if (meshContext.ExportSettings != null)
@@ -83,17 +85,17 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(4);
             }
 
-            if (GUILayout.Button("Save UnityMesh Asset..."))
+            if (GUILayout.Button(L.Get("SaveMeshAsset")))
             {
                 SaveMesh(meshContext);
             }
 
-            if (GUILayout.Button("Save as Prefab..."))
+            if (GUILayout.Button(L.Get("SaveAsPrefab")))
             {
                 SaveAsPrefab(meshContext);
             }
 
-            if (GUILayout.Button("Add to Hierarchy"))
+            if (GUILayout.Button(L.Get("AddToHierarchy")))
             {
                 AddToHierarchy(meshContext);
             }
@@ -103,14 +105,14 @@ public partial class SimpleMeshFactory
             // ================================================================
             // モデル保存/読み込み
             // ================================================================
-            EditorGUILayout.LabelField("Model File", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField(L.Get("ModelFile"), EditorStyles.miniBoldLabel);
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Export Model..."))
+            if (GUILayout.Button(L.Get("ExportModel")))
             {
                 ExportModel();
             }
-            if (GUILayout.Button("Import Model..."))
+            if (GUILayout.Button(L.Get("ImportModel")))
             {
                 ImportModel();
             }

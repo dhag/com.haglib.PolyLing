@@ -25,11 +25,17 @@ namespace MeshFactory.Tools
         public static readonly Func<IEditTool>[] ToolFactories = new Func<IEditTool>[]
         {
             // Selection
-            () => new SelectTool(),
-            () => new AdvancedSelectTool(),
+            //() => new SelectTool(),
+            //() => new AdvancedSelectTool(),
 
             // Transform
+            //() => new MoveTool(),
+            //() => new SculptTool(),
+
+
             () => new MoveTool(),
+            () => new AdvancedSelectTool(),
+
             () => new SculptTool(),
 
             // Topology
@@ -66,7 +72,7 @@ namespace MeshFactory.Tools
             }
 
             // デフォルトツールを設定
-            manager.SetDefault("Select");
+            //manager.SetDefault("Move");
         }
         /*
         /// <summary>

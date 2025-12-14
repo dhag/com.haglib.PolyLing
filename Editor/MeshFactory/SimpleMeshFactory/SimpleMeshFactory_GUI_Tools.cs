@@ -10,6 +10,7 @@ using UnityEngine;
 using MeshFactory.Tools;
 using MeshFactory.Tools.Windows;
 using MeshFactory.Selection;
+using MeshFactory.Localization;
 
 
 public partial class SimpleMeshFactory
@@ -20,7 +21,7 @@ public partial class SimpleMeshFactory
 
     private void DrawToolsSection()
     {
-        _foldTools = EditorGUILayout.Foldout(_foldTools, "Tools", true);
+        _foldTools = DrawFoldoutWithUndo("Tools", L.Get("Tools"), true);
         if (!_foldTools)
             return;
 
@@ -87,7 +88,10 @@ public partial class SimpleMeshFactory
         if (isActive)
             GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
 
-        if (GUILayout.Toggle(isActive, tool.DisplayName, "Button") && !isActive)
+        // ツール名をローカライズ（Tool_XXX形式で辞書を検索）
+        string displayName = L.Get("Tool_" + tool.Name);
+
+        if (GUILayout.Toggle(isActive, displayName, "Button") && !isActive)
         {
             // Undo記録付きでツール切り替え
             SwitchToolWithUndo(tool);
@@ -190,14 +194,14 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawToolWindowsSection()
     {
-        _foldToolWindows = EditorGUILayout.Foldout(_foldToolWindows, "Tool Windows", true);
+        _foldToolWindows = DrawFoldoutWithUndo("ToolWindows", L.Get("ToolWindows"), false);
         if (!_foldToolWindows)
             return;
 
         EditorGUI.indentLevel++;
 
         // UnityMesh List Window（統合版）
-        if (GUILayout.Button("Open UnityMesh List Window"))
+        if (GUILayout.Button(L.Get("OpenMeshListWindow")))
         {
             MeshListWindow.Open(_toolManager?.toolContext);
         }

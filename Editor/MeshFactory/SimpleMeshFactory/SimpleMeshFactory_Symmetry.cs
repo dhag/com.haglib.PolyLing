@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Symmetry;
+using MeshFactory.Localization;
 
 public partial class SimpleMeshFactory
 {
@@ -41,14 +42,14 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawSymmetryUI()
     {
-        _foldSymmetry = EditorGUILayout.Foldout(_foldSymmetry, "Symmetry (Mirror)", true);
+        _foldSymmetry = DrawFoldoutWithUndo("Symmetry", L.Get("Symmetry"), true);
         if (!_foldSymmetry) return;
 
         EditorGUI.indentLevel++;
 
         // 有効/無効トグル
         EditorGUI.BeginChangeCheck();
-        bool newEnabled = EditorGUILayout.Toggle("Enable Mirror", _symmetrySettings.IsEnabled);
+        bool newEnabled = EditorGUILayout.Toggle(L.Get("EnableMirror"), _symmetrySettings.IsEnabled);
         if (EditorGUI.EndChangeCheck())
         {
             _symmetrySettings.IsEnabled = newEnabled;
@@ -62,7 +63,7 @@ public partial class SimpleMeshFactory
 
             // 軸選択
             EditorGUI.BeginChangeCheck();
-            var newAxis = (SymmetryAxis)EditorGUILayout.EnumPopup("Axis", _symmetrySettings.Axis);
+            var newAxis = (SymmetryAxis)EditorGUILayout.EnumPopup(L.Get("Axis"), _symmetrySettings.Axis);
             if (EditorGUI.EndChangeCheck())
             {
                 _symmetrySettings.Axis = newAxis;
@@ -71,7 +72,7 @@ public partial class SimpleMeshFactory
 
             // 平面オフセット
             EditorGUI.BeginChangeCheck();
-            float newOffset = EditorGUILayout.Slider("Plane Offset", _symmetrySettings.PlaneOffset, -1f, 1f);
+            float newOffset = EditorGUILayout.Slider(L.Get("PlaneOffset"), _symmetrySettings.PlaneOffset, -1f, 1f);
             if (EditorGUI.EndChangeCheck())
             {
                 _symmetrySettings.PlaneOffset = newOffset;
@@ -83,7 +84,7 @@ public partial class SimpleMeshFactory
             {
                 EditorGUILayout.BeginHorizontal();
                 GUILayout.FlexibleSpace();
-                if (GUILayout.Button("Reset Offset", EditorStyles.miniButton, GUILayout.Width(80)))
+                if (GUILayout.Button(L.Get("ResetOffset"), EditorStyles.miniButton, GUILayout.Width(80)))
                 {
                     _symmetrySettings.PlaneOffset = 0f;
                     Repaint();
@@ -94,13 +95,13 @@ public partial class SimpleMeshFactory
             EditorGUILayout.Space(3);
 
             // 表示オプション
-            EditorGUILayout.LabelField("Display Options", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField(L.Get("DisplayOptions"), EditorStyles.miniLabel);
 
             EditorGUI.BeginChangeCheck();
-            bool showMesh = EditorGUILayout.Toggle("Mirror UnityMesh", _symmetrySettings.ShowMirrorMesh);
-            bool showWire = EditorGUILayout.Toggle("Mirror Wireframe", _symmetrySettings.ShowMirrorWireframe);
-            bool showPlane = EditorGUILayout.Toggle("Symmetry Plane", _symmetrySettings.ShowSymmetryPlane);
-            float alpha = EditorGUILayout.Slider("Mirror Alpha", _symmetrySettings.MirrorAlpha, 0.1f, 1f);
+            bool showMesh = EditorGUILayout.Toggle(L.Get("MirrorMesh"), _symmetrySettings.ShowMirrorMesh);
+            bool showWire = EditorGUILayout.Toggle(L.Get("MirrorWireframe"), _symmetrySettings.ShowMirrorWireframe);
+            bool showPlane = EditorGUILayout.Toggle(L.Get("SymmetryPlane"), _symmetrySettings.ShowSymmetryPlane);
+            float alpha = EditorGUILayout.Slider(L.Get("MirrorAlpha"), _symmetrySettings.MirrorAlpha, 0.1f, 1f);
 
             if (EditorGUI.EndChangeCheck())
             {

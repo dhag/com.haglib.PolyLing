@@ -6,6 +6,7 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Tools;
 using MeshFactory.Selection;
+using MeshFactory.Localization;
 
 public partial class SimpleMeshFactory
 {
@@ -24,14 +25,14 @@ public partial class SimpleMeshFactory
             EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanUndo))
             {
-                if (GUILayout.Button("↶ Undo"))
+                if (GUILayout.Button(L.Get("Undo")))
                 {
                     _undoController?.Undo();
                 }
             }
             using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanRedo))
             {
-                if (GUILayout.Button("Redo ↷"))
+                if (GUILayout.Button(L.Get("Redo")))
                 {
                     _undoController?.Redo();
                 }
@@ -54,14 +55,14 @@ public partial class SimpleMeshFactory
             // ================================================================
             // Display セクション
             // ================================================================
-            _foldDisplay = EditorGUILayout.Foldout(_foldDisplay, "Display", true);
+            _foldDisplay = DrawFoldoutWithUndo("Display", L.Get("Display"), true);
             if (_foldDisplay)
             {
                 EditorGUI.indentLevel++;
 
                 EditorGUI.BeginChangeCheck();
-                bool newShowWireframe = EditorGUILayout.Toggle("Wireframe", _showWireframe);
-                bool newShowVertices = EditorGUILayout.Toggle("Show Vertices", _showVertices);
+                bool newShowWireframe = EditorGUILayout.Toggle(L.Get("Wireframe"), _showWireframe);
+                bool newShowVertices = EditorGUILayout.Toggle(L.Get("ShowVertices"), _showVertices);
                 bool newVertexEditMode = newShowVertices;
 
                 if (EditorGUI.EndChangeCheck())
@@ -90,7 +91,7 @@ public partial class SimpleMeshFactory
                 }
 
                 EditorGUILayout.Space(2);
-                EditorGUILayout.LabelField("Zoom", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField(L.Get("Zoom"), EditorStyles.miniLabel);
                 EditorGUI.BeginChangeCheck();
                 float newDist = EditorGUILayout.Slider(_cameraDistance, 0.1f, 10f);
                 if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newDist, _cameraDistance))
@@ -104,6 +105,32 @@ public partial class SimpleMeshFactory
                 // ★対称モードUI
                 DrawSymmetryUI();
 
+                EditorGUILayout.Space(3);
+                
+                // 言語設定
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(L.Get("Language"), GUILayout.Width(60));
+                EditorGUI.BeginChangeCheck();
+                var newLang = (Language)EditorGUILayout.EnumPopup(L.CurrentLanguage);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    L.CurrentLanguage = newLang;
+                    Repaint();
+                }
+                EditorGUILayout.EndHorizontal();
+                
+                // Foldout Undo記録設定
+                if (_undoController != null)
+                {
+                    bool recordFoldout = _undoController.EditorState.RecordFoldoutChanges;
+                    EditorGUI.BeginChangeCheck();
+                    bool newRecordFoldout = EditorGUILayout.Toggle(L.Get("UndoFoldout"), recordFoldout);
+                    if (EditorGUI.EndChangeCheck() && newRecordFoldout != recordFoldout)
+                    {
+                        _undoController.EditorState.RecordFoldoutChanges = newRecordFoldout;
+                    }
+                }
+
                 EditorGUI.indentLevel--;
             }
 
@@ -112,19 +139,19 @@ public partial class SimpleMeshFactory
             // ================================================================
             // Primitive セクション
             // ================================================================
-            _foldPrimitive = EditorGUILayout.Foldout(_foldPrimitive, "Primitive", true);
+            _foldPrimitive = DrawFoldoutWithUndo("Primitive", L.Get("Primitive"), true);
             if (_foldPrimitive)
             {
                 EditorGUI.indentLevel++;
 
                 // Empty UnityMesh
-                if (GUILayout.Button("+ Empty UnityMesh"))
+                if (GUILayout.Button(L.Get("EmptyMesh")))
                 {
                     CreateEmptyMesh();
                 }
 
                 // Clear All
-                if (GUILayout.Button("Clear All"))
+                if (GUILayout.Button(L.Get("ClearAll")))
                 {
                     CleanupMeshes();
                     _selectedIndex = -1;
@@ -136,16 +163,16 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(3);
 
                 // Load UnityMesh
-                EditorGUILayout.LabelField("Load UnityMesh", EditorStyles.miniBoldLabel);
-                if (GUILayout.Button("From UnityMesh Asset..."))
+                EditorGUILayout.LabelField(L.Get("LoadMesh"), EditorStyles.miniBoldLabel);
+                if (GUILayout.Button(L.Get("FromAsset")))
                 {
                     LoadMeshFromAsset();
                 }
-                if (GUILayout.Button("From Prefab..."))
+                if (GUILayout.Button(L.Get("FromPrefab")))
                 {
                     LoadMeshFromPrefab();
                 }
-                if (GUILayout.Button("From Selection"))
+                if (GUILayout.Button(L.Get("FromSelection")))
                 {
                     LoadMeshFromSelection();
                 }
@@ -153,12 +180,12 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(3);
 
                 // Create UnityMesh
-                EditorGUILayout.LabelField("Create UnityMesh", EditorStyles.miniBoldLabel);
+                EditorGUILayout.LabelField(L.Get("CreateMesh"), EditorStyles.miniBoldLabel);
 
                 // ★追加モードUI（Undo対応）
                 EditorGUILayout.BeginHorizontal();
                 EditorGUI.BeginChangeCheck();
-                bool newAddToCurrentMesh = EditorGUILayout.ToggleLeft("Add to Current", _addToCurrentMesh, GUILayout.Width(110));
+                bool newAddToCurrentMesh = EditorGUILayout.ToggleLeft(L.Get("AddToCurrent"), _addToCurrentMesh, GUILayout.Width(110));
                 if (EditorGUI.EndChangeCheck() && newAddToCurrentMesh != _addToCurrentMesh)
                 {
                     if (_undoController != null)
@@ -176,14 +203,14 @@ public partial class SimpleMeshFactory
                 // 追加先がない場合は警告
                 if (_addToCurrentMesh && !_model.HasValidSelection)
                 {
-                    EditorGUILayout.LabelField("(No mesh selected)", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(L.Get("NoMeshSelected"), EditorStyles.miniLabel);
                 }
                 EditorGUILayout.EndHorizontal();
 
                 // 自動マージUI（Undo対応）
                 EditorGUILayout.BeginHorizontal();
                 EditorGUI.BeginChangeCheck();
-                bool newAutoMergeOnCreate = EditorGUILayout.ToggleLeft("Auto Merge", _autoMergeOnCreate, GUILayout.Width(90));
+                bool newAutoMergeOnCreate = EditorGUILayout.ToggleLeft(L.Get("AutoMerge"), _autoMergeOnCreate, GUILayout.Width(90));
                 if (EditorGUI.EndChangeCheck() && newAutoMergeOnCreate != _autoMergeOnCreate)
                 {
                     if (_undoController != null)
@@ -268,7 +295,7 @@ public partial class SimpleMeshFactory
             {
                 _undoController?.FocusVertexEdit();
 
-                _foldSelection = EditorGUILayout.Foldout(_foldSelection, "Selection", true);
+                _foldSelection = DrawFoldoutWithUndo("Selection", L.Get("Selection"), true);
                 if (_foldSelection)
                 {
                     EditorGUI.indentLevel++;
@@ -284,20 +311,19 @@ public partial class SimpleMeshFactory
                         totalVertices = meshContext.Data.VertexCount;
                     }
 
-                    //EditorGUILayout.LabelField($"Selected: {_selectedVertices.Count} / {totalVertices}", EditorStyles.miniLabel);
-                    EditorGUILayout.LabelField($"Selected: {_selectionState.SelectionCount} / {totalVertices}", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(L.GetSelectedCount(_selectionState.SelectionCount, totalVertices), EditorStyles.miniLabel);
 
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button("All", GUILayout.Width(40)))
+                        if (GUILayout.Button(L.Get("All"), GUILayout.Width(40)))
                         {
                             SelectAllVertices();
                         }
-                        if (GUILayout.Button("None", GUILayout.Width(40)))
+                        if (GUILayout.Button(L.Get("None"), GUILayout.Width(40)))
                         {
                             ClearSelection();
                         }
-                        if (GUILayout.Button("Invert", GUILayout.Width(50)))
+                        if (GUILayout.Button(L.Get("Invert"), GUILayout.Width(50)))
                         {
                             InvertSelection();
                         }
@@ -308,7 +334,7 @@ public partial class SimpleMeshFactory
                     {
                         var oldColor = GUI.backgroundColor;
                         GUI.backgroundColor = new Color(1f, 0.6f, 0.6f); // 薄い赤
-                        if (GUILayout.Button("Delete Selected"))
+                        if (GUILayout.Button(L.Get("DeleteSelected")))
                         {
                             DeleteSelectedVertices();
                         }
