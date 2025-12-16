@@ -104,6 +104,8 @@ namespace MeshFactory.Tools
 
         /// <summary>メッシュコンテキストを追加（Undo対応）</summary>
         public Action<MeshContext> AddMeshContext { get; set; }
+        /// <summary>メッシュコンテキストを複数追加（Undo対応・バッチ）</summary>
+        public Action<IList<MeshContext>> AddMeshContexts { get; set; }
 
         /// <summary>メッシュコンテキストを削除（Undo対応）</summary>
         public Action<int> RemoveMeshContext { get; set; }

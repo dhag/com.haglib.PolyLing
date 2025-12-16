@@ -105,6 +105,16 @@ public partial class SimpleMeshFactory : EditorWindow
         // Phase 4追加: メッシュ作成コールバック
         ctx.CreateNewMeshContext = OnMeshDataCreatedAsNew;
         ctx.AddMeshDataToCurrentMesh = OnMeshDataCreatedAddToCurrent;
+
+        // MeshContext操作コールバック
+        ctx.Model = _model;
+        ctx.AddMeshContext = AddMeshContextWithUndo;
+        ctx.AddMeshContexts = AddMeshContextsWithUndo;  // ★追加
+        ctx.RemoveMeshContext = RemoveMeshContextWithUndo;
+        ctx.SelectMeshContext = SelectMeshContentWithUndo;
+        ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
+        ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
+
     }
 
     /// <summary>
@@ -191,6 +201,7 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // ModelContext（Phase 3追加）
         ctx.Model = _model;
+        ctx.AddMeshContexts = AddMeshContextsWithUndo;  // ★追加
         ctx.AddMeshContext = AddMeshContextWithUndo;
         ctx.RemoveMeshContext = RemoveMeshContextWithUndo;
         ctx.SelectMeshContext = SelectMeshContentWithUndo;
@@ -338,9 +349,47 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         InitVertexOffsets();
-        LoadMeshContextToUndoController(_model.CurrentMeshContext);
+        LoadMeshContextToUndoController(_model.CurrentMeshContext); 
+        UpdateTopology();  // ← これを追加
         Repaint();
     }
+    /// <summary>
+    /// メッシュコンテキストを複数追加（Undo対応・バッチ）
+    /// </summary>
+    private void AddMeshContextsWithUndo(IList<MeshContext> meshContexts)
+    {
+        if (meshContexts == null || meshContexts.Count == 0) return;
+
+        int oldIndex = _selectedIndex;
+        var addedContexts = new List<(int, MeshContext)>();
+
+        foreach (var meshContext in meshContexts)
+        {
+            if (meshContext == null) continue;
+
+            int insertIndex = _meshContextList.Count;
+            _meshContextList.Add(meshContext);
+            addedContexts.Add((insertIndex, meshContext));
+        }
+
+        if (addedContexts.Count == 0) return;
+
+        // 最後に追加したものを選択
+        _selectedIndex = _meshContextList.Count - 1;
+
+        // Undo記録（1回でまとめて）
+        if (_undoController != null)
+        {
+            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshContextsAdd(addedContexts, oldIndex, _selectedIndex);
+        }
+
+        InitVertexOffsets();
+        LoadMeshContextToUndoController(_model.CurrentMeshContext);
+        UpdateTopology();
+        Repaint();
+    }
+
 
     /// <summary>
     /// メッシュコンテキストを削除（Undo対応）

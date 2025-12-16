@@ -20,7 +20,7 @@ namespace MeshFactory.Tools.Panels
     public class MeshListPanel : IToolPanelBase
     {
         // ================================================================
-        // IToolWindow実装
+        // IToolPanel実装
         // ================================================================
 
         public override string Name => "MeshContextList";

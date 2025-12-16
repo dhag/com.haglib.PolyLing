@@ -2,7 +2,7 @@
 // ToolManager統合版
 // Phase 1: UI描画をToolManagerと連携
 // ToolButtonLayoutを削除し、登録順で2列自動レイアウト
-// Phase 4: ToolWindow対応
+// Phase 4: ToolPanel対応
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -184,18 +184,18 @@ public partial class SimpleMeshFactory
     }
 
     // ================================================================
-    // ToolWindows セクション（Phase 4追加）
+    // ToolPanels セクション（Phase 4追加）
     // ================================================================
 
-    private bool _foldToolWindows = false;
+    private bool _foldToolPanel = false;
 
     /// <summary>
-    /// ToolWindowsセクションを描画
+    /// ToolPanelsセクションを描画
     /// </summary>
     private void DrawToolPanelsSection()
     {
-        _foldToolWindows = DrawFoldoutWithUndo("ToolWindows", L.Get("ToolWindows"), false);
-        if (!_foldToolWindows)
+        _foldToolPanel = DrawFoldoutWithUndo("ToolWindows", L.Get("ToolWindows"), false);
+        if (!_foldToolPanel)
             return;
 
         EditorGUI.indentLevel++;
@@ -205,7 +205,22 @@ public partial class SimpleMeshFactory
         {
             MeshListPanel.Open(_toolManager?.toolContext);
         }
+        // === Import/Export ===
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("Import / Export", EditorStyles.miniLabel);
 
+        if (GUILayout.Button("MQO Import..."))
+        {
+            MeshFactory.MQO.MQOImportPanel.Open(_toolManager?.toolContext);
+        }
+
+        EditorGUI.BeginDisabledGroup(!_model.HasValidSelection);
+        if (GUILayout.Button("MQO Export..."))
+        {
+            // MeshFactory.MQO.MQOExportPanel.Open(_toolManager?.toolContext);  // Phase 2
+        }
+        EditorGUI.EndDisabledGroup();
+        /*
         // 登録されたToolWindow
         var windows = ToolPanelRegistry.Windows;
         if (windows != null && windows.Length > 0)
@@ -220,6 +235,7 @@ public partial class SimpleMeshFactory
                 }
             }
         }
+        */
 
         EditorGUI.indentLevel--;
     }

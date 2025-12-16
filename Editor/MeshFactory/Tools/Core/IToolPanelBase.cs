@@ -11,6 +11,7 @@ using MeshFactory.Model;
 
 // MeshContentはSimpleMeshFactoryのネストクラスを参照
 using MeshContext = SimpleMeshFactory.MeshContext;
+using MeshFactory.MQO;
 
 namespace MeshFactory.Tools
 {
@@ -42,7 +43,7 @@ namespace MeshFactory.Tools
 
     /// <summary>
     /// 独立ウィンドウ型ツールの基底クラス
-    /// EditorWindow + IToolWindowを実装
+    /// EditorWindow + IToolPanelを実装
     /// </summary>
     public abstract class IToolPanelBase : EditorWindow, IToolPanel
     {

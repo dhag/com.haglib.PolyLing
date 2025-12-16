@@ -916,6 +916,31 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
+        /// メッシュコンテキスト複数追加を記録（バッチ）
+        /// </summary>
+        public void RecordMeshContextsAdd(
+            List<(int Index, SimpleMeshFactory.MeshContext MeshContext)> addedContexts,
+            int oldSelectedIndex,
+            int newSelectedIndex)
+        {
+            var record = new MeshListChangeRecord
+            {
+                AddedMeshContexts = addedContexts
+                    .Select(e => (e.Index, MeshContextSnapshot.Capture(e.MeshContext)))
+                    .ToList(),
+                OldSelectedIndex = oldSelectedIndex,
+                NewSelectedIndex = newSelectedIndex
+            };
+
+            string desc = addedContexts.Count == 1
+                ? $"Add Mesh: {addedContexts[0].MeshContext.Name}"
+                : $"Add {addedContexts.Count} Meshes";
+
+            _meshListStack.Record(record, desc);
+            FocusMeshList();
+        }
+
+        /// <summary>
         /// メッシュコンテキスト削除を記録（複数対応）
         /// </summary>
         /// <param name="removedContexts">削除されたメッシュコンテキスト（インデックス + コンテキスト）のリスト</param>
@@ -963,5 +988,7 @@ namespace MeshFactory.UndoSystem
             _meshListStack.Record(record, $"Reorder UnityMesh: {meshContext.Name}");
             FocusMeshList();
         }
+
+
     }
 }
