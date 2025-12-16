@@ -1,0 +1,506 @@
+#pragma enable_d3d11_debug_symbols
+//#pragma kernel __ComputeMain2DPixelA ///スクリーン上の頂点位置
+#pragma kernel __ComputeMain2DPixelB //各頂点のスクリーン座標と、マウスからの画素距離を計算
+#pragma kernel __ComputeMain2DPixelC //各線分とマウスの最短距離を計算（segmentDistance使用）
+//#pragma kernel __ComputeMain2DPixelD // 動作未確認 三角形内に点があるかどうかを判定する
+#pragma kernel __ComputeMain2DPixelE //多角形の表裏判定（時計回りか反時計回りか）
+#pragma kernel __ComputeMain2DPixelF //表裏判定の結果を頂点カラー（のZ成分）に書き戻し。頂点や線分のカリングに用いる。
+#pragma kernel __ComputeMain2DPixelG //マウスが多角形の内部にあるかを判定（面のヒットテスト）
+
+//漢字はUTF8で
+//HLSL Compute Shader 
+//  Don't use KANJI comment.
+//#include "UnityCG.cginc"
+
+//struct CSResult{
+//    float3 pos1;
+//    float3 pos2;
+//};
+
+
+RWByteAddressBuffer _InputLineIndexBuffer;
+
+RWByteAddressBuffer _InputFaceVertexIndexBuffer;
+RWByteAddressBuffer _InputFaceVertexIndexOffsetBuffer;
+RWByteAddressBuffer _InputFaceVertexIndexCountBuffer;
+
+
+RWStructuredBuffer<float3> _InputPositionBuffer;
+//RWStructuredBuffer<CSResult> _OutputPositionBuffer;
+RWStructuredBuffer<float3> _OutputPositionBuffer1;
+RWStructuredBuffer<float3> _OutputPositionBuffer2;
+//RWStructuredBuffer<float4> _OutputColorBuffer;
+
+
+//float _DeltaTime;
+float4x4 _MATRIX_MVP;
+float4 _CameraScaledPixelSize;
+
+float3 _MousePosition;
+/*
+//インデックス(_InputPositionBuffer)指定で2次元位置をもとめる関数
+float2 mul_MATRIX_MVP(int id)
+{
+/@
+    float3 p = _InputPositionBuffer[id];
+    float4 p__2D_Position = mul(_MATRIX_MVP, float4(p, 1));
+    p__2D_Position.x = p__2D_Position.x * _CameraScaledPixelSize.x;
+    p__2D_Position.y = p__2D_Position.y * _CameraScaledPixelSize.y;
+
+
+    p__2D_Position.y = (-p__2D_Position.y);
+    if (p__2D_Position.w != 0)
+    {
+        p__2D_Position.x /= p__2D_Position.w;
+        p__2D_Position.y /= p__2D_Position.w;
+    }
+    p__2D_Position.x = (p__2D_Position.x + _CameraScaledPixelSize.x) * 0.5;
+    p__2D_Position.y = (p__2D_Position.y + _CameraScaledPixelSize.y) * 0.5;
+    return p__2D_Position.xy;
+@/
+    return mul_MATRIX_MVP3(id).xy;
+    
+}   
+*/ 
+//インデックス(_InputPositionBuffer)指定で2次元位置をもとめる関数
+float3 mul_MATRIX_MVP3(int id)
+{
+    float3 p = _InputPositionBuffer[id];
+    float4 p__2D_Position = mul(_MATRIX_MVP, float4(p, 1));
+    p__2D_Position.x = p__2D_Position.x * _CameraScaledPixelSize.x;
+    p__2D_Position.y = p__2D_Position.y * _CameraScaledPixelSize.y;
+
+
+    p__2D_Position.y = (-p__2D_Position.y);
+    if (p__2D_Position.w != 0)
+    {
+        p__2D_Position.x /= p__2D_Position.w;
+        p__2D_Position.y /= p__2D_Position.w;
+        p__2D_Position.z /= p__2D_Position.w; //.zは近い程大きい値になる
+    }
+    p__2D_Position.x = (p__2D_Position.x + _CameraScaledPixelSize.x) * 0.5;
+    p__2D_Position.y = (p__2D_Position.y + _CameraScaledPixelSize.y) * 0.5;
+    return p__2D_Position.xyz; //.zは近い程大きい値になる
+    
+}
+
+//スクリーン上の頂点位置
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelA(uint3 id : SV_DispatchThreadID)
+{
+    const int index = id.x;
+    float3 p__3D_Position = mul_MATRIX_MVP3(index);
+//    _OutputPositionBuffer[index].pos1 = (float3) p__3D_Position;
+    _OutputPositionBuffer1[index] = (float3) p__3D_Position;
+}
+
+//スクリーン上の頂点位置に加え、Zに　マウスからの画素距離を格納する
+
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelB(uint3 id : SV_DispatchThreadID)
+{
+    const int index = id.x;
+    float3 p__3D_Position = mul_MATRIX_MVP3(index); //.zは近い程大きい値になる
+    //Zにマウスからの距離を
+    float x = p__3D_Position.x - _MousePosition.x;
+    float y = p__3D_Position.y - _MousePosition.y;
+    //p__2D_Position.z =sqrt(x*x+y*y);
+
+    //_OutputPositionBuffer[index].pos1 = p__3D_Position; //頂点の3次元位置。.zは近い程大きい値になる。
+    //_OutputPositionBuffer[index].pos2 = float3(0, 0, sqrt(x * x + y * y));//マウスからの距離。計算に使うのはxyのみ
+    _OutputPositionBuffer1[index] = p__3D_Position; //頂点の3次元位置。.zは近い程大きい値になる。
+    _OutputPositionBuffer2[index] = float3(0, 0, sqrt(x * x + y * y)); //マウスからの距離。計算に使うのはxyのみ
+
+}
+
+
+
+
+//線分との距離を計算する関数
+float segmentDistance(float2 pp, float2 p0, float2 p1)
+{
+    // 線分の始点と終点を指定
+    //float2 p0 = float2(1.0, 1.0);
+    //float2 p1 = float2(4.0, 4.0);
+
+    // 別の点を指定
+    //float2 pp = float2(2.0, 3.0);
+
+    // 線分上の最近点を計算
+    float2 v = p1 - p0;
+    float2 w = pp - p0;
+    float t = dot(w, v) / dot(v, v);
+
+    if (t < 0.0)
+    {
+        // 線分の始点（p0）より前に最近点がある場合
+        return length(pp - p0);
+    }
+    else if (t > 1.0)
+    {
+        // 線分の終点（p1）より後に最近点がある場合
+        return length(pp - p1);
+    }
+    else
+    {
+        // 線分上に最近点がある場合
+        float2 nearestPoint = p0 + t * v;
+        return length(pp - nearestPoint);
+    }
+}
+
+
+
+
+
+
+
+// マウスと線分との画素距離を計算する
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelC(uint3 id : SV_DispatchThreadID)
+{
+    const int index = id.x;
+    
+    
+    float2 pp = float2(_MousePosition.x, _MousePosition.y);
+    uint ip0 = _InputLineIndexBuffer.Load(index * 8);//インデックスが4バイトだとこうなのかな
+    uint ip1 = _InputLineIndexBuffer.Load(index * 8 + 4);//インデックスが4バイトだとこうなのかな
+    float2 p0 = mul_MATRIX_MVP3(ip0).xy;
+    float2 p1 = mul_MATRIX_MVP3(ip1).xy; 
+    float distance = segmentDistance(pp, p0, p1);
+    //頂点番号と距離を格納。
+    //_OutputPositionBuffer[index].pos1 = float3(p0.x, p0.y, 0); //ほぼ無意味
+    //_OutputPositionBuffer[index].pos2 = float3((float) ip0, (float) ip1, distance); //線分との距離を計算する関数
+    //_OutputPositionBuffer1[index] = float3(p0.x, p0.y, 0); //ほぼ無意味
+    _OutputPositionBuffer1[index] = float3((float) ip0, (float) ip1, distance); //線分との距離を計算する関数
+}
+
+/*
+// 2Dベクトルの外積を計算する関数
+float Cross(float2 a, float2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
+// 2Dベクトルの差を計算する関数
+float2 Subtract(float2 a, float2 b)
+{
+    return float2(a.x - b.x, a.y - b.y);
+}
+
+// 動作未確認/。三角形内に点があるかどうかを判定する関数
+float IsPointInsideTriangle(float2 A, float2 B, float2 C, float2 P)
+{
+    float2 v0 = Subtract(C, A);
+    float2 v1 = Subtract(B, A);
+    float2 v2 = Subtract(P, A);
+
+    float dot00 = dot(v0, v0);
+    float dot01 = dot(v0, v1);
+    float dot02 = dot(v0, v2);
+    float dot11 = dot(v1, v1);
+    float dot12 = dot(v1, v2);
+
+    float invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+    // uとvが0以上かつ1以下、かつu + v <= 1であれば、点は三角形内にある
+    return (u >= 0.0 && v >= 0.0 && u + v <= 1.0) ? 1.0 : 0.0;
+}
+
+// 動作未確認/カーネル。三角形内に点があるかどうかを判定する
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelD(uint3 id : SV_DispatchThreadID)
+{
+    const int index = id.x;
+    
+    float2 pp = float2(_MousePosition.x, _MousePosition.y).xy;
+
+    float2 vertexA = mul_MATRIX_MVP3(_InputTriangleIndexBuffer.Load(index * 4 * 3)).xy;
+    float2 vertexB = mul_MATRIX_MVP3(_InputTriangleIndexBuffer.Load(index * 4 * 3 + 4)).xy;
+    float2 vertexC = mul_MATRIX_MVP3(_InputTriangleIndexBuffer.Load(index * 4 * 3 + 8)).xy;
+
+    // 三角形の3つの頂点を指定
+    //    float2 vertexA = float2(1.0, 1.0);
+    //    float2 vertexB = float2(4.0, 1.0);
+    //    float2 vertexC = float2(2.5, 4.0);
+
+    // 判定対象の点を指定
+    //float2 pp = float2(2.0, 2.0);
+
+    // 点が三角形内にあるかどうかを判定
+    float isInsideTriangle = IsPointInsideTriangle(vertexA, vertexB, vertexC, pp);
+
+    // 結果を出力
+    //return isInsideTriangle;
+    _OutputPositionBuffer[index].pos.z = isInsideTriangle;
+}
+
+*/
+
+ // 多角形が右で回りかを判定する関数
+bool IsClockwise(float2 vertices[16], int numVertices)
+{
+    bool isClockwise = true;
+
+    for (int i = 0; i < numVertices; ++i)
+    {
+        float2 currentVertex = vertices[i];
+        float2 nextVertex = vertices[((uint) i + 1) % numVertices];
+        float2 prevVertex = vertices[((uint) i + numVertices - 1) % numVertices];
+
+        // 現在の頂点と前後の頂点との外積を計算
+        float crossProduct = (nextVertex.x - currentVertex.x) * (prevVertex.y - currentVertex.y) -
+                             (nextVertex.y - currentVertex.y) * (prevVertex.x - currentVertex.x);
+
+        // 外積が0より小さい場合、点は多角形の右側（時計回り）にある.
+        // そうでないものが一つでもある場合は、多角形は時計回りではない
+        if (crossProduct >= 0)
+        {
+            isClockwise = false;
+            break;
+        }
+    }
+
+    return isClockwise;
+}
+
+
+//表裏を判定その１
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelE(uint3 id : SV_DispatchThreadID)
+{
+    float2 polygonVertices[16];    
+    int index = id.x;    
+    
+    int numVertices = _InputFaceVertexIndexCountBuffer.Load(index * 4); //int == 32bit=4byte
+    int offset = _InputFaceVertexIndexOffsetBuffer.Load(index * 4); //int == 32bit=4byte
+    for (int j = 0; j < numVertices; j++)
+    {
+        int idd = _InputFaceVertexIndexBuffer.Load((j + offset) * 4); //int == 32bit=4byte
+        polygonVertices[j] = mul_MATRIX_MVP3(idd).xy; //         
+    }
+    // 表裏を判定（多角形が右で回りかを判定）
+    bool isClockwise = IsClockwise(polygonVertices, numVertices);
+
+    //_OutputPositionBuffer[index].pos2 = float3(0, 0, isClockwise ? 1.0f : 0.0f);
+    _OutputPositionBuffer2[index] = float3(0, 0, isClockwise ? 1.0f : 0.0f);
+}
+/*
+//表裏を判定その２(線分用)。出力仕様が異なる。
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelF_NotUse(uint3 id : SV_DispatchThreadID)
+{
+    float2 polygonVertices[16];
+    int index = id.x;
+    
+    int numVertices = _InputFaceVertexIndexCountBuffer.Load(index * 4); //int == 32bit=4byte
+    int offset = _InputFaceVertexIndexOffsetBuffer.Load(index * 4); //int == 32bit=4byte
+    for (int j = 0; j < numVertices; j++)
+    {
+        int idd = _InputFaceVertexIndexBuffer.Load((j + offset) * 4); //int == 32bit=4byte
+        polygonVertices[j] = mul_MATRIX_MVP3(idd).xy; //         
+    }
+    // 表裏を判定（多角形が右で回りかを判定）
+    bool isClockwise = IsClockwise(polygonVertices, numVertices);
+    float a = isClockwise ? 1.0f : 0.0f;
+    //線分の表裏として書き戻し。線分数
+    for (int k = 0; k < numVertices; k++)
+    {
+        _OutputColorBuffer[k + offset] = float4(0.0, 1.0, 1.0, a);
+    }
+}
+*/
+//表裏を判定その3。出力仕様が異なる。表裏判定の結果を頂点カラー（のZ成分）に書き戻し
+//頂点カラーを使って、頂点や線分のカリングを行うことができる。
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelF(uint3 id : SV_DispatchThreadID)
+{
+    float2 polygonVertices[16];
+    int index = id.x;    
+    int numVertices = _InputFaceVertexIndexCountBuffer.Load(index * 4); //int == 32bit=4byte
+    int offset = _InputFaceVertexIndexOffsetBuffer.Load(index * 4); //int == 32bit=4byte
+    for (int j = 0; j < numVertices; j++)
+    {
+        int idd = _InputFaceVertexIndexBuffer.Load((j + offset) * 4); //int == 32bit=4byte
+        polygonVertices[j] = mul_MATRIX_MVP3(idd).xy; //         
+    }
+    // 表裏を判定（多角形が右で回りかを判定）
+    bool isClockwise = true;
+    if (2 < numVertices)//2角形以下は全て表示。
+    {
+        isClockwise = IsClockwise(polygonVertices, numVertices);
+    }
+    float a = isClockwise ? 1.0f : 0.0f;
+    //あらかじめ透明にしてある頂点のカラーへの書き戻し。表示の時だけ不透明になる
+    for (int j = 0; j < numVertices; j++)
+    {
+        int idd = _InputFaceVertexIndexBuffer.Load((j + offset) * 4); //int == 32bit=4byte
+        if (isClockwise)
+        {
+            //older  _OutputColorBuffer[idd].a = 1.0; //カラーで返す。a=1の頂点は、おもて面。
+            _OutputPositionBuffer1[idd].z = 1.0; //カラーで返す。a=1の頂点は、おもて面。
+
+        }
+        //並列計算の時はこれはダメだって習った、てか教えてたはずなのに見逃してた。
+        //older  _OutputColorBuffer[idd].a =isClockwise ? 1.0 : _OutputColorBuffer[idd].a;
+        //_OutputPositionBuffer1[index].z = isClockwise ? 1.0 : _OutputPositionBuffer1[idd].z;
+
+    } 
+    
+}
+/*
+//表裏を判定その２(線分専用)。出力仕様が異なる。
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelF(uint3 id : SV_DispatchThreadID)
+{
+    float2 polygonVertices[16];
+    int index = id.x;
+    
+    int numVertices = _InputFaceVertexIndexCountBuffer.Load(index * 4); //int == 32bit=4byte
+    int offset = _InputFaceVertexIndexOffsetBuffer.Load(index * 4); //int == 32bit=4byte
+    for (int j = 0; j < numVertices; j++)
+    {
+        int idd = _InputFaceVertexIndexBuffer.Load((j + offset) * 4); //int == 32bit=4byte
+        polygonVertices[j] = mul_MATRIX_MVP3(idd).xy; //         
+    }
+    // 表裏を判定（多角形が右で回りかを判定）
+    bool isClockwise = IsClockwise(polygonVertices, numVertices);
+    float a = isClockwise ? 1.0f : 0.0f;
+    //線分（始点・終点・始点・終点・・）の表裏として書き戻し
+    for (int k = 0; k < numVertices; k++)
+    {
+        _OutputColorBuffer[(k + offset) * 2] = float4(0.0, 1.0, 1.0, a);
+        _OutputColorBuffer[(k + offset) * 2+1] = float4(0.0, 1.0, 1.0, a);
+    }
+}*/
+
+
+
+//-----------------------------------------------------------------------------
+//ok
+bool IsPointInsidePolygonB(float2 _point, float2 vertices[16], int numVertices)
+{
+    bool isInside = false;
+
+    for (int i = 0; i < numVertices; i++)
+    {
+        float2 currentVertex = vertices[i];
+        float2 prevVertex = vertices[((uint) i + numVertices - 1) % numVertices];
+
+        // 多角形の各辺との交差判定
+        bool onEdge = ((currentVertex.y > _point.y) != (prevVertex.y > _point.y)) &&
+                      (_point.x < (prevVertex.x - currentVertex.x) * (_point.y - currentVertex.y) / (prevVertex.y - currentVertex.y) + currentVertex.x);
+
+        if (onEdge)
+        {
+            // 点が辺上にある場合、多角形内にあるとみなす
+            //return true;
+        }
+
+        // 点を無限遠に射影し、多角形の辺と交差する回数を数える
+        if (((currentVertex.y <= _point.y && prevVertex.y > _point.y) || (prevVertex.y <= _point.y && currentVertex.y > _point.y)) &&
+            _point.x < (prevVertex.x - currentVertex.x) * (_point.y - currentVertex.y) / (prevVertex.y - currentVertex.y) + currentVertex.x)
+        {
+            isInside = !isInside;
+        }
+    }
+
+    return isInside;
+}
+//OK.
+bool IsPointInsidePolygonA(
+float2 _point, float2 vertices[16], int numVertices)
+{
+    bool isInside = false;
+
+    for (int i = 0, j = numVertices - 1;i <numVertices; j = i++)
+    {
+            if ((vertices[i].y > _point.y) != (vertices[j].y > _point.y) &&
+                _point.x < (vertices[j].x - vertices[i].x) * (_point.y - vertices[i].y) / (vertices[j].y - vertices[i].y) + vertices[i].x)
+            {
+                isInside = !isInside;
+            }
+    }
+    return isInside;
+}
+ //OK./ポイントが多角形内にあるかどうかを判定する関数。
+bool IsPointInsidePolygon(float2 _point, float2 vertices[16], int numVertices)
+{
+    //bool isInside = false;
+    bool isInside = true;
+
+    for (int i = 0; i < numVertices;i++)
+    {
+        float2 currentVertex = vertices[i];
+        float2 prevVertex = vertices[(uint) ((i + numVertices - 1) % numVertices)];
+        // 線分ABとAPの外積を計算
+        float crossProduct = (prevVertex.x - currentVertex.x) * (_point.y - currentVertex.y) - (prevVertex.y - currentVertex.y) * (_point.x - currentVertex.x);
+        // 外積が0でない場合、点は多角形の内部にある
+        if ((crossProduct != 0) && (crossProduct < 0))
+        {
+                isInside = false;
+        }
+
+    }
+
+    return isInside;
+}
+//マウスの面へのヒットを調べる。マウスが多角形の内部にあるかを判定（面のヒットテスト）
+[numthreads(8, 1, 1)]
+void __ComputeMain2DPixelG(uint3 id : SV_DispatchThreadID)
+{
+    
+    float2 pointToCheck = float2(_MousePosition.x, _MousePosition.y);
+    
+    float2 polygonVertices[16];
+    int index = id.x;
+    int numVertices = _InputFaceVertexIndexCountBuffer.Load(index * (uint)4); //int == 32bit=4byte
+    int offset = _InputFaceVertexIndexOffsetBuffer.Load(index * (uint) 4); //int == 32bit=4byte
+    for (int j = 0; j < numVertices; j++)
+    {
+        uint idd = _InputFaceVertexIndexBuffer.Load((j + offset) * (uint) 4); //int == 32bit=4byte
+        polygonVertices[j] = mul_MATRIX_MVP3(idd).xy; //       
+    }
+    // ポイントが多角形内にあるかどうかを2Dで判定
+    bool isInsidePolygon = IsPointInsidePolygon(pointToCheck, polygonVertices, numVertices);
+
+    // 結果を書き込み
+    //_OutputPositionBuffer[index].pos1 = float3(pointToCheck.x, pointToCheck.y, (float) numVertices); //pos1.xy:マウス位置。pos1.z:頂点数
+    //_OutputPositionBuffer[index].pos2 = float3(0, 0, isInsidePolygon ? 1.0f : 0.0f); //pos2.z:ヒットあり。
+
+    //_OutputPositionBuffer1[index] = float3(pointToCheck.x, pointToCheck.y, (float) numVertices); //pos1.xy:マウス位置。pos1.z:頂点数
+    _OutputPositionBuffer1[index] = float3(0, 0, isInsidePolygon ? 1.0f : 0.0f); //pos2.z:ヒットあり。
+
+}
+
+
+
+/*
+//三角形の表裏を判定する関数
+[numthreads(8, 1, 1)]
+void CalculateTriangleFacing(uint3 DTid : SV_DispatchThreadID)
+{
+    // 三角形の頂点座標を取得
+    float3 vertex0 = _InputPositionBuffer[_InputTriangleIndexBuffer.Load2(DTid.y * 6)].xyzz;
+    float3 vertex1 = _InputPositionBuffer[_InputTriangleIndexBuffer.Load2(DTid.y * 6 + 2)].xyzz;
+    float3 vertex2 = _InputPositionBuffer[_InputTriangleIndexBuffer.Load2(DTid.y * 6 + 4)].xyzz;
+
+    // 法線ベクトルを計算
+    float3 edge1 = vertex1 - vertex0;
+    float3 edge2 = vertex2 - vertex0;
+    float3 normal = cross(edge1, edge2);
+
+    // 法線ベクトルのz成分が正なら表, 負なら裏と判定
+    int facing = (normal.z >= 0.0) ? 1 : 0;
+
+    // 結果を書き込み
+    _OutputBuffer.Store(DTid.y * 4, facing);
+}
+
+// テクスチャやバッファなどのデータを定義
+Texture2D<float4> Result;
+Buffer<float2> PolygonVertices;
+float2 PointToCheck;
+*/

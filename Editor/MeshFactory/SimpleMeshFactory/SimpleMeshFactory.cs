@@ -16,7 +16,7 @@ using MeshFactory.Selection;
 using MeshFactory.Model;
 using MeshFactory.Localization;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
-
+using MeshFactory.Rendering;
 
 
 public partial class SimpleMeshFactory : EditorWindow
@@ -260,6 +260,10 @@ public partial class SimpleMeshFactory : EditorWindow
 
 
     private SelectionSnapshot _lastSelectionSnapshot;  // Undo用スナップショット
+
+
+    //  描画キャッシュ
+    private MeshDrawCache _drawCache;
     // ================================================================
     // ウインドウ初期化
     // ================================================================
@@ -320,6 +324,8 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // ExportSettings UIイベントハンドラ設定
         SetupExportSettingsEventHandlers();
+
+        _drawCache = new MeshDrawCache();
     }
 
     /// <summary>
@@ -429,6 +435,8 @@ public partial class SimpleMeshFactory : EditorWindow
             _undoController.Dispose();
             _undoController = null;
         }
+        // ★追加
+        _drawCache?.Clear();
     }
 
     /// <summary>
@@ -642,6 +650,9 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // トポロジキャッシュを無効化
         _meshTopology?.Invalidate();
+        // ★追加: エッジキャッシュを無効化
+        _drawCache?.InvalidateEdgeCache();
+
     }
 
 
