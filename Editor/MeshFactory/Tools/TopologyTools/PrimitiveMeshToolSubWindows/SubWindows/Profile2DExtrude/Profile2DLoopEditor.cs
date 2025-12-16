@@ -1,7 +1,6 @@
 // Assets/Editor/MeshCreators/Profile2DExtrude/Profile2DLoopEditor.cs
 // 2D閉曲線エディタコンポーネント
 
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 using System;
 using System.Collections.Generic;

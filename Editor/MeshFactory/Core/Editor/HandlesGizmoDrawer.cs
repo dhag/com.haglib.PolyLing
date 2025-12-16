@@ -5,7 +5,7 @@
 #if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
-
+/*
 namespace MeshFactory.Gizmo
 {
     /// <summary>
@@ -181,7 +181,7 @@ namespace MeshFactory.Gizmo
             if (points == null || points.Length < 2) return;
             UnityEditor.Handles.DrawAAPolyLine(width, points);
         }
-        /*
+        / *
         /// <summary>UnityEditor_Handles.DrawLine 互換（2点）</summary>
         public void DrawLine(Vector3 p1, Vector3 p2, float thickness)
         {
@@ -193,7 +193,7 @@ namespace MeshFactory.Gizmo
         {
             UnityEditor.Handles.DrawSolidDisc(center, normal, radius);
         }
-        */
+        * /
 
         /// <summary>UnityEditor_Handles.DrawWireDisc 互換</summary>
         // 既にIGizmoDrawer3Dで実装済み
@@ -212,4 +212,5 @@ namespace MeshFactory.Gizmo
         }
     }
 }
+*/
 #endif

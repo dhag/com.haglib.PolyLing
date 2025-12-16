@@ -6,7 +6,6 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools

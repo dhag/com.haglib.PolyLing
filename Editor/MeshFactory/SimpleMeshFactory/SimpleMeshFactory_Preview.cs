@@ -7,7 +7,6 @@ using UnityEditor;
 using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Selection;
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory

@@ -14,7 +14,6 @@ using MeshFactory.Transforms;
 using MeshFactory.UndoSystem;
 using MeshFactory.Selection;
 using MeshFactory.Localization;
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools

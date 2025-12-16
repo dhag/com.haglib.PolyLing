@@ -1,7 +1,6 @@
 // Assets/Editor/MeshCreators/Revolution/RevolutionProfileEditor.cs
 // 回転体メッシュ用の2D断面プロファイルエディタ
 
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 using System;
 using System.Collections.Generic;

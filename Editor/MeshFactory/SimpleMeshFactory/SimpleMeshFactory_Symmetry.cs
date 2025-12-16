@@ -8,7 +8,6 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Symmetry;
 using MeshFactory.Localization;
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory

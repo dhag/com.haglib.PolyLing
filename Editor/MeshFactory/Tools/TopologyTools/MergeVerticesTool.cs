@@ -10,7 +10,6 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.UndoSystem;
 using MeshFactory.Utilities;
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 namespace MeshFactory.Tools

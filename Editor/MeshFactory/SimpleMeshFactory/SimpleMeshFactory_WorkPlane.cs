@@ -4,7 +4,6 @@
 using UnityEditor;
 using UnityEngine;
 using MeshFactory.Tools;
-using static MeshFactory.Gizmo.HandlesGizmoDrawer;
 using static MeshFactory.Gizmo.GLGizmoDrawer;
 
 public partial class SimpleMeshFactory
