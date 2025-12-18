@@ -107,7 +107,7 @@ namespace MeshFactory.MQO
         // Open
         // ================================================================
 
-        [MenuItem("MeshFactory/Import/MQO Import...")]
+        //[MenuItem("MeshFactory/Import/MQO Import...")]
         public static void ShowWindow()
         {
             Open(null);

@@ -89,7 +89,7 @@ namespace MeshFactory.MQO
         // Open
         // ================================================================
 
-        //[MenuItem("MeshFactory/Export/MQO Export...")]
+        [MenuItem("MeshFactory/Export/MQO Export...")]
         public static void ShowWindow()
         {
             Open(null);

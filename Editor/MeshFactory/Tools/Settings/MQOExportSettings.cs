@@ -18,11 +18,11 @@ namespace MeshFactory.MQO
 
         /// <summary>スケール係数</summary>
         [Tooltip("エクスポート時のスケール係数")]
-        public float Scale = 1f;
+        public float Scale = 10f;
 
         /// <summary>Y軸とZ軸を入れ替え（Unity Y-up → MQO Z-up）</summary>
         [Tooltip("Y軸とZ軸を入れ替え")]
-        public bool SwapYZ = true;
+        public bool SwapYZ = false;
 
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転")]
