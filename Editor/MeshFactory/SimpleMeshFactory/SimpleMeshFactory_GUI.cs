@@ -73,8 +73,8 @@ public partial class SimpleMeshFactory
                     bool hasDisplayChange =
                         newShowWireframe != _showWireframe ||
                         newShowVertices != _showVertices ||
-                        newShowVertexIndices != _showVertexIndices ||      // ★追加
-                        newShowSelectedMeshOnly != _showSelectedMeshOnly || // ★追加
+                        newShowVertexIndices != _showVertexIndices ||
+                        newShowSelectedMeshOnly != _showSelectedMeshOnly ||
                         newVertexEditMode != _vertexEditMode;
 
                     if (hasDisplayChange && _undoController != null)
@@ -84,8 +84,8 @@ public partial class SimpleMeshFactory
 
                     _showWireframe = newShowWireframe;
                     _showVertices = newShowVertices;
-                    _showVertexIndices = newShowVertexIndices;          // ★追加
-                    _showSelectedMeshOnly = newShowSelectedMeshOnly;    // ★追加
+                    _showVertexIndices = newShowVertexIndices;
+                    _showSelectedMeshOnly = newShowSelectedMeshOnly;
                     _vertexEditMode = newVertexEditMode;
 
                     if (_undoController != null)
@@ -97,6 +97,28 @@ public partial class SimpleMeshFactory
                         _undoController.EditorState.VertexEditMode = _vertexEditMode;
                         _undoController.EndEditorStateDrag("Change Display Settings");
                     }
+                }
+
+                // === カリングA 設定（分離） ===
+                EditorGUI.BeginChangeCheck();
+                bool currentCulling = _undoController?.EditorState.BackfaceCullingEnabled ?? true;
+                bool newCulling = EditorGUILayout.Toggle(L.Get("BackfaceCulling"), currentCulling);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                        _undoController.EditorState.BackfaceCullingEnabled = newCulling;  // ★ここで保存
+                        _undoController.EndEditorStateDrag("Toggle Backface Culling");
+                    }
+
+                    // GPUレンダラーに反映
+                    if (_gpuRenderer != null)
+                    {
+                        _gpuRenderer.CullingEnabled = newCulling;
+                    }
+
+                    Repaint();  // ★追加
                 }
 
                 EditorGUILayout.Space(2);

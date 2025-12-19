@@ -263,6 +263,7 @@ namespace MeshFactory.Rendering
             _computeShader.Dispatch(_kernelScreenPos, threadGroups(_vertexCount), 1, 1);
 
             // 3. 面の可視性計算（カリング）
+            // 3. 面の可視性計算（カリング）
             if (CullingEnabled && _faceCount > 0)
             {
                 SetBuffer(_kernelFaceVisibility, "_ScreenPositionBuffer", _screenPositionBuffer);
@@ -282,7 +283,39 @@ namespace MeshFactory.Rendering
                     _computeShader.Dispatch(_kernelLineVisibility, threadGroups(_lineCount), 1, 1);
                 }
             }
+            else
+            {
+                // ★追加: カリングOFF時はすべて可視
+                SetAllVisible();
+            }
         }
+        /// <summary>
+        /// カリングOFF時: すべての頂点・線分を可視にする
+        /// </summary>
+        private void SetAllVisible()
+        {
+            // 頂点をすべて可視
+            if (_vertexVisibilityData == null || _vertexVisibilityData.Length != _vertexCount)
+                _vertexVisibilityData = new float[_vertexCount];
+
+            for (int i = 0; i < _vertexCount; i++)
+                _vertexVisibilityData[i] = 1.0f;
+
+            _vertexVisibilityBuffer?.SetData(_vertexVisibilityData);
+
+            // 線分をすべて可視
+            if (_lineVisibilityData == null || _lineVisibilityData.Length != _lineCount)
+                _lineVisibilityData = new float[_lineCount];
+
+            for (int i = 0; i < _lineCount; i++)
+                _lineVisibilityData[i] = 1.0f;
+
+            _lineVisibilityBuffer?.SetData(_lineVisibilityData);
+        }
+
+        // フィールド追加
+        private float[] _vertexVisibilityData;
+        private float[] _lineVisibilityData;
 
         private void SetBuffer(int kernel, string name, ComputeBuffer buffer)
         {

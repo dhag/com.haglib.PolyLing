@@ -1,5 +1,6 @@
 // Assets/Editor/UndoSystem/Core/IUndoNode.cs
 // 階層型Undoシステムのコアインターフェース
+// ConcurrentQueue対応版
 
 using System;
 using System.Collections.Generic;
@@ -28,10 +29,14 @@ namespace MeshFactory.UndoSystem
         public int GroupId { get; set; }
 
         private static long _nextOperationId = 0;
+        private static readonly object _idLock = new object();
 
         public UndoOperationInfo(string description, string stackId, int groupId = -1)
         {
-            OperationId = _nextOperationId++;
+            lock (_idLock)
+            {
+                OperationId = _nextOperationId++;
+            }
             Timestamp = DateTime.Now.Ticks;
             Description = description;
             StackId = stackId;
@@ -79,7 +84,6 @@ namespace MeshFactory.UndoSystem
         /// <summary>最新の操作情報（Undo調停用）</summary>
         UndoOperationInfo LatestOperation { get; }
         
-        /// <summary>最古のRedo操作情報（Redo調停用）</summary>
         /// <summary>
         /// 次にRedoされる操作の情報
         /// Redoスタックは末尾から取り出すため、末尾の要素を返す
@@ -102,10 +106,30 @@ namespace MeshFactory.UndoSystem
     }
 
     /// <summary>
+    /// キュー処理対応のUndoノードインターフェース
+    /// ConcurrentQueue経由で別スレッドから記録を受け付ける
+    /// </summary>
+    public interface IQueueableUndoNode : IUndoNode
+    {
+        /// <summary>保留中のレコード数</summary>
+        int PendingCount { get; }
+        
+        /// <summary>
+        /// 保留キューを処理してスタックに積む
+        /// メインスレッドで定期的に呼び出す
+        /// </summary>
+        /// <returns>処理したレコード数</returns>
+        int ProcessPendingQueue();
+        
+        /// <summary>保留中のレコードがあるか</summary>
+        bool HasPendingRecords { get; }
+    }
+
+    /// <summary>
     /// 末端のUndoスタックインターフェース（型付き）
     /// 特定のコンテキスト型に対してUndo/Redoを実行
     /// </summary>
-    public interface IUndoStack<TContext> : IUndoNode
+    public interface IUndoStack<TContext> : IUndoNode, IQueueableUndoNode
     {
         /// <summary>操作対象のコンテキスト</summary>
         TContext Context { get; set; }
@@ -119,7 +143,7 @@ namespace MeshFactory.UndoSystem
         /// <summary>最大履歴サイズ</summary>
         int MaxSize { get; set; }
         
-        /// <summary>操作を記録</summary>
+        /// <summary>操作を記録（スレッドセーフ、キューに追加）</summary>
         void Record(IUndoRecord<TContext> record, string description = null);
         
         /// <summary>現在のグループを開始（複数操作を1つにまとめる）</summary>
@@ -135,7 +159,7 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// 複数のUndoノードを束ねるグループインターフェース
     /// </summary>
-    public interface IUndoGroup : IUndoNode
+    public interface IUndoGroup : IUndoNode, IQueueableUndoNode
     {
         /// <summary>子ノード一覧</summary>
         IReadOnlyList<IUndoNode> Children { get; }

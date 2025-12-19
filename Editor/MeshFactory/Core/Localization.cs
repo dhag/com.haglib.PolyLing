@@ -194,6 +194,8 @@ namespace MeshFactory.Localization
             ["Axis"] = new() { ["en"] = "Axis", ["ja"] = "軸", ["hi"] = "じく" },
             ["PlaneOffset"] = new() { ["en"] = "Plane Offset", ["ja"] = "平面オフセット", ["hi"] = "へいめんずれ" },
             ["ResetOffset"] = new() { ["en"] = "Reset Offset", ["ja"] = "リセット", ["hi"] = "もどす" },
+            ["BackfaceCulling"] = new() { ["en"] = "Backface Culling", ["ja"] = "背面カリング", ["hi"] = "うらめんかくす" },
+
             ["DisplayOptions"] = new() { ["en"] = "Display Options", ["ja"] = "表示オプション", ["hi"] = "ひょうじせってい" },
             ["MirrorMesh"] = new() { ["en"] = "Mirror Mesh", ["ja"] = "ミラーメッシュ", ["hi"] = "かがみめっしゅ" },
             ["MirrorWireframe"] = new() { ["en"] = "Mirror Wireframe", ["ja"] = "ミラーワイヤー", ["hi"] = "かがみわいやー" },
@@ -261,7 +263,8 @@ namespace MeshFactory.Localization
             ["Tool_Flip"] = new() { ["en"] = "Flip", ["ja"] = "面反転", ["hi"] = "めんはんてん" },
             ["Tool_Line Extrude"] = new() { ["en"] = "Line Extr.", ["ja"] = "線押出", ["hi"] = "せんおしだし" },
             ["Tool_Pivot Offset"] = new() { ["en"] = "Pivot", ["ja"] = "ピボット", ["hi"] = "ちゅうしん" },
-            
+            ["Tool_Primitive"] = new() { ["en"] = "Primitive", ["ja"] = "図形生成", ["hi"] = "ずけいをつくる" },
+
             // ============================================================
             // メッシュ情報
             // ============================================================

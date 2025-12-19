@@ -1,5 +1,6 @@
 // Assets/Editor/UndoSystem/Core/UndoManager.cs
 // グローバルUndoマネージャー（ルートノード + ショートカット処理）
+// ConcurrentQueue対応版 - 全スタックのキュー処理を統括
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +11,7 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// グローバルUndoマネージャー
     /// アプリケーション全体のUndoツリーのルートとして機能
+    /// ConcurrentQueue経由で別スレッド/プロセスからの記録を受け付け
     /// </summary>
     public class UndoManager : IUndoGroup
     {
@@ -42,6 +44,10 @@ namespace MeshFactory.UndoSystem
             set => _root.ResolutionPolicy = value; 
         }
 
+        // === プロパティ: IQueueableUndoNode ===
+        public int PendingCount => _root.PendingCount;
+        public bool HasPendingRecords => _root.HasPendingRecords;
+
         // === イベント ===
         public event Action<UndoOperationInfo> OnUndoPerformed
         {
@@ -57,6 +63,15 @@ namespace MeshFactory.UndoSystem
         {
             add => _root.OnOperationRecorded += value;
             remove => _root.OnOperationRecorded -= value;
+        }
+        
+        /// <summary>
+        /// キュー処理後に発火するイベント（処理した合計レコード数）
+        /// </summary>
+        public event Action<int> OnQueueProcessed
+        {
+            add => _root.OnQueueProcessed += value;
+            remove => _root.OnQueueProcessed -= value;
         }
 
         // === コンストラクタ ===
@@ -82,6 +97,21 @@ namespace MeshFactory.UndoSystem
         public bool PerformUndo() => _root.PerformUndo();
         public bool PerformRedo() => _root.PerformRedo();
         public void Clear() => _root.Clear();
+
+        // === キュー処理 ===
+
+        /// <summary>
+        /// 全スタックの保留キューを処理
+        /// メインスレッドで定期的に呼び出す
+        /// 推奨: EditorApplication.update に登録
+        /// </summary>
+        /// <returns>処理した合計レコード数</returns>
+        public int ProcessPendingQueue() => _root.ProcessPendingQueue();
+
+        /// <summary>
+        /// 全スタックの保留キューを処理（エイリアス）
+        /// </summary>
+        public int ProcessAllQueues() => ProcessPendingQueue();
 
         // === 便利メソッド ===
 
@@ -236,6 +266,14 @@ namespace MeshFactory.UndoSystem
         public string GetTreeInfo()
         {
             return _root.GetTreeInfo();
+        }
+
+        /// <summary>
+        /// キュー状態をログ出力
+        /// </summary>
+        public void LogQueueStatus()
+        {
+            Debug.Log($"[UndoManager] Pending Records: {PendingCount}, HasPending: {HasPendingRecords}");
         }
     }
 }

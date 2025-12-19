@@ -1,30 +1,52 @@
 // Assets/Editor/UndoSystem/Core/UndoStack.cs
 // 汎用Undoスタック実装
+// ConcurrentQueue対応版 - 別スレッド/プロセスからの記録を受け付け可能
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Threading;
 
 namespace MeshFactory.UndoSystem
 {
     /// <summary>
+    /// 保留中のレコード情報
+    /// Record()時点でグループIDを確定させて保持
+    /// </summary>
+    internal struct PendingRecord<TContext>
+    {
+        public IUndoRecord<TContext> Record;
+        public string Description;
+        public int GroupId;
+        public long EnqueueTimestamp;
+    }
+
+    /// <summary>
     /// 汎用Undoスタック
     /// 任意のコンテキスト型に対応した末端スタック
+    /// ConcurrentQueue経由で別スレッドからの記録を受け付け
     /// </summary>
     public class UndoStack<TContext> : IUndoStack<TContext>
     {
         // === フィールド ===
         private readonly List<IUndoRecord<TContext>> _undoStack = new();
         private readonly List<IUndoRecord<TContext>> _redoStack = new();
+        
+        // ConcurrentQueue: 別スレッドからの記録を保留
+        private readonly ConcurrentQueue<PendingRecord<TContext>> _pendingQueue = new();
+        
+        // グループID管理（スレッドセーフ）
         private int _currentGroupId = 0;
         private int _activeGroupId = -1;
         private string _activeGroupName;
+        private readonly object _groupLock = new object();
 
         // === プロパティ: IUndoNode ===
         public string Id { get; }
         public string DisplayName { get; set; }
         public IUndoNode Parent { get; set; }
         
-        public bool CanUndo => _undoStack.Count > 0;
+        public bool CanUndo => _undoStack.Count > 0 || !_pendingQueue.IsEmpty;
         public bool CanRedo => _redoStack.Count > 0;
         
         public UndoOperationInfo LatestOperation => 
@@ -43,10 +65,19 @@ namespace MeshFactory.UndoSystem
         public int RedoCount => _redoStack.Count;
         public int MaxSize { get; set; } = 50;
 
+        // === プロパティ: IQueueableUndoNode ===
+        public int PendingCount => _pendingQueue.Count;
+        public bool HasPendingRecords => !_pendingQueue.IsEmpty;
+
         // === イベント ===
         public event Action<UndoOperationInfo> OnUndoPerformed;
         public event Action<UndoOperationInfo> OnRedoPerformed;
         public event Action<UndoOperationInfo> OnOperationRecorded;
+        
+        /// <summary>
+        /// キュー処理後に発火するイベント（UI更新用）
+        /// </summary>
+        public event Action<int> OnQueueProcessed;
 
         // === コンストラクタ ===
         public UndoStack(string id, string displayName = null, TContext context = default)
@@ -56,22 +87,114 @@ namespace MeshFactory.UndoSystem
             Context = context;
         }
 
-        // === 操作記録 ===
+        // === 操作記録（スレッドセーフ） ===
         
         /// <summary>
-        /// 操作を記録
+        /// 操作を記録（スレッドセーフ）
+        /// 即座にスタックには積まず、ConcurrentQueueに追加
+        /// メインスレッドでProcessPendingQueue()が呼ばれた時にスタックに積まれる
         /// </summary>
         public void Record(IUndoRecord<TContext> record, string description = null)
         {
             if (record == null)
                 throw new ArgumentNullException(nameof(record));
 
+            // グループIDをRecord時点で確定（スレッドセーフ）
+            int groupId;
+            lock (_groupLock)
+            {
+                groupId = _activeGroupId >= 0 ? _activeGroupId : Interlocked.Increment(ref _currentGroupId);
+            }
+
+            // キューに追加（スレッドセーフ）
+            _pendingQueue.Enqueue(new PendingRecord<TContext>
+            {
+                Record = record,
+                Description = description,
+                GroupId = groupId,
+                EnqueueTimestamp = DateTime.Now.Ticks
+            });
+        }
+
+        /// <summary>
+        /// グループを開始（複数操作を1つのUndoにまとめる）
+        /// </summary>
+        public int BeginGroup(string groupName = null)
+        {
+            lock (_groupLock)
+            {
+                _activeGroupId = Interlocked.Increment(ref _currentGroupId);
+                _activeGroupName = groupName;
+                return _activeGroupId;
+            }
+        }
+
+        /// <summary>
+        /// グループを終了
+        /// </summary>
+        public void EndGroup()
+        {
+            lock (_groupLock)
+            {
+                _activeGroupId = -1;
+                _activeGroupName = null;
+            }
+        }
+
+        /// <summary>
+        /// 指定グループIDまでの操作をまとめる
+        /// </summary>
+        public void CollapseToGroup(int groupId)
+        {
+            // まず保留キューを処理
+            ProcessPendingQueue();
+            
+            // 指定グループID以降の操作を同じグループIDに設定
+            for (int i = _undoStack.Count - 1; i >= 0; i--)
+            {
+                if (_undoStack[i].Info.GroupId < groupId)
+                    break;
+                _undoStack[i].Info.GroupId = groupId;
+            }
+        }
+
+        // === キュー処理（メインスレッドで呼び出し） ===
+
+        /// <summary>
+        /// 保留キューを処理してスタックに積む
+        /// メインスレッドで定期的に呼び出す（例: EditorApplication.update）
+        /// </summary>
+        /// <returns>処理したレコード数</returns>
+        public int ProcessPendingQueue()
+        {
+            int processed = 0;
+            
+            while (_pendingQueue.TryDequeue(out var pending))
+            {
+                ProcessRecord(pending);
+                processed++;
+            }
+            
+            if (processed > 0)
+            {
+                OnQueueProcessed?.Invoke(processed);
+            }
+            
+            return processed;
+        }
+
+        /// <summary>
+        /// 内部処理: レコードをスタックに積む
+        /// </summary>
+        private void ProcessRecord(PendingRecord<TContext> pending)
+        {
+            var record = pending.Record;
+            
             // メタ情報を設定
-            var groupId = _activeGroupId >= 0 ? _activeGroupId : _currentGroupId++;
             record.Info = new UndoOperationInfo(
-                description ?? "Operation",
+                pending.Description ?? "Operation",
                 Id,
-                groupId
+                pending.GroupId
             );
 
             _undoStack.Add(record);
@@ -83,39 +206,6 @@ namespace MeshFactory.UndoSystem
             OnOperationRecorded?.Invoke(record.Info);
         }
 
-        /// <summary>
-        /// グループを開始（複数操作を1つのUndoにまとめる）
-        /// </summary>
-        public int BeginGroup(string groupName = null)
-        {
-            _activeGroupId = _currentGroupId++;
-            _activeGroupName = groupName;
-            return _activeGroupId;
-        }
-
-        /// <summary>
-        /// グループを終了
-        /// </summary>
-        public void EndGroup()
-        {
-            _activeGroupId = -1;
-            _activeGroupName = null;
-        }
-
-        /// <summary>
-        /// 指定グループIDまでの操作をまとめる
-        /// </summary>
-        public void CollapseToGroup(int groupId)
-        {
-            // 指定グループID以降の操作を同じグループIDに設定
-            for (int i = _undoStack.Count - 1; i >= 0; i--)
-            {
-                if (_undoStack[i].Info.GroupId < groupId)
-                    break;
-                _undoStack[i].Info.GroupId = groupId;
-            }
-        }
-
         // === Undo/Redo実行 ===
 
         /// <summary>
@@ -123,7 +213,11 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public bool PerformUndo()
         {
-            if (!CanUndo || Context == null)
+            // ★重要: Undo前に保留キューを処理
+            // これにより、Record()直後のUndo要求に正しく対応できる
+            ProcessPendingQueue();
+            
+            if (_undoStack.Count == 0 || Context == null)
                 return false;
 
             // 同じグループIDの操作をまとめてUndo
@@ -159,7 +253,10 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public bool PerformRedo()
         {
-            if (!CanRedo || Context == null)
+            // ★重要: Redo前にも保留キューを処理
+            ProcessPendingQueue();
+            
+            if (_redoStack.Count == 0 || Context == null)
                 return false;
 
             // 同じグループIDの操作をまとめてRedo
@@ -195,9 +292,16 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public void Clear()
         {
+            // 保留キューもクリア
+            while (_pendingQueue.TryDequeue(out _)) { }
+            
             _undoStack.Clear();
             _redoStack.Clear();
-            _activeGroupId = -1;
+            
+            lock (_groupLock)
+            {
+                _activeGroupId = -1;
+            }
         }
 
         // === 内部メソッド ===
@@ -218,7 +322,8 @@ namespace MeshFactory.UndoSystem
         public string GetDebugInfo()
         {
             return $"[{Id}] Undo: {_undoStack.Count}, Redo: {_redoStack.Count}, " +
-                   $"Group: {_activeGroupId}, Latest: {LatestOperation?.Description ?? "none"}";
+                   $"Pending: {_pendingQueue.Count}, Group: {_activeGroupId}, " +
+                   $"Latest: {LatestOperation?.Description ?? "none"}";
         }
     }
 }

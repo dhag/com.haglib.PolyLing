@@ -1,5 +1,6 @@
 // Assets/Editor/UndoSystem/Core/UndoGroup.cs
 // 複数のUndoノードを束ねるグループ実装
+// ConcurrentQueue対応版 - 子ノードのキュー処理を統括
 
 using System;
 using System.Collections.Generic;
@@ -22,7 +23,7 @@ namespace MeshFactory.UndoSystem
         public string DisplayName { get; set; }
         public IUndoNode Parent { get; set; }
 
-        public bool CanUndo => _children.Any(c => c.CanUndo);
+        public bool CanUndo => _children.Any(c => c.CanUndo) || HasPendingRecords;
         public bool CanRedo => _children.Any(c => c.CanRedo);
 
         public UndoOperationInfo LatestOperation
@@ -70,11 +71,55 @@ namespace MeshFactory.UndoSystem
 
         public UndoResolutionPolicy ResolutionPolicy { get; set; } = UndoResolutionPolicy.FocusThenTimestamp;
 
+        // === プロパティ: IQueueableUndoNode ===
+        
+        /// <summary>
+        /// 子ノード全体の保留レコード数
+        /// </summary>
+        public int PendingCount
+        {
+            get
+            {
+                int total = 0;
+                foreach (var child in _children)
+                {
+                    if (child is IQueueableUndoNode queueable)
+                    {
+                        total += queueable.PendingCount;
+                    }
+                }
+                return total;
+            }
+        }
+
+        /// <summary>
+        /// 保留中のレコードがあるか
+        /// </summary>
+        public bool HasPendingRecords
+        {
+            get
+            {
+                foreach (var child in _children)
+                {
+                    if (child is IQueueableUndoNode queueable && queueable.HasPendingRecords)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
         // === イベント ===
         public event Action<UndoOperationInfo> OnUndoPerformed;
         public event Action<UndoOperationInfo> OnRedoPerformed;
         public event Action<UndoOperationInfo> OnOperationRecorded;
         public event Action<string> OnFocusChanged;
+        
+        /// <summary>
+        /// キュー処理後に発火するイベント（処理した合計レコード数）
+        /// </summary>
+        public event Action<int> OnQueueProcessed;
 
         // === コンストラクタ ===
         public UndoGroup(string id, string displayName = null)
@@ -147,6 +192,33 @@ namespace MeshFactory.UndoSystem
             return null;
         }
 
+        // === キュー処理 ===
+
+        /// <summary>
+        /// 全子ノードの保留キューを処理
+        /// メインスレッドで定期的に呼び出す
+        /// </summary>
+        /// <returns>処理した合計レコード数</returns>
+        public int ProcessPendingQueue()
+        {
+            int totalProcessed = 0;
+            
+            foreach (var child in _children)
+            {
+                if (child is IQueueableUndoNode queueable)
+                {
+                    totalProcessed += queueable.ProcessPendingQueue();
+                }
+            }
+            
+            if (totalProcessed > 0)
+            {
+                OnQueueProcessed?.Invoke(totalProcessed);
+            }
+            
+            return totalProcessed;
+        }
+
         // === Undo/Redo実行 ===
 
         /// <summary>
@@ -154,6 +226,9 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public bool PerformUndo()
         {
+            // ★重要: Undo前に全キューを処理
+            ProcessPendingQueue();
+            
             var target = ResolveUndoTarget();
             return target?.PerformUndo() ?? false;
         }
@@ -163,6 +238,9 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public bool PerformRedo()
         {
+            // ★重要: Redo前に全キューを処理
+            ProcessPendingQueue();
+            
             var target = ResolveRedoTarget();
             return target?.PerformRedo() ?? false;
         }
@@ -299,7 +377,8 @@ namespace MeshFactory.UndoSystem
         {
             var prefix = new string(' ', indent * 2);
             var focusMark = _focusedChildId != null ? $" (Focus: {_focusedChildId})" : "";
-            var result = $"{prefix}[Group] {Id}{focusMark}\n";
+            var pendingMark = PendingCount > 0 ? $" [Pending: {PendingCount}]" : "";
+            var result = $"{prefix}[Group] {Id}{focusMark}{pendingMark}\n";
 
             foreach (var child in _children)
             {
@@ -311,7 +390,12 @@ namespace MeshFactory.UndoSystem
                 {
                     var canUndo = node.CanUndo ? "U" : "-";
                     var canRedo = node.CanRedo ? "R" : "-";
-                    result += $"{prefix}  [{canUndo}{canRedo}] {child.Id}: {child.DisplayName}\n";
+                    var pending = "";
+                    if (child is IQueueableUndoNode queueable && queueable.PendingCount > 0)
+                    {
+                        pending = $" [P:{queueable.PendingCount}]";
+                    }
+                    result += $"{prefix}  [{canUndo}{canRedo}] {child.Id}: {child.DisplayName}{pending}\n";
                 }
             }
 

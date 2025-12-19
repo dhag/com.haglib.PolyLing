@@ -931,6 +931,7 @@ namespace MeshFactory.UndoSystem
         public bool ShowVertices = true;
         public bool ShowSelectedMeshOnly = true;
         public bool ShowVertexIndices = true;
+        public bool BackfaceCullingEnabled = true;  // ← カリングA
 
         // 編集モード
         public bool VertexEditMode = false;
@@ -952,6 +953,9 @@ namespace MeshFactory.UndoSystem
 
         // WorkPlane参照（カメラ連動Undo用）
         public WorkPlane WorkPlane;
+
+
+
 
         // === Foldout状態 ===
         /// <summary>Foldout開閉をUndo記録するか</summary>
@@ -987,6 +991,7 @@ namespace MeshFactory.UndoSystem
                 ShowVertices = ShowVertices,
                 ShowSelectedMeshOnly = ShowSelectedMeshOnly,
                 ShowVertexIndices = ShowVertexIndices,
+                BackfaceCullingEnabled = BackfaceCullingEnabled,  // ← カリングA
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
                 AddToCurrentMesh = AddToCurrentMesh,
@@ -1021,6 +1026,7 @@ namespace MeshFactory.UndoSystem
             ShowVertices = snapshot.ShowVertices;
             ShowSelectedMeshOnly = snapshot.ShowSelectedMeshOnly;
             ShowVertexIndices = snapshot.ShowVertexIndices;
+            BackfaceCullingEnabled = snapshot.BackfaceCullingEnabled;  // ← カリングA
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
             AddToCurrentMesh = snapshot.AddToCurrentMesh;
@@ -1062,6 +1068,7 @@ namespace MeshFactory.UndoSystem
         public Vector3 CameraTarget;
         public bool ShowWireframe, ShowVertices, VertexEditMode;
         public bool ShowSelectedMeshOnly, ShowVertexIndices;
+        public bool BackfaceCullingEnabled;  // ← カリングA
         public string CurrentToolName;
 
         // メッシュ作成設定
@@ -1090,6 +1097,7 @@ namespace MeshFactory.UndoSystem
                 ShowVertices != other.ShowVertices ||
                 ShowSelectedMeshOnly != other.ShowSelectedMeshOnly ||
                 ShowVertexIndices != other.ShowVertexIndices ||
+                BackfaceCullingEnabled != other.BackfaceCullingEnabled ||  // ← カリングA
                 VertexEditMode != other.VertexEditMode ||
                 CurrentToolName != other.CurrentToolName ||
                 AddToCurrentMesh != other.AddToCurrentMesh ||

@@ -189,7 +189,7 @@ public partial class SimpleMeshFactory : EditorWindow
     // ペイン幅
     private float _leftPaneWidth = 320f;
     private float _rightPaneWidth = 220f;
-    
+
     // スプリッター
     private bool _isDraggingLeftSplitter = false;
     private bool _isDraggingRightSplitter = false;
@@ -199,7 +199,7 @@ public partial class SimpleMeshFactory : EditorWindow
     private const float MinPaneWidth = 150f;
     private const float MaxLeftPaneWidth = 500f;
     private const float MaxRightPaneWidth = 400f;
-    
+
     private bool _foldSelection = true;
     private bool _foldTools = true;
     //private bool _foldWorkPlane = false;  // WorkPlaneセクション
@@ -278,14 +278,17 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         InitPreview();
         wantsMouseMove = true;
-        
+
         // ローカライゼーション設定を読み込み
         L.LoadSettings();
 
         // Undoコントローラー初期化
         _undoController = new MeshUndoController("SimpleMeshFactory");
         _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-        
+
+        // ★追加: Undoキュー処理を登録（ConcurrentQueue対応）
+        EditorApplication.update += ProcessUndoQueues;
+
         // MeshListをUndoコントローラーに設定
         _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
 
@@ -327,6 +330,13 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // ★GPU描画初期化
         InitializeDrawCache();
+
+        // カリングA 設定をGPUレンダラーに同期
+        if (_gpuRenderer != null && _undoController != null)
+        {
+            _gpuRenderer.CullingEnabled = _undoController.EditorState.BackfaceCullingEnabled;
+        }
+
 
         _drawCache = new MeshDrawCache();
     }
@@ -432,6 +442,9 @@ public partial class SimpleMeshFactory : EditorWindow
             _selectionState.OnSelectionChanged -= SyncSelectionToLegacy;
         }
 
+        // ★追加: Undoキュー処理を解除
+        EditorApplication.update -= ProcessUndoQueues;
+
         // Undoコントローラー破棄
         if (_undoController != null)
         {
@@ -481,6 +494,11 @@ public partial class SimpleMeshFactory : EditorWindow
                 meshContext.Materials = new List<Material>(ctx.Materials);
                 meshContext.CurrentMaterialIndex = ctx.CurrentMaterialIndex;
             }
+            // カリングA 設定をGPUレンダラーに復元
+            if (_gpuRenderer != null && _undoController != null)
+            {
+                _gpuRenderer.CullingEnabled = _undoController.EditorState.BackfaceCullingEnabled;
+            }
         }
 
         // デフォルトマテリアル復元
@@ -519,7 +537,7 @@ public partial class SimpleMeshFactory : EditorWindow
         //// ツール汎用設定の復元
         ApplyToTools(editorState);
 
-            _currentTool?.Reset();
+        _currentTool?.Reset();
         ResetEditState();
 
         // SelectionState を復元
@@ -554,8 +572,8 @@ public partial class SimpleMeshFactory : EditorWindow
                     _undoController.MeshContext.MeshData = newMeshContext.Data;
                     _undoController.MeshContext.TargetMesh = newMeshContext.UnityMesh;
                     _undoController.MeshContext.OriginalPositions = newMeshContext.OriginalPositions;
-                    _undoController.MeshContext.Materials = newMeshContext.Materials != null 
-                        ? new List<Material>(newMeshContext.Materials) 
+                    _undoController.MeshContext.Materials = newMeshContext.Materials != null
+                        ? new List<Material>(newMeshContext.Materials)
                         : new List<Material>();
                     _undoController.MeshContext.CurrentMaterialIndex = newMeshContext.CurrentMaterialIndex;
                 }
@@ -563,6 +581,25 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         Repaint();
+    }
+
+    // ================================================================
+    // Undoキュー処理（ConcurrentQueue対応）
+    // ================================================================
+
+    /// <summary>
+    /// Undoキューを処理（EditorApplication.updateから呼び出し）
+    /// 別スレッド/プロセスからRecord()されたデータをスタックに積む
+    /// </summary>
+    private void ProcessUndoQueues()
+    {
+        int processed = UndoManager.Instance.ProcessAllQueues();
+
+        if (processed > 0)
+        {
+            // キューが処理されたらUIを更新
+            Repaint();
+        }
     }
 
     /// <summary>
@@ -587,12 +624,12 @@ public partial class SimpleMeshFactory : EditorWindow
                 _undoController.MeshContext.MeshData = meshContext.Data;
                 _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
                 _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
-                _undoController.MeshContext.Materials = meshContext.Materials != null 
-                    ? new List<Material>(meshContext.Materials) 
+                _undoController.MeshContext.Materials = meshContext.Materials != null
+                    ? new List<Material>(meshContext.Materials)
                     : new List<Material>();
                 _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
             }
-            
+
             InitVertexOffsets(updateCamera: false);
         }
         else
@@ -606,12 +643,12 @@ public partial class SimpleMeshFactory : EditorWindow
                     _undoController.MeshContext.MeshData = fallbackMeshContext.Data;
                     _undoController.MeshContext.TargetMesh = fallbackMeshContext.UnityMesh;
                     _undoController.MeshContext.OriginalPositions = fallbackMeshContext.OriginalPositions;
-                    _undoController.MeshContext.Materials = fallbackMeshContext.Materials != null 
-                        ? new List<Material>(fallbackMeshContext.Materials) 
+                    _undoController.MeshContext.Materials = fallbackMeshContext.Materials != null
+                        ? new List<Material>(fallbackMeshContext.Materials)
                         : new List<Material>();
                     _undoController.MeshContext.CurrentMaterialIndex = fallbackMeshContext.CurrentMaterialIndex;
                 }
-                
+
                 InitVertexOffsets(updateCamera: false);
             }
         }
@@ -619,7 +656,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // 選択クリア
         _selectedVertices.Clear();
         _selectionState?.ClearAll();
-        
+
         if (_undoController != null)
         {
             _undoController.MeshContext.SelectedVertices = new HashSet<int>();
@@ -747,7 +784,7 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         HandleScrollWheel();
-        
+
         // スプリッターのドラッグ処理
         HandleSplitterDrag(e);
 
@@ -755,13 +792,13 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // 左ペイン：メッシュリスト
         DrawMeshList();
-        
+
         // 左スプリッター
         DrawSplitter(ref _leftSplitterRect, true);
 
         // 中央ペイン：プレビュー
         DrawPreview();
-        
+
         // 右スプリッター
         DrawSplitter(ref _rightSplitterRect, false);
 
@@ -769,7 +806,7 @@ public partial class SimpleMeshFactory : EditorWindow
         DrawVertexEditor();
 
         EditorGUILayout.EndHorizontal();
-        
+
         // カーソル変更
         UpdateSplitterCursor();
     }
@@ -898,7 +935,7 @@ public partial class SimpleMeshFactory : EditorWindow
     // ================================================================
     // Foldout Undo対応ヘルパー
     // ================================================================
-    
+
     /// <summary>
     /// Undo対応Foldoutを描画
     /// </summary>
@@ -913,13 +950,13 @@ public partial class SimpleMeshFactory : EditorWindow
             // Undo非対応の場合は通常のFoldout
             return EditorGUILayout.Foldout(defaultValue, label, true);
         }
-        
+
         var editorState = _undoController.EditorState;
         bool currentValue = editorState.GetFoldout(key, defaultValue);
-        
+
         EditorGUI.BeginChangeCheck();
         bool newValue = EditorGUILayout.Foldout(currentValue, label, true);
-        
+
         if (EditorGUI.EndChangeCheck() && newValue != currentValue)
         {
             // Undo記録するか判定
@@ -935,10 +972,10 @@ public partial class SimpleMeshFactory : EditorWindow
                 editorState.SetFoldout(key, newValue);
             }
         }
-        
+
         return newValue;
     }
-    
+
     /// <summary>
     /// Foldout Undo記録を有効/無効にする
     /// </summary>
@@ -953,11 +990,11 @@ public partial class SimpleMeshFactory : EditorWindow
     // ================================================================
     // スプリッター処理
     // ================================================================
-    
+
     // スプリッター用のコントロールID
     private int _leftSplitterControlId;
     private int _rightSplitterControlId;
-    
+
     /// <summary>
     /// スプリッターを描画（イベント処理込み）
     /// </summary>
@@ -969,15 +1006,15 @@ public partial class SimpleMeshFactory : EditorWindow
             _leftSplitterControlId = controlId;
         else
             _rightSplitterControlId = controlId;
-        
+
         // スプリッター領域を確保
         splitterRect = GUILayoutUtility.GetRect(
             SplitterWidth, SplitterWidth,
             GUILayout.ExpandHeight(true));
-        
+
         // イベント処理
         Event e = Event.current;
-        
+
         switch (e.GetTypeForControl(controlId))
         {
             case EventType.MouseDown:
@@ -991,7 +1028,7 @@ public partial class SimpleMeshFactory : EditorWindow
                     e.Use();
                 }
                 break;
-                
+
             case EventType.MouseDrag:
                 if (GUIUtility.hotControl == controlId)
                 {
@@ -1009,7 +1046,7 @@ public partial class SimpleMeshFactory : EditorWindow
                     Repaint();
                 }
                 break;
-                
+
             case EventType.MouseUp:
                 if (GUIUtility.hotControl == controlId)
                 {
@@ -1021,13 +1058,13 @@ public partial class SimpleMeshFactory : EditorWindow
                     e.Use();
                 }
                 break;
-                
+
             case EventType.Repaint:
                 UnityEditor_Handles.BeginGUI();
                 // 背景色
                 bool isDragging = GUIUtility.hotControl == controlId;
                 bool isHovering = splitterRect.Contains(e.mousePosition);
-                
+
                 Color splitterColor;
                 if (isDragging)
                 {
@@ -1047,11 +1084,11 @@ public partial class SimpleMeshFactory : EditorWindow
                 float centerX = splitterRect.x + splitterRect.width / 2;
                 float gripHeight = Mathf.Min(splitterRect.height * 0.3f, 60f);
                 float gripTop = splitterRect.y + (splitterRect.height - gripHeight) / 2;
-                
-                Color gripColor = isDragging || isHovering 
-                    ? new Color(0.7f, 0.7f, 0.7f, 0.8f) 
+
+                Color gripColor = isDragging || isHovering
+                    ? new Color(0.7f, 0.7f, 0.7f, 0.8f)
                     : new Color(0.5f, 0.5f, 0.5f, 0.5f);
-                
+
                 for (int i = 0; i < 3; i++)
                 {
                     float y = gripTop + i * (gripHeight / 2);
@@ -1060,11 +1097,11 @@ public partial class SimpleMeshFactory : EditorWindow
                 UnityEditor_Handles.EndGUI();
                 break;
         }
-        
+
         // カーソル変更
         EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
     }
-    
+
     /// <summary>
     /// スプリッターのドラッグを処理（未使用、DrawSplitter内で処理）
     /// </summary>
@@ -1072,7 +1109,7 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         // DrawSplitter内で処理するため、ここでは何もしない
     }
-    
+
     /// <summary>
     /// スプリッター上でのカーソル変更（未使用、DrawSplitter内で処理）
     /// </summary>
