@@ -425,7 +425,11 @@ public partial class SimpleMeshFactory : EditorWindow
             _gpuRenderer.CullingEnabled = _undoController.EditorState.BackfaceCullingEnabled;
         }
 
-
+        // 可視性プロバイダーを設定（カリング対応選択用）
+        if (_gpuRenderer != null && _selectionOps != null)
+        {
+            _selectionOps.SetVisibilityProvider(_gpuRenderer);
+        }
         _drawCache = new MeshDrawCache();
     }
 

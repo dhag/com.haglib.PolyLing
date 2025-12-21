@@ -1,6 +1,6 @@
 // Compute2D_GPU.compute
 // GPU描画 + ヒットテスト用 ComputeShader
-// v2.2 - ヒットテストカーネル追加
+// v2.3 - 面ヒットテストに深度出力追加
 
 #pragma kernel ClearBuffers
 #pragma kernel ComputeScreenPositions
@@ -37,6 +37,7 @@ RWStructuredBuffer<float> _LineVisibilityBuffer;
 RWStructuredBuffer<float> _VertexHitDistanceBuffer;
 RWStructuredBuffer<float> _LineHitDistanceBuffer;
 RWStructuredBuffer<uint> _FaceHitBuffer;  // 0 or 1
+RWStructuredBuffer<float> _FaceHitDepthBuffer;  // 面の深度（Z値）
 
 // ================================================================
 // パラメータ
@@ -231,6 +232,7 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
 /// <summary>
 /// 面ヒットテスト：マウス座標が面内にあるかを判定
 /// 多角形の内外判定（レイキャスト法）
+/// ヒット時は面の平均深度も出力
 /// 
 /// 【注意】_MousePosition は adjustedRect 座標系で渡すこと
 /// </summary>
@@ -246,6 +248,7 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     if (visibility < 0.5)
     {
         _FaceHitBuffer[faceIndex] = 0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;  // 無限遠
         return;
     }
     
@@ -255,11 +258,14 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     if (vertexCount < 3)
     {
         _FaceHitBuffer[faceIndex] = 0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
         return;
     }
     
-    // 多角形の頂点を取得
+    // 多角形の頂点を取得（深度も取得）
     float2 polygon[16];
+    float depths[16];
+    float totalDepth = 0;
     bool allValid = true;
     for (int i = 0; i < vertexCount && i < 16; i++)
     {
@@ -267,11 +273,14 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
         float4 screenPos = _ScreenPositionBuffer[vIdx];
         if (screenPos.w < 0.5) { allValid = false; break; }
         polygon[i] = screenPos.xy;
+        depths[i] = screenPos.z;
+        totalDepth += screenPos.z;
     }
     
     if (!allValid)
     {
         _FaceHitBuffer[faceIndex] = 0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
         return;
     }
     
@@ -298,5 +307,9 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     }
     
     // 奇数回交差 = 内部
-    _FaceHitBuffer[faceIndex] = (crossings & 1) ? 1 : 0;
+    bool isHit = (crossings & 1) != 0;
+    _FaceHitBuffer[faceIndex] = isHit ? 1 : 0;
+    
+    // 深度を出力（ヒット時は平均深度、非ヒット時は無限遠）
+    _FaceHitDepthBuffer[faceIndex] = isHit ? (totalDepth / vertexCount) : 1e10;
 }

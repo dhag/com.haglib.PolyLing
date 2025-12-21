@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using MeshFactory.Data;
+using MeshFactory.Rendering;
 
 namespace MeshFactory.Selection
 {
@@ -15,6 +16,7 @@ namespace MeshFactory.Selection
     {
         private SelectionState _state;
         private TopologyCache _topology;
+        private IVisibilityProvider _visibilityProvider;
         
         public float VertexHitRadius { get; set; } = 10f;
         public float EdgeHitDistance { get; set; } = 8f;
@@ -36,6 +38,15 @@ namespace MeshFactory.Selection
             _topology = topology ?? throw new ArgumentNullException(nameof(topology));
         }
 
+        /// <summary>
+        /// 可視性プロバイダーを設定（カリング対応用）
+        /// nullの場合は全て可視として扱う
+        /// </summary>
+        public void SetVisibilityProvider(IVisibilityProvider provider)
+        {
+            _visibilityProvider = provider;
+        }
+
         // === ヒットテスト ===
 
         public int FindVertexAt(
@@ -50,6 +61,10 @@ namespace MeshFactory.Selection
 
             for (int i = 0; i < meshData.VertexCount; i++)
             {
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                    continue;
+
                 Vector2 vScreen = worldToScreen(meshData.Vertices[i].Position);
                 float dist = Vector2.Distance(screenPos, vScreen);
                 if (dist < minDist)
@@ -74,6 +89,21 @@ namespace MeshFactory.Selection
 
             foreach (var pair in _topology.AllEdgePairs)
             {
+                // 可視性チェック：エッジが属する面のいずれかが可視なら可視
+                if (_visibilityProvider != null)
+                {
+                    bool anyVisible = false;
+                    foreach (var faceEdge in _topology.GetEdgesAt(pair))
+                    {
+                        if (_visibilityProvider.IsFaceVisible(faceEdge.FaceIndex))
+                        {
+                            anyVisible = true;
+                            break;
+                        }
+                    }
+                    if (!anyVisible) continue;
+                }
+
                 Vector2 p1 = worldToScreen(meshData.Vertices[pair.V1].Position);
                 Vector2 p2 = worldToScreen(meshData.Vertices[pair.V2].Position);
                 
@@ -94,6 +124,9 @@ namespace MeshFactory.Selection
             Func<Vector3, Vector2> worldToScreen)
         {
             if (meshData == null || worldToScreen == null) return -1;
+
+            // 補助線分（lineType=1）は常に可視として扱われるため、
+            // カリングチェックは不要
 
             float minDist = EdgeHitDistance;
             int nearest = -1;
@@ -130,6 +163,10 @@ namespace MeshFactory.Selection
 
             foreach (int faceIdx in _topology.RealFaceIndices)
             {
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(faceIdx))
+                    continue;
+
                 var face = meshData.Faces[faceIdx];
                 if (face.VertexCount < 3) continue;
 
@@ -377,6 +414,10 @@ namespace MeshFactory.Selection
             bool changed = false;
             for (int i = 0; i < meshData.VertexCount; i++)
             {
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                    continue;
+
                 Vector2 sp = worldToScreen(meshData.Vertices[i].Position);
                 if (rect.Contains(sp))
                 {
@@ -395,6 +436,21 @@ namespace MeshFactory.Selection
             bool changed = false;
             foreach (var pair in _topology.AllEdgePairs)
             {
+                // 可視性チェック：エッジが属する面のいずれかが可視なら可視
+                if (_visibilityProvider != null)
+                {
+                    bool anyVisible = false;
+                    foreach (var faceEdge in _topology.GetEdgesAt(pair))
+                    {
+                        if (_visibilityProvider.IsFaceVisible(faceEdge.FaceIndex))
+                        {
+                            anyVisible = true;
+                            break;
+                        }
+                    }
+                    if (!anyVisible) continue;
+                }
+
                 Vector2 p1 = worldToScreen(meshData.Vertices[pair.V1].Position);
                 Vector2 p2 = worldToScreen(meshData.Vertices[pair.V2].Position);
                 
@@ -415,6 +471,10 @@ namespace MeshFactory.Selection
             bool changed = false;
             foreach (int faceIdx in _topology.RealFaceIndices)
             {
+                // 可視性チェック
+                if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(faceIdx))
+                    continue;
+
                 var face = meshData.Faces[faceIdx];
                 
                 bool allInside = true;
@@ -464,7 +524,7 @@ namespace MeshFactory.Selection
         // === 全選択・反転 ===
 
         /// <summary>
-        /// 有効なモードの全要素を選択
+        /// 有効なモードの全要素を選択（可視要素のみ）
         /// </summary>
         public void SelectAll(MeshData meshData)
         {
@@ -475,30 +535,55 @@ namespace MeshFactory.Selection
             if (mode.Has(MeshSelectMode.Vertex))
             {
                 for (int i = 0; i < meshData.VertexCount; i++)
+                {
+                    if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                        continue;
                     _state.Vertices.Add(i);
+                }
             }
 
             if (mode.Has(MeshSelectMode.Edge))
             {
                 foreach (var pair in _topology.AllEdgePairs)
+                {
+                    // 可視性チェック
+                    if (_visibilityProvider != null)
+                    {
+                        bool anyVisible = false;
+                        foreach (var faceEdge in _topology.GetEdgesAt(pair))
+                        {
+                            if (_visibilityProvider.IsFaceVisible(faceEdge.FaceIndex))
+                            {
+                                anyVisible = true;
+                                break;
+                            }
+                        }
+                        if (!anyVisible) continue;
+                    }
                     _state.Edges.Add(pair);
+                }
             }
 
             if (mode.Has(MeshSelectMode.Face))
             {
                 foreach (int idx in _topology.RealFaceIndices)
+                {
+                    if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(idx))
+                        continue;
                     _state.Faces.Add(idx);
+                }
             }
 
             if (mode.Has(MeshSelectMode.Line))
             {
+                // 補助線分は常に可視
                 foreach (int idx in _topology.AuxLineIndices)
                     _state.Lines.Add(idx);
             }
         }
 
         /// <summary>
-        /// 有効なモードの選択を反転
+        /// 有効なモードの選択を反転（可視要素のみ対象）
         /// </summary>
         public void InvertSelection(MeshData meshData)
         {
@@ -508,30 +593,61 @@ namespace MeshFactory.Selection
 
             if (mode.Has(MeshSelectMode.Vertex))
             {
-                var allVerts = new HashSet<int>(Enumerable.Range(0, meshData.VertexCount));
-                allVerts.ExceptWith(_state.Vertices);
+                var newSelection = new HashSet<int>();
+                for (int i = 0; i < meshData.VertexCount; i++)
+                {
+                    if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                        continue;
+                    if (!_state.Vertices.Contains(i))
+                        newSelection.Add(i);
+                }
                 _state.Vertices.Clear();
-                foreach (int v in allVerts) _state.Vertices.Add(v);
+                foreach (int v in newSelection) _state.Vertices.Add(v);
             }
 
             if (mode.Has(MeshSelectMode.Edge))
             {
-                var allEdges = new HashSet<VertexPair>(_topology.AllEdgePairs);
-                allEdges.ExceptWith(_state.Edges);
+                var newSelection = new HashSet<VertexPair>();
+                foreach (var pair in _topology.AllEdgePairs)
+                {
+                    // 可視性チェック
+                    if (_visibilityProvider != null)
+                    {
+                        bool anyVisible = false;
+                        foreach (var faceEdge in _topology.GetEdgesAt(pair))
+                        {
+                            if (_visibilityProvider.IsFaceVisible(faceEdge.FaceIndex))
+                            {
+                                anyVisible = true;
+                                break;
+                            }
+                        }
+                        if (!anyVisible) continue;
+                    }
+                    if (!_state.Edges.Contains(pair))
+                        newSelection.Add(pair);
+                }
                 _state.Edges.Clear();
-                foreach (var e in allEdges) _state.Edges.Add(e);
+                foreach (var e in newSelection) _state.Edges.Add(e);
             }
 
             if (mode.Has(MeshSelectMode.Face))
             {
-                var allFaces = new HashSet<int>(_topology.RealFaceIndices);
-                allFaces.ExceptWith(_state.Faces);
+                var newSelection = new HashSet<int>();
+                foreach (int idx in _topology.RealFaceIndices)
+                {
+                    if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(idx))
+                        continue;
+                    if (!_state.Faces.Contains(idx))
+                        newSelection.Add(idx);
+                }
                 _state.Faces.Clear();
-                foreach (int f in allFaces) _state.Faces.Add(f);
+                foreach (int f in newSelection) _state.Faces.Add(f);
             }
 
             if (mode.Has(MeshSelectMode.Line))
             {
+                // 補助線分は常に可視
                 var allLines = new HashSet<int>(_topology.AuxLineIndices);
                 allLines.ExceptWith(_state.Lines);
                 _state.Lines.Clear();
