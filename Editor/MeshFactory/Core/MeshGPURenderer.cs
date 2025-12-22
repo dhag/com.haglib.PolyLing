@@ -823,7 +823,7 @@ namespace MeshFactory.Rendering
                 // 深度を考慮して最も手前の面を選択
                 newHoverFace = hitResult.GetNearestFaceIndex();
             }
-            
+            /*こっちはもう問題解消されたが、いつでも確認できるよう残しておく
             // デバッグ：状態変化をログ出力
             if (EnableHoverDebug)
             {
@@ -859,8 +859,8 @@ namespace MeshFactory.Rendering
                         Debug.Log($"[HoverDebug] NO HOVER - NearestVertex: idx={hitResult.NearestVertexIndex}, dist={hitResult.NearestVertexDistance:F2} (threshold={vertexRadius}), NearestLine: idx={hitResult.NearestLineIndex}, dist={hitResult.NearestLineDistance:F2} (threshold={lineDistance})");
                     }
                 }
-            }
-            
+            }*/
+
             _prevHoverVertexIndex = newHoverVertex;
             _prevHoverLineIndex = newHoverLine;
             _prevHoverFaceIndex = newHoverFace;
@@ -869,9 +869,10 @@ namespace MeshFactory.Rendering
             _hoverLineIndex = newHoverLine;
             _hoverFaceIndex = newHoverFace;
         }
-        
+
         /// <summary>
         /// ホバー状態を更新（デバッグ検証付き）
+        /// 線分インデックスの稀な間違い：未解決　のデバッグ用
         /// </summary>
         public void UpdateHoverState(GPUHitTestResult hitResult, float vertexRadius, float lineDistance, 
             Vector2 mousePos, MeshEdgeCache edgeCache)
@@ -880,8 +881,8 @@ namespace MeshFactory.Rendering
             
             // 通常の更新
             UpdateHoverState(hitResult, vertexRadius, lineDistance);
-            
-            // デバッグ検証
+
+            // [HoverDebug]デバッグ検証
             if (EnableHoverDebug && _hoverLineIndex >= 0 && edgeCache != null)
             {
                 ValidateLineHover(hitResult, mousePos, edgeCache);

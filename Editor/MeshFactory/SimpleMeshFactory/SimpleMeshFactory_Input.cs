@@ -157,9 +157,9 @@ public partial class SimpleMeshFactory
 
         float tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y;
         var hitResult = _gpuRenderer.DispatchHitTest(mousePos, rect, tabHeight);
-        
-        // 通常のホバー更新（デバッグなし）
-        _gpuRenderer.UpdateHoverState(hitResult, HOVER_VERTEX_RADIUS, HOVER_LINE_DISTANCE);
+
+        // デバッグ検証付きでホバー更新
+        _gpuRenderer.UpdateHoverState(hitResult, HOVER_VERTEX_RADIUS, HOVER_LINE_DISTANCE, mousePos, _edgeCache);
         Repaint();
     }
     /// <summary>
@@ -301,7 +301,7 @@ public partial class SimpleMeshFactory
         if (_selectionState != null && _selectionOps != null)
         {
             selectionChanged = _selectionOps.ApplyHitResult(_hitResultOnMouseDown, shiftHeld);
-            
+
             // _selectedVertices と同期（レガシー互換）
             _selectedVertices.Clear();
             foreach (var v in _selectionState.Vertices)
@@ -445,7 +445,7 @@ public partial class SimpleMeshFactory
         {
             bool additive = shiftHeld || ctrlHeld;
             _selectionOps.SelectInRect(selectRect, meshData, worldToScreen, additive);
-            
+
             // _selectedVertices と同期（レガシー互換）
             _selectedVertices.Clear();
             foreach (var v in _selectionState.Vertices)
