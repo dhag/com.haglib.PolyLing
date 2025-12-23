@@ -607,11 +607,19 @@ namespace MeshFactory.Rendering
             }
 
             // マウス座標を adjustedRect 座標系に変換
+            //この計算は必須。必須必須必須必須必須
             float ratioY = mousePos.y / rect.height;
             float adjustedMouseY = tabHeight + ratioY * (rect.height - tabHeight);
             Vector2 adjustedMousePos = new Vector2(mousePos.x, adjustedMouseY);
-
+            
             _computeShader.SetVector("_MousePosition", new Vector4(adjustedMousePos.x, adjustedMousePos.y, 0, 0));
+
+            //臨時。 検証用にキャッシュ
+            _cachedAdjustedMousePos = adjustedMousePos;
+
+
+            //これではだめ。
+            //_computeShader.SetVector("_MousePosition", new Vector4(mousePos.x, mousePos.y, 0, 0));
 
             int threadGroups(int count) => Mathf.CeilToInt(count / 64f);
 
@@ -620,7 +628,7 @@ namespace MeshFactory.Rendering
             SetBuffer(_kernelVertexHit, "_VertexVisibilityBuffer", _vertexVisibilityBuffer);
             SetBuffer(_kernelVertexHit, "_VertexHitDistanceBuffer", _vertexHitDistanceBuffer);
             SetBuffer(_kernelVertexHit, "_VertexHitDepthBuffer", _vertexHitDepthBuffer);
-            _computeShader.Dispatch(_kernelVertexHit, threadGroups(_vertexCount), 1, 1);
+            _computeShader.Dispatch(_kernelVertexHit, threadGroups(_vertexCount), 1, 1);//コンピュートシェーダによる頂点ヒットテスト
 
             // 2. 線分ヒット距離計算
             if (_lineCount > 0 && _lineHitDistanceBuffer != null)
@@ -630,7 +638,7 @@ namespace MeshFactory.Rendering
                 SetBuffer(_kernelLineHit, "_LineVisibilityBuffer", _lineVisibilityBuffer);
                 SetBuffer(_kernelLineHit, "_LineHitDistanceBuffer", _lineHitDistanceBuffer);
                 SetBuffer(_kernelLineHit, "_LineHitDepthBuffer", _lineHitDepthBuffer);
-                _computeShader.Dispatch(_kernelLineHit, threadGroups(_lineCount), 1, 1);
+                _computeShader.Dispatch(_kernelLineHit, threadGroups(_lineCount), 1, 1);//コンピュートシェーダによる線分ヒットテスト
             }
 
             // 3. 面ヒットテスト
@@ -643,7 +651,7 @@ namespace MeshFactory.Rendering
                 SetBuffer(_kernelFaceHit, "_FaceVisibilityBuffer", _faceVisibilityBuffer);
                 SetBuffer(_kernelFaceHit, "_FaceHitBuffer", _faceHitBuffer);
                 SetBuffer(_kernelFaceHit, "_FaceHitDepthBuffer", _faceHitDepthBuffer);
-                _computeShader.Dispatch(_kernelFaceHit, threadGroups(_faceCount), 1, 1);
+                _computeShader.Dispatch(_kernelFaceHit, threadGroups(_faceCount), 1, 1);//コンピュートシェーダによる面ヒットテスト
             }
 
             return ReadHitTestResults();
@@ -825,6 +833,7 @@ namespace MeshFactory.Rendering
             }
             /*こっちはもう問題解消されたが、いつでも確認できるよう残しておく
             // デバッグ：状態変化をログ出力
+            
             if (EnableHoverDebug)
             {
                 if (newHoverVertex != _prevHoverVertexIndex)
@@ -850,7 +859,7 @@ namespace MeshFactory.Rendering
                     else if (_prevHoverFaceIndex >= 0)
                         Debug.Log($"[HoverDebug] Face UNHOVER: was idx={_prevHoverFaceIndex}");
                 }
-                
+                /*
                 // ヒットテスト結果の詳細（ホバー対象がない場合も）
                 if (newHoverVertex < 0 && newHoverLine < 0 && newHoverFace < 0)
                 {
@@ -859,7 +868,9 @@ namespace MeshFactory.Rendering
                         Debug.Log($"[HoverDebug] NO HOVER - NearestVertex: idx={hitResult.NearestVertexIndex}, dist={hitResult.NearestVertexDistance:F2} (threshold={vertexRadius}), NearestLine: idx={hitResult.NearestLineIndex}, dist={hitResult.NearestLineDistance:F2} (threshold={lineDistance})");
                     }
                 }
-            }*/
+                
+            }
+            */
 
             _prevHoverVertexIndex = newHoverVertex;
             _prevHoverLineIndex = newHoverLine;
@@ -888,7 +899,10 @@ namespace MeshFactory.Rendering
                 ValidateLineHover(hitResult, mousePos, edgeCache);
             }
         }
-        
+
+
+        // ヒットテスト用の変換済みマウス座標（検証用）
+        private Vector2 _cachedAdjustedMousePos;
         /// <summary>
         /// 線分ホバーの検証（デバッグ用）
         /// GPUの結果とCPU再計算を比較
@@ -923,12 +937,18 @@ namespace MeshFactory.Rendering
             
             Vector4 p1Screen = _screenPositionData[v1];
             Vector4 p2Screen = _screenPositionData[v2];
-            
-            // CPU側で距離を再計算
-            float cpuDistance = DistanceToLineSegmentCPU(mousePos, 
-                new Vector2(p1Screen.x, p1Screen.y), 
+
+            // CPU側で距離を再計算。この式誤り。
+            //float cpuDistance = DistanceToLineSegmentCPU(mousePos, 
+            //     new Vector2(p1Screen.x, p1Screen.y), 
+            //    new Vector2(p2Screen.x, p2Screen.y));
+            // CPU側で距離を再計算。この式正しい。
+            // mousePos を adjustedRect 座標系に変換（DispatchHitTestと同じ変換）
+            // CPU側で距離を再計算（変換済みマウス座標を使用）
+            float cpuDistance = DistanceToLineSegmentCPU(_cachedAdjustedMousePos,
+                new Vector2(p1Screen.x, p1Screen.y),
                 new Vector2(p2Screen.x, p2Screen.y));
-            
+
             // 比較
             float distanceError = Mathf.Abs(gpuDistance - cpuDistance);
             const float errorThreshold = 5f;  // ピクセル
@@ -1081,8 +1101,11 @@ namespace MeshFactory.Rendering
             _pointMaterial.SetVector("_GUIOffset", guiOffset);
             _pointMaterial.SetFloat("_PointSize", pointSize);
             _pointMaterial.SetFloat("_Alpha", alpha);
-            _pointMaterial.SetInt("_HoverVertexIndex", _hoverVertexIndex);
-            
+            // デバッグ: ホバーインデックスを確認
+            //Debug.Log($"[DrawDebug] DrawPoints: _hoverVertexIndex={_hoverVertexIndex}");
+            //_pointMaterial.SetInt("_HoverVertexIndex", _hoverVertexIndex);
+            _pointMaterial.SetFloat("_HoverVertexIndex", _hoverVertexIndex);
+
             GL.PushMatrix();
             GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
             
@@ -1107,8 +1130,11 @@ namespace MeshFactory.Rendering
             _lineMaterial.SetFloat("_Alpha", alpha);
             _lineMaterial.SetColor("_EdgeColor", edgeColor ?? new Color(0f, 1f, 0.5f, 0.9f));
             _lineMaterial.SetColor("_SelectedEdgeColor", new Color(0f, 1f, 1f, 1f));
-            _lineMaterial.SetInt("_HoverLineIndex", _hoverLineIndex);
-            
+            // デバッグ: ホバーインデックスを確認  
+            //Debug.Log($"[DrawDebug] DrawLines: _hoverLineIndex={_hoverLineIndex}");
+            //_lineMaterial.SetInt("_HoverLineIndex", _hoverLineIndex);
+            _lineMaterial.SetFloat("_HoverLineIndex", _hoverLineIndex);
+
             GL.PushMatrix();
             GL.LoadPixelMatrix(0, windowSize.x, windowSize.y, 0);
             

@@ -46,7 +46,8 @@ Shader "MeshFactory/Line"
             float4 _PreviewRect;
             float2 _GUIOffset;   // タブバー等のオフセット
             float _Alpha;        // 透明度（非選択メッシュ用）
-            int _HoverLineIndex; // ホバー中の線分インデックス（-1=なし）
+            //int _HoverLineIndex; // ホバー中の線分インデックス（-1=なし）Unity シェーダーでは int プロパティが正しく動作しないことがあります。
+            float  _HoverLineIndex; // ホバー中の線分インデックス（-1=なし）
             
             struct Attributes
             {

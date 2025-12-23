@@ -44,7 +44,8 @@ Shader "MeshFactory/Point"
             float4 _PreviewRect; // x, y, width, height
             float2 _GUIOffset;   // タブバー等のオフセット
             float _Alpha;        // 透明度（非選択メッシュ用）
-            int _HoverVertexIndex;  // ホバー中の頂点インデックス（-1=なし）
+            //int _HoverVertexIndex;  // ホバー中の頂点インデックス（-1=なし）Unity シェーダーでは int プロパティが正しく動作しないことがあります。
+            float _HoverVertexIndex;  // ホバー中の頂点インデックス（-1=なし）Unity シェーダーでは int プロパティが正しく動作しないことがあります。
             
             struct Attributes
             {
