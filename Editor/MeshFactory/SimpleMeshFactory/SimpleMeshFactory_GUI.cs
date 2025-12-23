@@ -67,7 +67,7 @@ public partial class SimpleMeshFactory
                 bool newShowVertices = EditorGUILayout.Toggle(L.Get("ShowVertices"), _showVertices);
                 bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);  // ★追加
                 bool newShowSelectedMeshOnly = EditorGUILayout.Toggle(L.Get("ShowSelectedMeshOnly"), _showSelectedMeshOnly);  // ★追加
-                bool newVertexEditMode = newShowVertices;
+                //bool newVertexEditMode = newShowVertices;
 
                 if (EditorGUI.EndChangeCheck())
                 {
@@ -75,8 +75,8 @@ public partial class SimpleMeshFactory
                         newShowWireframe != _showWireframe ||
                         newShowVertices != _showVertices ||
                         newShowVertexIndices != _showVertexIndices ||
-                        newShowSelectedMeshOnly != _showSelectedMeshOnly ||
-                        newVertexEditMode != _vertexEditMode;
+                        newShowSelectedMeshOnly != _showSelectedMeshOnly;// ||
+                        //newVertexEditMode != _vertexEditMode;
 
                     if (hasDisplayChange && _undoController != null)
                     {
@@ -87,7 +87,7 @@ public partial class SimpleMeshFactory
                     _showVertices = newShowVertices;
                     _showVertexIndices = newShowVertexIndices;
                     _showSelectedMeshOnly = newShowSelectedMeshOnly;
-                    _vertexEditMode = newVertexEditMode;
+                    //_vertexEditMode = newVertexEditMode;
 
                     if (_undoController != null)
                     {
@@ -95,7 +95,7 @@ public partial class SimpleMeshFactory
                         _undoController.EditorState.ShowVertices = _showVertices;
                         _undoController.EditorState.ShowSelectedMeshOnly = _showSelectedMeshOnly;
                         _undoController.EditorState.ShowVertexIndices = _showVertexIndices;
-                        _undoController.EditorState.VertexEditMode = _vertexEditMode;
+                        //_undoController.EditorState.VertexEditMode = _vertexEditMode;
                         _undoController.EndEditorStateDrag("Change Display Settings");
                     }
                 }
@@ -222,8 +222,8 @@ public partial class SimpleMeshFactory
             // ================================================================
             // Selection セクション（編集モード時のみ）
             // ================================================================
-            if (_vertexEditMode)
-            {
+            //if (_vertexEditMode)
+            //{
                 _undoController?.FocusVertexEdit();
 
                 _foldSelection = DrawFoldoutWithUndo("Selection", L.Get("Selection"), true);
@@ -319,11 +319,11 @@ public partial class SimpleMeshFactory
                         Repaint();
                     }
                 }
-            }
-            else
-            {
-                _undoController?.FocusView();
-            }
+        //    }
+        //    else
+        //    {
+        //        _undoController?.FocusView();
+        //    }
 
             EditorGUILayout.Space(5);
 

@@ -289,8 +289,8 @@ public partial class SimpleMeshFactory : EditorWindow
     private bool _showWireframe = true;
     private bool _showVertices = true;
     private bool _vertexEditMode = true;  // Show Verticesと連動  
-    private bool _showSelectedMeshOnly = true;  // ★追加
-    private bool _showVertexIndices = true;     // ★追加
+    private bool _showSelectedMeshOnly = false;  // 
+    private bool _showVertexIndices = true;     // 
     /// <summary>
     /// ツールの状態
     /// </summary>
@@ -419,7 +419,7 @@ public partial class SimpleMeshFactory : EditorWindow
         _model.WorkPlane = _undoController.WorkPlane;
 
         // Show Verticesと編集モードを同期
-        _vertexEditMode = _showVertices;
+        //_vertexEditMode = _showVertices;
 
         // EditorStateにローカル変数の初期値を設定
         if (_undoController != null)
