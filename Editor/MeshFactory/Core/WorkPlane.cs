@@ -308,12 +308,12 @@ namespace MeshFactory.Tools
         /// 選択頂点の重心を原点に設定
         /// 注：Undo記録は呼び出し側で行う
         /// </summary>
-        public bool UpdateOriginFromSelection(MeshData meshData, HashSet<int> selectedVertices)
+        public bool UpdateOriginFromSelection(MeshObject meshObject, HashSet<int> selectedVertices)
         {
             if (_isLocked)
                 return false;
 
-            if (meshData == null || selectedVertices == null || selectedVertices.Count == 0)
+            if (meshObject == null || selectedVertices == null || selectedVertices.Count == 0)
                 return false;
 
             Vector3 center = Vector3.zero;
@@ -321,9 +321,9 @@ namespace MeshFactory.Tools
 
             foreach (int idx in selectedVertices)
             {
-                if (idx >= 0 && idx < meshData.VertexCount)
+                if (idx >= 0 && idx < meshObject.VertexCount)
                 {
-                    center += meshData.Vertices[idx].Position;
+                    center += meshObject.Vertices[idx].Position;
                     count++;
                 }
             }

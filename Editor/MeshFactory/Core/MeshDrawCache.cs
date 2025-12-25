@@ -24,8 +24,8 @@ namespace MeshFactory.Rendering
         /// <summary>補助線（2頂点の面）</summary>
         public List<(int v1, int v2)> AuxLines { get; private set; } = new List<(int, int)>();
 
-        /// <summary>キャッシュ元のMeshDataのハッシュ</summary>
-        private int _meshDataHash;
+        /// <summary>キャッシュ元のMeshObjectのハッシュ</summary>
+        private int _meshObjectHash;
 
         // ================================================================
         // 座標キャッシュ（毎フレーム更新）
@@ -58,28 +58,28 @@ namespace MeshFactory.Rendering
         /// メッシュデータからエッジリストを構築
         /// メッシュ変更時のみ呼び出す
         /// </summary>
-        public void UpdateEdgeCache(MeshData meshData)
+        public void UpdateEdgeCache(MeshObject meshObject)
         {
-            if (meshData == null)
+            if (meshObject == null)
             {
                 Edges.Clear();
                 AuxLines.Clear();
-                _meshDataHash = 0;
+                _meshObjectHash = 0;
                 return;
             }
 
             // 簡易ハッシュでメッシュ変更を検出
-            int hash = ComputeMeshHash(meshData);
-            if (hash == _meshDataHash && Edges.Count > 0)
+            int hash = ComputeMeshHash(meshObject);
+            if (hash == _meshObjectHash && Edges.Count > 0)
                 return;  // 変更なし
 
-            _meshDataHash = hash;
+            _meshObjectHash = hash;
             Edges.Clear();
             AuxLines.Clear();
 
             var edgeSet = new HashSet<(int, int)>();
 
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 if (face.VertexCount == 2)
                 {
@@ -106,7 +106,7 @@ namespace MeshFactory.Rendering
             }
 
             // スクリーン座標配列のサイズ調整
-            EnsureScreenPositionCapacity(meshData.VertexCount);
+            EnsureScreenPositionCapacity(meshObject.VertexCount);
         }
 
         /// <summary>
@@ -114,7 +114,7 @@ namespace MeshFactory.Rendering
         /// </summary>
         public void InvalidateEdgeCache()
         {
-            _meshDataHash = 0;
+            _meshObjectHash = 0;
             Edges.Clear();
             AuxLines.Clear();
         }
@@ -188,15 +188,15 @@ namespace MeshFactory.Rendering
         /// <summary>
         /// 全頂点のスクリーン座標を一括計算
         /// </summary>
-        public void ComputeAllScreenPositions(MeshData meshData)
+        public void ComputeAllScreenPositions(MeshObject meshObject)
         {
-            if (meshData == null) return;
+            if (meshObject == null) return;
 
-            EnsureScreenPositionCapacity(meshData.VertexCount);
+            EnsureScreenPositionCapacity(meshObject.VertexCount);
 
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
-                Vector3 worldPos = meshData.Vertices[i].Position;
+                Vector3 worldPos = meshObject.Vertices[i].Position;
                 Vector4 clipPos = _vpMatrix * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);
 
                 if (clipPos.w <= 0.0001f)
@@ -252,15 +252,15 @@ namespace MeshFactory.Rendering
             }
         }
 
-        private int ComputeMeshHash(MeshData meshData)
+        private int ComputeMeshHash(MeshObject meshObject)
         {
             // 簡易ハッシュ: 頂点数 + 面数 + 最初と最後の頂点位置
-            int hash = meshData.VertexCount * 397 ^ meshData.FaceCount;
+            int hash = meshObject.VertexCount * 397 ^ meshObject.FaceCount;
 
-            if (meshData.VertexCount > 0)
+            if (meshObject.VertexCount > 0)
             {
-                var first = meshData.Vertices[0].Position;
-                var last = meshData.Vertices[meshData.VertexCount - 1].Position;
+                var first = meshObject.Vertices[0].Position;
+                var last = meshObject.Vertices[meshObject.VertexCount - 1].Position;
                 hash ^= first.GetHashCode();
                 hash ^= last.GetHashCode();
             }
@@ -277,7 +277,7 @@ namespace MeshFactory.Rendering
             AuxLines.Clear();
             ScreenPositions = null;
             IsVisible = null;
-            _meshDataHash = 0;
+            _meshObjectHash = 0;
             _matricesValid = false;
         }
     }

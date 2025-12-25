@@ -1,6 +1,6 @@
 // Assets/Editor/SimpleMeshFactory.cs
 // 階層型Undoシステム統合済みメッシュエディタ
-// MeshData（Vertex/Face）ベース対応版
+// MeshObject（Vertex/Face）ベース対応版
 // DefaultMaterials対応版
 using System;
 using System.Collections.Generic;
@@ -35,61 +35,58 @@ public partial class SimpleMeshFactory : EditorWindow
 
     // ================================================================
     // メッシュコンテキスト
-    //   MeshDataにUnityMeshなどを加えたもの。
+    //   MeshObjectにUnityMeshなどを加えたもの。
     // ================================================================
     public class MeshContext
     {
         public string Name
         {
-            get => Data?.Name ?? "Untitled";
-            set { if (Data != null) Data.Name = value; }
+            get => MeshObject?.Name ?? "Untitled";
+            set { if (MeshObject != null) MeshObject.Name = value; }
         }
         public Mesh UnityMesh;                      // Unity UnityMesh（表示用）
-        public MeshData Data;                       // 新構造データ
+        public MeshObject MeshObject;                     // ータ
         public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
+
         // ================================================================
-        // 階層・トランスフォーム（MeshDataへの参照）
+        // 階層・トランスフォーム（MeshObjectへの参照）
         // ================================================================
 
         /// <summary>親メッシュのインデックス（-1=ルート）</summary>
         public int ParentIndex
         {
-            get => Data?.ParentIndex ?? -1;
-            set { if (Data != null) Data.ParentIndex = value; }
+            get => MeshObject?.ParentIndex ?? -1;
+            set { if (MeshObject != null) MeshObject.ParentIndex = value; }
         }
 
         /// <summary>階層深度（MQO互換）</summary>
         public int Depth
         {
-            get => Data?.Depth ?? 0;
-            set { if (Data != null) Data.Depth = value; }
+            get => MeshObject?.Depth ?? 0;
+            set { if (MeshObject != null) MeshObject.Depth = value; }
         }
 
         /// <summary>ゲームオブジェクト階層の親（将来用）</summary>
         public int HierarchyParentIndex
         {
-            get => Data?.HierarchyParentIndex ?? -1;
-            set { if (Data != null) Data.HierarchyParentIndex = value; }
+            get => MeshObject?.HierarchyParentIndex ?? -1;
+            set { if (MeshObject != null) MeshObject.HierarchyParentIndex = value; }
         }
 
         /// <summary>エクスポート設定</summary>
         public ExportSettings ExportSettings
         {
-            get => Data?.ExportSettings;
-            set { if (Data != null) Data.ExportSettings = value ?? new ExportSettings(); }
+            get => MeshObject?.ExportSettings;
+            set { if (MeshObject != null) MeshObject.ExportSettings = value ?? new ExportSettings(); }
         }
-
-        // マルチマテリアル対応
-        public List<Material> Materials = new List<Material>();
-        public int CurrentMaterialIndex = 0;
 
         // ================================================================
         // オブジェクト属性（MQOからインポート）
         // ================================================================
-        
+
         /// <summary>メッシュの種類</summary>
         public MeshType Type { get; set; } = MeshType.Mesh;
-        
+
         // ----------------------------------------------------------------
         // 親子関係について
         // ----------------------------------------------------------------
@@ -106,40 +103,40 @@ public partial class SimpleMeshFactory : EditorWindow
         // - 順序変更時: ParentIndexを新しいインデックスに更新
         // - エクスポート時: ParentIndexからdepthを再計算
         // ----------------------------------------------------------------
-        
+
         /// <summary>
         /// 親メッシュのインデックス（-1=ルート、親なし）
         /// </summary>
         //public int ParentIndex { get; set; } = -1;
-        
+
         /// <summary>
         /// 階層深度（0=ルート、1以上=子）
         /// MQO互換用。表示のインデント等に使用。
         /// </summary>
         //public int Depth { get; set; } = 0;
-        
+
         /// <summary>可視状態</summary>
         public bool IsVisible { get; set; } = true;
-        
+
         /// <summary>編集禁止（ロック）</summary>
         public bool IsLocked { get; set; } = false;
 
         // ================================================================
         // ミラー設定（MQOからインポート）
         // ================================================================
-        
+
         /// <summary>ミラータイプ (0:なし, 1:分離, 2:結合)</summary>
         public int MirrorType { get; set; } = 0;
-        
+
         /// <summary>ミラー軸 (1:X, 2:Y, 4:Z)</summary>
         public int MirrorAxis { get; set; } = 1;
-        
+
         /// <summary>ミラー距離</summary>
         public float MirrorDistance { get; set; } = 0f;
-        
+
         /// <summary>ミラーが有効か</summary>
         public bool IsMirrored => MirrorType > 0;
-        
+
         /// <summary>ミラー軸をSymmetryAxisに変換</summary>
         public MeshFactory.Symmetry.SymmetryAxis GetMirrorSymmetryAxis()
         {
@@ -155,10 +152,10 @@ public partial class SimpleMeshFactory : EditorWindow
         // ================================================================
         // ミラーメッシュキャッシュ
         // ================================================================
-        
+
         /// <summary>ミラー表示用メッシュキャッシュ（遅延初期化）</summary>
         private SymmetryMeshCache _symmetryCache;
-        
+
         /// <summary>ミラーメッシュキャッシュを取得（遅延初期化）</summary>
         public SymmetryMeshCache SymmetryCache
         {
@@ -169,13 +166,13 @@ public partial class SimpleMeshFactory : EditorWindow
                 return _symmetryCache;
             }
         }
-        
+
         /// <summary>ミラーキャッシュを無効化（トポロジー変更時に呼ぶ）</summary>
         public void InvalidateSymmetryCache()
         {
             _symmetryCache?.Invalidate();
         }
-        
+
         /// <summary>ミラーキャッシュをクリア（リソース解放）</summary>
         public void ClearSymmetryCache()
         {
@@ -186,57 +183,105 @@ public partial class SimpleMeshFactory : EditorWindow
         public MeshContext()
         {
             ExportSettings = new ExportSettings();
-            Materials.Add(null); // デフォルトマテリアルスロット（slot 0）
         }
 
-        /// <summary>
-        /// 現在選択中のマテリアルを取得
-        /// </summary>
+        // ================================================================
+        // マテリアル（後方互換用 - ModelContext への委譲）
+        // ================================================================
+        // Phase 1: Materials は ModelContext に集約されたが、
+        // 外部ファイル（MQOImporter等）との互換性のため委譲プロパティを維持
+
+        /// <summary>親ModelContextへの参照（マテリアル取得用）</summary>
+        internal MeshFactory.Model.ModelContext MaterialOwner { get; set; }
+
+        /// <summary>フォールバック用マテリアルリスト（MaterialOwnerがない場合）</summary>
+        private List<Material> _fallbackMaterials = new List<Material> { null };
+        private int _fallbackMaterialIndex = 0;
+
+        /// <summary>マテリアルリスト（後方互換）</summary>
+        public List<Material> Materials
+        {
+            get => MaterialOwner?.Materials ?? _fallbackMaterials;
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.Materials = value;
+                else
+                    _fallbackMaterials = value ?? new List<Material> { null };
+            }
+        }
+
+        /// <summary>現在選択中のマテリアルインデックス（後方互換）</summary>
+        public int CurrentMaterialIndex
+        {
+            get => MaterialOwner?.CurrentMaterialIndex ?? _fallbackMaterialIndex;
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.CurrentMaterialIndex = value;
+                else
+                    _fallbackMaterialIndex = value;
+            }
+        }
+
+        /// <summary>サブメッシュ数（後方互換）</summary>
+        public int SubMeshCount => Materials?.Count ?? 1;
+
+        /// <summary>現在選択中のマテリアルを取得（後方互換）</summary>
         public Material GetCurrentMaterial()
         {
-            if (CurrentMaterialIndex >= 0 && CurrentMaterialIndex < Materials.Count)
-                return Materials[CurrentMaterialIndex];
+            var mats = Materials;
+            int idx = CurrentMaterialIndex;
+            if (idx >= 0 && idx < mats.Count)
+                return mats[idx];
             return null;
         }
 
-        /// <summary>
-        /// 指定スロットのマテリアルを取得（範囲外ならnull）
-        /// </summary>
+        /// <summary>指定スロットのマテリアルを取得（後方互換）</summary>
         public Material GetMaterial(int index)
         {
-            if (index >= 0 && index < Materials.Count)
-                return Materials[index];
+            var mats = Materials;
+            if (index >= 0 && index < mats.Count)
+                return mats[index];
             return null;
         }
-
-        /// <summary>
-        /// サブメッシュ数を取得
-        /// </summary>
-        public int SubMeshCount => Materials.Count;
     }
 
 
     // ================================================================
-    // モデルコンテキスト（Phase 1: ModelContext導入）
+    // プロジェクトコンテキスト（Phase 0.5: ProjectContext導入）
     // ================================================================
-    private ModelContext _model = new ModelContext();
+    private ProjectContext _project = new ProjectContext();
 
     // 後方互換プロパティ（既存コードを壊さない）
-    private List<MeshContext> _meshContextList => _model.MeshContextList;
+    private ModelContext _model => _project.CurrentModel;
+    private List<MeshContext> _meshContextList => _model?.MeshContextList;
     private int _selectedIndex
     {
-        get => _model.SelectedIndex;
-        set => _model.SelectedIndex = value;
+        get => _model?.SelectedIndex ?? -1;
+        set { if (_model != null) _model.SelectedIndex = value; }
     }
 
     private Vector2 _vertexScroll;
 
     // ================================================================
-    // デフォルトマテリアル（新規メッシュ作成時に適用）
+    // デフォルトマテリアル（後方互換プロパティ → ModelContext に集約）
     // ================================================================
-    private List<Material> _defaultMaterials = new List<Material> { null };
-    private int _defaultCurrentMaterialIndex = 0;
-    private bool _autoSetDefaultMaterials = true;
+    private List<Material> _defaultMaterials
+    {
+        get => _model?.DefaultMaterials ?? new List<Material> { null };
+        set { if (_model != null) _model.DefaultMaterials = value; }
+    }
+    private int _defaultCurrentMaterialIndex
+    {
+        get => _model?.DefaultCurrentMaterialIndex ?? 0;
+        set { if (_model != null) _model.DefaultCurrentMaterialIndex = value; }
+    }
+    private bool _autoSetDefaultMaterials
+    {
+        get => _model?.AutoSetDefaultMaterials ?? true;
+        set { if (_model != null) _model.AutoSetDefaultMaterials = value; }
+    }
     /*
     // ================================================================
     // マテリアル管理（後方互換）
@@ -419,6 +464,15 @@ public partial class SimpleMeshFactory : EditorWindow
 
     private void OnEnable()
     {
+        // Phase 0.5: ProjectContext は常にデフォルト Model を持つ
+        // （ProjectContext コンストラクタで自動作成）
+        if (_project == null)
+            _project = new ProjectContext();
+
+        // シリアライズ復元時に Models が空の場合、デフォルトモデルを作成
+        if (_project.ModelCount == 0)
+            _project.AddModel(new ModelContext("Model"));
+
         InitPreview();
         wantsMouseMove = true;
 
@@ -437,7 +491,7 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // MeshListをUndoコントローラーに設定
         _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
-        
+
         // カメラ復元コールバックを設定
         if (_undoController.MeshListContext != null)
         {
@@ -446,7 +500,26 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         // ModelContextにWorkPlaneを設定
-        _model.WorkPlane = _undoController.WorkPlane;
+        if (_model != null)
+            _model.WorkPlane = _undoController.WorkPlane;
+
+        // ★Phase 1: MeshUndoContext.MaterialOwner を設定（Materials Undo用）
+        if (_undoController.MeshUndoContext != null && _model != null)
+        {
+            _undoController.MeshUndoContext.MaterialOwner = _model;
+        }
+
+        // ★Phase 1: 既存 MeshContext にも MaterialOwner を設定
+        if (_meshContextList != null && _model != null)
+        {
+            foreach (var meshContext in _meshContextList)
+            {
+                if (meshContext != null)
+                {
+                    meshContext.MaterialOwner = _model;
+                }
+            }
+        }
 
         // Show Verticesと編集モードを同期
         //_vertexEditMode = _showVertices;
@@ -547,7 +620,7 @@ public partial class SimpleMeshFactory : EditorWindow
     }
 
     /// <summary>
-    /// MeshData変更時にトポロジを更新
+    /// MeshObject変更時にトポロジを更新
     /// </summary>
     private void UpdateTopology()
     {
@@ -557,11 +630,11 @@ public partial class SimpleMeshFactory : EditorWindow
         var meshContext = _model.CurrentMeshContext;
         if (meshContext != null)
         {
-            _meshTopology.SetMeshData(meshContext.Data);
+            _meshTopology.SetMeshObject(meshContext.MeshObject);
         }
         else
         {
-            _meshTopology.SetMeshData(null);
+            _meshTopology.SetMeshObject(null);
         }
     }
 
@@ -627,14 +700,14 @@ public partial class SimpleMeshFactory : EditorWindow
         var meshContext = _model.CurrentMeshContext;
         if (meshContext != null)
         {
-            var ctx = _undoController.MeshContext;
+            var ctx = _undoController.MeshUndoContext;
 
-            if (ctx.MeshData != null)
+            if (ctx.MeshObject != null)
             {
-                meshContext.Data = ctx.MeshData.Clone();
+                meshContext.MeshObject = ctx.MeshObject.Clone();
                 SyncMeshFromData(meshContext);
 
-                if (ctx.MeshData.VertexCount > 0)
+                if (ctx.MeshObject.VertexCount > 0)
                 {
                     UpdateOffsetsFromData(meshContext);
                 }
@@ -645,12 +718,9 @@ public partial class SimpleMeshFactory : EditorWindow
                 _selectedVertices = new HashSet<int>(ctx.SelectedVertices);
             }
 
-            // マテリアル復元（マルチマテリアル対応）
-            if (ctx.Materials != null && ctx.Materials.Count > 0)
-            {
-                meshContext.Materials = new List<Material>(ctx.Materials);
-                meshContext.CurrentMaterialIndex = ctx.CurrentMaterialIndex;
-            }
+            // マテリアル復元は ModelContext に集約済み
+            // TODO: Undo Record からの Materials 復元を実装
+
             // カリングA 設定をGPUレンダラーに復元
             if (_gpuRenderer != null && _undoController != null)
             {
@@ -659,7 +729,7 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         // デフォルトマテリアル復元
-        var ctxForDefault = _undoController.MeshContext;
+        var ctxForDefault = _undoController.MeshUndoContext;
         if (ctxForDefault.DefaultMaterials != null && ctxForDefault.DefaultMaterials.Count > 0)
         {
             _defaultMaterials = new List<Material>(ctxForDefault.DefaultMaterials);
@@ -669,7 +739,7 @@ public partial class SimpleMeshFactory : EditorWindow
 
         // EditorStateContextからUI状態を復元
         var editorState = _undoController.EditorState;
-        
+
         // カメラ状態はMeshSelectionChangeRecord等から既に復元されている場合はスキップ
         if (!_cameraRestoredByRecord)
         {
@@ -679,7 +749,7 @@ public partial class SimpleMeshFactory : EditorWindow
             _cameraTarget = editorState.CameraTarget;
         }
         _cameraRestoredByRecord = false; // フラグをリセット
-        
+
         _showWireframe = editorState.ShowWireframe;
         _showVertices = editorState.ShowVertices;
         _showSelectedMeshOnly = editorState.ShowSelectedMeshOnly;
@@ -705,7 +775,7 @@ public partial class SimpleMeshFactory : EditorWindow
         ResetEditState();
 
         // SelectionState を復元
-        var ctx2 = _undoController.MeshContext;
+        var ctx2 = _undoController.MeshUndoContext;
         if (ctx2.CurrentSelectionSnapshot != null && _selectionState != null)
         {
             // 拡張選択スナップショットから復元（Edge/Face/Lines/Modeを含む完全な復元）
@@ -733,19 +803,16 @@ public partial class SimpleMeshFactory : EditorWindow
                 if (newMeshContext != null)
                 {
                     // MeshContextに必要な情報だけを設定
-                    _undoController.MeshContext.MeshData = newMeshContext.Data;
-                    _undoController.MeshContext.TargetMesh = newMeshContext.UnityMesh;
-                    _undoController.MeshContext.OriginalPositions = newMeshContext.OriginalPositions;
-                    _undoController.MeshContext.Materials = newMeshContext.Materials != null
-                        ? new List<Material>(newMeshContext.Materials)
-                        : new List<Material>();
-                    _undoController.MeshContext.CurrentMaterialIndex = newMeshContext.CurrentMaterialIndex;
+                    _undoController.MeshUndoContext.MeshObject = newMeshContext.MeshObject;
+                    _undoController.MeshUndoContext.TargetMesh = newMeshContext.UnityMesh;
+                    _undoController.MeshUndoContext.OriginalPositions = newMeshContext.OriginalPositions;
+                    // Materials は ModelContext に集約済み
                 }
             }
         }
 
         Repaint();
-        
+
         // ミラーキャッシュを無効化（頂点位置変更でも正しく更新されるように）
         InvalidateAllSymmetryCaches();
     }
@@ -776,13 +843,13 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.SelectedIndex={_undoController?.MeshListContext?.SelectedIndex}");
-        
+
         // MeshListContextから選択インデックスを取得
         if (_undoController?.MeshListContext != null)
         {
             _selectedIndex = _undoController.MeshListContext.SelectedIndex;
         }
-        
+
         Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
 
         // 選択中のメッシュコンテキストをMeshContextに設定
@@ -793,13 +860,10 @@ public partial class SimpleMeshFactory : EditorWindow
             // MeshContextに必要な情報だけを設定
             if (_undoController != null)
             {
-                _undoController.MeshContext.MeshData = meshContext.Data;
-                _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
-                _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
-                _undoController.MeshContext.Materials = meshContext.Materials != null
-                    ? new List<Material>(meshContext.Materials)
-                    : new List<Material>();
-                _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
+                _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
+                _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
+                _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
+                // Materials は ModelContext に集約済み
             }
 
             Debug.Log($"[OnMeshListChanged] Before InitVertexOffsets: _cameraTarget={_cameraTarget}");
@@ -814,13 +878,10 @@ public partial class SimpleMeshFactory : EditorWindow
             {
                 if (_undoController != null)
                 {
-                    _undoController.MeshContext.MeshData = fallbackMeshContext.Data;
-                    _undoController.MeshContext.TargetMesh = fallbackMeshContext.UnityMesh;
-                    _undoController.MeshContext.OriginalPositions = fallbackMeshContext.OriginalPositions;
-                    _undoController.MeshContext.Materials = fallbackMeshContext.Materials != null
-                        ? new List<Material>(fallbackMeshContext.Materials)
-                        : new List<Material>();
-                    _undoController.MeshContext.CurrentMaterialIndex = fallbackMeshContext.CurrentMaterialIndex;
+                    _undoController.MeshUndoContext.MeshObject = fallbackMeshContext.MeshObject;
+                    _undoController.MeshUndoContext.TargetMesh = fallbackMeshContext.UnityMesh;
+                    _undoController.MeshUndoContext.OriginalPositions = fallbackMeshContext.OriginalPositions;
+                    // Materials は ModelContext に集約済み
                 }
 
                 InitVertexOffsets(updateCamera: false);
@@ -833,7 +894,7 @@ public partial class SimpleMeshFactory : EditorWindow
 
         if (_undoController != null)
         {
-            _undoController.MeshContext.SelectedVertices = new HashSet<int>();
+            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
         }
 
         Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
@@ -861,10 +922,10 @@ public partial class SimpleMeshFactory : EditorWindow
 
     private void SyncMeshFromData(MeshContext meshContext)
     {
-        if (meshContext.Data == null || meshContext.UnityMesh == null)
+        if (meshContext.MeshObject == null || meshContext.UnityMesh == null)
             return;
 
-        var newMesh = meshContext.Data.ToUnityMesh();
+        var newMesh = meshContext.MeshObject.ToUnityMesh();
         meshContext.UnityMesh.Clear();
         meshContext.UnityMesh.vertices = newMesh.vertices;
         meshContext.UnityMesh.uv = newMesh.uv;
@@ -894,19 +955,19 @@ public partial class SimpleMeshFactory : EditorWindow
 
 
     /// <summary>
-    /// MeshDataからオフセットを更新
+    /// meshContext.MeshObjectからオフセットを更新
     /// </summary>
     private void UpdateOffsetsFromData(MeshContext meshContext)
     {
-        if (meshContext.Data == null || _vertexOffsets == null)
+        if (meshContext.MeshObject == null || _vertexOffsets == null)
             return;
 
-        int count = Mathf.Min(meshContext.Data.VertexCount, _vertexOffsets.Length);
+        int count = Mathf.Min(meshContext.MeshObject.VertexCount, _vertexOffsets.Length);
         for (int i = 0; i < count; i++)
         {
             if (i < meshContext.OriginalPositions.Length)
             {
-                _vertexOffsets[i] = meshContext.Data.Vertices[i].Position - meshContext.OriginalPositions[i];
+                _vertexOffsets[i] = meshContext.MeshObject.Vertices[i].Position - meshContext.OriginalPositions[i];
             }
         }
 
@@ -939,9 +1000,11 @@ public partial class SimpleMeshFactory : EditorWindow
 
     private void CleanupMeshes()
     {
+        if (_meshContextList == null) return;
+
         foreach (var meshContext in _meshContextList)
         {
-            if (meshContext.UnityMesh != null)
+            if (meshContext?.UnityMesh != null)
                 DestroyImmediate(meshContext.UnityMesh);
         }
         _meshContextList.Clear();
@@ -955,7 +1018,14 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undoショートカット処理
         if (_undoController != null)
         {
-            _undoController.HandleKeyboardShortcuts(Event.current);
+            if (_undoController.HandleKeyboardShortcuts(Event.current))
+            {
+                // Undo/Redo後にUIを再描画
+                var parentModel = _undoController?.MeshUndoContext?.MaterialOwner;
+                Debug.Log($"[SimpleMeshFactory.OnGUI] After Undo/Redo: _model.Materials.Count={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
+                Debug.Log($"[SimpleMeshFactory.OnGUI] _model==MaterialOwner? {ReferenceEquals(_model, parentModel)}, _model.Hash={_model?.GetHashCode()}, MaterialOwner.Hash={parentModel?.GetHashCode()}");
+                Repaint();
+            }
         }
 
         // グローバルなドラッグ終了検出

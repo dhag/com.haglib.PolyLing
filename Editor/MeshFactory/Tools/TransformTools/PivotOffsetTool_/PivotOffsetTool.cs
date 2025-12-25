@@ -179,7 +179,7 @@ namespace MeshFactory.Tools
             _totalOffset = Vector3.zero;
 
             // 全頂点の開始位置を記録
-            _dragStartPositions = ctx.MeshData.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             _state = (axis == AxisType.Center) ? ToolState.CenterDragging : ToolState.AxisDragging;
         }
@@ -233,16 +233,16 @@ namespace MeshFactory.Tools
         private void ApplyOffset(Vector3 delta, ToolContext ctx)
         {
             // 全頂点を移動
-            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
-                var v = ctx.MeshData.Vertices[i];
+                var v = ctx.MeshObject.Vertices[i];
                 v.Position += delta;
-                ctx.MeshData.Vertices[i] = v;
+                ctx.MeshObject.Vertices[i] = v;
 
                 // オフセット更新
                 if (ctx.VertexOffsets != null && i < ctx.VertexOffsets.Length)
                 {
-                    ctx.VertexOffsets[i] = ctx.MeshData.Vertices[i].Position - ctx.OriginalPositions[i];
+                    ctx.VertexOffsets[i] = ctx.MeshObject.Vertices[i].Position - ctx.OriginalPositions[i];
                     ctx.GroupOffsets[i] = ctx.VertexOffsets[i];
                 }
             }
@@ -251,13 +251,13 @@ namespace MeshFactory.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
             }
         }
 
         private void EndDrag(ToolContext ctx)
         {
-            if (_dragStartPositions == null || ctx.MeshData == null)
+            if (_dragStartPositions == null || ctx.MeshObject == null)
             {
                 _dragStartPositions = null;
                 _draggingAxis = AxisType.None;
@@ -269,10 +269,10 @@ namespace MeshFactory.Tools
             var oldPositions = new List<Vector3>();
             var newPositions = new List<Vector3>();
 
-            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
                 Vector3 oldPos = _dragStartPositions[i];
-                Vector3 newPos = ctx.MeshData.Vertices[i].Position;
+                Vector3 newPos = ctx.MeshObject.Vertices[i].Position;
 
                 if (Vector3.Distance(oldPos, newPos) > 0.0001f)
                 {

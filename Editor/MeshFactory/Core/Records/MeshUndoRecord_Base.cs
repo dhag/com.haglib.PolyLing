@@ -14,11 +14,11 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// メッシュ編集用Undo記録の基底クラス
     /// </summary>
-    public abstract class MeshUndoRecord : IUndoRecord<MeshEditContext>
+    public abstract class MeshUndoRecord : IUndoRecord<MeshUndoContext>
     {
         public UndoOperationInfo Info { get; set; }
-        public abstract void Undo(MeshEditContext context);
-        public abstract void Redo(MeshEditContext context);
+        public abstract void Undo(MeshUndoContext context);
+        public abstract void Redo(MeshUndoContext context);
     }
 
     // ============================================================
@@ -42,7 +42,7 @@ namespace MeshFactory.UndoSystem
             NewPositions = newPositions;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
             for (int i = 0; i < Indices.Length; i++)
             {
@@ -51,7 +51,7 @@ namespace MeshFactory.UndoSystem
             ctx.ApplyVertexPositionsToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
             for (int i = 0; i < Indices.Length; i++)
             {
@@ -84,17 +84,17 @@ namespace MeshFactory.UndoSystem
             OriginalPositions = originalPositions;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
             ApplyOffsets(ctx, OldOffsets);
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
             ApplyOffsets(ctx, NewOffsets);
         }
 
-        private void ApplyOffsets(MeshEditContext ctx, Vector3[] offsets)
+        private void ApplyOffsets(MeshUndoContext ctx, Vector3[] offsets)
         {
             for (int g = 0; g < Groups.Length; g++)
             {
@@ -132,22 +132,22 @@ namespace MeshFactory.UndoSystem
             NewUV = newUV;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null && VertexIndex < ctx.MeshData.VertexCount)
+            if (ctx.MeshObject != null && VertexIndex < ctx.MeshObject.VertexCount)
             {
-                var vertex = ctx.MeshData.Vertices[VertexIndex];
+                var vertex = ctx.MeshObject.Vertices[VertexIndex];
                 if (UVIndex < vertex.UVs.Count)
                     vertex.UVs[UVIndex] = OldUV;
             }
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null && VertexIndex < ctx.MeshData.VertexCount)
+            if (ctx.MeshObject != null && VertexIndex < ctx.MeshObject.VertexCount)
             {
-                var vertex = ctx.MeshData.Vertices[VertexIndex];
+                var vertex = ctx.MeshObject.Vertices[VertexIndex];
                 if (UVIndex < vertex.UVs.Count)
                     vertex.UVs[UVIndex] = NewUV;
             }

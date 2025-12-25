@@ -1,6 +1,6 @@
 // Assets/Editor/MeshFactory/Symmetry/SymmetrySettings.cs
 // 対称モード設定クラス
-// Phase1: 表示ミラーのみ（MeshDataは変更しない）
+// Phase1: 表示ミラーのみ（MeshObjectは変更しない）
 
 using System;
 using UnityEngine;

@@ -31,22 +31,22 @@ namespace MeshFactory.Utilities
         /// <summary>
         /// 指定された頂点のうち、しきい値以下の距離にあるものをマージする
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <param name="targetVertices">マージ対象の頂点インデックス</param>
         /// <param name="threshold">距離しきい値</param>
         /// <returns>マージ結果</returns>
-        public static MergeResult MergeVerticesAtSamePosition(MeshData meshData, HashSet<int> targetVertices, float threshold = 0.001f)
+        public static MergeResult MergeVerticesAtSamePosition(MeshObject meshObject, HashSet<int> targetVertices, float threshold = 0.001f)
         {
             var result = new MergeResult { Success = false };
 
-            if (meshData == null || targetVertices == null || targetVertices.Count < 2)
+            if (meshObject == null || targetVertices == null || targetVertices.Count < 2)
             {
                 result.Message = "Not enough vertices selected";
                 return result;
             }
 
             var validSelected = targetVertices
-                .Where(v => v >= 0 && v < meshData.VertexCount)
+                .Where(v => v >= 0 && v < meshObject.VertexCount)
                 .ToList();
 
             if (validSelected.Count < 2)
@@ -56,8 +56,8 @@ namespace MeshFactory.Utilities
             }
 
             // Union-Find
-            var parent = new int[meshData.VertexCount];
-            var rank = new int[meshData.VertexCount];
+            var parent = new int[meshObject.VertexCount];
+            var rank = new int[meshObject.VertexCount];
             for (int i = 0; i < parent.Length; i++) parent[i] = i;
 
             int Find(int x)
@@ -81,8 +81,8 @@ namespace MeshFactory.Utilities
                 for (int j = i + 1; j < validSelected.Count; j++)
                 {
                     float dist = Vector3.Distance(
-                        meshData.Vertices[validSelected[i]].Position,
-                        meshData.Vertices[validSelected[j]].Position);
+                        meshObject.Vertices[validSelected[i]].Position,
+                        meshObject.Vertices[validSelected[j]].Position);
 
                     if (dist <= threshold)
                         Unite(validSelected[i], validSelected[j]);
@@ -120,10 +120,10 @@ namespace MeshFactory.Utilities
                 // 重心を計算
                 Vector3 centroid = Vector3.zero;
                 foreach (int v in group)
-                    centroid += meshData.Vertices[v].Position;
+                    centroid += meshObject.Vertices[v].Position;
                 centroid /= group.Count;
 
-                meshData.Vertices[representative].Position = centroid;
+                meshObject.Vertices[representative].Position = centroid;
 
                 foreach (int v in group)
                 {
@@ -136,7 +136,7 @@ namespace MeshFactory.Utilities
             }
 
             // Faceの頂点インデックスを更新
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
@@ -146,11 +146,11 @@ namespace MeshFactory.Utilities
             }
 
             // 縮退面を削除
-            RemoveDegenerateFaces(meshData);
+            RemoveDegenerateFaces(meshObject);
 
             // 不要頂点を削除
             if (verticesToRemove.Count > 0)
-                RemoveVertices(meshData, verticesToRemove);
+                RemoveVertices(meshObject, verticesToRemove);
 
             result.Success = true;
             result.RemovedVertexCount = verticesToRemove.Count;
@@ -162,16 +162,16 @@ namespace MeshFactory.Utilities
         /// <summary>
         /// メッシュ内の全頂点を対象に、しきい値以下の距離にあるものをマージする
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <param name="threshold">距離しきい値</param>
         /// <returns>マージ結果</returns>
-        public static MergeResult MergeAllVerticesAtSamePosition(MeshData meshData, float threshold = 0.001f)
+        public static MergeResult MergeAllVerticesAtSamePosition(MeshObject meshObject, float threshold = 0.001f)
         {
-            if (meshData == null || meshData.VertexCount < 2)
+            if (meshObject == null || meshObject.VertexCount < 2)
                 return new MergeResult { Success = false, Message = "Not enough vertices" };
 
-            var allVertices = new HashSet<int>(Enumerable.Range(0, meshData.VertexCount));
-            return MergeVerticesAtSamePosition(meshData, allVertices, threshold);
+            var allVertices = new HashSet<int>(Enumerable.Range(0, meshObject.VertexCount));
+            return MergeVerticesAtSamePosition(meshObject, allVertices, threshold);
         }
 
         // ================================================================
@@ -181,13 +181,13 @@ namespace MeshFactory.Utilities
         /// <summary>
         /// 選択された頂点を重心位置に統合する
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <param name="verticesToMerge">マージ対象の頂点インデックス</param>
         /// <returns>マージ後の頂点インデックス（失敗時は-1）</returns>
-        public static int MergeVerticesToCentroid(MeshData meshData, HashSet<int> verticesToMerge)
+        public static int MergeVerticesToCentroid(MeshObject meshObject, HashSet<int> verticesToMerge)
         {
             if (verticesToMerge == null || verticesToMerge.Count < 2) return -1;
-            int originalCount = meshData.VertexCount;
+            int originalCount = meshObject.VertexCount;
             if (originalCount == 0) return -1;
 
             // 1. マージ先の頂点を決定（重心を計算）
@@ -197,7 +197,7 @@ namespace MeshFactory.Utilities
             {
                 if (idx >= 0 && idx < originalCount)
                 {
-                    centroid += meshData.Vertices[idx].Position;
+                    centroid += meshObject.Vertices[idx].Position;
                     validCount++;
                 }
             }
@@ -206,7 +206,7 @@ namespace MeshFactory.Utilities
 
             // 最小インデックスの頂点をマージ先とし、位置を重心に更新
             int targetVertex = verticesToMerge.Where(i => i >= 0 && i < originalCount).Min();
-            meshData.Vertices[targetVertex].Position = centroid;
+            meshObject.Vertices[targetVertex].Position = centroid;
 
             // 2. インデックスマッピングを作成
             var indexMap = new int[originalCount];
@@ -237,9 +237,9 @@ namespace MeshFactory.Utilities
             }
 
             // 3. 面を処理
-            for (int f = meshData.FaceCount - 1; f >= 0; f--)
+            for (int f = meshObject.FaceCount - 1; f >= 0; f--)
             {
-                var face = meshData.Faces[f];
+                var face = meshObject.Faces[f];
                 var newVertexIndices = new List<int>();
                 var newUVIndices = new List<int>();
                 var newNormalIndices = new List<int>();
@@ -272,7 +272,7 @@ namespace MeshFactory.Utilities
                 if (newVertexIndices.Count < 3)
                 {
                     // 頂点数が3未満なら面を削除
-                    meshData.Faces.RemoveAt(f);
+                    meshObject.Faces.RemoveAt(f);
                 }
                 else
                 {
@@ -285,15 +285,15 @@ namespace MeshFactory.Utilities
 
             // 4. 頂点を削除（マージ先以外、降順で）
             var verticesToRemove = verticesToMerge
-                .Where(i => i != targetVertex && i >= 0 && i < meshData.VertexCount)
+                .Where(i => i != targetVertex && i >= 0 && i < meshObject.VertexCount)
                 .OrderByDescending(i => i)
                 .ToList();
 
             foreach (var idx in verticesToRemove)
             {
-                if (idx >= 0 && idx < meshData.VertexCount)
+                if (idx >= 0 && idx < meshObject.VertexCount)
                 {
-                    meshData.Vertices.RemoveAt(idx);
+                    meshObject.Vertices.RemoveAt(idx);
                 }
             }
 
@@ -307,14 +307,14 @@ namespace MeshFactory.Utilities
         /// <summary>
         /// 指定された頂点を削除し、面のインデックスを更新する
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <param name="verticesToDelete">削除する頂点インデックス</param>
-        public static void DeleteVertices(MeshData meshData, HashSet<int> verticesToDelete)
+        public static void DeleteVertices(MeshObject meshObject, HashSet<int> verticesToDelete)
         {
-            if (meshData == null || verticesToDelete == null || verticesToDelete.Count == 0)
+            if (meshObject == null || verticesToDelete == null || verticesToDelete.Count == 0)
                 return;
 
-            int originalCount = meshData.VertexCount;
+            int originalCount = meshObject.VertexCount;
             if (originalCount == 0) return;
 
             // 1. 新しいインデックスへのマッピングを作成
@@ -333,9 +333,9 @@ namespace MeshFactory.Utilities
             }
 
             // 2. 面を処理（インデックス更新＆無効な面の削除）
-            for (int f = meshData.FaceCount - 1; f >= 0; f--)
+            for (int f = meshObject.FaceCount - 1; f >= 0; f--)
             {
-                var face = meshData.Faces[f];
+                var face = meshObject.Faces[f];
                 var newVertexIndices = new List<int>();
                 var newUVIndices = new List<int>();
                 var newNormalIndices = new List<int>();
@@ -358,7 +358,7 @@ namespace MeshFactory.Utilities
                 if (newVertexIndices.Count < 3)
                 {
                     // 頂点数が3未満なら面を削除
-                    meshData.Faces.RemoveAt(f);
+                    meshObject.Faces.RemoveAt(f);
                 }
                 else
                 {
@@ -373,9 +373,9 @@ namespace MeshFactory.Utilities
             var sortedIndices = verticesToDelete.OrderByDescending(i => i).ToList();
             foreach (var idx in sortedIndices)
             {
-                if (idx >= 0 && idx < meshData.VertexCount)
+                if (idx >= 0 && idx < meshObject.VertexCount)
                 {
-                    meshData.Vertices.RemoveAt(idx);
+                    meshObject.Vertices.RemoveAt(idx);
                 }
             }
         }
@@ -384,15 +384,15 @@ namespace MeshFactory.Utilities
         /// 指定された頂点を削除する（面インデックス更新済みの場合）
         /// MergeVerticesAtSamePosition内部で使用
         /// </summary>
-        public static void RemoveVertices(MeshData meshData, HashSet<int> verticesToRemove)
+        public static void RemoveVertices(MeshObject meshObject, HashSet<int> verticesToRemove)
         {
-            if (meshData == null || verticesToRemove == null || verticesToRemove.Count == 0)
+            if (meshObject == null || verticesToRemove == null || verticesToRemove.Count == 0)
                 return;
 
             var indexRemap = new Dictionary<int, int>();
             int newIndex = 0;
 
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
                 if (!verticesToRemove.Contains(i))
                 {
@@ -402,15 +402,15 @@ namespace MeshFactory.Utilities
             }
 
             var newVertices = new List<Vertex>();
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
                 if (!verticesToRemove.Contains(i))
-                    newVertices.Add(meshData.Vertices[i]);
+                    newVertices.Add(meshObject.Vertices[i]);
             }
-            meshData.Vertices.Clear();
-            meshData.Vertices.AddRange(newVertices);
+            meshObject.Vertices.Clear();
+            meshObject.Vertices.AddRange(newVertices);
 
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
@@ -427,17 +427,17 @@ namespace MeshFactory.Utilities
         /// <summary>
         /// 縮退した面（同じ頂点を複数参照する面）を削除
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <returns>削除した面の数</returns>
-        public static int RemoveDegenerateFaces(MeshData meshData)
+        public static int RemoveDegenerateFaces(MeshObject meshObject)
         {
-            if (meshData == null) return 0;
+            if (meshObject == null) return 0;
 
             var toRemove = new List<int>();
 
-            for (int i = 0; i < meshData.FaceCount; i++)
+            for (int i = 0; i < meshObject.FaceCount; i++)
             {
-                var face = meshData.Faces[i];
+                var face = meshObject.Faces[i];
                 var unique = new HashSet<int>(face.VertexIndices);
 
                 if (unique.Count < 2 || (face.VertexCount >= 3 && unique.Count < 3))
@@ -445,7 +445,7 @@ namespace MeshFactory.Utilities
             }
 
             for (int i = toRemove.Count - 1; i >= 0; i--)
-                meshData.Faces.RemoveAt(toRemove[i]);
+                meshObject.Faces.RemoveAt(toRemove[i]);
 
             if (toRemove.Count > 0)
                 Debug.Log($"[MeshMergeHelper] Removed {toRemove.Count} degenerate faces");
@@ -479,13 +479,13 @@ namespace MeshFactory.Utilities
         /// <summary>
         /// 面のインデックスにリマップを適用
         /// </summary>
-        public static void ApplyIndexRemapToFaces(MeshData meshData, Dictionary<int, int> remap)
+        public static void ApplyIndexRemapToFaces(MeshObject meshObject, Dictionary<int, int> remap)
         {
-            if (meshData == null || remap == null) return;
+            if (meshObject == null || remap == null) return;
 
-            for (int f = meshData.FaceCount - 1; f >= 0; f--)
+            for (int f = meshObject.FaceCount - 1; f >= 0; f--)
             {
-                var face = meshData.Faces[f];
+                var face = meshObject.Faces[f];
                 var newVertexIndices = new List<int>();
                 var newUVIndices = new List<int>();
                 var newNormalIndices = new List<int>();
@@ -503,7 +503,7 @@ namespace MeshFactory.Utilities
 
                 if (newVertexIndices.Count < 3)
                 {
-                    meshData.Faces.RemoveAt(f);
+                    meshObject.Faces.RemoveAt(f);
                 }
                 else
                 {

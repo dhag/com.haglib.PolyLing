@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/PyramidMeshCreatorWindow.cs
 // 角錐メッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 三角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 三角形面で構築
 //
 // 【頂点順序の規約】
 // 三角形: md.AddTriangle(v0, v1, v2) - 時計回りが表面
@@ -70,12 +70,12 @@ public class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMeshCreator
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static PyramidMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static PyramidMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<PyramidMeshCreatorWindow>(true, "Create Pyramid UnityMesh", true);
         window.minSize = new Vector2(400, 580);
         window.maxSize = new Vector2(500, 780);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -142,10 +142,10 @@ public class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMeshCreator
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -188,11 +188,11 @@ public class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMeshCreator
     }
 
     // ================================================================
-    // MeshData生成（三角形ベース）
+    // MeshObject生成（三角形ベース）
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         float halfHeight = _params.Height * 0.5f;
         Vector3 pivotOffset = new Vector3(0, _params.Pivot.y * _params.Height, 0);

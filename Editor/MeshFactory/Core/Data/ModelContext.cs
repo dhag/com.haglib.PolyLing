@@ -105,6 +105,44 @@ namespace MeshFactory.Model
 
         /// <summary>作業平面</summary>
         public WorkPlane WorkPlane { get; set; }
+        
+        // ================================================================
+        // Materials（モデル単位で実データを保持）
+        // ================================================================
+        
+        private List<Material> _materials = new List<Material> { null };
+        private int _currentMaterialIndex = 0;
+        
+        /// <summary>
+        /// マテリアルリスト（モデル単位で保持）
+        /// </summary>
+        public List<Material> Materials
+        {
+            get => _materials;
+            set => _materials = value ?? new List<Material> { null };
+        }
+        
+        /// <summary>
+        /// 現在選択中のマテリアルインデックス
+        /// </summary>
+        public int CurrentMaterialIndex
+        {
+            get => _currentMaterialIndex;
+            set => _currentMaterialIndex = value;
+        }
+        
+        // ================================================================
+        // デフォルトマテリアル設定
+        // ================================================================
+        
+        /// <summary>新規メッシュ作成時に適用されるデフォルトマテリアルリスト</summary>
+        public List<Material> DefaultMaterials { get; set; } = new List<Material> { null };
+        
+        /// <summary>新規メッシュ作成時に適用されるデフォルトカレントマテリアルインデックス</summary>
+        public int DefaultCurrentMaterialIndex { get; set; } = 0;
+        
+        /// <summary>マテリアル変更時に自動でデフォルトに設定するか</summary>
+        public bool AutoSetDefaultMaterials { get; set; } = true;
 
         // ================================================================
         // 対称設定
@@ -376,10 +414,10 @@ namespace MeshFactory.Model
 
             foreach (var meshContext in MeshContextList)
             {
-                if (meshContext.Data == null)
+                if (meshContext.MeshObject == null)
                     continue;
 
-                var meshContextBounds = meshContext.Data.CalculateBounds();
+                var meshContextBounds = meshContext.MeshObject.CalculateBounds();
 
                 if (!combinedBounds.HasValue)
                 {
@@ -399,10 +437,10 @@ namespace MeshFactory.Model
         /// <summary>現在選択中のメッシュのバウンディングボックス</summary>
         public Bounds CalculateCurrentBounds()
         {
-            if (CurrentMeshContext?.Data == null)
+            if (CurrentMeshContext?.MeshObject == null)
                 return new Bounds(Vector3.zero, Vector3.one);
 
-            return CurrentMeshContext.Data.CalculateBounds();
+            return CurrentMeshContext.MeshObject.CalculateBounds();
         }
     }
 }

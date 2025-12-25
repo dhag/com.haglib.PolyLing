@@ -30,6 +30,25 @@ namespace MeshFactory.Serialization
         /// <summary>エディタ状態</summary>
         public EditorStateData editorState;
 
+        // ================================================================
+        // マテリアル（Phase 1: モデル単位に集約）
+        // ================================================================
+
+        /// <summary>マテリアルリスト（アセットパス）</summary>
+        public List<string> materials = new List<string>();
+
+        /// <summary>現在選択中のマテリアルインデックス</summary>
+        public int currentMaterialIndex = 0;
+
+        /// <summary>デフォルトマテリアルリスト（アセットパス）</summary>
+        public List<string> defaultMaterials = new List<string>();
+
+        /// <summary>デフォルトマテリアルインデックス</summary>
+        public int defaultCurrentMaterialIndex = 0;
+
+        /// <summary>自動デフォルトマテリアル設定</summary>
+        public bool autoSetDefaultMaterials = true;
+
         // === ファクトリメソッド ===
 
         public static ModelData Create(string modelName)

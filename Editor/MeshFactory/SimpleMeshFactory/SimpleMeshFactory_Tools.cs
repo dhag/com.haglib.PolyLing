@@ -104,8 +104,8 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.SelectionOps = _selectionOps;
 
         // Phase 4追加: メッシュ作成コールバック
-        ctx.CreateNewMeshContext = OnMeshDataCreatedAsNew;
-        ctx.AddMeshDataToCurrentMesh = OnMeshDataCreatedAddToCurrent;
+        ctx.CreateNewMeshContext = OnMeshContextCreatedAsNew;
+        ctx.AddMeshObjectToCurrentMesh = OnMeshObjectCreatedAddToCurrent;
 
         // MeshContext操作コールバック
         ctx.Model = _model;
@@ -118,6 +118,10 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.ClearAllMeshContexts = ClearAllMeshContextsWithUndo;  // ★ImportMode用
         ctx.ReplaceAllMeshContexts = ReplaceAllMeshContextsWithUndo;  // ★1回のUndoで戻せるReplace
 
+        // Phase 5追加: マテリアル操作コールバック
+        ctx.AddMaterials = AddMaterialsToModel;
+        ctx.ReplaceMaterials = ReplaceMaterialsInModel;
+        ctx.SetCurrentMaterialIndex = (index) => { if (_model != null) _model.CurrentMaterialIndex = index; };
     }
 
     /// <summary>
@@ -180,7 +184,7 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         var ctx = _toolManager.toolContext;
 
-        ctx.MeshData = meshContext?.Data;
+        ctx.MeshObject = meshContext?.MeshObject;
         ctx.OriginalPositions = meshContext?.OriginalPositions;
         ctx.PreviewRect = rect;
         ctx.CameraPosition = camPos;
@@ -214,22 +218,27 @@ public partial class SimpleMeshFactory : EditorWindow
         ctx.ReplaceAllMeshContexts = ReplaceAllMeshContextsWithUndo;
 
         // Phase 4追加: メッシュ作成コールバック
-        ctx.CreateNewMeshContext = OnMeshDataCreatedAsNew;
-        ctx.AddMeshDataToCurrentMesh = OnMeshDataCreatedAddToCurrent;
+        ctx.CreateNewMeshContext = OnMeshContextCreatedAsNew;
+        ctx.AddMeshObjectToCurrentMesh = OnMeshObjectCreatedAddToCurrent;
+
+        // Phase 5追加: マテリアル操作コールバック
+        ctx.AddMaterials = AddMaterialsToModel;
+        ctx.ReplaceMaterials = ReplaceMaterialsInModel;
+        ctx.SetCurrentMaterialIndex = (index) => { if (_model != null) _model.CurrentMaterialIndex = index; };
 
         // UndoコンテキストにもMaterialsを同期
-        if (_undoController?.MeshContext != null && meshContext != null)
+        if (_undoController?.MeshUndoContext != null && meshContext != null)
         {
-            _undoController.MeshContext.Materials = meshContext.Materials;
-            _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
+            _undoController.MeshUndoContext.Materials = meshContext.Materials;
+            _undoController.MeshUndoContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
         }
 
         // デフォルトマテリアルを同期
-        if (_undoController?.MeshContext != null)
+        if (_undoController?.MeshUndoContext != null)
         {
-            _undoController.MeshContext.DefaultMaterials = _defaultMaterials;
-            _undoController.MeshContext.DefaultCurrentMaterialIndex = _defaultCurrentMaterialIndex;
-            _undoController.MeshContext.AutoSetDefaultMaterials = _autoSetDefaultMaterials;
+            _undoController.MeshUndoContext.DefaultMaterials = _defaultMaterials;
+            _undoController.MeshUndoContext.DefaultCurrentMaterialIndex = _defaultCurrentMaterialIndex;
+            _undoController.MeshUndoContext.AutoSetDefaultMaterials = _autoSetDefaultMaterials;
         }
 
         // ツール固有の更新処理
@@ -276,21 +285,69 @@ public partial class SimpleMeshFactory : EditorWindow
     // ================================================================
 
     /// <summary>
-    /// MeshDataから新しいMeshContextを作成（PrimitiveMeshTool用ラッパー）
+    /// MeshObjectから新しいMeshContextを作成（PrimitiveMeshTool用ラッパー）
     /// </summary>
-    private void OnMeshDataCreatedAsNew(MeshData meshData, string name)
+    private void OnMeshContextCreatedAsNew(MeshObject meshObject, string name)
     {
         // SimpleMeshFactory_MeshIO.csのCreateNewMeshContextを呼び出し
-        CreateNewMeshContext(meshData, name);
+        CreateNewMeshContext(meshObject, name);
     }
 
     /// <summary>
-    /// 現在選択中のメッシュにMeshDataを追加（PrimitiveMeshTool用ラッパー）
+    /// 現在選択中のメッシュにMeshObjectを追加（PrimitiveMeshTool用ラッパー）
     /// </summary>
-    private void OnMeshDataCreatedAddToCurrent(MeshData meshData, string name)
+    private void OnMeshObjectCreatedAddToCurrent(MeshObject meshObject, string name)
     {
-        // SimpleMeshFactory_MeshIO.csのAddMeshDataToCurrentを呼び出し
-        AddMeshDataToCurrent(meshData, name);
+        AddMeshObjectToCurrent(meshObject, name);
+    }
+
+    // ================================================================
+    // マテリアル操作（Phase 5追加）
+    // ================================================================
+
+    /// <summary>
+    /// マテリアルを追加（ModelContext.Materials に追加）
+    /// </summary>
+    private void AddMaterialsToModel(IList<Material> materials)
+    {
+        if (_model == null || materials == null) return;
+        
+        // 初期状態（null のみ）の場合はクリアしてから追加
+        if (_model.Materials.Count == 1 && _model.Materials[0] == null)
+        {
+            _model.Materials.Clear();
+        }
+        
+        foreach (var mat in materials)
+        {
+            _model.Materials.Add(mat);
+        }
+        
+        // 最後のレコードに NewMaterials を設定（Undo/Redo用）
+        _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);
+    }
+
+    /// <summary>
+    /// マテリアルを置換（ModelContext.Materials を置換）
+    /// </summary>
+    private void ReplaceMaterialsInModel(IList<Material> materials)
+    {
+        if (_model == null) return;
+        _model.Materials.Clear();
+        if (materials != null)
+        {
+            foreach (var mat in materials)
+            {
+                _model.Materials.Add(mat);
+            }
+        }
+        if (_model.Materials.Count == 0)
+        {
+            _model.Materials.Add(null);  // 少なくとも1つ
+        }
+        
+        // 最後のレコードに NewMaterials を設定（Undo/Redo用）
+        _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);
     }
 
     // ================================================================
@@ -340,6 +397,9 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         if (meshContext == null) return;
 
+        // MaterialOwner を設定（Materials 委譲用）
+        meshContext.MaterialOwner = _model;
+
         int oldIndex = _selectedIndex;
         int insertIndex = _meshContextList.Count;
         
@@ -387,6 +447,10 @@ public partial class SimpleMeshFactory : EditorWindow
         int oldIndex = _selectedIndex;
         var addedContexts = new List<(int, MeshContext)>();
         
+        // マテリアル状態を保存（追加前）
+        var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
+        var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
+        
         // カメラ状態を保存（追加前）
         var oldCamera = new CameraSnapshot
         {
@@ -399,6 +463,9 @@ public partial class SimpleMeshFactory : EditorWindow
         foreach (var meshContext in meshContexts)
         {
             if (meshContext == null) continue;
+
+            // MaterialOwner を設定（Materials 委譲用）
+            meshContext.MaterialOwner = _model;
 
             int insertIndex = _meshContextList.Count;
             _meshContextList.Add(meshContext);
@@ -421,11 +488,11 @@ public partial class SimpleMeshFactory : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録（1回でまとめて）- カメラ状態付き
+        // Undo記録（1回でまとめて）- カメラ状態付き、マテリアル状態付き
         if (_undoController != null)
         {
             _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextsAdd(addedContexts, oldIndex, _selectedIndex, oldCamera, newCamera);
+            _undoController.RecordMeshContextsAdd(addedContexts, oldIndex, _selectedIndex, oldCamera, newCamera, oldMaterials, oldMaterialIndex);
         }
 
         LoadMeshContextToUndoController(_model.CurrentMeshContext);
@@ -537,6 +604,9 @@ public partial class SimpleMeshFactory : EditorWindow
         foreach (var meshContext in newMeshContexts)
         {
             if (meshContext == null) continue;
+
+            // MaterialOwner を設定（Materials 委譲用）
+            meshContext.MaterialOwner = _model;
 
             int insertIndex = _meshContextList.Count;
             _meshContextList.Add(meshContext);
@@ -697,8 +767,8 @@ public partial class SimpleMeshFactory : EditorWindow
         var clone = new MeshContext
         {
             Name = original.Name + " (Copy)",
-            Data = original.Data?.Clone(),
-            UnityMesh = original.Data?.ToUnityMesh(),
+            MeshObject = original.MeshObject?.Clone(),
+            UnityMesh = original.MeshObject?.ToUnityMesh(),
             OriginalPositions = original.OriginalPositions?.ToArray(),
             ExportSettings = new ExportSettings
             {
@@ -708,7 +778,8 @@ public partial class SimpleMeshFactory : EditorWindow
                 Scale = original.ExportSettings?.Scale ?? Vector3.one
             },
             Materials = new List<Material>(original.Materials ?? new List<Material> { null }),
-            CurrentMaterialIndex = original.CurrentMaterialIndex
+            CurrentMaterialIndex = original.CurrentMaterialIndex,
+            MaterialOwner = _model  // Materials 委譲用
         };
 
         int oldIndex = _selectedIndex;

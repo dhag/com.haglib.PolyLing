@@ -145,7 +145,7 @@ namespace MeshFactory.Tools
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null) return false;
+            if (ctx.MeshObject == null) return false;
 
             switch (Mode)
             {
@@ -168,7 +168,7 @@ namespace MeshFactory.Tools
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
-            if (ctx.MeshData == null) return false;
+            if (ctx.MeshObject == null) return false;
 
             switch (Mode)
             {
@@ -191,7 +191,7 @@ namespace MeshFactory.Tools
 
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null)
+            if (ctx.MeshObject == null)
             {
                 _isDragging = false;
                 return false;
@@ -214,7 +214,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             switch (Mode)
             {

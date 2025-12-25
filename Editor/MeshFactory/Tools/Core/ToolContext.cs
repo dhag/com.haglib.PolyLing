@@ -3,6 +3,7 @@
 // SelectionState/TopologyCache対応版
 // Phase 3: ModelContext統合
 // Phase 4: PrimitiveMeshTool対応（メッシュ作成コールバック追加）
+// Phase 5: マテリアル操作コールバック追加（MQOインポート対応）
 
 using System;
 using System.Collections.Generic;
@@ -25,8 +26,8 @@ namespace MeshFactory.Tools
     {
         // === メッシュデータ ===
 
-        /// <summary>MeshData</summary>
-        public MeshData MeshData { get; set; }
+        /// <summary>MeshObject</summary>
+        public MeshObject MeshObject { get; set; }
 
         /// <summary>元の頂点位置</summary>
         public Vector3[] OriginalPositions { get; set; }
@@ -121,12 +122,11 @@ namespace MeshFactory.Tools
 
         // === メッシュ作成コールバック（Phase 4: PrimitiveMeshTool対応） ===
 
-        /// <summary>MeshDataから新しいMeshContextを作成（Undo対応）</summary>
-        public Action<MeshData, string> CreateNewMeshContext { get; set; }
+        /// <summary>MeshObjectから新しいMeshContextを作成（Undo対応）</summary>
+        public Action<MeshObject, string> CreateNewMeshContext { get; set; }
 
-        /// <summary>現在選択中のメッシュにMeshDataを追加（Undo対応）</summary>
-        public Action<MeshData, string> AddMeshDataToCurrentMesh { get; set; }
-
+        /// <summary>現在選択中のメッシュにMeshObjectを追加（Undo対応）</summary>
+        public Action<MeshObject, string> AddMeshObjectToCurrentMesh { get; set; }
 
         /// <summary>全メッシュをクリア（Replaceインポート用）</summary>
         public Action ClearAllMeshContexts { get; set; }
@@ -134,12 +134,29 @@ namespace MeshFactory.Tools
         /// <summary>全メッシュを置換（1回のUndoで戻せるReplace）</summary>
         public Action<IList<MeshContext>> ReplaceAllMeshContexts { get; set; }
 
+        // === マテリアル操作コールバック（Phase 5: MQOインポート対応） ===
+
+        /// <summary>マテリアルリストを設定（Undo対応）</summary>
+        public Action<IList<Material>> SetMaterials { get; set; }
+
+        /// <summary>マテリアルを追加（Undo対応）</summary>
+        public Action<Material> AddMaterial { get; set; }
+
+        /// <summary>マテリアルを複数追加（Undo対応・バッチ）</summary>
+        public Action<IList<Material>> AddMaterials { get; set; }
+
+        /// <summary>マテリアルリストを置換（既存を全削除して新規設定）</summary>
+        public Action<IList<Material>> ReplaceMaterials { get; set; }
+
+        /// <summary>カレントマテリアルインデックスを設定</summary>
+        public Action<int> SetCurrentMaterialIndex { get; set; }
+
         // === コールバック ===
 
         /// <summary>選択変更を記録</summary>
         public Action<HashSet<int>, HashSet<int>> RecordSelectionChange { get; set; }
 
-        /// <summary>MeshDataからUnity Meshを更新</summary>
+        /// <summary>MeshObjectからUnity Meshを更新</summary>
         public Action SyncMesh { get; set; }
 
         /// <summary>画面再描画を要求</summary>
@@ -160,7 +177,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 指定スクリーン位置にある頂点を検索
         /// </summary>
-        public Func<Vector2, MeshData, Rect, Vector3, Vector3, float, int> FindVertexAtScreenPos { get; set; }
+        public Func<Vector2, MeshObject, Rect, Vector3, Vector3, float, int> FindVertexAtScreenPos { get; set; }
 
         /// <summary>
         /// スクリーン座標からレイを生成

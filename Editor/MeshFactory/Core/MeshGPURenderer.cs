@@ -121,7 +121,7 @@ namespace MeshFactory.Rendering
         private bool _initialized;
         private bool _hitTestAvailable;
         private int _vertexCount, _faceCount, _lineCount;
-        private MeshData _cachedMeshData;
+        private MeshObject _cachedMeshObject;
 
         // ホバー状態
         private int _hoverVertexIndex = -1;
@@ -196,30 +196,30 @@ namespace MeshFactory.Rendering
             return true;
         }
 
-        public void UpdateBuffers(MeshData meshData, MeshEdgeCache edgeCache)
+        public void UpdateBuffers(MeshObject meshObject, MeshEdgeCache edgeCache)
         {
-            if (!_initialized || meshData == null || edgeCache == null) return;
+            if (!_initialized || meshObject == null || edgeCache == null) return;
             
             // キャッシュが有効な場合はスキップ
-            if (_cachedMeshData == meshData && _vertexCount == meshData.VertexCount) return;
+            if (_cachedMeshObject == meshObject && _vertexCount == meshObject.VertexCount) return;
 
-            _cachedMeshData = meshData;
+            _cachedMeshObject = meshObject;
             ReleaseBuffers();
             
-            _vertexCount = meshData.VertexCount;
-            _faceCount = meshData.FaceCount;
+            _vertexCount = meshObject.VertexCount;
+            _faceCount = meshObject.FaceCount;
             
             if (_vertexCount == 0) return;
 
             // エッジキャッシュを更新
-            edgeCache.Update(meshData, force: true);
+            edgeCache.Update(meshObject, force: true);
             _lineCount = edgeCache.LineCount;
 
             // 頂点位置バッファ
             var positions = new Vector3[_vertexCount];
             for (int i = 0; i < _vertexCount; i++)
             {
-                positions[i] = meshData.Vertices[i].Position;
+                positions[i] = meshObject.Vertices[i].Position;
             }
             _positionBuffer = new ComputeBuffer(_vertexCount, sizeof(float) * 3);
             _positionBuffer.SetData(positions);
@@ -232,7 +232,7 @@ namespace MeshFactory.Rendering
             }
 
             // 面バッファ
-            BuildFaceBuffers(meshData);
+            BuildFaceBuffers(meshObject);
 
             // 出力バッファ
             _screenPositionBuffer = new ComputeBuffer(_vertexCount, sizeof(float) * 4);
@@ -285,7 +285,7 @@ namespace MeshFactory.Rendering
             }
         }
 
-        private void BuildFaceBuffers(MeshData meshData)
+        private void BuildFaceBuffers(MeshObject meshObject)
         {
             if (_faceCount == 0) return;
             
@@ -296,7 +296,7 @@ namespace MeshFactory.Rendering
             int offset = 0;
             for (int f = 0; f < _faceCount; f++)
             {
-                var face = meshData.Faces[f];
+                var face = meshObject.Faces[f];
                 offsets[f] = offset;
                 counts[f] = face.VertexCount;
                 
@@ -1151,16 +1151,16 @@ namespace MeshFactory.Rendering
         /// ホバー中の面を半透明で描画
         /// DrawPoints/DrawLinesの前に呼び出すこと（下に描画されるように）
         /// </summary>
-        public void DrawHoverFace(Vector2 windowSize, MeshData meshData, Color? hoverColor = null)
+        public void DrawHoverFace(Vector2 windowSize, MeshObject meshObject, Color? hoverColor = null)
         {
-            if (!_initialized || _hoverFaceIndex < 0 || meshData == null) return;
-            if (_hoverFaceIndex >= meshData.FaceCount) return;
+            if (!_initialized || _hoverFaceIndex < 0 || meshObject == null) return;
+            if (_hoverFaceIndex >= meshObject.FaceCount) return;
 
             // スクリーン座標を読み戻し
             var screenPositions = new Vector4[_vertexCount];
             _screenPositionBuffer.GetData(screenPositions);
 
-            var face = meshData.Faces[_hoverFaceIndex];
+            var face = meshObject.Faces[_hoverFaceIndex];
             if (face.VertexCount < 3) return;
 
             // GL描画用マテリアルの初期化
@@ -1257,12 +1257,12 @@ namespace MeshFactory.Rendering
             _vertexCount = 0;
             _faceCount = 0;
             _lineCount = 0;
-            _cachedMeshData = null;
+            _cachedMeshObject = null;
         }
 
         public void InvalidateBuffers()
         {
-            _cachedMeshData = null;
+            _cachedMeshObject = null;
         }
 
         public void Dispose()

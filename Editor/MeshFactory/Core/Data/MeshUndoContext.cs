@@ -1,6 +1,7 @@
 // Assets/Editor/UndoSystem/MeshEditor/Context/MeshEditContext.cs
 // メッシュ編集コンテキスト
 // Undo/Redo操作の対象となるデータを保持
+// Phase 5: Materials を ModelContext に委譲
 
 using System.Collections.Generic;
 using System.Linq;
@@ -8,20 +9,21 @@ using UnityEngine;
 using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.Selection;
+using MeshFactory.Model;
 
 namespace MeshFactory.UndoSystem
 {
     /// <summary>
     /// メッシュ編集コンテキスト
     /// Undo/Redo操作の対象となるデータを保持
-    /// MeshDataベースの新構造
+    /// MeshObjectベースの構造
     /// </summary>
-    public class MeshEditContext
+    public class MeshUndoContext
     {
         // === メッシュデータ（新構造） ===
 
         /// <summary>メッシュデータ本体</summary>
-        public MeshData MeshData;
+        public MeshObject MeshObject;
 
         // === 選択状態 ===
 
@@ -51,37 +53,88 @@ namespace MeshFactory.UndoSystem
         /// <summary>Undo/Redo時に復元すべきSelectionSnapshot</summary>
         public SelectionSnapshot CurrentSelectionSnapshot;
 
-        // === マテリアル（マルチマテリアル対応） ===
+        // === マテリアル（Phase 5: ModelContext に委譲） ===
 
-        /// <summary>マテリアルリスト（MeshContext.Materialsと同期）</summary>
-        public List<Material> Materials = new List<Material> { null };
+        /// <summary>親ModelContextへの参照（マテリアル委譲用）</summary>
+        public ModelContext MaterialOwner { get; set; }
+
+        /// <summary>フォールバック用マテリアルリスト（MaterialOwnerがない場合）</summary>
+        private List<Material> _fallbackMaterials = new List<Material>();
+        private int _fallbackMaterialIndex = 0;
+
+        /// <summary>マテリアルリスト（ModelContext.Materialsに委譲）</summary>
+        public List<Material> Materials
+        {
+            get => MaterialOwner?.Materials ?? _fallbackMaterials;
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.Materials = value ?? new List<Material>();
+                else
+                    _fallbackMaterials = value ?? new List<Material>();
+            }
+        }
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
-        public int CurrentMaterialIndex = 0;
+        public int CurrentMaterialIndex
+        {
+            get => MaterialOwner?.CurrentMaterialIndex ?? _fallbackMaterialIndex;
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.CurrentMaterialIndex = value;
+                else
+                    _fallbackMaterialIndex = value;
+            }
+        }
 
-        // === デフォルトマテリアル（グローバル設定） ===
+        // === デフォルトマテリアル（ModelContext に委譲） ===
 
         /// <summary>新規メッシュ作成時に適用されるデフォルトマテリアルリスト</summary>
-        public List<Material> DefaultMaterials = new List<Material> { null };
+        public List<Material> DefaultMaterials
+        {
+            get => MaterialOwner?.DefaultMaterials ?? new List<Material> { null };
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.DefaultMaterials = value ?? new List<Material> { null };
+            }
+        }
 
         /// <summary>新規メッシュ作成時に適用されるデフォルトカレントマテリアルインデックス</summary>
-        public int DefaultCurrentMaterialIndex = 0;
+        public int DefaultCurrentMaterialIndex
+        {
+            get => MaterialOwner?.DefaultCurrentMaterialIndex ?? 0;
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.DefaultCurrentMaterialIndex = value;
+            }
+        }
 
         /// <summary>マテリアル変更時に自動でデフォルトに設定するか</summary>
-        public bool AutoSetDefaultMaterials = true;
+        public bool AutoSetDefaultMaterials
+        {
+            get => MaterialOwner?.AutoSetDefaultMaterials ?? true;
+            set
+            {
+                if (MaterialOwner != null)
+                    MaterialOwner.AutoSetDefaultMaterials = value;
+            }
+        }
 
         // === 後方互換プロパティ ===
 
         /// <summary>頂点位置リスト（後方互換）</summary>
         public List<Vector3> Vertices
         {
-            get => MeshData?.Vertices.Select(v => v.Position).ToList() ?? new List<Vector3>();
+            get => MeshObject?.Vertices.Select(v => v.Position).ToList() ?? new List<Vector3>();
             set
             {
-                if (MeshData == null) return;
-                for (int i = 0; i < value.Count && i < MeshData.Vertices.Count; i++)
+                if (MeshObject == null) return;
+                for (int i = 0; i < value.Count && i < MeshObject.Vertices.Count; i++)
                 {
-                    MeshData.Vertices[i].Position = value[i];
+                    MeshObject.Vertices[i].Position = value[i];
                 }
             }
         }
@@ -95,16 +148,13 @@ namespace MeshFactory.UndoSystem
 
         // === コンストラクタ ===
 
-        public MeshEditContext()
+        public MeshUndoContext()
         {
-            MeshData = new MeshData();
+            MeshObject = new MeshObject();
             SelectedVertices = new HashSet<int>();
             SelectedFaces = new HashSet<int>();
-            Materials = new List<Material> { null };
-            CurrentMaterialIndex = 0;
-            DefaultMaterials = new List<Material> { null };
-            DefaultCurrentMaterialIndex = 0;
-            AutoSetDefaultMaterials = true;
+            // Materials, DefaultMaterials は MaterialOwner 経由で取得
+            // MaterialOwner が null の場合は _fallbackMaterials を使用
         }
 
         // === メッシュ読み込み/適用 ===
@@ -117,11 +167,11 @@ namespace MeshFactory.UndoSystem
             if (mesh == null) return;
 
             TargetMesh = mesh;
-            MeshData = new MeshData();
-            MeshData.FromUnityMesh(mesh, mergeVertices);
+            MeshObject = new MeshObject();
+            MeshObject.FromUnityMesh(mesh, mergeVertices);
 
             // 元の位置を保存
-            OriginalPositions = MeshData.Vertices.Select(v => v.Position).ToArray();
+            OriginalPositions = MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             // 選択クリア
             SelectedVertices.Clear();
@@ -133,10 +183,10 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public void ApplyToMesh()
         {
-            if (TargetMesh == null || MeshData == null) return;
+            if (TargetMesh == null || MeshObject == null) return;
 
-            // MeshDataをUnity Meshに変換して適用
-            var newMesh = MeshData.ToUnityMesh();
+            // MeshObjectをUnity Meshに変換して適用
+            var newMesh = MeshObject.ToUnityMesh();
 
             TargetMesh.Clear();
             TargetMesh.vertices = newMesh.vertices;
@@ -154,10 +204,10 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public void ApplyVertexPositionsToMesh()
         {
-            if (TargetMesh == null || MeshData == null) return;
+            if (TargetMesh == null || MeshObject == null) return;
 
             // Unity Meshに変換して頂点位置を更新
-            var newMesh = MeshData.ToUnityMesh();
+            var newMesh = MeshObject.ToUnityMesh();
             TargetMesh.vertices = newMesh.vertices;
             TargetMesh.RecalculateNormals();
             TargetMesh.RecalculateBounds();
@@ -172,9 +222,9 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public Vector3 GetVertexPosition(int index)
         {
-            if (MeshData == null || index < 0 || index >= MeshData.VertexCount)
+            if (MeshObject == null || index < 0 || index >= MeshObject.VertexCount)
                 return Vector3.zero;
-            return MeshData.Vertices[index].Position;
+            return MeshObject.Vertices[index].Position;
         }
 
         /// <summary>
@@ -182,9 +232,9 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public void SetVertexPosition(int index, Vector3 position)
         {
-            if (MeshData == null || index < 0 || index >= MeshData.VertexCount)
+            if (MeshObject == null || index < 0 || index >= MeshObject.VertexCount)
                 return;
-            MeshData.Vertices[index].Position = position;
+            MeshObject.Vertices[index].Position = position;
         }
 
         /// <summary>
@@ -192,8 +242,8 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public Vector3[] GetAllPositions()
         {
-            if (MeshData == null) return new Vector3[0];
-            return MeshData.Vertices.Select(v => v.Position).ToArray();
+            if (MeshObject == null) return new Vector3[0];
+            return MeshObject.Vertices.Select(v => v.Position).ToArray();
         }
 
         /// <summary>
@@ -201,21 +251,21 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public void SetAllPositions(Vector3[] positions)
         {
-            if (MeshData == null) return;
-            for (int i = 0; i < positions.Length && i < MeshData.VertexCount; i++)
+            if (MeshObject == null) return;
+            for (int i = 0; i < positions.Length && i < MeshObject.VertexCount; i++)
             {
-                MeshData.Vertices[i].Position = positions[i];
+                MeshObject.Vertices[i].Position = positions[i];
             }
         }
 
         /// <summary>
         /// 頂点数を取得
         /// </summary>
-        public int VertexCount => MeshData?.VertexCount ?? 0;
+        public int VertexCount => MeshObject?.VertexCount ?? 0;
 
         /// <summary>
         /// 面数を取得
         /// </summary>
-        public int FaceCount => MeshData?.FaceCount ?? 0;
+        public int FaceCount => MeshObject?.FaceCount ?? 0;
     }
 }

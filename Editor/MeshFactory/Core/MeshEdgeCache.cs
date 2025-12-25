@@ -25,23 +25,23 @@ namespace MeshFactory.Rendering
         public int EdgeCount => UniqueEdges.Count;
         public int AuxLineCount => AuxLines.Count;
 
-        private MeshData _cachedMeshData;
+        private MeshObject _cachedMeshObject;
 
-        public void Update(MeshData meshData, bool force = false)
+        public void Update(MeshObject meshObject, bool force = false)
         {
-            if (meshData == null) { Clear(); return; }
-            if (!force && _cachedMeshData == meshData && Lines.Count > 0) return;
+            if (meshObject == null) { Clear(); return; }
+            if (!force && _cachedMeshObject == meshObject && Lines.Count > 0) return;
 
-            _cachedMeshData = meshData;
+            _cachedMeshObject = meshObject;
             Lines.Clear();
             UniqueEdges.Clear();
             AuxLines.Clear();
 
             var edgeSet = new HashSet<(int, int)>();
 
-            for (int faceIdx = 0; faceIdx < meshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 if (face.VertexCount == 2)
                 {
                     int v1 = face.VertexIndices[0];
@@ -64,7 +64,7 @@ namespace MeshFactory.Rendering
             }
         }
 
-        public void Invalidate() => _cachedMeshData = null;
-        public void Clear() { Lines.Clear(); UniqueEdges.Clear(); AuxLines.Clear(); _cachedMeshData = null; }
+        public void Invalidate() => _cachedMeshObject = null;
+        public void Clear() { Lines.Clear(); UniqueEdges.Clear(); AuxLines.Clear(); _cachedMeshObject = null; }
     }
 }

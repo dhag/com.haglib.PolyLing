@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/CylinderMeshCreatorWindow.cs
 // シリンダーメッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 四角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
 //
 // 【頂点順序の規約】
 // グリッド配置: i0=左下, i1=右下, i2=右上, i3=左上
@@ -80,12 +80,12 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static CylinderMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static CylinderMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<CylinderMeshCreatorWindow>(true, "Create Cylinder UnityMesh", true);
         window.minSize = new Vector2(400, 650);
         window.maxSize = new Vector2(500, 850);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -183,10 +183,10 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -229,11 +229,11 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
     }
 
     // ================================================================
-    // MeshData生成
+    // MeshObject生成
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         Vector3 pivotOffset = new Vector3(0, _params.Pivot.y * _params.Height, 0);
 
@@ -249,7 +249,7 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
         return md;
     }
 
-    private void GenerateSimpleCylinder(MeshData md, Vector3 pivotOffset)
+    private void GenerateSimpleCylinder(MeshObject md, Vector3 pivotOffset)
     {
         float halfHeight = _params.Height * 0.5f;
         int radialSegs = _params.RadialSegments;
@@ -307,7 +307,7 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
         }
     }
 
-    private void GenerateCapSimple(MeshData md, float y, float radius, bool isTop, Vector3 pivotOffset)
+    private void GenerateCapSimple(MeshObject md, float y, float radius, bool isTop, Vector3 pivotOffset)
     {
         int centerIdx = md.VertexCount;
         Vector3 centerPos = new Vector3(0, y, 0) - pivotOffset;
@@ -343,7 +343,7 @@ public class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderMeshCreat
         }
     }
 
-    private void GenerateRoundedCylinder(MeshData md, Vector3 pivotOffset)
+    private void GenerateRoundedCylinder(MeshObject md, Vector3 pivotOffset)
     {
         float halfHeight = _params.Height * 0.5f;
         float edgeR = _params.EdgeRadius;

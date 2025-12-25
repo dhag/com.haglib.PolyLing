@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/CapsuleMeshCreatorWindow.cs
 // カプセルメッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 四角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
 //
 // 【頂点順序の規約】
 // グリッド配置: i0=左下, i1=右下, i2=右上, i3=左上
@@ -71,12 +71,12 @@ public class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshCreator
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static CapsuleMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static CapsuleMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<CapsuleMeshCreatorWindow>(true, "Create Capsule UnityMesh", true);
         window.minSize = new Vector2(400, 580);
         window.maxSize = new Vector2(500, 780);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -149,10 +149,10 @@ public class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshCreator
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -195,11 +195,11 @@ public class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshCreator
     }
 
     // ================================================================
-    // MeshData生成（四角形ベース）
+    // MeshObject生成（四角形ベース）
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         float cylinderHeight = _params.Height - _params.RadiusTop - _params.RadiusBottom;
         if (cylinderHeight < 0) cylinderHeight = 0;

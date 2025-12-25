@@ -38,7 +38,7 @@ namespace MeshFactory.UndoSystem
     public class MeshContextSnapshot
     {
         public string Name;
-        public MeshData Data;                    // Clone
+        public MeshObject Data;                    // Clone
         public List<string> MaterialPaths;      // マテリアルはアセットパスで保持
         public List<Material> RuntimeMaterials; // ランタイム専用（アセット化されていないマテリアル）
         public int CurrentMaterialIndex;
@@ -67,7 +67,7 @@ namespace MeshFactory.UndoSystem
             var snapshot = new MeshContextSnapshot
             {
                 Name = meshContext.Name,
-                Data = meshContext.Data?.Clone(),
+                Data = meshContext.MeshObject?.Clone(),
                 MaterialPaths = new List<string>(),
                 RuntimeMaterials = new List<Material>(),
                 CurrentMaterialIndex = meshContext.CurrentMaterialIndex,
@@ -127,7 +127,7 @@ namespace MeshFactory.UndoSystem
             var meshContext = new SimpleMeshFactory.MeshContext
             {
                 Name = Name,
-                Data = Data?.Clone(),
+                MeshObject = Data?.Clone(),
                 Materials = new List<Material>(),
                 CurrentMaterialIndex = CurrentMaterialIndex,
                 ExportSettings = ExportSettings != null ? new ExportSettings(ExportSettings) : null,
@@ -172,9 +172,9 @@ namespace MeshFactory.UndoSystem
                 meshContext.Materials.Add(null);
             }
 
-            if (meshContext.Data != null)
+            if (meshContext.MeshObject != null)
             {
-                meshContext.UnityMesh = meshContext.Data.ToUnityMesh();
+                meshContext.UnityMesh = meshContext.MeshObject.ToUnityMesh();
                 meshContext.UnityMesh.name = Name;
                 meshContext.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             }
@@ -205,6 +205,18 @@ namespace MeshFactory.UndoSystem
         public List<(int Index, MeshContextSnapshot Snapshot)> RemovedMeshContexts = new List<(int, MeshContextSnapshot)>();
         public List<(int Index, MeshContextSnapshot Snapshot)> AddedMeshContexts = new List<(int, MeshContextSnapshot)>();
 
+        /// <summary>変更前のマテリアルリスト</summary>
+        public List<Material> OldMaterials;
+        
+        /// <summary>変更後のマテリアルリスト</summary>
+        public List<Material> NewMaterials;
+        
+        /// <summary>変更前のカレントマテリアルインデックス</summary>
+        public int OldCurrentMaterialIndex;
+        
+        /// <summary>変更後のカレントマテリアルインデックス</summary>
+        public int NewCurrentMaterialIndex;
+
         [Obsolete("Use OldSelectedIndices instead")]
         public int OldSelectedIndex
         {
@@ -230,6 +242,13 @@ namespace MeshFactory.UndoSystem
 
         public override void Undo(ModelContext ctx)
         {
+            // マテリアルを復元
+            if (OldMaterials != null)
+            {
+                ctx.Materials = new List<Material>(OldMaterials);
+                ctx.CurrentMaterialIndex = OldCurrentMaterialIndex;
+            }
+            
             // 追加されたものを削除
             foreach (var (index, _) in AddedMeshContexts.OrderByDescending(e => e.Index))
             {
@@ -245,6 +264,7 @@ namespace MeshFactory.UndoSystem
             foreach (var (index, snapshot) in RemovedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
+                mc.MaterialOwner = ctx;  // Materials 委譲用
                 ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
             }
 
@@ -268,6 +288,13 @@ namespace MeshFactory.UndoSystem
         {
             Debug.Log("[MeshListChangeRecord.Redo] *** CALLED ***");
             
+            // マテリアルを復元
+            if (NewMaterials != null)
+            {
+                ctx.Materials = new List<Material>(NewMaterials);
+                ctx.CurrentMaterialIndex = NewCurrentMaterialIndex;
+            }
+            
             // 削除されたものを削除
             foreach (var (index, _) in RemovedMeshContexts.OrderByDescending(e => e.Index))
             {
@@ -283,6 +310,7 @@ namespace MeshFactory.UndoSystem
             foreach (var (index, snapshot) in AddedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
+                mc.MaterialOwner = ctx;  // Materials 委譲用
                 ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
             }
 

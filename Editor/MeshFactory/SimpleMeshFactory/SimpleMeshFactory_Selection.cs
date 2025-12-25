@@ -18,13 +18,13 @@ public partial class SimpleMeshFactory
     private void SelectAllVertices()
     {
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data == null)
+        if (meshContext?.MeshObject == null)
             return;
 
         var oldSelection = new HashSet<int>(_selectedVertices);
 
         _selectedVertices.Clear();
-        for (int i = 0; i < meshContext.Data.VertexCount; i++)
+        for (int i = 0; i < meshContext.MeshObject.VertexCount; i++)
         {
             _selectedVertices.Add(i);
         }
@@ -39,13 +39,13 @@ public partial class SimpleMeshFactory
     private void InvertSelection()
     {
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data == null)
+        if (meshContext?.MeshObject == null)
             return;
 
         var oldSelection = new HashSet<int>(_selectedVertices);
 
         var newSelection = new HashSet<int>();
-        for (int i = 0; i < meshContext.Data.VertexCount; i++)
+        for (int i = 0; i < meshContext.MeshObject.VertexCount; i++)
         {
             if (!_selectedVertices.Contains(i))
             {
@@ -79,20 +79,20 @@ public partial class SimpleMeshFactory
     {
         if (_selectedVertices.Count == 0) return;
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data == null) return;
+        if (meshContext?.MeshObject == null) return;
 
         // スナップショット取得（操作前）
-        var before = MeshDataSnapshot.Capture(_undoController.MeshContext);
+        var before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // MeshMergeHelper使用
-        MeshMergeHelper.DeleteVertices(meshContext.Data, new HashSet<int>(_selectedVertices));
+        MeshMergeHelper.DeleteVertices(meshContext.MeshObject, new HashSet<int>(_selectedVertices));
 
         // 選択クリア
         _selectedVertices.Clear();
-        _undoController.MeshContext.SelectedVertices.Clear();
+        _undoController.MeshUndoContext.SelectedVertices.Clear();
 
         // スナップショット取得（操作後）
-        var after = MeshDataSnapshot.Capture(_undoController.MeshContext);
+        var after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // Undo記録
         _undoController.RecordDeleteVertices(before, after);
@@ -109,13 +109,13 @@ public partial class SimpleMeshFactory
     {
         if (_selectedVertices.Count < 2) return;
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data == null) return;
+        if (meshContext?.MeshObject == null) return;
 
         // スナップショット取得（操作前）
-        var before = MeshDataSnapshot.Capture(_undoController.MeshContext);
+        var before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // MeshMergeHelper使用
-        int mergedVertex = MeshMergeHelper.MergeVerticesToCentroid(meshContext.Data, new HashSet<int>(_selectedVertices));
+        int mergedVertex = MeshMergeHelper.MergeVerticesToCentroid(meshContext.MeshObject, new HashSet<int>(_selectedVertices));
 
         // 選択を更新（マージ後の1頂点のみ選択）
         _selectedVertices.Clear();
@@ -123,10 +123,10 @@ public partial class SimpleMeshFactory
         {
             _selectedVertices.Add(mergedVertex);
         }
-        _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
 
         // スナップショット取得（操作後）
-        var after = MeshDataSnapshot.Capture(_undoController.MeshContext);
+        var after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // Undo記録
         _undoController.RecordTopologyChange(before, after, "Merge Vertices");
@@ -151,9 +151,9 @@ public partial class SimpleMeshFactory
         {
             case KeyCode.A:
                 // A: 全選択トグル
-                if (meshContext.Data != null)
+                if (meshContext.MeshObject != null)
                 {
-                    if (_selectedVertices.Count == meshContext.Data.VertexCount)
+                    if (_selectedVertices.Count == meshContext.MeshObject.VertexCount)
                     {
                         ClearSelection();
                     }
@@ -223,19 +223,19 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// スクリーン位置から頂点を検索（MeshDataベース）
+    /// スクリーン位置から頂点を検索（MMeshObjectベース）
     /// </summary>
-    private int FindVertexAtScreenPos(Vector2 screenPos, MeshData meshData, Rect previewRect, Vector3 camPos, Vector3 lookAt, float radius)
+    private int FindVertexAtScreenPos(Vector2 screenPos, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt, float radius)
     {
-        if (meshData == null)
+        if (meshObject == null)
             return -1;
 
         int closestVertex = -1;
         float closestDist = radius;
 
-        for (int i = 0; i < meshData.VertexCount; i++)
+        for (int i = 0; i < meshObject.VertexCount; i++)
         {
-            Vector2 vertScreenPos = WorldToPreviewPos(meshData.Vertices[i].Position, previewRect, camPos, lookAt);
+            Vector2 vertScreenPos = WorldToPreviewPos(meshObject.Vertices[i].Position, previewRect, camPos, lookAt);
             float dist = Vector2.Distance(screenPos, vertScreenPos);
 
             if (dist < closestDist)

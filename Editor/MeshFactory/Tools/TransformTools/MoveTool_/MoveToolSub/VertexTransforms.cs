@@ -31,10 +31,10 @@ namespace MeshFactory.Transforms
         /// <summary>
         /// 変形開始
         /// </summary>
-        /// <param name="meshData">対象メッシュデータ</param>
+        /// <param name="meshObject">対象メッシュデータ</param>
         /// <param name="selectedIndices">選択中の頂点インデックス</param>
         /// <param name="originalPositions">変形開始時の全頂点位置</param>
-        void Begin(MeshData meshData, HashSet<int> selectedIndices, Vector3[] originalPositions);
+        void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions);
 
         /// <summary>
         /// 変形適用（ドラッグ中、毎フレーム呼ばれる）
@@ -108,14 +108,14 @@ namespace MeshFactory.Transforms
     // ================================================================
     public class SimpleMoveTransform : IVertexTransform
     {
-        private MeshData _meshData;
+        private MeshObject _meshObject;
         private HashSet<int> _selectedIndices;
         private Vector3[] _originalPositions;
         private Vector3 _totalDelta;
 
-        public void Begin(MeshData meshData, HashSet<int> selectedIndices, Vector3[] originalPositions)
+        public void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions)
         {
-            _meshData = meshData;
+            _meshObject = meshObject;
             _selectedIndices = new HashSet<int>(selectedIndices);
             _originalPositions = originalPositions;
             _totalDelta = Vector3.zero;
@@ -127,9 +127,9 @@ namespace MeshFactory.Transforms
 
             foreach (int idx in _selectedIndices)
             {
-                if (idx >= 0 && idx < _meshData.VertexCount)
+                if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
-                    _meshData.Vertices[idx].Position = _originalPositions[idx] + _totalDelta;
+                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + _totalDelta;
                 }
             }
         }
@@ -151,7 +151,7 @@ namespace MeshFactory.Transforms
 
         public Vector3[] GetCurrentPositions()
         {
-            return _selectedIndices.Select(idx => _meshData.Vertices[idx].Position).ToArray();
+            return _selectedIndices.Select(idx => _meshObject.Vertices[idx].Position).ToArray();
         }
     }
 
@@ -160,7 +160,7 @@ namespace MeshFactory.Transforms
     // ================================================================
     public class MagnetMoveTransform : IVertexTransform
     {
-        private MeshData _meshData;
+        private MeshObject _meshObject;
         private HashSet<int> _selectedIndices;
         private Vector3[] _originalPositions;
         private Vector3 _totalDelta;
@@ -194,9 +194,9 @@ namespace MeshFactory.Transforms
             set => _falloffType = value;
         }
 
-        public void Begin(MeshData meshData, HashSet<int> selectedIndices, Vector3[] originalPositions)
+        public void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions)
         {
-            _meshData = meshData;
+            _meshObject = meshObject;
             _selectedIndices = new HashSet<int>(selectedIndices);
             _originalPositions = originalPositions;
             _totalDelta = Vector3.zero;
@@ -210,7 +210,7 @@ namespace MeshFactory.Transforms
             _affectedNonSelected = new Dictionary<int, float>();
             _allAffectedIndices = new HashSet<int>(_selectedIndices);
 
-            if (_selectedIndices.Count == 0 || _meshData == null)
+            if (_selectedIndices.Count == 0 || _meshObject == null)
                 return;
 
             // 選択頂点の位置リスト
@@ -223,7 +223,7 @@ namespace MeshFactory.Transforms
                 return;
 
             // 全頂点をチェック
-            for (int i = 0; i < _meshData.VertexCount; i++)
+            for (int i = 0; i < _meshObject.VertexCount; i++)
             {
                 // 選択頂点はスキップ
                 if (_selectedIndices.Contains(i))
@@ -262,9 +262,9 @@ namespace MeshFactory.Transforms
             // 選択頂点: フル移動
             foreach (int idx in _selectedIndices)
             {
-                if (idx >= 0 && idx < _meshData.VertexCount)
+                if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
-                    _meshData.Vertices[idx].Position = _originalPositions[idx] + _totalDelta;
+                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + _totalDelta;
                 }
             }
 
@@ -274,9 +274,9 @@ namespace MeshFactory.Transforms
                 int idx = kvp.Key;
                 float falloff = kvp.Value;
 
-                if (idx >= 0 && idx < _meshData.VertexCount)
+                if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
-                    _meshData.Vertices[idx].Position = _originalPositions[idx] + _totalDelta * falloff;
+                    _meshObject.Vertices[idx].Position = _originalPositions[idx] + _totalDelta * falloff;
                 }
             }
         }
@@ -298,7 +298,7 @@ namespace MeshFactory.Transforms
 
         public Vector3[] GetCurrentPositions()
         {
-            return _allAffectedIndices.Select(idx => _meshData.Vertices[idx].Position).ToArray();
+            return _allAffectedIndices.Select(idx => _meshObject.Vertices[idx].Position).ToArray();
         }
     }
 
@@ -307,7 +307,7 @@ namespace MeshFactory.Transforms
     // ================================================================
     public class SimpleRotateTransform : IRotateTransform
     {
-        private MeshData _meshData;
+        private MeshObject _meshObject;
         private HashSet<int> _selectedIndices;
         private Vector3[] _originalPositions;
         private Vector3 _pivot;
@@ -321,9 +321,9 @@ namespace MeshFactory.Transforms
             _pivot = pivot;
         }
 
-        public void Begin(MeshData meshData, HashSet<int> selectedIndices, Vector3[] originalPositions)
+        public void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions)
         {
-            _meshData = meshData;
+            _meshObject = meshObject;
             _selectedIndices = new HashSet<int>(selectedIndices);
             _originalPositions = originalPositions;
             _totalRotation = Vector3.zero;
@@ -347,11 +347,11 @@ namespace MeshFactory.Transforms
 
             foreach (int idx in _selectedIndices)
             {
-                if (idx >= 0 && idx < _meshData.VertexCount)
+                if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
                     Vector3 offset = _originalPositions[idx] - _pivot;
                     Vector3 rotated = rotation * offset;
-                    _meshData.Vertices[idx].Position = _pivot + rotated;
+                    _meshObject.Vertices[idx].Position = _pivot + rotated;
                 }
             }
         }
@@ -373,7 +373,7 @@ namespace MeshFactory.Transforms
 
         public Vector3[] GetCurrentPositions()
         {
-            return _selectedIndices.Select(idx => _meshData.Vertices[idx].Position).ToArray();
+            return _selectedIndices.Select(idx => _meshObject.Vertices[idx].Position).ToArray();
         }
 
         private Vector3 CalculateCenter(HashSet<int> indices, Vector3[] positions)
@@ -399,7 +399,7 @@ namespace MeshFactory.Transforms
     // ================================================================
     public class SimpleScaleTransform : IScaleTransform
     {
-        private MeshData _meshData;
+        private MeshObject _meshObject;
         private HashSet<int> _selectedIndices;
         private Vector3[] _originalPositions;
         private Vector3 _pivot;
@@ -413,9 +413,9 @@ namespace MeshFactory.Transforms
             _pivot = pivot;
         }
 
-        public void Begin(MeshData meshData, HashSet<int> selectedIndices, Vector3[] originalPositions)
+        public void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions)
         {
-            _meshData = meshData;
+            _meshObject = meshObject;
             _selectedIndices = new HashSet<int>(selectedIndices);
             _originalPositions = originalPositions;
             _totalScale = Vector3.one;
@@ -438,7 +438,7 @@ namespace MeshFactory.Transforms
 
             foreach (int idx in _selectedIndices)
             {
-                if (idx >= 0 && idx < _meshData.VertexCount)
+                if (idx >= 0 && idx < _meshObject.VertexCount)
                 {
                     Vector3 offset = _originalPositions[idx] - _pivot;
                     Vector3 scaled = new Vector3(
@@ -446,7 +446,7 @@ namespace MeshFactory.Transforms
                         offset.y * _totalScale.y,
                         offset.z * _totalScale.z
                     );
-                    _meshData.Vertices[idx].Position = _pivot + scaled;
+                    _meshObject.Vertices[idx].Position = _pivot + scaled;
                 }
             }
         }
@@ -468,7 +468,7 @@ namespace MeshFactory.Transforms
 
         public Vector3[] GetCurrentPositions()
         {
-            return _selectedIndices.Select(idx => _meshData.Vertices[idx].Position).ToArray();
+            return _selectedIndices.Select(idx => _meshObject.Vertices[idx].Position).ToArray();
         }
 
         private Vector3 CalculateCenter(HashSet<int> indices, Vector3[] positions)

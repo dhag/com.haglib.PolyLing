@@ -51,21 +51,21 @@ namespace MeshFactory.Selection
 
         public int FindVertexAt(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen)
         {
-            if (meshData == null || worldToScreen == null) return -1;
+            if (meshObject == null || worldToScreen == null) return -1;
 
             float minDist = VertexHitRadius;
             int nearest = -1;
 
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
                 // 可視性チェック
                 if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
                     continue;
 
-                Vector2 vScreen = worldToScreen(meshData.Vertices[i].Position);
+                Vector2 vScreen = worldToScreen(meshObject.Vertices[i].Position);
                 float dist = Vector2.Distance(screenPos, vScreen);
                 if (dist < minDist)
                 {
@@ -79,10 +79,10 @@ namespace MeshFactory.Selection
 
         public VertexPair? FindEdgeAt(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen)
         {
-            if (meshData == null || worldToScreen == null) return null;
+            if (meshObject == null || worldToScreen == null) return null;
 
             float minDist = EdgeHitDistance;
             VertexPair? nearest = null;
@@ -104,8 +104,8 @@ namespace MeshFactory.Selection
                     if (!anyVisible) continue;
                 }
 
-                Vector2 p1 = worldToScreen(meshData.Vertices[pair.V1].Position);
-                Vector2 p2 = worldToScreen(meshData.Vertices[pair.V2].Position);
+                Vector2 p1 = worldToScreen(meshObject.Vertices[pair.V1].Position);
+                Vector2 p2 = worldToScreen(meshObject.Vertices[pair.V2].Position);
                 
                 float dist = DistanceToLineSegment(screenPos, p1, p2);
                 if (dist < minDist)
@@ -120,10 +120,10 @@ namespace MeshFactory.Selection
 
         public int FindLineAt(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen)
         {
-            if (meshData == null || worldToScreen == null) return -1;
+            if (meshObject == null || worldToScreen == null) return -1;
 
             // 補助線分（lineType=1）は常に可視として扱われるため、
             // カリングチェックは不要
@@ -133,11 +133,11 @@ namespace MeshFactory.Selection
 
             foreach (int faceIdx in _topology.AuxLineIndices)
             {
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 if (face.VertexCount != 2) continue;
 
-                Vector2 p1 = worldToScreen(meshData.Vertices[face.VertexIndices[0]].Position);
-                Vector2 p2 = worldToScreen(meshData.Vertices[face.VertexIndices[1]].Position);
+                Vector2 p1 = worldToScreen(meshObject.Vertices[face.VertexIndices[0]].Position);
+                Vector2 p2 = worldToScreen(meshObject.Vertices[face.VertexIndices[1]].Position);
                 
                 float dist = DistanceToLineSegment(screenPos, p1, p2);
                 if (dist < minDist)
@@ -152,11 +152,11 @@ namespace MeshFactory.Selection
 
         public int FindFaceAt(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen,
             Vector3 cameraPosition)
         {
-            if (!EnableFaceHit || meshData == null || worldToScreen == null) return -1;
+            if (!EnableFaceHit || meshObject == null || worldToScreen == null) return -1;
 
             int nearest = -1;
             float nearestDepth = float.MaxValue;
@@ -167,7 +167,7 @@ namespace MeshFactory.Selection
                 if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(faceIdx))
                     continue;
 
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 if (face.VertexCount < 3) continue;
 
                 var screenPoints = new Vector2[face.VertexCount];
@@ -175,7 +175,7 @@ namespace MeshFactory.Selection
                 
                 for (int i = 0; i < face.VertexCount; i++)
                 {
-                    var worldPos = meshData.Vertices[face.VertexIndices[i]].Position;
+                    var worldPos = meshObject.Vertices[face.VertexIndices[i]].Position;
                     screenPoints[i] = worldToScreen(worldPos);
                     centroid += worldPos;
                 }
@@ -200,7 +200,7 @@ namespace MeshFactory.Selection
         /// </summary>
         public HitResult FindAtEnabledModes(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen,
             Vector3 cameraPosition)
         {
@@ -212,7 +212,7 @@ namespace MeshFactory.Selection
             // 1. Vertex
             if (mode.Has(MeshSelectMode.Vertex))
             {
-                int vertexIdx = FindVertexAt(screenPos, meshData, worldToScreen);
+                int vertexIdx = FindVertexAt(screenPos, meshObject, worldToScreen);
                 if (vertexIdx >= 0)
                 {
                     result.HitType = MeshSelectMode.Vertex;
@@ -224,7 +224,7 @@ namespace MeshFactory.Selection
             // 2. Edge
             if (mode.Has(MeshSelectMode.Edge))
             {
-                var edgePair = FindEdgeAt(screenPos, meshData, worldToScreen);
+                var edgePair = FindEdgeAt(screenPos, meshObject, worldToScreen);
                 if (edgePair.HasValue)
                 {
                     result.HitType = MeshSelectMode.Edge;
@@ -236,7 +236,7 @@ namespace MeshFactory.Selection
             // 3. Line
             if (mode.Has(MeshSelectMode.Line))
             {
-                int lineIdx = FindLineAt(screenPos, meshData, worldToScreen);
+                int lineIdx = FindLineAt(screenPos, meshObject, worldToScreen);
                 if (lineIdx >= 0)
                 {
                     result.HitType = MeshSelectMode.Line;
@@ -248,7 +248,7 @@ namespace MeshFactory.Selection
             // 4. Face
             if (mode.Has(MeshSelectMode.Face))
             {
-                int faceIdx = FindFaceAt(screenPos, meshData, worldToScreen, cameraPosition);
+                int faceIdx = FindFaceAt(screenPos, meshObject, worldToScreen, cameraPosition);
                 if (faceIdx >= 0)
                 {
                     result.HitType = MeshSelectMode.Face;
@@ -265,23 +265,23 @@ namespace MeshFactory.Selection
         /// </summary>
         public HitResult FindAtCurrentMode(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen,
             Vector3 cameraPosition)
         {
-            return FindAtEnabledModes(screenPos, meshData, worldToScreen, cameraPosition);
+            return FindAtEnabledModes(screenPos, meshObject, worldToScreen, cameraPosition);
         }
 
         // === 選択操作 ===
 
         public bool SelectAt(
             Vector2 screenPos,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen,
             Vector3 cameraPosition,
             bool additive = false)
         {
-            var hit = FindAtEnabledModes(screenPos, meshData, worldToScreen, cameraPosition);
+            var hit = FindAtEnabledModes(screenPos, meshObject, worldToScreen, cameraPosition);
             return ApplyHitResult(hit, additive);
         }
 
@@ -377,11 +377,11 @@ namespace MeshFactory.Selection
         /// </summary>
         public bool SelectInRect(
             Rect screenRect,
-            MeshData meshData,
+            MeshObject meshObject,
             Func<Vector3, Vector2> worldToScreen,
             bool additive = false)
         {
-            if (meshData == null || worldToScreen == null) return false;
+            if (meshObject == null || worldToScreen == null) return false;
 
             bool changed = false;
             var mode = _state.Mode;
@@ -389,36 +389,36 @@ namespace MeshFactory.Selection
             // 有効な各モードで選択
             if (mode.Has(MeshSelectMode.Vertex))
             {
-                changed |= SelectVerticesInRect(screenRect, meshData, worldToScreen, additive);
+                changed |= SelectVerticesInRect(screenRect, meshObject, worldToScreen, additive);
             }
             if (mode.Has(MeshSelectMode.Edge))
             {
-                changed |= SelectEdgesInRect(screenRect, meshData, worldToScreen, additive);
+                changed |= SelectEdgesInRect(screenRect, meshObject, worldToScreen, additive);
             }
             if (mode.Has(MeshSelectMode.Face))
             {
-                changed |= SelectFacesInRect(screenRect, meshData, worldToScreen, additive);
+                changed |= SelectFacesInRect(screenRect, meshObject, worldToScreen, additive);
             }
             if (mode.Has(MeshSelectMode.Line))
             {
-                changed |= SelectLinesInRect(screenRect, meshData, worldToScreen, additive);
+                changed |= SelectLinesInRect(screenRect, meshObject, worldToScreen, additive);
             }
 
             return changed;
         }
 
-        private bool SelectVerticesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        private bool SelectVerticesInRect(Rect rect, MeshObject meshObject, Func<Vector3, Vector2> worldToScreen, bool additive)
         {
             if (!additive) _state.Vertices.Clear();
 
             bool changed = false;
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
                 // 可視性チェック
                 if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
                     continue;
 
-                Vector2 sp = worldToScreen(meshData.Vertices[i].Position);
+                Vector2 sp = worldToScreen(meshObject.Vertices[i].Position);
                 if (rect.Contains(sp))
                 {
                     if (_state.Vertices.Add(i))
@@ -429,7 +429,7 @@ namespace MeshFactory.Selection
             return changed || !additive;
         }
 
-        private bool SelectEdgesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        private bool SelectEdgesInRect(Rect rect, MeshObject meshObject, Func<Vector3, Vector2> worldToScreen, bool additive)
         {
             if (!additive) _state.Edges.Clear();
 
@@ -451,8 +451,8 @@ namespace MeshFactory.Selection
                     if (!anyVisible) continue;
                 }
 
-                Vector2 p1 = worldToScreen(meshData.Vertices[pair.V1].Position);
-                Vector2 p2 = worldToScreen(meshData.Vertices[pair.V2].Position);
+                Vector2 p1 = worldToScreen(meshObject.Vertices[pair.V1].Position);
+                Vector2 p2 = worldToScreen(meshObject.Vertices[pair.V2].Position);
                 
                 if (rect.Contains(p1) && rect.Contains(p2))
                 {
@@ -464,7 +464,7 @@ namespace MeshFactory.Selection
             return changed || !additive;
         }
 
-        private bool SelectFacesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        private bool SelectFacesInRect(Rect rect, MeshObject meshObject, Func<Vector3, Vector2> worldToScreen, bool additive)
         {
             if (!additive) _state.Faces.Clear();
 
@@ -475,12 +475,12 @@ namespace MeshFactory.Selection
                 if (_visibilityProvider != null && !_visibilityProvider.IsFaceVisible(faceIdx))
                     continue;
 
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 
                 bool allInside = true;
                 foreach (int vIdx in face.VertexIndices)
                 {
-                    Vector2 sp = worldToScreen(meshData.Vertices[vIdx].Position);
+                    Vector2 sp = worldToScreen(meshObject.Vertices[vIdx].Position);
                     if (!rect.Contains(sp))
                     {
                         allInside = false;
@@ -498,18 +498,18 @@ namespace MeshFactory.Selection
             return changed || !additive;
         }
 
-        private bool SelectLinesInRect(Rect rect, MeshData meshData, Func<Vector3, Vector2> worldToScreen, bool additive)
+        private bool SelectLinesInRect(Rect rect, MeshObject meshObject, Func<Vector3, Vector2> worldToScreen, bool additive)
         {
             if (!additive) _state.Lines.Clear();
 
             bool changed = false;
             foreach (int faceIdx in _topology.AuxLineIndices)
             {
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 if (face.VertexCount != 2) continue;
 
-                Vector2 p1 = worldToScreen(meshData.Vertices[face.VertexIndices[0]].Position);
-                Vector2 p2 = worldToScreen(meshData.Vertices[face.VertexIndices[1]].Position);
+                Vector2 p1 = worldToScreen(meshObject.Vertices[face.VertexIndices[0]].Position);
+                Vector2 p2 = worldToScreen(meshObject.Vertices[face.VertexIndices[1]].Position);
                 
                 if (rect.Contains(p1) && rect.Contains(p2))
                 {
@@ -526,15 +526,15 @@ namespace MeshFactory.Selection
         /// <summary>
         /// 有効なモードの全要素を選択（可視要素のみ）
         /// </summary>
-        public void SelectAll(MeshData meshData)
+        public void SelectAll(MeshObject meshObject)
         {
-            if (meshData == null) return;
+            if (meshObject == null) return;
 
             var mode = _state.Mode;
 
             if (mode.Has(MeshSelectMode.Vertex))
             {
-                for (int i = 0; i < meshData.VertexCount; i++)
+                for (int i = 0; i < meshObject.VertexCount; i++)
                 {
                     if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
                         continue;
@@ -585,16 +585,16 @@ namespace MeshFactory.Selection
         /// <summary>
         /// 有効なモードの選択を反転（可視要素のみ対象）
         /// </summary>
-        public void InvertSelection(MeshData meshData)
+        public void InvertSelection(MeshObject meshObject)
         {
-            if (meshData == null) return;
+            if (meshObject == null) return;
 
             var mode = _state.Mode;
 
             if (mode.Has(MeshSelectMode.Vertex))
             {
                 var newSelection = new HashSet<int>();
-                for (int i = 0; i < meshData.VertexCount; i++)
+                for (int i = 0; i < meshObject.VertexCount; i++)
                 {
                     if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
                         continue;

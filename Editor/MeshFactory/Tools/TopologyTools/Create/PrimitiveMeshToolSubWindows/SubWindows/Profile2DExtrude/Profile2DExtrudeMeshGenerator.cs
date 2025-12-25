@@ -31,7 +31,7 @@ namespace MeshFactory.Profile2DExtrude
         /// <summary>
         /// メッシュデータを生成
         /// </summary>
-        public static MeshData Generate(List<Loop> loops, string meshName, Profile2DGenerateParams p)
+        public static MeshObject Generate(List<Loop> loops, string meshName, Profile2DGenerateParams p)
         {
             if (loops == null || loops.Count == 0)
                 return null;
@@ -69,7 +69,7 @@ namespace MeshFactory.Profile2DExtrude
                     isHoleFlags.Add(loop.IsHole);
                 }
 
-                var md = new MeshData(meshName);
+                var md = new MeshObject(meshName);
 
                 if (p.Thickness <= 0.001f)
                 {
@@ -163,7 +163,7 @@ namespace MeshFactory.Profile2DExtrude
         /// <summary>
         /// 平面を生成（Poly2Tri使用）
         /// </summary>
-        private static void GenerateFlatFace(MeshData md, List<List<Vector2>> loops, List<bool> isHoleFlags,
+        private static void GenerateFlatFace(MeshObject md, List<List<Vector2>> loops, List<bool> isHoleFlags,
                                               float z, Vector3 normal, bool flipWinding)
         {
             // 外側ループを探す
@@ -242,7 +242,7 @@ namespace MeshFactory.Profile2DExtrude
         /// <summary>
         /// 側面を生成（Outwardモード）
         /// </summary>
-        private static void GenerateSideFacesOutward(MeshData md, List<List<Vector2>> baseLoops,
+        private static void GenerateSideFacesOutward(MeshObject md, List<List<Vector2>> baseLoops,
                                                       List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
                                                       List<bool> isHoleFlags, float halfThick, Profile2DGenerateParams p)
         {
@@ -320,7 +320,7 @@ namespace MeshFactory.Profile2DExtrude
         /// <summary>
         /// 側面を生成（通常モード）
         /// </summary>
-        private static void GenerateSideFacesNormal(MeshData md, List<List<Vector2>> baseLoops,
+        private static void GenerateSideFacesNormal(MeshObject md, List<List<Vector2>> baseLoops,
                                                      List<List<Vector2>> offsetFrontLoops, List<List<Vector2>> offsetBackLoops,
                                                      List<bool> isHoleFlags, float halfThick, Profile2DGenerateParams p)
         {
@@ -398,7 +398,7 @@ namespace MeshFactory.Profile2DExtrude
         /// <summary>
         /// 角処理の面を生成
         /// </summary>
-        private static void GenerateEdgeFaces(MeshData md,
+        private static void GenerateEdgeFaces(MeshObject md,
             Vector2 outer0, Vector2 outer1,
             Vector2 inner0, Vector2 inner1,
             float outerZ, float innerZ,

@@ -284,7 +284,7 @@ namespace MeshFactory.Localization
             // メッセージ
             // ============================================================
             ["SelectMesh"] = new() { ["en"] = "Select a mesh", ["ja"] = "メッシュを選択してください", ["hi"] = "めっしゅをえらんでね" },
-            ["InvalidMeshData"] = new() { ["en"] = "Invalid MeshData", ["ja"] = "MeshDataが無効です", ["hi"] = "データがおかしいよ" },
+            ["InvalidMeshData"] = new() { ["en"] = "Invalid MeshObject", ["ja"] = "MeshDataが無効です", ["hi"] = "データがおかしいよ" },
             
             // ============================================================
             // ExportSettings

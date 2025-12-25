@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/NohMaskMeshCreatorWindow.cs
 // 能面（Noh Mask）ベースメッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 四角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
 //
 // 【頂点順序の規約】
 // グリッド配置: i0=左下, i1=右下, i2=右上, i3=左上
@@ -103,12 +103,12 @@ public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreator
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static NohMaskMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static NohMaskMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<NohMaskMeshCreatorWindow>(true, "Create Noh Mask UnityMesh", true);
         window.minSize = new Vector2(420, 800);
         window.maxSize = new Vector2(500, 950);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -204,10 +204,10 @@ public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreator
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -250,11 +250,11 @@ public class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMeshCreator
     }
 
     // ================================================================
-    // MeshData生成（四角形ベース）
+    // MeshObject生成（四角形ベース）
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         int hSegs = _params.HorizontalSegments;
         int vSegs = _params.VerticalSegments;

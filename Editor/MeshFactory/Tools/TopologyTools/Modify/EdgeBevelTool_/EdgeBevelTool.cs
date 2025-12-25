@@ -65,7 +65,7 @@ namespace MeshFactory.Tools
         private float _dragAmount;
 
         // Undo
-        private MeshDataSnapshot _snapshotBefore;
+        private MeshObjectSnapshot _snapshotBefore;
 
         private struct BevelEdgeInfo
         {
@@ -87,7 +87,7 @@ namespace MeshFactory.Tools
             if (_state != BevelState.Idle)
                 return false;
 
-            if (ctx.MeshData == null || ctx.SelectionState == null)
+            if (ctx.MeshObject == null || ctx.SelectionState == null)
                 return false;
 
             _mouseDownScreenPos = mousePos;
@@ -153,7 +153,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null || ctx.SelectionState == null) return;
+            if (ctx.MeshObject == null || ctx.SelectionState == null) return;
 
             if (_state == BevelState.Idle || _state == BevelState.PendingAction)
             {
@@ -172,11 +172,11 @@ namespace MeshFactory.Tools
                 UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 1f);
                 foreach (var edge in _targetEdges)
                 {
-                    if (edge.V0 < 0 || edge.V0 >= ctx.MeshData.VertexCount) continue;
-                    if (edge.V1 < 0 || edge.V1 >= ctx.MeshData.VertexCount) continue;
+                    if (edge.V0 < 0 || edge.V0 >= ctx.MeshObject.VertexCount) continue;
+                    if (edge.V1 < 0 || edge.V1 >= ctx.MeshObject.VertexCount) continue;
 
-                    Vector2 p0 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V0].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V1].Position);
+                    Vector2 p0 = ctx.WorldToScreen(ctx.MeshObject.Vertices[edge.V0].Position);
+                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[edge.V1].Position);
                     DrawThickLine(p0, p1, 4f);
                 }
 
@@ -191,12 +191,12 @@ namespace MeshFactory.Tools
                 if (_hoverEdge.HasValue)
                 {
                     int v0 = _hoverEdge.Value.V1, v1 = _hoverEdge.Value.V2;
-                    if (v0 >= 0 && v0 < ctx.MeshData.VertexCount &&
-                        v1 >= 0 && v1 < ctx.MeshData.VertexCount)
+                    if (v0 >= 0 && v0 < ctx.MeshObject.VertexCount &&
+                        v1 >= 0 && v1 < ctx.MeshObject.VertexCount)
                     {
                         UnityEditor_Handles.color = Color.white;
-                        Vector2 p0 = ctx.WorldToScreen(ctx.MeshData.Vertices[v0].Position);
-                        Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
+                        Vector2 p0 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v0].Position);
+                        Vector2 p1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v1].Position);
                         DrawThickLine(p0, p1, 5f);
                     }
                 }
@@ -281,9 +281,9 @@ namespace MeshFactory.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
                 // 【フェーズ1】SelectionStateを渡してEdge選択も保存
-                _snapshotBefore = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext, ctx.SelectionState);
+                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
             }
 
             _dragAmount = Amount;
@@ -309,9 +309,9 @@ namespace MeshFactory.Tools
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
                 // 【フェーズ1】SelectionStateを渡してEdge選択も保存・復元
-                var snapshotAfter = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext, ctx.SelectionState);
+                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.VertexEditStack.Record(record, "Bevel Edges");
             }
@@ -321,7 +321,7 @@ namespace MeshFactory.Tools
 
         private void ExecuteBevel(ToolContext ctx)
         {
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             float amount = _dragAmount;
             int segments = Segments;
             int matIdx = ctx.CurrentMaterialIndex;
@@ -337,14 +337,14 @@ namespace MeshFactory.Tools
                 orphanCandidates.Add(v0);
                 orphanCandidates.Add(v1);
 
-                var faceA = meshData.Faces[edgeInfo.FaceA];
-                var faceB = meshData.Faces[edgeInfo.FaceB];
+                var faceA = meshObject.Faces[edgeInfo.FaceA];
+                var faceB = meshObject.Faces[edgeInfo.FaceB];
 
-                Vector3 p0 = meshData.Vertices[v0].Position;
-                Vector3 p1 = meshData.Vertices[v1].Position;
+                Vector3 p0 = meshObject.Vertices[v0].Position;
+                Vector3 p1 = meshObject.Vertices[v1].Position;
 
-                Vector3 offsetA = GetInwardOffset(meshData, faceA, v0, v1);
-                Vector3 offsetB = GetInwardOffset(meshData, faceB, v0, v1);
+                Vector3 offsetA = GetInwardOffset(meshObject, faceA, v0, v1);
+                Vector3 offsetB = GetInwardOffset(meshObject, faceB, v0, v1);
 
                 float stepAmount = amount / segments;
                 var newVerticesA = new List<int>();
@@ -375,20 +375,20 @@ namespace MeshFactory.Tools
                         posB1 = p1 + offsetB * stepAmount * (s + 1);
                     }
 
-                    int idxA0 = meshData.VertexCount;
-                    meshData.Vertices.Add(new Vertex { Position = posA0 });
-                    int idxA1 = meshData.VertexCount;
-                    meshData.Vertices.Add(new Vertex { Position = posA1 });
+                    int idxA0 = meshObject.VertexCount;
+                    meshObject.Vertices.Add(new Vertex { Position = posA0 });
+                    int idxA1 = meshObject.VertexCount;
+                    meshObject.Vertices.Add(new Vertex { Position = posA1 });
 
                     newVerticesA.Add(idxA0);
                     newVerticesA.Add(idxA1);
 
                     if (s == segments - 1)
                     {
-                        int idxB0 = meshData.VertexCount;
-                        meshData.Vertices.Add(new Vertex { Position = posB0 });
-                        int idxB1 = meshData.VertexCount;
-                        meshData.Vertices.Add(new Vertex { Position = posB1 });
+                        int idxB0 = meshObject.VertexCount;
+                        meshObject.Vertices.Add(new Vertex { Position = posB0 });
+                        int idxB1 = meshObject.VertexCount;
+                        meshObject.Vertices.Add(new Vertex { Position = posB1 });
 
                         newVerticesB.Add(idxB0);
                         newVerticesB.Add(idxB1);
@@ -421,11 +421,11 @@ namespace MeshFactory.Tools
                     bevelFace.VertexIndices.AddRange(new[] { a0, a1, b1, b0 });
                     bevelFace.UVIndices.AddRange(new[] { a0, a1, b1, b0 });
                     bevelFace.NormalIndices.AddRange(new[] { a0, a1, b1, b0 });
-                    meshData.Faces.Add(bevelFace);
+                    meshObject.Faces.Add(bevelFace);
                 }
             }
 
-            RemoveOrphanVertices(meshData, orphanCandidates);
+            RemoveOrphanVertices(meshObject, orphanCandidates);
 
             ctx.SelectionState?.Edges.Clear();
             ctx.SyncMesh?.Invoke();
@@ -450,24 +450,24 @@ namespace MeshFactory.Tools
             }
         }
 
-        private void RemoveOrphanVertices(MeshData meshData, HashSet<int> candidates)
+        private void RemoveOrphanVertices(MeshObject meshObject, HashSet<int> candidates)
         {
             var usedVertices = new HashSet<int>();
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 foreach (int vi in face.VertexIndices)
                     usedVertices.Add(vi);
             }
 
-            var toRemove = candidates.Where(v => !usedVertices.Contains(v) && v >= 0 && v < meshData.VertexCount)
+            var toRemove = candidates.Where(v => !usedVertices.Contains(v) && v >= 0 && v < meshObject.VertexCount)
                                      .OrderByDescending(v => v)
                                      .ToList();
 
             foreach (int vertexIdx in toRemove)
             {
-                meshData.Vertices.RemoveAt(vertexIdx);
+                meshObject.Vertices.RemoveAt(vertexIdx);
 
-                foreach (var face in meshData.Faces)
+                foreach (var face in meshObject.Faces)
                 {
                     for (int i = 0; i < face.VertexIndices.Count; i++)
                     {
@@ -488,15 +488,15 @@ namespace MeshFactory.Tools
             }
         }
 
-        private Vector3 GetInwardOffset(MeshData meshData, Face face, int v0, int v1)
+        private Vector3 GetInwardOffset(MeshObject meshObject, Face face, int v0, int v1)
         {
-            Vector3 faceNormal = CalculateFaceNormal(meshData, face);
-            Vector3 p0 = meshData.Vertices[v0].Position;
-            Vector3 p1 = meshData.Vertices[v1].Position;
+            Vector3 faceNormal = CalculateFaceNormal(meshObject, face);
+            Vector3 p0 = meshObject.Vertices[v0].Position;
+            Vector3 p1 = meshObject.Vertices[v1].Position;
             Vector3 edgeDir = (p1 - p0).normalized;
             Vector3 inward = Vector3.Cross(faceNormal, edgeDir).normalized;
 
-            Vector3 faceCenter = CalculateFaceCenter(meshData, face);
+            Vector3 faceCenter = CalculateFaceCenter(meshObject, face);
             Vector3 edgeCenter = (p0 + p1) * 0.5f;
             Vector3 toCenter = (faceCenter - edgeCenter).normalized;
 
@@ -506,22 +506,22 @@ namespace MeshFactory.Tools
             return inward;
         }
 
-        private Vector3 CalculateFaceNormal(MeshData meshData, Face face)
+        private Vector3 CalculateFaceNormal(MeshObject meshObject, Face face)
         {
             if (face.VertexCount < 3) return Vector3.up;
 
-            Vector3 p0 = meshData.Vertices[face.VertexIndices[0]].Position;
-            Vector3 p1 = meshData.Vertices[face.VertexIndices[1]].Position;
-            Vector3 p2 = meshData.Vertices[face.VertexIndices[2]].Position;
+            Vector3 p0 = meshObject.Vertices[face.VertexIndices[0]].Position;
+            Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
+            Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
 
             return Vector3.Cross(p1 - p0, p2 - p0).normalized;
         }
 
-        private Vector3 CalculateFaceCenter(MeshData meshData, Face face)
+        private Vector3 CalculateFaceCenter(MeshObject meshObject, Face face)
         {
             Vector3 center = Vector3.zero;
             foreach (int vi in face.VertexIndices)
-                center += meshData.Vertices[vi].Position;
+                center += meshObject.Vertices[vi].Position;
             return center / face.VertexCount;
         }
 
@@ -538,13 +538,13 @@ namespace MeshFactory.Tools
                 int v0 = edgePair.V1;
                 int v1 = edgePair.V2;
 
-                if (v0 < 0 || v0 >= ctx.MeshData.VertexCount) continue;
-                if (v1 < 0 || v1 >= ctx.MeshData.VertexCount) continue;
+                if (v0 < 0 || v0 >= ctx.MeshObject.VertexCount) continue;
+                if (v1 < 0 || v1 >= ctx.MeshObject.VertexCount) continue;
 
-                var adjacentFaces = FindAdjacentFaces(ctx.MeshData, v0, v1);
+                var adjacentFaces = FindAdjacentFaces(ctx.MeshObject, v0, v1);
 
-                Vector3 p0 = ctx.MeshData.Vertices[v0].Position;
-                Vector3 p1 = ctx.MeshData.Vertices[v1].Position;
+                Vector3 p0 = ctx.MeshObject.Vertices[v0].Position;
+                Vector3 p1 = ctx.MeshObject.Vertices[v1].Position;
 
                 var info = new BevelEdgeInfo
                 {
@@ -560,13 +560,13 @@ namespace MeshFactory.Tools
             }
         }
 
-        private List<int> FindAdjacentFaces(MeshData meshData, int v0, int v1)
+        private List<int> FindAdjacentFaces(MeshObject meshObject, int v0, int v1)
         {
             var result = new List<int>();
 
-            for (int i = 0; i < meshData.FaceCount; i++)
+            for (int i = 0; i < meshObject.FaceCount; i++)
             {
-                var face = meshData.Faces[i];
+                var face = meshObject.Faces[i];
                 if (face.VertexCount < 3) continue;
 
                 if (face.VertexIndices.Contains(v0) && face.VertexIndices.Contains(v1))
@@ -578,24 +578,24 @@ namespace MeshFactory.Tools
 
         private VertexPair? FindEdgeAtPosition(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null) return null;
+            if (ctx.MeshObject == null) return null;
 
             const float threshold = 8f;
 
-            for (int fi = 0; fi < ctx.MeshData.FaceCount; fi++)
+            for (int fi = 0; fi < ctx.MeshObject.FaceCount; fi++)
             {
-                var face = ctx.MeshData.Faces[fi];
+                var face = ctx.MeshObject.Faces[fi];
                 if (face.VertexCount < 3) continue;
 
                 for (int i = 0; i < face.VertexCount; i++)
                 {
                     int v0 = face.VertexIndices[i];
                     int v1 = face.VertexIndices[(i + 1) % face.VertexCount];
-                    if (v0 < 0 || v1 < 0 || v0 >= ctx.MeshData.VertexCount || v1 >= ctx.MeshData.VertexCount)
+                    if (v0 < 0 || v1 < 0 || v0 >= ctx.MeshObject.VertexCount || v1 >= ctx.MeshObject.VertexCount)
                         continue;
 
-                    Vector2 p0 = ctx.WorldToScreen(ctx.MeshData.Vertices[v0].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
+                    Vector2 p0 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v0].Position);
+                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v1].Position);
 
                     if (DistancePointToSegment(mousePos, p0, p1) < threshold)
                         return new VertexPair(v0, v1);
@@ -622,14 +622,14 @@ namespace MeshFactory.Tools
             {
                 if (edge.FaceA < 0 || edge.FaceB < 0) continue;
 
-                Vector3 p0 = ctx.MeshData.Vertices[edge.V0].Position;
-                Vector3 p1 = ctx.MeshData.Vertices[edge.V1].Position;
+                Vector3 p0 = ctx.MeshObject.Vertices[edge.V0].Position;
+                Vector3 p1 = ctx.MeshObject.Vertices[edge.V1].Position;
 
-                var faceA = ctx.MeshData.Faces[edge.FaceA];
-                var faceB = ctx.MeshData.Faces[edge.FaceB];
+                var faceA = ctx.MeshObject.Faces[edge.FaceA];
+                var faceB = ctx.MeshObject.Faces[edge.FaceB];
 
-                Vector3 offsetA = GetInwardOffset(ctx.MeshData, faceA, edge.V0, edge.V1);
-                Vector3 offsetB = GetInwardOffset(ctx.MeshData, faceB, edge.V0, edge.V1);
+                Vector3 offsetA = GetInwardOffset(ctx.MeshObject, faceA, edge.V0, edge.V1);
+                Vector3 offsetB = GetInwardOffset(ctx.MeshObject, faceB, edge.V0, edge.V1);
 
                 float stepAmount = _dragAmount / Segments;
 

@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/SphereMeshCreatorWindow.cs
 // スフィアメッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 四角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
 // 通常の球体とCube Sphere（立方体トポロジー）モードをサポート
 //
 // 【頂点順序の規約】
@@ -72,12 +72,12 @@ public class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshCreatorWi
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static SphereMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static SphereMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<SphereMeshCreatorWindow>(true, "Create Sphere UnityMesh", true);
         window.minSize = new Vector2(400, 550);
         window.maxSize = new Vector2(500, 750);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -160,10 +160,10 @@ public class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshCreatorWi
         }
 
         // メッシュ情報（Repaint以外でも表示）
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
 
@@ -191,23 +191,23 @@ public class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshCreatorWi
     }
 
     // ================================================================
-    // MeshData生成
+    //MeshObject生成
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
         if (_params.CubeSphere)
         {
-            return GenerateCubeSphereMeshData(_params.Radius, _params.CubeSubdivisions, _params.Pivot);
+            return GenerateCubeSphereMeshObject(_params.Radius, _params.CubeSubdivisions, _params.Pivot);
         }
         else
         {
-            return GenerateSphereMeshData(_params.Radius, _params.LongitudeSegments, _params.LatitudeSegments, _params.Pivot);
+            return GenerateSphereMeshObject(_params.Radius, _params.LongitudeSegments, _params.LatitudeSegments, _params.Pivot);
         }
     }
 
-    private MeshData GenerateSphereMeshData(float radius, int lonSegments, int latSegments, Vector3 pivot)
+    private MeshObject GenerateSphereMeshObject(float radius, int lonSegments, int latSegments, Vector3 pivot)
     {
-        var md = new MeshData("Sphere");
+        var md = new MeshObject("Sphere");
 
         Vector3 pivotOffset = pivot * radius * 2f;
         int cols = lonSegments + 1;
@@ -254,9 +254,9 @@ public class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshCreatorWi
         return md;
     }
 
-    private MeshData GenerateCubeSphereMeshData(float radius, int subdivisions, Vector3 pivot)
+    private MeshObject GenerateCubeSphereMeshObject(float radius, int subdivisions, Vector3 pivot)
     {
-        var md = new MeshData("CubeSphere");
+        var md = new MeshObject("CubeSphere");
 
         Vector3 pivotOffset = pivot * radius * 2f;
 

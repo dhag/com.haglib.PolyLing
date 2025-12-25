@@ -72,7 +72,7 @@ namespace MeshFactory.Tools
                 ctx.HoveredVertex = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
                 if (ctx.HoveredVertex >= 0)
                 {
-                    var connectedVerts = GetConnectedVertices(toolCtx.MeshData, ctx.HoveredVertex);
+                    var connectedVerts = GetConnectedVertices(toolCtx.MeshObject, ctx.HoveredVertex);
                     if (selectMode.Has(MeshSelectMode.Vertex))
                         ctx.PreviewVertices.AddRange(connectedVerts);
                     if (selectMode.Has(MeshSelectMode.Edge))
@@ -112,7 +112,7 @@ namespace MeshFactory.Tools
                     var connectedFaces = GetConnectedFaces(toolCtx, ctx.HoveredFace);
                     var connectedVerts = new HashSet<int>();
                     foreach (int fIdx in connectedFaces)
-                        foreach (int vIdx in toolCtx.MeshData.Faces[fIdx].VertexIndices)
+                        foreach (int vIdx in toolCtx.MeshObject.Faces[fIdx].VertexIndices)
                             connectedVerts.Add(vIdx);
 
                     if (selectMode.Has(MeshSelectMode.Vertex))
@@ -134,7 +134,7 @@ namespace MeshFactory.Tools
                     var connectedVerts = new HashSet<int>();
                     foreach (int lIdx in connectedLines)
                     {
-                        var face = toolCtx.MeshData.Faces[lIdx];
+                        var face = toolCtx.MeshObject.Faces[lIdx];
                         if (face.VertexCount == 2)
                         {
                             connectedVerts.Add(face.VertexIndices[0]);
@@ -167,7 +167,7 @@ namespace MeshFactory.Tools
         private void ApplyConnectedFromVertex(AdvancedSelectContext ctx, int startVertex, MeshSelectMode selectMode)
         {
             var toolCtx = ctx.ToolCtx;
-            var connectedVerts = GetConnectedVertices(toolCtx.MeshData, startVertex);
+            var connectedVerts = GetConnectedVertices(toolCtx.MeshObject, startVertex);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 SelectionHelper.ApplyVertexSelection(toolCtx, connectedVerts, ctx.AddToSelection);
@@ -222,7 +222,7 @@ namespace MeshFactory.Tools
             var connectedVerts = new HashSet<int>();
             foreach (int fIdx in connectedFaces)
             {
-                foreach (int vIdx in toolCtx.MeshData.Faces[fIdx].VertexIndices)
+                foreach (int vIdx in toolCtx.MeshObject.Faces[fIdx].VertexIndices)
                     connectedVerts.Add(vIdx);
             }
 
@@ -246,7 +246,7 @@ namespace MeshFactory.Tools
             var connectedVerts = new HashSet<int>();
             foreach (int lIdx in connectedLines)
             {
-                var face = toolCtx.MeshData.Faces[lIdx];
+                var face = toolCtx.MeshObject.Faces[lIdx];
                 if (face.VertexCount == 2)
                 {
                     connectedVerts.Add(face.VertexIndices[0]);
@@ -265,11 +265,11 @@ namespace MeshFactory.Tools
         // アルゴリズム
         // ================================================================
 
-        private List<int> GetConnectedVertices(MeshData meshData, int startVertex)
+        private List<int> GetConnectedVertices(MeshObject meshObject, int startVertex)
         {
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var adjacency = SelectionHelper.BuildVertexAdjacency(meshData);
+            var adjacency = SelectionHelper.BuildVertexAdjacency(meshObject);
 
             queue.Enqueue(startVertex);
             result.Add(startVertex);
@@ -317,7 +317,7 @@ namespace MeshFactory.Tools
         {
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var faceAdjacency = SelectionHelper.BuildFaceAdjacency(ctx.MeshData);
+            var faceAdjacency = SelectionHelper.BuildFaceAdjacency(ctx.MeshObject);
 
             queue.Enqueue(startFace);
             result.Add(startFace);
@@ -339,11 +339,11 @@ namespace MeshFactory.Tools
 
         private List<int> GetConnectedLines(ToolContext ctx, int startLine)
         {
-            if (ctx.MeshData == null) return new List<int> { startLine };
+            if (ctx.MeshObject == null) return new List<int> { startLine };
 
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var lineAdjacency = SelectionHelper.BuildLineAdjacency(ctx.MeshData);
+            var lineAdjacency = SelectionHelper.BuildLineAdjacency(ctx.MeshObject);
 
             queue.Enqueue(startLine);
             result.Add(startLine);

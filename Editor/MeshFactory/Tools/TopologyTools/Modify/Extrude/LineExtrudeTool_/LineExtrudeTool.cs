@@ -53,7 +53,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
             if (_selectedLineIndices.Count == 0) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -62,12 +62,12 @@ namespace MeshFactory.Tools
             UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
             foreach (int lineIdx in _selectedLineIndices)
             {
-                if (lineIdx < 0 || lineIdx >= ctx.MeshData.FaceCount) continue;
-                var face = ctx.MeshData.Faces[lineIdx];
+                if (lineIdx < 0 || lineIdx >= ctx.MeshObject.FaceCount) continue;
+                var face = ctx.MeshObject.Faces[lineIdx];
                 if (face.VertexCount != 2) continue;
 
-                Vector3 p0 = ctx.MeshData.Vertices[face.VertexIndices[0]].Position;
-                Vector3 p1 = ctx.MeshData.Vertices[face.VertexIndices[1]].Position;
+                Vector3 p0 = ctx.MeshObject.Vertices[face.VertexIndices[0]].Position;
+                Vector3 p1 = ctx.MeshObject.Vertices[face.VertexIndices[1]].Position;
 
                 Vector2 sp0 = ctx.WorldToScreen(p0);
                 Vector2 sp1 = ctx.WorldToScreen(p1);
@@ -91,10 +91,10 @@ namespace MeshFactory.Tools
                     int v0 = loop.VertexIndices[i];
                     int v1 = loop.VertexIndices[next];
                     
-                    if (v0 < ctx.MeshData.VertexCount && v1 < ctx.MeshData.VertexCount)
+                    if (v0 < ctx.MeshObject.VertexCount && v1 < ctx.MeshObject.VertexCount)
                     {
-                        Vector3 p0 = ctx.MeshData.Vertices[v0].Position;
-                        Vector3 p1 = ctx.MeshData.Vertices[v1].Position;
+                        Vector3 p0 = ctx.MeshObject.Vertices[v0].Position;
+                        Vector3 p1 = ctx.MeshObject.Vertices[v1].Position;
                         Vector2 sp0 = ctx.WorldToScreen(p0);
                         Vector2 sp1 = ctx.WorldToScreen(p1);
                         UnityEditor_Handles.DrawAAPolyLine(2f, sp0, sp1);
@@ -200,14 +200,14 @@ namespace MeshFactory.Tools
         {
             _selectedLineIndices.Clear();
 
-            if (ctx.MeshData == null || ctx.SelectionState == null)
+            if (ctx.MeshObject == null || ctx.SelectionState == null)
                 return;
 
             foreach (int lineIdx in ctx.SelectionState.Lines)
             {
-                if (lineIdx >= 0 && lineIdx < ctx.MeshData.FaceCount)
+                if (lineIdx >= 0 && lineIdx < ctx.MeshObject.FaceCount)
                 {
-                    var face = ctx.MeshData.Faces[lineIdx];
+                    var face = ctx.MeshObject.Faces[lineIdx];
                     if (face.VertexCount == 2)
                     {
                         _selectedLineIndices.Add(lineIdx);
@@ -223,10 +223,10 @@ namespace MeshFactory.Tools
         {
             _detectedLoops.Clear();
 
-            if (_lastContext?.MeshData == null || _selectedLineIndices.Count < 3)
+            if (_lastContext?.MeshObject == null || _selectedLineIndices.Count < 3)
                 return;
 
-            var meshData = _lastContext.MeshData;
+            var meshObject = _lastContext.MeshObject;
 
             // 使用済みラインを追跡
             var remainingLines = new HashSet<int>(_selectedLineIndices);
@@ -235,7 +235,7 @@ namespace MeshFactory.Tools
             var vertexToLines = new Dictionary<int, List<int>>();
             foreach (int lineIdx in _selectedLineIndices)
             {
-                var face = meshData.Faces[lineIdx];
+                var face = meshObject.Faces[lineIdx];
                 int v0 = face.VertexIndices[0];
                 int v1 = face.VertexIndices[1];
 
@@ -251,11 +251,11 @@ namespace MeshFactory.Tools
             // ループを探索
             while (remainingLines.Count >= 3)
             {
-                var loop = TryBuildLoop(meshData, remainingLines, vertexToLines);
+                var loop = TryBuildLoop(meshObject, remainingLines, vertexToLines);
                 if (loop != null && loop.VertexIndices.Count >= 3)
                 {
                     // 時計回り判定
-                    loop.IsClockwise = IsClockwise(meshData, loop.VertexIndices);
+                    loop.IsClockwise = IsClockwise(meshObject, loop.VertexIndices);
                     loop.IsHole = !loop.IsClockwise;  // 反時計回りはホール
                     _detectedLoops.Add(loop);
                 }
@@ -271,7 +271,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 残りのラインからループを1つ構築
         /// </summary>
-        private LoopInfo TryBuildLoop(MeshData meshData, HashSet<int> remainingLines, Dictionary<int, List<int>> vertexToLines)
+        private LoopInfo TryBuildLoop(MeshObject meshObject, HashSet<int> remainingLines, Dictionary<int, List<int>> vertexToLines)
         {
             if (remainingLines.Count == 0) return null;
 
@@ -280,7 +280,7 @@ namespace MeshFactory.Tools
 
             // 最初のラインから開始
             int firstLineIdx = remainingLines.First();
-            var firstFace = meshData.Faces[firstLineIdx];
+            var firstFace = meshObject.Faces[firstLineIdx];
             int startVertex = firstFace.VertexIndices[0];
             int currentVertex = startVertex;
 
@@ -317,7 +317,7 @@ namespace MeshFactory.Tools
                 usedLines.Add(nextLineIdx);
 
                 // 次の頂点を決定
-                var nextFace = meshData.Faces[nextLineIdx];
+                var nextFace = meshObject.Faces[nextLineIdx];
                 if (nextFace.VertexIndices[0] == currentVertex)
                     currentVertex = nextFace.VertexIndices[1];
                 else
@@ -342,7 +342,7 @@ namespace MeshFactory.Tools
         /// ループが時計回りかどうか判定（Shoelace formula）
         /// XY平面を仮定
         /// </summary>
-        private bool IsClockwise(MeshData meshData, List<int> vertexIndices)
+        private bool IsClockwise(MeshObject meshObject, List<int> vertexIndices)
         {
             if (vertexIndices.Count < 3) return true;
 
@@ -350,8 +350,8 @@ namespace MeshFactory.Tools
             for (int i = 0; i < vertexIndices.Count; i++)
             {
                 int next = (i + 1) % vertexIndices.Count;
-                Vector3 p0 = meshData.Vertices[vertexIndices[i]].Position;
-                Vector3 p1 = meshData.Vertices[vertexIndices[next]].Position;
+                Vector3 p0 = meshObject.Vertices[vertexIndices[i]].Position;
+                Vector3 p1 = meshObject.Vertices[vertexIndices[next]].Position;
 
                 sum += (p1.x - p0.x) * (p1.y + p0.y);
             }
@@ -365,7 +365,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private void SaveAsCSV()
         {
-            if (_lastContext?.MeshData == null || _detectedLoops.Count == 0)
+            if (_lastContext?.MeshObject == null || _detectedLoops.Count == 0)
                 return;
 
             string path = EditorUtility.SaveFilePanel(
@@ -377,7 +377,7 @@ namespace MeshFactory.Tools
             if (string.IsNullOrEmpty(path))
                 return;
 
-            var meshData = _lastContext.MeshData;
+            var meshObject = _lastContext.MeshObject;
             var sb = new StringBuilder();
 
             // ヘッダーコメント
@@ -394,7 +394,7 @@ namespace MeshFactory.Tools
             foreach (var loop in outerLoops)
             {
                 sb.AppendLine("# OUTER");
-                WriteLoopPoints(sb, meshData, loop);
+                WriteLoopPoints(sb, meshObject, loop);
                 sb.AppendLine();
             }
 
@@ -402,7 +402,7 @@ namespace MeshFactory.Tools
             foreach (var loop in holeLoops)
             {
                 sb.AppendLine("# HOLE");
-                WriteLoopPoints(sb, meshData, loop);
+                WriteLoopPoints(sb, meshObject, loop);
                 sb.AppendLine();
             }
 
@@ -419,11 +419,11 @@ namespace MeshFactory.Tools
             }
         }
 
-        private void WriteLoopPoints(StringBuilder sb, MeshData meshData, LoopInfo loop)
+        private void WriteLoopPoints(StringBuilder sb, MeshObject meshObject, LoopInfo loop)
         {
             foreach (int vIdx in loop.VertexIndices)
             {
-                Vector3 pos = meshData.Vertices[vIdx].Position;
+                Vector3 pos = meshObject.Vertices[vIdx].Position;
                 // XY座標を出力（小数点6桁）
                 sb.AppendLine($"{pos.x:F6},{pos.y:F6}");
             }

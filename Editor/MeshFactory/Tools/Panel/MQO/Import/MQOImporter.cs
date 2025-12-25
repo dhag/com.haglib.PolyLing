@@ -1,5 +1,5 @@
 // Assets/Editor/MeshFactory/MQO/Import/MQOImporter.cs
-// MQODocument → MeshData/MeshContext 変換
+// MQODocument → MeshObject/MeshUndoContext 変換
 // SimpleMeshFactoryのデータ構造に変換
 
 using System;
@@ -240,13 +240,13 @@ namespace MeshFactory.MQO
             MQOImportSettings settings,
             MQOImportStats stats)
         {
-            var meshData = new MeshData();
+            var meshObject = new MeshObject();
 
             // 頂点変換
             foreach (var mqoVert in mqoObj.Vertices)
             {
                 Vector3 pos = ConvertPosition(mqoVert.Position, settings);
-                meshData.AddVertex(pos);
+                meshObject.AddVertex(pos);
                 stats.TotalVertices++;
             }
 
@@ -263,27 +263,27 @@ namespace MeshFactory.MQO
                 // 1頂点（点）、2頂点（線）は補助線として扱う
                 if (mqoFace.VertexCount < 3)
                 {
-                    ConvertLine(mqoFace, meshData, settings);
+                    ConvertLine(mqoFace, meshObject, settings);
                     continue;
                 }
 
                 // 3頂点以上は面として変換
-                ConvertFace(mqoFace, meshData, settings);
+                ConvertFace(mqoFace, meshObject, settings);
                 stats.TotalFaces++;
             }
 
             // OriginalPositions作成
-            var originalPositions = new Vector3[meshData.VertexCount];
-            for (int i = 0; i < meshData.VertexCount; i++)
+            var originalPositions = new Vector3[meshObject.VertexCount];
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
-                originalPositions[i] = meshData.Vertices[i].Position;
+                originalPositions[i] = meshObject.Vertices[i].Position;
             }
 
             // MeshContext作成
             var meshContext = new MeshContext
             {
                 Name = mqoObj.Name,
-                Data = meshData,
+                MeshObject = meshObject,
                 OriginalPositions = originalPositions,
                 Materials = new List<Material>(),
                 // オブジェクト属性をコピー
@@ -296,50 +296,35 @@ namespace MeshFactory.MQO
                 MirrorDistance = mqoObj.MirrorDistance
             };
 
-            // マテリアル割り当て
-            if (settings.ImportMaterials && unityMaterials.Count > 0)
-            {
-                // 使用されているマテリアルインデックスを収集
-                var usedMaterialIndices = new HashSet<int>();
-                foreach (var face in meshData.Faces)
-                {
-                    if (face.MaterialIndex >= 0)
-                        usedMaterialIndices.Add(face.MaterialIndex);
-                }
+            // マテリアル設定
+            // Phase 5: マテリアルはMQOImportResultにグローバルリストとして保存される
+            // MeshContext.Materialsへの設定は不要（ModelContext.Materialsで管理）
+            // 代わりに、ToUnityMeshにマテリアル数を渡してサブメッシュを正しく生成
 
-                // マテリアルをMeshContextに追加
-                foreach (var matIndex in usedMaterialIndices)
-                {
-                    if (matIndex < unityMaterials.Count)
-                    {
-                        meshContext.Materials.Add(unityMaterials[matIndex]);
-                    }
-                }
-
-                // マテリアルがない場合はデフォルトを追加
-                if (meshContext.Materials.Count == 0)
-                {
-                    meshContext.Materials.Add(CreateDefaultMaterial());
-                }
-            }
-            else
+            // 使用されているマテリアルの最大インデックスを取得
+            int maxMaterialIndex = 0;
+            foreach (var face in meshObject.Faces)
             {
-                meshContext.Materials.Add(CreateDefaultMaterial());
+                if (face.MaterialIndex > maxMaterialIndex)
+                    maxMaterialIndex = face.MaterialIndex;
             }
+            int materialCount = settings.ImportMaterials && unityMaterials.Count > 0
+                ? unityMaterials.Count
+                : maxMaterialIndex + 1;
 
             // メッシュ名を設定
-            meshData.Name = mqoObj.Name;
+            meshObject.Name = mqoObj.Name;
 
-            // Unity Mesh生成
-            meshContext.UnityMesh = meshData.ToUnityMesh();
-
+            // Unity Mesh生成（マテリアル数を渡す）
+            meshContext.UnityMesh = meshObject.ToUnityMesh(materialCount);
+            /*
             // デバッグ出力（ミラー属性確認用）
             Debug.Log($"[MQOImporter] ConvertObject: {mqoObj.Name}");
-            Debug.Log($"  - MeshData: V={meshData.VertexCount}, F={meshData.FaceCount}");
+            Debug.Log($"  - MeshObject: V={meshObject.VertexCount}, F={meshObject.FaceCount}");
             Debug.Log($"  - MQO Mirror: Mode={mqoObj.MirrorMode}, Axis={mqoObj.MirrorAxis}, Dist={mqoObj.MirrorDistance}");
-            Debug.Log($"  - MeshContext: IsMirrored={meshContext.IsMirrored}, MirrorType={meshContext.MirrorType}, MirrorAxis={meshContext.MirrorAxis}");
+            Debug.Log($"  - MeshUndoContext: IsMirrored={meshContext.IsMirrored}, MirrorType={meshContext.MirrorType}, MirrorAxis={meshContext.MirrorAxis}");
             Debug.Log($"  - UnityMesh: V={meshContext.UnityMesh?.vertexCount ?? 0}, T={meshContext.UnityMesh?.triangles?.Length ?? 0}");
-
+            */
             return meshContext;
         }
 
@@ -347,7 +332,7 @@ namespace MeshFactory.MQO
         // 面変換
         // ================================================================
 
-        private static void ConvertFace(MQOFace mqoFace, MeshData meshData, MQOImportSettings settings)
+        private static void ConvertFace(MQOFace mqoFace, MeshObject meshObject, MQOImportSettings settings)
         {
             int vertexCount = mqoFace.VertexCount;
 
@@ -364,7 +349,7 @@ namespace MeshFactory.MQO
                     : Vector2.zero;
 
                 // 頂点にUVを追加し、サブインデックスを取得
-                var vertex = meshData.Vertices[vertIndex];
+                var vertex = meshObject.Vertices[vertIndex];
                 int uvSubIndex = AddOrGetUVIndex(vertex, uv);
                 uvSubIndices.Add(uvSubIndex);
             }
@@ -383,13 +368,13 @@ namespace MeshFactory.MQO
                 face.NormalIndices.Add(0); // 後で計算
             }
 
-            meshData.Faces.Add(face);
+            meshObject.Faces.Add(face);
 
             // 法線計算
-            CalculateFaceNormal(face, meshData);
+            CalculateFaceNormal(face, meshObject);
         }
 
-        private static void ConvertLine(MQOFace mqoFace, MeshData meshData, MQOImportSettings settings)
+        private static void ConvertLine(MQOFace mqoFace, MeshObject meshObject, MQOImportSettings settings)
         {
             if (mqoFace.VertexCount < 2) return;
 
@@ -406,7 +391,7 @@ namespace MeshFactory.MQO
                 face.NormalIndices.Add(0);
             }
 
-            meshData.Faces.Add(face);
+            meshObject.Faces.Add(face);
         }
 
         // ================================================================
@@ -516,14 +501,14 @@ namespace MeshFactory.MQO
             return vertex.UVs.Count - 1;
         }
 
-        private static void CalculateFaceNormal(Face face, MeshData meshData)
+        private static void CalculateFaceNormal(Face face, MeshObject meshObject)
         {
             if (face.VertexCount < 3) return;
 
             // 最初の3頂点から法線計算
-            Vector3 p0 = meshData.Vertices[face.VertexIndices[0]].Position;
-            Vector3 p1 = meshData.Vertices[face.VertexIndices[1]].Position;
-            Vector3 p2 = meshData.Vertices[face.VertexIndices[2]].Position;
+            Vector3 p0 = meshObject.Vertices[face.VertexIndices[0]].Position;
+            Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
+            Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
 
             Vector3 normal = Vector3.Cross(p1 - p0, p2 - p0).normalized;
 
@@ -533,7 +518,7 @@ namespace MeshFactory.MQO
                 int vertIndex = face.VertexIndices[i];
                 int normalSubIndex = face.NormalIndices[i];
 
-                var vertex = meshData.Vertices[vertIndex];
+                var vertex = meshObject.Vertices[vertIndex];
 
                 // 法線リストを確保
                 while (vertex.Normals.Count <= normalSubIndex)

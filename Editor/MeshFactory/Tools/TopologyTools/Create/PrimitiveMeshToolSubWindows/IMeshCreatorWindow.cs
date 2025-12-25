@@ -23,8 +23,8 @@ namespace MeshFactory.Tools.Creators
         /// <summary>
         /// ウィンドウを開く
         /// </summary>
-        /// <param name="onMeshDataCreated">メッシュ生成完了時のコールバック</param>
-        void Open(Action<MeshData, string> onMeshDataCreated);
+        /// <param name="onMeshObjectCreated">メッシュ生成完了時のコールバック</param>
+        void Open(Action<MeshObject, string> onMeshObjectCreated);
     }
 
     /// <summary>
@@ -36,7 +36,7 @@ namespace MeshFactory.Tools.Creators
         public string ButtonLabel { get; set; }
 
         /// <summary>ウィンドウを開くアクション</summary>
-        public Action<Action<MeshData, string>> OpenAction { get; set; }
+        public Action<Action<MeshObject, string>> OpenAction { get; set; }
 
         /// <summary>カテゴリ（オプション）</summary>
         public string Category { get; set; }
@@ -44,7 +44,7 @@ namespace MeshFactory.Tools.Creators
         /// <summary>表示順序</summary>
         public int Order { get; set; }
 
-        public MeshCreatorEntry(string label, Action<Action<MeshData, string>> openAction, string category = null, int order = 0)
+        public MeshCreatorEntry(string label, Action<Action<MeshObject, string>> openAction, string category = null, int order = 0)
         {
             ButtonLabel = label;
             OpenAction = openAction;

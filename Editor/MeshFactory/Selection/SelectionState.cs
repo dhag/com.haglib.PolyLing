@@ -247,15 +247,15 @@ namespace MeshFactory.Selection
             return result;
         }
 
-        public HashSet<int> GetVerticesFromFaces(MeshData meshData)
+        public HashSet<int> GetVerticesFromFaces(MeshObject meshObject)
         {
             var result = new HashSet<int>();
-            if (meshData == null) return result;
+            if (meshObject == null) return result;
 
             foreach (int faceIdx in Faces)
             {
-                if (faceIdx < 0 || faceIdx >= meshData.FaceCount) continue;
-                foreach (int vIdx in meshData.Faces[faceIdx].VertexIndices)
+                if (faceIdx < 0 || faceIdx >= meshObject.FaceCount) continue;
+                foreach (int vIdx in meshObject.Faces[faceIdx].VertexIndices)
                 {
                     result.Add(vIdx);
                 }
@@ -263,15 +263,15 @@ namespace MeshFactory.Selection
             return result;
         }
 
-        public HashSet<int> GetVerticesFromLines(MeshData meshData)
+        public HashSet<int> GetVerticesFromLines(MeshObject meshObject)
         {
             var result = new HashSet<int>();
-            if (meshData == null) return result;
+            if (meshObject == null) return result;
 
             foreach (int faceIdx in Lines)
             {
-                if (faceIdx < 0 || faceIdx >= meshData.FaceCount) continue;
-                var face = meshData.Faces[faceIdx];
+                if (faceIdx < 0 || faceIdx >= meshObject.FaceCount) continue;
+                var face = meshObject.Faces[faceIdx];
                 if (face.VertexCount != 2) continue;
                 result.Add(face.VertexIndices[0]);
                 result.Add(face.VertexIndices[1]);
@@ -279,7 +279,7 @@ namespace MeshFactory.Selection
             return result;
         }
 
-        public HashSet<int> GetAllAffectedVertices(MeshData meshData)
+        public HashSet<int> GetAllAffectedVertices(MeshObject meshObject)
         {
             var result = new HashSet<int>(Vertices);
 
@@ -289,19 +289,19 @@ namespace MeshFactory.Selection
                 result.Add(pair.V2);
             }
 
-            if (meshData != null)
+            if (meshObject != null)
             {
                 foreach (int faceIdx in Faces)
                 {
-                    if (faceIdx < 0 || faceIdx >= meshData.FaceCount) continue;
-                    foreach (int vIdx in meshData.Faces[faceIdx].VertexIndices)
+                    if (faceIdx < 0 || faceIdx >= meshObject.FaceCount) continue;
+                    foreach (int vIdx in meshObject.Faces[faceIdx].VertexIndices)
                         result.Add(vIdx);
                 }
 
                 foreach (int faceIdx in Lines)
                 {
-                    if (faceIdx < 0 || faceIdx >= meshData.FaceCount) continue;
-                    var face = meshData.Faces[faceIdx];
+                    if (faceIdx < 0 || faceIdx >= meshObject.FaceCount) continue;
+                    var face = meshObject.Faces[faceIdx];
                     if (face.VertexCount == 2)
                     {
                         result.Add(face.VertexIndices[0]);
@@ -328,14 +328,14 @@ namespace MeshFactory.Selection
             }
         }
 
-        public IEnumerable<VertexPair> GetOverlappingEdges(TopologyCache topology, MeshData meshData)
+        public IEnumerable<VertexPair> GetOverlappingEdges(TopologyCache topology, MeshObject meshObject)
         {
-            if (topology == null || meshData == null) yield break;
+            if (topology == null || meshObject == null) yield break;
 
             foreach (int lineIdx in Lines)
             {
-                if (lineIdx < 0 || lineIdx >= meshData.FaceCount) continue;
-                var face = meshData.Faces[lineIdx];
+                if (lineIdx < 0 || lineIdx >= meshObject.FaceCount) continue;
+                var face = meshObject.Faces[lineIdx];
                 if (face.VertexCount != 2) continue;
 
                 var pair = new VertexPair(face.VertexIndices[0], face.VertexIndices[1]);
@@ -362,11 +362,11 @@ namespace MeshFactory.Selection
             OnSelectionChanged?.Invoke();
         }
 
-        public void ConvertLinesToEdges(TopologyCache topology, MeshData meshData)
+        public void ConvertLinesToEdges(TopologyCache topology, MeshObject meshObject)
         {
-            if (topology == null || meshData == null) return;
+            if (topology == null || meshObject == null) return;
 
-            var edgePairs = GetOverlappingEdges(topology, meshData).ToList();
+            var edgePairs = GetOverlappingEdges(topology, meshObject).ToList();
             Edges.Clear();
             foreach (var pair in edgePairs)
             {

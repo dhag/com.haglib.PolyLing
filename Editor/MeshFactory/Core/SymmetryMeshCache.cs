@@ -28,7 +28,7 @@ namespace MeshFactory.Symmetry
         private int _lastSettingsHash;
 
         /// <summary>前回のメッシュデータハッシュ（トポロジー変更検出用）</summary>
-        private int _lastMeshDataHash;
+        private int _lastMeshObjectHash;
 
         // ================================================================
         // プロパティ
@@ -64,18 +64,18 @@ namespace MeshFactory.Symmetry
             }
             _isDirty = true;
             _lastSettingsHash = 0;
-            _lastMeshDataHash = 0;
+            _lastMeshObjectHash = 0;
         }
 
         /// <summary>
         /// キャッシュを更新（必要な場合のみ再構築）
         /// </summary>
-        /// <param name="meshData">元のメッシュデータ</param>
+        /// <param name="meshObject">元のメッシュデータ</param>
         /// <param name="settings">対称設定</param>
         /// <returns>更新されたか</returns>
-        public bool Update(MeshData meshData, SymmetrySettings settings)
+        public bool Update(MeshObject meshObject, SymmetrySettings settings)
         {
-            if (meshData == null || settings == null)
+            if (meshObject == null || settings == null)
             {
                 Clear();
                 return false;
@@ -83,10 +83,10 @@ namespace MeshFactory.Symmetry
 
             // 設定変更の検出
             int settingsHash = ComputeSettingsHash(settings);
-            int meshDataHash = ComputeMeshDataHash(meshData);
+            int meshObjectHash = ComputeMeshObjectHash(meshObject);
 
             bool settingsChanged = settingsHash != _lastSettingsHash;
-            bool meshChanged = meshDataHash != _lastMeshDataHash;
+            bool meshChanged = meshObjectHash != _lastMeshObjectHash;
 
             // 更新が不要な場合
             if (!_isDirty && !settingsChanged && !meshChanged && _mirrorMesh != null)
@@ -95,10 +95,10 @@ namespace MeshFactory.Symmetry
             }
 
             // キャッシュ再構築
-            RebuildMirrorMesh(meshData, settings);
+            RebuildMirrorMesh(meshObject, settings);
 
             _lastSettingsHash = settingsHash;
-            _lastMeshDataHash = meshDataHash;
+            _lastMeshObjectHash = meshObjectHash;
             _isDirty = false;
 
             return true;
@@ -107,28 +107,28 @@ namespace MeshFactory.Symmetry
         /// <summary>
         /// 頂点位置のみ更新（トポロジー変更なし、移動のみの場合）
         /// </summary>
-        /// <param name="meshData">元のメッシュデータ</param>
+        /// <param name="meshObject">元のメッシュデータ</param>
         /// <param name="settings">対称設定</param>
-        public void UpdatePositionsOnly(MeshData meshData, SymmetrySettings settings)
+        public void UpdatePositionsOnly(MeshObject meshObject, SymmetrySettings settings)
         {
-            if (_mirrorMesh == null || meshData == null || settings == null)
+            if (_mirrorMesh == null || meshObject == null || settings == null)
             {
                 // フルリビルドが必要
-                Update(meshData, settings);
+                Update(meshObject, settings);
                 return;
             }
 
             // 頂点位置のみ更新
             Matrix4x4 mirrorMatrix = settings.GetMirrorMatrix();
-            Vector3[] mirrorPositions = new Vector3[meshData.VertexCount];
+            Vector3[] mirrorPositions = new Vector3[meshObject.VertexCount];
 
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
-                mirrorPositions[i] = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[i].Position);
+                mirrorPositions[i] = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
             }
 
             // Unity Meshに展開（面ごとに頂点を持つ形式）
-            Vector3[] expandedPositions = ExpandPositions(mirrorPositions, meshData);
+            Vector3[] expandedPositions = ExpandPositions(mirrorPositions, meshObject);
             
             if (expandedPositions.Length == _mirrorMesh.vertexCount)
             {
@@ -139,7 +139,7 @@ namespace MeshFactory.Symmetry
             else
             {
                 // 頂点数が変わった場合はフルリビルド
-                Update(meshData, settings);
+                Update(meshObject, settings);
             }
         }
 
@@ -150,7 +150,7 @@ namespace MeshFactory.Symmetry
         /// <summary>
         /// ミラーメッシュを再構築
         /// </summary>
-        private void RebuildMirrorMesh(MeshData meshData, SymmetrySettings settings)
+        private void RebuildMirrorMesh(MeshObject meshObject, SymmetrySettings settings)
         {
             // 既存メッシュをクリア
             if (_mirrorMesh == null)
@@ -164,7 +164,7 @@ namespace MeshFactory.Symmetry
                 _mirrorMesh.Clear();
             }
 
-            if (meshData.VertexCount == 0 || meshData.FaceCount == 0)
+            if (meshObject.VertexCount == 0 || meshObject.FaceCount == 0)
             {
                 return;
             }
@@ -172,15 +172,15 @@ namespace MeshFactory.Symmetry
             Matrix4x4 mirrorMatrix = settings.GetMirrorMatrix();
 
             // ミラー済み頂点位置を計算
-            Vector3[] mirrorPositions = new Vector3[meshData.VertexCount];
-            for (int i = 0; i < meshData.VertexCount; i++)
+            Vector3[] mirrorPositions = new Vector3[meshObject.VertexCount];
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
-                mirrorPositions[i] = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[i].Position);
+                mirrorPositions[i] = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
             }
 
             // 面データを収集（3頂点以上の面のみ、2頂点は補助線）
             var realFaces = new List<Face>();
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 if (face.VertexCount >= 3)
                 {
@@ -232,7 +232,7 @@ namespace MeshFactory.Symmetry
                         // UV（元の順序から取得）
                         // 注: UVも反転順序に合わせて取得
                         int origOrderIdx = face.VertexIndices[GetOriginalOrderIndex(i, face.VertexCount)];
-                        var vertex = meshData.Vertices[origOrderIdx];
+                        var vertex = meshObject.Vertices[origOrderIdx];
                         if (vertex.UVs.Count > 0)
                         {
                             uvs.Add(vertex.UVs[0]);
@@ -315,11 +315,11 @@ namespace MeshFactory.Symmetry
         /// <summary>
         /// 頂点位置を面ごとに展開
         /// </summary>
-        private Vector3[] ExpandPositions(Vector3[] positions, MeshData meshData)
+        private Vector3[] ExpandPositions(Vector3[] positions, MeshObject meshObject)
         {
             var expanded = new List<Vector3>();
 
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 if (face.VertexCount < 3) continue;
 
@@ -353,16 +353,16 @@ namespace MeshFactory.Symmetry
         /// <summary>
         /// メッシュデータのハッシュを計算（トポロジー変更検出用）
         /// </summary>
-        private int ComputeMeshDataHash(MeshData meshData)
+        private int ComputeMeshObjectHash(MeshObject meshObject)
         {
             unchecked
             {
                 int hash = 17;
-                hash = hash * 31 + meshData.VertexCount;
-                hash = hash * 31 + meshData.FaceCount;
+                hash = hash * 31 + meshObject.VertexCount;
+                hash = hash * 31 + meshObject.FaceCount;
 
                 // 各面の頂点数とマテリアルインデックス
-                foreach (var face in meshData.Faces)
+                foreach (var face in meshObject.Faces)
                 {
                     hash = hash * 31 + face.VertexCount;
                     hash = hash * 31 + face.MaterialIndex;

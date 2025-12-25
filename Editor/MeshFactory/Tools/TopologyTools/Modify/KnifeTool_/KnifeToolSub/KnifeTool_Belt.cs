@@ -33,14 +33,14 @@ namespace MeshFactory.Tools
                     return kvp.Value;
             }
 
-            int newIdx = ctx.MeshData.VertexCount;
+            int newIdx = ctx.MeshObject.VertexCount;
             var newVertex = new Vertex(cutPoint);
 
             // UV/法線補間のため辺の端点を探す
             int v1Idx = -1, v2Idx = -1;
-            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
-                var pos = ctx.MeshData.Vertices[i].Position;
+                var pos = ctx.MeshObject.Vertices[i].Position;
                 if (v1Idx < 0 && Vector3.Distance(pos, edgePos.Item1) < POSITION_EPSILON) v1Idx = i;
                 else if (v2Idx < 0 && Vector3.Distance(pos, edgePos.Item2) < POSITION_EPSILON) v2Idx = i;
                 if (v1Idx >= 0 && v2Idx >= 0) break;
@@ -48,8 +48,8 @@ namespace MeshFactory.Tools
 
             if (v1Idx >= 0 && v2Idx >= 0)
             {
-                var v1 = ctx.MeshData.Vertices[v1Idx];
-                var v2 = ctx.MeshData.Vertices[v2Idx];
+                var v1 = ctx.MeshObject.Vertices[v1Idx];
+                var v2 = ctx.MeshObject.Vertices[v2Idx];
                 
                 // 辺上での比率を計算
                 float t = CalculateTFromCutPoint(edgePos, cutPoint);
@@ -60,7 +60,7 @@ namespace MeshFactory.Tools
                     newVertex.Normals.Add(Vector3.Lerp(v1.Normals[0], v2.Normals[0], t).normalized);
             }
 
-            ctx.MeshData.Vertices.Add(newVertex);
+            ctx.MeshObject.Vertices.Add(newVertex);
             cache[cutPoint] = newIdx;
             addedVertices.Add((newIdx, newVertex.Clone()));
             return newIdx;
@@ -85,11 +85,11 @@ namespace MeshFactory.Tools
         /// </summary>
         private float CalculateFaceLocalT(ToolContext ctx, int faceIdx, int edgeLocalIdx, Vector3 cutPoint)
         {
-            var face = ctx.MeshData.Faces[faceIdx];
+            var face = ctx.MeshObject.Faces[faceIdx];
             int v1 = face.VertexIndices[edgeLocalIdx];
             int v2 = face.VertexIndices[(edgeLocalIdx + 1) % face.VertexIndices.Count];
-            var p1 = ctx.MeshData.Vertices[v1].Position;
-            var p2 = ctx.MeshData.Vertices[v2].Position;
+            var p1 = ctx.MeshObject.Vertices[v1].Position;
+            var p2 = ctx.MeshObject.Vertices[v2].Position;
             
             var edgeVec = p2 - p1;
             float edgeLen = edgeVec.magnitude;
@@ -108,20 +108,20 @@ namespace MeshFactory.Tools
         {
             if (_targetFaceIndex < 0 || _intersections.Count < 2) return;
 
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             var inter0 = _intersections[0];
             var inter1 = _intersections[1];
-            var face0 = meshData.Faces[_targetFaceIndex];
+            var face0 = meshObject.Faces[_targetFaceIndex];
 
             // 最初の面の2辺と切断点を取得
             int e0v1 = face0.VertexIndices[inter0.EdgeStartIndex];
             int e0v2 = face0.VertexIndices[inter0.EdgeEndIndex];
-            var edge0Pos = NormalizeEdgeWorldPos(meshData.Vertices[e0v1].Position, meshData.Vertices[e0v2].Position);
+            var edge0Pos = NormalizeEdgeWorldPos(meshObject.Vertices[e0v1].Position, meshObject.Vertices[e0v2].Position);
             var cutPoint0 = inter0.WorldPos;
 
             int e1v1 = face0.VertexIndices[inter1.EdgeStartIndex];
             int e1v2 = face0.VertexIndices[inter1.EdgeEndIndex];
-            var edge1Pos = NormalizeEdgeWorldPos(meshData.Vertices[e1v1].Position, meshData.Vertices[e1v2].Position);
+            var edge1Pos = NormalizeEdgeWorldPos(meshObject.Vertices[e1v1].Position, meshObject.Vertices[e1v2].Position);
             var cutPoint1 = inter1.WorldPos;
 
             // beltInfo: (faceIdx, edgePos0, edgePos1, cutPoint0, cutPoint1)
@@ -185,7 +185,7 @@ namespace MeshFactory.Tools
             HashSet<int> visitedFaces,
             List<(int faceIdx, (Vector3, Vector3) edgePos0, (Vector3, Vector3) edgePos1, Vector3 cutPoint0, Vector3 cutPoint1)> beltInfo)
         {
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             var currentEdgePos = fromEdgePos;
             var currentCutPoint = fromCutPoint;
 
@@ -197,7 +197,7 @@ namespace MeshFactory.Tools
                 foreach (var (faceIdx, edgeLocalIdx) in facesWithEdge)
                 {
                     if (visitedFaces.Contains(faceIdx)) continue;
-                    var face = meshData.Faces[faceIdx];
+                    var face = meshObject.Faces[faceIdx];
                     int n = face.VertexIndices.Count;
 
                     // 三角形は終端
@@ -208,8 +208,8 @@ namespace MeshFactory.Tools
                     int oppLocalIdx = (edgeLocalIdx + 2) % n;
                     int oppV1 = face.VertexIndices[oppLocalIdx];
                     int oppV2 = face.VertexIndices[(oppLocalIdx + 1) % n];
-                    var oppP1 = meshData.Vertices[oppV1].Position;
-                    var oppP2 = meshData.Vertices[oppV2].Position;
+                    var oppP1 = meshObject.Vertices[oppV1].Position;
+                    var oppP2 = meshObject.Vertices[oppV2].Position;
                     var oppEdgePos = NormalizeEdgeWorldPos(oppP1, oppP2);
 
                     if (IsSameEdgePosition(oppEdgePos, excludeEdgePos)) continue;
@@ -217,7 +217,7 @@ namespace MeshFactory.Tools
                     // 対向辺上の切断点を計算（前の切断点との対応関係から）
                     var oppCutPoint = CalculateCorrespondingCutPoint(
                         currentEdgePos, currentCutPoint,
-                        oppEdgePos, face, edgeLocalIdx, oppLocalIdx, meshData);
+                        oppEdgePos, face, edgeLocalIdx, oppLocalIdx, meshObject);
 
                     visitedFaces.Add(faceIdx);
                     beltInfo.Add((faceIdx, currentEdgePos, oppEdgePos, currentCutPoint, oppCutPoint));
@@ -245,7 +245,7 @@ namespace MeshFactory.Tools
             HashSet<int> visitedFaces,
             List<(int faceIdx, (Vector3, Vector3) edgePos0, (Vector3, Vector3) edgePos1, Vector3 cutPoint0, Vector3 cutPoint1)> beltInfo)
         {
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             var currentEdgePos = fromEdgePos;
             var currentCutPoint = fromCutPoint;
 
@@ -257,7 +257,7 @@ namespace MeshFactory.Tools
                 foreach (var (faceIdx, edgeLocalIdx) in facesWithEdge)
                 {
                     if (visitedFaces.Contains(faceIdx)) continue;
-                    var face = meshData.Faces[faceIdx];
+                    var face = meshObject.Faces[faceIdx];
                     int n = face.VertexIndices.Count;
 
                     if (n == 3) break;
@@ -266,8 +266,8 @@ namespace MeshFactory.Tools
                     int oppLocalIdx = (edgeLocalIdx + 2) % n;
                     int oppV1 = face.VertexIndices[oppLocalIdx];
                     int oppV2 = face.VertexIndices[(oppLocalIdx + 1) % n];
-                    var oppP1 = meshData.Vertices[oppV1].Position;
-                    var oppP2 = meshData.Vertices[oppV2].Position;
+                    var oppP1 = meshObject.Vertices[oppV1].Position;
+                    var oppP2 = meshObject.Vertices[oppV2].Position;
                     var oppEdgePos = NormalizeEdgeWorldPos(oppP1, oppP2);
 
                     if (IsSameEdgePosition(oppEdgePos, excludeEdgePos)) continue;
@@ -289,7 +289,7 @@ namespace MeshFactory.Tools
                         // 交差しない場合は対応点を計算
                         oppCutPoint = CalculateCorrespondingCutPoint(
                             currentEdgePos, currentCutPoint,
-                            oppEdgePos, face, edgeLocalIdx, oppLocalIdx, meshData);
+                            oppEdgePos, face, edgeLocalIdx, oppLocalIdx, meshObject);
                     }
 
                     visitedFaces.Add(faceIdx);
@@ -316,13 +316,13 @@ namespace MeshFactory.Tools
             Face face,
             int prevEdgeLocalIdx,
             int oppEdgeLocalIdx,
-            MeshData meshData)
+            MeshObject meshObject)
         {
             // 前の辺での比率を計算（面内の辺の向きで）
             int pv1 = face.VertexIndices[prevEdgeLocalIdx];
             int pv2 = face.VertexIndices[(prevEdgeLocalIdx + 1) % face.VertexIndices.Count];
-            var pp1 = meshData.Vertices[pv1].Position;
-            var pp2 = meshData.Vertices[pv2].Position;
+            var pp1 = meshObject.Vertices[pv1].Position;
+            var pp2 = meshObject.Vertices[pv2].Position;
             
             var prevVec = pp2 - pp1;
             float prevLen = prevVec.magnitude;
@@ -336,8 +336,8 @@ namespace MeshFactory.Tools
             // 対向辺は逆向き（四角形の場合）なので、1-Tの位置が対応点
             int ov1 = face.VertexIndices[oppEdgeLocalIdx];
             int ov2 = face.VertexIndices[(oppEdgeLocalIdx + 1) % face.VertexIndices.Count];
-            var op1 = meshData.Vertices[ov1].Position;
-            var op2 = meshData.Vertices[ov2].Position;
+            var op1 = meshObject.Vertices[ov1].Position;
+            var op2 = meshObject.Vertices[ov2].Position;
             
             float oppT = 1f - prevT;
             return Vector3.Lerp(op1, op2, oppT);
@@ -352,11 +352,11 @@ namespace MeshFactory.Tools
             List<(int faceIdx, (Vector3, Vector3) edgePos0, (Vector3, Vector3) edgePos1, Vector3 cutPoint0, Vector3 cutPoint1)> beltInfo)
         {
             // Undo用スナップショット（切断前）
-            MeshDataSnapshot beforeSnapshot = ctx.UndoController != null 
-                ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext) 
+            MeshObjectSnapshot beforeSnapshot = ctx.UndoController != null 
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             var vertexCache = new Dictionary<Vector3, int>();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 
@@ -365,8 +365,8 @@ namespace MeshFactory.Tools
 
             foreach (var (faceIdx, edgePos0, edgePos1, cutPoint0, cutPoint1) in sortedBelt)
             {
-                if (faceIdx < 0 || faceIdx >= meshData.FaceCount) continue;
-                var face = meshData.Faces[faceIdx];
+                if (faceIdx < 0 || faceIdx >= meshObject.FaceCount) continue;
+                var face = meshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 // 辺のローカルインデックスを探す
@@ -375,8 +375,8 @@ namespace MeshFactory.Tools
                 {
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
-                    var p1 = meshData.Vertices[v1].Position;
-                    var p2 = meshData.Vertices[v2].Position;
+                    var p1 = meshObject.Vertices[v1].Position;
+                    var p2 = meshObject.Vertices[v2].Position;
                     var edgePos = NormalizeEdgeWorldPos(p1, p2);
                     
                     if (IsSameEdgePosition(edgePos, edgePos0)) edge0LocalIdx = i;
@@ -410,8 +410,8 @@ namespace MeshFactory.Tools
                 };
 
                 var (face1, face2) = SplitFace(face, inter0, inter1, newVIdx0, newVIdx1);
-                meshData.Faces[faceIdx] = face1;
-                meshData.Faces.Add(face2);
+                meshObject.Faces[faceIdx] = face1;
+                meshObject.Faces.Add(face2);
             }
 
             ctx.SyncMesh?.Invoke();
@@ -419,7 +419,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (ctx.UndoController != null && beforeSnapshot != null)
             {
-                var afterSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                var afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                 ctx.UndoController.RecordMeshTopologyChange(beforeSnapshot, afterSnapshot, "Knife Belt Cut");
             }
         }

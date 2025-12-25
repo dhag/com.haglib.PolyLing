@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/CubeMeshCreatorWindow.cs
 // 角を丸めた直方体メッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 四角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
 //
 // 【頂点順序の規約】
 // AddQuadFace入力: v0=(0,0)左下, v1=(1,0)右下, v2=(1,1)右上, v3=(0,1)左上
@@ -109,12 +109,12 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static CubeMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static CubeMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<CubeMeshCreatorWindow>(true, "Create Rounded Cube UnityMesh", true);
         window.minSize = new Vector2(400, 750);
         window.maxSize = new Vector2(500, 950);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -294,10 +294,10 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -340,16 +340,16 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
     }
 
     // ================================================================
-    // MeshData生成
+    // MeshObject生成
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
-        return _params.CornerRadius <= 0f ? GenerateSimpleCubeMeshData() : GenerateRoundedCubeMeshData();
+        return _params.CornerRadius <= 0f ? GenerateSimpleCubeMeshObject() : GenerateRoundedCubeMeshObject();
     }
 
-    private MeshData GenerateSimpleCubeMeshData()
+    private MeshObject GenerateSimpleCubeMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         float halfH = _params.Height * 0.5f;
         float avgW = (_params.WidthTop + _params.WidthBottom) * 0.5f;
@@ -375,9 +375,9 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
         return md;
     }
 
-    private MeshData GenerateRoundedCubeMeshData()
+    private MeshObject GenerateRoundedCubeMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         float r = _params.CornerRadius;
         int seg = _params.CornerSegments;
@@ -462,7 +462,7 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
     // ヘルパーメソッド
     // ================================================================
 
-    private void AddQuadFace(MeshData md, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 normal, int divU, int divV)
+    private void AddQuadFace(MeshObject md, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 normal, int divU, int divV)
     {
         int startIdx = md.VertexCount;
 
@@ -496,7 +496,7 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
         }
     }
 
-    private void AddCornerSphere(MeshData md, Vector3 center, Vector3 dir, float radius, int seg, Vector3 pivot)
+    private void AddCornerSphere(MeshObject md, Vector3 center, Vector3 dir, float radius, int seg, Vector3 pivot)
     {
         int startIdx = md.VertexCount;
 
@@ -540,7 +540,7 @@ public class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreatorWindow
         }
     }
 
-    private void AddEdgeCylinder(MeshData md, Vector3 start, Vector3 end, Vector3 cornerDir, float radius, int seg, Vector3 pivot)
+    private void AddEdgeCylinder(MeshObject md, Vector3 start, Vector3 end, Vector3 cornerDir, float radius, int seg, Vector3 pivot)
     {
         int startIdx = md.VertexCount;
 

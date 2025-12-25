@@ -77,7 +77,7 @@ namespace MeshFactory.Tools
         private List<FaceExtrudeInfo> _targetFaces = new List<FaceExtrudeInfo>();
 
         // Undo
-        private MeshDataSnapshot _snapshotBefore;
+        private MeshObjectSnapshot _snapshotBefore;
 
         private struct FaceExtrudeInfo
         {
@@ -99,7 +99,7 @@ namespace MeshFactory.Tools
             if (_state != ExtrudeState.Idle)
                 return false;
 
-            if (ctx.MeshData == null || ctx.SelectionState == null)
+            if (ctx.MeshObject == null || ctx.SelectionState == null)
                 return false;
 
             _mouseDownScreenPos = mousePos;
@@ -168,7 +168,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null || ctx.SelectionState == null) return;
+            if (ctx.MeshObject == null || ctx.SelectionState == null) return;
 
             if (_state == ExtrudeState.Idle || _state == ExtrudeState.PendingAction)
             {
@@ -198,7 +198,7 @@ namespace MeshFactory.Tools
             {
                 if (_hoverFace >= 0 && !ctx.SelectionState.Faces.Contains(_hoverFace))
                 {
-                    var faceInfo = CreateFaceInfo(ctx.MeshData, _hoverFace);
+                    var faceInfo = CreateFaceInfo(ctx.MeshObject, _hoverFace);
                     if (faceInfo.HasValue)
                     {
                         DrawFaceHighlight(ctx, faceInfo.Value, new Color(1f, 1f, 1f, 0.3f));
@@ -207,7 +207,7 @@ namespace MeshFactory.Tools
 
                 if (_hoverFace >= 0 && ctx.SelectionState.Faces.Contains(_hoverFace))
                 {
-                    var faceInfo = CreateFaceInfo(ctx.MeshData, _hoverFace);
+                    var faceInfo = CreateFaceInfo(ctx.MeshObject, _hoverFace);
                     if (faceInfo.HasValue)
                     {
                         DrawFaceHighlight(ctx, faceInfo.Value, new Color(1f, 1f, 1f, 0.5f));
@@ -307,9 +307,9 @@ namespace MeshFactory.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
                 // 【フェーズ1】SelectionStateを渡してFace選択も保存
-                _snapshotBefore = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext, ctx.SelectionState);
+                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
             }
 
             _extrudeDistance = 0f;
@@ -359,9 +359,9 @@ namespace MeshFactory.Tools
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
                 // 【フェーズ1】SelectionStateを渡してFace選択も保存・復元
-                var snapshotAfter = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext, ctx.SelectionState);
+                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.VertexEditStack.Record(record, "Extrude Faces");
             }
@@ -371,7 +371,7 @@ namespace MeshFactory.Tools
 
         private void ExecuteExtrude(ToolContext ctx)
         {
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
 
             Vector3 avgNormal = Vector3.zero;
             if (!IndividualNormals)
@@ -395,9 +395,9 @@ namespace MeshFactory.Tools
 
                 foreach (int oldVIdx in faceInfo.VertexIndices)
                 {
-                    if (oldVIdx < 0 || oldVIdx >= meshData.VertexCount) continue;
+                    if (oldVIdx < 0 || oldVIdx >= meshObject.VertexCount) continue;
 
-                    var oldVertex = meshData.Vertices[oldVIdx];
+                    var oldVertex = meshObject.Vertices[oldVIdx];
                     Vector3 newPos = oldVertex.Position + offset;
 
                     if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
@@ -410,8 +410,8 @@ namespace MeshFactory.Tools
                     newVertex.UVs.AddRange(oldVertex.UVs);
                     newVertex.Normals.AddRange(oldVertex.Normals);
 
-                    int newIdx = meshData.VertexCount;
-                    meshData.Vertices.Add(newVertex);
+                    int newIdx = meshObject.VertexCount;
+                    meshObject.Vertices.Add(newVertex);
                     vertexMap[oldVIdx] = newIdx;
                     newVertexIndices.Add(newIdx);
                 }
@@ -431,10 +431,10 @@ namespace MeshFactory.Tools
                     sideFace.VertexIndices.AddRange(new[] { v0, v1, nv1, nv0 });
                     sideFace.UVIndices.AddRange(new[] { v0, v1, nv1, nv0 });
                     sideFace.NormalIndices.AddRange(new[] { v0, v1, nv1, nv0 });
-                    meshData.Faces.Add(sideFace);
+                    meshObject.Faces.Add(sideFace);
                 }
 
-                var originalFace = meshData.Faces[faceInfo.FaceIndex];
+                var originalFace = meshObject.Faces[faceInfo.FaceIndex];
                 int origVertCount = originalFace.VertexIndices.Count;
 
                 while (originalFace.UVIndices.Count < origVertCount)
@@ -474,18 +474,18 @@ namespace MeshFactory.Tools
 
             foreach (int faceIdx in ctx.SelectionState.Faces)
             {
-                var info = CreateFaceInfo(ctx.MeshData, faceIdx);
+                var info = CreateFaceInfo(ctx.MeshObject, faceIdx);
                 if (info.HasValue)
                     _targetFaces.Add(info.Value);
             }
         }
 
-        private FaceExtrudeInfo? CreateFaceInfo(MeshData meshData, int faceIdx)
+        private FaceExtrudeInfo? CreateFaceInfo(MeshObject meshObject, int faceIdx)
         {
-            if (faceIdx < 0 || faceIdx >= meshData.FaceCount)
+            if (faceIdx < 0 || faceIdx >= meshObject.FaceCount)
                 return null;
 
-            var face = meshData.Faces[faceIdx];
+            var face = meshObject.Faces[faceIdx];
             if (face.VertexCount < 3)
                 return null;
 
@@ -494,17 +494,17 @@ namespace MeshFactory.Tools
             Vector3 center = Vector3.zero;
             foreach (int vIdx in vertIndices)
             {
-                if (vIdx >= 0 && vIdx < meshData.VertexCount)
-                    center += meshData.Vertices[vIdx].Position;
+                if (vIdx >= 0 && vIdx < meshObject.VertexCount)
+                    center += meshObject.Vertices[vIdx].Position;
             }
             center /= vertIndices.Count;
 
             Vector3 normal = Vector3.up;
             if (vertIndices.Count >= 3)
             {
-                Vector3 p0 = meshData.Vertices[vertIndices[0]].Position;
-                Vector3 p1 = meshData.Vertices[vertIndices[1]].Position;
-                Vector3 p2 = meshData.Vertices[vertIndices[2]].Position;
+                Vector3 p0 = meshObject.Vertices[vertIndices[0]].Position;
+                Vector3 p1 = meshObject.Vertices[vertIndices[1]].Position;
+                Vector3 p2 = meshObject.Vertices[vertIndices[2]].Position;
                 normal = Vector3.Cross(p1 - p0, p2 - p0).normalized;
             }
 
@@ -519,18 +519,18 @@ namespace MeshFactory.Tools
 
         private int FindFaceAtPosition(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null) return -1;
+            if (ctx.MeshObject == null) return -1;
 
-            for (int fi = 0; fi < ctx.MeshData.FaceCount; fi++)
+            for (int fi = 0; fi < ctx.MeshObject.FaceCount; fi++)
             {
-                var face = ctx.MeshData.Faces[fi];
+                var face = ctx.MeshObject.Faces[fi];
                 if (face.VertexCount < 3) continue;
 
                 var screenPoints = new List<Vector2>();
                 foreach (int vIdx in face.VertexIndices)
                 {
-                    if (vIdx >= 0 && vIdx < ctx.MeshData.VertexCount)
-                        screenPoints.Add(ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position));
+                    if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
+                        screenPoints.Add(ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position));
                 }
 
                 if (screenPoints.Count >= 3 && PointInPolygon(mousePos, screenPoints))
@@ -565,8 +565,8 @@ namespace MeshFactory.Tools
             {
                 foreach (int vIdx in faceInfo.VertexIndices)
                 {
-                    if (vIdx >= 0 && vIdx < ctx.MeshData.VertexCount)
-                        _previewPositions.Add(ctx.MeshData.Vertices[vIdx].Position);
+                    if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
+                        _previewPositions.Add(ctx.MeshObject.Vertices[vIdx].Position);
                 }
             }
         }
@@ -590,13 +590,13 @@ namespace MeshFactory.Tools
 
                 foreach (int vIdx in faceInfo.VertexIndices)
                 {
-                    if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount || idx >= _previewPositions.Count)
+                    if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount || idx >= _previewPositions.Count)
                     {
                         idx++;
                         continue;
                     }
 
-                    Vector3 newPos = ctx.MeshData.Vertices[vIdx].Position + offset;
+                    Vector3 newPos = ctx.MeshObject.Vertices[vIdx].Position + offset;
 
                     if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
                     {
@@ -632,9 +632,9 @@ namespace MeshFactory.Tools
                 for (int i = 0; i < vertCount; i++)
                 {
                     int vIdx = faceInfo.VertexIndices[i];
-                    if (vIdx >= ctx.MeshData.VertexCount || idx + i >= _previewPositions.Count) continue;
+                    if (vIdx >= ctx.MeshObject.VertexCount || idx + i >= _previewPositions.Count) continue;
 
-                    Vector2 orig = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
+                    Vector2 orig = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
                     Vector2 newPos = ctx.WorldToScreen(_previewPositions[idx + i]);
                     DrawThickLine(orig, newPos, 1.5f);
                 }
@@ -650,8 +650,8 @@ namespace MeshFactory.Tools
             var screenPoints = new List<Vector2>();
             foreach (int vIdx in faceInfo.VertexIndices)
             {
-                if (vIdx >= 0 && vIdx < ctx.MeshData.VertexCount)
-                    screenPoints.Add(ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position));
+                if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
+                    screenPoints.Add(ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position));
             }
 
             if (screenPoints.Count >= 3)

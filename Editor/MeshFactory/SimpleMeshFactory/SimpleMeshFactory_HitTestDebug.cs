@@ -43,7 +43,7 @@ public partial class SimpleMeshFactory
     private void ValidateHitTestOnClick(
         Vector2 mousePos, 
         Rect rect, 
-        MeshData meshData, 
+        MeshObject meshObject, 
         Vector3 camPos, 
         Vector3 lookAt,
         HitResult existingHitResult)
@@ -51,7 +51,7 @@ public partial class SimpleMeshFactory
         if (!_enableHitTestValidation)
             return;
 
-        if (meshData == null || _gpuRenderer == null || !_gpuRenderer.HitTestAvailable)
+        if (meshObject == null || _gpuRenderer == null || !_gpuRenderer.HitTestAvailable)
             return;
 
         var sb = new StringBuilder();
@@ -79,9 +79,9 @@ public partial class SimpleMeshFactory
         // 頂点距離
         int cpuNearestVertex = -1;
         float cpuNearestVertexDist = float.MaxValue;
-        for (int i = 0; i < meshData.VertexCount; i++)
+        for (int i = 0; i < meshObject.VertexCount; i++)
         {
-            Vector2 screenPos = worldToScreen(meshData.Vertices[i].Position);
+            Vector2 screenPos = worldToScreen(meshObject.Vertices[i].Position);
             float dist = Vector2.Distance(mousePos, screenPos);
             if (dist < cpuNearestVertexDist)
             {
@@ -100,12 +100,12 @@ public partial class SimpleMeshFactory
             for (int i = 0; i < lines.Count; i++)
             {
                 var line = lines[i];
-                if (line.V1 < 0 || line.V1 >= meshData.VertexCount ||
-                    line.V2 < 0 || line.V2 >= meshData.VertexCount)
+                if (line.V1 < 0 || line.V1 >= meshObject.VertexCount ||
+                    line.V2 < 0 || line.V2 >= meshObject.VertexCount)
                     continue;
 
-                Vector2 p1 = worldToScreen(meshData.Vertices[line.V1].Position);
-                Vector2 p2 = worldToScreen(meshData.Vertices[line.V2].Position);
+                Vector2 p1 = worldToScreen(meshObject.Vertices[line.V1].Position);
+                Vector2 p2 = worldToScreen(meshObject.Vertices[line.V2].Position);
                 float dist = DistanceToLineSegmentDebug(mousePos, p1, p2);
                 if (dist < cpuNearestLineDist)
                 {
@@ -176,9 +176,9 @@ public partial class SimpleMeshFactory
         sb.AppendLine($"  Line: {(lineMatch ? "MATCH" : "MISMATCH")} (CPU={cpuNearestLine}, GPU={gpuNearestLine}, distError={lineDistError:F2})");
 
         // 頂点0のスクリーン座標を比較（デバッグ用）
-        if (meshData.VertexCount > 0)
+        if (meshObject.VertexCount > 0)
         {
-            Vector2 cpuScreen0 = worldToScreen(meshData.Vertices[0].Position);
+            Vector2 cpuScreen0 = worldToScreen(meshObject.Vertices[0].Position);
             sb.AppendLine($"\n[Vertex 0 Debug]");
             sb.AppendLine($"  CPU screen pos: ({cpuScreen0.x:F1}, {cpuScreen0.y:F1})");
             sb.AppendLine($"  CPU dist from mouse: {Vector2.Distance(mousePos, cpuScreen0):F1}");

@@ -197,7 +197,7 @@ namespace MeshFactory.Tools
             // 頂点のヒットテスト
             // =========================================================
             _hitVertexOnMouseDown = ctx.FindVertexAtScreenPos(
-                mousePos, ctx.MeshData, ctx.PreviewRect,
+                mousePos, ctx.MeshObject, ctx.PreviewRect,
                 ctx.CameraPosition, ctx.CameraTarget, ctx.HandleRadius);
 
             // 頂点がヒットした場合は移動準備
@@ -220,7 +220,7 @@ namespace MeshFactory.Tools
                 // Edgeモードでのヒットテスト
                 if (mode.Has(MeshSelectMode.Edge))
                 {
-                    var edgePair = ctx.SelectionOps.FindEdgeAt(mousePos, ctx.MeshData, worldToScreen);
+                    var edgePair = ctx.SelectionOps.FindEdgeAt(mousePos, ctx.MeshObject, worldToScreen);
                     if (edgePair.HasValue)
                     {
                         _pendingEdgePair = edgePair.Value;
@@ -233,7 +233,7 @@ namespace MeshFactory.Tools
                 // Lineモードでのヒットテスト
                 if (mode.Has(MeshSelectMode.Line))
                 {
-                    int lineIdx = ctx.SelectionOps.FindLineAt(mousePos, ctx.MeshData, worldToScreen);
+                    int lineIdx = ctx.SelectionOps.FindLineAt(mousePos, ctx.MeshObject, worldToScreen);
                     if (lineIdx >= 0)
                     {
                         _pendingLineIndex = lineIdx;
@@ -246,7 +246,7 @@ namespace MeshFactory.Tools
                 // Faceモードでのヒットテスト
                 if (mode.Has(MeshSelectMode.Face))
                 {
-                    int faceIdx = ctx.SelectionOps.FindFaceAt(mousePos, ctx.MeshData, worldToScreen, ctx.CameraPosition);
+                    int faceIdx = ctx.SelectionOps.FindFaceAt(mousePos, ctx.MeshObject, worldToScreen, ctx.CameraPosition);
                     if (faceIdx >= 0)
                     {
                         _pendingFaceIndex = faceIdx;
@@ -446,7 +446,7 @@ namespace MeshFactory.Tools
 
             if (ctx.SelectionState != null)
             {
-                var affected = ctx.SelectionState.GetAllAffectedVertices(ctx.MeshData);
+                var affected = ctx.SelectionState.GetAllAffectedVertices(ctx.MeshObject);
                 foreach (var v in affected)
                 {
                     _affectedVertices.Add(v);
@@ -538,7 +538,7 @@ namespace MeshFactory.Tools
                 return;
             }
 
-            _dragStartPositions = ctx.MeshData.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             if (UseMagnet)
             {
@@ -549,7 +549,7 @@ namespace MeshFactory.Tools
                 _currentTransform = new SimpleMoveTransform();
             }
 
-            _currentTransform.Begin(ctx.MeshData, _affectedVertices, _dragStartPositions);
+            _currentTransform.Begin(ctx.MeshObject, _affectedVertices, _dragStartPositions);
             _state = MoveState.MovingVertices;
         }
 
@@ -569,7 +569,7 @@ namespace MeshFactory.Tools
             {
                 if (ctx.VertexOffsets != null && idx >= 0 && idx < ctx.VertexOffsets.Length)
                 {
-                    ctx.VertexOffsets[idx] = ctx.MeshData.Vertices[idx].Position - ctx.OriginalPositions[idx];
+                    ctx.VertexOffsets[idx] = ctx.MeshObject.Vertices[idx].Position - ctx.OriginalPositions[idx];
                     ctx.GroupOffsets[idx] = ctx.VertexOffsets[idx];
                 }
             }
@@ -578,13 +578,13 @@ namespace MeshFactory.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshContext.MeshData = ctx.MeshData;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
             }
         }
 
         private void EndVertexMove(ToolContext ctx)
         {
-            if (_currentTransform == null || ctx.MeshData == null)
+            if (_currentTransform == null || ctx.MeshObject == null)
             {
                 _currentTransform = null;
                 _dragStartPositions = null;
@@ -635,7 +635,7 @@ namespace MeshFactory.Tools
             _draggingAxis = axis;
             _lastAxisDragScreenPos = _mouseDownScreenPos;
 
-            _dragStartPositions = ctx.MeshData.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             if (UseMagnet)
             {
@@ -646,13 +646,13 @@ namespace MeshFactory.Tools
                 _currentTransform = new SimpleMoveTransform();
             }
 
-            _currentTransform.Begin(ctx.MeshData, _affectedVertices, _dragStartPositions);
+            _currentTransform.Begin(ctx.MeshObject, _affectedVertices, _dragStartPositions);
             _state = MoveState.AxisDragging;
         }
 
         private void MoveVerticesAlongAxis(Vector2 currentScreenPos, ToolContext ctx)
         {
-            if (_currentTransform == null || ctx.MeshData == null)
+            if (_currentTransform == null || ctx.MeshObject == null)
                 return;
 
             // スクリーン上での移動量を計算
@@ -686,7 +686,7 @@ namespace MeshFactory.Tools
             {
                 if (ctx.VertexOffsets != null && idx >= 0 && idx < ctx.VertexOffsets.Length)
                 {
-                    ctx.VertexOffsets[idx] = ctx.MeshData.Vertices[idx].Position - ctx.OriginalPositions[idx];
+                    ctx.VertexOffsets[idx] = ctx.MeshObject.Vertices[idx].Position - ctx.OriginalPositions[idx];
                     ctx.GroupOffsets[idx] = ctx.VertexOffsets[idx];
                 }
             }
@@ -704,7 +704,7 @@ namespace MeshFactory.Tools
 
         private void StartCenterDrag(ToolContext ctx)
         {
-            _dragStartPositions = ctx.MeshData.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
 
             if (UseMagnet)
             {
@@ -715,7 +715,7 @@ namespace MeshFactory.Tools
                 _currentTransform = new SimpleMoveTransform();
             }
 
-            _currentTransform.Begin(ctx.MeshData, _affectedVertices, _dragStartPositions);
+            _currentTransform.Begin(ctx.MeshObject, _affectedVertices, _dragStartPositions);
             _state = MoveState.CenterDragging;
         }
 
@@ -728,7 +728,7 @@ namespace MeshFactory.Tools
 
         private void UpdateGizmoCenter(ToolContext ctx)
         {
-            if (_affectedVertices.Count == 0 || ctx.MeshData == null)
+            if (_affectedVertices.Count == 0 || ctx.MeshObject == null)
             {
                 _selectionCenter = Vector3.zero;
                 _gizmoCenter = Vector3.zero;
@@ -739,9 +739,9 @@ namespace MeshFactory.Tools
             _selectionCenter = Vector3.zero;
             foreach (int vi in _affectedVertices)
             {
-                if (vi >= 0 && vi < ctx.MeshData.VertexCount)
+                if (vi >= 0 && vi < ctx.MeshObject.VertexCount)
                 {
-                    _selectionCenter += ctx.MeshData.Vertices[vi].Position;
+                    _selectionCenter += ctx.MeshObject.Vertices[vi].Position;
                 }
             }
             _selectionCenter /= _affectedVertices.Count;
@@ -912,19 +912,19 @@ namespace MeshFactory.Tools
 
         private bool IsClickOnSelectedEdge(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null || ctx.SelectionState == null)
+            if (ctx.MeshObject == null || ctx.SelectionState == null)
                 return false;
 
             const float hitDistance = 8f;
 
             foreach (var edge in ctx.SelectionState.Edges)
             {
-                if (edge.V1 < 0 || edge.V1 >= ctx.MeshData.VertexCount ||
-                    edge.V2 < 0 || edge.V2 >= ctx.MeshData.VertexCount)
+                if (edge.V1 < 0 || edge.V1 >= ctx.MeshObject.VertexCount ||
+                    edge.V2 < 0 || edge.V2 >= ctx.MeshObject.VertexCount)
                     continue;
 
-                Vector3 p1 = ctx.MeshData.Vertices[edge.V1].Position;
-                Vector3 p2 = ctx.MeshData.Vertices[edge.V2].Position;
+                Vector3 p1 = ctx.MeshObject.Vertices[edge.V1].Position;
+                Vector3 p2 = ctx.MeshObject.Vertices[edge.V2].Position;
 
                 Vector2 sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 Vector2 sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
@@ -939,24 +939,24 @@ namespace MeshFactory.Tools
 
         private bool IsClickOnSelectedFace(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null || ctx.SelectionState == null)
+            if (ctx.MeshObject == null || ctx.SelectionState == null)
                 return false;
 
             foreach (int faceIdx in ctx.SelectionState.Faces)
             {
-                if (faceIdx < 0 || faceIdx >= ctx.MeshData.FaceCount)
+                if (faceIdx < 0 || faceIdx >= ctx.MeshObject.FaceCount)
                     continue;
 
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 if (face.VertexCount < 3)
                     continue;
 
                 var screenPoints = new List<Vector2>();
                 foreach (int vIdx in face.VertexIndices)
                 {
-                    if (vIdx >= 0 && vIdx < ctx.MeshData.VertexCount)
+                    if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
                     {
-                        Vector3 p = ctx.MeshData.Vertices[vIdx].Position;
+                        Vector3 p = ctx.MeshObject.Vertices[vIdx].Position;
                         Vector2 sp = ctx.WorldToScreenPos(p, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                         screenPoints.Add(sp);
                     }
@@ -971,29 +971,29 @@ namespace MeshFactory.Tools
 
         private bool IsClickOnSelectedLine(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null || ctx.SelectionState == null)
+            if (ctx.MeshObject == null || ctx.SelectionState == null)
                 return false;
 
             const float hitDistance = 8f;
 
             foreach (int lineIdx in ctx.SelectionState.Lines)
             {
-                if (lineIdx < 0 || lineIdx >= ctx.MeshData.FaceCount)
+                if (lineIdx < 0 || lineIdx >= ctx.MeshObject.FaceCount)
                     continue;
 
-                var face = ctx.MeshData.Faces[lineIdx];
+                var face = ctx.MeshObject.Faces[lineIdx];
                 if (face.VertexCount != 2)
                     continue;
 
                 int v1 = face.VertexIndices[0];
                 int v2 = face.VertexIndices[1];
 
-                if (v1 < 0 || v1 >= ctx.MeshData.VertexCount ||
-                    v2 < 0 || v2 >= ctx.MeshData.VertexCount)
+                if (v1 < 0 || v1 >= ctx.MeshObject.VertexCount ||
+                    v2 < 0 || v2 >= ctx.MeshObject.VertexCount)
                     continue;
 
-                Vector3 p1 = ctx.MeshData.Vertices[v1].Position;
-                Vector3 p2 = ctx.MeshData.Vertices[v2].Position;
+                Vector3 p1 = ctx.MeshObject.Vertices[v1].Position;
+                Vector3 p2 = ctx.MeshObject.Vertices[v2].Position;
 
                 Vector2 sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 Vector2 sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);

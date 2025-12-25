@@ -82,7 +82,7 @@ namespace MeshFactory.Tools
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshData == null) return false;
+            if (ctx.MeshObject == null) return false;
 
             UpdateContext(ctx);
 
@@ -96,7 +96,7 @@ namespace MeshFactory.Tools
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
-            if (ctx.MeshData == null) return false;
+            if (ctx.MeshObject == null) return false;
 
             UpdateContext(ctx);
             _ctx.ClearPreview();
@@ -118,7 +118,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             UnityEditor_Handles.BeginGUI();
 
@@ -128,8 +128,8 @@ namespace MeshFactory.Tools
             GUI.color = previewColor;
             foreach (int vIdx in _ctx.PreviewVertices)
             {
-                if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount) continue;
-                Vector2 sp = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
+                if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount) continue;
+                Vector2 sp = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
                 float size = 8f;
                 GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size), EditorGUIUtility.whiteTexture);
             }
@@ -138,10 +138,10 @@ namespace MeshFactory.Tools
             UnityEditor_Handles.color = previewColor;
             foreach (var edge in _ctx.PreviewEdges)
             {
-                if (edge.V1 < 0 || edge.V1 >= ctx.MeshData.VertexCount) continue;
-                if (edge.V2 < 0 || edge.V2 >= ctx.MeshData.VertexCount) continue;
-                Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V1].Position);
-                Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V2].Position);
+                if (edge.V1 < 0 || edge.V1 >= ctx.MeshObject.VertexCount) continue;
+                if (edge.V2 < 0 || edge.V2 >= ctx.MeshObject.VertexCount) continue;
+                Vector2 sp1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[edge.V1].Position);
+                Vector2 sp2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[edge.V2].Position);
                 UnityEditor_Handles.DrawAAPolyLine(3f, sp1, sp2);
             }
 
@@ -166,19 +166,19 @@ namespace MeshFactory.Tools
                 {
                     int v1 = _ctx.PreviewPath[i];
                     int v2 = _ctx.PreviewPath[i + 1];
-                    if (v1 < 0 || v1 >= ctx.MeshData.VertexCount) continue;
-                    if (v2 < 0 || v2 >= ctx.MeshData.VertexCount) continue;
+                    if (v1 < 0 || v1 >= ctx.MeshObject.VertexCount) continue;
+                    if (v2 < 0 || v2 >= ctx.MeshObject.VertexCount) continue;
 
-                    Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
-                    Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
+                    Vector2 sp1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v1].Position);
+                    Vector2 sp2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v2].Position);
                     UnityEditor_Handles.DrawAAPolyLine(3f, sp1, sp2);
                 }
 
                 GUI.color = previewColor;
                 foreach (int vIdx in _ctx.PreviewPath)
                 {
-                    if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount) continue;
-                    Vector2 sp = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
+                    if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount) continue;
+                    Vector2 sp = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
                     float size = 8f;
                     GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size), EditorGUIUtility.whiteTexture);
                 }
@@ -188,10 +188,10 @@ namespace MeshFactory.Tools
             if (Mode == AdvancedSelectMode.ShortestPath)
             {
                 var shortestMode = _modes[AdvancedSelectMode.ShortestPath] as ShortestPathSelectMode;
-                if (shortestMode != null && shortestMode.FirstVertex >= 0 && shortestMode.FirstVertex < ctx.MeshData.VertexCount)
+                if (shortestMode != null && shortestMode.FirstVertex >= 0 && shortestMode.FirstVertex < ctx.MeshObject.VertexCount)
                 {
                     GUI.color = Color.yellow;
-                    Vector2 sp = ctx.WorldToScreen(ctx.MeshData.Vertices[shortestMode.FirstVertex].Position);
+                    Vector2 sp = ctx.WorldToScreen(ctx.MeshObject.Vertices[shortestMode.FirstVertex].Position);
                     float size = 12f;
                     GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size), EditorGUIUtility.whiteTexture);
                 }
@@ -202,11 +202,11 @@ namespace MeshFactory.Tools
             {
                 UnityEditor_Handles.color = Color.cyan;
                 var edge = _ctx.HoveredEdgePair.Value;
-                if (edge.V1 >= 0 && edge.V1 < ctx.MeshData.VertexCount &&
-                    edge.V2 >= 0 && edge.V2 < ctx.MeshData.VertexCount)
+                if (edge.V1 >= 0 && edge.V1 < ctx.MeshObject.VertexCount &&
+                    edge.V2 >= 0 && edge.V2 < ctx.MeshObject.VertexCount)
                 {
-                    Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V1].Position);
-                    Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[edge.V2].Position);
+                    Vector2 sp1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[edge.V1].Position);
+                    Vector2 sp2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[edge.V2].Position);
                     UnityEditor_Handles.DrawAAPolyLine(4f, sp1, sp2);
                 }
             }
@@ -299,8 +299,8 @@ namespace MeshFactory.Tools
 
         private void DrawFacePreview(ToolContext ctx, int faceIdx, Color color)
         {
-            if (faceIdx < 0 || faceIdx >= ctx.MeshData.FaceCount) return;
-            var face = ctx.MeshData.Faces[faceIdx];
+            if (faceIdx < 0 || faceIdx >= ctx.MeshObject.FaceCount) return;
+            var face = ctx.MeshObject.Faces[faceIdx];
             if (face.VertexCount < 3) return;
 
             UnityEditor_Handles.color = color;
@@ -308,27 +308,27 @@ namespace MeshFactory.Tools
             {
                 int v1 = face.VertexIndices[i];
                 int v2 = face.VertexIndices[(i + 1) % face.VertexCount];
-                if (v1 < 0 || v1 >= ctx.MeshData.VertexCount) continue;
-                if (v2 < 0 || v2 >= ctx.MeshData.VertexCount) continue;
-                Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
-                Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
+                if (v1 < 0 || v1 >= ctx.MeshObject.VertexCount) continue;
+                if (v2 < 0 || v2 >= ctx.MeshObject.VertexCount) continue;
+                Vector2 sp1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v1].Position);
+                Vector2 sp2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v2].Position);
                 UnityEditor_Handles.DrawAAPolyLine(2f, sp1, sp2);
             }
         }
 
         private void DrawLinePreview(ToolContext ctx, int lineIdx)
         {
-            if (lineIdx < 0 || lineIdx >= ctx.MeshData.FaceCount) return;
-            var face = ctx.MeshData.Faces[lineIdx];
+            if (lineIdx < 0 || lineIdx >= ctx.MeshObject.FaceCount) return;
+            var face = ctx.MeshObject.Faces[lineIdx];
             if (face.VertexCount != 2) return;
 
             int v1 = face.VertexIndices[0];
             int v2 = face.VertexIndices[1];
-            if (v1 < 0 || v1 >= ctx.MeshData.VertexCount) return;
-            if (v2 < 0 || v2 >= ctx.MeshData.VertexCount) return;
+            if (v1 < 0 || v1 >= ctx.MeshObject.VertexCount) return;
+            if (v2 < 0 || v2 >= ctx.MeshObject.VertexCount) return;
 
-            Vector2 sp1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
-            Vector2 sp2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
+            Vector2 sp1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v1].Position);
+            Vector2 sp2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v2].Position);
             UnityEditor_Handles.DrawAAPolyLine(4f, sp1, sp2);
         }
     }

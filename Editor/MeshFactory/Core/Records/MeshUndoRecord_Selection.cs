@@ -55,7 +55,7 @@ namespace MeshFactory.UndoSystem
             NewWorkPlaneSnapshot = newWorkPlane;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
             ctx.SelectedVertices = new HashSet<int>(OldSelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(OldSelectedFaces);
@@ -67,7 +67,7 @@ namespace MeshFactory.UndoSystem
             }
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
             ctx.SelectedVertices = new HashSet<int>(NewSelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(NewSelectedFaces);
@@ -118,7 +118,7 @@ namespace MeshFactory.UndoSystem
             NewWorkPlaneSnapshot = newWorkPlane;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
             // レガシー選択を復元（MeshEditContext用）
             ctx.SelectedVertices = new HashSet<int>(OldLegacyVertices);
@@ -133,7 +133,7 @@ namespace MeshFactory.UndoSystem
             }
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
             // レガシー選択を復元（MeshEditContext用）
             ctx.SelectedVertices = new HashSet<int>(NewLegacyVertices);

@@ -194,9 +194,9 @@ namespace MeshFactory.Tools.Panels
             }
 
             // 情報表示
-            if (_showInfo && meshContext.Data != null)
+            if (_showInfo && meshContext.MeshObject != null)
             {
-                EditorGUILayout.LabelField($"V:{meshContext.Data.VertexCount}", EditorStyles.miniLabel, GUILayout.Width(50));
+                EditorGUILayout.LabelField($"V:{meshContext.MeshObject.VertexCount}", EditorStyles.miniLabel, GUILayout.Width(50));
             }
 
             // ↑ 上に移動
@@ -264,14 +264,14 @@ namespace MeshFactory.Tools.Panels
                 }
 
                 // 統計情報
-                if (meshContext.Data != null)
+                if (meshContext.MeshObject != null)
                 {
-                    EditorGUILayout.LabelField(T("Vertices"), meshContext.Data.VertexCount.ToString());
-                    EditorGUILayout.LabelField(T("Faces"), meshContext.Data.FaceCount.ToString());
+                    EditorGUILayout.LabelField(T("Vertices"), meshContext.MeshObject.VertexCount.ToString());
+                    EditorGUILayout.LabelField(T("Faces"), meshContext.MeshObject.FaceCount.ToString());
 
                     // 面タイプ内訳
                     int triCount = 0, quadCount = 0, nGonCount = 0;
-                    foreach (var face in meshContext.Data.Faces)
+                    foreach (var face in meshContext.MeshObject.Faces)
                     {
                         if (face.IsTriangle) triCount++;
                         else if (face.IsQuad) quadCount++;
@@ -344,7 +344,7 @@ namespace MeshFactory.Tools.Panels
                 var newMeshContext = new MeshContext
                 {
                     Name = "New Mesh",
-                    Data = new MeshData("New Mesh"),
+                    MeshObject = new MeshObject("New Mesh"),
                     UnityMesh = new Mesh(),
                     OriginalPositions = new Vector3[0],
                     Materials = new System.Collections.Generic.List<Material> { null }

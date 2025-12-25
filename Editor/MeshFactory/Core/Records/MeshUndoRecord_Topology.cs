@@ -26,20 +26,20 @@ namespace MeshFactory.UndoSystem
             FaceIndex = index;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null && FaceIndex < ctx.MeshData.FaceCount)
+            if (ctx.MeshObject != null && FaceIndex < ctx.MeshObject.FaceCount)
             {
-                ctx.MeshData.Faces.RemoveAt(FaceIndex);
+                ctx.MeshObject.Faces.RemoveAt(FaceIndex);
             }
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null)
+            if (ctx.MeshObject != null)
             {
-                ctx.MeshData.Faces.Insert(FaceIndex, AddedFace.Clone());
+                ctx.MeshObject.Faces.Insert(FaceIndex, AddedFace.Clone());
             }
             ctx.ApplyToMesh();
         }
@@ -59,20 +59,20 @@ namespace MeshFactory.UndoSystem
             FaceIndex = index;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null)
+            if (ctx.MeshObject != null)
             {
-                ctx.MeshData.Faces.Insert(FaceIndex, DeletedFace.Clone());
+                ctx.MeshObject.Faces.Insert(FaceIndex, DeletedFace.Clone());
             }
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null && FaceIndex < ctx.MeshData.FaceCount)
+            if (ctx.MeshObject != null && FaceIndex < ctx.MeshObject.FaceCount)
             {
-                ctx.MeshData.Faces.RemoveAt(FaceIndex);
+                ctx.MeshObject.Faces.RemoveAt(FaceIndex);
             }
             ctx.ApplyToMesh();
         }
@@ -96,31 +96,31 @@ namespace MeshFactory.UndoSystem
             VertexIndex = index;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null && VertexIndex < ctx.MeshData.VertexCount)
+            if (ctx.MeshObject != null && VertexIndex < ctx.MeshObject.VertexCount)
             {
-                ctx.MeshData.Vertices.RemoveAt(VertexIndex);
+                ctx.MeshObject.Vertices.RemoveAt(VertexIndex);
                 // 面のインデックスを調整
-                AdjustFaceIndicesAfterVertexRemoval(ctx.MeshData, VertexIndex);
+                AdjustFaceIndicesAfterVertexRemoval(ctx.MeshObject, VertexIndex);
             }
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData != null)
+            if (ctx.MeshObject != null)
             {
-                ctx.MeshData.Vertices.Insert(VertexIndex, AddedVertex.Clone());
+                ctx.MeshObject.Vertices.Insert(VertexIndex, AddedVertex.Clone());
                 // 面のインデックスを調整
-                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshData, VertexIndex);
+                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshObject, VertexIndex);
             }
             ctx.ApplyToMesh();
         }
 
-        private void AdjustFaceIndicesAfterVertexRemoval(MeshData meshData, int removedIndex)
+        private void AdjustFaceIndicesAfterVertexRemoval(MeshObject meshObject, int removedIndex)
         {
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
@@ -130,9 +130,9 @@ namespace MeshFactory.UndoSystem
             }
         }
 
-        private void AdjustFaceIndicesAfterVertexInsertion(MeshData meshData, int insertedIndex)
+        private void AdjustFaceIndicesAfterVertexInsertion(MeshObject meshObject, int insertedIndex)
         {
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
@@ -174,71 +174,71 @@ namespace MeshFactory.UndoSystem
             }
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             // 面を削除
-            if (AddedFace != null && FaceIndex >= 0 && FaceIndex < ctx.MeshData.FaceCount)
+            if (AddedFace != null && FaceIndex >= 0 && FaceIndex < ctx.MeshObject.FaceCount)
             {
-                ctx.MeshData.Faces.RemoveAt(FaceIndex);
+                ctx.MeshObject.Faces.RemoveAt(FaceIndex);
             }
 
             // 頂点を削除（逆順で削除してインデックスを維持）
             var sortedVertices = AddedVertices.OrderByDescending(v => v.Index).ToList();
             foreach (var (idx, _) in sortedVertices)
             {
-                if (idx < ctx.MeshData.VertexCount)
+                if (idx < ctx.MeshObject.VertexCount)
                 {
-                    ctx.MeshData.Vertices.RemoveAt(idx);
+                    ctx.MeshObject.Vertices.RemoveAt(idx);
                     // 面のインデックスを調整
-                    AdjustFaceIndicesAfterVertexRemoval(ctx.MeshData, idx);
+                    AdjustFaceIndicesAfterVertexRemoval(ctx.MeshObject, idx);
                 }
             }
 
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             // 頂点を追加（昇順で追加、範囲外なら末尾に追加）
             var sortedVertices = AddedVertices.OrderBy(v => v.Index).ToList();
             foreach (var (idx, vtx) in sortedVertices)
             {
-                if (idx >= ctx.MeshData.Vertices.Count)
+                if (idx >= ctx.MeshObject.Vertices.Count)
                 {
                     // インデックスが範囲外なら末尾に追加
-                    ctx.MeshData.Vertices.Add(vtx.Clone());
+                    ctx.MeshObject.Vertices.Add(vtx.Clone());
                 }
                 else
                 {
-                    ctx.MeshData.Vertices.Insert(idx, vtx.Clone());
+                    ctx.MeshObject.Vertices.Insert(idx, vtx.Clone());
                 }
                 // 面のインデックスを調整
-                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshData, idx);
+                AdjustFaceIndicesAfterVertexInsertion(ctx.MeshObject, idx);
             }
 
             // 面を追加（範囲外なら末尾に追加）
             if (AddedFace != null && FaceIndex >= 0)
             {
-                if (FaceIndex >= ctx.MeshData.Faces.Count)
+                if (FaceIndex >= ctx.MeshObject.Faces.Count)
                 {
-                    ctx.MeshData.Faces.Add(AddedFace.Clone());
+                    ctx.MeshObject.Faces.Add(AddedFace.Clone());
                 }
                 else
                 {
-                    ctx.MeshData.Faces.Insert(FaceIndex, AddedFace.Clone());
+                    ctx.MeshObject.Faces.Insert(FaceIndex, AddedFace.Clone());
                 }
             }
 
             ctx.ApplyToMesh();
         }
 
-        private void AdjustFaceIndicesAfterVertexRemoval(MeshData meshData, int removedIndex)
+        private void AdjustFaceIndicesAfterVertexRemoval(MeshObject meshObject, int removedIndex)
         {
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
@@ -248,9 +248,9 @@ namespace MeshFactory.UndoSystem
             }
         }
 
-        private void AdjustFaceIndicesAfterVertexInsertion(MeshData meshData, int insertedIndex)
+        private void AdjustFaceIndicesAfterVertexInsertion(MeshObject meshObject, int insertedIndex)
         {
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
@@ -308,56 +308,56 @@ namespace MeshFactory.UndoSystem
             }
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             // 分割後の面2を削除（末尾から）
-            if (NewFace2Index >= 0 && NewFace2Index < ctx.MeshData.FaceCount)
+            if (NewFace2Index >= 0 && NewFace2Index < ctx.MeshObject.FaceCount)
             {
-                ctx.MeshData.Faces.RemoveAt(NewFace2Index);
+                ctx.MeshObject.Faces.RemoveAt(NewFace2Index);
             }
 
             // 元の面を復元
-            if (OriginalFaceIndex >= 0 && OriginalFaceIndex < ctx.MeshData.FaceCount && OriginalFace != null)
+            if (OriginalFaceIndex >= 0 && OriginalFaceIndex < ctx.MeshObject.FaceCount && OriginalFace != null)
             {
-                ctx.MeshData.Faces[OriginalFaceIndex] = OriginalFace.Clone();
+                ctx.MeshObject.Faces[OriginalFaceIndex] = OriginalFace.Clone();
             }
 
             // 追加された頂点を削除（逆順で、末尾から）
             var sortedVertices = AddedVertices.OrderByDescending(v => v.Index).ToList();
             foreach (var (idx, _) in sortedVertices)
             {
-                if (idx < ctx.MeshData.VertexCount)
+                if (idx < ctx.MeshObject.VertexCount)
                 {
-                    ctx.MeshData.Vertices.RemoveAt(idx);
+                    ctx.MeshObject.Vertices.RemoveAt(idx);
                 }
             }
 
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             // 頂点を追加（末尾に追加）
             var sortedVertices = AddedVertices.OrderBy(v => v.Index).ToList();
             foreach (var (_, vtx) in sortedVertices)
             {
-                ctx.MeshData.Vertices.Add(vtx.Clone());
+                ctx.MeshObject.Vertices.Add(vtx.Clone());
             }
 
             // 面を更新
-            if (OriginalFaceIndex >= 0 && OriginalFaceIndex < ctx.MeshData.FaceCount && NewFace1 != null)
+            if (OriginalFaceIndex >= 0 && OriginalFaceIndex < ctx.MeshObject.FaceCount && NewFace1 != null)
             {
-                ctx.MeshData.Faces[OriginalFaceIndex] = NewFace1.Clone();
+                ctx.MeshObject.Faces[OriginalFaceIndex] = NewFace1.Clone();
             }
 
             // 面2を追加（末尾に）
             if (NewFace2 != null)
             {
-                ctx.MeshData.Faces.Add(NewFace2.Clone());
+                ctx.MeshObject.Faces.Add(NewFace2.Clone());
             }
 
             ctx.ApplyToMesh();

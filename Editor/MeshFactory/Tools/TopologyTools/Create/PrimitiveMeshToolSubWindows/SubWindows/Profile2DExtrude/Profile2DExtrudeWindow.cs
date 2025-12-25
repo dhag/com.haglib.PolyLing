@@ -18,7 +18,7 @@ public class Profile2DExtrudeWindow : EditorWindow
     // ================================================================
     // フィールド
     // ================================================================
-    private Action<MeshData, string> _onMeshDataCreated;
+    private Action<MeshObject, string> _onMeshObjectCreated;
 
     // パラメータ
     [SerializeField] private string _meshName = "Profile2DExtrude";
@@ -44,7 +44,7 @@ public class Profile2DExtrudeWindow : EditorWindow
     // 3Dプレビュー
     private PreviewRenderUtility _preview;
     private Mesh _previewMesh;
-    private MeshData _previewMeshData;
+    private MeshObject _previewMeshObject;
     private Material _previewMaterial;
     private float _rotationY = 20f;
     private float _rotationX = 30f;
@@ -66,7 +66,7 @@ public class Profile2DExtrudeWindow : EditorWindow
     // ================================================================
     // エントリポイント
     // ================================================================
-    public static Profile2DExtrudeWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static Profile2DExtrudeWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<Profile2DExtrudeWindow>(
             utility: true,
@@ -75,7 +75,7 @@ public class Profile2DExtrudeWindow : EditorWindow
 
         window.minSize = new Vector2(800, 600);
         window.maxSize = new Vector2(1200, 900);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.InitPreview();
 
         if (window._loops.Count == 0)
@@ -729,13 +729,13 @@ public class Profile2DExtrudeWindow : EditorWindow
         EditorGUILayout.EndHorizontal();
 
         // 情報表示
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.Space(5);
-            int triCount = _previewMeshData.Faces.Count(f => f.IsTriangle);
-            int quadCount = _previewMeshData.Faces.Count(f => f.IsQuad);
+            int triCount = _previewMeshObject.Faces.Count(f => f.IsTriangle);
+            int quadCount = _previewMeshObject.Faces.Count(f => f.IsQuad);
             EditorGUILayout.HelpBox(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount} (Tri:{triCount}, Quad:{quadCount}), Loops: {_loops.Count}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount} (Tri:{triCount}, Quad:{quadCount}), Loops: {_loops.Count}",
                 MessageType.None);
         }
     }
@@ -751,16 +751,16 @@ public class Profile2DExtrudeWindow : EditorWindow
             _previewMesh = null;
         }
 
-        _previewMeshData = GenerateMeshData();
-        if (_previewMeshData != null)
+        _previewMeshObject = GenerateMeshObject();
+        if (_previewMeshObject != null)
         {
-            _previewMesh = _previewMeshData.ToUnityMesh();
+            _previewMesh = _previewMeshObject.ToUnityMesh();
         }
 
         Repaint();
     }
 
-    private MeshData GenerateMeshData()
+    private MeshObject GenerateMeshObject()
     {
         var genParams = new Profile2DGenerateParams
         {
@@ -780,8 +780,8 @@ public class Profile2DExtrudeWindow : EditorWindow
 
     private void CreateMeshAndClose()
     {
-        var meshData = GenerateMeshData();
-        if (meshData == null)
+        var meshObject = GenerateMeshObject();
+        if (meshObject == null)
         {
             EditorUtility.DisplayDialog(
                 "2D Profile Extrude",
@@ -790,7 +790,7 @@ public class Profile2DExtrudeWindow : EditorWindow
             return;
         }
 
-        _onMeshDataCreated?.Invoke(meshData, _meshName);
+        _onMeshObjectCreated?.Invoke(meshObject, _meshName);
         Close();
     }
 }

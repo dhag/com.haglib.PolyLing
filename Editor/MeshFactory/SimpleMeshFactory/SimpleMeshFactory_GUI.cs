@@ -29,14 +29,20 @@ public partial class SimpleMeshFactory
             {
                 if (GUILayout.Button(L.Get("Undo")))
                 {
-                    _undoController?.Undo();
+                    if (_undoController?.Undo() == true)
+                    {
+                        Repaint();
+                    }
                 }
             }
             using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanRedo))
             {
                 if (GUILayout.Button(L.Get("Redo")))
                 {
-                    _undoController?.Redo();
+                    if (_undoController?.Redo() == true)
+                    {
+                        Repaint();
+                    }
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -76,7 +82,7 @@ public partial class SimpleMeshFactory
                         newShowVertices != _showVertices ||
                         newShowVertexIndices != _showVertexIndices ||
                         newShowSelectedMeshOnly != _showSelectedMeshOnly;// ||
-                        //newVertexEditMode != _vertexEditMode;
+                                                                         //newVertexEditMode != _vertexEditMode;
 
                     if (hasDisplayChange && _undoController != null)
                     {
@@ -138,7 +144,7 @@ public partial class SimpleMeshFactory
                 DrawSymmetryUI();
 
                 EditorGUILayout.Space(3);
-                
+
                 // 言語設定
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(L.Get("Language"), GUILayout.Width(60));
@@ -150,7 +156,7 @@ public partial class SimpleMeshFactory
                     Repaint();
                 }
                 EditorGUILayout.EndHorizontal();
-                
+
                 // Foldout Undo記録設定
                 if (_undoController != null)
                 {
@@ -224,106 +230,106 @@ public partial class SimpleMeshFactory
             // ================================================================
             //if (_vertexEditMode)
             //{
-                _undoController?.FocusVertexEdit();
+            _undoController?.FocusVertexEdit();
 
-                _foldSelection = DrawFoldoutWithUndo("Selection", L.Get("Selection"), true);
-                if (_foldSelection)
+            _foldSelection = DrawFoldoutWithUndo("Selection", L.Get("Selection"), true);
+            if (_foldSelection)
+            {
+                EditorGUI.indentLevel++;
+
+                // === 選択モード切り替え ===
+                DrawSelectionModeToolbar();
+
+                int totalVertices = 0;
+
+                var meshContext = _model.CurrentMeshContext;
+                if (meshContext?.MeshObject != null)
                 {
-                    EditorGUI.indentLevel++;
-
-                    // === 選択モード切り替え ===
-                    DrawSelectionModeToolbar();
-
-                    int totalVertices = 0;
-
-                    var meshContext = _model.CurrentMeshContext;
-                    if (meshContext?.Data != null)
-                    {
-                        totalVertices = meshContext.Data.VertexCount;
-                    }
-
-                    EditorGUILayout.LabelField(L.GetSelectedCount(_selectionState.SelectionCount, totalVertices), EditorStyles.miniLabel);
-
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button(L.Get("All"), GUILayout.Width(40)))
-                        {
-                            SelectAllVertices();
-                        }
-                        if (GUILayout.Button(L.Get("None"), GUILayout.Width(40)))
-                        {
-                            ClearSelection();
-                        }
-                        if (GUILayout.Button(L.Get("Invert"), GUILayout.Width(50)))
-                        {
-                            InvertSelection();
-                        }
-                    }
-
-                    // 削除ボタン（選択があるときのみ有効）
-                    using (new EditorGUI.DisabledScope(_selectedVertices.Count == 0))
-                    {
-                        var oldColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(1f, 0.6f, 0.6f); // 薄い赤
-                        if (GUILayout.Button(L.Get("DeleteSelected")))
-                        {
-                            DeleteSelectedVertices();
-                        }
-                        GUI.backgroundColor = oldColor;
-                    }
-
-                    // マージボタン（2つ以上選択があるときのみ有効）
-                    using (new EditorGUI.DisabledScope(_selectedVertices.Count < 2))
-                    {
-                        var oldColor = GUI.backgroundColor;
-                        GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // 薄い青
-                        if (GUILayout.Button("Merge Selected"))
-                        {
-                            MergeSelectedVertices();
-                        }
-                        GUI.backgroundColor = oldColor;
-                    }
-
-                    EditorGUI.indentLevel--;
+                    totalVertices = meshContext.MeshObject.VertexCount;
                 }
 
-                EditorGUILayout.Space(3);
+                EditorGUILayout.LabelField(L.GetSelectedCount(_selectionState.SelectionCount, totalVertices), EditorStyles.miniLabel);
 
-                // ================================================================
-                // Tools セクション
-                // ================================================================
-                DrawToolsSection();
-
-                EditorGUILayout.Space(3);
-
-                // ================================================================
-                // Tool Panel セクション（Phase 4追加）
-                // ================================================================
-                DrawToolPanelsSection();
-
-                EditorGUILayout.Space(3);
-
-                // ================================================================
-                // Work Plane セクション
-                // ================================================================
-                // WorkPlane UIは内部でFoldout管理
-                DrawWorkPlaneUI();
-
-                // ギズモ表示トグル（WorkPlane展開時のみ表示）
-                if (_undoController?.WorkPlane?.IsExpanded == true)
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUI.BeginChangeCheck();
-                    _showWorkPlaneGizmo = EditorGUILayout.ToggleLeft("Show Gizmo", _showWorkPlaneGizmo);
-                    if (EditorGUI.EndChangeCheck())
+                    if (GUILayout.Button(L.Get("All"), GUILayout.Width(40)))
                     {
-                        Repaint();
+                        SelectAllVertices();
+                    }
+                    if (GUILayout.Button(L.Get("None"), GUILayout.Width(40)))
+                    {
+                        ClearSelection();
+                    }
+                    if (GUILayout.Button(L.Get("Invert"), GUILayout.Width(50)))
+                    {
+                        InvertSelection();
                     }
                 }
-        //    }
-        //    else
-        //    {
-        //        _undoController?.FocusView();
-        //    }
+
+                // 削除ボタン（選択があるときのみ有効）
+                using (new EditorGUI.DisabledScope(_selectedVertices.Count == 0))
+                {
+                    var oldColor = GUI.backgroundColor;
+                    GUI.backgroundColor = new Color(1f, 0.6f, 0.6f); // 薄い赤
+                    if (GUILayout.Button(L.Get("DeleteSelected")))
+                    {
+                        DeleteSelectedVertices();
+                    }
+                    GUI.backgroundColor = oldColor;
+                }
+
+                // マージボタン（2つ以上選択があるときのみ有効）
+                using (new EditorGUI.DisabledScope(_selectedVertices.Count < 2))
+                {
+                    var oldColor = GUI.backgroundColor;
+                    GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // 薄い青
+                    if (GUILayout.Button("Merge Selected"))
+                    {
+                        MergeSelectedVertices();
+                    }
+                    GUI.backgroundColor = oldColor;
+                }
+
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.Space(3);
+
+            // ================================================================
+            // Tools セクション
+            // ================================================================
+            DrawToolsSection();
+
+            EditorGUILayout.Space(3);
+
+            // ================================================================
+            // Tool Panel セクション（Phase 4追加）
+            // ================================================================
+            DrawToolPanelsSection();
+
+            EditorGUILayout.Space(3);
+
+            // ================================================================
+            // Work Plane セクション
+            // ================================================================
+            // WorkPlane UIは内部でFoldout管理
+            DrawWorkPlaneUI();
+
+            // ギズモ表示トグル（WorkPlane展開時のみ表示）
+            if (_undoController?.WorkPlane?.IsExpanded == true)
+            {
+                EditorGUI.BeginChangeCheck();
+                _showWorkPlaneGizmo = EditorGUILayout.ToggleLeft("Show Gizmo", _showWorkPlaneGizmo);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Repaint();
+                }
+            }
+            //    }
+            //    else
+            //    {
+            //        _undoController?.FocusView();
+            //    }
 
             EditorGUILayout.Space(5);
 
@@ -342,7 +348,7 @@ public partial class SimpleMeshFactory
                 if (newSelected && !isSelected)
                 {
                     int oldIndex = _selectedIndex;
-                    
+
                     // 選択前のカメラ状態をキャプチャ
                     var oldCamera = new CameraSnapshot
                     {
@@ -351,7 +357,7 @@ public partial class SimpleMeshFactory
                         CameraDistance = _cameraDistance,
                         CameraTarget = _cameraTarget
                     };
-                    
+
                     _selectedIndex = i;
                     _selectedVertices.Clear();
                     ResetEditState();
@@ -369,7 +375,7 @@ public partial class SimpleMeshFactory
                         CameraDistance = _cameraDistance,
                         CameraTarget = _cameraTarget
                     };
-                    
+
                     Debug.Log($"[SelectMesh] oldCamera: rotX={oldCamera.RotationX}, rotY={oldCamera.RotationY}, dist={oldCamera.CameraDistance}, target={oldCamera.CameraTarget}");
                     Debug.Log($"[SelectMesh] newCamera: rotX={newCamera.RotationX}, rotY={newCamera.RotationY}, dist={newCamera.CameraDistance}, target={newCamera.CameraTarget}");
 
@@ -548,15 +554,12 @@ public partial class SimpleMeshFactory
             return;
 
         // 参照を共有（Cloneしない）- AddFaceToolなどで直接変更されるため
-        // 注意: SetMeshDataは呼ばない（_vertexEditStack.Clear()を避けるため）
-        _undoController.MeshContext.MeshData = meshContext.Data;
-        _undoController.MeshContext.TargetMesh = meshContext.UnityMesh;
-        _undoController.MeshContext.OriginalPositions = meshContext.OriginalPositions;
-        _undoController.MeshContext.Materials = meshContext.Materials != null
-            ? new List<Material>(meshContext.Materials)
-            : new List<Material>();
-        _undoController.MeshContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
+        // 注意: SetMeshObjectは呼ばない（_vertexEditStack.Clear()を避けるため）
+        _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
+        _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
+        _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
+        // Materials は ModelContext に集約済み
         // 選択状態を同期
-        _undoController.MeshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
     }
 }

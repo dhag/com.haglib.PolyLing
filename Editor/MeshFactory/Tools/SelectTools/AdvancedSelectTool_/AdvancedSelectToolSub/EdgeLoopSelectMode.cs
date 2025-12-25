@@ -27,7 +27,7 @@ namespace MeshFactory.Tools
                 edge = new VertexPair(legacyEdge.Item1, legacyEdge.Item2);
             }
 
-            var loopEdges = GetEdgeLoopEdges(toolCtx.MeshData, edge.Value, ctx.EdgeLoopThreshold);
+            var loopEdges = GetEdgeLoopEdges(toolCtx.MeshObject, edge.Value, ctx.EdgeLoopThreshold);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
             {
@@ -62,7 +62,7 @@ namespace MeshFactory.Tools
 
             if (!ctx.HoveredEdgePair.HasValue) return;
 
-            var loopEdges = GetEdgeLoopEdges(toolCtx.MeshData, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
+            var loopEdges = GetEdgeLoopEdges(toolCtx.MeshObject, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
             {
@@ -92,23 +92,23 @@ namespace MeshFactory.Tools
         // アルゴリズム
         // ================================================================
 
-        private List<VertexPair> GetEdgeLoopEdges(MeshData meshData, VertexPair startEdge, float threshold)
+        private List<VertexPair> GetEdgeLoopEdges(MeshObject meshObject, VertexPair startEdge, float threshold)
         {
             var result = new HashSet<VertexPair>();
             var visitedEdges = new HashSet<VertexPair>();
 
-            Vector3 edgeDir = (meshData.Vertices[startEdge.V2].Position -
-                              meshData.Vertices[startEdge.V1].Position).normalized;
+            Vector3 edgeDir = (meshObject.Vertices[startEdge.V2].Position -
+                              meshObject.Vertices[startEdge.V1].Position).normalized;
 
-            var adjacency = SelectionHelper.BuildVertexAdjacency(meshData);
+            var adjacency = SelectionHelper.BuildVertexAdjacency(meshObject);
 
-            TraverseEdgeLoopEdges(meshData, startEdge.V1, startEdge.V2, edgeDir, adjacency, visitedEdges, result, threshold);
-            TraverseEdgeLoopEdges(meshData, startEdge.V2, startEdge.V1, -edgeDir, adjacency, visitedEdges, result, threshold);
+            TraverseEdgeLoopEdges(meshObject, startEdge.V1, startEdge.V2, edgeDir, adjacency, visitedEdges, result, threshold);
+            TraverseEdgeLoopEdges(meshObject, startEdge.V2, startEdge.V1, -edgeDir, adjacency, visitedEdges, result, threshold);
 
             return result.ToList();
         }
 
-        private void TraverseEdgeLoopEdges(MeshData meshData, int fromV, int toV, Vector3 direction,
+        private void TraverseEdgeLoopEdges(MeshObject meshObject, int fromV, int toV, Vector3 direction,
             Dictionary<int, HashSet<int>> adjacency, HashSet<VertexPair> visitedEdges, HashSet<VertexPair> result, float threshold)
         {
             int current = toV;
@@ -131,7 +131,7 @@ namespace MeshFactory.Tools
                 {
                     if (next == prev) continue;
 
-                    Vector3 nextDir = (meshData.Vertices[next].Position - meshData.Vertices[current].Position).normalized;
+                    Vector3 nextDir = (meshObject.Vertices[next].Position - meshObject.Vertices[current].Position).normalized;
                     float dot = Vector3.Dot(currentDir, nextDir);
 
                     if (dot > bestDot)
@@ -143,7 +143,7 @@ namespace MeshFactory.Tools
 
                 if (bestNext < 0) break;
 
-                currentDir = (meshData.Vertices[bestNext].Position - meshData.Vertices[current].Position).normalized;
+                currentDir = (meshObject.Vertices[bestNext].Position - meshObject.Vertices[current].Position).normalized;
                 prev = current;
                 current = bestNext;
             }

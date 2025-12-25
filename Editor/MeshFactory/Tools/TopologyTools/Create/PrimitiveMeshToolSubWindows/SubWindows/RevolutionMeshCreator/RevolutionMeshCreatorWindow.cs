@@ -37,12 +37,12 @@ public class RevolutionMeshCreatorWindow : MeshCreatorWindowBase<RevolutionParam
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static RevolutionMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static RevolutionMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<RevolutionMeshCreatorWindow>(true, "Create Revolution UnityMesh", true);
         window.minSize = new Vector2(750, 650);
         window.maxSize = new Vector2(1000, 900);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
 
         if (window._profile.Count == 0)
         {
@@ -344,10 +344,10 @@ public class RevolutionMeshCreatorWindow : MeshCreatorWindowBase<RevolutionParam
         Rect rect = GUILayoutUtility.GetRect(300, 400, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
 
         // メッシュ情報（常に実行）
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -397,9 +397,9 @@ public class RevolutionMeshCreatorWindow : MeshCreatorWindowBase<RevolutionParam
     }
 
     // ================================================================
-    // MeshData生成
+    // MeshObject生成
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
         // プロファイルをパラメータに同期
         _params.Profile = _profile.ToArray();

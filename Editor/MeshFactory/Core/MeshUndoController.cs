@@ -1,6 +1,6 @@
 // Assets/Editor/UndoSystem/MeshEditor/MeshUndoController.cs
 // SimpleMeshEditorに組み込むためのUndoコントローラー
-// MeshData（Vertex/Face）ベースに対応
+// MeshObject（Vertex/Face）ベースに対応
 
 using System;
 using System.Collections.Generic;
@@ -18,13 +18,13 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// メッシュエディタ用Undoコントローラー
     /// SimpleMeshEditorに組み込んで使用
-    /// MeshDataベースの新構造対応
+    /// MeshObjectベースの新構造対応
     /// </summary>
     public partial class  MeshUndoController : IDisposable
     {
         // === Undoノード構造 ===
         private UndoGroup _mainGroup;
-        private UndoStack<MeshEditContext> _vertexEditStack;
+        private UndoStack<MeshUndoContext> _vertexEditStack;
         private UndoStack<EditorStateContext> _editorStateStack;
         private UndoStack<WorkPlane> _workPlaneStack;
         private UndoStack<ModelContext> _meshListStack;
@@ -35,7 +35,7 @@ namespace MeshFactory.UndoSystem
         private Stack<MeshEditor.ProjectRecord> _projectRedoStack = new Stack<MeshEditor.ProjectRecord>();
 
         // === コンテキスト ===
-        private MeshEditContext _meshContext;
+        private MeshUndoContext _meshContext;
         private EditorStateContext _editorStateContext;
         private WorkPlane _workPlane;
         private ModelContext _modelContext;
@@ -54,7 +54,7 @@ namespace MeshFactory.UndoSystem
         private WorkPlaneSnapshot _workPlaneStartSnapshot;
 
         // === プロパティ ===
-        public MeshEditContext MeshContext => _meshContext;
+        public MeshUndoContext MeshUndoContext => _meshContext;
         public EditorStateContext EditorState => _editorStateContext;
         public WorkPlane WorkPlane => _workPlane;
         public ModelContext ModelContext => _modelContext;
@@ -62,8 +62,8 @@ namespace MeshFactory.UndoSystem
         /// <summary>後方互換: MeshListContext（ModelContextを返す）</summary>
         public ModelContext MeshListContext => _modelContext;
 
-        /// <summary>MeshDataへの直接アクセス</summary>
-        public MeshData MeshData => _meshContext?.MeshData;
+        /// <summary>MeshObjectへの直接アクセス</summary>
+        public MeshObject MeshObject => _meshContext?.MeshObject;
 
         // 後方互換
         public ViewContext ViewContext => _editorStateContext as ViewContext ?? new ViewContext();
@@ -72,7 +72,7 @@ namespace MeshFactory.UndoSystem
         public bool CanRedo => _mainGroup.CanRedo;
 
         public UndoGroup MainGroup => _mainGroup;
-        public UndoStack<MeshEditContext> VertexEditStack => _vertexEditStack;
+        public UndoStack<MeshUndoContext> VertexEditStack => _vertexEditStack;
         public UndoStack<EditorStateContext> EditorStateStack => _editorStateStack;
         public UndoStack<WorkPlane> WorkPlaneStack => _workPlaneStack;
         public UndoStack<ModelContext> MeshListStack => _meshListStack;
@@ -93,8 +93,8 @@ namespace MeshFactory.UndoSystem
             _mainGroup.ResolutionPolicy = UndoResolutionPolicy.TimestampOnly;
 
             // 頂点編集スタック
-            _meshContext = new MeshEditContext();
-            _vertexEditStack = new UndoStack<MeshEditContext>(
+            _meshContext = new MeshUndoContext();
+            _vertexEditStack = new UndoStack<MeshUndoContext>(
                 $"{windowId}/VertexEdit",
                 "Vertex Edit",
                 _meshContext
@@ -172,13 +172,13 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
-        /// MeshDataを直接設定
+        /// MeshObjectを直接設定
         /// </summary>
-        public void SetMeshData(MeshData meshData, Mesh targetMesh = null)
+        public void SetMeshObject(MeshObject meshObject, Mesh targetMesh = null)
         {
-            _meshContext.MeshData = meshData;
+            _meshContext.MeshObject = meshObject;
             _meshContext.TargetMesh = targetMesh;
-            _meshContext.OriginalPositions = meshData.Vertices
+            _meshContext.OriginalPositions = meshObject.Vertices
                 .ConvertAll(v => v.Position).ToArray();
             _meshContext.SelectedVertices.Clear();
             _meshContext.SelectedFaces.Clear();
@@ -363,12 +363,12 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
-        /// 頂点ドラッグ開始（MeshDataから自動取得）
+        /// 頂点ドラッグ開始（MeshObjectから自動取得）
         /// </summary>
         public void BeginVertexDrag()
         {
             if (_isDragging) return;
-            if (_meshContext?.MeshData == null) return;
+            if (_meshContext?.MeshObject == null) return;
 
             BeginVertexDrag(_meshContext.GetAllPositions());
         }
@@ -404,11 +404,11 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
-        /// 頂点ドラッグ終了（MeshDataから自動取得）
+        /// 頂点ドラッグ終了（MeshObjectから自動取得）
         /// </summary>
         public void EndVertexDrag(int[] movedIndices)
         {
-            if (_meshContext?.MeshData == null) return;
+            if (_meshContext?.MeshObject == null) return;
             EndVertexDrag(movedIndices, _meshContext.GetAllPositions());
         }
 
@@ -496,9 +496,9 @@ namespace MeshFactory.UndoSystem
         /// 【注意】この版ではEdge/Line選択は保存されない
         /// Edge/Line選択も保存したい場合はselectionState付きの版を使用
         /// </summary>
-        public MeshDataSnapshot CaptureMeshDataSnapshot()
+        public MeshObjectSnapshot CaptureMeshObjectSnapshot()
         {
-            return MeshDataSnapshot.Capture(_meshContext);
+            return MeshObjectSnapshot.Capture(_meshContext);
         }
 
         /// <summary>
@@ -512,9 +512,9 @@ namespace MeshFactory.UndoSystem
         /// これにより、ベベルや押し出しのUndoで元の選択も復元される。
         /// </param>
         /// <returns>スナップショット</returns>
-        public MeshDataSnapshot CaptureMeshDataSnapshot(SelectionState selectionState)
+        public MeshObjectSnapshot CaptureMeshObjectSnapshot(SelectionState selectionState)
         {
-            return MeshDataSnapshot.Capture(_meshContext, selectionState);
+            return MeshObjectSnapshot.Capture(_meshContext, selectionState);
         }
 
         /// <summary>
@@ -524,8 +524,8 @@ namespace MeshFactory.UndoSystem
         /// Edge/Line選択も復元したい場合はselectionState付きの版を使用
         /// </summary>
         public void RecordTopologyChange(
-            MeshDataSnapshot before,
-            MeshDataSnapshot after,
+            MeshObjectSnapshot before,
+            MeshObjectSnapshot after,
             string description = "Topology Change")
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
@@ -557,8 +557,8 @@ namespace MeshFactory.UndoSystem
         /// </param>
         /// <param name="description">Undo履歴に表示される説明</param>
         public void RecordTopologyChange(
-            MeshDataSnapshot before,
-            MeshDataSnapshot after,
+            MeshObjectSnapshot before,
+            MeshObjectSnapshot after,
             SelectionState selectionState,
             string description = "Topology Change")
         {
@@ -580,12 +580,12 @@ namespace MeshFactory.UndoSystem
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             // 旧形式のスナップショットを新形式に変換して記録
-            var beforeData = new MeshDataSnapshot();
+            var beforeData = new MeshObjectSnapshot();
             before.ApplyTo(_meshContext);
-            beforeData = MeshDataSnapshot.Capture(_meshContext);
+            beforeData = MeshObjectSnapshot.Capture(_meshContext);
 
             after.ApplyTo(_meshContext);
-            var afterData = MeshDataSnapshot.Capture(_meshContext);
+            var afterData = MeshObjectSnapshot.Capture(_meshContext);
 
             var record = new MeshSnapshotRecord(beforeData, afterData);
             _vertexEditStack.Record(record, description);
@@ -678,7 +678,7 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// 頂点削除操作を記録（スナップショット方式）
         /// </summary>
-        public void RecordDeleteVertices(MeshDataSnapshot before, MeshDataSnapshot after)
+        public void RecordDeleteVertices(MeshObjectSnapshot before, MeshObjectSnapshot after)
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             
@@ -691,7 +691,7 @@ namespace MeshFactory.UndoSystem
         /// メッシュトポロジー変更を記録（スナップショット方式）
         /// ナイフツールの複数面切断、面マージなど汎用的に使用
         /// </summary>
-        public void RecordMeshTopologyChange(MeshDataSnapshot before, MeshDataSnapshot after, string description = "UnityMesh Topology Change")
+        public void RecordMeshTopologyChange(MeshObjectSnapshot before, MeshObjectSnapshot after, string description = "UnityMesh Topology Change")
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             
@@ -701,7 +701,7 @@ namespace MeshFactory.UndoSystem
         }
         /// <summary>
         /// トポロジー変更前にスナップショットを取得（後方互換）
-        /// 現在のMeshDataのスナップショットを取得
+        /// 現在のMeshObjectのスナップショットを取得
         /// </summary>
         public MeshSnapshot CaptureSnapshot()
         {
@@ -880,9 +880,9 @@ namespace MeshFactory.UndoSystem
 
         public string GetDebugInfo()
         {
-            var meshInfo = _meshContext?.MeshData?.GetDebugInfo() ?? "No MeshData";
+            var meshInfo = _meshContext?.MeshObject?.GetDebugInfo() ?? "No MeshObject";
             return $"[MeshFactoryUndo]\n" +
-                   $"  MeshData: {meshInfo}\n" +
+                   $"  MeshObject: {meshInfo}\n" +
                    $"  Vertex: {_vertexEditStack.GetDebugInfo()}\n" +
                    $"  EditorState: {_editorStateStack.GetDebugInfo()}\n" +
                    $"  WorkPlane: {_workPlaneStack.GetDebugInfo()}\n" +
@@ -972,7 +972,9 @@ namespace MeshFactory.UndoSystem
             int oldSelectedIndex,
             int newSelectedIndex,
             CameraSnapshot? oldCamera = null,
-            CameraSnapshot? newCamera = null)
+            CameraSnapshot? newCamera = null,
+            List<Material> oldMaterials = null,
+            int oldMaterialIndex = 0)
         {
             var record = new MeshListChangeRecord
             {
@@ -982,7 +984,9 @@ namespace MeshFactory.UndoSystem
                 OldSelectedIndex = oldSelectedIndex,
                 NewSelectedIndex = newSelectedIndex,
                 OldCameraState = oldCamera,
-                NewCameraState = newCamera
+                NewCameraState = newCamera,
+                OldMaterials = oldMaterials != null ? new List<Material>(oldMaterials) : null,
+                OldCurrentMaterialIndex = oldMaterialIndex
             };
 
             string desc = addedContexts.Count == 1
@@ -990,7 +994,26 @@ namespace MeshFactory.UndoSystem
                 : $"Add {addedContexts.Count} Meshes";
 
             _meshListStack.Record(record, desc);
+            _lastMeshListRecord = record;  // 最後のレコードを保持
             FocusMeshList();
+        }
+
+        /// <summary>
+        /// 最後に記録した MeshListChangeRecord への参照（Materials 更新用）
+        /// </summary>
+        private MeshListChangeRecord _lastMeshListRecord;
+
+        /// <summary>
+        /// 最後のレコードに NewMaterials を設定
+        /// AddMaterialsToModel から呼び出される
+        /// </summary>
+        public void UpdateLastRecordMaterials(List<Material> newMaterials, int newMaterialIndex)
+        {
+            if (_lastMeshListRecord != null)
+            {
+                _lastMeshListRecord.NewMaterials = newMaterials != null ? new List<Material>(newMaterials) : null;
+                _lastMeshListRecord.NewCurrentMaterialIndex = newMaterialIndex;
+            }
         }
 
         /// <summary>

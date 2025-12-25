@@ -30,33 +30,33 @@ namespace MeshFactory.Serialization
         // ================================================================
 
         // ================================================================
-        // 変換: MeshData → MeshContextData
+        // 変換: MeshObject → MeshContextData
         // ================================================================
 
         /// <summary>
-        /// MeshDataをMeshContextDataに変換
+        /// MeshObjectをMeshContextDataに変換
         /// </summary>
         public static MeshContextData ToMeshContextData(
-            MeshData meshData,
+            MeshObject meshObject,
             string name,
             ExportSettings exportSettings,
             HashSet<int> selectedVertices,
             List<Material> materials = null,
             int currentMaterialIndex = 0)
         {
-            if (meshData == null)
+            if (meshObject == null)
                 return null;
 
             var contextData = new MeshContextData
             {
-                name = name ?? meshData.Name ?? "Untitled"
+                name = name ?? meshObject.Name ?? "Untitled"
             };
 
             // ExportSettings
             contextData.exportSettings = ToExportSettingsData(exportSettings);
 
             // Vertices
-            foreach (var vertex in meshData.Vertices)
+            foreach (var vertex in meshObject.Vertices)
             {
                 var vertexData = new VertexData();
                 vertexData.SetPosition(vertex.Position);
@@ -66,7 +66,7 @@ namespace MeshFactory.Serialization
             }
 
             // Faces（MaterialIndex含む）
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 var faceData = new FaceData
                 {
@@ -146,18 +146,18 @@ namespace MeshFactory.Serialization
         }
 
         // ================================================================
-        // 変換: MeshContextData → MeshData
+        // 変換: MeshContextData → MeshObject
         // ================================================================
 
         /// <summary>
-        /// MeshContextDataをMeshDataに変換
+        /// MeshContextDataをMeshObjectに変換
         /// </summary>
-        public static MeshData ToMeshData(MeshContextData meshContext)
+        public static MeshObject ToMeshObject(MeshContextData meshContext)
         {
             if (meshContext == null)
                 return null;
 
-            var meshData = new MeshData(meshContext.name);
+            var meshObject = new MeshObject(meshContext.name);
 
             // Vertices
             foreach (var vd in meshContext.vertices)
@@ -165,7 +165,7 @@ namespace MeshFactory.Serialization
                 var vertex = new Vertex(vd.GetPosition());
                 vertex.UVs = vd.GetUVs();
                 vertex.Normals = vd.GetNormals();
-                meshData.Vertices.Add(vertex);
+                meshObject.Vertices.Add(vertex);
             }
 
             // Faces（MaterialIndex含む）
@@ -178,10 +178,10 @@ namespace MeshFactory.Serialization
                     NormalIndices = new List<int>(fd.ni ?? new List<int>()),
                     MaterialIndex = fd.mi ?? 0  // nullの場合は0
                 };
-                meshData.Faces.Add(face);
+                meshObject.Faces.Add(face);
             }
 
-            return meshData;
+            return meshObject;
         }
 
         /// <summary>
@@ -337,6 +337,45 @@ namespace MeshFactory.Serialization
             // EditorState
             modelData.editorState = editorState;
 
+            // ================================================================
+            // Materials（Phase 1: モデル単位に集約）
+            // ================================================================
+            if (model.Materials != null)
+            {
+                foreach (var mat in model.Materials)
+                {
+                    if (mat == null)
+                    {
+                        modelData.materials.Add("");
+                    }
+                    else
+                    {
+                        string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mat);
+                        modelData.materials.Add(assetPath ?? "");
+                    }
+                }
+            }
+            modelData.currentMaterialIndex = model.CurrentMaterialIndex;
+
+            // DefaultMaterials
+            if (model.DefaultMaterials != null)
+            {
+                foreach (var mat in model.DefaultMaterials)
+                {
+                    if (mat == null)
+                    {
+                        modelData.defaultMaterials.Add("");
+                    }
+                    else
+                    {
+                        string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mat);
+                        modelData.defaultMaterials.Add(assetPath ?? "");
+                    }
+                }
+            }
+            modelData.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
+            modelData.autoSetDefaultMaterials = model.AutoSetDefaultMaterials;
+
             return modelData;
         }
 
@@ -367,8 +406,8 @@ namespace MeshFactory.Serialization
             // MeshContextDataからMeshContextを復元
             foreach (var meshContextData in modelData.meshContextList)
             {
-                var meshData = ToMeshData(meshContextData);
-                if (meshData == null) continue;
+                var meshObject = ToMeshObject(meshContextData);
+                if (meshObject == null) continue;
 
                 // MeshTypeをパース
                 SimpleMeshFactory.MeshType meshType = SimpleMeshFactory.MeshType.Mesh;
@@ -380,12 +419,11 @@ namespace MeshFactory.Serialization
                 var context = new MeshContext
                 {
                     Name = meshContextData.name ?? "UnityMesh",
-                    Data = meshData,
-                    UnityMesh = meshData.ToUnityMesh(),
-                    OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
+                    MeshObject = meshObject,
+                    UnityMesh = meshObject.ToUnityMesh(),
+                    OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
                     ExportSettings = ToExportSettings(meshContextData.exportSettings),
-                    Materials = ToMaterials(meshContextData),
-                    CurrentMaterialIndex = meshContextData.currentMaterialIndex,
+                    // Materials は ModelData から復元するため、ここでは設定しない
                     // オブジェクト属性
                     Type = meshType,
                     ParentIndex = meshContextData.parentIndex,
@@ -402,6 +440,53 @@ namespace MeshFactory.Serialization
                 model.Add(context);
             }
 
+            // ================================================================
+            // Materials 復元（Phase 1: モデル単位に集約）
+            // ================================================================
+            if (modelData.materials != null && modelData.materials.Count > 0)
+            {
+                // 新形式: ModelData.materials から復元
+                model.Materials.Clear();
+                foreach (var path in modelData.materials)
+                {
+                    Material mat = null;
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
+                        if (mat == null)
+                        {
+                            Debug.LogWarning($"[ModelSerializer] Material not found: {path}");
+                        }
+                    }
+                    model.Materials.Add(mat);
+                }
+                model.CurrentMaterialIndex = modelData.currentMaterialIndex;
+            }
+            else if (modelData.meshContextList.Count > 0)
+            {
+                // 旧形式: 最初の MeshContextData.materials から復元（後方互換）
+                var firstMeshData = modelData.meshContextList[0];
+                model.Materials = ToMaterials(firstMeshData);
+                model.CurrentMaterialIndex = firstMeshData.currentMaterialIndex;
+            }
+
+            // DefaultMaterials 復元
+            if (modelData.defaultMaterials != null && modelData.defaultMaterials.Count > 0)
+            {
+                model.DefaultMaterials.Clear();
+                foreach (var path in modelData.defaultMaterials)
+                {
+                    Material mat = null;
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
+                    }
+                    model.DefaultMaterials.Add(mat);
+                }
+                model.DefaultCurrentMaterialIndex = modelData.defaultCurrentMaterialIndex;
+                model.AutoSetDefaultMaterials = modelData.autoSetDefaultMaterials;
+            }
+
             return model;
         }
 
@@ -414,12 +499,12 @@ namespace MeshFactory.Serialization
                 return null;
 
             var contextData = ToMeshContextData(
-                meshContext.Data,
+                meshContext.MeshObject,
                 meshContext.Name,
                 meshContext.ExportSettings,
                 selectedVertices,
-                meshContext.Materials,
-                meshContext.CurrentMaterialIndex
+                null,  // Phase 1: Materials は ModelContext に集約
+                0
             );
 
             if (contextData != null)
@@ -449,8 +534,8 @@ namespace MeshFactory.Serialization
             if (contextData == null)
                 return null;
 
-            var meshData = ToMeshData(contextData);
-            if (meshData == null)
+            var meshObject = ToMeshObject(contextData);
+            if (meshObject == null)
                 return null;
 
             // MeshTypeをパース
@@ -463,12 +548,11 @@ namespace MeshFactory.Serialization
             return new MeshContext
             {
                 Name = contextData.name ?? "UnityMesh",
-                Data = meshData,
-                UnityMesh = meshData.ToUnityMesh(),
-                OriginalPositions = meshData.Vertices.Select(v => v.Position).ToArray(),
+                MeshObject = meshObject,
+                UnityMesh = meshObject.ToUnityMesh(),
+                OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
                 ExportSettings = ToExportSettings(contextData.exportSettings),
-                Materials = ToMaterials(contextData),
-                CurrentMaterialIndex = contextData.currentMaterialIndex,
+                // Phase 1: Materials は ModelContext に集約
                 // オブジェクト属性
                 Type = meshType,
                 ParentIndex = contextData.parentIndex,

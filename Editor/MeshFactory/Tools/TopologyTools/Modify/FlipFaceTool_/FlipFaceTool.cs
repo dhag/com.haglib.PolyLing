@@ -118,7 +118,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private void FlipSelectedFaces()
         {
-            if (_context == null || _context.MeshData == null)
+            if (_context == null || _context.MeshObject == null)
             {
                 _lastMessage = T("NoMesh"); 
                 return;
@@ -132,25 +132,25 @@ namespace MeshFactory.Tools
             }
 
             // Undo用スナップショット
-            MeshDataSnapshot before = null;
+            MeshObjectSnapshot before = null;
             if (_context.UndoController != null)
             {
-                before = MeshDataSnapshot.Capture(_context.UndoController.MeshContext);
+                before = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
             }
 
             // 選択された面を反転
             int flippedCount = 0;
             foreach (int faceIdx in faces)
             {
-                if (faceIdx >= 0 && faceIdx < _context.MeshData.FaceCount)
+                if (faceIdx >= 0 && faceIdx < _context.MeshObject.FaceCount)
                 {
-                    _context.MeshData.Faces[faceIdx].Flip();
+                    _context.MeshObject.Faces[faceIdx].Flip();
                     flippedCount++;
                 }
             }
 
             // 法線を再計算
-            _context.MeshData.RecalculateNormals();
+            _context.MeshObject.RecalculateNormals();
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -158,7 +158,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (_context.UndoController != null && before != null)
             {
-                var after = MeshDataSnapshot.Capture(_context.UndoController.MeshContext);
+                var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
                 _context.UndoController.RecordTopologyChange(before, after, $"Flip {flippedCount} Faces");
             }
 
@@ -173,35 +173,35 @@ namespace MeshFactory.Tools
         /// </summary>
         private void FlipAllFaces()
         {
-            if (_context == null || _context.MeshData == null)
+            if (_context == null || _context.MeshObject == null)
             {
                 _lastMessage = "メッシュが選択されていません";
                 return;
             }
 
-            if (_context.MeshData.FaceCount == 0)
+            if (_context.MeshObject.FaceCount == 0)
             {
                 _lastMessage = T("NoFacesExist");
                 return;
             }
 
             // Undo用スナップショット
-            MeshDataSnapshot before = null;
+            MeshObjectSnapshot before = null;
             if (_context.UndoController != null)
             {
-                before = MeshDataSnapshot.Capture(_context.UndoController.MeshContext);
+                before = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
             }
 
             // 全ての面を反転
             int flippedCount = 0;
-            foreach (var face in _context.MeshData.Faces)
+            foreach (var face in _context.MeshObject.Faces)
             {
                 face.Flip();
                 flippedCount++;
             }
 
             // 法線を再計算
-            _context.MeshData.RecalculateNormals();
+            _context.MeshObject.RecalculateNormals();
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -209,7 +209,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (_context.UndoController != null && before != null)
             {
-                var after = MeshDataSnapshot.Capture(_context.UndoController.MeshContext);
+                var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
                 _context.UndoController.RecordTopologyChange(before, after, $"Flip All {flippedCount} Faces");
             }
 

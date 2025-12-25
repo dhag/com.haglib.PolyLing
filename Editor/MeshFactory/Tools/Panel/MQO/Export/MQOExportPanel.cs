@@ -323,7 +323,17 @@ namespace MeshFactory.MQO
 
             Debug.Log($"[MQOExportPanel] Exporting {meshContexts.Count} mesh(es) to: {_lastFilePath}");
 
-            _lastResult = MQOExporter.ExportFile(_lastFilePath, meshContexts, _settings);
+            // Phase 5: ModelContext.Materialsを使用
+            var materials = _context?.Model?.Materials;
+            if (materials != null && materials.Count > 0)
+            {
+                _lastResult = MQOExporter.ExportFile(_lastFilePath, meshContexts, materials, _settings);
+            }
+            else
+            {
+                // フォールバック: 後方互換モード
+                _lastResult = MQOExporter.ExportFile(_lastFilePath, meshContexts, _settings);
+            }
 
             if (_lastResult.Success)
             {

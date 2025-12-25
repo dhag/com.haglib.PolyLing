@@ -81,8 +81,8 @@ namespace MeshFactory.Tools
         /// <summary>現在のMeshContext</summary>
         protected MeshContext CurrentMeshContent => _context?.CurrentMeshContent;
 
-        /// <summary>現在のMeshData</summary>
-        protected MeshData CurrentMeshData => CurrentMeshContent?.Data;
+        /// <summary>現在のMeshObject</summary>
+        protected MeshObject CurrentMeshObject => CurrentMeshContent?.MeshObject;
 
         /// <summary>有効なメッシュが選択されているか</summary>
         protected bool HasValidSelection => _context?.HasValidMeshSelection ?? false;
@@ -160,16 +160,16 @@ namespace MeshFactory.Tools
         /// トポロジ変更を記録（面追加/削除、頂点マージなど）
         /// </summary>
         /// <param name="operationName">操作名（Undo履歴に表示）</param>
-        /// <param name="action">MeshDataを変更するアクション</param>
-        protected void RecordTopologyChange(string operationName, Action<MeshData> action)
+        /// <param name="action">MeshObjectを変更するアクション</param>
+        protected void RecordTopologyChange(string operationName, Action<MeshObject> action)
         {
-            if (CurrentMeshData == null) return;
+            if (CurrentMeshObject == null) return;
 
             var undo = _context?.UndoController;
-            var before = undo?.CaptureMeshDataSnapshot();
+            var before = undo?.CaptureMeshObjectSnapshot();
 
             // 操作実行
-            action(CurrentMeshData);
+            action(CurrentMeshObject);
 
             // Unity Meshに反映
             _context?.SyncMesh?.Invoke();
@@ -177,7 +177,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (undo != null && before != null)
             {
-                var after = undo.CaptureMeshDataSnapshot();
+                var after = undo.CaptureMeshObjectSnapshot();
                 undo.RecordTopologyChange(before, after, operationName);
             }
 
@@ -189,15 +189,15 @@ namespace MeshFactory.Tools
         /// <summary>
         /// トポロジ変更を記録（戻り値あり版）
         /// </summary>
-        protected T RecordTopologyChange<T>(string operationName, Func<MeshData, T> action)
+        protected T RecordTopologyChange<T>(string operationName, Func<MeshObject, T> action)
         {
-            if (CurrentMeshData == null) return default;
+            if (CurrentMeshObject == null) return default;
 
             var undo = _context?.UndoController;
-            var before = undo?.CaptureMeshDataSnapshot();
+            var before = undo?.CaptureMeshObjectSnapshot();
 
             // 操作実行
-            T result = action(CurrentMeshData);
+            T result = action(CurrentMeshObject);
 
             // Unity Meshに反映
             _context?.SyncMesh?.Invoke();
@@ -205,7 +205,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (undo != null && before != null)
             {
-                var after = undo.CaptureMeshDataSnapshot();
+                var after = undo.CaptureMeshObjectSnapshot();
                 undo.RecordTopologyChange(before, after, operationName);
             }
 

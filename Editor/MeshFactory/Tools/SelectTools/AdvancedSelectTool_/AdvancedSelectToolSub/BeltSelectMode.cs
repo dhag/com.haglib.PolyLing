@@ -34,7 +34,7 @@ namespace MeshFactory.Tools
                 edge = new VertexPair(legacyEdge.Item1, legacyEdge.Item2);
             }
 
-            var beltData = GetBeltData(toolCtx.MeshData, edge.Value);
+            var beltData = GetBeltData(toolCtx.MeshObject, edge.Value);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 SelectionHelper.ApplyVertexSelection(toolCtx, beltData.Vertices.ToList(), ctx.AddToSelection);
@@ -62,7 +62,7 @@ namespace MeshFactory.Tools
 
             if (!ctx.HoveredEdgePair.HasValue) return;
 
-            var beltData = GetBeltData(toolCtx.MeshData, ctx.HoveredEdgePair.Value);
+            var beltData = GetBeltData(toolCtx.MeshObject, ctx.HoveredEdgePair.Value);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 ctx.PreviewVertices.AddRange(beltData.Vertices);
@@ -88,7 +88,7 @@ namespace MeshFactory.Tools
         // アルゴリズム
         // ================================================================
 
-        private BeltData GetBeltData(MeshData meshData, VertexPair startEdge)
+        private BeltData GetBeltData(MeshObject meshObject, VertexPair startEdge)
         {
             var result = new BeltData
             {
@@ -97,16 +97,16 @@ namespace MeshFactory.Tools
                 Faces = new List<int>()
             };
 
-            var edgeToFaces = SelectionHelper.BuildEdgeToFacesMap(meshData);
+            var edgeToFaces = SelectionHelper.BuildEdgeToFacesMap(meshObject);
             var visitedEdges = new HashSet<VertexPair>();
 
-            TraverseBeltData(meshData, startEdge, edgeToFaces, visitedEdges, result, true);
-            TraverseBeltData(meshData, startEdge, edgeToFaces, visitedEdges, result, false);
+            TraverseBeltData(meshObject, startEdge, edgeToFaces, visitedEdges, result, true);
+            TraverseBeltData(meshObject, startEdge, edgeToFaces, visitedEdges, result, false);
 
             return result;
         }
 
-        private void TraverseBeltData(MeshData meshData, VertexPair startEdge,
+        private void TraverseBeltData(MeshObject meshObject, VertexPair startEdge,
             Dictionary<VertexPair, List<int>> edgeToFaces, HashSet<VertexPair> visitedEdges,
             BeltData result, bool forward)
         {
@@ -127,7 +127,7 @@ namespace MeshFactory.Tools
 
                 foreach (int faceIdx in faces)
                 {
-                    var face = meshData.Faces[faceIdx];
+                    var face = meshObject.Faces[faceIdx];
                     if (face.VertexIndices.Count != 4) continue;
 
                     if (!result.Faces.Contains(faceIdx))

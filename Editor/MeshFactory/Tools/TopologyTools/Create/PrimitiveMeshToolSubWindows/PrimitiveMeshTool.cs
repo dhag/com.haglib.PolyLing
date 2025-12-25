@@ -117,7 +117,7 @@ namespace MeshFactory.Tools
             }
 
             // 追加先がない場合は警告
-            if (_settings.AddToCurrentMesh && _context != null && _context.MeshData == null)
+            if (_settings.AddToCurrentMesh && _context != null && _context.MeshObject == null)
             {
                 EditorGUILayout.LabelField(L.Get("NoMeshSelected"), EditorStyles.miniLabel);
             }
@@ -168,13 +168,13 @@ namespace MeshFactory.Tools
         private void OpenCreatorWindow(MeshCreatorEntry creator)
         {
             // コールバックを設定してウィンドウを開く
-            creator.OpenAction?.Invoke(OnMeshDataCreated);
+            creator.OpenAction?.Invoke(OnMeshObjectCreated);
         }
 
         /// <summary>
         /// メッシュ生成完了時のコールバック
         /// </summary>
-        private void OnMeshDataCreated(MeshData meshData, string name)
+        private void OnMeshObjectCreated(MeshObject meshObject, string name)
         {
             if (_context == null)
             {
@@ -185,11 +185,11 @@ namespace MeshFactory.Tools
             // ToolContext経由でメッシュを追加
             if (_settings.AddToCurrentMesh)
             {
-                _context.AddMeshDataToCurrentMesh?.Invoke(meshData, name);
+                _context.AddMeshObjectToCurrentMesh?.Invoke(meshObject, name);
             }
             else
             {
-                _context.CreateNewMeshContext?.Invoke(meshData, name);
+                _context.CreateNewMeshContext?.Invoke(meshObject, name);
             }
         }
 

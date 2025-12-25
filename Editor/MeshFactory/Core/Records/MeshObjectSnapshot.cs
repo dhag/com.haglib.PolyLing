@@ -1,4 +1,4 @@
-// Assets/Editor/UndoSystem/MeshEditor/Snapshots/MeshDataSnapshot.cs
+// Assets/Editor/UndoSystem/MeshEditor/Snapshots/MeshObjectSnapshot.cs
 // メッシュデータのスナップショット
 // トポロジー変更用の完全なメッシュ状態保存
 
@@ -15,14 +15,14 @@ namespace MeshFactory.UndoSystem
 
     /// <summary>
     /// メッシュ全体のスナップショット記録（トポロジー変更用）
-    /// MeshDataベースの新構造対応
+    /// MeshObjectベースの新構造対応
     /// 
     /// SelectionState参照を保持し、Edge/Line選択もUndo対象に
     /// </summary>
     public class MeshSnapshotRecord : MeshUndoRecord
     {
-        public MeshDataSnapshot Before;
-        public MeshDataSnapshot After;
+        public MeshObjectSnapshot Before;
+        public MeshObjectSnapshot After;
 
         // ================================================================
         // 拡張選択復元用のSelectionState参照
@@ -42,7 +42,7 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// コンストラクタ（従来版・後方互換）
         /// </summary>
-        public MeshSnapshotRecord(MeshDataSnapshot before, MeshDataSnapshot after)
+        public MeshSnapshotRecord(MeshObjectSnapshot before, MeshObjectSnapshot after)
         {
             Before = before;
             After = after;
@@ -61,8 +61,8 @@ namespace MeshFactory.UndoSystem
         /// トポロジー変更ツール（ベベル、押し出し等）は必ずこれを渡すこと。
         /// </param>
         public MeshSnapshotRecord(
-            MeshDataSnapshot before,
-            MeshDataSnapshot after,
+            MeshObjectSnapshot before,
+            MeshObjectSnapshot after,
             SelectionState selectionState)
         {
             Before = before;
@@ -70,14 +70,14 @@ namespace MeshFactory.UndoSystem
             _selectionStateRef = selectionState;
         }
 
-        public override void Undo(MeshEditContext ctx)
+        public override void Undo(MeshUndoContext ctx)
         {
             // 【フェーズ1変更】拡張選択対応版ApplyToを呼び出し
             Before?.ApplyTo(ctx, _selectionStateRef);
             ctx.ApplyToMesh();
         }
 
-        public override void Redo(MeshEditContext ctx)
+        public override void Redo(MeshUndoContext ctx)
         {
             // 【フェーズ1変更】拡張選択対応版ApplyToを呼び出し
             After?.ApplyTo(ctx, _selectionStateRef);
@@ -86,19 +86,19 @@ namespace MeshFactory.UndoSystem
     }
 
     // ============================================================
-    // MeshDataSnapshot クラス
+    // MeshObjectSnapshot クラス
     // ============================================================
 
     /// <summary>
-    /// MeshDataのスナップショット
+    /// MeshObjectのスナップショット
     /// マルチマテリアル対応版
     /// 
     /// 【フェーズ1】ExtendedSelection対応
     /// トポロジー変更時にEdge/Line選択も保存・復元可能に
     /// </summary>
-    public class MeshDataSnapshot
+    public class MeshObjectSnapshot
     {
-        public MeshData MeshData;
+        public MeshObject MeshObject;
         public HashSet<int> SelectedVertices;
         public HashSet<int> SelectedFaces;
 
@@ -136,11 +136,11 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// コンテキストからスナップショットを作成（従来版・後方互換）
         /// </summary>
-        public static MeshDataSnapshot Capture(MeshEditContext ctx)
+        public static MeshObjectSnapshot Capture(MeshUndoContext ctx)
         {
-            return new MeshDataSnapshot
+            return new MeshObjectSnapshot
             {
-                MeshData = ctx.MeshData?.Clone(),
+                MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(ctx.SelectedFaces),
                 Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
@@ -171,11 +171,11 @@ namespace MeshFactory.UndoSystem
         /// nullを渡すと従来通りの動作（Edge/Line選択は保存されない）
         /// </param>
         /// <returns>スナップショット</returns>
-        public static MeshDataSnapshot Capture(MeshEditContext ctx, SelectionState selectionState)
+        public static MeshObjectSnapshot Capture(MeshUndoContext ctx, SelectionState selectionState)
         {
-            var snapshot = new MeshDataSnapshot
+            var snapshot = new MeshObjectSnapshot
             {
-                MeshData = ctx.MeshData?.Clone(),
+                MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
                 SelectedFaces = new HashSet<int>(ctx.SelectedFaces),
                 Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
@@ -199,9 +199,9 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// スナップショットをコンテキストに適用（従来版・後方互換）
         /// </summary>
-        public void ApplyTo(MeshEditContext ctx)
+        public void ApplyTo(MeshUndoContext ctx)
         {
-            ctx.MeshData = MeshData?.Clone();
+            ctx.MeshObject = MeshObject?.Clone();
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
 
@@ -237,10 +237,10 @@ namespace MeshFactory.UndoSystem
         /// 
         /// nullを渡すと拡張選択は復元されない（従来動作）
         /// </param>
-        public void ApplyTo(MeshEditContext ctx, SelectionState selectionState)
+        public void ApplyTo(MeshUndoContext ctx, SelectionState selectionState)
         {
             // === 既存処理（メッシュデータ、レガシー選択、マテリアル） ===
-            ctx.MeshData = MeshData?.Clone();
+            ctx.MeshObject = MeshObject?.Clone();
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
 
@@ -297,10 +297,10 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// コンテキストからスナップショットを作成
         /// </summary>
-        public static MeshSnapshot Capture(MeshEditContext ctx)
+        public static MeshSnapshot Capture(MeshUndoContext ctx)
         {
-            // MeshDataから Unity 形式のデータを取得
-            if (ctx.MeshData == null)
+            // MeshObjectから Unity 形式のデータを取得
+            if (ctx.MeshObject == null)
             {
                 return new MeshSnapshot
                 {
@@ -313,7 +313,7 @@ namespace MeshFactory.UndoSystem
                 };
             }
 
-            var mesh = ctx.MeshData.ToUnityMesh();
+            var mesh = ctx.MeshObject.ToUnityMesh();
             var snapshot = new MeshSnapshot
             {
                 Vertices = mesh.vertices,
@@ -330,9 +330,9 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// スナップショットをコンテキストに適用（後方互換用）
         /// </summary>
-        public void ApplyTo(MeshEditContext ctx)
+        public void ApplyTo(MeshUndoContext ctx)
         {
-            // 一時的なMeshを作成してMeshDataに変換
+            // 一時的なMeshを作成してMeshObjectに変換
             var tempMesh = new Mesh
             {
                 vertices = Vertices,
@@ -341,8 +341,8 @@ namespace MeshFactory.UndoSystem
                 normals = Normals
             };
 
-            ctx.MeshData = new MeshData();
-            ctx.MeshData.FromUnityMesh(tempMesh, true);
+            ctx.MeshObject = new MeshObject();
+            ctx.MeshObject.FromUnityMesh(tempMesh, true);
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
 

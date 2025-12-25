@@ -24,14 +24,14 @@ namespace MeshFactory.Tools
 
         public static int FindNearestVertex(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null) return -1;
+            if (ctx.MeshObject == null) return -1;
 
             float minDist = VERTEX_CLICK_THRESHOLD;
             int nearest = -1;
 
-            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
-                Vector2 vScreen = ctx.WorldToScreen(ctx.MeshData.Vertices[i].Position);
+                Vector2 vScreen = ctx.WorldToScreen(ctx.MeshObject.Vertices[i].Position);
                 float dist = Vector2.Distance(screenPos, vScreen);
                 if (dist < minDist)
                 {
@@ -45,7 +45,7 @@ namespace MeshFactory.Tools
 
         public static VertexPair? FindNearestEdgePair(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null) return null;
+            if (ctx.MeshObject == null) return null;
 
             if (ctx.TopologyCache != null)
             {
@@ -54,8 +54,8 @@ namespace MeshFactory.Tools
 
                 foreach (var pair in ctx.TopologyCache.AllEdgePairs)
                 {
-                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[pair.V1].Position);
-                    Vector2 p2 = ctx.WorldToScreen(ctx.MeshData.Vertices[pair.V2].Position);
+                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[pair.V1].Position);
+                    Vector2 p2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[pair.V2].Position);
                     float dist = DistanceToLineSegment(screenPos, p1, p2);
                     if (dist < minDist)
                     {
@@ -76,12 +76,12 @@ namespace MeshFactory.Tools
 
         public static (int, int) FindNearestEdgeLegacy(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null) return (-1, -1);
+            if (ctx.MeshObject == null) return (-1, -1);
 
             float minDist = EDGE_CLICK_THRESHOLD;
             (int, int) nearest = (-1, -1);
 
-            foreach (var face in ctx.MeshData.Faces)
+            foreach (var face in ctx.MeshObject.Faces)
             {
                 int n = face.VertexCount;
                 if (n < 2) continue;
@@ -91,8 +91,8 @@ namespace MeshFactory.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[v1].Position);
-                    Vector2 p2 = ctx.WorldToScreen(ctx.MeshData.Vertices[v2].Position);
+                    Vector2 p1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v1].Position);
+                    Vector2 p2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[v2].Position);
                     float dist = DistanceToLineSegment(screenPos, p1, p2);
                     if (dist < minDist)
                     {
@@ -107,14 +107,14 @@ namespace MeshFactory.Tools
 
         public static int FindNearestFace(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null) return -1;
+            if (ctx.MeshObject == null) return -1;
 
             int nearest = -1;
             float nearestDepth = float.MaxValue;
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 if (face.VertexCount < 3) continue;
 
                 var screenPoints = new Vector2[face.VertexCount];
@@ -122,7 +122,7 @@ namespace MeshFactory.Tools
 
                 for (int i = 0; i < face.VertexCount; i++)
                 {
-                    var worldPos = ctx.MeshData.Vertices[face.VertexIndices[i]].Position;
+                    var worldPos = ctx.MeshObject.Vertices[face.VertexIndices[i]].Position;
                     screenPoints[i] = ctx.WorldToScreen(worldPos);
                     centroid += worldPos;
                 }
@@ -144,18 +144,18 @@ namespace MeshFactory.Tools
 
         public static int FindNearestLine(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null) return -1;
+            if (ctx.MeshObject == null) return -1;
 
             float minDist = EDGE_CLICK_THRESHOLD;
             int nearest = -1;
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 if (face.VertexCount != 2) continue;
 
-                Vector2 p1 = ctx.WorldToScreen(ctx.MeshData.Vertices[face.VertexIndices[0]].Position);
-                Vector2 p2 = ctx.WorldToScreen(ctx.MeshData.Vertices[face.VertexIndices[1]].Position);
+                Vector2 p1 = ctx.WorldToScreen(ctx.MeshObject.Vertices[face.VertexIndices[0]].Position);
+                Vector2 p2 = ctx.WorldToScreen(ctx.MeshObject.Vertices[face.VertexIndices[1]].Position);
                 float dist = DistanceToLineSegment(screenPos, p1, p2);
                 if (dist < minDist)
                 {
@@ -171,11 +171,11 @@ namespace MeshFactory.Tools
         // 隣接関係構築
         // ================================================================
 
-        public static Dictionary<int, HashSet<int>> BuildVertexAdjacency(MeshData meshData)
+        public static Dictionary<int, HashSet<int>> BuildVertexAdjacency(MeshObject meshObject)
         {
             var adjacency = new Dictionary<int, HashSet<int>>();
 
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 int n = face.VertexIndices.Count;
                 for (int i = 0; i < n; i++)
@@ -202,7 +202,7 @@ namespace MeshFactory.Tools
             var vertexToEdges = new Dictionary<int, List<VertexPair>>();
 
             var allEdges = new HashSet<VertexPair>();
-            foreach (var face in ctx.MeshData.Faces)
+            foreach (var face in ctx.MeshObject.Faces)
             {
                 int n = face.VertexCount;
                 for (int i = 0; i < n; i++)
@@ -242,14 +242,14 @@ namespace MeshFactory.Tools
             return adjacency;
         }
 
-        public static Dictionary<int, HashSet<int>> BuildFaceAdjacency(MeshData meshData)
+        public static Dictionary<int, HashSet<int>> BuildFaceAdjacency(MeshObject meshObject)
         {
             var adjacency = new Dictionary<int, HashSet<int>>();
             var edgeToFaces = new Dictionary<VertexPair, List<int>>();
 
-            for (int fIdx = 0; fIdx < meshData.FaceCount; fIdx++)
+            for (int fIdx = 0; fIdx < meshObject.FaceCount; fIdx++)
             {
-                var face = meshData.Faces[fIdx];
+                var face = meshObject.Faces[fIdx];
                 if (face.VertexCount < 3) continue;
 
                 adjacency[fIdx] = new HashSet<int>();
@@ -280,14 +280,14 @@ namespace MeshFactory.Tools
             return adjacency;
         }
 
-        public static Dictionary<int, HashSet<int>> BuildLineAdjacency(MeshData meshData)
+        public static Dictionary<int, HashSet<int>> BuildLineAdjacency(MeshObject meshObject)
         {
             var adjacency = new Dictionary<int, HashSet<int>>();
             var vertexToLines = new Dictionary<int, List<int>>();
 
-            for (int fIdx = 0; fIdx < meshData.FaceCount; fIdx++)
+            for (int fIdx = 0; fIdx < meshObject.FaceCount; fIdx++)
             {
-                var face = meshData.Faces[fIdx];
+                var face = meshObject.Faces[fIdx];
                 if (face.VertexCount != 2) continue;
 
                 adjacency[fIdx] = new HashSet<int>();
@@ -306,7 +306,7 @@ namespace MeshFactory.Tools
 
             foreach (int fIdx in adjacency.Keys.ToList())
             {
-                var face = meshData.Faces[fIdx];
+                var face = meshObject.Faces[fIdx];
                 if (face.VertexCount != 2) continue;
 
                 if (vertexToLines.TryGetValue(face.VertexIndices[0], out var list1))
@@ -324,13 +324,13 @@ namespace MeshFactory.Tools
             return adjacency;
         }
 
-        public static Dictionary<VertexPair, List<int>> BuildEdgeToFacesMap(MeshData meshData)
+        public static Dictionary<VertexPair, List<int>> BuildEdgeToFacesMap(MeshObject meshObject)
         {
             var map = new Dictionary<VertexPair, List<int>>();
 
-            for (int faceIdx = 0; faceIdx < meshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
                 if (n < 2) continue;
 
@@ -359,7 +359,7 @@ namespace MeshFactory.Tools
             var vertSet = new HashSet<int>(vertices);
             var result = new List<VertexPair>();
 
-            foreach (var face in ctx.MeshData.Faces)
+            foreach (var face in ctx.MeshObject.Faces)
             {
                 int n = face.VertexCount;
                 for (int i = 0; i < n; i++)
@@ -384,9 +384,9 @@ namespace MeshFactory.Tools
             var vertSet = new HashSet<int>(vertices);
             var result = new List<int>();
 
-            for (int fIdx = 0; fIdx < ctx.MeshData.FaceCount; fIdx++)
+            for (int fIdx = 0; fIdx < ctx.MeshObject.FaceCount; fIdx++)
             {
-                var face = ctx.MeshData.Faces[fIdx];
+                var face = ctx.MeshObject.Faces[fIdx];
                 if (face.VertexCount < 3) continue;
 
                 bool allIn = face.VertexIndices.All(v => vertSet.Contains(v));
@@ -402,9 +402,9 @@ namespace MeshFactory.Tools
             var vertSet = new HashSet<int>(vertices);
             var result = new List<int>();
 
-            for (int fIdx = 0; fIdx < ctx.MeshData.FaceCount; fIdx++)
+            for (int fIdx = 0; fIdx < ctx.MeshObject.FaceCount; fIdx++)
             {
-                var face = ctx.MeshData.Faces[fIdx];
+                var face = ctx.MeshObject.Faces[fIdx];
                 if (face.VertexCount != 2) continue;
 
                 if (vertSet.Contains(face.VertexIndices[0]) && vertSet.Contains(face.VertexIndices[1]))
@@ -420,7 +420,7 @@ namespace MeshFactory.Tools
 
             foreach (int fIdx in faces)
             {
-                var face = ctx.MeshData.Faces[fIdx];
+                var face = ctx.MeshObject.Faces[fIdx];
                 int n = face.VertexCount;
                 for (int i = 0; i < n; i++)
                 {
@@ -434,7 +434,7 @@ namespace MeshFactory.Tools
 
         public static List<int> GetAdjacentFaces(ToolContext ctx, List<VertexPair> edges)
         {
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshData);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshObject);
             var result = new HashSet<int>();
 
             foreach (var edge in edges)

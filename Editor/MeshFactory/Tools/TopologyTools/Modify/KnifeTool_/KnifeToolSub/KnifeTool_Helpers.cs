@@ -203,9 +203,9 @@ namespace MeshFactory.Tools
         {
             var result = new List<(int, int, (Vector3, Vector3))>();
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)
@@ -213,8 +213,8 @@ namespace MeshFactory.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    var p1 = ctx.MeshData.Vertices[v1].Position;
-                    var p2 = ctx.MeshData.Vertices[v2].Position;
+                    var p1 = ctx.MeshObject.Vertices[v1].Position;
+                    var p2 = ctx.MeshObject.Vertices[v2].Position;
                     var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -243,12 +243,12 @@ namespace MeshFactory.Tools
 
             foreach (var (faceIdx, localIdx, worldPos) in edges)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 int v1 = face.VertexIndices[localIdx];
                 int v2 = face.VertexIndices[(localIdx + 1) % face.VertexCount];
 
-                var p1 = ctx.MeshData.Vertices[v1].Position;
-                var p2 = ctx.MeshData.Vertices[v2].Position;
+                var p1 = ctx.MeshObject.Vertices[v1].Position;
+                var p2 = ctx.MeshObject.Vertices[v2].Position;
                 var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -271,9 +271,9 @@ namespace MeshFactory.Tools
         {
             var result = new List<(int, int)>();
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)
@@ -281,8 +281,8 @@ namespace MeshFactory.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    var p1 = ctx.MeshData.Vertices[v1].Position;
-                    var p2 = ctx.MeshData.Vertices[v2].Position;
+                    var p1 = ctx.MeshObject.Vertices[v1].Position;
+                    var p2 = ctx.MeshObject.Vertices[v2].Position;
                     var worldPos = NormalizeEdgeWorldPos(p1, p2);
 
                     if (IsSameEdgePosition(worldPos, edgeWorldPos))
@@ -300,11 +300,11 @@ namespace MeshFactory.Tools
         /// </summary>
         private int FindFaceWithBothEdges(ToolContext ctx, (Vector3, Vector3) edge1Pos, (Vector3, Vector3) edge2Pos)
         {
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
 
-            for (int faceIdx = 0; faceIdx < meshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
                 bool hasEdge1 = false, hasEdge2 = false;
 
@@ -312,8 +312,8 @@ namespace MeshFactory.Tools
                 {
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
-                    var p1 = meshData.Vertices[v1].Position;
-                    var p2 = meshData.Vertices[v2].Position;
+                    var p1 = meshObject.Vertices[v1].Position;
+                    var p2 = meshObject.Vertices[v2].Position;
                     var edgePos = NormalizeEdgeWorldPos(p1, p2);
 
                     if (IsSameEdgePosition(edgePos, edge1Pos)) hasEdge1 = true;
@@ -329,13 +329,13 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 辺から面へのマップを構築（インデックスベース）
         /// </summary>
-        private Dictionary<(int, int), List<int>> BuildEdgeToFacesMap(MeshData meshData)
+        private Dictionary<(int, int), List<int>> BuildEdgeToFacesMap(MeshObject meshObject)
         {
             var map = new Dictionary<(int, int), List<int>>();
 
-            for (int faceIdx = 0; faceIdx < meshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {
-                var face = meshData.Faces[faceIdx];
+                var face = meshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)

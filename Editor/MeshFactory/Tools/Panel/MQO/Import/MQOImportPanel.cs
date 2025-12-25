@@ -406,6 +406,7 @@ namespace MeshFactory.MQO
 
             if (GUILayout.Button(T("Import"), buttonStyle))
             {
+                Debug.Log($"[MQOImportPanel] Import button clicked. File: {_lastFilePath}");
                 ExecuteImport();
             }
 
@@ -427,7 +428,8 @@ namespace MeshFactory.MQO
             if (_lastResult.Success)
             {
                 Debug.Log($"[MQOImportPanel] Import successful: {_lastResult.MeshContexts.Count} objects, " +
-                          $"{_lastResult.Stats.TotalVertices} vertices, {_lastResult.Stats.TotalFaces} faces");
+                          $"{_lastResult.Stats.TotalVertices} vertices, {_lastResult.Stats.TotalFaces} faces, " +
+                          $"{_lastResult.Materials.Count} materials");
 
                 // コンテキストがあれば追加
                 if (_context != null)
@@ -455,6 +457,13 @@ namespace MeshFactory.MQO
                         {
                             Debug.LogWarning("[MQOImportPanel] Replace not available, falling back to Append mode");
                         }
+
+                        // Replaceモードではマテリアルも置換
+                        if (handled && _lastResult.Materials.Count > 0 && _context.ReplaceMaterials != null)
+                        {
+                            Debug.Log($"[MQOImportPanel] Replacing materials: {_lastResult.Materials.Count}");
+                            _context.ReplaceMaterials.Invoke(_lastResult.Materials);
+                        }
                     }
 
                     // Appendモード、またはReplaceのフォールバック
@@ -470,9 +479,16 @@ namespace MeshFactory.MQO
                             // フォールバック：1つずつ追加
                             foreach (var meshContext in _lastResult.MeshContexts)
                             {
-                                Debug.Log($"[MQOImportPanel] Adding MeshContext: {meshContext.Name}");
+                                Debug.Log($"[MQOImportPanel] Adding MeshUndoContext: {meshContext.Name}");
                                 _context.AddMeshContext?.Invoke(meshContext);
                             }
+                        }
+
+                        // Appendモードではマテリアルを追加（既存にマージ）
+                        if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
+                        {
+                            Debug.Log($"[MQOImportPanel] Adding materials: {_lastResult.Materials.Count}");
+                            _context.AddMaterials.Invoke(_lastResult.Materials);
                         }
                     }
                     _context.Repaint?.Invoke();
@@ -528,7 +544,7 @@ namespace MeshFactory.MQO
 
                     foreach (var mc in _lastResult.MeshContexts)
                     {
-                        EditorGUILayout.LabelField($"  {mc.Name} (V:{mc.Data?.VertexCount ?? 0} F:{mc.Data?.FaceCount ?? 0})",
+                        EditorGUILayout.LabelField($"  {mc.Name} (V:{mc.MeshObject?.VertexCount ?? 0} F:{mc.MeshObject?.FaceCount ?? 0})",
                             EditorStyles.miniLabel);
                     }
                 }

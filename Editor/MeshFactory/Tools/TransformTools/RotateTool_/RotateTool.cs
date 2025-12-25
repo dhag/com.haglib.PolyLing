@@ -134,7 +134,7 @@ namespace MeshFactory.Tools
             _affected.Clear();
             if (_ctx.SelectionState != null)
             {
-                foreach (var v in _ctx.SelectionState.GetAllAffectedVertices(_ctx.MeshData))
+                foreach (var v in _ctx.SelectionState.GetAllAffectedVertices(_ctx.MeshObject))
                     _affected.Add(v);
             }
             else if (_ctx.SelectedVertices != null)
@@ -152,7 +152,7 @@ namespace MeshFactory.Tools
                 return;
             }
 
-            if (_affected.Count == 0 || _ctx.MeshData == null)
+            if (_affected.Count == 0 || _ctx.MeshObject == null)
             {
                 _pivot = Vector3.zero;
                 return;
@@ -160,20 +160,20 @@ namespace MeshFactory.Tools
 
             Vector3 sum = Vector3.zero;
             foreach (int i in _affected)
-                sum += _ctx.MeshData.Vertices[i].Position;
+                sum += _ctx.MeshObject.Vertices[i].Position;
             _pivot = sum / _affected.Count;
         }
 
         private void UpdatePreview()
         {
-            if (_ctx?.MeshData == null || _affected.Count == 0) return;
+            if (_ctx?.MeshObject == null || _affected.Count == 0) return;
 
             // 初回: 開始位置を記録
             if (_startPositions.Count == 0)
             {
                 UpdatePivot();
                 foreach (int i in _affected)
-                    _startPositions[i] = _ctx.MeshData.Vertices[i].Position;
+                    _startPositions[i] = _ctx.MeshObject.Vertices[i].Position;
             }
 
             // 回転適用（開始位置から計算）
@@ -182,9 +182,9 @@ namespace MeshFactory.Tools
             {
                 Vector3 offset = _startPositions[i] - _pivot;
                 Vector3 rotated = rot * offset;
-                var v = _ctx.MeshData.Vertices[i];
+                var v = _ctx.MeshObject.Vertices[i];
                 v.Position = _pivot + rotated;
-                _ctx.MeshData.Vertices[i] = v;
+                _ctx.MeshObject.Vertices[i] = v;
             }
 
             _isDirty = true;
@@ -202,7 +202,7 @@ namespace MeshFactory.Tools
 
             foreach (var kv in _startPositions)
             {
-                Vector3 cur = ctx.MeshData.Vertices[kv.Key].Position;
+                Vector3 cur = ctx.MeshObject.Vertices[kv.Key].Position;
                 if (Vector3.Distance(kv.Value, cur) > 0.0001f)
                 {
                     indices.Add(kv.Key);
@@ -223,7 +223,7 @@ namespace MeshFactory.Tools
                 foreach (int i in _affected)
                 {
                     if (i < ctx.OriginalPositions.Length)
-                        ctx.OriginalPositions[i] = ctx.MeshData.Vertices[i].Position;
+                        ctx.OriginalPositions[i] = ctx.MeshObject.Vertices[i].Position;
                 }
             }
 
@@ -233,13 +233,13 @@ namespace MeshFactory.Tools
 
         private void RevertToStart()
         {
-            if (_ctx?.MeshData == null) return;
+            if (_ctx?.MeshObject == null) return;
 
             foreach (var kv in _startPositions)
             {
-                var v = _ctx.MeshData.Vertices[kv.Key];
+                var v = _ctx.MeshObject.Vertices[kv.Key];
                 v.Position = kv.Value;
-                _ctx.MeshData.Vertices[kv.Key] = v;
+                _ctx.MeshObject.Vertices[kv.Key] = v;
             }
 
             _startPositions.Clear();

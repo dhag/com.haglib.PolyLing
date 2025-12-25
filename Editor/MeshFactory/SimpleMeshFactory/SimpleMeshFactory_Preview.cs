@@ -189,7 +189,7 @@ public partial class SimpleMeshFactory
                 {
                     if (i == _selectedIndex) continue;
                     var ctx = _meshContextList[i];
-                    if (ctx?.Data == null) continue;
+                    if (ctx?.MeshObject == null) continue;
                     if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                     DrawWithGPU(rect, ctx, camPos, false);
                 }
@@ -210,7 +210,7 @@ public partial class SimpleMeshFactory
                 {
                     if (meshContext != null && meshContext.IsVisible)
                     {
-                        DrawWireframeOverlay(rect, meshContext.Data, camPos, _cameraTarget, true);
+                        DrawWireframeOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
                     }
                 }
                 else
@@ -218,10 +218,10 @@ public partial class SimpleMeshFactory
                     for (int i = 0; i < _meshContextList.Count; i++)
                     {
                         var ctx = _meshContextList[i];
-                        if (ctx?.Data == null) continue;
+                        if (ctx?.MeshObject == null) continue;
                         if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                         bool isActive = (i == _selectedIndex);
-                        DrawWireframeOverlay(rect, ctx.Data, camPos, _cameraTarget, isActive);
+                        DrawWireframeOverlay(rect, ctx.MeshObject, camPos, _cameraTarget, isActive);
                     }
                 }
             }
@@ -231,7 +231,7 @@ public partial class SimpleMeshFactory
             {
                 if (meshContext != null && meshContext.IsVisible)
                 {
-                    DrawVertexHandles(rect, meshContext.Data, camPos, _cameraTarget, true);
+                    DrawVertexHandles(rect, meshContext.MeshObject, camPos, _cameraTarget, true);
                 }
             }
             else
@@ -239,10 +239,10 @@ public partial class SimpleMeshFactory
                 for (int i = 0; i < _meshContextList.Count; i++)
                 {
                     var ctx = _meshContextList[i];
-                    if (ctx?.Data == null) continue;
+                    if (ctx?.MeshObject == null) continue;
                     if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
                     bool isActive = (i == _selectedIndex);
-                    DrawVertexHandles(rect, ctx.Data, camPos, _cameraTarget, isActive);
+                    DrawVertexHandles(rect, ctx.MeshObject, camPos, _cameraTarget, isActive);
                 }
             }
         }
@@ -250,11 +250,11 @@ public partial class SimpleMeshFactory
         // ミラーワイヤーフレーム描画（常にCPU）
         if (_showWireframe && _symmetrySettings != null && _symmetrySettings.IsEnabled)
         {
-            DrawMirroredWireframe(rect, meshContext.Data, camPos, _cameraTarget);
+            DrawMirroredWireframe(rect, meshContext.MeshObject, camPos, _cameraTarget);
         }
 
         // 選択状態のオーバーレイ描画
-        DrawSelectionOverlay(rect, meshContext.Data, camPos, _cameraTarget, useGPU);
+        DrawSelectionOverlay(rect, meshContext.MeshObject, camPos, _cameraTarget, useGPU);
 
         // ローカル原点マーカー
         DrawOriginMarker(rect, camPos, _cameraTarget);
@@ -272,7 +272,7 @@ public partial class SimpleMeshFactory
         // 対称平面ギズモ描画
         if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
         {
-            Bounds meshBounds = meshContext.Data != null ? meshContext.Data.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
+            Bounds meshBounds = meshContext.MeshObject != null ? meshContext.MeshObject.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
             DrawSymmetryPlane(rect, camPos, _cameraTarget, meshBounds);
         }
     }
@@ -286,7 +286,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawWithGPU(Rect rect, MeshContext meshContext, Vector3 camPos, bool isSelected, HashSet<int> selectedVertices = null)
     {
-        if (_gpuRenderer == null || meshContext?.Data == null)
+        if (_gpuRenderer == null || meshContext?.MeshObject == null)
             return;
 
         Vector2 windowSize = new Vector2(position.width, position.height);
@@ -296,7 +296,7 @@ public partial class SimpleMeshFactory
         Rect adjustedRect = new Rect(rect.x, rect.y + tabHeight, rect.width, rect.height - tabHeight);
 
         // バッファ更新（メッシュが変わると自動更新）
-        _gpuRenderer.UpdateBuffers(meshContext.Data, _edgeCache);
+        _gpuRenderer.UpdateBuffers(meshContext.MeshObject, _edgeCache);
 
         // 選択状態更新（選択メッシュのみ）
         _gpuRenderer.UpdateSelection(isSelected ? selectedVertices : null);
@@ -336,7 +336,7 @@ public partial class SimpleMeshFactory
             // 面ホバー描画（選択メッシュのみ、最背面に描画）
             if (isSelected)
             {
-                _gpuRenderer.DrawHoverFace(windowSize, meshContext.Data);
+                _gpuRenderer.DrawHoverFace(windowSize, meshContext.MeshObject);
             }
 
             _gpuRenderer.DrawLines(adjustedRect, windowSize, guiOffset, 2f, alpha, edgeColor);
@@ -350,7 +350,7 @@ public partial class SimpleMeshFactory
         // インデックス表示は選択メッシュのみ
         if (_showVertexIndices && isSelected)
         {
-            DrawVertexIndices(rect, meshContext.Data, camPos, _cameraTarget);
+            DrawVertexIndices(rect, meshContext.MeshObject, camPos, _cameraTarget);
         }
 
         // 矩形選択オーバーレイは選択メッシュのみ
@@ -383,14 +383,14 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 頂点インデックス表示（GPU描画時のCPUフォールバック）
     /// </summary>
-    private void DrawVertexIndices(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawVertexIndices(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
     {
-        if (meshData == null)
+        if (meshObject == null)
             return;
 
-        for (int i = 0; i < meshData.VertexCount; i++)
+        for (int i = 0; i < meshObject.VertexCount; i++)
         {
-            Vector3 worldPos = meshData.Vertices[i].Position;
+            Vector3 worldPos = meshObject.Vertices[i].Position;
             Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
 
             if (!previewRect.Contains(screenPos))
@@ -421,9 +421,9 @@ public partial class SimpleMeshFactory
         for (int i = 0; i < subMeshCount; i++)
         {
             Material mat = null;
-            if (meshContext != null && i < meshContext.Materials.Count)
+            if (meshContext != null && i < _model.Materials.Count)
             {
-                mat = meshContext.Materials[i];
+                mat = _model.Materials[i];
             }
 
             if (mat == null)
@@ -474,17 +474,17 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     /// <summary>
-    /// ワイヤーフレーム描画（MeshDataベース）
+    /// ワイヤーフレーム描画（MeshObjectベース）
     /// </summary>
-    private void DrawWireframeOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
+    private void DrawWireframeOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
-        if (meshData == null)
+        if (meshObject == null)
             return;
 
         var edges = new HashSet<(int, int)>();
         var lines = new List<(int, int)>();
 
-        foreach (var face in meshData.Faces)
+        foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount == 2)
             {
@@ -510,8 +510,8 @@ public partial class SimpleMeshFactory
             : new Color(0.4f, 0.4f, 0.4f, 0.5f);
         foreach (var edge in edges)
         {
-            Vector3 p1World = meshData.Vertices[edge.Item1].Position;
-            Vector3 p2World = meshData.Vertices[edge.Item2].Position;
+            Vector3 p1World = meshObject.Vertices[edge.Item1].Position;
+            Vector3 p2World = meshObject.Vertices[edge.Item2].Position;
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -527,12 +527,12 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.color = new Color(1f, 0.3f, 1f, 0.9f);
         foreach (var line in lines)
         {
-            if (line.Item1 < 0 || line.Item1 >= meshData.VertexCount ||
-                line.Item2 < 0 || line.Item2 >= meshData.VertexCount)
+            if (line.Item1 < 0 || line.Item1 >= meshObject.VertexCount ||
+                line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = meshData.Vertices[line.Item1].Position;
-            Vector3 p2World = meshData.Vertices[line.Item2].Position;
+            Vector3 p1World = meshObject.Vertices[line.Item1].Position;
+            Vector3 p2World = meshObject.Vertices[line.Item2].Position;
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -555,21 +555,21 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// 選択状態のオーバーレイを描画
     /// </summary>
-    private void DrawSelectionOverlay(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool gpuRendering = false)
+    private void DrawSelectionOverlay(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool gpuRendering = false)
     {
-        if (meshData == null || _selectionState == null)
+        if (meshObject == null || _selectionState == null)
             return;
 
         try
         {
             UnityEditor_Handles.BeginGUI();
-            DrawSelectedFaces(previewRect, meshData, camPos, lookAt);
+            DrawSelectedFaces(previewRect, meshObject, camPos, lookAt);
 
             // GPU描画時はエッジと線分はシェーダーで描画済みなのでスキップ
             if (!gpuRendering)
             {
-                DrawSelectedEdges(previewRect, meshData, camPos, lookAt);
-                DrawSelectedLines(previewRect, meshData, camPos, lookAt);
+                DrawSelectedEdges(previewRect, meshObject, camPos, lookAt);
+                DrawSelectedLines(previewRect, meshObject, camPos, lookAt);
             }
         }
         finally
@@ -578,7 +578,7 @@ public partial class SimpleMeshFactory
         }
     }
 
-    private void DrawSelectedFaces(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectedFaces(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
     {
         if (_selectionState.Faces.Count == 0)
             return;
@@ -588,10 +588,10 @@ public partial class SimpleMeshFactory
 
         foreach (int faceIdx in _selectionState.Faces)
         {
-            if (faceIdx < 0 || faceIdx >= meshData.FaceCount)
+            if (faceIdx < 0 || faceIdx >= meshObject.FaceCount)
                 continue;
 
-            var face = meshData.Faces[faceIdx];
+            var face = meshObject.Faces[faceIdx];
             if (face.VertexCount < 3)
                 continue;
 
@@ -599,7 +599,7 @@ public partial class SimpleMeshFactory
 
             for (int i = 0; i < face.VertexCount; i++)
             {
-                var worldPos = meshData.Vertices[face.VertexIndices[i]].Position;
+                var worldPos = meshObject.Vertices[face.VertexIndices[i]].Position;
                 screenPoints[i] = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
             }
 
@@ -616,7 +616,7 @@ public partial class SimpleMeshFactory
         }
     }
 
-    private void DrawSelectedEdges(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectedEdges(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
     {
         if (_selectionState.Edges.Count == 0)
             return;
@@ -625,12 +625,12 @@ public partial class SimpleMeshFactory
 
         foreach (var edge in _selectionState.Edges)
         {
-            if (edge.V1 < 0 || edge.V1 >= meshData.VertexCount ||
-                edge.V2 < 0 || edge.V2 >= meshData.VertexCount)
+            if (edge.V1 < 0 || edge.V1 >= meshObject.VertexCount ||
+                edge.V2 < 0 || edge.V2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = meshData.Vertices[edge.V1].Position;
-            Vector3 p2World = meshData.Vertices[edge.V2].Position;
+            Vector3 p1World = meshObject.Vertices[edge.V1].Position;
+            Vector3 p2World = meshObject.Vertices[edge.V2].Position;
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -644,7 +644,7 @@ public partial class SimpleMeshFactory
         }
     }
 
-    private void DrawSelectedLines(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawSelectedLines(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
     {
         if (_selectionState.Lines.Count == 0)
             return;
@@ -653,15 +653,15 @@ public partial class SimpleMeshFactory
 
         foreach (int lineIdx in _selectionState.Lines)
         {
-            if (lineIdx < 0 || lineIdx >= meshData.FaceCount)
+            if (lineIdx < 0 || lineIdx >= meshObject.FaceCount)
                 continue;
 
-            var face = meshData.Faces[lineIdx];
+            var face = meshObject.Faces[lineIdx];
             if (face.VertexCount != 2)
                 continue;
 
-            Vector3 p1World = meshData.Vertices[face.VertexIndices[0]].Position;
-            Vector3 p2World = meshData.Vertices[face.VertexIndices[1]].Position;
+            Vector3 p1World = meshObject.Vertices[face.VertexIndices[0]].Position;
+            Vector3 p2World = meshObject.Vertices[face.VertexIndices[1]].Position;
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -679,16 +679,16 @@ public partial class SimpleMeshFactory
     // 頂点ハンドル描画（CPU版）
     // ================================================================
 
-    private void DrawVertexHandles(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
+    private void DrawVertexHandles(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, bool isActiveMesh = true)
     {
-        if (!_showVertices || meshData == null)
+        if (!_showVertices || meshObject == null)
             return;
 
         float handleSize = isActiveMesh ? 8f : 4f;
 
-        for (int i = 0; i < meshData.VertexCount; i++)
+        for (int i = 0; i < meshObject.VertexCount; i++)
         {
-            Vector2 screenPos = WorldToPreviewPos(meshData.Vertices[i].Position, previewRect, camPos, lookAt);
+            Vector2 screenPos = WorldToPreviewPos(meshObject.Vertices[i].Position, previewRect, camPos, lookAt);
 
             if (!previewRect.Contains(screenPos))
                 continue;

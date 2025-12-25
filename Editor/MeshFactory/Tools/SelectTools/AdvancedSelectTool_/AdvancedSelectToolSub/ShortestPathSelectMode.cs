@@ -33,7 +33,7 @@ namespace MeshFactory.Tools
             }
             else
             {
-                var path = GetShortestPath(toolCtx.MeshData, _firstVertex, vIdx);
+                var path = GetShortestPath(toolCtx.MeshObject, _firstVertex, vIdx);
 
                 if (selectMode.Has(MeshSelectMode.Vertex))
                     SelectionHelper.ApplyVertexSelection(toolCtx, path, ctx.AddToSelection);
@@ -64,7 +64,7 @@ namespace MeshFactory.Tools
 
             if (_firstVertex >= 0 && ctx.HoveredVertex >= 0 && _firstVertex != ctx.HoveredVertex)
             {
-                ctx.PreviewPath.AddRange(GetShortestPath(toolCtx.MeshData, _firstVertex, ctx.HoveredVertex));
+                ctx.PreviewPath.AddRange(GetShortestPath(toolCtx.MeshObject, _firstVertex, ctx.HoveredVertex));
 
                 if (selectMode.Has(MeshSelectMode.Edge))
                     ctx.PreviewEdges.AddRange(SelectionHelper.GetEdgesFromPath(ctx.PreviewPath));
@@ -110,14 +110,14 @@ namespace MeshFactory.Tools
         // アルゴリズム (Dijkstra)
         // ================================================================
 
-        private List<int> GetShortestPath(MeshData meshData, int start, int end)
+        private List<int> GetShortestPath(MeshObject meshObject, int start, int end)
         {
-            var adjacency = SelectionHelper.BuildVertexAdjacency(meshData);
+            var adjacency = SelectionHelper.BuildVertexAdjacency(meshObject);
             var distances = new Dictionary<int, float>();
             var previous = new Dictionary<int, int>();
             var unvisited = new HashSet<int>();
 
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
                 distances[i] = float.MaxValue;
                 unvisited.Add(i);
@@ -147,8 +147,8 @@ namespace MeshFactory.Tools
                     if (!unvisited.Contains(neighbor)) continue;
 
                     float edgeLength = Vector3.Distance(
-                        meshData.Vertices[current].Position,
-                        meshData.Vertices[neighbor].Position);
+                        meshObject.Vertices[current].Position,
+                        meshObject.Vertices[neighbor].Position);
 
                     float alt = distances[current] + edgeLength;
                     if (alt < distances[neighbor])

@@ -138,11 +138,11 @@ public partial class SimpleMeshFactory
         if (workPlane == null || workPlane.IsLocked) return;
 
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data == null || _selectedVertices.Count == 0) return;
+        if (meshContext?.MeshObject == null || _selectedVertices.Count == 0) return;
 
         var before = workPlane.CreateSnapshot();
 
-        if (workPlane.UpdateOriginFromSelection(meshContext.Data, _selectedVertices))
+        if (workPlane.UpdateOriginFromSelection(meshContext.MeshObject, _selectedVertices))
         {
             var after = workPlane.CreateSnapshot();
             if (before.IsDifferentFrom(after))
@@ -202,9 +202,9 @@ public partial class SimpleMeshFactory
         // グリッドサイズ（バウンディングボックスに基づく）
         float gridSize = 0.5f;
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data != null)
+        if (meshContext?.MeshObject != null)
         {
-            var bounds = meshContext.Data.CalculateBounds();
+            var bounds = meshContext.MeshObject.CalculateBounds();
             gridSize = Mathf.Max(bounds.size.magnitude * 0.3f, 0.3f);
         }
 

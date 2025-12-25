@@ -70,7 +70,7 @@ namespace MeshFactory.Tools
             // === ドラッグ状態 ===
             private bool _isDragging;
             private Vector2 _currentScreenPos;
-            private MeshDataSnapshot _beforeSnapshot;
+            private MeshObjectSnapshot _beforeSnapshot;
 
             // === キャッシュ ===
             private Dictionary<int, HashSet<int>> _adjacencyCache;
@@ -90,13 +90,13 @@ namespace MeshFactory.Tools
 
             public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
             {
-                if (ctx.MeshData == null) return false;
+                if (ctx.MeshObject == null) return false;
 
                 _isDragging = true;
                 _currentScreenPos = mousePos;
 
-                _beforeSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
-                BuildCaches(ctx.MeshData);
+                _beforeSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                BuildCaches(ctx.MeshObject);
                 ApplyBrush(ctx, mousePos);
 
                 return true;
@@ -105,7 +105,7 @@ namespace MeshFactory.Tools
             public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
             {
                 if (!_isDragging) return false;
-                if (ctx.MeshData == null) return false;
+                if (ctx.MeshObject == null) return false;
 
                 _currentScreenPos = mousePos;
                 ApplyBrush(ctx, mousePos);
@@ -121,7 +121,7 @@ namespace MeshFactory.Tools
 
                 if (_beforeSnapshot != null && ctx.UndoController != null)
                 {
-                    var after = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                    var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                     ctx.UndoController.RecordTopologyChange(_beforeSnapshot, after, $"Sculpt ({Mode})");
                     _beforeSnapshot = null;
                 }
@@ -135,7 +135,7 @@ namespace MeshFactory.Tools
 
             public void DrawGizmo(ToolContext ctx)
             {
-                if (ctx.MeshData == null) return;
+                if (ctx.MeshObject == null) return;
 
                 UnityEditor_Handles.BeginGUI();
 
@@ -205,23 +205,23 @@ namespace MeshFactory.Tools
             Vector3 brushCenter = FindBrushCenter(ctx, ray);
 
             // ブラシ範囲内の頂点を収集
-            var affectedVertices = GetVerticesInBrushRadius(ctx.MeshData, brushCenter);
+            var affectedVertices = GetVerticesInBrushRadius(ctx.MeshObject, brushCenter);
             if (affectedVertices.Count == 0) return;
 
             // モードに応じて変形
             switch (Mode)
             {
                 case SculptMode.Draw:
-                    ApplyDraw(ctx.MeshData, affectedVertices, brushCenter, ray.direction);
+                    ApplyDraw(ctx.MeshObject, affectedVertices, brushCenter, ray.direction);
                     break;
                 case SculptMode.Smooth:
-                    ApplySmooth(ctx.MeshData, affectedVertices, brushCenter);
+                    ApplySmooth(ctx.MeshObject, affectedVertices, brushCenter);
                     break;
                 case SculptMode.Inflate:
-                    ApplyInflate(ctx.MeshData, affectedVertices, brushCenter);
+                    ApplyInflate(ctx.MeshObject, affectedVertices, brushCenter);
                     break;
                 case SculptMode.Flatten:
-                    ApplyFlatten(ctx.MeshData, affectedVertices, brushCenter);
+                    ApplyFlatten(ctx.MeshObject, affectedVertices, brushCenter);
                     break;
             }
 
@@ -236,16 +236,16 @@ namespace MeshFactory.Tools
             float closestDist = float.MaxValue;
             Vector3 closestPoint = ray.origin + ray.direction * 5f; // デフォルト
 
-            foreach (var face in ctx.MeshData.Faces)
+            foreach (var face in ctx.MeshObject.Faces)
             {
                 if (face.VertexIndices.Count < 3) continue;
 
                 // 三角形に分割してレイキャスト
                 for (int i = 1; i < face.VertexIndices.Count - 1; i++)
                 {
-                    Vector3 v0 = ctx.MeshData.Vertices[face.VertexIndices[0]].Position;
-                    Vector3 v1 = ctx.MeshData.Vertices[face.VertexIndices[i]].Position;
-                    Vector3 v2 = ctx.MeshData.Vertices[face.VertexIndices[i + 1]].Position;
+                    Vector3 v0 = ctx.MeshObject.Vertices[face.VertexIndices[0]].Position;
+                    Vector3 v1 = ctx.MeshObject.Vertices[face.VertexIndices[i]].Position;
+                    Vector3 v2 = ctx.MeshObject.Vertices[face.VertexIndices[i + 1]].Position;
 
                     if (RayTriangleIntersection(ray, v0, v1, v2, out float t))
                     {
@@ -286,13 +286,13 @@ namespace MeshFactory.Tools
             return t > 1e-6f;
         }
 
-        private List<(int index, float weight)> GetVerticesInBrushRadius(MeshData meshData, Vector3 brushCenter)
+        private List<(int index, float weight)> GetVerticesInBrushRadius(MeshObject meshObject, Vector3 brushCenter)
         {
             var result = new List<(int, float)>();
 
-            for (int i = 0; i < meshData.VertexCount; i++)
+            for (int i = 0; i < meshObject.VertexCount; i++)
             {
-                float dist = Vector3.Distance(meshData.Vertices[i].Position, brushCenter);
+                float dist = Vector3.Distance(meshObject.Vertices[i].Position, brushCenter);
                 if (dist <= BrushRadius)
                 {
                     // フォールオフを計算（中心ほど強く、端ほど弱く）
@@ -312,7 +312,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// Draw: 盛り上げ/盛り下げ
         /// </summary>
-        private void ApplyDraw(MeshData meshData, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3 viewDir)
+        private void ApplyDraw(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3 viewDir)
         {
             // ブラシ中心の平均法線を計算
             Vector3 avgNormal = Vector3.zero;
@@ -336,14 +336,14 @@ namespace MeshFactory.Tools
             foreach (var (idx, weight) in vertices)
             {
                 Vector3 offset = avgNormal * Strength * weight * direction;
-                meshData.Vertices[idx].Position += offset;
+                meshObject.Vertices[idx].Position += offset;
             }
         }
 
         /// <summary>
         /// Smooth: 滑らかにする
         /// </summary>
-        private void ApplySmooth(MeshData meshData, List<(int index, float weight)> vertices, Vector3 brushCenter)
+        private void ApplySmooth(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter)
         {
             // 各頂点を隣接頂点の平均位置に近づける
             var newPositions = new Dictionary<int, Vector3>();
@@ -355,11 +355,11 @@ namespace MeshFactory.Tools
                     Vector3 avgPos = Vector3.zero;
                     foreach (int neighbor in neighbors)
                     {
-                        avgPos += meshData.Vertices[neighbor].Position;
+                        avgPos += meshObject.Vertices[neighbor].Position;
                     }
                     avgPos /= neighbors.Count;
 
-                    Vector3 currentPos = meshData.Vertices[idx].Position;
+                    Vector3 currentPos = meshObject.Vertices[idx].Position;
                     Vector3 targetPos = Vector3.Lerp(currentPos, avgPos, Strength * weight);
                     newPositions[idx] = targetPos;
                 }
@@ -367,14 +367,14 @@ namespace MeshFactory.Tools
 
             foreach (var kvp in newPositions)
             {
-                meshData.Vertices[kvp.Key].Position = kvp.Value;
+                meshObject.Vertices[kvp.Key].Position = kvp.Value;
             }
         }
 
         /// <summary>
         /// Inflate: 膨らます
         /// </summary>
-        private void ApplyInflate(MeshData meshData, List<(int index, float weight)> vertices, Vector3 brushCenter)
+        private void ApplyInflate(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter)
         {
             float direction = Invert ? -1f : 1f;
 
@@ -383,7 +383,7 @@ namespace MeshFactory.Tools
                 if (_vertexNormalsCache.TryGetValue(idx, out var normal))
                 {
                     Vector3 offset = normal * Strength * weight * direction;
-                    meshData.Vertices[idx].Position += offset;
+                    meshObject.Vertices[idx].Position += offset;
                 }
             }
         }
@@ -391,7 +391,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// Flatten: 平らにする
         /// </summary>
-        private void ApplyFlatten(MeshData meshData, List<(int index, float weight)> vertices, Vector3 brushCenter)
+        private void ApplyFlatten(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter)
         {
             if (vertices.Count == 0) return;
 
@@ -402,7 +402,7 @@ namespace MeshFactory.Tools
 
             foreach (var (idx, weight) in vertices)
             {
-                avgPos += meshData.Vertices[idx].Position * weight;
+                avgPos += meshObject.Vertices[idx].Position * weight;
                 totalWeight += weight;
 
                 if (_vertexNormalsCache.TryGetValue(idx, out var normal))
@@ -420,7 +420,7 @@ namespace MeshFactory.Tools
             // 各頂点を平面に投影
             foreach (var (idx, weight) in vertices)
             {
-                Vector3 pos = meshData.Vertices[idx].Position;
+                Vector3 pos = meshObject.Vertices[idx].Position;
                 
                 // 平面への距離
                 float distToPlane = Vector3.Dot(pos - avgPos, avgNormal);
@@ -430,7 +430,7 @@ namespace MeshFactory.Tools
                 
                 // 補間
                 Vector3 targetPos = Vector3.Lerp(pos, projectedPos, Strength * weight);
-                meshData.Vertices[idx].Position = targetPos;
+                meshObject.Vertices[idx].Position = targetPos;
             }
         }
 
@@ -438,11 +438,11 @@ namespace MeshFactory.Tools
         // キャッシュ構築
         // ================================================================
 
-        private void BuildCaches(MeshData meshData)
+        private void BuildCaches(MeshObject meshObject)
         {
             // 隣接頂点キャッシュ
             _adjacencyCache = new Dictionary<int, HashSet<int>>();
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 int n = face.VertexIndices.Count;
                 for (int i = 0; i < n; i++)
@@ -462,14 +462,14 @@ namespace MeshFactory.Tools
             _vertexNormalsCache = new Dictionary<int, Vector3>();
             var vertexFaceNormals = new Dictionary<int, List<Vector3>>();
 
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 if (face.VertexIndices.Count < 3) continue;
 
                 // 面の法線を計算
-                Vector3 v0 = meshData.Vertices[face.VertexIndices[0]].Position;
-                Vector3 v1 = meshData.Vertices[face.VertexIndices[1]].Position;
-                Vector3 v2 = meshData.Vertices[face.VertexIndices[2]].Position;
+                Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
+                Vector3 v1 = meshObject.Vertices[face.VertexIndices[1]].Position;
+                Vector3 v2 = meshObject.Vertices[face.VertexIndices[2]].Position;
                 Vector3 faceNormal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
 
                 foreach (int vIdx in face.VertexIndices)

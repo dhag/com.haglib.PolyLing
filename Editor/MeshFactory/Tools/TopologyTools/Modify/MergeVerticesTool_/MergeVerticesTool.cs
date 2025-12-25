@@ -71,7 +71,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null || !ShowPreview) return;
+            if (ctx.MeshObject == null || !ShowPreview) return;
             if (_preview.Groups == null || _preview.Groups.Count == 0) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -98,8 +98,8 @@ namespace MeshFactory.Tools
                     Vector3 centroid = Vector3.zero;
                     foreach (int vIdx in group)
                     {
-                        if (vIdx >= 0 && vIdx < ctx.MeshData.VertexCount)
-                            centroid += ctx.MeshData.Vertices[vIdx].Position;
+                        if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
+                            centroid += ctx.MeshObject.Vertices[vIdx].Position;
                     }
                     centroid /= group.Count;
 
@@ -109,8 +109,8 @@ namespace MeshFactory.Tools
                     UnityEditor_Handles.color = color;
                     foreach (int vIdx in group)
                     {
-                        if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount) continue;
-                        Vector2 vScreen = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
+                        if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount) continue;
+                        Vector2 vScreen = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
                         UnityEditor_Handles.DrawAAPolyLine(2f, vScreen, centroidScreen);
                     }
 
@@ -125,8 +125,8 @@ namespace MeshFactory.Tools
                 GUI.color = color;
                 foreach (int vIdx in group)
                 {
-                    if (vIdx < 0 || vIdx >= ctx.MeshData.VertexCount) continue;
-                    Vector2 sp = ctx.WorldToScreen(ctx.MeshData.Vertices[vIdx].Position);
+                    if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount) continue;
+                    Vector2 sp = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
                     float size = 8f;
                     GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size),
                         EditorGUIUtility.whiteTexture);
@@ -235,13 +235,13 @@ namespace MeshFactory.Tools
             _lastContext = ctx;
 
             // プレビュー更新（毎フレーム再計算 - 選択変更を検出するため）
-            if (ctx.MeshData != null && ctx.SelectedVertices != null)
+            if (ctx.MeshObject != null && ctx.SelectedVertices != null)
             {
-                _preview = CalculatePreview(ctx.MeshData, ctx.SelectedVertices, Threshold);
+                _preview = CalculatePreview(ctx.MeshObject, ctx.SelectedVertices, Threshold);
             }
 
             // マージ実行
-            if (_pendingMerge && ctx.MeshData != null)
+            if (_pendingMerge && ctx.MeshObject != null)
             {
                 ExecuteMerge(ctx);
                 _pendingMerge = false;
@@ -262,16 +262,16 @@ namespace MeshFactory.Tools
 
         private void ExecuteMerge(ToolContext ctx)
         {
-            if (ctx.MeshData == null || ctx.SelectedVertices == null) return;
+            if (ctx.MeshObject == null || ctx.SelectedVertices == null) return;
             if (ctx.SelectedVertices.Count < 2) return;
 
             // Undo用スナップショット
             var before = ctx.UndoController?.VertexEditStack != null
-                ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext)
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext)
                 : default;
 
             // MeshMergeHelper使用
-            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.MeshData, ctx.SelectedVertices, Threshold);
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.MeshObject, ctx.SelectedVertices, Threshold);
 
             if (result.Success)
             {
@@ -281,7 +281,7 @@ namespace MeshFactory.Tools
                 // Undo記録
                 if (ctx.UndoController != null)
                 {
-                    var after = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                    var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                     ctx.UndoController.RecordTopologyChange(before, after, "Merge Vertices");
                 }
 
@@ -293,22 +293,22 @@ namespace MeshFactory.Tools
         // プレビュー計算
         // ================================================================
 
-        private MergePreviewInfo CalculatePreview(MeshData meshData, HashSet<int> selectedVertices, float threshold)
+        private MergePreviewInfo CalculatePreview(MeshObject meshObject, HashSet<int> selectedVertices, float threshold)
         {
             var result = new MergePreviewInfo { Groups = new List<List<int>>() };
 
-            if (meshData == null || selectedVertices == null || selectedVertices.Count < 2)
+            if (meshObject == null || selectedVertices == null || selectedVertices.Count < 2)
                 return result;
 
             var validSelected = selectedVertices
-                .Where(v => v >= 0 && v < meshData.VertexCount)
+                .Where(v => v >= 0 && v < meshObject.VertexCount)
                 .ToList();
 
             if (validSelected.Count < 2)
                 return result;
 
             // Union-Find
-            var parent = new int[meshData.VertexCount];
+            var parent = new int[meshObject.VertexCount];
             for (int i = 0; i < parent.Length; i++) parent[i] = i;
 
             int Find(int x)
@@ -329,8 +329,8 @@ namespace MeshFactory.Tools
                 for (int j = i + 1; j < validSelected.Count; j++)
                 {
                     float dist = Vector3.Distance(
-                        meshData.Vertices[validSelected[i]].Position,
-                        meshData.Vertices[validSelected[j]].Position);
+                        meshObject.Vertices[validSelected[i]].Position,
+                        meshObject.Vertices[validSelected[j]].Position);
 
                     if (dist <= threshold)
                     {
@@ -363,24 +363,24 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 指定された頂点のうち、しきい値以下の距離にあるものをマージする（静的版）
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <param name="targetVertices">マージ対象の頂点インデックス</param>
         /// <param name="threshold">距離しきい値</param>
         /// <returns>マージ結果</returns>
-        public static MergeResult MergeVerticesAtSamePosition(MeshData meshData, HashSet<int> targetVertices, float threshold = 0.001f)
+        public static MergeResult MergeVerticesAtSamePosition(MeshObject meshObject, HashSet<int> targetVertices, float threshold = 0.001f)
         {
-            return MeshMergeHelper.MergeVerticesAtSamePosition(meshData, targetVertices, threshold);
+            return MeshMergeHelper.MergeVerticesAtSamePosition(meshObject, targetVertices, threshold);
         }
 
         /// <summary>
         /// メッシュ内の全頂点を対象に、しきい値以下の距離にあるものをマージする
         /// </summary>
-        /// <param name="meshData">対象メッシュ</param>
+        /// <param name="meshObject">対象メッシュ</param>
         /// <param name="threshold">距離しきい値</param>
         /// <returns>マージ結果</returns>
-        public static MergeResult MergeAllVerticesAtSamePosition(MeshData meshData, float threshold = 0.001f)
+        public static MergeResult MergeAllVerticesAtSamePosition(MeshObject meshObject, float threshold = 0.001f)
         {
-            return MeshMergeHelper.MergeAllVerticesAtSamePosition(meshData, threshold);
+            return MeshMergeHelper.MergeAllVerticesAtSamePosition(meshObject, threshold);
         }
     }
 

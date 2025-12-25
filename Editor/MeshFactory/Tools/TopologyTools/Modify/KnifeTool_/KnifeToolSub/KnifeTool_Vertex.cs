@@ -279,14 +279,14 @@ namespace MeshFactory.Tools
 
         private void ExecuteVertexCut(ToolContext ctx, Vector3 vertexWorldPos, int faceIdx, (Vector3, Vector3) edgeWorldPos, float cutRatio)
         {
-            var meshData = ctx.MeshData;
-            var face = meshData.Faces[faceIdx];
+            var meshObject = ctx.MeshObject;
+            var face = meshObject.Faces[faceIdx];
             int n = face.VertexIndices.Count;
 
             int vertexLocalIdx = -1;
             for (int i = 0; i < n; i++)
             {
-                var pos = meshData.Vertices[face.VertexIndices[i]].Position;
+                var pos = meshObject.Vertices[face.VertexIndices[i]].Position;
                 if (Vector3.Distance(pos, vertexWorldPos) < POSITION_EPSILON)
                 {
                     vertexLocalIdx = i;
@@ -300,8 +300,8 @@ namespace MeshFactory.Tools
             {
                 int v1 = face.VertexIndices[i];
                 int v2 = face.VertexIndices[(i + 1) % n];
-                var p1 = meshData.Vertices[v1].Position;
-                var p2 = meshData.Vertices[v2].Position;
+                var p1 = meshObject.Vertices[v1].Position;
+                var p2 = meshObject.Vertices[v2].Position;
                 var pos = NormalizeEdgeWorldPos(p1, p2);
                 if (IsSameEdgePosition(pos, edgeWorldPos))
                 {
@@ -312,38 +312,38 @@ namespace MeshFactory.Tools
             if (edgeLocalIdx < 0) return;
 
             // Undo用スナップショット（切断前）
-            MeshDataSnapshot beforeSnapshot = ctx.UndoController != null 
-                ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext) 
+            MeshObjectSnapshot beforeSnapshot = ctx.UndoController != null 
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
             var cutPos = Vector3.Lerp(edgeWorldPos.Item1, edgeWorldPos.Item2, cutRatio);
-            int newVertexIdx = meshData.VertexCount;
+            int newVertexIdx = meshObject.VertexCount;
             var newVertex = new Vertex(cutPos);
 
             int ev1 = face.VertexIndices[edgeLocalIdx];
             int ev2 = face.VertexIndices[(edgeLocalIdx + 1) % n];
-            var vert1 = meshData.Vertices[ev1];
-            var vert2 = meshData.Vertices[ev2];
+            var vert1 = meshObject.Vertices[ev1];
+            var vert2 = meshObject.Vertices[ev2];
             if (vert1.UVs.Count > 0 && vert2.UVs.Count > 0)
                 newVertex.UVs.Add(Vector2.Lerp(vert1.UVs[0], vert2.UVs[0], cutRatio));
             if (vert1.Normals.Count > 0 && vert2.Normals.Count > 0)
                 newVertex.Normals.Add(Vector3.Lerp(vert1.Normals[0], vert2.Normals[0], cutRatio).normalized);
 
-            meshData.Vertices.Add(newVertex);
-            SplitFaceVertexToEdge(meshData, faceIdx, vertexLocalIdx, edgeLocalIdx, newVertexIdx);
+            meshObject.Vertices.Add(newVertex);
+            SplitFaceVertexToEdge(meshObject, faceIdx, vertexLocalIdx, edgeLocalIdx, newVertexIdx);
             ctx.SyncMesh?.Invoke();
 
             // Undo記録
             if (ctx.UndoController != null && beforeSnapshot != null)
             {
-                var afterSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                var afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                 ctx.UndoController.RecordMeshTopologyChange(beforeSnapshot, afterSnapshot, "Vertex Cut");
             }
         }
 
-        private void SplitFaceVertexToEdge(MeshData meshData, int faceIdx, int vertexLocalIdx, int edgeLocalIdx, int newVertexIdx)
+        private void SplitFaceVertexToEdge(MeshObject meshObject, int faceIdx, int vertexLocalIdx, int edgeLocalIdx, int newVertexIdx)
         {
-            var face = meshData.Faces[faceIdx];
+            var face = meshObject.Faces[faceIdx];
             var verts = face.VertexIndices;
             var uvs = face.UVIndices;
             var normals = face.NormalIndices;
@@ -382,27 +382,27 @@ namespace MeshFactory.Tools
                 if (i == vertexLocalIdx) break;
             }
 
-            meshData.Faces[faceIdx] = new Face { VertexIndices = face1Verts, UVIndices = face1UVs, NormalIndices = face1Normals };
-            meshData.Faces.Add(new Face { VertexIndices = face2Verts, UVIndices = face2UVs, NormalIndices = face2Normals });
+            meshObject.Faces[faceIdx] = new Face { VertexIndices = face1Verts, UVIndices = face1UVs, NormalIndices = face1Normals };
+            meshObject.Faces.Add(new Face { VertexIndices = face2Verts, UVIndices = face2UVs, NormalIndices = face2Normals });
         }
 
         private void ExecuteVertexChainCut(ToolContext ctx, Vector3 startVertexPos, int startFaceIdx, (Vector3, Vector3) startEdgePos, float cutRatio)
         {
             // Undo用スナップショット（切断前）
-            MeshDataSnapshot beforeSnapshot = ctx.UndoController != null 
-                ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext) 
+            MeshObjectSnapshot beforeSnapshot = ctx.UndoController != null 
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             var processedFaces = new HashSet<int>();
 
-            var firstFace = meshData.Faces[startFaceIdx];
+            var firstFace = meshObject.Faces[startFaceIdx];
             int n = firstFace.VertexIndices.Count;
 
             int vertexLocalIdx = -1;
             for (int i = 0; i < n; i++)
             {
-                var pos = meshData.Vertices[firstFace.VertexIndices[i]].Position;
+                var pos = meshObject.Vertices[firstFace.VertexIndices[i]].Position;
                 if (Vector3.Distance(pos, startVertexPos) < POSITION_EPSILON)
                 {
                     vertexLocalIdx = i;
@@ -416,7 +416,7 @@ namespace MeshFactory.Tools
             {
                 int v1 = firstFace.VertexIndices[i];
                 int v2 = firstFace.VertexIndices[(i + 1) % n];
-                var edgePos = NormalizeEdgeWorldPos(meshData.Vertices[v1].Position, meshData.Vertices[v2].Position);
+                var edgePos = NormalizeEdgeWorldPos(meshObject.Vertices[v1].Position, meshObject.Vertices[v2].Position);
                 if (IsSameEdgePosition(edgePos, startEdgePos))
                 {
                     edgeLocalIdx = i;
@@ -426,21 +426,21 @@ namespace MeshFactory.Tools
             if (edgeLocalIdx < 0) { ctx.SyncMesh?.Invoke(); return; }
 
             var cutPos = Vector3.Lerp(startEdgePos.Item1, startEdgePos.Item2, cutRatio);
-            int newVertexIdx = meshData.VertexCount;
+            int newVertexIdx = meshObject.VertexCount;
             var newVertex = new Vertex(cutPos);
 
             int ev1 = firstFace.VertexIndices[edgeLocalIdx];
             int ev2 = firstFace.VertexIndices[(edgeLocalIdx + 1) % n];
-            var vert1 = meshData.Vertices[ev1];
-            var vert2 = meshData.Vertices[ev2];
+            var vert1 = meshObject.Vertices[ev1];
+            var vert2 = meshObject.Vertices[ev2];
             if (vert1.UVs.Count > 0 && vert2.UVs.Count > 0)
                 newVertex.UVs.Add(Vector2.Lerp(vert1.UVs[0], vert2.UVs[0], cutRatio));
             if (vert1.Normals.Count > 0 && vert2.Normals.Count > 0)
                 newVertex.Normals.Add(Vector3.Lerp(vert1.Normals[0], vert2.Normals[0], cutRatio).normalized);
-            meshData.Vertices.Add(newVertex);
+            meshObject.Vertices.Add(newVertex);
 
             processedFaces.Add(startFaceIdx);
-            SplitFaceVertexToEdge(meshData, startFaceIdx, vertexLocalIdx, edgeLocalIdx, newVertexIdx);
+            SplitFaceVertexToEdge(meshObject, startFaceIdx, vertexLocalIdx, edgeLocalIdx, newVertexIdx);
 
             var previousEdgePos = startEdgePos;
 
@@ -462,46 +462,46 @@ namespace MeshFactory.Tools
 
                 if (nextFaceIdx < 0) break;
 
-                var face = meshData.Faces[nextFaceIdx];
+                var face = meshObject.Faces[nextFaceIdx];
                 n = face.VertexIndices.Count;
                 if (n != 4) break;
 
                 int oppEdgeLocalIdx = (prevEdgeLocalIdx + 2) % n;
                 int ov1 = face.VertexIndices[oppEdgeLocalIdx];
                 int ov2 = face.VertexIndices[(oppEdgeLocalIdx + 1) % n];
-                var oppEdgePos = NormalizeEdgeWorldPos(meshData.Vertices[ov1].Position, meshData.Vertices[ov2].Position);
+                var oppEdgePos = NormalizeEdgeWorldPos(meshObject.Vertices[ov1].Position, meshObject.Vertices[ov2].Position);
 
                 var cutPos1 = Vector3.Lerp(previousEdgePos.Item1, previousEdgePos.Item2, cutRatio);
                 var cutPos2 = Vector3.Lerp(oppEdgePos.Item1, oppEdgePos.Item2, cutRatio);
 
-                int newVIdx1 = meshData.VertexCount;
+                int newVIdx1 = meshObject.VertexCount;
                 var newVert1 = new Vertex(cutPos1);
                 int pv1 = face.VertexIndices[prevEdgeLocalIdx];
                 int pv2 = face.VertexIndices[(prevEdgeLocalIdx + 1) % n];
-                var pVert1 = meshData.Vertices[pv1];
-                var pVert2 = meshData.Vertices[pv2];
+                var pVert1 = meshObject.Vertices[pv1];
+                var pVert2 = meshObject.Vertices[pv2];
                 if (pVert1.UVs.Count > 0 && pVert2.UVs.Count > 0)
                     newVert1.UVs.Add(Vector2.Lerp(pVert1.UVs[0], pVert2.UVs[0], cutRatio));
                 if (pVert1.Normals.Count > 0 && pVert2.Normals.Count > 0)
                     newVert1.Normals.Add(Vector3.Lerp(pVert1.Normals[0], pVert2.Normals[0], cutRatio).normalized);
-                meshData.Vertices.Add(newVert1);
+                meshObject.Vertices.Add(newVert1);
 
-                int newVIdx2 = meshData.VertexCount;
+                int newVIdx2 = meshObject.VertexCount;
                 var newVert2 = new Vertex(cutPos2);
-                var oVert1 = meshData.Vertices[ov1];
-                var oVert2 = meshData.Vertices[ov2];
+                var oVert1 = meshObject.Vertices[ov1];
+                var oVert2 = meshObject.Vertices[ov2];
                 if (oVert1.UVs.Count > 0 && oVert2.UVs.Count > 0)
                     newVert2.UVs.Add(Vector2.Lerp(oVert1.UVs[0], oVert2.UVs[0], cutRatio));
                 if (oVert1.Normals.Count > 0 && oVert2.Normals.Count > 0)
                     newVert2.Normals.Add(Vector3.Lerp(oVert1.Normals[0], oVert2.Normals[0], cutRatio).normalized);
-                meshData.Vertices.Add(newVert2);
+                meshObject.Vertices.Add(newVert2);
 
                 var inter1 = new EdgeIntersection { EdgeStartIndex = prevEdgeLocalIdx, EdgeEndIndex = (prevEdgeLocalIdx + 1) % n, T = cutRatio, WorldPos = cutPos1 };
                 var inter2 = new EdgeIntersection { EdgeStartIndex = oppEdgeLocalIdx, EdgeEndIndex = (oppEdgeLocalIdx + 1) % n, T = cutRatio, WorldPos = cutPos2 };
 
                 var (face1, face2) = SplitFace(face, inter1, inter2, newVIdx1, newVIdx2);
-                meshData.Faces[nextFaceIdx] = face1;
-                meshData.Faces.Add(face2);
+                meshObject.Faces[nextFaceIdx] = face1;
+                meshObject.Faces.Add(face2);
 
                 processedFaces.Add(nextFaceIdx);
                 previousEdgePos = oppEdgePos;
@@ -512,7 +512,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (ctx.UndoController != null && beforeSnapshot != null)
             {
-                var afterSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                var afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                 ctx.UndoController.RecordMeshTopologyChange(beforeSnapshot, afterSnapshot, "Vertex Chain Cut");
             }
         }
@@ -526,9 +526,9 @@ namespace MeshFactory.Tools
             float bestDist = threshold;
             Vector3? bestPos = null;
 
-            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
-                var worldPos = ctx.MeshData.Vertices[i].Position;
+                var worldPos = ctx.MeshObject.Vertices[i].Position;
                 var screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 float dist = Vector2.Distance(mousePos, screenPos);
                 if (dist < bestDist)
@@ -545,15 +545,15 @@ namespace MeshFactory.Tools
         {
             var result = new List<(int, int)>();
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)
                 {
                     int vIdx = face.VertexIndices[i];
-                    var pos = ctx.MeshData.Vertices[vIdx].Position;
+                    var pos = ctx.MeshObject.Vertices[vIdx].Position;
                     if (Vector3.Distance(pos, vertexWorldPos) < POSITION_EPSILON)
                     {
                         result.Add((faceIdx, i));
@@ -572,7 +572,7 @@ namespace MeshFactory.Tools
 
             foreach (var (faceIdx, vertexLocalIdx) in facesWithVertex)
             {
-                var face = ctx.MeshData.Faces[faceIdx];
+                var face = ctx.MeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 int prevEdgeIdx = (vertexLocalIdx - 1 + n) % n;
@@ -584,8 +584,8 @@ namespace MeshFactory.Tools
 
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
-                    var p1 = ctx.MeshData.Vertices[v1].Position;
-                    var p2 = ctx.MeshData.Vertices[v2].Position;
+                    var p1 = ctx.MeshObject.Vertices[v1].Position;
+                    var p2 = ctx.MeshObject.Vertices[v2].Position;
                     var edgePos = NormalizeEdgeWorldPos(p1, p2);
                     result.Add((faceIdx, i, edgePos));
                 }

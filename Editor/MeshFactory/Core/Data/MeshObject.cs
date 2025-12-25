@@ -1,8 +1,8 @@
-// Assets/Editor/MeshData/MeshDataStructures.cs
+// Assets/Editor/MeshObject.cs
 // 頂点ベースのメッシュデータ構造
 // - Vertex: 位置 + 複数UV + 複数法線 + フラグ
 // - Face: N角形対応（三角形、四角形、Nゴン）+ マテリアルインデックス + フラグ
-// - MeshData: Unity UnityMesh との相互変換（サブメッシュ対応）
+// - MeshObject: Unity UnityMesh との相互変換（サブメッシュ対応）
 // v1.2: VertexFlags/FaceFlags 追加
 
 using MeshFactory.Tools;
@@ -215,7 +215,7 @@ namespace MeshFactory.Data
         /// <summary>各頂点の法線サブインデックス（Vertex.Normals[n]への参照）</summary>
         public List<int> NormalIndices = new List<int>();
 
-        /// <summary>マテリアルインデックス（MeshContext.Materialsへの参照）</summary>
+        /// <summary>マテリアルインデックス（MeshUndoContext.Materialsへの参照）</summary>
         public int MaterialIndex = 0;
 
         /// <summary>面フラグ</summary>
@@ -409,7 +409,7 @@ namespace MeshFactory.Data
     }
 
     // ============================================================
-    // MeshData クラス
+    // MeshObject クラス
     // ============================================================
 
     /// <summary>
@@ -417,7 +417,7 @@ namespace MeshFactory.Data
     /// Vertex/Faceリストを管理し、Unity Meshとの相互変換を提供
     /// </summary>
     [Serializable]
-    public class MeshData
+    public class MeshObject
     {
         /// <summary>メッシュ名</summary>
         public string Name = "Mesh";
@@ -481,9 +481,9 @@ namespace MeshFactory.Data
 
         // === コンストラクタ ===
 
-        public MeshData() { }
+        public MeshObject() { }
 
-        public MeshData(string name)
+        public MeshObject(string name)
         {
             Name = name;
         }
@@ -561,7 +561,8 @@ namespace MeshFactory.Data
         /// <summary>
         /// Unity Meshに変換（サブメッシュ対応）
         /// </summary>
-        public Mesh ToUnityMesh()
+        /// <param name="materialCount">マテリアル数（省略時は自動計算）</param>
+        public Mesh ToUnityMesh(int materialCount = -1)
         {
             var mesh = new Mesh();
             mesh.name = Name;
@@ -569,11 +570,11 @@ namespace MeshFactory.Data
             if (Vertices.Count == 0)
                 return mesh;
 
-            // サブメッシュ数を計算
-            int subMeshCount = SubMeshCount;
+            // サブメッシュ数を計算（materialCount指定時はそれを使用）
+            int subMeshCount = materialCount > 0 ? materialCount : SubMeshCount;
 
             // === 頂点データ展開 ===
-            // MeshData: 頂点は1つ、UV/法線は面ごとに異なる場合がある
+            // MeshObject: 頂点は1つ、UV/法線は面ごとに異なる場合がある
             // Unity: 頂点は展開される（同じ位置でもUV/法線が異なれば別頂点）
 
             var unityVerts = new List<Vector3>();
@@ -893,9 +894,9 @@ namespace MeshFactory.Data
         /// <summary>
         /// ディープコピー
         /// </summary>
-        public MeshData Clone()
+        public MeshObject Clone()
         {
-            var copy = new MeshData(Name);
+            var copy = new MeshObject(Name);
             copy.Vertices = Vertices.Select(v => v.Clone()).ToList();
             copy.Faces = Faces.Select(f => f.Clone()).ToList();
             copy.ParentIndex = this.ParentIndex;

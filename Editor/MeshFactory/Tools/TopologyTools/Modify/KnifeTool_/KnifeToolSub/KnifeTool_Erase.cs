@@ -21,7 +21,7 @@ namespace MeshFactory.Tools
             if (_hoveredEdge.Item1 < 0) return false;
 
             // 共有辺かどうか確認
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshData);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshObject);
             var key = _hoveredEdge;
 
             if (!edgeToFaces.TryGetValue(key, out var faces) || faces.Count != 2)
@@ -31,8 +31,8 @@ namespace MeshFactory.Tools
             }
 
             // Undo用スナップショット（統合前）
-            MeshDataSnapshot beforeSnapshot = ctx.UndoController != null 
-                ? MeshDataSnapshot.Capture(ctx.UndoController.MeshContext) 
+            MeshObjectSnapshot beforeSnapshot = ctx.UndoController != null 
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
             // 2つの面を統合
@@ -41,7 +41,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (ctx.UndoController != null && beforeSnapshot != null)
             {
-                var afterSnapshot = MeshDataSnapshot.Capture(ctx.UndoController.MeshContext);
+                var afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                 ctx.UndoController.RecordMeshTopologyChange(beforeSnapshot, afterSnapshot, "Erase Edge");
             }
 
@@ -79,7 +79,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private (int, int) FindNearestSharedEdge(ToolContext ctx, Vector2 mousePos)
         {
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshData);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshObject);
 
             float bestDist = EDGE_CLICK_THRESHOLD;
             (int, int) bestEdge = (-1, -1);
@@ -90,8 +90,8 @@ namespace MeshFactory.Tools
                 if (kvp.Value.Count != 2) continue;
 
                 var edge = kvp.Key;
-                var p1 = ctx.MeshData.Vertices[edge.Item1].Position;
-                var p2 = ctx.MeshData.Vertices[edge.Item2].Position;
+                var p1 = ctx.MeshObject.Vertices[edge.Item1].Position;
+                var p2 = ctx.MeshObject.Vertices[edge.Item2].Position;
                 var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -111,9 +111,9 @@ namespace MeshFactory.Tools
         /// </summary>
         private void MergeFaces(ToolContext ctx, int faceIdx1, int faceIdx2, (int, int) sharedEdge)
         {
-            var meshData = ctx.MeshData;
-            var face1 = meshData.Faces[faceIdx1];
-            var face2 = meshData.Faces[faceIdx2];
+            var meshObject = ctx.MeshObject;
+            var face1 = meshObject.Faces[faceIdx1];
+            var face2 = meshObject.Faces[faceIdx2];
 
             // 新しい頂点リストを作成
             var newVerts = new List<int>();
@@ -182,11 +182,11 @@ namespace MeshFactory.Tools
             int maxIdx = Mathf.Max(faceIdx1, faceIdx2);
             int minIdx = Mathf.Min(faceIdx1, faceIdx2);
 
-            meshData.Faces.RemoveAt(maxIdx);
-            meshData.Faces.RemoveAt(minIdx);
+            meshObject.Faces.RemoveAt(maxIdx);
+            meshObject.Faces.RemoveAt(minIdx);
 
             // 新しい面を追加
-            meshData.Faces.Add(newFace);
+            meshObject.Faces.Add(newFace);
 
             ctx.SyncMesh?.Invoke();
         }
@@ -201,7 +201,7 @@ namespace MeshFactory.Tools
 
             var edgeSet = new HashSet<(int, int)>();
 
-            foreach (var face in ctx.MeshData.Faces)
+            foreach (var face in ctx.MeshObject.Faces)
             {
                 int n = face.VertexIndices.Count;
                 for (int i = 0; i < n; i++)
@@ -213,8 +213,8 @@ namespace MeshFactory.Tools
                     if (edgeSet.Contains(edge)) continue;
                     edgeSet.Add(edge);
 
-                    var p1 = ctx.MeshData.Vertices[edge.Item1].Position;
-                    var p2 = ctx.MeshData.Vertices[edge.Item2].Position;
+                    var p1 = ctx.MeshObject.Vertices[edge.Item1].Position;
+                    var p2 = ctx.MeshObject.Vertices[edge.Item2].Position;
                     var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -235,8 +235,8 @@ namespace MeshFactory.Tools
         /// </summary>
         private void DrawEdge(ToolContext ctx, (int, int) edge)
         {
-            var p1 = ctx.MeshData.Vertices[edge.Item1].Position;
-            var p2 = ctx.MeshData.Vertices[edge.Item2].Position;
+            var p1 = ctx.MeshObject.Vertices[edge.Item1].Position;
+            var p2 = ctx.MeshObject.Vertices[edge.Item2].Position;
             var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));

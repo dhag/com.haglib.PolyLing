@@ -17,13 +17,13 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     // 後方互換プロパティ（ModelContextに移行）
-    private SymmetrySettings _symmetrySettings => _model.SymmetrySettings;
+    private SymmetrySettings _symmetrySettings => _model?.SymmetrySettings;
 
     // ミラー描画用マテリアル
     private Material _mirrorMaterial;
 
     // ミラーメッシュキャッシュ（Phase2追加）
-    // MeshContext.SymmetryCacheを使用（各MeshContextが自身のキャッシュを持つ）
+    // MeshUndoContext.SymmetryCacheを使用（各MeshContextが自身のキャッシュを持つ）
 
     // UI状態
     private bool _foldSymmetry = true;
@@ -42,11 +42,11 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     /// <summary>
-    /// 対称キャッシュを初期化（MeshContext.SymmetryCacheで遅延初期化されるため不要）
+    /// 対称キャッシュを初期化（MeshUndoContext.SymmetryCacheで遅延初期化されるため不要）
     /// </summary>
     private void InitializeSymmetryCache()
     {
-        // MeshContext.SymmetryCacheプロパティで遅延初期化されるため何もしない
+        // MeshUndoContext.SymmetryCacheプロパティで遅延初期化されるため何もしない
     }
 
     /// <summary>
@@ -80,6 +80,7 @@ public partial class SimpleMeshFactory
     {
         _foldSymmetry = DrawFoldoutWithUndo("Symmetry", L.Get("Symmetry"), true);
         if (!_foldSymmetry) return;
+        if (_symmetrySettings == null) return;  // Phase 1: null チェック
 
         EditorGUI.indentLevel++;
 
@@ -258,7 +259,7 @@ public partial class SimpleMeshFactory
         // ミラー表示対象かチェック（グローバル設定 OR MeshContextごとの設定）
         if (!ShouldDrawMirror(meshContext))
             return;
-        if (meshContext?.Data == null)
+        if (meshContext?.MeshObject == null)
             return;
 
         // 有効な対称設定を取得
@@ -267,7 +268,7 @@ public partial class SimpleMeshFactory
             return;
 
         // MeshContextのキャッシュを更新（必要な場合のみ再構築）
-        meshContext.SymmetryCache.Update(meshContext.Data, effectiveSettings);
+        meshContext.SymmetryCache.Update(meshContext.MeshObject, effectiveSettings);
 
         Mesh mirrorMesh = meshContext.SymmetryCache.MirrorMesh;
         if (mirrorMesh == null || mirrorMesh.vertexCount == 0)
@@ -280,9 +281,9 @@ public partial class SimpleMeshFactory
         for (int i = 0; i < subMeshCount; i++)
         {
             Material baseMat = null;
-            if (meshContext.Materials != null && i < meshContext.Materials.Count)
+            if (_model.Materials != null && i < _model.Materials.Count)
             {
-                baseMat = meshContext.Materials[i];
+                baseMat = _model.Materials[i];
             }
             Material mat = (baseMat != null) ? baseMat : mirrorMat;
 
@@ -296,11 +297,11 @@ public partial class SimpleMeshFactory
     /// </summary>
     public void UpdateSymmetryPositionsOnly()
     {
-        if (!_symmetrySettings.IsEnabled)
+        if (_symmetrySettings == null || !_symmetrySettings.IsEnabled)
             return;
 
-        var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.Data == null)
+        var meshContext = _model?.CurrentMeshContext;
+        if (meshContext?.MeshObject == null)
             return;
 
         // 有効な対称設定を取得
@@ -308,7 +309,7 @@ public partial class SimpleMeshFactory
         if (effectiveSettings == null)
             return;
 
-        meshContext.SymmetryCache.UpdatePositionsOnly(meshContext.Data, effectiveSettings);
+        meshContext.SymmetryCache.UpdatePositionsOnly(meshContext.MeshObject, effectiveSettings);
     }
 
     /// <summary>
@@ -340,7 +341,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void UpdateMirrorMaterialAlpha()
     {
-        if (_mirrorMaterial == null) return;
+        if (_mirrorMaterial == null || _symmetrySettings == null) return;
 
         float alpha = _symmetrySettings.MirrorAlpha;
         Color col = new Color(0.6f, 0.6f, 0.7f, alpha);
@@ -382,8 +383,8 @@ public partial class SimpleMeshFactory
         if (!ShouldDrawMirrorWireframe(meshContext))
             return;
 
-        var meshData = meshContext?.Data;
-        if (meshData == null)
+        var meshObject = meshContext?.MeshObject;
+        if (meshObject == null)
             return;
 
         // MeshContextのミラー設定を使用
@@ -392,13 +393,13 @@ public partial class SimpleMeshFactory
             return;
 
         Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
-        float alpha = _symmetrySettings.MirrorAlpha * 0.7f;  // ワイヤーフレームはやや薄く
+        float alpha = effectiveSettings.MirrorAlpha * 0.7f;  // ワイヤーフレームはやや薄く
 
         var edges = new HashSet<(int, int)>();
         var lines = new List<(int, int)>();
 
         // 各面からエッジを抽出
-        foreach (var face in meshData.Faces)
+        foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount == 2)
             {
@@ -421,8 +422,8 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
         foreach (var edge in edges)
         {
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[edge.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[edge.Item2].Position);
+            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
+            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -439,12 +440,12 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.color = new Color(1f, 0.5f, 0.8f, alpha);
         foreach (var line in lines)
         {
-            if (line.Item1 < 0 || line.Item1 >= meshData.VertexCount ||
-                line.Item2 < 0 || line.Item2 >= meshData.VertexCount)
+            if (line.Item1 < 0 || line.Item1 >= meshObject.VertexCount ||
+                line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[line.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[line.Item2].Position);
+            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
+            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -461,15 +462,15 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// 旧シグネチャ（後方互換用）- MeshDataのみ渡された場合
+    /// 旧シグネチャ（後方互換用）- MeshObjectのみ渡された場合
     /// </summary>
-    private void DrawMirroredWireframe(Rect previewRect, MeshData meshData, Vector3 camPos, Vector3 lookAt)
+    private void DrawMirroredWireframe(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
     {
         // 旧コードからの呼び出し - グローバル設定でフィルター
         if (_symmetrySettings == null || !_symmetrySettings.IsEnabled || !_symmetrySettings.ShowMirrorWireframe)
             return;
 
-        if (meshData == null)
+        if (meshObject == null)
             return;
 
         Matrix4x4 mirrorMatrix = _symmetrySettings.GetMirrorMatrix();
@@ -478,7 +479,7 @@ public partial class SimpleMeshFactory
         var edges = new HashSet<(int, int)>();
         var lines = new List<(int, int)>();
 
-        foreach (var face in meshData.Faces)
+        foreach (var face in meshObject.Faces)
         {
             if (face.VertexCount == 2)
             {
@@ -500,8 +501,8 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
         foreach (var edge in edges)
         {
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[edge.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[edge.Item2].Position);
+            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
+            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
@@ -517,12 +518,12 @@ public partial class SimpleMeshFactory
         UnityEditor_Handles.color = new Color(1f, 0.5f, 0.8f, alpha);
         foreach (var line in lines)
         {
-            if (line.Item1 < 0 || line.Item1 >= meshData.VertexCount ||
-                line.Item2 < 0 || line.Item2 >= meshData.VertexCount)
+            if (line.Item1 < 0 || line.Item1 >= meshObject.VertexCount ||
+                line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
                 continue;
 
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[line.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshData.Vertices[line.Item2].Position);
+            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
+            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
 
             Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
             Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);

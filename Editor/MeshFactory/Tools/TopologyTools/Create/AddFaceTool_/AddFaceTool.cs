@@ -155,7 +155,7 @@ namespace MeshFactory.Tools
                 if (createdIndices.Count >= 2)
                 {
                     int lastIdx = createdIndices[1];
-                    Vector3 lastPos = ctx.MeshData.Vertices[lastIdx].Position;
+                    Vector3 lastPos = ctx.MeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                     Debug.Log($"[AddFaceTool] Continuous line: next start = V{lastIdx}");
                 }
@@ -176,7 +176,7 @@ namespace MeshFactory.Tools
                 if (Mode == AddFaceMode.Line && ContinuousLine && createdIndices.Count >= 2)
                 {
                     int lastIdx = createdIndices[createdIndices.Count - 1];
-                    Vector3 lastPos = ctx.MeshData.Vertices[lastIdx].Position;
+                    Vector3 lastPos = ctx.MeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                 }
 
@@ -202,7 +202,7 @@ namespace MeshFactory.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshData == null) return;
+            if (ctx.MeshObject == null) return;
 
             UnityEditor_Handles.BeginGUI();
 
@@ -421,7 +421,7 @@ namespace MeshFactory.Tools
             _lastLinePoint = null;
 
             // 選択された頂点を最初の点として使用
-            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.MeshData != null)
+            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.MeshObject != null)
             {
                 var selectedList = new List<int>(ctx.SelectedVertices);
 
@@ -430,9 +430,9 @@ namespace MeshFactory.Tools
                 {
                     foreach (int idx in selectedList)
                     {
-                        if (idx >= 0 && idx < ctx.MeshData.VertexCount)
+                        if (idx >= 0 && idx < ctx.MeshObject.VertexCount)
                         {
-                            Vector3 pos = ctx.MeshData.Vertices[idx].Position;
+                            Vector3 pos = ctx.MeshObject.Vertices[idx].Position;
                             _points.Add(PointInfo.FromExisting(idx, pos));
                         }
                     }
@@ -445,7 +445,7 @@ namespace MeshFactory.Tools
                         if (ContinuousLine && createdIndices.Count >= 2)
                         {
                             int lastIdx = createdIndices[1];
-                            Vector3 lastPos = ctx.MeshData.Vertices[lastIdx].Position;
+                            Vector3 lastPos = ctx.MeshObject.Vertices[lastIdx].Position;
                             _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                         }
                         _points.Clear();
@@ -457,9 +457,9 @@ namespace MeshFactory.Tools
                 if (selectedList.Count == 1)
                 {
                     int selectedIdx = selectedList[0];
-                    if (selectedIdx >= 0 && selectedIdx < ctx.MeshData.VertexCount)
+                    if (selectedIdx >= 0 && selectedIdx < ctx.MeshObject.VertexCount)
                     {
-                        Vector3 pos = ctx.MeshData.Vertices[selectedIdx].Position;
+                        Vector3 pos = ctx.MeshObject.Vertices[selectedIdx].Position;
                         var startPoint = PointInfo.FromExisting(selectedIdx, pos);
 
                         if (Mode == AddFaceMode.Line && ContinuousLine)
@@ -505,7 +505,7 @@ namespace MeshFactory.Tools
 
             if (hitVertex >= 0)
             {
-                Vector3 pos = ctx.MeshData.Vertices[hitVertex].Position;
+                Vector3 pos = ctx.MeshObject.Vertices[hitVertex].Position;
                 return PointInfo.FromExisting(hitVertex, pos);
             }
 
@@ -519,7 +519,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private int FindNearestVertexAtScreen(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null) return -1;
+            if (ctx.MeshObject == null) return -1;
 
             // ヒット半径（少し大きめに設定）
             float hitRadius = 15f;
@@ -528,10 +528,10 @@ namespace MeshFactory.Tools
             int nearest = -1;
             float minDist = hitRadius;
 
-            for (int i = 0; i < ctx.MeshData.VertexCount; i++)
+            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
                 Vector2 vertScreen = ctx.WorldToScreenPos(
-                    ctx.MeshData.Vertices[i].Position,
+                    ctx.MeshObject.Vertices[i].Position,
                     ctx.PreviewRect,
                     ctx.CameraPosition,
                     ctx.CameraTarget);
@@ -583,7 +583,7 @@ namespace MeshFactory.Tools
         /// </summary>
         private void UpdatePreview(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshData == null || !ctx.PreviewRect.Contains(screenPos))
+            if (ctx.MeshObject == null || !ctx.PreviewRect.Contains(screenPos))
             {
                 _previewValid = false;
                 return;
@@ -594,7 +594,7 @@ namespace MeshFactory.Tools
 
             if (_previewHitVertex >= 0)
             {
-                _previewPoint = ctx.MeshData.Vertices[_previewHitVertex].Position;
+                _previewPoint = ctx.MeshObject.Vertices[_previewHitVertex].Position;
             }
             else
             {
@@ -611,10 +611,10 @@ namespace MeshFactory.Tools
         {
             var createdIndices = new List<int>();
 
-            if (ctx.MeshData == null || _points.Count < 2)
+            if (ctx.MeshObject == null || _points.Count < 2)
                 return createdIndices;
 
-            var meshData = ctx.MeshData;
+            var meshObject = ctx.MeshObject;
             var newVertexIndices = new List<int>();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 
@@ -634,8 +634,8 @@ namespace MeshFactory.Tools
                     vertex.UVs.Add(Vector2.zero);  // デフォルトUV
                     vertex.Normals.Add(Vector3.up);  // 仮の法線（後で計算）
 
-                    int newIndex = meshData.Vertices.Count;
-                    meshData.Vertices.Add(vertex);
+                    int newIndex = meshObject.Vertices.Count;
+                    meshObject.Vertices.Add(vertex);
                     newVertexIndices.Add(newIndex);
                     addedVertices.Add((newIndex, vertex));
                     createdIndices.Add(newIndex);
@@ -693,10 +693,10 @@ namespace MeshFactory.Tools
                 // 3頂点以上の場合は法線を計算
                 if (newFace.VertexCount >= 3)
                 {
-                    Vector3 faceNormal = CalculateFaceNormal(meshData, newFace);
+                    Vector3 faceNormal = CalculateFaceNormal(meshObject, newFace);
                     foreach (int vi in newFace.VertexIndices)
                     {
-                        var vertex = meshData.Vertices[vi];
+                        var vertex = meshObject.Vertices[vi];
                         if (vertex.Normals.Count == 0)
                         {
                             vertex.Normals.Add(faceNormal);
@@ -708,8 +708,8 @@ namespace MeshFactory.Tools
                     }
                 }
 
-                int faceIndex = meshData.Faces.Count;
-                meshData.Faces.Add(newFace);
+                int faceIndex = meshObject.Faces.Count;
+                meshObject.Faces.Add(newFace);
 
                 Debug.Log($"[AddFaceTool] Created {Mode}: VertexCount={newFace.VertexCount}, MaterialIndex={newFace.MaterialIndex}");
 
@@ -731,14 +731,14 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 面の法線を計算
         /// </summary>
-        private Vector3 CalculateFaceNormal(MeshData meshData, Face face)
+        private Vector3 CalculateFaceNormal(MeshObject meshObject, Face face)
         {
             if (face.VertexCount < 3)
                 return Vector3.up;
 
-            Vector3 p0 = meshData.Vertices[face.VertexIndices[0]].Position;
-            Vector3 p1 = meshData.Vertices[face.VertexIndices[1]].Position;
-            Vector3 p2 = meshData.Vertices[face.VertexIndices[2]].Position;
+            Vector3 p0 = meshObject.Vertices[face.VertexIndices[0]].Position;
+            Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
+            Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
 
             Vector3 v1 = p1 - p0;
             Vector3 v2 = p2 - p0;

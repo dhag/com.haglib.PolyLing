@@ -1,6 +1,6 @@
 // Assets/Editor/MeshCreators/PlaneMeshCreatorWindow.cs
 // プレーングリッドメッシュ生成用のサブウインドウ（MeshCreatorWindowBase継承版）
-// MeshData（Vertex/Face）ベース対応版 - 四角形面で構築
+// MeshObject（Vertex/Face）ベース対応版 - 四角形面で構築
 //
 // 【頂点順序の規約】
 // グリッド配置: i0=左下, i1=右下, i2=右上, i3=左上
@@ -75,12 +75,12 @@ public class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCreatorWind
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static PlaneMeshCreatorWindow Open(Action<MeshData, string> onMeshDataCreated)
+    public static PlaneMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
     {
         var window = GetWindow<PlaneMeshCreatorWindow>(true, "Create Plane UnityMesh", true);
         window.minSize = new Vector2(400, 580);
         window.maxSize = new Vector2(500, 780);
-        window._onMeshDataCreated = onMeshDataCreated;
+        window._onMeshObjectCreated = onMeshObjectCreated;
         window.UpdatePreviewMesh();
         return window;
     }
@@ -144,10 +144,10 @@ public class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCreatorWind
 
         Rect rect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
-        if (_previewMeshData != null)
+        if (_previewMeshObject != null)
         {
             EditorGUILayout.LabelField(
-                $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                 EditorStyles.miniLabel);
         }
         else
@@ -190,11 +190,11 @@ public class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCreatorWind
     }
 
     // ================================================================
-    // MeshData生成
+    // MeshObject生成
     // ================================================================
-    protected override MeshData GenerateMeshData()
+    protected override MeshObject GenerateMeshObject()
     {
-        var md = new MeshData(_params.MeshName);
+        var md = new MeshObject(_params.MeshName);
 
         Vector3 pivotOffset = new Vector3(_params.Pivot.x * _params.Width, _params.Pivot.y * _params.Height, 0);
 
@@ -208,7 +208,7 @@ public class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCreatorWind
         return md;
     }
 
-    private void AddPlaneFace(MeshData md, Vector3 pivotOffset, bool flip)
+    private void AddPlaneFace(MeshObject md, Vector3 pivotOffset, bool flip)
     {
         int startIdx = md.VertexCount;
 

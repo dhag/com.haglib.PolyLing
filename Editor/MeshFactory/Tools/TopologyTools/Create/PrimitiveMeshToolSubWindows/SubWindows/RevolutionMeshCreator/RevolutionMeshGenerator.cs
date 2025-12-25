@@ -19,12 +19,12 @@ namespace MeshFactory.Revolution
         /// <summary>
         /// 回転体メッシュを生成
         /// </summary>
-        public static MeshData Generate(List<Vector2> profile, RevolutionParams p)
+        public static MeshObject Generate(List<Vector2> profile, RevolutionParams p)
         {
             if (profile == null || profile.Count < 2)
-                return new MeshData(p.MeshName);
+                return new MeshObject(p.MeshName);
 
-            MeshData md;
+            MeshObject md;
             if (p.Spiral)
             {
                 md = GenerateSpiral(profile, p);
@@ -37,7 +37,7 @@ namespace MeshFactory.Revolution
             md.Name = p.MeshName;
 
             // 変換適用
-            TransformMeshData(md, p.FlipY, p.FlipZ);
+            TransformMeshObject(md, p.FlipY, p.FlipZ);
 
             return md;
         }
@@ -45,9 +45,9 @@ namespace MeshFactory.Revolution
         /// <summary>
         /// 通常の回転体メッシュを生成
         /// </summary>
-        public static MeshData GenerateRevolution(List<Vector2> profile, int radialSeg, bool closeTop, bool closeBottom, bool closeLoop, Vector3 pivot)
+        public static MeshObject GenerateRevolution(List<Vector2> profile, int radialSeg, bool closeTop, bool closeBottom, bool closeLoop, Vector3 pivot)
         {
-            var md = new MeshData("Revolution");
+            var md = new MeshObject("Revolution");
 
             float minY = float.MaxValue;
             float maxY = float.MinValue;
@@ -155,9 +155,9 @@ namespace MeshFactory.Revolution
         /// <summary>
         /// らせんメッシュを生成
         /// </summary>
-        public static MeshData GenerateSpiral(List<Vector2> profile, RevolutionParams param)
+        public static MeshObject GenerateSpiral(List<Vector2> profile, RevolutionParams param)
         {
-            var md = new MeshData("Spiral");
+            var md = new MeshObject("Spiral");
 
             int totalRadialSteps = param.RadialSegments * param.SpiralTurns;
             int profileCount = profile.Count;
@@ -303,7 +303,7 @@ namespace MeshFactory.Revolution
         /// <summary>
         /// メッシュデータの変換（FlipY, FlipZ）
         /// </summary>
-        public static void TransformMeshData(MeshData md, bool flipY, bool flipZ)
+        public static void TransformMeshObject(MeshObject md, bool flipY, bool flipZ)
         {
             if (!flipY && !flipZ) return;
 

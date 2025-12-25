@@ -198,7 +198,77 @@ namespace MeshFactory.Serialization
         }
 
         // ================================================================
-        // 変換: ProjectData → ModelContext
+        // 変換: ProjectContext ↔ ProjectData
+        // ================================================================
+
+        /// <summary>
+        /// ProjectContextからProjectDataを作成（エクスポート用）
+        /// </summary>
+        public static ProjectData FromProjectContext(
+            ProjectContext project,
+            List<WorkPlane> workPlanes = null,
+            List<EditorStateData> editorStates = null)
+        {
+            if (project == null)
+                return null;
+
+            var projectData = ProjectData.Create(project.Name ?? "Untitled");
+
+            for (int i = 0; i < project.ModelCount; i++)
+            {
+                var model = project.Models[i];
+                if (model == null) continue;
+
+                var workPlane = (workPlanes != null && i < workPlanes.Count) ? workPlanes[i] : null;
+                var editorState = (editorStates != null && i < editorStates.Count) ? editorStates[i] : null;
+
+                var modelData = ModelSerializer.FromModelContext(model, workPlane, editorState);
+                if (modelData != null)
+                {
+                    projectData.models.Add(modelData);
+                }
+            }
+
+            return projectData;
+        }
+
+        /// <summary>
+        /// ProjectDataからProjectContextを復元（インポート用）
+        /// </summary>
+        public static ProjectContext ToProjectContext(ProjectData projectData)
+        {
+            if (projectData == null)
+                return null;
+
+            var project = new ProjectContext(projectData.name ?? "Untitled");
+            
+            // デフォルト Model をクリア（コンストラクタで自動作成されるため）
+            project.Models.Clear();
+
+            // ProjectData から Models を復元
+            foreach (var modelData in projectData.models)
+            {
+                var model = ModelSerializer.ToModelContext(modelData);
+                if (model != null)
+                {
+                    project.Models.Add(model);
+                }
+            }
+
+            // Models が空の場合はデフォルト Model を追加
+            if (project.Models.Count == 0)
+            {
+                project.Models.Add(new ModelContext("Model"));
+            }
+
+            // CurrentModelIndex を設定
+            project.CurrentModelIndex = 0;
+
+            return project;
+        }
+
+        // ================================================================
+        // 変換: ProjectData → ModelContext（後方互換）
         // ================================================================
 
         /// <summary>

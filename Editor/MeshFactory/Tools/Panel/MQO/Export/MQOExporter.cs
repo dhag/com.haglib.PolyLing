@@ -1,5 +1,6 @@
 // Assets/Editor/MeshFactory/MQO/Export/MQOExporter.cs
 // MQOエクスポーター
+// Phase 5: ModelContext対応
 
 using System;
 using System.Collections.Generic;
@@ -8,6 +9,7 @@ using System.IO;
 using System.Text;
 using UnityEngine;
 using MeshFactory.Data;
+using MeshFactory.Model;
 
 namespace MeshFactory.MQO
 {
@@ -21,7 +23,86 @@ namespace MeshFactory.MQO
         // ================================================================
 
         /// <summary>
-        /// MeshContextリストをMQOファイルに出力
+        /// ModelContextをMQOファイルに出力（推奨）
+        /// Phase 5: ModelContext.Materialsを使用
+        /// </summary>
+        public static MQOExportResult ExportFile(
+            string filePath,
+            ModelContext model,
+            MQOExportSettings settings = null)
+        {
+            if (model == null)
+            {
+                return new MQOExportResult
+                {
+                    Success = false,
+                    ErrorMessage = "Model is null"
+                };
+            }
+
+            return ExportFile(filePath, model.MeshContextList, model.Materials, settings);
+        }
+
+        /// <summary>
+        /// MeshContextリストをMQOファイルに出力（マテリアルリスト指定）
+        /// Phase 5: グローバルマテリアルリストを明示的に指定
+        /// </summary>
+        public static MQOExportResult ExportFile(
+            string filePath,
+            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            IList<Material> materials,
+            MQOExportSettings settings = null)
+        {
+            var result = new MQOExportResult();
+
+            if (meshContexts == null || meshContexts.Count == 0)
+            {
+                result.Success = false;
+                result.ErrorMessage = "No mesh contexts to export";
+                return result;
+            }
+
+            settings = settings ?? new MQOExportSettings();
+
+            try
+            {
+                // MQOドキュメント作成（マテリアルリストを渡す）
+                var document = ConvertToDocument(meshContexts, materials, settings, result.Stats);
+
+                // テキスト生成
+                string mqoText = GenerateMQOText(document, settings);
+
+                // ファイル出力
+                Encoding encoding = settings.UseShiftJIS
+                    ? Encoding.GetEncoding("shift_jis")
+                    : Encoding.UTF8;
+
+                File.WriteAllText(filePath, mqoText, encoding);
+
+                result.Success = true;
+                result.FilePath = filePath;
+                result.Stats.ObjectCount = document.Objects.Count;
+                result.Stats.MaterialCount = document.Materials.Count;
+
+                Debug.Log($"[MQOExporter] Export successful: {filePath}");
+                Debug.Log($"  - Objects: {result.Stats.ObjectCount}");
+                Debug.Log($"  - Vertices: {result.Stats.TotalVertices}");
+                Debug.Log($"  - Faces: {result.Stats.TotalFaces}");
+                Debug.Log($"  - Materials: {result.Stats.MaterialCount}");
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.ErrorMessage = ex.Message;
+                Debug.LogError($"[MQOExporter] Export failed: {ex}");
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// MeshContextリストをMQOファイルに出力（後方互換）
+        /// 注意: MeshContext.Materialsを使用（Modelが設定されていればModelContext.Materialsに委譲）
         /// </summary>
         public static MQOExportResult ExportFile(
             string filePath,
@@ -41,8 +122,8 @@ namespace MeshFactory.MQO
 
             try
             {
-                // MQOドキュメント作成
-                var document = ConvertToDocument(meshContexts, settings, result.Stats);
+                // MQOドキュメント作成（後方互換モード）
+                var document = ConvertToDocumentLegacy(meshContexts, settings, result.Stats);
 
                 // テキスト生成
                 string mqoText = GenerateMQOText(document, settings);
@@ -90,7 +171,101 @@ namespace MeshFactory.MQO
         // ドキュメント変換
         // ================================================================
 
+        /// <summary>
+        /// MQOドキュメント変換（Phase 5: グローバルマテリアルリスト対応）
+        /// </summary>
         private static MQODocument ConvertToDocument(
+            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            IList<Material> materials,
+            MQOExportSettings settings,
+            MQOExportStats stats)
+        {
+            var document = new MQODocument
+            {
+                Version = 1.1m,
+            };
+
+            // デフォルトシーン情報
+            document.Scene = CreateDefaultScene();
+
+            // マテリアル設定（グローバルマテリアルリストから）
+            var materialMap = new Dictionary<Material, int>();
+            if (settings.ExportMaterials && materials != null && materials.Count > 0)
+            {
+                for (int i = 0; i < materials.Count; i++)
+                {
+                    var mat = materials[i];
+                    if (mat != null)
+                    {
+                        if (!materialMap.ContainsKey(mat))
+                        {
+                            materialMap[mat] = document.Materials.Count;
+                            document.Materials.Add(ConvertMaterial(mat));
+                        }
+                    }
+                    else
+                    {
+                        // nullマテリアルの場合はデフォルトを追加
+                        document.Materials.Add(new MQOMaterial
+                        {
+                            Name = $"Material{i}",
+                            Color = Color.white,
+                            Diffuse = 0.8f,
+                            Ambient = 0.6f,
+                        });
+                    }
+                }
+            }
+
+            // デフォルトマテリアルがない場合は追加
+            if (document.Materials.Count == 0)
+            {
+                document.Materials.Add(new MQOMaterial
+                {
+                    Name = "Default",
+                    Color = Color.white,
+                    Diffuse = 0.8f,
+                    Ambient = 0.6f,
+                });
+            }
+
+            // オブジェクト変換
+            if (settings.MergeObjects)
+            {
+                // 全メッシュを統合
+                var merged = MergeMeshContexts(meshContexts, "MergedObject");
+                var mqoObj = ConvertObject(merged, materialMap, settings, stats);
+                if (mqoObj != null)
+                {
+                    document.Objects.Add(mqoObj);
+                }
+            }
+            else
+            {
+                // 個別にエクスポート
+                foreach (var mc in meshContexts)
+                {
+                    if (mc?.MeshObject == null) continue;
+
+                    // 空オブジェクトスキップ
+                    if (settings.SkipEmptyObjects && mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0)
+                        continue;
+
+                    var mqoObj = ConvertObject(mc, materialMap, settings, stats);
+                    if (mqoObj != null)
+                    {
+                        document.Objects.Add(mqoObj);
+                    }
+                }
+            }
+
+            return document;
+        }
+
+        /// <summary>
+        /// MQOドキュメント変換（後方互換: MeshContext.Materialsを使用）
+        /// </summary>
+        private static MQODocument ConvertToDocumentLegacy(
             IList<SimpleMeshFactory.MeshContext> meshContexts,
             MQOExportSettings settings,
             MQOExportStats stats)
@@ -103,7 +278,7 @@ namespace MeshFactory.MQO
             // デフォルトシーン情報
             document.Scene = CreateDefaultScene();
 
-            // マテリアル収集
+            // マテリアル収集（MeshContext.Materialsから）
             var materialMap = new Dictionary<Material, int>();
             if (settings.ExportMaterials)
             {
@@ -149,10 +324,10 @@ namespace MeshFactory.MQO
                 // 個別にエクスポート
                 foreach (var mc in meshContexts)
                 {
-                    if (mc?.Data == null) continue;
+                    if (mc?.MeshObject == null) continue;
 
                     // 空オブジェクトスキップ
-                    if (settings.SkipEmptyObjects && mc.Data.VertexCount == 0 && mc.Data.FaceCount == 0)
+                    if (settings.SkipEmptyObjects && mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0)
                         continue;
 
                     var mqoObj = ConvertObject(mc, materialMap, settings, stats);
@@ -206,8 +381,8 @@ namespace MeshFactory.MQO
             MQOExportSettings settings,
             MQOExportStats stats)
         {
-            var meshData = meshContext.Data;
-            if (meshData == null) return null;
+            var meshObject = meshContext.MeshObject;
+            if (meshObject == null) return null;
 
             var mqoObj = new MQOObject
             {
@@ -223,7 +398,7 @@ namespace MeshFactory.MQO
             mqoObj.Attributes.Add(new MQOAttribute("color_type", 0));
 
             // 頂点変換
-            foreach (var v in meshData.Vertices)
+            foreach (var v in meshObject.Vertices)
             {
                 var mqoVert = new MQOVertex
                 {
@@ -235,7 +410,7 @@ namespace MeshFactory.MQO
             }
 
             // 面変換
-            foreach (var face in meshData.Faces)
+            foreach (var face in meshObject.Faces)
             {
                 if (face.VertexIndices == null || face.VertexIndices.Count == 0)
                     continue;
@@ -254,9 +429,9 @@ namespace MeshFactory.MQO
                     {
                         int vertIdx = face.VertexIndices[i];
                         int uvIdx = face.UVIndices[i];
-                        if (vertIdx >= 0 && vertIdx < meshData.Vertices.Count)
+                        if (vertIdx >= 0 && vertIdx < meshObject.Vertices.Count)
                         {
-                            var vertex = meshData.Vertices[vertIdx];
+                            var vertex = meshObject.Vertices[vertIdx];
                             // UVインデックスが有効範囲内か確認
                             Vector2 uv = (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
                                 ? vertex.UVs[uvIdx]
@@ -330,17 +505,17 @@ namespace MeshFactory.MQO
             IList<SimpleMeshFactory.MeshContext> meshContexts,
             string name)
         {
-            var mergedData = new MeshData(name);
+            var mergedData = new MeshObject(name);
             var mergedMaterials = new List<Material>();
 
             foreach (var mc in meshContexts)
             {
-                if (mc?.Data == null) continue;
+                if (mc?.MeshObject == null) continue;
 
                 int vertexOffset = mergedData.VertexCount;
 
                 // 頂点コピー
-                foreach (var v in mc.Data.Vertices)
+                foreach (var v in mc.MeshObject.Vertices)
                 {
                     Vector2 uv = v.UVs.Count > 0 ? v.UVs[0] : Vector2.zero;
                     Vector3 normal = v.Normals.Count > 0 ? v.Normals[0] : Vector3.zero;
@@ -348,7 +523,7 @@ namespace MeshFactory.MQO
                 }
 
                 // 面コピー（インデックスオフセット）
-                foreach (var face in mc.Data.Faces)
+                foreach (var face in mc.MeshObject.Faces)
                 {
                     var newFace = new Face
                     {
@@ -380,7 +555,7 @@ namespace MeshFactory.MQO
             return new SimpleMeshFactory.MeshContext
             {
                 Name = name,
-                Data = mergedData,
+                MeshObject = mergedData,
                 Materials = mergedMaterials,
             };
         }

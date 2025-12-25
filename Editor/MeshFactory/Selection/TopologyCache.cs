@@ -13,7 +13,7 @@ namespace MeshFactory.Selection
     /// </summary>
     public class TopologyCache
     {
-        private MeshData _meshData;
+        private MeshObject _meshObject;
         private bool _isDirty = true;
 
         // キャッシュ
@@ -23,16 +23,16 @@ namespace MeshFactory.Selection
         private List<int> _realFaceIndices;
         private List<int> _auxLineIndices;
 
-        public TopologyCache(MeshData meshData = null)
+        public TopologyCache(MeshObject meshObject = null)
         {
-            _meshData = meshData;
+            _meshObject = meshObject;
         }
 
-        public void SetMeshData(MeshData meshData)
+        public void SetMeshObject(MeshObject meshObject)
         {
-            if (_meshData != meshData)
+            if (_meshObject != meshObject)
             {
-                _meshData = meshData;
+                _meshObject = meshObject;
                 Invalidate();
             }
         }
@@ -44,7 +44,7 @@ namespace MeshFactory.Selection
 
         private void RebuildIfNeeded()
         {
-            if (!_isDirty || _meshData == null) return;
+            if (!_isDirty || _meshObject == null) return;
 
             _pairToEdges = new Dictionary<VertexPair, List<FaceEdge>>();
             _pairToLines = new Dictionary<VertexPair, List<AuxLine>>();
@@ -52,9 +52,9 @@ namespace MeshFactory.Selection
             _realFaceIndices = new List<int>();
             _auxLineIndices = new List<int>();
 
-            for (int faceIdx = 0; faceIdx < _meshData.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < _meshObject.FaceCount; faceIdx++)
             {
-                var face = _meshData.Faces[faceIdx];
+                var face = _meshObject.Faces[faceIdx];
                 int vertCount = face.VertexCount;
 
                 if (vertCount == 2)
@@ -202,16 +202,16 @@ public IEnumerable<VertexPair> AllLinePairs
 
         public bool IsAuxLine(int faceIndex)
         {
-            if (_meshData == null || faceIndex < 0 || faceIndex >= _meshData.FaceCount)
+            if (_meshObject == null || faceIndex < 0 || faceIndex >= _meshObject.FaceCount)
                 return false;
-            return _meshData.Faces[faceIndex].VertexCount == 2;
+            return _meshObject.Faces[faceIndex].VertexCount == 2;
         }
 
         public bool IsRealFace(int faceIndex)
         {
-            if (_meshData == null || faceIndex < 0 || faceIndex >= _meshData.FaceCount)
+            if (_meshObject == null || faceIndex < 0 || faceIndex >= _meshObject.FaceCount)
                 return false;
-            return _meshData.Faces[faceIndex].VertexCount >= 3;
+            return _meshObject.Faces[faceIndex].VertexCount >= 3;
         }
 
         public IEnumerable<int> GetOverlappingLineIndices(VertexPair edgePair)

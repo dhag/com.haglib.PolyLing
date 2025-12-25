@@ -29,14 +29,14 @@ namespace MeshFactory.Tools.Creators
         /// <summary>プレビュー用メッシュ</summary>
         protected Mesh _previewMesh;
 
-        /// <summary>プレビュー用MeshData</summary>
-        protected MeshData _previewMeshData;
+        /// <summary>プレビュー用MeshObject</summary>
+        protected MeshObject _previewMeshObject;
 
         /// <summary>プレビュー用マテリアル</summary>
         protected Material _previewMaterial;
 
         /// <summary>メッシュ生成完了時のコールバック</summary>
-        protected Action<MeshData, string> _onMeshDataCreated;
+        protected Action<MeshObject, string> _onMeshObjectCreated;
 
         /// <summary>スクロール位置</summary>
         protected Vector2 _scrollPos;
@@ -67,8 +67,8 @@ namespace MeshFactory.Tools.Creators
         /// <summary>デフォルトパラメータを取得</summary>
         protected abstract TParams GetDefaultParams();
 
-        /// <summary>MeshDataを生成</summary>
-        protected abstract MeshData GenerateMeshData();
+        /// <summary>MeshObjectを生成</summary>
+        protected abstract MeshObject GenerateMeshObject();
 
         /// <summary>パラメータUIを描画</summary>
         protected abstract void DrawParametersUI();
@@ -230,10 +230,10 @@ namespace MeshFactory.Tools.Creators
             Rect previewRect = GUILayoutUtility.GetRect(200, 200, GUILayout.ExpandWidth(true));
 
             // メッシュ情報（常に実行）
-            if (_previewMeshData != null)
+            if (_previewMeshObject != null)
             {
                 EditorGUILayout.LabelField(
-                    $"Vertices: {_previewMeshData.VertexCount}, Faces: {_previewMeshData.FaceCount}",
+                    $"Vertices: {_previewMeshObject.VertexCount}, Faces: {_previewMeshObject.FaceCount}",
                     EditorStyles.miniLabel);
             }
             else
@@ -321,11 +321,11 @@ namespace MeshFactory.Tools.Creators
         /// </summary>
         protected virtual void UpdatePreviewMesh()
         {
-            _previewMeshData = GenerateMeshData();
-            if (_previewMeshData == null) return;
+            _previewMeshObject = GenerateMeshObject();
+            if (_previewMeshObject == null) return;
 
             if (_previewMesh != null) DestroyImmediate(_previewMesh);
-            _previewMesh = _previewMeshData.ToUnityMesh();
+            _previewMesh = _previewMeshObject.ToUnityMesh();
             _previewMesh.name = "Preview";
             _previewMesh.hideFlags = HideFlags.HideAndDontSave;
 
@@ -337,8 +337,8 @@ namespace MeshFactory.Tools.Creators
         /// </summary>
         protected virtual void CreateMesh()
         {
-            var meshData = GenerateMeshData();
-            if (meshData == null)
+            var meshObject = GenerateMeshObject();
+            if (meshObject == null)
             {
                 Debug.LogWarning($"[{WindowName}] Failed to generate mesh data");
                 return;
@@ -347,9 +347,9 @@ namespace MeshFactory.Tools.Creators
             string meshName = GetMeshName();
 
             // AutoMerge適用
-            if (_autoMergeOnCreate && meshData.VertexCount >= 2)
+            if (_autoMergeOnCreate && meshObject.VertexCount >= 2)
             {
-                var result = MeshMergeHelper.MergeAllVerticesAtSamePosition(meshData, _autoMergeThreshold);
+                var result = MeshMergeHelper.MergeAllVerticesAtSamePosition(meshObject, _autoMergeThreshold);
                 if (result.RemovedVertexCount > 0)
                 {
                     Debug.Log($"[{WindowName}] Auto-merged {result.RemovedVertexCount} vertices");
@@ -357,9 +357,9 @@ namespace MeshFactory.Tools.Creators
             }
 
             // コールバック呼び出し
-            _onMeshDataCreated?.Invoke(meshData, meshName);
+            _onMeshObjectCreated?.Invoke(meshObject, meshName);
 
-            Debug.Log($"[{WindowName}] Created mesh: {meshName} (V:{meshData.VertexCount}, F:{meshData.FaceCount})");
+            Debug.Log($"[{WindowName}] Created mesh: {meshName} (V:{meshObject.VertexCount}, F:{meshObject.FaceCount})");
         }
 
         // ================================================================
