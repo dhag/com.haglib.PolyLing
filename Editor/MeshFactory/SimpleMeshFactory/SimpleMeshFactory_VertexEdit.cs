@@ -53,13 +53,13 @@ public partial class SimpleMeshFactory
 
             if (GUILayout.Button(L.Get("ResetToOriginal")))
             {
-                var before = _undoController?.CaptureMeshObjectSnapshot();
+                MeshObjectSnapshot before = _undoController?.CaptureMeshObjectSnapshot();
 
                 ResetMesh(meshContext);
 
                 if (_undoController != null && before != null)
                 {
-                    var after = _undoController.CaptureMeshObjectSnapshot();
+                    MeshObjectSnapshot after = _undoController.CaptureMeshObjectSnapshot();
                     _undoController.RecordTopologyChange(before, after, "Reset UnityMesh");
                 }
             }
@@ -158,7 +158,7 @@ public partial class SimpleMeshFactory
             if (EditorGUI.EndChangeCheck())
             {
                 // Undo用スナップショット（変更前）
-                var beforeSnapshot = _undoController?.CaptureMeshObjectSnapshot();
+                MeshObjectSnapshot beforeSnapshot = _undoController?.CaptureMeshObjectSnapshot();
 
                 _model.Materials[i] = newMat;
                 SyncMaterialsToUndoContext(meshContext);
@@ -614,7 +614,7 @@ public partial class SimpleMeshFactory
         {
             var afterSnapshot = _undoController.CaptureMeshObjectSnapshot();
             _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, "Set Default Materials");
-            Debug.Log($"[MaterialUndo] Set default materials: {_defaultMaterials.Count} slots, currentIndex={_defaultCurrentMaterialIndex}");
+            Debug.Log($"[MaterialUndo] Set default materialPathList: {_defaultMaterials.Count} slots, currentIndex={_defaultCurrentMaterialIndex}");
         }
     }
 
@@ -639,7 +639,7 @@ public partial class SimpleMeshFactory
         {
             var afterSnapshot = _undoController.CaptureMeshObjectSnapshot();
             _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, $"Auto Default Materials: {(value ? "ON" : "OFF")}");
-            Debug.Log($"[MaterialUndo] Auto default materials: {(value ? "ON" : "OFF")}");
+            Debug.Log($"[MaterialUndo] Auto default materialPathList: {(value ? "ON" : "OFF")}");
         }
     }
 
@@ -655,7 +655,7 @@ public partial class SimpleMeshFactory
         _defaultCurrentMaterialIndex = _model.CurrentMaterialIndex;
         SyncDefaultMaterialsToUndoContext();
 
-        Debug.Log($"[MaterialUndo] Auto-updated default materials: {_defaultMaterials.Count} slots, currentIndex={_defaultCurrentMaterialIndex}");
+        Debug.Log($"[MaterialUndo] Auto-updated default materialPathList: {_defaultMaterials.Count} slots, currentIndex={_defaultCurrentMaterialIndex}");
     }
 
     /// <summary>

@@ -49,7 +49,7 @@ namespace MeshFactory.MQO
         /// </summary>
         public static MQOExportResult ExportFile(
             string filePath,
-            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            IList<MeshContext> meshContexts,
             IList<Material> materials,
             MQOExportSettings settings = null)
         {
@@ -106,7 +106,7 @@ namespace MeshFactory.MQO
         /// </summary>
         public static MQOExportResult ExportFile(
             string filePath,
-            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            IList<MeshContext> meshContexts,
             MQOExportSettings settings = null)
         {
             var result = new MQOExportResult();
@@ -161,7 +161,7 @@ namespace MeshFactory.MQO
         /// </summary>
         public static MQOExportResult ExportFile(
             string filePath,
-            SimpleMeshFactory.MeshContext meshContext,
+            MeshContext meshContext,
             MQOExportSettings settings = null)
         {
             return ExportFile(filePath, new[] { meshContext }, settings);
@@ -175,7 +175,7 @@ namespace MeshFactory.MQO
         /// MQOドキュメント変換（Phase 5: グローバルマテリアルリスト対応）
         /// </summary>
         private static MQODocument ConvertToDocument(
-            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            IList<MeshContext> meshContexts,
             IList<Material> materials,
             MQOExportSettings settings,
             MQOExportStats stats)
@@ -266,7 +266,7 @@ namespace MeshFactory.MQO
         /// MQOドキュメント変換（後方互換: MeshContext.Materialsを使用）
         /// </summary>
         private static MQODocument ConvertToDocumentLegacy(
-            IList<SimpleMeshFactory.MeshContext> meshContexts,
+            IList<MeshContext> meshContexts,
             MQOExportSettings settings,
             MQOExportStats stats)
         {
@@ -376,7 +376,7 @@ namespace MeshFactory.MQO
         }
 
         private static MQOObject ConvertObject(
-            SimpleMeshFactory.MeshContext meshContext,
+            MeshContext meshContext,
             Dictionary<Material, int> materialMap,
             MQOExportSettings settings,
             MQOExportStats stats)
@@ -450,7 +450,7 @@ namespace MeshFactory.MQO
         }
 
         private static int GetMaterialIndex(
-            SimpleMeshFactory.MeshContext meshContext,
+            MeshContext meshContext,
             int localIndex,
             Dictionary<Material, int> materialMap)
         {
@@ -501,8 +501,8 @@ namespace MeshFactory.MQO
         // メッシュ統合
         // ================================================================
 
-        private static SimpleMeshFactory.MeshContext MergeMeshContexts(
-            IList<SimpleMeshFactory.MeshContext> meshContexts,
+        private static MeshContext MergeMeshContexts(
+            IList<MeshContext> meshContexts,
             string name)
         {
             var mergedData = new MeshObject(name);
@@ -552,7 +552,7 @@ namespace MeshFactory.MQO
                 }
             }
 
-            return new SimpleMeshFactory.MeshContext
+            return new MeshContext
             {
                 Name = name,
                 MeshObject = mergedData,

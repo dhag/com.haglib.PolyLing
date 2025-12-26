@@ -26,7 +26,7 @@ namespace MeshFactory.UndoSystem
         private UndoGroup _mainGroup;
         private UndoStack<MeshUndoContext> _vertexEditStack;
         private UndoStack<EditorStateContext> _editorStateStack;
-        private UndoStack<WorkPlane> _workPlaneStack;
+        private UndoStack<WorkPlaneContext> _workPlaneStack;
         private UndoStack<ModelContext> _meshListStack;
         private UndoGroup _subWindowGroup;
 
@@ -37,7 +37,7 @@ namespace MeshFactory.UndoSystem
         // === コンテキスト ===
         private MeshUndoContext _meshContext;
         private EditorStateContext _editorStateContext;
-        private WorkPlane _workPlane;
+        private WorkPlaneContext _workPlane;
         private ModelContext _modelContext;
 
         // === 状態追跡（変更検出用） ===
@@ -56,7 +56,7 @@ namespace MeshFactory.UndoSystem
         // === プロパティ ===
         public MeshUndoContext MeshUndoContext => _meshContext;
         public EditorStateContext EditorState => _editorStateContext;
-        public WorkPlane WorkPlane => _workPlane;
+        public WorkPlaneContext WorkPlane => _workPlane;
         public ModelContext ModelContext => _modelContext;
         
         /// <summary>後方互換: MeshListContext（ModelContextを返す）</summary>
@@ -74,7 +74,7 @@ namespace MeshFactory.UndoSystem
         public UndoGroup MainGroup => _mainGroup;
         public UndoStack<MeshUndoContext> VertexEditStack => _vertexEditStack;
         public UndoStack<EditorStateContext> EditorStateStack => _editorStateStack;
-        public UndoStack<WorkPlane> WorkPlaneStack => _workPlaneStack;
+        public UndoStack<WorkPlaneContext> WorkPlaneStack => _workPlaneStack;
         public UndoStack<ModelContext> MeshListStack => _meshListStack;
         public UndoGroup SubWindowGroup => _subWindowGroup;
 
@@ -111,9 +111,9 @@ namespace MeshFactory.UndoSystem
             _mainGroup.AddChild(_editorStateStack);
 
             // WorkPlaneスタック
-            _workPlane = new WorkPlane();
-            _workPlaneStack = new UndoStack<WorkPlane>(
-                $"{windowId}/WorkPlane",
+            _workPlane = new WorkPlaneContext();
+            _workPlaneStack = new UndoStack<WorkPlaneContext>(
+                $"{windowId}/WorkPlaneContext",
                 "Work Plane",
                 _workPlane
             );
@@ -264,11 +264,11 @@ namespace MeshFactory.UndoSystem
             if (!_isEditorStateDragging) return;
             _isEditorStateDragging = false;
 
-            var currentSnapshot = _editorStateContext.Capture();
+            EditorStateSnapshot currentSnapshot = _editorStateContext.Capture();
             if (currentSnapshot.IsDifferentFrom(_editorStateStartSnapshot))
             {
                 _editorStateStack.EndGroup();  // 独立した操作として記録
-                var record = new EditorStateChangeRecord(_editorStateStartSnapshot, currentSnapshot);
+                EditorStateChangeRecord record = new EditorStateChangeRecord(_editorStateStartSnapshot, currentSnapshot);
                 _editorStateStack.Record(record, description);
             }
         }
@@ -310,15 +310,15 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// WorkPlaneドラッグ終了（変更があれば記録）
         /// </summary>
-        public void EndWorkPlaneDrag(string description = "Change WorkPlane")
+        public void EndWorkPlaneDrag(string description = "Change WorkPlaneContext")
         {
             if (!_isWorkPlaneDragging) return;
             _isWorkPlaneDragging = false;
 
-            var currentSnapshot = _workPlane.CreateSnapshot();
+            WorkPlaneSnapshot currentSnapshot = _workPlane.CreateSnapshot();
             if (currentSnapshot.IsDifferentFrom(_workPlaneStartSnapshot))
             {
-                var record = new WorkPlaneChangeRecord(_workPlaneStartSnapshot, currentSnapshot, description);
+                WorkPlaneChangeRecord record = new WorkPlaneChangeRecord(_workPlaneStartSnapshot, currentSnapshot, description);
                 _workPlaneStack.Record(record, description);
             }
         }
@@ -326,7 +326,7 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// WorkPlane変更を即座に記録
         /// </summary>
-        public void RecordWorkPlaneChange(string description = "Change WorkPlane")
+        public void RecordWorkPlaneChange(string description = "Change WorkPlaneContext")
         {
             if (!_isWorkPlaneDragging)
             {
@@ -529,7 +529,7 @@ namespace MeshFactory.UndoSystem
             string description = "Topology Change")
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
-            var record = new MeshSnapshotRecord(before, after);
+            MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, description);
             FocusVertexEdit();
         }
@@ -565,7 +565,7 @@ namespace MeshFactory.UndoSystem
             _vertexEditStack.EndGroup();  // 独立した操作として記録
 
             // selectionStateを渡すことでEdge/Line選択もUndo対象に
-            var record = new MeshSnapshotRecord(before, after, selectionState);
+            MeshSnapshotRecord record = new MeshSnapshotRecord(before, after, selectionState);
             _vertexEditStack.Record(record, description);
             FocusVertexEdit();
         }
@@ -580,14 +580,14 @@ namespace MeshFactory.UndoSystem
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             // 旧形式のスナップショットを新形式に変換して記録
-            var beforeData = new MeshObjectSnapshot();
+            MeshObjectSnapshot beforeData = new MeshObjectSnapshot();
             before.ApplyTo(_meshContext);
             beforeData = MeshObjectSnapshot.Capture(_meshContext);
 
             after.ApplyTo(_meshContext);
-            var afterData = MeshObjectSnapshot.Capture(_meshContext);
+            MeshObjectSnapshot afterData = MeshObjectSnapshot.Capture(_meshContext);
 
-            var record = new MeshSnapshotRecord(beforeData, afterData);
+            MeshSnapshotRecord record = new MeshSnapshotRecord(beforeData, afterData);
             _vertexEditStack.Record(record, description);
             FocusVertexEdit();
         }
@@ -681,8 +681,8 @@ namespace MeshFactory.UndoSystem
         public void RecordDeleteVertices(MeshObjectSnapshot before, MeshObjectSnapshot after)
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
-            
-            var record = new MeshSnapshotRecord(before, after);
+
+            MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, "Delete Vertices");
             FocusVertexEdit();
         }
@@ -694,8 +694,8 @@ namespace MeshFactory.UndoSystem
         public void RecordMeshTopologyChange(MeshObjectSnapshot before, MeshObjectSnapshot after, string description = "UnityMesh Topology Change")
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
-            
-            var record = new MeshSnapshotRecord(before, after);
+
+            MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, description);
             FocusVertexEdit();
         }
@@ -717,7 +717,7 @@ namespace MeshFactory.UndoSystem
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
             float newRotX, float newRotY, float newDist, Vector3 newTarget)
         {
-            var before = new EditorStateSnapshot
+            EditorStateSnapshot before = new EditorStateSnapshot
             {
                 RotationX = oldRotX,
                 RotationY = oldRotY,
@@ -729,7 +729,7 @@ namespace MeshFactory.UndoSystem
             };
             //before.knifeProperty = _editorStateContext.knifeProperty;
 
-            var after = new EditorStateSnapshot
+            EditorStateSnapshot after = new EditorStateSnapshot
             {
                 RotationX = newRotX,
                 RotationY = newRotY,
@@ -755,7 +755,7 @@ namespace MeshFactory.UndoSystem
             WorkPlaneSnapshot? oldWorkPlane,
             WorkPlaneSnapshot? newWorkPlane)
         {
-            var before = new EditorStateSnapshot
+            EditorStateSnapshot before = new EditorStateSnapshot
             {
                 RotationX = oldRotX,
                 RotationY = oldRotY,
@@ -767,7 +767,7 @@ namespace MeshFactory.UndoSystem
             };
             //before.knifeProperty = _editorStateContext.knifeProperty;
 
-            var after = new EditorStateSnapshot
+            EditorStateSnapshot after = new EditorStateSnapshot
             {
                 RotationX = newRotX,
                 RotationY = newRotY,
@@ -885,7 +885,7 @@ namespace MeshFactory.UndoSystem
                    $"  MeshObject: {meshInfo}\n" +
                    $"  Vertex: {_vertexEditStack.GetDebugInfo()}\n" +
                    $"  EditorState: {_editorStateStack.GetDebugInfo()}\n" +
-                   $"  WorkPlane: {_workPlaneStack.GetDebugInfo()}\n" +
+                   $"  WorkPlaneContext: {_workPlaneStack.GetDebugInfo()}\n" +
                    $"  MeshContextList: {_meshListStack.GetDebugInfo()}\n" +
                    $"  SubWindows: {_subWindowGroup.Children.Count}";
         }
@@ -916,7 +916,7 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// MeshListを設定（後方互換）
         /// </summary>
-        public void SetMeshList(List<SimpleMeshFactory.MeshContext> meshList, Action onListChanged = null)
+        public void SetMeshList(List<MeshContext> meshList, Action onListChanged = null)
         {
             _modelContext.MeshContextList = meshList;
             _modelContext.OnListChanged = onListChanged;
@@ -936,15 +936,15 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         /// <param name="meshContext">追加されたメッシュコンテキスト</param>
         /// <param name="insertIndex">挿入位置</param>
-        /// <param name="oldSelectedIndex">追加前の選択インデックス</param>
-        /// <param name="newSelectedIndex">追加後の選択インデックス</param>
+        /// <param name="oldSelectedMeshContextIndex">追加前の選択インデックス</param>
+        /// <param name="newSelectedMeshContextIndex">追加後の選択インデックス</param>
         /// <param name="oldCamera">追加前のカメラ状態（オプション）</param>
         /// <param name="newCamera">追加後のカメラ状態（オプション）</param>
         public void RecordMeshContextAdd(
-            SimpleMeshFactory.MeshContext meshContext, 
+            MeshContext meshContext, 
             int insertIndex, 
-            int oldSelectedIndex, 
-            int newSelectedIndex,
+            int oldSelectedMeshContextIndex, 
+            int newSelectedMeshContextIndex,
             CameraSnapshot? oldCamera = null,
             CameraSnapshot? newCamera = null)
         {
@@ -954,8 +954,8 @@ namespace MeshFactory.UndoSystem
                 {
                     (insertIndex, MeshContextSnapshot.Capture(meshContext))
                 },
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex,
+                OldSelectedIndex = oldSelectedMeshContextIndex,
+                NewSelectedIndex = newSelectedMeshContextIndex,
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
@@ -968,7 +968,7 @@ namespace MeshFactory.UndoSystem
         /// メッシュコンテキスト複数追加を記録（バッチ）
         /// </summary>
         public void RecordMeshContextsAdd(
-            List<(int Index, SimpleMeshFactory.MeshContext MeshContext)> addedContexts,
+            List<(int Index, MeshContext MeshContext)> addedContexts,
             int oldSelectedIndex,
             int newSelectedIndex,
             CameraSnapshot? oldCamera = null,
@@ -1017,6 +1017,19 @@ namespace MeshFactory.UndoSystem
         }
 
         /// <summary>
+        /// MeshListChangeRecord を記録（Materials 対応版）
+        /// ReplaceAllMeshContextsWithUndo 等から使用
+        /// </summary>
+        public void RecordMeshListChange(MeshListChangeRecord record, string description, List<Material> oldMaterials = null, int oldMaterialIndex = 0)
+        {
+            record.OldMaterials = oldMaterials != null ? new List<Material>(oldMaterials) : null;
+            record.OldCurrentMaterialIndex = oldMaterialIndex;
+            _meshListStack.Record(record, description);
+            _lastMeshListRecord = record;
+            FocusMeshList();
+        }
+
+        /// <summary>
         /// メッシュコンテキスト削除を記録（複数対応）
         /// </summary>
         /// <param name="removedContexts">削除されたメッシュコンテキスト（インデックス + コンテキスト）のリスト</param>
@@ -1025,7 +1038,7 @@ namespace MeshFactory.UndoSystem
         /// <param name="oldCamera">削除前のカメラ状態（オプション）</param>
         /// <param name="newCamera">削除後のカメラ状態（オプション）</param>
         public void RecordMeshContextsRemove(
-            List<(int Index, SimpleMeshFactory.MeshContext meshContext)> removedContexts, 
+            List<(int Index, MeshContext meshContext)> removedContexts, 
             int oldSelectedIndex, 
             int newSelectedIndex,
             CameraSnapshot? oldCamera = null,
@@ -1061,7 +1074,7 @@ namespace MeshFactory.UndoSystem
         /// <param name="oldCamera">移動前のカメラ状態（オプション）</param>
         /// <param name="newCamera">移動後のカメラ状態（オプション）</param>
         public void RecordMeshContextReorder(
-            SimpleMeshFactory.MeshContext meshContext, 
+            MeshContext meshContext, 
             int oldIndex, 
             int newIndex, 
             int oldSelectedIndex, 
@@ -1069,7 +1082,7 @@ namespace MeshFactory.UndoSystem
             CameraSnapshot? oldCamera = null,
             CameraSnapshot? newCamera = null)
         {
-            var snapshot = MeshContextSnapshot.Capture(meshContext);
+            MeshContextSnapshot snapshot = MeshContextSnapshot.Capture(meshContext);
 
             var record = new MeshListChangeRecord
             {

@@ -1,4 +1,4 @@
-// Assets/Editor/MeshFactory/Serialization/ProjectData.cs
+// Assets/Editor/MeshFactory/Serialization/ProjectDTO.cs
 // プロジェクトファイル (.mfproj) のシリアライズ用データ構造
 // v1.0: 初期バージョン
 
@@ -15,7 +15,7 @@ namespace MeshFactory.Serialization
     /// プロジェクトファイルのルートデータ
     /// </summary>
     [Serializable]
-    public class ProjectData
+    public class ProjectDTO
     {
         /// <summary>ファイルフォーマットバージョン</summary>
         public string version = "1.0";
@@ -34,7 +34,7 @@ namespace MeshFactory.Serialization
         // ================================================================
 
         /// <summary>モデルリスト</summary>
-        public List<ModelData> models = new List<ModelData>();
+        public List<ModelDTO> models = new List<ModelDTO>();
 
         // ================================================================
         // 将来用：モーションリスト
@@ -50,10 +50,10 @@ namespace MeshFactory.Serialization
         // ファクトリメソッド
         // ================================================================
 
-        public static ProjectData Create(string projectName)
+        public static ProjectDTO Create(string projectName)
         {
             var now = DateTime.Now.ToString("o");
-            return new ProjectData
+            return new ProjectDTO
             {
                 version = "1.0",
                 name = projectName,

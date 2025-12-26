@@ -11,7 +11,7 @@ using MeshFactory.Data;
 using MeshFactory.Model;
 using MeshFactory.Localization;
 
-using MeshContext = SimpleMeshFactory.MeshContext;
+//using MeshContext = MeshContext;
 
 namespace MeshFactory.MQO
 {
@@ -429,7 +429,7 @@ namespace MeshFactory.MQO
             {
                 Debug.Log($"[MQOImportPanel] Import successful: {_lastResult.MeshContexts.Count} objects, " +
                           $"{_lastResult.Stats.TotalVertices} vertices, {_lastResult.Stats.TotalFaces} faces, " +
-                          $"{_lastResult.Materials.Count} materials");
+                          $"{_lastResult.Materials.Count} materialPathList");
 
                 // コンテキストがあれば追加
                 if (_context != null)
@@ -461,7 +461,7 @@ namespace MeshFactory.MQO
                         // Replaceモードではマテリアルも置換
                         if (handled && _lastResult.Materials.Count > 0 && _context.ReplaceMaterials != null)
                         {
-                            Debug.Log($"[MQOImportPanel] Replacing materials: {_lastResult.Materials.Count}");
+                            Debug.Log($"[MQOImportPanel] Replacing materialPathList: {_lastResult.Materials.Count}");
                             _context.ReplaceMaterials.Invoke(_lastResult.Materials);
                         }
                     }
@@ -487,7 +487,7 @@ namespace MeshFactory.MQO
                         // Appendモードではマテリアルを追加（既存にマージ）
                         if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
                         {
-                            Debug.Log($"[MQOImportPanel] Adding materials: {_lastResult.Materials.Count}");
+                            Debug.Log($"[MQOImportPanel] Adding materialPathList: {_lastResult.Materials.Count}");
                             _context.AddMaterials.Invoke(_lastResult.Materials);
                         }
                     }

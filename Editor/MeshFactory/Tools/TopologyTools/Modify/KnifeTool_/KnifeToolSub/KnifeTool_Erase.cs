@@ -41,7 +41,7 @@ namespace MeshFactory.Tools
             // Undo記録
             if (ctx.UndoController != null && beforeSnapshot != null)
             {
-                var afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                MeshObjectSnapshot afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                 ctx.UndoController.RecordMeshTopologyChange(beforeSnapshot, afterSnapshot, "Erase Edge");
             }
 

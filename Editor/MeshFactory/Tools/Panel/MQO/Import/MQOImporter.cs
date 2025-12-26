@@ -10,7 +10,7 @@ using MeshFactory.Data;
 using MeshFactory.Model;
 
 // MeshContextはSimpleMeshFactoryのネストクラス
-using MeshContext = SimpleMeshFactory.MeshContext;
+//using MeshContext = MeshContext;
 
 namespace MeshFactory.MQO
 {

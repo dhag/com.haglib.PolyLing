@@ -293,8 +293,8 @@ public partial class SimpleMeshFactory
     // ================================================================
     private void HandleClick(bool shiftHeld, MeshObject meshObject, Rect rect, Vector3 camPos, Vector3 lookAt, float handleRadius)
     {
-        var oldLegacySelection = new HashSet<int>(_selectedVertices);
-        var oldSnapshot = _selectionState?.CreateSnapshot();
+        HashSet<int> oldLegacySelection = new HashSet<int>(_selectedVertices);
+        SelectionSnapshot oldSnapshot = _selectionState?.CreateSnapshot();
         bool selectionChanged = false;
 
         // SelectionOperationsを使用（複数モード対応）
@@ -426,8 +426,8 @@ public partial class SimpleMeshFactory
 
     private void FinishBoxSelect(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt)
     {
-        var oldSelection = new HashSet<int>(_selectedVertices);
-        var oldSnapshot = _selectionState?.CreateSnapshot();
+        HashSet<int> oldSelection = new HashSet<int>(_selectedVertices);
+        SelectionSnapshot oldSnapshot = _selectionState?.CreateSnapshot();
 
         // 矩形を正規化
         Rect selectRect = new Rect(
@@ -524,7 +524,7 @@ public partial class SimpleMeshFactory
         }
 
         // 変更チェック
-        var afterSnapshot = _selectionState.CreateSnapshot();
+        SelectionSnapshot afterSnapshot = _selectionState.CreateSnapshot();
 
         if (!_selectionSnapshotOnMouseDown.IsDifferentFrom(afterSnapshot))
         {
@@ -536,7 +536,7 @@ public partial class SimpleMeshFactory
         }
 
         // 選択が変更された → Undo記録
-        var newLegacyVertices = _selectedVertices != null
+        HashSet<int> newLegacyVertices = _selectedVertices != null
             ? new HashSet<int>(_selectedVertices)
             : new HashSet<int>();
 

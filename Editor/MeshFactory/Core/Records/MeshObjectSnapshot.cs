@@ -173,7 +173,7 @@ namespace MeshFactory.UndoSystem
         /// <returns>スナップショット</returns>
         public static MeshObjectSnapshot Capture(MeshUndoContext ctx, SelectionState selectionState)
         {
-            var snapshot = new MeshObjectSnapshot
+            MeshObjectSnapshot snapshot = new MeshObjectSnapshot
             {
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
@@ -313,8 +313,8 @@ namespace MeshFactory.UndoSystem
                 };
             }
 
-            var mesh = ctx.MeshObject.ToUnityMesh();
-            var snapshot = new MeshSnapshot
+            UnityEngine.Mesh mesh = ctx.MeshObject.ToUnityMesh();
+            MeshSnapshot snapshot = new MeshSnapshot
             {
                 Vertices = mesh.vertices,
                 Triangles = mesh.triangles,
@@ -333,7 +333,7 @@ namespace MeshFactory.UndoSystem
         public void ApplyTo(MeshUndoContext ctx)
         {
             // 一時的なMeshを作成してMeshObjectに変換
-            var tempMesh = new Mesh
+            UnityEngine.Mesh tempMesh = new Mesh
             {
                 vertices = Vertices,
                 triangles = Triangles,

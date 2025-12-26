@@ -228,9 +228,9 @@ namespace MeshFactory.Tools
         // ================================================================
 
         /// <summary>
-        /// ExportSettingsData から変換
+        /// ExportSettingsDTO から変換
         /// </summary>
-        public static ExportSettings FromSerializable(ExportSettingsData data)
+        public static ExportSettings FromSerializable(ExportSettingsDTO data)
         {
             if (data == null) return new ExportSettings();
 
@@ -243,11 +243,11 @@ namespace MeshFactory.Tools
         }
 
         /// <summary>
-        /// ExportSettingsData に変換
+        /// ExportSettingsDTO に変換
         /// </summary>
-        public ExportSettingsData ToSerializable()
+        public ExportSettingsDTO ToSerializable()
         {
-            var data = new ExportSettingsData
+            var data = new ExportSettingsDTO
             {
                 useLocalTransform = _useLocalTransform
             };

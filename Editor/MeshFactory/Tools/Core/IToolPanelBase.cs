@@ -10,7 +10,7 @@ using MeshFactory.UndoSystem;
 using MeshFactory.Model;
 
 // MeshContentはSimpleMeshFactoryのネストクラスを参照
-using MeshContext = SimpleMeshFactory.MeshContext;
+////using MeshContext = MeshContext;
 using MeshFactory.MQO;
 
 namespace MeshFactory.Tools
@@ -193,8 +193,8 @@ namespace MeshFactory.Tools
         {
             if (CurrentMeshObject == null) return default;
 
-            var undo = _context?.UndoController;
-            var before = undo?.CaptureMeshObjectSnapshot();
+            MeshUndoController undo = _context?.UndoController;
+            MeshObjectSnapshot before = undo?.CaptureMeshObjectSnapshot();
 
             // 操作実行
             T result = action(CurrentMeshObject);
@@ -227,12 +227,12 @@ namespace MeshFactory.Tools
         {
             if (_context?.UndoController == null || Settings == null) return;
 
-            var editorState = _context.UndoController.EditorState;
+            EditorStateContext editorState = _context.UndoController.EditorState;
             if (editorState.ToolSettings == null)
                 editorState.ToolSettings = new ToolSettingsStorage();
 
             // Before
-            var before = Settings.Clone();
+            IToolSettings before = Settings.Clone();
             editorState.ToolSettings.Set(Name, before);
             _context.UndoController.BeginEditorStateDrag();
 

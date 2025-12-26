@@ -14,7 +14,7 @@ using MeshFactory.Selection;
 using MeshFactory.Model;
 
 // MeshContentはSimpleMeshFactoryのネストクラスを参照
-using MeshContext = SimpleMeshFactory.MeshContext;
+////using MeshContext = MeshContext;
 
 namespace MeshFactory.Tools
 {
@@ -74,7 +74,7 @@ namespace MeshFactory.Tools
         // === 作業平面 ===
 
         /// <summary>作業平面</summary>
-        public WorkPlane WorkPlane { get; set; }
+        public WorkPlaneContext WorkPlane { get; set; }
 
         // === マテリアル ===
 
@@ -96,10 +96,10 @@ namespace MeshFactory.Tools
         public IReadOnlyList<MeshContext> MeshList => Model?.MeshContextList;
 
         /// <summary>選択中のメッシュインデックス</summary>
-        public int SelectedMeshIndex => Model?.SelectedIndex ?? -1;
+        public int SelectedMeshIndex => Model?.SelectedMeshContextIndex ?? -1;
 
         /// <summary>有効なメッシュが選択されているか</summary>
-        public bool HasValidMeshSelection => Model?.HasValidSelection ?? false;
+        public bool HasValidMeshSelection => Model?.HasValidMeshContextSelection ?? false;
 
         // === メッシュリスト操作コールバック（Undo対応） ===
 

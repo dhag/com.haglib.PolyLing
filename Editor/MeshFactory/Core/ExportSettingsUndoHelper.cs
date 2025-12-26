@@ -136,7 +136,7 @@ namespace MeshFactory.UndoSystem
             if (!_isDragging) return;
             _isDragging = false;
 
-            var currentSnapshot = _settings.CreateSnapshot();
+            ExportSettingsSnapshot currentSnapshot = _settings.CreateSnapshot();
             if (_dragStartSnapshot.IsDifferentFrom(currentSnapshot))
             {
                 var record = new ExportSettingsChangeRecord(

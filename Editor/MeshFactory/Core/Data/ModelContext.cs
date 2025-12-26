@@ -13,7 +13,7 @@ using MeshFactory.Symmetry;
 using MeshFactory.UndoSystem;
 
 // MeshContextはSimpleMeshFactoryのネストクラスを参照
-using MeshContext = SimpleMeshFactory.MeshContext;
+////using MeshContext = MeshContext;
 
 namespace MeshFactory.Model
 {
@@ -55,36 +55,36 @@ namespace MeshFactory.Model
         // ================================================================
 
         /// <summary>選択中のメッシュインデックス（複数選択対応）</summary>
-        public HashSet<int> SelectedIndices { get; set; } = new HashSet<int>();
+        public HashSet<int> SelectedMeshContextIndices { get; set; } = new HashSet<int>();
 
         /// <summary>主選択インデックス（編集対象・最小インデックス）</summary>
-        public int PrimarySelectedIndex => SelectedIndices.Count > 0 ? SelectedIndices.Min() : -1;
+        public int PrimarySelectedMeshContextIndex => SelectedMeshContextIndices.Count > 0 ? SelectedMeshContextIndices.Min() : -1;
 
         /// <summary>選択があるか</summary>
-        public bool HasSelection => SelectedIndices.Count > 0;
+        public bool HasSelection => SelectedMeshContextIndices.Count > 0;
 
         /// <summary>複数選択されているか</summary>
-        public bool IsMultiSelected => SelectedIndices.Count > 1;
+        public bool IsMultiSelected => SelectedMeshContextIndices.Count > 1;
 
         /// <summary>選択中のメッシュインデックス（後方互換・単一選択用）</summary>
-        public int SelectedIndex
+        public int SelectedMeshContextIndex
         {
-            get => PrimarySelectedIndex;
+            get => PrimarySelectedMeshContextIndex;
             set
             {
-                SelectedIndices.Clear();
+                SelectedMeshContextIndices.Clear();
                 if (value >= 0 && value < Count)
-                    SelectedIndices.Add(value);
+                    SelectedMeshContextIndices.Add(value);
             }
         }
 
         /// <summary>現在選択中のメッシュコンテキスト（主選択）</summary>
         public MeshContext CurrentMeshContext =>
-            (PrimarySelectedIndex >= 0 && PrimarySelectedIndex < Count)
-                ? MeshContextList[PrimarySelectedIndex] : null;
+            (PrimarySelectedMeshContextIndex >= 0 && PrimarySelectedMeshContextIndex < Count)
+                ? MeshContextList[PrimarySelectedMeshContextIndex] : null;
 
         /// <summary>有効なメッシュコンテキストが選択されているか</summary>
-        public bool HasValidSelection => CurrentMeshContext != null;
+        public bool HasValidMeshContextSelection => CurrentMeshContext != null;
 
         // ================================================================
         // Undoコールバック（旧MeshListUndoContextから統合）
@@ -100,11 +100,11 @@ namespace MeshFactory.Model
         public Action OnFocusMeshListRequested;
 
         // ================================================================
-        // WorkPlane
+        // WorkPlaneContext
         // ================================================================
 
         /// <summary>作業平面</summary>
-        public WorkPlane WorkPlane { get; set; }
+        public WorkPlaneContext WorkPlane { get; set; }
         
         // ================================================================
         // Materials（モデル単位で実データを保持）
@@ -171,37 +171,37 @@ namespace MeshFactory.Model
         /// <summary>選択をクリア</summary>
         public void ClearSelection()
         {
-            SelectedIndices.Clear();
+            SelectedMeshContextIndices.Clear();
         }
 
         /// <summary>単一選択（既存選択をクリアして選択）</summary>
         public void Select(int index)
         {
-            SelectedIndices.Clear();
+            SelectedMeshContextIndices.Clear();
             if (index >= 0 && index < Count)
-                SelectedIndices.Add(index);
+                SelectedMeshContextIndices.Add(index);
         }
 
         /// <summary>選択を追加</summary>
         public void AddToSelection(int index)
         {
             if (index >= 0 && index < Count)
-                SelectedIndices.Add(index);
+                SelectedMeshContextIndices.Add(index);
         }
 
         /// <summary>選択を解除</summary>
         public void RemoveFromSelection(int index)
         {
-            SelectedIndices.Remove(index);
+            SelectedMeshContextIndices.Remove(index);
         }
 
         /// <summary>選択をトグル</summary>
         public void ToggleSelection(int index)
         {
-            if (SelectedIndices.Contains(index))
-                SelectedIndices.Remove(index);
+            if (SelectedMeshContextIndices.Contains(index))
+                SelectedMeshContextIndices.Remove(index);
             else if (index >= 0 && index < Count)
-                SelectedIndices.Add(index);
+                SelectedMeshContextIndices.Add(index);
         }
 
         /// <summary>範囲選択（from から to まで）</summary>
@@ -212,28 +212,28 @@ namespace MeshFactory.Model
             for (int i = min; i <= max; i++)
             {
                 if (i >= 0 && i < Count)
-                    SelectedIndices.Add(i);
+                    SelectedMeshContextIndices.Add(i);
             }
         }
 
         /// <summary>全選択</summary>
         public void SelectAll()
         {
-            SelectedIndices.Clear();
+            SelectedMeshContextIndices.Clear();
             for (int i = 0; i < Count; i++)
-                SelectedIndices.Add(i);
+                SelectedMeshContextIndices.Add(i);
         }
 
         /// <summary>選択されているか</summary>
         public bool IsSelected(int index)
         {
-            return SelectedIndices.Contains(index);
+            return SelectedMeshContextIndices.Contains(index);
         }
 
         /// <summary>選択インデックスを検証して無効なものを除去</summary>
         public void ValidateSelection()
         {
-            SelectedIndices.RemoveWhere(i => i < 0 || i >= Count);
+            SelectedMeshContextIndices.RemoveWhere(i => i < 0 || i >= Count);
         }
 
         // ================================================================
@@ -265,11 +265,11 @@ namespace MeshFactory.Model
 
             // 選択インデックス調整（挿入位置以降は+1）
             var adjusted = new HashSet<int>();
-            foreach (var i in SelectedIndices)
+            foreach (var i in SelectedMeshContextIndices)
             {
                 adjusted.Add(i >= index ? i + 1 : i);
             }
-            SelectedIndices = adjusted;
+            SelectedMeshContextIndices = adjusted;
         }
 
         /// <summary>メッシュを削除</summary>
@@ -284,7 +284,7 @@ namespace MeshFactory.Model
 
             // 選択インデックス調整
             var adjusted = new HashSet<int>();
-            foreach (var i in SelectedIndices)
+            foreach (var i in SelectedMeshContextIndices)
             {
                 if (i < index)
                     adjusted.Add(i);
@@ -292,7 +292,7 @@ namespace MeshFactory.Model
                     adjusted.Add(i - 1);
                 // i == index の場合は削除されるので追加しない
             }
-            SelectedIndices = adjusted;
+            SelectedMeshContextIndices = adjusted;
             ValidateSelection();
 
             return true;
@@ -315,7 +315,7 @@ namespace MeshFactory.Model
 
             // 選択インデックス調整
             var adjusted = new HashSet<int>();
-            foreach (var i in SelectedIndices)
+            foreach (var i in SelectedMeshContextIndices)
             {
                 if (i == fromIndex)
                 {
@@ -334,7 +334,7 @@ namespace MeshFactory.Model
                     adjusted.Add(i);
                 }
             }
-            SelectedIndices = adjusted;
+            SelectedMeshContextIndices = adjusted;
 
             IsDirty = true;
             return true;
@@ -372,7 +372,7 @@ namespace MeshFactory.Model
             }
 
             MeshContextList.Clear();
-            SelectedIndices.Clear();
+            SelectedMeshContextIndices.Clear();
             IsDirty = true;
         }
 

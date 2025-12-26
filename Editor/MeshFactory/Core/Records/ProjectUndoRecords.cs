@@ -1,3 +1,4 @@
+using MeshFactory.Data;
 using MeshFactory.Serialization;
 using MeshFactory.Tools;
 using MeshFactory.UndoSystem;
@@ -14,21 +15,21 @@ namespace MeshEditor
     {
         public string Name;
         public List<MeshContextSnapshot> MeshSnapshots;
-        public WorkPlaneData WorkPlane;
-        public EditorStateData EditorState;
+        public WorkPlaneDTO WorkPlane;
+        public EditorStateDTO EditorState;
 
         /// <summary>
         /// メッシュコンテキストリストからスナップショットを作成
         /// </summary>
         public static ModelSnapshot Capture(
-            List<SimpleMeshFactory.MeshContext> meshContextList,
+            List<MeshContext> meshContextList,
             string name = null,
-            WorkPlane workPlane = null,
-            EditorStateData editorState = null)
+            WorkPlaneContext workPlaneContext = null,
+            EditorStateDTO editorState = null)
         {
             if (meshContextList == null) return null;
 
-            var snapshot = new ModelSnapshot
+            ModelSnapshot snapshot = new ModelSnapshot
             {
                 Name = name ?? "Model",
                 MeshSnapshots = new List<MeshContextSnapshot>(),
@@ -38,7 +39,7 @@ namespace MeshEditor
             // 各メッシュのスナップショットを作成
             foreach (var meshContext in meshContextList)
             {
-                var meshSnapshot = MeshContextSnapshot.Capture(meshContext);
+                MeshContextSnapshot meshSnapshot = MeshContextSnapshot.Capture(meshContext);
                 if (meshSnapshot != null)
                 {
                     snapshot.MeshSnapshots.Add(meshSnapshot);
@@ -46,9 +47,9 @@ namespace MeshEditor
             }
 
             // WorkPlaneのスナップショット
-            if (workPlane != null)
+            if (workPlaneContext != null)
             {
-                snapshot.WorkPlane = ModelSerializer.ToWorkPlaneData(workPlane);
+                snapshot.WorkPlane = ModelSerializer.ToWorkPlaneData(workPlaneContext);
             }
 
             return snapshot;
@@ -57,15 +58,15 @@ namespace MeshEditor
         /// <summary>
         /// スナップショットからメッシュコンテキストリストを復元
         /// </summary>
-        public List<SimpleMeshFactory.MeshContext> ToMeshContextList()
+        public List<MeshContext> ToMeshContextList()
         {
-            var list = new List<SimpleMeshFactory.MeshContext>();
+            var list = new List<MeshContext>();
 
             if (MeshSnapshots != null)
             {
                 foreach (var meshSnapshot in MeshSnapshots)
                 {
-                    var meshContext = meshSnapshot?.ToMeshContext();
+                    MeshContext meshContext = meshSnapshot?.ToMeshContext();
                     if (meshContext != null)
                     {
                         list.Add(meshContext);
@@ -79,7 +80,7 @@ namespace MeshEditor
         /// <summary>
         /// WorkPlaneを復元
         /// </summary>
-        public void ApplyToWorkPlane(WorkPlane workPlane)
+        public void ApplyToWorkPlane(WorkPlaneContext workPlane)
         {
             if (WorkPlane != null && workPlane != null)
             {
@@ -87,11 +88,11 @@ namespace MeshEditor
             }
         }
 
-        private static EditorStateData CloneEditorState(EditorStateData source)
+        private static EditorStateDTO CloneEditorState(EditorStateDTO source)
         {
             if (source == null) return null;
 
-            return new EditorStateData
+            return new EditorStateDTO
             {
                 rotationX = source.rotationX,
                 rotationY = source.rotationY,
@@ -122,27 +123,27 @@ namespace MeshEditor
         /// <summary>
         /// プロジェクトデータからスナップショットを作成
         /// </summary>
-        public static ProjectSnapshot Capture(ProjectData projectData)
+        public static ProjectSnapshot Capture(ProjectDTO projectDTO)
         {
-            if (projectData == null) return null;
+            if (projectDTO == null) return null;
 
-            var snapshot = new ProjectSnapshot
+            ProjectSnapshot snapshot = new ProjectSnapshot
             {
-                Version = projectData.version,
-                Name = projectData.name,
-                CreatedAt = projectData.createdAt,
-                ModifiedAt = projectData.modifiedAt,
+                Version = projectDTO.version,
+                Name = projectDTO.name,
+                CreatedAt = projectDTO.createdAt,
+                ModifiedAt = projectDTO.modifiedAt,
                 ModelSnapshots = new List<ModelSnapshot>()
             };
 
             // 各モデルのスナップショットを作成
             // 注: ProjectDataはシリアライズ用データなので、
             //     実際の使用時はModelContextから直接キャプチャする方が望ましい
-            if (projectData.models != null)
+            if (projectDTO.models != null)
             {
-                foreach (var modelData in projectData.models)
+                foreach (var modelDTO in projectDTO.models)
                 {
-                    var modelSnapshot = CaptureFromModelData(modelData);
+                    ModelSnapshot modelSnapshot = CaptureFromModelDTO(modelDTO);
                     if (modelSnapshot != null)
                     {
                         snapshot.ModelSnapshots.Add(modelSnapshot);
@@ -157,12 +158,12 @@ namespace MeshEditor
         /// 現在のエディタ状態からスナップショットを作成（単一モデル用）
         /// </summary>
         public static ProjectSnapshot CaptureFromEditor(
-            List<SimpleMeshFactory.MeshContext> meshContextList,
+            List<MeshContext> meshContextList,
             string projectName,
-            WorkPlane workPlane = null,
-            EditorStateData editorState = null)
+            WorkPlaneContext workPlane = null,
+            EditorStateDTO editorStateDTO = null)
         {
-            var snapshot = new ProjectSnapshot
+            ProjectSnapshot snapshot = new ProjectSnapshot
             {
                 Version = "1.0",
                 Name = projectName ?? "Project",
@@ -175,7 +176,7 @@ namespace MeshEditor
                 meshContextList,
                 projectName,
                 workPlane,
-                editorState);
+                editorStateDTO);
 
             if (modelSnapshot != null)
             {
@@ -188,61 +189,61 @@ namespace MeshEditor
         /// <summary>
         /// スナップショットからProjectDataを復元
         /// </summary>
-        public ProjectData ToProjectData()
+        public ProjectDTO ToProjectData()
         {
-            var projectData = new ProjectData
+            var projectDTO = new ProjectDTO
             {
                 version = Version ?? "1.0",
                 name = Name ?? "Project",
                 createdAt = CreatedAt,
                 modifiedAt = ModifiedAt,
-                models = new List<ModelData>()
+                models = new List<ModelDTO>()
             };
 
             if (ModelSnapshots != null)
             {
                 foreach (var modelSnapshot in ModelSnapshots)
                 {
-                    var modelData = ToModelData(modelSnapshot);
-                    if (modelData != null)
+                    var modelDTO = ToModelData(modelSnapshot);
+                    if (modelDTO != null)
                     {
-                        projectData.models.Add(modelData);
+                        projectDTO.models.Add(modelDTO);
                     }
                 }
             }
 
-            return projectData;
+            return projectDTO;
         }
 
         /// <summary>
         /// 最初のモデルのメッシュコンテキストリストを復元（単一モデル用）
         /// </summary>
-        public List<SimpleMeshFactory.MeshContext> ToMeshContextList()
+        public List<MeshContext> ToMeshContextList()
         {
             if (ModelSnapshots == null || ModelSnapshots.Count == 0)
             {
-                return new List<SimpleMeshFactory.MeshContext>();
+                return new List<MeshContext>();
             }
 
             return ModelSnapshots[0].ToMeshContextList();
         }
 
-        private static ModelSnapshot CaptureFromModelData(ModelData modelData)
+        private static ModelSnapshot CaptureFromModelDTO(ModelDTO modelDTO)
         {
-            if (modelData == null) return null;
+            if (modelDTO == null) return null;
 
-            var snapshot = new ModelSnapshot
+            ModelSnapshot snapshot = new ModelSnapshot
             {
-                Name = modelData.name,
+                Name = modelDTO.name,
                 MeshSnapshots = new List<MeshContextSnapshot>(),
-                WorkPlane = modelData.workPlane,
-                EditorState = modelData.editorState
+                WorkPlane = modelDTO.workPlane,
+                EditorState = modelDTO.editorStateDTO
             };
 
             // MeshContextDataからMeshContextSnapshotへ変換
-            if (modelData.meshContextList != null)
+            if (modelDTO.meshDTOList != null)
             {
-                foreach (var meshContextData in modelData.meshContextList)
+                foreach (var meshContextData in modelDTO.meshDTOList)
                 {
                     var meshContext = ModelSerializer.ToMeshContext(meshContextData);
                     if (meshContext != null)
@@ -259,35 +260,35 @@ namespace MeshEditor
             return snapshot;
         }
 
-        private static ModelData ToModelData(ModelSnapshot modelSnapshot)
+        private static ModelDTO ToModelData(ModelSnapshot modelSnapshot)
         {
             if (modelSnapshot == null) return null;
 
-            var modelData = new ModelData
+            var modelDTO = new ModelDTO
             {
                 name = modelSnapshot.Name,
-                meshContextList = new List<MeshContextData>(),
+                meshDTOList = new List<MeshDTO>(),
                 workPlane = modelSnapshot.WorkPlane,
-                editorState = modelSnapshot.EditorState
+                editorStateDTO = modelSnapshot.EditorState
             };
 
             if (modelSnapshot.MeshSnapshots != null)
             {
                 foreach (var meshSnapshot in modelSnapshot.MeshSnapshots)
                 {
-                    var meshContext = meshSnapshot?.ToMeshContext();
+                    MeshContext meshContext = meshSnapshot?.ToMeshContext();
                     if (meshContext != null)
                     {
                         var meshContextData = ModelSerializer.FromMeshContext(meshContext, null);
                         if (meshContextData != null)
                         {
-                            modelData.meshContextList.Add(meshContextData);
+                            modelDTO.meshDTOList.Add(meshContextData);
                         }
                     }
                 }
             }
 
-            return modelData;
+            return modelDTO;
         }
     }
 
@@ -313,7 +314,7 @@ namespace MeshEditor
         /// <summary>
         /// メッシュ追加の記録を作成
         /// </summary>
-        public static MeshListRecord CreateAdd(int index, SimpleMeshFactory.MeshContext meshContext)
+        public static MeshListRecord CreateAdd(int index, MeshContext meshContext)
         {
             return new MeshListRecord
             {
@@ -326,7 +327,7 @@ namespace MeshEditor
         /// <summary>
         /// メッシュ削除の記録を作成
         /// </summary>
-        public static MeshListRecord CreateRemove(int index, SimpleMeshFactory.MeshContext meshContext)
+        public static MeshListRecord CreateRemove(int index, MeshContext meshContext)
         {
             return new MeshListRecord
             {
@@ -341,8 +342,8 @@ namespace MeshEditor
         /// </summary>
         public static MeshListRecord CreateReplace(
             int index,
-            SimpleMeshFactory.MeshContext before,
-            SimpleMeshFactory.MeshContext after)
+            MeshContext before,
+            MeshContext after)
         {
             return new MeshListRecord
             {

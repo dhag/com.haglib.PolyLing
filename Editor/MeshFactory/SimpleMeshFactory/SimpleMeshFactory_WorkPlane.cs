@@ -1,4 +1,4 @@
-// Assets/Editor/SimpleMeshFactory.WorkPlane.cs
+// Assets/Editor/SimpleMeshFactory.WorkPlaneContext.cs
 // WorkPlane関連（UI、イベントハンドラ、ギズモ描画）
 
 using UnityEditor;
@@ -43,7 +43,7 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     /// <summary>
-    /// WorkPlane UIイベントハンドラ設定
+    /// WorkPlaneContext UIイベントハンドラ設定
     /// </summary>
     private void SetupWorkPlaneEventHandlers()
     {
@@ -55,7 +55,7 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
-    /// WorkPlane UIイベントハンドラ解除
+    /// WorkPlaneContext UIイベントハンドラ解除
     /// </summary>
     private void CleanupWorkPlaneEventHandlers()
     {
@@ -93,12 +93,12 @@ public partial class SimpleMeshFactory
         // 選択がなければ何もしない
         if (UnityEditor.Selection.activeTransform == null) return;
 
-        var before = meshContext.ExportSettings.CreateSnapshot();
+        ExportSettingsSnapshot before = meshContext.ExportSettings.CreateSnapshot();
 
         meshContext.ExportSettings.CopyFromSelection();
         meshContext.ExportSettings.UseLocalTransform = true;
 
-        var after = meshContext.ExportSettings.CreateSnapshot();
+        ExportSettingsSnapshot after = meshContext.ExportSettings.CreateSnapshot();
 
         // Undo記録
         ExportSettingsUI.NotifyChanged(before, after, "Copy Transform From Selection");
@@ -128,7 +128,7 @@ public partial class SimpleMeshFactory
     //移動予定ここまで
 
     /// <summary>
-    /// WorkPlane "From Selection"ボタンクリック
+    /// WorkPlaneContext "From Selection"ボタンクリック
     /// </summary>
     private void OnWorkPlaneFromSelectionClicked()
     {
@@ -147,7 +147,7 @@ public partial class SimpleMeshFactory
             var after = workPlane.CreateSnapshot();
             if (before.IsDifferentFrom(after))
             {
-                _undoController.RecordWorkPlaneChange(before, after, "Set WorkPlane Origin from Selection");
+                _undoController.RecordWorkPlaneChange(before, after, "Set WorkPlaneContext Origin from Selection");
             }
             Repaint();
         }
@@ -168,7 +168,7 @@ public partial class SimpleMeshFactory
     /// 選択変更時にWorkPlane原点を更新
     /// </summary>
     /// <summary>
-    /// WorkPlane UI描画
+    /// WorkPlaneContext UI描画
     /// </summary>
     private void DrawWorkPlaneUI()
     {

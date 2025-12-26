@@ -311,8 +311,8 @@ namespace MeshFactory.Tools
             {
                 ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
                 // 【フェーズ1】SelectionStateを渡してEdge選択も保存・復元
-                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
-                var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
+                MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                MeshSnapshotRecord record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.VertexEditStack.Record(record, "Bevel Edges");
             }
 

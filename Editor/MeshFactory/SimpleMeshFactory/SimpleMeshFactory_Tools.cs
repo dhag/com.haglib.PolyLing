@@ -402,9 +402,9 @@ public partial class SimpleMeshFactory : EditorWindow
 
         int oldIndex = _selectedIndex;
         int insertIndex = _meshContextList.Count;
-        
+
         // カメラ状態を保存（追加前）
-        var oldCamera = new CameraSnapshot
+        CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -416,9 +416,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectedIndex = insertIndex;
         
         InitVertexOffsets();
-        
+
         // カメラ状態を保存（追加後）
-        var newCamera = new CameraSnapshot
+        CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -429,7 +429,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undo記録 - カメラ状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
             _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldIndex, _selectedIndex, oldCamera, newCamera);
         }
 
@@ -450,9 +450,9 @@ public partial class SimpleMeshFactory : EditorWindow
         // マテリアル状態を保存（追加前）
         var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
         var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
-        
+
         // カメラ状態を保存（追加前）
-        var oldCamera = new CameraSnapshot
+        CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -478,9 +478,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectedIndex = _meshContextList.Count - 1;
         
         InitVertexOffsets();
-        
+
         // カメラ状態を保存（追加後）
-        var newCamera = new CameraSnapshot
+        CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -491,7 +491,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undo記録（1回でまとめて）- カメラ状態付き、マテリアル状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
             _undoController.RecordMeshContextsAdd(addedContexts, oldIndex, _selectedIndex, oldCamera, newCamera, oldMaterials, oldMaterialIndex);
         }
 
@@ -509,8 +509,12 @@ public partial class SimpleMeshFactory : EditorWindow
 
         int oldIndex = _selectedIndex;
         
+        // マテリアル状態を保存（削除前）
+        var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
+        var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
+
         // カメラ状態を保存（削除前）
-        var oldCamera = new CameraSnapshot
+        CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -518,11 +522,11 @@ public partial class SimpleMeshFactory : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // 削除するメッシュのリストを作成（Undo記録用）
-        var removedList = new List<(int Index, MeshContext meshContext)>();
+        // 削除するメッシュのスナップショットを作成（Undo記録用）
+        List<(int Index, MeshContextSnapshot Snapshot)> removedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
         for (int i = 0; i < _meshContextList.Count; i++)
         {
-            removedList.Add((i, _meshContextList[i]));
+            removedSnapshots.Add((i, MeshContextSnapshot.Capture(_meshContextList[i])));
         }
 
         // 全メッシュリソースを解放
@@ -539,9 +543,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectionState?.ClearAll();
         _selectedVertices.Clear();
         InitVertexOffsets();
-        
+
         // カメラ状態を保存（削除後）
-        var newCamera = new CameraSnapshot
+        CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -549,11 +553,19 @@ public partial class SimpleMeshFactory : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録（既存APIを使用）- カメラ状態付き
+        // Undo記録 - Materials 対応版
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            _undoController.RecordMeshContextsRemove(removedList, oldIndex, _selectedIndex, oldCamera, newCamera);
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            var record = new MeshListChangeRecord
+            {
+                RemovedMeshContexts = removedSnapshots,
+                OldSelectedIndex = oldIndex,
+                NewSelectedIndex = _selectedIndex,
+                OldCameraState = oldCamera,
+                NewCameraState = newCamera
+            };
+            _undoController.RecordMeshListChange(record, "Clear All Meshes", oldMaterials, oldMaterialIndex);
         }
 
         UpdateTopology();
@@ -573,9 +585,13 @@ public partial class SimpleMeshFactory : EditorWindow
         }
 
         int oldSelectedIndex = _selectedIndex;
+        
+        // マテリアル状態を保存（置換前）
+        var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
+        var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
 
         // カメラ状態を保存（置換前）
-        var oldCameraState = new CameraSnapshot
+        CameraSnapshot oldCameraState = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -584,10 +600,10 @@ public partial class SimpleMeshFactory : EditorWindow
         };
 
         // 既存メッシュのスナップショットを保存
-        var removedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
+        List<(int Index, MeshContextSnapshot Snapshot)> removedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
         for (int i = 0; i < _meshContextList.Count; i++)
         {
-            var snapshot = MeshContextSnapshot.Capture(_meshContextList[i]);
+            MeshContextSnapshot snapshot = MeshContextSnapshot.Capture(_meshContextList[i]);
             removedSnapshots.Add((i, snapshot));
         }
 
@@ -600,7 +616,7 @@ public partial class SimpleMeshFactory : EditorWindow
         _meshContextList.Clear();
 
         // 新しいメッシュを追加
-        var addedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
+        List<(int Index, MeshContextSnapshot Snapshot)> addedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
         foreach (var meshContext in newMeshContexts)
         {
             if (meshContext == null) continue;
@@ -610,8 +626,8 @@ public partial class SimpleMeshFactory : EditorWindow
 
             int insertIndex = _meshContextList.Count;
             _meshContextList.Add(meshContext);
-            
-            var snapshot = MeshContextSnapshot.Capture(meshContext);
+
+            MeshContextSnapshot snapshot = MeshContextSnapshot.Capture(meshContext);
             addedSnapshots.Add((insertIndex, snapshot));
         }
 
@@ -623,7 +639,7 @@ public partial class SimpleMeshFactory : EditorWindow
         InitVertexOffsets();
 
         // カメラ状態を保存（置換後）
-        var newCameraState = new CameraSnapshot
+        CameraSnapshot newCameraState = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -631,10 +647,10 @@ public partial class SimpleMeshFactory : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録（1回のレコードで削除と追加を両方記録）
+        // Undo記録（1回のレコードで削除と追加を両方記録）- Materials 対応版
         if (_undoController != null)
         {
-            var record = new MeshListChangeRecord
+            MeshListChangeRecord record = new MeshListChangeRecord
             {
                 RemovedMeshContexts = removedSnapshots,
                 AddedMeshContexts = addedSnapshots,
@@ -643,10 +659,10 @@ public partial class SimpleMeshFactory : EditorWindow
                 OldCameraState = oldCameraState,
                 NewCameraState = newCameraState
             };
-            _undoController.MeshListStack.Record(record, $"Replace All: {newMeshContexts.Count} meshes");
-            _undoController.FocusMeshList();
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.RecordMeshListChange(record, $"Replace All: {newMeshContexts.Count} meshes", oldMaterials, oldMaterialIndex);
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
         }
+
 
         LoadMeshContextToUndoController(_model.CurrentMeshContext);
         UpdateTopology();
@@ -661,11 +677,11 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         if (index < 0 || index >= _meshContextList.Count) return;
 
-        var meshContext = _meshContextList[index];
+        MeshContext meshContext = _meshContextList[index];
         int oldIndex = _selectedIndex;
-        
+
         // カメラ状態を保存（削除前）
-        var oldCamera = new CameraSnapshot
+        CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -691,14 +707,14 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectedVertices.Clear();
         _selectionState?.ClearAll();
 
-        if (_model.HasValidSelection)
+        if (_model.HasValidMeshContextSelection)
         {
             InitVertexOffsets();
             LoadMeshContextToUndoController(_model.CurrentMeshContext);
         }
-        
+
         // カメラ状態を保存（削除後）
-        var newCamera = new CameraSnapshot
+        CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -709,8 +725,8 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undo記録 - カメラ状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
-            var removedList = new List<(int Index, MeshContext meshContext)> { (index, meshContext) };
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
+            List<(int Index, MeshContext meshContext)> removedList = new List<(int Index, MeshContext meshContext)> { (index, meshContext) };
             _undoController.RecordMeshContextsRemove(removedList, oldIndex, _selectedIndex, oldCamera, newCamera);
         }
 
@@ -731,9 +747,9 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undo記録（選択変更のみ）
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
             // MeshListChangeRecordで選択変更を記録
-            var record = new MeshListChangeRecord
+            MeshListChangeRecord record = new MeshListChangeRecord
             {
                 OldSelectedIndex = oldIndex,
                 NewSelectedIndex = _selectedIndex
@@ -745,7 +761,7 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectedVertices.Clear();
         _selectionState?.ClearAll();
 
-        if (_model.HasValidSelection)
+        if (_model.HasValidMeshContextSelection)
         {
             InitVertexOffsets();
             LoadMeshContextToUndoController(_model.CurrentMeshContext);
@@ -761,7 +777,7 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         if (index < 0 || index >= _meshContextList.Count) return;
 
-        var original = _meshContextList[index];
+        MeshContext original = _meshContextList[index];
 
         // MeshContextを複製
         var clone = new MeshContext
@@ -784,9 +800,9 @@ public partial class SimpleMeshFactory : EditorWindow
 
         int oldIndex = _selectedIndex;
         int insertIndex = index + 1;
-        
+
         // カメラ状態を保存（追加前）
-        var oldCamera = new CameraSnapshot
+        CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -798,9 +814,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _selectedIndex = insertIndex;
 
         InitVertexOffsets();
-        
+
         // カメラ状態を保存（追加後）
-        var newCamera = new CameraSnapshot
+        CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
             RotationY = _rotationY,
@@ -811,7 +827,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undo記録 - カメラ状態付き
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
             _undoController.RecordMeshContextAdd(clone, insertIndex, oldIndex, _selectedIndex, oldCamera, newCamera);
         }
 
@@ -851,7 +867,7 @@ public partial class SimpleMeshFactory : EditorWindow
         // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.SelectedIndex = _selectedIndex;
+            _undoController.MeshListContext.SelectedMeshContextIndex = _selectedIndex;
             _undoController.RecordMeshContextReorder(meshContext, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
         }
 

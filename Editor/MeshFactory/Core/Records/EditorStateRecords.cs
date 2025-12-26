@@ -44,7 +44,7 @@ namespace MeshFactory.UndoSystem
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
 
         // WorkPlane参照（カメラ連動Undo用）
-        public WorkPlane WorkPlane;
+        public WorkPlaneContext WorkPlane;
 
         // === Foldout状態 ===
         /// <summary>Foldout開閉をUndo記録するか</summary>
@@ -70,7 +70,7 @@ namespace MeshFactory.UndoSystem
         /// </summary>
         public EditorStateSnapshot Capture()
         {
-            var snapshot = new EditorStateSnapshot
+            EditorStateSnapshot editorStatesnapshot = new EditorStateSnapshot
             {
                 RotationX = RotationX,
                 RotationY = RotationY,
@@ -91,9 +91,9 @@ namespace MeshFactory.UndoSystem
             };
 
             // ToolSettings（新規）
-            snapshot.ToolSettings = ToolSettings?.Clone();
+            editorStatesnapshot.ToolSettings = ToolSettings?.Clone();
 
-            return snapshot;
+            return editorStatesnapshot;
         }
 
         /// <summary>

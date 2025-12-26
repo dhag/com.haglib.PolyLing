@@ -14,7 +14,7 @@ using MeshFactory.Tools;
 using MeshFactory.Model;
 
 // MeshContextはSimpleMeshFactoryのネストクラスを参照
-using MeshContext = SimpleMeshFactory.MeshContext;
+////using MeshContext = MeshContext;
 
 namespace MeshFactory.Serialization
 {
@@ -38,14 +38,14 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// プロジェクトをファイルにエクスポート
         /// </summary>
-        public static bool Export(string path, ProjectData projectData)
+        public static bool Export(string path, ProjectDTO projectDTO)
         {
-            if (string.IsNullOrEmpty(path) || projectData == null)
+            if (string.IsNullOrEmpty(path) || projectDTO == null)
                 return false;
 
             try
             {
-                projectData.UpdateModifiedAt();
+                projectDTO.UpdateModifiedAt();
 
                 var settings = new JsonSerializerSettings
                 {
@@ -53,7 +53,7 @@ namespace MeshFactory.Serialization
                     NullValueHandling = NullValueHandling.Ignore
                 };
 
-                string json = JsonConvert.SerializeObject(projectData, settings);
+                string json = JsonConvert.SerializeObject(projectDTO, settings);
                 File.WriteAllText(path, json);
 
                 Debug.Log($"[ProjectSerializer] Exported: {path}");
@@ -69,7 +69,7 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ファイルダイアログを表示してエクスポート
         /// </summary>
-        public static bool ExportWithDialog(ProjectData projectData, string defaultName = "Project")
+        public static bool ExportWithDialog(ProjectDTO projectDTO, string defaultName = "Project")
         {
             string path = EditorUtility.SaveFilePanel(
                 "Export Project",
@@ -81,7 +81,7 @@ namespace MeshFactory.Serialization
             if (string.IsNullOrEmpty(path))
                 return false;
 
-            return Export(path, projectData);
+            return Export(path, projectDTO);
         }
 
         // ================================================================
@@ -91,7 +91,7 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ファイルからプロジェクトをインポート
         /// </summary>
-        public static ProjectData Import(string path)
+        public static ProjectDTO Import(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
@@ -102,16 +102,16 @@ namespace MeshFactory.Serialization
             try
             {
                 string json = File.ReadAllText(path);
-                var projectData = JsonConvert.DeserializeObject<ProjectData>(json);
+                var projectDTO = JsonConvert.DeserializeObject<ProjectDTO>(json);
 
-                if (projectData == null)
+                if (projectDTO == null)
                 {
                     Debug.LogError("[ProjectSerializer] Failed to deserialize project data");
                     return null;
                 }
 
-                Debug.Log($"[ProjectSerializer] Imported: {path} (version: {projectData.version})");
-                return projectData;
+                Debug.Log($"[ProjectSerializer] Imported: {path} (version: {projectDTO.version})");
+                return projectDTO;
             }
             catch (Exception ex)
             {
@@ -123,7 +123,7 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ファイルダイアログを表示してインポート
         /// </summary>
-        public static ProjectData ImportWithDialog()
+        public static ProjectDTO ImportWithDialog()
         {
             string path = EditorUtility.OpenFilePanel(
                 "Import Project",
@@ -144,40 +144,40 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ModelContextからProjectDataを作成
         /// </summary>
-        public static ProjectData FromModelContext(
+        public static ProjectDTO FromModelContext(
             ModelContext model,
             string projectName,
-            WorkPlane workPlane = null,
-            EditorStateData editorState = null)
+            WorkPlaneContext workPlaneContext = null,
+            EditorStateDTO editorStateDTO = null)
         {
             if (model == null)
                 return null;
 
-            var projectData = ProjectData.Create(projectName);
+            var projectDTO = ProjectDTO.Create(projectName);
 
             // ModelDataを作成して追加
-            var modelData = ModelSerializer.FromModelContext(model, workPlane, editorState);
-            if (modelData != null)
+            var modelDTO = ModelSerializer.FromModelContext(model, workPlaneContext, editorStateDTO);
+            if (modelDTO != null)
             {
-                projectData.models.Add(modelData);
+                projectDTO.models.Add(modelDTO);
             }
 
-            return projectData;
+            return projectDTO;
         }
 
         /// <summary>
         /// 複数のModelContextからProjectDataを作成
         /// </summary>
-        public static ProjectData FromModelContexts(
+        public static ProjectDTO FromModelContexts(
             List<ModelContext> models,
             string projectName,
-            List<WorkPlane> workPlanes = null,
-            List<EditorStateData> editorStates = null)
+            List<WorkPlaneContext> workPlanes = null,
+            List<EditorStateDTO> editorStates = null)
         {
             if (models == null || models.Count == 0)
                 return null;
 
-            var projectData = ProjectData.Create(projectName);
+            var projectDTO = ProjectDTO.Create(projectName);
 
             for (int i = 0; i < models.Count; i++)
             {
@@ -187,14 +187,14 @@ namespace MeshFactory.Serialization
                 var workPlane = (workPlanes != null && i < workPlanes.Count) ? workPlanes[i] : null;
                 var editorState = (editorStates != null && i < editorStates.Count) ? editorStates[i] : null;
 
-                var modelData = ModelSerializer.FromModelContext(model, workPlane, editorState);
-                if (modelData != null)
+                var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState);
+                if (modelDTO != null)
                 {
-                    projectData.models.Add(modelData);
+                    projectDTO.models.Add(modelDTO);
                 }
             }
 
-            return projectData;
+            return projectDTO;
         }
 
         // ================================================================
@@ -204,15 +204,15 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ProjectContextからProjectDataを作成（エクスポート用）
         /// </summary>
-        public static ProjectData FromProjectContext(
+        public static ProjectDTO FromProjectContext(
             ProjectContext project,
-            List<WorkPlane> workPlanes = null,
-            List<EditorStateData> editorStates = null)
+            List<WorkPlaneContext> workPlanes = null,
+            List<EditorStateDTO> editorStates = null)
         {
             if (project == null)
                 return null;
 
-            var projectData = ProjectData.Create(project.Name ?? "Untitled");
+            var projectDTO = ProjectDTO.Create(project.Name ?? "Untitled");
 
             for (int i = 0; i < project.ModelCount; i++)
             {
@@ -222,33 +222,33 @@ namespace MeshFactory.Serialization
                 var workPlane = (workPlanes != null && i < workPlanes.Count) ? workPlanes[i] : null;
                 var editorState = (editorStates != null && i < editorStates.Count) ? editorStates[i] : null;
 
-                var modelData = ModelSerializer.FromModelContext(model, workPlane, editorState);
-                if (modelData != null)
+                var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState);
+                if (modelDTO != null)
                 {
-                    projectData.models.Add(modelData);
+                    projectDTO.models.Add(modelDTO);
                 }
             }
 
-            return projectData;
+            return projectDTO;
         }
 
         /// <summary>
         /// ProjectDataからProjectContextを復元（インポート用）
         /// </summary>
-        public static ProjectContext ToProjectContext(ProjectData projectData)
+        public static ProjectContext ToProjectContext(ProjectDTO projectDTO)
         {
-            if (projectData == null)
+            if (projectDTO == null)
                 return null;
 
-            var project = new ProjectContext(projectData.name ?? "Untitled");
+            var project = new ProjectContext(projectDTO.name ?? "Untitled");
             
             // デフォルト Model をクリア（コンストラクタで自動作成されるため）
             project.Models.Clear();
 
             // ProjectData から Models を復元
-            foreach (var modelData in projectData.models)
+            foreach (var modelDTO in projectDTO.models)
             {
-                var model = ModelSerializer.ToModelContext(modelData);
+                var model = ModelSerializer.ToModelContext(modelDTO);
                 if (model != null)
                 {
                     project.Models.Add(model);
@@ -274,27 +274,27 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ProjectDataから最初のModelContextを復元
         /// </summary>
-        public static ModelContext ToModelContext(ProjectData projectData)
+        public static ModelContext ToModelContext(ProjectDTO projectDTO)
         {
-            if (projectData == null || projectData.models.Count == 0)
+            if (projectDTO == null || projectDTO.models.Count == 0)
                 return null;
 
-            return ModelSerializer.ToModelContext(projectData.models[0]);
+            return ModelSerializer.ToModelContext(projectDTO.models[0]);
         }
 
         /// <summary>
         /// ProjectDataから全てのModelContextを復元
         /// </summary>
-        public static List<ModelContext> ToModelContexts(ProjectData projectData)
+        public static List<ModelContext> ToModelContexts(ProjectDTO projectDTO)
         {
             var result = new List<ModelContext>();
 
-            if (projectData == null)
+            if (projectDTO == null)
                 return result;
 
-            foreach (var modelData in projectData.models)
+            foreach (var modelDTO in projectDTO.models)
             {
-                var model = ModelSerializer.ToModelContext(modelData);
+                var model = ModelSerializer.ToModelContext(modelDTO);
                 if (model != null)
                 {
                     result.Add(model);
@@ -311,38 +311,38 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// プロジェクトにモデルを追加
         /// </summary>
-        public static void AddModel(ProjectData projectData, ModelContext model, WorkPlane workPlane = null, EditorStateData editorState = null)
+        public static void AddModel(ProjectDTO projectDTO, ModelContext model, WorkPlaneContext workPlane = null, EditorStateDTO editorStateDTO = null)
         {
-            if (projectData == null || model == null)
+            if (projectDTO == null || model == null)
                 return;
 
-            var modelData = ModelSerializer.FromModelContext(model, workPlane, editorState);
-            if (modelData != null)
+            var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorStateDTO);
+            if (modelDTO != null)
             {
-                projectData.models.Add(modelData);
-                projectData.UpdateModifiedAt();
+                projectDTO.models.Add(modelDTO);
+                projectDTO.UpdateModifiedAt();
             }
         }
 
         /// <summary>
         /// プロジェクトからモデルを削除
         /// </summary>
-        public static bool RemoveModel(ProjectData projectData, int index)
+        public static bool RemoveModel(ProjectDTO projectDTO, int index)
         {
-            if (projectData == null || index < 0 || index >= projectData.models.Count)
+            if (projectDTO == null || index < 0 || index >= projectDTO.models.Count)
                 return false;
 
-            projectData.models.RemoveAt(index);
-            projectData.UpdateModifiedAt();
+            projectDTO.models.RemoveAt(index);
+            projectDTO.UpdateModifiedAt();
             return true;
         }
 
         /// <summary>
         /// モデル数を取得
         /// </summary>
-        public static int GetModelCount(ProjectData projectData)
+        public static int GetModelCount(ProjectDTO projectDTO)
         {
-            return projectData?.models?.Count ?? 0;
+            return projectDTO?.models?.Count ?? 0;
         }
     }
 }

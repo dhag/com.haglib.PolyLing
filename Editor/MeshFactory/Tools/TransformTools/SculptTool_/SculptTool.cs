@@ -121,7 +121,7 @@ namespace MeshFactory.Tools
 
                 if (_beforeSnapshot != null && ctx.UndoController != null)
                 {
-                    var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                     ctx.UndoController.RecordTopologyChange(_beforeSnapshot, after, $"Sculpt ({Mode})");
                     _beforeSnapshot = null;
                 }

@@ -1,4 +1,4 @@
-// Assets/Editor/MeshCreators/WorkPlane.cs
+// Assets/Editor/MeshCreators/WorkPlaneContext.cs
 // 作業平面（Work Plane）クラス
 // 頂点追加時の配置平面、編集時の参照平面を定義
 // 全操作がUndo対応
@@ -61,19 +61,19 @@ namespace MeshFactory.Tools
         public string GetChangeDescription(WorkPlaneSnapshot before)
         {
             if (Mode != before.Mode)
-                return $"Change WorkPlane Mode to {Mode}";
+                return $"Change WorkPlaneContext Mode to {Mode}";
             if (Vector3.Distance(Origin, before.Origin) > 0.0001f)
-                return "Change WorkPlane Origin";
+                return "Change WorkPlaneContext Origin";
             if (Vector3.Distance(AxisU, before.AxisU) > 0.0001f || 
                 Vector3.Distance(AxisV, before.AxisV) > 0.0001f)
-                return "Change WorkPlane Orientation";
+                return "Change WorkPlaneContext Orientation";
             if (IsLocked != before.IsLocked)
-                return IsLocked ? "Lock WorkPlane" : "Unlock WorkPlane";
+                return IsLocked ? "Lock WorkPlaneContext" : "Unlock WorkPlaneContext";
             if (LockOrientation != before.LockOrientation)
-                return LockOrientation ? "Lock WorkPlane Orientation" : "Unlock WorkPlane Orientation";
+                return LockOrientation ? "Lock WorkPlaneContext Orientation" : "Unlock WorkPlaneContext Orientation";
             if (AutoUpdateOriginOnSelection != before.AutoUpdateOriginOnSelection)
                 return AutoUpdateOriginOnSelection ? "Enable Auto-update Origin" : "Disable Auto-update Origin";
-            return "Change WorkPlane";
+            return "Change WorkPlaneContext";
         }
     }
 
@@ -85,7 +85,7 @@ namespace MeshFactory.Tools
     /// 原点と2つの直交軸で平面を定義
     /// </summary>
     [Serializable]
-    public class WorkPlane
+    public class WorkPlaneContext
     {
         // === フィールド ===
         [SerializeField] private WorkPlaneMode _mode = WorkPlaneMode.CameraParallel;
@@ -163,12 +163,12 @@ namespace MeshFactory.Tools
         }
 
         // === コンストラクタ ===
-        public WorkPlane()
+        public WorkPlaneContext()
         {
             ResetInternal();
         }
 
-        public WorkPlane(WorkPlane other)
+        public WorkPlaneContext(WorkPlaneContext other)
         {
             CopyFrom(other);
         }
@@ -201,7 +201,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// 他のWorkPlaneからコピー
         /// </summary>
-        public void CopyFrom(WorkPlane other)
+        public void CopyFrom(WorkPlaneContext other)
         {
             if (other == null) return;
             _mode = other._mode;
@@ -449,11 +449,11 @@ namespace MeshFactory.Tools
         public static event Action<WorkPlaneSnapshot, WorkPlaneSnapshot, string> OnChanged;
 
         /// <summary>
-        /// WorkPlane UIを描画
+        /// WorkPlaneContext UIを描画
         /// </summary>
         /// <param name="workPlane">対象のWorkPlane</param>
         /// <returns>変更があったか</returns>
-        public static bool DrawUI(WorkPlane workPlane)
+        public static bool DrawUI(WorkPlaneContext workPlane)
         {
             if (workPlane == null) return false;
 
@@ -480,7 +480,7 @@ namespace MeshFactory.Tools
                 {
                     workPlane.IsLocked = !workPlane.IsLocked;
                     changed = true;
-                    changeDescription = workPlane.IsLocked ? "Lock WorkPlane" : "Unlock WorkPlane";
+                    changeDescription = workPlane.IsLocked ? "Lock WorkPlaneContext" : "Unlock WorkPlaneContext";
                 }
 
                 // リセットボタン
@@ -488,7 +488,7 @@ namespace MeshFactory.Tools
                 {
                     workPlane.Reset();
                     changed = true;
-                    changeDescription = "Reset WorkPlane";
+                    changeDescription = "Reset WorkPlaneContext";
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -508,7 +508,7 @@ namespace MeshFactory.Tools
                     {
                         workPlane.Mode = newMode;
                         changed = true;
-                        changeDescription = $"Change WorkPlane Mode to {newMode}";
+                        changeDescription = $"Change WorkPlaneContext Mode to {newMode}";
                     }
 
                     EditorGUILayout.Space(2);
@@ -529,7 +529,7 @@ namespace MeshFactory.Tools
                         {
                             workPlane.Origin = newOrigin;
                             changed = true;
-                            changeDescription = "Change WorkPlane Origin";
+                            changeDescription = "Change WorkPlaneContext Origin";
                         }
                     }
                     EditorGUILayout.EndHorizontal();
@@ -562,7 +562,7 @@ namespace MeshFactory.Tools
                             {
                                 workPlane.AxisU = newAxisU;
                                 changed = true;
-                                changeDescription = "Change WorkPlane Axis U";
+                                changeDescription = "Change WorkPlaneContext Axis U";
                             }
                         }
                         EditorGUILayout.EndHorizontal();
@@ -591,7 +591,7 @@ namespace MeshFactory.Tools
                             {
                                 workPlane.AxisV = newAxisV;
                                 changed = true;
-                                changeDescription = "Change WorkPlane Axis V";
+                                changeDescription = "Change WorkPlaneContext Axis V";
                             }
                         }
                         EditorGUILayout.EndHorizontal();
@@ -615,7 +615,7 @@ namespace MeshFactory.Tools
                         {
                             workPlane.Orthonormalize();
                             changed = true;
-                            changeDescription = "Orthonormalize WorkPlane";
+                            changeDescription = "Orthonormalize WorkPlaneContext";
                         }
                     }
 
@@ -644,7 +644,7 @@ namespace MeshFactory.Tools
                         {
                             workPlane.LockOrientation = newLockOrientation;
                             changed = true;
-                            changeDescription = newLockOrientation ? "Lock WorkPlane Orientation" : "Unlock WorkPlane Orientation";
+                            changeDescription = newLockOrientation ? "Lock WorkPlaneContext Orientation" : "Unlock WorkPlaneContext Orientation";
                         }
                     }
                 }
@@ -678,7 +678,7 @@ namespace MeshFactory.Tools
         /// <summary>
         /// シーンビュー/プレビューにWorkPlaneを描画
         /// </summary>
-        public static void DrawGizmo(WorkPlane workPlane, float size = 1f, float alpha = 0.3f)
+        public static void DrawGizmo(WorkPlaneContext workPlane, float size = 1f, float alpha = 0.3f)
         {
             if (workPlane == null) return;
 
@@ -733,7 +733,7 @@ namespace MeshFactory.UndoSystem
     /// <summary>
     /// WorkPlane変更記録
     /// </summary>
-    public class WorkPlaneChangeRecord : IUndoRecord<WorkPlane>
+    public class WorkPlaneChangeRecord : IUndoRecord<WorkPlaneContext>
     {
         public UndoOperationInfo Info { get; set; }
 
@@ -748,12 +748,12 @@ namespace MeshFactory.UndoSystem
             Description = description ?? after.GetChangeDescription(before);
         }
 
-        public void Undo(WorkPlane context)
+        public void Undo(WorkPlaneContext context)
         {
             context?.ApplySnapshot(Before);
         }
 
-        public void Redo(WorkPlane context)
+        public void Redo(WorkPlaneContext context)
         {
             context?.ApplySnapshot(After);
         }

@@ -9,6 +9,7 @@ using MeshFactory.Tools;
 using MeshFactory.Selection;
 using MeshFactory.Localization;
 using MeshFactory.UndoSystem;
+using MeshFactory.Data;
 
 public partial class SimpleMeshFactory
 {
@@ -312,7 +313,7 @@ public partial class SimpleMeshFactory
             // ================================================================
             // Work Plane セクション
             // ================================================================
-            // WorkPlane UIは内部でFoldout管理
+            // WorkPlaneContext UIは内部でFoldout管理
             DrawWorkPlaneUI();
 
             // ギズモ表示トグル（WorkPlane展開時のみ表示）
@@ -350,7 +351,7 @@ public partial class SimpleMeshFactory
                     int oldIndex = _selectedIndex;
 
                     // 選択前のカメラ状態をキャプチャ
-                    var oldCamera = new CameraSnapshot
+                    CameraSnapshot oldCamera = new CameraSnapshot
                     {
                         RotationX = _rotationX,
                         RotationY = _rotationY,
@@ -363,12 +364,12 @@ public partial class SimpleMeshFactory
                     ResetEditState();
                     InitVertexOffsets();  // カメラがフィット
 
-                    var meshContext = _meshContextList[_selectedIndex];
+                    MeshContext meshContext = _meshContextList[_selectedIndex];
                     LoadMeshContextToUndoController(meshContext);
                     UpdateTopology();
 
                     // 選択後のカメラ状態をキャプチャ
-                    var newCamera = new CameraSnapshot
+                    CameraSnapshot newCamera = new CameraSnapshot
                     {
                         RotationX = _rotationX,
                         RotationY = _rotationY,
@@ -464,8 +465,8 @@ public partial class SimpleMeshFactory
     {
         if (_selectionState == null) return;
 
-        var oldSnapshot = _selectionState.CreateSnapshot();
-        var oldLegacySelection = new HashSet<int>(_selectedVertices);
+        SelectionSnapshot oldSnapshot = _selectionState.CreateSnapshot();
+        HashSet<int> oldLegacySelection = new HashSet<int>(_selectedVertices);
 
         // 現在のモードにフラグをトグル
         if (_selectionState.Mode.Has(toggleMode))
@@ -497,8 +498,8 @@ public partial class SimpleMeshFactory
         if (_selectionState == null) return;
         if (_selectionState.Mode == newMode) return;
 
-        var oldSnapshot = _selectionState.CreateSnapshot();
-        var oldLegacySelection = new HashSet<int>(_selectedVertices);
+        SelectionSnapshot oldSnapshot = _selectionState.CreateSnapshot();
+        HashSet<int> oldLegacySelection = new HashSet<int>(_selectedVertices);
 
         _selectionState.Mode = newMode;
 

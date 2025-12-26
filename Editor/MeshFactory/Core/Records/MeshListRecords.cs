@@ -46,7 +46,7 @@ namespace MeshFactory.UndoSystem
         public Vector3[] OriginalPositions;
 
         // オブジェクト属性
-        public SimpleMeshFactory.MeshType Type;
+        public MeshType Type;
         public int ParentIndex;
         public int Depth;
         public bool IsVisible;
@@ -60,11 +60,11 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// MeshContextからスナップショットを作成
         /// </summary>
-        public static MeshContextSnapshot Capture(SimpleMeshFactory.MeshContext meshContext)
+        public static MeshContextSnapshot Capture(MeshContext meshContext)
         {
             if (meshContext == null) return null;
 
-            var snapshot = new MeshContextSnapshot
+            MeshContextSnapshot snapshot = new MeshContextSnapshot
             {
                 Name = meshContext.Name,
                 Data = meshContext.MeshObject?.Clone(),
@@ -122,9 +122,9 @@ namespace MeshFactory.UndoSystem
         /// <summary>
         /// スナップショットからMeshContextを復元
         /// </summary>
-        public SimpleMeshFactory.MeshContext ToMeshContext()
+        public MeshContext ToMeshContext()
         {
-            var meshContext = new SimpleMeshFactory.MeshContext
+            var meshContext = new MeshContext
             {
                 Name = Name,
                 MeshObject = Data?.Clone(),
@@ -268,7 +268,7 @@ namespace MeshFactory.UndoSystem
                 ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
             }
 
-            ctx.SelectedIndices = new HashSet<int>(OldSelectedIndices);
+            ctx.SelectedMeshContextIndices = new HashSet<int>(OldSelectedIndices);
             ctx.ValidateSelection();
             
             // カメラ状態を復元
@@ -314,7 +314,7 @@ namespace MeshFactory.UndoSystem
                 ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
             }
 
-            ctx.SelectedIndices = new HashSet<int>(NewSelectedIndices);
+            ctx.SelectedMeshContextIndices = new HashSet<int>(NewSelectedIndices);
             ctx.ValidateSelection();
             
             // カメラ状態を復元
@@ -361,7 +361,7 @@ namespace MeshFactory.UndoSystem
 
         public override void Undo(ModelContext ctx)
         {
-            ctx.SelectedIndices = new HashSet<int>(OldSelectedIndices);
+            ctx.SelectedMeshContextIndices = new HashSet<int>(OldSelectedIndices);
             ctx.ValidateSelection();
             
             Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnCameraRestoreRequested");
@@ -382,7 +382,7 @@ namespace MeshFactory.UndoSystem
         public override void Redo(ModelContext ctx)
         {
             Debug.Log("[MeshSelectionChangeRecord.Redo] *** CALLED ***");
-            ctx.SelectedIndices = new HashSet<int>(NewSelectedIndices);
+            ctx.SelectedMeshContextIndices = new HashSet<int>(NewSelectedIndices);
             ctx.ValidateSelection();
             
             Debug.Log($"[MeshSelectionChangeRecord.Redo] NewCameraState.HasValue={NewCameraState.HasValue}");

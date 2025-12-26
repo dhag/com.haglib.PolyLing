@@ -214,7 +214,7 @@ public partial class SimpleMeshFactory
             MeshFactory.MQO.MQOImportPanel.Open(_toolManager?.toolContext);
         }
 
-        EditorGUI.BeginDisabledGroup(!_model.HasValidSelection);
+        EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
         if (GUILayout.Button("Export"))
         {
             MeshFactory.MQO.MQOExportPanel.Open(_toolManager?.toolContext);

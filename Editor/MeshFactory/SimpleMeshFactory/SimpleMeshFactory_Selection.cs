@@ -82,7 +82,7 @@ public partial class SimpleMeshFactory
         if (meshContext?.MeshObject == null) return;
 
         // スナップショット取得（操作前）
-        var before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
+        MeshObjectSnapshot before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // MeshMergeHelper使用
         MeshMergeHelper.DeleteVertices(meshContext.MeshObject, new HashSet<int>(_selectedVertices));
@@ -92,7 +92,7 @@ public partial class SimpleMeshFactory
         _undoController.MeshUndoContext.SelectedVertices.Clear();
 
         // スナップショット取得（操作後）
-        var after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
+        MeshObjectSnapshot after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // Undo記録
         _undoController.RecordDeleteVertices(before, after);
@@ -112,7 +112,7 @@ public partial class SimpleMeshFactory
         if (meshContext?.MeshObject == null) return;
 
         // スナップショット取得（操作前）
-        var before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
+        MeshObjectSnapshot before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // MeshMergeHelper使用
         int mergedVertex = MeshMergeHelper.MergeVerticesToCentroid(meshContext.MeshObject, new HashSet<int>(_selectedVertices));
@@ -126,7 +126,7 @@ public partial class SimpleMeshFactory
         _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
 
         // スナップショット取得（操作後）
-        var after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
+        MeshObjectSnapshot  after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // Undo記録
         _undoController.RecordTopologyChange(before, after, "Merge Vertices");

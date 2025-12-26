@@ -266,7 +266,7 @@ namespace MeshFactory.Tools
             if (ctx.SelectedVertices.Count < 2) return;
 
             // Undo用スナップショット
-            var before = ctx.UndoController?.VertexEditStack != null
+            MeshObjectSnapshot before = ctx.UndoController?.VertexEditStack != null
                 ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext)
                 : default;
 
@@ -281,7 +281,7 @@ namespace MeshFactory.Tools
                 // Undo記録
                 if (ctx.UndoController != null)
                 {
-                    var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                    MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                     ctx.UndoController.RecordTopologyChange(before, after, "Merge Vertices");
                 }
 

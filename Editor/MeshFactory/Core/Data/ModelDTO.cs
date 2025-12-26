@@ -16,19 +16,19 @@ namespace MeshFactory.Serialization
     /// モデルファイルのルートデータ
     /// </summary>
     [Serializable]
-    public class ModelData
+    public class ModelDTO
     {
         /// <summary>モデル名</summary>
         public string name;
 
         /// <summary>メッシュコンテキストリスト</summary>
-        public List<MeshContextData> meshContextList = new List<MeshContextData>();
+        public List<MeshDTO> meshDTOList = new List<MeshDTO>();
 
         /// <summary>WorkPlane設定</summary>
-        public WorkPlaneData workPlane;
+        public WorkPlaneDTO workPlane;
 
         /// <summary>エディタ状態</summary>
-        public EditorStateData editorState;
+        public EditorStateDTO editorStateDTO;
 
         // ================================================================
         // マテリアル（Phase 1: モデル単位に集約）
@@ -51,9 +51,9 @@ namespace MeshFactory.Serialization
 
         // === ファクトリメソッド ===
 
-        public static ModelData Create(string modelName)
+        public static ModelDTO Create(string modelName)
         {
-            return new ModelData
+            return new ModelDTO
             {
                 name = modelName
             };
@@ -68,25 +68,25 @@ namespace MeshFactory.Serialization
     /// 個別メッシュコンテキストのデータ
     /// </summary>
     [Serializable]
-    public class MeshContextData
+    public class MeshDTO
     {
         /// <summary>メッシュ名</summary>
         public string name;
 
         /// <summary>エクスポート時のトランスフォーム設定</summary>
-        public ExportSettingsData exportSettings;
+        public ExportSettingsDTO exportSettingsDTO;
 
         /// <summary>頂点データ</summary>
-        public List<VertexData> vertices = new List<VertexData>();
+        public List<VertexDTO> vertices = new List<VertexDTO>();
 
         /// <summary>面データ</summary>
-        public List<FaceData> faces = new List<FaceData>();
+        public List<FaceDTO> faces = new List<FaceDTO>();
 
         /// <summary>選択中の頂点インデックス</summary>
         public List<int> selectedVertices = new List<int>();
 
         /// <summary>マテリアルリスト（アセットパス）</summary>
-        public List<string> materials = new List<string>();
+        public List<string> materialPathList = new List<string>();
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
         public int currentMaterialIndex = 0;
@@ -135,7 +135,7 @@ namespace MeshFactory.Serialization
     /// 頂点データ（効率的な配列形式）
     /// </summary>
     [Serializable]
-    public class VertexData
+    public class VertexDTO
     {
         /// <summary>位置 [x, y, z]</summary>
         public float[] p;
@@ -214,7 +214,7 @@ namespace MeshFactory.Serialization
     /// 面データ
     /// </summary>
     [Serializable]
-    public class FaceData
+    public class FaceDTO
     {
         /// <summary>頂点インデックスリスト</summary>
         public List<int> v;
@@ -237,7 +237,7 @@ namespace MeshFactory.Serialization
     /// エクスポート時のトランスフォーム設定
     /// </summary>
     [Serializable]
-    public class ExportSettingsData
+    public class ExportSettingsDTO
     {
         /// <summary>ローカルトランスフォームを使用するか</summary>
         public bool useLocalTransform;
@@ -286,9 +286,9 @@ namespace MeshFactory.Serialization
             scale = new float[] { s.x, s.y, s.z };
         }
 
-        public static ExportSettingsData CreateDefault()
+        public static ExportSettingsDTO CreateDefault()
         {
-            return new ExportSettingsData
+            return new ExportSettingsDTO
             {
                 useLocalTransform = false,
                 position = new float[] { 0, 0, 0 },
@@ -306,7 +306,7 @@ namespace MeshFactory.Serialization
     /// WorkPlane設定データ
     /// </summary>
     [Serializable]
-    public class WorkPlaneData
+    public class WorkPlaneDTO
     {
         /// <summary>モード ("CameraParallel", "WorldXY", "WorldXZ", "WorldYZ", "Custom")</summary>
         public string mode;
@@ -329,9 +329,9 @@ namespace MeshFactory.Serialization
         /// <summary>選択時の原点自動更新</summary>
         public bool autoUpdateOriginOnSelection;
 
-        public static WorkPlaneData CreateDefault()
+        public static WorkPlaneDTO CreateDefault()
         {
-            return new WorkPlaneData
+            return new WorkPlaneDTO
             {
                 mode = "CameraParallel",
                 origin = new float[] { 0, 0, 0 },
@@ -352,7 +352,7 @@ namespace MeshFactory.Serialization
     /// エディタ状態データ
     /// </summary>
     [Serializable]
-    public class EditorStateData
+    public class EditorStateDTO
     {
         /// <summary>カメラ回転X</summary>
         public float rotationX;
@@ -391,9 +391,9 @@ namespace MeshFactory.Serialization
         /// <summary>ナイフツールのChainMode</summary>
         public bool knifeChainMode;
 
-        public static EditorStateData CreateDefault()
+        public static EditorStateDTO CreateDefault()
         {
-            return new EditorStateData
+            return new EditorStateDTO
             {
                 rotationX = 20f,
                 rotationY = 0f,

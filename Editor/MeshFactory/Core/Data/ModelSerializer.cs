@@ -15,7 +15,7 @@ using MeshFactory.Tools;
 using MeshFactory.Model;
 
 // MeshContextはSimpleMeshFactoryのネストクラスを参照
-using MeshContext = SimpleMeshFactory.MeshContext;
+////using MeshContext = MeshContext;
 
 namespace MeshFactory.Serialization
 {
@@ -30,13 +30,13 @@ namespace MeshFactory.Serialization
         // ================================================================
 
         // ================================================================
-        // 変換: MeshObject → MeshContextData
+        // 変換: MeshObject → MeshDTO
         // ================================================================
 
         /// <summary>
-        /// MeshObjectをMeshContextDataに変換
+        /// MeshObjectをMeshDTOに変換
         /// </summary>
-        public static MeshContextData ToMeshContextData(
+        public static MeshDTO ToMeshDTO(
             MeshObject meshObject,
             string name,
             ExportSettings exportSettings,
@@ -47,41 +47,41 @@ namespace MeshFactory.Serialization
             if (meshObject == null)
                 return null;
 
-            var contextData = new MeshContextData
+            var meshDTO = new MeshDTO
             {
                 name = name ?? meshObject.Name ?? "Untitled"
             };
 
             // ExportSettings
-            contextData.exportSettings = ToExportSettingsData(exportSettings);
+            meshDTO.exportSettingsDTO = ToExportSettingsDTO(exportSettings);
 
             // Vertices
             foreach (var vertex in meshObject.Vertices)
             {
-                var vertexData = new VertexData();
-                vertexData.SetPosition(vertex.Position);
-                vertexData.SetUVs(vertex.UVs);
-                vertexData.SetNormals(vertex.Normals);
-                contextData.vertices.Add(vertexData);
+                var vertexDTO = new VertexDTO();
+                vertexDTO.SetPosition(vertex.Position);
+                vertexDTO.SetUVs(vertex.UVs);
+                vertexDTO.SetNormals(vertex.Normals);
+                meshDTO.vertices.Add(vertexDTO);
             }
 
             // Faces（MaterialIndex含む）
             foreach (var face in meshObject.Faces)
             {
-                var faceData = new FaceData
+                var faceData = new FaceDTO
                 {
                     v = new List<int>(face.VertexIndices),
                     uvi = new List<int>(face.UVIndices),
                     ni = new List<int>(face.NormalIndices),
                     mi = face.MaterialIndex != 0 ? face.MaterialIndex : (int?)null  // 0はデフォルトなので省略
                 };
-                contextData.faces.Add(faceData);
+                meshDTO.faces.Add(faceData);
             }
 
             // Selection
             if (selectedVertices != null && selectedVertices.Count > 0)
             {
-                contextData.selectedVertices = selectedVertices.ToList();
+                meshDTO.selectedVertices = selectedVertices.ToList();
             }
 
             // Materials（アセットパスとして保存）
@@ -92,29 +92,29 @@ namespace MeshFactory.Serialization
                     if (mat != null)
                     {
                         string assetPath = AssetDatabase.GetAssetPath(mat);
-                        contextData.materials.Add(assetPath ?? "");
+                        meshDTO.materialPathList.Add(assetPath ?? "");
                     }
                     else
                     {
-                        contextData.materials.Add("");  // null は空文字列
+                        meshDTO.materialPathList.Add("");  // null は空文字列
                     }
                 }
             }
 
-            contextData.currentMaterialIndex = currentMaterialIndex;
+            meshDTO.currentMaterialIndex = currentMaterialIndex;
 
-            return contextData;
+            return meshDTO;
         }
 
         /// <summary>
         /// ExportSettingsをExportSettingsDataに変換
         /// </summary>
-        public static ExportSettingsData ToExportSettingsData(ExportSettings settings)
+        public static ExportSettingsDTO ToExportSettingsDTO(ExportSettings settings)
         {
             if (settings == null)
-                return ExportSettingsData.CreateDefault();
+                return ExportSettingsDTO.CreateDefault();
 
-            var data = new ExportSettingsData
+            var data = new ExportSettingsDTO
             {
                 useLocalTransform = settings.UseLocalTransform
             };
@@ -128,39 +128,39 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// WorkPlaneをWorkPlaneDataに変換
         /// </summary>
-        public static WorkPlaneData ToWorkPlaneData(WorkPlane workPlane)
+        public static WorkPlaneDTO ToWorkPlaneData(WorkPlaneContext workPlaneContext)
         {
-            if (workPlane == null)
-                return WorkPlaneData.CreateDefault();
+            if (workPlaneContext == null)
+                return WorkPlaneDTO.CreateDefault();
 
-            return new WorkPlaneData
+            return new WorkPlaneDTO
             {
-                mode = workPlane.Mode.ToString(),
-                origin = new float[] { workPlane.Origin.x, workPlane.Origin.y, workPlane.Origin.z },
-                axisU = new float[] { workPlane.AxisU.x, workPlane.AxisU.y, workPlane.AxisU.z },
-                axisV = new float[] { workPlane.AxisV.x, workPlane.AxisV.y, workPlane.AxisV.z },
-                isLocked = workPlane.IsLocked,
-                lockOrientation = workPlane.LockOrientation,
-                autoUpdateOriginOnSelection = workPlane.AutoUpdateOriginOnSelection
+                mode = workPlaneContext.Mode.ToString(),
+                origin = new float[] { workPlaneContext.Origin.x, workPlaneContext.Origin.y, workPlaneContext.Origin.z },
+                axisU = new float[] { workPlaneContext.AxisU.x, workPlaneContext.AxisU.y, workPlaneContext.AxisU.z },
+                axisV = new float[] { workPlaneContext.AxisV.x, workPlaneContext.AxisV.y, workPlaneContext.AxisV.z },
+                isLocked = workPlaneContext.IsLocked,
+                lockOrientation = workPlaneContext.LockOrientation,
+                autoUpdateOriginOnSelection = workPlaneContext.AutoUpdateOriginOnSelection
             };
         }
 
         // ================================================================
-        // 変換: MeshContextData → MeshObject
+        // 変換: MeshDTO → MeshObject
         // ================================================================
 
         /// <summary>
-        /// MeshContextDataをMeshObjectに変換
+        /// MeshDTOをMeshObjectに変換
         /// </summary>
-        public static MeshObject ToMeshObject(MeshContextData meshContext)
+        public static MeshObject ToMeshObject(MeshDTO meshDTO)
         {
-            if (meshContext == null)
+            if (meshDTO == null)
                 return null;
 
-            var meshObject = new MeshObject(meshContext.name);
+            var meshObject = new MeshObject(meshDTO.name);
 
             // Vertices
-            foreach (var vd in meshContext.vertices)
+            foreach (var vd in meshDTO.vertices)
             {
                 var vertex = new Vertex(vd.GetPosition());
                 vertex.UVs = vd.GetUVs();
@@ -169,7 +169,7 @@ namespace MeshFactory.Serialization
             }
 
             // Faces（MaterialIndex含む）
-            foreach (var fd in meshContext.faces)
+            foreach (var fd in meshDTO.faces)
             {
                 var face = new Face
                 {
@@ -187,18 +187,18 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// マテリアルリストを復元
         /// </summary>
-        public static List<Material> ToMaterials(MeshContextData meshContextData)
+        public static List<Material> ToMaterials(MeshDTO meshDTO)
         {
             var result = new List<Material>();
 
-            if (meshContextData?.materials == null || meshContextData.materials.Count == 0)
+            if (meshDTO?.materialPathList == null || meshDTO.materialPathList.Count == 0)
             {
                 // デフォルトでスロット0を追加
                 result.Add(null);
                 return result;
             }
 
-            foreach (var path in meshContextData.materials)
+            foreach (var path in meshDTO.materialPathList)
             {
                 if (string.IsNullOrEmpty(path))
                 {
@@ -227,7 +227,7 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// ExportSettingsDataをExportSettingsに変換
         /// </summary>
-        public static ExportSettings ToExportSettings(ExportSettingsData data)
+        public static ExportSettings ToExportSettings(ExportSettingsDTO data)
         {
             if (data == null)
                 return new ExportSettings();
@@ -244,7 +244,7 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// WorkPlaneDataをWorkPlaneに適用
         /// </summary>
-        public static void ApplyToWorkPlane(WorkPlaneData data, WorkPlane workPlane)
+        public static void ApplyToWorkPlane(WorkPlaneDTO data, WorkPlaneContext workPlane)
         {
             if (data == null || workPlane == null)
                 return;
@@ -281,12 +281,12 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// 選択状態を復元
         /// </summary>
-        public static HashSet<int> ToSelectedVertices(MeshContextData meshContext)
+        public static HashSet<int> ToSelectedVertices(MeshDTO meshDTO)
         {
-            if (meshContext?.selectedVertices == null)
+            if (meshDTO?.selectedVertices == null)
                 return new HashSet<int>();
 
-            return new HashSet<int>(meshContext.selectedVertices);
+            return new HashSet<int>(meshDTO.selectedVertices);
         }
 
         // ================================================================
@@ -297,18 +297,18 @@ namespace MeshFactory.Serialization
         /// ModelContextからModelDataを作成（エクスポート用）
         /// </summary>
         /// <param name="model">ModelContext</param>
-        /// <param name="workPlane">WorkPlane（オプション）</param>
-        /// <param name="editorState">EditorStateData（オプション）</param>
+        /// <param name="workPlaneContext">WorkPlaneContext（オプション）</param>
+        /// <param name="editorStateDTO">EditorStateDTO（オプション）</param>
         /// <returns>シリアライズ可能なModelData</returns>
-        public static ModelData FromModelContext(
+        public static ModelDTO FromModelContext(
             ModelContext model,
-            WorkPlane workPlane = null,
-            EditorStateData editorState = null)
+            WorkPlaneContext workPlaneContext = null,
+            EditorStateDTO editorStateDTO = null)
         {
             if (model == null)
                 return null;
 
-            var modelData = new ModelData
+            var modelDTO = new ModelDTO
             {
                 name = model.Name ?? "Untitled"
             };
@@ -324,18 +324,18 @@ namespace MeshFactory.Serialization
 
                 if (meshContextData != null)
                 {
-                    modelData.meshContextList.Add(meshContextData);
+                    modelDTO.meshDTOList.Add(meshContextData);
                 }
             }
 
-            // WorkPlane
-            if (workPlane != null)
+            // WorkPlaneContext
+            if (workPlaneContext != null)
             {
-                modelData.workPlane = ToWorkPlaneData(workPlane);
+                modelDTO.workPlane = ToWorkPlaneData(workPlaneContext);
             }
 
             // EditorState
-            modelData.editorState = editorState;
+            modelDTO.editorStateDTO = editorStateDTO;
 
             // ================================================================
             // Materials（Phase 1: モデル単位に集約）
@@ -346,16 +346,16 @@ namespace MeshFactory.Serialization
                 {
                     if (mat == null)
                     {
-                        modelData.materials.Add("");
+                        modelDTO.materials.Add("");
                     }
                     else
                     {
                         string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mat);
-                        modelData.materials.Add(assetPath ?? "");
+                        modelDTO.materials.Add(assetPath ?? "");
                     }
                 }
             }
-            modelData.currentMaterialIndex = model.CurrentMaterialIndex;
+            modelDTO.currentMaterialIndex = model.CurrentMaterialIndex;
 
             // DefaultMaterials
             if (model.DefaultMaterials != null)
@@ -364,30 +364,30 @@ namespace MeshFactory.Serialization
                 {
                     if (mat == null)
                     {
-                        modelData.defaultMaterials.Add("");
+                        modelDTO.defaultMaterials.Add("");
                     }
                     else
                     {
                         string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mat);
-                        modelData.defaultMaterials.Add(assetPath ?? "");
+                        modelDTO.defaultMaterials.Add(assetPath ?? "");
                     }
                 }
             }
-            modelData.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
-            modelData.autoSetDefaultMaterials = model.AutoSetDefaultMaterials;
+            modelDTO.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
+            modelDTO.autoSetDefaultMaterials = model.AutoSetDefaultMaterials;
 
-            return modelData;
+            return modelDTO;
         }
 
         /// <summary>
         /// ModelDataからModelContextを復元（インポート用）
         /// </summary>
-        /// <param name="modelData">インポートしたModelData</param>
+        /// <param name="modelDTO">インポートしたModelData</param>
         /// <param name="model">復元先のModelContext（nullの場合は新規作成）</param>
         /// <returns>復元されたModelContext</returns>
-        public static ModelContext ToModelContext(ModelData modelData, ModelContext model = null)
+        public static ModelContext ToModelContext(ModelDTO modelDTO, ModelContext model = null)
         {
-            if (modelData == null)
+            if (modelDTO == null)
                 return null;
 
             // ModelContextを準備
@@ -400,17 +400,17 @@ namespace MeshFactory.Serialization
                 model.Clear();
             }
 
-            model.Name = modelData.name;
+            model.Name = modelDTO.name;
             model.FilePath = null;  // 呼び出し元で設定
 
             // MeshContextDataからMeshContextを復元
-            foreach (var meshContextData in modelData.meshContextList)
+            foreach (var meshContextData in modelDTO.meshDTOList)
             {
                 var meshObject = ToMeshObject(meshContextData);
                 if (meshObject == null) continue;
 
                 // MeshTypeをパース
-                SimpleMeshFactory.MeshType meshType = SimpleMeshFactory.MeshType.Mesh;
+                MeshType meshType = MeshType.Mesh;
                 if (!string.IsNullOrEmpty(meshContextData.type))
                 {
                     Enum.TryParse(meshContextData.type, out meshType);
@@ -422,7 +422,7 @@ namespace MeshFactory.Serialization
                     MeshObject = meshObject,
                     UnityMesh = meshObject.ToUnityMesh(),
                     OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
-                    ExportSettings = ToExportSettings(meshContextData.exportSettings),
+                    ExportSettings = ToExportSettings(meshContextData.exportSettingsDTO),
                     // Materials は ModelData から復元するため、ここでは設定しない
                     // オブジェクト属性
                     Type = meshType,
@@ -443,11 +443,11 @@ namespace MeshFactory.Serialization
             // ================================================================
             // Materials 復元（Phase 1: モデル単位に集約）
             // ================================================================
-            if (modelData.materials != null && modelData.materials.Count > 0)
+            if (modelDTO.materials != null && modelDTO.materials.Count > 0)
             {
-                // 新形式: ModelData.materials から復元
+                // 新形式: ModelData.materialPathList から復元
                 model.Materials.Clear();
-                foreach (var path in modelData.materials)
+                foreach (var path in modelDTO.materials)
                 {
                     Material mat = null;
                     if (!string.IsNullOrEmpty(path))
@@ -460,21 +460,21 @@ namespace MeshFactory.Serialization
                     }
                     model.Materials.Add(mat);
                 }
-                model.CurrentMaterialIndex = modelData.currentMaterialIndex;
+                model.CurrentMaterialIndex = modelDTO.currentMaterialIndex;
             }
-            else if (modelData.meshContextList.Count > 0)
+            else if (modelDTO.meshDTOList.Count > 0)
             {
-                // 旧形式: 最初の MeshContextData.materials から復元（後方互換）
-                var firstMeshData = modelData.meshContextList[0];
+                // 旧形式: 最初の MeshDTO.materialPathList から復元（後方互換）
+                var firstMeshData = modelDTO.meshDTOList[0];
                 model.Materials = ToMaterials(firstMeshData);
                 model.CurrentMaterialIndex = firstMeshData.currentMaterialIndex;
             }
 
             // DefaultMaterials 復元
-            if (modelData.defaultMaterials != null && modelData.defaultMaterials.Count > 0)
+            if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
             {
                 model.DefaultMaterials.Clear();
-                foreach (var path in modelData.defaultMaterials)
+                foreach (var path in modelDTO.defaultMaterials)
                 {
                     Material mat = null;
                     if (!string.IsNullOrEmpty(path))
@@ -483,22 +483,22 @@ namespace MeshFactory.Serialization
                     }
                     model.DefaultMaterials.Add(mat);
                 }
-                model.DefaultCurrentMaterialIndex = modelData.defaultCurrentMaterialIndex;
-                model.AutoSetDefaultMaterials = modelData.autoSetDefaultMaterials;
+                model.DefaultCurrentMaterialIndex = modelDTO.defaultCurrentMaterialIndex;
+                model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;
             }
 
             return model;
         }
 
         /// <summary>
-        /// MeshContextをMeshContextDataに変換（簡易版）
+        /// MeshContextをMeshDTOに変換（簡易版）
         /// </summary>
-        public static MeshContextData FromMeshContext(MeshContext meshContext, HashSet<int> selectedVertices = null)
+        public static MeshDTO FromMeshContext(MeshContext meshContext, HashSet<int> selectedVertices = null)
         {
             if (meshContext == null)
                 return null;
 
-            var contextData = ToMeshContextData(
+            var contextData = ToMeshDTO(
                 meshContext.MeshObject,
                 meshContext.Name,
                 meshContext.ExportSettings,
@@ -529,47 +529,47 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// MeshContextDataからMeshContextを復元（簡易版）
         /// </summary>
-        public static MeshContext ToMeshContext(MeshContextData contextData)
+        public static MeshContext ToMeshContext(MeshDTO meshDTO)
         {
-            if (contextData == null)
+            if (meshDTO == null)
                 return null;
 
-            var meshObject = ToMeshObject(contextData);
+            var meshObject = ToMeshObject(meshDTO);
             if (meshObject == null)
                 return null;
 
             // MeshTypeをパース
-            SimpleMeshFactory.MeshType meshType = SimpleMeshFactory.MeshType.Mesh;
-            if (!string.IsNullOrEmpty(contextData.type))
+            MeshType meshType = MeshType.Mesh;
+            if (!string.IsNullOrEmpty(meshDTO.type))
             {
-                Enum.TryParse(contextData.type, out meshType);
+                Enum.TryParse(meshDTO.type, out meshType);
             }
 
             return new MeshContext
             {
-                Name = contextData.name ?? "UnityMesh",
+                Name = meshDTO.name ?? "UnityMesh",
                 MeshObject = meshObject,
                 UnityMesh = meshObject.ToUnityMesh(),
                 OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
-                ExportSettings = ToExportSettings(contextData.exportSettings),
+                ExportSettings = ToExportSettings(meshDTO.exportSettingsDTO),
                 // Phase 1: Materials は ModelContext に集約
                 // オブジェクト属性
                 Type = meshType,
-                ParentIndex = contextData.parentIndex,
-                Depth = contextData.depth,
-                IsVisible = contextData.isVisible,
-                IsLocked = contextData.isLocked,
+                ParentIndex = meshDTO.parentIndex,
+                Depth = meshDTO.depth,
+                IsVisible = meshDTO.isVisible,
+                IsLocked = meshDTO.isLocked,
                 // ミラー設定
-                MirrorType = contextData.mirrorType,
-                MirrorAxis = contextData.mirrorAxis,
-                MirrorDistance = contextData.mirrorDistance
+                MirrorType = meshDTO.mirrorType,
+                MirrorAxis = meshDTO.mirrorAxis,
+                MirrorDistance = meshDTO.mirrorDistance
             };
         }
 
         /// <summary>
-        /// EditorStateDataを作成
+        /// EditorStateDTOを作成
         /// </summary>
-        public static EditorStateData CreateEditorStateData(
+        public static EditorStateDTO CreateEditorStateDTO(
             float rotationX,
             float rotationY,
             float cameraDistance,
@@ -580,7 +580,7 @@ namespace MeshFactory.Serialization
             int selectedMeshIndex,
             string currentToolName = null)
         {
-            return new EditorStateData
+            return new EditorStateDTO
             {
                 rotationX = rotationX,
                 rotationY = rotationY,
@@ -598,16 +598,16 @@ namespace MeshFactory.Serialization
         /// MeshContextに選択頂点情報を含めてMeshContextDataに変換し、ModelDataに設定
         /// </summary>
         public static void SetSelectedVerticesForMeshContext(
-            ModelData modelData,
+            ModelDTO modelDTO,
             int meshIndex,
             HashSet<int> selectedVertices)
         {
-            if (modelData == null || meshIndex < 0 || meshIndex >= modelData.meshContextList.Count)
+            if (modelDTO == null || meshIndex < 0 || meshIndex >= modelDTO.meshDTOList.Count)
                 return;
 
             if (selectedVertices != null && selectedVertices.Count > 0)
             {
-                modelData.meshContextList[meshIndex].selectedVertices = selectedVertices.ToList();
+                modelDTO.meshDTOList[meshIndex].selectedVertices = selectedVertices.ToList();
             }
         }
     }

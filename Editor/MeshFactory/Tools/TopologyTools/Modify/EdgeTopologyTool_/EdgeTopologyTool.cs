@@ -751,7 +751,7 @@ namespace MeshFactory.Tools
             var face2 = ctx.MeshObject.Faces[edge.FaceIndex2];
 
             // スナップショット（操作前）
-            var before = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+            MeshObjectSnapshot before = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
 
             // 2つの面を結合した多角形を作成
             var mergedVertices = MergeFaceVertices(face1, face2, edge.VertexIndex1, edge.VertexIndex2);

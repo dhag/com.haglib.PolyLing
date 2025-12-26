@@ -46,7 +46,7 @@ namespace MeshFactory.UndoSystem
         // === WorkPlane参照（選択連動Undo用） ===
 
         /// <summary>WorkPlane参照（選択と連動してUndo/Redoするため）</summary>
-        public WorkPlane WorkPlane;
+        public WorkPlaneContext WorkPlane;
 
         // === 拡張選択システム用 ===
 
@@ -55,7 +55,7 @@ namespace MeshFactory.UndoSystem
 
         // === マテリアル（Phase 5: ModelContext に委譲） ===
 
-        /// <summary>親ModelContextへの参照（マテリアル委譲用）</summary>
+        /// <summary>マテリアル委譲用ModelContextへの参照（マテリアル委譲用）</summary>
         public ModelContext MaterialOwner { get; set; }
 
         /// <summary>フォールバック用マテリアルリスト（MaterialOwnerがない場合）</summary>

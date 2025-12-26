@@ -10,7 +10,7 @@ using MeshFactory.Data;
 using MeshFactory.Model;
 using MeshFactory.Localization;
 
-using MeshContext = SimpleMeshFactory.MeshContext;
+////using MeshContext = MeshContext;
 
 namespace MeshFactory.Tools.Panels
 {
@@ -164,7 +164,7 @@ namespace MeshFactory.Tools.Panels
             var meshContext = model.GetMeshContext(index);
             if (meshContext == null) return;
 
-            bool isSelected = (model.SelectedIndex == index);
+            bool isSelected = (model.SelectedMeshContextIndex == index);
             bool isFirst = (index == 0);
             bool isLast = (index == model.MeshContextCount - 1);
 
