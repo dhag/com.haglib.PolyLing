@@ -245,6 +245,10 @@ namespace MeshFactory.Localization
             ["AddToHierarchy"] = new() { ["en"] = "Add to Hierarchy", ["ja"] = "ヒエラルキーに追加", ["hi"] = "シーンについか" },
             ["ExportModel"] = new() { ["en"] = "Export Model...", ["ja"] = "エクスポート...", ["hi"] = "かきだす..." },
             ["ImportModel"] = new() { ["en"] = "Import Model...", ["ja"] = "インポート...", ["hi"] = "よみこむ..." },
+            ["ExportSelectedMeshOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択メッシュのみ", ["hi"] = "えらんだめっしゅだけ" },
+            ["BakeMirror"] = new() { ["en"] = "Bake Symmetry", ["ja"] = "対称をベイク", ["hi"] = "たいしょうをやきつけ" },
+            ["MirrorFlipU"] = new() { ["en"] = "Flip UV U", ["ja"] = "UV U反転", ["hi"] = "UV Uはんてん" },
+            ["SaveSection"] = new() { ["en"] = "Save / Export", ["ja"] = "保存 / エクスポート", ["hi"] = "ほぞん" },
             
             // ============================================================
             // ツール名（キーは "Tool_" + IEditTool.Name）

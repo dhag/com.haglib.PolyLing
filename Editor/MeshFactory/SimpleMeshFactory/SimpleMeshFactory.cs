@@ -107,6 +107,18 @@ public partial class SimpleMeshFactory : EditorWindow
     [SerializeField]
     private float _autoMergeThreshold = 0.001f;  // マージしきい値
 
+    // ============================================================================
+    // === エクスポート設定 ===
+    // ============================================================================
+    [SerializeField]
+    private bool _exportSelectedMeshOnly = false;  // 選択メッシュのみエクスポート（デフォルトOFF=モデル全体）
+
+    [SerializeField]
+    private bool _bakeMirror = false;  // 対称をベイク
+
+    [SerializeField]
+    private bool _mirrorFlipU = true;  // ベイク時にUV U反転
+
 
 
     // ================================================================
@@ -309,6 +321,9 @@ public partial class SimpleMeshFactory : EditorWindow
             _undoController.EditorState.AddToCurrentMesh = _addToCurrentMesh;
             _undoController.EditorState.AutoMergeOnCreate = _autoMergeOnCreate;
             _undoController.EditorState.AutoMergeThreshold = _autoMergeThreshold;
+            _undoController.EditorState.ExportSelectedMeshOnly = _exportSelectedMeshOnly;
+            _undoController.EditorState.BakeMirror = _bakeMirror;
+            _undoController.EditorState.MirrorFlipU = _mirrorFlipU;
         }
 
         // Selection System 初期化（ツールより先に初期化）
@@ -532,6 +547,9 @@ public partial class SimpleMeshFactory : EditorWindow
         _addToCurrentMesh = editorState.AddToCurrentMesh;
         _autoMergeOnCreate = editorState.AutoMergeOnCreate;
         _autoMergeThreshold = editorState.AutoMergeThreshold;
+        _exportSelectedMeshOnly = editorState.ExportSelectedMeshOnly;
+        _bakeMirror = editorState.BakeMirror;
+        _mirrorFlipU = editorState.MirrorFlipU;
 
         RestoreToolFromName(editorState.CurrentToolName);
 

@@ -85,19 +85,117 @@ public partial class SimpleMeshFactory
                 EditorGUILayout.Space(4);
             }
 
-            if (GUILayout.Button(L.Get("SaveMeshAsset")))
+            // ================================================================
+            // 選択メッシュのみ チェックボックス（Undo対応）
+            // ================================================================
+            EditorGUI.BeginChangeCheck();
+            bool newExportSelectedOnly = EditorGUILayout.Toggle(L.Get("ExportSelectedMeshOnly"), _exportSelectedMeshOnly);
+            if (EditorGUI.EndChangeCheck() && newExportSelectedOnly != _exportSelectedMeshOnly)
             {
-                SaveMesh(meshContext);
+                if (_undoController != null)
+                {
+                    _undoController.BeginEditorStateDrag();
+                }
+
+                _exportSelectedMeshOnly = newExportSelectedOnly;
+
+                if (_undoController != null)
+                {
+                    _undoController.EditorState.ExportSelectedMeshOnly = _exportSelectedMeshOnly;
+                    _undoController.EndEditorStateDrag("Toggle Export Selected Mesh Only");
+                }
             }
 
-            if (GUILayout.Button(L.Get("SaveAsPrefab")))
+            // ================================================================
+            // 対称をベイク チェックボックス（Undo対応）
+            // ================================================================
+            EditorGUI.BeginChangeCheck();
+            bool newBakeMirror = EditorGUILayout.Toggle(L.Get("BakeMirror"), _bakeMirror);
+            if (EditorGUI.EndChangeCheck() && newBakeMirror != _bakeMirror)
             {
-                SaveAsPrefab(meshContext);
+                if (_undoController != null)
+                {
+                    _undoController.BeginEditorStateDrag();
+                }
+
+                _bakeMirror = newBakeMirror;
+
+                if (_undoController != null)
+                {
+                    _undoController.EditorState.BakeMirror = _bakeMirror;
+                    _undoController.EndEditorStateDrag("Toggle Bake Mirror");
+                }
             }
 
-            if (GUILayout.Button(L.Get("AddToHierarchy")))
+            // UV U反転（対称ベイク時のみ有効）
+            using (new EditorGUI.DisabledScope(!_bakeMirror))
             {
-                AddToHierarchy(meshContext);
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginChangeCheck();
+                bool newMirrorFlipU = EditorGUILayout.Toggle(L.Get("MirrorFlipU"), _mirrorFlipU);
+                if (EditorGUI.EndChangeCheck() && newMirrorFlipU != _mirrorFlipU)
+                {
+                    if (_undoController != null)
+                    {
+                        _undoController.BeginEditorStateDrag();
+                    }
+
+                    _mirrorFlipU = newMirrorFlipU;
+
+                    if (_undoController != null)
+                    {
+                        _undoController.EditorState.MirrorFlipU = _mirrorFlipU;
+                        _undoController.EndEditorStateDrag("Toggle Mirror Flip U");
+                    }
+                }
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.Space(2);
+
+            // ================================================================
+            // エクスポートボタン群
+            // ================================================================
+            bool hasAnyMesh = _meshContextList.Count > 0;
+            bool canExport = _exportSelectedMeshOnly ? true : hasAnyMesh;  // 選択時は現在のmeshContextが有効
+
+            using (new EditorGUI.DisabledScope(!canExport))
+            {
+                if (GUILayout.Button(L.Get("SaveMeshAsset")))
+                {
+                    if (_exportSelectedMeshOnly)
+                    {
+                        SaveMesh(meshContext);
+                    }
+                    else
+                    {
+                        SaveModelMeshAssets();
+                    }
+                }
+
+                if (GUILayout.Button(L.Get("SaveAsPrefab")))
+                {
+                    if (_exportSelectedMeshOnly)
+                    {
+                        SaveAsPrefab(meshContext);
+                    }
+                    else
+                    {
+                        SaveModelAsPrefab();
+                    }
+                }
+
+                if (GUILayout.Button(L.Get("AddToHierarchy")))
+                {
+                    if (_exportSelectedMeshOnly)
+                    {
+                        AddToHierarchy(meshContext);
+                    }
+                    else
+                    {
+                        AddModelToHierarchy();
+                    }
+                }
             }
 
             EditorGUILayout.Space(10);

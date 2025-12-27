@@ -40,6 +40,11 @@ namespace MeshFactory.UndoSystem
         public bool AutoMergeOnCreate = true;
         public float AutoMergeThreshold = 0.001f;
 
+        // エクスポート設定
+        public bool ExportSelectedMeshOnly = false;
+        public bool BakeMirror = false;
+        public bool MirrorFlipU = true;
+
         // 汎用ツール設定ストレージ
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
 
@@ -86,6 +91,9 @@ namespace MeshFactory.UndoSystem
                 AddToCurrentMesh = AddToCurrentMesh,
                 AutoMergeOnCreate = AutoMergeOnCreate,
                 AutoMergeThreshold = AutoMergeThreshold,
+                ExportSelectedMeshOnly = ExportSelectedMeshOnly,
+                BakeMirror = BakeMirror,
+                MirrorFlipU = MirrorFlipU,
                 RecordFoldoutChanges = RecordFoldoutChanges,
                 FoldoutStates = new Dictionary<string, bool>(FoldoutStates),
             };
@@ -115,6 +123,9 @@ namespace MeshFactory.UndoSystem
             AddToCurrentMesh = snapshot.AddToCurrentMesh;
             AutoMergeOnCreate = snapshot.AutoMergeOnCreate;
             AutoMergeThreshold = snapshot.AutoMergeThreshold;
+            ExportSelectedMeshOnly = snapshot.ExportSelectedMeshOnly;
+            BakeMirror = snapshot.BakeMirror;
+            MirrorFlipU = snapshot.MirrorFlipU;
             RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
             
             // FoldoutStates復元
@@ -158,6 +169,11 @@ namespace MeshFactory.UndoSystem
         public bool AutoMergeOnCreate;
         public float AutoMergeThreshold;
 
+        // エクスポート設定
+        public bool ExportSelectedMeshOnly;
+        public bool BakeMirror;
+        public bool MirrorFlipU;
+
         // 汎用ツール設定
         public ToolSettingsStorage ToolSettings;
         
@@ -182,6 +198,9 @@ namespace MeshFactory.UndoSystem
                 AddToCurrentMesh != other.AddToCurrentMesh ||
                 AutoMergeOnCreate != other.AutoMergeOnCreate ||
                 !Mathf.Approximately(AutoMergeThreshold, other.AutoMergeThreshold) ||
+                ExportSelectedMeshOnly != other.ExportSelectedMeshOnly ||
+                BakeMirror != other.BakeMirror ||
+                MirrorFlipU != other.MirrorFlipU ||
                 RecordFoldoutChanges != other.RecordFoldoutChanges)
             {
                 return true;
