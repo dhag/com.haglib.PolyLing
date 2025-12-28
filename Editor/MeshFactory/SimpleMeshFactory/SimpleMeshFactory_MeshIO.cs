@@ -1047,11 +1047,28 @@ public partial class SimpleMeshFactory
     /// <summary>
     /// モデル全体をヒエラルキーに追加
     /// HierarchyParentIndexに基づいて親子関係を再現
+    /// ExportAsSkinned が有効な場合は SkinnedMeshRenderer を使用
     /// </summary>
     private void AddModelToHierarchy()
     {
         if (_meshContextList.Count == 0)
             return;
+
+        // ExportAsSkinned フラグをチェック（最初のメッシュの設定を使用）
+        bool exportAsSkinned = false;
+        var firstMeshContext = _meshContextList.FirstOrDefault(m => m?.ExportSettings != null);
+        if (firstMeshContext?.ExportSettings != null)
+        {
+            exportAsSkinned = firstMeshContext.ExportSettings.ExportAsSkinned;
+        }
+
+        if (exportAsSkinned)
+        {
+            AddModelToHierarchyAsSkinned();
+            return;
+        }
+
+        // === 通常の MeshRenderer エクスポート ===
 
         // 選択中のオブジェクトを親として取得
         Transform existingParent = null;
@@ -1157,6 +1174,135 @@ public partial class SimpleMeshFactory
         }
 
         Debug.Log($"Added model to hierarchy: {_meshContextList.Count} objects (with hierarchy structure)");
+    }
+
+    /// <summary>
+    /// モデル全体を SkinnedMeshRenderer としてヒエラルキーに追加
+    /// 各 MeshContext の HierarchyParentIndex をボーンインデックスとして使用
+    /// </summary>
+    private void AddModelToHierarchyAsSkinned()
+    {
+        if (_meshContextList.Count == 0)
+            return;
+
+        // 選択中のオブジェクトを親として取得
+        Transform existingParent = null;
+        if (Selection.gameObjects.Length > 0)
+        {
+            existingParent = Selection.gameObjects[0].transform;
+        }
+
+        // 共有マテリアル配列を取得
+        Material[] sharedMaterials = GetMaterialsForSave(null);
+
+        // GameObjectをインデックス順に作成
+        var createdObjects = new GameObject[_meshContextList.Count];
+
+        // === Pass 1: すべての GameObject を作成（コンポーネントなし） ===
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var meshContext = _meshContextList[i];
+            if (meshContext == null) continue;
+
+            GameObject go = new GameObject(meshContext.Name);
+            createdObjects[i] = go;
+        }
+
+        // === Pass 2: 親子関係を設定し、ExportSettings を適用 ===
+        GameObject firstRootObject = null;
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var meshContext = _meshContextList[i];
+            var go = createdObjects[i];
+            if (go == null) continue;
+
+            int parentIndex = meshContext.HierarchyParentIndex;
+
+            if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            {
+                go.transform.SetParent(createdObjects[parentIndex].transform, false);
+            }
+            else
+            {
+                if (existingParent != null)
+                {
+                    go.transform.SetParent(existingParent, false);
+                }
+
+                if (firstRootObject == null)
+                {
+                    firstRootObject = go;
+                }
+            }
+
+            // ExportSettings を適用
+            if (meshContext.ExportSettings != null)
+            {
+                meshContext.ExportSettings.ApplyToGameObject(go, asLocal: true);
+            }
+            else
+            {
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                go.transform.localScale = Vector3.one;
+            }
+
+            // Undo登録
+            Undo.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
+        }
+
+        // === Pass 3: ボーン配列とバインドポーズを計算 ===
+        var bones = new Transform[_meshContextList.Count];
+        var bindPoses = new Matrix4x4[_meshContextList.Count];
+
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            if (createdObjects[i] != null)
+            {
+                bones[i] = createdObjects[i].transform;
+                // バインドポーズ = ワールド→ローカル変換行列
+                bindPoses[i] = bones[i].worldToLocalMatrix;
+            }
+        }
+
+        // === Pass 4: 各メッシュに対して SkinnedMeshRenderer をセットアップ ===
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var meshContext = _meshContextList[i];
+            var go = createdObjects[i];
+            if (meshContext?.MeshObject == null || go == null) continue;
+            if (meshContext.MeshObject.VertexCount == 0) continue;
+
+            // BoneWeight が未設定の頂点にデフォルト値を設定
+            EnsureBoneWeights(meshContext.MeshObject, i);
+
+            // メッシュを生成
+            Mesh meshCopy;
+            Material[] materialsToUse;
+            if (_bakeMirror && meshContext.IsMirrored)
+            {
+                meshCopy = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
+                materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials);
+            }
+            else
+            {
+                meshCopy = meshContext.MeshObject.ToUnityMesh();
+                materialsToUse = sharedMaterials;
+            }
+            meshCopy.name = meshContext.Name;
+
+            // SkinnedMeshRenderer をセットアップ
+            SetupSkinnedMeshRenderer(go, meshCopy, bones, bindPoses, materialsToUse);
+        }
+
+        // 最初のルートオブジェクトを選択
+        if (firstRootObject != null)
+        {
+            Selection.activeGameObject = firstRootObject;
+            EditorGUIUtility.PingObject(firstRootObject);
+        }
+
+        Debug.Log($"Added model to hierarchy as SkinnedMesh: {_meshContextList.Count} bones");
     }
 
     /// <summary>
@@ -1928,6 +2074,78 @@ public partial class SimpleMeshFactory
         }
 
         return null;
+    }
+
+    // ================================================================
+    // SkinnedMeshRenderer 対応（Phase 2）
+    // ================================================================
+
+    /// <summary>
+    /// BoneWeight が未設定の頂点にデフォルト値（boneIndex0 に 100%）を設定
+    /// </summary>
+    /// <param name="meshObject">対象の MeshObject</param>
+    /// <param name="defaultBoneIndex">デフォルトのボーンインデックス（通常は自身のメッシュインデックス）</param>
+    private void EnsureBoneWeights(MeshObject meshObject, int defaultBoneIndex)
+    {
+        if (meshObject == null) return;
+
+        foreach (var vertex in meshObject.Vertices)
+        {
+            if (!vertex.HasBoneWeight)
+            {
+                vertex.BoneWeight = new BoneWeight
+                {
+                    boneIndex0 = defaultBoneIndex,
+                    weight0 = 1f,
+                    boneIndex1 = 0,
+                    weight1 = 0f,
+                    boneIndex2 = 0,
+                    weight2 = 0f,
+                    boneIndex3 = 0,
+                    weight3 = 0f
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// SkinnedMeshRenderer をセットアップ
+    /// </summary>
+    /// <param name="go">対象の GameObject</param>
+    /// <param name="mesh">設定するメッシュ</param>
+    /// <param name="bones">ボーン Transform 配列</param>
+    /// <param name="bindPoses">バインドポーズ行列配列</param>
+    /// <param name="materials">マテリアル配列</param>
+    private void SetupSkinnedMeshRenderer(
+        GameObject go,
+        Mesh mesh,
+        Transform[] bones,
+        Matrix4x4[] bindPoses,
+        Material[] materials)
+    {
+        if (go == null || mesh == null) return;
+
+        // SkinnedMeshRenderer を追加
+        var smr = go.AddComponent<SkinnedMeshRenderer>();
+
+        // バインドポーズを設定
+        mesh.bindposes = bindPoses;
+
+        // メッシュとボーンを設定
+        smr.sharedMesh = mesh;
+        smr.bones = bones;
+
+        // マテリアル設定
+        if (materials != null && materials.Length > 0)
+        {
+            smr.sharedMaterials = materials;
+        }
+
+        // ルートボーンを設定（最初のボーン）
+        if (bones != null && bones.Length > 0)
+        {
+            smr.rootBone = bones[0];
+        }
     }
 
 }

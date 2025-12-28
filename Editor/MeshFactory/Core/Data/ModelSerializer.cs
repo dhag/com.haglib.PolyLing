@@ -62,6 +62,7 @@ namespace MeshFactory.Serialization
                 vertexDTO.SetPosition(vertex.Position);
                 vertexDTO.SetUVs(vertex.UVs);
                 vertexDTO.SetNormals(vertex.Normals);
+                vertexDTO.SetBoneWeight(vertex.BoneWeight);
                 meshDTO.vertices.Add(vertexDTO);
             }
 
@@ -165,6 +166,7 @@ namespace MeshFactory.Serialization
                 var vertex = new Vertex(vd.GetPosition());
                 vertex.UVs = vd.GetUVs();
                 vertex.Normals = vd.GetNormals();
+                vertex.BoneWeight = vd.GetBoneWeight();
                 meshObject.Vertices.Add(vertex);
             }
 

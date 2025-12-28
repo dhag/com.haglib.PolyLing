@@ -302,6 +302,7 @@ namespace MeshFactory.Localization
             // ============================================================
             ["ExportSettings"] = new() { ["en"] = "Export Transform", ["ja"] = "エクスポート変換", ["hi"] = "かきだしへんかん" },
             ["UseLocalTransform"] = new() { ["en"] = "Use Local Transform", ["ja"] = "ローカル変換を使用", ["hi"] = "ローカルへんかん" },
+            ["ExportAsSkinned"] = new() { ["en"] = "Export as Skinned", ["ja"] = "スキンメッシュで出力", ["hi"] = "すきんめっしゅでだす" },
             ["Position"] = new() { ["en"] = "Position", ["ja"] = "位置", ["hi"] = "いち" },
             ["Rotation"] = new() { ["en"] = "Rotation", ["ja"] = "回転", ["hi"] = "かいてん" },
             ["Scale"] = new() { ["en"] = "Scale", ["ja"] = "スケール", ["hi"] = "おおきさ" },

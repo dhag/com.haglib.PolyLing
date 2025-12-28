@@ -154,4 +154,51 @@ namespace MeshFactory.UndoSystem
             ctx.ApplyToMesh();
         }
     }
+
+    // ============================================================
+    // ボーンウェイト変更記録
+    // ============================================================
+
+    /// <summary>
+    /// ボーンウェイト変更記録
+    /// </summary>
+    public class BoneWeightChangeRecord : MeshUndoRecord
+    {
+        public int[] Indices;
+        public BoneWeight?[] OldWeights;
+        public BoneWeight?[] NewWeights;
+
+        public BoneWeightChangeRecord(int[] indices, BoneWeight?[] oldWeights, BoneWeight?[] newWeights)
+        {
+            Indices = indices;
+            OldWeights = oldWeights;
+            NewWeights = newWeights;
+        }
+
+        public override void Undo(MeshUndoContext ctx)
+        {
+            ApplyWeights(ctx, OldWeights);
+        }
+
+        public override void Redo(MeshUndoContext ctx)
+        {
+            ApplyWeights(ctx, NewWeights);
+        }
+
+        private void ApplyWeights(MeshUndoContext ctx, BoneWeight?[] weights)
+        {
+            if (ctx.MeshObject == null) return;
+
+            for (int i = 0; i < Indices.Length; i++)
+            {
+                int idx = Indices[i];
+                if (idx >= 0 && idx < ctx.MeshObject.VertexCount)
+                {
+                    ctx.MeshObject.Vertices[idx].BoneWeight = weights[i];
+                }
+            }
+            // スキニングデータ変更はメッシュ再構築が必要
+            ctx.ApplyToMesh();
+        }
+    }
 }

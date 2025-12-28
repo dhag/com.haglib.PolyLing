@@ -25,6 +25,7 @@ namespace MeshFactory.Tools
         public Vector3 Rotation;
         public Vector3 Scale;
         public bool UseLocalTransform;
+        public bool ExportAsSkinned;
 
         /// <summary>
         /// 他のスナップショットと異なるかどうか
@@ -34,7 +35,8 @@ namespace MeshFactory.Tools
             return Vector3.Distance(Position, other.Position) > 0.0001f ||
                    Vector3.Distance(Rotation, other.Rotation) > 0.0001f ||
                    Vector3.Distance(Scale, other.Scale) > 0.0001f ||
-                   UseLocalTransform != other.UseLocalTransform;
+                   UseLocalTransform != other.UseLocalTransform ||
+                   ExportAsSkinned != other.ExportAsSkinned;
         }
 
         /// <summary>
@@ -44,6 +46,8 @@ namespace MeshFactory.Tools
         {
             if (UseLocalTransform != before.UseLocalTransform)
                 return UseLocalTransform ? "Enable Local Transform" : "Disable Local Transform";
+            if (ExportAsSkinned != before.ExportAsSkinned)
+                return ExportAsSkinned ? "Enable Export As Skinned" : "Disable Export As Skinned";
             if (Vector3.Distance(Position, before.Position) > 0.0001f)
                 return "Change Export Position";
             if (Vector3.Distance(Rotation, before.Rotation) > 0.0001f)
@@ -70,6 +74,7 @@ namespace MeshFactory.Tools
         [SerializeField] private Vector3 _rotation = Vector3.zero;  // Euler angles
         [SerializeField] private Vector3 _scale = Vector3.one;
         [SerializeField] private bool _useLocalTransform = false;
+        [SerializeField] private bool _exportAsSkinned = false;
 
         // UI状態（シリアライズ不要）
         private bool _isExpanded = true;
@@ -99,6 +104,13 @@ namespace MeshFactory.Tools
         {
             get => _useLocalTransform;
             set => _useLocalTransform = value;
+        }
+
+        /// <summary>SkinnedMeshRendererとしてエクスポートするか</summary>
+        public bool ExportAsSkinned
+        {
+            get => _exportAsSkinned;
+            set => _exportAsSkinned = value;
         }
 
         /// <summary>回転をQuaternionで取得</summary>
@@ -136,6 +148,7 @@ namespace MeshFactory.Tools
             _rotation = Vector3.zero;
             _scale = Vector3.one;
             _useLocalTransform = false;
+            _exportAsSkinned = false;
         }
 
         /// <summary>
@@ -157,6 +170,7 @@ namespace MeshFactory.Tools
             _rotation = other._rotation;
             _scale = other._scale;
             _useLocalTransform = other._useLocalTransform;
+            _exportAsSkinned = other._exportAsSkinned;
         }
 
         /// <summary>
@@ -169,7 +183,8 @@ namespace MeshFactory.Tools
                 Position = _position,
                 Rotation = _rotation,
                 Scale = _scale,
-                UseLocalTransform = _useLocalTransform
+                UseLocalTransform = _useLocalTransform,
+                ExportAsSkinned = _exportAsSkinned
             };
         }
 
@@ -182,6 +197,7 @@ namespace MeshFactory.Tools
             _rotation = snapshot.Rotation;
             _scale = snapshot.Scale;
             _useLocalTransform = snapshot.UseLocalTransform;
+            _exportAsSkinned = snapshot.ExportAsSkinned;
         }
 
         /// <summary>
@@ -236,6 +252,7 @@ namespace MeshFactory.Tools
 
             var settings = new ExportSettings();
             settings._useLocalTransform = data.useLocalTransform;
+            settings._exportAsSkinned = data.exportAsSkinned;
             settings._position = data.GetPosition();
             settings._rotation = data.GetRotation();
             settings._scale = data.GetScale();
@@ -249,7 +266,8 @@ namespace MeshFactory.Tools
         {
             var data = new ExportSettingsDTO
             {
-                useLocalTransform = _useLocalTransform
+                useLocalTransform = _useLocalTransform,
+                exportAsSkinned = _exportAsSkinned
             };
             data.SetPosition(_position);
             data.SetRotation(_rotation);
@@ -404,25 +422,38 @@ namespace MeshFactory.Tools
                     }
                     EditorGUILayout.EndHorizontal();
 
-                    EditorGUILayout.Space(4);
-
-                    // ボタン群
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        if (GUILayout.Button(T("FromSelection"), GUILayout.Height(18)))
-                        {
-                            OnFromSelectionClicked?.Invoke();
-                        }
-                        if (GUILayout.Button(T("Reset"), GUILayout.Height(18)))
-                        {
-                            OnResetClicked?.Invoke();
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
-
                     EditorGUI.indentLevel--;
                 }
                 EditorGUI.EndDisabledGroup();
+
+                // ExportAsSkinned（UseLocalTransformとは独立）
+                EditorGUILayout.Space(2);
+                bool newExportAsSkinned = EditorGUILayout.Toggle(
+                    L.Get("ExportAsSkinned"),
+                    settings.ExportAsSkinned
+                );
+                if (newExportAsSkinned != settings.ExportAsSkinned)
+                {
+                    settings.ExportAsSkinned = newExportAsSkinned;
+                    changed = true;
+                    changeDescription = newExportAsSkinned ? "Enable Export As Skinned" : "Disable Export As Skinned";
+                }
+
+                EditorGUILayout.Space(4);
+
+                // ボタン群
+                EditorGUILayout.BeginHorizontal();
+                {
+                    if (GUILayout.Button(T("FromSelection"), GUILayout.Height(18)))
+                    {
+                        OnFromSelectionClicked?.Invoke();
+                    }
+                    if (GUILayout.Button(T("Reset"), GUILayout.Height(18)))
+                    {
+                        OnResetClicked?.Invoke();
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
             }
 
             // 変更があればコールバック
