@@ -242,23 +242,45 @@ namespace MeshFactory.MQO
         {
             var meshObject = new MeshObject();
 
-            // 頂点変換
+            // 頂点変換（IDは後で設定）
             foreach (var mqoVert in mqoObj.Vertices)
             {
                 Vector3 pos = ConvertPosition(mqoVert.Position, settings);
-                meshObject.AddVertex(pos);
+                var vertex = new Vertex(pos);
+                vertex.Id = -1;  // 初期値: IDなし
+                meshObject.AddVertexRaw(vertex);  // ID管理なしで追加
                 stats.TotalVertices++;
+            }
+
+            // 特殊面から頂点IDを抽出（面変換の前に処理）
+            foreach (var mqoFace in mqoObj.Faces)
+            {
+                if (!mqoFace.IsSpecialFace)
+                    continue;
+
+                // COL属性の3番目の値が頂点ID
+                // 例: 3 V(0 0 0) M(0) COL(1 1 100000) → 頂点0のIDは100000
+                if (mqoFace.VertexColors != null && mqoFace.VertexColors.Length >= 3)
+                {
+                    int vertIndex = mqoFace.VertexIndices[0];
+                    int vertexId = (int)mqoFace.VertexColors[2];
+
+                    if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
+                    {
+                        meshObject.Vertices[vertIndex].Id = vertexId;
+                        meshObject.RegisterVertexId(vertexId);
+                    }
+                }
+
+                stats.SkippedSpecialFaces++;
             }
 
             // 面変換
             foreach (var mqoFace in mqoObj.Faces)
             {
-                // 特殊面（メタデータ）はスキップ
+                // 特殊面（メタデータ）はスキップ（既に処理済み）
                 if (mqoFace.IsSpecialFace)
-                {
-                    stats.SkippedSpecialFaces++;
                     continue;
-                }
 
                 // 1頂点（点）、2頂点（線）は補助線として扱う
                 if (mqoFace.VertexCount < 3)
@@ -271,6 +293,8 @@ namespace MeshFactory.MQO
                 ConvertFace(mqoFace, meshObject, settings);
                 stats.TotalFaces++;
             }
+
+            // IDが未設定（-1）の頂点はそのまま（外部からIDが与えられていない）
 
             // OriginalPositions作成
             var originalPositions = new Vector3[meshObject.VertexCount];
@@ -316,7 +340,7 @@ namespace MeshFactory.MQO
             meshObject.Name = mqoObj.Name;
 
             // Unity Mesh生成（マテリアル数を渡す）
-            meshContext.UnityMesh = meshObject.ToUnityMesh(materialCount);
+            meshContext.UnityMesh = meshObject.ToUnityMeshShared(materialCount);
             /*
             // デバッグ出力（ミラー属性確認用）
             Debug.Log($"[MQOImporter] ConvertObject: {mqoObj.Name}");
@@ -488,10 +512,10 @@ namespace MeshFactory.MQO
 
         private static int AddOrGetUVIndex(Vertex vertex, Vector2 uv)
         {
-            // 既存のUVを検索
+            // 既存のUVを検索（完全一致）
             for (int i = 0; i < vertex.UVs.Count; i++)
             {
-                if (Vector2.Distance(vertex.UVs[i], uv) < 0.0001f)
+                if (vertex.UVs[i] == uv)
                     return i;
             }
 

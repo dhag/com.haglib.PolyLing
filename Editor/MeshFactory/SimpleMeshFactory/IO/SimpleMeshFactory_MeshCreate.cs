@@ -76,7 +76,7 @@ public partial class SimpleMeshFactory
         }
 
         // MeshObjectから表示用Unity Meshを生成（MaterialIndex適用後）
-        Mesh mesh = meshContext.MeshObject.ToUnityMesh();
+        Mesh mesh = meshContext.MeshObject.ToUnityMeshShared();
         mesh.name = name;
         mesh.hideFlags = HideFlags.HideAndDontSave;
         meshContext.UnityMesh = mesh;
@@ -256,7 +256,7 @@ public partial class SimpleMeshFactory
                     face.MaterialIndex = _model.CurrentMaterialIndex;
                 }
                 // Meshを再生成してサブメッシュを反映
-                var newMesh = meshContext.MeshObject.ToUnityMesh();
+                var newMesh = meshContext.MeshObject.ToUnityMeshShared();
                 newMesh.name = name;
                 newMesh.hideFlags = HideFlags.HideAndDontSave;
                 if (meshContext.UnityMesh != null) DestroyImmediate(meshContext.UnityMesh);

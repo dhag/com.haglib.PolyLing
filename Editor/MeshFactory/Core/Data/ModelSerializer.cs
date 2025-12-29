@@ -422,7 +422,7 @@ namespace MeshFactory.Serialization
                 {
                     Name = meshContextData.name ?? "UnityMesh",
                     MeshObject = meshObject,
-                    UnityMesh = meshObject.ToUnityMesh(),
+                    UnityMesh = meshObject.ToUnityMeshShared(),
                     OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
                     BoneTransform = ToBoneTransform(meshContextData.exportSettingsDTO),
                     // Materials は ModelData から復元するため、ここでは設定しない
@@ -551,7 +551,7 @@ namespace MeshFactory.Serialization
             {
                 Name = meshDTO.name ?? "UnityMesh",
                 MeshObject = meshObject,
-                UnityMesh = meshObject.ToUnityMesh(),
+                UnityMesh = meshObject.ToUnityMeshShared(),
                 OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
                 BoneTransform = ToBoneTransform(meshDTO.exportSettingsDTO),
                 // Phase 1: Materials は ModelContext に集約

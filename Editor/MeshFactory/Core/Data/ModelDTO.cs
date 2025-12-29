@@ -137,6 +137,9 @@ namespace MeshFactory.Serialization
     [Serializable]
     public class VertexDTO
     {
+        /// <summary>頂点ID（0=未設定、null可能で後方互換）</summary>
+        public int? id;
+
         /// <summary>位置 [x, y, z]</summary>
         public float[] p;
 
@@ -256,6 +259,9 @@ namespace MeshFactory.Serialization
     [Serializable]
     public class FaceDTO
     {
+        /// <summary>面ID（0=未設定、null可能で後方互換）</summary>
+        public int? id;
+
         /// <summary>頂点インデックスリスト</summary>
         public List<int> v;
 

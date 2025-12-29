@@ -82,7 +82,7 @@ public partial class SimpleMeshFactory
                 }
                 else
                 {
-                    meshCopy = meshContext.MeshObject.ToUnityMesh();
+                    meshCopy = meshContext.MeshObject.ToUnityMeshShared();
                     materialsToUse = sharedMaterials;
                 }
                 meshCopy.name = meshContext.Name;
@@ -285,7 +285,7 @@ public partial class SimpleMeshFactory
             }
             else
             {
-                meshCopy = meshContext.MeshObject.ToUnityMesh();
+                meshCopy = meshContext.MeshObject.ToUnityMeshShared();
                 materialsToUse = sharedMaterials;
             }
             meshCopy.name = meshContext.Name;
@@ -382,7 +382,7 @@ public partial class SimpleMeshFactory
                 }
                 else
                 {
-                    meshCopy = meshContext.MeshObject.ToUnityMesh();
+                    meshCopy = meshContext.MeshObject.ToUnityMeshShared();
                 }
                 meshCopy.name = meshContext.Name;
 
@@ -545,7 +545,7 @@ public partial class SimpleMeshFactory
             }
             else
             {
-                meshCopy = meshContext.MeshObject.ToUnityMesh();
+                meshCopy = meshContext.MeshObject.ToUnityMeshShared();
             }
             meshCopy.name = meshContext.Name;
 

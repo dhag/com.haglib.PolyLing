@@ -174,7 +174,7 @@ namespace MeshFactory.UndoSystem
 
             if (meshContext.MeshObject != null)
             {
-                meshContext.UnityMesh = meshContext.MeshObject.ToUnityMesh();
+                meshContext.UnityMesh = meshContext.MeshObject.ToUnityMeshShared();
                 meshContext.UnityMesh.name = Name;
                 meshContext.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             }

@@ -335,7 +335,7 @@ public partial class SimpleMeshFactory
         // OriginalPositionsとUnityMeshを設定
         meshContext.OriginalPositions = meshContext.MeshObject.Vertices
             .Select(v => v.Position).ToArray();
-        meshContext.UnityMesh = meshContext.MeshObject.ToUnityMesh();
+        meshContext.UnityMesh = meshContext.MeshObject.ToUnityMeshShared();
         meshContext.UnityMesh.name = go.name;
 
         return meshContext;
@@ -423,7 +423,7 @@ public partial class SimpleMeshFactory
         }
 
         // 表示用Unity Meshを作成（MaterialIndex適用後）
-        Mesh displayMesh = meshContext.MeshObject.ToUnityMesh();
+        Mesh displayMesh = meshContext.MeshObject.ToUnityMeshShared();
         displayMesh.name = name;
         displayMesh.hideFlags = HideFlags.HideAndDontSave;
         meshContext.UnityMesh = displayMesh;

@@ -18,9 +18,10 @@ public partial class SimpleMeshFactory
     // ================================================================
 
     /// <summary>
-    /// ミラー（対称）をベイクしたUnity Meshを生成
+    /// ミラー（対称）をベイクしたUnity Meshを生成（頂点共有版）
     /// 頂点数・面数が2倍になり、サブメッシュは左右ペアで並ぶ
     /// 例: 元が[mat0, mat1]なら、結果は[左mat0, 右mat0, 左mat1, 右mat1]
+    /// (頂点インデックス, UVサブインデックス, 法線サブインデックス) の組み合わせで頂点を共有
     /// </summary>
     private Mesh BakeMirrorToUnityMesh(MeshContext meshContext, bool flipU, out List<int> usedMaterialIndices)
     {
@@ -39,12 +40,17 @@ public partial class SimpleMeshFactory
         var unityUVs = new List<Vector2>();
         var unityNormals = new List<Vector3>();
 
+        // 頂点共有用マッピング（左側・右側で別々）
+        // キー: (頂点インデックス, UVサブインデックス, 法線サブインデックス)
+        var leftVertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+        var rightVertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+
         // マテリアルインデックス → サブメッシュインデックス（左）
         var matToLeftSubMesh = new Dictionary<int, int>();
         var subMeshTriangles = new List<List<int>>();
 
         // ============================================
-        // パス1: 左側
+        // パス1: 左側（頂点共有版）
         // ============================================
         foreach (var face in meshObject.Faces)
         {
@@ -67,8 +73,6 @@ public partial class SimpleMeshFactory
             var triangles = face.Triangulate();
             foreach (var tri in triangles)
             {
-                int baseIndex = unityVerts.Count;
-
                 for (int i = 0; i < 3; i++)
                 {
                     int vIdx = tri.VertexIndices[i];
@@ -77,32 +81,47 @@ public partial class SimpleMeshFactory
 
                     var vertex = meshObject.Vertices[vIdx];
 
-                    unityVerts.Add(vertex.Position);
+                    // UVサブインデックスを取得
+                    int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
+                    if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
 
-                    int uvIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                    Vector2 uv;
-                    if (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
-                        uv = vertex.UVs[uvIdx];
-                    else if (vertex.UVs.Count > 0)
-                        uv = vertex.UVs[0];
-                    else
-                        uv = Vector2.zero;
-                    unityUVs.Add(uv);
+                    // 法線サブインデックスを取得
+                    int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
+                    if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
+                        normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
 
-                    int nIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                    Vector3 normal;
-                    if (nIdx >= 0 && nIdx < vertex.Normals.Count)
-                        normal = vertex.Normals[nIdx];
-                    else if (vertex.Normals.Count > 0)
-                        normal = vertex.Normals[0];
-                    else
-                        normal = Vector3.up;
-                    unityNormals.Add(normal);
+                    var key = (vIdx, uvSubIdx, normalSubIdx);
+
+                    // 既存の頂点があるか確認
+                    if (!leftVertexMapping.TryGetValue(key, out int unityIdx))
+                    {
+                        // 新しいUnity頂点を作成
+                        unityIdx = unityVerts.Count;
+                        leftVertexMapping[key] = unityIdx;
+
+                        // 位置
+                        unityVerts.Add(vertex.Position);
+
+                        // UV
+                        if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
+                            unityUVs.Add(vertex.UVs[uvSubIdx]);
+                        else if (vertex.UVs.Count > 0)
+                            unityUVs.Add(vertex.UVs[0]);
+                        else
+                            unityUVs.Add(Vector2.zero);
+
+                        // 法線
+                        if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
+                            unityNormals.Add(vertex.Normals[normalSubIdx]);
+                        else if (vertex.Normals.Count > 0)
+                            unityNormals.Add(vertex.Normals[0]);
+                        else
+                            unityNormals.Add(Vector3.up);
+                    }
+
+                    subMeshTriangles[leftSubMesh].Add(unityIdx);
                 }
-
-                subMeshTriangles[leftSubMesh].Add(baseIndex);
-                subMeshTriangles[leftSubMesh].Add(baseIndex + 1);
-                subMeshTriangles[leftSubMesh].Add(baseIndex + 2);
             }
         }
 
@@ -110,7 +129,7 @@ public partial class SimpleMeshFactory
         Debug.Log($"[BakeMirror] Pass1 done: leftVertexCount={leftVertexCount}");
 
         // ============================================
-        // パス2: 右側
+        // パス2: 右側（頂点共有版、ミラー変換）
         // ============================================
         foreach (var face in meshObject.Faces)
         {
@@ -122,45 +141,72 @@ public partial class SimpleMeshFactory
             var triangles = face.Triangulate();
             foreach (var tri in triangles)
             {
-                int baseIndex = unityVerts.Count;
+                // 右側は頂点順序を逆にして面を反転
+                int[] triIndices = new int[3];
 
-                for (int i = 2; i >= 0; i--)
+                for (int i = 0; i < 3; i++)
                 {
-                    int vIdx = tri.VertexIndices[i];
+                    // 逆順で処理（2, 1, 0）
+                    int srcI = 2 - i;
+
+                    int vIdx = tri.VertexIndices[srcI];
                     if (vIdx < 0 || vIdx >= meshObject.Vertices.Count)
                         vIdx = 0;
 
                     var vertex = meshObject.Vertices[vIdx];
 
-                    unityVerts.Add(MirrorPosition(vertex.Position, axis));
+                    // UVサブインデックスを取得
+                    int uvSubIdx = srcI < tri.UVIndices.Count ? tri.UVIndices[srcI] : 0;
+                    if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                        uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
 
-                    int uvIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
-                    Vector2 uv;
-                    if (uvIdx >= 0 && uvIdx < vertex.UVs.Count)
-                        uv = vertex.UVs[uvIdx];
-                    else if (vertex.UVs.Count > 0)
-                        uv = vertex.UVs[0];
-                    else
-                        uv = Vector2.zero;
+                    // 法線サブインデックスを取得
+                    int normalSubIdx = srcI < tri.NormalIndices.Count ? tri.NormalIndices[srcI] : 0;
+                    if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
+                        normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
 
-                    if (flipU)
-                        uv.x = 1f - uv.x;
-                    unityUVs.Add(uv);
+                    var key = (vIdx, uvSubIdx, normalSubIdx);
 
-                    int nIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
-                    Vector3 normal;
-                    if (nIdx >= 0 && nIdx < vertex.Normals.Count)
-                        normal = vertex.Normals[nIdx];
-                    else if (vertex.Normals.Count > 0)
-                        normal = vertex.Normals[0];
-                    else
-                        normal = Vector3.up;
-                    unityNormals.Add(MirrorNormal(normal, axis));
+                    // 既存の頂点があるか確認
+                    if (!rightVertexMapping.TryGetValue(key, out int unityIdx))
+                    {
+                        // 新しいUnity頂点を作成（ミラー変換）
+                        unityIdx = unityVerts.Count;
+                        rightVertexMapping[key] = unityIdx;
+
+                        // 位置（ミラー）
+                        unityVerts.Add(MirrorPosition(vertex.Position, axis));
+
+                        // UV（flipU対応）
+                        Vector2 uv;
+                        if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
+                            uv = vertex.UVs[uvSubIdx];
+                        else if (vertex.UVs.Count > 0)
+                            uv = vertex.UVs[0];
+                        else
+                            uv = Vector2.zero;
+
+                        if (flipU)
+                            uv.x = 1f - uv.x;
+                        unityUVs.Add(uv);
+
+                        // 法線（ミラー）
+                        Vector3 normal;
+                        if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
+                            normal = vertex.Normals[normalSubIdx];
+                        else if (vertex.Normals.Count > 0)
+                            normal = vertex.Normals[0];
+                        else
+                            normal = Vector3.up;
+                        unityNormals.Add(MirrorNormal(normal, axis));
+                    }
+
+                    triIndices[i] = unityIdx;
                 }
 
-                subMeshTriangles[rightSubMesh].Add(baseIndex);
-                subMeshTriangles[rightSubMesh].Add(baseIndex + 1);
-                subMeshTriangles[rightSubMesh].Add(baseIndex + 2);
+                subMeshTriangles[rightSubMesh].Add(triIndices[0]);
+                subMeshTriangles[rightSubMesh].Add(triIndices[1]);
+                subMeshTriangles[rightSubMesh].Add(triIndices[2]);
             }
         }
 

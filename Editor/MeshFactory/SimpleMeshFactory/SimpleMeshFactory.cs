@@ -730,7 +730,7 @@ public partial class SimpleMeshFactory : EditorWindow
         if (meshContext.MeshObject == null || meshContext.UnityMesh == null)
             return;
 
-        var newMesh = meshContext.MeshObject.ToUnityMesh();
+        var newMesh = meshContext.MeshObject.ToUnityMeshShared();
         meshContext.UnityMesh.Clear();
         meshContext.UnityMesh.vertices = newMesh.vertices;
         meshContext.UnityMesh.uv = newMesh.uv;

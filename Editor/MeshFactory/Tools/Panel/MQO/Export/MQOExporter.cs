@@ -446,6 +446,23 @@ namespace MeshFactory.MQO
                 stats.TotalFaces++;
             }
 
+            // 頂点ID用の特殊面を追加（ID != -1 の頂点のみ）
+            // フォーマット: 3 V(idx idx idx) M(0) COL(1 1 vertexId)
+            for (int i = 0; i < meshObject.Vertices.Count; i++)
+            {
+                var vertex = meshObject.Vertices[i];
+                if (vertex.Id != -1)
+                {
+                    var specialFace = new MQOFace
+                    {
+                        VertexIndices = new int[] { i, i, i },
+                        MaterialIndex = 0,
+                        VertexColors = new uint[] { 1, 1, (uint)vertex.Id }
+                    };
+                    mqoObj.Faces.Add(specialFace);
+                }
+            }
+
             return mqoObj;
         }
 
@@ -670,6 +687,18 @@ namespace MeshFactory.MQO
                             sb.Append(face.UVs[i].x.ToString(fmt, CultureInfo.InvariantCulture));
                             sb.Append(" ");
                             sb.Append(face.UVs[i].y.ToString(fmt, CultureInfo.InvariantCulture));
+                        }
+                        sb.Append(")");
+                    }
+
+                    // COL属性（頂点カラー/頂点ID用）
+                    if (face.VertexColors != null && face.VertexColors.Length > 0)
+                    {
+                        sb.Append(" COL(");
+                        for (int i = 0; i < face.VertexColors.Length; i++)
+                        {
+                            if (i > 0) sb.Append(" ");
+                            sb.Append(face.VertexColors[i]);
                         }
                         sb.Append(")");
                     }

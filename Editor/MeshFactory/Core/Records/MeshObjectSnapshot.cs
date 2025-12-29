@@ -313,7 +313,7 @@ namespace MeshFactory.UndoSystem
                 };
             }
 
-            UnityEngine.Mesh mesh = ctx.MeshObject.ToUnityMesh();
+            UnityEngine.Mesh mesh = ctx.MeshObject.ToUnityMeshShared();
             MeshSnapshot snapshot = new MeshSnapshot
             {
                 Vertices = mesh.vertices,

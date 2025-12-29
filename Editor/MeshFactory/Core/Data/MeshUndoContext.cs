@@ -186,7 +186,7 @@ namespace MeshFactory.UndoSystem
             if (TargetMesh == null || MeshObject == null) return;
 
             // MeshObjectをUnity Meshに変換して適用
-            var newMesh = MeshObject.ToUnityMesh();
+            var newMesh = MeshObject.ToUnityMeshShared();
 
             TargetMesh.Clear();
             TargetMesh.vertices = newMesh.vertices;
@@ -207,7 +207,7 @@ namespace MeshFactory.UndoSystem
             if (TargetMesh == null || MeshObject == null) return;
 
             // Unity Meshに変換して頂点位置を更新
-            var newMesh = MeshObject.ToUnityMesh();
+            var newMesh = MeshObject.ToUnityMeshShared();
             TargetMesh.vertices = newMesh.vertices;
             TargetMesh.RecalculateNormals();
             TargetMesh.RecalculateBounds();

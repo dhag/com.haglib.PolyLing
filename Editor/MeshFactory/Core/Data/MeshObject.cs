@@ -74,6 +74,12 @@ namespace MeshFactory.Data
     [Serializable]
     public class Vertex
     {
+        /// <summary>
+        /// 頂点ID（トポロジー追跡・外部連携・モーフ用）
+        /// MeshObjectが管理する一意の識別子
+        /// </summary>
+        public int Id = 0;
+
         /// <summary>頂点位置</summary>
         public Vector3 Position;
 
@@ -119,6 +125,15 @@ namespace MeshFactory.Data
             Position = position;
             UVs.Add(uv);
             Normals.Add(normal);
+        }
+
+        /// <summary>
+        /// ID指定付きコンストラクタ
+        /// </summary>
+        public Vertex(int id, Vector3 position)
+        {
+            Id = id;
+            Position = position;
         }
 
         // === フラグ操作 ===
@@ -194,15 +209,26 @@ namespace MeshFactory.Data
         }
 
         /// <summary>
-        /// ディープコピー
+        /// ディープコピー（IDも保持）
         /// </summary>
         public Vertex Clone()
         {
             var clone = new Vertex(this.Position);
+            clone.Id = this.Id;
             clone.UVs = new List<Vector2>(this.UVs);
             clone.Normals = new List<Vector3>(this.Normals);
             clone.Flags = this.Flags;
             clone.BoneWeight = this.BoneWeight;
+            return clone;
+        }
+
+        /// <summary>
+        /// ディープコピー（新しいIDを割り当て）
+        /// </summary>
+        public Vertex CloneWithNewId(int newId)
+        {
+            var clone = Clone();
+            clone.Id = newId;
             return clone;
         }
     }
@@ -218,6 +244,12 @@ namespace MeshFactory.Data
     [Serializable]
     public class Face
     {
+        /// <summary>
+        /// 面ID（トポロジー追跡・外部連携・モーフ用）
+        /// MeshObjectが管理する一意の識別子
+        /// </summary>
+        public int Id = 0;
+
         /// <summary>頂点インデックスリスト（Vertex配列への参照）</summary>
         public List<int> VertexIndices = new List<int>();
 
@@ -405,12 +437,13 @@ namespace MeshFactory.Data
         }
 
         /// <summary>
-        /// ディープコピー
+        /// ディープコピー（IDも保持）
         /// </summary>
         public Face Clone()
         {
             return new Face
             {
+                Id = Id,
                 VertexIndices = new List<int>(VertexIndices),
                 UVIndices = new List<int>(UVIndices),
                 NormalIndices = new List<int>(NormalIndices),
@@ -418,6 +451,35 @@ namespace MeshFactory.Data
                 Flags = Flags
             };
         }
+
+        /// <summary>
+        /// ディープコピー（新しいIDを割り当て）
+        /// </summary>
+        public Face CloneWithNewId(int newId)
+        {
+            var clone = Clone();
+            clone.Id = newId;
+            return clone;
+        }
+    }
+
+    // ============================================================
+    // MeshType 定義（MeshContext.MeshTypeと統一）
+    // ============================================================
+
+    /// <summary>
+    /// メッシュの種類
+    /// </summary>
+    public enum MeshType
+    {
+        /// <summary>通常のメッシュ</summary>
+        Mesh = 0,
+        /// <summary>ボーン</summary>
+        Bone = 1,
+        /// <summary>ヘルパーオブジェクト</summary>
+        Helper = 2,
+        /// <summary>グループ</summary>
+        Group = 3
     }
 
     // ============================================================
@@ -431,8 +493,233 @@ namespace MeshFactory.Data
     [Serializable]
     public class MeshObject
     {
+        // ================================================================
+        // ID管理
+        // ================================================================
+
+        /// <summary>ID生成用の乱数ジェネレータ</summary>
+        [NonSerialized]
+        private static readonly System.Random _idRandom = new System.Random();
+
+        /// <summary>頂点用の使用中ID（重複防止）</summary>
+        [NonSerialized]
+        private HashSet<int> _usedVertexIds = new HashSet<int>();
+
+        /// <summary>面用の使用中ID（重複防止）</summary>
+        [NonSerialized]
+        private HashSet<int> _usedFaceIds = new HashSet<int>();
+
+        /// <summary>
+        /// 新しい頂点IDを生成（GUID的なランダム生成）
+        /// </summary>
+        public int GenerateVertexId()
+        {
+            EnsureIdSetsInitialized();
+            int id;
+            int attempts = 0;
+            do
+            {
+                // 1〜int.MaxValue-1 の範囲でランダム生成
+                id = _idRandom.Next(1, int.MaxValue);
+                attempts++;
+                if (attempts > 1000)
+                {
+                    // フォールバック: 線形探索
+                    id = FindNextAvailableId(_usedVertexIds);
+                    break;
+                }
+            } while (id == 0 || _usedVertexIds.Contains(id));
+
+            _usedVertexIds.Add(id);
+            return id;
+        }
+
+        /// <summary>
+        /// 新しい面IDを生成（GUID的なランダム生成）
+        /// </summary>
+        public int GenerateFaceId()
+        {
+            EnsureIdSetsInitialized();
+            int id;
+            int attempts = 0;
+            do
+            {
+                id = _idRandom.Next(1, int.MaxValue);
+                attempts++;
+                if (attempts > 1000)
+                {
+                    id = FindNextAvailableId(_usedFaceIds);
+                    break;
+                }
+            } while (id == 0 || _usedFaceIds.Contains(id));
+
+            _usedFaceIds.Add(id);
+            return id;
+        }
+
+        /// <summary>
+        /// 頂点IDを登録（外部からインポート時等に使用）
+        /// </summary>
+        public void RegisterVertexId(int id)
+        {
+            EnsureIdSetsInitialized();
+            if (id != 0)
+                _usedVertexIds.Add(id);
+        }
+
+        /// <summary>
+        /// 面IDを登録（外部からインポート時等に使用）
+        /// </summary>
+        public void RegisterFaceId(int id)
+        {
+            EnsureIdSetsInitialized();
+            if (id != 0)
+                _usedFaceIds.Add(id);
+        }
+
+        /// <summary>
+        /// 頂点IDを解放（削除時、再利用可能にする場合）
+        /// </summary>
+        public void ReleaseVertexId(int id)
+        {
+            EnsureIdSetsInitialized();
+            _usedVertexIds.Remove(id);
+        }
+
+        /// <summary>
+        /// 面IDを解放（削除時、再利用可能にする場合）
+        /// </summary>
+        public void ReleaseFaceId(int id)
+        {
+            EnsureIdSetsInitialized();
+            _usedFaceIds.Remove(id);
+        }
+
+        /// <summary>
+        /// 使用中IDセットを現在のVertex/Faceから再構築
+        /// </summary>
+        public void RebuildIdSets()
+        {
+            _usedVertexIds = new HashSet<int>();
+            _usedFaceIds = new HashSet<int>();
+
+            foreach (var v in Vertices)
+            {
+                if (v.Id != 0)
+                    _usedVertexIds.Add(v.Id);
+            }
+            foreach (var f in Faces)
+            {
+                if (f.Id != 0)
+                    _usedFaceIds.Add(f.Id);
+            }
+        }
+
+        /// <summary>
+        /// IDが未設定の頂点・面にIDを割り当て
+        /// </summary>
+        public void AssignMissingIds()
+        {
+            EnsureIdSetsInitialized();
+            foreach (var v in Vertices)
+            {
+                if (v.Id == 0)
+                {
+                    v.Id = GenerateVertexId();
+                }
+                else
+                {
+                    RegisterVertexId(v.Id);
+                }
+            }
+            foreach (var f in Faces)
+            {
+                if (f.Id == 0)
+                {
+                    f.Id = GenerateFaceId();
+                }
+                else
+                {
+                    RegisterFaceId(f.Id);
+                }
+            }
+        }
+
+        private void EnsureIdSetsInitialized()
+        {
+            if (_usedVertexIds == null)
+                _usedVertexIds = new HashSet<int>();
+            if (_usedFaceIds == null)
+                _usedFaceIds = new HashSet<int>();
+        }
+
+        private static int FindNextAvailableId(HashSet<int> usedIds)
+        {
+            for (int i = 1; i < int.MaxValue; i++)
+            {
+                if (!usedIds.Contains(i))
+                    return i;
+            }
+            return 1; // 極端な場合のフォールバック
+        }
+
+        // ================================================================
+        // IDによる検索
+        // ================================================================
+
+        /// <summary>
+        /// 頂点IDから頂点インデックスを取得（見つからない場合-1）
+        /// </summary>
+        public int FindVertexIndexById(int id)
+        {
+            for (int i = 0; i < Vertices.Count; i++)
+            {
+                if (Vertices[i].Id == id)
+                    return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 面IDから面インデックスを取得（見つからない場合-1）
+        /// </summary>
+        public int FindFaceIndexById(int id)
+        {
+            for (int i = 0; i < Faces.Count; i++)
+            {
+                if (Faces[i].Id == id)
+                    return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 頂点IDから頂点を取得（見つからない場合null）
+        /// </summary>
+        public Vertex FindVertexById(int id)
+        {
+            int idx = FindVertexIndexById(id);
+            return idx >= 0 ? Vertices[idx] : null;
+        }
+
+        /// <summary>
+        /// 面IDから面を取得（見つからない場合null）
+        /// </summary>
+        public Face FindFaceById(int id)
+        {
+            int idx = FindFaceIndexById(id);
+            return idx >= 0 ? Faces[idx] : null;
+        }
+
+        // ================================================================
+        // 基本プロパティ
+        // ================================================================
+
         /// <summary>メッシュ名</summary>
         public string Name = "Mesh";
+
+        /// <summary>メッシュの種類</summary>
+        public MeshType Type { get; set; } = MeshType.Mesh;
 
         /// <summary>頂点リスト</summary>
         public List<Vertex> Vertices = new List<Vertex>();
@@ -506,37 +793,60 @@ namespace MeshFactory.Data
         // === 頂点操作 ===
 
         /// <summary>
-        /// 頂点を追加
+        /// 頂点を追加（ID自動割り当て）
         /// </summary>
         /// <returns>追加された頂点のインデックス</returns>
         public int AddVertex(Vector3 position)
         {
-            Vertices.Add(new Vertex(position));
+            var vertex = new Vertex(position);
+            vertex.Id = GenerateVertexId();
+            Vertices.Add(vertex);
             return Vertices.Count - 1;
         }
 
         /// <summary>
-        /// 頂点を追加（UV付き）
+        /// 頂点を追加（UV付き、ID自動割り当て）
         /// </summary>
         public int AddVertex(Vector3 position, Vector2 uv)
         {
-            Vertices.Add(new Vertex(position, uv));
+            var vertex = new Vertex(position, uv);
+            vertex.Id = GenerateVertexId();
+            Vertices.Add(vertex);
             return Vertices.Count - 1;
         }
 
         /// <summary>
-        /// 頂点を追加（UV/法線付き）
+        /// 頂点を追加（UV/法線付き、ID自動割り当て）
         /// </summary>
         public int AddVertex(Vector3 position, Vector2 uv, Vector3 normal)
         {
-            Vertices.Add(new Vertex(position, uv, normal));
+            var vertex = new Vertex(position, uv, normal);
+            vertex.Id = GenerateVertexId();
+            Vertices.Add(vertex);
             return Vertices.Count - 1;
         }
 
         /// <summary>
-        /// Vertexオブジェクトを追加
+        /// Vertexオブジェクトを追加（IDが0なら自動割り当て）
         /// </summary>
         public int AddVertex(Vertex vertex)
+        {
+            if (vertex.Id == 0)
+            {
+                vertex.Id = GenerateVertexId();
+            }
+            else
+            {
+                RegisterVertexId(vertex.Id);
+            }
+            Vertices.Add(vertex);
+            return Vertices.Count - 1;
+        }
+
+        /// <summary>
+        /// Vertexオブジェクトを追加（ID管理なし、後方互換用）
+        /// </summary>
+        public int AddVertexRaw(Vertex vertex)
         {
             Vertices.Add(vertex);
             return Vertices.Count - 1;
@@ -545,27 +855,48 @@ namespace MeshFactory.Data
         // === 面操作 ===
 
         /// <summary>
-        /// 三角形を追加
+        /// 三角形を追加（ID自動割り当て）
         /// </summary>
         public int AddTriangle(int v0, int v1, int v2, int materialIndex = 0)
         {
-            Faces.Add(new Face(v0, v1, v2, materialIndex));
+            var face = new Face(v0, v1, v2, materialIndex);
+            face.Id = GenerateFaceId();
+            Faces.Add(face);
             return Faces.Count - 1;
         }
 
         /// <summary>
-        /// 四角形を追加
+        /// 四角形を追加（ID自動割り当て）
         /// </summary>
         public int AddQuad(int v0, int v1, int v2, int v3, int materialIndex = 0)
         {
-            Faces.Add(new Face(v0, v1, v2, v3, materialIndex));
+            var face = new Face(v0, v1, v2, v3, materialIndex);
+            face.Id = GenerateFaceId();
+            Faces.Add(face);
             return Faces.Count - 1;
         }
 
         /// <summary>
-        /// Faceオブジェクトを追加
+        /// Faceオブジェクトを追加（IDが0なら自動割り当て）
         /// </summary>
         public int AddFace(Face face)
+        {
+            if (face.Id == 0)
+            {
+                face.Id = GenerateFaceId();
+            }
+            else
+            {
+                RegisterFaceId(face.Id);
+            }
+            Faces.Add(face);
+            return Faces.Count - 1;
+        }
+
+        /// <summary>
+        /// Faceオブジェクトを追加（ID管理なし、後方互換用）
+        /// </summary>
+        public int AddFaceRaw(Face face)
         {
             Faces.Add(face);
             return Faces.Count - 1;
@@ -795,6 +1126,270 @@ namespace MeshFactory.Data
             return mesh;
         }
 
+        // ================================================================
+        // Unity Mesh 変換（頂点共有版）
+        // ================================================================
+
+        /// <summary>
+        /// Unity Meshに変換（頂点共有版）
+        /// (頂点インデックス, UVサブインデックス, 法線サブインデックス) の組み合わせで頂点を共有
+        /// MQO読み込み時の CreateFaceAndModifyVertex 方式に対応
+        /// </summary>
+        /// <param name="materialCount">マテリアル数（省略時は自動計算）</param>
+        public Mesh ToUnityMeshShared(int materialCount = -1)
+        {
+            var mesh = new Mesh();
+            mesh.name = Name;
+
+            if (Vertices.Count == 0)
+                return mesh;
+
+            // サブメッシュ数を計算
+            int subMeshCount = materialCount > 0 ? materialCount : SubMeshCount;
+
+            // === 頂点データ（共有版） ===
+            // キー: (頂点インデックス, UVサブインデックス, 法線サブインデックス)
+            // 値:  Unity頂点インデックス
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+
+            var unityVerts = new List<Vector3>();
+            var unityUVs = new List<Vector2>();
+            var unityNormals = new List<Vector3>();
+            var unityBoneWeights = new List<BoneWeight>();
+            bool hasBoneWeights = IsSkinned;
+
+            // サブメッシュごとの三角形インデックス
+            var subMeshTriangles = new List<int>[subMeshCount];
+            for (int i = 0; i < subMeshCount; i++)
+                subMeshTriangles[i] = new List<int>();
+
+            foreach (var face in Faces)
+            {
+                // 補助線（2頂点）や非表示面はスキップ
+                if (face.VertexCount < 3 || face.IsHidden)
+                    continue;
+
+                // 三角形に分解
+                var triangles = face.Triangulate();
+                foreach (var tri in triangles)
+                {
+                    int subMesh = Mathf.Clamp(tri.MaterialIndex, 0, subMeshCount - 1);
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        int vIdx = tri.VertexIndices[i];
+                        if (vIdx < 0 || vIdx >= Vertices.Count)
+                            continue;
+
+                        var vertex = Vertices[vIdx];
+
+                        // UVサブインデックスを取得（なければ0）
+                        int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
+                        if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
+
+                        // 法線サブインデックスを取得（なければ0）
+                        int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
+                        if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
+                            normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
+
+                        // キーを作成
+                        var key = (vIdx, uvSubIdx, normalSubIdx);
+
+                        // 既存の頂点があるか確認
+                        if (!vertexMapping.TryGetValue(key, out int unityIdx))
+                        {
+                            // 新しいUnity頂点を作成
+                            unityIdx = unityVerts.Count;
+                            vertexMapping[key] = unityIdx;
+
+                            // 位置
+                            unityVerts.Add(vertex.Position);
+
+                            // UV
+                            if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
+                                unityUVs.Add(vertex.UVs[uvSubIdx]);
+                            else if (vertex.UVs.Count > 0)
+                                unityUVs.Add(vertex.UVs[0]);
+                            else
+                                unityUVs.Add(Vector2.zero);
+
+                            // 法線
+                            if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
+                                unityNormals.Add(vertex.Normals[normalSubIdx]);
+                            else if (vertex.Normals.Count > 0)
+                                unityNormals.Add(vertex.Normals[0]);
+                            else
+                                unityNormals.Add(Vector3.up);
+
+                            // BoneWeight
+                            if (hasBoneWeights)
+                            {
+                                unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                            }
+                        }
+
+                        // 三角形インデックスを追加
+                        subMeshTriangles[subMesh].Add(unityIdx);
+                    }
+                }
+            }
+
+            // Meshに設定
+            mesh.SetVertices(unityVerts);
+            mesh.SetUVs(0, unityUVs);
+            mesh.SetNormals(unityNormals);
+
+            // BoneWeight設定
+            if (hasBoneWeights && unityBoneWeights.Count == unityVerts.Count)
+            {
+                mesh.boneWeights = unityBoneWeights.ToArray();
+            }
+
+            // サブメッシュ設定
+            mesh.subMeshCount = subMeshCount;
+            for (int i = 0; i < subMeshCount; i++)
+            {
+                mesh.SetTriangles(subMeshTriangles[i], i);
+            }
+
+            mesh.RecalculateBounds();
+
+            // 法線がない場合は自動計算
+            if (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up))
+            {
+                mesh.RecalculateNormals();
+            }
+
+            return mesh;
+        }
+
+        /// <summary>
+        /// Unity Meshに変換（頂点共有版・座標変換付き）
+        /// </summary>
+        /// <param name="transform">頂点に適用する変換行列</param>
+        /// <param name="materialCount">マテリアル数（省略時は自動計算）</param>
+        public Mesh ToUnityMeshShared(Matrix4x4 transform, int materialCount = -1)
+        {
+            var mesh = new Mesh();
+            mesh.name = Name;
+
+            if (Vertices.Count == 0)
+                return mesh;
+
+            // サブメッシュ数を計算
+            int subMeshCount = materialCount > 0 ? materialCount : SubMeshCount;
+
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx, int normalIdx), int>();
+
+            var unityVerts = new List<Vector3>();
+            var unityUVs = new List<Vector2>();
+            var unityNormals = new List<Vector3>();
+            var unityBoneWeights = new List<BoneWeight>();
+            bool hasBoneWeights = IsSkinned;
+
+            // 法線変換用（逆転置行列）
+            Matrix4x4 normalMatrix = transform.inverse.transpose;
+
+            var subMeshTriangles = new List<int>[subMeshCount];
+            for (int i = 0; i < subMeshCount; i++)
+                subMeshTriangles[i] = new List<int>();
+
+            foreach (var face in Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden)
+                    continue;
+
+                var triangles = face.Triangulate();
+                foreach (var tri in triangles)
+                {
+                    int subMesh = Mathf.Clamp(tri.MaterialIndex, 0, subMeshCount - 1);
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        int vIdx = tri.VertexIndices[i];
+                        if (vIdx < 0 || vIdx >= Vertices.Count)
+                            continue;
+
+                        var vertex = Vertices[vIdx];
+
+                        int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
+                        if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                            uvSubIdx = vertex.UVs.Count > 0 ? 0 : -1;
+
+                        int normalSubIdx = i < tri.NormalIndices.Count ? tri.NormalIndices[i] : 0;
+                        if (normalSubIdx < 0 || normalSubIdx >= vertex.Normals.Count)
+                            normalSubIdx = vertex.Normals.Count > 0 ? 0 : -1;
+
+                        var key = (vIdx, uvSubIdx, normalSubIdx);
+
+                        if (!vertexMapping.TryGetValue(key, out int unityIdx))
+                        {
+                            unityIdx = unityVerts.Count;
+                            vertexMapping[key] = unityIdx;
+
+                            // 位置を変換
+                            Vector3 transformedPos = transform.MultiplyPoint3x4(vertex.Position);
+                            unityVerts.Add(transformedPos);
+
+                            // UV
+                            if (uvSubIdx >= 0 && uvSubIdx < vertex.UVs.Count)
+                                unityUVs.Add(vertex.UVs[uvSubIdx]);
+                            else if (vertex.UVs.Count > 0)
+                                unityUVs.Add(vertex.UVs[0]);
+                            else
+                                unityUVs.Add(Vector2.zero);
+
+                            // 法線を変換
+                            Vector3 normal;
+                            if (normalSubIdx >= 0 && normalSubIdx < vertex.Normals.Count)
+                                normal = vertex.Normals[normalSubIdx];
+                            else if (vertex.Normals.Count > 0)
+                                normal = vertex.Normals[0];
+                            else
+                                normal = Vector3.up;
+                            
+                            Vector3 transformedNormal = normalMatrix.MultiplyVector(normal).normalized;
+                            unityNormals.Add(transformedNormal);
+
+                            // BoneWeight
+                            if (hasBoneWeights)
+                            {
+                                unityBoneWeights.Add(vertex.BoneWeight ?? default);
+                            }
+                        }
+
+                        subMeshTriangles[subMesh].Add(unityIdx);
+                    }
+                }
+            }
+
+            // Meshに設定
+            mesh.SetVertices(unityVerts);
+            mesh.SetUVs(0, unityUVs);
+            mesh.SetNormals(unityNormals);
+
+            if (hasBoneWeights && unityBoneWeights.Count == unityVerts.Count)
+            {
+                mesh.boneWeights = unityBoneWeights.ToArray();
+            }
+
+            mesh.subMeshCount = subMeshCount;
+            for (int i = 0; i < subMeshCount; i++)
+            {
+                mesh.SetTriangles(subMeshTriangles[i], i);
+            }
+
+            mesh.RecalculateBounds();
+
+            if (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up))
+            {
+                mesh.RecalculateNormals();
+            }
+
+            return mesh;
+        }
+
         /// <summary>
         /// Unity Meshから読み込み
         /// </summary>
@@ -916,7 +1511,9 @@ namespace MeshFactory.Data
         {
             for (int i = 0; i < vertex.UVs.Count; i++)
             {
-                if (Vector2.Distance(vertex.UVs[i], uv) < tolerance)
+                //if (Vector2.Distance(vertex.UVs[i], uv) < tolerance)
+                //    return i;
+                if (vertex.UVs[i] == uv)  // 完全一致
                     return i;
             }
             return 0;
@@ -1031,11 +1628,12 @@ namespace MeshFactory.Data
         }
 
         /// <summary>
-        /// ディープコピー
+        /// ディープコピー（IDも保持）
         /// </summary>
         public MeshObject Clone()
         {
             var copy = new MeshObject(Name);
+            copy.Type = this.Type;
             copy.Vertices = Vertices.Select(v => v.Clone()).ToList();
             copy.Faces = Faces.Select(f => f.Clone()).ToList();
             copy.ParentIndex = this.ParentIndex;
@@ -1048,8 +1646,48 @@ namespace MeshFactory.Data
                 copy.BoneTransform.CopyFrom(this.BoneTransform);
             }
 
+            // ID管理セットを再構築
+            copy.RebuildIdSets();
+
             return copy;
         }
+
+        /// <summary>
+        /// ディープコピー（頂点・面に新しいIDを割り当て）
+        /// </summary>
+        public MeshObject CloneWithNewIds()
+        {
+            var copy = new MeshObject(Name);
+            copy.Type = this.Type;
+            copy.ParentIndex = this.ParentIndex;
+            copy.Depth = this.Depth;
+            copy.HierarchyParentIndex = this.HierarchyParentIndex;
+
+            if (this.BoneTransform != null)
+            {
+                copy.BoneTransform = new BoneTransform();
+                copy.BoneTransform.CopyFrom(this.BoneTransform);
+            }
+
+            // 頂点をコピー（新しいID）
+            foreach (var v in Vertices)
+            {
+                var newV = v.Clone();
+                newV.Id = copy.GenerateVertexId();
+                copy.Vertices.Add(newV);
+            }
+
+            // 面をコピー（新しいID）
+            foreach (var f in Faces)
+            {
+                var newF = f.Clone();
+                newF.Id = copy.GenerateFaceId();
+                copy.Faces.Add(newF);
+            }
+
+            return copy;
+        }
+
 
         /// <summary>
         /// バウンディングボックスを計算
