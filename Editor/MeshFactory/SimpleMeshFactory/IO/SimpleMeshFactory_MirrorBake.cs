@@ -211,7 +211,8 @@ public partial class SimpleMeshFactory
         }
 
         // 頂点数が多い場合は32ビットインデックスを使用
-        if (unityVerts.Count > 65535)
+        //if (unityVerts.Count > 65535)
+        if (true)
         {
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         }

@@ -219,6 +219,16 @@ public partial class SimpleMeshFactory
             MeshFactory.PMX.PMXImportPanel.Open(_toolManager?.toolContext);
         }
 
+        if (GUILayout.Button("PMX Bone Weight Export..."))
+        {
+            MeshFactory.PMX.PMXBoneWeightExportPanel.ShowWindow();
+        }
+
+        if (GUILayout.Button("Avatar Creator..."))
+        {
+            MeshFactory.PMX.PMXAvatarCreatorPanel.ShowWindow();
+        }
+
         EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
         if (GUILayout.Button("Export"))
         {

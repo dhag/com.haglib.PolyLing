@@ -164,7 +164,7 @@ public partial class SimpleMeshFactory
             // ================================================================
             // オンメモリマテリアル保存オプション（オンメモリマテリアルがある場合のみ表示）
             // ================================================================
-            if (_model.HasOnMemoryMaterials)
+            if (_model.HasOnMemoryMaterials())
             {
                 EditorGUI.BeginChangeCheck();
                 bool newSaveOnMemoryMaterials = EditorGUILayout.Toggle(L.Get("SaveOnMemoryMaterials"), _saveOnMemoryMaterials);

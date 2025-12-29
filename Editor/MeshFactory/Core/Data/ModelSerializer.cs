@@ -13,6 +13,7 @@ using Unity.Plastic.Newtonsoft.Json;
 using MeshFactory.Data;
 using MeshFactory.Tools;
 using MeshFactory.Model;
+using MeshFactory.Materials;
 
 // MeshContextはSimpleMeshFactoryのネストクラスを参照
 ////using MeshContext = MeshContext;
@@ -305,9 +306,7 @@ namespace MeshFactory.Serialization
         public static ModelDTO FromModelContext(
             ModelContext model,
             WorkPlaneContext workPlaneContext = null,
-            EditorStateDTO editorStateDTO = null,
-            bool saveOnMemoryMaterials = false,
-            string materialSaveDirectory = null)
+            EditorStateDTO editorStateDTO = null)
         {
             if (model == null)
                 return null;
@@ -344,109 +343,37 @@ namespace MeshFactory.Serialization
             // ================================================================
             // Materials（Phase 1: モデル単位に集約）
             // ================================================================
-            if (model.Materials != null)
+            
+            // 新形式: MaterialReferences → MaterialReferenceDTO
+            if (model.MaterialReferences != null)
             {
-                int matIndex = 0;
-                foreach (var mat in model.Materials)
+                foreach (var matRef in model.MaterialReferences)
                 {
-                    string assetPath = GetOrSaveMaterialPath(mat, saveOnMemoryMaterials, materialSaveDirectory, model.Name, matIndex);
-                    modelDTO.materials.Add(assetPath);
-                    matIndex++;
+                    var dto = ToMaterialReferenceDTO(matRef);
+                    modelDTO.materialReferences.Add(dto);
+                    
+                    // 後方互換用: パスも保存
+                    modelDTO.materials.Add(dto?.assetPath ?? "");
                 }
             }
             modelDTO.currentMaterialIndex = model.CurrentMaterialIndex;
 
-            // DefaultMaterials
-            if (model.DefaultMaterials != null)
+            // DefaultMaterialReferences
+            if (model.DefaultMaterialReferences != null)
             {
-                int matIndex = 0;
-                foreach (var mat in model.DefaultMaterials)
+                foreach (var matRef in model.DefaultMaterialReferences)
                 {
-                    string assetPath = GetOrSaveMaterialPath(mat, saveOnMemoryMaterials, materialSaveDirectory, model.Name + "_Default", matIndex);
-                    modelDTO.defaultMaterials.Add(assetPath);
-                    matIndex++;
+                    var dto = ToMaterialReferenceDTO(matRef);
+                    modelDTO.defaultMaterialReferences.Add(dto);
+                    
+                    // 後方互換用: パスも保存
+                    modelDTO.defaultMaterials.Add(dto?.assetPath ?? "");
                 }
             }
             modelDTO.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
             modelDTO.autoSetDefaultMaterials = model.AutoSetDefaultMaterials;
 
             return modelDTO;
-        }
-
-        /// <summary>
-        /// マテリアルのアセットパスを取得、またはオンメモリマテリアルを保存してパスを返す
-        /// </summary>
-        /// <param name="mat">マテリアル</param>
-        /// <param name="saveOnMemory">オンメモリマテリアルを保存するか</param>
-        /// <param name="saveDirectory">保存先ディレクトリ</param>
-        /// <param name="baseName">ベース名（ファイル名生成用）</param>
-        /// <param name="index">インデックス（ファイル名生成用）</param>
-        /// <returns>アセットパス（保存できない場合は空文字列）</returns>
-        private static string GetOrSaveMaterialPath(Material mat, bool saveOnMemory, string saveDirectory, string baseName, int index)
-        {
-            if (mat == null)
-                return "";
-
-            // 既存のアセットパスを取得
-            string existingPath = AssetDatabase.GetAssetPath(mat);
-            if (!string.IsNullOrEmpty(existingPath))
-                return existingPath;
-
-            // オンメモリマテリアル
-            if (!saveOnMemory || string.IsNullOrEmpty(saveDirectory))
-                return "";
-
-            // 保存先ディレクトリを作成
-            if (!Directory.Exists(saveDirectory))
-            {
-                Directory.CreateDirectory(saveDirectory);
-                AssetDatabase.Refresh();
-            }
-
-            // ファイル名を生成（マテリアル名またはベース名+インデックス）
-            string matName = !string.IsNullOrEmpty(mat.name) ? mat.name : $"{baseName}_Mat{index}";
-            matName = SanitizeFileName(matName);
-            string savePath = Path.Combine(saveDirectory, $"{matName}.mat");
-            
-            // 重複チェック
-            int counter = 1;
-            while (File.Exists(savePath))
-            {
-                savePath = Path.Combine(saveDirectory, $"{matName}_{counter}.mat");
-                counter++;
-            }
-
-            // マテリアルをアセットとして保存
-            try
-            {
-                // 新しいマテリアルを作成（オリジナルをコピー）
-                Material newMat = new Material(mat);
-                newMat.name = Path.GetFileNameWithoutExtension(savePath);
-                
-                AssetDatabase.CreateAsset(newMat, savePath);
-                AssetDatabase.SaveAssets();
-                
-                Debug.Log($"[ModelSerializer] Saved on-memory material: {savePath}");
-                return savePath;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[ModelSerializer] Failed to save material: {e.Message}");
-                return "";
-            }
-        }
-
-        /// <summary>
-        /// ファイル名として使用できない文字を除去
-        /// </summary>
-        private static string SanitizeFileName(string name)
-        {
-            char[] invalid = Path.GetInvalidFileNameChars();
-            foreach (char c in invalid)
-            {
-                name = name.Replace(c, '_');
-            }
-            return name;
         }
 
         /// <summary>
@@ -513,46 +440,72 @@ namespace MeshFactory.Serialization
             // ================================================================
             // Materials 復元（Phase 1: モデル単位に集約）
             // ================================================================
-            if (modelDTO.materials != null && modelDTO.materials.Count > 0)
+            
+            // 新形式: materialReferences から復元（優先）
+            if (modelDTO.materialReferences != null && modelDTO.materialReferences.Count > 0)
             {
-                // 新形式: ModelData.materialPathList から復元
-                model.Materials.Clear();
-                foreach (var path in modelDTO.materials)
+                var matRefs = new List<MaterialReference>();
+                foreach (var dto in modelDTO.materialReferences)
                 {
-                    Material mat = null;
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
-                        if (mat == null)
-                        {
-                            Debug.LogWarning($"[ModelSerializer] Material not found: {path}");
-                        }
-                    }
-                    model.Materials.Add(mat);
+                    matRefs.Add(ToMaterialReference(dto));
                 }
+                model.MaterialReferences = matRefs;
                 model.CurrentMaterialIndex = modelDTO.currentMaterialIndex;
             }
+            // 旧形式: materials（パスのみ）から復元
+            else if (modelDTO.materials != null && modelDTO.materials.Count > 0)
+            {
+                var matRefs = new List<MaterialReference>();
+                foreach (var path in modelDTO.materials)
+                {
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        matRefs.Add(new MaterialReference(path));
+                    }
+                    else
+                    {
+                        matRefs.Add(new MaterialReference());
+                    }
+                }
+                model.MaterialReferences = matRefs;
+                model.CurrentMaterialIndex = modelDTO.currentMaterialIndex;
+            }
+            // 最古形式: MeshDTO.materialPathList から復元（後方互換）
             else if (modelDTO.meshDTOList.Count > 0)
             {
-                // 旧形式: 最初の MeshDTO.materialPathList から復元（後方互換）
                 var firstMeshData = modelDTO.meshDTOList[0];
                 model.Materials = ToMaterials(firstMeshData);
                 model.CurrentMaterialIndex = firstMeshData.currentMaterialIndex;
             }
 
-            // DefaultMaterials 復元
-            if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
+            // DefaultMaterialReferences 復元
+            if (modelDTO.defaultMaterialReferences != null && modelDTO.defaultMaterialReferences.Count > 0)
             {
-                model.DefaultMaterials.Clear();
+                var matRefs = new List<MaterialReference>();
+                foreach (var dto in modelDTO.defaultMaterialReferences)
+                {
+                    matRefs.Add(ToMaterialReference(dto));
+                }
+                model.DefaultMaterialReferences = matRefs;
+                model.DefaultCurrentMaterialIndex = modelDTO.defaultCurrentMaterialIndex;
+                model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;
+            }
+            // 旧形式から復元
+            else if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
+            {
+                var matRefs = new List<MaterialReference>();
                 foreach (var path in modelDTO.defaultMaterials)
                 {
-                    Material mat = null;
                     if (!string.IsNullOrEmpty(path))
                     {
-                        mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
+                        matRefs.Add(new MaterialReference(path));
                     }
-                    model.DefaultMaterials.Add(mat);
+                    else
+                    {
+                        matRefs.Add(new MaterialReference());
+                    }
                 }
+                model.DefaultMaterialReferences = matRefs;
                 model.DefaultCurrentMaterialIndex = modelDTO.defaultCurrentMaterialIndex;
                 model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;
             }
@@ -679,6 +632,116 @@ namespace MeshFactory.Serialization
             {
                 modelDTO.meshDTOList[meshIndex].selectedVertices = selectedVertices.ToList();
             }
+        }
+
+        // ================================================================
+        // MaterialReference ⇔ MaterialReferenceDTO 変換
+        // ================================================================
+
+        /// <summary>
+        /// MaterialReference → MaterialReferenceDTO
+        /// </summary>
+        public static MaterialReferenceDTO ToMaterialReferenceDTO(MaterialReference matRef)
+        {
+            if (matRef == null)
+                return MaterialReferenceDTO.Create();
+
+            var dto = new MaterialReferenceDTO
+            {
+                assetPath = matRef.AssetPath,
+                data = ToMaterialDataDTO(matRef.Data)
+            };
+
+            return dto;
+        }
+
+        /// <summary>
+        /// MaterialReferenceDTO → MaterialReference
+        /// </summary>
+        public static MaterialReference ToMaterialReference(MaterialReferenceDTO dto)
+        {
+            if (dto == null)
+                return new MaterialReference();
+
+            var matRef = new MaterialReference
+            {
+                AssetPath = dto.assetPath,
+                Data = ToMaterialData(dto.data)
+            };
+
+            return matRef;
+        }
+
+        /// <summary>
+        /// MaterialData → MaterialDataDTO
+        /// </summary>
+        public static MaterialDataDTO ToMaterialDataDTO(MaterialData data)
+        {
+            if (data == null)
+                return new MaterialDataDTO();
+
+            return new MaterialDataDTO
+            {
+                name = data.Name,
+                shaderType = data.ShaderType.ToString(),
+                baseColor = data.BaseColor,
+                baseMapPath = data.BaseMapPath,
+                metallic = data.Metallic,
+                smoothness = data.Smoothness,
+                metallicMapPath = data.MetallicMapPath,
+                normalMapPath = data.NormalMapPath,
+                normalScale = data.NormalScale,
+                occlusionMapPath = data.OcclusionMapPath,
+                occlusionStrength = data.OcclusionStrength,
+                emissionEnabled = data.EmissionEnabled,
+                emissionColor = data.EmissionColor,
+                emissionMapPath = data.EmissionMapPath,
+                surface = (int)data.Surface,
+                blendMode = (int)data.BlendMode,
+                cullMode = (int)data.CullMode,
+                alphaClipEnabled = data.AlphaClipEnabled,
+                alphaCutoff = data.AlphaCutoff
+            };
+        }
+
+        /// <summary>
+        /// MaterialDataDTO → MaterialData
+        /// </summary>
+        public static MaterialData ToMaterialData(MaterialDataDTO dto)
+        {
+            if (dto == null)
+                return new MaterialData();
+
+            var data = new MaterialData
+            {
+                Name = dto.name ?? "New Material",
+                BaseColor = dto.baseColor ?? new float[] { 1f, 1f, 1f, 1f },
+                BaseMapPath = dto.baseMapPath,
+                Metallic = dto.metallic,
+                Smoothness = dto.smoothness,
+                MetallicMapPath = dto.metallicMapPath,
+                NormalMapPath = dto.normalMapPath,
+                NormalScale = dto.normalScale,
+                OcclusionMapPath = dto.occlusionMapPath,
+                OcclusionStrength = dto.occlusionStrength,
+                EmissionEnabled = dto.emissionEnabled,
+                EmissionColor = dto.emissionColor ?? new float[] { 0f, 0f, 0f, 1f },
+                EmissionMapPath = dto.emissionMapPath,
+                Surface = (SurfaceType)dto.surface,
+                BlendMode = (BlendModeType)dto.blendMode,
+                CullMode = (CullModeType)dto.cullMode,
+                AlphaClipEnabled = dto.alphaClipEnabled,
+                AlphaCutoff = dto.alphaCutoff
+            };
+
+            // ShaderType をパース
+            if (!string.IsNullOrEmpty(dto.shaderType) && 
+                Enum.TryParse<ShaderType>(dto.shaderType, out var shaderType))
+            {
+                data.ShaderType = shaderType;
+            }
+
+            return data;
         }
     }
 }

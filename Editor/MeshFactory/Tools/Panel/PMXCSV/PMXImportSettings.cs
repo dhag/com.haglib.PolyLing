@@ -45,9 +45,9 @@ namespace MeshFactory.PMX
         [Tooltip("Z軸を反転する（PMXは右手系、Unityは左手系）")]
         public bool FlipZ = true;
 
-        /// <summary>UV V座標反転</summary>
-        [Tooltip("UV座標のV成分を反転する")]
-        public bool FlipUV_V = false;
+        /// <summary>UV V座標反転（PMX→Unity変換で通常必要）</summary>
+        [Tooltip("UV座標のV成分を反転する（PMXは上が0、Unityは下が0）")]
+        public bool FlipUV_V = true;
 
         // ================================================================
         // インポートオプション
@@ -88,14 +88,14 @@ namespace MeshFactory.PMX
             return new PMXImportSettings();
         }
 
-        /// <summary>MMD互換設定を作成（1/10スケール、Z反転）</summary>
+        /// <summary>MMD互換設定を作成（1/10スケール、Z反転、UV V反転）</summary>
         public static PMXImportSettings CreateMMDCompatible()
         {
             return new PMXImportSettings
             {
                 Scale = 0.1f,
                 FlipZ = true,
-                FlipUV_V = false
+                FlipUV_V = true
             };
         }
 
@@ -106,7 +106,7 @@ namespace MeshFactory.PMX
             {
                 Scale = 1f,
                 FlipZ = true,
-                FlipUV_V = false
+                FlipUV_V = true
             };
         }
 

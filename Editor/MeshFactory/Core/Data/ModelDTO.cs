@@ -34,13 +34,13 @@ namespace MeshFactory.Serialization
         // マテリアル（Phase 1: モデル単位に集約）
         // ================================================================
 
-        /// <summary>マテリアルリスト（アセットパス）</summary>
+        /// <summary>マテリアルリスト（アセットパス）- 後方互換用</summary>
         public List<string> materials = new List<string>();
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
         public int currentMaterialIndex = 0;
 
-        /// <summary>デフォルトマテリアルリスト（アセットパス）</summary>
+        /// <summary>デフォルトマテリアルリスト（アセットパス）- 後方互換用</summary>
         public List<string> defaultMaterials = new List<string>();
 
         /// <summary>デフォルトマテリアルインデックス</summary>
@@ -48,6 +48,16 @@ namespace MeshFactory.Serialization
 
         /// <summary>自動デフォルトマテリアル設定</summary>
         public bool autoSetDefaultMaterials = true;
+        
+        // ================================================================
+        // マテリアル（新形式：パラメータデータ込み）
+        // ================================================================
+        
+        /// <summary>マテリアル参照リスト（パス＋パラメータデータ）</summary>
+        public List<MaterialReferenceDTO> materialReferences = new List<MaterialReferenceDTO>();
+        
+        /// <summary>デフォルトマテリアル参照リスト</summary>
+        public List<MaterialReferenceDTO> defaultMaterialReferences = new List<MaterialReferenceDTO>();
 
         // === ファクトリメソッド ===
 
@@ -137,9 +147,6 @@ namespace MeshFactory.Serialization
     [Serializable]
     public class VertexDTO
     {
-        /// <summary>頂点ID（0=未設定、null可能で後方互換）</summary>
-        public int? id;
-
         /// <summary>位置 [x, y, z]</summary>
         public float[] p;
 
@@ -259,9 +266,6 @@ namespace MeshFactory.Serialization
     [Serializable]
     public class FaceDTO
     {
-        /// <summary>面ID（0=未設定、null可能で後方互換）</summary>
-        public int? id;
-
         /// <summary>頂点インデックスリスト</summary>
         public List<int> v;
 
@@ -460,5 +464,68 @@ namespace MeshFactory.Serialization
                 knifeChainMode = false
             };
         }
+    }
+
+    // ================================================================
+    // マテリアル参照データ
+    // ================================================================
+
+    /// <summary>
+    /// マテリアル参照のシリアライズ用データ
+    /// アセットパス＋パラメータデータを保持
+    /// </summary>
+    [Serializable]
+    public class MaterialReferenceDTO
+    {
+        /// <summary>マテリアルアセットのパス（あれば）</summary>
+        public string assetPath;
+        
+        /// <summary>パラメータデータ</summary>
+        public MaterialDataDTO data;
+        
+        public static MaterialReferenceDTO Create(string path = null)
+        {
+            return new MaterialReferenceDTO
+            {
+                assetPath = path,
+                data = new MaterialDataDTO()
+            };
+        }
+    }
+
+    /// <summary>
+    /// マテリアルパラメータのシリアライズ用データ
+    /// </summary>
+    [Serializable]
+    public class MaterialDataDTO
+    {
+        // 基本情報
+        public string name = "New Material";
+        public string shaderType = "URPLit";
+        
+        // ベースカラー
+        public float[] baseColor = new float[] { 1f, 1f, 1f, 1f };
+        public string baseMapPath;
+        
+        // PBRパラメータ
+        public float metallic = 0f;
+        public float smoothness = 0.5f;
+        public string metallicMapPath;
+        public string normalMapPath;
+        public float normalScale = 1f;
+        public string occlusionMapPath;
+        public float occlusionStrength = 1f;
+        
+        // エミッション
+        public bool emissionEnabled = false;
+        public float[] emissionColor = new float[] { 0f, 0f, 0f, 1f };
+        public string emissionMapPath;
+        
+        // レンダリング設定
+        public int surface = 0;        // SurfaceType
+        public int blendMode = 0;      // BlendModeType
+        public int cullMode = 1;       // CullModeType
+        public bool alphaClipEnabled = false;
+        public float alphaCutoff = 0.5f;
     }
 }

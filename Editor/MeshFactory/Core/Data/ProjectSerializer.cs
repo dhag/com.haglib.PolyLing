@@ -148,9 +148,7 @@ namespace MeshFactory.Serialization
             ModelContext model,
             string projectName,
             WorkPlaneContext workPlaneContext = null,
-            EditorStateDTO editorStateDTO = null,
-            bool saveOnMemoryMaterials = false,
-            string materialSaveDirectory = null)
+            EditorStateDTO editorStateDTO = null)
         {
             if (model == null)
                 return null;
@@ -158,7 +156,7 @@ namespace MeshFactory.Serialization
             var projectDTO = ProjectDTO.Create(projectName);
 
             // ModelDataを作成して追加
-            var modelDTO = ModelSerializer.FromModelContext(model, workPlaneContext, editorStateDTO, saveOnMemoryMaterials, materialSaveDirectory);
+            var modelDTO = ModelSerializer.FromModelContext(model, workPlaneContext, editorStateDTO);
             if (modelDTO != null)
             {
                 projectDTO.models.Add(modelDTO);
@@ -174,9 +172,7 @@ namespace MeshFactory.Serialization
             List<ModelContext> models,
             string projectName,
             List<WorkPlaneContext> workPlanes = null,
-            List<EditorStateDTO> editorStates = null,
-            bool saveOnMemoryMaterials = false,
-            string materialSaveDirectory = null)
+            List<EditorStateDTO> editorStates = null)
         {
             if (models == null || models.Count == 0)
                 return null;
@@ -191,7 +187,7 @@ namespace MeshFactory.Serialization
                 var workPlane = (workPlanes != null && i < workPlanes.Count) ? workPlanes[i] : null;
                 var editorState = (editorStates != null && i < editorStates.Count) ? editorStates[i] : null;
 
-                var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState, saveOnMemoryMaterials, materialSaveDirectory);
+                var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState);
                 if (modelDTO != null)
                 {
                     projectDTO.models.Add(modelDTO);
@@ -211,9 +207,7 @@ namespace MeshFactory.Serialization
         public static ProjectDTO FromProjectContext(
             ProjectContext project,
             List<WorkPlaneContext> workPlanes = null,
-            List<EditorStateDTO> editorStates = null,
-            bool saveOnMemoryMaterials = false,
-            string materialSaveDirectory = null)
+            List<EditorStateDTO> editorStates = null)
         {
             if (project == null)
                 return null;
@@ -228,7 +222,7 @@ namespace MeshFactory.Serialization
                 var workPlane = (workPlanes != null && i < workPlanes.Count) ? workPlanes[i] : null;
                 var editorState = (editorStates != null && i < editorStates.Count) ? editorStates[i] : null;
 
-                var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState, saveOnMemoryMaterials, materialSaveDirectory);
+                var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorState);
                 if (modelDTO != null)
                 {
                     projectDTO.models.Add(modelDTO);
@@ -317,12 +311,12 @@ namespace MeshFactory.Serialization
         /// <summary>
         /// プロジェクトにモデルを追加
         /// </summary>
-        public static void AddModel(ProjectDTO projectDTO, ModelContext model, WorkPlaneContext workPlane = null, EditorStateDTO editorStateDTO = null, bool saveOnMemoryMaterials = false, string materialSaveDirectory = null)
+        public static void AddModel(ProjectDTO projectDTO, ModelContext model, WorkPlaneContext workPlane = null, EditorStateDTO editorStateDTO = null)
         {
             if (projectDTO == null || model == null)
                 return;
 
-            var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorStateDTO, saveOnMemoryMaterials, materialSaveDirectory);
+            var modelDTO = ModelSerializer.FromModelContext(model, workPlane, editorStateDTO);
             if (modelDTO != null)
             {
                 projectDTO.models.Add(modelDTO);

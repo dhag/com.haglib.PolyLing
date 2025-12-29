@@ -528,9 +528,9 @@ public partial class SimpleMeshFactory
         }
 
         // オンメモリマテリアルを保存（オプションがONの場合）
-        if (_saveOnMemoryMaterials && _model.HasOnMemoryMaterials)
+        if (_saveOnMemoryMaterials && _model.HasOnMemoryMaterials())
         {
-            int savedCount = _model.SaveOnMemoryMaterialsAsAssets(directory, baseName);
+            int savedCount = _model.SaveOnMemoryMaterialsAsAssets(directory);
             if (savedCount > 0)
             {
                 Debug.Log($"[SaveMaterialsAsAssets] Saved {savedCount} on-memory materials as assets");

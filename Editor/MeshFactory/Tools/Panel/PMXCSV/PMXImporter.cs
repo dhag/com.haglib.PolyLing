@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using UnityEditor;
 using MeshFactory.Data;
 using MeshFactory.Model;
 using MeshFactory.Tools;
@@ -156,7 +157,7 @@ namespace MeshFactory.PMX
             {
                 foreach (var pmxMat in document.Materials)
                 {
-                    var mat = ConvertMaterial(pmxMat, settings);
+                    var mat = ConvertMaterial(pmxMat, document, settings);
                     result.Materials.Add(mat);
                 }
             }
@@ -714,7 +715,7 @@ namespace MeshFactory.PMX
         // マテリアル変換
         // ================================================================
 
-        private static Material ConvertMaterial(PMXMaterial pmxMat, PMXImportSettings settings)
+        private static Material ConvertMaterial(PMXMaterial pmxMat, PMXDocument document, PMXImportSettings settings)
         {
             Shader shader = FindBestShader();
             var material = new Material(shader);
@@ -732,7 +733,135 @@ namespace MeshFactory.PMX
                 material.SetFloat("_Smoothness", smoothness);
             }
 
+            // テクスチャを設定
+            string baseDir = GetBaseDirectory(document.FilePath);
+
+            // メインテクスチャ（BaseMap）
+            if (!string.IsNullOrEmpty(pmxMat.TexturePath))
+            {
+                var texture = LoadTexture(pmxMat.TexturePath, baseDir);
+                if (texture != null)
+                {
+                    SetMaterialTexture(material, "_BaseMap", "_MainTex", texture);
+                    Debug.Log($"[PMXImporter] Loaded texture: {pmxMat.TexturePath}");
+                }
+            }
+
+            // スフィアテクスチャ（使用する場合）
+            // TODO: スフィアマップ対応（必要に応じて）
+
             return material;
+        }
+
+        /// <summary>
+        /// CSVファイルのディレクトリを取得
+        /// </summary>
+        private static string GetBaseDirectory(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return "";
+
+            return Path.GetDirectoryName(filePath);
+        }
+
+        /// <summary>
+        /// テクスチャを読み込み
+        /// </summary>
+        private static Texture2D LoadTexture(string texturePath, string baseDir)
+        {
+            if (string.IsNullOrEmpty(texturePath))
+                return null;
+
+            // パス区切り文字を正規化（\ → /）
+            string normalizedPath = texturePath.Replace('\\', '/');
+            string normalizedBaseDir = baseDir?.Replace('\\', '/') ?? "";
+
+            // アセットパスを構築
+            string assetPath;
+
+            if (Path.IsPathRooted(normalizedPath))
+            {
+                // 絶対パスの場合
+                assetPath = normalizedPath;
+            }
+            else
+            {
+                // 相対パスの場合 → baseDirからの相対パス
+                if (!string.IsNullOrEmpty(normalizedBaseDir))
+                {
+                    assetPath = Path.Combine(normalizedBaseDir, normalizedPath).Replace('\\', '/');
+                }
+                else
+                {
+                    assetPath = normalizedPath;
+                }
+            }
+
+            // Assets/から始まるように正規化
+            if (!assetPath.StartsWith("Assets/"))
+            {
+                // Assetsの位置を探す
+                int assetsIdx = assetPath.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
+                if (assetsIdx >= 0)
+                {
+                    assetPath = assetPath.Substring(assetsIdx + 1); // "/Assets/" の "/" を除去
+                }
+                else
+                {
+                    assetsIdx = assetPath.IndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
+                    if (assetsIdx > 0)
+                    {
+                        assetPath = assetPath.Substring(assetsIdx);
+                    }
+                }
+            }
+
+            // テクスチャを読み込み
+            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+
+            if (texture == null)
+            {
+                // パスが見つからない場合、ファイル名で検索
+                string fileName = Path.GetFileName(normalizedPath);
+                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+
+                string[] guids = AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}");
+                foreach (var guid in guids)
+                {
+                    string foundPath = AssetDatabase.GUIDToAssetPath(guid);
+                    if (Path.GetFileName(foundPath).Equals(fileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        texture = AssetDatabase.LoadAssetAtPath<Texture2D>(foundPath);
+                        if (texture != null)
+                        {
+                            Debug.Log($"[PMXImporter] Texture found by name: {foundPath}");
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (texture == null)
+            {
+                Debug.LogWarning($"[PMXImporter] Texture not found: {assetPath} (original: {texturePath})");
+            }
+
+            return texture;
+        }
+
+        /// <summary>
+        /// マテリアルにテクスチャを設定
+        /// </summary>
+        private static void SetMaterialTexture(Material material, string urpPropertyName, string standardPropertyName, Texture texture)
+        {
+            if (material.HasProperty(urpPropertyName))
+            {
+                material.SetTexture(urpPropertyName, texture);
+            }
+            if (material.HasProperty(standardPropertyName))
+            {
+                material.SetTexture(standardPropertyName, texture);
+            }
         }
 
         private static Shader FindBestShader()
