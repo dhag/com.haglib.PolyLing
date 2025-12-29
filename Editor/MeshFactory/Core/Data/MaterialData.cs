@@ -20,6 +20,7 @@ namespace MeshFactory.Materials
         Unknown           // 非対応（フォールバック）
     }
 
+    /// <summary>
     /// サーフェスタイプ
     /// </summary>
     public enum SurfaceType
