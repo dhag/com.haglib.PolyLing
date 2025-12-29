@@ -355,6 +355,20 @@ namespace MeshFactory.Tools
             }
             EditorGUILayout.EndHorizontal();
 
+            // ExportAsSkinned（Foldout外に配置、常に表示）
+            EditorGUI.indentLevel++;
+            bool newExportAsSkinned = EditorGUILayout.Toggle(
+                L.Get("ExportAsSkinned"),
+                settings.ExportAsSkinned
+            );
+            if (newExportAsSkinned != settings.ExportAsSkinned)
+            {
+                settings.ExportAsSkinned = newExportAsSkinned;
+                changed = true;
+                changeDescription = newExportAsSkinned ? "Enable Export As Skinned" : "Disable Export As Skinned";
+            }
+            EditorGUI.indentLevel--;
+
             // === 展開時のコンテンツ ===
             if (settings.IsExpanded)
             {
@@ -425,19 +439,6 @@ namespace MeshFactory.Tools
                     EditorGUI.indentLevel--;
                 }
                 EditorGUI.EndDisabledGroup();
-
-                // ExportAsSkinned（UseLocalTransformとは独立）
-                EditorGUILayout.Space(2);
-                bool newExportAsSkinned = EditorGUILayout.Toggle(
-                    L.Get("ExportAsSkinned"),
-                    settings.ExportAsSkinned
-                );
-                if (newExportAsSkinned != settings.ExportAsSkinned)
-                {
-                    settings.ExportAsSkinned = newExportAsSkinned;
-                    changed = true;
-                    changeDescription = newExportAsSkinned ? "Enable Export As Skinned" : "Disable Export As Skinned";
-                }
 
                 EditorGUILayout.Space(4);
 

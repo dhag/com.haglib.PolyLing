@@ -342,16 +342,27 @@ public partial class SimpleMeshFactory : EditorWindow
     {
         if (_model == null || materials == null) return;
         
-        // 初期状態（null のみ）の場合はクリアしてから追加
-        if (_model.Materials.Count == 1 && _model.Materials[0] == null)
+        // ★重要: 直接List操作ではなく、新しいリストを作成してsetterで設定
+        var currentMaterials = _model.Materials;
+        var newList = new List<Material>();
+        
+        // 初期状態（null のみ）の場合は既存をスキップ
+        bool skipExisting = (currentMaterials.Count == 1 && currentMaterials[0] == null);
+        
+        if (!skipExisting)
         {
-            _model.Materials.Clear();
+            foreach (var mat in currentMaterials)
+            {
+                newList.Add(mat);
+            }
         }
         
         foreach (var mat in materials)
         {
-            _model.Materials.Add(mat);
+            newList.Add(mat);
         }
+        
+        _model.Materials = newList;  // setterを使用
         
         // 最後のレコードに NewMaterials を設定（Undo/Redo用）
         _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);
@@ -363,18 +374,23 @@ public partial class SimpleMeshFactory : EditorWindow
     private void ReplaceMaterialsInModel(IList<Material> materials)
     {
         if (_model == null) return;
-        _model.Materials.Clear();
+        
+        // ★重要: 直接List操作ではなく、新しいリストを作成してsetterで設定
+        // （Materialsプロパティのgetterが新しいリストを返す可能性があるため）
+        var newList = new List<Material>();
         if (materials != null)
         {
             foreach (var mat in materials)
             {
-                _model.Materials.Add(mat);
+                newList.Add(mat);
             }
         }
-        if (_model.Materials.Count == 0)
+        if (newList.Count == 0)
         {
-            _model.Materials.Add(null);  // 少なくとも1つ
+            newList.Add(null);  // 少なくとも1つ
         }
+        
+        _model.Materials = newList;  // setterを使用
         
         // 最後のレコードに NewMaterials を設定（Undo/Redo用）
         _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);

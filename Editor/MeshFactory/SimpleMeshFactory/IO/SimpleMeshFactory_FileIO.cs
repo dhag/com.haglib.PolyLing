@@ -236,14 +236,40 @@ public partial class SimpleMeshFactory
         if (_model.Materials.Count > 0)
         {
             var result = new Material[_model.Materials.Count];
+
+            // オンメモリマテリアル保存用のディレクトリ
+            string saveDir = null;
+            if (_saveOnMemoryMaterials)
+            {
+                string modelName = SanitizeFileName(_model.Name ?? "Model");
+                saveDir = $"Assets/SavedMaterials/{modelName}";
+            }
+
             for (int i = 0; i < _model.Materials.Count; i++)
             {
                 var srcMat = _model.Materials[i];
                 if (srcMat != null)
                 {
                     // マテリアルをコピー
-                    result[i] = new Material(srcMat);
-                    result[i].name = srcMat.name;
+                    var copiedMat = new Material(srcMat);
+                    copiedMat.name = srcMat.name;
+
+                    // オンメモリマテリアルの保存処理（コピー後のマテリアルを保存）
+                    if (_saveOnMemoryMaterials)
+                    {
+                        string existingPath = AssetDatabase.GetAssetPath(srcMat);
+                        if (string.IsNullOrEmpty(existingPath))
+                        {
+                            // コピーしたマテリアルをアセットとして保存
+                            var savedMat = SaveOnMemoryMaterial(copiedMat, saveDir, i);
+                            if (savedMat != null)
+                            {
+                                copiedMat = savedMat;
+                            }
+                        }
+                    }
+
+                    result[i] = copiedMat;
                 }
                 else
                 {
@@ -261,6 +287,66 @@ public partial class SimpleMeshFactory
             return result;
         }
         return new Material[] { GetOrCreateDefaultMaterial() };
+    }
+
+    /// <summary>
+    /// オンメモリマテリアルをアセットとして保存
+    /// </summary>
+    private Material SaveOnMemoryMaterial(Material mat, string saveDir, int index)
+    {
+        if (mat == null || string.IsNullOrEmpty(saveDir))
+            return mat;
+
+        try
+        {
+            // ディレクトリを作成
+            if (!System.IO.Directory.Exists(saveDir))
+            {
+                System.IO.Directory.CreateDirectory(saveDir);
+                AssetDatabase.Refresh();
+            }
+
+            // ファイル名を生成
+            string matName = !string.IsNullOrEmpty(mat.name) ? mat.name : $"Material_{index}";
+            matName = SanitizeFileName(matName);
+            string savePath = $"{saveDir}/{matName}.mat";
+
+            // 重複チェック
+            int counter = 1;
+            while (AssetDatabase.LoadAssetAtPath<Material>(savePath) != null)
+            {
+                savePath = $"{saveDir}/{matName}_{counter}.mat";
+                counter++;
+            }
+
+            // 新しいマテリアルを作成して保存
+            Material newMat = new Material(mat);
+            newMat.name = System.IO.Path.GetFileNameWithoutExtension(savePath);
+
+            AssetDatabase.CreateAsset(newMat, savePath);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"[SaveOnMemoryMaterial] Saved: {savePath}");
+            return newMat;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[SaveOnMemoryMaterial] Failed: {e.Message}");
+            return mat;
+        }
+    }
+
+    /// <summary>
+    /// ファイル名として使用できない文字を除去
+    /// </summary>
+    private string SanitizeFileName(string name)
+    {
+        char[] invalid = System.IO.Path.GetInvalidFileNameChars();
+        foreach (char c in invalid)
+        {
+            name = name.Replace(c, '_');
+        }
+        return name;
     }
 
     /// <summary>

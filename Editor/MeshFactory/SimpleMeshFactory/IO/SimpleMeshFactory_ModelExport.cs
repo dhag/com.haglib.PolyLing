@@ -43,11 +43,20 @@ public partial class SimpleMeshFactory
 
         // === 通常の MeshRenderer エクスポート ===
 
-        // 選択中のオブジェクトを親として取得
-        Transform existingParent = null;
+        // 選択中のオブジェクトを親として取得、なければ空のルートを作成
+        Transform rootParent = null;
+        GameObject createdRoot = null;
         if (Selection.gameObjects.Length > 0)
         {
-            existingParent = Selection.gameObjects[0].transform;
+            rootParent = Selection.gameObjects[0].transform;
+        }
+        else
+        {
+            // 選択がない場合は空のルートオブジェクトを作成
+            string rootName = !string.IsNullOrEmpty(_model.Name) ? _model.Name : "Model";
+            createdRoot = new GameObject(rootName);
+            rootParent = createdRoot.transform;
+            Undo.RegisterCreatedObjectUndo(createdRoot, $"Create {rootName}");
         }
 
         // 共有マテリアル配列を取得
@@ -82,7 +91,7 @@ public partial class SimpleMeshFactory
                 }
                 else
                 {
-                    meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.Materials.Count > 0 ? _model.Materials.Count : meshContext.MeshObject.SubMeshCount);
+                    meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.MaterialCount > 0 ? _model.MaterialCount : meshContext.MeshObject.SubMeshCount);
                     materialsToUse = sharedMaterials;
                 }
                 meshCopy.name = meshContext.Name;
@@ -137,11 +146,7 @@ public partial class SimpleMeshFactory
             else
             {
                 // ルートオブジェクト（HierarchyParentIndex == -1 または無効な参照）
-                if (existingParent != null)
-                {
-                    go.transform.SetParent(existingParent, false);
-                }
-                // else: シーンルートに配置
+                go.transform.SetParent(rootParent, false);
 
                 if (firstRootObject == null)
                 {
@@ -165,11 +170,12 @@ public partial class SimpleMeshFactory
             Undo.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
         }
 
-        // 最初のルートオブジェクトを選択
-        if (firstRootObject != null)
+        // 作成したルートオブジェクト、または最初のルートオブジェクトを選択
+        GameObject objectToSelect = createdRoot ?? firstRootObject;
+        if (objectToSelect != null)
         {
-            Selection.activeGameObject = firstRootObject;
-            EditorGUIUtility.PingObject(firstRootObject);
+            Selection.activeGameObject = objectToSelect;
+            EditorGUIUtility.PingObject(objectToSelect);
         }
 
         Debug.Log($"Added model to hierarchy: {_meshContextList.Count} objects (with hierarchy structure)");
@@ -184,11 +190,20 @@ public partial class SimpleMeshFactory
         if (_meshContextList.Count == 0)
             return;
 
-        // 選択中のオブジェクトを親として取得
-        Transform existingParent = null;
+        // 選択中のオブジェクトを親として取得、なければ空のルートを作成
+        Transform rootParent = null;
+        GameObject createdRoot = null;
         if (Selection.gameObjects.Length > 0)
         {
-            existingParent = Selection.gameObjects[0].transform;
+            rootParent = Selection.gameObjects[0].transform;
+        }
+        else
+        {
+            // 選択がない場合は空のルートオブジェクトを作成
+            string rootName = !string.IsNullOrEmpty(_model.Name) ? _model.Name : "Model";
+            createdRoot = new GameObject(rootName);
+            rootParent = createdRoot.transform;
+            Undo.RegisterCreatedObjectUndo(createdRoot, $"Create {rootName}");
         }
 
         // 共有マテリアル配列を取得
@@ -223,10 +238,8 @@ public partial class SimpleMeshFactory
             }
             else
             {
-                if (existingParent != null)
-                {
-                    go.transform.SetParent(existingParent, false);
-                }
+                // ルートオブジェクトはrootParentの子に
+                go.transform.SetParent(rootParent, false);
 
                 if (firstRootObject == null)
                 {
@@ -285,7 +298,7 @@ public partial class SimpleMeshFactory
             }
             else
             {
-                meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.Materials.Count > 0 ? _model.Materials.Count : meshContext.MeshObject.SubMeshCount);
+                meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.MaterialCount > 0 ? _model.MaterialCount : meshContext.MeshObject.SubMeshCount);
                 materialsToUse = sharedMaterials;
             }
             meshCopy.name = meshContext.Name;
@@ -320,11 +333,12 @@ public partial class SimpleMeshFactory
             SetupSkinnedMeshRenderer(go, meshCopy, bones, bindPoses, materialsToUse);
         }
 
-        // 最初のルートオブジェクトを選択
-        if (firstRootObject != null)
+        // 作成したルートオブジェクト、または最初のルートオブジェクトを選択
+        GameObject objectToSelect = createdRoot ?? firstRootObject;
+        if (objectToSelect != null)
         {
-            Selection.activeGameObject = firstRootObject;
-            EditorGUIUtility.PingObject(firstRootObject);
+            Selection.activeGameObject = objectToSelect;
+            EditorGUIUtility.PingObject(objectToSelect);
         }
 
         Debug.Log($"Added model to hierarchy as SkinnedMesh: {_meshContextList.Count} bones");
@@ -354,8 +368,8 @@ public partial class SimpleMeshFactory
         string directory = System.IO.Path.GetDirectoryName(path);
         string baseName = System.IO.Path.GetFileNameWithoutExtension(path);
 
-        // 共有マテリアル配列を取得
-        Material[] sharedMaterials = GetMaterialsForSave(null);
+        // 共有マテリアル配列を取得してアセットとして保存
+        Material[] sharedMaterials = SaveMaterialsAsAssets(directory, baseName);
 
         // GameObjectをインデックス順に作成（親子関係設定のため）
         var createdObjects = new GameObject[_meshContextList.Count];
@@ -382,7 +396,7 @@ public partial class SimpleMeshFactory
                 }
                 else
                 {
-                    meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.Materials.Count > 0 ? _model.Materials.Count : meshContext.MeshObject.SubMeshCount);
+                    meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.MaterialCount > 0 ? _model.MaterialCount : meshContext.MeshObject.SubMeshCount);
                 }
                 meshCopy.name = meshContext.Name;
 
@@ -502,6 +516,39 @@ public partial class SimpleMeshFactory
     }
 
     /// <summary>
+    /// マテリアルをアセットとして保存し、保存されたマテリアル配列を返す
+    /// オンメモリマテリアルは_saveOnMemoryMaterialsがtrueの場合のみ保存
+    /// </summary>
+    private Material[] SaveMaterialsAsAssets(string directory, string baseName)
+    {
+        var materialRefs = _model.MaterialReferences;
+        if (materialRefs.Count == 0)
+        {
+            return new Material[] { GetOrCreateDefaultMaterial() };
+        }
+
+        // オンメモリマテリアルを保存（オプションがONの場合）
+        if (_saveOnMemoryMaterials && _model.HasOnMemoryMaterials)
+        {
+            int savedCount = _model.SaveOnMemoryMaterialsAsAssets(directory, baseName);
+            if (savedCount > 0)
+            {
+                Debug.Log($"[SaveMaterialsAsAssets] Saved {savedCount} on-memory materials as assets");
+            }
+        }
+
+        // マテリアル配列を構築
+        var result = new Material[materialRefs.Count];
+        for (int i = 0; i < materialRefs.Count; i++)
+        {
+            var matRef = materialRefs[i];
+            result[i] = matRef?.Material ?? GetOrCreateDefaultMaterial();
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// モデル全体のメッシュアセットを保存
     /// </summary>
     private void SaveModelMeshAssets()
@@ -545,7 +592,7 @@ public partial class SimpleMeshFactory
             }
             else
             {
-                meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.Materials.Count > 0 ? _model.Materials.Count : meshContext.MeshObject.SubMeshCount);
+                meshCopy = meshContext.MeshObject.ToUnityMeshShared(_model.MaterialCount > 0 ? _model.MaterialCount : meshContext.MeshObject.SubMeshCount);
             }
             meshCopy.name = meshContext.Name;
 

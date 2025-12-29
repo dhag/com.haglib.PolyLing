@@ -107,19 +107,52 @@ namespace MeshFactory.Model
         public WorkPlaneContext WorkPlane { get; set; }
         
         // ================================================================
-        // Materials（モデル単位で実データを保持）
+        // Materials（モデル単位でMaterialReferenceリストを保持）
         // ================================================================
         
-        private List<Material> _materials = new List<Material> { null };
+        private List<MaterialReference> _materialReferences = new List<MaterialReference> { new MaterialReference() };
         private int _currentMaterialIndex = 0;
         
         /// <summary>
-        /// マテリアルリスト（モデル単位で保持）
+        /// マテリアル参照リスト（モデル単位で保持）
+        /// </summary>
+        public List<MaterialReference> MaterialReferences
+        {
+            get => _materialReferences;
+            set => _materialReferences = value ?? new List<MaterialReference> { new MaterialReference() };
+        }
+        
+        /// <summary>
+        /// マテリアルリスト（後方互換用）
+        /// 取得時はMaterialReferenceからMaterialを取得
+        /// 設定時はMaterialReferenceに変換
         /// </summary>
         public List<Material> Materials
         {
-            get => _materials;
-            set => _materials = value ?? new List<Material> { null };
+            get
+            {
+                var result = new List<Material>();
+                foreach (var matRef in _materialReferences)
+                {
+                    result.Add(matRef?.Material);
+                }
+                return result;
+            }
+            set
+            {
+                _materialReferences.Clear();
+                if (value == null || value.Count == 0)
+                {
+                    _materialReferences.Add(new MaterialReference());
+                }
+                else
+                {
+                    foreach (var mat in value)
+                    {
+                        _materialReferences.Add(new MaterialReference(mat));
+                    }
+                }
+            }
         }
         
         /// <summary>
@@ -129,6 +162,134 @@ namespace MeshFactory.Model
         {
             get => _currentMaterialIndex;
             set => _currentMaterialIndex = value;
+        }
+        
+        /// <summary>
+        /// 指定インデックスのマテリアルを取得
+        /// </summary>
+        public Material GetMaterial(int index)
+        {
+            if (index < 0 || index >= _materialReferences.Count)
+                return null;
+            return _materialReferences[index]?.Material;
+        }
+        
+        /// <summary>
+        /// 指定インデックスのマテリアル参照を取得
+        /// </summary>
+        public MaterialReference GetMaterialReference(int index)
+        {
+            if (index < 0 || index >= _materialReferences.Count)
+                return null;
+            return _materialReferences[index];
+        }
+        
+        /// <summary>
+        /// オンメモリマテリアルがあるか
+        /// </summary>
+        public bool HasOnMemoryMaterials
+        {
+            get
+            {
+                foreach (var matRef in _materialReferences)
+                {
+                    if (matRef != null && matRef.IsOnMemory)
+                        return true;
+                }
+                return false;
+            }
+        }
+        
+        /// <summary>
+        /// 全てのオンメモリマテリアルをアセットとして保存
+        /// </summary>
+        /// <param name="directory">保存先ディレクトリ</param>
+        /// <param name="baseName">ベースファイル名</param>
+        /// <returns>保存したマテリアル数</returns>
+        public int SaveOnMemoryMaterialsAsAssets(string directory, string baseName)
+        {
+            int savedCount = 0;
+            for (int i = 0; i < _materialReferences.Count; i++)
+            {
+                var matRef = _materialReferences[i];
+                if (matRef != null && matRef.IsOnMemory)
+                {
+                    string fileName = $"{baseName}_mat{i}_{matRef.Name ?? "Material"}";
+                    if (matRef.SaveAsAsset(directory, fileName))
+                    {
+                        savedCount++;
+                    }
+                }
+            }
+            return savedCount;
+        }
+        
+        // ================================================================
+        // マテリアル操作ヘルパー（後方互換用）
+        // ================================================================
+        
+        /// <summary>
+        /// マテリアルリストをクリア
+        /// </summary>
+        public void ClearMaterials()
+        {
+            _materialReferences.Clear();
+        }
+        
+        /// <summary>
+        /// マテリアルを追加
+        /// </summary>
+        public void AddMaterial(Material mat)
+        {
+            _materialReferences.Add(new MaterialReference(mat));
+        }
+        
+        /// <summary>
+        /// マテリアルリストを一括設定（クリアしてから追加）
+        /// </summary>
+        public void SetMaterials(IEnumerable<Material> materials)
+        {
+            _materialReferences.Clear();
+            if (materials == null)
+            {
+                _materialReferences.Add(new MaterialReference());
+                return;
+            }
+            
+            foreach (var mat in materials)
+            {
+                _materialReferences.Add(new MaterialReference(mat));
+            }
+            
+            if (_materialReferences.Count == 0)
+            {
+                _materialReferences.Add(new MaterialReference());
+            }
+        }
+        
+        /// <summary>
+        /// 指定インデックスのマテリアルを設定
+        /// </summary>
+        public void SetMaterial(int index, Material mat)
+        {
+            if (index < 0 || index >= _materialReferences.Count)
+                return;
+            _materialReferences[index] = new MaterialReference(mat);
+        }
+        
+        /// <summary>
+        /// マテリアル数
+        /// </summary>
+        public int MaterialCount => _materialReferences.Count;
+        
+        /// <summary>
+        /// 指定インデックスのマテリアルを削除
+        /// </summary>
+        public void RemoveMaterialAt(int index)
+        {
+            if (index < 0 || index >= _materialReferences.Count)
+                return;
+            _materialReferences.RemoveAt(index);
         }
         
         // ================================================================

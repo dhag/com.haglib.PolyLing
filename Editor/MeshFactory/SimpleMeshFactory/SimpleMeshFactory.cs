@@ -119,6 +119,9 @@ public partial class SimpleMeshFactory : EditorWindow
     [SerializeField]
     private bool _mirrorFlipU = true;  // ベイク時にUV U反転
 
+    [SerializeField]
+    private bool _saveOnMemoryMaterials = true;  // オンメモリマテリアルをアセットとして保存
+
 
 
     // ================================================================
@@ -162,6 +165,7 @@ public partial class SimpleMeshFactory : EditorWindow
     // UIフォールドアウト状態
     private bool _foldDisplay = true;
     private bool _foldPrimitive = true;
+    private bool _foldMaterials = false;  // 材質パネル（デフォルト閉じ）
 
     // ペイン幅
     private float _leftPaneWidth = 320f;
@@ -827,7 +831,7 @@ public partial class SimpleMeshFactory : EditorWindow
             {
                 // Undo/Redo後にUIを再描画
                 var parentModel = _undoController?.MeshUndoContext?.MaterialOwner;
-                Debug.Log($"[SimpleMeshFactory.OnGUI] After Undo/Redo: _model.Materials.Count={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
+                Debug.Log($"[SimpleMeshFactory.OnGUI] After Undo/Redo: _model.MaterialCount={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
                 Debug.Log($"[SimpleMeshFactory.OnGUI] _model==MaterialOwner? {ReferenceEquals(_model, parentModel)}, _model.Hash={_model?.GetHashCode()}, MaterialOwner.Hash={parentModel?.GetHashCode()}");
                 Repaint();
             }

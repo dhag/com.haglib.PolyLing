@@ -161,6 +161,19 @@ public partial class SimpleMeshFactory
                 EditorGUI.indentLevel--;
             }
 
+            // ================================================================
+            // オンメモリマテリアル保存オプション（オンメモリマテリアルがある場合のみ表示）
+            // ================================================================
+            if (_model.HasOnMemoryMaterials)
+            {
+                EditorGUI.BeginChangeCheck();
+                bool newSaveOnMemoryMaterials = EditorGUILayout.Toggle(L.Get("SaveOnMemoryMaterials"), _saveOnMemoryMaterials);
+                if (EditorGUI.EndChangeCheck() && newSaveOnMemoryMaterials != _saveOnMemoryMaterials)
+                {
+                    _saveOnMemoryMaterials = newSaveOnMemoryMaterials;
+                }
+            }
+
             EditorGUILayout.Space(2);
 
             // ================================================================
@@ -239,10 +252,14 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void DrawMaterialUI(MeshContext meshContext)
     {
-        EditorGUILayout.LabelField("Materials", EditorStyles.miniBoldLabel);
+        _foldMaterials = DrawFoldoutWithUndo("Materials", "Materials", false);
+        if (!_foldMaterials)
+            return;
+
+        EditorGUI.indentLevel++;
 
         // マテリアルリスト表示
-        for (int i = 0; i < _model.Materials.Count; i++)
+        for (int i = 0; i < _model.MaterialCount; i++)
         {
             EditorGUILayout.BeginHorizontal();
 
@@ -262,7 +279,7 @@ public partial class SimpleMeshFactory
             // マテリアルフィールド
             EditorGUI.BeginChangeCheck();
             Material newMat = (Material)EditorGUILayout.ObjectField(
-                _model.Materials[i],
+                _model.GetMaterial(i),
                 typeof(Material),
                 false);
             if (EditorGUI.EndChangeCheck())
@@ -270,7 +287,7 @@ public partial class SimpleMeshFactory
                 // Undo用スナップショット（変更前）
                 MeshObjectSnapshot beforeSnapshot = _undoController?.CaptureMeshObjectSnapshot();
 
-                _model.Materials[i] = newMat;
+                _model.SetMaterial(i, newMat);
                 SyncMaterialsToUndoContext(meshContext);
 
                 // Undo記録
@@ -278,7 +295,7 @@ public partial class SimpleMeshFactory
             }
 
             // 削除ボタン（最後の1つは削除不可）
-            EditorGUI.BeginDisabledGroup(_model.Materials.Count <= 1);
+            EditorGUI.BeginDisabledGroup(_model.MaterialCount <= 1);
             if (GUILayout.Button("×", GUILayout.Width(20)))
             {
                 RemoveMaterialSlot(meshContext, i);
@@ -295,8 +312,8 @@ public partial class SimpleMeshFactory
             // Undo用スナップショット（変更前）
             var beforeSnapshot = _undoController?.CaptureMeshObjectSnapshot();
 
-            _model.Materials.Add(null);
-            _model.CurrentMaterialIndex = _model.Materials.Count - 1;
+            _model.AddMaterial(null);
+            _model.CurrentMaterialIndex = _model.MaterialCount - 1;
             SyncMaterialsToUndoContext(meshContext);
 
             // Undo記録
@@ -339,6 +356,8 @@ public partial class SimpleMeshFactory
 
         // 選択面へのマテリアル適用UI
         DrawApplyMaterialToSelectionUI(meshContext);
+
+        EditorGUI.indentLevel--;
     }
 
     /// <summary>
@@ -395,7 +414,7 @@ public partial class SimpleMeshFactory
             return;
 
         // マテリアルインデックスの範囲チェック
-        if (materialIndex < 0 || materialIndex >= _model.Materials.Count)
+        if (materialIndex < 0 || materialIndex >= _model.MaterialCount)
             return;
 
         // Undo用スナップショット
@@ -439,10 +458,10 @@ public partial class SimpleMeshFactory
     private void RemoveMaterialSlot(MeshContext meshContext, int index)
     {
         // 最後の1つは削除不可
-        if (_model.Materials.Count <= 1)
+        if (_model.MaterialCount <= 1)
             return;
 
-        if (index < 0 || index >= _model.Materials.Count)
+        if (index < 0 || index >= _model.MaterialCount)
             return;
 
         // Undo用スナップショット（変更前）
@@ -466,12 +485,12 @@ public partial class SimpleMeshFactory
             }
         }
 
-        _model.Materials.RemoveAt(index);
+        _model.RemoveMaterialAt(index);
 
         // CurrentMaterialIndexの調整
-        if (_model.CurrentMaterialIndex >= _model.Materials.Count)
+        if (_model.CurrentMaterialIndex >= _model.MaterialCount)
         {
-            _model.CurrentMaterialIndex = _model.Materials.Count - 1;
+            _model.CurrentMaterialIndex = _model.MaterialCount - 1;
         }
         else if (_model.CurrentMaterialIndex > index)
         {
@@ -647,20 +666,20 @@ public partial class SimpleMeshFactory
                             if (obj is Material mat)
                             {
                                 // 既存スロットにないか確認（重複防止はオプション）
-                                _model.Materials.Add(mat);
+                                _model.AddMaterial(mat);
                                 addedCount++;
                             }
                         }
 
                         if (addedCount > 0)
                         {
-                            _model.CurrentMaterialIndex = _model.Materials.Count - 1;
+                            _model.CurrentMaterialIndex = _model.MaterialCount - 1;
                             SyncMaterialsToUndoContext(meshContext);
 
                             // Undo記録
                             RecordMaterialChange(beforeSnapshot, $"Add {addedCount} Material(s)");
 
-                            Debug.Log($"[MaterialUI] Added {addedCount} material(s). Total slots: {_model.Materials.Count}");
+                            Debug.Log($"[MaterialUI] Added {addedCount} material(s). Total slots: {_model.MaterialCount}");
                             Repaint();
                         }
                     }
@@ -706,7 +725,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void SetCurrentMaterialsAsDefault(MeshContext meshContext)
     {
-        if (meshContext == null || _model.Materials == null)
+        if (meshContext == null || _model.MaterialCount == 0)
             return;
 
         // Undo用スナップショット（変更前）
@@ -758,7 +777,7 @@ public partial class SimpleMeshFactory
     /// </summary>
     private void AutoUpdateDefaultMaterials(MeshContext meshContext)
     {
-        if (!_autoSetDefaultMaterials || meshContext == null || _model.Materials == null)
+        if (!_autoSetDefaultMaterials || meshContext == null || _model.MaterialCount == 0)
             return;
 
         _defaultMaterials = new List<Material>(_model.Materials);

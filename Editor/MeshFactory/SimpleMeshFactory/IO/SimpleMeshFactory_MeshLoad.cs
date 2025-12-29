@@ -191,8 +191,7 @@ public partial class SimpleMeshFactory
         }
 
         // モデルのマテリアルを設定
-        _model.Materials.Clear();
-        _model.Materials.AddRange(allMaterials);
+        _model.SetMaterials(allMaterials);
         _model.CurrentMaterialIndex = 0;
 
         // 各GameObjectからMeshContextを作成
@@ -335,7 +334,7 @@ public partial class SimpleMeshFactory
         // OriginalPositionsとUnityMeshを設定
         meshContext.OriginalPositions = meshContext.MeshObject.Vertices
             .Select(v => v.Position).ToArray();
-        meshContext.UnityMesh = meshContext.MeshObject.ToUnityMeshShared();
+        meshContext.UnityMesh = meshContext.MeshObject.ToUnityMesh();
         meshContext.UnityMesh.name = go.name;
 
         return meshContext;
@@ -399,18 +398,14 @@ public partial class SimpleMeshFactory
         if (materials != null && materials.Length > 0)
         {
             // 引数で指定されたマテリアルを使用（読み込み元のマテリアル）
-            _model.Materials.Clear();
-            foreach (var mat in materials)
-            {
-                _model.Materials.Add(mat);
-            }
+            _model.SetMaterials(materials);
             // 引数指定の場合はCurrentMaterialIndexは0のまま、FaceのMaterialIndexもそのまま
         }
         else if (_defaultMaterials != null && _defaultMaterials.Count > 0)
         {
             // デフォルトマテリアルをコピー
-            _model.Materials = new List<Material>(_defaultMaterials);
-            _model.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, _model.Materials.Count - 1);
+            _model.SetMaterials(_defaultMaterials);
+            _model.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, _model.MaterialCount - 1);
 
             // 全FaceにカレントマテリアルIndexを適用
             if (meshContext.MeshObject != null && _model.CurrentMaterialIndex > 0)
@@ -423,7 +418,7 @@ public partial class SimpleMeshFactory
         }
 
         // 表示用Unity Meshを作成（MaterialIndex適用後）
-        Mesh displayMesh = meshContext.MeshObject.ToUnityMeshShared();
+        Mesh displayMesh = meshContext.MeshObject.ToUnityMesh();
         displayMesh.name = name;
         displayMesh.hideFlags = HideFlags.HideAndDontSave;
         meshContext.UnityMesh = displayMesh;

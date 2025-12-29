@@ -730,9 +730,9 @@ public partial class SimpleMeshFactory
         for (int i = 0; i < subMeshCount; i++)
         {
             Material mat = null;
-            if (meshContext != null && i < _model.Materials.Count)
+            if (meshContext != null && i < _model.MaterialCount)
             {
-                mat = _model.Materials[i];
+                mat = _model.GetMaterial(i);
             }
 
             if (mat == null)

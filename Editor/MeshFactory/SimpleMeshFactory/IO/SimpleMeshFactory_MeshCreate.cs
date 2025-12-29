@@ -50,8 +50,8 @@ public partial class SimpleMeshFactory
         // デフォルトマテリアルをコピー
         if (_defaultMaterials != null && _defaultMaterials.Count > 0)
         {
-            _model.Materials = new List<Material>(_defaultMaterials);
-            _model.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, _model.Materials.Count - 1);
+            _model.SetMaterials(_defaultMaterials);
+            _model.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, _model.MaterialCount - 1);
 
             // 全FaceにカレントマテリアルIndexを適用
             if (meshContext.MeshObject != null && _model.CurrentMaterialIndex > 0)
@@ -76,7 +76,7 @@ public partial class SimpleMeshFactory
         }
 
         // MeshObjectから表示用Unity Meshを生成（MaterialIndex適用後）
-        Mesh mesh = meshContext.MeshObject.ToUnityMeshShared();
+        Mesh mesh = meshContext.MeshObject.ToUnityMesh();
         mesh.name = name;
         mesh.hideFlags = HideFlags.HideAndDontSave;
         meshContext.UnityMesh = mesh;
@@ -245,8 +245,8 @@ public partial class SimpleMeshFactory
         // デフォルトマテリアルをコピー
         if (_defaultMaterials != null && _defaultMaterials.Count > 0)
         {
-            _model.Materials = new List<Material>(_defaultMaterials);
-            _model.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, _model.Materials.Count - 1);
+            _model.SetMaterials(_defaultMaterials);
+            _model.CurrentMaterialIndex = Mathf.Clamp(_defaultCurrentMaterialIndex, 0, _model.MaterialCount - 1);
 
             // 全FaceにカレントマテリアルIndexを適用
             if (meshContext.MeshObject != null && _model.CurrentMaterialIndex > 0)
@@ -256,7 +256,7 @@ public partial class SimpleMeshFactory
                     face.MaterialIndex = _model.CurrentMaterialIndex;
                 }
                 // Meshを再生成してサブメッシュを反映
-                var newMesh = meshContext.MeshObject.ToUnityMeshShared();
+                var newMesh = meshContext.MeshObject.ToUnityMesh();
                 newMesh.name = name;
                 newMesh.hideFlags = HideFlags.HideAndDontSave;
                 if (meshContext.UnityMesh != null) DestroyImmediate(meshContext.UnityMesh);

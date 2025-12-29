@@ -276,9 +276,9 @@ public partial class SimpleMeshFactory
         for (int i = 0; i < subMeshCount; i++)
         {
             Material baseMat = null;
-            if (_model.Materials != null && i < _model.Materials.Count)
+            if (_model.MaterialCount > 0 && i < _model.MaterialCount)
             {
-                baseMat = _model.Materials[i];
+                baseMat = _model.GetMaterial(i);
             }
             Material mat = (baseMat != null) ? baseMat : mirrorMat;
 

@@ -305,7 +305,9 @@ namespace MeshFactory.Serialization
         public static ModelDTO FromModelContext(
             ModelContext model,
             WorkPlaneContext workPlaneContext = null,
-            EditorStateDTO editorStateDTO = null)
+            EditorStateDTO editorStateDTO = null,
+            bool saveOnMemoryMaterials = false,
+            string materialSaveDirectory = null)
         {
             if (model == null)
                 return null;
@@ -344,17 +346,12 @@ namespace MeshFactory.Serialization
             // ================================================================
             if (model.Materials != null)
             {
+                int matIndex = 0;
                 foreach (var mat in model.Materials)
                 {
-                    if (mat == null)
-                    {
-                        modelDTO.materials.Add("");
-                    }
-                    else
-                    {
-                        string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mat);
-                        modelDTO.materials.Add(assetPath ?? "");
-                    }
+                    string assetPath = GetOrSaveMaterialPath(mat, saveOnMemoryMaterials, materialSaveDirectory, model.Name, matIndex);
+                    modelDTO.materials.Add(assetPath);
+                    matIndex++;
                 }
             }
             modelDTO.currentMaterialIndex = model.CurrentMaterialIndex;
@@ -362,23 +359,94 @@ namespace MeshFactory.Serialization
             // DefaultMaterials
             if (model.DefaultMaterials != null)
             {
+                int matIndex = 0;
                 foreach (var mat in model.DefaultMaterials)
                 {
-                    if (mat == null)
-                    {
-                        modelDTO.defaultMaterials.Add("");
-                    }
-                    else
-                    {
-                        string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mat);
-                        modelDTO.defaultMaterials.Add(assetPath ?? "");
-                    }
+                    string assetPath = GetOrSaveMaterialPath(mat, saveOnMemoryMaterials, materialSaveDirectory, model.Name + "_Default", matIndex);
+                    modelDTO.defaultMaterials.Add(assetPath);
+                    matIndex++;
                 }
             }
             modelDTO.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
             modelDTO.autoSetDefaultMaterials = model.AutoSetDefaultMaterials;
 
             return modelDTO;
+        }
+
+        /// <summary>
+        /// マテリアルのアセットパスを取得、またはオンメモリマテリアルを保存してパスを返す
+        /// </summary>
+        /// <param name="mat">マテリアル</param>
+        /// <param name="saveOnMemory">オンメモリマテリアルを保存するか</param>
+        /// <param name="saveDirectory">保存先ディレクトリ</param>
+        /// <param name="baseName">ベース名（ファイル名生成用）</param>
+        /// <param name="index">インデックス（ファイル名生成用）</param>
+        /// <returns>アセットパス（保存できない場合は空文字列）</returns>
+        private static string GetOrSaveMaterialPath(Material mat, bool saveOnMemory, string saveDirectory, string baseName, int index)
+        {
+            if (mat == null)
+                return "";
+
+            // 既存のアセットパスを取得
+            string existingPath = AssetDatabase.GetAssetPath(mat);
+            if (!string.IsNullOrEmpty(existingPath))
+                return existingPath;
+
+            // オンメモリマテリアル
+            if (!saveOnMemory || string.IsNullOrEmpty(saveDirectory))
+                return "";
+
+            // 保存先ディレクトリを作成
+            if (!Directory.Exists(saveDirectory))
+            {
+                Directory.CreateDirectory(saveDirectory);
+                AssetDatabase.Refresh();
+            }
+
+            // ファイル名を生成（マテリアル名またはベース名+インデックス）
+            string matName = !string.IsNullOrEmpty(mat.name) ? mat.name : $"{baseName}_Mat{index}";
+            matName = SanitizeFileName(matName);
+            string savePath = Path.Combine(saveDirectory, $"{matName}.mat");
+            
+            // 重複チェック
+            int counter = 1;
+            while (File.Exists(savePath))
+            {
+                savePath = Path.Combine(saveDirectory, $"{matName}_{counter}.mat");
+                counter++;
+            }
+
+            // マテリアルをアセットとして保存
+            try
+            {
+                // 新しいマテリアルを作成（オリジナルをコピー）
+                Material newMat = new Material(mat);
+                newMat.name = Path.GetFileNameWithoutExtension(savePath);
+                
+                AssetDatabase.CreateAsset(newMat, savePath);
+                AssetDatabase.SaveAssets();
+                
+                Debug.Log($"[ModelSerializer] Saved on-memory material: {savePath}");
+                return savePath;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ModelSerializer] Failed to save material: {e.Message}");
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// ファイル名として使用できない文字を除去
+        /// </summary>
+        private static string SanitizeFileName(string name)
+        {
+            char[] invalid = Path.GetInvalidFileNameChars();
+            foreach (char c in invalid)
+            {
+                name = name.Replace(c, '_');
+            }
+            return name;
         }
 
         /// <summary>
@@ -422,7 +490,7 @@ namespace MeshFactory.Serialization
                 {
                     Name = meshContextData.name ?? "UnityMesh",
                     MeshObject = meshObject,
-                    UnityMesh = meshObject.ToUnityMeshShared(),
+                    UnityMesh = meshObject.ToUnityMesh(),
                     OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
                     BoneTransform = ToBoneTransform(meshContextData.exportSettingsDTO),
                     // Materials は ModelData から復元するため、ここでは設定しない
@@ -551,7 +619,7 @@ namespace MeshFactory.Serialization
             {
                 Name = meshDTO.name ?? "UnityMesh",
                 MeshObject = meshObject,
-                UnityMesh = meshObject.ToUnityMeshShared(),
+                UnityMesh = meshObject.ToUnityMesh(),
                 OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
                 BoneTransform = ToBoneTransform(meshDTO.exportSettingsDTO),
                 // Phase 1: Materials は ModelContext に集約
