@@ -1,20 +1,15 @@
-Shader "MeshFactory/Wireframe3D"
+Shader "MeshFactory/Wireframe3D_Overlay"
 {
-    Properties
-    {
-        _Color ("Color", Color) = (0, 1, 0.5, 0.9)
-        [Enum(UnityEngine.Rendering.CompareFunction)] _ZTest ("ZTest", Float) = 4
-    }
     SubShader
     {
-        Tags { "RenderType"="Transparent" "Queue"="Geometry+100" }
+        Tags { "RenderType"="Transparent" "Queue"="Overlay" }
         
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
-            ZTest [_ZTest]
-            Offset -1, -1
+            ZTest Always
+            Offset -2, -2
             Cull Off
             
             CGPROGRAM
@@ -24,14 +19,15 @@ Shader "MeshFactory/Wireframe3D"
             
             #include "UnityCG.cginc"
             
-            #define FLAG_MESH_SELECTED 2  // 1 << 1
-            #define FLAG_CULLED 16384  // 1 << 14
+            #define FLAG_MESH_SELECTED 2
+            #define FLAG_HOVERED 256
+            #define FLAG_CULLED 16384
             
             struct appdata
             {
                 float4 vertex : POSITION;
                 float4 color : COLOR;
-                float2 uv : TEXCOORD0;  // バッファインデックス
+                float2 uv : TEXCOORD0;
             };
             
             struct v2f
@@ -39,8 +35,6 @@ Shader "MeshFactory/Wireframe3D"
                 float4 pos : SV_POSITION;
                 float4 color : COLOR;
             };
-            
-            float4 _Color;
             
             StructuredBuffer<uint> _LineFlagsBuffer;
             int _UseLineFlagsBuffer;
@@ -52,24 +46,25 @@ Shader "MeshFactory/Wireframe3D"
                 
                 if (_UseLineFlagsBuffer > 0)
                 {
-                    uint bufferIndex = (uint)v.uv.x;
-                    uint flags = _LineFlagsBuffer[bufferIndex];
+                    uint idx = (uint)v.uv.x;
+                    uint flags = _LineFlagsBuffer[idx];
                     bool isMeshSelected = (flags & FLAG_MESH_SELECTED) != 0;
                     bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isHovered = (flags & FLAG_HOVERED) != 0;
                     
-                    // 選択メッシュのセグメントは非表示（オーバーレイで描画するため）
-                    if (isMeshSelected)
+                    // 選択メッシュでない場合は非表示
+                    if (!isMeshSelected)
                     {
                         o.pos = float4(99999, 99999, 99999, 1);
-                        o.color = float4(0, 0, 0, 0);
+                        o.color = 0;
                         return o;
                     }
                     
-                    // 背面カリング（有効時のみ）
-                    if (_EnableBackfaceCulling > 0 && isCulled)
+                    // 背面カリング（有効時のみ、ホバー中は除く）
+                    if (_EnableBackfaceCulling > 0 && isCulled && !isHovered)
                     {
                         o.pos = float4(99999, 99999, 99999, 1);
-                        o.color = float4(0, 0, 0, 0);
+                        o.color = 0;
                         return o;
                     }
                 }

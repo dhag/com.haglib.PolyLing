@@ -38,7 +38,7 @@ RWStructuredBuffer<float> _VertexHitDistanceBuffer;
 RWStructuredBuffer<float> _VertexHitDepthBuffer;   // 頂点の深度
 RWStructuredBuffer<float> _LineHitDistanceBuffer;
 RWStructuredBuffer<float> _LineHitDepthBuffer;     // 線分の深度（補間）
-RWStructuredBuffer<uint> _FaceHitBuffer;  // 0 or 1
+RWStructuredBuffer<float> _FaceHitBuffer;  // 0.0 or 1.0 (float型に変更)
 RWStructuredBuffer<float> _FaceHitDepthBuffer;  // 面の深度（Z値）
 
 // ================================================================
@@ -54,6 +54,14 @@ uint _FaceCount;
 uint _LineCount;
 uint _IsMirrored;        // ミラー変換時は1（面の向き判定を反転）
 
+// 統合バッファ用オフセット（Phase GPU-Unified）
+uint _VertexOffset;      // 統合バッファ内の頂点開始位置
+uint _EdgeOffset;        // 統合バッファ内のエッジ開始位置
+uint _FaceOffset;        // 統合バッファ内の面開始位置
+
+// MeshObject選択状態（Phase GPU-Unified）
+uint _IsMeshObjectSelected;  // 0=非選択MeshObject, 1=選択MeshObject
+
 // ヒットテスト用パラメータ
 float2 _MousePosition;   // マウス座標（adjustedRect座標系）
 
@@ -65,9 +73,20 @@ float2 _MousePosition;   // マウス座標（adjustedRect座標系）
 void ClearBuffers(uint3 id : SV_DispatchThreadID)
 {
     uint index = id.x;
-    if (index < _VertexCount) { _VertexVisibilityBuffer[index] = 0.0; _ScreenPositionBuffer[index] = float4(-10000, -10000, 0, 0); }
-    if (index < _FaceCount) { _FaceVisibilityBuffer[index] = 0.0; }
-    if (index < _LineCount) { _LineVisibilityBuffer[index] = 0.0; }
+    // オフセットを適用してクリア
+    if (index < _VertexCount) { 
+        uint globalIdx = _VertexOffset + index;
+        _VertexVisibilityBuffer[globalIdx] = 0.0; 
+        _ScreenPositionBuffer[globalIdx] = float4(-10000, -10000, 0, 0); 
+    }
+    if (index < _FaceCount) { 
+        uint globalIdx = _FaceOffset + index;
+        _FaceVisibilityBuffer[globalIdx] = 0.0; 
+    }
+    if (index < _LineCount) { 
+        uint globalIdx = _EdgeOffset + index;
+        _LineVisibilityBuffer[globalIdx] = 0.0; 
+    }
 }
 
 [numthreads(64, 1, 1)]
@@ -75,7 +94,11 @@ void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
 {
     uint index = id.x;
     if (index >= _VertexCount) return;
-    float3 localPos = _PositionBuffer[index];
+    
+    // オフセットを適用して統合バッファから読み取り
+    uint globalIdx = _VertexOffset + index;
+    float3 localPos = _PositionBuffer[globalIdx];
+    
     // ModelMatrixで変換（トランスフォーム表示、ミラー等に使用）
     // 単位行列の場合は元の位置のまま
     float3 worldPos = mul(_ModelMatrix, float4(localPos, 1.0)).xyz;
@@ -86,9 +109,9 @@ void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
         // previewRect内のローカル座標 + previewRectのオフセット = ウィンドウ座標
         float screenX = _PreviewRect.x + (ndc.x * 0.5 + 0.5) * _PreviewRect.z;
         float screenY = _PreviewRect.y + (1.0 - (ndc.y * 0.5 + 0.5)) * _PreviewRect.w;
-        _ScreenPositionBuffer[index] = float4(screenX, screenY, clipPos.z / clipPos.w, 1.0);
+        _ScreenPositionBuffer[globalIdx] = float4(screenX, screenY, clipPos.z / clipPos.w, 1.0);
     }
-    else { _ScreenPositionBuffer[index] = float4(-10000, -10000, -10000, 0.0); }
+    else { _ScreenPositionBuffer[globalIdx] = float4(-10000, -10000, -10000, 0.0); }
 }
 
 bool IsClockwise(float2 vertices[16], int numVertices)
@@ -108,14 +131,19 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
 {
     uint faceIndex = id.x;
     if (faceIndex >= _FaceCount) return;
-    int vertexCount = asint(_FaceVertexCountBuffer.Load(faceIndex * 4));
-    int offset = asint(_FaceVertexOffsetBuffer.Load(faceIndex * 4));
+    
+    // オフセットを適用してグローバルインデックスを取得
+    uint globalFaceIdx = _FaceOffset + faceIndex;
+    
+    int vertexCount = asint(_FaceVertexCountBuffer.Load(globalFaceIdx * 4));
+    int offset = asint(_FaceVertexOffsetBuffer.Load(globalFaceIdx * 4));
     if (vertexCount <= 2)
     {
-        _FaceVisibilityBuffer[faceIndex] = 1.0;
+        _FaceVisibilityBuffer[globalFaceIdx] = 1.0;
         for (int j = 0; j < vertexCount; j++)
         {
             int vIdx = asint(_FaceVertexIndexBuffer.Load((offset + j) * 4));
+            // vIdxは統合バッファ構築時に既にグローバル化されている
             _VertexVisibilityBuffer[vIdx] = 1.0;
         }
         return;
@@ -129,11 +157,11 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
         if (screenPos.w < 0.5) { allValid = false; break; }
         screenVerts[i] = screenPos.xy;
     }
-    if (!allValid) { _FaceVisibilityBuffer[faceIndex] = 0.0; return; }
+    if (!allValid) { _FaceVisibilityBuffer[globalFaceIdx] = 0.0; return; }
     bool isFrontFacing = IsClockwise(screenVerts, vertexCount);
     // ミラー変換時は面の向きが反転するので判定も反転
     if (_IsMirrored != 0) isFrontFacing = !isFrontFacing;
-    _FaceVisibilityBuffer[faceIndex] = isFrontFacing ? 1.0 : 0.0;
+    _FaceVisibilityBuffer[globalFaceIdx] = isFrontFacing ? 1.0 : 0.0;
     if (isFrontFacing)
     {
         for (int k = 0; k < vertexCount; k++)
@@ -149,9 +177,16 @@ void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
 {
     uint lineIndex = id.x;
     if (lineIndex >= _LineCount) return;
-    LineSegment seg = _LineBuffer[lineIndex];
-    if (seg.lineType == 1) { _LineVisibilityBuffer[lineIndex] = 1.0; return; }
-    _LineVisibilityBuffer[lineIndex] = _FaceVisibilityBuffer[seg.faceIndex];
+    
+    // オフセットを適用してグローバルインデックスを取得
+    uint globalLineIdx = _EdgeOffset + lineIndex;
+    uint globalFaceOffset = _FaceOffset;
+    
+    LineSegment seg = _LineBuffer[globalLineIdx];
+    if (seg.lineType == 1) { _LineVisibilityBuffer[globalLineIdx] = 1.0; return; }
+    
+    // faceIndexもグローバル化されている（統合バッファ構築時）
+    _LineVisibilityBuffer[globalLineIdx] = _FaceVisibilityBuffer[seg.faceIndex];
 }
 
 // ================================================================
@@ -173,23 +208,26 @@ void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
     uint index = id.x;
     if (index >= _VertexCount) return;
     
-    float4 screenPos = _ScreenPositionBuffer[index];
-    float visibility = _VertexVisibilityBuffer[index];
+    // オフセットを適用
+    uint globalIdx = _VertexOffset + index;
+    
+    float4 screenPos = _ScreenPositionBuffer[globalIdx];
+    float visibility = _VertexVisibilityBuffer[globalIdx];
     
     // 不可視の頂点は無限大距離・深度
     if (visibility < 0.5 || screenPos.w < 0.5)
     {
-        _VertexHitDistanceBuffer[index] = 1e10;
-        _VertexHitDepthBuffer[index] = 1e10;
+        _VertexHitDistanceBuffer[globalIdx] = 1e10;
+        _VertexHitDepthBuffer[globalIdx] = 1e10;
         return;
     }
     
     // マウスとの距離を計算
     float2 diff = screenPos.xy - _MousePosition;
-    _VertexHitDistanceBuffer[index] = length(diff);
+    _VertexHitDistanceBuffer[globalIdx] = length(diff);
     
     // 深度を出力
-    _VertexHitDepthBuffer[index] = screenPos.z;
+    _VertexHitDepthBuffer[globalIdx] = screenPos.z;
 }
 
 /// <summary>
@@ -204,25 +242,29 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     uint index = id.x;
     if (index >= _LineCount) return;
     
-    LineSegment seg = _LineBuffer[index];
-    float visibility = _LineVisibilityBuffer[index];
+    // オフセットを適用
+    uint globalLineIdx = _EdgeOffset + index;
+    
+    LineSegment seg = _LineBuffer[globalLineIdx];
+    float visibility = _LineVisibilityBuffer[globalLineIdx];
     
     // 不可視の線分は無限大距離・深度
     if (visibility < 0.5)
     {
-        _LineHitDistanceBuffer[index] = 1e10;
-        _LineHitDepthBuffer[index] = 1e10;
+        _LineHitDistanceBuffer[globalLineIdx] = 1e10;
+        _LineHitDepthBuffer[globalLineIdx] = 1e10;
         return;
     }
     
+    // seg.v1, seg.v2は統合バッファ構築時に既にグローバル化されている
     float4 p1Screen = _ScreenPositionBuffer[seg.v1];
     float4 p2Screen = _ScreenPositionBuffer[seg.v2];
     
     // どちらかの頂点が無効なら無限大
     if (p1Screen.w < 0.5 || p2Screen.w < 0.5)
     {
-        _LineHitDistanceBuffer[index] = 1e10;
-        _LineHitDepthBuffer[index] = 1e10;
+        _LineHitDistanceBuffer[globalLineIdx] = 1e10;
+        _LineHitDepthBuffer[globalLineIdx] = 1e10;
         return;
     }
     
@@ -237,17 +279,17 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     if (lenSq < 0.000001)
     {
         // 線分が点に縮退
-        _LineHitDistanceBuffer[index] = length(pt - p1);
-        _LineHitDepthBuffer[index] = p1Screen.z;
+        _LineHitDistanceBuffer[globalLineIdx] = length(pt - p1);
+        _LineHitDepthBuffer[globalLineIdx] = p1Screen.z;
         return;
     }
     
     float t = clamp(dot(pt - p1, segDir) / lenSq, 0.0, 1.0);
     float2 projection = p1 + t * segDir;
-    _LineHitDistanceBuffer[index] = length(pt - projection);
+    _LineHitDistanceBuffer[globalLineIdx] = length(pt - projection);
     
     // 深度を補間して出力
-    _LineHitDepthBuffer[index] = lerp(p1Screen.z, p2Screen.z, t);
+    _LineHitDepthBuffer[globalLineIdx] = lerp(p1Screen.z, p2Screen.z, t);
 }
 
 /// <summary>
@@ -263,23 +305,26 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     uint faceIndex = id.x;
     if (faceIndex >= _FaceCount) return;
     
-    float visibility = _FaceVisibilityBuffer[faceIndex];
+    // オフセットを適用
+    uint globalFaceIdx = _FaceOffset + faceIndex;
+    
+    float visibility = _FaceVisibilityBuffer[globalFaceIdx];
     
     // 不可視の面はヒットなし
     if (visibility < 0.5)
     {
-        _FaceHitBuffer[faceIndex] = 0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;  // 無限遠
+        _FaceHitBuffer[globalFaceIdx] = 0.0;
+        _FaceHitDepthBuffer[globalFaceIdx] = 1e10;  // 無限遠
         return;
     }
     
-    int vertexCount = asint(_FaceVertexCountBuffer.Load(faceIndex * 4));
-    int offset = asint(_FaceVertexOffsetBuffer.Load(faceIndex * 4));
+    int vertexCount = asint(_FaceVertexCountBuffer.Load(globalFaceIdx * 4));
+    int offset = asint(_FaceVertexOffsetBuffer.Load(globalFaceIdx * 4));
     
     if (vertexCount < 3)
     {
-        _FaceHitBuffer[faceIndex] = 0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[globalFaceIdx] = 0.0;
+        _FaceHitDepthBuffer[globalFaceIdx] = 1e10;
         return;
     }
     
@@ -291,6 +336,7 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     for (int i = 0; i < vertexCount && i < 16; i++)
     {
         int vIdx = asint(_FaceVertexIndexBuffer.Load((offset + i) * 4));
+        // vIdxは統合バッファ構築時に既にグローバル化されている
         float4 screenPos = _ScreenPositionBuffer[vIdx];
         if (screenPos.w < 0.5) { allValid = false; break; }
         polygon[i] = screenPos.xy;
@@ -300,8 +346,8 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     
     if (!allValid)
     {
-        _FaceHitBuffer[faceIndex] = 0;
-        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        _FaceHitBuffer[globalFaceIdx] = 0.0;
+        _FaceHitDepthBuffer[globalFaceIdx] = 1e10;
         return;
     }
     
@@ -329,8 +375,8 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     
     // 奇数回交差 = 内部
     bool isHit = (crossings & 1) != 0;
-    _FaceHitBuffer[faceIndex] = isHit ? 1 : 0;
+    _FaceHitBuffer[globalFaceIdx] = isHit ? 1.0 : 0.0;
     
     // 深度を出力（ヒット時は平均深度、非ヒット時は無限遠）
-    _FaceHitDepthBuffer[faceIndex] = isHit ? (totalDepth / vertexCount) : 1e10;
+    _FaceHitDepthBuffer[globalFaceIdx] = isHit ? (totalDepth / vertexCount) : 1e10;
 }

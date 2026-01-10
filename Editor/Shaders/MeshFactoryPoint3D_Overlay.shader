@@ -1,19 +1,15 @@
-Shader "MeshFactory/Point3D"
+Shader "MeshFactory/Point3D_Overlay"
 {
-    Properties
-    {
-        _PointSize ("Point Size", Float) = 0.01
-    }
     SubShader
     {
-        Tags { "RenderType"="Transparent" "Queue"="Geometry+110" }
+        Tags { "RenderType"="Transparent" "Queue"="Overlay" }
         
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
-            ZTest LEqual
-            Offset -2, -2
+            ZTest Always
+            Offset -3, -3
             Cull Off
             
             CGPROGRAM
@@ -23,15 +19,16 @@ Shader "MeshFactory/Point3D"
             
             #include "UnityCG.cginc"
             
-            #define FLAG_MESH_SELECTED 2  // 1 << 1
-            #define FLAG_CULLED 16384  // 1 << 14
+            #define FLAG_MESH_SELECTED 2
+            #define FLAG_HOVERED 256
+            #define FLAG_CULLED 16384
             
             struct appdata
             {
                 float4 vertex : POSITION;
                 float4 color : COLOR;
                 float2 uv : TEXCOORD0;
-                float2 uv2 : TEXCOORD1;  // バッファインデックス
+                float2 uv2 : TEXCOORD1;
             };
             
             struct v2f
@@ -42,73 +39,60 @@ Shader "MeshFactory/Point3D"
                 float2 uv : TEXCOORD0;
             };
             
-            float _PointSize;
-            
             StructuredBuffer<uint> _VertexFlagsBuffer;
-            int _UseVertexFlagsBuffer;    // バッファ使用フラグ
-            int _EnableBackfaceCulling;   // 背面カリング有効フラグ
+            int _UseVertexFlagsBuffer;
+            int _EnableBackfaceCulling;
             
             v2f vert(appdata v)
             {
                 v2f o;
                 
-                float selectState = v.color.a;
-                
-                if (selectState < 0)
-                {
-                    o.pos = float4(99999, 99999, 99999, 1);
-                    o.fillColor = float4(0, 0, 0, 0);
-                    o.borderColor = float4(0, 0, 0, 0);
-                    o.uv = float2(0, 0);
-                    return o;
-                }
-                
-                // フラグバッファチェック
                 if (_UseVertexFlagsBuffer > 0)
                 {
-                    uint bufferIndex = (uint)v.uv2.x;
-                    uint flags = _VertexFlagsBuffer[bufferIndex];
+                    uint idx = (uint)v.uv2.x;
+                    uint flags = _VertexFlagsBuffer[idx];
                     bool isMeshSelected = (flags & FLAG_MESH_SELECTED) != 0;
                     bool isCulled = (flags & FLAG_CULLED) != 0;
-                    bool isHover = selectState < 0.1;
+                    bool isHovered = (flags & FLAG_HOVERED) != 0;
                     
-                    // 選択メッシュの頂点は非表示（オーバーレイで描画するため）
-                    if (isMeshSelected)
+                    // 選択メッシュでない場合は非表示
+                    if (!isMeshSelected)
                     {
                         o.pos = float4(99999, 99999, 99999, 1);
-                        o.fillColor = float4(0, 0, 0, 0);
-                        o.borderColor = float4(0, 0, 0, 0);
-                        o.uv = float2(0, 0);
+                        o.fillColor = 0;
+                        o.borderColor = 0;
+                        o.uv = 0;
                         return o;
                     }
                     
-                    // 背面カリング（有効時のみ）
-                    if (_EnableBackfaceCulling > 0 && isCulled && !isHover)
+                    // 背面カリング（有効時のみ、ホバー中は除く）
+                    if (_EnableBackfaceCulling > 0 && isCulled && !isHovered)
                     {
                         o.pos = float4(99999, 99999, 99999, 1);
-                        o.fillColor = float4(0, 0, 0, 0);
-                        o.borderColor = float4(0, 0, 0, 0);
-                        o.uv = float2(0, 0);
+                        o.fillColor = 0;
+                        o.borderColor = 0;
+                        o.uv = 0;
                         return o;
                     }
                 }
                 
                 o.pos = UnityObjectToClipPos(v.vertex);
                 
+                float selectState = v.color.a;
                 if (selectState > 0.9)
                 {
-                    o.fillColor = float4(1, 0.8, 0, 1);
+                    o.fillColor = float4(1, 0.8, 0, 0.95);
                     o.borderColor = float4(1, 0, 0, 1);
                 }
                 else if (selectState < 0.1)
                 {
-                    o.fillColor = float4(0, 1, 1, 1);
+                    o.fillColor = float4(0, 1, 1, 0.95);
                     o.borderColor = float4(0, 0.8, 0.8, 1);
                 }
                 else
                 {
-                    o.fillColor = float4(1, 1, 1, 0.6);
-                    o.borderColor = float4(0.5, 0.5, 0.5, 1);
+                    o.fillColor = float4(1, 1, 1, 0.8);
+                    o.borderColor = float4(0.7, 0.7, 0.7, 1);
                 }
                 
                 o.uv = v.uv;
@@ -117,13 +101,10 @@ Shader "MeshFactory/Point3D"
             
             float4 frag(v2f i) : SV_Target
             {
-                if (i.fillColor.a < 0.01 && i.borderColor.a < 0.01) discard;
-                
                 float2 center = i.uv - 0.5;
                 float2 absCenter = abs(center);
                 float borderThickness = 0.15;
                 bool isBorder = absCenter.x > (0.5 - borderThickness) || absCenter.y > (0.5 - borderThickness);
-                
                 return isBorder ? i.borderColor : i.fillColor;
             }
             ENDCG

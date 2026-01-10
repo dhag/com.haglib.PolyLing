@@ -1,0 +1,743 @@
+// Editor/Resources/UnifiedCompute.compute
+// 統合ComputeShader
+// フラグベースのスクリーン座標計算・カリング・ヒットテスト
+
+#pragma kernel ClearBuffers
+#pragma kernel ClearFaceBuffers
+#pragma kernel ComputeScreenPositions
+#pragma kernel ComputeCulling
+#pragma kernel ComputeVertexHitTest
+#pragma kernel ComputeLineHitTest
+#pragma kernel ComputeFaceHitTest
+#pragma kernel ComputeFaceVisibility
+#pragma kernel ComputeLineVisibility
+#pragma kernel UpdateHoverFlags
+
+// ============================================================
+// SelectionFlags定義（C#側と同期）
+// ============================================================
+
+// 階層フラグ (Bits 0-3)
+#define FLAG_MODEL_SELECTED     0x00000001
+#define FLAG_MESH_SELECTED      0x00000002
+#define FLAG_MODEL_ACTIVE       0x00000004
+#define FLAG_MESH_ACTIVE        0x00000008
+
+// 要素選択フラグ (Bits 4-7)
+#define FLAG_VERTEX_SELECTED    0x00000010
+#define FLAG_EDGE_SELECTED      0x00000020
+#define FLAG_FACE_SELECTED      0x00000040
+#define FLAG_LINE_SELECTED      0x00000080
+
+// インタラクションフラグ (Bits 8-11)
+#define FLAG_HOVERED            0x00000100
+#define FLAG_DRAGGING           0x00000200
+#define FLAG_PRESELECT          0x00000400
+#define FLAG_HIGHLIGHT          0x00000800
+
+// 表示フラグ (Bits 12-15)
+#define FLAG_HIDDEN             0x00001000
+#define FLAG_LOCKED             0x00002000
+#define FLAG_CULLED             0x00004000
+#define FLAG_MIRROR             0x00008000
+
+// 属性フラグ (Bits 16-19)
+#define FLAG_IS_AUXLINE         0x00010000
+#define FLAG_IS_BOUNDARY        0x00020000
+#define FLAG_IS_SEAM            0x00040000
+#define FLAG_IS_SHARP           0x00080000
+
+// マスク
+#define HIERARCHY_MASK          0x0000000F
+#define ELEMENT_SELECTION_MASK  0x000000F0
+
+// ヘルパーマクロ
+#define HAS_FLAG(flags, flag) (((flags) & (flag)) != 0)
+#define IS_ACTIVE(flags) (((flags) & (FLAG_MODEL_ACTIVE | FLAG_MESH_ACTIVE)) == (FLAG_MODEL_ACTIVE | FLAG_MESH_ACTIVE))
+#define IS_VISIBLE(flags) (!HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+
+// ============================================================
+// 構造体定義
+// ============================================================
+
+struct UnifiedLine
+{
+    uint v1;
+    uint v2;
+    uint flags;
+    uint faceIndex;
+    uint meshIndex;
+    uint modelIndex;
+};
+
+struct MeshInfo
+{
+    uint vertexStart;
+    uint vertexCount;
+    uint lineStart;
+    uint lineCount;
+    uint faceStart;
+    uint faceCount;
+    uint indexStart;
+    uint indexCount;
+    uint flags;
+    uint modelIndex;
+    uint padding0;
+    uint padding1;
+};
+
+struct HitTestInput
+{
+    float2 mousePosition;
+    float hitRadius;
+    uint hitMode;
+    float4 previewRect;
+};
+
+struct UnifiedFace
+{
+    uint indexStart;
+    uint vertexCount;
+    uint flags;
+    uint materialIndex;
+    uint meshIndex;
+    uint modelIndex;
+    float3 normal;
+};
+
+// ============================================================
+// バッファ
+// ============================================================
+
+// 入力バッファ（読み取り専用）
+StructuredBuffer<float3> _PositionBuffer;
+StructuredBuffer<float3> _MirrorPositionBuffer;
+StructuredBuffer<UnifiedLine> _LineBuffer;
+StructuredBuffer<MeshInfo> _MeshInfoBuffer;
+StructuredBuffer<HitTestInput> _HitTestInputBuffer;
+StructuredBuffer<UnifiedFace> _FaceBuffer;
+StructuredBuffer<uint> _IndexBuffer;  // 三角形化済みインデックス
+
+// 入出力バッファ（フラグ）
+RWStructuredBuffer<uint> _VertexFlagsBuffer;
+RWStructuredBuffer<uint> _LineFlagsBuffer;
+RWStructuredBuffer<uint> _FaceFlagsBuffer;
+
+// 出力バッファ
+RWStructuredBuffer<float4> _ScreenPositionBuffer;      // xy=screen, z=depth, w=valid
+RWStructuredBuffer<float4> _MirrorScreenPositionBuffer;
+RWStructuredBuffer<float> _VertexHitDistanceBuffer;
+RWStructuredBuffer<float> _LineHitDistanceBuffer;
+RWStructuredBuffer<float> _FaceHitBuffer;              // 面ヒット結果（0 or 1）
+RWStructuredBuffer<float> _FaceHitDepthBuffer;         // 面の深度
+
+// ============================================================
+// パラメータ
+// ============================================================
+
+float4x4 _ViewProjectionMatrix;
+float4 _ViewportParams;     // x, y, width, height
+float4 _CameraPosition;
+float4 _CameraForward;
+
+uint _VertexCount;
+uint _LineCount;
+uint _FaceCount;
+uint _MeshCount;
+
+int _UseMirror;             // 1: ミラー計算も実行
+int _IsMirrored;            // 現在ミラーパスかどうか
+
+float2 _MousePosition;
+float _HitRadius;
+
+// ============================================================
+// クリアカーネル（D3D11.0のUAV制限8個のため2つに分割）
+// ============================================================
+
+// ClearBuffers1: 頂点・線分関連（UAV 6個）
+[numthreads(64, 1, 1)]
+void ClearBuffers(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    if (index < _VertexCount)
+    {
+        _ScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
+        _VertexHitDistanceBuffer[index] = 1e10;
+        
+        // カリングフラグを設定
+        uint vFlags = _VertexFlagsBuffer[index];
+        if (!HAS_FLAG(vFlags, FLAG_HIDDEN))
+        {
+            _VertexFlagsBuffer[index] = vFlags | FLAG_CULLED;
+        }
+        
+        if (_UseMirror > 0)
+        {
+            _MirrorScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
+        }
+    }
+    
+    if (index < _LineCount)
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        
+        // 線分のカリングフラグを設定
+        uint lFlags = _LineFlagsBuffer[index];
+        if (!HAS_FLAG(lFlags, FLAG_HIDDEN))
+        {
+            _LineFlagsBuffer[index] = lFlags | FLAG_CULLED;
+        }
+    }
+}
+
+// ClearBuffers2: 面関連（UAV 3個）
+[numthreads(64, 1, 1)]
+void ClearFaceBuffers(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    
+    if (index < _FaceCount)
+    {
+        _FaceHitBuffer[index] = 0.0;
+        _FaceHitDepthBuffer[index] = 1e10;
+        
+        // 面のカリングフラグを設定
+        uint fFlags = _FaceFlagsBuffer[index];
+        if (!HAS_FLAG(fFlags, FLAG_HIDDEN))
+        {
+            _FaceFlagsBuffer[index] = fFlags | FLAG_CULLED;
+        }
+    }
+}
+
+// ============================================================
+// スクリーン座標計算
+// 
+// 【座標系の設計 - 重要】
+// 既存システム（MeshGPURenderer.cs + Compute2D_GPU.compute）との互換性のため、
+// スクリーン座標は _ViewportParams.x/y 付きの「グローバル座標」を使用する。
+// 
+// 呼び出し側では:
+// - _ViewportParams に adjustedRect（タブオフセット付き）を設定すること
+//   adjustedRect.y = rect.y + tabHeight
+//   tabHeight = GUIUtility.GUIToScreenPoint(Vector2.zero).y - position.y
+// 
+// - マウス座標も adjustedRect 座標系に変換してから比較すること
+//   float rY = mousePos.y / rect.height;
+//   float adjMouseY = tabHeight + rY * (rect.height - tabHeight);
+// 
+// CPU版（UnifiedBufferManager_Update.cs）も同じ計算式を使用。
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeScreenPositions(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount) return;
+    
+    // フラグチェック
+    uint flags = _VertexFlagsBuffer[index];
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _ScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
+        return;
+    }
+    
+    // 位置取得
+    float3 position = _PositionBuffer[index];
+    
+    // クリップ座標に変換
+    float4 clipPos = mul(_ViewProjectionMatrix, float4(position, 1.0));
+    
+    if (clipPos.w <= 0.0001)
+    {
+        _ScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
+        return;
+    }
+    
+    // NDC
+    float2 ndc = clipPos.xy / clipPos.w;
+    
+    // スクリーン座標（viewport.x/y付きのグローバル座標）
+    // ※ CPU版ComputeScreenPositions()と同じ計算式
+    // ※ 既存システム（Compute2D_GPU.compute）と同じ計算式
+    // ※ マウス座標はヒットテスト時にこの座標系に変換される
+    float screenX = _ViewportParams.x + (ndc.x * 0.5 + 0.5) * _ViewportParams.z;
+    float screenY = _ViewportParams.y + (1.0 - (ndc.y * 0.5 + 0.5)) * _ViewportParams.w;
+    float depth = clipPos.z / clipPos.w;
+    
+    _ScreenPositionBuffer[index] = float4(screenX, screenY, depth, 1.0);
+    
+    // ミラー座標も計算
+    if (_UseMirror > 0)
+    {
+        float3 mirrorPos = _MirrorPositionBuffer[index];
+        float4 mirrorClip = mul(_ViewProjectionMatrix, float4(mirrorPos, 1.0));
+        
+        if (mirrorClip.w > 0.0001)
+        {
+            float2 mirrorNdc = mirrorClip.xy / mirrorClip.w;
+            float mirrorScreenX = _ViewportParams.x + (mirrorNdc.x * 0.5 + 0.5) * _ViewportParams.z;
+            float mirrorScreenY = _ViewportParams.y + (1.0 - (mirrorNdc.y * 0.5 + 0.5)) * _ViewportParams.w;
+            float mirrorDepth = mirrorClip.z / mirrorClip.w;
+            _MirrorScreenPositionBuffer[index] = float4(mirrorScreenX, mirrorScreenY, mirrorDepth, 1.0);
+        }
+        else
+        {
+            _MirrorScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
+        }
+    }
+}
+
+// ============================================================
+// カリング計算
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeCulling(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount) return;
+    
+    float4 screenPos = _ScreenPositionBuffer[index];
+    uint flags = _VertexFlagsBuffer[index];
+    
+    // 既に非表示の場合はスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+        return;
+    
+    // カリング判定
+    bool culled = false;
+    
+    // 画面外チェック
+    if (screenPos.w < 0.5)
+    {
+        culled = true;
+    }
+    else
+    {
+        // ビューポート外チェック
+        float margin = 50.0; // マージン（ピクセル）
+        if (screenPos.x < _ViewportParams.x - margin ||
+            screenPos.x > _ViewportParams.x + _ViewportParams.z + margin ||
+            screenPos.y < _ViewportParams.y - margin ||
+            screenPos.y > _ViewportParams.y + _ViewportParams.w + margin)
+        {
+            culled = true;
+        }
+    }
+    
+    // フラグ更新
+    if (culled)
+    {
+        _VertexFlagsBuffer[index] = flags | FLAG_CULLED;
+    }
+    else
+    {
+        _VertexFlagsBuffer[index] = flags & ~FLAG_CULLED;
+    }
+}
+
+// ============================================================
+// 頂点ヒットテスト
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount) return;
+    
+    uint flags = _VertexFlagsBuffer[index];
+    
+    // 非表示・カリング済みはスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+    {
+        _VertexHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    float4 screenPos = _ScreenPositionBuffer[index];
+    
+    if (screenPos.w < 0.5)
+    {
+        _VertexHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    // マウスとの距離
+    float2 diff = screenPos.xy - _MousePosition;
+    float dist = length(diff);
+    
+    // 距離がヒット半径内なら深度を、そうでなければ1e10を書き込む
+    // CPU側で最小深度（最も手前）の頂点を選択する
+    if (dist < _HitRadius)
+    {
+        _VertexHitDistanceBuffer[index] = screenPos.z; // 深度値
+    }
+    else
+    {
+        _VertexHitDistanceBuffer[index] = 1e10; // ヒット範囲外
+    }
+}
+
+// ============================================================
+// ラインヒットテスト
+// ============================================================
+
+float DistanceToLineSegment(float2 pt, float2 lineStart, float2 lineEnd)
+{
+    float2 seg = lineEnd - lineStart;
+    float lenSq = dot(seg, seg);
+    
+    if (lenSq < 0.000001)
+        return length(pt - lineStart);
+    
+    float t = clamp(dot(pt - lineStart, seg) / lenSq, 0.0, 1.0);
+    float2 projection = lineStart + t * seg;
+    return length(pt - projection);
+}
+
+[numthreads(64, 1, 1)]
+void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _LineCount) return;
+    
+    uint flags = _LineFlagsBuffer[index];
+    
+    // 非表示・カリング済みはスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    UnifiedLine lineSeg = _LineBuffer[index];
+    
+    float4 p1Screen = _ScreenPositionBuffer[lineSeg.v1];
+    float4 p2Screen = _ScreenPositionBuffer[lineSeg.v2];
+    
+    // どちらかが無効なら無限大
+    if (p1Screen.w < 0.5 || p2Screen.w < 0.5)
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    float dist = DistanceToLineSegment(_MousePosition, p1Screen.xy, p2Screen.xy);
+    
+    // 距離がヒット半径内なら深度を、そうでなければ1e10を書き込む
+    // 深度は両端の平均
+    // CPU側で最小深度（最も手前）の線分を選択する
+    if (dist < _HitRadius)
+    {
+        float avgDepth = (p1Screen.z + p2Screen.z) * 0.5;
+        _LineHitDistanceBuffer[index] = avgDepth; // 深度値
+    }
+    else
+    {
+        _LineHitDistanceBuffer[index] = 1e10; // ヒット範囲外
+    }
+}
+
+// ============================================================
+// ホバーフラグ更新
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void UpdateHoverFlags(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount) return;
+    
+    uint flags = _VertexFlagsBuffer[index];
+    float dist = _VertexHitDistanceBuffer[index];
+    
+    // ホバーフラグをクリア（別カーネルで最近接のみ設定）
+    _VertexFlagsBuffer[index] = flags & ~FLAG_HOVERED;
+}
+
+// ============================================================
+// 面の可視性計算（背面カリング）
+// 旧システム（Compute2D_GPU.compute）と同じショエレース公式を使用
+// ============================================================
+
+// ショエレース公式による時計回り判定
+// GUI座標系（Y軸下向き）では signedArea < 0 が時計回り = 表面
+float ComputeSignedArea(uint faceIndex, UnifiedFace face)
+{
+    float signedArea = 0;
+    uint triCount = face.vertexCount - 2;
+    
+    // 三角形ファンから元の多角形の頂点を復元して計算
+    // 頂点0
+    uint baseIdx = _IndexBuffer[face.indexStart];
+    float4 sp0 = _ScreenPositionBuffer[baseIdx];
+    if (sp0.w < 0.5) return 0; // 無効
+    
+    float2 prevVert = sp0.xy;
+    float2 firstVert = sp0.xy;
+    
+    // 頂点1～(N-1)
+    for (uint i = 0; i < triCount; i++)
+    {
+        uint idx = _IndexBuffer[face.indexStart + i * 3 + 1];
+        float4 sp = _ScreenPositionBuffer[idx];
+        if (sp.w < 0.5) return 0;
+        
+        float2 currVert = sp.xy;
+        signedArea += (currVert.x - prevVert.x) * (currVert.y + prevVert.y);
+        prevVert = currVert;
+    }
+    
+    // 最後の頂点
+    if (triCount > 0)
+    {
+        uint lastIdx = _IndexBuffer[face.indexStart + (triCount - 1) * 3 + 2];
+        float4 spLast = _ScreenPositionBuffer[lastIdx];
+        if (spLast.w < 0.5) return 0;
+        
+        float2 lastVert = spLast.xy;
+        signedArea += (lastVert.x - prevVert.x) * (lastVert.y + prevVert.y);
+        prevVert = lastVert;
+    }
+    
+    // 最後→最初で閉じる
+    signedArea += (firstVert.x - prevVert.x) * (firstVert.y + prevVert.y);
+    
+    return signedArea;
+}
+
+[numthreads(64, 1, 1)]
+void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
+{
+    uint faceIndex = id.x;
+    if (faceIndex >= _FaceCount) return;
+    
+    UnifiedFace face = _FaceBuffer[faceIndex];
+    uint flags = _FaceFlagsBuffer[faceIndex];
+    
+    // 既に非表示の場合はスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _FaceFlagsBuffer[faceIndex] = flags | FLAG_CULLED;
+        return;
+    }
+    
+    // 頂点数が3未満（補助線など）は常に可視
+    if (face.vertexCount < 3)
+    {
+        _FaceFlagsBuffer[faceIndex] = flags & ~FLAG_CULLED;
+        return;
+    }
+    
+    // ショエレース公式で表裏判定
+    // signedArea < 0 = 時計回り = 表面（GUI座標系）
+    float signedArea = ComputeSignedArea(faceIndex, face);
+    bool isFrontFacing = signedArea < 0;
+    
+    // ミラー変換時は面の向きが反転するので判定も反転
+    if (_IsMirrored != 0) isFrontFacing = !isFrontFacing;
+    
+    if (isFrontFacing)
+    {
+        // 表面: カリングフラグをクリア
+        _FaceFlagsBuffer[faceIndex] = flags & ~FLAG_CULLED;
+        
+        // 表面の頂点のカリングフラグもクリア
+        uint triCount = face.vertexCount - 2;
+        
+        // 頂点0
+        uint baseIdx = _IndexBuffer[face.indexStart];
+        uint vFlags = _VertexFlagsBuffer[baseIdx];
+        _VertexFlagsBuffer[baseIdx] = vFlags & ~FLAG_CULLED;
+        
+        // 頂点1～(N-2)
+        for (uint i = 0; i < triCount; i++)
+        {
+            uint idx = _IndexBuffer[face.indexStart + i * 3 + 1];
+            vFlags = _VertexFlagsBuffer[idx];
+            _VertexFlagsBuffer[idx] = vFlags & ~FLAG_CULLED;
+        }
+        
+        // 最後の頂点
+        if (triCount > 0)
+        {
+            uint lastIdx = _IndexBuffer[face.indexStart + (triCount - 1) * 3 + 2];
+            vFlags = _VertexFlagsBuffer[lastIdx];
+            _VertexFlagsBuffer[lastIdx] = vFlags & ~FLAG_CULLED;
+        }
+    }
+    else
+    {
+        // 裏面: カリングフラグを設定
+        _FaceFlagsBuffer[faceIndex] = flags | FLAG_CULLED;
+    }
+}
+
+// ============================================================
+// 面ヒットテスト（N-gon対応、レイキャスト法）
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint faceIndex = id.x;
+    if (faceIndex >= _FaceCount) return;
+    
+    UnifiedFace face = _FaceBuffer[faceIndex];
+    uint flags = _FaceFlagsBuffer[faceIndex];
+    
+    // 非表示・カリング済みはヒットなし
+    if (HAS_FLAG(flags, FLAG_HIDDEN | FLAG_CULLED))
+    {
+        _FaceHitBuffer[faceIndex] = 0.0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        return;
+    }
+    
+    uint vertexCount = face.vertexCount;
+    if (vertexCount < 3 || vertexCount > 16)
+    {
+        _FaceHitBuffer[faceIndex] = 0.0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        return;
+    }
+    
+    // 多角形の頂点をスクリーン座標で取得
+    float2 polygon[16];
+    float depths[16];
+    float totalDepth = 0;
+    bool allValid = true;
+    
+    // N-gonの場合、三角形化されたインデックスから元の頂点を復元
+    // indexStartは三角形化済みインデックスの開始位置
+    // 最初の頂点 + 各三角形の2番目の頂点を使う
+    
+    // 簡易実装：三角形ファンを前提として復元
+    // tri 0: v0, v1, v2
+    // tri 1: v0, v2, v3
+    // tri n: v0, vn+1, vn+2
+    
+    uint triCount = vertexCount - 2;
+    uint baseIdx = _IndexBuffer[face.indexStart]; // v0
+    
+    float4 sp0 = _ScreenPositionBuffer[baseIdx];
+    if (sp0.w < 0.5) allValid = false;
+    polygon[0] = sp0.xy;
+    depths[0] = sp0.z;
+    totalDepth += sp0.z;
+    
+    for (uint i = 0; i < triCount && allValid; i++)
+    {
+        // 各三角形の2番目の頂点がN-gonの頂点 i+1
+        uint idx = _IndexBuffer[face.indexStart + i * 3 + 1];
+        float4 sp = _ScreenPositionBuffer[idx];
+        if (sp.w < 0.5) { allValid = false; break; }
+        polygon[i + 1] = sp.xy;
+        depths[i + 1] = sp.z;
+        totalDepth += sp.z;
+    }
+    
+    // 最後の頂点
+    if (allValid && triCount > 0)
+    {
+        uint lastIdx = _IndexBuffer[face.indexStart + (triCount - 1) * 3 + 2];
+        float4 spLast = _ScreenPositionBuffer[lastIdx];
+        if (spLast.w < 0.5) allValid = false;
+        polygon[vertexCount - 1] = spLast.xy;
+        depths[vertexCount - 1] = spLast.z;
+        totalDepth += spLast.z;
+    }
+    
+    if (!allValid)
+    {
+        _FaceHitBuffer[faceIndex] = 0.0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        return;
+    }
+    
+    // レイキャスト法で内外判定
+    float2 pt = _MousePosition;
+    int crossings = 0;
+    
+    for (uint j = 0; j < vertexCount; j++)
+    {
+        uint nextJ = (j + 1) % vertexCount;
+        float2 v0 = polygon[j];
+        float2 v1 = polygon[nextJ];
+        
+        // 右方向へのレイが辺と交差するか
+        if ((v0.y <= pt.y && v1.y > pt.y) || (v1.y <= pt.y && v0.y > pt.y))
+        {
+            float vt = (pt.y - v0.y) / (v1.y - v0.y);
+            float xIntersect = v0.x + vt * (v1.x - v0.x);
+            if (pt.x < xIntersect)
+            {
+                crossings++;
+            }
+        }
+    }
+    
+    // 奇数回交差 = 内部
+    bool isHit = (crossings & 1) != 0;
+    _FaceHitBuffer[faceIndex] = isHit ? 1.0 : 0.0;
+    
+    // 深度を出力（ヒット時は平均深度、非ヒット時は無限遠）
+    _FaceHitDepthBuffer[faceIndex] = isHit ? (totalDepth / vertexCount) : 1e10;
+}
+
+// ============================================================
+// 線分の可視性計算（面のカリングから継承）
+// ComputeFaceVisibilityの後に実行すること
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
+{
+    uint lineIndex = id.x;
+    if (lineIndex >= _LineCount) return;
+    
+    UnifiedLine lineSeg = _LineBuffer[lineIndex];
+    uint lineFlags = _LineFlagsBuffer[lineIndex];
+    
+    // 既に非表示の場合はスキップ
+    if (HAS_FLAG(lineFlags, FLAG_HIDDEN))
+    {
+        _LineFlagsBuffer[lineIndex] = lineFlags | FLAG_CULLED;
+        return;
+    }
+    
+    // 補助線（IsAuxLine）は常に可視
+    if (HAS_FLAG(lineFlags, FLAG_IS_AUXLINE))
+    {
+        _LineFlagsBuffer[lineIndex] = lineFlags & ~FLAG_CULLED;
+        return;
+    }
+    
+    // 通常のエッジ: 関連する面のカリング状態を継承
+    uint faceIndex = lineSeg.faceIndex;
+    if (faceIndex < _FaceCount)
+    {
+        uint faceFlags = _FaceFlagsBuffer[faceIndex];
+        
+        if (HAS_FLAG(faceFlags, FLAG_CULLED))
+        {
+            // 面がカリングされていたら線分もカリング
+            _LineFlagsBuffer[lineIndex] = lineFlags | FLAG_CULLED;
+        }
+        else
+        {
+            // 面が可視なら線分も可視
+            _LineFlagsBuffer[lineIndex] = lineFlags & ~FLAG_CULLED;
+        }
+    }
+    else
+    {
+        // 無効な面インデックスの場合は可視とする
+        _LineFlagsBuffer[lineIndex] = lineFlags & ~FLAG_CULLED;
+    }
+}

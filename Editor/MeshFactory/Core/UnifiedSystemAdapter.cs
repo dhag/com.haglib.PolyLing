@@ -1,0 +1,513 @@
+// Assets/Editor/MeshFactory/Core/UnifiedSystemAdapter.cs
+// 統合システムアダプター
+// SimpleMeshFactoryとUnifiedMeshSystemを接続するブリッジクラス
+
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEditor;
+using MeshFactory.Data;
+using MeshFactory.Model;
+using MeshFactory.Selection;
+using MeshFactory.Symmetry;
+using MeshFactory.Rendering;
+using MeshFactory.Core.Rendering;
+
+namespace MeshFactory.Core
+{
+    /// <summary>
+    /// 統合システムアダプター
+    /// 既存のSimpleMeshFactoryとUnifiedMeshSystemを段階的に統合
+    /// </summary>
+    public class UnifiedSystemAdapter : IDisposable
+    {
+        // ============================================================
+        // コンポーネント
+        // ============================================================
+
+        private UnifiedMeshSystem _unifiedSystem;
+        private UnifiedRenderer _renderer;
+
+        // ============================================================
+        // 外部参照
+        // ============================================================
+
+        private ModelContext _modelContext;
+        private SelectionState _selectionState;
+        private SymmetrySettings _symmetrySettings;
+
+        // ============================================================
+        // 状態
+        // ============================================================
+
+        private bool _isInitialized = false;
+        private bool _disposed = false;
+        private bool _useUnifiedRendering = false; // 統合レンダリング使用フラグ
+
+        // クワッドメッシュ（頂点描画用）
+        private Mesh _quadMesh;
+
+        // ============================================================
+        // プロパティ
+        // ============================================================
+
+        public bool IsInitialized => _isInitialized;
+        public bool UseUnifiedRendering
+        {
+            get => _useUnifiedRendering;
+            set => _useUnifiedRendering = value;
+        }
+        
+        /// <summary>
+        /// 背面カリングを有効にするか
+        /// </summary>
+        public bool BackfaceCullingEnabled
+        {
+            get => _renderer?.BackfaceCullingEnabled ?? true;
+            set { if (_renderer != null) _renderer.BackfaceCullingEnabled = value; }
+        }
+
+        public UnifiedMeshSystem UnifiedSystem => _unifiedSystem;
+        public UnifiedRenderer Renderer => _renderer;
+        public UnifiedBufferManager BufferManager => _unifiedSystem?.BufferManager;
+
+        // 既存システムとの互換用
+        public int HoverVertexIndex => _unifiedSystem?.HoveredVertexIndex ?? -1;
+        public int HoverLineIndex => _unifiedSystem?.HoveredLineIndex ?? -1;
+        public int HoverFaceIndex => _unifiedSystem?.HoveredFaceIndex ?? -1;
+
+        // ============================================================
+        // コンストラクタ
+        // ============================================================
+
+        public UnifiedSystemAdapter()
+        {
+            _unifiedSystem = new UnifiedMeshSystem();
+            _renderer = new UnifiedRenderer(_unifiedSystem.BufferManager);
+        }
+
+        // ============================================================
+        // 初期化
+        // ============================================================
+
+        /// <summary>
+        /// アダプターを初期化
+        /// </summary>
+        public bool Initialize()
+        {
+            if (_isInitialized)
+                return true;
+
+            _unifiedSystem.Initialize();
+
+            if (!_renderer.Initialize())
+            {
+                Debug.LogWarning("[UnifiedSystemAdapter] Failed to initialize renderer");
+                return false;
+            }
+
+            // クワッドメッシュを作成（頂点描画用）
+            CreateQuadMesh();
+
+            _isInitialized = true;
+            return true;
+        }
+
+        /// <summary>
+        /// クワッドメッシュを作成
+        /// </summary>
+        private void CreateQuadMesh()
+        {
+            _quadMesh = new Mesh();
+            _quadMesh.name = "UnifiedPointQuad";
+
+            // 単位正方形（中心原点）
+            _quadMesh.vertices = new Vector3[]
+            {
+                new Vector3(-0.5f, -0.5f, 0),
+                new Vector3(0.5f, -0.5f, 0),
+                new Vector3(0.5f, 0.5f, 0),
+                new Vector3(-0.5f, 0.5f, 0)
+            };
+
+            _quadMesh.uv = new Vector2[]
+            {
+                new Vector2(0, 0),
+                new Vector2(1, 0),
+                new Vector2(1, 1),
+                new Vector2(0, 1)
+            };
+
+            _quadMesh.triangles = new int[] { 0, 2, 1, 0, 3, 2 };
+            _quadMesh.RecalculateNormals();
+        }
+
+        // ============================================================
+        // 参照設定
+        // ============================================================
+
+        /// <summary>
+        /// モデルコンテキストを設定
+        /// </summary>
+        public void SetModelContext(ModelContext modelContext)
+        {
+            _modelContext = modelContext;
+            Debug.Log($"[UnifiedSystemAdapter] SetModelContext: modelContext={(modelContext != null ? "valid" : "null")}, meshCount={(modelContext?.MeshContextList?.Count ?? 0)}");
+            
+            _unifiedSystem.SetModel(modelContext);
+            
+            // 即座にトポロジー更新を実行（遅延せずにバッファを構築）
+            _unifiedSystem.ExecuteUpdates(DirtyLevel.Topology);
+            
+            // 構築後の状態を確認
+            var bm = _unifiedSystem.BufferManager;
+            Debug.Log($"[UnifiedSystemAdapter] After ExecuteUpdates: MeshCount={bm?.MeshCount ?? -1}, TotalVertexCount={bm?.TotalVertexCount ?? -1}, TotalLineCount={bm?.TotalLineCount ?? -1}");
+        }
+
+        /// <summary>
+        /// 選択状態を設定
+        /// </summary>
+        public void SetSelectionState(SelectionState selectionState)
+        {
+            _selectionState = selectionState;
+            _unifiedSystem.SetSelectionState(selectionState);
+        }
+
+        /// <summary>
+        /// 対称設定を設定
+        /// </summary>
+        public void SetSymmetrySettings(SymmetrySettings settings)
+        {
+            _symmetrySettings = settings;
+            _unifiedSystem.SetSymmetrySettings(settings);
+        }
+
+        /// <summary>
+        /// アクティブメッシュを設定
+        /// </summary>
+        public void SetActiveMesh(int modelIndex, int meshIndex)
+        {
+            _unifiedSystem.SetActiveMesh(modelIndex, meshIndex);
+        }
+
+        // ============================================================
+        // 更新通知
+        // ============================================================
+
+        /// <summary>
+        /// トポロジー変更を通知
+        /// </summary>
+        public void NotifyTopologyChanged()
+        {
+            _unifiedSystem.NotifyTopologyChanged();
+            // 即座にトポロジー更新を実行
+            _unifiedSystem.ExecuteUpdates(DirtyLevel.Topology);
+        }
+
+        /// <summary>
+        /// 位置変更を通知
+        /// </summary>
+        public void NotifyTransformChanged()
+        {
+            _unifiedSystem.NotifyTransformChanged();
+        }
+
+        /// <summary>
+        /// 選択変更を通知
+        /// </summary>
+        public void NotifySelectionChanged()
+        {
+            _unifiedSystem.NotifySelectionChanged();
+        }
+
+        // ============================================================
+        // フレーム更新
+        // ============================================================
+
+        /// <summary>
+        /// フレーム更新
+        /// </summary>
+        public void UpdateFrame(
+            Vector3 cameraPosition,
+            Vector3 cameraTarget,
+            float fov,
+            Rect viewport,
+            Vector2 mousePosition,
+            float rotationZ = 0f)
+        {
+            if (!_isInitialized)
+                return;
+
+            _unifiedSystem.BeginFrame();
+
+            // カメラ更新
+            _unifiedSystem.UpdateCamera(cameraPosition, cameraTarget, fov, viewport, rotationZ);
+
+            // マウス更新
+            _unifiedSystem.UpdateMousePosition(mousePosition);
+
+            // 更新実行
+            DirtyLevel level = _unifiedSystem.ProcessUpdates();
+            _unifiedSystem.ExecuteUpdates(level);
+
+            _unifiedSystem.EndFrame();
+        }
+
+        // ============================================================
+        // 描画
+        // ============================================================
+        /*
+        /// <summary>
+        /// メッシュを構築してキューに追加（後方互換用オーバーロード）
+        /// </summary>
+        public void PrepareDrawing(Camera camera, bool showWireframe, bool showVertices, float pointSize = 0.02f, float alpha = 1f)
+        {
+            // 全メッシュ描画（後方互換）
+            PrepareDrawing(camera, showWireframe, showVertices, true, true, -1, pointSize, alpha);
+        }
+        */
+        /// <summary>
+        /// メッシュを構築してキューに追加（選択/非選択フィルタリング対応）
+        /// </summary>
+        /// <param name="camera">カメラ</param>
+        /// <param name="showWireframe">ワイヤーフレームを表示するか</param>
+        /// <param name="showVertices">頂点を表示するか</param>
+        /// <param name="showUnselectedWireframe">非選択メッシュのワイヤーフレームを表示するか</param>
+        /// <param name="showUnselectedVertices">非選択メッシュの頂点を表示するか</param>
+        /// <param name="selectedMeshIndex">選択メッシュインデックス（-1で全選択扱い）</param>
+        /// <param name="pointSize">頂点サイズ</param>
+        /// <param name="alpha">アルファ値</param>
+        public void PrepareDrawing(
+            Camera camera,
+            bool showWireframe,
+            bool showVertices,
+            bool showUnselectedWireframe,
+            bool showUnselectedVertices,
+            int selectedMeshIndex,
+            float pointSize ,
+            float alpha = 1f)
+        {
+
+            //Debug.Log($"[UnifiedSystemAdapter] PrepareDrawing: isInitialized={_isInitialized}, showWireframe={showWireframe}, showVertices={showVertices}, selectedMeshIndex={selectedMeshIndex}");
+            
+            if (!_isInitialized)
+            {
+                Debug.LogWarning("[UnifiedSystemAdapter] PrepareDrawing: not initialized!");
+                return;
+            }
+
+            // メッシュ構築
+            if (showWireframe)
+            {
+                _renderer.UpdateWireframeMesh(
+                    selectedMeshIndex,
+                    showUnselectedWireframe,
+                    alpha,
+                    0.4f);
+                _renderer.QueueWireframe();
+            }
+
+            if (showVertices)
+            {
+                _renderer.UpdatePointMesh(
+                    camera,
+                    selectedMeshIndex,
+                    showUnselectedVertices,
+                    pointSize,
+                    alpha,
+                    0.4f);
+                _renderer.QueuePoints();
+            }
+        }
+
+        /// <summary>
+        /// キューに入っているメッシュを描画
+        /// </summary>
+        public void DrawQueued(PreviewRenderUtility preview)
+        {
+            if (!_isInitialized)
+                return;
+
+            _renderer.DrawQueued(preview);
+        }
+
+        /// <summary>
+        /// 描画後のクリーンアップ
+        /// </summary>
+        public void CleanupQueued()
+        {
+            if (!_isInitialized)
+                return;
+
+            _renderer.CleanupQueued();
+        }
+
+        /// <summary>
+        /// 旧API互換（非推奨）
+        /// </summary>
+        [Obsolete("Use PrepareDrawing + DrawQueued + CleanupQueued instead")]
+        public void Draw(Matrix4x4 modelMatrix, Camera camera = null)
+        {
+            // 旧APIは機能しない
+        }
+
+        // ============================================================
+        // ヒットテスト
+        // ============================================================
+
+        /// <summary>
+        /// 頂点ヒットテスト
+        /// </summary>
+        public int FindNearestVertex(Vector2 screenPos, float radius)
+        {
+            if (!_isInitialized)
+                return -1;
+
+            int globalIndex = _unifiedSystem.FindVertexAtScreenPos(screenPos, radius);
+
+            if (globalIndex >= 0)
+            {
+                // グローバルインデックスをローカルに変換
+                if (_unifiedSystem.GlobalToLocal(globalIndex, out int meshIndex, out int localIndex))
+                {
+                    // アクティブメッシュの頂点のみ返す（既存動作と互換）
+                    if (meshIndex == _unifiedSystem.ActiveMeshIndex)
+                    {
+                        return localIndex;
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// ラインヒットテスト
+        /// </summary>
+        public int FindNearestLine(Vector2 screenPos, float radius)
+        {
+            if (!_isInitialized)
+                return -1;
+
+            int globalIndex = _unifiedSystem.FindLineAtScreenPos(screenPos, radius);
+
+            // TODO: グローバル→ローカル変換
+            return globalIndex;
+        }
+
+        /// <summary>
+        /// ホバー頂点のローカルインデックスを取得
+        /// </summary>
+        public int GetHoveredVertexLocal()
+        {
+            if (!_isInitialized)
+                return -1;
+
+            if (_unifiedSystem.GetHoveredVertexLocal(out int meshIndex, out int localIndex))
+            {
+                if (meshIndex == _unifiedSystem.ActiveMeshIndex)
+                {
+                    return localIndex;
+                }
+            }
+
+            return -1;
+        }
+
+        // ============================================================
+        // 色設定
+        // ============================================================
+
+        /// <summary>
+        /// 色設定を変更
+        /// </summary>
+        public void SetColorSettings(ShaderColorSettings settings)
+        {
+            _renderer?.SetColorSettings(settings);
+        }
+
+        // ============================================================
+        // カリング
+        // ============================================================
+
+        /// <summary>
+        /// 指定メッシュのローカル頂点がカリング（背面）されているかを取得
+        /// </summary>
+        /// <param name="meshIndex">メッシュインデックス</param>
+        /// <param name="localVertexIndex">ローカル頂点インデックス</param>
+        /// <returns>カリングされている場合true</returns>
+        public bool IsVertexCulled(int meshIndex, int localVertexIndex)
+        {
+            var bufferManager = _unifiedSystem?.BufferManager;
+            if (!_isInitialized || bufferManager == null)
+                return false;
+
+            int globalIndex = bufferManager.LocalToGlobalVertexIndex(meshIndex, localVertexIndex);
+            if (globalIndex < 0)
+                return false;
+
+            var vertexFlags = bufferManager.VertexFlags;
+            if (vertexFlags == null || globalIndex >= vertexFlags.Length)
+                return false;
+
+            return (vertexFlags[globalIndex] & (uint)SelectionFlags.Culled) != 0;
+        }
+
+        /// <summary>
+        /// GPUの頂点フラグをCPUに読み戻す
+        /// </summary>
+        public void ReadBackVertexFlags()
+        {
+            _unifiedSystem?.BufferManager?.ReadBackVertexFlags();
+        }
+
+        // ============================================================
+        // デバッグ
+        // ============================================================
+
+        /// <summary>
+        /// 統計情報をログ出力
+        /// </summary>
+        public void LogStatus()
+        {
+            Debug.Log($"[UnifiedSystemAdapter] Initialized={_isInitialized}, UseUnifiedRendering={_useUnifiedRendering}");
+            _unifiedSystem?.LogStatus();
+        }
+
+        // ============================================================
+        // IDisposable
+        // ============================================================
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _renderer?.Dispose();
+                    _unifiedSystem?.Dispose();
+
+                    if (_quadMesh != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(_quadMesh);
+                        _quadMesh = null;
+                    }
+                }
+
+                _disposed = true;
+                _isInitialized = false;
+            }
+        }
+
+        ~UnifiedSystemAdapter()
+        {
+            Dispose(false);
+        }
+    }
+}
