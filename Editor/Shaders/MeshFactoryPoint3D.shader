@@ -1,4 +1,4 @@
-Shader "MeshFactory/Point3D"
+Shader "Poly_Ling/Point3D"
 {
     Properties
     {

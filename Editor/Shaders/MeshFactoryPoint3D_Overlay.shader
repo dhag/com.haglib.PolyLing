@@ -1,4 +1,4 @@
-Shader "MeshFactory/Point3D_Overlay"
+Shader "Poly_Ling/Point3D_Overlay"
 {
     Properties
     {

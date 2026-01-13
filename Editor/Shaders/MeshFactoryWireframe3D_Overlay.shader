@@ -1,4 +1,4 @@
-Shader "MeshFactory/Wireframe3D_Overlay"
+Shader "Poly_Ling/Wireframe3D_Overlay"
 {
     SubShader
     {

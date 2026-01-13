@@ -1,4 +1,4 @@
-Shader "MeshFactory/Wireframe3D"
+Shader "Poly_Ling/Wireframe3D"
 {
     Properties
     {
