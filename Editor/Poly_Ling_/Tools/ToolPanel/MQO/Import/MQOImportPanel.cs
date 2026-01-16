@@ -100,6 +100,9 @@ namespace Poly_Ling.MQO
             ["SkippedSpecialFaces"] = new() { ["en"] = "Skipped Special Faces", ["ja"] = "スキップした特殊面" },
             ["ImportedMeshes"] = new() { ["en"] = "Imported Meshes:", ["ja"] = "インポートしたメッシュ:" },
             
+            // ミラー設定
+            ["BakeMirror"] = new() { ["en"] = "Bake Mirror", ["ja"] = "ミラーをベイク" },
+            
             // デバッグ設定
             ["DebugSettings"] = new() { ["en"] = "Debug Settings", ["ja"] = "デバッグ設定" },
             ["DebugVertexInfo"] = new() { ["en"] = "Output Vertex Debug Info", ["ja"] = "頂点デバッグ情報を出力" },
@@ -385,6 +388,14 @@ namespace Poly_Ling.MQO
             }
 
             EditorGUI.indentLevel--;
+            
+            // ================================================================
+            // ミラー設定
+            // ================================================================
+            EditorGUILayout.Space(8);
+            _settings.BakeMirror = EditorGUILayout.Toggle(
+                new GUIContent(T("BakeMirror"), "ミラー属性を持つメッシュのミラー側を実体メッシュとして生成"),
+                _settings.BakeMirror);
             
             // ================================================================
             // デバッグ設定

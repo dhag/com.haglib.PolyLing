@@ -60,6 +60,10 @@ namespace Poly_Ling.MQO
         [Tooltip("オブジェクトの階層・表示・ミラー設定を保持")]
         public bool PreserveObjectAttributes = true;
 
+        /// <summary>ベイクミラーを削除</summary>
+        [Tooltip("ベイクされたミラーメッシュ（Type=BakedMirror）を出力しない")]
+        public bool SkipBakedMirror = false;
+
         // ================================================================
         // テクスチャ
         // ================================================================
@@ -99,6 +103,7 @@ namespace Poly_Ling.MQO
                 ExportSelectedOnly = this.ExportSelectedOnly,
                 MergeObjects = this.MergeObjects,
                 PreserveObjectAttributes = this.PreserveObjectAttributes,
+                SkipBakedMirror = this.SkipBakedMirror,
                 TextureFolder = this.TextureFolder,
                 DecimalPrecision = this.DecimalPrecision,
                 UseShiftJIS = this.UseShiftJIS,
@@ -118,6 +123,7 @@ namespace Poly_Ling.MQO
                    ExportSelectedOnly != o.ExportSelectedOnly ||
                    MergeObjects != o.MergeObjects ||
                    PreserveObjectAttributes != o.PreserveObjectAttributes ||
+                   SkipBakedMirror != o.SkipBakedMirror ||
                    TextureFolder != o.TextureFolder ||
                    DecimalPrecision != o.DecimalPrecision ||
                    UseShiftJIS != o.UseShiftJIS;
@@ -136,6 +142,7 @@ namespace Poly_Ling.MQO
             ExportSelectedOnly = o.ExportSelectedOnly;
             MergeObjects = o.MergeObjects;
             PreserveObjectAttributes = o.PreserveObjectAttributes;
+            SkipBakedMirror = o.SkipBakedMirror;
             TextureFolder = o.TextureFolder;
             DecimalPrecision = o.DecimalPrecision;
             UseShiftJIS = o.UseShiftJIS;

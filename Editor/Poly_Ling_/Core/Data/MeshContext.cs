@@ -570,6 +570,26 @@ namespace Poly_Ling.Data
             _symmetryCache = null;
         }
 
+        // ================================================================
+        // ベイクミラー（実体化されたミラーメッシュ）
+        // ================================================================
+
+        /// <summary>
+        /// ベイク元メッシュのインデックス
+        /// -1 = ベイクされたミラーではない（通常メッシュまたはミラー属性を持つメッシュ）
+        /// 0以上 = このメッシュはベイクされたミラーで、指定インデックスのメッシュが元
+        /// </summary>
+        public int BakedMirrorSourceIndex { get; set; } = -1;
+
+        /// <summary>ベイクされたミラーメッシュかどうか</summary>
+        public bool IsBakedMirror => BakedMirrorSourceIndex >= 0;
+
+        /// <summary>
+        /// ベイクミラーの元メッシュかどうか
+        /// （MirrorType > 0 かつ BakedMirrorSourceIndex == -1）
+        /// </summary>
+        public bool HasBakedMirrorChild { get; set; } = false;
+
         public MeshContext()
         {
             BoneTransform = new BoneTransform();

@@ -447,7 +447,9 @@ namespace Poly_Ling.Serialization
                     MirrorType = meshContextData.mirrorType,
                     MirrorAxis = meshContextData.mirrorAxis,
                     MirrorDistance = meshContextData.mirrorDistance,
-                    MirrorMaterialOffset = meshContextData.mirrorMaterialOffset
+                    MirrorMaterialOffset = meshContextData.mirrorMaterialOffset,
+                    // ベイクミラー
+                    BakedMirrorSourceIndex = meshContextData.bakedMirrorSourceIndex
                 };
 
                 // 選択セットを復元
@@ -569,6 +571,9 @@ namespace Poly_Ling.Serialization
                 contextData.mirrorDistance = meshContext.MirrorDistance;
                 contextData.mirrorMaterialOffset = meshContext.MirrorMaterialOffset;
 
+                // ベイクミラー
+                contextData.bakedMirrorSourceIndex = meshContext.BakedMirrorSourceIndex;
+
                 // 選択セット
                 SaveSelectionSetsToDTO(meshContext, contextData);
 
@@ -617,7 +622,9 @@ namespace Poly_Ling.Serialization
                 MirrorType = meshDTO.mirrorType,
                 MirrorAxis = meshDTO.mirrorAxis,
                 MirrorDistance = meshDTO.mirrorDistance,
-                MirrorMaterialOffset = meshDTO.mirrorMaterialOffset
+                MirrorMaterialOffset = meshDTO.mirrorMaterialOffset,
+                // ベイクミラー
+                BakedMirrorSourceIndex = meshDTO.bakedMirrorSourceIndex
             };
 
             // 選択セットを復元

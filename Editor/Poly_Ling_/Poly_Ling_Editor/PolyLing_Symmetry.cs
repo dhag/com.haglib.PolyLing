@@ -179,7 +179,30 @@ public partial class PolyLing
         if (_symmetrySettings != null && !_symmetrySettings.ShowMirrorMesh)
             return false;
 
+        // BakedMirrorの子が存在する場合はSymmetryCacheを使わない（二重表示防止）
+        if (HasBakedMirrorChild(meshContext))
+            return false;
+
         return true;
+    }
+
+    /// <summary>
+    /// 指定されたMeshContextをソースとするBakedMirrorが存在するか確認
+    /// </summary>
+    private bool HasBakedMirrorChild(MeshContext meshContext)
+    {
+        if (_meshContextList == null) return false;
+
+        int sourceIndex = _meshContextList.IndexOf(meshContext);
+        if (sourceIndex < 0) return false;
+
+        // BakedMirrorSourceIndexが自分を指しているものがあるかチェック
+        foreach (var ctx in _meshContextList)
+        {
+            if (ctx != null && ctx.Type == MeshType.BakedMirror && ctx.BakedMirrorSourceIndex == sourceIndex)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -197,6 +220,10 @@ public partial class PolyLing
         // グローバル設定で「ミラーワイヤーフレーム」をOFFにしている場合は表示しない
         // ただし、グローバルミラーが無効でもMeshContextごとのミラーは表示する
         if (_symmetrySettings != null && !_symmetrySettings.ShowMirrorWireframe)
+            return false;
+
+        // BakedMirrorの子が存在する場合はSymmetryCacheを使わない（二重表示防止）
+        if (HasBakedMirrorChild(meshContext))
             return false;
 
         return true;

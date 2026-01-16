@@ -282,6 +282,12 @@ namespace Poly_Ling.MQO
                 {
                     if (mc == null) continue;
 
+                    // ベイクミラースキップ（SkipBakedMirrorがtrueかつType=BakedMirrorの場合）
+                    if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
+                    {
+                        continue;
+                    }
+
                     // 空オブジェクトスキップ（SkipEmptyObjectsがtrueかつMeshObjectがnullまたは空の場合）
                     if (settings.SkipEmptyObjects)
                     {
@@ -368,6 +374,12 @@ namespace Poly_Ling.MQO
                 foreach (var mc in meshContexts)
                 {
                     if (mc == null) continue;
+
+                    // ベイクミラースキップ（SkipBakedMirrorがtrueかつType=BakedMirrorの場合）
+                    if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
+                    {
+                        continue;
+                    }
 
                     // 空オブジェクトスキップ（SkipEmptyObjectsがtrueかつMeshObjectがnullまたは空の場合）
                     if (settings.SkipEmptyObjects)

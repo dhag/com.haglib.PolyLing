@@ -121,6 +121,14 @@ namespace Poly_Ling.MQO
         public float BoneScale = 1.0f;
 
         // ================================================================
+        // ミラー設定
+        // ================================================================
+
+        /// <summary>ミラーをベイク（実体化）</summary>
+        [Tooltip("ミラー属性を持つメッシュのミラー側を実体メッシュとして生成する")]
+        public bool BakeMirror = false;
+
+        // ================================================================
         // 頂点デバッグ設定
         // ================================================================
 
@@ -192,6 +200,7 @@ namespace Poly_Ling.MQO
                 NormalMode = this.NormalMode,
                 SmoothingAngle = this.SmoothingAngle,
                 BoneWeightCSVPath = this.BoneWeightCSVPath,
+                BakeMirror = this.BakeMirror,
                 DebugVertexInfo = this.DebugVertexInfo,
                 DebugVertexNearUVCount = this.DebugVertexNearUVCount
             };
@@ -213,6 +222,7 @@ namespace Poly_Ling.MQO
                    NormalMode != o.NormalMode ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
                    BoneWeightCSVPath != o.BoneWeightCSVPath ||
+                   BakeMirror != o.BakeMirror ||
                    DebugVertexInfo != o.DebugVertexInfo ||
                    DebugVertexNearUVCount != o.DebugVertexNearUVCount;
         }
@@ -233,6 +243,7 @@ namespace Poly_Ling.MQO
             NormalMode = o.NormalMode;
             SmoothingAngle = o.SmoothingAngle;
             BoneWeightCSVPath = o.BoneWeightCSVPath;
+            BakeMirror = o.BakeMirror;
             DebugVertexInfo = o.DebugVertexInfo;
             DebugVertexNearUVCount = o.DebugVertexNearUVCount;
         }

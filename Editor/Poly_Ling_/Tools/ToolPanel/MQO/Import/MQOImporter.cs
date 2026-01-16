@@ -402,6 +402,36 @@ namespace Poly_Ling.MQO
 
             result.Stats.ObjectCount = result.MeshContexts.Count - boneContextCount;
 
+            // ================================================================
+            // ベイクミラー処理
+            // ================================================================
+            if (settings.BakeMirror)
+            {
+                var bakedMirrorContexts = new List<MeshContext>();
+                
+                for (int i = 0; i < result.MeshContexts.Count; i++)
+                {
+                    var ctx = result.MeshContexts[i];
+                    if (ctx.IsMirrored && ctx.Type == MeshType.Mesh)
+                    {
+                        var bakedMirror = CreateBakedMirrorMesh(ctx, i, settings);
+                        if (bakedMirror != null)
+                        {
+                            bakedMirrorContexts.Add(bakedMirror);
+                            Debug.Log($"[MQOImporter] Created baked mirror: {bakedMirror.Name} (source: {ctx.Name})");
+                        }
+                    }
+                }
+                
+                // ベイクしたミラーメッシュを追加
+                result.MeshContexts.AddRange(bakedMirrorContexts);
+                
+                if (bakedMirrorContexts.Count > 0)
+                {
+                    Debug.Log($"[MQOImporter] Baked {bakedMirrorContexts.Count} mirror meshes");
+                }
+            }
+
             // 統合オプション（ボーン以外のメッシュのみ対象）
             // 注意: MergeObjectsが有効な場合、ボーンウェイトの整合性に注意が必要
             if (settings.MergeObjects && result.MeshContexts.Count > boneContextCount + 1)
@@ -1433,6 +1463,139 @@ namespace Poly_Ling.MQO
             var merged = meshContexts[0];
             merged.Name = name;
             return merged;
+        }
+
+        // ================================================================
+        // ベイクミラー生成
+        // ================================================================
+
+        /// <summary>
+        /// ミラー属性を持つメッシュからベイクミラーメッシュを生成
+        /// </summary>
+        /// <param name="source">ソースメッシュコンテキスト</param>
+        /// <param name="sourceIndex">ソースのインデックス</param>
+        /// <param name="settings">インポート設定</param>
+        /// <returns>ベイクミラーメッシュコンテキスト</returns>
+        private static MeshContext CreateBakedMirrorMesh(MeshContext source, int sourceIndex, MQOImportSettings settings)
+        {
+            if (source == null || source.MeshObject == null || !source.IsMirrored)
+                return null;
+
+            var srcMeshObj = source.MeshObject;
+            var axis = source.GetMirrorSymmetryAxis();
+
+            // 新しいMeshObjectを作成
+            var mirrorMeshObj = new MeshObject
+            {
+                Name = source.Name + "_BakedMirror"
+            };
+
+            // 頂点をミラー変換してコピー
+            foreach (var srcVertex in srcMeshObj.Vertices)
+            {
+                var mirrorVertex = new Vertex
+                {
+                    Id = srcVertex.Id,
+                    Position = MirrorPosition(srcVertex.Position, axis)
+                };
+
+                // UVをコピー
+                foreach (var uv in srcVertex.UVs)
+                {
+                    mirrorVertex.UVs.Add(uv);
+                }
+
+                // 法線をミラー変換してコピー
+                foreach (var normal in srcVertex.Normals)
+                {
+                    mirrorVertex.Normals.Add(MirrorNormal(normal, axis));
+                }
+
+                // ボーンウェイト: ミラー側があればミラー側、なければ実体側
+                if (srcVertex.HasMirrorBoneWeight)
+                {
+                    mirrorVertex.BoneWeight = srcVertex.MirrorBoneWeight;
+                }
+                else if (srcVertex.HasBoneWeight)
+                {
+                    mirrorVertex.BoneWeight = srcVertex.BoneWeight;
+                }
+
+                mirrorMeshObj.Vertices.Add(mirrorVertex);
+            }
+
+            // 面をコピー（頂点順序を反転して法線方向を維持）
+            foreach (var srcFace in srcMeshObj.Faces)
+            {
+                var mirrorFace = new Face
+                {
+                    MaterialIndex = srcFace.MaterialIndex + source.MirrorMaterialOffset,
+                };
+                if (srcFace.IsHidden)
+                    mirrorFace.SetFlag(FaceFlags.Hidden);
+
+                // 頂点順序を反転（法線方向維持のため）
+                for (int i = srcFace.VertexCount - 1; i >= 0; i--)
+                {
+                    mirrorFace.VertexIndices.Add(srcFace.VertexIndices[i]);
+                    mirrorFace.UVIndices.Add(srcFace.UVIndices[i]);
+                    mirrorFace.NormalIndices.Add(srcFace.NormalIndices[i]);
+                }
+
+                mirrorMeshObj.Faces.Add(mirrorFace);
+            }
+
+            // MeshContextを作成
+            var mirrorContext = new MeshContext
+            {
+                MeshObject = mirrorMeshObj,
+                Name = mirrorMeshObj.Name,
+                Type = MeshType.BakedMirror,
+                BakedMirrorSourceIndex = sourceIndex,
+                // 階層情報は元メッシュに合わせる
+                ParentIndex = source.ParentIndex,
+                Depth = source.Depth,
+                IsVisible = source.IsVisible,
+                // ミラー属性はなし（実体化されているため）
+                MirrorType = 0,
+                MirrorAxis = 1,
+                MirrorDistance = 0,
+                MirrorMaterialOffset = 0
+            };
+
+            // UnityMesh生成
+            mirrorContext.UnityMesh = mirrorMeshObj.ToUnityMesh();
+            mirrorContext.OriginalPositions = mirrorMeshObj.Vertices.Select(v => v.Position).ToArray();
+
+            return mirrorContext;
+        }
+
+        /// <summary>
+        /// 位置をミラー変換
+        /// </summary>
+        private static Vector3 MirrorPosition(Vector3 pos, Poly_Ling.Symmetry.SymmetryAxis axis)
+        {
+            switch (axis)
+            {
+                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-pos.x, pos.y, pos.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(pos.x, -pos.y, pos.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(pos.x, pos.y, -pos.z);
+                default: return new Vector3(-pos.x, pos.y, pos.z);
+            }
+        }
+
+        /// <summary>
+        /// 法線をミラー変換
+        /// </summary>
+        private static Vector3 MirrorNormal(Vector3 normal, Poly_Ling.Symmetry.SymmetryAxis axis)
+        {
+            switch (axis)
+            {
+                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-normal.x, normal.y, normal.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(normal.x, -normal.y, normal.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(normal.x, normal.y, -normal.z);
+                default: return new Vector3(-normal.x, normal.y, normal.z);
+            }
         }
     }
 }

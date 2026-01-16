@@ -173,6 +173,12 @@ namespace Poly_Ling.Serialization
         /// <summary>ミラー側マテリアルオフセット（ミラー側マテリアルインデックス = 実体側 + オフセット）</summary>
         public int mirrorMaterialOffset = 0;
 
+        /// <summary>
+        /// ベイク元メッシュのインデックス（Type==BakedMirrorの時に使用）
+        /// -1 = ベイクミラーではない
+        /// </summary>
+        public int bakedMirrorSourceIndex = -1;
+
         // ================================================================
         // モーフ基準データ（Phase: Morph対応）
         // ================================================================

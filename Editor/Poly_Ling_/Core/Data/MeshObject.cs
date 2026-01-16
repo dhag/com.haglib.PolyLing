@@ -496,7 +496,9 @@ namespace Poly_Ling.Data
         /// <summary>ヘルパーオブジェクト</summary>
         Helper = 5,
         /// <summary>グループ</summary>
-        Group = 6
+        Group = 6,
+        /// <summary>ベイクされたミラーメッシュ</summary>
+        BakedMirror = 7
     }
 
     // ============================================================

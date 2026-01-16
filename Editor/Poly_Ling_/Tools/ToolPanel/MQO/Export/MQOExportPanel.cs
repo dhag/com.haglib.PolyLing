@@ -53,6 +53,7 @@ namespace Poly_Ling.MQO
             ["ExportSelectedOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択メッシュのみ" },
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
             ["PreserveObjectAttributes"] = new() { ["en"] = "Preserve Object Attributes", ["ja"] = "オブジェクト属性を保持" },
+            ["SkipBakedMirror"] = new() { ["en"] = "Skip Baked Mirror", ["ja"] = "ベイクミラーを削除" },
             ["TextureFolder"] = new() { ["en"] = "Texture Folder", ["ja"] = "テクスチャフォルダ" },
             ["Format"] = new() { ["en"] = "Format", ["ja"] = "出力形式" },
             ["DecimalPrecision"] = new() { ["en"] = "Decimal Precision", ["ja"] = "小数点以下桁数" },
@@ -290,6 +291,7 @@ namespace Poly_Ling.MQO
             _settings.ExportSelectedOnly = EditorGUILayout.Toggle(T("ExportSelectedOnly"), _settings.ExportSelectedOnly);
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
             _settings.PreserveObjectAttributes = EditorGUILayout.Toggle(T("PreserveObjectAttributes"), _settings.PreserveObjectAttributes);
+            _settings.SkipBakedMirror = EditorGUILayout.Toggle(T("SkipBakedMirror"), _settings.SkipBakedMirror);
 
             EditorGUILayout.Space(3);
 
