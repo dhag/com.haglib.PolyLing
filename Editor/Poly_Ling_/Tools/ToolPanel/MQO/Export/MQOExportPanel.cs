@@ -1,6 +1,7 @@
 // Assets/Editor/Poly_Ling/MQO/Export/MQOExportPanel.cs
 // MQOエクスポートパネル
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
@@ -47,6 +48,7 @@ namespace Poly_Ling.MQO
             ["FlipUV_V"] = new() { ["en"] = "Flip UV V", ["ja"] = "UV V反転" },
             ["Options"] = new() { ["en"] = "Options", ["ja"] = "オプション" },
             ["ExportMaterials"] = new() { ["en"] = "Export Materials", ["ja"] = "マテリアル出力" },
+            ["ExcludeUnusedMirrorMat"] = new() { ["en"] = "Exclude Unused Mirror Mat", ["ja"] = "未使用ミラー材質除外" },
             ["SkipEmptyObjects"] = new() { ["en"] = "Skip Empty Objects", ["ja"] = "空オブジェクトをスキップ" },
             ["ExportSelectedOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択メッシュのみ" },
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
@@ -90,21 +92,21 @@ namespace Poly_Ling.MQO
         // フィールド
         // ================================================================
 
-        private MQOExportSettings _settings = new MQOExportSettings();
-        private MQOExportResult _lastResult;
-        private string _lastFilePath = "";
-        private Vector2 _scrollPosition;
+        [NonSerialized] private MQOExportSettings _settings = new MQOExportSettings();
+        [NonSerialized] private MQOExportResult _lastResult;
+        [NonSerialized] private string _lastFilePath = "";
+        [NonSerialized] private Vector2 _scrollPosition;
 
-        private bool _foldSettings = true;
-        private bool _foldBoneWeight = false;
-        private bool _foldResult = false;
+        [NonSerialized] private bool _foldSettings = true;
+        [NonSerialized] private bool _foldBoneWeight = false;
+        [NonSerialized] private bool _foldResult = false;
 
         // ボーン/ウェイトCSV
-        private bool _exportBoneCSV = false;
-        private bool _exportWeightCSV = false;
-        private string _boneCSVPath = "";
-        private string _weightCSVPath = "";
-        private string _boneWeightExportResult = "";
+        [NonSerialized] private bool _exportBoneCSV = false;
+        [NonSerialized] private bool _exportWeightCSV = false;
+        [NonSerialized] private string _boneCSVPath = "";
+        [NonSerialized] private string _weightCSVPath = "";
+        [NonSerialized] private string _boneWeightExportResult = "";
 
         // ================================================================
         // Open
@@ -278,6 +280,12 @@ namespace Poly_Ling.MQO
             // オプション
             EditorGUILayout.LabelField(T("Options"), EditorStyles.miniLabel);
             _settings.ExportMaterials = EditorGUILayout.Toggle(T("ExportMaterials"), _settings.ExportMaterials);
+            using (new EditorGUI.DisabledScope(!_settings.ExportMaterials))
+            {
+                EditorGUI.indentLevel++;
+                _settings.ExcludeUnusedMirrorMaterials = EditorGUILayout.Toggle(T("ExcludeUnusedMirrorMat"), _settings.ExcludeUnusedMirrorMaterials);
+                EditorGUI.indentLevel--;
+            }
             _settings.SkipEmptyObjects = EditorGUILayout.Toggle(T("SkipEmptyObjects"), _settings.SkipEmptyObjects);
             _settings.ExportSelectedOnly = EditorGUILayout.Toggle(T("ExportSelectedOnly"), _settings.ExportSelectedOnly);
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
@@ -461,11 +469,13 @@ namespace Poly_Ling.MQO
 
             Debug.Log($"[MQOExportPanel] Exporting {meshContexts.Count} mesh(es) to: {_lastFilePath}");
 
-            // Phase 5: ModelContext.Materialsを使用
+            // Phase 5: ModelContext.Materials と MaterialReferences を使用
             var materials = _context?.Model?.Materials;
+            var materialRefs = _context?.Model?.MaterialReferences;
+            
             if (materials != null && materials.Count > 0)
             {
-                _lastResult = MQOExporter.ExportFile(_lastFilePath, meshContexts, materials, _settings);
+                _lastResult = MQOExporter.ExportFile(_lastFilePath, meshContexts, materials, _settings, materialRefs);
             }
             else
             {

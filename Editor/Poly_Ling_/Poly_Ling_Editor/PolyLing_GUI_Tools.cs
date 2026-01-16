@@ -205,6 +205,13 @@ public partial class PolyLing
         {
             MeshListPanel.Open(_toolManager?.toolContext);
         }
+
+        // Simple Morph
+        if (GUILayout.Button(L.Get("Window_SimpleMorph")))
+        {
+            SimpleMorphPanel.Open(_toolManager?.toolContext);
+        }
+
         // === Import/Export ===
         //EditorGUILayout.Space(5);
         //EditorGUILayout.LabelField("Import / Export", EditorStyles.miniLabel);
@@ -226,11 +233,11 @@ public partial class PolyLing
 
         if (GUILayout.Button("Avatar Creator..."))
         {
-            Poly_Ling.PMXCSV.AvatarCreatorPanel.ShowWindow();
+            Poly_Ling.MISC.AvatarCreatorPanel.ShowWindow();
         }
 
         EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
-        if (GUILayout.Button("Export"))
+        if (GUILayout.Button("MQO Export"))
         {
             Poly_Ling.MQO.MQOExportPanel.Open(_toolManager?.toolContext);
         }

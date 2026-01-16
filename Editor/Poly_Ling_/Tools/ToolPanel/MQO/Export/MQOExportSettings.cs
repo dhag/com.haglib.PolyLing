@@ -40,6 +40,10 @@ namespace Poly_Ling.MQO
         [Tooltip("マテリアル情報をエクスポート")]
         public bool ExportMaterials = true;
 
+        /// <summary>未使用のミラーマテリアルを除外</summary>
+        [Tooltip("どのメッシュでも使用されていないミラーマテリアル（+付き）を除外")]
+        public bool ExcludeUnusedMirrorMaterials = true;
+
         /// <summary>空のオブジェクトをスキップ</summary>
         [Tooltip("頂点や面を持たないオブジェクトをスキップ")]
         public bool SkipEmptyObjects = false;
@@ -90,6 +94,7 @@ namespace Poly_Ling.MQO
                 FlipZ = this.FlipZ,
                 FlipUV_V = this.FlipUV_V,
                 ExportMaterials = this.ExportMaterials,
+                ExcludeUnusedMirrorMaterials = this.ExcludeUnusedMirrorMaterials,
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 ExportSelectedOnly = this.ExportSelectedOnly,
                 MergeObjects = this.MergeObjects,
@@ -108,6 +113,7 @@ namespace Poly_Ling.MQO
                    FlipZ != o.FlipZ ||
                    FlipUV_V != o.FlipUV_V ||
                    ExportMaterials != o.ExportMaterials ||
+                   ExcludeUnusedMirrorMaterials != o.ExcludeUnusedMirrorMaterials ||
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    ExportSelectedOnly != o.ExportSelectedOnly ||
                    MergeObjects != o.MergeObjects ||
@@ -125,6 +131,7 @@ namespace Poly_Ling.MQO
             FlipZ = o.FlipZ;
             FlipUV_V = o.FlipUV_V;
             ExportMaterials = o.ExportMaterials;
+            ExcludeUnusedMirrorMaterials = o.ExcludeUnusedMirrorMaterials;
             SkipEmptyObjects = o.SkipEmptyObjects;
             ExportSelectedOnly = o.ExportSelectedOnly;
             MergeObjects = o.MergeObjects;

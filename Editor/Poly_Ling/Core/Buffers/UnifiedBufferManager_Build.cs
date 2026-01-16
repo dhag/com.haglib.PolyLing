@@ -50,6 +50,7 @@ namespace Poly_Ling.Core
             int totalLines = 0;
             int totalFaces = 0;
             int totalIndices = 0;
+            int totalExpandedVerts = 0;  // UV展開後の頂点数
             int meshCount = 0;
 
             foreach (var mc in meshContexts)
@@ -60,6 +61,13 @@ namespace Poly_Ling.Core
                 totalVerts += mo.VertexCount;
                 totalFaces += mo.FaceCount;
                 meshCount++;
+
+                // UV展開後の頂点数を計算
+                foreach (var vertex in mo.Vertices)
+                {
+                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                    totalExpandedVerts += uvCount;
+                }
 
                 // ライン数を計算（エッジ + 補助線）
                 foreach (var face in mo.Faces)
@@ -76,8 +84,9 @@ namespace Poly_Ling.Core
                 }
             }
 
-            Debug.Log($"[BuildFromMeshContexts] meshCount={meshCount}, totalVerts={totalVerts}, totalLines={totalLines}, totalFaces={totalFaces}, _meshInfos.Length={_meshInfos?.Length ?? 0}");
+            Debug.Log($"[BuildFromMeshContexts] meshCount={meshCount}, totalVerts={totalVerts}, expandedVerts={totalExpandedVerts}, totalLines={totalLines}, totalFaces={totalFaces}, _meshInfos.Length={_meshInfos?.Length ?? 0}");
             EnsureCapacity(totalVerts, totalLines, totalFaces, totalIndices, meshCount);
+            EnsureExpandedCapacity(totalExpandedVerts);
 
             // マッピングをクリア
             _contextToUnifiedMeshIndex.Clear();
@@ -135,6 +144,9 @@ namespace Poly_Ling.Core
             _totalFaceCount = (int)faceOffset;
             _totalIndexCount = (int)indexOffset;
             _modelCount = 1;
+
+            // UV展開マッピングを構築
+            BuildExpandedVertexMapping(meshContexts);
 
             // ModelInfo作成
             _modelInfos[0] = new ModelInfo
@@ -503,6 +515,76 @@ namespace Poly_Ling.Core
 
             Vector3 normal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
             return normal.magnitude > 0.001f ? normal : Vector3.up;
+        }
+
+        // ============================================================
+        // UV展開マッピング構築
+        // ============================================================
+
+        /// <summary>
+        /// UV展開後の頂点マッピングを構築
+        /// ToUnityMesh()と同じロジックでマッピングを生成
+        /// </summary>
+        private void BuildExpandedVertexMapping(List<MeshContext> meshContexts)
+        {
+            if (meshContexts == null || meshContexts.Count == 0)
+                return;
+
+            // 展開後の総頂点数を計算
+            int totalExpanded = 0;
+            foreach (var mc in meshContexts)
+            {
+                if (mc?.MeshObject == null) continue;
+                foreach (var vertex in mc.MeshObject.Vertices)
+                {
+                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                    totalExpanded += uvCount;
+                }
+            }
+
+            _totalExpandedVertexCount = totalExpanded;
+
+            if (totalExpanded == 0)
+                return;
+
+            // マッピング配列を確保
+            if (_expandedToOriginal == null || _expandedToOriginal.Length < totalExpanded)
+            {
+                _expandedToOriginal = new uint[totalExpanded];
+            }
+
+            // マッピングを構築
+            // ToUnityMesh()と同じ順序: 頂点順 → UV順
+            int expandedIdx = 0;
+            uint vertexBaseOffset = 0;
+
+            foreach (var mc in meshContexts)
+            {
+                if (mc?.MeshObject == null) continue;
+                var mo = mc.MeshObject;
+
+                for (int vIdx = 0; vIdx < mo.Vertices.Count; vIdx++)
+                {
+                    var vertex = mo.Vertices[vIdx];
+                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                    // この頂点の全UV分、同じ元頂点インデックスを指す
+                    uint originalIdx = vertexBaseOffset + (uint)vIdx;
+                    for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                    {
+                        _expandedToOriginal[expandedIdx] = originalIdx;
+                        expandedIdx++;
+                    }
+                }
+
+                vertexBaseOffset += (uint)mo.Vertices.Count;
+            }
+
+            // GPUバッファにアップロード
+            if (_expandedToOriginalBuffer != null)
+            {
+                _expandedToOriginalBuffer.SetData(_expandedToOriginal, 0, 0, totalExpanded);
+            }
         }
     }
 }

@@ -23,6 +23,19 @@ namespace Poly_Ling.MQO
     }
 
     /// <summary>
+    /// 法線計算モード
+    /// </summary>
+    public enum NormalMode
+    {
+        /// <summary>面法線をそのまま使用（フラットシェーディング、エディット向け）</summary>
+        FaceNormal,
+        /// <summary>スムージング角度で平均化（スムーズシェーディング）</summary>
+        Smooth,
+        /// <summary>Unity標準のRecalculateNormalsを使用</summary>
+        Unity,
+    }
+
+    /// <summary>
     /// MQOインポート設定
     /// </summary>
     [Serializable]
@@ -76,12 +89,12 @@ namespace Poly_Ling.MQO
         // 詳細設定
         // ================================================================
 
-        /// <summary>法線を再計算</summary>
-        [Tooltip("インポート後に法線を再計算する")]
-        public bool RecalculateNormals = true;
+        /// <summary>法線計算モード</summary>
+        [Tooltip("FaceNormal: 面法線そのまま（フラット）, Smooth: スムージング")]
+        public NormalMode NormalMode = NormalMode.Smooth;
 
         /// <summary>スムージング角度（度）</summary>
-        [Tooltip("法線スムージングの閾値角度")]
+        [Tooltip("法線スムージングの閾値角度（NormalMode=Smoothの時のみ有効）")]
         [Range(0f, 180f)]
         public float SmoothingAngle = 60f;
 
@@ -106,6 +119,19 @@ namespace Poly_Ling.MQO
         /// <summary>ボーンスケール（PMXボーン座標に適用、デフォルト1.0）</summary>
         [Tooltip("PMXボーン座標に適用するスケール（MQOと同じScaleを使う場合は1.0）")]
         public float BoneScale = 1.0f;
+
+        // ================================================================
+        // 頂点デバッグ設定
+        // ================================================================
+
+        /// <summary>頂点デバッグログを出力</summary>
+        [Tooltip("メッシュオブジェクトごとの頂点情報をコンソールに出力する")]
+        public bool DebugVertexInfo = false;
+
+        /// <summary>同一頂点・近接UV検出時に出力する件数</summary>
+        [Tooltip("同一頂点で異なるUVを持つペアの出力件数（近い順）")]
+        [Range(1, 100)]
+        public int DebugVertexNearUVCount = 10;
 
         // ================================================================
         // テクスチャ読み込み用
@@ -163,9 +189,11 @@ namespace Poly_Ling.MQO
                 SkipHiddenObjects = this.SkipHiddenObjects,
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 MergeObjects = this.MergeObjects,
-                RecalculateNormals = this.RecalculateNormals,
+                NormalMode = this.NormalMode,
                 SmoothingAngle = this.SmoothingAngle,
-                BoneWeightCSVPath = this.BoneWeightCSVPath
+                BoneWeightCSVPath = this.BoneWeightCSVPath,
+                DebugVertexInfo = this.DebugVertexInfo,
+                DebugVertexNearUVCount = this.DebugVertexNearUVCount
             };
         }
 
@@ -182,9 +210,11 @@ namespace Poly_Ling.MQO
                    SkipHiddenObjects != o.SkipHiddenObjects ||
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    MergeObjects != o.MergeObjects ||
-                   RecalculateNormals != o.RecalculateNormals ||
+                   NormalMode != o.NormalMode ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
-                   BoneWeightCSVPath != o.BoneWeightCSVPath;
+                   BoneWeightCSVPath != o.BoneWeightCSVPath ||
+                   DebugVertexInfo != o.DebugVertexInfo ||
+                   DebugVertexNearUVCount != o.DebugVertexNearUVCount;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -200,9 +230,11 @@ namespace Poly_Ling.MQO
             SkipHiddenObjects = o.SkipHiddenObjects;
             SkipEmptyObjects = o.SkipEmptyObjects;
             MergeObjects = o.MergeObjects;
-            RecalculateNormals = o.RecalculateNormals;
+            NormalMode = o.NormalMode;
             SmoothingAngle = o.SmoothingAngle;
             BoneWeightCSVPath = o.BoneWeightCSVPath;
+            DebugVertexInfo = o.DebugVertexInfo;
+            DebugVertexNearUVCount = o.DebugVertexNearUVCount;
         }
 
         // ================================================================

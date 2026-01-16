@@ -10,6 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
+using Poly_Ling.Materials;
 
 // MeshContextはSimpleMeshFactoryのネストクラス
 //using MeshContext = MeshContext;
@@ -35,6 +36,9 @@ namespace Poly_Ling.MQO
 
         /// <summary>インポートされたマテリアルリスト</summary>
         public List<Material> Materials { get; } = new List<Material>();
+
+        /// <summary>インポートされたマテリアル参照リスト（ソースパス情報付き）</summary>
+        public List<MaterialReference> MaterialReferences { get; } = new List<MaterialReference>();
 
         /// <summary>
         /// ミラー側マテリアルのオフセット
@@ -261,19 +265,22 @@ namespace Poly_Ling.MQO
                 // 実体側マテリアル
                 foreach (var mqoMat in document.Materials)
                 {
-                    var mat = ConvertMaterial(mqoMat, settings);
-                    result.Materials.Add(mat);
+                    var matRef = ConvertMaterialToRef(mqoMat, settings);
+                    result.Materials.Add(matRef.Material);
+                    result.MaterialReferences.Add(matRef);
                 }
                 
                 // ミラー側マテリアルオフセットを記録
                 result.MirrorMaterialOffset = result.Materials.Count;
                 
-                // ミラー側マテリアル（実体側を複製、名前に"+"を付加）
+                // ミラー側マテリアル（実体側を複製、名前に"+"を付加、ソースパスを引き継ぐ）
                 foreach (var mqoMat in document.Materials)
                 {
-                    var mat = ConvertMaterial(mqoMat, settings);
-                    mat.name = mat.name + "+";
-                    result.Materials.Add(mat);
+                    var matRef = ConvertMaterialToRef(mqoMat, settings);
+                    matRef.Data.Name = matRef.Data.Name + "+";
+                    matRef.Material.name = matRef.Data.Name;
+                    result.Materials.Add(matRef.Material);
+                    result.MaterialReferences.Add(matRef);
                 }
                 
                 result.Stats.MaterialCount = result.Materials.Count;
@@ -686,8 +693,33 @@ namespace Poly_Ling.MQO
             // メッシュ名を設定
             meshObject.Name = mqoObj.Name;
 
+            // 法線スムージング（NormalMode.Smoothの場合のみ）
+            if (settings.NormalMode == NormalMode.Smooth)
+            {
+                CalculateSmoothNormals(meshObject, settings.SmoothingAngle);
+            }
+            else if (settings.NormalMode == NormalMode.Unity)
+            {
+                // Unity標準のRecalculateNormalsを使用（ToUnityMeshShared後に呼ばれる）
+            }
+            // NormalMode.FaceNormalの場合はCalculateFaceNormalで設定済みの面法線をそのまま使用
+
             // Unity Mesh生成（マテリアル数を渡す）
             meshContext.UnityMesh = meshObject.ToUnityMeshShared(materialCount);
+            
+            // NormalMode.Unityの場合はUnity標準のRecalculateNormalsを使用
+            if (settings.NormalMode == NormalMode.Unity && meshContext.UnityMesh != null)
+            {
+                meshContext.UnityMesh.RecalculateNormals();
+                Debug.Log($"[MQOImporter] Unity RecalculateNormals applied");
+            }
+            
+            // 頂点デバッグ出力
+            if (settings.DebugVertexInfo)
+            {
+                OutputVertexDebugInfo(mqoObj.Name, mqoObj, meshObject, settings.DebugVertexNearUVCount);
+            }
+            
             /*
             // デバッグ出力（ミラー属性確認用）
             Debug.Log($"[MQOImporter] ConvertObject: {mqoObj.Name}");
@@ -731,12 +763,12 @@ namespace Poly_Ling.MQO
                 MaterialIndex = mqoFace.MaterialIndex >= 0 ? mqoFace.MaterialIndex : 0
             };
 
-            // 頂点とUVサブインデックスを追加
+            // 頂点とUVサブインデックスを追加（元の順序のまま）
             for (int i = 0; i < vertexCount; i++)
             {
                 face.VertexIndices.Add(vertexIndices[i]);
                 face.UVIndices.Add(uvSubIndices[i]);
-                face.NormalIndices.Add(0); // 後で計算
+                face.NormalIndices.Add(0);
             }
 
             meshObject.Faces.Add(face);
@@ -769,7 +801,7 @@ namespace Poly_Ling.MQO
         // マテリアル変換
         // ================================================================
 
-        private static Material ConvertMaterial(MQOMaterial mqoMat, MQOImportSettings settings)
+        private static MaterialReference ConvertMaterialToRef(MQOMaterial mqoMat, MQOImportSettings settings)
         {
             // URPシェーダーを優先
             Shader shader = FindBestShader();
@@ -779,6 +811,13 @@ namespace Poly_Ling.MQO
             // 色設定
             Color color = mqoMat.Color;
             SetMaterialColor(material, color);
+
+            // 不透明度（Color.a）が1未満の場合は透過マテリアルに設定
+            if (color.a < 1f - 0.001f)
+            {
+                SetMaterialTransparent(material);
+                Debug.Log($"[MQOImporter] Material '{mqoMat.Name}' set to Transparent (alpha={color.a:F2})");
+            }
 
             // その他のプロパティ
             if (material.HasProperty("_Smoothness"))
@@ -804,10 +843,113 @@ namespace Poly_Ling.MQO
                 }
             }
 
-            // アルファマップ（メインテクスチャのアルファとして使用することが多い）
-            // MQOのアルファマップは特殊なのでここではスキップ
+            // MaterialReferenceを作成し、ソースパスを設定
+            var matRef = new MaterialReference(material);
+            
+            // ソースパスを設定（元のMQOファイルの相対パスをそのまま保存）
+            if (!string.IsNullOrEmpty(mqoMat.TexturePath))
+            {
+                matRef.Data.SourceTexturePath = mqoMat.TexturePath;
+            }
+            if (!string.IsNullOrEmpty(mqoMat.AlphaMapPath))
+            {
+                matRef.Data.SourceAlphaMapPath = mqoMat.AlphaMapPath;
+            }
+            if (!string.IsNullOrEmpty(mqoMat.BumpMapPath))
+            {
+                matRef.Data.SourceBumpMapPath = mqoMat.BumpMapPath;
+            }
 
-            return material;
+            return matRef;
+        }
+
+        /// <summary>
+        /// テクスチャパスを解決（相対パスならフルパスに変換）
+        /// テクスチャ読み込み用
+        /// </summary>
+        private static string ResolveTexturePath(string texturePath, string baseDir)
+        {
+            if (string.IsNullOrEmpty(texturePath))
+                return null;
+
+            string normalizedPath = texturePath.Replace("\\", "/");
+            
+            // 既にフルパスの場合
+            if (Path.IsPathRooted(normalizedPath))
+                return normalizedPath;
+
+            // 相対パスの場合、baseDirと結合
+            if (!string.IsNullOrEmpty(baseDir))
+            {
+                return Path.GetFullPath(Path.Combine(baseDir, normalizedPath)).Replace("\\", "/");
+            }
+
+            return normalizedPath;
+        }
+
+        /// <summary>後方互換用：Material を返す</summary>
+        private static Material ConvertMaterial(MQOMaterial mqoMat, MQOImportSettings settings)
+        {
+            return ConvertMaterialToRef(mqoMat, settings).Material;
+        }
+
+        /// <summary>
+        /// マテリアルを透過モードに設定（URP/Standard両対応）
+        /// </summary>
+        private static void SetMaterialTransparent(Material material)
+        {
+            // URP Lit用設定
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 1); // 0=Opaque, 1=Transparent
+                material.SetOverrideTag("RenderType", "Transparent");
+            }
+            if (material.HasProperty("_Blend"))
+            {
+                material.SetFloat("_Blend", 0); // 0=Alpha, 1=Premultiply, 2=Additive, 3=Multiply
+            }
+            if (material.HasProperty("_AlphaClip"))
+            {
+                material.SetFloat("_AlphaClip", 0);
+            }
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            }
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_SrcBlendAlpha"))
+            {
+                material.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            }
+            if (material.HasProperty("_DstBlendAlpha"))
+            {
+                material.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_ZWrite"))
+            {
+                material.SetFloat("_ZWrite", 0);
+            }
+
+            // Standard Shader用設定
+            if (material.HasProperty("_Mode"))
+            {
+                material.SetFloat("_Mode", 3); // 0=Opaque, 1=Cutout, 2=Fade, 3=Transparent
+            }
+
+            // レンダーキュー設定
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            // キーワード設定（URP）
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            
+            // Standard Shader用キーワード
+            material.EnableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
         }
         
         /// <summary>
@@ -1072,6 +1214,213 @@ namespace Poly_Ling.MQO
                 // 法線を蓄積（後でスムージング可能）
                 vertex.Normals[normalSubIndex] = normal;
             }
+        }
+
+        /// <summary>
+        /// 頂点法線をスムージング
+        /// 同一位置の頂点の法線を平均化（角度閾値付き）
+        /// </summary>
+        private static void CalculateSmoothNormals(MeshObject meshObject, float smoothingAngle)
+        {
+            float cosThreshold = Mathf.Cos(smoothingAngle * Mathf.Deg2Rad);
+
+            // 各面の法線を計算して保持
+            var faceNormals = new Vector3[meshObject.FaceCount];
+            for (int fi = 0; fi < meshObject.FaceCount; fi++)
+            {
+                var face = meshObject.Faces[fi];
+                if (face.VertexCount < 3)
+                {
+                    faceNormals[fi] = Vector3.up;
+                    continue;
+                }
+
+                Vector3 p0 = meshObject.Vertices[face.VertexIndices[0]].Position;
+                Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
+                Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
+                faceNormals[fi] = Vector3.Cross(p1 - p0, p2 - p0).normalized;
+            }
+
+            // 位置→(面インデックス, 頂点インデックス in 面, NormalSubIndex) のマッピング
+            var positionToFaceVerts = new Dictionary<Vector3, List<(int faceIdx, int vertInFace, int normalSubIdx)>>();
+
+            for (int fi = 0; fi < meshObject.FaceCount; fi++)
+            {
+                var face = meshObject.Faces[fi];
+                for (int vi = 0; vi < face.VertexCount; vi++)
+                {
+                    int vertIdx = face.VertexIndices[vi];
+                    int normalSubIdx = face.NormalIndices[vi];
+                    Vector3 pos = meshObject.Vertices[vertIdx].Position;
+
+                    // 位置をキーにまとめる（微小誤差を許容するため丸める）
+                    Vector3 roundedPos = new Vector3(
+                        Mathf.Round(pos.x * 10000f) / 10000f,
+                        Mathf.Round(pos.y * 10000f) / 10000f,
+                        Mathf.Round(pos.z * 10000f) / 10000f
+                    );
+
+                    if (!positionToFaceVerts.ContainsKey(roundedPos))
+                        positionToFaceVerts[roundedPos] = new List<(int, int, int)>();
+
+                    positionToFaceVerts[roundedPos].Add((fi, vi, normalSubIdx));
+                }
+            }
+
+            // 各位置で法線をスムージング
+            foreach (var kvp in positionToFaceVerts)
+            {
+                var faceVerts = kvp.Value;
+                if (faceVerts.Count <= 1) continue;
+
+                // 各頂点について、角度閾値内の面法線を平均化
+                foreach (var (faceIdx, vertInFace, normalSubIdx) in faceVerts)
+                {
+                    Vector3 baseFaceNormal = faceNormals[faceIdx];
+                    Vector3 smoothedNormal = baseFaceNormal;
+
+                    foreach (var (otherFaceIdx, _, _) in faceVerts)
+                    {
+                        if (otherFaceIdx == faceIdx) continue;
+
+                        Vector3 otherFaceNormal = faceNormals[otherFaceIdx];
+                        float dot = Vector3.Dot(baseFaceNormal, otherFaceNormal);
+
+                        // 角度閾値内なら平均に加える
+                        if (dot >= cosThreshold)
+                        {
+                            smoothedNormal += otherFaceNormal;
+                        }
+                    }
+
+                    smoothedNormal = smoothedNormal.normalized;
+
+                    // 頂点の法線を更新
+                    int vertIdx = meshObject.Faces[faceIdx].VertexIndices[vertInFace];
+                    var vertex = meshObject.Vertices[vertIdx];
+                    if (normalSubIdx < vertex.Normals.Count)
+                    {
+                        vertex.Normals[normalSubIdx] = smoothedNormal;
+                    }
+                }
+            }
+
+            Debug.Log($"[MQOImporter] Smooth normals calculated (angle={smoothingAngle}°, positions={positionToFaceVerts.Count})");
+        }
+
+        // ================================================================
+        // 頂点デバッグ出力
+        // ================================================================
+
+        /// <summary>
+        /// 頂点デバッグ情報を出力（オブジェクトごとに1つのログでまとめて出力）
+        /// MQOの元データから直接抽出
+        /// </summary>
+        /// <param name="objectName">オブジェクト名</param>
+        /// <param name="mqoObj">MQOオブジェクト（元データ）</param>
+        /// <param name="meshObject">変換後のメッシュオブジェクト</param>
+        /// <param name="nearUVCount">近接UV出力件数</param>
+        private static void OutputVertexDebugInfo(string objectName, MQOObject mqoObj, MeshObject meshObject, int nearUVCount)
+        {
+            int originalVertexCount = mqoObj.Vertices.Count;
+            
+            // 展開時の頂点数を計算（変換後のVertex.UVs.Countの合計）
+            int expandedVertexCount = 0;
+            foreach (var vertex in meshObject.Vertices)
+            {
+                expandedVertexCount += Math.Max(1, vertex.UVs.Count);
+            }
+            
+            // MQOの面データから頂点ごとのUVを収集
+            // Key: 頂点インデックス, Value: その頂点に割り当てられたUVのリスト
+            var vertexUVs = new Dictionary<int, List<Vector2>>();
+            
+            foreach (var mqoFace in mqoObj.Faces)
+            {
+                if (mqoFace.IsSpecialFace) continue;
+                if (mqoFace.UVs == null) continue;
+                
+                for (int i = 0; i < mqoFace.VertexCount && i < mqoFace.UVs.Length; i++)
+                {
+                    int vertIndex = mqoFace.VertexIndices[i];
+                    Vector2 uv = mqoFace.UVs[i]; // MQOの元UV値（変換前）
+                    
+                    if (!vertexUVs.ContainsKey(vertIndex))
+                    {
+                        vertexUVs[vertIndex] = new List<Vector2>();
+                    }
+                    
+                    // 同じUVが既にあるかチェック（完全一致）
+                    bool found = false;
+                    foreach (var existingUV in vertexUVs[vertIndex])
+                    {
+                        if (existingUV == uv)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        vertexUVs[vertIndex].Add(uv);
+                    }
+                }
+            }
+            
+            // 同一頂点で異なるUVを持つペアを収集
+            var nearUVPairs = new List<(int vertIndex, int vertexId, Vector2 uv1, Vector2 uv2, float distance)>();
+            
+            foreach (var kvp in vertexUVs)
+            {
+                int vertIndex = kvp.Key;
+                var uvList = kvp.Value;
+                
+                if (uvList.Count < 2) continue;
+                
+                // 頂点IDを取得（meshObjectから）
+                int vertexId = (vertIndex < meshObject.Vertices.Count) ? meshObject.Vertices[vertIndex].Id : 0;
+                
+                // 全ペアの距離を計算
+                for (int i = 0; i < uvList.Count; i++)
+                {
+                    for (int j = i + 1; j < uvList.Count; j++)
+                    {
+                        Vector2 uv1 = uvList[i];
+                        Vector2 uv2 = uvList[j];
+                        float dist = Vector2.Distance(uv1, uv2);
+                        
+                        nearUVPairs.Add((vertIndex, vertexId, uv1, uv2, dist));
+                    }
+                }
+            }
+            
+            // 距離が近い順にソート
+            nearUVPairs.Sort((a, b) => a.distance.CompareTo(b.distance));
+            
+            // 1つのログにまとめて出力（コピペしやすいように半角スペース区切り）
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"[VertexDebug] {objectName}");
+            sb.AppendLine($"OriginalVertexCount {originalVertexCount}");
+            sb.AppendLine($"ExpandedVertexCount {expandedVertexCount}");
+            sb.AppendLine($"NearUVPairCount {nearUVPairs.Count}");
+            
+            int outputCount = Math.Min(nearUVCount, nearUVPairs.Count);
+            if (outputCount > 0)
+            {
+                sb.AppendLine("VertIndex VertexID U1 V1 U2 V2 Distance");
+                for (int i = 0; i < outputCount; i++)
+                {
+                    var pair = nearUVPairs[i];
+                    // MQOと同じ5桁形式（0.12345）で出力して文字列検索可能に
+                    string u1 = pair.uv1.x.ToString("0.00000");
+                    string v1 = pair.uv1.y.ToString("0.00000");
+                    string u2 = pair.uv2.x.ToString("0.00000");
+                    string v2 = pair.uv2.y.ToString("0.00000");
+                    sb.AppendLine($"{pair.vertIndex} {pair.vertexId} {u1} {v1} {u2} {v2} {pair.distance:F6}");
+                }
+            }
+            
+            Debug.Log(sb.ToString());
         }
 
         private static MeshContext MergeAllMeshContexts(List<MeshContext> meshContexts, string name)

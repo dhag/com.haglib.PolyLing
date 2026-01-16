@@ -1218,6 +1218,7 @@ namespace Poly_Ling.Core
         // ============================================================
 
         private int _kernelTransformVertices = -1;
+        private int _kernelExpandVertices = -1;
 
         /// <summary>
         /// TransformVerticesカーネルを実行
@@ -1225,7 +1226,7 @@ namespace Poly_Ling.Core
         /// </summary>
         /// <param name="useWorldTransform">true: ワールド変換適用, false: ローカル座標コピー</param>
         /// <param name="transformNormals">true: 法線も変換</param>
-        /// <param name="readbackToCPU">true: 結果をCPU側に読み戻す</param>
+        /// <param name="readbackToCPU">true: 結果をCPU側に読み戻す（非推奨、後方互換用）</param>
         public void DispatchTransformVertices(bool useWorldTransform, bool transformNormals = false, bool readbackToCPU = true)
         {
             if (!_gpuComputeAvailable || _computeShader == null)
@@ -1267,7 +1268,7 @@ namespace Poly_Ling.Core
             int threadGroups = Mathf.CeilToInt(_totalVertexCount / 256.0f);
             _computeShader.Dispatch(_kernelTransformVertices, threadGroups, 1, 1);
 
-            // CPU側に読み戻し（描画用）
+            // CPU側に読み戻し（描画用）- 非推奨、後方互換用
             if (readbackToCPU && useWorldTransform)
             {
                 if (_worldPositions == null || _worldPositions.Length < _totalVertexCount)
@@ -1275,6 +1276,58 @@ namespace Poly_Ling.Core
                 
                 _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
             }
+        }
+
+        /// <summary>
+        /// ExpandVerticesカーネルを実行
+        /// ワールド変換済み頂点をUV展開済み配列に展開
+        /// </summary>
+        /// <param name="transformNormals">法線も展開するか</param>
+        public void DispatchExpandVertices(bool transformNormals = false)
+        {
+            if (!_gpuComputeAvailable || _computeShader == null)
+                return;
+
+            if (_totalExpandedVertexCount == 0)
+                return;
+
+            // 必要なバッファがすべて存在するか確認
+            if (_expandedToOriginalBuffer == null || 
+                _expandedPositionBuffer == null || 
+                _expandedNormalBuffer == null ||
+                _worldPositionBuffer == null ||
+                _normalBuffer == null)
+            {
+                Debug.LogWarning("[UnifiedBufferManager] ExpandVertices: Required buffers not initialized");
+                return;
+            }
+
+            // カーネルを取得（初回のみ）
+            if (_kernelExpandVertices < 0)
+            {
+                _kernelExpandVertices = _computeShader.FindKernel("ExpandVertices");
+                if (_kernelExpandVertices < 0)
+                {
+                    Debug.LogWarning("[UnifiedBufferManager] ExpandVertices kernel not found");
+                    return;
+                }
+            }
+
+            // バッファをバインド
+            _computeShader.SetBuffer(_kernelExpandVertices, "_ExpandedToOriginalBuffer", _expandedToOriginalBuffer);
+            _computeShader.SetBuffer(_kernelExpandVertices, "_WorldPositionBuffer", _worldPositionBuffer);
+            _computeShader.SetBuffer(_kernelExpandVertices, "_ExpandedPositionBuffer", _expandedPositionBuffer);
+            _computeShader.SetBuffer(_kernelExpandVertices, "_NormalBuffer", _normalBuffer);
+            _computeShader.SetBuffer(_kernelExpandVertices, "_WorldNormalBuffer", _normalBuffer);  // TODO: 変換済み法線
+            _computeShader.SetBuffer(_kernelExpandVertices, "_ExpandedNormalBuffer", _expandedNormalBuffer);
+
+            // パラメータを設定
+            _computeShader.SetInt("_ExpandedVertexCount", _totalExpandedVertexCount);
+            _computeShader.SetInt("_TransformNormals", transformNormals ? 1 : 0);
+
+            // ディスパッチ
+            int threadGroups = Mathf.CeilToInt(_totalExpandedVertexCount / 256.0f);
+            _computeShader.Dispatch(_kernelExpandVertices, threadGroups, 1, 1);
         }
 
         /// <summary>
@@ -1290,6 +1343,24 @@ namespace Poly_Ling.Core
 
             _worldPositionBuffer.GetData(_worldPositions, 0, 0, _totalVertexCount);
             return _worldPositions;
+        }
+
+        // 展開済み頂点のCPU配列（ReadBack用）
+        private Vector3[] _expandedPositions;
+
+        /// <summary>
+        /// 展開済み頂点座標バッファの内容を取得
+        /// </summary>
+        public Vector3[] GetExpandedPositions()
+        {
+            if (_expandedPositionBuffer == null || _totalExpandedVertexCount == 0)
+                return null;
+
+            if (_expandedPositions == null || _expandedPositions.Length < _totalExpandedVertexCount)
+                _expandedPositions = new Vector3[_totalExpandedVertexCount];
+
+            _expandedPositionBuffer.GetData(_expandedPositions, 0, 0, _totalExpandedVertexCount);
+            return _expandedPositions;
         }
     }
 }

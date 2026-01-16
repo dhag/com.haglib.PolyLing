@@ -14,6 +14,7 @@ using Poly_Ling.UndoSystem;
 using Poly_Ling.Selection;
 using Poly_Ling.Model;
 using Poly_Ling.Rendering;
+using Poly_Ling.Materials;
 
 // MeshContentはSimpleMeshFactoryのネストクラスを参照
 ////using MeshContext = MeshContext;
@@ -211,8 +212,14 @@ namespace Poly_Ling.Tools
         /// <summary>マテリアルを複数追加（Undo対応・バッチ）</summary>
         public Action<IList<Material>> AddMaterials { get; set; }
 
+        /// <summary>マテリアル参照を複数追加（ソースパス情報付き）</summary>
+        public Action<IList<MaterialReference>> AddMaterialReferences { get; set; }
+
         /// <summary>マテリアルリストを置換（既存を全削除して新規設定）</summary>
         public Action<IList<Material>> ReplaceMaterials { get; set; }
+
+        /// <summary>マテリアル参照リストを置換（ソースパス情報付き）</summary>
+        public Action<IList<MaterialReference>> ReplaceMaterialReferences { get; set; }
 
         /// <summary>カレントマテリアルインデックスを設定</summary>
         public Action<int> SetCurrentMaterialIndex { get; set; }

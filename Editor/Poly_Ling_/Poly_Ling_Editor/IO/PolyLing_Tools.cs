@@ -120,7 +120,9 @@ public partial class PolyLing : EditorWindow
 
         // Phase 5追加: マテリアル操作コールバック
         ctx.AddMaterials = AddMaterialsToModel;
+        ctx.AddMaterialReferences = AddMaterialRefsToModel;
         ctx.ReplaceMaterials = ReplaceMaterialsInModel;
+        ctx.ReplaceMaterialReferences = ReplaceMaterialRefsInModel;
         ctx.SetCurrentMaterialIndex = (index) => { if (_model != null) _model.CurrentMaterialIndex = index; };
     }
 
@@ -234,7 +236,7 @@ public partial class PolyLing : EditorWindow
         ctx.GroupOffsets = _groupOffsets;
         ctx.UndoController = _undoController;
         ctx.WorkPlane = _undoController?.WorkPlane;
-        ctx.SyncMesh = () => SyncMeshFromData(meshContext);
+        ctx.SyncMesh = () => SyncMeshFromData(_model?.CurrentMeshContext);
 
         // マルチマテリアル対応
         ctx.CurrentMaterialIndex = meshContext?.CurrentMaterialIndex ?? 0;
@@ -262,13 +264,17 @@ public partial class PolyLing : EditorWindow
 
         // Phase 5追加: マテリアル操作コールバック
         ctx.AddMaterials = AddMaterialsToModel;
+        ctx.AddMaterialReferences = AddMaterialRefsToModel;
         ctx.ReplaceMaterials = ReplaceMaterialsInModel;
+        ctx.ReplaceMaterialReferences = ReplaceMaterialRefsInModel;
         ctx.SetCurrentMaterialIndex = (index) => { if (_model != null) _model.CurrentMaterialIndex = index; };
 
         // UndoコンテキストにもMaterialsを同期
+        // 注意: MaterialOwnerが設定されている場合、MeshUndoContext.MaterialsはModelContext.Materialsを参照するため
+        // ここでsetterを呼ぶとSourceTexturePathが失われる。MaterialIndexのみ同期する。
         if (_undoController?.MeshUndoContext != null && meshContext != null)
         {
-            _undoController.MeshUndoContext.Materials = meshContext.Materials;
+            // Materials setterは呼ばない（MaterialOwner経由で既に共有されている）
             _undoController.MeshUndoContext.CurrentMaterialIndex = meshContext.CurrentMaterialIndex;
         }
 
@@ -378,6 +384,38 @@ public partial class PolyLing : EditorWindow
     }
 
     /// <summary>
+    /// マテリアル参照を追加（ソースパス情報付き）
+    /// </summary>
+    private void AddMaterialRefsToModel(IList<Poly_Ling.Materials.MaterialReference> materialRefs)
+    {
+        if (_model == null || materialRefs == null) return;
+        
+        var currentRefs = _model.MaterialReferences;
+        var newList = new List<Poly_Ling.Materials.MaterialReference>();
+        
+        // 初期状態（空または1つのみで未設定）の場合は既存をスキップ
+        bool skipExisting = (currentRefs.Count == 1 && currentRefs[0]?.Data?.Name == "New Material");
+        
+        if (!skipExisting)
+        {
+            foreach (var matRef in currentRefs)
+            {
+                newList.Add(matRef);
+            }
+        }
+        
+        foreach (var matRef in materialRefs)
+        {
+            newList.Add(matRef);
+        }
+        
+        _model.MaterialReferences = newList;
+        
+        // Undo記録
+        _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);
+    }
+
+    /// <summary>
     /// マテリアルを置換（ModelContext.Materials を置換）
     /// </summary>
     private void ReplaceMaterialsInModel(IList<Material> materials)
@@ -402,6 +440,31 @@ public partial class PolyLing : EditorWindow
         _model.Materials = newList;  // setterを使用
         
         // 最後のレコードに NewMaterials を設定（Undo/Redo用）
+        _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);
+    }
+
+    /// <summary>
+    /// マテリアル参照を置換（ソースパス情報付き）
+    /// </summary>
+    private void ReplaceMaterialRefsInModel(IList<Poly_Ling.Materials.MaterialReference> materialRefs)
+    {
+        if (_model == null) return;
+        
+        var newList = new List<Poly_Ling.Materials.MaterialReference>();
+        if (materialRefs != null)
+        {
+            foreach (var matRef in materialRefs)
+            {
+                newList.Add(matRef);
+            }
+        }
+        if (newList.Count == 0)
+        {
+            newList.Add(new Poly_Ling.Materials.MaterialReference());
+        }
+        
+        _model.MaterialReferences = newList;
+        
         _undoController?.UpdateLastRecordMaterials(_model.Materials, _model.CurrentMaterialIndex);
     }
 

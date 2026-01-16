@@ -450,8 +450,8 @@ namespace Poly_Ling.PMX
 
                 if (_mqoImportResult.Success)
                 {
-                    // 展開後頂点数を計算
-                    CalculateExpandedVertexCount();
+                    // MQO展開後頂点の総数を計算
+                    CalculateExpandedVertexCountMQO();
 
                     Debug.Log($"[PMXBoneWeightExport] Loaded MQO: {_mqoImportResult.MeshContexts.Count} objects, " +
                              $"expanded vertices: {_mqoExpandedVertexCount}");
@@ -481,17 +481,17 @@ namespace Poly_Ling.PMX
         // 頂点数計算
         // ================================================================
 
-        private void CalculateExpandedVertexCount()
+        private void CalculateExpandedVertexCountMQO()
         {
             _mqoExpandedVertexCount = 0;
             if (_mqoImportResult == null || !_mqoImportResult.Success) return;
 
             foreach (var meshContext in _mqoImportResult.MeshContexts)
             {
-                var mo = meshContext.MeshObject;
-                if (mo == null) continue;
+                var meshObject = meshContext.MeshObject;
+                if (meshObject == null) continue;
 
-                int expand = CalculateExpandedVertexCount(mo);
+                int expand = CalculateExpandedVertexCount(meshObject);
                 _mqoExpandedVertexCount += expand;
 
                 // ミラーの場合は2倍
@@ -507,6 +507,16 @@ namespace Poly_Ling.PMX
             {
                 int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
                 count += uvCount;
+                /***
+                緊急チェック用ログ（消したらダメ）
+                if (1 < uvCount)
+                {// UV展開の詳細ログ
+                    foreach (var uv in vertex.UVs)
+                    {
+                        Debug.Log($"[PMXBoneWeightExport] UV詳細   Vertex ID={vertex.Id}, UV=({uv.x}, {uv.y})");
+                    }
+                }
+                ***/
             }
             return count;
         }

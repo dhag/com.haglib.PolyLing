@@ -78,6 +78,19 @@ namespace Poly_Ling.Materials
         public string BaseMapPath;
 
         // ================================================================
+        // ソースパス（インポート元のパス、エクスポート時に使用）
+        // ================================================================
+
+        /// <summary>ソーステクスチャパス（インポート元のファイルパス）</summary>
+        public string SourceTexturePath;
+
+        /// <summary>ソースアルファマップパス</summary>
+        public string SourceAlphaMapPath;
+
+        /// <summary>ソースバンプマップパス</summary>
+        public string SourceBumpMapPath;
+
+        // ================================================================
         // PBRパラメータ（Lit系のみ）
         // ================================================================
         
@@ -187,6 +200,9 @@ namespace Poly_Ling.Materials
                 ShaderType = this.ShaderType,
                 BaseColor = (float[])this.BaseColor.Clone(),
                 BaseMapPath = this.BaseMapPath,
+                SourceTexturePath = this.SourceTexturePath,
+                SourceAlphaMapPath = this.SourceAlphaMapPath,
+                SourceBumpMapPath = this.SourceBumpMapPath,
                 Metallic = this.Metallic,
                 Smoothness = this.Smoothness,
                 MetallicMapPath = this.MetallicMapPath,

@@ -612,6 +612,11 @@ namespace Poly_Ling.Serialization
         public float[] baseColor = new float[] { 1f, 1f, 1f, 1f };
         public string baseMapPath;
         
+        // ソースパス（インポート元のパス、エクスポート時に使用）
+        public string sourceTexturePath;
+        public string sourceAlphaMapPath;
+        public string sourceBumpMapPath;
+        
         // PBRパラメータ
         public float metallic = 0f;
         public float smoothness = 0.5f;

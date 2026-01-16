@@ -57,15 +57,15 @@ namespace Poly_Ling.Core
             get => _useUnifiedRendering;
             set => _useUnifiedRendering = value;
         }
-        
+
         /// <summary>
         /// 背面カリングを有効にするか
         /// </summary>
         public bool BackfaceCullingEnabled
         {
             get => _renderer?.BackfaceCullingEnabled ?? true;
-            set 
-            { 
+            set
+            {
                 if (_renderer != null) _renderer.BackfaceCullingEnabled = value;
                 if (_unifiedSystem != null) _unifiedSystem.BackfaceCullingEnabled = value;
             }
@@ -87,7 +87,7 @@ namespace Poly_Ling.Core
         {
             int globalIndex = HoverVertexIndex;
             if (globalIndex < 0) return -1;
-            
+
             if (BufferManager?.GlobalToLocalVertexIndex(globalIndex, out int meshIdx, out int localIdx) == true)
             {
                 if (meshIdx == meshIndex)
@@ -105,7 +105,7 @@ namespace Poly_Ling.Core
         {
             int globalIndex = HoverLineIndex;
             if (globalIndex < 0) return -1;
-            
+
             if (BufferManager?.GlobalToLocalLineIndex(globalIndex, out int meshIdx, out int localIdx) == true)
             {
                 if (meshIdx == meshIndex)
@@ -121,7 +121,7 @@ namespace Poly_Ling.Core
         {
             int globalIndex = HoverFaceIndex;
             if (globalIndex < 0) return -1;
-            
+
             if (BufferManager?.GlobalToLocalFaceIndex(globalIndex, out int meshIdx, out int localIdx) == true)
             {
                 if (meshIdx == meshIndex)
@@ -206,9 +206,9 @@ namespace Poly_Ling.Core
         public void SetModelContext(ModelContext modelContext)
         {
             _modelContext = modelContext;
-            
+
             _unifiedSystem.SetModel(modelContext);
-            
+
             // 即座にトポロジー更新を実行（遅延せずにバッファを構築）
             _unifiedSystem.ExecuteUpdates(DirtyLevel.Topology);
         }
@@ -331,11 +331,16 @@ namespace Poly_Ling.Core
             bufferManager.UpdateTransformMatrices(_modelContext.MeshContextList, useWorldTransform);
 
             // TransformVerticesカーネルを実行
-            bufferManager.DispatchTransformVertices(useWorldTransform, false);
+            // ReadBackは必要（ワイヤフレーム・頂点描画がGetDisplayPositions()を使うため）
+            bufferManager.DispatchTransformVertices(useWorldTransform, false, readbackToCPU: true);
+
+            // UV展開済み頂点を生成（面シェーダ描画用）
+            bufferManager.DispatchExpandVertices(transformNormals: false);
         }
 
         /// <summary>
-        /// GPU変換後の頂点をMeshObjectに書き戻し、UnityMeshを再生成（面描画用）
+        /// GPU変換後の頂点をUnityMeshに設定
+        /// 展開済み頂点バッファから一度ReadBackして各メッシュに配分
         /// </summary>
         public void WritebackTransformedVertices()
         {
@@ -350,7 +355,105 @@ namespace Poly_Ling.Core
             if (meshContextList == null)
                 return;
 
-            // GPU変換後の頂点座標を取得
+            int totalExpandedCount = bufferManager.TotalExpandedVertexCount;
+            if (totalExpandedCount == 0)
+            {
+                // 展開バッファが未構築の場合はフォールバック
+                WritebackTransformedVerticesFallback();
+                return;
+            }
+
+            // 展開済み頂点をGPUから一度だけReadBack
+            var expandedPositions = bufferManager.GetExpandedPositions();
+            if (expandedPositions == null || expandedPositions.Length == 0)
+            {
+                WritebackTransformedVerticesFallback();
+                return;
+            }
+
+            // 展開済み頂点のオフセットを追跡
+            int expandedOffset = 0;
+
+            // 各MeshContextのUnityMeshを更新
+            for (int ctxIdx = 0; ctxIdx < meshContextList.Count; ctxIdx++)
+            {
+                var ctx = meshContextList[ctxIdx];
+                if (ctx?.MeshObject == null)
+                    continue;
+
+                // ボーンはスキップ
+                if (ctx.Type == MeshType.Bone)
+                    continue;
+
+                var meshObject = ctx.MeshObject;
+
+                // このメッシュの展開後頂点数を計算
+                int expandedVertexCount = 0;
+                foreach (var vertex in meshObject.Vertices)
+                {
+                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                    expandedVertexCount += uvCount;
+                }
+
+                if (expandedVertexCount == 0)
+                    continue;
+
+                // UnityMeshが存在し、頂点数が一致する場合は位置のみ更新
+                var unityMesh = ctx.UnityMesh;
+                if (unityMesh != null && unityMesh.vertexCount == expandedVertexCount)
+                {
+                    // NativeArrayを使ってコピー（GC削減）
+                    var nativeArray = new Unity.Collections.NativeArray<Vector3>(
+                        expandedVertexCount,
+                        Unity.Collections.Allocator.Temp,
+                        Unity.Collections.NativeArrayOptions.UninitializedMemory);
+
+                    Unity.Collections.NativeArray<Vector3>.Copy(expandedPositions, expandedOffset, nativeArray, 0, expandedVertexCount);
+
+                    unityMesh.SetVertices(nativeArray);
+                    unityMesh.RecalculateBounds();
+
+                    nativeArray.Dispose();
+                }
+                else
+                {
+                    // UnityMeshが存在しないか頂点数が違う場合は再生成
+                    var meshInfos = bufferManager.MeshInfos;
+                    int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
+                    if (unifiedMeshIdx >= 0 && meshInfos != null)
+                    {
+                        var meshInfo = meshInfos[unifiedMeshIdx];
+                        int vertexStart = (int)meshInfo.VertexStart;
+                        var worldPositions = bufferManager.GetWorldPositions();
+                        if (worldPositions != null)
+                        {
+                            for (int i = 0; i < meshObject.VertexCount && (vertexStart + i) < worldPositions.Length; i++)
+                            {
+                                meshObject.Vertices[i].Position = worldPositions[vertexStart + i];
+                            }
+                        }
+                    }
+                    ctx.UnityMesh = meshObject.ToUnityMesh();
+                }
+
+                expandedOffset += expandedVertexCount;
+            }
+        }
+
+        /// <summary>
+        /// フォールバック: 従来のCPU経由の書き戻し
+        /// </summary>
+        private void WritebackTransformedVerticesFallback()
+        {
+            var bufferManager = _unifiedSystem?.BufferManager;
+            if (bufferManager == null)
+                return;
+
+            var meshContextList = _modelContext.MeshContextList;
+            if (meshContextList == null)
+                return;
+
+            // GPU変換後の頂点座標を取得（CPU ReadBack）
             var worldPositions = bufferManager.GetWorldPositions();
             if (worldPositions == null || worldPositions.Length == 0)
                 return;
@@ -366,11 +469,9 @@ namespace Poly_Ling.Core
                 if (ctx?.MeshObject == null)
                     continue;
 
-                // ボーンはスキップ（頂点を持たない）
                 if (ctx.Type == MeshType.Bone)
                     continue;
 
-                // MeshContextインデックス → UnifiedMeshインデックスの変換
                 int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
                 if (unifiedMeshIdx < 0)
                     continue;
@@ -384,7 +485,7 @@ namespace Poly_Ling.Core
 
                 var meshObject = ctx.MeshObject;
                 if (meshObject.VertexCount != vertexCount)
-                    continue;  // 頂点数が一致しない場合はスキップ
+                    continue;
 
                 // MeshObject.Verticesに書き戻し
                 for (int i = 0; i < vertexCount; i++)
@@ -396,7 +497,7 @@ namespace Poly_Ling.Core
                     }
                 }
 
-                // UnityMeshを再生成（UV/法線のサブインデックスに合わせて展開）
+                // UnityMeshを再生成
                 ctx.UnityMesh = meshObject.ToUnityMesh();
             }
         }
@@ -432,8 +533,7 @@ namespace Poly_Ling.Core
             bool showUnselectedWireframe,
             bool showUnselectedVertices,
             int selectedMeshIndex,
-            float pointSize ,
-            float lineWidthPx = 1.0f,
+            float pointSize,
             float alpha = 1f)
         {
             if (!_isInitialized)
@@ -444,25 +544,27 @@ namespace Poly_Ling.Core
             // メッシュ構築
             if (showWireframe)
             {
+                // UpdateWireframeMesh(selectedMeshIndex, showUnselected, cam, lineWidthPx, selectedAlpha, unselectedAlpha)
                 _renderer.UpdateWireframeMesh(
                     selectedMeshIndex,
                     showUnselectedWireframe,
                     camera,
-                    lineWidthPx,
-                    alpha,
-                    0.4f);
+                    1.0f,       // lineWidthPx
+                    alpha,      // selectedAlpha
+                    0.4f);      // unselectedAlpha
                 _renderer.QueueWireframe();
             }
 
             if (showVertices)
             {
+                // UpdatePointMesh(camera, selectedMeshIndex, showUnselected, pointSize, selectedAlpha, unselectedAlpha)
                 _renderer.UpdatePointMesh(
                     camera,
                     selectedMeshIndex,
                     showUnselectedVertices,
                     pointSize,
-                    alpha,
-                    0.4f);
+                    alpha,      // selectedAlpha
+                    0.4f);      // unselectedAlpha
                 _renderer.QueuePoints();
             }
         }
@@ -488,7 +590,7 @@ namespace Poly_Ling.Core
 
             _renderer.CleanupQueued();
         }
-        /*
+
         /// <summary>
         /// 旧API互換（非推奨）
         /// </summary>
@@ -497,7 +599,7 @@ namespace Poly_Ling.Core
         {
             // 旧APIは機能しない
         }
-        */
+
         // ============================================================
         // ヒットテスト
         // ============================================================

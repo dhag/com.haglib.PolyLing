@@ -133,7 +133,7 @@ namespace Poly_Ling.Symmetry
 
             // Unity Meshに展開（面ごとに頂点を持つ形式）
             Vector3[] expandedPositions = ExpandPositions(mirrorPositions, meshObject);
-            
+
             if (expandedPositions.Length == _mirrorMesh.vertexCount)
             {
                 _mirrorMesh.vertices = expandedPositions;
@@ -155,6 +155,10 @@ namespace Poly_Ling.Symmetry
         /// ミラーメッシュを再構築（B方式）
         /// サブメッシュ構成: [mat0, mat1, mat2, ...]
         /// </summary>
+        /// <summary>
+        /// ミラーメッシュを再構築（頂点共有方式）
+        /// BakeMirrorToUnityMeshと同じ構造で、将来のワールド変換対応を考慮
+        /// </summary>
         private void RebuildMirrorMesh(MeshObject meshObject, SymmetrySettings settings)
         {
             // 既存メッシュをクリア
@@ -175,46 +179,60 @@ namespace Poly_Ling.Symmetry
             }
 
             Matrix4x4 mirrorMatrix = settings.GetMirrorMatrix();
+            SymmetryAxis axis = settings.Axis;
 
-            // ミラー済み頂点位置を計算
-            Vector3[] mirrorPositions = new Vector3[meshObject.VertexCount];
-            for (int i = 0; i < meshObject.VertexCount; i++)
+            // === 頂点共有方式（BakeMirrorToUnityMeshと同じ構造）===
+            var unityVerts = new List<Vector3>();
+            var unityUVs = new List<Vector2>();
+            var unityNormals = new List<Vector3>();
+
+            // キー: (頂点インデックス, UVサブインデックス) → Unity頂点インデックス
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
+
+            // 頂点を展開（頂点順→UV順）
+            for (int vIdx = 0; vIdx < meshObject.VertexCount; vIdx++)
             {
-                mirrorPositions[i] = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
+                var vertex = meshObject.Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                {
+                    int unityIdx = unityVerts.Count;
+                    vertexMapping[(vIdx, uvIdx)] = unityIdx;
+
+                    // 位置（ミラー変換）
+                    unityVerts.Add(mirrorMatrix.MultiplyPoint3x4(vertex.Position));
+
+                    // UV
+                    if (uvIdx < vertex.UVs.Count)
+                        unityUVs.Add(vertex.UVs[uvIdx]);
+                    else
+                        unityUVs.Add(Vector2.zero);
+
+                    // 法線（ミラー変換）
+                    Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
+                    unityNormals.Add(MirrorNormal(normal, axis));
+                }
             }
 
-            // 面データを収集（3頂点以上の面のみ、2頂点は補助線）
-            var realFaces = new List<Face>();
+            // 面データを収集（3頂点以上の面のみ）
+            var facesByMaterial = new Dictionary<int, List<Face>>();
             foreach (var face in meshObject.Faces)
             {
-                if (face.VertexCount >= 3)
-                {
-                    realFaces.Add(face);
-                }
-            }
+                if (face.VertexCount < 3 || face.IsHidden)
+                    continue;
 
-            if (realFaces.Count == 0)
-            {
-                return;
-            }
-
-            // サブメッシュ（マテリアル）ごとに面を分類
-            var facesByMaterial = new Dictionary<int, List<Face>>();
-            foreach (var face in realFaces)
-            {
                 int matIdx = face.MaterialIndex;
                 if (!facesByMaterial.ContainsKey(matIdx))
-                {
                     facesByMaterial[matIdx] = new List<Face>();
-                }
                 facesByMaterial[matIdx].Add(face);
             }
 
-            // 頂点・三角形を構築（面ごとに頂点を展開）
-            var vertices = new List<Vector3>();
-            var uvs = new List<Vector2>();
-            var trianglesBySubmesh = new Dictionary<int, List<int>>();
+            if (facesByMaterial.Count == 0)
+                return;
 
+            // 三角形インデックスを構築（面を反転）
+            var trianglesBySubmesh = new Dictionary<int, List<int>>();
             foreach (var kvp in facesByMaterial)
             {
                 int matIdx = kvp.Key;
@@ -225,47 +243,35 @@ namespace Poly_Ling.Symmetry
                 {
                     // 反転した面インデックスを取得
                     int[] reversedIndices = CreateReversedFace(face.VertexIndices);
-                    
+                    int[] reversedUVIndices = CreateReversedFace(face.UVIndices);
+
                     // 三角形分割（ファン方式）
-                    int baseVertex = vertices.Count;
-
-                    for (int i = 0; i < reversedIndices.Length; i++)
-                    {
-                        int origIdx = reversedIndices[i];
-                        vertices.Add(mirrorPositions[origIdx]);
-
-                        // UV（元の順序から取得）
-                        // 注: UVも反転順序に合わせて取得
-                        int origOrderIdx = face.VertexIndices[GetOriginalOrderIndex(i, face.VertexCount)];
-                        var vertex = meshObject.Vertices[origOrderIdx];
-                        if (vertex.UVs.Count > 0)
-                        {
-                            uvs.Add(vertex.UVs[0]);
-                        }
-                        else
-                        {
-                            uvs.Add(Vector2.zero);
-                        }
-                    }
-
-                    // 三角形インデックス（ファン分割）
                     for (int i = 1; i < reversedIndices.Length - 1; i++)
                     {
-                        trianglesBySubmesh[matIdx].Add(baseVertex);
-                        trianglesBySubmesh[matIdx].Add(baseVertex + i);
-                        trianglesBySubmesh[matIdx].Add(baseVertex + i + 1);
+                        // 頂点0
+                        int vIdx0 = reversedIndices[0];
+                        int uvIdx0 = reversedUVIndices.Length > 0 ? reversedUVIndices[0] : 0;
+                        trianglesBySubmesh[matIdx].Add(GetVertexIndex(vertexMapping, vIdx0, uvIdx0));
+
+                        // 頂点i
+                        int vIdxI = reversedIndices[i];
+                        int uvIdxI = i < reversedUVIndices.Length ? reversedUVIndices[i] : 0;
+                        trianglesBySubmesh[matIdx].Add(GetVertexIndex(vertexMapping, vIdxI, uvIdxI));
+
+                        // 頂点i+1
+                        int vIdxI1 = reversedIndices[i + 1];
+                        int uvIdxI1 = (i + 1) < reversedUVIndices.Length ? reversedUVIndices[i + 1] : 0;
+                        trianglesBySubmesh[matIdx].Add(GetVertexIndex(vertexMapping, vIdxI1, uvIdxI1));
                     }
                 }
             }
 
             // メッシュに設定
-            _mirrorMesh.vertices = vertices.ToArray();
-            if (uvs.Count == vertices.Count)
-            {
-                _mirrorMesh.uv = uvs.ToArray();
-            }
+            _mirrorMesh.vertices = unityVerts.ToArray();
+            _mirrorMesh.uv = unityUVs.ToArray();
+            _mirrorMesh.normals = unityNormals.ToArray();
 
-            // サブメッシュ設定（B方式：材質ごと）
+            // サブメッシュ設定
             int subMeshCount = 0;
             foreach (var matIdx in trianglesBySubmesh.Keys)
             {
@@ -276,17 +282,43 @@ namespace Poly_Ling.Symmetry
             for (int i = 0; i < subMeshCount; i++)
             {
                 if (trianglesBySubmesh.TryGetValue(i, out var triangles))
-                {
                     _mirrorMesh.SetTriangles(triangles, i);
-                }
                 else
-                {
                     _mirrorMesh.SetTriangles(new int[0], i);
-                }
             }
 
-            _mirrorMesh.RecalculateNormals();
             _mirrorMesh.RecalculateBounds();
+        }
+
+        /// <summary>
+        /// 頂点マッピングから Unity 頂点インデックスを取得
+        /// </summary>
+        private int GetVertexIndex(Dictionary<(int vertexIdx, int uvIdx), int> mapping, int vIdx, int uvIdx)
+        {
+            if (mapping.TryGetValue((vIdx, uvIdx), out int result))
+                return result;
+            // フォールバック: uvIdx=0で試行
+            if (mapping.TryGetValue((vIdx, 0), out result))
+                return result;
+            return 0;
+        }
+
+        /// <summary>
+        /// 法線をミラー変換
+        /// </summary>
+        private Vector3 MirrorNormal(Vector3 normal, SymmetryAxis axis)
+        {
+            switch (axis)
+            {
+                case SymmetryAxis.X:
+                    return new Vector3(-normal.x, normal.y, normal.z);
+                case SymmetryAxis.Y:
+                    return new Vector3(normal.x, -normal.y, normal.z);
+                case SymmetryAxis.Z:
+                    return new Vector3(normal.x, normal.y, -normal.z);
+                default:
+                    return normal;
+            }
         }
 
         /// <summary>

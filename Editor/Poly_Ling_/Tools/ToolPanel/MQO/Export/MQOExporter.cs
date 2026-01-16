@@ -40,7 +40,7 @@ namespace Poly_Ling.MQO
                 };
             }
 
-            return ExportFile(filePath, model.MeshContextList, model.Materials, settings);
+            return ExportFile(filePath, model.MeshContextList, model.Materials, settings, model.MaterialReferences);
         }
 
         /// <summary>
@@ -51,7 +51,8 @@ namespace Poly_Ling.MQO
             string filePath,
             IList<MeshContext> meshContexts,
             IList<Material> materials,
-            MQOExportSettings settings = null)
+            MQOExportSettings settings = null,
+            IList<Poly_Ling.Materials.MaterialReference> materialRefs = null)
         {
             var result = new MQOExportResult();
 
@@ -66,8 +67,8 @@ namespace Poly_Ling.MQO
 
             try
             {
-                // MQOドキュメント作成（マテリアルリストを渡す）
-                var document = ConvertToDocument(meshContexts, materials, settings, result.Stats);
+                // MQOドキュメント作成（マテリアルリストとMaterialReferencesを渡す）
+                var document = ConvertToDocument(meshContexts, materials, settings, result.Stats, materialRefs);
 
                 // テキスト生成
                 string mqoText = GenerateMQOText(document, settings);
@@ -178,7 +179,8 @@ namespace Poly_Ling.MQO
             IList<MeshContext> meshContexts,
             IList<Material> materials,
             MQOExportSettings settings,
-            MQOExportStats stats)
+            MQOExportStats stats,
+            IList<Poly_Ling.Materials.MaterialReference> materialRefs = null)
         {
             var document = new MQODocument
             {
@@ -188,20 +190,51 @@ namespace Poly_Ling.MQO
             // デフォルトシーン情報
             document.Scene = CreateDefaultScene();
 
+            // 使用されているマテリアルインデックスを収集
+            var usedMaterialIndices = new HashSet<int>();
+            foreach (var mc in meshContexts)
+            {
+                if (mc?.MeshObject == null) continue;
+                foreach (var face in mc.MeshObject.Faces)
+                {
+                    if (face.MaterialIndex >= 0)
+                    {
+                        usedMaterialIndices.Add(face.MaterialIndex);
+                    }
+                }
+            }
+
             // マテリアル設定（グローバルマテリアルリストから）
-            var materialMap = new Dictionary<Material, int>();
+            // oldIndex -> newIndex のマッピング
+            var materialIndexMap = new Dictionary<int, int>();
+            
             if (settings.ExportMaterials && materials != null && materials.Count > 0)
             {
                 for (int i = 0; i < materials.Count; i++)
                 {
                     var mat = materials[i];
+                    var matRef = (materialRefs != null && i < materialRefs.Count) ? materialRefs[i] : null;
+                    
+                    // 未使用ミラーマテリアル除外チェック
+                    if (settings.ExcludeUnusedMirrorMaterials)
+                    {
+                        string matName = mat?.name ?? matRef?.Data?.Name ?? "";
+                        bool isMirrorMaterial = matName.EndsWith("+");
+                        bool isUsed = usedMaterialIndices.Contains(i);
+                        
+                        if (isMirrorMaterial && !isUsed)
+                        {
+                            // 未使用のミラーマテリアルはスキップ
+                            continue;
+                        }
+                    }
+                    
+                    // マッピングを記録
+                    materialIndexMap[i] = document.Materials.Count;
+                    
                     if (mat != null)
                     {
-                        if (!materialMap.ContainsKey(mat))
-                        {
-                            materialMap[mat] = document.Materials.Count;
-                            document.Materials.Add(ConvertMaterial(mat, settings.TextureFolder));
-                        }
+                        document.Materials.Add(ConvertMaterial(mat, settings.TextureFolder, matRef));
                     }
                     else
                     {
@@ -229,14 +262,14 @@ namespace Poly_Ling.MQO
                 });
             }
 
-            // オブジェクト変換（Phase 5: マテリアル数を渡す）
+            // オブジェクト変換（Phase 5: マテリアルインデックスマップを渡す）
             int materialCount = document.Materials.Count;
             
             if (settings.MergeObjects)
             {
                 // 全メッシュを統合
                 var merged = MergeMeshContexts(meshContexts, "MergedObject");
-                var mqoObj = ConvertObject(merged, materialCount, settings, stats);
+                var mqoObj = ConvertObject(merged, materialCount, settings, stats, materialIndexMap);
                 if (mqoObj != null)
                 {
                     document.Objects.Add(mqoObj);
@@ -252,14 +285,14 @@ namespace Poly_Ling.MQO
                     // 空オブジェクトスキップ（SkipEmptyObjectsがtrueかつMeshObjectがnullまたは空の場合）
                     if (settings.SkipEmptyObjects)
                     {
-                        if (mc.MeshObject == null || 
+                        if (mc.MeshObject == null ||
                             (mc.MeshObject.VertexCount == 0 && mc.MeshObject.FaceCount == 0))
                         {
                             continue;
                         }
                     }
 
-                    var mqoObj = ConvertObject(mc, materialCount, settings, stats);
+                    var mqoObj = ConvertObject(mc, materialCount, settings, stats, materialIndexMap);
                     if (mqoObj != null)
                     {
                         document.Objects.Add(mqoObj);
@@ -370,7 +403,7 @@ namespace Poly_Ling.MQO
             return scene;
         }
 
-        private static MQOMaterial ConvertMaterial(Material mat, string textureFolder)
+        private static MQOMaterial ConvertMaterial(Material mat, string textureFolder, Poly_Ling.Materials.MaterialReference matRef = null)
         {
             var mqoMat = new MQOMaterial
             {
@@ -382,8 +415,13 @@ namespace Poly_Ling.MQO
                 Power = mat.HasProperty("_Shininess") ? mat.GetFloat("_Shininess") : 5f,
             };
 
-            // テクスチャパス（フォルダを付加）
-            if (mat.HasProperty("_MainTex") && mat.mainTexture != null)
+            // ソーステクスチャパスを優先的に使用（インポート時のパスを保持）
+            if (matRef?.Data != null && !string.IsNullOrEmpty(matRef.Data.SourceTexturePath))
+            {
+                mqoMat.TexturePath = matRef.Data.SourceTexturePath;
+            }
+            // フォールバック: 現在のテクスチャから生成
+            else if (mat.HasProperty("_MainTex") && mat.mainTexture != null)
             {
                 string texName = mat.mainTexture.name;
                 // 拡張子がなければ.pngを追加
@@ -405,6 +443,18 @@ namespace Poly_Ling.MQO
                 mqoMat.TexturePath = texName;
             }
 
+            // バンプマップのソースパス
+            if (matRef?.Data != null && !string.IsNullOrEmpty(matRef.Data.SourceBumpMapPath))
+            {
+                mqoMat.BumpMapPath = matRef.Data.SourceBumpMapPath;
+            }
+
+            // アルファマップのソースパス
+            if (matRef?.Data != null && !string.IsNullOrEmpty(matRef.Data.SourceAlphaMapPath))
+            {
+                mqoMat.AlphaMapPath = matRef.Data.SourceAlphaMapPath;
+            }
+
             return mqoMat;
         }
 
@@ -416,7 +466,8 @@ namespace Poly_Ling.MQO
             MeshContext meshContext,
             int materialCount,
             MQOExportSettings settings,
-            MQOExportStats stats)
+            MQOExportStats stats,
+            Dictionary<int, int> materialIndexMap = null)
         {
             var meshObject = meshContext.MeshObject;
             
@@ -495,12 +546,24 @@ namespace Poly_Ling.MQO
                     if (face.VertexIndices == null || face.VertexIndices.Count == 0)
                         continue;
 
+                    // マテリアルインデックスを変換（マッピングがあれば使用）
+                    int exportMatIdx = 0;
+                    if (face.MaterialIndex >= 0)
+                    {
+                        if (materialIndexMap != null && materialIndexMap.TryGetValue(face.MaterialIndex, out int mappedIdx))
+                        {
+                            exportMatIdx = mappedIdx;
+                        }
+                        else if (face.MaterialIndex < materialCount)
+                        {
+                            exportMatIdx = face.MaterialIndex;
+                        }
+                    }
+
                     var mqoFace = new MQOFace
                     {
                         VertexIndices = face.VertexIndices.ToArray(),
-                        // Phase 5: Face.MaterialIndexはグローバルインデックス
-                        MaterialIndex = (face.MaterialIndex >= 0 && face.MaterialIndex < materialCount) 
-                            ? face.MaterialIndex : 0,
+                        MaterialIndex = exportMatIdx,
                     };
 
                     // UV変換

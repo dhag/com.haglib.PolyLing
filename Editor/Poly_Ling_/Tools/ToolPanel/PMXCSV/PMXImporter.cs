@@ -406,6 +406,11 @@ namespace Poly_Ling.PMX
                 IsVisible = true
             };
 
+            // BindPoseを設定（ワールド位置の逆変換）
+            // BindPose = ボーンのワールド行列の逆行列
+            // 回転・スケールなしの場合、これは単純な平行移動の逆
+            meshContext.BindPose = Matrix4x4.Translate(-worldPosition);
+
             return meshContext;
         }
 
@@ -787,9 +792,16 @@ namespace Poly_Ling.PMX
             var material = new Material(shader);
             material.name = pmxMat.Name;
 
-            // 拡散色を設定
+            // 拡散色を設定（アルファ値も含む）
             Color color = pmxMat.Diffuse;
             SetMaterialColor(material, color);
+
+            // 非透過度（Diffuse.a）が1未満の場合は透過マテリアルに設定
+            if (color.a < 1f - 0.001f)
+            {
+                SetMaterialTransparent(material);
+                Debug.Log($"[PMXImporter] Material '{pmxMat.Name}' set to Transparent (alpha={color.a:F2})");
+            }
 
             // その他のプロパティ
             if (material.HasProperty("_Smoothness"))
@@ -817,6 +829,65 @@ namespace Poly_Ling.PMX
             // TODO: スフィアマップ対応（必要に応じて）
 
             return material;
+        }
+
+        /// <summary>
+        /// マテリアルを透過モードに設定（URP/Standard両対応）
+        /// </summary>
+        private static void SetMaterialTransparent(Material material)
+        {
+            // URP Lit用設定
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 1); // 0=Opaque, 1=Transparent
+                material.SetOverrideTag("RenderType", "Transparent");
+            }
+            if (material.HasProperty("_Blend"))
+            {
+                material.SetFloat("_Blend", 0); // 0=Alpha, 1=Premultiply, 2=Additive, 3=Multiply
+            }
+            if (material.HasProperty("_AlphaClip"))
+            {
+                material.SetFloat("_AlphaClip", 0);
+            }
+            if (material.HasProperty("_SrcBlend"))
+            {
+                material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            }
+            if (material.HasProperty("_DstBlend"))
+            {
+                material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_SrcBlendAlpha"))
+            {
+                material.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            }
+            if (material.HasProperty("_DstBlendAlpha"))
+            {
+                material.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+            if (material.HasProperty("_ZWrite"))
+            {
+                material.SetFloat("_ZWrite", 0);
+            }
+
+            // Standard Shader用設定
+            if (material.HasProperty("_Mode"))
+            {
+                material.SetFloat("_Mode", 3); // 0=Opaque, 1=Cutout, 2=Fade, 3=Transparent
+            }
+
+            // レンダーキュー設定
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            // キーワード設定（URP）
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            
+            // Standard Shader用キーワード
+            material.EnableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
         }
 
         /// <summary>

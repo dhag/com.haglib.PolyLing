@@ -13,6 +13,7 @@
 #pragma kernel ComputeLineVisibility
 #pragma kernel UpdateHoverFlags
 #pragma kernel TransformVertices
+#pragma kernel ExpandVertices
 
 // ============================================================
 // SelectionFlags定義（C#側と同期）
@@ -825,5 +826,39 @@ void TransformVertices(uint3 id : SV_DispatchThreadID)
         // 簡易版: 回転成分のみ使用（均一スケール前提）
         float3 worldNormal = mul((float3x3)skinMatrix, localNormal);
         _WorldNormalBuffer[vertexIndex] = normalize(worldNormal);
+    }
+}
+
+// ============================================================
+// UV展開済み頂点生成カーネル
+// ============================================================
+// Unity Meshの頂点配列に対応するため、UV分割された頂点を生成
+// 例: 元100K頂点 → 展開後150K頂点
+
+StructuredBuffer<uint> _ExpandedToOriginalBuffer;   // 展開後idx → 元idx マッピング
+RWStructuredBuffer<float3> _ExpandedPositionBuffer; // 展開後の頂点位置
+RWStructuredBuffer<float3> _ExpandedNormalBuffer;   // 展開後の法線
+uint _ExpandedVertexCount;                          // 展開後の頂点数
+
+[numthreads(256, 1, 1)]
+void ExpandVertices(uint3 id : SV_DispatchThreadID)
+{
+    uint expandedIdx = id.x;
+    if (expandedIdx >= _ExpandedVertexCount) return;
+    
+    // 元の頂点インデックスを取得
+    uint srcIdx = _ExpandedToOriginalBuffer[expandedIdx];
+    
+    // ワールド変換済みの位置をコピー
+    _ExpandedPositionBuffer[expandedIdx] = _WorldPositionBuffer[srcIdx];
+    
+    // 法線もコピー（変換済み法線がある場合）
+    if (_TransformNormals != 0)
+    {
+        _ExpandedNormalBuffer[expandedIdx] = _WorldNormalBuffer[srcIdx];
+    }
+    else
+    {
+        _ExpandedNormalBuffer[expandedIdx] = _NormalBuffer[srcIdx];
     }
 }

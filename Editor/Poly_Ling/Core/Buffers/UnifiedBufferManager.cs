@@ -98,6 +98,13 @@ namespace Poly_Ling.Core
         private ComputeBuffer _worldPositionBuffer;
         private Vector3[] _worldPositions;
 
+        // UV展開済み頂点（Unity Mesh用）
+        private ComputeBuffer _expandedToOriginalBuffer;  // 展開後idx → 元idx マッピング
+        private ComputeBuffer _expandedPositionBuffer;    // 展開後の頂点位置
+        private ComputeBuffer _expandedNormalBuffer;      // 展開後の法線
+        private uint[] _expandedToOriginal;               // CPU側マッピングデータ
+        private int _totalExpandedVertexCount;            // 展開後の総頂点数
+
         // 変換行列（メッシュごと）
         private ComputeBuffer _transformMatrixBuffer;
         private Matrix4x4[] _transformMatrices;
@@ -252,6 +259,9 @@ namespace Poly_Ling.Core
         // バッファアクセス
         public ComputeBuffer PositionBuffer => _positionBuffer;
         public ComputeBuffer WorldPositionBuffer => _worldPositionBuffer;
+        public ComputeBuffer ExpandedPositionBuffer => _expandedPositionBuffer;
+        public ComputeBuffer ExpandedNormalBuffer => _expandedNormalBuffer;
+        public int TotalExpandedVertexCount => _totalExpandedVertexCount;
         public ComputeBuffer TransformMatrixBuffer => _transformMatrixBuffer;
         public ComputeBuffer VertexMeshIndexBuffer => _vertexMeshIndexBuffer;
         public ComputeBuffer BoneWeightsBuffer => _boneWeightsBuffer;
@@ -505,6 +515,34 @@ namespace Poly_Ling.Core
             }
         }
 
+        // UV展開バッファ用の容量
+        private int _expandedVertexCapacity = 0;
+
+        /// <summary>
+        /// UV展開用バッファの容量を確保
+        /// </summary>
+        public void EnsureExpandedCapacity(int expandedVertexCount)
+        {
+            if (expandedVertexCount <= _expandedVertexCapacity)
+                return;
+
+            _expandedVertexCapacity = Mathf.NextPowerOfTwo(expandedVertexCount);
+
+            // CPU配列
+            Array.Resize(ref _expandedToOriginal, _expandedVertexCapacity);
+
+            // GPUバッファ再作成
+            ReleaseBuffer(ref _expandedToOriginalBuffer);
+            ReleaseBuffer(ref _expandedPositionBuffer);
+            ReleaseBuffer(ref _expandedNormalBuffer);
+
+            _expandedToOriginalBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(uint));
+            _expandedPositionBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3);
+            _expandedNormalBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3);
+
+            Debug.Log($"[EnsureExpandedCapacity] Resized to {_expandedVertexCapacity} (requested: {expandedVertexCount})");
+        }
+
         /// <summary>
         /// バッファサイズを変更
         /// </summary>
@@ -553,6 +591,9 @@ namespace Poly_Ling.Core
         {
             ReleaseBuffer(ref _positionBuffer);
             ReleaseBuffer(ref _worldPositionBuffer);
+            ReleaseBuffer(ref _expandedToOriginalBuffer);
+            ReleaseBuffer(ref _expandedPositionBuffer);
+            ReleaseBuffer(ref _expandedNormalBuffer);
             ReleaseBuffer(ref _transformMatrixBuffer);
             ReleaseBuffer(ref _vertexMeshIndexBuffer);
             ReleaseBuffer(ref _boneWeightsBuffer);

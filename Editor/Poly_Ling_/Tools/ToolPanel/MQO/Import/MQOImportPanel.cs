@@ -61,7 +61,7 @@ namespace Poly_Ling.MQO
             ["SkipEmptyObjects"] = new() { ["en"] = "Skip Empty Objects", ["ja"] = "空オブジェクトをスキップ" },
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
             ["Normals"] = new() { ["en"] = "Normals", ["ja"] = "法線" },
-            ["RecalculateNormals"] = new() { ["en"] = "Recalculate Normals", ["ja"] = "法線を再計算" },
+            ["NormalMode"] = new() { ["en"] = "Normal Mode", ["ja"] = "法線モード" },
             ["SmoothingAngle"] = new() { ["en"] = "Smoothing Angle", ["ja"] = "スムージング角度" },
 
             // インポートモード（v1.1追加、v1.2: NewModel追加）
@@ -99,6 +99,11 @@ namespace Poly_Ling.MQO
             ["TotalFaces"] = new() { ["en"] = "Total Faces", ["ja"] = "総面数" },
             ["SkippedSpecialFaces"] = new() { ["en"] = "Skipped Special Faces", ["ja"] = "スキップした特殊面" },
             ["ImportedMeshes"] = new() { ["en"] = "Imported Meshes:", ["ja"] = "インポートしたメッシュ:" },
+            
+            // デバッグ設定
+            ["DebugSettings"] = new() { ["en"] = "Debug Settings", ["ja"] = "デバッグ設定" },
+            ["DebugVertexInfo"] = new() { ["en"] = "Output Vertex Debug Info", ["ja"] = "頂点デバッグ情報を出力" },
+            ["DebugVertexNearUVCount"] = new() { ["en"] = "Near UV Pair Count", ["ja"] = "近接UVペア出力件数" },
         };
 
         /// <summary>ローカライズ取得</summary>
@@ -287,8 +292,8 @@ namespace Poly_Ling.MQO
 
             // 法線
             EditorGUILayout.LabelField(T("Normals"), EditorStyles.miniLabel);
-            _settings.RecalculateNormals = EditorGUILayout.Toggle(T("RecalculateNormals"), _settings.RecalculateNormals);
-            if (_settings.RecalculateNormals)
+            _settings.NormalMode = (NormalMode)EditorGUILayout.EnumPopup(T("NormalMode"), _settings.NormalMode);
+            if (_settings.NormalMode == NormalMode.Smooth)
             {
                 _settings.SmoothingAngle = EditorGUILayout.Slider(T("SmoothingAngle"), _settings.SmoothingAngle, 0f, 180f);//スライダーの上限下限
             }
@@ -379,6 +384,26 @@ namespace Poly_Ling.MQO
                     _settings.BoneScale);
             }
 
+            EditorGUI.indentLevel--;
+            
+            // ================================================================
+            // デバッグ設定
+            // ================================================================
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField(T("DebugSettings"), EditorStyles.boldLabel);
+            EditorGUI.indentLevel++;
+            
+            _settings.DebugVertexInfo = EditorGUILayout.Toggle(
+                new GUIContent(T("DebugVertexInfo"), "メッシュオブジェクトごとの頂点情報をコンソールに出力"),
+                _settings.DebugVertexInfo);
+            
+            if (_settings.DebugVertexInfo)
+            {
+                _settings.DebugVertexNearUVCount = EditorGUILayout.IntSlider(
+                    new GUIContent(T("DebugVertexNearUVCount"), "同一頂点で異なるUVを持つペアの出力件数（近い順）"),
+                    _settings.DebugVertexNearUVCount, 1, 100);
+            }
+            
             EditorGUI.indentLevel--;
         }
 
@@ -611,8 +636,13 @@ namespace Poly_Ling.MQO
                             Debug.LogWarning("[MQOImportPanel] Replace not available, falling back to Append mode");
                         }
 
-                        // Replaceモードではマテリアルも置換
-                        if (handled && _lastResult.Materials.Count > 0 && _context.ReplaceMaterials != null)
+                        // Replaceモードではマテリアルも置換（MaterialReferences優先）
+                        if (handled && _lastResult.MaterialReferences.Count > 0 && _context.ReplaceMaterialReferences != null)
+                        {
+                            Debug.Log($"[MQOImportPanel] Replacing materialRefs: {_lastResult.MaterialReferences.Count}");
+                            _context.ReplaceMaterialReferences.Invoke(_lastResult.MaterialReferences);
+                        }
+                        else if (handled && _lastResult.Materials.Count > 0 && _context.ReplaceMaterials != null)
                         {
                             Debug.Log($"[MQOImportPanel] Replacing materialPathList: {_lastResult.Materials.Count}");
                             _context.ReplaceMaterials.Invoke(_lastResult.Materials);
@@ -645,9 +675,12 @@ namespace Poly_Ling.MQO
                         // BoneMeshContextsは使用しない
 
                         // NewModelモードではマテリアルを追加（インポート分のみ）
-                        if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
+                        if (_lastResult.MaterialReferences.Count > 0 && _context.AddMaterialReferences != null)
                         {
-                            Debug.Log($"[MQOImportPanel] Adding materials: {_lastResult.Materials.Count}");
+                            _context.AddMaterialReferences.Invoke(_lastResult.MaterialReferences);
+                        }
+                        else if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
+                        {
                             _context.AddMaterials.Invoke(_lastResult.Materials);
                         }
                     }
@@ -692,7 +725,12 @@ namespace Poly_Ling.MQO
                         // BoneMeshContextsは使用しない
 
                         // Appendモードではマテリアルを追加（既存にマージ）
-                        if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
+                        if (_lastResult.MaterialReferences.Count > 0 && _context.AddMaterialReferences != null)
+                        {
+                            Debug.Log($"[MQOImportPanel] Adding materialRefs: {_lastResult.MaterialReferences.Count}");
+                            _context.AddMaterialReferences.Invoke(_lastResult.MaterialReferences);
+                        }
+                        else if (_lastResult.Materials.Count > 0 && _context.AddMaterials != null)
                         {
                             Debug.Log($"[MQOImportPanel] Adding materials: {_lastResult.Materials.Count}");
                             _context.AddMaterials.Invoke(_lastResult.Materials);

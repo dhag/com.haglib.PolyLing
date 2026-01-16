@@ -188,16 +188,13 @@ public partial class PolyLing
         // ワイヤフレーム・頂点描画（UnifiedSystem使用）
         // ================================================================
         var pointSize = 0.01f;
-        var lineWithPx = 1f;
         PrepareUnifiedDrawing(
             _preview.camera,
             _showWireframe,
             _showVertices,
             _showUnselectedWireframe,
             _showUnselectedVertices,
-            pointSize,
-            lineWithPx
-            );
+            pointSize);
 
         DrawUnifiedQueued(_preview);
 
@@ -425,13 +422,41 @@ public partial class PolyLing
         Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
         bool useBackfaceCulling = _unifiedAdapter != null && _unifiedAdapter.BackfaceCullingEnabled;
 
+        // ワールド変換済み座標を取得（ボーンベンディング対応）
+        Vector3[] displayPositions = null;
+        int vertexOffset = 0;
+        if (_unifiedAdapter != null)
+        {
+            var bufferManager = _unifiedAdapter.BufferManager;
+            if (bufferManager != null)
+            {
+                displayPositions = bufferManager.GetDisplayPositions();
+                // 選択メッシュの頂点オフセットを取得
+                int unifiedIdx = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
+                if (unifiedIdx >= 0 && bufferManager.MeshInfos != null)
+                {
+                    vertexOffset = (int)bufferManager.MeshInfos[unifiedIdx].VertexStart;
+                }
+            }
+        }
+
         for (int i = 0; i < meshObject.VertexCount; i++)
         {
             if (useBackfaceCulling && _unifiedAdapter.IsVertexCulled(_selectedIndex, i))
                 continue;
 
-            Vector3 transformedPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
-            Vector2 screenPos = WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
+            // ワールド変換済み座標を使用（利用可能な場合）
+            Vector3 worldPos;
+            if (displayPositions != null && (vertexOffset + i) < displayPositions.Length)
+            {
+                worldPos = displayPositions[vertexOffset + i];
+            }
+            else
+            {
+                worldPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
+            }
+
+            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
 
             if (!previewRect.Contains(screenPos))
                 continue;
