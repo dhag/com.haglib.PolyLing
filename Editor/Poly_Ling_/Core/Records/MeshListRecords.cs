@@ -424,8 +424,10 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(ModelContext ctx)
         {
+            Debug.Log($"[MeshSelectionChangeRecord.Undo] START. OldSelectedIndices={string.Join(",", OldSelectedIndices)}, CurrentIndex={ctx.SelectedMeshContextIndex}");
             ctx.SelectedMeshContextIndices = new HashSet<int>(OldSelectedIndices);
             ctx.ValidateSelection();
+            Debug.Log($"[MeshSelectionChangeRecord.Undo] After ValidateSelection. NewIndex={ctx.SelectedMeshContextIndex}");
             
             Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnCameraRestoreRequested");
             if (OldCameraState.HasValue)
@@ -440,6 +442,7 @@ namespace Poly_Ling.UndoSystem
             
             // MeshListStackにフォーカスを切り替え（Redo時に正しいスタックで実行されるように）
             ctx.OnFocusMeshListRequested?.Invoke();
+            Debug.Log($"[MeshSelectionChangeRecord.Undo] END");
         }
 
         public override void Redo(ModelContext ctx)

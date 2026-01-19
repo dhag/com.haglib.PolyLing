@@ -1,10 +1,12 @@
 // Assets/Editor/UndoSystem/Core/UndoGroup.cs
 // 複数のUndoノードを束ねるグループ実装
 // ConcurrentQueue対応版 - 子ノードのキュー処理を統括
+// デバッグログ追加版
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -229,7 +231,12 @@ namespace Poly_Ling.UndoSystem
             // ★重要: Undo前に全キューを処理
             ProcessPendingQueue();
             
+            Debug.Log($"[UndoGroup.PerformUndo] Group={Id}, FocusedChildId={_focusedChildId}, Policy={ResolutionPolicy}");
+            
             var target = ResolveUndoTarget();
+            
+            Debug.Log($"[UndoGroup.PerformUndo] Group={Id}, ResolvedTarget={target?.Id ?? "null"}");
+            
             return target?.PerformUndo() ?? false;
         }
 

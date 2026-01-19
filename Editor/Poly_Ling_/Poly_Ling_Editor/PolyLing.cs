@@ -2,6 +2,7 @@
 // 階層型Undoシステム統合済みメッシュエディタ
 // MeshObject（Vertex/Face）ベース対応版
 // DefaultMaterials対応版
+// Phase: CommandQueue対応版
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,6 +19,7 @@ using Poly_Ling.Localization;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 using Poly_Ling.Rendering;
 using Poly_Ling.Symmetry;
+using Poly_Ling.Commands;
 
 
 
@@ -288,6 +290,12 @@ public partial class PolyLing : EditorWindow
     // Undoシステム統合
     // ================================================================
     private MeshUndoController _undoController;
+    
+    // ================================================================
+    // コマンドキュー（全操作の順序保証）
+    // ================================================================
+    private CommandQueue _commandQueue;
+    
     // ================================================================
     // Selection System
     // ================================================================
@@ -371,8 +379,13 @@ public partial class PolyLing : EditorWindow
         // ローカライゼーション設定を読み込み
         L.LoadSettings();
 
+        // コマンドキュー初期化（全操作の順序保証）
+        _commandQueue = new CommandQueue();
+        // _commandQueue.EnableDebugLog = true; // デバッグ時に有効化
+
         // Undoコントローラー初期化
         _undoController = new MeshUndoController("PolyLing");
+        _undoController.SetCommandQueue(_commandQueue); // キューを設定
         _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
 
 
@@ -579,6 +592,10 @@ public partial class PolyLing : EditorWindow
         // ★追加: Undoキュー処理を解除
         EditorApplication.update -= ProcessUndoQueues;
 
+        // コマンドキュークリア
+        _commandQueue?.Clear();
+        _commandQueue = null;
+
         // Undoコントローラー破棄
         if (_undoController != null)
         {
@@ -609,6 +626,9 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnUndoRedoPerformed()
     {
+        Debug.Log($"[OnUndoRedoPerformed] === START === _selectedIndex={_selectedIndex}, MeshListContext.SelectedMeshContextIndex={_undoController?.MeshListContext?.SelectedMeshContextIndex}");
+        Debug.Log($"[OnUndoRedoPerformed] _selectedVertices.Count={_selectedVertices.Count}, ctx.SelectedVertices?.Count={_undoController?.MeshUndoContext?.SelectedVertices?.Count}");
+        
         // コンテキストからメッシュに反映
         var meshContext = _model.CurrentMeshContext;
         if (meshContext != null)
@@ -632,10 +652,10 @@ public partial class PolyLing : EditorWindow
                 }
             }
 
-            if (ctx.SelectedVertices != null)
-            {
-                _selectedVertices = new HashSet<int>(ctx.SelectedVertices);
-            }
+            // 注意: ctx.SelectedVertices は SelectionRecord の Undo 時にのみ更新される
+            // VertexMoveRecord の Undo 時は更新されないため、ここで無条件に反映すると
+            // 古い値で上書きしてしまう。選択の復元は SelectionSnapshot 経由でのみ行う。
+            // (以前のコード: _selectedVertices = new HashSet<int>(ctx.SelectedVertices);)
 
             // マテリアル復元は ModelContext に集約済み
             // TODO: Undo Record からの Materials 復元を実装
@@ -677,41 +697,31 @@ public partial class PolyLing : EditorWindow
 
         // SelectionState を復元
         var ctx2 = _undoController.MeshUndoContext;
+        Debug.Log($"[OnUndoRedoPerformed] SelectionSnapshot check: ctx2.CurrentSelectionSnapshot={ctx2.CurrentSelectionSnapshot != null}, ctx2.SelectedVertices.Count={ctx2.SelectedVertices?.Count ?? -1}");
         if (ctx2.CurrentSelectionSnapshot != null && _selectionState != null)
         {
+            Debug.Log($"[OnUndoRedoPerformed] Restoring from SelectionSnapshot. Snapshot.Vertices.Count={ctx2.CurrentSelectionSnapshot.Vertices?.Count ?? -1}");
             // 拡張選択スナップショットから復元（Edge/Face/Lines/Modeを含む完全な復元）
             _selectionState.RestoreFromSnapshot(ctx2.CurrentSelectionSnapshot);
             ctx2.CurrentSelectionSnapshot = null;  // 使用済みなのでクリア
 
             // _selectedVertices も同期
             _selectedVertices = new HashSet<int>(_selectionState.Vertices);
+            Debug.Log($"[OnUndoRedoPerformed] After restore: _selectedVertices.Count={_selectedVertices.Count}");
         }
         else
         {
-            // 従来のレガシー同期（Vertexモードのみ）
-            SyncSelectionFromLegacy();
+            // SelectionSnapshotがない場合は選択状態を変更しない
+            // VertexMoveRecord等のUndo時は選択状態は維持される
+            Debug.Log($"[OnUndoRedoPerformed] No SelectionSnapshot, keeping current selection state. _selectedVertices.Count={_selectedVertices.Count}");
         }
 
-        // MeshListContextから選択インデックスを反映
-        // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
-        if (_undoController?.MeshListContext != null)
-        {
-            int newIndex = _undoController.MeshListContext.SelectedMeshContextIndex;
-            if (newIndex != _selectedIndex && newIndex >= -1 && newIndex < _meshContextList.Count)
-            {
-                _selectedIndex = newIndex;
-                var newMeshContext = _model.CurrentMeshContext;
-                if (newMeshContext != null)
-                {
-                    // MeshContextに必要な情報だけを設定
-                    _undoController.MeshUndoContext.MeshObject = newMeshContext.MeshObject;
-                    _undoController.MeshUndoContext.TargetMesh = newMeshContext.UnityMesh;
-                    _undoController.MeshUndoContext.OriginalPositions = newMeshContext.OriginalPositions;
-                    // Materials は ModelContext に集約済み
-                }
-            }
-        }
+        // MeshListContextからの選択インデックス反映は不要
+        // MeshSelectionChangeRecord.Undo/Redo() が OnListChanged?.Invoke() を呼び出し、
+        // OnMeshListChanged() で _selectedIndex が正しく更新される。
+        // ここで再度チェックすると、VertexMoveRecord等のUndo時に古い状態を参照してしまう。
 
+        Debug.Log($"[OnUndoRedoPerformed] === END === _selectedIndex={_selectedIndex}, _selectedVertices.Count={_selectedVertices.Count}");
         Repaint();
 
         // ミラーキャッシュを無効化（頂点位置変更でも正しく更新されるように）
@@ -725,9 +735,18 @@ public partial class PolyLing : EditorWindow
     /// <summary>
     /// Undoキューを処理（EditorApplication.updateから呼び出し）
     /// 別スレッド/プロセスからRecord()されたデータをスタックに積む
+    /// コマンドキューも処理する
     /// </summary>
     private void ProcessUndoQueues()
     {
+        // コマンドキューの処理（Undo/Redo含む全操作）
+        if (_commandQueue != null && _commandQueue.Count > 0)
+        {
+            _commandQueue.ProcessAll();
+            Repaint();
+        }
+
+        // UndoManagerのキュー処理（従来の処理）
         int processed = UndoManager.Instance.ProcessAllQueues();
 
         if (processed > 0)
@@ -924,6 +943,12 @@ public partial class PolyLing : EditorWindow
         // Undoショートカット処理
         if (_undoController != null)
         {
+            Event e_ = Event.current;
+            if (e_.type == EventType.KeyDown)
+            {
+                Debug.Log($"[PolyLing.OnGUI] KeyDown before HandleKeyboardShortcuts: keyCode={e_.keyCode}, ctrl={e_.control || e_.command}, shift={e_.shift}, used={e_.type == EventType.Used}");
+            }
+            
             if (_undoController.HandleKeyboardShortcuts(Event.current))
             {
                 // Undo/Redo後にUIを再描画

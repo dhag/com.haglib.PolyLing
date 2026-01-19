@@ -1,11 +1,13 @@
 // Assets/Editor/UndoSystem/Core/UndoStack.cs
 // 汎用Undoスタック実装
 // ConcurrentQueue対応版 - 別スレッド/プロセスからの記録を受け付け可能
+// デバッグログ追加版
 
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Threading;
+using UnityEngine;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -106,6 +108,8 @@ namespace Poly_Ling.UndoSystem
                 groupId = _activeGroupId >= 0 ? _activeGroupId : Interlocked.Increment(ref _currentGroupId);
             }
 
+            Debug.Log($"[UndoStack.Record] Stack={Id}, Desc={description}, GroupId={groupId}, ActiveGroupId={_activeGroupId}, RecordType={record.GetType().Name}");
+
             // キューに追加（スレッドセーフ）
             _pendingQueue.Enqueue(new PendingRecord<TContext>
             {
@@ -125,6 +129,7 @@ namespace Poly_Ling.UndoSystem
             {
                 _activeGroupId = Interlocked.Increment(ref _currentGroupId);
                 _activeGroupName = groupName;
+                Debug.Log($"[UndoStack.BeginGroup] Stack={Id}, GroupName={groupName}, NewGroupId={_activeGroupId}");
                 return _activeGroupId;
             }
         }
@@ -136,8 +141,10 @@ namespace Poly_Ling.UndoSystem
         {
             lock (_groupLock)
             {
+                int oldGroupId = _activeGroupId;
                 _activeGroupId = -1;
                 _activeGroupName = null;
+                Debug.Log($"[UndoStack.EndGroup] Stack={Id}, EndedGroupId={oldGroupId}");
             }
         }
 
@@ -218,16 +225,23 @@ namespace Poly_Ling.UndoSystem
             ProcessPendingQueue();
             
             if (_undoStack.Count == 0 || Context == null)
+            {
+                Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Cannot undo: Count={_undoStack.Count}, HasContext={Context != null}");
                 return false;
+            }
 
             // 同じグループIDの操作をまとめてUndo
             var lastGroupId = _undoStack[^1].Info.GroupId;
             var undoneRecords = new List<IUndoRecord<TContext>>();
 
+            Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Starting undo. StackCount={_undoStack.Count}, TargetGroupId={lastGroupId}");
+
             while (_undoStack.Count > 0 && _undoStack[^1].Info.GroupId == lastGroupId)
             {
                 var record = _undoStack[^1];
                 _undoStack.RemoveAt(_undoStack.Count - 1);
+                
+                Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Undoing: {record.GetType().Name}, GroupId={record.Info.GroupId}, Desc={record.Info.Description}");
                 
                 record.Undo(Context);
                 undoneRecords.Add(record);
@@ -241,6 +255,7 @@ namespace Poly_Ling.UndoSystem
 
             if (undoneRecords.Count > 0)
             {
+                Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Completed. UndoneCount={undoneRecords.Count}, RemainingStack={_undoStack.Count}");
                 OnUndoPerformed?.Invoke(undoneRecords[0].Info);
                 return true;
             }

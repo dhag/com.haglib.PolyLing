@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
+using UnityEngine;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -57,20 +58,42 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(MeshUndoContext ctx)
         {
+            Debug.Log($"[SelectionChangeRecord.Undo] START. OldSelectedVertices.Count={OldSelectedVertices?.Count ?? -1}");
             ctx.SelectedVertices = new HashSet<int>(OldSelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(OldSelectedFaces);
+
+            // SelectionSnapshot を設定して OnUndoRedoPerformed で反映されるようにする
+            ctx.CurrentSelectionSnapshot = new SelectionSnapshot
+            {
+                Mode = MeshSelectMode.Vertex,  // 基本モードとしてVertex
+                Vertices = new HashSet<int>(OldSelectedVertices),
+                Edges = new HashSet<VertexPair>(),
+                Faces = new HashSet<int>(OldSelectedFaces),
+                Lines = new HashSet<int>()
+            };
 
             // WorkPlane連動復元
             if (OldWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)
             {
                 ctx.WorkPlane.ApplySnapshot(OldWorkPlaneSnapshot.Value);
             }
+            Debug.Log($"[SelectionChangeRecord.Undo] END. ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
         }
 
         public override void Redo(MeshUndoContext ctx)
         {
             ctx.SelectedVertices = new HashSet<int>(NewSelectedVertices);
             ctx.SelectedFaces = new HashSet<int>(NewSelectedFaces);
+
+            // SelectionSnapshot を設定して OnUndoRedoPerformed で反映されるようにする
+            ctx.CurrentSelectionSnapshot = new SelectionSnapshot
+            {
+                Mode = MeshSelectMode.Vertex,  // 基本モードとしてVertex
+                Vertices = new HashSet<int>(NewSelectedVertices),
+                Edges = new HashSet<VertexPair>(),
+                Faces = new HashSet<int>(NewSelectedFaces),
+                Lines = new HashSet<int>()
+            };
 
             // WorkPlane連動復元
             if (NewWorkPlaneSnapshot.HasValue && ctx.WorkPlane != null)

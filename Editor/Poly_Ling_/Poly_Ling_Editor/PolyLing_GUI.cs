@@ -292,7 +292,10 @@ public partial class PolyLing
             // ================================================================
             //if (_vertexEditMode)
             //{
-            _undoController?.FocusVertexEdit();
+            // 注意: FocusVertexEdit()はここで呼ばない
+            // 各操作のRecord時に適切なFocusXxx()が呼ばれるため、
+            // GUI描画時に強制すると他のスタック（EditorState, MeshList等）への
+            // 記録後にフォーカスが上書きされてしまう
 
             _foldSelection = DrawFoldoutWithUndo("Selection", L.Get("Selection"), true);
             if (_foldSelection)

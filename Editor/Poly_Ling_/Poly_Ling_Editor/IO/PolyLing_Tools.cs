@@ -231,7 +231,10 @@ public partial class PolyLing : EditorWindow
             return closestVertex;
         };
 
-        ctx.SelectedVertices = _selectedVertices;
+        // 注意: クローンを作成して独立したインスタンスにする
+        // 参照代入するとRecord作成後に_selectedVerticesが変更された時に
+        // Recordの中のデータも変わってしまう
+        ctx.SelectedVertices = new HashSet<int>(_selectedVertices);
         ctx.VertexOffsets = _vertexOffsets;
         ctx.GroupOffsets = _groupOffsets;
         ctx.UndoController = _undoController;
