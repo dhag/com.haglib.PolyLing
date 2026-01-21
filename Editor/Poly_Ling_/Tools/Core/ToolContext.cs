@@ -15,6 +15,7 @@ using Poly_Ling.Selection;
 using Poly_Ling.Model;
 using Poly_Ling.Rendering;
 using Poly_Ling.Materials;
+using Poly_Ling.Commands;
 
 // MeshContentはSimpleMeshFactoryのネストクラスを参照
 ////using MeshContext = MeshContext;
@@ -226,6 +227,11 @@ namespace Poly_Ling.Tools
 
         /// <summary>カレントマテリアルインデックスを設定</summary>
         public Action<int> SetCurrentMaterialIndex { get; set; }
+
+        // === コマンドキュー ===
+
+        /// <summary>コマンドキュー（すべての操作はここ経由）</summary>
+        public CommandQueue CommandQueue { get; set; }
 
         // === コールバック ===
 

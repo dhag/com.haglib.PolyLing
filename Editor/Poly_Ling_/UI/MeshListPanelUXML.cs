@@ -13,6 +13,7 @@ using Poly_Ling.Model;
 using Poly_Ling.Tools;
 using Poly_Ling.Localization;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using UIList.UIToolkitExtensions;
 
 namespace Poly_Ling.UI
@@ -240,10 +241,23 @@ namespace Poly_Ling.UI
                 _treeRoot = new MeshTreeRoot(_toolContext.Model, _toolContext);
                 _treeRoot.OnChanged = () =>
                 {
-                    RefreshTree();
-                    UpdateDetailPanel();
-                    // D&D完了時に他のパネルに通知
-                    NotifyModelChanged();
+                    _isSyncingFromExternal = true;
+                    try
+                    {
+                        RefreshTree();
+                        SyncTreeViewSelection();  // ModelContextの選択をTreeViewに同期
+                        UpdateDetailPanel();
+                        // D&D完了時に他のパネルに通知
+                        NotifyModelChanged();
+                        // 順序変更はトポロジー変更なのでCG再構築（OnReorderCompletedでMeshUndoContextも更新される）
+                        // 注意: ModelはToolContext.Modelだが、OnReorderCompletedは
+                        // UndoController.MeshListContextに設定されている
+                        _toolContext?.UndoController?.MeshListContext?.OnReorderCompleted?.Invoke();
+                    }
+                    finally
+                    {
+                        _isSyncingFromExternal = false;
+                    }
                 };
 
                 // D&Dを設定
@@ -741,15 +755,17 @@ namespace Poly_Ling.UI
         private void RecordSelectionChange(HashSet<int> oldSelection, HashSet<int> newSelection)
         {
             var undoController = _toolContext?.UndoController;
-            if (undoController == null) return;
+            var commandQueue = _toolContext?.CommandQueue;
+            if (undoController == null || commandQueue == null) return;
             
             // 同じなら記録しない
             if (oldSelection.SetEquals(newSelection)) return;
             
-            undoController.RecordMeshSelectionChange(
+            commandQueue.Enqueue(new RecordMeshSelectionChangeCommand(
+                undoController,
                 oldSelection.Count > 0 ? oldSelection.First() : -1,
                 newSelection.Count > 0 ? newSelection.First() : -1
-            );
+            ));
         }
 
         /// <summary>
@@ -912,6 +928,7 @@ namespace Poly_Ling.UI
 
             var record = new MeshMultiSelectionChangeRecord(oldIndices, newIndices);
             undoController.MeshListStack.Record(record, "メッシュ選択変更");
+            undoController.FocusMeshList();
         }
 
         /// <summary>

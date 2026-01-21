@@ -101,6 +101,12 @@ namespace Poly_Ling.Model
         /// <summary>MeshListStackへのフォーカス切り替えリクエスト</summary>
         public Action OnFocusMeshListRequested;
 
+        /// <summary>メッシュリスト順序変更後のCG再構築リクエスト</summary>
+        public Action OnReorderCompleted;
+
+        /// <summary>VertexEditStackクリアリクエスト（メッシュ順序変更で古い記録が無効になるため）</summary>
+        public Action OnVertexEditStackClearRequested;
+
         // ================================================================
         // WorkPlaneContext
         // ================================================================

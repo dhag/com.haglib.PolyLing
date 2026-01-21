@@ -23,6 +23,7 @@ namespace Poly_Ling.Commands
         private readonly WorkPlaneSnapshot? _newWorkPlane;
 
         public string Description => "Record Selection Change";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Selection;
 
         public RecordSelectionChangeCommand(
             MeshUndoController controller,
@@ -90,6 +91,7 @@ namespace Poly_Ling.Commands
         private readonly WorkPlaneSnapshot? _newWorkPlane;
 
         public string Description => "Record Extended Selection Change";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Selection;
 
         public RecordExtendedSelectionChangeCommand(
             MeshUndoController controller,
@@ -130,6 +132,7 @@ namespace Poly_Ling.Commands
         private readonly CameraSnapshot? _newCamera;
 
         public string Description => "Record Mesh Selection Change";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Selection;
 
         public RecordMeshSelectionChangeCommand(
             MeshUndoController controller,

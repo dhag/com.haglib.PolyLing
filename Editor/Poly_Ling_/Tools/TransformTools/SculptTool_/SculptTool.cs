@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.Tools
@@ -122,7 +123,8 @@ namespace Poly_Ling.Tools
                 if (_beforeSnapshot != null && ctx.UndoController != null)
                 {
                 MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-                    ctx.UndoController.RecordTopologyChange(_beforeSnapshot, after, $"Sculpt ({Mode})");
+                    ctx.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                        ctx.UndoController, _beforeSnapshot, after, $"Sculpt ({Mode})"));
                     _beforeSnapshot = null;
                 }
 

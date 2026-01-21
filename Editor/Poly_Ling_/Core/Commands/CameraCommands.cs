@@ -23,6 +23,7 @@ namespace Poly_Ling.Commands
         private readonly WorkPlaneSnapshot? _newWorkPlane;
 
         public string Description => "Record Camera Change";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.None;
 
         public RecordCameraChangeCommand(
             MeshUndoController controller,

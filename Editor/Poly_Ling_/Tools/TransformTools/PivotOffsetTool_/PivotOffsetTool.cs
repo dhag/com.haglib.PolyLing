@@ -291,6 +291,7 @@ namespace Poly_Ling.Tools
                     movedIndices.ToArray(),
                     oldPositions.ToArray(),
                     newPositions.ToArray());
+                ctx.UndoController.FocusVertexEdit();
                 ctx.UndoController.VertexEditStack.Record(record, actionName);
             }
 

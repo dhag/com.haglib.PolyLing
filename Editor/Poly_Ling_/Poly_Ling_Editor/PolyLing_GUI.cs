@@ -10,6 +10,7 @@ using Poly_Ling.Selection;
 using Poly_Ling.Localization;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Data;
+using Poly_Ling.Commands;
 
 public partial class PolyLing
 {
@@ -33,20 +34,14 @@ public partial class PolyLing
             {
                 if (GUILayout.Button(L.Get("Undo")))
                 {
-                    if (_undoController?.Undo() == true)
-                    {
-                        Repaint();
-                    }
+                    _commandQueue?.Enqueue(new UndoCommand(_undoController, null));
                 }
             }
             using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanRedo))
             {
                 if (GUILayout.Button(L.Get("Redo")))
                 {
-                    if (_undoController?.Redo() == true)
-                    {
-                        Repaint();
-                    }
+                    _commandQueue?.Enqueue(new RedoCommand(_undoController, null));
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -686,8 +681,9 @@ public partial class PolyLing
             CameraTarget = _cameraTarget
         };
 
-        // メッシュ選択変更をUndo記録
-        _undoController?.RecordMeshSelectionChange(oldIndex, _selectedIndex, oldCamera, newCamera);
+        // メッシュ選択変更をUndo記録（キュー経由）
+        _commandQueue?.Enqueue(new RecordMeshSelectionChangeCommand(
+            _undoController, oldIndex, _selectedIndex, oldCamera, newCamera));
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();

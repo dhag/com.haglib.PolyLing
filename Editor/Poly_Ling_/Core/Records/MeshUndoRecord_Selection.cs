@@ -26,6 +26,11 @@ namespace Poly_Ling.UndoSystem
         public WorkPlaneSnapshot? OldWorkPlaneSnapshot;
         public WorkPlaneSnapshot? NewWorkPlaneSnapshot;
 
+        /// <summary>
+        /// 選択変更はLevel 3（選択フラグのみ更新）で済む
+        /// </summary>
+        public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Selection;
+
         public SelectionChangeRecord(
             HashSet<int> oldVertices,
             HashSet<int> newVertices,
@@ -124,6 +129,11 @@ namespace Poly_Ling.UndoSystem
         // WorkPlane連動
         public WorkPlaneSnapshot? OldWorkPlaneSnapshot;
         public WorkPlaneSnapshot? NewWorkPlaneSnapshot;
+
+        /// <summary>
+        /// 選択変更はLevel 3（選択フラグのみ更新）で済む
+        /// </summary>
+        public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Selection;
 
         public ExtendedSelectionChangeRecord(
             SelectionSnapshot oldSnapshot,

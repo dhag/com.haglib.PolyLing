@@ -9,6 +9,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using Poly_Ling.Utilities;
 public partial class PolyLing
 {
@@ -214,8 +215,9 @@ public partial class PolyLing
         // スナップショット取得（操作後）
         MeshObjectSnapshot  after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
-        // Undo記録
-        _undoController.RecordTopologyChange(before, after, "Merge Vertices");
+        // Undo記録（コマンドキュー経由）
+        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+            _undoController, before, after, "Merge Vertices"));
 
         // メッシュ更新
         SyncMeshFromData(meshContext);

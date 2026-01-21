@@ -201,6 +201,7 @@ namespace Poly_Ling.UndoSystem
 
         /// <summary>
         /// 頂点位置のみをMeshに適用（高速）
+        /// ToUnityMeshShared()を使わず、直接頂点位置を設定
         /// </summary>
         public void ApplyVertexPositionsToMesh()
         {

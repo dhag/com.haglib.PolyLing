@@ -214,6 +214,7 @@ namespace Poly_Ling.Tools
             if (indices.Count > 0 && ctx.UndoController != null)
             {
                 var record = new VertexMoveRecord(indices.ToArray(), oldPos.ToArray(), newPos.ToArray());
+                ctx.UndoController.FocusVertexEdit();
                 ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
             }
 

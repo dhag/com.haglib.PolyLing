@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Selection;
+using Poly_Ling.Commands;
 
 namespace Poly_Ling.Tools
 {
@@ -159,7 +160,8 @@ namespace Poly_Ling.Tools
             if (_context.UndoController != null && before != null)
             {
                 var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
-                _context.UndoController.RecordTopologyChange(before, after, $"Flip {flippedCount} Faces");
+                _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                    _context.UndoController, before, after, $"Flip {flippedCount} Faces"));
             }
 
             _lastFlippedCount = flippedCount;
@@ -210,7 +212,8 @@ namespace Poly_Ling.Tools
             if (_context.UndoController != null && before != null)
             {
                 var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
-                _context.UndoController.RecordTopologyChange(before, after, $"Flip All {flippedCount} Faces");
+                _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                    _context.UndoController, before, after, $"Flip All {flippedCount} Faces"));
             }
 
             _lastFlippedCount = flippedCount;

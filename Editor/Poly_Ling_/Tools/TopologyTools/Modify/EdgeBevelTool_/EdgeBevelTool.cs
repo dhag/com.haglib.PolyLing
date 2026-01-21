@@ -313,6 +313,7 @@ namespace Poly_Ling.Tools
                 // 【フェーズ1】SelectionStateを渡してEdge選択も保存・復元
                 MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 MeshSnapshotRecord record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
+                ctx.UndoController.FocusVertexEdit();
                 ctx.UndoController.VertexEditStack.Record(record, "Bevel Edges");
             }
 

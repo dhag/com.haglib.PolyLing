@@ -264,7 +264,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// エディタ状態ドラッグ終了（変更があれば記録・キュー経由）
+        /// エディタ状態ドラッグ終了（変更があれば記録）
         /// </summary>
         public void EndEditorStateDrag(string description = "Change Editor State")
         {
@@ -274,15 +274,7 @@ namespace Poly_Ling.UndoSystem
             EditorStateSnapshot currentSnapshot = _editorStateContext.Capture();
             if (currentSnapshot.IsDifferentFrom(_editorStateStartSnapshot))
             {
-                if (_commandQueue != null)
-                {
-                    _commandQueue.Enqueue(new RecordEditorStateChangeCommand(
-                        this, _editorStateStartSnapshot, currentSnapshot, description));
-                }
-                else
-                {
-                    RecordEditorStateChangeInternal(_editorStateStartSnapshot, currentSnapshot, description);
-                }
+                RecordEditorStateChangeInternal(_editorStateStartSnapshot, currentSnapshot, description);
             }
         }
 
@@ -382,18 +374,11 @@ namespace Poly_Ling.UndoSystem
         // === 頂点編集操作の記録 ===
 
         /// <summary>
-        /// 頂点ドラッグ開始（キュー経由）
+        /// 頂点ドラッグ開始
         /// </summary>
         public void BeginVertexDrag(Vector3[] currentPositions)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new BeginVertexDragCommand(this, currentPositions));
-            }
-            else
-            {
-                BeginVertexDragInternal(currentPositions);
-            }
+            BeginVertexDragInternal(currentPositions);
         }
 
         /// <summary>
@@ -414,18 +399,11 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 頂点ドラッグ開始（MeshObjectから自動取得・キュー経由）
+        /// 頂点ドラッグ開始（MeshObjectから自動取得）
         /// </summary>
         public void BeginVertexDrag()
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new BeginVertexDragCommand(this, null));
-            }
-            else
-            {
-                BeginVertexDragInternal();
-            }
+            BeginVertexDragInternal();
         }
 
         /// <summary>
@@ -444,14 +422,7 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void EndVertexDrag(int[] movedIndices, Vector3[] newPositions)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new EndVertexDragCommand(this, movedIndices, newPositions));
-            }
-            else
-            {
-                EndVertexDragInternal(movedIndices, newPositions);
-            }
+            EndVertexDragInternal(movedIndices, newPositions);
         }
 
         /// <summary>
@@ -490,20 +461,11 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 頂点ドラッグ終了（MeshObjectから自動取得・キュー経由）
+        /// 頂点ドラッグ終了（MeshObjectから自動取得）
         /// </summary>
         public void EndVertexDrag(int[] movedIndices)
         {
-            if (_commandQueue != null)
-            {
-                // 現在の位置をキャプチャしてコマンドに渡す
-                var positions = _meshContext?.GetAllPositions();
-                _commandQueue.Enqueue(new EndVertexDragCommand(this, movedIndices, positions));
-            }
-            else
-            {
-                EndVertexDragInternal(movedIndices);
-            }
+            EndVertexDragInternal(movedIndices);
         }
 
         /// <summary>
@@ -516,7 +478,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 頂点グループ移動を記録（キュー経由）
+        /// 頂点グループ移動を記録
         /// </summary>
         public void RecordVertexGroupMove(
             List<int>[] groups,
@@ -524,15 +486,7 @@ namespace Poly_Ling.UndoSystem
             Vector3[] newOffsets,
             Vector3[] originalVertices)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordVertexGroupMoveCommand(
-                    this, groups, oldOffsets, newOffsets, originalVertices));
-            }
-            else
-            {
-                RecordVertexGroupMoveInternal(groups, oldOffsets, newOffsets, originalVertices);
-            }
+            RecordVertexGroupMoveInternal(groups, oldOffsets, newOffsets, originalVertices);
         }
 
         /// <summary>
@@ -556,7 +510,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 選択状態変更を記録（キュー経由）
+        /// 選択状態変更を記録
         /// </summary>
         public void RecordSelectionChange(
             HashSet<int> oldVertices,
@@ -564,15 +518,7 @@ namespace Poly_Ling.UndoSystem
             HashSet<int> oldFaces = null,
             HashSet<int> newFaces = null)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordSelectionChangeCommand(
-                    this, oldVertices, newVertices, oldFaces, newFaces));
-            }
-            else
-            {
-                RecordSelectionChangeInternal(oldVertices, newVertices, oldFaces, newFaces);
-            }
+            RecordSelectionChangeInternal(oldVertices, newVertices, oldFaces, newFaces);
         }
 
         /// <summary>
@@ -595,7 +541,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 選択状態変更を記録（WorkPlane連動・キュー経由）
+        /// 選択状態変更を記録（WorkPlane連動）
         /// </summary>
         public void RecordSelectionChangeWithWorkPlane(
             HashSet<int> oldVertices,
@@ -605,16 +551,8 @@ namespace Poly_Ling.UndoSystem
             HashSet<int> oldFaces = null,
             HashSet<int> newFaces = null)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordSelectionChangeCommand(
-                    this, oldVertices, newVertices, oldWorkPlane, newWorkPlane, oldFaces, newFaces));
-            }
-            else
-            {
-                RecordSelectionChangeWithWorkPlaneInternal(
-                    oldVertices, newVertices, oldWorkPlane, newWorkPlane, oldFaces, newFaces);
-            }
+            RecordSelectionChangeWithWorkPlaneInternal(
+                oldVertices, newVertices, oldWorkPlane, newWorkPlane, oldFaces, newFaces);
         }
 
         /// <summary>
@@ -638,7 +576,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 拡張選択変更を記録（Edge/Face/Line対応・キュー経由）
+        /// 拡張選択変更を記録（Edge/Face/Line対応）
         /// </summary>
         public void RecordExtendedSelectionChange(
             Poly_Ling.Selection.SelectionSnapshot oldSnapshot,
@@ -648,20 +586,10 @@ namespace Poly_Ling.UndoSystem
             WorkPlaneSnapshot? oldWorkPlane = null,
             WorkPlaneSnapshot? newWorkPlane = null)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordExtendedSelectionChangeCommand(
-                    this, oldSnapshot, newSnapshot,
-                    oldLegacyVertices, newLegacyVertices,
-                    oldWorkPlane, newWorkPlane));
-            }
-            else
-            {
-                RecordExtendedSelectionChangeInternal(
-                    oldSnapshot, newSnapshot,
-                    oldLegacyVertices, newLegacyVertices,
-                    oldWorkPlane, newWorkPlane);
-            }
+            RecordExtendedSelectionChangeInternal(
+                oldSnapshot, newSnapshot,
+                oldLegacyVertices, newLegacyVertices,
+                oldWorkPlane, newWorkPlane);
         }
 
         /// <summary>
@@ -728,6 +656,17 @@ namespace Poly_Ling.UndoSystem
             MeshObjectSnapshot after,
             string description = "Topology Change")
         {
+            RecordTopologyChangeInternal(before, after, description);
+        }
+
+        /// <summary>
+        /// トポロジー変更を記録（内部用）
+        /// </summary>
+        internal void RecordTopologyChangeInternal(
+            MeshObjectSnapshot before,
+            MeshObjectSnapshot after,
+            string description = "Topology Change")
+        {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             _vertexEditStack.Record(record, description);
@@ -757,6 +696,18 @@ namespace Poly_Ling.UndoSystem
         /// </param>
         /// <param name="description">Undo履歴に表示される説明</param>
         public void RecordTopologyChange(
+            MeshObjectSnapshot before,
+            MeshObjectSnapshot after,
+            SelectionState selectionState,
+            string description = "Topology Change")
+        {
+            RecordTopologyChangeInternal(before, after, selectionState, description);
+        }
+
+        /// <summary>
+        /// トポロジー変更を記録（拡張選択対応版・内部用）
+        /// </summary>
+        internal void RecordTopologyChangeInternal(
             MeshObjectSnapshot before,
             MeshObjectSnapshot after,
             SelectionState selectionState,
@@ -911,24 +862,14 @@ namespace Poly_Ling.UndoSystem
         // === 表示操作の記録 ===
 
         /// <summary>
-        /// カメラ変更を記録（キュー経由）
+        /// カメラ変更を記録
         /// </summary>
         public void RecordViewChange(
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
             float newRotX, float newRotY, float newDist, Vector3 newTarget)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordCameraChangeCommand(
-                    this,
-                    oldRotX, oldRotY, oldDist, oldTarget,
-                    newRotX, newRotY, newDist, newTarget));
-            }
-            else
-            {
-                RecordViewChangeInternal(oldRotX, oldRotY, oldDist, oldTarget,
-                    newRotX, newRotY, newDist, newTarget);
-            }
+            RecordViewChangeInternal(oldRotX, oldRotY, oldDist, oldTarget,
+                newRotX, newRotY, newDist, newTarget);
         }
 
         /// <summary>
@@ -962,7 +903,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// カメラ変更を記録（WorkPlane連動・キュー経由）
+        /// カメラ変更を記録（WorkPlane連動）
         /// </summary>
         public void RecordViewChangeWithWorkPlane(
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
@@ -970,21 +911,10 @@ namespace Poly_Ling.UndoSystem
             WorkPlaneSnapshot? oldWorkPlane,
             WorkPlaneSnapshot? newWorkPlane)
         {
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordCameraChangeCommand(
-                    this,
-                    oldRotX, oldRotY, oldDist, oldTarget,
-                    newRotX, newRotY, newDist, newTarget,
-                    oldWorkPlane, newWorkPlane));
-            }
-            else
-            {
-                RecordViewChangeWithWorkPlaneInternal(
-                    oldRotX, oldRotY, oldDist, oldTarget,
-                    newRotX, newRotY, newDist, newTarget,
-                    oldWorkPlane, newWorkPlane);
-            }
+            RecordViewChangeWithWorkPlaneInternal(
+                oldRotX, oldRotY, oldDist, oldTarget,
+                newRotX, newRotY, newDist, newTarget,
+                oldWorkPlane, newWorkPlane);
         }
 
         /// <summary>
@@ -1068,39 +998,19 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// Undo実行（キュー経由）
+        /// Undo実行
         /// </summary>
         public bool Undo()
         {
-            if (_commandQueue != null)
-            {
-                // キュー経由で実行（順序保証）
-                _commandQueue.Enqueue(new UndoCommand(this, OnUndoRedoPerformed));
-                return true; // キューに追加成功
-            }
-            else
-            {
-                // キューなしの場合は直接実行（後方互換）
-                return UndoInternal();
-            }
+            return UndoInternal();
         }
 
         /// <summary>
-        /// Redo実行（キュー経由）
+        /// Redo実行
         /// </summary>
         public bool Redo()
         {
-            if (_commandQueue != null)
-            {
-                // キュー経由で実行（順序保証）
-                _commandQueue.Enqueue(new RedoCommand(this, OnUndoRedoPerformed));
-                return true; // キューに追加成功
-            }
-            else
-            {
-                // キューなしの場合は直接実行（後方互換）
-                return RedoInternal();
-            }
+            return RedoInternal();
         }
 
         /// <summary>
@@ -1142,9 +1052,10 @@ namespace Poly_Ling.UndoSystem
 
             if (ctrl && e.keyCode == KeyCode.Z && !e.shift)
             {
-                Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Z detected, calling Undo()");
-                if (Undo())
+                Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Z detected, enqueuing UndoCommand");
+                if (_commandQueue != null && CanUndo)
                 {
+                    _commandQueue.Enqueue(new UndoCommand(this, null));
                     e.Use();
                     return true;
                 }
@@ -1153,9 +1064,10 @@ namespace Poly_Ling.UndoSystem
             if ((ctrl && e.keyCode == KeyCode.Y) ||
                 (ctrl && e.shift && e.keyCode == KeyCode.Z))
             {
-                Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Y or Ctrl+Shift+Z detected, calling Redo()");
-                if (Redo())
+                Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Y or Ctrl+Shift+Z detected, enqueuing RedoCommand");
+                if (_commandQueue != null && CanRedo)
                 {
+                    _commandQueue.Enqueue(new RedoCommand(this, null));
                     e.Use();
                     return true;
                 }
@@ -1387,20 +1299,12 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// メッシュ選択変更を記録（キュー経由）
+        /// メッシュ選択変更を記録
         /// </summary>
         public void RecordMeshSelectionChange(int oldIndex, int newIndex)
         {
             if (oldIndex == newIndex) return;
-
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordMeshSelectionChangeCommand(this, oldIndex, newIndex));
-            }
-            else
-            {
-                RecordMeshSelectionChangeInternal(oldIndex, newIndex);
-            }
+            RecordMeshSelectionChangeInternal(oldIndex, newIndex);
         }
 
         /// <summary>
@@ -1425,7 +1329,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// メッシュ選択変更を記録（カメラ状態付き・キュー経由）
+        /// メッシュ選択変更を記録（カメラ状態付き）
         /// </summary>
         public void RecordMeshSelectionChange(
             int oldIndex, 
@@ -1434,16 +1338,7 @@ namespace Poly_Ling.UndoSystem
             CameraSnapshot? newCamera)
         {
             if (oldIndex == newIndex) return;
-
-            if (_commandQueue != null)
-            {
-                _commandQueue.Enqueue(new RecordMeshSelectionChangeCommand(
-                    this, oldIndex, newIndex, oldCamera, newCamera));
-            }
-            else
-            {
-                RecordMeshSelectionChangeInternal(oldIndex, newIndex, oldCamera, newCamera);
-            }
+            RecordMeshSelectionChangeInternal(oldIndex, newIndex, oldCamera, newCamera);
         }
 
         /// <summary>

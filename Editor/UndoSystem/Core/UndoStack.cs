@@ -81,6 +81,12 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public event Action<int> OnQueueProcessed;
 
+        /// <summary>
+        /// 最後にUndo/Redoで実行されたレコード
+        /// OnUndoPerformed/OnRedoPerformed ハンドラ内で参照可能
+        /// </summary>
+        public IUndoRecord<TContext> LastExecutedRecord { get; private set; }
+
         // === コンストラクタ ===
         public UndoStack(string id, string displayName = null, TContext context = default)
         {
@@ -256,6 +262,7 @@ namespace Poly_Ling.UndoSystem
             if (undoneRecords.Count > 0)
             {
                 Debug.Log($"[UndoStack.PerformUndo] Stack={Id}, Completed. UndoneCount={undoneRecords.Count}, RemainingStack={_undoStack.Count}");
+                LastExecutedRecord = undoneRecords[0];
                 OnUndoPerformed?.Invoke(undoneRecords[0].Info);
                 return true;
             }
@@ -295,6 +302,7 @@ namespace Poly_Ling.UndoSystem
 
             if (redoneRecords.Count > 0)
             {
+                LastExecutedRecord = redoneRecords[0];
                 OnRedoPerformed?.Invoke(redoneRecords[0].Info);
                 return true;
             }

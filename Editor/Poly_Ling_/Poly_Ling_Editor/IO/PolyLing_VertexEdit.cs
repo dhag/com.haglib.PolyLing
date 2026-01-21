@@ -10,6 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using Poly_Ling.Localization;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 public partial class PolyLing
@@ -71,7 +72,8 @@ public partial class PolyLing
             if (_undoController != null && before != null)
             {
                 MeshObjectSnapshot after = _undoController.CaptureMeshObjectSnapshot();
-                _undoController.RecordTopologyChange(before, after, "Reset UnityMesh");
+                _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                    _undoController, before, after, "Reset UnityMesh"));
             }
         }
 
@@ -532,12 +534,13 @@ public partial class PolyLing
             // メッシュを再構築
             SyncMeshFromData(meshContext);
 
-            // Undo記録
+            // Undo記録（コマンドキュー経由）
             if (_undoController != null && beforeSnapshot != null)
             {
                 var afterSnapshot = _undoController.CaptureMeshObjectSnapshot();
-                _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot,
-                    $"Apply Material [{materialIndex}] to {_selectionState.Faces.Count} faces");
+                _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                    _undoController, beforeSnapshot, afterSnapshot,
+                    $"Apply Material [{materialIndex}] to {_selectionState.Faces.Count} faces"));
             }
 
             Repaint();
@@ -801,7 +804,8 @@ public partial class PolyLing
         }
 
         var afterSnapshot = _undoController.CaptureMeshObjectSnapshot();
-        _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, description);
+        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+            _undoController, beforeSnapshot, afterSnapshot, description));
         Debug.Log($"[MaterialUndo] Recorded: {description}");
 
         // 自動デフォルト設定がONの場合、デフォルトを更新
@@ -830,11 +834,12 @@ public partial class PolyLing
         // Undoコンテキストに同期
         SyncDefaultMaterialsToUndoContext();
 
-        // Undo記録
+        // Undo記録（コマンドキュー経由）
         if (beforeSnapshot != null && _undoController != null)
         {
             var afterSnapshot = _undoController.CaptureMeshObjectSnapshot();
-            _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, "Set Default Materials");
+            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                _undoController, beforeSnapshot, afterSnapshot, "Set Default Materials"));
             Debug.Log($"[MaterialUndo] Set default materialPathList: {_defaultMaterials.Count} slots, currentIndex={_defaultCurrentMaterialIndex}");
         }
     }
@@ -855,11 +860,12 @@ public partial class PolyLing
         // Undoコンテキストに同期
         SyncDefaultMaterialsToUndoContext();
 
-        // Undo記録
+        // Undo記録（コマンドキュー経由）
         if (beforeSnapshot != null && _undoController != null)
         {
             var afterSnapshot = _undoController.CaptureMeshObjectSnapshot();
-            _undoController.RecordTopologyChange(beforeSnapshot, afterSnapshot, $"Auto Default Materials: {(value ? "ON" : "OFF")}");
+            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                _undoController, beforeSnapshot, afterSnapshot, $"Auto Default Materials: {(value ? "ON" : "OFF")}"));
             Debug.Log($"[MaterialUndo] Auto default materialPathList: {(value ? "ON" : "OFF")}");
         }
     }

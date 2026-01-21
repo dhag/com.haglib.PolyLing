@@ -18,6 +18,7 @@ namespace Poly_Ling.Commands
         private readonly string _description;
 
         public string Description => $"Record Editor State: {_description}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.None;
 
         public RecordEditorStateChangeCommand(
             MeshUndoController controller,

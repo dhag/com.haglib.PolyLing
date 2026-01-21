@@ -15,6 +15,7 @@ namespace Poly_Ling.Commands
         private readonly Action _onCompleted;
         
         public string Description => "Undo";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
 
         public UndoCommand(MeshUndoController controller, Action onCompleted = null)
         {
@@ -41,6 +42,7 @@ namespace Poly_Ling.Commands
         private readonly Action _onCompleted;
         
         public string Description => "Redo";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
 
         public RedoCommand(MeshUndoController controller, Action onCompleted = null)
         {

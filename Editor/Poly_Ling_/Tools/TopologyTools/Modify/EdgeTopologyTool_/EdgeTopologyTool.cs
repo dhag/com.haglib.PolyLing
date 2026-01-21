@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.Tools
@@ -677,7 +678,8 @@ namespace Poly_Ling.Tools
 
             // スナップショット（操作後）& Undo記録
             var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-            ctx.UndoController?.RecordTopologyChange(before, after, "Edge Flip");
+            ctx.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                ctx.UndoController, before, after, "Edge Flip"));
         }
 
         /// <summary>
@@ -737,7 +739,8 @@ namespace Poly_Ling.Tools
 
             // スナップショット（操作後）& Undo記録
             var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-            ctx.UndoController?.RecordTopologyChange(before, after, "Quad Split");
+            ctx.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                ctx.UndoController, before, after, "Quad Split"));
         }
 
         /// <summary>
@@ -784,7 +787,8 @@ namespace Poly_Ling.Tools
 
             // スナップショット（操作後）& Undo記録
             var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-            ctx.UndoController?.RecordTopologyChange(before, after, "Edge Dissolve");
+            ctx.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                ctx.UndoController, before, after, "Edge Dissolve"));
         }
 
         /// <summary>

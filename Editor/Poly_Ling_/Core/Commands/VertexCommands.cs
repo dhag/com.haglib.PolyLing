@@ -17,6 +17,7 @@ namespace Poly_Ling.Commands
         private readonly Vector3[] _currentPositions;
 
         public string Description => "Begin Vertex Drag";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.None;
 
         public BeginVertexDragCommand(MeshUndoController controller, Vector3[] currentPositions = null)
         {
@@ -49,6 +50,7 @@ namespace Poly_Ling.Commands
         private readonly Vector3[] _newPositions;
 
         public string Description => "End Vertex Drag";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
 
         public EndVertexDragCommand(MeshUndoController controller, int[] movedIndices, Vector3[] newPositions = null)
         {
@@ -84,6 +86,7 @@ namespace Poly_Ling.Commands
         private readonly Vector3[] _originalVertices;
 
         public string Description => "Record Vertex Group Move";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
 
         public RecordVertexGroupMoveCommand(
             MeshUndoController controller,

@@ -8,6 +8,22 @@ using Poly_Ling.Data;
 namespace Poly_Ling.UndoSystem
 {
     // ============================================================
+    // 更新レベル定義
+    // ============================================================
+
+    /// <summary>
+    /// Undo/Redo後に必要な更新レベル
+    /// 数字が大きいほど重い処理
+    /// </summary>
+    public enum MeshUpdateLevel
+    {
+        None = 0,       // 更新不要
+        Selection = 3,  // 選択フラグのみ
+        Position = 4,   // 頂点位置のみ（0.5〜2秒 @10M頂点）
+        Topology = 5    // フル更新（5〜20秒 @10M頂点）
+    }
+
+    // ============================================================
     // Undo記録の基底
     // ============================================================
 
@@ -19,6 +35,12 @@ namespace Poly_Ling.UndoSystem
         public UndoOperationInfo Info { get; set; }
         public abstract void Undo(MeshUndoContext context);
         public abstract void Redo(MeshUndoContext context);
+
+        /// <summary>
+        /// この操作のUndo/Redo後に必要な更新レベル
+        /// デフォルトはTopology（フル更新）- 安全側に倒す
+        /// </summary>
+        public virtual MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Topology;
     }
 
     // ============================================================
@@ -34,6 +56,12 @@ namespace Poly_Ling.UndoSystem
         public int[] Indices;
         public Vector3[] OldPositions;
         public Vector3[] NewPositions;
+
+        /// <summary>
+        /// 頂点移動はLevel 4（位置のみ更新）で済む
+        /// </summary>
+        public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Position;
+        //public Vector3[] NewPositions;
 
         public VertexMoveRecord(int[] indices, Vector3[] oldPositions, Vector3[] newPositions)
         {
@@ -73,6 +101,11 @@ namespace Poly_Ling.UndoSystem
         public Vector3[] OldOffsets;
         public Vector3[] NewOffsets;
         public Vector3[] OriginalPositions;  // 元の頂点位置
+
+        /// <summary>
+        /// 頂点グループ移動もLevel 4（位置のみ更新）で済む
+        /// </summary>
+        public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Position;
 
         public VertexGroupMoveRecord(
             List<int>[] groups,

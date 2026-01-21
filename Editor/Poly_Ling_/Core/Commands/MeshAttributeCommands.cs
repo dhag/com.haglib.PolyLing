@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using Poly_Ling.Tools;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Commands
 {
@@ -17,6 +18,7 @@ namespace Poly_Ling.Commands
         private readonly Action<IList<MeshAttributeChange>> _handler;
 
         public string Description => $"Update Mesh Attributes ({_changes?.Count ?? 0} changes)";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
 
         public UpdateMeshAttributesCommand(
             IList<MeshAttributeChange> changes,

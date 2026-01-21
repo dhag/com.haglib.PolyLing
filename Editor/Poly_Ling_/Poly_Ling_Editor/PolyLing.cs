@@ -407,6 +407,56 @@ public partial class PolyLing : EditorWindow
         {
             _undoController.MeshListContext.OnCameraRestoreRequested = OnCameraRestoreRequested;
             _undoController.MeshListContext.OnFocusMeshListRequested = () => _undoController.FocusMeshList();
+            _undoController.MeshListContext.OnReorderCompleted = () => {
+                // ========================================================
+                // メッシュ順序変更後の完全再構築処理
+                // ========================================================
+                // 
+                // メッシュリストの順序変更は、グローバルバッファ（頂点リスト、面リスト等）の
+                // 完全再構築が必要。SetModelContextがこれを行う。
+                // 
+                // 【重要】以下の処理は必ずこの順序で実行すること：
+                // 1. _selectedIndex を ModelContext から同期
+                // 2. SetModelContext でグローバルバッファを完全再構築
+                // 3. SetActiveMesh で選択メッシュを設定
+                //    ※SetModelContextの後に呼ぶこと！
+                //    ※SetActiveMeshはBufferManagerのマッピングテーブルを使うため、
+                //      バッファ再構築前に呼ぶと古いマッピングで変換されてしまう
+                // 4. MeshUndoContext を再設定（参照が変わるため）
+                // ========================================================
+
+                // 1. _selectedIndex を同期
+                // 注意: _undoController.MeshListContext と _model は別オブジェクトの場合がある
+                // MeshTreeRootは _toolContext.Model (= _model) を更新するので、
+                // _model から直接読む必要がある
+                var oldSelectedIndex = _selectedIndex;
+                _selectedIndex = _model?.SelectedMeshContextIndex ?? 0;
+                Debug.Log($"[OnReorderCompleted] _selectedIndex: {oldSelectedIndex} -> {_selectedIndex}, CurrentMesh={_model?.CurrentMeshContext?.Name}");
+
+                // 2. グローバルバッファを完全再構築
+                _unifiedAdapter?.SetModelContext(_model);
+
+                // 3. 選択メッシュを設定（バッファ再構築後に呼ぶこと！）
+                // SetActiveMeshはContextIndex→UnifiedMeshIndex変換にBufferManagerの
+                // マッピングテーブルを使用する。SetModelContextでバッファが再構築されると
+                // マッピングテーブルも新しくなるため、必ず再構築後に呼ぶ必要がある。
+                _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
+                _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+
+                // 4. MeshUndoContextを再設定（UnityMeshが再構築されるため参照が変わる）
+                var meshContext = _model?.CurrentMeshContext;
+                if (meshContext != null && _undoController != null)
+                {
+                    _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
+                    _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
+                    _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
+                }
+
+                // 5. トポロジー更新（SelectMeshAtIndexと同じ処理）
+                // SetModelContextだけでは不十分。UpdateTopologyも呼ぶ必要がある。
+                UpdateTopology();
+            };
+            _undoController.MeshListContext.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
         }
 
         // ModelContextにWorkPlaneを設定
@@ -842,7 +892,7 @@ public partial class PolyLing : EditorWindow
 
     private void SyncMeshFromData(MeshContext meshContext)
     {
-        if (meshContext.MeshObject == null || meshContext.UnityMesh == null)
+        if (meshContext == null || meshContext.MeshObject == null || meshContext.UnityMesh == null)
             return;
 
         var newMesh = meshContext.MeshObject.ToUnityMeshShared();
@@ -1096,11 +1146,12 @@ public partial class PolyLing : EditorWindow
                 }
             }
 
-            // Undo記録（WorkPlane連動版）
-            _undoController.RecordViewChangeWithWorkPlane(
+            // Undo記録（キュー経由）
+            _commandQueue?.Enqueue(new RecordCameraChangeCommand(
+                _undoController,
                 _cameraStartRotX, _cameraStartRotY, _cameraStartDistance, _cameraStartTarget,
                 _rotationX, _rotationY, _cameraDistance, _cameraTarget,
-                oldWorkPlane, newWorkPlane);
+                oldWorkPlane, newWorkPlane));
 
             // Single Source of Truth: プロパティ経由でEditorStateを直接参照しているため、
             // SetEditorState呼び出しは不要

@@ -41,39 +41,57 @@ namespace Poly_Ling.UI
         /// <summary>ルートレベルのアイテムリスト</summary>
         public List<MeshTreeAdapter> RootItems => _rootItems;
 
-        // === D&D用スナップショット ===
-        private List<int> _preChangeOrder;
-        private Dictionary<int, int> _preChangeParentIndices;
+        // === D&D用スナップショット（オブジェクト参照ベース）===
+        private List<MeshContext> _preOrderedList;
+        private Dictionary<MeshContext, MeshContext> _preParentMap;
+        private MeshContext _preSelectedMeshContext;
 
         /// <summary>
         /// ツリー構造が変更された時に呼ばれる（D&D完了時等）
         /// </summary>
         public void OnTreeChanged()
         {
-            // Undo用に変更後の状態を取得
-            var postChangeOrder = GetCurrentOrder();
-            var postChangeParentIndices = GetCurrentParentIndices();
-
-            // Undo記録（変更前後の状態がある場合）
-            if (_preChangeOrder != null && _toolContext?.UndoController != null)
+            var undoController = _toolContext?.UndoController;
+            int groupId = -1;
+            
+            // BeginGroupでD&D操作全体を1つのグループにまとめる
+            if (undoController != null)
             {
-                RecordReorderChange(_preChangeOrder, postChangeOrder, 
-                                   _preChangeParentIndices, postChangeParentIndices);
+                groupId = undoController.MeshListStack.BeginGroup("メッシュ順序変更");
             }
+            
+            try
+            {
+                // 1. ModelContextに同期（これでリストの順序が更新される）
+                SyncToModelContext();
 
-            // スナップショットをクリア
-            _preChangeOrder = null;
-            _preChangeParentIndices = null;
+                // 2. Undo記録（変更前のスナップショットがある場合）
+                if (_preOrderedList != null && undoController != null)
+                {
+                    RecordReorderChange();
+                }
 
-            // 1. ModelContextに同期
-            SyncToModelContext();
+                // スナップショットをクリア
+                _preOrderedList = null;
+                _preParentMap = null;
+                _preSelectedMeshContext = null;
 
-            // 2. 変更通知（UI更新 + 他パネルへの通知はMeshListPanelUXML側で行う）
-            OnChanged?.Invoke();
+                // 3. 変更通知
+                UnityEngine.Debug.Log($"[MeshTreeRoot.OnTreeChanged] OnChanged is {(OnChanged != null ? "set" : "null")}");
+                OnChanged?.Invoke();
+                UnityEngine.Debug.Log($"[MeshTreeRoot.OnTreeChanged] OnChanged invoked");
 
-            // 3. モデルの変更フラグを立てる
-            if (_modelContext != null)
-                _modelContext.IsDirty = true;
+                // 4. モデルの変更フラグを立てる
+                if (_modelContext != null)
+                    _modelContext.IsDirty = true;
+            }
+            finally
+            {
+                if (undoController != null && groupId >= 0)
+                {
+                    undoController.MeshListStack.EndGroup();
+                }
+            }
         }
 
         /// <summary>
@@ -81,69 +99,87 @@ namespace Poly_Ling.UI
         /// </summary>
         public void SavePreChangeSnapshot()
         {
-            _preChangeOrder = GetCurrentOrder();
-            _preChangeParentIndices = GetCurrentParentIndices();
-        }
-
-        /// <summary>
-        /// 現在の順序を取得
-        /// </summary>
-        private List<int> GetCurrentOrder()
-        {
-            return TreeViewHelper.Flatten(_rootItems)
-                .Select(a => a.GetCurrentIndex())
-                .ToList();
-        }
-
-        /// <summary>
-        /// 現在の親インデックスマップを取得
-        /// </summary>
-        private Dictionary<int, int> GetCurrentParentIndices()
-        {
-            var result = new Dictionary<int, int>();
-            var flatList = TreeViewHelper.Flatten(_rootItems);
+            if (_modelContext == null) return;
             
-            foreach (var adapter in flatList)
+            // MeshContextのオブジェクト参照リストを保存
+            _preOrderedList = new List<MeshContext>(_modelContext.MeshContextList);
+            
+            // 親マップを保存（MeshContext → 親MeshContext）
+            _preParentMap = new Dictionary<MeshContext, MeshContext>();
+            foreach (var mc in _modelContext.MeshContextList)
             {
-                int index = adapter.GetCurrentIndex();
-                int parentIndex = adapter.Parent?.GetCurrentIndex() ?? -1;
-                result[index] = parentIndex;
+                MeshContext parent = null;
+                if (mc.HierarchyParentIndex >= 0 && mc.HierarchyParentIndex < _modelContext.MeshContextCount)
+                {
+                    parent = _modelContext.GetMeshContext(mc.HierarchyParentIndex);
+                }
+                _preParentMap[mc] = parent;
             }
             
-            return result;
+            // 選択中のMeshContextを保存
+            _preSelectedMeshContext = _modelContext.CurrentMeshContext;
         }
 
         /// <summary>
         /// 順序変更をUndoスタックに記録
         /// </summary>
-        private void RecordReorderChange(
-            List<int> oldOrder, List<int> newOrder,
-            Dictionary<int, int> oldParents, Dictionary<int, int> newParents)
+        private void RecordReorderChange()
         {
             var undoController = _toolContext?.UndoController;
-            if (undoController == null) return;
+            if (undoController == null || _modelContext == null) return;
+
+            // 現在の状態を取得（SyncToModelContext後）
+            var newOrderedList = new List<MeshContext>(_modelContext.MeshContextList);
+            
+            var newParentMap = new Dictionary<MeshContext, MeshContext>();
+            foreach (var mc in _modelContext.MeshContextList)
+            {
+                MeshContext parent = null;
+                if (mc.HierarchyParentIndex >= 0 && mc.HierarchyParentIndex < _modelContext.MeshContextCount)
+                {
+                    parent = _modelContext.GetMeshContext(mc.HierarchyParentIndex);
+                }
+                newParentMap[mc] = parent;
+            }
+            
+            var newSelectedMeshContext = _modelContext.CurrentMeshContext;
 
             // 順序が同じなら記録しない
-            if (oldOrder.SequenceEqual(newOrder) && ParentIndicesEqual(oldParents, newParents))
+            if (ListsEqual(_preOrderedList, newOrderedList) && MapsEqual(_preParentMap, newParentMap))
                 return;
 
             var record = new MeshReorderChangeRecord
             {
-                OldOrder = oldOrder.ToArray(),
-                NewOrder = newOrder.ToArray(),
-                OldParentIndices = new Dictionary<int, int>(oldParents),
-                NewParentIndices = new Dictionary<int, int>(newParents)
+                OldOrderedList = _preOrderedList,
+                NewOrderedList = newOrderedList,
+                OldParentMap = _preParentMap,
+                NewParentMap = newParentMap,
+                OldSelectedMeshContext = _preSelectedMeshContext,
+                NewSelectedMeshContext = newSelectedMeshContext
             };
 
             undoController.MeshListStack.Record(record, "メッシュ順序変更");
+            undoController.FocusMeshList();
         }
 
-        private bool ParentIndicesEqual(Dictionary<int, int> a, Dictionary<int, int> b)
+        private bool ListsEqual(List<MeshContext> a, List<MeshContext> b)
         {
+            if (a == null || b == null) return a == b;
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (!ReferenceEquals(a[i], b[i])) return false;
+            }
+            return true;
+        }
+
+        private bool MapsEqual(Dictionary<MeshContext, MeshContext> a, Dictionary<MeshContext, MeshContext> b)
+        {
+            if (a == null || b == null) return a == b;
             if (a.Count != b.Count) return false;
             foreach (var kvp in a)
             {
-                if (!b.TryGetValue(kvp.Key, out var value) || value != kvp.Value)
+                if (!b.TryGetValue(kvp.Key, out var val) || !ReferenceEquals(kvp.Value, val))
                     return false;
             }
             return true;
@@ -296,6 +332,7 @@ namespace Poly_Ling.UI
             }
 
             // 4. 選択インデックスを復元
+            var oldIndices = string.Join(",", _modelContext.SelectedMeshContextIndices);
             _modelContext.SelectedMeshContextIndices.Clear();
             foreach (var mc in selectedMeshContexts)
             {
@@ -305,6 +342,8 @@ namespace Poly_Ling.UI
                     _modelContext.SelectedMeshContextIndices.Add(newIndex);
                 }
             }
+            var newIndices = string.Join(",", _modelContext.SelectedMeshContextIndices);
+            UnityEngine.Debug.Log($"[SyncToModelContext] 選択インデックス更新: {oldIndices} -> {newIndices}");
         }
 
         // ================================================================

@@ -360,11 +360,17 @@ public partial class PolyLing
         // 【暫定】毎フレーム選択状態を同期（TECHNICAL_DEBT参照）
         SyncSelectionFromLegacy();
         
+        // ContextIndex → UnifiedMeshIndex に変換
+        // 【重要】ContextIndex と UnifiedMeshIndex は異なる可能性がある
+        // （IsVisible=false や MeshObject=null のメッシュがあるとずれる）
+        // BufferManager にも UnifiedMeshIndex を渡す必要がある
+        int unifiedMeshIndex = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
+        
         // 選択フラグを直接更新
         var bufMgr = _unifiedAdapter.BufferManager;
         if (bufMgr != null)
         {
-            bufMgr.SetActiveMesh(0, _selectedIndex);
+            bufMgr.SetActiveMesh(0, unifiedMeshIndex);  // UnifiedMeshIndex を使用
             bufMgr.UpdateAllSelectionFlags();
             
             // 面・線分の可視性計算（Culledフラグ設定）
@@ -374,9 +380,6 @@ public partial class PolyLing
             bufMgr.DispatchFaceVisibilityGPU();
             bufMgr.DispatchLineVisibilityGPU();
         }
-        
-        // ContextIndex → UnifiedMeshIndex に変換
-        int unifiedMeshIndex = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
         
         _unifiedAdapter.PrepareDrawing(
             camera,

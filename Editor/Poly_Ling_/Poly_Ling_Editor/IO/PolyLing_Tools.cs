@@ -108,20 +108,44 @@ public partial class PolyLing : EditorWindow
         ctx.CreateNewMeshContext = OnMeshContextCreatedAsNew;
         ctx.AddMeshObjectToCurrentMesh = OnMeshObjectCreatedAddToCurrent;
 
-        // MeshContext操作コールバック
+        // MeshContext操作コールバック（すべてCommandQueue経由）
         ctx.Model = _model;
-        ctx.AddMeshContext = AddMeshContextWithUndo;
-        ctx.AddMeshContexts = AddMeshContextsWithUndo;  // ★追加
-        ctx.RemoveMeshContext = RemoveMeshContextWithUndo;
-        ctx.SelectMeshContext = SelectMeshContentWithUndo;
-        ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
-        ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
+        ctx.AddMeshContext = (meshContext) =>
+        {
+            _commandQueue?.Enqueue(new AddMeshContextCommand(meshContext, AddMeshContextWithUndo));
+        };
+        ctx.AddMeshContexts = (meshContexts) =>
+        {
+            _commandQueue?.Enqueue(new AddMeshContextsCommand(meshContexts, AddMeshContextsWithUndo));
+        };
+        ctx.RemoveMeshContext = (index) =>
+        {
+            _commandQueue?.Enqueue(new RemoveMeshContextCommand(index, RemoveMeshContextWithUndo));
+        };
+        ctx.SelectMeshContext = (index) =>
+        {
+            _commandQueue?.Enqueue(new SelectMeshContextCommand(index, SelectMeshContentWithUndo));
+        };
+        ctx.DuplicateMeshContent = (index) =>
+        {
+            _commandQueue?.Enqueue(new DuplicateMeshContentCommand(index, DuplicateMeshContentWithUndo));
+        };
+        ctx.ReorderMeshContext = (fromIndex, toIndex) =>
+        {
+            _commandQueue?.Enqueue(new ReorderMeshContextCommand(fromIndex, toIndex, ReorderMeshContentWithUndo));
+        };
         ctx.UpdateMeshAttributes = (changes) =>
         {
             _commandQueue?.Enqueue(new UpdateMeshAttributesCommand(changes, UpdateMeshAttributesWithUndo));
         };
-        ctx.ClearAllMeshContexts = ClearAllMeshContextsWithUndo;  // ★ImportMode用
-        ctx.ReplaceAllMeshContexts = ReplaceAllMeshContextsWithUndo;  // ★1回のUndoで戻せるReplace
+        ctx.ClearAllMeshContexts = () =>
+        {
+            _commandQueue?.Enqueue(new ClearAllMeshContextsCommand(ClearAllMeshContextsWithUndo));
+        };
+        ctx.ReplaceAllMeshContexts = (meshContexts) =>
+        {
+            _commandQueue?.Enqueue(new ReplaceAllMeshContextsCommand(meshContexts, ReplaceAllMeshContextsWithUndo));
+        };
 
         // Phase 5追加: マテリアル操作コールバック
         ctx.AddMaterials = AddMaterialsToModel;
@@ -259,20 +283,44 @@ public partial class PolyLing : EditorWindow
         ctx.TopologyCache = _meshTopology;
         ctx.SelectionOps = _selectionOps;
 
-        // ModelContext（Phase 3追加）
+        // ModelContext（Phase 3追加）- すべてCommandQueue経由
         ctx.Model = _model;
-        ctx.AddMeshContexts = AddMeshContextsWithUndo;  // ★追加
-        ctx.AddMeshContext = AddMeshContextWithUndo;
-        ctx.RemoveMeshContext = RemoveMeshContextWithUndo;
-        ctx.SelectMeshContext = SelectMeshContentWithUndo;
-        ctx.DuplicateMeshContent = DuplicateMeshContentWithUndo;
-        ctx.ReorderMeshContext = ReorderMeshContentWithUndo;
+        ctx.AddMeshContexts = (meshContexts) =>
+        {
+            _commandQueue?.Enqueue(new AddMeshContextsCommand(meshContexts, AddMeshContextsWithUndo));
+        };
+        ctx.AddMeshContext = (meshContext) =>
+        {
+            _commandQueue?.Enqueue(new AddMeshContextCommand(meshContext, AddMeshContextWithUndo));
+        };
+        ctx.RemoveMeshContext = (index) =>
+        {
+            _commandQueue?.Enqueue(new RemoveMeshContextCommand(index, RemoveMeshContextWithUndo));
+        };
+        ctx.SelectMeshContext = (index) =>
+        {
+            _commandQueue?.Enqueue(new SelectMeshContextCommand(index, SelectMeshContentWithUndo));
+        };
+        ctx.DuplicateMeshContent = (index) =>
+        {
+            _commandQueue?.Enqueue(new DuplicateMeshContentCommand(index, DuplicateMeshContentWithUndo));
+        };
+        ctx.ReorderMeshContext = (fromIndex, toIndex) =>
+        {
+            _commandQueue?.Enqueue(new ReorderMeshContextCommand(fromIndex, toIndex, ReorderMeshContentWithUndo));
+        };
         ctx.UpdateMeshAttributes = (changes) =>
         {
             _commandQueue?.Enqueue(new UpdateMeshAttributesCommand(changes, UpdateMeshAttributesWithUndo));
         };
-        ctx.ClearAllMeshContexts = ClearAllMeshContextsWithUndo;
-        ctx.ReplaceAllMeshContexts = ReplaceAllMeshContextsWithUndo;
+        ctx.ClearAllMeshContexts = () =>
+        {
+            _commandQueue?.Enqueue(new ClearAllMeshContextsCommand(ClearAllMeshContextsWithUndo));
+        };
+        ctx.ReplaceAllMeshContexts = (meshContexts) =>
+        {
+            _commandQueue?.Enqueue(new ReplaceAllMeshContextsCommand(meshContexts, ReplaceAllMeshContextsWithUndo));
+        };
 
         // Phase 4追加: メッシュ作成コールバック
         ctx.CreateNewMeshContext = OnMeshContextCreatedAsNew;
@@ -919,6 +967,9 @@ public partial class PolyLing : EditorWindow
         {
             InitVertexOffsets();
             LoadMeshContextToUndoController(_model.CurrentMeshContext);
+            // UnifiedSystemにトポロジー変更を通知
+            // ※メインパネルのSelectMeshAtIndexと同じ処理
+            UpdateTopology();
         }
 
         Repaint();

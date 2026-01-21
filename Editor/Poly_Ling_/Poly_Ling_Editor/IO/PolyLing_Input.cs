@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
+using Poly_Ling.Commands;
 
 public partial class PolyLing
 {
@@ -614,7 +615,7 @@ public partial class PolyLing
     }
 
     /// <summary>
-    /// 選択変更をUndoスタックに記録（WorkPlane原点連動）
+    /// 選択変更をUndoスタックに記録（WorkPlane原点連動・キュー経由）
     /// </summary>
     private void RecordSelectionChange(HashSet<int> oldSelection, HashSet<int> newSelection)
     {
@@ -653,13 +654,14 @@ public partial class PolyLing
             }
         }
 
-        // Undo記録（WorkPlane連動版）
-        _undoController.RecordSelectionChangeWithWorkPlane(
+        // Undo記録（キュー経由）
+        _commandQueue?.Enqueue(new RecordSelectionChangeCommand(
+            _undoController,
             oldSelection, newSelection,
-            oldWorkPlane, newWorkPlane);
+            oldWorkPlane, newWorkPlane));
     }
     /// <summary>
-    /// 拡張選択変更をUndoスタックに記録
+    /// 拡張選択変更をUndoスタックに記録（キュー経由）
     /// </summary>
     private void RecordExtendedSelectionChange(SelectionSnapshot oldSnapshot, HashSet<int> oldLegacyVertices)
     {
@@ -698,14 +700,15 @@ public partial class PolyLing
             }
         }
 
-        // Undo記録
-        _undoController.RecordExtendedSelectionChange(
+        // Undo記録（キュー経由）
+        _commandQueue?.Enqueue(new RecordExtendedSelectionChangeCommand(
+            _undoController,
             oldSnapshot,
             newSnapshot,
             oldLegacyVertices,
             newLegacyVertices,
             oldWorkPlane,
-            newWorkPlane);
+            newWorkPlane));
 
         // 最新スナップショットを保存
         _lastSelectionSnapshot = newSnapshot;
@@ -876,15 +879,16 @@ public partial class PolyLing
             }
         }
 
-        // Undo記録
-        _undoController?.RecordExtendedSelectionChange(
+        // Undo記録（コマンドキュー経由）
+        _commandQueue?.Enqueue(new RecordExtendedSelectionChangeCommand(
+            _undoController,
             _selectionSnapshotOnMouseDown,
             afterSnapshot,
             _legacySelectionOnMouseDown,
             newLegacyVertices,
             _workPlaneSnapshotOnMouseDown,
             newWorkPlane
-        );
+        ));
 
         _lastSelectionSnapshot = afterSnapshot;
 

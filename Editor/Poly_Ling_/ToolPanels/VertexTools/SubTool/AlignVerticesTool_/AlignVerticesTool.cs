@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 
 namespace Poly_Ling.Tools
 {
@@ -307,7 +308,8 @@ namespace Poly_Ling.Tools
                 if (_context.UndoController != null && before != null)
                 {
                     MeshObjectSnapshot after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
-                    _context.UndoController.RecordTopologyChange(before, after, "Align Vertices");
+                    _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                        _context.UndoController, before, after, "Align Vertices"));
                 }
 
                 Debug.Log("[AlignVerticesTool] Aligned " + movedCount + " vertices");

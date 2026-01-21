@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using Poly_Ling.Model;
 
 // MeshContentはSimpleMeshFactoryのネストクラスを参照
@@ -178,7 +179,8 @@ namespace Poly_Ling.Tools
             if (undo != null && before != null)
             {
                 var after = undo.CaptureMeshObjectSnapshot();
-                undo.RecordTopologyChange(before, after, operationName);
+                _context?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                    undo, before, after, operationName));
             }
 
             // 再描画
@@ -206,7 +208,8 @@ namespace Poly_Ling.Tools
             if (undo != null && before != null)
             {
                 var after = undo.CaptureMeshObjectSnapshot();
-                undo.RecordTopologyChange(before, after, operationName);
+                _context?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                    undo, before, after, operationName));
             }
 
             // 再描画

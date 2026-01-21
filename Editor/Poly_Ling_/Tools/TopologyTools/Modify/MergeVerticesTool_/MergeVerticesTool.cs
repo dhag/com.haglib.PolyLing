@@ -15,6 +15,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Utilities;
+using Poly_Ling.Commands;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.Tools
@@ -283,11 +284,12 @@ namespace Poly_Ling.Tools
                 // トポロジカル変更後の標準処理（削除を伴うため選択クリア）
                 ctx.OnTopologyChanged();
 
-                // Undo記録
-                if (ctx.UndoController != null)
+                // Undo記録（キュー経由）
+                if (ctx.UndoController != null && ctx.CommandQueue != null)
                 {
                     MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-                    ctx.UndoController.RecordTopologyChange(before, after, "Merge Vertices");
+                    ctx.CommandQueue.Enqueue(new RecordTopologyChangeCommand(
+                        ctx.UndoController, before, after, "Merge Vertices"));
                 }
 
                 Debug.Log($"[MergeTool] {result.Message}");

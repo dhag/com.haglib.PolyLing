@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Commands
 {
@@ -15,6 +16,11 @@ namespace Poly_Ling.Commands
     {
         /// <summary>コマンドの説明（デバッグ用）</summary>
         string Description { get; }
+        
+        /// <summary>
+        /// この操作のUndo/Redo後に必要な更新レベル
+        /// </summary>
+        MeshUpdateLevel UpdateLevel { get; }
         
         /// <summary>コマンドを実行</summary>
         void Execute();
