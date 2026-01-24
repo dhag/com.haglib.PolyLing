@@ -1,0 +1,82 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- 
+    TypedMeshListPanel.uxml
+    タイプ別メッシュリストパネル
+    -->
+    
+    <ui:VisualElement name="typed-list-root" class="typed-list-root">
+        
+        <!-- タブヘッダー -->
+        <ui:VisualElement name="tab-header" class="tab-header">
+            <ui:Button name="tab-drawable" text="メッシュ" tooltip="Mesh + BakedMirror" class="tab-button tab-active" />
+            <ui:Button name="tab-bone" text="ボーン" tooltip="Bone" class="tab-button" />
+            <ui:Button name="tab-morph" text="モーフ" tooltip="Morph (開発中)" class="tab-button" />
+        </ui:VisualElement>
+        
+        <!-- メインコンテンツ -->
+        <ui:VisualElement name="main-content" class="main-content">
+            
+            <!-- ヘッダー -->
+            <ui:VisualElement name="header" class="header">
+                <ui:Label name="count-label" text="Items: 0" class="header-label" />
+                <ui:VisualElement style="flex-grow: 1;" />
+                <ui:Toggle name="show-info-toggle" label="Info" value="true" class="header-toggle" />
+                <ui:Button name="btn-add" text="+" tooltip="新規追加" class="header-button" />
+            </ui:VisualElement>
+            
+            <!-- ツリービュー -->
+            <ui:TreeView name="mesh-tree" 
+                         selection-type="Multiple"
+                         class="mesh-tree" />
+            
+            <!-- ツールバー -->
+            <ui:VisualElement name="toolbar" class="toolbar">
+                <ui:VisualElement class="toolbar-group">
+                    <ui:Button name="btn-up" text="↑" tooltip="上へ移動" class="toolbar-button" />
+                    <ui:Button name="btn-down" text="↓" tooltip="下へ移動" class="toolbar-button" />
+                    <ui:VisualElement class="toolbar-spacer" />
+                    <ui:Button name="btn-outdent" text="←" tooltip="階層を上げる" class="toolbar-button" />
+                    <ui:Button name="btn-indent" text="→" tooltip="階層を下げる" class="toolbar-button" />
+                </ui:VisualElement>
+                <ui:VisualElement class="toolbar-group">
+                    <ui:Button name="btn-duplicate" text="D" tooltip="複製" class="toolbar-button" />
+                    <ui:Button name="btn-delete" text="X" tooltip="削除" class="toolbar-button-danger" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <!-- 詳細パネル -->
+            <ui:Foldout name="detail-foldout" text="詳細" value="true" class="detail-foldout">
+                <ui:VisualElement name="detail-panel" class="detail-panel">
+                    <ui:TextField name="mesh-name-field" label="名前" class="detail-field" />
+                    <ui:VisualElement class="detail-stats">
+                        <ui:Label name="vertex-count-label" text="頂点: -" class="stat-label" />
+                        <ui:Label name="face-count-label" text="面: -" class="stat-label" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="face-breakdown" class="detail-breakdown">
+                        <ui:Label name="tri-count-label" text="三角形: -" class="stat-label-small" />
+                        <ui:Label name="quad-count-label" text="四角形: -" class="stat-label-small" />
+                        <ui:Label name="ngon-count-label" text="多角形: -" class="stat-label-small" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="index-info" class="index-info">
+                        <ui:Label name="bone-index-label" text="ボーンIdx: -" class="stat-label-small" />
+                        <ui:Label name="master-index-label" text="マスターIdx: -" class="stat-label-small" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="detail-buttons">
+                        <ui:Button name="btn-to-top" text="先頭へ" class="detail-button" />
+                        <ui:Button name="btn-to-bottom" text="末尾へ" class="detail-button" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:Foldout>
+            
+        </ui:VisualElement>
+        
+        <!-- モーフ用プレースホルダー -->
+        <ui:VisualElement name="morph-placeholder" class="placeholder">
+            <ui:Label text="モーフ機能は開発中です" class="placeholder-text" />
+        </ui:VisualElement>
+        
+        <!-- ステータスバー -->
+        <ui:Label name="status-label" text="" class="status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>

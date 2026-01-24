@@ -649,6 +649,42 @@ public partial class PolyLing
     }
 
     /// <summary>
+    /// BoneWeight を設定し、マスターインデックスからボーンリストインデックスに変換
+    /// </summary>
+    /// <param name="meshObject">対象の MeshObject</param>
+    /// <param name="defaultBoneIndex">デフォルトのボーンインデックス（ボーンリスト内）</param>
+    /// <param name="typedIndices">インデックス変換用のTypedMeshIndices</param>
+    private void EnsureBoneWeightsWithConversion(MeshObject meshObject, int defaultBoneIndex, TypedMeshIndices typedIndices)
+    {
+        if (meshObject == null) return;
+
+        foreach (var vertex in meshObject.Vertices)
+        {
+            if (!vertex.HasBoneWeight)
+            {
+                // 未設定の場合はデフォルト値を設定
+                vertex.BoneWeight = new BoneWeight
+                {
+                    boneIndex0 = defaultBoneIndex,
+                    weight0 = 1f,
+                    boneIndex1 = 0,
+                    weight1 = 0f,
+                    boneIndex2 = 0,
+                    weight2 = 0f,
+                    boneIndex3 = 0,
+                    weight3 = 0f
+                };
+            }
+            else
+            {
+                // 既存のBoneWeightのインデックスを変換
+                var bw = vertex.BoneWeight.Value;
+                vertex.BoneWeight = typedIndices.ConvertBoneWeightToLocal(bw);
+            }
+        }
+    }
+
+    /// <summary>
     /// SkinnedMeshRenderer をセットアップ
     /// </summary>
     /// <param name="go">対象の GameObject</param>

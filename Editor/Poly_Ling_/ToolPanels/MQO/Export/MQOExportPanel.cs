@@ -54,6 +54,9 @@ namespace Poly_Ling.MQO
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
             ["PreserveObjectAttributes"] = new() { ["en"] = "Preserve Object Attributes", ["ja"] = "オブジェクト属性を保持" },
             ["SkipBakedMirror"] = new() { ["en"] = "Skip Baked Mirror", ["ja"] = "ベイクミラーを削除" },
+            ["ExportBones"] = new() { ["en"] = "Export Bones to MQO", ["ja"] = "ボーンをMQOに出力" },
+            ["ExportLocalTransform"] = new() { ["en"] = "Export Local Transform", ["ja"] = "ローカルトランスフォーム出力" },
+            ["EmbedBoneWeightsInMQO"] = new() { ["en"] = "Embed Bone Weights in MQO", ["ja"] = "ボーンウェイトをMQOに埋め込む" },
             ["TextureFolder"] = new() { ["en"] = "Texture Folder", ["ja"] = "テクスチャフォルダ" },
             ["Format"] = new() { ["en"] = "Format", ["ja"] = "出力形式" },
             ["DecimalPrecision"] = new() { ["en"] = "Decimal Precision", ["ja"] = "小数点以下桁数" },
@@ -292,6 +295,9 @@ namespace Poly_Ling.MQO
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
             _settings.PreserveObjectAttributes = EditorGUILayout.Toggle(T("PreserveObjectAttributes"), _settings.PreserveObjectAttributes);
             _settings.SkipBakedMirror = EditorGUILayout.Toggle(T("SkipBakedMirror"), _settings.SkipBakedMirror);
+            _settings.ExportBones = EditorGUILayout.Toggle(T("ExportBones"), _settings.ExportBones);
+            _settings.ExportLocalTransform = EditorGUILayout.Toggle(T("ExportLocalTransform"), _settings.ExportLocalTransform);
+            _settings.EmbedBoneWeightsInMQO = EditorGUILayout.Toggle(T("EmbedBoneWeightsInMQO"), _settings.EmbedBoneWeightsInMQO);
 
             EditorGUILayout.Space(3);
 

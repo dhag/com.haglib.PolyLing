@@ -1,40 +1,91 @@
 // Assets/Editor/Poly_Ling/MQO/Import/PmxBoneCSVParser.cs
+// =====================================================================
 // PmxBone形式のCSVをパースしてボーン情報を読み取る
+// 
+// 【CSVフォーマット】
+// コメント行: ;PmxBone,"ボーン名","英名",変形階層,物理後,位置X,位置Y,位置Z,回転,移動,IK,表示,操作,"親ボーン名"
+// データ行:   PmxBone,"全ての親","",0,0,0.000000,0.000000,0.000000,1,0,0,1,1,""
+// 
+// 【列の意味】（PmxBoneCSVSchemaで定義）
+// - 列0: "PmxBone" （行タイプ識別子）
+// - 列1: ボーン名（日本語名）
+// - 列2: 英名
+// - 列3: 変形階層
+// - 列4: 物理後フラグ（0/1）
+// - 列5-7: ボーンの位置（X, Y, Z）
+// - 列8-12: 各種フラグ
+// - 列13: 親ボーン名
+// =====================================================================
 
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.RegularExpressions;
 using UnityEngine;
+using Poly_Ling.MQO.CSV;
 
 namespace Poly_Ling.MQO
 {
+    // =========================================================================
+    // データクラス
+    // =========================================================================
+
     /// <summary>
     /// PmxBoneデータ
+    /// 1つのボーンの情報を保持
     /// </summary>
     public class PmxBoneData
     {
+        /// <summary>ボーン名（日本語）</summary>
         public string Name { get; set; }
+
+        /// <summary>英名</summary>
         public string NameEn { get; set; }
+
+        /// <summary>ワールド位置</summary>
         public Vector3 Position { get; set; }
+
+        /// <summary>親ボーン名（空でルート）</summary>
         public string ParentName { get; set; }
+
+        /// <summary>変形階層</summary>
         public int DeformHierarchy { get; set; }
+
+        /// <summary>物理後フラグ</summary>
         public bool IsPhysicsAfter { get; set; }
+
+        /// <summary>回転可能</summary>
         public bool CanRotate { get; set; }
+
+        /// <summary>移動可能</summary>
         public bool CanMove { get; set; }
+
+        /// <summary>IKフラグ</summary>
         public bool IsIK { get; set; }
+
+        /// <summary>表示フラグ</summary>
         public bool IsVisible { get; set; }
+
+        /// <summary>操作可能</summary>
         public bool IsControllable { get; set; }
     }
+
+    // =========================================================================
+    // パーサー
+    // =========================================================================
 
     /// <summary>
     /// PmxBone CSVパーサー
     /// </summary>
     public static class PmxBoneCSVParser
     {
+        // スキーマ定義（列位置の宣言的定義）
+        private static readonly PmxBoneCSVSchema _schema = new PmxBoneCSVSchema();
+
         /// <summary>
         /// CSVファイルをパース
         /// </summary>
+        /// <param name="filePath">CSVファイルパス</param>
+        /// <returns>ボーンデータリスト、失敗時は空リスト</returns>
         public static List<PmxBoneData> ParseFile(string filePath)
         {
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
@@ -58,6 +109,8 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// CSV文字列をパース
         /// </summary>
+        /// <param name="content">CSV文字列</param>
+        /// <returns>ボーンデータリスト</returns>
         public static List<PmxBoneData> Parse(string content)
         {
             var bones = new List<PmxBoneData>();
@@ -65,19 +118,22 @@ namespace Poly_Ling.MQO
             if (string.IsNullOrEmpty(content))
                 return bones;
 
-            var lines = content.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+            // ステップ1: CSVHelperで行リストに変換
+            var rows = CSVHelper.ParseString(content);
 
-            foreach (var line in lines)
+            // ステップ2: 各行をパース
+            foreach (var row in rows)
             {
-                // コメント行またはヘッダ行をスキップ
-                if (string.IsNullOrWhiteSpace(line) || line.StartsWith(";"))
+                // コメント行をスキップ
+                if (CSVHelper.IsCommentLine(row.OriginalLine))
                     continue;
 
-                // PmxBone行のみ処理
-                if (!line.StartsWith("PmxBone,"))
+                // スキーマによる有効性チェック（"PmxBone,"で始まるか）
+                if (!_schema.IsValidDataRow(row))
                     continue;
 
-                var bone = ParseBoneLine(line);
+                // ステップ3: スキーマを使ってボーンデータに変換
+                var bone = ParseRow(row);
                 if (bone != null)
                 {
                     bones.Add(bone);
@@ -89,117 +145,57 @@ namespace Poly_Ling.MQO
         }
 
         /// <summary>
-        /// 1行をパースしてPmxBoneDataを作成
-        /// フォーマット: PmxBone,"ボーン名","英名",変形階層,物理後,位置X,位置Y,位置Z,回転,移動,IK,表示,操作,"親ボーン名",...
+        /// 1行をパースしてPmxBoneDataを生成
+        /// スキーマの列定義を使用して意味のある列アクセス
         /// </summary>
-        private static PmxBoneData ParseBoneLine(string line)
+        private static PmxBoneData ParseRow(CSVRow row)
         {
             try
             {
-                var fields = ParseCSVLine(line);
-                
-                if (fields.Count < 14)
-                {
-                    Debug.LogWarning($"[PmxBoneCSVParser] Invalid line (not enough fields): {line}");
-                    return null;
-                }
-
-                // fields[0] = "PmxBone"
-                // fields[1] = ボーン名
-                // fields[2] = 英名
-                // fields[3] = 変形階層
-                // fields[4] = 物理後(0/1)
-                // fields[5] = 位置X
-                // fields[6] = 位置Y
-                // fields[7] = 位置Z
-                // fields[8] = 回転(0/1)
-                // fields[9] = 移動(0/1)
-                // fields[10] = IK(0/1)
-                // fields[11] = 表示(0/1)
-                // fields[12] = 操作(0/1)
-                // fields[13] = 親ボーン名
-
+                // スキーマの列定義を使ってデータ取得
                 var bone = new PmxBoneData
                 {
-                    Name = fields[1],
-                    NameEn = fields[2],
-                    DeformHierarchy = ParseInt(fields[3], 0),
-                    IsPhysicsAfter = ParseInt(fields[4], 0) != 0,
-                    Position = new Vector3(
-                        ParseFloat(fields[5], 0f),
-                        ParseFloat(fields[6], 0f),
-                        ParseFloat(fields[7], 0f)
-                    ),
-                    CanRotate = ParseInt(fields[8], 1) != 0,
-                    CanMove = ParseInt(fields[9], 0) != 0,
-                    IsIK = ParseInt(fields[10], 0) != 0,
-                    IsVisible = ParseInt(fields[11], 1) != 0,
-                    IsControllable = ParseInt(fields[12], 1) != 0,
-                    ParentName = fields[13]
+                    // 列1: ボーン名
+                    Name = row.Get(_schema.BoneName),
+                    
+                    // 列2: 英名
+                    NameEn = row.Get(_schema.BoneNameEn),
+                    
+                    // 列3: 変形階層
+                    DeformHierarchy = row.GetInt(_schema.DeformHierarchy, 0),
+                    
+                    // 列4: 物理後フラグ
+                    IsPhysicsAfter = row.GetBool(_schema.PhysicsAfter),
+                    
+                    // 列5-7: 位置（スキーマのヘルパーメソッドを使用）
+                    Position = _schema.GetPosition(row),
+                    
+                    // 列8: 回転可能
+                    CanRotate = row.GetBool(_schema.CanRotate, true),
+                    
+                    // 列9: 移動可能
+                    CanMove = row.GetBool(_schema.CanMove),
+                    
+                    // 列10: IKフラグ
+                    IsIK = row.GetBool(_schema.IsIK),
+                    
+                    // 列11: 表示フラグ
+                    IsVisible = row.GetBool(_schema.IsVisible, true),
+                    
+                    // 列12: 操作可能
+                    IsControllable = row.GetBool(_schema.IsControllable, true),
+                    
+                    // 列13: 親ボーン名
+                    ParentName = row.Get(_schema.ParentName)
                 };
 
                 return bone;
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[PmxBoneCSVParser] Failed to parse line: {e.Message}\n{line}");
+                Debug.LogWarning($"[PmxBoneCSVParser] Failed to parse line: {e.Message}\n{row.OriginalLine}");
                 return null;
             }
-        }
-
-        /// <summary>
-        /// CSV行をフィールドに分割（ダブルクォート対応）
-        /// </summary>
-        private static List<string> ParseCSVLine(string line)
-        {
-            var fields = new List<string>();
-            var current = "";
-            bool inQuotes = false;
-
-            for (int i = 0; i < line.Length; i++)
-            {
-                char c = line[i];
-
-                if (c == '"')
-                {
-                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
-                    {
-                        // エスケープされた引用符
-                        current += '"';
-                        i++;
-                    }
-                    else
-                    {
-                        inQuotes = !inQuotes;
-                    }
-                }
-                else if (c == ',' && !inQuotes)
-                {
-                    fields.Add(current);
-                    current = "";
-                }
-                else
-                {
-                    current += c;
-                }
-            }
-            
-            fields.Add(current);
-            return fields;
-        }
-
-        private static int ParseInt(string s, int defaultValue)
-        {
-            if (int.TryParse(s, out int result))
-                return result;
-            return defaultValue;
-        }
-
-        private static float ParseFloat(string s, float defaultValue)
-        {
-            if (float.TryParse(s, out float result))
-                return result;
-            return defaultValue;
         }
     }
 }

@@ -490,32 +490,52 @@ public partial class PolyLing
             Undo.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
         }
 
-        // === Pass 3: ボーン配列とバインドポーズを計算 ===
-        var bones = new Transform[_meshContextList.Count];
-        var bindPoses = new Matrix4x4[_meshContextList.Count];
+        // === Pass 3: ボーン配列とバインドポーズを計算（ボーンタイプのみ） ===
+        // TypedIndices を使ってボーンリストを取得
+        var boneEntries = _model.Bones;
+        int boneCount = boneEntries.Count;
+        
+        var bones = new Transform[boneCount];
+        var bindPoses = new Matrix4x4[boneCount];
 
-        for (int i = 0; i < _meshContextList.Count; i++)
+        for (int bi = 0; bi < boneCount; bi++)
         {
-            if (createdObjects[i] != null)
+            var entry = boneEntries[bi];
+            int masterIndex = entry.MasterIndex;
+            
+            if (masterIndex >= 0 && masterIndex < createdObjects.Length && createdObjects[masterIndex] != null)
             {
-                bones[i] = createdObjects[i].transform;
+                bones[bi] = createdObjects[masterIndex].transform;
                 
                 // MeshContext.BindPoseが設定されていればそれを使用、なければ計算
-                var meshContext = _meshContextList[i];
-                if (meshContext != null && meshContext.BindPose != Matrix4x4.identity)
+                var boneCtx = entry.Context;
+                if (boneCtx != null && boneCtx.BindPose != Matrix4x4.identity)
                 {
-                    bindPoses[i] = meshContext.BindPose;
+                    bindPoses[bi] = boneCtx.BindPose;
                 }
                 else
                 {
                     // バインドポーズ = ワールド→ローカル変換行列
-                    bindPoses[i] = bones[i].worldToLocalMatrix;
+                    bindPoses[bi] = bones[bi].worldToLocalMatrix;
                 }
             }
         }
         
         // デバッグ: ボーン配列のサマリー
-        Debug.Log($"[ExportSkinned] Bone Array: {bones.Length} total");
+        Debug.Log($"[ExportSkinned] Bone Array: {boneCount} bones (from {_meshContextList.Count} total objects)");
+        if (boneCount > 0 && boneCount <= 10)
+        {
+            for (int bi = 0; bi < boneCount; bi++)
+            {
+                Debug.Log($"  Bone[{bi}]: '{boneEntries[bi].Name}' (master index: {boneEntries[bi].MasterIndex})");
+            }
+        }
+
+        // ボーンがない場合の警告
+        if (boneCount == 0)
+        {
+            Debug.LogWarning("[ExportSkinned] No bones found. SkinnedMeshRenderer will have empty bone array.");
+        }
 
         // === Pass 4: 各メッシュに対して SkinnedMeshRenderer をセットアップ ===
         for (int i = 0; i < _meshContextList.Count; i++)
@@ -525,8 +545,18 @@ public partial class PolyLing
             if (meshContext?.MeshObject == null || go == null) continue;
             if (meshContext.MeshObject.VertexCount == 0) continue;
 
+            // ボーンインデックスを変換するためのTypedIndices参照
+            var typedIndices = _model.TypedIndices;
+
             // BoneWeight が未設定の頂点にデフォルト値を設定
-            EnsureBoneWeights(meshContext.MeshObject, i);
+            // デフォルトボーンインデックスは、このメッシュのマスターインデックスをボーンインデックスに変換
+            int defaultBoneIndex = typedIndices.MasterToBoneIndex(i);
+            if (defaultBoneIndex < 0)
+            {
+                // このオブジェクト自体がボーンでない場合、最初のボーンをデフォルトとする
+                defaultBoneIndex = 0;
+            }
+            EnsureBoneWeightsWithConversion(meshContext.MeshObject, defaultBoneIndex, typedIndices);
 
             // メッシュを生成
             Mesh meshCopy;
@@ -581,7 +611,7 @@ public partial class PolyLing
             EditorGUIUtility.PingObject(objectToSelect);
         }
 
-        Debug.Log($"Added model to hierarchy as SkinnedMesh: {_meshContextList.Count} bones");
+        Debug.Log($"Added model to hierarchy as SkinnedMesh: {boneCount} bones, {_meshContextList.Count} objects");
     }
 
     /// <summary>

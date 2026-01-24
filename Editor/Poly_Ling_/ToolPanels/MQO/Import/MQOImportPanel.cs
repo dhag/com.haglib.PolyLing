@@ -102,6 +102,7 @@ namespace Poly_Ling.MQO
             
             // ミラー設定
             ["BakeMirror"] = new() { ["en"] = "Bake Mirror", ["ja"] = "ミラーをベイク" },
+            ["ImportBonesFromArmature"] = new() { ["en"] = "Import Bones from __Armature__", ["ja"] = "__Armature__からボーンをインポート" },
             
             // デバッグ設定
             ["DebugSettings"] = new() { ["en"] = "Debug Settings", ["ja"] = "デバッグ設定" },
@@ -396,6 +397,10 @@ namespace Poly_Ling.MQO
             _settings.BakeMirror = EditorGUILayout.Toggle(
                 new GUIContent(T("BakeMirror"), "ミラー属性を持つメッシュのミラー側を実体メッシュとして生成"),
                 _settings.BakeMirror);
+            
+            _settings.ImportBonesFromArmature = EditorGUILayout.Toggle(
+                new GUIContent(T("ImportBonesFromArmature"), "MQO内の__Armature__オブジェクト以下をボーン構造としてインポート"),
+                _settings.ImportBonesFromArmature);
             
             // ================================================================
             // デバッグ設定

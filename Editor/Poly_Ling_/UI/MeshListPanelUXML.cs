@@ -35,8 +35,8 @@ namespace Poly_Ling.UI
         // 定数
         // ================================================================
 
-        private const string UxmlPath = "Assets/Editor/Poly_Ling_/UI/MeshListPanel.uxml";
-        private const string UssPath = "Assets/Editor/Poly_Ling_/UI/MeshListPanel.uss";
+        private const string UxmlPath = "Packages/com.haglib.meshfactory/Editor/Poly_Ling_/UI/MeshListPanel.uxml";
+        private const string UssPath = "Packages/com.haglib.meshfactory/Editor/Poly_Ling_/UI/MeshListPanel.uss";
 
         // ================================================================
         // UI要素

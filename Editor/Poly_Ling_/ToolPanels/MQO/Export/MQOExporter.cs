@@ -277,11 +277,90 @@ namespace Poly_Ling.MQO
             }
             else
             {
-                // 個別にエクスポート
+                // ボーンとメッシュを分離
+                var boneContexts = new List<MeshContext>();
+                var meshOnlyContexts = new List<MeshContext>();
+                
                 foreach (var mc in meshContexts)
                 {
                     if (mc == null) continue;
-
+                    
+                    if (mc.Type == MeshType.Bone)
+                    {
+                        boneContexts.Add(mc);
+                    }
+                    else
+                    {
+                        meshOnlyContexts.Add(mc);
+                    }
+                }
+                
+                // ボーン出力（ExportBones=trueの場合）
+                if (settings.ExportBones && boneContexts.Count > 0)
+                {
+                    // __Armature__オブジェクトを作成（ツリー構造用）
+                    var armatureObj = new MQOObject
+                    {
+                        Name = "__Armature__"
+                    };
+                    armatureObj.Attributes.Add(new MQOAttribute("depth", 0));
+                    armatureObj.Attributes.Add(new MQOAttribute("visible", 15));
+                    armatureObj.Attributes.Add(new MQOAttribute("locking", 0));
+                    armatureObj.Attributes.Add(new MQOAttribute("shading", 1));
+                    armatureObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                    armatureObj.Attributes.Add(new MQOAttribute("color", 1, 1, 1));
+                    armatureObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                    document.Objects.Add(armatureObj);
+                    
+                    // ボーンをツリー順（深さ優先）でソート
+                    var sortedBones = SortBonesDepthFirst(boneContexts, meshContexts);
+                    var boneDepths = CalculateBoneDepths(boneContexts, meshContexts);
+                    
+                    // ボーンを出力（ツリー順）
+                    foreach (var bc in sortedBones)
+                    {
+                        var mqoObj = ConvertBoneObject(bc, boneDepths, settings, stats);
+                        if (mqoObj != null)
+                        {
+                            document.Objects.Add(mqoObj);
+                        }
+                    }
+                    
+                    // __ArmatureName__オブジェクトを作成（リスト順インデックス用）
+                    var armatureNameObj = new MQOObject
+                    {
+                        Name = "__ArmatureName__"
+                    };
+                    armatureNameObj.Attributes.Add(new MQOAttribute("depth", 0));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("visible", 0));  // 非表示
+                    armatureNameObj.Attributes.Add(new MQOAttribute("locking", 1));  // ロック
+                    armatureNameObj.Attributes.Add(new MQOAttribute("shading", 1));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                    document.Objects.Add(armatureNameObj);
+                    
+                    // ボーン名をリスト順（元のインデックス順）で出力
+                    foreach (var bc in boneContexts)
+                    {
+                        var nameObj = new MQOObject
+                        {
+                            Name = "__ArmatureName__" + (bc.Name ?? "Bone")
+                        };
+                        nameObj.Attributes.Add(new MQOAttribute("depth", 1));
+                        nameObj.Attributes.Add(new MQOAttribute("visible", 0));
+                        nameObj.Attributes.Add(new MQOAttribute("locking", 1));
+                        nameObj.Attributes.Add(new MQOAttribute("shading", 1));
+                        nameObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                        nameObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                        nameObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                        document.Objects.Add(nameObj);
+                    }
+                }
+                
+                // メッシュを出力
+                foreach (var mc in meshOnlyContexts)
+                {
                     // ベイクミラースキップ（SkipBakedMirrorがtrueかつType=BakedMirrorの場合）
                     if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
                     {
@@ -307,6 +386,210 @@ namespace Poly_Ling.MQO
             }
 
             return document;
+        }
+
+        /// <summary>
+        /// ボーンのデプスを計算（HierarchyParentIndexに基づく）
+        /// __Armature__の下なのでルートボーンはdepth=1
+        /// </summary>
+        private static Dictionary<MeshContext, int> CalculateBoneDepths(
+            List<MeshContext> boneContexts,
+            IList<MeshContext> allContexts)
+        {
+            var depths = new Dictionary<MeshContext, int>();
+            var contextToIndex = new Dictionary<MeshContext, int>();
+            
+            // インデックスマップを作成
+            for (int i = 0; i < allContexts.Count; i++)
+            {
+                contextToIndex[allContexts[i]] = i;
+            }
+            
+            // 各ボーンのデプスを再帰的に計算
+            foreach (var bc in boneContexts)
+            {
+                depths[bc] = CalculateSingleBoneDepth(bc, allContexts, contextToIndex, depths);
+            }
+            
+            return depths;
+        }
+
+        private static int CalculateSingleBoneDepth(
+            MeshContext bone,
+            IList<MeshContext> allContexts,
+            Dictionary<MeshContext, int> contextToIndex,
+            Dictionary<MeshContext, int> cachedDepths)
+        {
+            // キャッシュがあれば返す
+            if (cachedDepths.TryGetValue(bone, out int cached))
+            {
+                return cached;
+            }
+            
+            int parentIndex = bone.HierarchyParentIndex;
+            
+            // ルートボーン（親がいない）→ depth=1（__Armature__の下）
+            if (parentIndex < 0 || parentIndex >= allContexts.Count)
+            {
+                return 1;
+            }
+            
+            var parent = allContexts[parentIndex];
+            
+            // 親がボーンでない場合もルートとして扱う
+            if (parent.Type != MeshType.Bone)
+            {
+                return 1;
+            }
+            
+            // 親のデプス + 1
+            int parentDepth = CalculateSingleBoneDepth(parent, allContexts, contextToIndex, cachedDepths);
+            return parentDepth + 1;
+        }
+
+        /// <summary>
+        /// ボーンをツリー順（深さ優先）でソート
+        /// MQOのdepth属性は出現順に基づくため、親→子の順で出力する必要がある
+        /// </summary>
+        private static List<MeshContext> SortBonesDepthFirst(
+            List<MeshContext> boneContexts,
+            IList<MeshContext> allContexts)
+        {
+            var result = new List<MeshContext>();
+            var boneSet = new HashSet<MeshContext>(boneContexts);
+            var visited = new HashSet<MeshContext>();
+            
+            // ボーンのインデックスマップを作成
+            var boneToIndex = new Dictionary<MeshContext, int>();
+            for (int i = 0; i < allContexts.Count; i++)
+            {
+                if (allContexts[i].Type == MeshType.Bone)
+                {
+                    boneToIndex[allContexts[i]] = i;
+                }
+            }
+            
+            // 親→子のマップを構築
+            var childrenMap = new Dictionary<int, List<MeshContext>>();  // parentIndex → children
+            var rootBones = new List<MeshContext>();
+            
+            foreach (var bone in boneContexts)
+            {
+                int parentIndex = bone.HierarchyParentIndex;
+                
+                // 親がボーンかどうかを確認
+                bool parentIsBone = parentIndex >= 0 && 
+                                    parentIndex < allContexts.Count && 
+                                    allContexts[parentIndex].Type == MeshType.Bone;
+                
+                if (!parentIsBone)
+                {
+                    // ルートボーン
+                    rootBones.Add(bone);
+                }
+                else
+                {
+                    // 子ボーン
+                    if (!childrenMap.ContainsKey(parentIndex))
+                    {
+                        childrenMap[parentIndex] = new List<MeshContext>();
+                    }
+                    childrenMap[parentIndex].Add(bone);
+                }
+            }
+            
+            // 深さ優先でトラバース
+            void TraverseDepthFirst(MeshContext bone)
+            {
+                if (visited.Contains(bone))
+                    return;
+                
+                visited.Add(bone);
+                result.Add(bone);
+                
+                // このボーンのインデックスを取得
+                if (boneToIndex.TryGetValue(bone, out int boneIndex))
+                {
+                    // 子ボーンを処理
+                    if (childrenMap.TryGetValue(boneIndex, out var children))
+                    {
+                        foreach (var child in children)
+                        {
+                            TraverseDepthFirst(child);
+                        }
+                    }
+                }
+            }
+            
+            // ルートボーンから開始
+            foreach (var root in rootBones)
+            {
+                TraverseDepthFirst(root);
+            }
+            
+            // 訪問されなかったボーン（孤立ボーン）を追加
+            foreach (var bone in boneContexts)
+            {
+                if (!visited.Contains(bone))
+                {
+                    result.Add(bone);
+                }
+            }
+            
+            return result;
+        }
+
+        /// <summary>
+        /// ボーン用のMQOObject変換
+        /// </summary>
+        private static MQOObject ConvertBoneObject(
+            MeshContext boneContext,
+            Dictionary<MeshContext, int> boneDepths,
+            MQOExportSettings settings,
+            MQOExportStats stats)
+        {
+            var mqoObj = new MQOObject
+            {
+                Name = boneContext.Name ?? "Bone"
+            };
+            
+            // デプス設定
+            int depth = boneDepths.TryGetValue(boneContext, out int d) ? d : 1;
+            mqoObj.Attributes.Add(new MQOAttribute("depth", depth));
+            
+            // 基本属性
+            mqoObj.Attributes.Add(new MQOAttribute("visible", boneContext.IsVisible ? 15 : 0));
+            mqoObj.Attributes.Add(new MQOAttribute("locking", boneContext.IsLocked ? 1 : 0));
+            mqoObj.Attributes.Add(new MQOAttribute("shading", 1));
+            mqoObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+            mqoObj.Attributes.Add(new MQOAttribute("color", 1, 1, 1));
+            mqoObj.Attributes.Add(new MQOAttribute("color_type", 0));
+            
+            // ローカルトランスフォーム出力
+            if (settings.ExportLocalTransform && boneContext.BoneTransform != null)
+            {
+                var bt = boneContext.BoneTransform;
+                if (bt.UseLocalTransform)
+                {
+                    // 位置（スケールを適用）
+                    Vector3 pos = bt.Position * settings.Scale;
+                    if (settings.FlipZ)
+                    {
+                        pos.z = -pos.z;
+                    }
+                    mqoObj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
+                    
+                    // 回転（度数法）
+                    Vector3 rot = bt.Rotation;
+                    mqoObj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
+                    
+                    // スケール
+                    Vector3 scale = bt.Scale;
+                    mqoObj.Attributes.Add(new MQOAttribute("scale", scale.x, scale.y, scale.z));
+                }
+            }
+            
+            return mqoObj;
         }
 
         /// <summary>
@@ -370,11 +653,90 @@ namespace Poly_Ling.MQO
             }
             else
             {
-                // 個別にエクスポート
+                // ボーンとメッシュを分離
+                var boneContexts = new List<MeshContext>();
+                var meshOnlyContexts = new List<MeshContext>();
+                
                 foreach (var mc in meshContexts)
                 {
                     if (mc == null) continue;
-
+                    
+                    if (mc.Type == MeshType.Bone)
+                    {
+                        boneContexts.Add(mc);
+                    }
+                    else
+                    {
+                        meshOnlyContexts.Add(mc);
+                    }
+                }
+                
+                // ボーン出力（ExportBones=trueの場合）
+                if (settings.ExportBones && boneContexts.Count > 0)
+                {
+                    // __Armature__オブジェクトを作成（ツリー構造用）
+                    var armatureObj = new MQOObject
+                    {
+                        Name = "__Armature__"
+                    };
+                    armatureObj.Attributes.Add(new MQOAttribute("depth", 0));
+                    armatureObj.Attributes.Add(new MQOAttribute("visible", 15));
+                    armatureObj.Attributes.Add(new MQOAttribute("locking", 0));
+                    armatureObj.Attributes.Add(new MQOAttribute("shading", 1));
+                    armatureObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                    armatureObj.Attributes.Add(new MQOAttribute("color", 1, 1, 1));
+                    armatureObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                    document.Objects.Add(armatureObj);
+                    
+                    // ボーンをツリー順（深さ優先）でソート
+                    var sortedBones = SortBonesDepthFirst(boneContexts, meshContexts);
+                    var boneDepths = CalculateBoneDepths(boneContexts, meshContexts);
+                    
+                    // ボーンを出力（ツリー順）
+                    foreach (var bc in sortedBones)
+                    {
+                        var mqoObj = ConvertBoneObject(bc, boneDepths, settings, stats);
+                        if (mqoObj != null)
+                        {
+                            document.Objects.Add(mqoObj);
+                        }
+                    }
+                    
+                    // __ArmatureName__オブジェクトを作成（リスト順インデックス用）
+                    var armatureNameObj = new MQOObject
+                    {
+                        Name = "__ArmatureName__"
+                    };
+                    armatureNameObj.Attributes.Add(new MQOAttribute("depth", 0));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("visible", 0));  // 非表示
+                    armatureNameObj.Attributes.Add(new MQOAttribute("locking", 1));  // ロック
+                    armatureNameObj.Attributes.Add(new MQOAttribute("shading", 1));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                    armatureNameObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                    document.Objects.Add(armatureNameObj);
+                    
+                    // ボーン名をリスト順（元のインデックス順）で出力
+                    foreach (var bc in boneContexts)
+                    {
+                        var nameObj = new MQOObject
+                        {
+                            Name = "__ArmatureName__" + (bc.Name ?? "Bone")
+                        };
+                        nameObj.Attributes.Add(new MQOAttribute("depth", 1));
+                        nameObj.Attributes.Add(new MQOAttribute("visible", 0));
+                        nameObj.Attributes.Add(new MQOAttribute("locking", 1));
+                        nameObj.Attributes.Add(new MQOAttribute("shading", 1));
+                        nameObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                        nameObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                        nameObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                        document.Objects.Add(nameObj);
+                    }
+                }
+                
+                // メッシュを出力
+                foreach (var mc in meshOnlyContexts)
+                {
                     // ベイクミラースキップ（SkipBakedMirrorがtrueかつType=BakedMirrorの場合）
                     if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
                     {
@@ -537,6 +899,30 @@ namespace Poly_Ling.MQO
             mqoObj.Attributes.Add(new MQOAttribute("color", 1, 1, 1));
             mqoObj.Attributes.Add(new MQOAttribute("color_type", 0));
 
+            // ローカルトランスフォーム出力
+            if (settings.ExportLocalTransform && meshContext.BoneTransform != null)
+            {
+                var bt = meshContext.BoneTransform;
+                if (bt.UseLocalTransform)
+                {
+                    // 位置（スケールを適用）
+                    Vector3 pos = bt.Position * settings.Scale;
+                    if (settings.FlipZ)
+                    {
+                        pos.z = -pos.z;
+                    }
+                    mqoObj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
+                    
+                    // 回転（度数法）
+                    Vector3 rot = bt.Rotation;
+                    mqoObj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
+                    
+                    // スケール
+                    Vector3 scale = bt.Scale;
+                    mqoObj.Attributes.Add(new MQOAttribute("scale", scale.x, scale.y, scale.z));
+                }
+            }
+
             // MeshObjectがある場合のみ頂点・面を出力
             if (meshObject != null)
             {
@@ -617,6 +1003,40 @@ namespace Poly_Ling.MQO
                             VertexColors = new uint[] { 1, 1, (uint)vertex.Id }
                         };
                         mqoObj.Faces.Add(specialFace);
+                    }
+                }
+
+                // ボーンウェイト用の四角形特殊面を追加（BoneWeightを持つ頂点のみ）
+                // フォーマット: 4 V(idx idx idx idx) M(0) UV(w0 w1 w2 w3 0 0 0 0) COL(b0 b1 b2 b3)
+                if (settings.EmbedBoneWeightsInMQO)
+                {
+                    for (int i = 0; i < meshObject.Vertices.Count; i++)
+                    {
+                        var vertex = meshObject.Vertices[i];
+                        if (vertex.HasBoneWeight)
+                        {
+                            var bw = vertex.BoneWeight.Value;
+                            var specialFace = new MQOFace
+                            {
+                                VertexIndices = new int[] { i, i, i, i },
+                                MaterialIndex = 0,
+                                UVs = new Vector2[]
+                                {
+                                    new Vector2(bw.weight0, bw.weight1),
+                                    new Vector2(bw.weight2, bw.weight3),
+                                    Vector2.zero,
+                                    Vector2.zero
+                                },
+                                VertexColors = new uint[]
+                                {
+                                    (uint)bw.boneIndex0,
+                                    (uint)bw.boneIndex1,
+                                    (uint)bw.boneIndex2,
+                                    (uint)bw.boneIndex3
+                                }
+                            };
+                            mqoObj.Faces.Add(specialFace);
+                        }
                     }
                 }
             }

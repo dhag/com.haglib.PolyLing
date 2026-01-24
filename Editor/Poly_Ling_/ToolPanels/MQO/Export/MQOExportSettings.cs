@@ -64,6 +64,18 @@ namespace Poly_Ling.MQO
         [Tooltip("ベイクされたミラーメッシュ（Type=BakedMirror）を出力しない")]
         public bool SkipBakedMirror = true;
 
+        /// <summary>ボーンをMQOに出力</summary>
+        [Tooltip("ボーン（Type=Bone）をMQOオブジェクトとして出力（__Armature__の下に配置）")]
+        public bool ExportBones = true;
+
+        /// <summary>ローカルトランスフォームを出力</summary>
+        [Tooltip("オブジェクトのローカルトランスフォーム（位置・回転・スケール）を出力")]
+        public bool ExportLocalTransform = true;
+
+        /// <summary>ボーンウェイトをMQOに埋め込む</summary>
+        [Tooltip("ボーンウェイト情報を四角形特殊面としてMQOに埋め込む")]
+        public bool EmbedBoneWeightsInMQO = true;
+
         // ================================================================
         // テクスチャ
         // ================================================================
@@ -104,6 +116,9 @@ namespace Poly_Ling.MQO
                 MergeObjects = this.MergeObjects,
                 PreserveObjectAttributes = this.PreserveObjectAttributes,
                 SkipBakedMirror = this.SkipBakedMirror,
+                ExportBones = this.ExportBones,
+                ExportLocalTransform = this.ExportLocalTransform,
+                EmbedBoneWeightsInMQO = this.EmbedBoneWeightsInMQO,
                 TextureFolder = this.TextureFolder,
                 DecimalPrecision = this.DecimalPrecision,
                 UseShiftJIS = this.UseShiftJIS,
@@ -124,6 +139,9 @@ namespace Poly_Ling.MQO
                    MergeObjects != o.MergeObjects ||
                    PreserveObjectAttributes != o.PreserveObjectAttributes ||
                    SkipBakedMirror != o.SkipBakedMirror ||
+                   ExportBones != o.ExportBones ||
+                   ExportLocalTransform != o.ExportLocalTransform ||
+                   EmbedBoneWeightsInMQO != o.EmbedBoneWeightsInMQO ||
                    TextureFolder != o.TextureFolder ||
                    DecimalPrecision != o.DecimalPrecision ||
                    UseShiftJIS != o.UseShiftJIS;
@@ -143,6 +161,9 @@ namespace Poly_Ling.MQO
             MergeObjects = o.MergeObjects;
             PreserveObjectAttributes = o.PreserveObjectAttributes;
             SkipBakedMirror = o.SkipBakedMirror;
+            ExportBones = o.ExportBones;
+            ExportLocalTransform = o.ExportLocalTransform;
+            EmbedBoneWeightsInMQO = o.EmbedBoneWeightsInMQO;
             TextureFolder = o.TextureFolder;
             DecimalPrecision = o.DecimalPrecision;
             UseShiftJIS = o.UseShiftJIS;

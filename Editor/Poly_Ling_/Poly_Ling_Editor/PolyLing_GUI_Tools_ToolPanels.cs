@@ -85,6 +85,10 @@ public partial class PolyLing
         {
             Poly_Ling.UI.MeshListPanelUXML.Open(_toolManager?.toolContext);
         }
+        if (GUILayout.Button("TypedMeshListPanelUXML"))
+        {
+            Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
+        }
 
 
         EditorGUI.indentLevel--;

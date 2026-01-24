@@ -500,8 +500,8 @@ namespace Poly_Ling.MQO
                             for (int i = 0; i < vertexCount; i++)
                             {
                                 face.UVs[i] = new Vector2(
-                                    float.Parse(values[i * 2].Value),
-                                    float.Parse(values[i * 2 + 1].Value)
+                                    float.Parse(values[i * 2].Value, System.Globalization.CultureInfo.InvariantCulture),
+                                    float.Parse(values[i * 2 + 1].Value, System.Globalization.CultureInfo.InvariantCulture)
                                 );
                             }
                         }

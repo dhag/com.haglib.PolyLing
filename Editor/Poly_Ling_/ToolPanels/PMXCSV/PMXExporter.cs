@@ -1,6 +1,9 @@
 // Assets/Editor/Poly_Ling/PMX/Export/PMXExporter.cs
 // MeshContext → PMXDocument変換 & ファイル出力
 
+
+///ミラー対応は後回し中。VertexHelperを使うときに考慮する。
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;

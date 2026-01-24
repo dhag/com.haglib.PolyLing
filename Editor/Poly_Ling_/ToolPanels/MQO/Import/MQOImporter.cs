@@ -180,7 +180,7 @@ namespace Poly_Ling.MQO
         {
             var result = new MQOImportResult();
             settings = settings ?? new MQOImportSettings();
-            
+
             // ベースディレクトリを設定（テクスチャ読み込み用）
             settings.BaseDir = Path.GetDirectoryName(filePath)?.Replace('\\', '/') ?? "";
 
@@ -269,10 +269,10 @@ namespace Poly_Ling.MQO
                     result.Materials.Add(matRef.Material);
                     result.MaterialReferences.Add(matRef);
                 }
-                
+
                 // ミラー側マテリアルオフセットを記録
                 result.MirrorMaterialOffset = result.Materials.Count;
-                
+
                 // ミラー側マテリアル（実体側を複製、名前に"+"を付加、ソースパスを引き継ぐ）
                 foreach (var mqoMat in document.Materials)
                 {
@@ -282,7 +282,7 @@ namespace Poly_Ling.MQO
                     result.Materials.Add(matRef.Material);
                     result.MaterialReferences.Add(matRef);
                 }
-                
+
                 result.Stats.MaterialCount = result.Materials.Count;
                 Debug.Log($"[MQOImporter] Materials: {result.MirrorMaterialOffset} original + {result.MirrorMaterialOffset} mirror = {result.Materials.Count} total");
             }
@@ -290,7 +290,7 @@ namespace Poly_Ling.MQO
             // ボーンCSVを先にロード
             List<PmxBoneData> boneDataList = null;
             Dictionary<string, int> boneNameToIndex = null;
-            
+
             if (settings.UseBoneCSV)
             {
                 Debug.Log($"[MQOImporter] Loading bone CSV: {settings.BoneCSVPath}");
@@ -298,10 +298,10 @@ namespace Poly_Ling.MQO
                 if (boneDataList.Count > 0)
                 {
                     Debug.Log($"[MQOImporter] Bone CSV loaded: {boneDataList.Count} bones");
-                    
+
                     // === PMXと同じ方式: ボーンを先にMeshContextsに追加 ===
                     var boneMeshContexts = ConvertBonesToMeshContexts(boneDataList, settings);
-                    
+
                     // boneNameToIndex: ボーン名 → result.MeshContexts内のインデックス
                     boneNameToIndex = new Dictionary<string, int>();
                     for (int i = 0; i < boneMeshContexts.Count; i++)
@@ -309,7 +309,7 @@ namespace Poly_Ling.MQO
                         result.MeshContexts.Add(boneMeshContexts[i]);
                         boneNameToIndex[boneMeshContexts[i].Name] = i;
                     }
-                    
+
                     result.Stats.BoneCount = boneMeshContexts.Count;
                     Debug.Log($"[MQOImporter] Added {boneMeshContexts.Count} bones to MeshContexts");
                 }
@@ -321,6 +321,31 @@ namespace Poly_Ling.MQO
 
             // ボーン数を記録（メッシュのParentIndex計算用）
             int boneContextCount = result.MeshContexts.Count;
+
+            // __Armature__からボーンをインポート（ボーンCSVが無い場合のみ）
+            HashSet<string> armatureBoneNames = null;
+            if (settings.ImportBonesFromArmature && !settings.UseBoneCSV)
+            {
+                var armatureResult = ImportBonesFromArmature(document.Objects, settings);
+                if (armatureResult.BoneContexts.Count > 0)
+                {
+                    // boneNameToIndexを作成
+                    boneNameToIndex = new Dictionary<string, int>();
+                    armatureBoneNames = new HashSet<string>();
+
+                    for (int i = 0; i < armatureResult.BoneContexts.Count; i++)
+                    {
+                        var bc = armatureResult.BoneContexts[i];
+                        result.MeshContexts.Add(bc);
+                        boneNameToIndex[bc.Name] = i;
+                        armatureBoneNames.Add(bc.Name);
+                    }
+
+                    boneContextCount = result.MeshContexts.Count;
+                    result.Stats.BoneCount = armatureResult.BoneContexts.Count;
+                    Debug.Log($"[MQOImporter] Imported {armatureResult.BoneContexts.Count} bones from __Armature__");
+                }
+            }
 
             // ボーンウェイトCSVをロード（設定されている場合）
             BoneWeightCSVData boneWeightData = null;
@@ -349,6 +374,18 @@ namespace Poly_Ling.MQO
             int boneWeightSkippedObjects = 0;
             foreach (var mqoObj in document.Objects)
             {
+                // __Armature__オブジェクトをスキップ
+                if (mqoObj.Name == "__Armature__")
+                    continue;
+
+                // __ArmatureName__オブジェクトとその下のオブジェクトをスキップ
+                if (mqoObj.Name == "__ArmatureName__" || mqoObj.Name.StartsWith("__ArmatureName__"))
+                    continue;
+
+                // __Armature__からインポートされたボーンをスキップ
+                if (armatureBoneNames != null && armatureBoneNames.Contains(mqoObj.Name))
+                    continue;
+
                 // 非表示オブジェクトをスキップ
                 if (settings.SkipHiddenObjects && !mqoObj.IsVisible)
                     continue;
@@ -404,12 +441,14 @@ namespace Poly_Ling.MQO
 
             // ================================================================
             // ベイクミラー処理
+            // BakedMirrorはソースメッシュの直後に挿入する
             // ================================================================
             if (settings.BakeMirror)
             {
-                var bakedMirrorContexts = new List<MeshContext>();
-                
-                for (int i = 0; i < result.MeshContexts.Count; i++)
+                int insertedCount = 0;
+
+                // 後ろから処理することでインデックスのずれを回避
+                for (int i = result.MeshContexts.Count - 1; i >= 0; i--)
                 {
                     var ctx = result.MeshContexts[i];
                     if (ctx.IsMirrored && ctx.Type == MeshType.Mesh)
@@ -417,18 +456,17 @@ namespace Poly_Ling.MQO
                         var bakedMirror = CreateBakedMirrorMesh(ctx, i, settings);
                         if (bakedMirror != null)
                         {
-                            bakedMirrorContexts.Add(bakedMirror);
-                            Debug.Log($"[MQOImporter] Created baked mirror: {bakedMirror.Name} (source: {ctx.Name})");
+                            // ソースメッシュの直後に挿入
+                            result.MeshContexts.Insert(i + 1, bakedMirror);
+                            insertedCount++;
+                            Debug.Log($"[MQOImporter] Created baked mirror: {bakedMirror.Name} (source: {ctx.Name}, inserted at {i + 1})");
                         }
                     }
                 }
-                
-                // ベイクしたミラーメッシュを追加
-                result.MeshContexts.AddRange(bakedMirrorContexts);
-                
-                if (bakedMirrorContexts.Count > 0)
+
+                if (insertedCount > 0)
                 {
-                    Debug.Log($"[MQOImporter] Baked {bakedMirrorContexts.Count} mirror meshes");
+                    Debug.Log($"[MQOImporter] Baked {insertedCount} mirror meshes (inserted after sources)");
                 }
             }
 
@@ -439,9 +477,9 @@ namespace Poly_Ling.MQO
                 // ボーン部分を保持
                 var boneContexts = result.MeshContexts.GetRange(0, boneContextCount);
                 var meshContexts = result.MeshContexts.GetRange(boneContextCount, result.MeshContexts.Count - boneContextCount);
-                
+
                 var merged = MergeAllMeshContexts(meshContexts, document.FileName ?? "Merged");
-                
+
                 result.MeshContexts.Clear();
                 result.MeshContexts.AddRange(boneContexts);
                 result.MeshContexts.Add(merged);
@@ -451,13 +489,13 @@ namespace Poly_Ling.MQO
             // ボーンの親子関係はConvertBonesToMeshContextsで既に設定済み
             if (boneContextCount > 0)
             {
-                // メッシュ部分のみ親子関係を計算
+                // メッシュ部分のみ親子関係を計算（オフセット=ボーン数）
                 var meshOnlyList = result.MeshContexts.GetRange(boneContextCount, result.MeshContexts.Count - boneContextCount);
-                CalculateParentIndices(meshOnlyList);
+                CalculateParentIndices(meshOnlyList, boneContextCount);
             }
             else
             {
-                CalculateParentIndices(result.MeshContexts);
+                CalculateParentIndices(result.MeshContexts, 0);
             }
         }
 
@@ -465,12 +503,14 @@ namespace Poly_Ling.MQO
         /// Depth値から親子関係（ParentIndex）を計算
         /// MQOのDepth値はリスト順序に依存するため、インポート時に親子関係を確定させる
         /// </summary>
-        private static void CalculateParentIndices(List<MeshContext> meshContexts)
+        /// <param name="meshContexts">対象のMeshContextリスト</param>
+        /// <param name="indexOffset">グローバルインデックスへのオフセット（ボーン数）</param>
+        private static void CalculateParentIndices(List<MeshContext> meshContexts, int indexOffset = 0)
         {
             if (meshContexts == null || meshContexts.Count == 0)
                 return;
 
-            // スタック: (インデックス, Depth) を保持
+            // スタック: (ローカルインデックス, Depth) を保持
             // 現在のDepth以下の最も近い親を見つけるために使用
             var parentStack = new Stack<(int index, int depth)>();
 
@@ -496,7 +536,8 @@ namespace Poly_Ling.MQO
 
                     if (parentStack.Count > 0)
                     {
-                        ctx.ParentIndex = parentStack.Peek().index;
+                        // グローバルインデックスに変換して設定
+                        ctx.ParentIndex = parentStack.Peek().index + indexOffset;
                     }
                     else
                     {
@@ -595,6 +636,7 @@ namespace Poly_Ling.MQO
                 var meshContext = new MeshContext
                 {
                     MeshObject = meshObject,
+                    Name = bone.Name,  // 明示的に設定（MeshObject.Nameとは別）
                     Type = MeshType.Bone,
                     IsVisible = true,
                     BindPose = bindPose  // ★インポート時計算のBindPose
@@ -607,6 +649,256 @@ namespace Poly_Ling.MQO
             }
 
             Debug.Log($"[MQOImporter] Converted {result.Count} bones to MeshContexts");
+            return result;
+        }
+
+        /// <summary>
+        /// __Armature__からボーンをインポートした結果
+        /// </summary>
+        private class ArmatureImportResult
+        {
+            /// <summary>ボーンのMeshContextリスト（リスト順＝インデックス順）</summary>
+            public List<MeshContext> BoneContexts { get; } = new List<MeshContext>();
+            /// <summary>ボーン名→インデックスのマップ</summary>
+            public Dictionary<string, int> BoneNameToIndex { get; } = new Dictionary<string, int>();
+        }
+
+        /// <summary>
+        /// MQOの__Armature__オブジェクト以下をボーン構造としてインポート
+        /// __ArmatureName__がある場合はそちらのリスト順を使用
+        /// </summary>
+        private static ArmatureImportResult ImportBonesFromArmature(List<MQOObject> objects, MQOImportSettings settings)
+        {
+            var result = new ArmatureImportResult();
+
+            // __Armature__オブジェクトを探す
+            int armatureIndex = -1;
+            int armatureNameIndex = -1;
+            for (int i = 0; i < objects.Count; i++)
+            {
+                if (objects[i].Name == "__Armature__")
+                {
+                    armatureIndex = i;
+                }
+                else if (objects[i].Name == "__ArmatureName__")
+                {
+                    armatureNameIndex = i;
+                }
+            }
+
+            if (armatureIndex < 0)
+            {
+                return result;  // __Armature__がない
+            }
+
+            Debug.Log($"[MQOImporter] Found __Armature__ at index {armatureIndex}");
+
+            // __Armature__以降のオブジェクトでdepth > 0のものをボーンとして収集
+            // depth=0が出現したらボーン収集終了（__Armature__ツリーの終わり）
+            var boneObjects = new List<MQOObject>();
+            var boneObjectNames = new HashSet<string>();
+            for (int i = armatureIndex + 1; i < objects.Count; i++)
+            {
+                var obj = objects[i];
+                if (obj.Depth == 0)
+                {
+                    break;  // __Armature__ツリー終了
+                }
+                boneObjects.Add(obj);
+                boneObjectNames.Add(obj.Name);
+            }
+
+            if (boneObjects.Count == 0)
+            {
+                Debug.Log($"[MQOImporter] No bones found under __Armature__");
+                return result;
+            }
+
+            // リスト順（インデックス順）を決定
+            // __ArmatureName__がある場合はそちらを使用、なければ__Armature__の出現順
+            var boneListOrder = new List<string>();
+            const string armatureNamePrefix = "__ArmatureName__";
+
+            if (armatureNameIndex >= 0)
+            {
+                Debug.Log($"[MQOImporter] Found __ArmatureName__ at index {armatureNameIndex}");
+
+                // __ArmatureName__以降のオブジェクトでdepth=1のものをリスト順として収集
+                for (int i = armatureNameIndex + 1; i < objects.Count; i++)
+                {
+                    var obj = objects[i];
+                    if (obj.Depth == 0)
+                    {
+                        break;  // __ArmatureName__ツリー終了
+                    }
+                    if (obj.Depth == 1)
+                    {
+                        // __ArmatureName__プレフィックスを除去してボーン名を取得
+                        string boneName = obj.Name;
+                        if (boneName.StartsWith(armatureNamePrefix))
+                        {
+                            boneName = boneName.Substring(armatureNamePrefix.Length);
+                        }
+                        boneListOrder.Add(boneName);
+                    }
+                }
+                Debug.Log($"[MQOImporter] Bone list order from __ArmatureName__: {boneListOrder.Count} bones");
+            }
+            else
+            {
+                // __ArmatureName__がない場合は__Armature__の出現順をリスト順とする
+                foreach (var obj in boneObjects)
+                {
+                    boneListOrder.Add(obj.Name);
+                }
+                Debug.Log($"[MQOImporter] Using __Armature__ order as list order: {boneListOrder.Count} bones");
+            }
+
+            // ボーン名→リストインデックスのマップを作成
+            var listOrderIndex = new Dictionary<string, int>();
+            for (int i = 0; i < boneListOrder.Count; i++)
+            {
+                if (!listOrderIndex.ContainsKey(boneListOrder[i]))
+                {
+                    listOrderIndex[boneListOrder[i]] = i;
+                }
+            }
+
+            // ボーン名→__Armature__内でのインデックスのマップを作成（親子関係解決用）
+            var boneObjIndex = new Dictionary<string, int>();
+            for (int i = 0; i < boneObjects.Count; i++)
+            {
+                boneObjIndex[boneObjects[i].Name] = i;
+            }
+
+            // Depthから親子関係を計算（__Armature__の下なのでdepth=1がルート）
+            // スタック: (オブジェクトインデックス, Depth)
+            var parentStack = new Stack<(int index, int depth)>();
+            var parentIndices = new int[boneObjects.Count];  // __Armature__内でのインデックス
+
+            for (int i = 0; i < boneObjects.Count; i++)
+            {
+                var obj = boneObjects[i];
+                int depth = obj.Depth;
+
+                while (parentStack.Count > 0 && parentStack.Peek().depth >= depth)
+                {
+                    parentStack.Pop();
+                }
+
+                if (parentStack.Count > 0)
+                {
+                    parentIndices[i] = parentStack.Peek().index;
+                }
+                else
+                {
+                    parentIndices[i] = -1;  // ルートボーン
+                }
+
+                parentStack.Push((i, depth));
+            }
+
+            // 各ボーンをMeshContextに変換（リスト順で格納）
+            var boneContextsTemp = new MeshContext[boneListOrder.Count];
+
+            for (int i = 0; i < boneObjects.Count; i++)
+            {
+                var obj = boneObjects[i];
+
+                // このボーンのリスト順インデックスを取得
+                if (!listOrderIndex.TryGetValue(obj.Name, out int listIdx))
+                {
+                    Debug.LogWarning($"[MQOImporter] Bone '{obj.Name}' not found in list order, skipping");
+                    continue;
+                }
+
+                // 親のリスト順インデックスを計算
+                int parentListIdx = -1;
+                int parentObjIdx = parentIndices[i];
+                if (parentObjIdx >= 0)
+                {
+                    string parentName = boneObjects[parentObjIdx].Name;
+                    if (listOrderIndex.TryGetValue(parentName, out int pIdx))
+                    {
+                        parentListIdx = pIdx;
+                    }
+                }
+
+                // MeshObjectを作成
+                var meshObject = new MeshObject(obj.Name)
+                {
+                    Type = MeshType.Bone,
+                    HierarchyParentIndex = parentListIdx
+                };
+
+                // MQOのtranslation/rotation/scaleを取得してBoneTransformに設定
+                Vector3 translation = obj.Translation;
+                Vector3 rotation = obj.Rotation;
+                Vector3 scale = obj.Scale;
+
+                // 位置にスケールとZ反転を適用
+                Vector3 localPosition = new Vector3(
+                    translation.x * settings.Scale,
+                    translation.y * settings.Scale,
+                    settings.FlipZ ? -translation.z * settings.Scale : translation.z * settings.Scale
+                );
+
+                // BoneTransformを設定
+                var boneTransform = new BoneTransform
+                {
+                    Position = localPosition,
+                    Rotation = rotation,
+                    Scale = scale,
+                    UseLocalTransform = true,
+                    ExportAsSkinned = true
+                };
+                meshObject.BoneTransform = boneTransform;
+
+                // ワールド位置を計算（BindPose用）
+                Vector3 worldPosition = localPosition;
+                int currentParent = parentObjIdx;
+                while (currentParent >= 0)
+                {
+                    var parentObj = boneObjects[currentParent];
+                    Vector3 parentTrans = parentObj.Translation;
+                    worldPosition += new Vector3(
+                        parentTrans.x * settings.Scale,
+                        parentTrans.y * settings.Scale,
+                        settings.FlipZ ? -parentTrans.z * settings.Scale : parentTrans.z * settings.Scale
+                    );
+                    currentParent = parentIndices[currentParent];
+                }
+
+                // BindPose行列を計算
+                Matrix4x4 bindPose = Matrix4x4.Translate(-worldPosition);
+
+                // MeshContextを作成
+                var meshContext = new MeshContext
+                {
+                    MeshObject = meshObject,
+                    Name = obj.Name,
+                    Type = MeshType.Bone,
+                    IsVisible = obj.IsVisible,
+                    BindPose = bindPose,
+                    BoneTransform = boneTransform
+                };
+
+                meshContext.HierarchyParentIndex = parentListIdx;
+
+                boneContextsTemp[listIdx] = meshContext;
+            }
+
+            // nullでない要素をリストに追加
+            for (int i = 0; i < boneContextsTemp.Length; i++)
+            {
+                if (boneContextsTemp[i] != null)
+                {
+                    result.BoneContexts.Add(boneContextsTemp[i]);
+                    result.BoneNameToIndex[boneContextsTemp[i].Name] = result.BoneContexts.Count - 1;
+                }
+            }
+
+            Debug.Log($"[MQOImporter] Imported {result.BoneContexts.Count} bones from __Armature__");
             return result;
         }
 
@@ -623,6 +915,7 @@ namespace Poly_Ling.MQO
             int mirrorMaterialOffset = 0)
         {
             var meshObject = new MeshObject();
+            meshObject.Type = MeshType.Mesh;  // 明示的に設定
 
             // 頂点変換（IDは後で設定）
             foreach (var mqoVert in mqoObj.Vertices)
@@ -634,27 +927,74 @@ namespace Poly_Ling.MQO
                 stats.TotalVertices++;
             }
 
-            // 特殊面から頂点IDを抽出（面変換の前に処理）
-            foreach (var mqoFace in mqoObj.Faces)
+            // 特殊面から頂点IDを抽出（VertexIdHelper使用）
+            // 対応パターン:
+            //   COL(1 1 ID) → 独自ID
+            //   COL(0xFFFFFFFF 0xFFFFFFFF ID) → メタセコイアデフォルト白
+            //   COL(1 ID ID) → 共有ID (COL[1]==COL[2])
+            var vertexIdMap = VertexIdHelper.ExtractIdsFromSpecialFaces(mqoObj.Faces);
+            foreach (var kvp in vertexIdMap)
             {
-                if (!mqoFace.IsSpecialFace)
-                    continue;
+                int vertIndex = kvp.Key;
+                int vertexId = kvp.Value;
 
-                // COL属性の3番目の値が頂点ID
-                // 例: 3 V(0 0 0) M(0) COL(1 1 100000) → 頂点0のIDは100000
-                if (mqoFace.VertexColors != null && mqoFace.VertexColors.Length >= 3)
+                if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
                 {
-                    int vertIndex = mqoFace.VertexIndices[0];
-                    int vertexId = (int)mqoFace.VertexColors[2];
-
-                    if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
-                    {
-                        meshObject.Vertices[vertIndex].Id = vertexId;
-                        meshObject.RegisterVertexId(vertexId);
-                    }
+                    meshObject.Vertices[vertIndex].Id = vertexId;
+                    meshObject.RegisterVertexId(vertexId);
                 }
+            }
 
-                stats.SkippedSpecialFaces++;
+            // 特殊面の数をカウント
+            stats.SkippedSpecialFaces += mqoObj.Faces.Count(f => f.IsSpecialFace);
+
+            // 四角形特殊面からボーンウェイトを抽出（VertexIdHelper使用）
+            // 実体側ウェイト（UV[3].y == 0）
+            var boneWeightMap = VertexIdHelper.ExtractBoneWeightsFromSpecialFaces(mqoObj.Faces);
+            foreach (var kvp in boneWeightMap)
+            {
+                int vertIndex = kvp.Key;
+                var bw = kvp.Value;
+
+                if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
+                {
+                    var vertex = meshObject.Vertices[vertIndex];
+                    vertex.BoneWeight = new BoneWeight
+                    {
+                        boneIndex0 = bw.BoneIndex0,
+                        boneIndex1 = bw.BoneIndex1,
+                        boneIndex2 = bw.BoneIndex2,
+                        boneIndex3 = bw.BoneIndex3,
+                        weight0 = bw.Weight0,
+                        weight1 = bw.Weight1,
+                        weight2 = bw.Weight2,
+                        weight3 = bw.Weight3
+                    };
+                }
+            }
+
+            // ミラー側ウェイト（UV[3].y == 1）
+            var mirrorBoneWeightMap = VertexIdHelper.ExtractMirrorBoneWeightsFromSpecialFaces(mqoObj.Faces);
+            foreach (var kvp in mirrorBoneWeightMap)
+            {
+                int vertIndex = kvp.Key;
+                var bw = kvp.Value;
+
+                if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
+                {
+                    var vertex = meshObject.Vertices[vertIndex];
+                    vertex.MirrorBoneWeight = new BoneWeight
+                    {
+                        boneIndex0 = bw.BoneIndex0,
+                        boneIndex1 = bw.BoneIndex1,
+                        boneIndex2 = bw.BoneIndex2,
+                        boneIndex3 = bw.BoneIndex3,
+                        weight0 = bw.Weight0,
+                        weight1 = bw.Weight1,
+                        weight2 = bw.Weight2,
+                        weight3 = bw.Weight3
+                    };
+                }
             }
 
             // 面変換
@@ -736,20 +1076,20 @@ namespace Poly_Ling.MQO
 
             // Unity Mesh生成（マテリアル数を渡す）
             meshContext.UnityMesh = meshObject.ToUnityMeshShared(materialCount);
-            
+
             // NormalMode.Unityの場合はUnity標準のRecalculateNormalsを使用
             if (settings.NormalMode == NormalMode.Unity && meshContext.UnityMesh != null)
             {
                 meshContext.UnityMesh.RecalculateNormals();
                 Debug.Log($"[MQOImporter] Unity RecalculateNormals applied");
             }
-            
+
             // 頂点デバッグ出力
             if (settings.DebugVertexInfo)
             {
                 OutputVertexDebugInfo(mqoObj.Name, mqoObj, meshObject, settings.DebugVertexNearUVCount);
             }
-            
+
             /*
             // デバッグ出力（ミラー属性確認用）
             Debug.Log($"[MQOImporter] ConvertObject: {mqoObj.Name}");
@@ -875,7 +1215,7 @@ namespace Poly_Ling.MQO
 
             // MaterialReferenceを作成し、ソースパスを設定
             var matRef = new MaterialReference(material);
-            
+
             // ソースパスを設定（元のMQOファイルの相対パスをそのまま保存）
             if (!string.IsNullOrEmpty(mqoMat.TexturePath))
             {
@@ -903,7 +1243,7 @@ namespace Poly_Ling.MQO
                 return null;
 
             string normalizedPath = texturePath.Replace("\\", "/");
-            
+
             // 既にフルパスの場合
             if (Path.IsPathRooted(normalizedPath))
                 return normalizedPath;
@@ -975,13 +1315,13 @@ namespace Poly_Ling.MQO
             // キーワード設定（URP）
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            
+
             // Standard Shader用キーワード
             material.EnableKeyword("_ALPHABLEND_ON");
             material.DisableKeyword("_ALPHATEST_ON");
             material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
         }
-        
+
         /// <summary>
         /// テクスチャを読み込み
         /// Assets内 → AssetDatabase、Assets外 → File.ReadAllBytes
@@ -995,7 +1335,7 @@ namespace Poly_Ling.MQO
             // MQOファイルではバックスラッシュが使われることが多い
             string normalizedPath = texturePath.Replace("\\", "/");
             string normalizedBaseDir = baseDir?.Replace("\\", "/") ?? "";
-            
+
             Debug.Log($"[MQOImporter] LoadTexture: original='{texturePath}', normalized='{normalizedPath}', baseDir='{normalizedBaseDir}'");
 
             // 実際のファイルパスを構築
@@ -1015,7 +1355,7 @@ namespace Poly_Ling.MQO
                     fullPath = normalizedPath;
                 }
             }
-            
+
             Debug.Log($"[MQOImporter] LoadTexture: fullPath='{fullPath}'");
 
             // アセットパスを構築（Assets/から始まる形式）
@@ -1056,7 +1396,7 @@ namespace Poly_Ling.MQO
             {
                 string fileName = Path.GetFileName(normalizedPath);
                 string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-                
+
                 // baseDirをAssets/形式に変換
                 string searchFolder = normalizedBaseDir;
                 if (!searchFolder.StartsWith("Assets/"))
@@ -1068,7 +1408,7 @@ namespace Poly_Ling.MQO
                     }
                 }
 
-                string[] guids = UnityEditor.AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}", 
+                string[] guids = UnityEditor.AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}",
                     new[] { searchFolder });
                 foreach (var guid in guids)
                 {
@@ -1117,7 +1457,7 @@ namespace Poly_Ling.MQO
 
             return texture;
         }
-        
+
         /// <summary>
         /// マテリアルにテクスチャを設定
         /// </summary>
@@ -1353,33 +1693,33 @@ namespace Poly_Ling.MQO
         private static void OutputVertexDebugInfo(string objectName, MQOObject mqoObj, MeshObject meshObject, int nearUVCount)
         {
             int originalVertexCount = mqoObj.Vertices.Count;
-            
+
             // 展開時の頂点数を計算（変換後のVertex.UVs.Countの合計）
             int expandedVertexCount = 0;
             foreach (var vertex in meshObject.Vertices)
             {
                 expandedVertexCount += Math.Max(1, vertex.UVs.Count);
             }
-            
+
             // MQOの面データから頂点ごとのUVを収集
             // Key: 頂点インデックス, Value: その頂点に割り当てられたUVのリスト
             var vertexUVs = new Dictionary<int, List<Vector2>>();
-            
+
             foreach (var mqoFace in mqoObj.Faces)
             {
                 if (mqoFace.IsSpecialFace) continue;
                 if (mqoFace.UVs == null) continue;
-                
+
                 for (int i = 0; i < mqoFace.VertexCount && i < mqoFace.UVs.Length; i++)
                 {
                     int vertIndex = mqoFace.VertexIndices[i];
                     Vector2 uv = mqoFace.UVs[i]; // MQOの元UV値（変換前）
-                    
+
                     if (!vertexUVs.ContainsKey(vertIndex))
                     {
                         vertexUVs[vertIndex] = new List<Vector2>();
                     }
-                    
+
                     // 同じUVが既にあるかチェック（完全一致）
                     bool found = false;
                     foreach (var existingUV in vertexUVs[vertIndex])
@@ -1396,20 +1736,20 @@ namespace Poly_Ling.MQO
                     }
                 }
             }
-            
+
             // 同一頂点で異なるUVを持つペアを収集
             var nearUVPairs = new List<(int vertIndex, int vertexId, Vector2 uv1, Vector2 uv2, float distance)>();
-            
+
             foreach (var kvp in vertexUVs)
             {
                 int vertIndex = kvp.Key;
                 var uvList = kvp.Value;
-                
+
                 if (uvList.Count < 2) continue;
-                
+
                 // 頂点IDを取得（meshObjectから）
                 int vertexId = (vertIndex < meshObject.Vertices.Count) ? meshObject.Vertices[vertIndex].Id : 0;
-                
+
                 // 全ペアの距離を計算
                 for (int i = 0; i < uvList.Count; i++)
                 {
@@ -1418,22 +1758,22 @@ namespace Poly_Ling.MQO
                         Vector2 uv1 = uvList[i];
                         Vector2 uv2 = uvList[j];
                         float dist = Vector2.Distance(uv1, uv2);
-                        
+
                         nearUVPairs.Add((vertIndex, vertexId, uv1, uv2, dist));
                     }
                 }
             }
-            
+
             // 距離が近い順にソート
             nearUVPairs.Sort((a, b) => a.distance.CompareTo(b.distance));
-            
+
             // 1つのログにまとめて出力（コピペしやすいように半角スペース区切り）
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"[VertexDebug] {objectName}");
             sb.AppendLine($"OriginalVertexCount {originalVertexCount}");
             sb.AppendLine($"ExpandedVertexCount {expandedVertexCount}");
             sb.AppendLine($"NearUVPairCount {nearUVPairs.Count}");
-            
+
             int outputCount = Math.Min(nearUVCount, nearUVPairs.Count);
             if (outputCount > 0)
             {
@@ -1449,7 +1789,7 @@ namespace Poly_Ling.MQO
                     sb.AppendLine($"{pair.vertIndex} {pair.vertexId} {u1} {v1} {u2} {v2} {pair.distance:F6}");
                 }
             }
-            
+
             Debug.Log(sb.ToString());
         }
 
@@ -1487,7 +1827,8 @@ namespace Poly_Ling.MQO
             // 新しいMeshObjectを作成
             var mirrorMeshObj = new MeshObject
             {
-                Name = source.Name + "_BakedMirror"
+                Name = source.Name + "_BakedMirror",
+                Type = MeshType.BakedMirror  // 明示的に設定
             };
 
             // 頂点をミラー変換してコピー

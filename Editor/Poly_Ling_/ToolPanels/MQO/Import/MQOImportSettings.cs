@@ -128,6 +128,10 @@ namespace Poly_Ling.MQO
         [Tooltip("ミラー属性を持つメッシュのミラー側を実体メッシュとして生成する")]
         public bool BakeMirror = true;
 
+        /// <summary>__Armature__からボーンをインポート</summary>
+        [Tooltip("MQO内の__Armature__オブジェクト以下をボーン構造としてインポートする")]
+        public bool ImportBonesFromArmature = true;
+
         // ================================================================
         // 頂点デバッグ設定
         // ================================================================
@@ -201,6 +205,7 @@ namespace Poly_Ling.MQO
                 SmoothingAngle = this.SmoothingAngle,
                 BoneWeightCSVPath = this.BoneWeightCSVPath,
                 BakeMirror = this.BakeMirror,
+                ImportBonesFromArmature = this.ImportBonesFromArmature,
                 DebugVertexInfo = this.DebugVertexInfo,
                 DebugVertexNearUVCount = this.DebugVertexNearUVCount
             };
@@ -223,6 +228,7 @@ namespace Poly_Ling.MQO
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
                    BoneWeightCSVPath != o.BoneWeightCSVPath ||
                    BakeMirror != o.BakeMirror ||
+                   ImportBonesFromArmature != o.ImportBonesFromArmature ||
                    DebugVertexInfo != o.DebugVertexInfo ||
                    DebugVertexNearUVCount != o.DebugVertexNearUVCount;
         }
@@ -244,6 +250,7 @@ namespace Poly_Ling.MQO
             SmoothingAngle = o.SmoothingAngle;
             BoneWeightCSVPath = o.BoneWeightCSVPath;
             BakeMirror = o.BakeMirror;
+            ImportBonesFromArmature = o.ImportBonesFromArmature;
             DebugVertexInfo = o.DebugVertexInfo;
             DebugVertexNearUVCount = o.DebugVertexNearUVCount;
         }

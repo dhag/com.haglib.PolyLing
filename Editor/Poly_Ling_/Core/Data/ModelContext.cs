@@ -53,6 +53,70 @@ namespace Poly_Ling.Model
         public int MeshContextCount => Count;
 
         // ================================================================
+        // タイプ別メッシュインデックス
+        // ================================================================
+
+        /// <summary>タイプ別インデックスキャッシュ（遅延初期化）</summary>
+        private TypedMeshIndices _typedIndices;
+
+        /// <summary>
+        /// タイプ別メッシュインデックスへのアクセス
+        /// カテゴリ別のフィルタリングとボーンインデックス変換を提供
+        /// </summary>
+        public TypedMeshIndices TypedIndices
+        {
+            get
+            {
+                if (_typedIndices == null)
+                    _typedIndices = new TypedMeshIndices(this);
+                return _typedIndices;
+            }
+        }
+
+        /// <summary>タイプ別インデックスキャッシュを無効化（リスト変更時に呼ぶ）</summary>
+        public void InvalidateTypedIndices()
+        {
+            _typedIndices?.Invalidate();
+        }
+
+        // ================================================================
+        // タイプ別アクセス（ショートカット）
+        // ================================================================
+
+        /// <summary>描画可能メッシュ（Mesh + BakedMirror）</summary>
+        public IReadOnlyList<TypedMeshEntry> DrawableMeshes => TypedIndices.GetEntries(MeshCategory.Drawable);
+
+        /// <summary>通常メッシュのみ</summary>
+        public IReadOnlyList<TypedMeshEntry> Meshes => TypedIndices.GetEntries(MeshCategory.Mesh);
+
+        /// <summary>ボーンリスト</summary>
+        public IReadOnlyList<TypedMeshEntry> Bones => TypedIndices.GetEntries(MeshCategory.Bone);
+
+        /// <summary>モーフリスト</summary>
+        public IReadOnlyList<TypedMeshEntry> Morphs => TypedIndices.GetEntries(MeshCategory.Morph);
+
+        /// <summary>剛体リスト</summary>
+        public IReadOnlyList<TypedMeshEntry> RigidBodies => TypedIndices.GetEntries(MeshCategory.RigidBody);
+
+        /// <summary>剛体ジョイントリスト</summary>
+        public IReadOnlyList<TypedMeshEntry> RigidBodyJoints => TypedIndices.GetEntries(MeshCategory.RigidBodyJoint);
+
+        /// <summary>ヘルパーリスト</summary>
+        public IReadOnlyList<TypedMeshEntry> Helpers => TypedIndices.GetEntries(MeshCategory.Helper);
+
+        /// <summary>グループリスト</summary>
+        public IReadOnlyList<TypedMeshEntry> Groups => TypedIndices.GetEntries(MeshCategory.Group);
+
+        /// <summary>ボーン数</summary>
+        public int BoneCount => TypedIndices.BoneCount;
+
+        /// <summary>描画可能メッシュ数</summary>
+        public int DrawableCount => TypedIndices.DrawableCount;
+
+        /// <summary>ボーンがあるか</summary>
+        public bool HasBones => TypedIndices.HasBones;
+
+        // ================================================================
         // 選択状態（複数選択対応）
         // ================================================================
 
@@ -433,6 +497,7 @@ namespace Poly_Ling.Model
                 throw new ArgumentNullException(nameof(meshContext));
 
             MeshContextList.Add(meshContext);
+            InvalidateTypedIndices();
             IsDirty = true;
             return MeshContextList.Count - 1;
         }
@@ -446,6 +511,7 @@ namespace Poly_Ling.Model
                 throw new ArgumentOutOfRangeException(nameof(index));
 
             MeshContextList.Insert(index, meshContext);
+            InvalidateTypedIndices();
             IsDirty = true;
 
             // 選択インデックス調整（挿入位置以降は+1）
@@ -465,6 +531,7 @@ namespace Poly_Ling.Model
                 return false;
 
             MeshContextList.RemoveAt(index);
+            InvalidateTypedIndices();
             IsDirty = true;
 
             // 選択インデックス調整
@@ -521,6 +588,7 @@ namespace Poly_Ling.Model
             }
             SelectedMeshContextIndices = adjusted;
 
+            InvalidateTypedIndices();
             IsDirty = true;
             return true;
         }
@@ -558,6 +626,7 @@ namespace Poly_Ling.Model
 
             MeshContextList.Clear();
             SelectedMeshContextIndices.Clear();
+            InvalidateTypedIndices();
             IsDirty = true;
         }
 

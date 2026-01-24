@@ -1,0 +1,223 @@
+/* TypedMeshListPanel.uss
+   タイプ別メッシュリストパネルのスタイル定義
+   MeshListPanel.ussをベースに、タブ機能を追加
+*/
+
+/* ================================================================
+   ルート
+   ================================================================ */
+
+.typed-list-root {
+    flex-grow: 1;
+    padding: 4px;
+}
+
+/* ================================================================
+   タブヘッダー
+   ================================================================ */
+
+.tab-header {
+    flex-direction: row;
+    margin-bottom: 4px;
+    padding: 2px;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+}
+
+.tab-button {
+    flex-grow: 1;
+    height: 22px;
+    margin: 1px;
+    border-radius: 3px;
+    border-width: 0;
+    background-color: transparent;
+    -unity-font-style: normal;
+    font-size: 12px;
+}
+
+.tab-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.tab-active {
+    background-color: rgba(66, 165, 245, 0.4);
+    -unity-font-style: bold;
+}
+
+.tab-active:hover {
+    background-color: rgba(66, 165, 245, 0.5);
+}
+
+/* ================================================================
+   メインコンテンツ
+   ================================================================ */
+
+.main-content {
+    flex-grow: 1;
+}
+
+/* ================================================================
+   ヘッダー
+   ================================================================ */
+
+.header {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px;
+    margin-bottom: 4px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+}
+
+.header-label {
+    -unity-font-style: bold;
+    margin-right: 8px;
+}
+
+.header-toggle {
+    margin-right: 8px;
+}
+
+.header-button {
+    width: 24px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+}
+
+/* ================================================================
+   ツリービュー
+   ================================================================ */
+
+.mesh-tree {
+    flex-grow: 1;
+    min-height: 100px;
+    margin: 4px 0;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+/* ================================================================
+   ツールバー
+   ================================================================ */
+
+.toolbar {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 4px 0;
+}
+
+.toolbar-group {
+    flex-direction: row;
+}
+
+.toolbar-button {
+    width: 28px;
+    height: 22px;
+    margin: 0 1px;
+    padding: 0;
+    font-size: 14px;
+}
+
+.toolbar-button-danger {
+    width: 28px;
+    height: 22px;
+    margin: 0 1px;
+    padding: 0;
+    font-size: 14px;
+    color: #ef5350;
+}
+
+.toolbar-button-danger:hover {
+    background-color: rgba(239, 83, 80, 0.2);
+}
+
+.toolbar-spacer {
+    width: 8px;
+}
+
+/* ================================================================
+   詳細パネル
+   ================================================================ */
+
+.detail-foldout {
+    margin-top: 4px;
+}
+
+.detail-panel {
+    padding: 4px 8px;
+}
+
+.detail-field {
+    margin-bottom: 4px;
+}
+
+.detail-stats {
+    flex-direction: row;
+    margin-bottom: 4px;
+}
+
+.stat-label {
+    flex-grow: 1;
+    font-size: 12px;
+}
+
+.detail-breakdown {
+    flex-direction: row;
+    padding-left: 16px;
+    margin-bottom: 4px;
+}
+
+.stat-label-small {
+    flex-grow: 1;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.index-info {
+    flex-direction: row;
+    margin-bottom: 4px;
+    padding: 4px;
+    background-color: rgba(33, 150, 243, 0.1);
+    border-radius: 3px;
+}
+
+.detail-buttons {
+    flex-direction: row;
+    margin-top: 8px;
+}
+
+.detail-button {
+    flex-grow: 1;
+    margin: 0 2px;
+}
+
+/* ================================================================
+   プレースホルダー
+   ================================================================ */
+
+.placeholder {
+    display: none;
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    padding: 32px;
+}
+
+.placeholder-text {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* ================================================================
+   ステータスバー
+   ================================================================ */
+
+.status-label {
+    margin-top: 4px;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    -unity-text-align: middle-left;
+}
