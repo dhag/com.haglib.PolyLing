@@ -530,6 +530,45 @@ namespace Poly_Ling.MQO
 
             /// <summary>有効なウェイトを持つか（合計が0より大きいか）</summary>
             public bool HasWeight => Weight0 + Weight1 + Weight2 + Weight3 > 0;
+
+            /// <summary>
+            /// Unity BoneWeightから変換
+            /// </summary>
+            /// <param name="bw">Unity BoneWeight</param>
+            /// <returns>BoneWeightData</returns>
+            public static BoneWeightData FromUnityBoneWeight(UnityEngine.BoneWeight bw)
+            {
+                return new BoneWeightData
+                {
+                    BoneIndex0 = bw.boneIndex0,
+                    BoneIndex1 = bw.boneIndex1,
+                    BoneIndex2 = bw.boneIndex2,
+                    BoneIndex3 = bw.boneIndex3,
+                    Weight0 = bw.weight0,
+                    Weight1 = bw.weight1,
+                    Weight2 = bw.weight2,
+                    Weight3 = bw.weight3
+                };
+            }
+
+            /// <summary>
+            /// Unity BoneWeightに変換
+            /// </summary>
+            /// <returns>Unity BoneWeight</returns>
+            public UnityEngine.BoneWeight ToUnityBoneWeight()
+            {
+                return new UnityEngine.BoneWeight
+                {
+                    boneIndex0 = BoneIndex0,
+                    boneIndex1 = BoneIndex1,
+                    boneIndex2 = BoneIndex2,
+                    boneIndex3 = BoneIndex3,
+                    weight0 = Weight0,
+                    weight1 = Weight1,
+                    weight2 = Weight2,
+                    weight3 = Weight3
+                };
+            }
         }
 
         // =====================================================================

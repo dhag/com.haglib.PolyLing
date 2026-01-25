@@ -990,24 +990,18 @@ namespace Poly_Ling.MQO
                 }
 
                 // 頂点ID用の特殊面を追加（ID != -1 の頂点のみ）
-                // フォーマット: 3 V(idx idx idx) M(0) COL(1 1 vertexId)
+                // VertexIdHelper.CreateSpecialFaceForVertexIdを使用
                 for (int i = 0; i < meshObject.Vertices.Count; i++)
                 {
                     var vertex = meshObject.Vertices[i];
                     if (vertex.Id != -1)
                     {
-                        var specialFace = new MQOFace
-                        {
-                            VertexIndices = new int[] { i, i, i },
-                            MaterialIndex = 0,
-                            VertexColors = new uint[] { 1, 1, (uint)vertex.Id }
-                        };
-                        mqoObj.Faces.Add(specialFace);
+                        mqoObj.Faces.Add(VertexIdHelper.CreateSpecialFaceForVertexId(i, vertex.Id, 0));
                     }
                 }
 
                 // ボーンウェイト用の四角形特殊面を追加（BoneWeightを持つ頂点のみ）
-                // フォーマット: 4 V(idx idx idx idx) M(0) UV(w0 w1 w2 w3 0 0 0 0) COL(b0 b1 b2 b3)
+                // VertexIdHelper.CreateSpecialFaceForBoneWeightを使用
                 if (settings.EmbedBoneWeightsInMQO)
                 {
                     for (int i = 0; i < meshObject.Vertices.Count; i++)
@@ -1015,27 +1009,8 @@ namespace Poly_Ling.MQO
                         var vertex = meshObject.Vertices[i];
                         if (vertex.HasBoneWeight)
                         {
-                            var bw = vertex.BoneWeight.Value;
-                            var specialFace = new MQOFace
-                            {
-                                VertexIndices = new int[] { i, i, i, i },
-                                MaterialIndex = 0,
-                                UVs = new Vector2[]
-                                {
-                                    new Vector2(bw.weight0, bw.weight1),
-                                    new Vector2(bw.weight2, bw.weight3),
-                                    Vector2.zero,
-                                    Vector2.zero
-                                },
-                                VertexColors = new uint[]
-                                {
-                                    (uint)bw.boneIndex0,
-                                    (uint)bw.boneIndex1,
-                                    (uint)bw.boneIndex2,
-                                    (uint)bw.boneIndex3
-                                }
-                            };
-                            mqoObj.Faces.Add(specialFace);
+                            var boneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(vertex.BoneWeight.Value);
+                            mqoObj.Faces.Add(VertexIdHelper.CreateSpecialFaceForBoneWeight(i, boneWeightData, false, 0));
                         }
                     }
                 }
