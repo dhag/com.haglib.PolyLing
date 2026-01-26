@@ -48,7 +48,9 @@ namespace Poly_Ling.MQO.Utility
             EditorGUILayout.LabelField("① 元のMQO（depth情報あり）", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                _originalMqoPath = EditorGUILayout.TextField(_originalMqoPath);
+                var origRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _originalMqoPath = EditorGUI.TextField(origRect, _originalMqoPath);
+                HandleDropOnRect(origRect, ".mqo", path => _originalMqoPath = path);
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
                     string path = EditorUtility.OpenFilePanel("元のMQOを選択", 
@@ -65,7 +67,19 @@ namespace Poly_Ling.MQO.Utility
             EditorGUILayout.LabelField("② 壊れたMQO（頂点ID追加済み、depthなし）", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                _brokenMqoPath = EditorGUILayout.TextField(_brokenMqoPath);
+                var brokenRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _brokenMqoPath = EditorGUI.TextField(brokenRect, _brokenMqoPath);
+                HandleDropOnRect(brokenRect, ".mqo", path =>
+                {
+                    _brokenMqoPath = path;
+                    // 出力先を自動設定
+                    if (string.IsNullOrEmpty(_outputMqoPath))
+                    {
+                        string dir = Path.GetDirectoryName(path);
+                        string name = Path.GetFileNameWithoutExtension(path);
+                        _outputMqoPath = Path.Combine(dir, name + "_recovered.mqo");
+                    }
+                });
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
                     string path = EditorUtility.OpenFilePanel("壊れたMQOを選択",
@@ -350,6 +364,40 @@ namespace Poly_Ling.MQO.Utility
         {
             _log += message + "\n";
             Debug.Log($"[MQODepthRecovery] {message}");
+        }
+
+        /// <summary>
+        /// 指定矩形へのドロップを処理
+        /// </summary>
+        private void HandleDropOnRect(Rect rect, string extension, Action<string> onDrop)
+        {
+            var evt = Event.current;
+            if (!rect.Contains(evt.mousePosition)) return;
+
+            switch (evt.type)
+            {
+                case EventType.DragUpdated:
+                    if (DragAndDrop.paths.Length > 0 &&
+                        Path.GetExtension(DragAndDrop.paths[0]).ToLower() == extension)
+                    {
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragPerform:
+                    if (DragAndDrop.paths.Length > 0)
+                    {
+                        string path = DragAndDrop.paths[0];
+                        if (Path.GetExtension(path).ToLower() == extension)
+                        {
+                            DragAndDrop.AcceptDrag();
+                            onDrop(path);
+                            evt.Use();
+                        }
+                    }
+                    break;
+            }
         }
     }
 }

@@ -183,7 +183,14 @@ namespace Poly_Ling.PMX
             // 元PMXファイル選択
             using (new EditorGUILayout.HorizontalScope())
             {
-                _settings.SourcePMXPath = EditorGUILayout.TextField(T("SourcePMXFile"), _settings.SourcePMXPath);
+                EditorGUILayout.PrefixLabel(T("SourcePMXFile"));
+                var pmxRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _settings.SourcePMXPath = EditorGUI.TextField(pmxRect, _settings.SourcePMXPath);
+                HandleDropOnRect(pmxRect, ".pmx", path =>
+                {
+                    _settings.SourcePMXPath = path;
+                    LoadSourcePMX(path);
+                });
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
                     string path = EditorUtility.OpenFilePanel("Select Source PMX", "", "pmx");
@@ -354,6 +361,40 @@ namespace Poly_Ling.PMX
             var model = GetModelContext();
             string name = model?.Name ?? "export";
             return name + ".pmx";
+        }
+
+        /// <summary>
+        /// 指定矩形へのドロップを処理
+        /// </summary>
+        private void HandleDropOnRect(Rect rect, string extension, Action<string> onDrop)
+        {
+            var evt = Event.current;
+            if (!rect.Contains(evt.mousePosition)) return;
+
+            switch (evt.type)
+            {
+                case EventType.DragUpdated:
+                    if (DragAndDrop.paths.Length > 0 &&
+                        Path.GetExtension(DragAndDrop.paths[0]).ToLower() == extension)
+                    {
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragPerform:
+                    if (DragAndDrop.paths.Length > 0)
+                    {
+                        string path = DragAndDrop.paths[0];
+                        if (Path.GetExtension(path).ToLower() == extension)
+                        {
+                            DragAndDrop.AcceptDrag();
+                            onDrop(path);
+                            evt.Use();
+                        }
+                    }
+                    break;
+            }
         }
     }
 }

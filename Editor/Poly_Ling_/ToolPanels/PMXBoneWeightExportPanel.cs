@@ -188,7 +188,15 @@ namespace Poly_Ling.PMX
             // PMX (バイナリ/CSV両対応)
             using (new EditorGUILayout.HorizontalScope())
             {
-                _pmxFilePath = EditorGUILayout.TextField(T("PMXFile"), _pmxFilePath);
+                EditorGUILayout.PrefixLabel(T("PMXFile"));
+                var pmxRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _pmxFilePath = EditorGUI.TextField(pmxRect, _pmxFilePath);
+                HandleDropOnRect(pmxRect, new[] { ".pmx", ".csv" }, path =>
+                {
+                    _pmxFilePath = path;
+                    LoadPMX();
+                    CheckVertexCount();
+                });
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
                     string path = EditorUtility.OpenFilePanel("Select PMX File", "", "pmx,csv");
@@ -201,19 +209,20 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            DrawDropArea(T("DragDropPMX"), new[] { ".pmx", ".csv" }, path =>
-            {
-                _pmxFilePath = path;
-                LoadPMX();
-                CheckVertexCount();
-            });
-
             EditorGUILayout.Space(5);
 
             // MQO
             using (new EditorGUILayout.HorizontalScope())
             {
-                _mqoFilePath = EditorGUILayout.TextField(T("MQOFile"), _mqoFilePath);
+                EditorGUILayout.PrefixLabel(T("MQOFile"));
+                var mqoRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _mqoFilePath = EditorGUI.TextField(mqoRect, _mqoFilePath);
+                HandleDropOnRect(mqoRect, new[] { ".mqo" }, path =>
+                {
+                    _mqoFilePath = path;
+                    LoadMQO();
+                    CheckVertexCount();
+                });
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
                     string path = EditorUtility.OpenFilePanel("Select MQO", "", "mqo");
@@ -225,46 +234,38 @@ namespace Poly_Ling.PMX
                     }
                 }
             }
-
-            DrawDropArea(T("DragDropMQO"), new[] { ".mqo" }, path =>
-            {
-                _mqoFilePath = path;
-                LoadMQO();
-                CheckVertexCount();
-            });
         }
 
-        private void DrawDropArea(string message, string[] extensions, Action<string> onDrop)
+        /// <summary>
+        /// 指定矩形へのドロップを処理
+        /// </summary>
+        private void HandleDropOnRect(Rect rect, string[] extensions, Action<string> onDrop)
         {
-            var dropArea = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
-            GUI.Box(dropArea, message, EditorStyles.helpBox);
-
             var evt = Event.current;
-            if (dropArea.Contains(evt.mousePosition))
+            if (!rect.Contains(evt.mousePosition)) return;
+
+            switch (evt.type)
             {
-                switch (evt.type)
-                {
-                    case EventType.DragUpdated:
-                        if (DragAndDrop.paths.Length > 0 && HasValidExtension(DragAndDrop.paths[0], extensions))
+                case EventType.DragUpdated:
+                    if (DragAndDrop.paths.Length > 0 && HasValidExtension(DragAndDrop.paths[0], extensions))
+                    {
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragPerform:
+                    if (DragAndDrop.paths.Length > 0)
+                    {
+                        string path = DragAndDrop.paths[0];
+                        if (HasValidExtension(path, extensions))
                         {
-                            DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                            DragAndDrop.AcceptDrag();
+                            onDrop(path);
                             evt.Use();
                         }
-                        break;
-
-                    case EventType.DragPerform:
-                        if (DragAndDrop.paths.Length > 0)
-                        {
-                            string path = DragAndDrop.paths[0];
-                            if (HasValidExtension(path, extensions))
-                            {
-                                DragAndDrop.AcceptDrag();
-                                onDrop(path);
-                                evt.Use();
-                            }
-                        }
-                        break;
-                }
+                    }
+                    break;
             }
         }
 

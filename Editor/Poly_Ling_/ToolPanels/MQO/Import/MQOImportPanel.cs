@@ -47,6 +47,7 @@ namespace Poly_Ling.MQO
             ["File"] = new() { ["en"] = "File", ["ja"] = "ファイル" },
             ["MQOFile"] = new() { ["en"] = "MQO File", ["ja"] = "MQOファイル" },
             ["DragDropHere"] = new() { ["en"] = "Drag & Drop MQO file here", ["ja"] = "MQOファイルをここにドロップ" },
+            ["DropFileHere"] = new() { ["en"] = "Drop MQO file here", ["ja"] = "ここにドロップ" },
 
             // 設定セクション
             ["ImportSettings"] = new() { ["en"] = "Import Settings", ["ja"] = "インポート設定" },
@@ -184,6 +185,8 @@ namespace Poly_Ling.MQO
         {
             EditorGUILayout.LabelField(T("File"), EditorStyles.boldLabel);
 
+            // テキストフィールド行全体をドロップエリアとして使用
+            Rect fieldRect;
             using (new EditorGUILayout.HorizontalScope())
             {
                 _lastFilePath = EditorGUILayout.TextField(T("MQOFile"), _lastFilePath);
@@ -203,41 +206,71 @@ namespace Poly_Ling.MQO
                     }
                 }
             }
-
-            // ドラッグ&ドロップ
-            var dropArea = GUILayoutUtility.GetRect(0, 40, GUILayout.ExpandWidth(true));
-            GUI.Box(dropArea, T("DragDropHere"), EditorStyles.helpBox);
-            HandleDragAndDrop(dropArea);
+            
+            // 直前のHorizontalScopeのRectを取得してD&D処理
+            fieldRect = GUILayoutUtility.GetLastRect();
+            HandleFileDragAndDrop(fieldRect);
+            
+            // ドラッグ中のヒント表示
+            if (_isDraggingFile)
+            {
+                EditorGUILayout.HelpBox(T("DropFileHere"), MessageType.Info);
+            }
         }
 
-        private void HandleDragAndDrop(Rect dropArea)
+        private bool _isDraggingFile = false;
+        
+        private void HandleFileDragAndDrop(Rect dropArea)
         {
             Event evt = Event.current;
 
             switch (evt.type)
             {
                 case EventType.DragUpdated:
-                case EventType.DragPerform:
-                    if (!dropArea.Contains(evt.mousePosition))
-                        return;
-
-                    DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-
-                    if (evt.type == EventType.DragPerform)
+                    // MQOファイルがドラッグされているかチェック
+                    bool hasMQO = false;
+                    if (DragAndDrop.paths != null)
                     {
-                        DragAndDrop.AcceptDrag();
-
-                        foreach (string path in DragAndDrop.paths)
+                        foreach (var path in DragAndDrop.paths)
                         {
                             if (path.EndsWith(".mqo", System.StringComparison.OrdinalIgnoreCase))
                             {
-                                _lastFilePath = path;
-                                LoadPreview();
+                                hasMQO = true;
                                 break;
                             }
                         }
                     }
+                    
+                    _isDraggingFile = hasMQO;
+                    
+                    if (dropArea.Contains(evt.mousePosition) && hasMQO)
+                    {
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                        evt.Use();
+                    }
+                    break;
+                    
+                case EventType.DragPerform:
+                    if (!dropArea.Contains(evt.mousePosition))
+                        return;
+
+                    DragAndDrop.AcceptDrag();
+                    _isDraggingFile = false;
+
+                    foreach (string path in DragAndDrop.paths)
+                    {
+                        if (path.EndsWith(".mqo", System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            _lastFilePath = path;
+                            LoadPreview();
+                            break;
+                        }
+                    }
                     evt.Use();
+                    break;
+                    
+                case EventType.DragExited:
+                    _isDraggingFile = false;
                     break;
             }
         }

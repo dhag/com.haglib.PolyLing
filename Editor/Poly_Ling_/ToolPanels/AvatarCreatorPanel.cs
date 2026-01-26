@@ -102,7 +102,13 @@ namespace Poly_Ling.MISC
             EditorGUILayout.LabelField(T("MappingFile"), EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                _mappingFilePath = EditorGUILayout.TextField(_mappingFilePath);
+                var csvRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _mappingFilePath = EditorGUI.TextField(csvRect, _mappingFilePath);
+                HandleDropOnRect(csvRect, path =>
+                {
+                    _mappingFilePath = path;
+                    LoadMapping();
+                });
 
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
@@ -119,12 +125,6 @@ namespace Poly_Ling.MISC
                 }
             }
 
-            DrawDropArea(T("DragDropMapping"), path =>
-            {
-                _mappingFilePath = path;
-                LoadMapping();
-            });
-
             EditorGUILayout.Space(10);
 
             // プレビュー
@@ -138,37 +138,36 @@ namespace Poly_Ling.MISC
             EditorGUILayout.EndScrollView();
         }
 
-        private void DrawDropArea(string message, Action<string> onDrop)
+        /// <summary>
+        /// 指定矩形へのドロップを処理（CSV専用）
+        /// </summary>
+        private void HandleDropOnRect(Rect rect, Action<string> onDrop)
         {
-            var dropArea = GUILayoutUtility.GetRect(0, 30, GUILayout.ExpandWidth(true));
-            GUI.Box(dropArea, message, EditorStyles.helpBox);
-
             var evt = Event.current;
-            if (dropArea.Contains(evt.mousePosition))
+            if (!rect.Contains(evt.mousePosition)) return;
+
+            switch (evt.type)
             {
-                switch (evt.type)
-                {
-                    case EventType.DragUpdated:
-                        if (DragAndDrop.paths.Length > 0 && DragAndDrop.paths[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                case EventType.DragUpdated:
+                    if (DragAndDrop.paths.Length > 0 && DragAndDrop.paths[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragPerform:
+                    if (DragAndDrop.paths.Length > 0)
+                    {
+                        string path = DragAndDrop.paths[0];
+                        if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
                         {
-                            DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                            DragAndDrop.AcceptDrag();
+                            onDrop(path);
                             evt.Use();
                         }
-                        break;
-
-                    case EventType.DragPerform:
-                        if (DragAndDrop.paths.Length > 0)
-                        {
-                            string path = DragAndDrop.paths[0];
-                            if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-                            {
-                                DragAndDrop.AcceptDrag();
-                                onDrop(path);
-                                evt.Use();
-                            }
-                        }
-                        break;
-                }
+                    }
+                    break;
             }
         }
 

@@ -44,6 +44,7 @@ namespace Poly_Ling.PMX
             ["File"] = new() { ["en"] = "File", ["ja"] = "ファイル" },
             ["PMXFile"] = new() { ["en"] = "PMX File", ["ja"] = "PMXファイル" },
             ["DragDropHere"] = new() { ["en"] = "Drag & Drop PMX/CSV file here", ["ja"] = "PMX/CSVファイルをここにドロップ" },
+            ["DropFileHere"] = new() { ["en"] = "Drop PMX/CSV file here", ["ja"] = "ここにドロップ" },
 
             // 設定セクション
             ["ImportSettings"] = new() { ["en"] = "Import Settings", ["ja"] = "インポート設定" },
@@ -169,6 +170,8 @@ namespace Poly_Ling.PMX
         {
             EditorGUILayout.LabelField(T("File"), EditorStyles.boldLabel);
 
+            // テキストフィールド行全体をドロップエリアとして使用
+            Rect fieldRect;
             using (new EditorGUILayout.HorizontalScope())
             {
                 _lastFilePath = EditorGUILayout.TextField(T("PMXFile"), _lastFilePath);
@@ -188,34 +191,56 @@ namespace Poly_Ling.PMX
                     }
                 }
             }
-
-            // ドラッグ&ドロップ
-            var dropArea = GUILayoutUtility.GetRect(0, 40, GUILayout.ExpandWidth(true));
-            GUI.Box(dropArea, T("DragDropHere"), EditorStyles.helpBox);
-
-            Event evt = Event.current;
-            if (dropArea.Contains(evt.mousePosition))
+            
+            // 直前のHorizontalScopeのRectを取得してD&D処理
+            fieldRect = GUILayoutUtility.GetLastRect();
+            HandleFileDragAndDrop(fieldRect);
+            
+            // ドラッグ中のヒント表示
+            if (_isDraggingFile)
             {
-                switch (evt.type)
-                {
-                    case EventType.DragUpdated:
-                        if (IsPMXFile(DragAndDrop.paths))
-                        {
-                            DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-                            evt.Use();
-                        }
-                        break;
+                EditorGUILayout.HelpBox(T("DropFileHere"), MessageType.Info);
+            }
+        }
 
-                    case EventType.DragPerform:
-                        if (IsPMXFile(DragAndDrop.paths))
-                        {
-                            DragAndDrop.AcceptDrag();
-                            _lastFilePath = DragAndDrop.paths[0];
-                            LoadPreview();
-                            evt.Use();
-                        }
-                        break;
-                }
+        private bool _isDraggingFile = false;
+        
+        private void HandleFileDragAndDrop(Rect dropArea)
+        {
+            Event evt = Event.current;
+
+            switch (evt.type)
+            {
+                case EventType.DragUpdated:
+                    // PMX/CSVファイルがドラッグされているかチェック
+                    bool hasValidFile = IsPMXFile(DragAndDrop.paths);
+                    
+                    _isDraggingFile = hasValidFile;
+                    
+                    if (dropArea.Contains(evt.mousePosition) && hasValidFile)
+                    {
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                        evt.Use();
+                    }
+                    break;
+                    
+                case EventType.DragPerform:
+                    if (!dropArea.Contains(evt.mousePosition))
+                        return;
+                        
+                    if (IsPMXFile(DragAndDrop.paths))
+                    {
+                        DragAndDrop.AcceptDrag();
+                        _isDraggingFile = false;
+                        _lastFilePath = DragAndDrop.paths[0];
+                        LoadPreview();
+                        evt.Use();
+                    }
+                    break;
+                    
+                case EventType.DragExited:
+                    _isDraggingFile = false;
+                    break;
             }
         }
 
