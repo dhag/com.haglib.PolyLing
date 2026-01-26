@@ -53,38 +53,46 @@ namespace Poly_Ling.UndoSystem
         /// <summary>Undo/Redo時に復元すべきSelectionSnapshot</summary>
         public SelectionSnapshot CurrentSelectionSnapshot;
 
-        // === マテリアル（Phase 5: ModelContext に委譲） ===
+        // === マテリアル（ModelContext に委譲） ===
 
-        /// <summary>マテリアル委譲用ModelContextへの参照（マテリアル委譲用）</summary>
+        /// <summary>マテリアル委譲用ModelContextへの参照 - 必須</summary>
         public ModelContext MaterialOwner { get; set; }
 
-        /// <summary>フォールバック用マテリアルリスト（MaterialOwnerがない場合）</summary>
-        private List<Material> _fallbackMaterials = new List<Material>();
-        private int _fallbackMaterialIndex = 0;
-
-        /// <summary>マテリアルリスト（ModelContext.Materialsに委譲）</summary>
+        /// <summary>マテリアルリスト（ModelContextに委譲）</summary>
         public List<Material> Materials
         {
-            get => MaterialOwner?.Materials ?? _fallbackMaterials;
+            get
+            {
+                if (MaterialOwner == null)
+                {
+                    Debug.LogError("[MeshUndoContext] MaterialOwnerが設定されていません。");
+                    return new List<Material>();
+                }
+                return MaterialOwner.Materials;
+            }
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.Materials = value ?? new List<Material>();
-                else
-                    _fallbackMaterials = value ?? new List<Material>();
+                if (MaterialOwner == null)
+                {
+                    Debug.LogError("[MeshUndoContext] MaterialOwnerが設定されていません。");
+                    return;
+                }
+                MaterialOwner.Materials = value ?? new List<Material>();
             }
         }
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
         public int CurrentMaterialIndex
         {
-            get => MaterialOwner?.CurrentMaterialIndex ?? _fallbackMaterialIndex;
+            get => MaterialOwner?.CurrentMaterialIndex ?? 0;
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.CurrentMaterialIndex = value;
-                else
-                    _fallbackMaterialIndex = value;
+                if (MaterialOwner == null)
+                {
+                    Debug.LogError("[MeshUndoContext] MaterialOwnerが設定されていません。");
+                    return;
+                }
+                MaterialOwner.CurrentMaterialIndex = value;
             }
         }
 
@@ -154,7 +162,7 @@ namespace Poly_Ling.UndoSystem
             SelectedVertices = new HashSet<int>();
             SelectedFaces = new HashSet<int>();
             // Materials, DefaultMaterials は MaterialOwner 経由で取得
-            // MaterialOwner が null の場合は _fallbackMaterials を使用
+            // MaterialOwner は使用前に必ず設定すること
         }
 
         // === メッシュ読み込み/適用 ===

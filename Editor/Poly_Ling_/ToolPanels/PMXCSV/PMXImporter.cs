@@ -12,6 +12,7 @@ using UnityEditor;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
+using Poly_Ling.Materials;
 
 namespace Poly_Ling.PMX
 {
@@ -29,8 +30,27 @@ namespace Poly_Ling.PMX
         /// <summary>インポートされたMeshContextリスト</summary>
         public List<MeshContext> MeshContexts { get; } = new List<MeshContext>();
 
-        /// <summary>インポートされたマテリアルリスト</summary>
-        public List<Material> Materials { get; } = new List<Material>();
+        /// <summary>インポートされたマテリアル参照リスト（正式形式）</summary>
+        public List<MaterialReference> MaterialReferences { get; } = new List<MaterialReference>();
+
+        /// <summary>
+        /// インポートされたマテリアルリスト（MaterialReferencesから導出）
+        /// </summary>
+        public List<Material> Materials
+        {
+            get
+            {
+                var list = new List<Material>();
+                foreach (var matRef in MaterialReferences)
+                {
+                    list.Add(matRef?.Material);
+                }
+                return list;
+            }
+        }
+
+        /// <summary>マテリアル数</summary>
+        public int MaterialCount => MaterialReferences.Count;
 
         /// <summary>元のPMXドキュメント</summary>
         public PMXDocument Document { get; set; }
@@ -266,9 +286,10 @@ namespace Poly_Ling.PMX
                 foreach (var pmxMat in document.Materials)
                 {
                     var mat = ConvertMaterial(pmxMat, document, settings);
-                    result.Materials.Add(mat);
+                    // MaterialReferenceでラップして追加
+                    result.MaterialReferences.Add(new MaterialReference(mat));
                 }
-                Debug.Log($"[PMXImporter] Imported {result.Materials.Count} materials");
+                Debug.Log($"[PMXImporter] Imported {result.MaterialCount} materials");
             }
 
             // ボーンをインポート（メッシュより先に追加）

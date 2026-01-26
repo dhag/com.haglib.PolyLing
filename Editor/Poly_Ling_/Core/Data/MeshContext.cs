@@ -596,61 +596,75 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
-        // マテリアル（後方互換用 - ModelContext への委譲）
+        // マテリアル（ModelContext への委譲）
         // ================================================================
-        // Phase 1: Materials は ModelContext に集約されたが、
-        // 外部ファイル（MQOImporter等）との互換性のため委譲プロパティを維持
+        // マテリアルはModelContextで一元管理
+        // MeshContextはMaterialOwner経由でアクセス
 
-        /// <summary>親ModelContextへの参照（マテリアル取得用）</summary>
+        /// <summary>親ModelContextへの参照（マテリアル取得用）- 必須</summary>
         internal Poly_Ling.Model.ModelContext MaterialOwner { get; set; }
 
-        /// <summary>フォールバック用マテリアルリスト（MaterialOwnerがない場合）</summary>
-        private List<Material> _fallbackMaterials = new List<Material> { null };
-        private int _fallbackMaterialIndex = 0;
-
-        /// <summary>マテリアルリスト（後方互換）</summary>
+        /// <summary>マテリアルリスト（ModelContextに委譲）</summary>
         public List<Material> Materials
         {
-            get => MaterialOwner?.Materials ?? _fallbackMaterials;
+            get
+            {
+                if (MaterialOwner == null)
+                {
+                    Debug.LogError("[MeshContext] MaterialOwnerが設定されていません。ModelContext.Add()で追加してください。");
+                    return new List<Material> { null };
+                }
+                return MaterialOwner.Materials;
+            }
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.Materials = value;
-                else
-                    _fallbackMaterials = value ?? new List<Material> { null };
+                if (MaterialOwner == null)
+                {
+                    Debug.LogError("[MeshContext] MaterialOwnerが設定されていません。");
+                    return;
+                }
+                MaterialOwner.Materials = value;
             }
         }
 
-        /// <summary>現在選択中のマテリアルインデックス（後方互換）</summary>
+        /// <summary>現在選択中のマテリアルインデックス（ModelContextに委譲）</summary>
         public int CurrentMaterialIndex
         {
-            get => MaterialOwner?.CurrentMaterialIndex ?? _fallbackMaterialIndex;
+            get
+            {
+                if (MaterialOwner == null) return 0;
+                return MaterialOwner.CurrentMaterialIndex;
+            }
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.CurrentMaterialIndex = value;
-                else
-                    _fallbackMaterialIndex = value;
+                if (MaterialOwner == null)
+                {
+                    Debug.LogError("[MeshContext] MaterialOwnerが設定されていません。");
+                    return;
+                }
+                MaterialOwner.CurrentMaterialIndex = value;
             }
         }
 
-        /// <summary>サブメッシュ数（後方互換）</summary>
-        public int SubMeshCount => Materials?.Count ?? 1;
+        /// <summary>サブメッシュ数</summary>
+        public int SubMeshCount => MaterialOwner?.Materials?.Count ?? 1;
 
-        /// <summary>現在選択中のマテリアルを取得（後方互換）</summary>
+        /// <summary>現在選択中のマテリアルを取得</summary>
         public Material GetCurrentMaterial()
         {
-            var mats = Materials;
-            int idx = CurrentMaterialIndex;
+            if (MaterialOwner == null) return null;
+            var mats = MaterialOwner.Materials;
+            int idx = MaterialOwner.CurrentMaterialIndex;
             if (idx >= 0 && idx < mats.Count)
                 return mats[idx];
             return null;
         }
 
-        /// <summary>指定スロットのマテリアルを取得（後方互換）</summary>
+        /// <summary>指定スロットのマテリアルを取得</summary>
         public Material GetMaterial(int index)
         {
-            var mats = Materials;
+            if (MaterialOwner == null) return null;
+            var mats = MaterialOwner.Materials;
             if (index >= 0 && index < mats.Count)
                 return mats[index];
             return null;

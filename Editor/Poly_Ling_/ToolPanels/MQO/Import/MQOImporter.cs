@@ -34,11 +34,28 @@ namespace Poly_Ling.MQO
         /// <summary>インポートされたボーンMeshContextリスト</summary>
         public List<MeshContext> BoneMeshContexts { get; } = new List<MeshContext>();
 
-        /// <summary>インポートされたマテリアルリスト</summary>
-        public List<Material> Materials { get; } = new List<Material>();
-
-        /// <summary>インポートされたマテリアル参照リスト（ソースパス情報付き）</summary>
+        /// <summary>インポートされたマテリアル参照リスト（正式形式）</summary>
         public List<MaterialReference> MaterialReferences { get; } = new List<MaterialReference>();
+
+        /// <summary>
+        /// インポートされたマテリアルリスト（MaterialReferencesから導出）
+        /// </summary>
+        /// <remarks>新規コードではMaterialReferencesを使用してください</remarks>
+        public List<Material> Materials
+        {
+            get
+            {
+                var list = new List<Material>();
+                foreach (var matRef in MaterialReferences)
+                {
+                    list.Add(matRef?.Material);
+                }
+                return list;
+            }
+        }
+
+        /// <summary>マテリアル数</summary>
+        public int MaterialCount => MaterialReferences.Count;
 
         /// <summary>
         /// ミラー側マテリアルのオフセット
@@ -266,12 +283,11 @@ namespace Poly_Ling.MQO
                 foreach (var mqoMat in document.Materials)
                 {
                     var matRef = ConvertMaterialToRef(mqoMat, settings);
-                    result.Materials.Add(matRef.Material);
                     result.MaterialReferences.Add(matRef);
                 }
 
                 // ミラー側マテリアルオフセットを記録
-                result.MirrorMaterialOffset = result.Materials.Count;
+                result.MirrorMaterialOffset = result.MaterialCount;
 
                 // ミラー側マテリアル（実体側を複製、名前に"+"を付加、ソースパスを引き継ぐ）
                 foreach (var mqoMat in document.Materials)
@@ -279,12 +295,11 @@ namespace Poly_Ling.MQO
                     var matRef = ConvertMaterialToRef(mqoMat, settings);
                     matRef.Data.Name = matRef.Data.Name + "+";
                     matRef.Material.name = matRef.Data.Name;
-                    result.Materials.Add(matRef.Material);
                     result.MaterialReferences.Add(matRef);
                 }
 
-                result.Stats.MaterialCount = result.Materials.Count;
-                Debug.Log($"[MQOImporter] Materials: {result.MirrorMaterialOffset} original + {result.MirrorMaterialOffset} mirror = {result.Materials.Count} total");
+                result.Stats.MaterialCount = result.MaterialCount;
+                Debug.Log($"[MQOImporter] Materials: {result.MirrorMaterialOffset} original + {result.MirrorMaterialOffset} mirror = {result.MaterialCount} total");
             }
 
             // ボーンCSVを先にロード

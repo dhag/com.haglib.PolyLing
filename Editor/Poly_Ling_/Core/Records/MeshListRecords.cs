@@ -164,8 +164,8 @@ namespace Poly_Ling.UndoSystem
             var meshContext = new MeshContext
             {
                 MeshObject = Data?.Clone(),
-                Materials = new List<Material>(),
-                CurrentMaterialIndex = CurrentMaterialIndex,
+                // 注: Materials はModelContextで管理されるため、ここでは設定しない
+                // MaterialOwnerはModelContext.Add()時に設定される
                 BoneTransform = BoneTransform != null ? new BoneTransform(BoneTransform) : null,
                 OriginalPositions = OriginalPositions != null 
                     ? (Vector3[])OriginalPositions.Clone() 
@@ -187,31 +187,10 @@ namespace Poly_Ling.UndoSystem
             // 名前を設定（MeshObjectに反映）
             meshContext.Name = Name;
 
-            // マテリアルを復元
-            if (MaterialPaths != null)
-            {
-                for (int i = 0; i < MaterialPaths.Count; i++)
-                {
-                    Material mat = null;
-                    string path = MaterialPaths[i];
-
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
-                    }
-                    else if (RuntimeMaterials != null && i < RuntimeMaterials.Count)
-                    {
-                        mat = RuntimeMaterials[i];
-                    }
-
-                    meshContext.Materials.Add(mat);
-                }
-            }
-
-            if (meshContext.Materials.Count == 0)
-            {
-                meshContext.Materials.Add(null);
-            }
+            // 注: マテリアル情報はModelContextで一元管理されるため、
+            // MeshContextSnapshotからのマテリアル復元は行わない
+            // MaterialPaths, RuntimeMaterials, CurrentMaterialIndex は
+            // ModelContextのスナップショットで管理される
 
             if (meshContext.MeshObject != null)
             {

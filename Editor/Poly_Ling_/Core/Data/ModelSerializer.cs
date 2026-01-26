@@ -90,23 +90,8 @@ namespace Poly_Ling.Serialization
                 meshDTO.selectedVertices = selectedVertices.ToList();
             }
 
-            // Materials（アセットパスとして保存）
-            if (materials != null)
-            {
-                foreach (var mat in materials)
-                {
-                    if (mat != null)
-                    {
-                        string assetPath = AssetDatabase.GetAssetPath(mat);
-                        meshDTO.materialPathList.Add(assetPath ?? "");
-                    }
-                    else
-                    {
-                        meshDTO.materialPathList.Add("");  // null は空文字列
-                    }
-                }
-            }
-
+            // 注: materialPathList への書き込みは廃止
+            // マテリアルは ModelDTO.materialReferences で一元管理
             meshDTO.currentMaterialIndex = currentMaterialIndex;
 
             return meshDTO;
@@ -199,41 +184,15 @@ namespace Poly_Ling.Serialization
         /// <summary>
         /// マテリアルリストを復元
         /// </summary>
+        /// <remarks>
+        /// [廃止] MeshDTO.materialPathList形式は廃止されました。
+        /// マテリアルはModelDTO.materialReferencesで一元管理されます。
+        /// </remarks>
+        [System.Obsolete("MeshDTO.materialPathList形式は廃止されました。ModelDTO.materialReferencesを使用してください。")]
         public static List<Material> ToMaterials(MeshDTO meshDTO)
         {
-            var result = new List<Material>();
-
-            if (meshDTO?.materialPathList == null || meshDTO.materialPathList.Count == 0)
-            {
-                // デフォルトでスロット0を追加
-                result.Add(null);
-                return result;
-            }
-
-            foreach (var path in meshDTO.materialPathList)
-            {
-                if (string.IsNullOrEmpty(path))
-                {
-                    result.Add(null);
-                }
-                else
-                {
-                    var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-                    if (mat == null)
-                    {
-                        Debug.LogWarning($"[ModelSerializer] Material not found: {path}");
-                    }
-                    result.Add(mat);  // 見つからなくてもnullで追加
-                }
-            }
-
-            // 空にならないように最低1つ確保
-            if (result.Count == 0)
-            {
-                result.Add(null);
-            }
-
-            return result;
+            Debug.LogWarning("[ModelSerializer] ToMaterials()は廃止されました。");
+            return new List<Material> { null };
         }
 
         /// <summary>
@@ -360,9 +319,7 @@ namespace Poly_Ling.Serialization
                 {
                     var dto = ToMaterialReferenceDTO(matRef);
                     modelDTO.materialReferences.Add(dto);
-
-                    // 後方互換用: パスも保存
-                    modelDTO.materials.Add(dto?.assetPath ?? "");
+                    // 注: 旧形式(materials)への書き込みは廃止
                 }
             }
             modelDTO.currentMaterialIndex = model.CurrentMaterialIndex;
@@ -374,9 +331,7 @@ namespace Poly_Ling.Serialization
                 {
                     var dto = ToMaterialReferenceDTO(matRef);
                     modelDTO.defaultMaterialReferences.Add(dto);
-
-                    // 後方互換用: パスも保存
-                    modelDTO.defaultMaterials.Add(dto?.assetPath ?? "");
+                    // 注: 旧形式(defaultMaterials)への書き込みは廃止
                 }
             }
             modelDTO.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
@@ -465,7 +420,7 @@ namespace Poly_Ling.Serialization
             // Materials 復元（Phase 1: モデル単位に集約）
             // ================================================================
 
-            // 新形式: materialReferences から復元（優先）
+            // 新形式: materialReferences から復元
             if (modelDTO.materialReferences != null && modelDTO.materialReferences.Count > 0)
             {
                 var matRefs = new List<MaterialReference>();
@@ -476,30 +431,18 @@ namespace Poly_Ling.Serialization
                 model.MaterialReferences = matRefs;
                 model.CurrentMaterialIndex = modelDTO.currentMaterialIndex;
             }
-            // 旧形式: materials（パスのみ）から復元
-            else if (modelDTO.materials != null && modelDTO.materials.Count > 0)
+            // 旧形式・最古形式は廃止: デフォルトマテリアルで初期化
+            else
             {
-                var matRefs = new List<MaterialReference>();
-                foreach (var path in modelDTO.materials)
+                // 旧形式のデータがあれば警告
+                if ((modelDTO.materials != null && modelDTO.materials.Count > 0) ||
+                    (modelDTO.meshDTOList.Count > 0 && modelDTO.meshDTOList[0].materialPathList?.Count > 0))
                 {
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        matRefs.Add(new MaterialReference(path));
-                    }
-                    else
-                    {
-                        matRefs.Add(new MaterialReference());
-                    }
+                    Debug.LogWarning("[ModelSerializer] 旧形式のマテリアルデータは廃止されました。デフォルトマテリアルで初期化します。");
                 }
-                model.MaterialReferences = matRefs;
-                model.CurrentMaterialIndex = modelDTO.currentMaterialIndex;
-            }
-            // 最古形式: MeshDTO.materialPathList から復元（後方互換）
-            else if (modelDTO.meshDTOList.Count > 0)
-            {
-                var firstMeshData = modelDTO.meshDTOList[0];
-                model.Materials = ToMaterials(firstMeshData);
-                model.CurrentMaterialIndex = firstMeshData.currentMaterialIndex;
+                // デフォルトのマテリアル参照を設定
+                model.MaterialReferences = new List<MaterialReference> { new MaterialReference() };
+                model.CurrentMaterialIndex = 0;
             }
 
             // DefaultMaterialReferences 復元
@@ -514,23 +457,15 @@ namespace Poly_Ling.Serialization
                 model.DefaultCurrentMaterialIndex = modelDTO.defaultCurrentMaterialIndex;
                 model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;
             }
-            // 旧形式から復元
-            else if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
+            // 旧形式は廃止: デフォルト値で初期化
+            else
             {
-                var matRefs = new List<MaterialReference>();
-                foreach (var path in modelDTO.defaultMaterials)
+                if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
                 {
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        matRefs.Add(new MaterialReference(path));
-                    }
-                    else
-                    {
-                        matRefs.Add(new MaterialReference());
-                    }
+                    Debug.LogWarning("[ModelSerializer] 旧形式のデフォルトマテリアルデータは廃止されました。");
                 }
-                model.DefaultMaterialReferences = matRefs;
-                model.DefaultCurrentMaterialIndex = modelDTO.defaultCurrentMaterialIndex;
+                model.DefaultMaterialReferences = new List<MaterialReference> { new MaterialReference() };
+                model.DefaultCurrentMaterialIndex = 0;
                 model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;
             }
 

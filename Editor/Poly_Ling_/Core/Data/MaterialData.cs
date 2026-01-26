@@ -41,13 +41,17 @@ namespace Poly_Ling.Materials
     }
 
     /// <summary>
-    /// カリングモード
+    /// カリングモード（面の表示設定）
+    /// 値はUnityEngine.Rendering.CullModeと一致
     /// </summary>
     public enum CullModeType
     {
-        Both = 0,    // Off
-        Back = 1,    // Back (default)
-        Front = 2    // Front
+        /// <summary>両面表示（カリングなし）</summary>
+        Off = 0,
+        /// <summary>裏面のみ表示（表面をカリング）- 特殊用途</summary>
+        Front = 1,
+        /// <summary>表面のみ表示（裏面をカリング）- デフォルト、最も一般的</summary>
+        Back = 2
     }
 
     /// <summary>

@@ -38,13 +38,15 @@ namespace Poly_Ling.Serialization
         // マテリアル（Phase 1: モデル単位に集約）
         // ================================================================
 
-        /// <summary>マテリアルリスト（アセットパス）- 後方互換用</summary>
+        /// <summary>[廃止] マテリアルリスト（アセットパス）- 読み込み時に警告を出力</summary>
+        [System.Obsolete("materialReferencesを使用してください")]
         public List<string> materials = new List<string>();
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
         public int currentMaterialIndex = 0;
 
-        /// <summary>デフォルトマテリアルリスト（アセットパス）- 後方互換用</summary>
+        /// <summary>[廃止] デフォルトマテリアルリスト（アセットパス）- 読み込み時に警告を出力</summary>
+        [System.Obsolete("defaultMaterialReferencesを使用してください")]
         public List<string> defaultMaterials = new List<string>();
 
         /// <summary>デフォルトマテリアルインデックス</summary>
@@ -123,13 +125,16 @@ namespace Poly_Ling.Serialization
         public List<SelectionSetDTO> selectionSets = new List<SelectionSetDTO>();
 
         // ================================================================
-        // マテリアル
+        // マテリアル [廃止セクション]
+        // マテリアルはModelDTO.materialReferencesで一元管理されます
         // ================================================================
 
-        /// <summary>マテリアルリスト（アセットパス）</summary>
+        /// <summary>[廃止] マテリアルリスト - ModelDTO.materialReferencesを使用してください</summary>
+        [System.Obsolete("ModelDTO.materialReferencesを使用してください")]
         public List<string> materialPathList = new List<string>();
 
-        /// <summary>現在選択中のマテリアルインデックス</summary>
+        /// <summary>[廃止] 現在選択中のマテリアルインデックス</summary>
+        [System.Obsolete("ModelDTO.currentMaterialIndexを使用してください")]
         public int currentMaterialIndex = 0;
 
         // ================================================================
@@ -640,7 +645,7 @@ namespace Poly_Ling.Serialization
         // レンダリング設定
         public int surface = 0;        // SurfaceType
         public int blendMode = 0;      // BlendModeType
-        public int cullMode = 1;       // CullModeType
+        public int cullMode = 2;       // CullModeType.Back（表面のみ表示）
         public bool alphaClipEnabled = false;
         public float alphaCutoff = 0.5f;
     }
