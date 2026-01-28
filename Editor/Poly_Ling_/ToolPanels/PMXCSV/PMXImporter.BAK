@@ -13,7 +13,6 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
 using Poly_Ling.Materials;
-using Poly_Ling.Core;
 
 namespace Poly_Ling.PMX
 {
@@ -97,7 +96,7 @@ namespace Poly_Ling.PMX
             foreach (var meshContext in MeshContexts)
             {
                 if (meshContext?.MeshObject == null) continue;
-
+                
                 // ボーンタイプの場合はBoneWeightを持たない
                 if (meshContext.Type == MeshType.Bone) continue;
 
@@ -138,7 +137,7 @@ namespace Poly_Ling.PMX
             foreach (var meshContext in MeshContexts)
             {
                 if (meshContext == null) continue;
-
+                
                 // ボーンの親インデックスにオフセットを適用
                 if (meshContext.Type == MeshType.Bone && meshContext.HierarchyParentIndex >= 0)
                 {
@@ -366,20 +365,6 @@ namespace Poly_Ling.PMX
                 Debug.Log($"[PMXImporter] Imported {result.Stats.MeshCount} mesh contexts");
             }
 
-            // Tポーズ変換（メッシュ作成後に実行）
-            if (settings.ConvertToTPose && settings.ShouldImportBones && document.Bones.Count > 0)
-            {
-                // ボーン名からインデックスへのマッピングを再構築
-                var boneNameToIndex = new Dictionary<string, int>();
-                for (int i = 0; i < document.Bones.Count; i++)
-                {
-                    boneNameToIndex[document.Bones[i].Name] = i;
-                }
-
-                ConvertToTPose(result.MeshContexts, document, boneNameToIndex, settings);
-                Debug.Log($"[PMXImporter] Converted to T-Pose");
-            }
-
             // TODO: 剛体をインポート（将来実装）
             if (settings.ShouldImportBodies && document.RigidBodies.Count > 0)
             {
@@ -458,6 +443,13 @@ namespace Poly_Ling.PMX
                 // デバッグ：親子関係と回転を確認
                 bool hasLocalAxis = (pmxBone.Flags & 0x0800) != 0;
                 Debug.Log($"[PMXImporter] Bone[{i}] '{pmxBone.Name}' -> Parent='{pmxBone.ParentBoneName}' -> HierarchyParentIndex={meshContext.HierarchyParentIndex}, HasLocalAxis={hasLocalAxis}");
+            }
+
+            // Tポーズ変換（オプション）
+            if (settings.ConvertToTPose)
+            {
+                ConvertToTPose(result.MeshContexts, document, boneNameToIndex, settings);
+                Debug.Log($"[PMXImporter] Converted to T-Pose");
             }
 
             Debug.Log($"[PMXImporter] Imported {document.Bones.Count} bones");
@@ -606,7 +598,6 @@ namespace Poly_Ling.PMX
 
         /// <summary>
         /// AポーズをTポーズに変換
-        /// GPU処理を使用してスキニング変換を適用
         /// </summary>
         private static void ConvertToTPose(
             List<MeshContext> meshContexts,
@@ -614,33 +605,17 @@ namespace Poly_Ling.PMX
             Dictionary<string, int> boneNameToIndex,
             PMXImportSettings settings)
         {
-            // Step 1: 左右の腕ボーンの回転を補正
-            ApplyArmRotationCorrection(meshContexts, document, boneNameToIndex, settings, true);  // 左
-            ApplyArmRotationCorrection(meshContexts, document, boneNameToIndex, settings, false); // 右
-
-            // Step 2: 全ボーンのWorldMatrixを再計算してMeshContextに設定
-            var worldMatrices = CalculateWorldMatrices(meshContexts);
-            foreach (var kv in worldMatrices)
-            {
-                meshContexts[kv.Key].WorldMatrix = kv.Value;
-            }
-
-            // Step 3: GPU処理で頂点座標をスキニング変換
-            BakeSkinnedVertices(meshContexts);
-
-            // Step 4: 全ボーンのBindPoseを新WorldMatrixの逆行列に更新
-            foreach (var kv in worldMatrices)
-            {
-                meshContexts[kv.Key].BindPose = kv.Value.inverse;
-            }
-
-            Debug.Log($"[PMXImporter] T-Pose conversion completed");
+            // 左腕の変換
+            ConvertArmToTPose(meshContexts, document, boneNameToIndex, settings, true);
+            
+            // 右腕の変換
+            ConvertArmToTPose(meshContexts, document, boneNameToIndex, settings, false);
         }
 
         /// <summary>
-        /// 腕ボーンの回転補正を適用（頂点変換なし）
+        /// 片腕をTポーズに変換
         /// </summary>
-        private static void ApplyArmRotationCorrection(
+        private static void ConvertArmToTPose(
             List<MeshContext> meshContexts,
             PMXDocument document,
             Dictionary<string, int> boneNameToIndex,
@@ -648,15 +623,16 @@ namespace Poly_Ling.PMX
             bool isLeft)
         {
             string[] armBoneNames = isLeft ? LeftArmBoneNames : RightArmBoneNames;
+            string[] fingerBoneNames = isLeft ? LeftFingerBoneNames : RightFingerBoneNames;
             string sideName = isLeft ? "Left" : "Right";
 
             // UpperArm（腕）とLowerArm（ひじ）のインデックスを取得
-            if (!boneNameToIndex.TryGetValue(armBoneNames[1], out int upperArmIndex))
+            if (!boneNameToIndex.TryGetValue(armBoneNames[1], out int upperArmIndex)) // 左腕/右腕
             {
                 Debug.LogWarning($"[PMXImporter] T-Pose: {sideName} UpperArm not found");
                 return;
             }
-            if (!boneNameToIndex.TryGetValue(armBoneNames[2], out int lowerArmIndex))
+            if (!boneNameToIndex.TryGetValue(armBoneNames[2], out int lowerArmIndex)) // 左ひじ/右ひじ
             {
                 Debug.LogWarning($"[PMXImporter] T-Pose: {sideName} LowerArm not found");
                 return;
@@ -668,12 +644,7 @@ namespace Poly_Ling.PMX
             Vector3 currentDirection = (lowerArmPos - upperArmPos).normalized;
 
             // 目標方向（水平・外向き）
-            // PMXの「左腕」はキャラ視点で左 = カメラから見て右 = X+方向
-            // PMXの「右腕」はキャラ視点で右 = カメラから見て左 = X-方向
-            Vector3 targetDirection = isLeft ? Vector3.right : Vector3.left;
-
-            Debug.Log($"[PMXImporter] T-Pose: {sideName} arm - upperArmPos={upperArmPos}, lowerArmPos={lowerArmPos}");
-            Debug.Log($"[PMXImporter] T-Pose: {sideName} arm - currentDirection={currentDirection}, targetDirection={targetDirection}");
+            Vector3 targetDirection = isLeft ? Vector3.left : Vector3.right;
 
             // 現在の方向と目標方向が近い場合はスキップ
             float angle = Vector3.Angle(currentDirection, targetDirection);
@@ -683,87 +654,51 @@ namespace Poly_Ling.PMX
                 return;
             }
 
-            // 補正回転を計算・適用
+            // 補正回転を計算
             Quaternion correction = Quaternion.FromToRotation(currentDirection, targetDirection);
-            Debug.Log($"[PMXImporter] T-Pose: {sideName} arm correction angle={angle:F1}°, correction={correction.eulerAngles}");
+            Debug.Log($"[PMXImporter] T-Pose: {sideName} arm correction angle={angle:F1}°");
 
+            // UpperArmのBoneTransformに補正を適用
             var upperArmContext = meshContexts[upperArmIndex];
             if (upperArmContext?.BoneTransform != null)
             {
+                // 現在のローカル回転に補正を適用
                 Quaternion currentRotation = Quaternion.Euler(upperArmContext.BoneTransform.Rotation);
                 Quaternion newRotation = correction * currentRotation;
-                Debug.Log($"[PMXImporter] T-Pose: {sideName} arm rotation: {upperArmContext.BoneTransform.Rotation} -> {newRotation.eulerAngles}");
                 upperArmContext.BoneTransform.Rotation = newRotation.eulerAngles;
             }
-        }
 
-        /// <summary>
-        /// GPU処理を使用してスキンドメッシュの頂点座標をベイク
-        /// </summary>
-        private static void BakeSkinnedVertices(List<MeshContext> meshContexts)
-        {
-            using (var bufferManager = new UnifiedBufferManager())
+            // ワールド変換行列を再計算（親子関係を考慮）
+            var worldMatrices = CalculateWorldMatrices(meshContexts);
+
+            // 腕系統全てのBindPoseを再計算
+            var allArmBones = new List<int>();
+            
+            // 肩から手首まで
+            foreach (var boneName in armBoneNames)
             {
-                bufferManager.Initialize();
-                bufferManager.BuildFromMeshContexts(meshContexts);
-                bufferManager.UpdateTransformMatrices(meshContexts, useWorldTransform: true);
-                bufferManager.DispatchTransformVertices(useWorldTransform: true, transformNormals: false, readbackToCPU: true);
+                if (boneNameToIndex.TryGetValue(boneName, out int idx))
+                    allArmBones.Add(idx);
+            }
+            
+            // 指
+            foreach (var boneName in fingerBoneNames)
+            {
+                if (boneNameToIndex.TryGetValue(boneName, out int idx))
+                    allArmBones.Add(idx);
+            }
 
-                var worldPositions = bufferManager.GetWorldPositions();
-                if (worldPositions == null || worldPositions.Length == 0)
+            // BindPose再計算
+            foreach (int boneIndex in allArmBones)
+            {
+                if (boneIndex >= 0 && boneIndex < meshContexts.Count)
                 {
-                    Debug.LogWarning("[PMXImporter] T-Pose: Failed to get world positions from GPU");
-                    return;
-                }
-
-                var meshInfos = bufferManager.MeshInfos;
-                if (meshInfos == null)
-                {
-                    Debug.LogWarning("[PMXImporter] T-Pose: MeshInfos is null");
-                    return;
-                }
-
-                Debug.Log($"[PMXImporter] T-Pose: worldPositions.Length={worldPositions.Length}, meshInfos.Length={meshInfos.Length}");
-
-                // 各メッシュの頂点座標を書き戻し
-                int bakedMeshCount = 0;
-                int bakedVertexCount = 0;
-                for (int ctxIdx = 0; ctxIdx < meshContexts.Count; ctxIdx++)
-                {
-                    var ctx = meshContexts[ctxIdx];
-                    if (ctx?.MeshObject == null)
-                        continue;
-
-                    // ボーンはスキップ
-                    if (ctx.Type == MeshType.Bone)
-                        continue;
-
-                    int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
-                    if (unifiedMeshIdx < 0 || unifiedMeshIdx >= meshInfos.Length)
+                    var ctx = meshContexts[boneIndex];
+                    if (ctx != null && worldMatrices.TryGetValue(boneIndex, out Matrix4x4 worldMatrix))
                     {
-                        Debug.LogWarning($"[PMXImporter] T-Pose: Mesh '{ctx.Name}' not found in buffer (ctxIdx={ctxIdx}, unifiedMeshIdx={unifiedMeshIdx})");
-                        continue;
+                        ctx.BindPose = worldMatrix.inverse;
                     }
-
-                    var meshInfo = meshInfos[unifiedMeshIdx];
-                    int vertexStart = (int)meshInfo.VertexStart;
-                    int vertexCount = ctx.MeshObject.VertexCount;
-
-                    Debug.Log($"[PMXImporter] T-Pose: Baking mesh '{ctx.Name}' vertexStart={vertexStart}, vertexCount={vertexCount}, IsSkinned={ctx.MeshObject.IsSkinned}");
-
-                    for (int i = 0; i < vertexCount && (vertexStart + i) < worldPositions.Length; i++)
-                    {
-                        ctx.MeshObject.Vertices[i].Position = worldPositions[vertexStart + i];
-                    }
-
-                    // UnityMeshを再生成して表示を更新
-                    ctx.UnityMesh = ctx.MeshObject.ToUnityMesh();
-
-                    bakedMeshCount++;
-                    bakedVertexCount += vertexCount;
                 }
-
-                Debug.Log($"[PMXImporter] T-Pose: Baked {bakedMeshCount} meshes, {bakedVertexCount} vertices using GPU");
             }
         }
 
@@ -858,11 +793,11 @@ namespace Poly_Ling.PMX
             {
                 Vector3 parentWorldPos = boneWorldPositions[parentIndex];
                 Quaternion parentModelRotation = boneModelRotations[parentIndex];
-
+                
                 // ワールド空間での差分を親のローカル座標系に変換
                 Vector3 worldOffset = worldPosition - parentWorldPos;
                 localPosition = Quaternion.Inverse(parentModelRotation) * worldOffset;
-
+                
                 // 親からの相対回転
                 localRotation = Quaternion.Inverse(parentModelRotation) * modelRotation;
             }
@@ -1384,7 +1319,7 @@ namespace Poly_Ling.PMX
             // キーワード設定（URP）
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-
+            
             // Standard Shader用キーワード
             material.EnableKeyword("_ALPHABLEND_ON");
             material.DisableKeyword("_ALPHATEST_ON");
@@ -1470,7 +1405,7 @@ namespace Poly_Ling.PMX
             {
                 string fileName = Path.GetFileName(normalizedPath);
                 string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-
+                
                 // baseDirをAssets/形式に変換
                 string searchFolder = normalizedBaseDir;
                 if (!searchFolder.StartsWith("Assets/"))
@@ -1482,7 +1417,7 @@ namespace Poly_Ling.PMX
                     }
                 }
 
-                string[] guids = AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}",
+                string[] guids = AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}", 
                     new[] { searchFolder });
                 foreach (var guid in guids)
                 {

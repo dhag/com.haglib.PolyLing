@@ -401,6 +401,16 @@ namespace Poly_Ling.Model
         public SymmetrySettings SymmetrySettings { get; } = new SymmetrySettings();
 
         // ================================================================
+        // Humanoidボーンマッピング
+        // ================================================================
+
+        /// <summary>Humanoid Avatar用のボーンマッピング</summary>
+        private HumanoidBoneMapping _humanoidMapping = new HumanoidBoneMapping();
+
+        /// <summary>Humanoidボーンマッピング</summary>
+        public HumanoidBoneMapping HumanoidMapping => _humanoidMapping;
+
+        // ================================================================
         // コンストラクタ
         // ================================================================
 
@@ -639,6 +649,7 @@ namespace Poly_Ling.Model
             IsDirty = false;
             WorkPlane?.Reset();
             SymmetrySettings?.Reset();
+            _humanoidMapping?.ClearAll();
         }
 
         // ================================================================

@@ -65,6 +65,16 @@ namespace Poly_Ling.Serialization
         /// <summary>デフォルトマテリアル参照リスト</summary>
         public List<MaterialReferenceDTO> defaultMaterialReferences = new List<MaterialReferenceDTO>();
 
+        // ================================================================
+        // Humanoidボーンマッピング
+        // ================================================================
+
+        /// <summary>
+        /// Humanoidボーンマッピング
+        /// Unity Humanoid名 → ボーンインデックス（MeshContextListのインデックス）
+        /// </summary>
+        public Dictionary<string, int> humanoidBoneMapping = new Dictionary<string, int>();
+
         // === ファクトリメソッド ===
 
         public static ModelDTO Create(string modelName)

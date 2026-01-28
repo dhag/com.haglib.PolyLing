@@ -103,6 +103,10 @@ namespace Poly_Ling.PMX
         [Tooltip("PMXマテリアルをUnityマテリアルに変換する")]
         public bool ImportMaterials = true;
 
+        /// <summary>Tポーズに変換（Humanoid Avatar用）</summary>
+        [Tooltip("AポーズをTポーズに変換する（Mecanimアニメーション用）")]
+        public bool ConvertToTPose = false;
+
         // ================================================================
         // 詳細設定
         // ================================================================
@@ -171,6 +175,7 @@ namespace Poly_Ling.PMX
                 FlipZ = this.FlipZ,
                 FlipUV_V = this.FlipUV_V,
                 ImportMaterials = this.ImportMaterials,
+                ConvertToTPose = this.ConvertToTPose,
                 RecalculateNormals = this.RecalculateNormals,
                 SmoothingAngle = this.SmoothingAngle
             };
@@ -187,6 +192,7 @@ namespace Poly_Ling.PMX
                    FlipZ != o.FlipZ ||
                    FlipUV_V != o.FlipUV_V ||
                    ImportMaterials != o.ImportMaterials ||
+                   ConvertToTPose != o.ConvertToTPose ||
                    RecalculateNormals != o.RecalculateNormals ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle);
         }
@@ -202,6 +208,7 @@ namespace Poly_Ling.PMX
             FlipZ = o.FlipZ;
             FlipUV_V = o.FlipUV_V;
             ImportMaterials = o.ImportMaterials;
+            ConvertToTPose = o.ConvertToTPose;
             RecalculateNormals = o.RecalculateNormals;
             SmoothingAngle = o.SmoothingAngle;
         }

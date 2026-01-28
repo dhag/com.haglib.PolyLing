@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -483,6 +484,272 @@ namespace Poly_Ling.MISC
         {
             if (t.parent == null) return t.name;
             return GetTransformPath(t.parent) + "/" + t.name;
+        }
+
+        // ================================================================
+        // 静的メソッド: 外部からAvatar生成を呼び出すためのAPI
+        // ================================================================
+
+        /// <summary>
+        /// Humanoid Avatarを生成して保存
+        /// </summary>
+        /// <param name="rootObject">ルートGameObject（Armatureの親）</param>
+        /// <param name="boneMapping">Unity Humanoid名 → Transform のマッピング</param>
+        /// <param name="savePath">保存先パス（Assets/.../*.asset）</param>
+        /// <returns>生成されたAvatar（失敗時はnull）</returns>
+        public static Avatar BuildAndSaveAvatar(
+            GameObject rootObject,
+            Dictionary<string, Transform> boneMapping,
+            string savePath)
+        {
+            if (rootObject == null || boneMapping == null || boneMapping.Count == 0)
+            {
+                Debug.LogError("[AvatarCreator] Invalid parameters for BuildAndSaveAvatar");
+                return null;
+            }
+
+            try
+            {
+                // SkeletonBone配列を作成（全Transform）
+                var allTransforms = rootObject.GetComponentsInChildren<Transform>(true);
+                var skeletonBones = new List<SkeletonBone>();
+                var skeletonNames = new HashSet<string>();
+
+                Debug.Log($"[AvatarCreator] Building skeleton from {allTransforms.Length} transforms, root: {rootObject.name}");
+
+                foreach (var t in allTransforms)
+                {
+                    var skeletonBone = new SkeletonBone
+                    {
+                        name = t.name,
+                        position = t.localPosition,
+                        rotation = t.localRotation,
+                        scale = t.localScale
+                    };
+                    skeletonBones.Add(skeletonBone);
+                    skeletonNames.Add(t.name);
+                }
+
+                // 有効なボーンマッピングをフィルタリング
+                var validBoneMapping = new Dictionary<string, Transform>();
+                var skippedBones = new List<string>();
+
+                foreach (var kvp in boneMapping)
+                {
+                    string unityName = kvp.Key;
+                    Transform boneTransform = kvp.Value;
+
+                    // 無効なTransformをスキップ
+                    if (boneTransform == null)
+                    {
+                        skippedBones.Add($"{unityName} (null transform)");
+                        continue;
+                    }
+
+                    // Skeleton配列に存在しないボーンをスキップ（階層外のボーン）
+                    if (!skeletonNames.Contains(boneTransform.name))
+                    {
+                        skippedBones.Add($"{unityName} -> {boneTransform.name} (not in skeleton hierarchy)");
+                        continue;
+                    }
+
+                    // rootObjectの子孫かどうか確認
+                    if (!boneTransform.IsChildOf(rootObject.transform))
+                    {
+                        skippedBones.Add($"{unityName} -> {boneTransform.name} (not a child of root)");
+                        continue;
+                    }
+
+                    validBoneMapping[unityName] = boneTransform;
+                }
+
+                // Humanoid階層要件をチェックし、違反するボーンを除外
+                ValidateHumanoidHierarchy(validBoneMapping, skippedBones);
+
+                // HumanBone配列を作成（有効なボーンのみ）
+                var humanBones = new List<HumanBone>();
+                foreach (var kvp in validBoneMapping)
+                {
+                    var humanBone = new HumanBone
+                    {
+                        humanName = kvp.Key,
+                        boneName = kvp.Value.name,
+                        limit = new HumanLimit { useDefaultValues = true }
+                    };
+                    humanBones.Add(humanBone);
+                }
+
+                // スキップされたボーンをログ出力
+                if (skippedBones.Count > 0)
+                {
+                    Debug.Log($"[AvatarCreator] Skipped {skippedBones.Count} invalid bones:");
+                    foreach (var skipped in skippedBones)
+                    {
+                        Debug.Log($"  - {skipped}");
+                    }
+                }
+
+                // 必須ボーンのチェック
+                var mappedHumanNames = new HashSet<string>(humanBones.Select(hb => hb.humanName));
+                var missingRequired = new List<string>();
+                foreach (var required in RequiredBones)
+                {
+                    if (!mappedHumanNames.Contains(required))
+                    {
+                        missingRequired.Add(required);
+                    }
+                }
+
+                if (missingRequired.Count > 0)
+                {
+                    Debug.LogWarning($"[AvatarCreator] Missing required bones: {string.Join(", ", missingRequired)}");
+                }
+
+                if (humanBones.Count == 0)
+                {
+                    Debug.LogError("[AvatarCreator] No valid human bones after filtering");
+                    return null;
+                }
+
+                // HumanDescription作成
+                var humanDescription = new HumanDescription
+                {
+                    human = humanBones.ToArray(),
+                    skeleton = skeletonBones.ToArray(),
+                    upperArmTwist = 0.5f,
+                    lowerArmTwist = 0.5f,
+                    upperLegTwist = 0.5f,
+                    lowerLegTwist = 0.5f,
+                    armStretch = 0.05f,
+                    legStretch = 0.05f,
+                    feetSpacing = 0f,
+                    hasTranslationDoF = false
+                };
+
+                Debug.Log($"[AvatarCreator] Building avatar: {humanBones.Count} humanBones, {skeletonBones.Count} skeletonBones");
+
+                // Avatar作成
+                Avatar avatar = AvatarBuilder.BuildHumanAvatar(rootObject, humanDescription);
+
+                if (avatar == null)
+                {
+                    Debug.LogError("[AvatarCreator] AvatarBuilder.BuildHumanAvatar returned null");
+                    return null;
+                }
+
+                if (!avatar.isValid)
+                {
+                    Debug.LogWarning("[AvatarCreator] Avatar is not valid, but will save anyway");
+                }
+
+                if (!avatar.isHuman)
+                {
+                    Debug.LogWarning("[AvatarCreator] Avatar is not humanoid");
+                }
+
+                avatar.name = Path.GetFileNameWithoutExtension(savePath);
+
+                // ディレクトリ確認・作成
+                string directory = Path.GetDirectoryName(savePath);
+                if (!string.IsNullOrEmpty(directory) && !AssetDatabase.IsValidFolder(directory))
+                {
+                    CreateFolderRecursive(directory);
+                }
+
+                // アセット保存
+                AssetDatabase.CreateAsset(avatar, savePath);
+                AssetDatabase.SaveAssets();
+
+                Debug.Log($"[AvatarCreator] Avatar saved: {savePath} (isHuman: {avatar.isHuman}, isValid: {avatar.isValid})");
+
+                return avatar;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[AvatarCreator] BuildAndSaveAvatar failed: {ex.Message}\n{ex.StackTrace}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Humanoid階層要件をチェックし、違反するボーンを除外
+        /// Unity Humanoidは特定の親子関係を要求する
+        /// </summary>
+        private static void ValidateHumanoidHierarchy(Dictionary<string, Transform> boneMapping, List<string> skippedBones)
+        {
+            // Humanoidの階層要件: child は parent の子孫である必要がある
+            var hierarchyRequirements = new (string child, string parent)[]
+            {
+                // 体幹
+                ("Spine", "Hips"),
+                ("Chest", "Spine"),
+                ("UpperChest", "Chest"),
+                ("Neck", "Spine"),      // Neck は少なくとも Spine の子孫
+                ("Head", "Neck"),
+                
+                // 左腕
+                ("LeftShoulder", "Spine"),
+                ("LeftUpperArm", "Spine"),
+                ("LeftLowerArm", "LeftUpperArm"),
+                ("LeftHand", "LeftLowerArm"),
+                
+                // 右腕
+                ("RightShoulder", "Spine"),
+                ("RightUpperArm", "Spine"),
+                ("RightLowerArm", "RightUpperArm"),
+                ("RightHand", "RightLowerArm"),
+                
+                // 左脚
+                ("LeftUpperLeg", "Hips"),
+                ("LeftLowerLeg", "LeftUpperLeg"),
+                ("LeftFoot", "LeftLowerLeg"),
+                ("LeftToes", "LeftFoot"),
+                
+                // 右脚
+                ("RightUpperLeg", "Hips"),
+                ("RightLowerLeg", "RightUpperLeg"),
+                ("RightFoot", "RightLowerLeg"),
+                ("RightToes", "RightFoot"),
+            };
+
+            var bonesToRemove = new List<string>();
+
+            foreach (var (child, parent) in hierarchyRequirements)
+            {
+                // 両方のボーンがマッピングに存在する場合のみチェック
+                if (!boneMapping.TryGetValue(child, out var childTransform)) continue;
+                if (!boneMapping.TryGetValue(parent, out var parentTransform)) continue;
+
+                // child が parent の子孫かどうかチェック
+                if (!childTransform.IsChildOf(parentTransform))
+                {
+                    skippedBones.Add($"{child} -> {childTransform.name} (not a descendant of {parent} '{parentTransform.name}')");
+                    bonesToRemove.Add(child);
+                }
+            }
+
+            // 違反するボーンを削除
+            foreach (var bone in bonesToRemove)
+            {
+                boneMapping.Remove(bone);
+            }
+        }
+
+        /// <summary>
+        /// フォルダを再帰的に作成
+        /// </summary>
+        private static void CreateFolderRecursive(string path)
+        {
+            if (AssetDatabase.IsValidFolder(path)) return;
+
+            string parent = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
+            {
+                CreateFolderRecursive(parent);
+            }
+
+            string folderName = Path.GetFileName(path);
+            AssetDatabase.CreateFolder(parent, folderName);
         }
     }
 }

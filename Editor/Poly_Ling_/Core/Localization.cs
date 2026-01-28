@@ -285,6 +285,8 @@ namespace Poly_Ling.Localization
             ["CreateArmatureMeshesFolder"] = new() { ["en"] = "Create Armature/Meshes Folder", ["ja"] = "Armature/Meshesフォルダ作成", ["hi"] = "フォルダをつくる" },
             ["ExportAsSkinned"] = new() { ["en"] = "Export as SkinnedMesh", ["ja"] = "スキンメッシュとしてエクスポート", ["hi"] = "スキンメッシュ" },
             ["AddAnimatorComponent"] = new() { ["en"] = "Add Animator", ["ja"] = "Animator追加", ["hi"] = "あにめーたーついか" },
+            ["CreateAvatarOnExport"] = new() { ["en"] = "Create Avatar", ["ja"] = "Avatar作成", ["hi"] = "あばたーつくる" },
+            ["NoHumanoidMapping"] = new() { ["en"] = "Set Humanoid Mapping first", ["ja"] = "Humanoidマッピングを設定してください", ["hi"] = "まっぴんぐをせってい" },
             ["SaveSection"] = new() { ["en"] = "Save / Export", ["ja"] = "保存 / エクスポート", ["hi"] = "ほぞん" },
             
             // ============================================================

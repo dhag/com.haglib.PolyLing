@@ -337,6 +337,15 @@ namespace Poly_Ling.Serialization
             modelDTO.defaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex;
             modelDTO.autoSetDefaultMaterials = model.AutoSetDefaultMaterials;
 
+            // ================================================================
+            // Humanoidボーンマッピング
+            // ================================================================
+            
+            if (model.HumanoidMapping != null && !model.HumanoidMapping.IsEmpty)
+            {
+                modelDTO.humanoidBoneMapping = model.HumanoidMapping.ToDictionary();
+            }
+
             return modelDTO;
         }
 
@@ -467,6 +476,15 @@ namespace Poly_Ling.Serialization
                 model.DefaultMaterialReferences = new List<MaterialReference> { new MaterialReference() };
                 model.DefaultCurrentMaterialIndex = 0;
                 model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;
+            }
+
+            // ================================================================
+            // Humanoidボーンマッピング復元
+            // ================================================================
+            
+            if (modelDTO.humanoidBoneMapping != null && modelDTO.humanoidBoneMapping.Count > 0)
+            {
+                model.HumanoidMapping.FromDictionary(modelDTO.humanoidBoneMapping);
             }
 
             return model;

@@ -270,6 +270,24 @@ public partial class PolyLing
                 _addAnimatorComponent = EditorGUILayout.Toggle(
                     L.Get("AddAnimatorComponent"),
                     _addAnimatorComponent);
+                
+                // Avatar生成オプション（Animator追加時のみ表示）
+                if (_addAnimatorComponent)
+                {
+                    EditorGUI.indentLevel++;
+                    bool hasMapping = _model?.HumanoidMapping != null && !_model.HumanoidMapping.IsEmpty;
+                    using (new EditorGUI.DisabledScope(!hasMapping))
+                    {
+                        _createAvatarOnExport = EditorGUILayout.Toggle(
+                            L.Get("CreateAvatarOnExport"),
+                            _createAvatarOnExport && hasMapping);
+                    }
+                    if (!hasMapping)
+                    {
+                        EditorGUILayout.HelpBox(L.Get("NoHumanoidMapping"), MessageType.Info);
+                    }
+                    EditorGUI.indentLevel--;
+                }
                 EditorGUI.indentLevel--;
             }
         }

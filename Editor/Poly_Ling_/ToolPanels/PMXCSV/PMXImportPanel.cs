@@ -61,6 +61,7 @@ namespace Poly_Ling.PMX
             ["Normals"] = new() { ["en"] = "Normals", ["ja"] = "法線" },
             ["RecalculateNormals"] = new() { ["en"] = "Recalculate Normals", ["ja"] = "法線を再計算" },
             ["SmoothingAngle"] = new() { ["en"] = "Smoothing Angle", ["ja"] = "スムージング角度" },
+            ["ConvertToTPose"] = new() { ["en"] = "Convert to T-Pose", ["ja"] = "Tポーズに変換" },
 
             // インポートモード（v1.2: NewModel追加）
             ["ImportMode"] = new() { ["en"] = "Import Mode", ["ja"] = "インポートモード" },
@@ -322,6 +323,14 @@ namespace Poly_Ling.PMX
             using (new EditorGUI.IndentLevelScope())
             {
                 _settings.ImportMaterials = EditorGUILayout.Toggle(T("ImportMaterials"), _settings.ImportMaterials);
+            }
+            EditorGUI.EndDisabledGroup();
+
+            // ボーンオプション（Bone読み込み時のみ有効）
+            EditorGUI.BeginDisabledGroup(!_settings.ShouldImportBones);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                _settings.ConvertToTPose = EditorGUILayout.Toggle(T("ConvertToTPose"), _settings.ConvertToTPose);
             }
             EditorGUI.EndDisabledGroup();
 

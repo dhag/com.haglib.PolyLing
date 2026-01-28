@@ -96,7 +96,10 @@ public partial class PolyLing
         {
             Poly_Ling.Tools.Panels.ModelListPanel.Open(_toolManager?.toolContext);
         }
-
+        if(GUILayout.Button("アバターマッピング辞書インポート"))
+        {
+            Poly_Ling.Tools.Panels.HumanoidMappingPanel.Open(_toolManager?.toolContext);
+        }
         EditorGUI.indentLevel--;
     }
 

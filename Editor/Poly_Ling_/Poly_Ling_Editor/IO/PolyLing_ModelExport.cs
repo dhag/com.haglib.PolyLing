@@ -603,16 +603,77 @@ public partial class PolyLing
             SetupSkinnedMeshRenderer(go, meshCopy, bones, bindPoses, materialsToUse);
         }
 
+        // Animatorコンポーネント追加オプションがONの場合、rootParentに追加
+        if (_addAnimatorComponent && rootParent != null && rootParent.GetComponent<Animator>() == null)
+        {
+            var animator = rootParent.gameObject.AddComponent<Animator>();
+            
+            // Avatar生成オプションがONの場合
+            if (_createAvatarOnExport && _model?.HumanoidMapping != null && !_model.HumanoidMapping.IsEmpty)
+            {
+                // HumanoidBoneMappingからTransformマッピングを作成
+                var boneTransformMapping = new Dictionary<string, Transform>();
+                
+                Debug.Log($"[ExportSkinned] Building Avatar bone mapping from HumanoidMapping ({_model.HumanoidMapping.Count} entries)");
+                
+                foreach (var humanoidBone in Poly_Ling.Data.HumanoidBoneMapping.AllHumanoidBones)
+                {
+                    int meshContextIndex = _model.HumanoidMapping.Get(humanoidBone);
+                    if (meshContextIndex >= 0 && meshContextIndex < createdObjects.Length && createdObjects[meshContextIndex] != null)
+                    {
+                        var boneTransform = createdObjects[meshContextIndex].transform;
+                        boneTransformMapping[humanoidBone] = boneTransform;
+                        Debug.Log($"  {humanoidBone} -> [{meshContextIndex}] {boneTransform.name}");
+                    }
+                }
+                
+                // 必須ボーンのチェック
+                var missingRequired = Poly_Ling.Data.HumanoidBoneMapping.RequiredBones
+                    .Where(b => !boneTransformMapping.ContainsKey(b))
+                    .ToList();
+                
+                if (missingRequired.Count > 0)
+                {
+                    Debug.LogWarning($"[ExportSkinned] Missing required bones for Avatar: {string.Join(", ", missingRequired)}");
+                }
+                
+                if (boneTransformMapping.Count > 0)
+                {
+                    // マテリアル保存フォルダを取得してAvatar保存先を決定
+                    string saveFolder = GetMaterialSaveDirectory();
+                    string avatarName = !string.IsNullOrEmpty(_model.Name) ? _model.Name : "Model";
+                    string avatarPath = $"{saveFolder}/{avatarName}_Avatar.asset";
+                    
+                    Debug.Log($"[ExportSkinned] Creating Avatar with {boneTransformMapping.Count} bone mappings, root: {rootParent.name}");
+                    
+                    // AvatarCreatorPanelの静的メソッドを使用してAvatar生成
+                    var avatar = Poly_Ling.MISC.AvatarCreatorPanel.BuildAndSaveAvatar(
+                        rootParent.gameObject,
+                        boneTransformMapping,
+                        avatarPath);
+                    
+                    if (avatar != null && avatar.isValid && avatar.isHuman)
+                    {
+                        animator.avatar = avatar;
+                        Debug.Log($"[ExportSkinned] Avatar created and assigned: {avatarPath}");
+                    }
+                    else if (avatar != null)
+                    {
+                        Debug.LogWarning($"[ExportSkinned] Avatar created but not valid for humanoid (isValid: {avatar.isValid}, isHuman: {avatar.isHuman})");
+                        // 無効なAvatarは設定しない
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning("[ExportSkinned] No valid bone mappings found for Avatar creation");
+                }
+            }
+        }
+
         // 作成したルートオブジェクト、または最初のルートオブジェクトを選択
         GameObject objectToSelect = createdRoot ?? firstRootObject;
         if (objectToSelect != null)
         {
-            // Animatorコンポーネント追加オプションがONの場合
-            if (_addAnimatorComponent && objectToSelect.GetComponent<Animator>() == null)
-            {
-                objectToSelect.AddComponent<Animator>();
-            }
-            
             Selection.activeGameObject = objectToSelect;
             EditorGUIUtility.PingObject(objectToSelect);
         }

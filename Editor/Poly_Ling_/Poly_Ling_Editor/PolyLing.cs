@@ -253,6 +253,7 @@ public partial class PolyLing : EditorWindow
     }
     private bool _createArmatureMeshesFolder = true; // Armature/Meshesフォルダを作成（EditorStateに含めない）
     private bool _addAnimatorComponent = true; // エクスポート時にAnimatorコンポーネントを追加（デフォルトON）
+    private bool _createAvatarOnExport = false; // エクスポート時にHumanoid Avatarも生成（デフォルトOFF）
     
     /// <summary>
     /// ツールの状態
