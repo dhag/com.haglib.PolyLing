@@ -188,21 +188,11 @@ public partial class PolyLing
 
     /// <summary>
     /// 指定されたMeshContextをソースとするBakedMirrorが存在するか確認
+    /// MeshContext.HasBakedMirrorChildプロパティを参照
     /// </summary>
     private bool HasBakedMirrorChild(MeshContext meshContext)
     {
-        if (_meshContextList == null) return false;
-
-        int sourceIndex = _meshContextList.IndexOf(meshContext);
-        if (sourceIndex < 0) return false;
-
-        // BakedMirrorSourceIndexが自分を指しているものがあるかチェック
-        foreach (var ctx in _meshContextList)
-        {
-            if (ctx != null && ctx.Type == MeshType.BakedMirror && ctx.BakedMirrorSourceIndex == sourceIndex)
-                return true;
-        }
-        return false;
+        return meshContext?.HasBakedMirrorChild ?? false;
     }
 
     /// <summary>

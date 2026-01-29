@@ -64,6 +64,10 @@ namespace Poly_Ling.UndoSystem
         public float MirrorDistance;
         public int MirrorMaterialOffset;
 
+        // ベイクドミラー設定
+        public int BakedMirrorSourceIndex;
+        public bool HasBakedMirrorChild;
+
         // ================================================================
         // 選択状態（Phase 1追加）
         // ================================================================
@@ -114,6 +118,9 @@ namespace Poly_Ling.UndoSystem
                 MirrorAxis = meshContext.MirrorAxis,
                 MirrorDistance = meshContext.MirrorDistance,
                 MirrorMaterialOffset = meshContext.MirrorMaterialOffset,
+                // ベイクドミラー設定
+                BakedMirrorSourceIndex = meshContext.BakedMirrorSourceIndex,
+                HasBakedMirrorChild = meshContext.HasBakedMirrorChild,
                 // 選択状態（Phase 1追加）
                 Selection = meshContext.CaptureSelection(),
                 // 選択セット（Phase 9追加）
@@ -181,7 +188,10 @@ namespace Poly_Ling.UndoSystem
                 MirrorType = MirrorType,
                 MirrorAxis = MirrorAxis,
                 MirrorDistance = MirrorDistance,
-                MirrorMaterialOffset = MirrorMaterialOffset
+                MirrorMaterialOffset = MirrorMaterialOffset,
+                // ベイクドミラー設定
+                BakedMirrorSourceIndex = BakedMirrorSourceIndex,
+                HasBakedMirrorChild = HasBakedMirrorChild
             };
 
             // 名前を設定（MeshObjectに反映）

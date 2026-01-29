@@ -475,6 +475,10 @@ namespace Poly_Ling.MQO
                             // ソースメッシュの直後に挿入
                             result.MeshContexts.Insert(i + 1, bakedMirror);
                             insertedCount++;
+                            
+                            // ソースにベイクドミラー子フラグを設定（二重表示防止）
+                            ctx.HasBakedMirrorChild = true;
+                            
                             Debug.Log($"[MQOImporter] Created baked mirror: {bakedMirror.Name} (source: {ctx.Name}, inserted at {i + 1})");
                         }
                     }

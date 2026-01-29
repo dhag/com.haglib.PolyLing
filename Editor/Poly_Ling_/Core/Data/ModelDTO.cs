@@ -194,6 +194,12 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public int bakedMirrorSourceIndex = -1;
 
+        /// <summary>
+        /// ベイクドミラーの子を持つか（ソース側で設定）
+        /// true = このメッシュのベイクドミラーが存在する
+        /// </summary>
+        public bool hasBakedMirrorChild = false;
+
         // ================================================================
         // モーフ基準データ（Phase: Morph対応）
         // ================================================================
