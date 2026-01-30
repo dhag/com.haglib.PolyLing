@@ -466,11 +466,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// ボーンのモデル空間回転を計算（ローカル軸から）
         /// </summary>
-<<<<<<< HEAD
         public static Quaternion CalculateBoneModelRotation(PMXBone pmxBone, PMXDocument document, int boneIndex, PMXImportSettings settings)
-=======
-        private static Quaternion CalculateBoneModelRotation(PMXBone pmxBone, PMXDocument document, int boneIndex, PMXImportSettings settings)
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
         {
             const int FLAG_LOCAL_AXIS = 0x0800;
             bool hasLocalAxis = (pmxBone.Flags & FLAG_LOCAL_AXIS) != 0;
@@ -501,17 +497,12 @@ namespace Poly_Ling.PMX
             localX = localX.normalized;
             localZ = localZ.normalized;
 
-<<<<<<< HEAD
             // Y軸を計算
             // 右手系（PMX）: Y = Cross(Z, X)
             // 左手系（flipZ後）: Y = Cross(X, Z)
             Vector3 localY = settings.FlipZ
                 ? Vector3.Cross(localX, localZ)
                 : Vector3.Cross(localZ, localX);
-=======
-            // Y軸を計算: Y = Z × X（PMXの仕様）
-            Vector3 localY = Vector3.Cross(localZ, localX);
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
 
             // 数値誤差チェック
             if (localY.sqrMagnitude < 1e-10f)
@@ -542,11 +533,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// ローカル軸が未定義の場合のデフォルトX軸を計算
         /// </summary>
-<<<<<<< HEAD
         public static Vector3 CalculateDefaultLocalAxisX(PMXBone pmxBone, PMXDocument document, int boneIndex)
-=======
-        private static Vector3 CalculateDefaultLocalAxisX(PMXBone pmxBone, PMXDocument document, int boneIndex)
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
         {
             // 接続先がある場合、その方向をX軸とする
             bool connected = (pmxBone.Flags & 0x0001) != 0;
@@ -587,11 +574,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// 3つの軸からQuaternionを生成
         /// </summary>
-<<<<<<< HEAD
         public static Quaternion CreateRotationFromAxes(Vector3 x, Vector3 y, Vector3 z)
-=======
-        private static Quaternion CreateRotationFromAxes(Vector3 x, Vector3 y, Vector3 z)
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
         {
             var m = new Matrix4x4();
             m.SetColumn(0, new Vector4(x.x, x.y, x.z, 0f));
@@ -608,26 +591,16 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// PMX標準の腕ボーン名
         /// </summary>
-<<<<<<< HEAD
         public static readonly string[] LeftArmBoneNames = { "左肩", "左腕", "左ひじ", "左手首" };
         public static readonly string[] RightArmBoneNames = { "右肩", "右腕", "右ひじ", "右手首" };
         public static readonly string[] LeftFingerBoneNames = {
-=======
-        private static readonly string[] LeftArmBoneNames = { "左肩", "左腕", "左ひじ", "左手首" };
-        private static readonly string[] RightArmBoneNames = { "右肩", "右腕", "右ひじ", "右手首" };
-        private static readonly string[] LeftFingerBoneNames = {
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
             "左親指０", "左親指１", "左親指２",
             "左人指１", "左人指２", "左人指３",
             "左中指１", "左中指２", "左中指３",
             "左薬指１", "左薬指２", "左薬指３",
             "左小指１", "左小指２", "左小指３"
         };
-<<<<<<< HEAD
         public static readonly string[] RightFingerBoneNames = {
-=======
-        private static readonly string[] RightFingerBoneNames = {
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
             "右親指０", "右親指１", "右親指２",
             "右人指１", "右人指２", "右人指３",
             "右中指１", "右中指２", "右中指３",
@@ -669,7 +642,6 @@ namespace Poly_Ling.PMX
         }
 
         /// <summary>
-<<<<<<< HEAD
         /// AポーズをTポーズに変換（MeshContextのみ使用、PMXDocument不要）
         /// MQOImporter等から呼び出し可能
         /// </summary>
@@ -782,8 +754,6 @@ namespace Poly_Ling.PMX
         }
 
         /// <summary>
-=======
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
         /// 腕ボーンの回転補正を適用（頂点変換なし）
         /// </summary>
         private static void ApplyArmRotationCorrection(
@@ -846,11 +816,7 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// GPU処理を使用してスキンドメッシュの頂点座標をベイク
         /// </summary>
-<<<<<<< HEAD
         public static void BakeSkinnedVertices(List<MeshContext> meshContexts)
-=======
-        private static void BakeSkinnedVertices(List<MeshContext> meshContexts)
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
         {
             using (var bufferManager = new UnifiedBufferManager())
             {
@@ -920,15 +886,11 @@ namespace Poly_Ling.PMX
         /// <summary>
         /// 全ボーンのワールド変換行列を計算
         /// </summary>
-<<<<<<< HEAD
         /// <summary>
         /// 全ボーンのワールド行列を階層的に計算
         /// BoneTransformのローカル位置・回転からワールド行列を求める
         /// </summary>
         public static Dictionary<int, Matrix4x4> CalculateWorldMatrices(List<MeshContext> meshContexts)
-=======
-        private static Dictionary<int, Matrix4x4> CalculateWorldMatrices(List<MeshContext> meshContexts)
->>>>>>> 2ff09a6cec4492e9d5914d8c34e37b3e1a929e1b
         {
             var worldMatrices = new Dictionary<int, Matrix4x4>();
 

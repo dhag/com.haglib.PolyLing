@@ -175,7 +175,7 @@ public partial class PolyLing
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField(L.Get("Zoom"), EditorStyles.miniLabel);
                 EditorGUI.BeginChangeCheck();
-                float newDist = EditorGUILayout.Slider(_cameraDistance, 0.1f, 40f);//スライダーの上限下限：ズーム
+                float newDist = EditorGUILayout.Slider(_cameraDistance, 0.1f, 80f);//スライダーの上限下限：ズーム
                 if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newDist, _cameraDistance))
                 {
                     if (!_isCameraDragging) BeginCameraDrag();

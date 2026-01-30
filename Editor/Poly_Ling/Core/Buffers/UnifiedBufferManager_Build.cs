@@ -207,6 +207,25 @@ namespace Poly_Ling.Core
                     _boneIndices[globalIdx] = new UInt4((uint)meshIndex, 0, 0, 0);
                 }
 
+                // ミラー用ボーンウェイト/インデックス
+                // MirrorBoneWeightがあればそれを使用、なければBoneWeightと同じ
+                if (vertex.HasMirrorBoneWeight)
+                {
+                    var mbw = vertex.MirrorBoneWeight.Value;
+                    _mirrorBoneWeights[globalIdx] = new Vector4(mbw.weight0, mbw.weight1, mbw.weight2, mbw.weight3);
+                    _mirrorBoneIndices[globalIdx] = new UInt4(
+                        (uint)mbw.boneIndex0,
+                        (uint)mbw.boneIndex1,
+                        (uint)mbw.boneIndex2,
+                        (uint)mbw.boneIndex3);
+                }
+                else
+                {
+                    // MirrorBoneWeightがない場合は実体側と同じ
+                    _mirrorBoneWeights[globalIdx] = _boneWeights[globalIdx];
+                    _mirrorBoneIndices[globalIdx] = _boneIndices[globalIdx];
+                }
+
                 // フラグ計算
                 _vertexFlags[globalIdx] = (uint)_flagManager.ComputeVertexFlags(
                     modelIndex, meshIndex, v,
@@ -396,6 +415,8 @@ namespace Poly_Ling.Core
                 _vertexMeshIndexBuffer?.SetData(_vertexMeshIndices, 0, 0, _totalVertexCount);
                 _boneWeightsBuffer?.SetData(_boneWeights, 0, 0, _totalVertexCount);
                 _boneIndicesBuffer?.SetData(_boneIndices, 0, 0, _totalVertexCount);
+                _mirrorBoneWeightsBuffer?.SetData(_mirrorBoneWeights, 0, 0, _totalVertexCount);
+                _mirrorBoneIndicesBuffer?.SetData(_mirrorBoneIndices, 0, 0, _totalVertexCount);
             }
 
             if (_totalLineCount > 0)

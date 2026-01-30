@@ -1258,11 +1258,18 @@ namespace Poly_Ling.Core
             _computeShader.SetBuffer(_kernelTransformVertices, "_NormalBuffer", _normalBuffer);
             // WorldNormalBufferは未実装のため、ダミーとしてNormalBufferをバインド
             _computeShader.SetBuffer(_kernelTransformVertices, "_WorldNormalBuffer", _normalBuffer);
+            
+            // ミラーバッファをバインド
+            _computeShader.SetBuffer(_kernelTransformVertices, "_MirrorPositionBuffer", _mirrorPositionBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_SkinnedMirrorPositionBuffer", _skinnedMirrorPositionBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_MirrorBoneWeightsBuffer", _mirrorBoneWeightsBuffer);
+            _computeShader.SetBuffer(_kernelTransformVertices, "_MirrorBoneIndicesBuffer", _mirrorBoneIndicesBuffer);
 
             // パラメータを設定
             _computeShader.SetInt("_VertexCount", _totalVertexCount);
             _computeShader.SetInt("_UseWorldTransform", useWorldTransform ? 1 : 0);
             _computeShader.SetInt("_TransformNormals", transformNormals ? 1 : 0);
+            _computeShader.SetInt("_ComputeMirror", _mirrorEnabled ? 1 : 0);
 
             // ディスパッチ
             int threadGroups = Mathf.CeilToInt(_totalVertexCount / 256.0f);

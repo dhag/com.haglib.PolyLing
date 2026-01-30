@@ -121,6 +121,14 @@ namespace Poly_Ling.Core
         private ComputeBuffer _boneIndicesBuffer;
         private UInt4[] _boneIndices;
 
+        // ミラー用ボーンウェイト（MirrorBoneWeightがあればそれ、なければBoneWeight）
+        private ComputeBuffer _mirrorBoneWeightsBuffer;
+        private Vector4[] _mirrorBoneWeights;
+
+        // ミラー用ボーンインデックス
+        private ComputeBuffer _mirrorBoneIndicesBuffer;
+        private UInt4[] _mirrorBoneIndices;
+
         // 法線
         private ComputeBuffer _normalBuffer;
         private Vector3[] _normals;
@@ -136,6 +144,10 @@ namespace Poly_Ling.Core
         // ミラー頂点位置
         private ComputeBuffer _mirrorPositionBuffer;
         private Vector3[] _mirrorPositions;
+
+        // スキニング済みミラー頂点位置（GPU計算結果）
+        private ComputeBuffer _skinnedMirrorPositionBuffer;
+        private Vector3[] _skinnedMirrorPositions;
 
         // ============================================================
         // バッファ（Level 3: Selection）
@@ -266,6 +278,8 @@ namespace Poly_Ling.Core
         public ComputeBuffer VertexMeshIndexBuffer => _vertexMeshIndexBuffer;
         public ComputeBuffer BoneWeightsBuffer => _boneWeightsBuffer;
         public ComputeBuffer BoneIndicesBuffer => _boneIndicesBuffer;
+        public ComputeBuffer MirrorBoneWeightsBuffer => _mirrorBoneWeightsBuffer;
+        public ComputeBuffer MirrorBoneIndicesBuffer => _mirrorBoneIndicesBuffer;
         public ComputeBuffer NormalBuffer => _normalBuffer;
         public ComputeBuffer UVBuffer => _uvBuffer;
         public ComputeBuffer IndexBuffer => _indexBuffer;
@@ -349,6 +363,8 @@ namespace Poly_Ling.Core
             _vertexMeshIndices = new uint[_vertexCapacity];
             _boneWeights = new Vector4[_vertexCapacity];
             _boneIndices = new UInt4[_vertexCapacity];
+            _mirrorBoneWeights = new Vector4[_vertexCapacity];
+            _mirrorBoneIndices = new UInt4[_vertexCapacity];
 
             _lines = new UnifiedLine[_lineCapacity];
             _lineFlags = new uint[_lineCapacity];
@@ -439,11 +455,14 @@ namespace Poly_Ling.Core
             // Level 4: Transform
             _boundsBuffer = new ComputeBuffer(_meshInfos.Length, AABB.Stride);
             _mirrorPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
+            _skinnedMirrorPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
             _worldPositionBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 3);
             _transformMatrixBuffer = new ComputeBuffer(Mathf.Max(1, _meshInfos.Length), sizeof(float) * 16);
             _vertexMeshIndexBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
             _boneWeightsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
             _boneIndicesBuffer = new ComputeBuffer(_vertexCapacity, UInt4.Stride);
+            _mirrorBoneWeightsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
+            _mirrorBoneIndicesBuffer = new ComputeBuffer(_vertexCapacity, UInt4.Stride);
 
             // Level 3: Selection
             _vertexFlagsBuffer = new ComputeBuffer(_vertexCapacity, sizeof(uint));
@@ -558,6 +577,8 @@ namespace Poly_Ling.Core
             Array.Resize(ref _vertexMeshIndices, _vertexCapacity);
             Array.Resize(ref _boneWeights, _vertexCapacity);
             Array.Resize(ref _boneIndices, _vertexCapacity);
+            Array.Resize(ref _mirrorBoneWeights, _vertexCapacity);
+            Array.Resize(ref _mirrorBoneIndices, _vertexCapacity);
             Array.Resize(ref _screenPositions, _vertexCapacity);
             Array.Resize(ref _screenPositions4, _vertexCapacity);
             Array.Resize(ref _mirrorScreenPositions4, _vertexCapacity);
@@ -598,6 +619,8 @@ namespace Poly_Ling.Core
             ReleaseBuffer(ref _vertexMeshIndexBuffer);
             ReleaseBuffer(ref _boneWeightsBuffer);
             ReleaseBuffer(ref _boneIndicesBuffer);
+            ReleaseBuffer(ref _mirrorBoneWeightsBuffer);
+            ReleaseBuffer(ref _mirrorBoneIndicesBuffer);
             ReleaseBuffer(ref _normalBuffer);
             ReleaseBuffer(ref _uvBuffer);
             ReleaseBuffer(ref _indexBuffer);
@@ -607,6 +630,7 @@ namespace Poly_Ling.Core
             ReleaseBuffer(ref _modelInfoBuffer);
             ReleaseBuffer(ref _boundsBuffer);
             ReleaseBuffer(ref _mirrorPositionBuffer);
+            ReleaseBuffer(ref _skinnedMirrorPositionBuffer);
             ReleaseBuffer(ref _vertexFlagsBuffer);
             ReleaseBuffer(ref _lineFlagsBuffer);
             ReleaseBuffer(ref _faceFlagsBuffer);

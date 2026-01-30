@@ -147,6 +147,84 @@ namespace Poly_Ling.Symmetry
             }
         }
 
+        /// <summary>
+        /// スキニング済みミラー座標で頂点位置を更新
+        /// GPU側でTransformMirrorVertices実行後に呼び出す
+        /// </summary>
+        /// <param name="skinnedMirrorPositions">スキニング済みミラー座標配列（頂点インデックス順）</param>
+        /// <param name="meshObject">元のメッシュデータ（面構造取得用）</param>
+        /// <param name="vertexOffset">このメッシュの開始頂点オフセット</param>
+        /// <param name="settings">対称設定（キャッシュ無効時のフォールバック用）</param>
+        public void UpdateWithSkinnedPositions(Vector3[] skinnedMirrorPositions, MeshObject meshObject, int vertexOffset, SymmetrySettings settings)
+        {
+            // デバッグ：無条件出力
+            UnityEngine.Debug.Log($"[MirrorCache] ENTER: positions={skinnedMirrorPositions?.Length ?? -1}, mesh={meshObject?.VertexCount ?? -1}, offset={vertexOffset}, mirrorMesh={_mirrorMesh != null}");
+
+            if (skinnedMirrorPositions == null || meshObject == null)
+            {
+                UnityEngine.Debug.Log($"[MirrorCache] NULL_INPUT: positions={skinnedMirrorPositions != null}, mesh={meshObject != null}");
+                return;
+            }
+
+            // mesh=0の場合は早期リターン
+            if (meshObject.VertexCount == 0)
+            {
+                UnityEngine.Debug.Log($"[MirrorCache] SKIP: mesh has 0 vertices");
+                return;
+            }
+
+            if (_mirrorMesh == null)
+            {
+                if (UnityEngine.Time.frameCount % 60 == 0)
+                    UnityEngine.Debug.Log("[MirrorCache] UpdateWithSkinnedPositions: _mirrorMesh is null, calling Update()");
+                // キャッシュが未初期化の場合はフルリビルド
+                Update(meshObject, settings);
+                return;
+            }
+
+            // このメッシュの頂点座標を抽出
+            int vertexCount = meshObject.VertexCount;
+            Vector3[] localMirrorPositions = new Vector3[vertexCount];
+
+            for (int i = 0; i < vertexCount; i++)
+            {
+                int globalIdx = vertexOffset + i;
+                if (globalIdx < skinnedMirrorPositions.Length)
+                {
+                    localMirrorPositions[i] = skinnedMirrorPositions[globalIdx];
+                }
+            }
+
+            // Unity Meshに展開（面ごとに頂点を持つ形式、面を反転）
+            Vector3[] expandedPositions = ExpandPositions(localMirrorPositions, meshObject);
+
+            if (UnityEngine.Time.frameCount % 60 == 0)
+            {
+                UnityEngine.Debug.Log($"[MirrorCache] UpdateWithSkinnedPositions: expandedLen={expandedPositions.Length}, mirrorMeshVerts={_mirrorMesh.vertexCount}");
+                if (vertexCount > 0 && localMirrorPositions.Length > 0)
+                {
+                    UnityEngine.Debug.Log($"[MirrorCache] Sample pos[0]: {localMirrorPositions[0]}");
+                }
+            }
+
+            if (expandedPositions.Length == _mirrorMesh.vertexCount)
+            {
+                _mirrorMesh.vertices = expandedPositions;
+                _mirrorMesh.RecalculateNormals();
+                _mirrorMesh.RecalculateBounds();
+
+                // デバッグ：無条件出力
+                UnityEngine.Debug.Log($"[MirrorCache] SUCCESS: expanded={expandedPositions.Length}, sample[0]={expandedPositions[0]}");
+            }
+            else
+            {
+                // デバッグ：無条件出力
+                UnityEngine.Debug.Log($"[MirrorCache] MISMATCH: expanded={expandedPositions.Length}, mirrorVerts={_mirrorMesh.vertexCount}");
+                // 頂点数が変わった場合はフルリビルド
+                Update(meshObject, settings);
+            }
+        }
+
         // ================================================================
         // 内部処理（B方式：材質ごとにサブメッシュ）
         // ================================================================
@@ -350,25 +428,30 @@ namespace Poly_Ling.Symmetry
         }
 
         /// <summary>
-        /// 頂点位置を面ごとに展開
+        /// 頂点位置を頂点共有方式で展開（RebuildMirrorMeshと同じ構造）
         /// </summary>
         private Vector3[] ExpandPositions(Vector3[] positions, MeshObject meshObject)
         {
             var expanded = new List<Vector3>();
 
-            foreach (var face in meshObject.Faces)
+            // RebuildMirrorMeshと同じ頂点展開ロジック（頂点順→UV順）
+            for (int vIdx = 0; vIdx < meshObject.VertexCount; vIdx++)
             {
-                if (face.VertexCount < 3) continue;
+                var vertex = meshObject.Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
-                int[] reversedIndices = CreateReversedFace(face.VertexIndices);
-                foreach (int idx in reversedIndices)
+                // GPU座標を取得
+                Vector3 pos = (vIdx < positions.Length) ? positions[vIdx] : Vector3.zero;
+
+                // UVの数だけ同じ座標を追加
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
                 {
-                    if (idx >= 0 && idx < positions.Length)
-                    {
-                        expanded.Add(positions[idx]);
-                    }
+                    expanded.Add(pos);
                 }
             }
+
+
+            UnityEngine.Debug.Log($"[MirrorCache] ExpandPositions: inputVerts={meshObject.VertexCount}, outputVerts={expanded.Count}");
 
             return expanded.ToArray();
         }

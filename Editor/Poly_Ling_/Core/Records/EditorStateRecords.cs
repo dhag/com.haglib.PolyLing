@@ -20,7 +20,7 @@ namespace Poly_Ling.UndoSystem
         // カメラ
         public float RotationX = 20f;
         public float RotationY = 0f;
-        public float CameraDistance = 2f;
+        public float CameraDistance = 40f;
         public Vector3 CameraTarget = Vector3.zero;
 
         // 表示設定

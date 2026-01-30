@@ -766,8 +766,16 @@ StructuredBuffer<float4> _BoneWeightsBuffer;
 // 通常メッシュ: (meshIndex,0,0,0)
 StructuredBuffer<uint4> _BoneIndicesBuffer;
 
+// ミラー用ボーンウェイト/インデックス
+// MirrorBoneWeightがあればそれ、なければBoneWeightと同じ
+StructuredBuffer<float4> _MirrorBoneWeightsBuffer;
+StructuredBuffer<uint4> _MirrorBoneIndicesBuffer;
+
 // ワールド座標出力バッファ
 RWStructuredBuffer<float3> _WorldPositionBuffer;
+
+// ミラー座標出力バッファ（スキニング済み）
+RWStructuredBuffer<float3> _SkinnedMirrorPositionBuffer;
 
 // ワールド法線出力バッファ（オプション）
 RWStructuredBuffer<float3> _WorldNormalBuffer;
@@ -778,6 +786,10 @@ StructuredBuffer<float3> _NormalBuffer;
 // 変換モードフラグ
 int _UseWorldTransform;  // 0: ローカル座標コピー, 1: ワールド変換適用
 int _TransformNormals;   // 0: 法線変換しない, 1: 法線も変換
+
+// ミラー行列（SymmetrySettingsから設定）
+float4x4 _MirrorMatrix;
+int _ComputeMirror;  // 0: ミラー計算しない, 1: ミラーも計算
 
 [numthreads(256, 1, 1)]
 void TransformVertices(uint3 id : SV_DispatchThreadID)
@@ -796,6 +808,13 @@ void TransformVertices(uint3 id : SV_DispatchThreadID)
         if (_TransformNormals != 0)
         {
             _WorldNormalBuffer[vertexIndex] = _NormalBuffer[vertexIndex];
+        }
+        
+        // ミラー座標もローカルのまま（CPU側で既に計算済み）
+        if (_ComputeMirror != 0)
+        {
+            float3 mirrorLocalPos = _MirrorPositionBuffer[vertexIndex];
+            _SkinnedMirrorPositionBuffer[vertexIndex] = mirrorLocalPos;
         }
         return;
     }
@@ -826,6 +845,28 @@ void TransformVertices(uint3 id : SV_DispatchThreadID)
         // 簡易版: 回転成分のみ使用（均一スケール前提）
         float3 worldNormal = mul((float3x3)skinMatrix, localNormal);
         _WorldNormalBuffer[vertexIndex] = normalize(worldNormal);
+    }
+    
+    // ミラー座標のスキニング計算
+    if (_ComputeMirror != 0)
+    {
+        // ローカルミラー座標を取得（CPU側で事前計算済み）
+        float3 mirrorLocalPos = _MirrorPositionBuffer[vertexIndex];
+        
+        // ミラー用ボーンウェイト/インデックスを取得
+        float4 mirrorWeights = _MirrorBoneWeightsBuffer[vertexIndex];
+        uint4 mirrorBoneIds = _MirrorBoneIndicesBuffer[vertexIndex];
+        
+        // ミラー用スキニング行列を計算
+        float4x4 mirrorSkinMatrix = 
+            _TransformMatrixBuffer[mirrorBoneIds.x] * mirrorWeights.x +
+            _TransformMatrixBuffer[mirrorBoneIds.y] * mirrorWeights.y +
+            _TransformMatrixBuffer[mirrorBoneIds.z] * mirrorWeights.z +
+            _TransformMatrixBuffer[mirrorBoneIds.w] * mirrorWeights.w;
+        
+        // ミラー座標にスキニングを適用
+        float3 skinnedMirrorPos = mul(mirrorSkinMatrix, float4(mirrorLocalPos, 1.0)).xyz;
+        _SkinnedMirrorPositionBuffer[vertexIndex] = skinnedMirrorPos;
     }
 }
 

@@ -67,6 +67,9 @@ public partial class PolyLing
         _unifiedAdapter.SetModelContext(_model);
         _unifiedAdapter.SetSelectionState(_selectionState);
 
+        // 対称設定を適用
+        ApplySymmetryToUnifiedSystem();
+
         // アクティブメッシュを設定
         if (_selectedIndex >= 0)
         {
@@ -310,12 +313,11 @@ public partial class PolyLing
     }
 
     /// <summary>
-    /// 現在の対称設定を取得（既存コードから）
+    /// 現在の対称設定を取得
     /// </summary>
     private SymmetrySettings GetCurrentSymmetrySettings()
     {
-        // TODO: 既存の対称システムとの連携を実装
-        return null;
+        return _model?.SymmetrySettings;
     }
 
     // ============================================================

@@ -210,6 +210,27 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// スキニング済みミラー位置を全取得（GPU→CPU読み戻し）
+        /// TransformVertices実行後に呼び出すこと
+        /// </summary>
+        public Vector3[] GetMirrorPositions()
+        {
+            if (!_mirrorEnabled || _skinnedMirrorPositionBuffer == null || _totalVertexCount == 0)
+                return null;
+
+            if (_skinnedMirrorPositions == null || _skinnedMirrorPositions.Length < _totalVertexCount)
+                _skinnedMirrorPositions = new Vector3[_totalVertexCount];
+
+            _skinnedMirrorPositionBuffer.GetData(_skinnedMirrorPositions, 0, 0, _totalVertexCount);
+            return _skinnedMirrorPositions;
+        }
+
+        /// <summary>
+        /// スキニング済みミラー位置バッファを取得
+        /// </summary>
+        public ComputeBuffer SkinnedMirrorPositionBuffer => _skinnedMirrorPositionBuffer;
+
+        /// <summary>
         /// 元の位置からミラー位置を計算
         /// </summary>
         public Vector3 ComputeMirrorPosition(Vector3 position)

@@ -91,6 +91,7 @@ public partial class PolyLing
         {
             _symmetrySettings.IsEnabled = newEnabled;
             InvalidateSymmetryCache();
+            ApplySymmetryToUnifiedSystem();
             Repaint();
         }
 
@@ -106,6 +107,7 @@ public partial class PolyLing
             {
                 _symmetrySettings.Axis = newAxis;
                 InvalidateSymmetryCache();
+                ApplySymmetryToUnifiedSystem();
                 Repaint();
             }
 
@@ -116,6 +118,7 @@ public partial class PolyLing
             {
                 _symmetrySettings.PlaneOffset = newOffset;
                 InvalidateSymmetryCache();
+                ApplySymmetryToUnifiedSystem();
                 Repaint();
             }
 
@@ -128,6 +131,7 @@ public partial class PolyLing
                 {
                     _symmetrySettings.PlaneOffset = 0f;
                     InvalidateSymmetryCache();
+                    ApplySymmetryToUnifiedSystem();
                     Repaint();
                 }
                 EditorGUILayout.EndHorizontal();
@@ -268,6 +272,15 @@ public partial class PolyLing
     /// </summary>
     private void DrawMirroredMesh(MeshContext meshContext, Mesh mesh)
     {
+        // デバッグ：詳細情報
+        var dbgEditorState = _undoController?.EditorState;
+        bool dbgUseWorld = dbgEditorState?.ShowWorldTransform ?? false;
+        var dbgBufMgr = _unifiedAdapter?.BufferManager;
+        bool dbgMirrorEnabled = dbgBufMgr?.MirrorEnabled ?? false;
+        var dbgMirrorPos = dbgBufMgr?.GetMirrorPositions();
+
+        Debug.Log($"[MIRROR] useWorld={dbgUseWorld}, mirrorEnabled={dbgMirrorEnabled}, mirrorPos={dbgMirrorPos != null}, count={dbgMirrorPos?.Length ?? 0}");
+
         // ミラー表示対象かチェック（グローバル設定 OR MeshContextごとの設定）
         if (!ShouldDrawMirror(meshContext))
             return;
@@ -281,6 +294,69 @@ public partial class PolyLing
 
         // MeshContextのキャッシュを更新（必要な場合のみ再構築）
         meshContext.SymmetryCache.Update(meshContext.MeshObject, effectiveSettings);
+
+        // スキニング有効時はGPU計算済みミラー座標で位置を更新
+        var editorState = _undoController?.EditorState;
+        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
+
+        // デバッグ（1フレームに1回だけ）
+        if (Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"[MirrorSkinning] useWorldTransform={useWorldTransform}, adapter={_unifiedAdapter != null}, bufferMgr={_unifiedAdapter?.BufferManager != null}");
+        }
+
+        if (useWorldTransform && _unifiedAdapter?.BufferManager != null)
+        {
+            var bufferManager = _unifiedAdapter.BufferManager;
+            var mirrorPositions = bufferManager.GetMirrorPositions();
+
+            // デバッグ
+            if (Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[MirrorSkinning] mirrorPositions={mirrorPositions != null}, count={mirrorPositions?.Length ?? 0}, mirrorEnabled={bufferManager.MirrorEnabled}");
+            }
+
+            if (mirrorPositions != null)
+            {
+                // MeshContextのインデックスを取得
+                int contextIndex = _meshContextList?.IndexOf(meshContext) ?? -1;
+
+                // デバッグ
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"[MirrorSkinning] contextIndex={contextIndex}, meshContextListCount={_meshContextList?.Count ?? 0}");
+                }
+
+                if (contextIndex >= 0)
+                {
+                    int unifiedMeshIndex = bufferManager.ContextToUnifiedMeshIndex(contextIndex);
+
+                    // デバッグ
+                    if (Time.frameCount % 60 == 0)
+                    {
+                        Debug.Log($"[MirrorSkinning] unifiedMeshIndex={unifiedMeshIndex}");
+                    }
+
+                    if (unifiedMeshIndex >= 0)
+                    {
+                        var meshInfos = bufferManager.MeshInfos;
+                        if (meshInfos != null && unifiedMeshIndex < meshInfos.Length)
+                        {
+                            int vertexOffset = (int)meshInfos[unifiedMeshIndex].VertexStart;
+
+                            // デバッグ
+                            if (Time.frameCount % 60 == 0)
+                            {
+                                Debug.Log($"[MirrorSkinning] Calling UpdateWithSkinnedPositions: vertexOffset={vertexOffset}, vertexCount={meshContext.MeshObject?.VertexCount ?? 0}");
+                            }
+
+                            meshContext.SymmetryCache.UpdateWithSkinnedPositions(
+                                mirrorPositions, meshContext.MeshObject, vertexOffset, effectiveSettings);
+                        }
+                    }
+                }
+            }
+        }
 
         Mesh mirrorMesh = meshContext.SymmetryCache.MirrorMesh;
         if (mirrorMesh == null || mirrorMesh.vertexCount == 0)
@@ -406,11 +482,11 @@ public partial class PolyLing
             return;
 
         Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
-        
+
         // 表示用トランスフォーム行列を取得し、ミラー行列と合成
         Matrix4x4 displayMatrix = GetDisplayMatrix(meshIndex);
         Matrix4x4 combinedMatrix = displayMatrix * mirrorMatrix;
-        
+
         float alpha = effectiveSettings.MirrorAlpha * 0.7f;  // ワイヤーフレームはやや薄く
 
         var edges = new HashSet<(int, int)>();
