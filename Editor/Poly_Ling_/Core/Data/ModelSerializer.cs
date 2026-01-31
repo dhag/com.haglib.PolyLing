@@ -346,6 +346,12 @@ namespace Poly_Ling.Serialization
                 modelDTO.humanoidBoneMapping = model.HumanoidMapping.ToDictionary();
             }
 
+            // ================================================================
+            // MorphSets
+            // ================================================================
+
+            SaveMorphSetsToDTO(model, modelDTO);
+
             return modelDTO;
         }
 
@@ -487,6 +493,12 @@ namespace Poly_Ling.Serialization
             {
                 model.HumanoidMapping.FromDictionary(modelDTO.humanoidBoneMapping);
             }
+
+            // ================================================================
+            // MorphSets復元
+            // ================================================================
+
+            LoadMorphSetsFromDTO(modelDTO, model);
 
             return model;
         }
@@ -910,6 +922,54 @@ namespace Poly_Ling.Serialization
 
             // エクスポート除外フラグ
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;
+        }
+
+        // ================================================================
+        // MorphSets シリアライズ
+        // ================================================================
+
+        /// <summary>
+        /// ModelContextのモーフセットをModelDTOに保存
+        /// </summary>
+        public static void SaveMorphSetsToDTO(Model.ModelContext model, ModelDTO modelDTO)
+        {
+            if (model == null || modelDTO == null) return;
+
+            modelDTO.morphSets = new List<MorphSetDTO>();
+
+            if (model.MorphSets != null)
+            {
+                foreach (var set in model.MorphSets)
+                {
+                    var dto = MorphSetDTO.FromMorphSet(set);
+                    if (dto != null)
+                    {
+                        modelDTO.morphSets.Add(dto);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// ModelDTOのモーフセットをModelContextに復元
+        /// </summary>
+        public static void LoadMorphSetsFromDTO(ModelDTO modelDTO, Model.ModelContext model)
+        {
+            if (modelDTO == null || model == null) return;
+
+            model.MorphSets = new List<Data.MorphSet>();
+
+            if (modelDTO.morphSets != null)
+            {
+                foreach (var dto in modelDTO.morphSets)
+                {
+                    var set = dto?.ToMorphSet();
+                    if (set != null)
+                    {
+                        model.MorphSets.Add(set);
+                    }
+                }
+            }
         }
     }
 }

@@ -295,10 +295,10 @@ namespace Poly_Ling.PMX
             {
                 DrawImportTargetToggle(PMXImportTarget.Mesh, T("TargetMesh"));
                 DrawImportTargetToggle(PMXImportTarget.Bones, T("TargetBones"));
+                DrawImportTargetToggle(PMXImportTarget.Morphs, T("TargetMorphs"));
                 
                 // 将来用（グレーアウト）
                 EditorGUI.BeginDisabledGroup(true);
-                DrawImportTargetToggle(PMXImportTarget.Morphs, T("TargetMorphs"));
                 DrawImportTargetToggle(PMXImportTarget.Bodies, T("TargetBodies"));
                 DrawImportTargetToggle(PMXImportTarget.Joints, T("TargetJoints"));
                 EditorGUI.EndDisabledGroup();
@@ -531,6 +531,13 @@ namespace Poly_Ling.PMX
                             Debug.Log($"[PMXImportPanel] Replacing materials: {_lastResult.Materials.Count}");
                             _context.ReplaceMaterials.Invoke(_lastResult.Materials);
                         }
+
+                        // Replaceモードではモーフセットも置換
+                        if (handled && _lastResult.MorphSets.Count > 0 && _context.Model != null)
+                        {
+                            _context.Model.MorphSets = new List<Data.MorphSet>(_lastResult.MorphSets);
+                            Debug.Log($"[PMXImportPanel] Replaced morph sets: {_lastResult.MorphSets.Count}");
+                        }
                     }
                     // ================================================================
                     // NewModelモード: 新規モデルを作成してそこにメッシュを追加
@@ -552,6 +559,16 @@ namespace Poly_Ling.PMX
                                 {
                                     newModel.MaterialReferences = new List<Materials.MaterialReference>(_lastResult.MaterialReferences);
                                     Debug.Log($"[PMXImportPanel] Set {_lastResult.MaterialReferences.Count} materials to new model");
+                                }
+                            }
+
+                            // 新しいモデルにモーフセットを設定
+                            if (_lastResult.MorphSets.Count > 0)
+                            {
+                                if (newModel != null)
+                                {
+                                    newModel.MorphSets = new List<Data.MorphSet>(_lastResult.MorphSets);
+                                    Debug.Log($"[PMXImportPanel] Set {_lastResult.MorphSets.Count} morph sets to new model");
                                 }
                             }
                             
@@ -631,6 +648,21 @@ namespace Poly_Ling.PMX
                         {
                             Debug.Log($"[PMXImportPanel] Adding materials: {_lastResult.Materials.Count}");
                             _context.AddMaterials.Invoke(_lastResult.Materials);
+                        }
+
+                        // Appendモードではモーフセットを追加（インデックス調整済み）
+                        if (_lastResult.MorphSets.Count > 0 && _context.Model != null)
+                        {
+                            // MorphSets内のメッシュインデックスにオフセットを適用
+                            foreach (var morphSet in _lastResult.MorphSets)
+                            {
+                                for (int i = 0; i < morphSet.MeshIndices.Count; i++)
+                                {
+                                    morphSet.MeshIndices[i] += existingMeshContextCount;
+                                }
+                                _context.Model.MorphSets.Add(morphSet);
+                            }
+                            Debug.Log($"[PMXImportPanel] Added {_lastResult.MorphSets.Count} morph sets");
                         }
                     }
                     _context.Repaint?.Invoke();

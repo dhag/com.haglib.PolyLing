@@ -14,6 +14,178 @@ using Poly_Ling.Data;
 public partial class PolyLing
 {
     // ================================================================
+    // エクスポートフィルタリング
+    // ================================================================
+
+    /// <summary>
+    /// エクスポート時にGameObjectを作成すべきタイプかどうか
+    /// Bone, Mesh, BakedMirror のみtrue
+    /// Morph, RigidBody, RigidBodyJoint, Helper, Group は除外
+    /// </summary>
+    private static bool ShouldExportAsGameObject(MeshType type)
+    {
+        switch (type)
+        {
+            case MeshType.Mesh:
+            case MeshType.Bone:
+            case MeshType.BakedMirror:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// エクスポート時にメッシュ（SkinnedMeshRenderer/MeshRenderer）として出力すべきか
+    /// Mesh, BakedMirror のみtrue（頂点を持つ描画可能オブジェクト）
+    /// </summary>
+    private static bool ShouldExportAsMesh(MeshType type)
+    {
+        switch (type)
+        {
+            case MeshType.Mesh:
+            case MeshType.BakedMirror:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // ================================================================
+    // BlendShapeベイク
+    // ================================================================
+
+    /// <summary>
+    /// メッシュにBlendShapeをベイクする
+    /// MorphSetを参照し、対応するMorphメッシュから差分を計算して追加
+    /// </summary>
+    /// <param name="mesh">BlendShapeを追加するUnity Mesh</param>
+    /// <param name="baseMeshContext">ベースとなるMeshContext</param>
+    /// <param name="baseMeshIndex">ベースメッシュの_meshContextList内インデックス</param>
+    private void BakeBlendShapesToMesh(Mesh mesh, MeshContext baseMeshContext, int baseMeshIndex)
+    {
+        if (mesh == null || baseMeshContext == null || _model?.MorphSets == null)
+            return;
+
+        var morphSets = _model.MorphSets;
+        if (morphSets.Count == 0)
+            return;
+
+        int vertexCount = mesh.vertexCount;
+        string baseMeshName = baseMeshContext.Name;
+
+        int addedCount = 0;
+
+        foreach (var morphSet in morphSets)
+        {
+            if (!morphSet.IsValid || morphSet.Type != MorphType.Vertex)
+                continue;
+
+            // このMorphSetに含まれるMorphメッシュの中から、ベースメッシュに対応するものを探す
+            MeshContext morphMeshContext = null;
+
+            foreach (int morphIndex in morphSet.MeshIndices)
+            {
+                if (morphIndex < 0 || morphIndex >= _meshContextList.Count)
+                    continue;
+
+                var candidate = _meshContextList[morphIndex];
+                if (candidate == null || !candidate.IsMorph)
+                    continue;
+
+                // Morphメッシュ名は "ベースメッシュ名_モーフ名" の形式
+                // 例: "Body_まばたき"
+                if (candidate.Name.StartsWith(baseMeshName + "_"))
+                {
+                    morphMeshContext = candidate;
+                    break;
+                }
+            }
+
+            if (morphMeshContext == null)
+                continue;
+
+            // MorphBaseDataから差分を計算
+            if (morphMeshContext.MorphBaseData == null || !morphMeshContext.MorphBaseData.IsValid)
+                continue;
+
+            var baseData = morphMeshContext.MorphBaseData;
+            var morphMesh = morphMeshContext.MeshObject;
+
+            if (morphMesh == null || morphMesh.VertexCount != baseData.VertexCount)
+                continue;
+
+            // 頂点数チェック（展開後の頂点数と一致するか）
+            // ToUnityMeshSharedはUV境界で頂点を分割するので、元の頂点数と異なる場合がある
+            // MorphBaseDataは元の頂点数ベースなので、展開後の配列を作成する必要がある
+
+            // まずベースメッシュの頂点展開マッピングを取得
+            var expandedDeltas = ExpandMorphDeltas(baseMeshContext.MeshObject, baseData, morphMesh, vertexCount);
+            
+            if (expandedDeltas == null)
+                continue;
+
+            // BlendShapeFrameを追加（weight=100で完全適用）
+            mesh.AddBlendShapeFrame(morphSet.Name, 100f, expandedDeltas, null, null);
+            addedCount++;
+        }
+
+        if (addedCount > 0)
+        {
+            Debug.Log($"[BlendShape] Added {addedCount} BlendShapes to '{baseMeshName}'");
+        }
+    }
+
+    /// <summary>
+    /// モーフ差分を展開済み頂点配列に変換
+    /// UV境界での頂点分割を考慮
+    /// </summary>
+    private Vector3[] ExpandMorphDeltas(MeshObject baseMeshObject, MorphBaseData baseData, MeshObject morphMeshObject, int expandedVertexCount)
+    {
+        if (baseMeshObject == null || baseData == null || morphMeshObject == null)
+            return null;
+
+        int originalVertexCount = baseMeshObject.VertexCount;
+        
+        // 元の頂点数と一致しない場合はスキップ
+        if (baseData.VertexCount != originalVertexCount || morphMeshObject.VertexCount != originalVertexCount)
+            return null;
+
+        // 元の頂点ごとの差分を計算
+        var originalDeltas = new Vector3[originalVertexCount];
+        for (int i = 0; i < originalVertexCount; i++)
+        {
+            originalDeltas[i] = morphMeshObject.Vertices[i].Position - baseData.BasePositions[i];
+        }
+
+        // 頂点展開なしの場合（展開後頂点数が元と同じ）
+        if (expandedVertexCount == originalVertexCount)
+        {
+            return originalDeltas;
+        }
+
+        // 頂点展開ありの場合：展開マッピングを再構築
+        // ToUnityMeshSharedと同じ展開ロジックを使用
+        var expandedDeltas = new Vector3[expandedVertexCount];
+        int expandedIndex = 0;
+
+        for (int originalIndex = 0; originalIndex < originalVertexCount; originalIndex++)
+        {
+            var vertex = baseMeshObject.Vertices[originalIndex];
+            int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+            
+            // 同じ元頂点から展開された全ての頂点に同じ差分を適用
+            for (int u = 0; u < uvCount && expandedIndex < expandedVertexCount; u++)
+            {
+                expandedDeltas[expandedIndex] = originalDeltas[originalIndex];
+                expandedIndex++;
+            }
+        }
+
+        return expandedDeltas;
+    }
+
+    // ================================================================
     // モデル全体エクスポート（複数メッシュ対応）
     // ================================================================
 
@@ -90,18 +262,24 @@ public partial class PolyLing
         // GameObjectをインデックス順に作成（親子関係設定のため）
         var createdObjects = new GameObject[_meshContextList.Count];
 
-        // Pass 1: すべてのGameObjectを作成（親子関係は後で設定）
+        // Pass 1: エクスポート対象のGameObjectを作成（親子関係は後で設定）
+        // Morph, RigidBody, RigidBodyJoint, Helper, Group は除外
         for (int i = 0; i < _meshContextList.Count; i++)
         {
             var meshContext = _meshContextList[i];
             if (meshContext == null) continue;
 
+            // エクスポート対象外のタイプはスキップ
+            if (!ShouldExportAsGameObject(meshContext.Type))
+                continue;
+
             // GameObjectを作成
             GameObject go = new GameObject(meshContext.Name);
             createdObjects[i] = go;
 
-            // メッシュがある場合のみMeshFilter/MeshRendererを追加
-            if (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0)
+            // 描画可能メッシュの場合のみMeshFilter/MeshRendererを追加
+            if (ShouldExportAsMesh(meshContext.Type) && 
+                meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0)
             {
                 MeshFilter mf = go.AddComponent<MeshFilter>();
                 MeshRenderer mr = go.AddComponent<MeshRenderer>();
@@ -261,6 +439,10 @@ public partial class PolyLing
             if (meshContext?.MeshObject == null || meshContext.MeshObject.VertexCount == 0)
                 continue;
 
+            // 描画可能メッシュ以外はスキップ
+            if (!ShouldExportAsMesh(meshContext.Type))
+                continue;
+
             string meshName = meshContext.Name;
 
             // 同名のGameObjectを検索（子孫含む）
@@ -414,11 +596,16 @@ public partial class PolyLing
         // GameObjectをインデックス順に作成
         var createdObjects = new GameObject[_meshContextList.Count];
 
-        // === Pass 1: すべての GameObject を作成（コンポーネントなし） ===
+        // === Pass 1: エクスポート対象のGameObjectを作成（コンポーネントなし） ===
+        // Morph, RigidBody, RigidBodyJoint, Helper, Group は除外
         for (int i = 0; i < _meshContextList.Count; i++)
         {
             var meshContext = _meshContextList[i];
             if (meshContext == null) continue;
+
+            // エクスポート対象外のタイプはスキップ
+            if (!ShouldExportAsGameObject(meshContext.Type))
+                continue;
 
             GameObject go = new GameObject(meshContext.Name);
             createdObjects[i] = go;
@@ -537,13 +724,18 @@ public partial class PolyLing
             Debug.LogWarning("[ExportSkinned] No bones found. SkinnedMeshRenderer will have empty bone array.");
         }
 
-        // === Pass 4: 各メッシュに対して SkinnedMeshRenderer をセットアップ ===
+        // === Pass 4: 描画可能メッシュに対して SkinnedMeshRenderer をセットアップ ===
+        // Mesh, BakedMirror のみ処理（Bone, Morph, RigidBody等は除外）
         for (int i = 0; i < _meshContextList.Count; i++)
         {
             var meshContext = _meshContextList[i];
             var go = createdObjects[i];
             if (meshContext?.MeshObject == null || go == null) continue;
             if (meshContext.MeshObject.VertexCount == 0) continue;
+
+            // 描画可能メッシュ以外はスキップ
+            if (!ShouldExportAsMesh(meshContext.Type))
+                continue;
 
             // ボーンインデックスを変換するためのTypedIndices参照
             var typedIndices = _model.TypedIndices;
@@ -598,6 +790,9 @@ public partial class PolyLing
                         Debug.Log($"[ExportSkinned]   SubMesh[{sm}]: {triCount} tris, Mat='{matName}'");
                 }
             }
+
+            // BlendShapeをベイク
+            BakeBlendShapesToMesh(meshCopy, meshContext, i);
 
             // SkinnedMeshRenderer をセットアップ
             SetupSkinnedMeshRenderer(go, meshCopy, bones, bindPoses, materialsToUse);
@@ -672,6 +867,13 @@ public partial class PolyLing
 
         // 作成したルートオブジェクト、または最初のルートオブジェクトを選択
         GameObject objectToSelect = createdRoot ?? firstRootObject;
+
+        // BlendShapeSync をアタッチ（MorphSetがある場合）
+        if (objectToSelect != null)
+        {
+            AttachBlendShapeSync(objectToSelect);
+        }
+
         if (objectToSelect != null)
         {
             Selection.activeGameObject = objectToSelect;
@@ -711,18 +913,24 @@ public partial class PolyLing
         // GameObjectをインデックス順に作成（親子関係設定のため）
         var createdObjects = new GameObject[_meshContextList.Count];
 
-        // Pass 1: すべてのGameObjectを作成してメッシュを設定
+        // Pass 1: エクスポート対象のGameObjectを作成してメッシュを設定
+        // Morph, RigidBody, RigidBodyJoint, Helper, Group は除外
         for (int i = 0; i < _meshContextList.Count; i++)
         {
             var meshContext = _meshContextList[i];
             if (meshContext == null) continue;
 
+            // エクスポート対象外のタイプはスキップ
+            if (!ShouldExportAsGameObject(meshContext.Type))
+                continue;
+
             // GameObjectを作成
             GameObject go = new GameObject(meshContext.Name);
             createdObjects[i] = go;
 
-            // メッシュがある場合のみMeshFilter/MeshRendererを追加
-            if (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0)
+            // 描画可能メッシュの場合のみMeshFilter/MeshRendererを追加
+            if (ShouldExportAsMesh(meshContext.Type) &&
+                meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0)
             {
                 // メッシュを生成（ベイクオプション対応）
                 Mesh meshCopy;
@@ -914,11 +1122,15 @@ public partial class PolyLing
             return;
         }
 
-        // 各メッシュを保存
+        // 各メッシュを保存（描画可能メッシュのみ）
         int savedCount = 0;
         foreach (var meshContext in _meshContextList)
         {
             if (meshContext?.MeshObject == null)
+                continue;
+
+            // 描画可能メッシュ以外はスキップ
+            if (!ShouldExportAsMesh(meshContext.Type))
                 continue;
 
             // メッシュを生成（ベイクオプション対応）
@@ -959,5 +1171,85 @@ public partial class PolyLing
         }
 
         Debug.Log($"Mesh assets saved: {savedCount} meshes to {path}");
+    }
+
+    // ================================================================
+    // BlendShape同期CSV生成
+    // ================================================================
+
+    /// <summary>
+    /// BlendShape同期用のCSVマッピングを生成
+    /// 形式: ClipName,MeshName,BlendShapeName,Weight,...
+    /// </summary>
+    private string GenerateBlendShapeMappingCSV()
+    {
+        if (_model?.MorphSets == null || _model.MorphSets.Count == 0)
+            return "";
+
+        var lines = new System.Collections.Generic.List<string>();
+        lines.Add("# ClipName,MeshName,BlendShapeName,Weight,...");
+
+        foreach (var morphSet in _model.MorphSets)
+        {
+            // 頂点モーフのみ
+            if (morphSet.Type != MorphType.Vertex) continue;
+            if (!morphSet.IsValid) continue;
+
+            var parts = new System.Collections.Generic.List<string>();
+            parts.Add(morphSet.Name); // ClipName = MorphSet.Name
+
+            foreach (var morphIndex in morphSet.MeshIndices)
+            {
+                if (morphIndex < 0 || morphIndex >= _meshContextList.Count)
+                    continue;
+
+                var morphCtx = _meshContextList[morphIndex];
+                if (morphCtx == null || !morphCtx.IsMorph) continue;
+
+                // モーフメッシュ名から対応するベースメッシュを探す
+                // 形式: "ベースメッシュ名_モーフ名"
+                string morphMeshName = morphCtx.Name;
+                string baseMeshName = null;
+
+                // アンダースコアで分割して最後の部分を除去
+                int lastUnderscore = morphMeshName.LastIndexOf('_');
+                if (lastUnderscore > 0)
+                {
+                    baseMeshName = morphMeshName.Substring(0, lastUnderscore);
+                }
+
+                if (string.IsNullOrEmpty(baseMeshName)) continue;
+
+                // MeshName, BlendShapeName, Weight
+                parts.Add(baseMeshName);
+                parts.Add(morphSet.Name); // BlendShapeName = MorphSet.Name
+                parts.Add("1.0");
+            }
+
+            if (parts.Count > 1) // ClipName以外にも要素がある
+            {
+                lines.Add(string.Join(",", parts));
+            }
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// BlendShapeSyncコンポーネントをアタッチ
+    /// </summary>
+    private void AttachBlendShapeSync(GameObject root)
+    {
+        if (_model?.MorphSets == null || _model.MorphSets.Count == 0) return;
+
+        string csv = GenerateBlendShapeMappingCSV();
+        if (string.IsNullOrEmpty(csv)) return;
+
+        var sync = root.AddComponent<Poly_Ling.Runtime.BlendShapeSync>();
+        sync.MappingCSV = csv;
+        sync.AutoFindRenderers = true;
+        sync.Initialize();
+
+        Debug.Log($"[BlendShapeSync] Attached with {sync.Clips.Count} clips");
     }
 }

@@ -282,6 +282,7 @@ namespace Poly_Ling.Localization
             ["ImportModel"] = new() { ["en"] = "Open...", ["ja"] = "開く...", ["hi"] = "ひらく..." },
             ["ExportSelectedMeshOnly"] = new() { ["en"] = "Selected Mesh Only", ["ja"] = "選択メッシュのみ", ["hi"] = "えらんだめっしゅだけ" },
             ["BakeMirror"] = new() { ["en"] = "Bake Symmetry", ["ja"] = "対称をベイク", ["hi"] = "たいしょうをやきつけ" },
+            ["BakeBlendShapes"] = new() { ["en"] = "Bake BlendShapes", ["ja"] = "BlendShapeを焼き込む", ["hi"] = "ぶれんどしぇいぷをやきこむ" },
             ["MirrorFlipU"] = new() { ["en"] = "Flip UV U", ["ja"] = "UV U反転", ["hi"] = "UV Uはんてん" },
             ["CreateArmatureMeshesFolder"] = new() { ["en"] = "Create Armature/Meshes Folder", ["ja"] = "Armature/Meshesフォルダ作成", ["hi"] = "フォルダをつくる" },
             ["ExportAsSkinned"] = new() { ["en"] = "Export as SkinnedMesh", ["ja"] = "スキンメッシュとしてエクスポート", ["hi"] = "スキンメッシュ" },

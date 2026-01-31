@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
@@ -19,6 +20,7 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 単一モデルからバッファを構築
+        /// Drawableカテゴリ（Mesh, BakedMirror）のみを対象とする
         /// </summary>
         public void BuildFromModel(ModelContext model, int modelIndex = 0)
         {
@@ -28,12 +30,147 @@ namespace Poly_Ling.Core
                 return;
             }
 
-            var meshContexts = model.MeshContextList;
-            BuildFromMeshContexts(meshContexts, modelIndex);
+            // Drawableのみを取得（Morph, Bone等を除外）
+            var drawableEntries = model.TypedIndices.GetEntries(MeshCategory.Drawable);
+            BuildFromTypedEntries(drawableEntries, modelIndex);
         }
 
         /// <summary>
-        /// MeshContextリストからバッファを構築
+        /// TypedMeshEntryリストからバッファを構築
+        /// MasterIndex（MeshContextList内のインデックス）をマッピングキーとして使用
+        /// </summary>
+        private void BuildFromTypedEntries(IReadOnlyList<TypedMeshEntry> entries, int modelIndex = 0)
+        {
+            if (!_isInitialized)
+                Initialize();
+
+            ClearData();
+
+            if (entries == null || entries.Count == 0)
+                return;
+
+            // 必要な容量を計算
+            int totalVerts = 0;
+            int totalLines = 0;
+            int totalFaces = 0;
+            int totalIndices = 0;
+            int totalExpandedVerts = 0;
+            int meshCount = 0;
+
+            foreach (var entry in entries)
+            {
+                var mc = entry.Context;
+                if (mc?.MeshObject == null) continue;
+                var mo = mc.MeshObject;
+
+                totalVerts += mo.VertexCount;
+                totalFaces += mo.FaceCount;
+                meshCount++;
+
+                foreach (var vertex in mo.Vertices)
+                {
+                    int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+                    totalExpandedVerts += uvCount;
+                }
+
+                foreach (var face in mo.Faces)
+                {
+                    if (face.VertexCount == 2)
+                    {
+                        totalLines++;
+                    }
+                    else if (face.VertexCount >= 3)
+                    {
+                        totalLines += face.VertexCount;
+                        totalIndices += (face.VertexCount - 2) * 3;
+                    }
+                }
+            }
+
+            Debug.Log($"[BuildFromTypedEntries] meshCount={meshCount}, totalVerts={totalVerts}, expandedVerts={totalExpandedVerts}, totalLines={totalLines}, totalFaces={totalFaces}");
+            EnsureCapacity(totalVerts, totalLines, totalFaces, totalIndices, meshCount);
+            EnsureExpandedCapacity(totalExpandedVerts);
+
+            // マッピングをクリア
+            _contextToUnifiedMeshIndex.Clear();
+
+            // データ構築
+            uint vertexOffset = 0;
+            uint lineOffset = 0;
+            uint faceOffset = 0;
+            uint indexOffset = 0;
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                var meshContext = entry.Context;
+                if (meshContext?.MeshObject == null)
+                    continue;
+
+                int masterIndex = entry.MasterIndex;  // MeshContextList内のインデックス
+
+                // マッピングを記録: MeshContextListインデックス → UnifiedMeshインデックス
+                _contextToUnifiedMeshIndex[masterIndex] = _meshCount;
+
+                var meshObject = meshContext.MeshObject;
+
+                // MeshInfo作成
+                _meshInfos[_meshCount] = new MeshInfo
+                {
+                    VertexStart = vertexOffset,
+                    VertexCount = (uint)meshObject.VertexCount,
+                    LineStart = lineOffset,
+                    LineCount = 0,
+                    FaceStart = faceOffset,
+                    FaceCount = (uint)meshObject.FaceCount,
+                    IndexStart = indexOffset,
+                    IndexCount = 0,
+                    Flags = 0,
+                    ModelIndex = (uint)modelIndex
+                };
+
+                // 頂点データ構築
+                BuildVertexData(meshObject, meshContext, modelIndex, masterIndex, ref vertexOffset);
+
+                // ライン/エッジデータ構築
+                uint lineCount = BuildLineData(meshObject, meshContext, modelIndex, masterIndex, vertexOffset - (uint)meshObject.VertexCount, faceOffset, ref lineOffset);
+
+                // 面データ構築
+                uint indexCount = BuildFaceData(meshObject, meshContext, modelIndex, masterIndex, vertexOffset - (uint)meshObject.VertexCount, ref faceOffset, ref indexOffset);
+
+                // MeshInfo更新
+                _meshInfos[_meshCount].LineCount = lineCount;
+                _meshInfos[_meshCount].IndexCount = indexCount;
+
+                _meshCount++;
+            }
+
+            _totalVertexCount = (int)vertexOffset;
+            _totalLineCount = (int)lineOffset;
+            _totalFaceCount = (int)faceOffset;
+            _totalIndexCount = (int)indexOffset;
+            _modelCount = 1;
+
+            // UV展開マッピングを構築（MeshContextリストを作成して渡す）
+            var meshContextList = entries.Select(e => e.Context).ToList();
+            BuildExpandedVertexMapping(meshContextList);
+
+            // ModelInfo作成
+            _modelInfos[0] = new ModelInfo
+            {
+                MeshStart = 0,
+                MeshCount = (uint)_meshCount,
+                VertexStart = 0,
+                VertexCount = (uint)_totalVertexCount,
+                Flags = 0
+            };
+
+            // GPUにアップロード
+            UploadAllBuffers();
+        }
+
+        /// <summary>
+        /// MeshContextリストからバッファを構築（後方互換用）
         /// </summary>
         public void BuildFromMeshContexts(List<MeshContext> meshContexts, int modelIndex = 0)
         {

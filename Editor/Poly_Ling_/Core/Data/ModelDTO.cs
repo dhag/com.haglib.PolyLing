@@ -75,6 +75,16 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public Dictionary<string, int> humanoidBoneMapping = new Dictionary<string, int>();
 
+        // ================================================================
+        // モーフセット
+        // ================================================================
+
+        /// <summary>
+        /// モーフセット一覧
+        /// 複数メッシュのモーフをグループ化
+        /// </summary>
+        public List<MorphSetDTO> morphSets = new List<MorphSetDTO>();
+
         // === ファクトリメソッド ===
 
         public static ModelDTO Create(string modelName)

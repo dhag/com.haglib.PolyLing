@@ -165,6 +165,31 @@ public partial class PolyLing
         }
 
         // ================================================================
+        // BlendShape焼き込み チェックボックス（Undo対応）
+        // モーフセットがある場合のみ表示
+        // ================================================================
+        if (_model.HasMorphSets)
+        {
+            EditorGUI.BeginChangeCheck();
+            bool newBakeBlendShapes = EditorGUILayout.Toggle(L.Get("BakeBlendShapes"), _bakeBlendShapes);
+            if (EditorGUI.EndChangeCheck() && newBakeBlendShapes != _bakeBlendShapes)
+            {
+                if (_undoController != null)
+                {
+                    _undoController.BeginEditorStateDrag();
+                }
+
+                _bakeBlendShapes = newBakeBlendShapes;
+
+                if (_undoController != null)
+                {
+                    _undoController.EditorState.BakeBlendShapes = _bakeBlendShapes;
+                    _undoController.EndEditorStateDrag("Toggle Bake BlendShapes");
+                }
+            }
+        }
+
+        // ================================================================
         // オンメモリマテリアル保存オプション（オンメモリマテリアルがある場合のみ表示）
         // ================================================================
         if (_model.HasOnMemoryMaterials())

@@ -51,6 +51,7 @@ namespace Poly_Ling.UndoSystem
         public bool BakeMirror = false;
         public bool MirrorFlipU = true;
         public bool ExportAsSkinned = false;            // スキンメッシュとしてエクスポート
+        public bool BakeBlendShapes = false;            // モーフをBlendShapeとして焼き込む
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform = false;   // 自身のBoneTransformを反映
@@ -114,6 +115,7 @@ namespace Poly_Ling.UndoSystem
                 BakeMirror = BakeMirror,
                 MirrorFlipU = MirrorFlipU,
                 ExportAsSkinned = ExportAsSkinned,
+                BakeBlendShapes = BakeBlendShapes,
                 ShowLocalTransform = ShowLocalTransform,
                 ShowWorldTransform = ShowWorldTransform,
                 AutoZoomEnabled = AutoZoomEnabled,
@@ -155,6 +157,7 @@ namespace Poly_Ling.UndoSystem
             BakeMirror = snapshot.BakeMirror;
             MirrorFlipU = snapshot.MirrorFlipU;
             ExportAsSkinned = snapshot.ExportAsSkinned;
+            BakeBlendShapes = snapshot.BakeBlendShapes;
             ShowLocalTransform = snapshot.ShowLocalTransform;
             ShowWorldTransform = snapshot.ShowWorldTransform;
             AutoZoomEnabled = snapshot.AutoZoomEnabled;
@@ -209,6 +212,7 @@ namespace Poly_Ling.UndoSystem
         public bool BakeMirror;
         public bool MirrorFlipU;
         public bool ExportAsSkinned;
+        public bool BakeBlendShapes;
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform;
@@ -250,6 +254,7 @@ namespace Poly_Ling.UndoSystem
                 BakeMirror != other.BakeMirror ||
                 MirrorFlipU != other.MirrorFlipU ||
                 ExportAsSkinned != other.ExportAsSkinned ||
+                BakeBlendShapes != other.BakeBlendShapes ||
                 ShowLocalTransform != other.ShowLocalTransform ||
                 ShowWorldTransform != other.ShowWorldTransform ||
                 AutoZoomEnabled != other.AutoZoomEnabled ||

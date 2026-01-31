@@ -56,6 +56,12 @@ namespace Poly_Ling.PMX
         /// <summary>元のPMXドキュメント</summary>
         public PMXDocument Document { get; set; }
 
+        /// <summary>インポートされたモーフセット</summary>
+        public List<MorphSet> MorphSets { get; } = new List<MorphSet>();
+
+        /// <summary>材質グループ情報（モーフ変換で使用）</summary>
+        public List<MaterialGroupInfo> MaterialGroupInfos { get; } = new List<MaterialGroupInfo>();
+
         /// <summary>インポート統計</summary>
         public PMXImportStats Stats { get; } = new PMXImportStats();
 
@@ -167,6 +173,27 @@ namespace Poly_Ling.PMX
         public int MaterialGroupCount { get; set; }
         public int BoneCount { get; set; }
         public int MorphCount { get; set; }
+    }
+
+    /// <summary>
+    /// 材質グループ情報（メッシュ/モーフ分割で共有）
+    /// </summary>
+    public class MaterialGroupInfo
+    {
+        /// <summary>グループに含まれる材質名リスト</summary>
+        public List<string> MaterialNames { get; set; } = new List<string>();
+
+        /// <summary>グループが使用するPMX頂点インデックス</summary>
+        public HashSet<int> UsedVertexIndices { get; set; } = new HashSet<int>();
+
+        /// <summary>PMX頂点インデックス → ローカル頂点インデックス</summary>
+        public Dictionary<int, int> PmxToLocalIndex { get; set; } = new Dictionary<int, int>();
+
+        /// <summary>result.MeshContexts 内のインデックス</summary>
+        public int MeshContextIndex { get; set; } = -1;
+
+        /// <summary>グループ名（メッシュ名）</summary>
+        public string Name { get; set; }
     }
 
     /// <summary>
@@ -342,10 +369,14 @@ namespace Poly_Ling.PMX
                     Debug.Log($"[PMXImporter] Group[{g}] contains {groupMats.Count} materials: [{string.Join(", ", groupMats)}]");
                 }
 
-                // 各グループをMeshContextに変換
+                // 各グループをMeshContextに変換し、MaterialGroupInfoを構築
                 int meshIndex = 0;
                 foreach (var group in materialGroups)
                 {
+                    // MaterialGroupInfo を構築
+                    var groupInfo = BuildMaterialGroupInfo(group, materialToFaces, meshIndex);
+                    groupInfo.MeshContextIndex = boneContextCount + meshIndex;
+
                     var meshContext = ConvertMaterialGroup(
                         document,
                         group,
@@ -357,7 +388,9 @@ namespace Poly_Ling.PMX
 
                     if (meshContext != null)
                     {
+                        groupInfo.Name = meshContext.Name;
                         result.MeshContexts.Add(meshContext);
+                        result.MaterialGroupInfos.Add(groupInfo);
                         meshIndex++;
                     }
                 }
@@ -394,11 +427,11 @@ namespace Poly_Ling.PMX
                 // ConvertJoints(document, settings, result);
             }
 
-            // TODO: モーフをインポート（将来実装）
+            // モーフをインポート
             if (settings.ShouldImportMorphs && document.Morphs.Count > 0)
             {
-                Debug.Log($"[PMXImporter] Morphs import not yet implemented ({document.Morphs.Count} morphs)");
-                // ConvertMorphs(document, settings, result);
+                ConvertMorphs(document, settings, result);
+                Debug.Log($"[PMXImporter] Imported {result.MorphSets.Count} morph sets");
             }
         }
 
@@ -1756,6 +1789,307 @@ namespace Poly_Ling.PMX
             if (settings.FlipUV_V)
                 return new Vector2(pmxUV.x, 1f - pmxUV.y);
             return pmxUV;
+        }
+
+        // ================================================================
+        // MaterialGroupInfo 構築
+        // ================================================================
+
+        /// <summary>
+        /// 材質グループから MaterialGroupInfo を構築
+        /// </summary>
+        private static MaterialGroupInfo BuildMaterialGroupInfo(
+            List<string> materialNames,
+            Dictionary<string, List<PMXFace>> materialToFaces,
+            int meshIndex)
+        {
+            var info = new MaterialGroupInfo
+            {
+                MaterialNames = new List<string>(materialNames)
+            };
+
+            // グループ内の全面から使用頂点を収集
+            foreach (var matName in materialNames)
+            {
+                if (materialToFaces.TryGetValue(matName, out var faces))
+                {
+                    foreach (var face in faces)
+                    {
+                        info.UsedVertexIndices.Add(face.VertexIndex1);
+                        info.UsedVertexIndices.Add(face.VertexIndex2);
+                        info.UsedVertexIndices.Add(face.VertexIndex3);
+                    }
+                }
+            }
+
+            // PMX頂点インデックス → ローカルインデックス のマッピングを構築
+            // ConvertMaterialGroup と同じロジック
+            var sortedIndices = info.UsedVertexIndices.OrderBy(x => x).ToList();
+            for (int i = 0; i < sortedIndices.Count; i++)
+            {
+                info.PmxToLocalIndex[sortedIndices[i]] = i;
+            }
+
+            return info;
+        }
+
+        // ================================================================
+        // モーフ変換
+        // ================================================================
+
+        /// <summary>
+        /// PMXモーフをMeshContext + MorphSetに変換
+        /// </summary>
+        private static void ConvertMorphs(PMXDocument document, PMXImportSettings settings, PMXImportResult result)
+        {
+            if (result.MaterialGroupInfos.Count == 0)
+            {
+                Debug.LogWarning("[PMXImporter] No material group info available for morph conversion");
+                return;
+            }
+
+            foreach (var pmxMorph in document.Morphs)
+            {
+                // 頂点モーフ (type=1) と UVモーフ (type=3-7) のみ対応
+                if (pmxMorph.MorphType == 1)
+                {
+                    ConvertVertexMorph(document, pmxMorph, settings, result);
+                }
+                else if (pmxMorph.MorphType >= 3 && pmxMorph.MorphType <= 7)
+                {
+                    ConvertUVMorph(document, pmxMorph, settings, result);
+                }
+                // グループモーフ(0)、ボーンモーフ(2)、マテリアルモーフ(8)等は未対応
+            }
+        }
+
+        /// <summary>
+        /// 頂点モーフを変換
+        /// </summary>
+        private static void ConvertVertexMorph(
+            PMXDocument document,
+            PMXMorph pmxMorph,
+            PMXImportSettings settings,
+            PMXImportResult result)
+        {
+            // 各MaterialGroupに対するオフセットを分類
+            // key: MaterialGroupInfo のインデックス, value: (ローカル頂点Index, オフセット) のリスト
+            var groupOffsets = new Dictionary<int, List<(int localIndex, Vector3 offset)>>();
+
+            foreach (var offset in pmxMorph.Offsets)
+            {
+                if (offset is PMXVertexMorphOffset vertexOffset)
+                {
+                    int pmxVertexIndex = vertexOffset.VertexIndex;
+
+                    // この頂点がどのグループに属するか検索
+                    for (int gi = 0; gi < result.MaterialGroupInfos.Count; gi++)
+                    {
+                        var groupInfo = result.MaterialGroupInfos[gi];
+                        if (groupInfo.PmxToLocalIndex.TryGetValue(pmxVertexIndex, out int localIndex))
+                        {
+                            if (!groupOffsets.ContainsKey(gi))
+                                groupOffsets[gi] = new List<(int, Vector3)>();
+
+                            // オフセットを座標変換
+                            Vector3 convertedOffset = ConvertPosition(vertexOffset.Offset, settings);
+                            groupOffsets[gi].Add((localIndex, convertedOffset));
+                            break;  // 1つの頂点は1つのグループにのみ属する
+                        }
+                    }
+                }
+            }
+
+            if (groupOffsets.Count == 0)
+            {
+                Debug.LogWarning($"[PMXImporter] Vertex morph '{pmxMorph.Name}' has no valid offsets");
+                return;
+            }
+
+            // MorphSetを作成
+            var morphSet = new MorphSet(pmxMorph.Name, MorphType.Vertex)
+            {
+                NameEnglish = pmxMorph.NameEnglish ?? "",
+                Panel = pmxMorph.Panel
+            };
+
+            // 影響する各グループについてモーフメッシュを作成
+            foreach (var kvp in groupOffsets)
+            {
+                int groupIndex = kvp.Key;
+                var offsets = kvp.Value;
+                var groupInfo = result.MaterialGroupInfos[groupIndex];
+
+                if (groupInfo.MeshContextIndex < 0 || groupInfo.MeshContextIndex >= result.MeshContexts.Count)
+                    continue;
+
+                var baseMesh = result.MeshContexts[groupInfo.MeshContextIndex];
+                if (baseMesh?.MeshObject == null) continue;
+
+                // メッシュをクローン
+                var morphMesh = new MeshContext
+                {
+                    MeshObject = baseMesh.MeshObject.Clone(),
+                    Type = MeshType.Morph,
+                    IsVisible = false,  // モーフメッシュは非表示
+                    ExcludeFromExport = true  // エクスポートから除外
+                };
+                morphMesh.MeshObject.Type = MeshType.Morph;  // MeshObject.Typeも設定（TypedMeshIndices用）
+                morphMesh.MeshObject.Name = $"{baseMesh.Name}_{pmxMorph.Name}";
+                morphMesh.Name = morphMesh.MeshObject.Name;
+
+                // MorphBaseDataを設定（現在の位置を基準として保存）
+                morphMesh.SetAsMorph(pmxMorph.Name);
+                morphMesh.MorphPanel = pmxMorph.Panel;
+
+                // オフセットを適用
+                foreach (var (localIndex, offset) in offsets)
+                {
+                    if (localIndex < morphMesh.MeshObject.VertexCount)
+                    {
+                        morphMesh.MeshObject.Vertices[localIndex].Position += offset;
+                    }
+                }
+
+                // Unity Meshを再構築
+                morphMesh.UnityMesh = morphMesh.MeshObject.ToUnityMeshShared();
+                morphMesh.UnityMesh.name = morphMesh.MeshObject.Name;
+                morphMesh.UnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+
+                // 結果に追加
+                int morphMeshIndex = result.MeshContexts.Count;
+                result.MeshContexts.Add(morphMesh);
+                morphSet.AddMesh(morphMeshIndex);
+            }
+
+            if (morphSet.MeshCount > 0)
+            {
+                result.MorphSets.Add(morphSet);
+            }
+        }
+
+        /// <summary>
+        /// UVモーフを変換
+        /// </summary>
+        private static void ConvertUVMorph(
+            PMXDocument document,
+            PMXMorph pmxMorph,
+            PMXImportSettings settings,
+            PMXImportResult result)
+        {
+            // 各MaterialGroupに対するオフセットを分類
+            var groupOffsets = new Dictionary<int, List<(int localIndex, Vector2 offset)>>();
+
+            foreach (var offset in pmxMorph.Offsets)
+            {
+                if (offset is PMXUVMorphOffset uvOffset)
+                {
+                    int pmxVertexIndex = uvOffset.VertexIndex;
+
+                    // この頂点がどのグループに属するか検索
+                    for (int gi = 0; gi < result.MaterialGroupInfos.Count; gi++)
+                    {
+                        var groupInfo = result.MaterialGroupInfos[gi];
+                        if (groupInfo.PmxToLocalIndex.TryGetValue(pmxVertexIndex, out int localIndex))
+                        {
+                            if (!groupOffsets.ContainsKey(gi))
+                                groupOffsets[gi] = new List<(int, Vector2)>();
+
+                            // UV オフセット（Vector4のXYのみ使用）
+                            Vector2 uvOffsetValue = new Vector2(uvOffset.Offset.x, uvOffset.Offset.y);
+
+                            // UV V反転設定に応じて調整
+                            if (settings.FlipUV_V)
+                                uvOffsetValue.y = -uvOffsetValue.y;
+
+                            groupOffsets[gi].Add((localIndex, uvOffsetValue));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (groupOffsets.Count == 0)
+            {
+                Debug.LogWarning($"[PMXImporter] UV morph '{pmxMorph.Name}' has no valid offsets");
+                return;
+            }
+
+            // MorphTypeを決定
+            MorphType morphType = pmxMorph.MorphType switch
+            {
+                3 => MorphType.UV,
+                4 => MorphType.UV1,
+                5 => MorphType.UV2,
+                6 => MorphType.UV3,
+                7 => MorphType.UV4,
+                _ => MorphType.UV
+            };
+
+            // MorphSetを作成
+            var morphSet = new MorphSet(pmxMorph.Name, morphType)
+            {
+                NameEnglish = pmxMorph.NameEnglish ?? "",
+                Panel = pmxMorph.Panel
+            };
+
+            // 影響する各グループについてモーフメッシュを作成
+            foreach (var kvp in groupOffsets)
+            {
+                int groupIndex = kvp.Key;
+                var offsets = kvp.Value;
+                var groupInfo = result.MaterialGroupInfos[groupIndex];
+
+                if (groupInfo.MeshContextIndex < 0 || groupInfo.MeshContextIndex >= result.MeshContexts.Count)
+                    continue;
+
+                var baseMesh = result.MeshContexts[groupInfo.MeshContextIndex];
+                if (baseMesh?.MeshObject == null) continue;
+
+                // メッシュをクローン
+                var morphMesh = new MeshContext
+                {
+                    MeshObject = baseMesh.MeshObject.Clone(),
+                    Type = MeshType.Morph,
+                    IsVisible = false,
+                    ExcludeFromExport = true
+                };
+                morphMesh.MeshObject.Type = MeshType.Morph;  // MeshObject.Typeも設定（TypedMeshIndices用）
+                morphMesh.MeshObject.Name = $"{baseMesh.Name}_{pmxMorph.Name}";
+                morphMesh.Name = morphMesh.MeshObject.Name;
+
+                // MorphBaseDataを設定
+                morphMesh.SetAsMorph(pmxMorph.Name);
+                morphMesh.MorphPanel = pmxMorph.Panel;
+
+                // UVオフセットを適用
+                foreach (var (localIndex, uvOffset) in offsets)
+                {
+                    if (localIndex < morphMesh.MeshObject.VertexCount)
+                    {
+                        var vertex = morphMesh.MeshObject.Vertices[localIndex];
+                        if (vertex.UVs.Count > 0)
+                        {
+                            vertex.UVs[0] += uvOffset;
+                        }
+                    }
+                }
+
+                // Unity Meshを再構築
+                morphMesh.UnityMesh = morphMesh.MeshObject.ToUnityMeshShared();
+                morphMesh.UnityMesh.name = morphMesh.MeshObject.Name;
+                morphMesh.UnityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+
+                // 結果に追加
+                int morphMeshIndex = result.MeshContexts.Count;
+                result.MeshContexts.Add(morphMesh);
+                morphSet.AddMesh(morphMeshIndex);
+            }
+
+            if (morphSet.MeshCount > 0)
+            {
+                result.MorphSets.Add(morphSet);
+            }
         }
     }
 }

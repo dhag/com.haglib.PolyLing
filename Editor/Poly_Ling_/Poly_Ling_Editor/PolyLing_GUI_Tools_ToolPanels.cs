@@ -100,6 +100,11 @@ public partial class PolyLing
         {
             Poly_Ling.Tools.Panels.HumanoidMappingPanel.Open(_toolManager?.toolContext);
         }
+        
+        if(GUILayout.Button("モーフ確認"))
+        {
+            Poly_Ling.Tools.Panels.MorphPanel.Open(_toolManager?.toolContext);
+        }
         EditorGUI.indentLevel--;
     }
 

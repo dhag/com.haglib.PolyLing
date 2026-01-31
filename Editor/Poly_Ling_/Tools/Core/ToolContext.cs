@@ -280,6 +280,9 @@ namespace Poly_Ling.Tools
         /// <summary>MeshObjectからUnity Meshの位置のみ更新（軽量版）</summary>
         public Action SyncMeshPositionsOnly { get; set; }
 
+        /// <summary>指定MeshContextの位置のみ更新（非選択メッシュにも対応）</summary>
+        public Action<MeshContext> SyncMeshContextPositionsOnly { get; set; }
+
         /// <summary>画面再描画を要求</summary>
         public Action Repaint { get; set; }
 

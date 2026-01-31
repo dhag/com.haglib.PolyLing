@@ -228,6 +228,38 @@ namespace Poly_Ling.Data
             return result;
         }
 
+        /// <summary>
+        /// 変化のあるUVインデックスと差分を取得（エクスポート用、スパース形式）
+        /// </summary>
+        /// <param name="meshObject">モーフ後のメッシュ</param>
+        /// <param name="threshold">変化とみなす閾値</param>
+        /// <returns>(頂点インデックス, 差分) のリスト</returns>
+        public List<(int Index, Vector2 Offset)> GetSparseUVOffsets(MeshObject meshObject, float threshold = 0.0001f)
+        {
+            var result = new List<(int, Vector2)>();
+
+            if (!HasUVs || meshObject == null)
+                return result;
+
+            int count = Mathf.Min(BaseUVs.Length, meshObject.VertexCount);
+            float thresholdSq = threshold * threshold;
+
+            for (int i = 0; i < count; i++)
+            {
+                var uvs = meshObject.Vertices[i].UVs;
+                if (uvs == null || uvs.Count == 0)
+                    continue;
+
+                Vector2 offset = uvs[0] - BaseUVs[i];
+                if (offset.sqrMagnitude > thresholdSq)
+                {
+                    result.Add((i, offset));
+                }
+            }
+
+            return result;
+        }
+
         // ================================================================
         // 基準位置の適用
         // ================================================================

@@ -184,6 +184,12 @@ public partial class PolyLing : EditorWindow
         set { if (_undoController?.EditorState != null) _undoController.EditorState.MirrorFlipU = value; }
     }
 
+    private bool _bakeBlendShapes
+    {
+        get => _undoController?.EditorState?.BakeBlendShapes ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.BakeBlendShapes = value; }
+    }
+
     [SerializeField]
     private bool _saveOnMemoryMaterials = true;  // オンメモリマテリアルをアセットとして保存
 

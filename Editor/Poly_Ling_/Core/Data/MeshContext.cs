@@ -494,6 +494,18 @@ namespace Poly_Ling.Data
             return MorphBaseData.GetSparseOffsets(MeshObject, threshold);
         }
 
+        /// <summary>
+        /// UVモーフ差分を取得（エクスポート用）
+        /// </summary>
+        /// <returns>変化のあるUVとその差分のリスト</returns>
+        public List<(int VertexIndex, Vector2 Offset)> GetUVMorphOffsets(float threshold = 0.0001f)
+        {
+            if (!IsMorph || MeshObject == null || MorphBaseData == null)
+                return new List<(int, Vector2)>();
+
+            return MorphBaseData.GetSparseUVOffsets(MeshObject, threshold);
+        }
+
         // ================================================================
         // エクスポート制御フラグ（Phase: Morph対応）
         // ================================================================
@@ -538,6 +550,7 @@ namespace Poly_Ling.Data
                 default: return Poly_Ling.Symmetry.SymmetryAxis.X;
             }
         }
+
 
         // ================================================================
         // ミラーメッシュキャッシュ

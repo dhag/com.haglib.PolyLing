@@ -392,6 +392,60 @@ namespace Poly_Ling.Model
 
         /// <summary>作業平面</summary>
         public WorkPlaneContext WorkPlane { get; set; }
+
+        // ================================================================
+        // MorphSets（モーフグループ管理）
+        // ================================================================
+
+        /// <summary>モーフセットリスト</summary>
+        public List<MorphSet> MorphSets { get; set; } = new List<MorphSet>();
+
+        /// <summary>モーフセット数</summary>
+        public int MorphSetCount => MorphSets?.Count ?? 0;
+
+        /// <summary>モーフセットがあるか</summary>
+        public bool HasMorphSets => MorphSetCount > 0;
+
+        /// <summary>モーフセットを追加</summary>
+        public MorphSet AddMorphSet(string name, MorphType type = MorphType.Vertex)
+        {
+            var set = new MorphSet(name, type);
+            MorphSets.Add(set);
+            return set;
+        }
+
+        /// <summary>モーフセットを削除</summary>
+        public bool RemoveMorphSet(MorphSet set)
+        {
+            return MorphSets.Remove(set);
+        }
+
+        /// <summary>名前でモーフセットを検索</summary>
+        public MorphSet FindMorphSetByName(string name)
+        {
+            return MorphSets.Find(s => s.Name == name);
+        }
+
+        /// <summary>メッシュインデックスでモーフセットを検索</summary>
+        public MorphSet FindMorphSetByMesh(int meshIndex)
+        {
+            return MorphSets.Find(s => s.ContainsMesh(meshIndex));
+        }
+
+        /// <summary>一意なモーフセット名を生成</summary>
+        public string GenerateUniqueMorphSetName(string baseName = "Morph")
+        {
+            string name = baseName;
+            int counter = 1;
+
+            while (FindMorphSetByName(name) != null)
+            {
+                name = $"{baseName}_{counter}";
+                counter++;
+            }
+
+            return name;
+        }
         
         // ================================================================
         // Materials（モデル単位で実データを保持）
@@ -757,6 +811,12 @@ namespace Poly_Ling.Model
             SelectedMeshIndices = AdjustIndicesForInsert(SelectedMeshIndices, index);
             SelectedBoneIndices = AdjustIndicesForInsert(SelectedBoneIndices, index);
             SelectedMorphIndices = AdjustIndicesForInsert(SelectedMorphIndices, index);
+
+            // モーフセットのインデックス調整
+            foreach (var set in MorphSets)
+            {
+                set.AdjustIndicesOnInsert(index);
+            }
         }
 
         /// <summary>挿入時のインデックス調整ヘルパー</summary>
@@ -785,6 +845,13 @@ namespace Poly_Ling.Model
             SelectedMeshIndices = AdjustIndicesForRemove(SelectedMeshIndices, index);
             SelectedBoneIndices = AdjustIndicesForRemove(SelectedBoneIndices, index);
             SelectedMorphIndices = AdjustIndicesForRemove(SelectedMorphIndices, index);
+
+            // モーフセットのインデックス調整
+            foreach (var set in MorphSets)
+            {
+                set.AdjustIndicesOnRemove(index);
+            }
+
             ValidateSelection();
 
             return true;
