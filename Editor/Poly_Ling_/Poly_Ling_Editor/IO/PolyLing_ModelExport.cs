@@ -343,14 +343,27 @@ public partial class PolyLing
             bool isBone = (meshContext.Type == MeshType.Bone);
             bool hasVertices = (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0);
 
-            if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            // 親子関係の設定
+            // Armature/Meshes構造を使用する場合：
+            // - ボーンはHierarchyParentIndexに従ってArmature下に階層化
+            // - メッシュ（頂点を持つ非ボーン）はMeshes下に配置（HierarchyParentIndexを無視）
+            bool shouldFollowParentHierarchy = true;
+            
+            if (useArmatureMeshesStructure && hasBone && !isBone && hasVertices)
             {
-                // 親がメッシュリスト内にある場合
+                // メッシュはMeshes下に配置（親子関係を無視）
+                shouldFollowParentHierarchy = false;
+            }
+
+            if (shouldFollowParentHierarchy &&
+                parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            {
+                // 親がメッシュリスト内にある場合（ボーンの階層化）
                 go.transform.SetParent(createdObjects[parentIndex].transform, false);
             }
             else
             {
-                // ルートオブジェクト
+                // ルートオブジェクトまたはMeshes配下に配置
                 if (useArmatureMeshesStructure && hasBone)
                 {
                     if (isBone && armatureParent != null)
@@ -623,14 +636,27 @@ public partial class PolyLing
             bool isBone = (meshContext.Type == MeshType.Bone);
             bool hasVertices = (meshContext.MeshObject != null && meshContext.MeshObject.VertexCount > 0);
 
-            if (parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            // 親子関係の設定
+            // Armature/Meshes構造を使用する場合：
+            // - ボーンはHierarchyParentIndexに従ってArmature下に階層化
+            // - メッシュ（頂点を持つ非ボーン）はMeshes下に配置（HierarchyParentIndexを無視）
+            bool shouldFollowParentHierarchy = true;
+            
+            if (useArmatureMeshesStructure && hasBone && !isBone && hasVertices)
             {
-                // 親がメッシュリスト内にある場合
+                // メッシュはMeshes下に配置（親子関係を無視）
+                shouldFollowParentHierarchy = false;
+            }
+
+            if (shouldFollowParentHierarchy && 
+                parentIndex >= 0 && parentIndex < createdObjects.Length && createdObjects[parentIndex] != null)
+            {
+                // 親がメッシュリスト内にある場合（ボーンの階層化）
                 go.transform.SetParent(createdObjects[parentIndex].transform, false);
             }
             else
             {
-                // ルートオブジェクト
+                // ルートオブジェクトまたはMeshes配下に配置
                 if (useArmatureMeshesStructure && hasBone)
                 {
                     if (isBone && armatureParent != null)

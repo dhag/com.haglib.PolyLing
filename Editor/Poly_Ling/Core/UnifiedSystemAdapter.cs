@@ -452,6 +452,17 @@ namespace Poly_Ling.Core
                 if (expandedVertexCount == 0)
                     continue;
 
+                // 境界チェック: expandedPositions配列の範囲外アクセスを防ぐ
+                if (expandedOffset + expandedVertexCount > expandedPositions.Length)
+                {
+                    // バッファサイズ不整合 - フォールバック処理へ
+                    Debug.LogWarning($"[WritebackTransformedVertices] Buffer size mismatch for mesh '{ctx.Name}': " +
+                        $"offset={expandedOffset}, count={expandedVertexCount}, bufferSize={expandedPositions.Length}. " +
+                        $"Skipping this mesh.");
+                    expandedOffset += expandedVertexCount;
+                    continue;
+                }
+
                 // UnityMeshが存在し、頂点数が一致する場合は位置のみ更新
                 var unityMesh = ctx.UnityMesh;
                 if (unityMesh != null && unityMesh.vertexCount == expandedVertexCount)

@@ -190,7 +190,8 @@ public partial class PolyLing
     }
     
     /// <summary>
-    /// Armatureフォルダを検出（エクスポートしたモデルの再インポート用）
+    /// Armatureフォルダを検出し、実際のルートボーンを返す（エクスポートしたモデルの再インポート用）
+    /// Armatureフォルダ自体ではなく、その最初の子（実際のボーン階層のルート）を返す
     /// </summary>
     private Transform DetectArmatureFolder(Transform root)
     {
@@ -201,6 +202,12 @@ public partial class PolyLing
         {
             if (child.name == "Armature")
             {
+                // Armatureフォルダの最初の子が実際のルートボーン
+                if (child.childCount > 0)
+                {
+                    return child.GetChild(0);
+                }
+                // 子がない場合はArmatureフォルダ自体を返す（フォールバック）
                 return child;
             }
         }
@@ -289,17 +296,112 @@ public partial class PolyLing
 
     /// <summary>
     /// 複数のSkinnedMeshRendererから最適なルートボーンを検出
+    /// 優先順位: 1.Animator.avatar 2.SMR.rootBone 3.bones配列から推定
     /// </summary>
     private Transform DetectBestRootBone(SkinnedMeshRenderer[] smrs)
     {
         if (smrs == null || smrs.Length == 0) return null;
 
-        // 全smrのrootBoneを収集
+        // 0. まずAnimatorからルートボーンを取得（最も信頼性が高い）
+        // SMRの親階層を辿ってAnimatorを探す
+        foreach (var smr in smrs)
+        {
+            if (smr == null) continue;
+            
+            var animator = smr.GetComponentInParent<Animator>();
+            if (animator != null && animator.avatar != null)
+            {
+                // AvatarのHumanDescriptionからルートボーンを取得
+                // Humanoidの場合はHipsが実質的なルート
+                if (animator.isHuman)
+                {
+                    var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+                    if (hips != null)
+                    {
+                        // Hipsから親を辿ってArmatureフォルダの直下の子を探す
+                        // これがルートボーン（エクスポータがArmature直下に配置するボーン）
+                        Transform current = hips;
+                        while (current.parent != null)
+                        {
+                            // Armatureフォルダの直下に到達したらそれがルートボーン
+                            if (current.parent.name == "Armature")
+                            {
+                                Debug.Log($"[DetectBestRootBone] Found root bone under Armature: {current.name}");
+                                return current;
+                            }
+                            // Animatorの直下（Armatureフォルダがない構造）に到達した場合
+                            if (current.parent == animator.transform)
+                            {
+                                // currentがArmatureフォルダ自体かチェック
+                                if (current.name == "Armature" && current.childCount > 0)
+                                {
+                                    // Armatureフォルダの最初の子を返す
+                                    Debug.Log($"[DetectBestRootBone] Found Armature folder, returning first child: {current.GetChild(0).name}");
+                                    return current.GetChild(0);
+                                }
+                                // そうでなければcurrent自体がルートボーン
+                                Debug.Log($"[DetectBestRootBone] Found root bone under Animator: {current.name}");
+                                return current;
+                            }
+                            current = current.parent;
+                        }
+                        // 見つからなければHips自体を返す
+                        Debug.Log($"[DetectBestRootBone] Fallback to Hips: {hips.name}");
+                        return hips;
+                    }
+                }
+                
+                // Genericの場合やHipsが取れない場合はrootBoneを試す
+                // （Animator.avatarRootはUnityエディタ専用なので使えない）
+            }
+        }
+
+        // 1. 全smrのrootBoneを収集
         var rootBones = smrs
             .Where(s => s != null && s.rootBone != null)
             .Select(s => s.rootBone)
             .Distinct()
             .ToList();
+
+        // 2. rootBoneが設定されていない場合、bones配列から最も階層が高いボーンを探す
+        if (rootBones.Count == 0)
+        {
+            var allBones = new HashSet<Transform>();
+            foreach (var smr in smrs)
+            {
+                if (smr != null && smr.bones != null)
+                {
+                    foreach (var bone in smr.bones)
+                    {
+                        if (bone != null)
+                            allBones.Add(bone);
+                    }
+                }
+            }
+            
+            if (allBones.Count > 0)
+            {
+                // 全ボーンの中で最も階層が高いものを探す
+                var topBone = allBones
+                    .OrderBy(b => GetHierarchyDepth(b))
+                    .First();
+                
+                // 親を辿ってボーン配列に含まれる最上位を見つける
+                Transform current = topBone;
+                while (current.parent != null && allBones.Contains(current.parent))
+                {
+                    current = current.parent;
+                }
+                
+                // Armatureフォルダの子かどうか確認
+                if (current.parent != null && current.parent.name == "Armature")
+                {
+                    return current;
+                }
+                
+                return current;
+            }
+        }
 
         if (rootBones.Count == 0) return null;
         if (rootBones.Count == 1) return rootBones[0];
@@ -463,11 +565,25 @@ public partial class PolyLing
             boneGameObjects.Add(bone.gameObject);
         }
         
-        // ボーンでないGameObjectのみをフィルタリング
+        // Armature/Meshes構造のフォルダオブジェクトを検出して除外
+        // これらは空のGameObjectで、エクスポート時に自動生成されるもの
+        var folderObjects = new HashSet<GameObject>();
+        foreach (var go in gameObjects)
+        {
+            // メッシュコンポーネントを持たず、名前が"Armature"または"Meshes"の場合は除外候補
+            if ((go.name == "Armature" || go.name == "Meshes") &&
+                go.GetComponent<MeshFilter>() == null &&
+                go.GetComponent<SkinnedMeshRenderer>() == null)
+            {
+                folderObjects.Add(go);
+            }
+        }
+        
+        // ボーンでもフォルダでもないGameObjectのみをフィルタリング
         var meshGameObjects = new List<GameObject>();
         foreach (var go in gameObjects)
         {
-            if (!boneGameObjects.Contains(go))
+            if (!boneGameObjects.Contains(go) && !folderObjects.Contains(go))
             {
                 meshGameObjects.Add(go);
             }
