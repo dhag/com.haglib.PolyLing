@@ -182,6 +182,13 @@ namespace Poly_Ling.Serialization
         /// <summary>折りたたみ状態（MQO互換）</summary>
         public bool isFolding = false;
 
+        /// <summary>
+        /// 頂点が展開済みか（PMX形式）
+        /// true: 各頂点が1つのUV/法線を持つ（展開済み、PMX互換）
+        /// false: 頂点が複数のUV/法線を持つ可能性あり（MQO形式）
+        /// </summary>
+        public bool isExpanded = false;
+
         // ================================================================
         // ミラー設定
         // ================================================================

@@ -552,25 +552,108 @@ namespace Poly_Ling.PMX
             Dictionary<string, int> boneNameToIndex,
             PMXExportSettings settings)
         {
-            int globalVertexOffset = 0;
+            // メッシュをObjectName別にグループ化
+            // MeshContext.Name をObjectNameとして使用
+            var objectGroups = new Dictionary<string, List<MeshContext>>();
+            var groupOrder = new List<string>();
 
             foreach (var ctx in meshContexts)
             {
-                var meshObject = ctx?.MeshObject;
-                if (meshObject == null || meshObject.VertexCount == 0) continue;
+                if (ctx?.MeshObject == null || ctx.MeshObject.VertexCount == 0) continue;
+                if (ctx.Type == MeshType.Morph) continue;  // モーフは除外
+                if (ctx.ExcludeFromExport) continue;       // エクスポート除外
 
-                int meshVertexStart = document.Vertices.Count;
-
-                // 頂点を変換
-                foreach (var vertex in meshObject.Vertices)
+                string objectName = ctx.Name ?? "Unnamed";
+                
+                // BakedMirrorの場合、元のオブジェクト名を使用（"+"接尾辞を除去）
+                bool isMirror = ctx.IsBakedMirror;
+                if (isMirror && objectName.EndsWith("+"))
                 {
-                    var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
-                    pmxVertex.Index = document.Vertices.Count;
-                    document.Vertices.Add(pmxVertex);
+                    objectName = objectName.TrimEnd('+');
                 }
 
-                // 面を変換
-                foreach (var face in meshObject.Faces)
+                if (!objectGroups.ContainsKey(objectName))
+                {
+                    objectGroups[objectName] = new List<MeshContext>();
+                    groupOrder.Add(objectName);
+                }
+                objectGroups[objectName].Add(ctx);
+            }
+
+            // 実体側を先に、次にミラー側を出力（仕様通りの順序）
+            var realMeshes = new List<(MeshContext ctx, string objectName, bool isMirror)>();
+            var mirrorMeshes = new List<(MeshContext ctx, string objectName, bool isMirror)>();
+
+            foreach (var objectName in groupOrder)
+            {
+                foreach (var ctx in objectGroups[objectName])
+                {
+                    bool isMirror = ctx.IsBakedMirror;
+                    if (isMirror)
+                        mirrorMeshes.Add((ctx, objectName, true));
+                    else
+                        realMeshes.Add((ctx, objectName, false));
+                }
+            }
+
+            // 実体側を出力
+            foreach (var (ctx, objectName, isMirror) in realMeshes)
+            {
+                ConvertSingleMeshWithObjectName(ctx, document, boneNameToIndex, settings, objectName, isMirror);
+            }
+
+            // ミラー側を出力
+            foreach (var (ctx, objectName, isMirror) in mirrorMeshes)
+            {
+                ConvertSingleMeshWithObjectName(ctx, document, boneNameToIndex, settings, objectName, isMirror);
+            }
+
+            // 材質の面数を更新
+            UpdateMaterialFaceCounts(document);
+
+            Debug.Log($"[PMXExporter] Converted {document.Vertices.Count} vertices, {document.Faces.Count} faces");
+        }
+
+        /// <summary>
+        /// 単一MeshContextをPMX形式に変換（ObjectName対応）
+        /// </summary>
+        private static void ConvertSingleMeshWithObjectName(
+            MeshContext ctx,
+            PMXDocument document,
+            Dictionary<string, int> boneNameToIndex,
+            PMXExportSettings settings,
+            string objectName,
+            bool isMirror)
+        {
+            var meshObject = ctx.MeshObject;
+            int meshVertexStart = document.Vertices.Count;
+
+            // 頂点を変換（順序保持）
+            foreach (var vertex in meshObject.Vertices)
+            {
+                var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
+                pmxVertex.Index = document.Vertices.Count;
+                document.Vertices.Add(pmxVertex);
+            }
+
+            // 面を材質ごとにグループ化（同一材質内の面順序は保持）
+            var facesByMaterial = new Dictionary<int, List<Face>>();
+            foreach (var face in meshObject.Faces)
+            {
+                if (!facesByMaterial.ContainsKey(face.MaterialIndex))
+                    facesByMaterial[face.MaterialIndex] = new List<Face>();
+                facesByMaterial[face.MaterialIndex].Add(face);
+            }
+
+            // 材質インデックス順に面を追加
+            foreach (var matIndex in facesByMaterial.Keys.OrderBy(k => k))
+            {
+                var faces = facesByMaterial[matIndex];
+                string materialName = matIndex < document.Materials.Count
+                    ? document.Materials[matIndex].Name
+                    : $"Material_{matIndex}";
+
+                foreach (var face in faces)
                 {
                     if (face.VertexIndices.Count < 3) continue;
 
@@ -581,16 +664,10 @@ namespace Poly_Ling.PMX
                         int v1 = face.VertexIndices[i + 1] + meshVertexStart;
                         int v2 = face.VertexIndices[i + 2] + meshVertexStart;
 
-                        // 材質名を取得
-                        string materialName = "";
-                        if (face.MaterialIndex >= 0 && face.MaterialIndex < document.Materials.Count)
-                        {
-                            materialName = document.Materials[face.MaterialIndex].Name;
-                        }
-
                         var pmxFace = new PMXFace
                         {
                             MaterialName = materialName,
+                            MaterialIndex = matIndex,
                             FaceIndex = document.Faces.Count,
                             VertexIndex1 = settings.FlipZ ? v0 : v0,
                             VertexIndex2 = settings.FlipZ ? v2 : v1,
@@ -601,13 +678,64 @@ namespace Poly_Ling.PMX
                     }
                 }
 
-                // 材質の面数を更新
-                UpdateMaterialFaceCounts(document);
-
-                globalVertexOffset += meshObject.VertexCount;
+                // 材質のMemo欄にObjectNameを設定
+                SetMaterialObjectName(document, matIndex, objectName, isMirror);
             }
+        }
 
-            Debug.Log($"[PMXExporter] Converted {document.Vertices.Count} vertices, {document.Faces.Count} faces");
+        /// <summary>
+        /// 材質のMemo欄にObjectNameを設定
+        /// </summary>
+        private static void SetMaterialObjectName(
+            PMXDocument document,
+            int materialIndex,
+            string objectName,
+            bool isMirror)
+        {
+            if (materialIndex < 0 || materialIndex >= document.Materials.Count)
+                return;
+
+            var mat = document.Materials[materialIndex];
+            string newMemo = PMXHelper.BuildMaterialMemo(objectName, isMirror);
+
+            if (string.IsNullOrEmpty(newMemo))
+                return;
+
+            // 既存のMemoがある場合、ObjectName関連の既存データを削除してから追加
+            if (!string.IsNullOrEmpty(mat.Memo))
+            {
+                // 既存のObjectName/IsMirrorを除去
+                var existingParts = mat.Memo.Split(',')
+                    .Select(p => p.Trim())
+                    .ToList();
+
+                var cleanedParts = new List<string>();
+                for (int i = 0; i < existingParts.Count; i++)
+                {
+                    var part = existingParts[i];
+                    if (part.Equals("ObjectName", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // ObjectName,値 の値部分もスキップ
+                        if (i + 1 < existingParts.Count)
+                            i++;
+                        continue;
+                    }
+                    if (part.Equals("IsMirror", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    
+                    cleanedParts.Add(part);
+                }
+
+                // クリーンアップ後の既存データと新しいデータを結合
+                if (cleanedParts.Count > 0)
+                    mat.Memo = string.Join(",", cleanedParts) + "," + newMemo;
+                else
+                    mat.Memo = newMemo;
+            }
+            else
+            {
+                mat.Memo = newMemo;
+            }
         }
 
         private static PMXVertex ConvertVertex(

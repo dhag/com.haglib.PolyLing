@@ -746,6 +746,13 @@ namespace Poly_Ling.Data
         /// <summary>面リスト</summary>
         public List<Face> Faces = new List<Face>();
 
+        /// <summary>
+        /// 頂点が展開済みか（PMX形式）
+        /// true: 各頂点が1つのUV/法線を持つ（展開済み、PMX互換）
+        /// false: 頂点が複数のUV/法線を持つ可能性あり（MQO形式）
+        /// </summary>
+        public bool IsExpanded { get; set; } = false;
+
 
 
 
@@ -1755,6 +1762,7 @@ namespace Poly_Ling.Data
         {
             var copy = new MeshObject(Name);
             copy.Type = this.Type;
+            copy.IsExpanded = this.IsExpanded;
             copy.Vertices = Vertices.Select(v => v.Clone()).ToList();
             copy.Faces = Faces.Select(f => f.Clone()).ToList();
             copy.ParentIndex = this.ParentIndex;
@@ -1780,6 +1788,7 @@ namespace Poly_Ling.Data
         {
             var copy = new MeshObject(Name);
             copy.Type = this.Type;
+            copy.IsExpanded = this.IsExpanded;
             copy.ParentIndex = this.ParentIndex;
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;

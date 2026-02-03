@@ -169,6 +169,221 @@ namespace Poly_Ling.MQO
         }
 
         // ================================================================
+        // WriteBack API
+        // ================================================================
+
+        /// <summary>
+        /// 編集後のMeshContextからMQOObjectへ頂点属性を書き戻す
+        /// 面の構造（頂点インデックス、マテリアル）は変更しない
+        /// </summary>
+        /// <param name="sourceMeshContext">編集後のモデル側MeshContext（展開済み）</param>
+        /// <param name="targetMqoObject">更新対象のMQOObject</param>
+        /// <param name="mqoMeshContext">MQOインポート結果のMeshContext（UV数情報用）</param>
+        /// <param name="settings">エクスポート設定</param>
+        /// <param name="flags">何を更新するかのフラグ</param>
+        /// <returns>更新した頂点数</returns>
+        public static int WriteBack(
+            MeshContext sourceMeshContext,
+            MQOObject targetMqoObject,
+            MeshContext mqoMeshContext,
+            MQOExportSettings settings,
+            WriteBackFlags flags)
+        {
+            if (sourceMeshContext?.MeshObject == null) return 0;
+            if (targetMqoObject == null) return 0;
+            if (mqoMeshContext?.MeshObject == null) return 0;
+
+            settings = settings ?? new MQOExportSettings();
+            var srcMo = sourceMeshContext.MeshObject;
+            var mqoMo = mqoMeshContext.MeshObject;
+
+            int transferred = 0;
+            int srcOffset = 0;
+
+            // MQO側MeshContextの頂点を走査（UV展開対応）
+            for (int vIdx = 0; vIdx < mqoMo.VertexCount && vIdx < targetMqoObject.Vertices.Count; vIdx++)
+            {
+                var mqoVertex = mqoMo.Vertices[vIdx];
+                int uvCount = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
+
+                // Position更新
+                if ((flags & WriteBackFlags.Position) != 0 && srcOffset < srcMo.VertexCount)
+                {
+                    Vector3 pos = srcMo.Vertices[srcOffset].Position;
+
+                    // 座標変換: Model → MQO
+                    if (settings.FlipZ) pos.z = -pos.z;
+                    pos *= settings.Scale;
+
+                    targetMqoObject.Vertices[vIdx].Position = pos;
+                    mqoVertex.Position = pos;
+                    transferred++;
+                }
+
+                srcOffset += uvCount;
+            }
+
+            // UV更新（面のUVs配列を更新）
+            if ((flags & WriteBackFlags.UV) != 0)
+            {
+                WriteBackUVs(sourceMeshContext, targetMqoObject, mqoMeshContext, settings);
+            }
+
+            // BoneWeight更新（特殊面を削除して再追加）
+            if ((flags & WriteBackFlags.BoneWeight) != 0)
+            {
+                WriteBackBoneWeights(sourceMeshContext, targetMqoObject, mqoMeshContext, settings);
+            }
+
+            return transferred;
+        }
+
+        /// <summary>
+        /// UVを面のUVs配列に書き戻す
+        /// 既存のConvertObject（1180-1192行）と同じロジックを使用
+        /// </summary>
+        private static void WriteBackUVs(
+            MeshContext sourceMeshContext,
+            MQOObject targetMqoObject,
+            MeshContext mqoMeshContext,
+            MQOExportSettings settings)
+        {
+            var srcMo = sourceMeshContext.MeshObject;
+            var mqoMo = mqoMeshContext.MeshObject;
+
+            // MQO側の頂点インデックス→展開後インデックス開始位置のマッピングを構築
+            var vertexToExpandedStart = new Dictionary<int, int>();
+            int expandedIdx = 0;
+            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            {
+                vertexToExpandedStart[vIdx] = expandedIdx;
+                int uvCount = mqoMo.Vertices[vIdx].UVs.Count > 0 ? mqoMo.Vertices[vIdx].UVs.Count : 1;
+                expandedIdx += uvCount;
+            }
+
+            // MQOObject側の面とMeshContext側の面を並行して走査
+            int mqoFaceIdx = 0;
+            foreach (var targetFace in targetMqoObject.Faces)
+            {
+                if (targetFace.IsSpecialFace) continue;
+                if (targetFace.VertexIndices == null) continue;
+
+                // 対応するMeshContext側の面を取得
+                if (mqoFaceIdx >= mqoMo.FaceCount) break;
+                var meshFace = mqoMo.Faces[mqoFaceIdx];
+                mqoFaceIdx++;
+
+                // 面のUVs配列を確保
+                if (targetFace.UVs == null || targetFace.UVs.Length != targetFace.VertexIndices.Length)
+                {
+                    targetFace.UVs = new Vector2[targetFace.VertexIndices.Length];
+                }
+
+                for (int i = 0; i < targetFace.VertexIndices.Length && i < meshFace.VertexIndices.Count; i++)
+                {
+                    int vIdx = targetFace.VertexIndices[i];
+                    if (!vertexToExpandedStart.TryGetValue(vIdx, out int expStart)) continue;
+
+                    // UVIndicesからUVスロット番号を取得（既存のConvertObjectと同じロジック）
+                    int uvSlot = (i < meshFace.UVIndices.Count) ? meshFace.UVIndices[i] : 0;
+
+                    // 展開後インデックス = 頂点の展開開始位置 + UVスロット番号
+                    int srcIdx = expStart + uvSlot;
+                    if (srcIdx < srcMo.VertexCount)
+                    {
+                        var srcVertex = srcMo.Vertices[srcIdx];
+                        Vector2 uv = srcVertex.UVs.Count > 0 ? srcVertex.UVs[0] : Vector2.zero;
+
+                        // UV V座標反転
+                        if (settings.FlipUV_V)
+                        {
+                            uv.y = 1f - uv.y;
+                        }
+
+                        targetFace.UVs[i] = uv;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// ボーンウェイトを特殊面として書き戻す（既存削除→新規追加）
+        /// </summary>
+        private static void WriteBackBoneWeights(
+            MeshContext sourceMeshContext,
+            MQOObject targetMqoObject,
+            MeshContext mqoMeshContext,
+            MQOExportSettings settings)
+        {
+            var srcMo = sourceMeshContext.MeshObject;
+            var mqoMo = mqoMeshContext.MeshObject;
+
+            // 既存の特殊面を削除（頂点ID特殊面とボーンウェイト特殊面）
+            targetMqoObject.Faces.RemoveAll(f => f.IsSpecialFace);
+
+            // 頂点ID特殊面を再追加
+            int srcOffset = 0;
+            for (int vIdx = 0; vIdx < mqoMo.VertexCount && vIdx < targetMqoObject.Vertices.Count; vIdx++)
+            {
+                var mqoVertex = mqoMo.Vertices[vIdx];
+                int uvCount = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
+
+                if (srcOffset < srcMo.VertexCount)
+                {
+                    var srcVertex = srcMo.Vertices[srcOffset];
+
+                    // 頂点ID特殊面
+                    if (srcVertex.Id != -1)
+                    {
+                        targetMqoObject.Faces.Add(
+                            VertexIdHelper.CreateSpecialFaceForVertexId(vIdx, srcVertex.Id, 0));
+                    }
+
+                    // ボーンウェイト特殊面
+                    if (srcVertex.HasBoneWeight)
+                    {
+                        var boneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(srcVertex.BoneWeight.Value);
+                        targetMqoObject.Faces.Add(
+                            VertexIdHelper.CreateSpecialFaceForBoneWeight(vIdx, boneWeightData, false, 0));
+                    }
+                }
+
+                srcOffset += uvCount;
+            }
+        }
+
+        /// <summary>
+        /// WriteBack可能か検証
+        /// </summary>
+        /// <param name="sourceMeshContext">ソースMeshContext</param>
+        /// <param name="mqoMeshContext">MQO側MeshContext</param>
+        /// <returns>エラーメッセージ（nullなら問題なし）</returns>
+        public static string ValidateWriteBack(MeshContext sourceMeshContext, MeshContext mqoMeshContext)
+        {
+            if (sourceMeshContext?.MeshObject == null)
+                return "Source MeshContext is null";
+            if (mqoMeshContext?.MeshObject == null)
+                return "MQO MeshContext is null";
+
+            // 展開後頂点数の計算
+            var mqoMo = mqoMeshContext.MeshObject;
+            int expectedExpandedCount = 0;
+            for (int i = 0; i < mqoMo.VertexCount; i++)
+            {
+                int uvCount = mqoMo.Vertices[i].UVs.Count > 0 ? mqoMo.Vertices[i].UVs.Count : 1;
+                expectedExpandedCount += uvCount;
+            }
+
+            int srcCount = sourceMeshContext.MeshObject.VertexCount;
+            if (srcCount != expectedExpandedCount)
+            {
+                return $"Vertex count mismatch: source={srcCount}, expected={expectedExpandedCount}";
+            }
+
+            return null;
+        }
+
+        // ================================================================
         // ドキュメント変換
         // ================================================================
 
@@ -1272,6 +1487,32 @@ namespace Poly_Ling.MQO
 
             return sb.ToString();
         }
+    }
+
+    // ================================================================
+    // WriteBackフラグ
+    // ================================================================
+
+    /// <summary>
+    /// WriteBack時に何を更新するかのフラグ
+    /// </summary>
+    [Flags]
+    public enum WriteBackFlags
+    {
+        /// <summary>何も更新しない</summary>
+        None = 0,
+
+        /// <summary>頂点位置を更新</summary>
+        Position = 1 << 0,
+
+        /// <summary>面のUVを更新</summary>
+        UV = 1 << 1,
+
+        /// <summary>ボーンウェイト特殊面を更新（頂点IDも含む）</summary>
+        BoneWeight = 1 << 2,
+
+        /// <summary>全て更新</summary>
+        All = Position | UV | BoneWeight
     }
 
     // ================================================================

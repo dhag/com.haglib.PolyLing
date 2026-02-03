@@ -1205,6 +1205,22 @@ namespace Poly_Ling.MQO
                 Debug.Log($"[MQOImporter] Material '{mqoMat.Name}' set to Transparent (alpha={color.a:F2})");
             }
 
+
+            // アルファクリップ設定
+            if (material.HasProperty("_AlphaClip"))
+            {
+                material.SetFloat("_AlphaClip", 1f);
+                material.EnableKeyword("_ALPHATEST_ON");
+            }
+            if (material.HasProperty("_Cutoff"))
+            {
+                material.SetFloat("_Cutoff", 0.5f);
+            }
+
+
+
+
+
             // その他のプロパティ
             if (material.HasProperty("_Smoothness"))
                 material.SetFloat("_Smoothness", mqoMat.Specular);

@@ -120,6 +120,10 @@ namespace Poly_Ling.PMX
         [Range(0f, 180f)]
         public float SmoothingAngle = 60f;
 
+        /// <summary>ObjectNameグループ化を使用</summary>
+        [Tooltip("材質Memo欄のObjectNameでメッシュをグループ化（頂点順序保持）")]
+        public bool UseObjectNameGrouping = true;
+
         // ================================================================
         // ファクトリメソッド
         // ================================================================
@@ -177,7 +181,8 @@ namespace Poly_Ling.PMX
                 ImportMaterials = this.ImportMaterials,
                 ConvertToTPose = this.ConvertToTPose,
                 RecalculateNormals = this.RecalculateNormals,
-                SmoothingAngle = this.SmoothingAngle
+                SmoothingAngle = this.SmoothingAngle,
+                UseObjectNameGrouping = this.UseObjectNameGrouping
             };
         }
 
@@ -194,7 +199,8 @@ namespace Poly_Ling.PMX
                    ImportMaterials != o.ImportMaterials ||
                    ConvertToTPose != o.ConvertToTPose ||
                    RecalculateNormals != o.RecalculateNormals ||
-                   !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle);
+                   !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
+                   UseObjectNameGrouping != o.UseObjectNameGrouping;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -211,6 +217,7 @@ namespace Poly_Ling.PMX
             ConvertToTPose = o.ConvertToTPose;
             RecalculateNormals = o.RecalculateNormals;
             SmoothingAngle = o.SmoothingAngle;
+            UseObjectNameGrouping = o.UseObjectNameGrouping;
         }
 
         // ================================================================

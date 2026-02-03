@@ -1209,9 +1209,19 @@ public partial class PolyLing : EditorWindow
 
         _isCameraDragging = true;
         
-        // ヒットテストをスキップ（カメラ操作中は不要）
-        // ★デバッグ用：一旦すべて無効化
-        /*
+        // =====================================================================
+        // 【重要】カメラ操作中の最適化フラグ - 絶対にコメントアウトしないこと！
+        // =====================================================================
+        // これらのフラグを無効化すると、カメラドラッグ中に以下の重い処理が
+        // 毎フレーム実行され、深刻なパフォーマンス低下を引き起こす：
+        // - ヒットテスト（不要なGPU計算）
+        // - 頂点フラグ読み戻し（GPU→CPU転送）
+        // - 可視性計算（ComputeShader実行）
+        // - 非選択メッシュの描画（大量の頂点処理）
+        // - メッシュ再構築（毎フレームList生成+全頂点走査）
+        // 
+        // デバッグ時も個別にテストすること。一括コメントアウト禁止！
+        // =====================================================================
         if (_unifiedAdapter != null)
         {
             _unifiedAdapter.SkipHitTest = true;
@@ -1219,8 +1229,8 @@ public partial class PolyLing : EditorWindow
             _unifiedAdapter.SkipGpuVisibilityCompute = true;
             _unifiedAdapter.SkipUnselectedWireframe = true;
             _unifiedAdapter.SkipUnselectedVertices = true;
+            _unifiedAdapter.SkipMeshRebuild = true;  // カメラ操作中はメッシュ再構築もスキップ
         }
-        */
         
         _cameraStartRotX = _rotationX;
         _cameraStartRotY = _rotationY;
@@ -1254,6 +1264,7 @@ public partial class PolyLing : EditorWindow
             _unifiedAdapter.SkipGpuVisibilityCompute = false;
             _unifiedAdapter.SkipUnselectedWireframe = false;
             _unifiedAdapter.SkipUnselectedVertices = false;
+            _unifiedAdapter.SkipMeshRebuild = false;
         }
 
         bool hasChanged =

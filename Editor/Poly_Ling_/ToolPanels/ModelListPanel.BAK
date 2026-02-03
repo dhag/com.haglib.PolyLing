@@ -334,6 +334,7 @@ namespace Poly_Ling.MQO
 
         private void DrawModelList()
         {
+            MeshEntry toRemove = null;
             foreach (var entry in _modelMeshes)
             {
                 using (new EditorGUILayout.HorizontalScope())
@@ -350,7 +351,19 @@ namespace Poly_Ling.MQO
                     }
                     EditorGUILayout.LabelField(label);
                     GUI.color = Color.white;
+
+                    // 削除ボタン
+                    if (GUILayout.Button("×", GUILayout.Width(20)))
+                    {
+                        toRemove = entry;
+                    }
                 }
+            }
+
+            // ループ外で削除
+            if (toRemove != null)
+            {
+                _modelMeshes.Remove(toRemove);
             }
         }
 
@@ -611,7 +624,6 @@ namespace Poly_Ling.MQO
         /// MQO側のMeshContextを基準に、モデル側の頂点を転送
         /// PMXMQOTransferPanel.TransferPMXToMQOと同じアプローチ
         /// WriteBackFlags対応: Position, UV, BoneWeight
-        /// 孤立頂点（面に使われていない頂点）はスキップ
         /// </summary>
         private int TransferToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, ref int modelVertexOffset)
         {
@@ -629,16 +641,6 @@ namespace Poly_Ling.MQO
             if (_writeBackUV) flags |= WriteBackFlags.UV;
             if (_writeBackBoneWeight) flags |= WriteBackFlags.BoneWeight;
 
-            // MQO側の面で使用されている頂点インデックスを収集（孤立頂点判定用）
-            var usedVertexIndices = new HashSet<int>();
-            foreach (var face in mqoMo.Faces)
-            {
-                foreach (var vi in face.VertexIndices)
-                {
-                    usedVertexIndices.Add(vi);
-                }
-            }
-
             int transferred = 0;
             int startOffset = modelVertexOffset;
 
@@ -647,13 +649,6 @@ namespace Poly_Ling.MQO
             {
                 var mqoVertex = mqoMo.Vertices[vIdx];
                 int uvCount = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
-
-                // 孤立頂点（面に使われていない頂点）はスキップ
-                // PMXには孤立点がない仕様のため、モデル側オフセットは進めない
-                if (!usedVertexIndices.Contains(vIdx))
-                {
-                    continue;
-                }
 
                 // Position更新
                 if (_writeBackPosition)
@@ -686,13 +681,13 @@ namespace Poly_Ling.MQO
             // UV更新（WriteBack APIを使用）
             if (_writeBackUV)
             {
-                WriteBackUVsToMQO(mqoEntry, modelMeshes, startOffset, mqoDocObj, usedVertexIndices);
+                WriteBackUVsToMQO(mqoEntry, modelMeshes, startOffset, mqoDocObj);
             }
 
             // BoneWeight更新（WriteBack APIを使用）
             if (_writeBackBoneWeight)
             {
-                WriteBackBoneWeightsToMQO(mqoEntry, modelMeshes, startOffset, mqoDocObj, usedVertexIndices);
+                WriteBackBoneWeightsToMQO(mqoEntry, modelMeshes, startOffset, mqoDocObj);
             }
 
             return transferred;
@@ -701,24 +696,17 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// UVを面のUVs配列に書き戻す
         /// MQO側の面のUVIndicesを使って、対応する展開後インデックスを特定
-        /// 孤立頂点はスキップ
         /// </summary>
-        private void WriteBackUVsToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj, HashSet<int> usedVertexIndices)
+        private void WriteBackUVsToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj)
         {
             var mqoMo = mqoEntry.MeshContext?.MeshObject;
             if (mqoMo == null) return;
 
             // MQO側の頂点インデックス→展開後オフセット開始位置のマッピングを構築
-            // 孤立頂点はスキップしてカウントしない
             var vertexToExpandedStart = new Dictionary<int, int>();
             int expandedIdx = 0;
             for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
             {
-                // 孤立頂点はスキップ
-                if (!usedVertexIndices.Contains(vIdx))
-                {
-                    continue;
-                }
                 vertexToExpandedStart[vIdx] = expandedIdx;
                 int uvCount = mqoMo.Vertices[vIdx].UVs.Count > 0 ? mqoMo.Vertices[vIdx].UVs.Count : 1;
                 expandedIdx += uvCount;
@@ -772,7 +760,7 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// ボーンウェイトを特殊面として書き戻す（既存削除→新規追加）
         /// </summary>
-        private void WriteBackBoneWeightsToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj, HashSet<int> usedVertexIndices)
+        private void WriteBackBoneWeightsToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj)
         {
             var mqoMo = mqoEntry.MeshContext?.MeshObject;
             if (mqoMo == null) return;
@@ -781,18 +769,11 @@ namespace Poly_Ling.MQO
             mqoDocObj.Faces.RemoveAll(f => f.IsSpecialFace);
 
             // 頂点ID特殊面とボーンウェイト特殊面を再追加
-            // 孤立頂点はスキップ
             int localOffset = 0;
             for (int vIdx = 0; vIdx < mqoMo.VertexCount && vIdx < mqoDocObj.Vertices.Count; vIdx++)
             {
                 var mqoVertex = mqoMo.Vertices[vIdx];
                 int uvCount = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
-
-                // 孤立頂点はスキップ
-                if (!usedVertexIndices.Contains(vIdx))
-                {
-                    continue;
-                }
 
                 int globalOffset = startOffset + localOffset;
 

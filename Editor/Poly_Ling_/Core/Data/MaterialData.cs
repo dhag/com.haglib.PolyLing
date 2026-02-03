@@ -144,9 +144,9 @@ namespace Poly_Ling.Materials
         
         /// <summary>カリングモード</summary>
         public CullModeType CullMode = CullModeType.Back;
-        
+
         /// <summary>アルファカットオフ有効</summary>
-        public bool AlphaClipEnabled = false;
+        public bool AlphaClipEnabled = true;// false;
         
         /// <summary>アルファカットオフ値 (0-1)</summary>
         public float AlphaCutoff = 0.5f;

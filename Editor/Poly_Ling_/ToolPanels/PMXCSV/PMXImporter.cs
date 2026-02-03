@@ -356,30 +356,34 @@ namespace Poly_Ling.PMX
                     materialToVertices[kvp.Key] = vertexSet;
                 }
 
-                // 頂点共有による材質グループ化
-                var materialGroups = GroupMaterialsBySharedVertices(materialToVertices);
-                result.Stats.MaterialGroupCount = materialGroups.Count;
+                // PMX追加仕様：ObjectNameでグループ化
+                var objectGroups = PMX.PMXHelper.BuildObjectGroups(document);
+                result.Stats.MaterialGroupCount = objectGroups.Count;
 
-                Debug.Log($"[PMXImporter] {materialToFaces.Count} materials grouped into {materialGroups.Count} meshes");
+                Debug.Log($"[PMXImporter] {materialToFaces.Count} materials grouped into {objectGroups.Count} meshes by ObjectName");
 
                 // デバッグ: 各グループの内容を出力
-                for (int g = 0; g < materialGroups.Count && g < 5; g++)
+                for (int g = 0; g < objectGroups.Count && g < 5; g++)
                 {
-                    var groupMats = materialGroups[g];
-                    Debug.Log($"[PMXImporter] Group[{g}] contains {groupMats.Count} materials: [{string.Join(", ", groupMats)}]");
+                    var grp = objectGroups[g];
+                    var matNames = string.Join(", ", grp.Materials.ConvertAll(m => m.MaterialName));
+                    Debug.Log($"[PMXImporter] ObjectGroup[{g}] '{grp.ObjectName}' contains {grp.Materials.Count} materials: [{matNames}]");
                 }
 
-                // 各グループをMeshContextに変換し、MaterialGroupInfoを構築
+                // 各ObjectGroupをMeshContextに変換
                 int meshIndex = 0;
-                foreach (var group in materialGroups)
+                foreach (var objectGroup in objectGroups)
                 {
+                    // ObjectGroupから材質名リストを取得
+                    var materialNames = objectGroup.Materials.ConvertAll(m => m.MaterialName);
+                    
                     // MaterialGroupInfo を構築
-                    var groupInfo = BuildMaterialGroupInfo(group, materialToFaces, meshIndex);
+                    var groupInfo = BuildMaterialGroupInfo(materialNames, materialToFaces, meshIndex);
                     groupInfo.MeshContextIndex = boneContextCount + meshIndex;
 
                     var meshContext = ConvertMaterialGroup(
                         document,
-                        group,
+                        materialNames,
                         materialToFaces,
                         result.Materials,
                         settings,
@@ -388,6 +392,8 @@ namespace Poly_Ling.PMX
 
                     if (meshContext != null)
                     {
+                        // ObjectNameをMeshContext名に設定
+                        meshContext.Name = objectGroup.ObjectName;
                         groupInfo.Name = meshContext.Name;
                         result.MeshContexts.Add(meshContext);
                         result.MaterialGroupInfos.Add(groupInfo);
@@ -1188,6 +1194,7 @@ namespace Poly_Ling.PMX
                 : $"Group_{meshIndex}_{materialNames[0]}";
 
             var meshObject = new MeshObject(meshName);
+            meshObject.IsExpanded = true;  // PMXは展開済み形式
 
             // 頂点を追加（スケールなしで追加し、法線計算後にスケール適用）
             int debugCount = 0;
@@ -1455,6 +1462,16 @@ namespace Poly_Ling.PMX
             {
                 SetMaterialTransparent(material);
                 Debug.Log($"[PMXImporter] Material '{pmxMat.Name}' set to Transparent (alpha={color.a:F2})");
+            }
+            // アルファクリップ設定
+            if (material.HasProperty("_AlphaClip"))
+            {
+                material.SetFloat("_AlphaClip", 1f);
+                material.EnableKeyword("_ALPHATEST_ON");
+            }
+            if (material.HasProperty("_Cutoff"))
+            {
+                material.SetFloat("_Cutoff", 0.5f);
             }
 
             // その他のプロパティ

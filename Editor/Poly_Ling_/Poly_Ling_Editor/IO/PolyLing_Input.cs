@@ -39,11 +39,26 @@ public partial class PolyLing
         // ツールコンテキストを更新
         UpdateToolContext(meshContext, rect, camPos, camDist);
 
-        // プレビュー領域内でのホイールズーム
+        // プレビュー領域内でのホイール操作
         if (e.type == EventType.ScrollWheel && rect.Contains(mousePos))
         {
-            _cameraDistance *= (1f + e.delta.y * 0.05f);
-            _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 80f);//マウスズームの上限下限（スライダーは別）：ズーム
+            // ホイールの値はdelta.xまたはdelta.yに入る（環境依存）
+            float scrollValue = Mathf.Abs(e.delta.y) > Mathf.Abs(e.delta.x) ? e.delta.y : e.delta.x;
+
+            if (e.shift)
+            {
+                // Shift+ホイール: 注目点をカメラ視線方向に前後移動
+                Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
+                Vector3 forward = rot * Vector3.forward;
+                float moveSpeed = _cameraDistance * 0.1f;  // 距離に比例した速度
+                _cameraTarget += forward * scrollValue * moveSpeed;
+            }
+            else
+            {
+                // 通常ホイール: ズーム
+                _cameraDistance *= (1f + scrollValue * 0.05f);
+                _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 80f);
+            }
             e.Use();
             Repaint();
             return;
@@ -228,7 +243,7 @@ public partial class PolyLing
             if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localIdx))
             {
                 // v2.1: 複数メッシュ対応
-                bool isSelectedMesh = meshIdx == _selectedIndex || 
+                bool isSelectedMesh = meshIdx == _selectedIndex ||
                     (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
                 if (isSelectedMesh)
                 {
@@ -246,7 +261,7 @@ public partial class PolyLing
             if (bufferManager.GlobalToLocalLineIndex(globalLine, out int meshIdx, out int localIdx))
             {
                 // v2.1: 複数メッシュ対応
-                bool isSelectedMesh = meshIdx == _selectedIndex || 
+                bool isSelectedMesh = meshIdx == _selectedIndex ||
                     (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
                 if (isSelectedMesh)
                 {
@@ -262,7 +277,7 @@ public partial class PolyLing
             if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localIdx))
             {
                 // v2.1: 複数メッシュ対応
-                bool isSelectedMesh = meshIdx == _selectedIndex || 
+                bool isSelectedMesh = meshIdx == _selectedIndex ||
                     (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
                 if (isSelectedMesh)
                 {
@@ -329,7 +344,7 @@ public partial class PolyLing
                 {
                     Debug.Log($"[OnMouseDown] Vertex hit: meshIdx={meshIdx}, localVertex={localVertex}");
                     // v2.1: 複数メッシュ対応 - 選択中のメッシュならヒット
-                    bool isSelectedMesh = meshIdx == _selectedIndex || 
+                    bool isSelectedMesh = meshIdx == _selectedIndex ||
                         (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
                     if (isSelectedMesh)
                     {
@@ -345,16 +360,16 @@ public partial class PolyLing
                     }
                 }
             }
-            
+
             // 線分ヒット判定（Edge/Lineモードの場合）
             if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
-                (currentMode.Has(MeshSelectMode.Edge) || currentMode.Has(MeshSelectMode.Line)) && 
+                (currentMode.Has(MeshSelectMode.Edge) || currentMode.Has(MeshSelectMode.Line)) &&
                 globalLine >= 0)
             {
                 if (bufferManager.GetLineVerticesLocal(globalLine, out int meshIdx, out int localV1, out int localV2))
                 {
                     // v2.1: 複数メッシュ対応
-                    bool isSelectedMesh = meshIdx == _selectedIndex || 
+                    bool isSelectedMesh = meshIdx == _selectedIndex ||
                         (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
                     if (isSelectedMesh)
                     {
@@ -393,7 +408,7 @@ public partial class PolyLing
                     }
                 }
             }
-            
+
             // 面ヒット判定（Faceモードの場合）
             if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
                 currentMode.Has(MeshSelectMode.Face) && globalFace >= 0)
@@ -401,7 +416,7 @@ public partial class PolyLing
                 if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localFace))
                 {
                     // v2.1: 複数メッシュ対応
-                    bool isSelectedMesh = meshIdx == _selectedIndex || 
+                    bool isSelectedMesh = meshIdx == _selectedIndex ||
                         (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
                     if (isSelectedMesh)
                     {
@@ -423,7 +438,7 @@ public partial class PolyLing
         // ★ Phase 6: 選択済み要素クリック時は選択変更なし（Blender風）
         // ================================================================
         bool hitIsAlreadySelected = IsHitResultAlreadySelected(_hitResultOnMouseDown);
-        
+
         // v2.1: ヒットなしでも選択頂点がある場合、その上でクリックしたかチェック
         // ワールドモードでホバーが検出されない場合の対策
         if (!hitIsAlreadySelected && _hitResultOnMouseDown.HitType == MeshSelectMode.None)
@@ -436,31 +451,31 @@ public partial class PolyLing
                 bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
                 Vector3[] displayPositions = null;
                 int vertexOffset = 0;
-                
+
                 if (useWorldTransform && _unifiedAdapter?.BufferManager != null)
                 {
                     displayPositions = _unifiedAdapter.BufferManager.GetDisplayPositions();
                     vertexOffset = _unifiedAdapter.GetVertexOffset(_selectedIndex);
                 }
-                
+
                 foreach (int vIdx in _selectionState.Vertices)
                 {
                     Vector3 worldPos;
                     if (displayPositions != null)
                     {
                         int globalIdx = vertexOffset + vIdx;
-                        worldPos = (globalIdx >= 0 && globalIdx < displayPositions.Length) 
-                            ? displayPositions[globalIdx] 
+                        worldPos = (globalIdx >= 0 && globalIdx < displayPositions.Length)
+                            ? displayPositions[globalIdx]
                             : meshObject.Vertices[vIdx].Position;
                     }
                     else
                     {
                         worldPos = meshObject.Vertices[vIdx].Position;
                     }
-                    
+
                     Vector2 screenPos = WorldToPreviewPos(worldPos, rect, camPos, lookAt);
                     float dist = Vector2.Distance(screenPos, mousePos);
-                    
+
                     if (dist < handleRadius * 2f)  // 少し大きめの判定範囲
                     {
                         Debug.Log($"[OnMouseDown] Hit selected vertex {vIdx} at distance {dist}");
@@ -1239,7 +1254,7 @@ public partial class PolyLing
         // v2.1: ワールドモード判定
         var editorState = _undoController?.EditorState;
         bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
-        
+
         // GPU変換後の座標を取得（ワールドモード時のみ）
         Vector3[] displayPositions = null;
         if (useWorldTransform && _unifiedAdapter?.BufferManager != null)
@@ -1248,14 +1263,14 @@ public partial class PolyLing
         }
 
         bool additive = shiftHeld || ctrlHeld;
-        
+
         // 選択モード取得
         var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
-        
+
         // v2.1: 複数メッシュ対応 - 選択中の全メッシュに対して矩形選択を実行
         var selectedMeshIndices = _model?.SelectedMeshIndices;
         Debug.Log($"[FinishBoxSelect] _model={_model?.GetHashCode()}, toolCtx.Model={_toolContext?.Model?.GetHashCode()}, same={_model == _toolContext?.Model}");
-        
+
         if (selectedMeshIndices != null && selectedMeshIndices.Count > 0)
         {
             // 加算モードでない場合、全メッシュの選択をクリア
@@ -1268,18 +1283,18 @@ public partial class PolyLing
                 }
                 _selectionState?.ClearAll();
             }
-            
+
             foreach (int meshIdx in selectedMeshIndices)
             {
                 var meshContext = _model.GetMeshContext(meshIdx);
                 if (meshContext == null || meshContext.MeshObject == null)
                     continue;
-                
+
                 var targetMeshObject = meshContext.MeshObject;
-                
+
                 // 表示用トランスフォーム行列を取得
                 Matrix4x4 displayMatrix = GetDisplayMatrix(meshIdx);
-                
+
                 // 頂点オフセットを取得
                 int vertexOffset = _unifiedAdapter?.GetVertexOffset(meshIdx) ?? 0;
 
@@ -1289,7 +1304,7 @@ public partial class PolyLing
                     Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(worldPos);
                     return WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
                 };
-                
+
                 // 頂点インデックスからスクリーン座標を取得
                 Func<int, Vector2> vertexIndexToScreen;
                 if (useWorldTransform && displayPositions != null)
@@ -1310,7 +1325,7 @@ public partial class PolyLing
                     vertexIndexToScreen = (vertexIndex) =>
                         worldToScreen(targetMeshObject.Vertices[vertexIndex].Position);
                 }
-                
+
                 // 頂点選択
                 if (currentMode.Has(MeshSelectMode.Vertex))
                 {
@@ -1319,26 +1334,26 @@ public partial class PolyLing
                     {
                         _visibilityProvider.MeshIndex = meshIdx;
                     }
-                    
+
                     for (int i = 0; i < targetMeshObject.VertexCount; i++)
                     {
                         // 背面カリングチェック
                         if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
                             continue;
-                        
+
                         if (selectRect.Contains(vertexIndexToScreen(i)))
                         {
                             meshContext.SelectedVertices.Add(i);
                         }
                     }
                 }
-                
+
                 // エッジ選択
                 if (currentMode.Has(MeshSelectMode.Edge))
                 {
                     var topology = new TopologyCache();
                     topology.SetMeshObject(targetMeshObject);
-                    
+
                     foreach (var pair in topology.AllEdgePairs)
                     {
                         // 背面カリング：両端頂点の少なくとも一方が見えていなければスキップ
@@ -1349,7 +1364,7 @@ public partial class PolyLing
                             if (!v1Visible && !v2Visible)
                                 continue;
                         }
-                        
+
                         if (selectRect.Contains(vertexIndexToScreen(pair.V1)) &&
                             selectRect.Contains(vertexIndexToScreen(pair.V2)))
                         {
@@ -1357,7 +1372,7 @@ public partial class PolyLing
                         }
                     }
                 }
-                
+
                 // 面選択
                 if (currentMode.Has(MeshSelectMode.Face))
                 {
@@ -1365,7 +1380,7 @@ public partial class PolyLing
                     {
                         var face = targetMeshObject.Faces[faceIdx];
                         if (face.VertexCount < 3) continue;
-                        
+
                         // 背面カリング：少なくとも1つの頂点が見えていなければスキップ
                         if (_visibilityProvider != null)
                         {
@@ -1380,7 +1395,7 @@ public partial class PolyLing
                             }
                             if (!anyVisible) continue;
                         }
-                        
+
                         bool allInRect = true;
                         foreach (int vIdx in face.VertexIndices)
                         {
@@ -1393,7 +1408,7 @@ public partial class PolyLing
                         if (allInRect) meshContext.SelectedFaces.Add(faceIdx);
                     }
                 }
-                
+
                 // 線分選択
                 if (currentMode.Has(MeshSelectMode.Line))
                 {
@@ -1401,7 +1416,7 @@ public partial class PolyLing
                     {
                         var face = targetMeshObject.Faces[faceIdx];
                         if (face.VertexCount != 2) continue;
-                        
+
                         // 背面カリング：両端頂点の少なくとも一方が見えていなければスキップ
                         if (_visibilityProvider != null)
                         {
@@ -1410,7 +1425,7 @@ public partial class PolyLing
                             if (!v1Visible && !v2Visible)
                                 continue;
                         }
-                        
+
                         if (selectRect.Contains(vertexIndexToScreen(face.VertexIndices[0])) &&
                             selectRect.Contains(vertexIndexToScreen(face.VertexIndices[1])))
                         {
@@ -1418,10 +1433,10 @@ public partial class PolyLing
                         }
                     }
                 }
-                
+
                 Debug.Log($"[FinishBoxSelect] Mesh {meshIdx}: V={meshContext.SelectedVertices.Count}, E={meshContext.SelectedEdges.Count}, F={meshContext.SelectedFaces.Count}, L={meshContext.SelectedLines.Count}");
             }
-            
+
             // プライマリメッシュの選択を _selectionState にも同期（レガシー互換）
             int primaryMesh = _model.PrimarySelectedMeshIndex;
             if (primaryMesh >= 0)
@@ -1429,7 +1444,7 @@ public partial class PolyLing
                 var primaryContext = _model.GetMeshContext(primaryMesh);
                 primaryContext?.LoadSelectionTo(_selectionState);
             }
-            
+
             // _selectedVertices と同期（レガシー互換）
             _selectedVertices.Clear();
             if (_selectionState != null)
@@ -1452,7 +1467,7 @@ public partial class PolyLing
                 Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(worldPos);
                 return WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
             };
-            
+
             Func<int, Vector2> vertexIndexToScreen = null;
             if (useWorldTransform && displayPositions != null)
             {
@@ -1493,7 +1508,7 @@ public partial class PolyLing
             RecordExtendedSelectionChange(oldSnapshot, oldSelection);
         }
     }
-    
+
     /// <summary>
     /// v2.1: 複数メッシュの選択状態をGPUに同期
     /// </summary>
@@ -1501,22 +1516,22 @@ public partial class PolyLing
     {
         if (_model == null || _unifiedAdapter?.BufferManager == null)
             return;
-        
+
         var bufferManager = _unifiedAdapter.BufferManager;
         var selectedMeshIndices = _model.SelectedMeshIndices;
-        
+
         // まず全頂点の選択フラグをクリア
         bufferManager.ClearAllVertexSelectedFlags();
-        
+
         // 選択中メッシュの選択状態をフラグに反映
         foreach (int meshIdx in selectedMeshIndices)
         {
             var meshContext = _model.GetMeshContext(meshIdx);
             if (meshContext == null || !meshContext.HasSelection)
                 continue;
-            
+
             int vertexOffset = _unifiedAdapter.GetVertexOffset(meshIdx);
-            
+
             // 頂点選択フラグを設定
             foreach (int localVertex in meshContext.SelectedVertices)
             {
@@ -1524,7 +1539,7 @@ public partial class PolyLing
                 bufferManager.SetVertexSelectedFlag(globalVertex, true);
             }
         }
-        
+
         // GPUにアップロード
         bufferManager.UploadVertexFlags();
     }

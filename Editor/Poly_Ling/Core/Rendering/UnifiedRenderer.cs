@@ -43,6 +43,19 @@ namespace Poly_Ling.Core.Rendering
         private List<Mesh> _pendingMeshes = new List<Mesh>();
         private List<Material> _pendingMaterials = new List<Material>();
 
+        // =====================================================================
+        // 【重要】メッシュ構築用キャッシュリスト - 毎フレームnewしないこと！
+        // =====================================================================
+        // UpdatePointMesh/UpdateWireframeMesh内で毎フレーム new List<>() すると
+        // 大量のGCが発生し、カメラ操作やマウス移動が重くなる。
+        // 必ずこれらのキャッシュを Clear() して再利用すること。
+        // =====================================================================
+        private List<Vector3> _cachedVertices = new List<Vector3>();
+        private List<Color> _cachedColors = new List<Color>();
+        private List<Vector2> _cachedUVs = new List<Vector2>();
+        private List<Vector2> _cachedUVs2 = new List<Vector2>();
+        private List<int> _cachedIndices = new List<int>();
+
         // ============================================================
         // 設定
         // ============================================================
@@ -400,10 +413,16 @@ namespace Poly_Ling.Core.Rendering
                 _wireframeMesh.Clear();
             }
 
-            var vertices = new List<Vector3>();
-            var colors = new List<Color>();
-            var uvs = new List<Vector2>();  // 元のラインインデックス格納用
-            var indices = new List<int>();
+            // キャッシュリストをクリアして再利用（new を避ける）
+            _cachedVertices.Clear();
+            _cachedColors.Clear();
+            _cachedUVs.Clear();
+            _cachedIndices.Clear();
+            
+            var vertices = _cachedVertices;
+            var colors = _cachedColors;
+            var uvs = _cachedUVs;  // 元のラインインデックス格納用
+            var indices = _cachedIndices;
 
             var positions = _bufferManager.GetDisplayPositions();
             var lines = _bufferManager.Lines;
@@ -517,11 +536,18 @@ namespace Poly_Ling.Core.Rendering
                 _pointMesh.Clear();
             }
 
-            var vertices = new List<Vector3>();
-            var colors = new List<Color>();
-            var uvs = new List<Vector2>();
-            var uvs2 = new List<Vector2>();  // 元のバッファインデックス格納用
-            var indices = new List<int>();
+            // キャッシュリストをクリアして再利用（new を避ける）
+            _cachedVertices.Clear();
+            _cachedColors.Clear();
+            _cachedUVs.Clear();
+            _cachedUVs2.Clear();
+            _cachedIndices.Clear();
+            
+            var vertices = _cachedVertices;
+            var colors = _cachedColors;
+            var uvs = _cachedUVs;
+            var uvs2 = _cachedUVs2;  // 元のバッファインデックス格納用
+            var indices = _cachedIndices;
 
             var positions = _bufferManager.GetDisplayPositions();
             var vertexFlags = _bufferManager.VertexFlags;

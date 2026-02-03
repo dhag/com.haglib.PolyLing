@@ -54,11 +54,11 @@ public partial class PolyLing
             Poly_Ling.PMX.PMXImportPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("PMX Bone Weight Export..."))
+        if (GUILayout.Button("YET PMX Bone Weight Export..."))
         {
             Poly_Ling.PMX.PMXBoneWeightExportPanel.ShowWindow();
         }
-        if (GUILayout.Button("PMX ←→ MQO"))
+        if (GUILayout.Button("YET PMX ←→ MQO"))
         {
             Poly_Ling.PMX.PMXMQOTransferPanel.ShowWindow();
         }

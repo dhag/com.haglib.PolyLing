@@ -49,7 +49,8 @@ namespace Poly_Ling.Serialization
 
             var meshDTO = new MeshDTO
             {
-                name = name ?? meshObject.Name ?? "Untitled"
+                name = name ?? meshObject.Name ?? "Untitled",
+                isExpanded = meshObject.IsExpanded
             };
 
             // BoneTransform
@@ -149,6 +150,7 @@ namespace Poly_Ling.Serialization
                 return null;
 
             var meshObject = new MeshObject(meshDTO.name);
+            meshObject.IsExpanded = meshDTO.isExpanded;
 
             // Vertices
             foreach (var vd in meshDTO.vertices)

@@ -48,6 +48,8 @@ namespace Poly_Ling.Core
         private bool _skipGpuVisibilityCompute = false;  // GPU可視性計算をスキップ
         private bool _skipUnselectedWireframe = false;  // 非選択ワイヤーフレーム描画をスキップ
         private bool _skipUnselectedVertices = false;   // 非選択頂点描画をスキップ
+        // 【重要】カメラ操作中はtrueにすること。falseのままだと毎フレームメッシュ再構築が走る
+        private bool _skipMeshRebuild = false;          // メッシュ再構築をスキップ（カメラ操作中）
 
         // クワッドメッシュ（頂点描画用）
         private Mesh _quadMesh;
@@ -106,6 +108,15 @@ namespace Poly_Ling.Core
         {
             get => _skipUnselectedVertices;
             set => _skipUnselectedVertices = value;
+        }
+
+        /// <summary>
+        /// メッシュ再構築をスキップするか（カメラ操作中など）
+        /// </summary>
+        public bool SkipMeshRebuild
+        {
+            get => _skipMeshRebuild;
+            set => _skipMeshRebuild = value;
         }
 
         /// <summary>
@@ -606,31 +617,40 @@ namespace Poly_Ling.Core
                 return;
             }
 
+            // カメラ操作中はメッシュ再構築をスキップ（キャッシュされたメッシュを使用）
+            bool rebuildMesh = !_skipMeshRebuild;
+
             // メッシュ構築
             if (showWireframe)
             {
-                // UpdateWireframeMesh(selectedMeshIndex, showUnselected, cam, lineWidthPx, selectedAlpha, unselectedAlpha)
-                _renderer.UpdateWireframeMesh(
-                    selectedMeshIndex,
-                    showUnselectedWireframe,
-                    camera,
-                    1.0f,       // lineWidthPx
-                    alpha,      // selectedAlpha
-                    0.4f);      // unselectedAlpha
+                if (rebuildMesh)
+                {
+                    // UpdateWireframeMesh(selectedMeshIndex, showUnselected, cam, lineWidthPx, selectedAlpha, unselectedAlpha)
+                    _renderer.UpdateWireframeMesh(
+                        selectedMeshIndex,
+                        showUnselectedWireframe,
+                        camera,
+                        1.0f,       // lineWidthPx
+                        alpha,      // selectedAlpha
+                        0.4f);      // unselectedAlpha
+                }
                 // v2.1: 非選択表示フラグを渡す
                 _renderer.QueueWireframe(showUnselectedWireframe);
             }
 
             if (showVertices)
             {
-                // UpdatePointMesh(camera, selectedMeshIndex, showUnselected, pointSize, selectedAlpha, unselectedAlpha)
-                _renderer.UpdatePointMesh(
-                    camera,
-                    selectedMeshIndex,
-                    showUnselectedVertices,
-                    pointSize,
-                    alpha,      // selectedAlpha
-                    0.4f);      // unselectedAlpha
+                if (rebuildMesh)
+                {
+                    // UpdatePointMesh(camera, selectedMeshIndex, showUnselected, pointSize, selectedAlpha, unselectedAlpha)
+                    _renderer.UpdatePointMesh(
+                        camera,
+                        selectedMeshIndex,
+                        showUnselectedVertices,
+                        pointSize,
+                        alpha,      // selectedAlpha
+                        0.4f);      // unselectedAlpha
+                }
                 // v2.1: 非選択表示フラグを渡す
                 _renderer.QueuePoints(showUnselectedVertices);
             }

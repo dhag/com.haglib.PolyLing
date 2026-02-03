@@ -128,6 +128,14 @@ namespace Poly_Ling.Tools.Panels
         private Vector2 _scrollPosition;
 
         // ================================================================
+        // オリジナル頂点位置キャッシュ
+        // [modelIndex][drawableIndex][vertexIndex] → Position
+        // ================================================================
+
+        private List<List<Vector3[]>> _originalPositions = new List<List<Vector3[]>>();
+        private bool _cacheValid = false;
+
+        // ================================================================
         // Open
         // ================================================================
 
@@ -143,6 +151,8 @@ namespace Poly_Ling.Tools.Panels
         // ================================================================
         // GUI
         // ================================================================
+
+        private int _lastModelCount = -1;
 
         private void OnGUI()
         {
@@ -161,6 +171,13 @@ namespace Poly_Ling.Tools.Panels
             {
                 EditorGUILayout.HelpBox(T("NeedMultipleModels"), MessageType.Info);
                 return;
+            }
+
+            // モデル数が変わったらキャッシュを無効化
+            if (_lastModelCount != modelCount)
+            {
+                InvalidateCache();
+                _lastModelCount = modelCount;
             }
 
             // ウェイトリストを同期
@@ -228,8 +245,10 @@ namespace Poly_Ling.Tools.Panels
                     if (!_isDragging)
                     {
                         _isDragging = true;
-                        // 全メッシュのスナップショットを取る
+                        // 全メッシュのスナップショットを取る（Undo用）
                         CaptureAllMeshSnapshots();
+                        // オリジナル頂点位置をキャッシュ（プレビュー用）
+                        BuildOriginalPositionCache(project);
                     }
 
                     _settings.Weights[i] = newWeight;
@@ -247,6 +266,8 @@ namespace Poly_Ling.Tools.Panels
             if (_isDragging && Event.current.type == EventType.MouseUp)
             {
                 _isDragging = false;
+                // キャッシュを無効化（次回ドラッグ時に再構築）
+                InvalidateCache();
                 if (_settings.RecalculateNormals)
                 {
                     RecalculateAllNormals(currentModel);
@@ -383,6 +404,12 @@ namespace Poly_Ling.Tools.Panels
             var currentModel = project.CurrentModel;
             if (currentModel == null) return;
 
+            // キャッシュが無効な場合は構築
+            if (!_cacheValid)
+            {
+                BuildOriginalPositionCache(project);
+            }
+
             // 正規化されたウェイト
             float[] normalizedWeights = NormalizeWeightArray(_settings.Weights);
 
@@ -396,34 +423,31 @@ namespace Poly_Ling.Tools.Panels
                 var targetMesh = targetEntry.Context?.MeshObject;
                 if (targetMesh == null) continue;
 
-                // 各モデルから対応するDrawableメッシュを収集
-                var sourceMeshes = new List<MeshObject>();
+                // キャッシュからオリジナル位置を収集してブレンド
+                var sourcePositions = new List<Vector3[]>();
                 var weights = new List<float>();
 
                 for (int modelIdx = 0; modelIdx < project.ModelCount; modelIdx++)
                 {
-                    var model = project.GetModel(modelIdx);
-                    if (model == null) continue;
+                    if (modelIdx >= _originalPositions.Count) continue;
+                    if (drawIdx >= _originalPositions[modelIdx].Count) continue;
 
-                    var modelDrawables = model.DrawableMeshes;
-                    if (drawIdx >= modelDrawables.Count) continue;
-
-                    var srcMesh = modelDrawables[drawIdx].Context?.MeshObject;
-                    if (srcMesh != null)
+                    var positions = _originalPositions[modelIdx][drawIdx];
+                    if (positions != null)
                     {
-                        sourceMeshes.Add(srcMesh);
+                        sourcePositions.Add(positions);
                         weights.Add(normalizedWeights[modelIdx]);
                     }
                 }
 
-                if (sourceMeshes.Count == 0) continue;
+                if (sourcePositions.Count == 0) continue;
 
                 // 頂点数の最小値
-                int minVertexCount = sourceMeshes.Min(m => m.VertexCount);
+                int minVertexCount = sourcePositions.Min(p => p.Length);
                 minVertexCount = Mathf.Min(minVertexCount, targetMesh.VertexCount);
 
-                // ブレンド実行（法線は再計算しない）
-                BlendVertices(sourceMeshes.ToArray(), weights.ToArray(), targetMesh, minVertexCount);
+                // ブレンド実行（キャッシュから）
+                BlendVerticesFromCache(sourcePositions, weights.ToArray(), targetMesh, minVertexCount);
             }
 
             // Unity Meshに反映
@@ -453,6 +477,79 @@ namespace Poly_Ling.Tools.Panels
 
                 target.Vertices[vi].Position = blendedPos;
             }
+        }
+
+        private void BlendVerticesFromCache(List<Vector3[]> sourcePositions, float[] weights, MeshObject target, int vertexCount)
+        {
+            // ウェイトを正規化
+            float totalWeight = weights.Sum();
+            if (totalWeight <= 0f) return;
+
+            float[] normalizedWeights = weights.Select(w => w / totalWeight).ToArray();
+
+            for (int vi = 0; vi < vertexCount; vi++)
+            {
+                Vector3 blendedPos = Vector3.zero;
+
+                for (int si = 0; si < sourcePositions.Count; si++)
+                {
+                    if (vi < sourcePositions[si].Length)
+                    {
+                        blendedPos += sourcePositions[si][vi] * normalizedWeights[si];
+                    }
+                }
+
+                target.Vertices[vi].Position = blendedPos;
+            }
+        }
+
+        // ================================================================
+        // オリジナル頂点位置キャッシュ
+        // ================================================================
+
+        private void BuildOriginalPositionCache(ProjectContext project)
+        {
+            _originalPositions.Clear();
+
+            for (int modelIdx = 0; modelIdx < project.ModelCount; modelIdx++)
+            {
+                var model = project.GetModel(modelIdx);
+                var modelPositions = new List<Vector3[]>();
+
+                if (model != null)
+                {
+                    var drawables = model.DrawableMeshes;
+                    foreach (var entry in drawables)
+                    {
+                        var mesh = entry.Context?.MeshObject;
+                        if (mesh != null)
+                        {
+                            // 頂点位置をコピー
+                            var positions = new Vector3[mesh.VertexCount];
+                            for (int vi = 0; vi < mesh.VertexCount; vi++)
+                            {
+                                positions[vi] = mesh.Vertices[vi].Position;
+                            }
+                            modelPositions.Add(positions);
+                        }
+                        else
+                        {
+                            modelPositions.Add(new Vector3[0]);
+                        }
+                    }
+                }
+
+                _originalPositions.Add(modelPositions);
+            }
+
+            _cacheValid = true;
+            Debug.Log($"[ModelBlend] Built position cache: {_originalPositions.Count} models");
+        }
+
+        private void InvalidateCache()
+        {
+            _cacheValid = false;
+            _originalPositions.Clear();
         }
 
         // ================================================================
@@ -595,8 +692,48 @@ namespace Poly_Ling.Tools.Panels
 
         protected override void OnContextSet()
         {
+            // 前のプロジェクトのイベント解除
+            UnsubscribeFromProject();
+
             // ウェイトリストをリセット
             _settings.Weights.Clear();
+            // キャッシュを無効化
+            InvalidateCache();
+            // モデル数カウントをリセット
+            _lastModelCount = -1;
+
+            // 新しいプロジェクトのイベント購読
+            SubscribeToProject();
+        }
+
+        private void SubscribeToProject()
+        {
+            var project = _context?.Project;
+            if (project != null)
+            {
+                project.OnModelsChanged += OnModelsChanged;
+            }
+        }
+
+        private void UnsubscribeFromProject()
+        {
+            var project = _context?.Project;
+            if (project != null)
+            {
+                project.OnModelsChanged -= OnModelsChanged;
+            }
+        }
+
+        private void OnModelsChanged()
+        {
+            InvalidateCache();
+            _lastModelCount = -1;
+            Repaint();
+        }
+
+        private void OnDestroy()
+        {
+            UnsubscribeFromProject();
         }
     }
 }

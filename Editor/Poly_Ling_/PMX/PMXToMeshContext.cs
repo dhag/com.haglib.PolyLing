@@ -1,6 +1,9 @@
 // PMXToMeshContext.cs - PMXモデルをMeshContextに変換
+// PMX追加仕様対応：材質Memo欄のObjectNameでオブジェクト分割
+// 頂点順序の入れ替えは厳禁
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 
@@ -8,51 +11,81 @@ namespace Poly_Ling.PMX
 {
     /// <summary>
     /// PMXモデルをMeshContextに変換
+    /// PMX追加仕様：材質Memo欄のObjectNameでオブジェクト分割
     /// </summary>
     public static class PMXToMeshContext
     {
         /// <summary>
         /// PMXファイル（バイナリ）を読み込んでMeshContextリストに変換
+        /// ObjectNameでオブジェクト分割（PMX追加仕様）
         /// </summary>
         /// <param name="filePath">PMXファイルパス</param>
-        /// <param name="splitByMaterial">マテリアルごとに分割するか</param>
+        /// <param name="splitByObjectName">ObjectNameでオブジェクト分割するか（デフォルトtrue）</param>
         /// <returns>MeshContextのリスト</returns>
-        public static List<MeshContext> LoadBinary(string filePath, bool splitByMaterial = false)
+        public static List<MeshContext> LoadBinary(string filePath, bool splitByObjectName = true)
         {
             var doc = PMXReader.Load(filePath);
-            return Convert(doc, splitByMaterial);
+            return Convert(doc, splitByObjectName);
         }
 
         /// <summary>
         /// PMXDocumentをMeshContextリストに変換
+        /// PMX追加仕様：ObjectNameでオブジェクト分割
         /// </summary>
-        public static List<MeshContext> Convert(PMXDocument doc, bool splitByMaterial = false)
+        /// <param name="doc">PMXDocument</param>
+        /// <param name="splitByObjectName">ObjectNameでオブジェクト分割するか（デフォルトtrue）</param>
+        /// <returns>MeshContextのリスト</returns>
+        public static List<MeshContext> Convert(PMXDocument doc, bool splitByObjectName = true)
         {
-            var results = new List<MeshContext>();
-
-            if (splitByMaterial && doc.Materials.Count > 1)
+            if (splitByObjectName)
             {
-                // マテリアルごとに分割
-                int faceOffset = 0;
-                for (int matIdx = 0; matIdx < doc.Materials.Count; matIdx++)
-                {
-                    var mat = doc.Materials[matIdx];
-                    var meshContext = ConvertMaterialRange(doc, matIdx, faceOffset, mat.FaceCount);
-                    meshContext.Name = !string.IsNullOrEmpty(mat.Name) ? mat.Name : $"Material_{matIdx}";
-                    results.Add(meshContext);
-                    faceOffset += mat.FaceCount;
-                }
+                // PMX追加仕様：ObjectNameでオブジェクト分割
+                // PMXHelper.BuildObjectGroupsを使用
+                return ConvertByObjectName(doc);
             }
             else
             {
-                // 単一メッシュとして変換
+                // 単一メッシュとして変換（後方互換性）
+                var results = new List<MeshContext>();
                 var meshContext = ConvertAll(doc);
                 meshContext.Name = !string.IsNullOrEmpty(doc.ModelInfo?.Name) 
                     ? doc.ModelInfo.Name 
                     : Path.GetFileNameWithoutExtension(doc.FilePath);
                 results.Add(meshContext);
+                return results;
             }
+        }
 
+        /// <summary>
+        /// PMX追加仕様：ObjectNameでオブジェクト分割してMeshContextリストを作成
+        /// 頂点順序は厳密に保持される
+        /// </summary>
+        private static List<MeshContext> ConvertByObjectName(PMXDocument doc)
+        {
+            var results = new List<MeshContext>();
+            
+            // PMXHelperを使ってObjectGroupを構築
+            var groups = PMXHelper.BuildObjectGroups(doc);
+            
+            // デフォルトのインポート設定
+            var settings = new PMXImportSettings
+            {
+                FlipZ = true,
+                FlipUV_V = false,
+                Scale = 1f,
+                RecalculateNormals = false
+            };
+            
+            // 各グループをMeshContextに変換
+            foreach (var group in groups)
+            {
+                var meshContext = PMXHelper.ConvertObjectGroupToMeshContext(doc, group, settings);
+                if (meshContext != null)
+                {
+                    results.Add(meshContext);
+                }
+            }
+            
             return results;
         }
 
@@ -109,63 +142,9 @@ namespace Poly_Ling.PMX
             };
         }
 
-        /// <summary>
-        /// 指定マテリアル範囲をMeshContextに変換
-        /// </summary>
-        private static MeshContext ConvertMaterialRange(PMXDocument doc, int materialIndex, int faceOffset, int faceCount)
-        {
-            var mesh = new MeshObject();
-            var vertexMap = new Dictionary<int, int>();  // PMX頂点Index → 新頂点Index
-
-            // 使用する頂点を収集して追加
-            for (int i = 0; i < faceCount && faceOffset + i < doc.Faces.Count; i++)
-            {
-                var face = doc.Faces[faceOffset + i];
-                AddVertexIfNeeded(doc, mesh, vertexMap, face.VertexIndex1);
-                AddVertexIfNeeded(doc, mesh, vertexMap, face.VertexIndex2);
-                AddVertexIfNeeded(doc, mesh, vertexMap, face.VertexIndex3);
-            }
-
-            // 面を追加（頂点インデックスを新しいものに変換）
-            for (int i = 0; i < faceCount && faceOffset + i < doc.Faces.Count; i++)
-            {
-                var f = doc.Faces[faceOffset + i];
-                int v0 = vertexMap[f.VertexIndex1];
-                int v1 = vertexMap[f.VertexIndex2];
-                int v2 = vertexMap[f.VertexIndex3];
-                var face = new Face(v0, v2, v1, materialIndex);  // v1とv2を入れ替え（座標系変換）
-                mesh.AddFace(face);
-            }
-
-            mesh.CalculateBounds();
-
-            return new MeshContext
-            {
-                MeshObject = mesh,
-                Type = MeshType.Mesh,
-                OriginalPositions = mesh.Vertices.ConvertAll(v => v.Position).ToArray()
-            };
-        }
-
-        private static void AddVertexIfNeeded(PMXDocument doc, MeshObject mesh, Dictionary<int, int> vertexMap, int pmxIndex)
-        {
-            if (vertexMap.ContainsKey(pmxIndex))
-                return;
-
-            var v = doc.Vertices[pmxIndex];
-            var vertex = new Vertex(ConvertPosition(v.Position), v.UV);
-            vertex.Normals.Add(ConvertNormal(v.Normal));
-            
-            // ボーンウェイトを変換
-            if (v.BoneWeights != null && v.BoneWeights.Length > 0)
-            {
-                vertex.BoneWeight = ConvertBoneWeight(v.BoneWeights);
-            }
-            
-            int newIndex = mesh.Vertices.Count;
-            mesh.Vertices.Add(vertex);
-            vertexMap[pmxIndex] = newIndex;
-        }
+        // 注：ConvertMaterialRange（旧来のマテリアル単位分割）は削除
+        // PMX追加仕様では材質単位ではなくObjectName単位で分割する
+        // PMXHelper.ConvertObjectGroupToMeshContextを使用すること
 
         /// <summary>
         /// PMX座標系（左手系）からUnity座標系（左手系だがZ反転）に変換

@@ -129,6 +129,7 @@ namespace Poly_Ling.PMX
             public string PMXMaterialName;
             public int PMXVertexStartIndex;
             public int PMXVertexCount;
+            public List<int> PMXVertexIndices;  // 実際のPMX頂点インデックスリスト
 
             // 照合結果
             public bool IsMatched => MeshExpandedVertexCount == PMXVertexCount;
@@ -452,8 +453,8 @@ namespace Poly_Ling.PMX
             var drawables = model.DrawableMeshes;
             if (drawables == null) return;
 
-            // PMX材質ごとの頂点範囲を計算
-            var pmxMaterialRanges = CalculatePMXMaterialVertexRanges();
+            // PMXのObjectNameグループを取得（Memo欄ベース）
+            var pmxObjectGroups = PMXHelper.GetObjectNameGroups(_pmxDocument);
 
             // Drawableメッシュごとにマッピングを作成
             for (int i = 0; i < drawables.Count; i++)
@@ -462,102 +463,66 @@ namespace Poly_Ling.PMX
                 var ctx = entry.Context;
                 if (ctx?.MeshObject == null) continue;
 
+                var vertexInfo = PMXHelper.GetVertexInfo(ctx);
                 var mapping = new MeshMaterialMapping
                 {
                     DrawableIndex = i,
                     MasterIndex = entry.MasterIndex,
                     MeshName = ctx.Name,
-                    MeshVertexCount = ctx.MeshObject.VertexCount,
-                    MeshExpandedVertexCount = CalculateExpandedVertexCount(ctx.MeshObject),
+                    MeshVertexCount = vertexInfo.VertexCount,
+                    MeshExpandedVertexCount = vertexInfo.ExpandedVertexCount,
                     MeshContext = ctx
                 };
 
-                // PMX材質との対応を探す（名前ベース）
-                // メッシュ名と一致する材質、または "_L" / "_R" サフィックスを除いた名前で検索
+                // PMXのObjectNameとの対応を探す（ObjectName = メッシュ名）
+                // メッシュ名と一致するObjectName、または "_L" / "_R" サフィックスを除いた名前で検索
                 string baseName = ctx.Name;
                 if (baseName.EndsWith("_L") || baseName.EndsWith("_R"))
                 {
                     baseName = baseName.Substring(0, baseName.Length - 2);
                 }
 
-                // 完全一致を優先
-                if (pmxMaterialRanges.TryGetValue(ctx.Name, out var range))
+                ObjectGroup matchedGroup = null;
+                string matchedKey = null;
+
+                // 完全一致を優先（ObjectNameベース）
+                if (pmxObjectGroups.TryGetValue(ctx.Name, out var group))
                 {
-                    mapping.PMXMaterialName = ctx.Name;
-                    mapping.PMXVertexStartIndex = range.startIndex;
-                    mapping.PMXVertexCount = range.count;
+                    matchedGroup = group;
+                    matchedKey = ctx.Name;
                 }
                 // ベース名で検索
-                else if (pmxMaterialRanges.TryGetValue(baseName, out range))
+                else if (pmxObjectGroups.TryGetValue(baseName, out group))
                 {
-                    mapping.PMXMaterialName = baseName;
-                    mapping.PMXVertexStartIndex = range.startIndex;
-                    mapping.PMXVertexCount = range.count;
+                    matchedGroup = group;
+                    matchedKey = baseName;
                 }
-                // インデックスベースでフォールバック（同じ順番の材質）
-                else if (i < _pmxDocument.Materials.Count)
+                // "+"サフィックス付き（ミラー）で検索
+                else if (pmxObjectGroups.TryGetValue(ctx.Name + "+", out group))
                 {
-                    var mat = _pmxDocument.Materials[i];
-                    if (pmxMaterialRanges.TryGetValue(mat.Name, out range))
-                    {
-                        mapping.PMXMaterialName = mat.Name;
-                        mapping.PMXVertexStartIndex = range.startIndex;
-                        mapping.PMXVertexCount = range.count;
-                    }
+                    matchedGroup = group;
+                    matchedKey = ctx.Name + "+";
+                }
+                else if (pmxObjectGroups.TryGetValue(baseName + "+", out group))
+                {
+                    matchedGroup = group;
+                    matchedKey = baseName + "+";
+                }
+
+                if (matchedGroup != null)
+                {
+                    mapping.PMXMaterialName = matchedKey;
+                    mapping.PMXVertexIndices = matchedGroup.VertexIndices;
+                    mapping.PMXVertexCount = matchedGroup.VertexCount;
+                    // StartIndexは表示用（実際の転送にはVertexIndicesを使用）
+                    mapping.PMXVertexStartIndex = matchedGroup.VertexIndices.Count > 0 
+                        ? matchedGroup.VertexIndices.Min() : 0;
                 }
 
                 _mappings.Add(mapping);
             }
 
             Debug.Log($"[PMXPartialExport] Built {_mappings.Count} mappings");
-        }
-
-        /// <summary>
-        /// PMX材質ごとの頂点範囲を計算
-        /// </summary>
-        private Dictionary<string, (int startIndex, int count)> CalculatePMXMaterialVertexRanges()
-        {
-            var result = new Dictionary<string, (int startIndex, int count)>();
-
-            foreach (var mat in _pmxDocument.Materials)
-            {
-                int minIndex = int.MaxValue;
-                int maxIndex = int.MinValue;
-
-                foreach (var face in _pmxDocument.Faces)
-                {
-                    if (face.MaterialName != mat.Name) continue;
-
-                    minIndex = Math.Min(minIndex, face.VertexIndex1);
-                    minIndex = Math.Min(minIndex, face.VertexIndex2);
-                    minIndex = Math.Min(minIndex, face.VertexIndex3);
-
-                    maxIndex = Math.Max(maxIndex, face.VertexIndex1);
-                    maxIndex = Math.Max(maxIndex, face.VertexIndex2);
-                    maxIndex = Math.Max(maxIndex, face.VertexIndex3);
-                }
-
-                if (minIndex != int.MaxValue && maxIndex != int.MinValue)
-                {
-                    result[mat.Name] = (minIndex, maxIndex - minIndex + 1);
-                }
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// UV展開後の頂点数を計算
-        /// </summary>
-        private int CalculateExpandedVertexCount(MeshObject mo)
-        {
-            int count = 0;
-            foreach (var v in mo.Vertices)
-            {
-                // 各頂点のUV数（最低1）
-                count += Math.Max(1, v.UVs.Count);
-            }
-            return count;
         }
 
         // ================================================================
@@ -617,85 +582,84 @@ namespace Poly_Ling.PMX
 
         /// <summary>
         /// 1メッシュ分のデータをPMXに転送
+        /// PMXVertexIndicesに基づいて正確な位置に転送
         /// </summary>
         private int TransferMeshToPMX(MeshMaterialMapping mapping)
         {
             var mo = mapping.MeshContext?.MeshObject;
             if (mo == null) return 0;
+            if (mapping.PMXVertexIndices == null || mapping.PMXVertexIndices.Count == 0) return 0;
 
             int transferred = 0;
-            int pmxVertexIndex = mapping.PMXVertexStartIndex;
+            int localIndex = 0;
 
-            // MeshObjectの頂点をUV展開しながらPMXに転送
+            // MeshObjectの頂点をPMXVertexIndicesに基づいて転送
+            // MeshObjectの頂点順序 = PMXVertexIndices順序（昇順）
             foreach (var vertex in mo.Vertices)
             {
-                int uvCount = Math.Max(1, vertex.UVs.Count);
+                if (localIndex >= mapping.PMXVertexIndices.Count)
+                    break;
 
-                for (int iuv = 0; iuv < uvCount; iuv++)
+                int pmxVertexIndex = mapping.PMXVertexIndices[localIndex];
+                if (pmxVertexIndex >= _pmxDocument.Vertices.Count)
                 {
-                    if (pmxVertexIndex >= _pmxDocument.Vertices.Count)
-                        break;
-
-                    var pmxVertex = _pmxDocument.Vertices[pmxVertexIndex];
-
-                    // 座標
-                    if (_replacePositions)
-                    {
-                        Vector3 pos = vertex.Position;
-
-                        // 座標変換
-                        if (_flipZ) pos.z = -pos.z;
-                        pos *= _scale;
-
-                        pmxVertex.Position = pos;
-                    }
-
-                    // 法線
-                    if (_replaceNormals)
-                    {
-                        // Vertexは法線リストを持つ（Normals）、先頭を使用
-                        Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
-                        if (_flipZ) normal.z = -normal.z;
-                        pmxVertex.Normal = normal;
-                    }
-
-                    // UV
-                    if (_replaceUVs)
-                    {
-                        Vector2 uv = iuv < vertex.UVs.Count ? vertex.UVs[iuv] : (vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero);
-                        if (_flipUV_V) uv.y = 1f - uv.y;
-                        pmxVertex.UV = uv;
-                    }
-
-                    // ボーンウェイト
-                    if (_replaceBoneWeights && vertex.BoneWeight.HasValue)
-                    {
-                        var bw = vertex.BoneWeight.Value;
-
-                        // PMXBoneWeight配列を構築
-                        var boneWeights = new List<PMXBoneWeight>();
-
-                        if (bw.weight0 > 0)
-                            boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex0, Weight = bw.weight0 });
-                        if (bw.weight1 > 0)
-                            boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex1, Weight = bw.weight1 });
-                        if (bw.weight2 > 0)
-                            boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex2, Weight = bw.weight2 });
-                        if (bw.weight3 > 0)
-                            boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex3, Weight = bw.weight3 });
-
-                        pmxVertex.BoneWeights = boneWeights.ToArray();
-                        pmxVertex.WeightType = boneWeights.Count switch
-                        {
-                            1 => 0,  // BDEF1
-                            2 => 1,  // BDEF2
-                            _ => 2   // BDEF4
-                        };
-                    }
-
-                    transferred++;
-                    pmxVertexIndex++;
+                    localIndex++;
+                    continue;
                 }
+
+                var pmxVertex = _pmxDocument.Vertices[pmxVertexIndex];
+
+                // 座標
+                if (_replacePositions)
+                {
+                    Vector3 pos = vertex.Position;
+                    if (_flipZ) pos.z = -pos.z;
+                    pos *= _scale;
+                    pmxVertex.Position = pos;
+                }
+
+                // 法線
+                if (_replaceNormals)
+                {
+                    Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
+                    if (_flipZ) normal.z = -normal.z;
+                    pmxVertex.Normal = normal;
+                }
+
+                // UV
+                if (_replaceUVs)
+                {
+                    Vector2 uv = vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero;
+                    if (_flipUV_V) uv.y = 1f - uv.y;
+                    pmxVertex.UV = uv;
+                }
+
+                // ボーンウェイト
+                if (_replaceBoneWeights && vertex.BoneWeight.HasValue)
+                {
+                    var bw = vertex.BoneWeight.Value;
+                    var boneWeights = new List<PMXBoneWeight>();
+
+                    if (bw.weight0 > 0)
+                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex0, Weight = bw.weight0 });
+                    if (bw.weight1 > 0)
+                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex1, Weight = bw.weight1 });
+                    if (bw.weight2 > 0)
+                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex2, Weight = bw.weight2 });
+                    if (bw.weight3 > 0)
+                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex3, Weight = bw.weight3 });
+
+                    pmxVertex.BoneWeights = boneWeights.ToArray();
+                    pmxVertex.WeightType = boneWeights.Count switch
+                    {
+                        1 => 0,  // BDEF1
+                        2 => 1,  // BDEF2
+                        _ => 2   // BDEF4
+                    };
+                }
+
+                transferred++;
+                localIndex++;
             }
 
             Debug.Log($"[PMXPartialExport] Transferred '{mapping.MeshName}' → '{mapping.PMXMaterialName}': {transferred} vertices");
