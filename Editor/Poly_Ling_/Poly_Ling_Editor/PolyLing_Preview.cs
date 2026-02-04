@@ -75,6 +75,13 @@ public partial class PolyLing
             GUILayout.ExpandWidth(true),
             GUILayout.ExpandHeight(true));
 
+        // 注目点移動XYで使用するためにプレビュー領域を保存
+        // Repaintイベント時のみ保存（Layoutイベント時は最大値が返るため）
+        if (Event.current.type == EventType.Repaint)
+        {
+            _lastPreviewRect = rect;
+        }
+
         var meshContext = _model.CurrentMeshContext;
         if (meshContext == null || _preview == null)
         {

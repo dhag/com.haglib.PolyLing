@@ -281,7 +281,8 @@ public partial class PolyLing
             if (e.control)
             {
                 // Ctrl+右ドラッグ: Z軸回転（ロール）
-                _rotationZ += e.delta.x * 0.5f;
+                // Note: Ctrlはゆっくり移動なので、Z回転には修飾キー倍率を適用しない
+                _rotationZ += _mouseSettings.GetRotationDelta(e.delta.x);
             }
             else
             {
@@ -293,8 +294,8 @@ public partial class PolyLing
                 float adjustedDeltaX = e.delta.x * cos - e.delta.y * sin;
                 float adjustedDeltaY = e.delta.x * sin + e.delta.y * cos;
 
-                _rotationY += adjustedDeltaX * 0.5f;
-                _rotationX += adjustedDeltaY * 0.5f;
+                _rotationY += _mouseSettings.GetRotationDelta(adjustedDeltaX, e);
+                _rotationX += _mouseSettings.GetRotationDelta(adjustedDeltaY, e);
                 _rotationX = Mathf.Clamp(_rotationX, -89f, 89f);
             }
             e.Use();
@@ -350,6 +351,10 @@ public partial class PolyLing
 
         Vector3 worldDelta = right * screenDelta.x * pixelToWorld
                            - up * screenDelta.y * pixelToWorld;
+
+        // デバッグ出力
+        Debug.Log($"[ScreenDeltaToWorldDelta] screenDelta={screenDelta}, forward={forward}, right={right}, up={up}, " +
+                  $"pixelToWorld={pixelToWorld}, worldDelta={worldDelta}");
 
         return worldDelta;
     }

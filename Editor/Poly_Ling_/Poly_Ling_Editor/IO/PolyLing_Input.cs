@@ -20,9 +20,9 @@ public partial class PolyLing
     // クリック時は _lastHoverHitResult を使用して選択処理を行う。
     // ================================================================
 
-    // ホバー判定の閾値
-    private const float HOVER_VERTEX_RADIUS = 12f;   // 頂点ヒット判定半径（ピクセル）
-    private const float HOVER_LINE_DISTANCE = 18f;   // 線分ヒット判定距離（ピクセル）
+    // ホバー判定の閾値（MouseSettingsから取得）
+    private float HOVER_VERTEX_RADIUS => _mouseSettings.HoverVertexRadius;
+    private float HOVER_LINE_DISTANCE => _mouseSettings.HoverLineDistance;
 
     // ホバー状態の保存（クリック時に使用）
     private Vector2 _lastHoverMousePos;
@@ -48,15 +48,16 @@ public partial class PolyLing
             if (e.shift)
             {
                 // Shift+ホイール: 注目点をカメラ視線方向に前後移動
+                // Note: Shiftは高速移動だが、ここでは既にShiftがトリガーなので修飾キー倍率は適用しない
                 Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
                 Vector3 forward = rot * Vector3.forward;
-                float moveSpeed = _cameraDistance * 0.1f;  // 距離に比例した速度
-                _cameraTarget += forward * scrollValue * moveSpeed;
+                float moveAmount = _mouseSettings.GetFocusPointZDelta(scrollValue, _cameraDistance);
+                _cameraTarget += forward * moveAmount;
             }
             else
             {
-                // 通常ホイール: ズーム
-                _cameraDistance *= (1f + scrollValue * 0.05f);
+                // 通常ホイール: ズーム（Ctrl押下時はゆっくり）
+                _cameraDistance *= _mouseSettings.GetZoomMultiplier(scrollValue, e);
                 _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 80f);
             }
             e.Use();

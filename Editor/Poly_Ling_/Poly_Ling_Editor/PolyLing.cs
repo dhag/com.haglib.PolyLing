@@ -115,6 +115,12 @@ public partial class PolyLing : EditorWindow
     // プレビュー
     // ================================================================
     private PreviewRenderUtility _preview;
+    private Rect _lastPreviewRect;  // 最後に計算されたプレビュー領域（注目点移動で使用）
+
+    // ================================================================
+    // マウス操作設定
+    // ================================================================
+    private Poly_Ling.Input.MouseSettings _mouseSettings = new Poly_Ling.Input.MouseSettings();
     
     // カメラ状態: EditorStateContext を Single Source of Truth として参照
     // RotationZはEditorStateに含まれないためローカルで管理
@@ -1176,6 +1182,7 @@ public partial class PolyLing : EditorWindow
         Event e = Event.current;
 
         // 中ボタンドラッグで視点XY移動（パン）
+        // グループB: ScreenDeltaToWorldDeltaを使用し、マウス移動と画面上の物体移動を一致させる
         if (e.type == EventType.MouseDrag && e.button == 2)
         {
             if (!_isCameraDragging)
@@ -1183,13 +1190,33 @@ public partial class PolyLing : EditorWindow
                 BeginCameraDrag();
             }
 
-            Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
-            Vector3 right = rot * Vector3.right;
-            Vector3 up = rot * Vector3.up;
+            // プレビュー領域が未初期化の場合はスキップ
+            if (_lastPreviewRect.height <= 0)
+            {
+                e.Use();
+                return;
+            }
 
-            float panSpeed = _cameraDistance * 0.002f;
-            _cameraTarget -= right * e.delta.x * panSpeed;
-            _cameraTarget += up * e.delta.y * panSpeed;
+            // カメラ位置を計算
+            Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
+            Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -_cameraDistance);
+
+            // ScreenDeltaToWorldDeltaで物理的に正確な移動量を計算
+            // 注目点を動かすと画面上の物体は逆方向に動くので、結果を反転
+            Vector3 worldDelta = ScreenDeltaToWorldDelta(e.delta, camPos, _cameraTarget, _cameraDistance, _lastPreviewRect);
+            
+            // 修飾キー倍率を適用
+            float multiplier = _mouseSettings.GetModifierMultiplier(e);
+
+            // デバッグ出力
+            float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
+            float worldHeightAtDist = 2f * _cameraDistance * Mathf.Tan(fovRad / 2f);
+            float pixelToWorld = worldHeightAtDist / _lastPreviewRect.height;
+            Debug.Log($"[CameraPan] delta={e.delta}, worldDelta={worldDelta}, multiplier={multiplier}, " +
+                      $"FOV={_preview.cameraFieldOfView}, camDist={_cameraDistance}, " +
+                      $"rectHeight={_lastPreviewRect.height}, pixelToWorld={pixelToWorld}");
+
+            _cameraTarget -= worldDelta * multiplier;
 
             e.Use();
             Repaint();
