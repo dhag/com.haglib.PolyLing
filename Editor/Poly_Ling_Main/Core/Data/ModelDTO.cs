@@ -4,6 +4,7 @@
 // Phase8: 選択状態シリアライズ対応（Edge/Face/Line/Mode）
 // Phase9: 選択セット対応
 // Phase Morph: モーフ基準データ対応
+// Phase BonePose: BonePoseData対応
 
 using System;
 using System.Collections.Generic;
@@ -226,6 +227,12 @@ namespace Poly_Ling.Serialization
         /// null = モーフではない通常メッシュ
         /// </summary>
         public MorphBaseDataDTO morphBaseData;
+
+        /// <summary>
+        /// ボーンポーズデータ（RestPose + Manualレイヤー）
+        /// null = BonePoseData未使用
+        /// </summary>
+        public BonePoseDataDTO bonePoseData;
 
         /// <summary>
         /// エクスポートから除外するか

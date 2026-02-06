@@ -121,6 +121,11 @@ public partial class PolyLing
         {
             Poly_Ling.Tools.Panels.ModelBlendPanel.Open(_toolManager?.toolContext);
         }
+
+        if (GUILayout.Button("VMD簡易テスト"))
+        {
+            Poly_Ling.VMD.VMDTestPanel.Open(_toolManager?.toolContext);
+        }
         EditorGUI.indentLevel--;
     }
 

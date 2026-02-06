@@ -307,6 +307,10 @@ namespace Poly_Ling.PMX
         /// <summary>ローカルZ軸方向</summary>
         public Vector3 LocalAxisZ { get; set; }
 
+        /// <summary>ローカル軸が自動計算されたかどうか（インポート時に設定、エクスポート時は無視）</summary>
+        [System.NonSerialized]
+        public bool IsLocalAxisAutoCalculated;
+
         /// <summary>外部親キー</summary>
         public int ExternalParentKey { get; set; }
 

@@ -3,6 +3,7 @@
 // Phase7: マルチマテリアル対応版
 // Phase5: ModelContext統合
 // Phase Morph: モーフ基準データ対応
+// Phase BonePose: BonePoseData対応
 
 using System;
 using System.Collections.Generic;
@@ -431,6 +432,9 @@ namespace Poly_Ling.Serialization
                 // モーフデータを復元（Phase Morph追加）
                 LoadMorphDataFromDTO(meshContextData, context);
 
+                // BonePoseData復元（Phase BonePose追加）
+                LoadBonePoseDataFromDTO(meshContextData, context);
+
                 model.Add(context);
             }
 
@@ -548,6 +552,9 @@ namespace Poly_Ling.Serialization
 
                 // モーフデータ（Phase Morph追加）
                 SaveMorphDataToDTO(meshContext, contextData);
+
+                // BonePoseData（Phase BonePose追加）
+                SaveBonePoseDataToDTO(meshContext, contextData);
             }
 
             return contextData;
@@ -602,6 +609,9 @@ namespace Poly_Ling.Serialization
 
             // モーフデータを復元（Phase Morph追加）
             LoadMorphDataFromDTO(meshDTO, meshContext);
+
+            // BonePoseData復元（Phase BonePose追加）
+            LoadBonePoseDataFromDTO(meshDTO, meshContext);
 
             return meshContext;
         }
@@ -971,6 +981,44 @@ namespace Poly_Ling.Serialization
                         model.MorphSets.Add(set);
                     }
                 }
+            }
+        }
+
+        // ================================================================
+        // BonePoseData シリアライズ（Phase BonePose追加）
+        // ================================================================
+
+        /// <summary>
+        /// MeshContextのBonePoseDataをMeshDTOに保存
+        /// </summary>
+        public static void SaveBonePoseDataToDTO(MeshContext meshContext, MeshDTO meshDTO)
+        {
+            if (meshContext == null || meshDTO == null) return;
+
+            if (meshContext.BonePoseData != null)
+            {
+                meshDTO.bonePoseData = meshContext.BonePoseData.ToDTO();
+            }
+            else
+            {
+                meshDTO.bonePoseData = null;
+            }
+        }
+
+        /// <summary>
+        /// MeshDTOのBonePoseDataをMeshContextに復元
+        /// </summary>
+        public static void LoadBonePoseDataFromDTO(MeshDTO meshDTO, MeshContext meshContext)
+        {
+            if (meshDTO == null || meshContext == null) return;
+
+            if (meshDTO.bonePoseData != null)
+            {
+                meshContext.BonePoseData = BonePoseData.FromDTO(meshDTO.bonePoseData);
+            }
+            else
+            {
+                meshContext.BonePoseData = null;
             }
         }
     }

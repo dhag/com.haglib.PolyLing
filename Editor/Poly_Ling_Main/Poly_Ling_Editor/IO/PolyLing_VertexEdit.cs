@@ -94,7 +94,11 @@ public partial class PolyLing
         // Export Transform設定（メッシュコンテキストごと）
         if (meshContext.BoneTransform != null)
         {
+            // BonePoseData有効時: BoneTransformはベースなので編集不可
+            bool poseActive = meshContext.BonePoseData != null && meshContext.BonePoseData.IsActive;
+            EditorGUI.BeginDisabledGroup(poseActive);
             BoneTransformUI.DrawUI(meshContext.BoneTransform);
+            EditorGUI.EndDisabledGroup();
             EditorGUILayout.Space(4);
         }
 

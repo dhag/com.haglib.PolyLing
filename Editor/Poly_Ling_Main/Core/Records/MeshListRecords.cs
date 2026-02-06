@@ -3,6 +3,7 @@
 // v1.3: MeshListUndoContext削除、ModelContext統合
 // v1.4: MeshContextSnapshot に選択状態を追加（Phase 1）
 // v1.5: MeshContextSnapshot にモーフデータを追加（Phase Morph）
+// v1.6: MeshContextSnapshot にBonePoseDataを追加（Phase BonePose）
 
 using System;
 using System.Collections.Generic;
@@ -88,6 +89,13 @@ namespace Poly_Ling.UndoSystem
         /// <summary>エクスポートから除外するか</summary>
         public bool ExcludeFromExport;
 
+        // ================================================================
+        // BonePoseData（Phase BonePose追加）
+        // ================================================================
+
+        /// <summary>ボーンポーズデータ</summary>
+        public BonePoseData BonePoseData;
+
         /// <summary>
         /// MeshContextからスナップショットを作成
         /// </summary>
@@ -128,7 +136,9 @@ namespace Poly_Ling.UndoSystem
                                 ?? new List<SelectionSet>(),
                 // モーフデータ（Phase Morph追加）
                 MorphBaseData = meshContext.MorphBaseData?.Clone(),
-                ExcludeFromExport = meshContext.ExcludeFromExport
+                ExcludeFromExport = meshContext.ExcludeFromExport,
+                // BonePoseData（Phase BonePose追加）
+                BonePoseData = meshContext.BonePoseData?.Clone()
             };
 
             // マテリアルを安全に保存
@@ -222,6 +232,9 @@ namespace Poly_Ling.UndoSystem
             // モーフデータを復元（Phase Morph追加）
             meshContext.MorphBaseData = MorphBaseData?.Clone();
             meshContext.ExcludeFromExport = ExcludeFromExport;
+
+            // BonePoseData復元（Phase BonePose追加）
+            meshContext.BonePoseData = BonePoseData?.Clone();
 
             return meshContext;
         }

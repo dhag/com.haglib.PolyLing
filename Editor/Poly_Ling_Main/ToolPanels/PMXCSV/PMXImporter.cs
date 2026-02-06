@@ -1,4 +1,4 @@
-// Assets/Editor/Poly_Ling/PMX/Import/PMXImporter.cs
+﻿// Assets/Editor/Poly_Ling/PMX/Import/PMXImporter.cs
 // PMXDocument → MeshObject/MeshContext 変換
 // SimpleMeshFactoryのデータ構造に変換
 // 頂点共有する材質をグループ化
@@ -376,7 +376,7 @@ namespace Poly_Ling.PMX
                 {
                     // ObjectGroupから材質名リストを取得
                     var materialNames = objectGroup.Materials.ConvertAll(m => m.MaterialName);
-                    
+
                     // MaterialGroupInfo を構築
                     var groupInfo = BuildMaterialGroupInfo(materialNames, materialToFaces, meshIndex);
                     groupInfo.MeshContextIndex = boneContextCount + meshIndex;
@@ -496,7 +496,7 @@ namespace Poly_Ling.PMX
 
                 // デバッグ：親子関係と回転を確認
                 bool hasLocalAxis = (pmxBone.Flags & 0x0800) != 0;
-                Debug.Log($"[PMXImporter] Bone[{i}] '{pmxBone.Name}' -> Parent='{pmxBone.ParentBoneName}' -> HierarchyParentIndex={meshContext.HierarchyParentIndex}, HasLocalAxis={hasLocalAxis}");
+                Debug.Log($"[PMXImporter] Bone[{i}] '{pmxBone.Name}' -> Parent='{pmxBone.ParentBoneName}' -> HierarchyParentIndex={meshContext.HierarchyParentIndex}, Flags=0x{pmxBone.Flags:X4}, HasLocalAxis={hasLocalAxis}");
             }
 
             Debug.Log($"[PMXImporter] Imported {document.Bones.Count} bones");
@@ -512,36 +512,47 @@ namespace Poly_Ling.PMX
 
             Vector3 localX, localZ;
 
+            // デバッグ対象ボーン
+            bool isDebugBone = pmxBone.Name.Contains("腕") || pmxBone.Name.Contains("ひじ") || pmxBone.Name.Contains("手首");
+
             if (hasLocalAxis)
             {
                 // ローカル軸が定義されている場合
                 localX = pmxBone.LocalAxisX;
                 localZ = pmxBone.LocalAxisZ;
+
+                if (isDebugBone)
+                {
+                    Debug.Log($"[PMX AXIS DEBUG] {pmxBone.Name}: hasLocalAxis=true");
+                    Debug.Log($"[PMX AXIS DEBUG]   PMX LocalAxisX = {localX}");
+                    Debug.Log($"[PMX AXIS DEBUG]   PMX LocalAxisZ = {localZ}");
+                }
             }
             else
             {
                 // ローカル軸が定義されていない場合、デフォルト軸を計算
                 localX = CalculateDefaultLocalAxisX(pmxBone, document, boneIndex);
                 localZ = Vector3.forward; // PMX座標系でのZ+（前方向）
-            }
 
-            // 座標系変換（PMX → Unity: Z反転）
-            if (settings.FlipZ)
-            {
-                localX = new Vector3(localX.x, localX.y, -localX.z);
-                localZ = new Vector3(localZ.x, localZ.y, -localZ.z);
+                // 自動計算結果をボーンに記録
+                pmxBone.LocalAxisX = localX.normalized;
+                pmxBone.LocalAxisZ = localZ;
+                pmxBone.IsLocalAxisAutoCalculated = true;
+
+                if (isDebugBone)
+                {
+                    Debug.Log($"[PMX AXIS DEBUG] {pmxBone.Name}: hasLocalAxis=false, using default");
+                    Debug.Log($"[PMX AXIS DEBUG]   Calculated LocalAxisX = {localX}");
+                    Debug.Log($"[PMX AXIS DEBUG]   Default LocalAxisZ = {localZ}");
+                }
             }
 
             // 正規化
             localX = localX.normalized;
             localZ = localZ.normalized;
 
-            // Y軸を計算
-            // 右手系（PMX）: Y = Cross(Z, X)
-            // 左手系（flipZ後）: Y = Cross(X, Z)
-            Vector3 localY = settings.FlipZ
-                ? Vector3.Cross(localX, localZ)
-                : Vector3.Cross(localZ, localX);
+            // 右手系(PMX)のままでY軸を計算: Y = Z × X
+            Vector3 localY = Vector3.Cross(localZ, localX);
 
             // 数値誤差チェック
             if (localY.sqrMagnitude < 1e-10f)
@@ -556,13 +567,38 @@ namespace Poly_Ling.PMX
             {
                 localY = localY.normalized;
                 // Zを直交化
+                Vector3 originalZ = localZ;
                 localZ = Vector3.Cross(localX, localY).normalized;
+
+                if (isDebugBone)
+                {
+                    Debug.Log($"[PMX AXIS DEBUG]   Computed Y = {localY}");
+                    Debug.Log($"[PMX AXIS DEBUG]   Original Z = {originalZ}, Recomputed Z = {localZ}");
+                    float zDot = Vector3.Dot(originalZ, localZ);
+                    Debug.Log($"[PMX AXIS DEBUG]   Z dot product = {zDot:F4} (negative means flipped!)");
+                }
             }
 
-            // デバッグ: Y軸が下向きの場合に警告
-            if (localY.y < -0.5f)
+            // デバッグ: Z反転前のdet
+            if (isDebugBone || pmxBone.Name.Contains("肩"))
             {
-                Debug.LogWarning($"[PMXImporter] Bone '{pmxBone.Name}' has downward-pointing Y axis (Y.y = {localY.y:F3}). This may cause issues with mirrored animations.");
+                float detBefore = Vector3.Dot(localX, Vector3.Cross(localY, localZ));
+                Debug.Log($"[PMX DET] {pmxBone.Name}: PMX(右手系) det={detBefore:F4}  X=({localX.x:F4},{localX.y:F4},{localX.z:F4}) Y=({localY.x:F4},{localY.y:F4},{localY.z:F4}) Z=({localZ.x:F4},{localZ.y:F4},{localZ.z:F4})");
+            }
+
+            // 3軸すべてを座標系変換（右手系→左手系）
+            if (settings.FlipZ)
+            {
+                localX = new Vector3(localX.x, localX.y, -localX.z);
+                localY = new Vector3(localY.x, localY.y, -localY.z);
+                localZ = new Vector3(localZ.x, localZ.y, -localZ.z);
+            }
+
+            // デバッグ: Z反転後のdet
+            if (isDebugBone || pmxBone.Name.Contains("肩"))
+            {
+                float detAfter = Vector3.Dot(localX, Vector3.Cross(localY, localZ));
+                Debug.Log($"[PMX DET] {pmxBone.Name}: Unity(左手系) det={detAfter:F4}  X=({localX.x:F4},{localX.y:F4},{localX.z:F4}) Y=({localY.x:F4},{localY.y:F4},{localY.z:F4}) Z=({localZ.x:F4},{localZ.y:F4},{localZ.z:F4})");
             }
 
             // 回転行列からQuaternionを生成
@@ -620,7 +656,16 @@ namespace Poly_Ling.PMX
             m.SetColumn(1, new Vector4(y.x, y.y, y.z, 0f));
             m.SetColumn(2, new Vector4(z.x, z.y, z.z, 0f));
             m.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
-            return m.rotation;
+
+            // ★★★ Inverse必須 - 削除禁止 ★★★
+            // 移植元ライブラリ(NCSHAGLIB)の MatrixHelper.LocalAxisToMatrix4X4 では
+            // System.Numerics.Matrix4x4 の M11=X.x, M12=X.y, M13=X.z と「行」にXYZを格納し、
+            // matrix_to_quaternion() の最後で Quaternion.Inverse(q) をかけている。
+            // 一方、UnityのSetColumn()は「列」にXYZを格納するため、
+            // 元ライブラリとは転置の関係になる。転置行列の回転=逆回転なので、
+            // Inverseで補正しないと回転方向が反転する。
+            // 元ライブラリのコメント: 「なぜかこれが必要」
+            return Quaternion.Inverse(m.rotation);
         }
 
         // ================================================================
@@ -1065,7 +1110,8 @@ namespace Poly_Ling.PMX
                 Type = MeshType.Bone,
                 IsVisible = true,
                 BindPose = bindPose,
-                BoneTransform = boneTransform  // ★BoneTransformを設定
+                BoneTransform = boneTransform,  // ★BoneTransformを設定
+                BoneModelRotation = modelRotation  // ★VMD変換用のワールド累積回転
             };
 
             // ★MeshContextにもHierarchyParentIndexを設定（重要！）

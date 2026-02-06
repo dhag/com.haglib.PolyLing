@@ -35,8 +35,10 @@ namespace Poly_Ling.UI
         // 定数
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.meshfactory/Editor/Poly_Ling_/UI/MeshListPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.meshfactory/Editor/Poly_Ling_/UI/MeshListPanel.uss";
+        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanel.uxml";
+        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanel.uss";
+        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanel.uxml";
+        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanel.uss";
 
         // ================================================================
         // UI要素
@@ -331,7 +333,8 @@ namespace Poly_Ling.UI
             var root = rootVisualElement;
 
             // UXMLをロード
-            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath);
+            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath)
+                          ?? AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPathAssets);
             if (visualTree != null)
             {
                 visualTree.CloneTree(root);
@@ -343,7 +346,8 @@ namespace Poly_Ling.UI
             }
 
             // USSをロード
-            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPath);
+            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPath)
+                          ?? AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPathAssets);
             if (styleSheet != null)
             {
                 root.styleSheets.Add(styleSheet);

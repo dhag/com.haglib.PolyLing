@@ -2,6 +2,7 @@
     <!-- 
     TypedMeshListPanel.uxml
     タイプ別メッシュリストパネル
+    Phase BonePose: BonePoseData/BindPoseサブパネル追加
     -->
     
     <ui:VisualElement name="typed-list-root" class="typed-list-root">
@@ -67,6 +68,85 @@
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:Foldout>
+            
+            <!-- ================================================================
+                 BonePose セクション（Boneタブ選択時のみ表示）
+                 Phase BonePose 追加
+                 ================================================================ -->
+            <ui:VisualElement name="bone-pose-section" class="bone-pose-section">
+                
+                <!-- BonePoseData -->
+                <ui:Foldout name="pose-foldout" text="Pose (BonePoseData)" value="true" class="pose-foldout">
+                    <ui:VisualElement class="pose-panel">
+                        
+                        <!-- Active トグル -->
+                        <ui:VisualElement class="pose-row">
+                            <ui:Toggle name="pose-active-toggle" label="Active" class="pose-toggle" />
+                        </ui:VisualElement>
+                        
+                        <!-- RestPose -->
+                        <ui:Label text="RestPose" class="pose-section-label" />
+                        <ui:VisualElement class="pose-row">
+                            <ui:Label text="Pos" class="pose-field-label" />
+                            <ui:FloatField name="rest-pos-x" label="X" class="pose-float-field" />
+                            <ui:FloatField name="rest-pos-y" label="Y" class="pose-float-field" />
+                            <ui:FloatField name="rest-pos-z" label="Z" class="pose-float-field" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-row">
+                            <ui:Label text="Rot" class="pose-field-label" />
+                            <ui:FloatField name="rest-rot-x" label="X" class="pose-float-field" />
+                            <ui:FloatField name="rest-rot-y" label="Y" class="pose-float-field" />
+                            <ui:FloatField name="rest-rot-z" label="Z" class="pose-float-field" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-row">
+                            <ui:Label text="Scl" class="pose-field-label" />
+                            <ui:FloatField name="rest-scl-x" label="X" class="pose-float-field" />
+                            <ui:FloatField name="rest-scl-y" label="Y" class="pose-float-field" />
+                            <ui:FloatField name="rest-scl-z" label="Z" class="pose-float-field" />
+                        </ui:VisualElement>
+                        
+                        <!-- レイヤー一覧 -->
+                        <ui:Label text="Layers" class="pose-section-label" />
+                        <ui:VisualElement name="pose-layers-container" class="pose-layers-container">
+                            <ui:Label name="pose-no-layers-label" text="(レイヤーなし)" class="pose-no-layers" />
+                        </ui:VisualElement>
+                        
+                        <!-- 合成結果（読み取り専用） -->
+                        <ui:Label text="Result (Blended)" class="pose-section-label" />
+                        <ui:VisualElement class="pose-result-row">
+                            <ui:Label name="pose-result-pos" text="Pos: (0, 0, 0)" class="pose-result-label" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-result-row">
+                            <ui:Label name="pose-result-rot" text="Rot: (0, 0, 0)" class="pose-result-label" />
+                        </ui:VisualElement>
+                        
+                        <!-- ボタン -->
+                        <ui:VisualElement class="pose-buttons">
+                            <ui:Button name="btn-init-pose" text="Init from BoneTransform" tooltip="BoneTransformからBonePoseDataを初期化" class="pose-button" />
+                            <ui:Button name="btn-reset-layers" text="Reset Layers" tooltip="全レイヤーをクリア" class="pose-button" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:Foldout>
+                
+                <!-- BindPose -->
+                <ui:Foldout name="bindpose-foldout" text="BindPose" value="false" class="pose-foldout">
+                    <ui:VisualElement class="pose-panel">
+                        <ui:VisualElement class="pose-result-row">
+                            <ui:Label name="bindpose-pos" text="Pos: (0, 0, 0)" class="pose-result-label" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-result-row">
+                            <ui:Label name="bindpose-rot" text="Rot: (0, 0, 0)" class="pose-result-label" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-result-row">
+                            <ui:Label name="bindpose-scl" text="Scl: (1, 1, 1)" class="pose-result-label" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-buttons">
+                            <ui:Button name="btn-bake-pose" text="Bake Current Pose" tooltip="現在のポーズをBindPoseに焼く" class="pose-button" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:Foldout>
+                
+            </ui:VisualElement>
             
         </ui:VisualElement>
         

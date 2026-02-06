@@ -4,6 +4,7 @@
 // DefaultMaterials対応版
 // Phase 1: 選択状態をMeshContextに統合
 // Phase Morph: モーフ基準データ対応
+// Phase BonePose: BonePoseData対応（BindPose相互変換）
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -317,21 +318,37 @@ namespace Poly_Ling.Data
             set { if (MeshObject != null) MeshObject.BoneTransform = value ?? new BoneTransform(); }
         }
 
+        /// <summary>
+        /// ボーンポーズデータ（エディット＆ランタイムポーズ）
+        /// BindPoseと相互変換可能
+        /// null = BonePoseData未使用（BoneTransformにフォールバック）
+        /// </summary>
+        public BonePoseData BonePoseData { get; set; }
+
         // ================================================================
         // 変換行列（ワールド座標変換用）
         // ================================================================
 
         /// <summary>
-        /// ローカル変換行列（BoneTransformから生成）
-        /// UseLocalTransformがfalseの場合は単位行列
+        /// ローカル変換行列
+        /// BonePoseDataが有効ならそちら優先、なければBoneTransformにフォールバック
         /// </summary>
         public Matrix4x4 LocalMatrix
         {
             get
             {
+                // ベース: BoneTransformのローカル変換（親子関係の基礎）
+                Matrix4x4 baseMatrix;
                 if (BoneTransform == null || !BoneTransform.UseLocalTransform)
-                    return Matrix4x4.identity;
-                return BoneTransform.TransformMatrix;
+                    baseMatrix = Matrix4x4.identity;
+                else
+                    baseMatrix = BoneTransform.TransformMatrix;
+
+                // BonePoseDataが有効ならデルタを乗算
+                if (BonePoseData != null && BonePoseData.IsActive)
+                    return baseMatrix * BonePoseData.LocalMatrix;
+
+                return baseMatrix;
             }
         }
 
@@ -352,6 +369,14 @@ namespace Poly_Ling.Data
         /// SkinningMatrix = WorldMatrix × BindPose
         /// </summary>
         public Matrix4x4 BindPose { get; set; } = Matrix4x4.identity;
+
+        /// <summary>
+        /// ★★★ PMXインポート時のモデル空間でのローカル軸回転（ワールド累積） ★★★
+        /// VMDモーション適用時にローカル軸空間変換 (R⁻¹ * Q * R) で使用する。
+        /// BoneTransform.RotationQuaternionは親からの相対回転であり、
+        /// VMD変換にはこのワールド空間での累積回転が必要。削除禁止。
+        /// </summary>
+        public Quaternion BoneModelRotation { get; set; } = Quaternion.identity;
 
         /// <summary>
         /// スキニング行列を取得（WorldMatrix × BindPose）

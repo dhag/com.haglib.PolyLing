@@ -168,6 +168,35 @@ namespace Poly_Ling.PMX
         // ================================================================
 
         /// <summary>
+        /// ローカルX軸からZ軸を自動計算（PMXE互換）
+        /// PMXEの仕様: X軸に基づいてZ軸を計算し、左右で向きが揃うようにする
+        /// 具体的にはY軸が上向き成分を持つようにZ軸を決定する
+        /// </summary>
+        /// <param name="localX">ローカルX軸（正規化済み）</param>
+        /// <returns>計算されたローカルZ軸</returns>
+        public static Vector3 CalculateDefaultLocalAxisZ(Vector3 localX)
+        {
+            // X軸とワールド上方向から、Z軸を求める
+            // Z = Cross(X, Up) → Y = Cross(Z, X) が上向き成分を持つ
+            Vector3 worldUp = Vector3.up;
+            Vector3 localZ = Vector3.Cross(localX, worldUp);
+
+            if (localZ.sqrMagnitude < 1e-10f)
+            {
+                // X軸がほぼ真上/真下を向いている場合、前方向をフォールバック
+                localZ = Vector3.Cross(localX, Vector3.forward);
+
+                if (localZ.sqrMagnitude < 1e-10f)
+                {
+                    // それでも退化する場合（理論上到達しない）
+                    localZ = Vector3.Cross(localX, Vector3.right);
+                }
+            }
+
+            return localZ.normalized;
+        }
+
+        /// <summary>
         /// ボーンのモデル空間回転を計算
         /// </summary>
         private static Quaternion CalculateModelSpaceRotation(
@@ -191,20 +220,18 @@ namespace Poly_Ling.PMX
                 // ローカル軸が定義されていない場合、デフォルト軸を計算
                 localX = CalculateDefaultLocalAxisX(pmxBone, doc, boneIndex);
                 localZ = Vector3.forward; // PMX座標系でのZ+（前方向）
-            }
 
-            // 座標系変換
-            if (convertCoordinate)
-            {
-                localX = ConvertDirection(localX);
-                localZ = ConvertDirection(localZ);
+                // 自動計算結果をボーンに記録
+                pmxBone.LocalAxisX = localX.normalized;
+                pmxBone.LocalAxisZ = localZ;
+                pmxBone.IsLocalAxisAutoCalculated = true;
             }
 
             // 正規化
             localX = localX.normalized;
             localZ = localZ.normalized;
 
-            // Y軸を計算: Y = Z × X
+            // 右手系(PMX)のままでY軸を計算: Y = Z × X
             Vector3 localY = Vector3.Cross(localZ, localX);
 
             // 数値誤差チェック
@@ -221,6 +248,14 @@ namespace Poly_Ling.PMX
                 localY = localY.normalized;
                 // Zを直交化
                 localZ = Vector3.Cross(localX, localY).normalized;
+            }
+
+            // 3軸すべてを座標系変換（右手系→左手系）
+            if (convertCoordinate)
+            {
+                localX = ConvertDirection(localX);
+                localY = ConvertDirection(localY);
+                localZ = ConvertDirection(localZ);
             }
 
             // デバッグ: Y軸が下向きの場合に警告
@@ -286,7 +321,15 @@ namespace Poly_Ling.PMX
             m.SetColumn(2, new Vector4(z.x, z.y, z.z, 0f));
             m.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
 
-            return m.rotation;
+            // ★★★ Inverse必須 - 削除禁止 ★★★
+            // 移植元ライブラリ(NCSHAGLIB)の MatrixHelper.LocalAxisToMatrix4X4 では
+            // System.Numerics.Matrix4x4 の M11=X.x, M12=X.y, M13=X.z と「行」にXYZを格納し、
+            // matrix_to_quaternion() の最後で Quaternion.Inverse(q) をかけている。
+            // 一方、UnityのSetColumn()は「列」にXYZを格納するため、
+            // 元ライブラリとは転置の関係になる。転置行列の回転=逆回転なので、
+            // Inverseで補正しないと回転方向が反転する。
+            // 元ライブラリのコメント: 「なぜかこれが必要」
+            return Quaternion.Inverse(m.rotation);
         }
 
         /// <summary>
@@ -327,14 +370,15 @@ namespace Poly_Ling.PMX
 
                 Vector3 x = bone.LocalAxisX;
                 Vector3 z = bone.LocalAxisZ;
+                Vector3 y = Vector3.Cross(z, x).normalized;
+                z = Vector3.Cross(x, y).normalized;
 
                 if (convertCoordinate)
                 {
                     x = ConvertDirection(x);
+                    y = ConvertDirection(y);
                     z = ConvertDirection(z);
                 }
-
-                Vector3 y = Vector3.Cross(z, x).normalized;
 
                 Debug.Log($"Bone: {bone.Name}");
                 Debug.Log($"  LocalX: ({x.x:F4}, {x.y:F4}, {x.z:F4})");

@@ -167,9 +167,6 @@ namespace Poly_Ling.PMX
             public bool HasFixedAxis;
             public Vector3 FixedAxis;
 
-            /// <summary>ローカル軸が自動計算されたかどうか</summary>
-            public bool IsLocalAxisAutoCalculated;
-
             public int ConnectType;  // 0:オフセット, 1:ボーン
             public string ConnectBoneName;
             public Vector3 ConnectOffset;
@@ -460,14 +457,13 @@ namespace Poly_Ling.PMX
                 // ローカル軸未定義時はデフォルト軸を計算
                 localX = CalculateDefaultLocalAxisX(bone, allBones);
                 localZ = Vector3.forward;
-
-                // 自動計算結果を記録
-                bone.LocalAxisX = localX.normalized;
-                bone.LocalAxisZ = localZ;
-                bone.IsLocalAxisAutoCalculated = true;
             }
 
-            // 右手系(PMX)のままでY軸を計算: Y = Z × X
+            // 座標系変換
+            localX = map.MapDirection(localX).normalized;
+            localZ = map.MapDirection(localZ).normalized;
+
+            // Y軸計算: Y = Z × X
             Vector3 localY = Vector3.Cross(localZ, localX);
 
             if (localY.sqrMagnitude < 1e-10f)
@@ -482,11 +478,6 @@ namespace Poly_Ling.PMX
                 localY = localY.normalized;
                 localZ = Vector3.Cross(localX, localY).normalized;
             }
-
-            // 3軸すべてを座標系変換（右手系→左手系）
-            localX = map.MapDirection(localX).normalized;
-            localY = map.MapDirection(localY).normalized;
-            localZ = map.MapDirection(localZ).normalized;
 
             // デバッグ警告: Y軸が下向きの場合
             if (localY.y < -0.5f)
@@ -547,16 +538,7 @@ namespace Poly_Ling.PMX
             m.SetColumn(1, new Vector4(y.x, y.y, y.z, 0f));
             m.SetColumn(2, new Vector4(z.x, z.y, z.z, 0f));
             m.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
-
-            // ★★★ Inverse必須 - 削除禁止 ★★★
-            // 移植元ライブラリ(NCSHAGLIB)の MatrixHelper.LocalAxisToMatrix4X4 では
-            // System.Numerics.Matrix4x4 の M11=X.x, M12=X.y, M13=X.z と「行」にXYZを格納し、
-            // matrix_to_quaternion() の最後で Quaternion.Inverse(q) をかけている。
-            // 一方、UnityのSetColumn()は「列」にXYZを格納するため、
-            // 元ライブラリとは転置の関係になる。転置行列の回転=逆回転なので、
-            // Inverseで補正しないと回転方向が反転する。
-            // 元ライブラリのコメント: 「なぜかこれが必要」
-            return Quaternion.Inverse(m.rotation);
+            return m.rotation;
         }
 
         // ================================================================
@@ -642,19 +624,14 @@ namespace Poly_Ling.PMX
             {
                 if (!bone.HasLocalAxis) continue;
 
-                Vector3 x = bone.LocalAxisX;
-                Vector3 z = bone.LocalAxisZ;
+                Vector3 x = map.MapDirection(bone.LocalAxisX);
+                Vector3 z = map.MapDirection(bone.LocalAxisZ);
                 Vector3 y = Vector3.Cross(z, x).normalized;
-                z = Vector3.Cross(x, y).normalized;
-
-                x = map.MapDirection(x);
-                y = map.MapDirection(y);
-                z = map.MapDirection(z);
 
                 Debug.Log($"Bone: {bone.Name}");
                 Debug.Log($"  LocalX: ({x.x:F4}, {x.y:F4}, {x.z:F4})");
                 Debug.Log($"  LocalZ: ({z.x:F4}, {z.y:F4}, {z.z:F4})");
-                Debug.Log($"  LocalY: ({y.x:F4}, {y.y:F4}, {y.z:F4})");
+                Debug.Log($"  LocalY (Z×X): ({y.x:F4}, {y.y:F4}, {y.z:F4})");
                 Debug.Log($"  Y.y sign: {(y.y >= 0 ? "+" : "-")} ({y.y:F4})");
             }
         }

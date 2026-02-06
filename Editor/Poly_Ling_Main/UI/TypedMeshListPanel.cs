@@ -9,6 +9,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEditor.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
@@ -28,10 +29,10 @@ namespace Poly_Ling.UI
         // 定数
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.meshfactory/Editor/Poly_Ling_/UI/TypedMeshListPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.meshfactory/Editor/Poly_Ling_/UI/TypedMeshListPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_/UI/TypedMeshListPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_/UI/TypedMeshListPanel.uss";
+        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uxml";
+        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uss";
+        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uxml";
+        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uss";
 
         private enum TabType { Drawable, Bone, Morph }
 
@@ -52,6 +53,21 @@ namespace Poly_Ling.UI
         private Label _triCountLabel, _quadCountLabel, _ngonCountLabel;
         private VisualElement _indexInfo;
         private Label _boneIndexLabel, _masterIndexLabel;
+
+        // BonePoseセクション（Phase BonePose追加）
+        private VisualElement _bonePoseSection;
+        private Foldout _poseFoldout, _bindposeFoldout;
+        private Toggle _poseActiveToggle;
+        private FloatField _restPosX, _restPosY, _restPosZ;
+        private FloatField _restRotX, _restRotY, _restRotZ;
+        private FloatField _restSclX, _restSclY, _restSclZ;
+        private VisualElement _poseLayersContainer;
+        private Label _poseNoLayersLabel;
+        private Label _poseResultPos, _poseResultRot;
+        private Button _btnInitPose, _btnResetLayers;
+        private Label _bindposePos, _bindposeRot, _bindposeScl;
+        private Button _btnBakePose;
+        private bool _isSyncingPoseUI = false;
 
         // ================================================================
         // データ
@@ -289,6 +305,9 @@ namespace Poly_Ling.UI
 
             // 名前フィールド
             _meshNameField?.RegisterValueChangedCallback(OnNameFieldChanged);
+
+            // BonePoseセクション（Phase BonePose追加）
+            BindBonePoseUI(root);
         }
 
         // ================================================================
@@ -306,6 +325,10 @@ namespace Poly_Ling.UI
             // インデックス情報表示（ボーンタブのみ）
             if (_indexInfo != null)
                 _indexInfo.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // BonePoseセクション表示（ボーンタブのみ）（Phase BonePose追加）
+            if (_bonePoseSection != null)
+                _bonePoseSection.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
 
             // モーフタブはプレースホルダー
             bool isMorph = tab == TabType.Morph;
@@ -987,11 +1010,361 @@ namespace Poly_Ling.UI
                 if (_vertexCountLabel != null) _vertexCountLabel.text = $"頂点: {totalV} (合計)";
                 if (_faceCountLabel != null) _faceCountLabel.text = $"面: {totalF} (合計)";
             }
+
+            // BonePose更新（Phase BonePose追加）
+            UpdateBonePosePanel();
         }
 
         private void Log(string msg)
         {
             if (_statusLabel != null) _statusLabel.text = msg;
+        }
+
+        // ================================================================
+        // BonePose セクション（Phase BonePose追加）
+        // ================================================================
+
+        /// <summary>
+        /// BonePoseセクションのUI要素をバインド
+        /// </summary>
+        private void BindBonePoseUI(VisualElement root)
+        {
+            _bonePoseSection = root.Q<VisualElement>("bone-pose-section");
+            _poseFoldout = root.Q<Foldout>("pose-foldout");
+            _bindposeFoldout = root.Q<Foldout>("bindpose-foldout");
+
+            _poseActiveToggle = root.Q<Toggle>("pose-active-toggle");
+
+            _restPosX = root.Q<FloatField>("rest-pos-x");
+            _restPosY = root.Q<FloatField>("rest-pos-y");
+            _restPosZ = root.Q<FloatField>("rest-pos-z");
+            _restRotX = root.Q<FloatField>("rest-rot-x");
+            _restRotY = root.Q<FloatField>("rest-rot-y");
+            _restRotZ = root.Q<FloatField>("rest-rot-z");
+            _restSclX = root.Q<FloatField>("rest-scl-x");
+            _restSclY = root.Q<FloatField>("rest-scl-y");
+            _restSclZ = root.Q<FloatField>("rest-scl-z");
+
+            _poseLayersContainer = root.Q<VisualElement>("pose-layers-container");
+            _poseNoLayersLabel = root.Q<Label>("pose-no-layers-label");
+
+            _poseResultPos = root.Q<Label>("pose-result-pos");
+            _poseResultRot = root.Q<Label>("pose-result-rot");
+
+            _btnInitPose = root.Q<Button>("btn-init-pose");
+            _btnResetLayers = root.Q<Button>("btn-reset-layers");
+
+            _bindposePos = root.Q<Label>("bindpose-pos");
+            _bindposeRot = root.Q<Label>("bindpose-rot");
+            _bindposeScl = root.Q<Label>("bindpose-scl");
+            _btnBakePose = root.Q<Button>("btn-bake-pose");
+
+            // イベント登録
+            _poseActiveToggle?.RegisterValueChangedCallback(OnPoseActiveChanged);
+
+            RegisterRestPoseField(_restPosX, (pose, v) => pose.RestPosition = SetX(pose.RestPosition, v));
+            RegisterRestPoseField(_restPosY, (pose, v) => pose.RestPosition = SetY(pose.RestPosition, v));
+            RegisterRestPoseField(_restPosZ, (pose, v) => pose.RestPosition = SetZ(pose.RestPosition, v));
+
+            RegisterRestRotField(_restRotX, 0);
+            RegisterRestRotField(_restRotY, 1);
+            RegisterRestRotField(_restRotZ, 2);
+
+            RegisterRestPoseField(_restSclX, (pose, v) => pose.RestScale = SetX(pose.RestScale, v));
+            RegisterRestPoseField(_restSclY, (pose, v) => pose.RestScale = SetY(pose.RestScale, v));
+            RegisterRestPoseField(_restSclZ, (pose, v) => pose.RestScale = SetZ(pose.RestScale, v));
+
+            _btnInitPose?.RegisterCallback<ClickEvent>(_ => OnInitPoseClicked());
+            _btnResetLayers?.RegisterCallback<ClickEvent>(_ => OnResetLayersClicked());
+            _btnBakePose?.RegisterCallback<ClickEvent>(_ => OnBakePoseClicked());
+        }
+
+        private void RegisterRestPoseField(FloatField field, Action<BonePoseData, float> setter)
+        {
+            field?.RegisterValueChangedCallback(evt =>
+            {
+                if (_isSyncingPoseUI) return;
+                var pose = GetSelectedBonePoseData();
+                if (pose == null) return;
+                setter(pose, evt.newValue);
+                pose.SetDirty();
+                UpdateBonePosePanel();
+                NotifyModelChanged();
+            });
+        }
+
+        private void RegisterRestRotField(FloatField field, int axis)
+        {
+            field?.RegisterValueChangedCallback(evt =>
+            {
+                if (_isSyncingPoseUI) return;
+                var pose = GetSelectedBonePoseData();
+                if (pose == null) return;
+
+                Vector3 euler = IsQuatValid(pose.RestRotation)
+                    ? pose.RestRotation.eulerAngles
+                    : Vector3.zero;
+
+                if (axis == 0) euler.x = evt.newValue;
+                else if (axis == 1) euler.y = evt.newValue;
+                else euler.z = evt.newValue;
+
+                pose.RestRotation = Quaternion.Euler(euler);
+                pose.SetDirty();
+                UpdateBonePosePanel();
+                NotifyModelChanged();
+            });
+        }
+
+        private void OnPoseActiveChanged(ChangeEvent<bool> evt)
+        {
+            if (_isSyncingPoseUI) return;
+            var ctx = GetSelectedMeshContext();
+            if (ctx == null) return;
+
+            if (evt.newValue)
+            {
+                // ON: BonePoseDataがなければIdentityで自動生成
+                if (ctx.BonePoseData == null)
+                {
+                    // RestPose = Identity（デルタなし = 見た目変わらない）
+                    ctx.BonePoseData = new BonePoseData();
+                }
+                ctx.BonePoseData.IsActive = true;
+                ctx.BonePoseData.SetDirty();
+            }
+            else
+            {
+                // OFF: データは残してIsActiveだけfalse
+                if (ctx.BonePoseData != null)
+                {
+                    ctx.BonePoseData.IsActive = false;
+                    ctx.BonePoseData.SetDirty();
+                }
+            }
+            UpdateBonePosePanel();
+            NotifyModelChanged();
+        }
+
+        private void OnInitPoseClicked()
+        {
+            var ctx = GetSelectedMeshContext();
+            if (ctx == null) return;
+
+            if (ctx.BonePoseData == null)
+            {
+                // RestPose = Identity
+                ctx.BonePoseData = new BonePoseData();
+                ctx.BonePoseData.IsActive = true;
+                Log("BonePoseData初期化完了（Identity）");
+            }
+            else
+            {
+                Log("BonePoseDataは既に存在");
+            }
+            UpdateBonePosePanel();
+            NotifyModelChanged();
+        }
+
+        private void OnResetLayersClicked()
+        {
+            var pose = GetSelectedBonePoseData();
+            if (pose == null) return;
+            pose.ClearAllLayers();
+            UpdateBonePosePanel();
+            NotifyModelChanged();
+            Log("全レイヤーをクリア");
+        }
+
+        private void OnBakePoseClicked()
+        {
+            var ctx = GetSelectedMeshContext();
+            if (ctx == null || ctx.BonePoseData == null) return;
+            ctx.BonePoseData.BakeToBindPose(ctx.WorldMatrix);
+            ctx.BindPose = ctx.WorldMatrix.inverse;
+            UpdateBonePosePanel();
+            NotifyModelChanged();
+            Log("BindPoseにベイク完了");
+        }
+
+        /// <summary>
+        /// BonePoseパネルの表示を更新
+        /// </summary>
+        private void UpdateBonePosePanel()
+        {
+            if (_bonePoseSection == null) return;
+            if (_currentTab != TabType.Bone) return;
+
+            _isSyncingPoseUI = true;
+            try
+            {
+                var ctx = GetSelectedMeshContext();
+
+                // BonePoseData
+                var pose = ctx?.BonePoseData;
+                bool hasPose = pose != null;
+
+                _poseActiveToggle?.SetValueWithoutNotify(hasPose && pose.IsActive);
+                _poseActiveToggle?.SetEnabled(ctx != null);
+
+                // RestPose
+                Vector3 restPos = hasPose ? pose.RestPosition : Vector3.zero;
+                Vector3 restRot = hasPose && IsQuatValid(pose.RestRotation)
+                    ? pose.RestRotation.eulerAngles
+                    : Vector3.zero;
+                Vector3 restScl = hasPose ? pose.RestScale : Vector3.one;
+
+                SetFloatField(_restPosX, restPos.x, hasPose);
+                SetFloatField(_restPosY, restPos.y, hasPose);
+                SetFloatField(_restPosZ, restPos.z, hasPose);
+                SetFloatField(_restRotX, restRot.x, hasPose);
+                SetFloatField(_restRotY, restRot.y, hasPose);
+                SetFloatField(_restRotZ, restRot.z, hasPose);
+                SetFloatField(_restSclX, restScl.x, hasPose);
+                SetFloatField(_restSclY, restScl.y, hasPose);
+                SetFloatField(_restSclZ, restScl.z, hasPose);
+
+                // レイヤー一覧
+                UpdateLayersList(pose);
+
+                // 合成結果
+                if (hasPose)
+                {
+                    Vector3 pos = pose.Position;
+                    Vector3 rot = IsQuatValid(pose.Rotation)
+                        ? pose.Rotation.eulerAngles
+                        : Vector3.zero;
+                    if (_poseResultPos != null)
+                        _poseResultPos.text = $"Pos: ({pos.x:F3}, {pos.y:F3}, {pos.z:F3})";
+                    if (_poseResultRot != null)
+                        _poseResultRot.text = $"Rot: ({rot.x:F1}, {rot.y:F1}, {rot.z:F1})";
+                }
+                else
+                {
+                    if (_poseResultPos != null) _poseResultPos.text = "Pos: -";
+                    if (_poseResultRot != null) _poseResultRot.text = "Rot: -";
+                }
+
+                // Initボタンは廃止（Activeトグルで自動生成）
+                _btnInitPose?.SetEnabled(false);
+                if (_btnInitPose != null)
+                    _btnInitPose.style.display = DisplayStyle.None;
+                _btnResetLayers?.SetEnabled(hasPose && pose.LayerCount > 0);
+
+                // BindPose
+                if (ctx != null)
+                {
+                    Matrix4x4 bp = ctx.BindPose;
+                    Vector3 bpPos = (Vector3)bp.GetColumn(3);
+                    Vector3 bpRot = IsQuatValid(bp.rotation)
+                        ? bp.rotation.eulerAngles
+                        : Vector3.zero;
+                    Vector3 bpScl = bp.lossyScale;
+
+                    if (_bindposePos != null)
+                        _bindposePos.text = $"Pos: ({bpPos.x:F3}, {bpPos.y:F3}, {bpPos.z:F3})";
+                    if (_bindposeRot != null)
+                        _bindposeRot.text = $"Rot: ({bpRot.x:F1}, {bpRot.y:F1}, {bpRot.z:F1})";
+                    if (_bindposeScl != null)
+                        _bindposeScl.text = $"Scl: ({bpScl.x:F3}, {bpScl.y:F3}, {bpScl.z:F3})";
+                }
+                else
+                {
+                    if (_bindposePos != null) _bindposePos.text = "Pos: -";
+                    if (_bindposeRot != null) _bindposeRot.text = "Rot: -";
+                    if (_bindposeScl != null) _bindposeScl.text = "Scl: -";
+                }
+
+                _btnBakePose?.SetEnabled(hasPose);
+            }
+            finally
+            {
+                _isSyncingPoseUI = false;
+            }
+        }
+
+        private void UpdateLayersList(BonePoseData pose)
+        {
+            if (_poseLayersContainer == null) return;
+
+            // 動的に追加したレイヤー行を削除（Labelは残す）
+            var toRemove = new List<VisualElement>();
+            foreach (var child in _poseLayersContainer.Children())
+            {
+                if (child.ClassListContains("pose-layer-row"))
+                    toRemove.Add(child);
+            }
+            foreach (var el in toRemove)
+                _poseLayersContainer.Remove(el);
+
+            bool hasLayers = pose != null && pose.LayerCount > 0;
+            if (_poseNoLayersLabel != null)
+                _poseNoLayersLabel.style.display = hasLayers ? DisplayStyle.None : DisplayStyle.Flex;
+
+            if (!hasLayers) return;
+
+            foreach (var layer in pose.Layers)
+            {
+                var row = new VisualElement();
+                row.AddToClassList("pose-layer-row");
+                if (!layer.Enabled) row.AddToClassList("pose-layer-disabled");
+
+                var nameLabel = new Label(layer.Name);
+                nameLabel.AddToClassList("pose-layer-name");
+
+                var euler = IsQuatValid(layer.DeltaRotation)
+                    ? layer.DeltaRotation.eulerAngles
+                    : Vector3.zero;
+                string deltaInfo = $"dP({layer.DeltaPosition.x:F2},{layer.DeltaPosition.y:F2},{layer.DeltaPosition.z:F2}) " +
+                                   $"dR({euler.x:F1},{euler.y:F1},{euler.z:F1})";
+                var infoLabel = new Label(deltaInfo);
+                infoLabel.AddToClassList("pose-layer-info");
+
+                var weightLabel = new Label($"w={layer.Weight:F2}");
+                weightLabel.AddToClassList("pose-layer-weight");
+
+                row.Add(nameLabel);
+                row.Add(infoLabel);
+                row.Add(weightLabel);
+                _poseLayersContainer.Add(row);
+            }
+        }
+
+        // ================================================================
+        // BonePose ヘルパー
+        // ================================================================
+
+        private MeshContext GetSelectedMeshContext()
+        {
+            if (_selectedAdapters.Count != 1) return null;
+            return _selectedAdapters[0].Entry.Context;
+        }
+
+        private BonePoseData GetSelectedBonePoseData()
+        {
+            return GetSelectedMeshContext()?.BonePoseData;
+        }
+
+        private static void SetFloatField(FloatField field, float value, bool enabled)
+        {
+            if (field == null) return;
+            field.SetValueWithoutNotify((float)System.Math.Round(value, 4));
+            field.SetEnabled(enabled);
+        }
+
+        private static Vector3 SetX(Vector3 v, float x) => new Vector3(x, v.y, v.z);
+        private static Vector3 SetY(Vector3 v, float y) => new Vector3(v.x, y, v.z);
+        private static Vector3 SetZ(Vector3 v, float z) => new Vector3(v.x, v.y, z);
+
+        private static bool IsQuatValid(Quaternion q)
+        {
+            return !float.IsNaN(q.x) && !float.IsNaN(q.y) && !float.IsNaN(q.z) && !float.IsNaN(q.w)
+                && (q.x != 0 || q.y != 0 || q.z != 0 || q.w != 0);
+        }
+
+        private static Vector3 SafeEuler(Quaternion q)
+        {
+            return IsQuatValid(q) ? q.eulerAngles : Vector3.zero;
         }
     }
 

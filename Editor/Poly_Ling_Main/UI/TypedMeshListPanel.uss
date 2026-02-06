@@ -1,6 +1,7 @@
 /* TypedMeshListPanel.uss
    タイプ別メッシュリストパネルのスタイル定義
    MeshListPanel.ussをベースに、タブ機能を追加
+   Phase BonePose: BonePoseData/BindPoseサブパネル追加
 */
 
 /* ================================================================
@@ -191,6 +192,143 @@
 .detail-button {
     flex-grow: 1;
     margin: 0 2px;
+}
+
+/* ================================================================
+   BonePose セクション（Phase BonePose追加）
+   ================================================================ */
+
+.bone-pose-section {
+    display: none;
+    margin-top: 4px;
+}
+
+.pose-foldout {
+    margin-top: 2px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.15);
+    border-radius: 3px;
+}
+
+.pose-panel {
+    padding: 4px 8px;
+}
+
+.pose-section-label {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.8);
+    margin-top: 6px;
+    margin-bottom: 2px;
+    padding-bottom: 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.pose-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.pose-field-label {
+    width: 28px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.pose-float-field {
+    flex-grow: 1;
+    margin: 0 1px;
+    min-width: 0;
+}
+
+.pose-float-field Label {
+    min-width: 12px;
+    font-size: 10px;
+}
+
+.pose-float-field FloatInput {
+    font-size: 11px;
+}
+
+.pose-toggle {
+    margin-bottom: 2px;
+}
+
+/* レイヤー表示 */
+
+.pose-layers-container {
+    padding: 2px 4px;
+    margin-bottom: 4px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 2px;
+    min-height: 20px;
+}
+
+.pose-no-layers {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    -unity-text-align: middle-center;
+    padding: 4px;
+}
+
+.pose-layer-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 2px 0;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.pose-layer-name {
+    width: 60px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pose-layer-info {
+    flex-grow: 1;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.pose-layer-weight {
+    width: 40px;
+    font-size: 10px;
+    -unity-text-align: middle-right;
+    color: rgba(66, 165, 245, 0.9);
+}
+
+.pose-layer-disabled {
+    opacity: 0.4;
+}
+
+/* 合成結果（読み取り専用） */
+
+.pose-result-row {
+    padding: 1px 4px;
+}
+
+.pose-result-label {
+    font-size: 11px;
+    color: rgba(76, 175, 80, 0.9);
+}
+
+/* ボタン */
+
+.pose-buttons {
+    flex-direction: row;
+    margin-top: 6px;
+}
+
+.pose-button {
+    flex-grow: 1;
+    margin: 0 2px;
+    font-size: 11px;
+    height: 22px;
 }
 
 /* ================================================================
