@@ -400,6 +400,26 @@ namespace Poly_Ling.PMX
             // メッシュを変換（頂点・面）
             ConvertMeshes(meshOnlyContexts, document, boneNameToIndex, settings);
 
+            // 元PMXDocumentから物理データ等をパススルー
+            if (model.SourceDocument is PMXDocument sourcePmx)
+            {
+                // 表示枠
+                foreach (var frame in sourcePmx.DisplayFrames)
+                    document.DisplayFrames.Add(frame);
+
+                // 剛体
+                foreach (var body in sourcePmx.RigidBodies)
+                    document.RigidBodies.Add(body);
+
+                // ジョイント
+                foreach (var joint in sourcePmx.Joints)
+                    document.Joints.Add(joint);
+
+                // ソフトボディ
+                foreach (var softBody in sourcePmx.SoftBodies)
+                    document.SoftBodies.Add(softBody);
+            }
+
             return document;
         }
 
@@ -444,6 +464,39 @@ namespace Poly_Ling.PMX
                     Flags = 0x0001 | 0x0002 | 0x0004 | 0x0008,  // 基本フラグ
                     ConnectOffset = Vector3.zero
                 };
+
+                // IK設定
+                if (ctx.IsIK && ctx.IKLinks != null && ctx.IKLinks.Count > 0)
+                {
+                    pmxBone.Flags |= 0x0020;  // FLAG_IK
+
+                    // IKターゲット
+                    if (ctx.IKTargetIndex >= 0 && ctx.IKTargetIndex < boneContexts.Count)
+                    {
+                        pmxBone.IKTargetBoneName = boneContexts[ctx.IKTargetIndex].Name;
+                        pmxBone.IKTargetIndex = ctx.IKTargetIndex;
+                    }
+
+                    pmxBone.IKLoopCount = ctx.IKLoopCount;
+                    pmxBone.IKLimitAngle = ctx.IKLimitAngle;
+
+                    // IKリンク
+                    foreach (var link in ctx.IKLinks)
+                    {
+                        var pmxLink = new PMXIKLink
+                        {
+                            BoneIndex = link.BoneIndex,
+                            HasLimit = link.HasLimit,
+                            LimitMin = link.LimitMin,
+                            LimitMax = link.LimitMax
+                        };
+                        if (link.BoneIndex >= 0 && link.BoneIndex < boneContexts.Count)
+                        {
+                            pmxLink.BoneName = boneContexts[link.BoneIndex].Name;
+                        }
+                        pmxBone.IKLinks.Add(pmxLink);
+                    }
+                }
 
                 document.Bones.Add(pmxBone);
             }

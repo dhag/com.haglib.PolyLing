@@ -178,7 +178,7 @@ public partial class PolyLing
                 var dialog = SkinnedMeshImportDialog.Show(selected, armatureRoot, boneCount, 0);
                 dialog.OnImport = (importMesh, importBones, selectedRootBone) =>
                 {
-                    LoadHierarchyFromGameObject(selected, importBones ? selectedRootBone : null);
+                    LoadHierarchyFromGameObject(selected, importBones ? selectedRootBone : null, dialog.DetectNamedMirror);
                 };
             }
             else
@@ -290,7 +290,7 @@ public partial class PolyLing
         var dialog = SkinnedMeshImportDialog.Show(rootObject, detectedRootBone, boneCount, skinnedRenderers.Length);
         dialog.OnImport = (importMesh, importBones, selectedRootBone) =>
         {
-            LoadHierarchyFromGameObject(rootObject, importBones ? selectedRootBone : null);
+            LoadHierarchyFromGameObject(rootObject, importBones ? selectedRootBone : null, dialog.DetectNamedMirror);
         };
     }
 
@@ -445,7 +445,7 @@ public partial class PolyLing
     /// </summary>
     /// <param name="rootGameObject">ルートGameObject</param>
     /// <param name="boneRootTransform">ボーン取り込み時のルートTransform（nullの場合はボーン取り込みなし）</param>
-    private void LoadHierarchyFromGameObject(GameObject rootGameObject, Transform boneRootTransform)
+    private void LoadHierarchyFromGameObject(GameObject rootGameObject, Transform boneRootTransform, bool detectNamedMirror = true)
     {
         if (rootGameObject == null) return;
 
@@ -636,6 +636,12 @@ public partial class PolyLing
         }
 
         InitVertexOffsets();
+        
+        // 名前末尾+のメッシュをBakedMirrorとして検出
+        if (detectNamedMirror)
+        {
+            Poly_Ling.PMX.PMXImporter.DetectNamedMirrors(_meshContextList, boneStartIndex);
+        }
         
         // 統合システムにトポロジー変更を通知
         _unifiedAdapter?.NotifyTopologyChanged();

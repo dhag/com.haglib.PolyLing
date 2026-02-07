@@ -36,6 +36,10 @@ namespace Poly_Ling
 
         private bool _importMesh = true;
         private bool _importBones = true;
+        private bool _detectNamedMirror = true;
+
+        /// <summary>名前ミラー検出が有効か（インポート後に参照可能）</summary>
+        public bool DetectNamedMirror => _detectNamedMirror;
 
         // ================================================================
         // 表示
@@ -143,6 +147,8 @@ namespace Poly_Ling
                 }
             }
             EditorGUI.EndDisabledGroup();
+
+            _detectNamedMirror = EditorGUILayout.Toggle("名前ミラー(+)を検出", _detectNamedMirror);
 
             EditorGUI.indentLevel--;
 

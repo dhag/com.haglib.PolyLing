@@ -169,221 +169,6 @@ namespace Poly_Ling.MQO
         }
 
         // ================================================================
-        // WriteBack API
-        // ================================================================
-
-        /// <summary>
-        /// 編集後のMeshContextからMQOObjectへ頂点属性を書き戻す
-        /// 面の構造（頂点インデックス、マテリアル）は変更しない
-        /// </summary>
-        /// <param name="sourceMeshContext">編集後のモデル側MeshContext（展開済み）</param>
-        /// <param name="targetMqoObject">更新対象のMQOObject</param>
-        /// <param name="mqoMeshContext">MQOインポート結果のMeshContext（UV数情報用）</param>
-        /// <param name="settings">エクスポート設定</param>
-        /// <param name="flags">何を更新するかのフラグ</param>
-        /// <returns>更新した頂点数</returns>
-        public static int WriteBack(
-            MeshContext sourceMeshContext,
-            MQOObject targetMqoObject,
-            MeshContext mqoMeshContext,
-            MQOExportSettings settings,
-            WriteBackFlags flags)
-        {
-            if (sourceMeshContext?.MeshObject == null) return 0;
-            if (targetMqoObject == null) return 0;
-            if (mqoMeshContext?.MeshObject == null) return 0;
-
-            settings = settings ?? new MQOExportSettings();
-            var srcMo = sourceMeshContext.MeshObject;
-            var mqoMo = mqoMeshContext.MeshObject;
-
-            int transferred = 0;
-            int srcOffset = 0;
-
-            // MQO側MeshContextの頂点を走査（UV展開対応）
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount && vIdx < targetMqoObject.Vertices.Count; vIdx++)
-            {
-                var mqoVertex = mqoMo.Vertices[vIdx];
-                int uvCount = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
-
-                // Position更新
-                if ((flags & WriteBackFlags.Position) != 0 && srcOffset < srcMo.VertexCount)
-                {
-                    Vector3 pos = srcMo.Vertices[srcOffset].Position;
-
-                    // 座標変換: Model → MQO
-                    if (settings.FlipZ) pos.z = -pos.z;
-                    pos *= settings.Scale;
-
-                    targetMqoObject.Vertices[vIdx].Position = pos;
-                    mqoVertex.Position = pos;
-                    transferred++;
-                }
-
-                srcOffset += uvCount;
-            }
-
-            // UV更新（面のUVs配列を更新）
-            if ((flags & WriteBackFlags.UV) != 0)
-            {
-                WriteBackUVs(sourceMeshContext, targetMqoObject, mqoMeshContext, settings);
-            }
-
-            // BoneWeight更新（特殊面を削除して再追加）
-            if ((flags & WriteBackFlags.BoneWeight) != 0)
-            {
-                WriteBackBoneWeights(sourceMeshContext, targetMqoObject, mqoMeshContext, settings);
-            }
-
-            return transferred;
-        }
-
-        /// <summary>
-        /// UVを面のUVs配列に書き戻す
-        /// 既存のConvertObject（1180-1192行）と同じロジックを使用
-        /// </summary>
-        private static void WriteBackUVs(
-            MeshContext sourceMeshContext,
-            MQOObject targetMqoObject,
-            MeshContext mqoMeshContext,
-            MQOExportSettings settings)
-        {
-            var srcMo = sourceMeshContext.MeshObject;
-            var mqoMo = mqoMeshContext.MeshObject;
-
-            // MQO側の頂点インデックス→展開後インデックス開始位置のマッピングを構築
-            var vertexToExpandedStart = new Dictionary<int, int>();
-            int expandedIdx = 0;
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
-            {
-                vertexToExpandedStart[vIdx] = expandedIdx;
-                int uvCount = mqoMo.Vertices[vIdx].UVs.Count > 0 ? mqoMo.Vertices[vIdx].UVs.Count : 1;
-                expandedIdx += uvCount;
-            }
-
-            // MQOObject側の面とMeshContext側の面を並行して走査
-            int mqoFaceIdx = 0;
-            foreach (var targetFace in targetMqoObject.Faces)
-            {
-                if (targetFace.IsSpecialFace) continue;
-                if (targetFace.VertexIndices == null) continue;
-
-                // 対応するMeshContext側の面を取得
-                if (mqoFaceIdx >= mqoMo.FaceCount) break;
-                var meshFace = mqoMo.Faces[mqoFaceIdx];
-                mqoFaceIdx++;
-
-                // 面のUVs配列を確保
-                if (targetFace.UVs == null || targetFace.UVs.Length != targetFace.VertexIndices.Length)
-                {
-                    targetFace.UVs = new Vector2[targetFace.VertexIndices.Length];
-                }
-
-                for (int i = 0; i < targetFace.VertexIndices.Length && i < meshFace.VertexIndices.Count; i++)
-                {
-                    int vIdx = targetFace.VertexIndices[i];
-                    if (!vertexToExpandedStart.TryGetValue(vIdx, out int expStart)) continue;
-
-                    // UVIndicesからUVスロット番号を取得（既存のConvertObjectと同じロジック）
-                    int uvSlot = (i < meshFace.UVIndices.Count) ? meshFace.UVIndices[i] : 0;
-
-                    // 展開後インデックス = 頂点の展開開始位置 + UVスロット番号
-                    int srcIdx = expStart + uvSlot;
-                    if (srcIdx < srcMo.VertexCount)
-                    {
-                        var srcVertex = srcMo.Vertices[srcIdx];
-                        Vector2 uv = srcVertex.UVs.Count > 0 ? srcVertex.UVs[0] : Vector2.zero;
-
-                        // UV V座標反転
-                        if (settings.FlipUV_V)
-                        {
-                            uv.y = 1f - uv.y;
-                        }
-
-                        targetFace.UVs[i] = uv;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// ボーンウェイトを特殊面として書き戻す（既存削除→新規追加）
-        /// </summary>
-        private static void WriteBackBoneWeights(
-            MeshContext sourceMeshContext,
-            MQOObject targetMqoObject,
-            MeshContext mqoMeshContext,
-            MQOExportSettings settings)
-        {
-            var srcMo = sourceMeshContext.MeshObject;
-            var mqoMo = mqoMeshContext.MeshObject;
-
-            // 既存の特殊面を削除（頂点ID特殊面とボーンウェイト特殊面）
-            targetMqoObject.Faces.RemoveAll(f => f.IsSpecialFace);
-
-            // 頂点ID特殊面を再追加
-            int srcOffset = 0;
-            for (int vIdx = 0; vIdx < mqoMo.VertexCount && vIdx < targetMqoObject.Vertices.Count; vIdx++)
-            {
-                var mqoVertex = mqoMo.Vertices[vIdx];
-                int uvCount = mqoVertex.UVs.Count > 0 ? mqoVertex.UVs.Count : 1;
-
-                if (srcOffset < srcMo.VertexCount)
-                {
-                    var srcVertex = srcMo.Vertices[srcOffset];
-
-                    // 頂点ID特殊面
-                    if (srcVertex.Id != -1)
-                    {
-                        targetMqoObject.Faces.Add(
-                            VertexIdHelper.CreateSpecialFaceForVertexId(vIdx, srcVertex.Id, 0));
-                    }
-
-                    // ボーンウェイト特殊面
-                    if (srcVertex.HasBoneWeight)
-                    {
-                        var boneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(srcVertex.BoneWeight.Value);
-                        targetMqoObject.Faces.Add(
-                            VertexIdHelper.CreateSpecialFaceForBoneWeight(vIdx, boneWeightData, false, 0));
-                    }
-                }
-
-                srcOffset += uvCount;
-            }
-        }
-
-        /// <summary>
-        /// WriteBack可能か検証
-        /// </summary>
-        /// <param name="sourceMeshContext">ソースMeshContext</param>
-        /// <param name="mqoMeshContext">MQO側MeshContext</param>
-        /// <returns>エラーメッセージ（nullなら問題なし）</returns>
-        public static string ValidateWriteBack(MeshContext sourceMeshContext, MeshContext mqoMeshContext)
-        {
-            if (sourceMeshContext?.MeshObject == null)
-                return "Source MeshContext is null";
-            if (mqoMeshContext?.MeshObject == null)
-                return "MQO MeshContext is null";
-
-            // 展開後頂点数の計算
-            var mqoMo = mqoMeshContext.MeshObject;
-            int expectedExpandedCount = 0;
-            for (int i = 0; i < mqoMo.VertexCount; i++)
-            {
-                int uvCount = mqoMo.Vertices[i].UVs.Count > 0 ? mqoMo.Vertices[i].UVs.Count : 1;
-                expectedExpandedCount += uvCount;
-            }
-
-            int srcCount = sourceMeshContext.MeshObject.VertexCount;
-            if (srcCount != expectedExpandedCount)
-            {
-                return $"Vertex count mismatch: source={srcCount}, expected={expectedExpandedCount}";
-            }
-
-            return null;
-        }
-
-        // ================================================================
         // ドキュメント変換
         // ================================================================
 
@@ -572,13 +357,20 @@ namespace Poly_Ling.MQO
                         document.Objects.Add(nameObj);
                     }
                 }
+                    
+                    // __IK__セクション: IKボーン情報を出力
+                    EmitIKObjects(document, boneContexts, meshContexts);
                 
-                // メッシュを出力
+                // メッシュを出力（2パス: 実体を先に出力し、ミラーは後でウェイト保存）
+                var skippedMirrors = new List<MeshContext>();
+                var mcToMqoObj = new Dictionary<MeshContext, MQOObject>();
+
                 foreach (var mc in meshOnlyContexts)
                 {
-                    // ベイクミラースキップ（SkipBakedMirrorがtrueかつType=BakedMirrorの場合）
-                    if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
+                    // ミラースキップ判定（B: Type=BakedMirror, C: 名前末尾+）
+                    if (ShouldSkipAsMirror(mc, settings))
                     {
+                        skippedMirrors.Add(mc);
                         continue;
                     }
 
@@ -596,6 +388,21 @@ namespace Poly_Ling.MQO
                     if (mqoObj != null)
                     {
                         document.Objects.Add(mqoObj);
+                        mcToMqoObj[mc] = mqoObj;
+                    }
+                }
+
+                // スキップしたミラーメッシュのウェイトを実体側に保存
+                foreach (var mirrorMc in skippedMirrors)
+                {
+                    var sourceMc = FindMirrorSource(mirrorMc, meshContexts);
+                    if (sourceMc != null && mcToMqoObj.TryGetValue(sourceMc, out var sourceMqoObj))
+                    {
+                        SaveMirrorWeightsToSource(mirrorMc, sourceMqoObj, settings);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[MQOExporter] Mirror source not found for '{mirrorMc.Name}', weights will be lost");
                     }
                 }
             }
@@ -948,13 +755,20 @@ namespace Poly_Ling.MQO
                         document.Objects.Add(nameObj);
                     }
                 }
+                    
+                    // __IK__セクション: IKボーン情報を出力
+                    EmitIKObjects(document, boneContexts, meshContexts);
                 
-                // メッシュを出力
+                // メッシュを出力（2パス: 実体を先に出力し、ミラーは後でウェイト保存）
+                var skippedMirrors = new List<MeshContext>();
+                var mcToMqoObj = new Dictionary<MeshContext, MQOObject>();
+
                 foreach (var mc in meshOnlyContexts)
                 {
-                    // ベイクミラースキップ（SkipBakedMirrorがtrueかつType=BakedMirrorの場合）
-                    if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
+                    // ミラースキップ判定（B: Type=BakedMirror, C: 名前末尾+）
+                    if (ShouldSkipAsMirror(mc, settings))
                     {
+                        skippedMirrors.Add(mc);
                         continue;
                     }
 
@@ -972,6 +786,21 @@ namespace Poly_Ling.MQO
                     if (mqoObj != null)
                     {
                         document.Objects.Add(mqoObj);
+                        mcToMqoObj[mc] = mqoObj;
+                    }
+                }
+
+                // スキップしたミラーメッシュのウェイトを実体側に保存
+                foreach (var mirrorMc in skippedMirrors)
+                {
+                    var sourceMc = FindMirrorSource(mirrorMc, meshContexts);
+                    if (sourceMc != null && mcToMqoObj.TryGetValue(sourceMc, out var sourceMqoObj))
+                    {
+                        SaveMirrorWeightsToSource(mirrorMc, sourceMqoObj, settings);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[MQOExporter] Mirror source not found for '{mirrorMc.Name}', weights will be lost");
                     }
                 }
             }
@@ -1222,17 +1051,219 @@ namespace Poly_Ling.MQO
                     for (int i = 0; i < meshObject.Vertices.Count; i++)
                     {
                         var vertex = meshObject.Vertices[i];
+                        // 実体側ボーンウェイト
                         if (vertex.HasBoneWeight)
                         {
                             var boneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(vertex.BoneWeight.Value);
                             mqoObj.Faces.Add(VertexIdHelper.CreateSpecialFaceForBoneWeight(i, boneWeightData, false, 0));
                         }
+                        // タイプA: ミラー側ボーンウェイト（実体メッシュ内にMirrorBoneWeightとして保持されている場合）
+                        if (vertex.HasMirrorBoneWeight)
+                        {
+                            var mirrorBoneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(vertex.MirrorBoneWeight.Value);
+                            mqoObj.Faces.Add(VertexIdHelper.CreateSpecialFaceForBoneWeight(i, mirrorBoneWeightData, true, 0));
+                        }
                     }
+                }
+            }
+
+            // ミラーウェイトを保存したオブジェクトにミラーフラグを立てる（タイプA）
+            if (settings.EmbedBoneWeightsInMQO && meshObject != null)
+            {
+                bool hasMirrorWeight = false;
+                for (int i = 0; i < meshObject.VertexCount; i++)
+                {
+                    if (meshObject.Vertices[i].HasMirrorBoneWeight)
+                    {
+                        hasMirrorWeight = true;
+                        break;
+                    }
+                }
+                if (hasMirrorWeight && meshContext.MirrorType == 0)
+                {
+                    mqoObj.Attributes.Add(new MQOAttribute("mirror", 1));
+                    mqoObj.Attributes.Add(new MQOAttribute("mirror_axis", 1));
                 }
             }
 
             return mqoObj;
         }
+
+        // ================================================================
+        // ミラースキップ・ウェイト保存
+        // ================================================================
+
+        /// <summary>
+        /// メッシュがミラースキップ対象かを判定
+        /// B: SkipBakedMirror かつ Type=BakedMirror
+        /// C: SkipNamedMirror かつ 名前末尾が+
+        /// </summary>
+        /// <summary>
+        /// __IK__セクションをMQODocumentに出力
+        /// IKボーンごとに __IK__ボーン名 → __IKTarget__ターゲット名 → __IKLink__リンク名... の構造
+        /// </summary>
+        private static void EmitIKObjects(
+            MQODocument document,
+            List<MeshContext> boneContexts,
+            IList<MeshContext> allContexts)
+        {
+            var ikBones = new List<MeshContext>();
+            foreach (var bc in boneContexts)
+            {
+                if (bc.IsIK && bc.IKLinks != null && bc.IKLinks.Count > 0)
+                    ikBones.Add(bc);
+            }
+            if (ikBones.Count == 0) return;
+
+            // __IK__ ルートオブジェクト
+            var ikRootObj = new MQOObject { Name = "__IK__" };
+            ikRootObj.Attributes.Add(new MQOAttribute("depth", 0));
+            ikRootObj.Attributes.Add(new MQOAttribute("visible", 0));
+            ikRootObj.Attributes.Add(new MQOAttribute("locking", 1));
+            ikRootObj.Attributes.Add(new MQOAttribute("shading", 1));
+            ikRootObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+            ikRootObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+            ikRootObj.Attributes.Add(new MQOAttribute("color_type", 0));
+            document.Objects.Add(ikRootObj);
+
+            foreach (var ikBone in ikBones)
+            {
+                // __IK__ボーン名
+                var ikObj = new MQOObject { Name = "__IK__" + (ikBone.Name ?? "IK") };
+                ikObj.Attributes.Add(new MQOAttribute("depth", 1));
+                ikObj.Attributes.Add(new MQOAttribute("visible", 0));
+                ikObj.Attributes.Add(new MQOAttribute("locking", 1));
+                ikObj.Attributes.Add(new MQOAttribute("shading", 1));
+                ikObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                ikObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                ikObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                document.Objects.Add(ikObj);
+
+                // __IKTarget__ターゲットボーン名
+                string targetName = "Unknown";
+                if (ikBone.IKTargetIndex >= 0 && ikBone.IKTargetIndex < allContexts.Count)
+                {
+                    targetName = allContexts[ikBone.IKTargetIndex]?.Name ?? "Unknown";
+                }
+                var targetObj = new MQOObject { Name = "__IKTarget__" + targetName };
+                targetObj.Attributes.Add(new MQOAttribute("depth", 2));
+                targetObj.Attributes.Add(new MQOAttribute("visible", 0));
+                targetObj.Attributes.Add(new MQOAttribute("locking", 1));
+                targetObj.Attributes.Add(new MQOAttribute("shading", 1));
+                targetObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                targetObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                targetObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                document.Objects.Add(targetObj);
+
+                // __IKLink__リンクボーン名
+                foreach (var link in ikBone.IKLinks)
+                {
+                    string linkName = "Unknown";
+                    if (link.BoneIndex >= 0 && link.BoneIndex < allContexts.Count)
+                    {
+                        linkName = allContexts[link.BoneIndex]?.Name ?? "Unknown";
+                    }
+                    var linkObj = new MQOObject { Name = "__IKLink__" + linkName };
+                    linkObj.Attributes.Add(new MQOAttribute("depth", 2));
+                    linkObj.Attributes.Add(new MQOAttribute("visible", 0));
+                    linkObj.Attributes.Add(new MQOAttribute("locking", 1));
+                    linkObj.Attributes.Add(new MQOAttribute("shading", 1));
+                    linkObj.Attributes.Add(new MQOAttribute("facet", 59.5f));
+                    linkObj.Attributes.Add(new MQOAttribute("color", 0.5f, 0.5f, 0.5f));
+                    linkObj.Attributes.Add(new MQOAttribute("color_type", 0));
+                    document.Objects.Add(linkObj);
+                }
+            }
+        }
+
+        private static bool ShouldSkipAsMirror(MeshContext mc, MQOExportSettings settings)
+        {
+            // B: Type=BakedMirror
+            if (settings.SkipBakedMirror && mc.Type == MeshType.BakedMirror)
+                return true;
+
+            // C: 名前末尾が+（Type=BakedMirrorでないもの）
+            if (settings.SkipNamedMirror && mc.Type != MeshType.BakedMirror &&
+                !string.IsNullOrEmpty(mc.Name) && mc.Name.EndsWith("+"))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// ミラーメッシュの実体側MeshContextを検索
+        /// B: BakedMirrorSourceIndex
+        /// C: 名前から+を除いた名前で検索
+        /// </summary>
+        private static MeshContext FindMirrorSource(MeshContext mirrorMc, IList<MeshContext> allMeshContexts)
+        {
+            // B: BakedMirrorSourceIndex が有効
+            if (mirrorMc.BakedMirrorSourceIndex >= 0 &&
+                mirrorMc.BakedMirrorSourceIndex < allMeshContexts.Count)
+            {
+                return allMeshContexts[mirrorMc.BakedMirrorSourceIndex];
+            }
+
+            // C: 名前末尾+を除いて検索
+            if (!string.IsNullOrEmpty(mirrorMc.Name) && mirrorMc.Name.EndsWith("+"))
+            {
+                string sourceName = mirrorMc.Name.Substring(0, mirrorMc.Name.Length - 1);
+                foreach (var mc in allMeshContexts)
+                {
+                    if (mc != null && mc != mirrorMc && mc.Name == sourceName)
+                        return mc;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// ミラーメッシュのボーンウェイトと頂点IDを実体側MQOObjectに特殊面として保存
+        /// </summary>
+        /// <param name="mirrorMc">スキップされるミラーメッシュ</param>
+        /// <param name="sourceMqoObj">実体側のMQOObject（特殊面を追加する先）</param>
+        /// <param name="settings">エクスポート設定</param>
+        private static void SaveMirrorWeightsToSource(
+            MeshContext mirrorMc,
+            MQOObject sourceMqoObj,
+            MQOExportSettings settings)
+        {
+            if (mirrorMc?.MeshObject == null || sourceMqoObj == null) return;
+            if (!settings.EmbedBoneWeightsInMQO) return;
+
+            var meshObject = mirrorMc.MeshObject;
+
+            for (int i = 0; i < meshObject.Vertices.Count; i++)
+            {
+                var vertex = meshObject.Vertices[i];
+
+                // ボーンウェイト特殊面（isMirror=true）
+                if (vertex.HasBoneWeight)
+                {
+                    var boneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(vertex.BoneWeight.Value);
+                    sourceMqoObj.Faces.Add(
+                        VertexIdHelper.CreateSpecialFaceForBoneWeight(i, boneWeightData, true, 0));
+                }
+
+                // 頂点ID特殊面（ミラー側にIDがある場合）
+                // ミラー側の頂点IDはisMirror=true特殊面では保存できない（三角形特殊面にはミラーフラグがない）
+                // → 頂点IDは実体側と共有されるため、個別保存は不要
+            }
+
+            Debug.Log($"[MQOExporter] Saved mirror weights from '{mirrorMc.Name}' to source object ({meshObject.VertexCount} vertices)");
+
+            // ソースオブジェクトにミラーフラグを立てる（mirror属性がまだない場合）
+            if (sourceMqoObj.Attributes.Find(a => a.Name == "mirror") == null)
+            {
+                sourceMqoObj.Attributes.Add(new MQOAttribute("mirror", 1));
+                sourceMqoObj.Attributes.Add(new MQOAttribute("mirror_axis", 1));
+            }
+        }
+
+        // ================================================================
+        // マテリアルインデックス取得
+        // ================================================================
 
         /// <summary>
         /// マテリアルインデックスを取得
@@ -1397,6 +1428,14 @@ namespace Poly_Ling.MQO
                     {
                         sb.Append($" tex(\"{mat.TexturePath}\")");
                     }
+                    if (!string.IsNullOrEmpty(mat.AlphaMapPath))
+                    {
+                        sb.Append($" aplane(\"{mat.AlphaMapPath}\")");
+                    }
+                    if (!string.IsNullOrEmpty(mat.BumpMapPath))
+                    {
+                        sb.Append($" bump(\"{mat.BumpMapPath}\")");
+                    }
                     sb.AppendLine();
                 }
                 sb.AppendLine("}");
@@ -1487,32 +1526,6 @@ namespace Poly_Ling.MQO
 
             return sb.ToString();
         }
-    }
-
-    // ================================================================
-    // WriteBackフラグ
-    // ================================================================
-
-    /// <summary>
-    /// WriteBack時に何を更新するかのフラグ
-    /// </summary>
-    [Flags]
-    public enum WriteBackFlags
-    {
-        /// <summary>何も更新しない</summary>
-        None = 0,
-
-        /// <summary>頂点位置を更新</summary>
-        Position = 1 << 0,
-
-        /// <summary>面のUVを更新</summary>
-        UV = 1 << 1,
-
-        /// <summary>ボーンウェイト特殊面を更新（頂点IDも含む）</summary>
-        BoneWeight = 1 << 2,
-
-        /// <summary>全て更新</summary>
-        All = Position | UV | BoneWeight
     }
 
     // ================================================================

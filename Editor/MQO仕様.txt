@@ -13,4 +13,41 @@ MQOオブジェクトは頂点の位置を変えずに並べる。
 頂点B位置、UV[0]、norm[0]
 頂点B位置、UV[1]、norm[1]
 
+ミラーは３種類ある。
+A・実体がなく、実態メッシュの中に重み等をもつもの
+B・実態があり、タイプがベイクドミラーになっているもの
+C・実態があるが、タイプがベイクドミラーになっていないもの。名前の末尾に+がついているので推測可能なもの。
+D・実態があるが、タイプがベイクドミラーになっていない上に、名前からも予測がつかないもの
+Dは手動で操作するしかないので対応しない。ABCそれぞれについて、実態部分にぼーんの重みとインデックスを保存できるようにする。Cは半自動。
+
+特殊面
+
+頂点ID特殊面（三角形）:
+
+判定: 3頂点すべて同じインデックス (IsSpecialFace && VertexCount == 3)
+VertexIndices: [vIdx, vIdx, vIdx]
+UVs: [(0,0), (0,0), (0,0)]
+COL: [1, 1, vertexId] （COL[0]=1, COL[1]=1がマーカー、COL[2]=頂点ID）
+
+ボーンウェイト特殊面（四角形）:
+
+判定: 4頂点すべて同じインデックス (IsSpecialFace && VertexCount == 4)
+VertexIndices: [vIdx, vIdx, vIdx, vIdx]
+UVs: [(weight0, weight1), (weight2, weight3), (0, 0), (0, mirrorFlag)]
+
+UV[3].y = 0: 実体側
+UV[3].y = 1: ミラー側
+
+
+COL: [boneIndex0, boneIndex1, boneIndex2, boneIndex3]
+
+抽出メソッド:
+
+ExtractBoneWeightsFromSpecialFaces: 実体側のみ返す（isMirror=false）
+ExtractMirrorBoneWeightsFromSpecialFaces: ミラー側のみ返す（isMirror=true）
+
+生成メソッド:
+
+CreateSpecialFaceForVertexId(vIdx, vertexId, matIdx)
+CreateSpecialFaceForBoneWeight(vIdx, boneWeightData, isMirror, matIdx)
 

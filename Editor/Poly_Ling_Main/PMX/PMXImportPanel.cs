@@ -92,6 +92,8 @@ namespace Poly_Ling.PMX
 
             // インポートボタン
             ["Import"] = new() { ["en"] = "Import", ["ja"] = "インポート" },
+            ["Reload"] = new() { ["en"] = "Reload", ["ja"] = "リロード" },
+            ["DetectNamedMirror"] = new() { ["en"] = "Detect Named Mirror (+)", ["ja"] = "名前ミラー(+)を検出" },
             ["NoContextWarning"] = new() { ["en"] = "No context set. Open from Poly_Ling window to import directly.", ["ja"] = "コンテキスト未設定。直接インポートするにはMeshFactoryウィンドウから開いてください。" },
 
             // 結果セクション
@@ -189,6 +191,7 @@ namespace Poly_Ling.PMX
                     {
                         _lastFilePath = path;
                         LoadPreview();
+                        ExecuteImport();
                     }
                 }
             }
@@ -235,6 +238,7 @@ namespace Poly_Ling.PMX
                         _isDraggingFile = false;
                         _lastFilePath = DragAndDrop.paths[0];
                         LoadPreview();
+                        ExecuteImport();
                         evt.Use();
                     }
                     break;
@@ -323,6 +327,7 @@ namespace Poly_Ling.PMX
             using (new EditorGUI.IndentLevelScope())
             {
                 _settings.ImportMaterials = EditorGUILayout.Toggle(T("ImportMaterials"), _settings.ImportMaterials);
+                _settings.DetectNamedMirror = EditorGUILayout.Toggle(T("DetectNamedMirror"), _settings.DetectNamedMirror);
             }
             EditorGUI.EndDisabledGroup();
 
@@ -469,9 +474,10 @@ namespace Poly_Ling.PMX
                 GUI.backgroundColor = new Color(1f, 0.7f, 0.5f);
             }
 
-            if (GUILayout.Button(T("Import"), buttonStyle))
+            if (GUILayout.Button(T("Reload"), buttonStyle))
             {
-                Debug.Log($"[PMXImportPanel] Import button clicked. File: {_lastFilePath}");
+                Debug.Log($"[PMXImportPanel] Reload button clicked. File: {_lastFilePath}");
+                LoadPreview();
                 ExecuteImport();
             }
 
@@ -665,6 +671,13 @@ namespace Poly_Ling.PMX
                             Debug.Log($"[PMXImportPanel] Added {_lastResult.MorphSets.Count} morph sets");
                         }
                     }
+                    
+                    // 元PMXDocumentをModelContextに保持（物理データのパススルー用）
+                    if (_context.Model != null && _lastResult.Document != null)
+                    {
+                        _context.Model.SourceDocument = _lastResult.Document;
+                    }
+
                     _context.Repaint?.Invoke();
                 }
 

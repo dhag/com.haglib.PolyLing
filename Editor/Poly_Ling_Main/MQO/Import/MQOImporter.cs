@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using Poly_Ling.CSV;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
@@ -360,6 +361,9 @@ namespace Poly_Ling.MQO
                     boneContextCount = result.MeshContexts.Count;
                     result.Stats.BoneCount = armatureResult.BoneContexts.Count;
                     Debug.Log($"[MQOImporter] Imported {armatureResult.BoneContexts.Count} bones from __Armature__");
+
+                    // __IK__セクションからIK情報をインポート
+                    ApplyIKFromObjects(document.Objects, armatureResult.BoneContexts, boneNameToIndex);
                 }
             }
 
@@ -396,6 +400,11 @@ namespace Poly_Ling.MQO
 
                 // __ArmatureName__オブジェクトとその下のオブジェクトをスキップ
                 if (mqoObj.Name == "__ArmatureName__" || mqoObj.Name.StartsWith("__ArmatureName__"))
+                    continue;
+
+                // __IK__オブジェクトとその子をスキップ
+                if (mqoObj.Name == "__IK__" || mqoObj.Name.StartsWith("__IK__") ||
+                    mqoObj.Name.StartsWith("__IKTarget__") || mqoObj.Name.StartsWith("__IKLink__"))
                     continue;
 
                 // __Armature__からインポートされたボーンをスキップ
@@ -916,6 +925,92 @@ namespace Poly_Ling.MQO
 
             Debug.Log($"[MQOImporter] Imported {result.BoneContexts.Count} bones from __Armature__");
             return result;
+        }
+
+        /// <summary>
+        /// MQOの__IK__セクションからIK情報を読み取り、ボーンに適用
+        /// 構造: __IK__ → __IK__ボーン名 (depth=1) → __IKTarget__ターゲット名 (depth=2), __IKLink__リンク名 (depth=2)
+        /// </summary>
+        private static void ApplyIKFromObjects(
+            List<MQOObject> objects,
+            List<MeshContext> boneContexts,
+            Dictionary<string, int> boneNameToIndex)
+        {
+            if (boneNameToIndex == null || boneNameToIndex.Count == 0) return;
+
+            // __IK__ルートオブジェクトを探す
+            int ikRootIndex = -1;
+            for (int i = 0; i < objects.Count; i++)
+            {
+                if (objects[i].Name == "__IK__")
+                {
+                    ikRootIndex = i;
+                    break;
+                }
+            }
+            if (ikRootIndex < 0) return;
+
+            // __IK__以降を走査
+            const string ikPrefix = "__IK__";
+            const string targetPrefix = "__IKTarget__";
+            const string linkPrefix = "__IKLink__";
+
+            int ikCount = 0;
+            for (int i = ikRootIndex + 1; i < objects.Count; i++)
+            {
+                var obj = objects[i];
+                if (obj.Depth == 0) break;  // __IK__ツリー終了
+
+                // depth=1: IKボーン
+                if (obj.Depth == 1 && obj.Name.StartsWith(ikPrefix))
+                {
+                    string ikBoneName = obj.Name.Substring(ikPrefix.Length);
+                    if (!boneNameToIndex.TryGetValue(ikBoneName, out int ikBoneIdx)) continue;
+                    if (ikBoneIdx < 0 || ikBoneIdx >= boneContexts.Count) continue;
+
+                    var ikBone = boneContexts[ikBoneIdx];
+                    ikBone.IsIK = true;
+                    ikBone.IKLoopCount = 40;      // デフォルト値
+                    ikBone.IKLimitAngle = 2.0f;   // デフォルト値（ラジアン）
+                    ikBone.IKLinks = new List<IKLinkInfo>();
+
+                    // depth=2の子オブジェクト（Target, Link）を収集
+                    for (int j = i + 1; j < objects.Count; j++)
+                    {
+                        var child = objects[j];
+                        if (child.Depth <= 1) break;  // このIKボーンの子ツリー終了
+
+                        if (child.Name.StartsWith(targetPrefix))
+                        {
+                            string targetName = child.Name.Substring(targetPrefix.Length);
+                            if (boneNameToIndex.TryGetValue(targetName, out int targetIdx))
+                            {
+                                ikBone.IKTargetIndex = targetIdx;
+                            }
+                        }
+                        else if (child.Name.StartsWith(linkPrefix))
+                        {
+                            string linkName = child.Name.Substring(linkPrefix.Length);
+                            if (boneNameToIndex.TryGetValue(linkName, out int linkIdx))
+                            {
+                                ikBone.IKLinks.Add(new IKLinkInfo
+                                {
+                                    BoneIndex = linkIdx,
+                                    HasLimit = false
+                                });
+                            }
+                        }
+                    }
+
+                    ikCount++;
+                    Debug.Log($"[MQOImporter] IK: '{ikBoneName}' target={ikBone.IKTargetIndex}, links={ikBone.IKLinks.Count}");
+                }
+            }
+
+            if (ikCount > 0)
+            {
+                Debug.Log($"[MQOImporter] Imported {ikCount} IK bones from __IK__");
+            }
         }
 
         // ================================================================

@@ -41,6 +41,7 @@ namespace Poly_Ling.MQO
             ["Scale"] = new() { ["en"] = "Scale", ["ja"] = "スケール" },
             ["FlipZ"] = new() { ["en"] = "Flip Z", ["ja"] = "Z反転" },
             ["SkipBakedMirror"] = new() { ["en"] = "Skip Baked Mirror (flag only)", ["ja"] = "ベイクミラーをスキップ（フラグのみ）" },
+            ["SkipNamedMirror"] = new() { ["en"] = "Skip Named Mirror (+)", ["ja"] = "名前ミラー(+)をスキップ" },
 
             // WriteBackオプション
             ["WriteBack"] = new() { ["en"] = "WriteBack Options", ["ja"] = "書き戻しオプション" },
@@ -92,6 +93,7 @@ namespace Poly_Ling.MQO
         private float _scale = 10f;
         private bool _flipZ = true;
         private bool _skipBakedMirror = true;
+        private bool _skipNamedMirror = true;
 
         // WriteBackオプション
         private bool _writeBackPosition = true;
@@ -252,6 +254,14 @@ namespace Poly_Ling.MQO
                 if (_mqoDocument != null) AutoMatch();
             }
 
+            bool prevSkipNamed = _skipNamedMirror;
+            _skipNamedMirror = EditorGUILayout.ToggleLeft(T("SkipNamedMirror"), _skipNamedMirror);
+            if (prevSkipNamed != _skipNamedMirror)
+            {
+                BuildModelList();
+                if (_mqoDocument != null) AutoMatch();
+            }
+
             // WriteBackオプション
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField(T("WriteBack"), EditorStyles.boldLabel);
@@ -344,7 +354,7 @@ namespace Poly_Ling.MQO
                     int verts = entry.ExpandedVertexCount;
                     string label = $"{entry.Name} ({verts})";
 
-                    if (entry.IsBakedMirror)
+                    if (entry.IsBakedMirror || (!string.IsNullOrEmpty(entry.Name) && entry.Name.EndsWith("+")))
                     {
                         GUI.color = new Color(0.7f, 0.7f, 1f);
                     }
@@ -430,6 +440,10 @@ namespace Poly_Ling.MQO
 
                 // ベイクミラーフラグでスキップ
                 if (_skipBakedMirror && ctx.IsBakedMirror) continue;
+
+                // 名前末尾+のメッシュをスキップ（Type=BakedMirrorでないもの）
+                if (_skipNamedMirror && !ctx.IsBakedMirror &&
+                    !string.IsNullOrEmpty(ctx.Name) && ctx.Name.EndsWith("+")) continue;
 
                 var isolated = PMXMQOTransferPanel.GetIsolatedVertices(mo);
                 int expandedCount = PMXMQOTransferPanel.CalculateExpandedVertexCount(mo, isolated);
@@ -610,7 +624,7 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// MQO側のMeshContextを基準に、モデル側の頂点を転送
         /// PMXMQOTransferPanel.TransferPMXToMQOと同じアプローチ
-        /// WriteBackFlags対応: Position, UV, BoneWeight
+        /// Position, UV, BoneWeight書き戻し対応
         /// 孤立頂点（面に使われていない頂点）はスキップ
         /// </summary>
         private int TransferToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, ref int modelVertexOffset)
@@ -622,12 +636,6 @@ namespace Poly_Ling.MQO
             // MQODocument側のオブジェクトを名前で検索
             var mqoDocObj = _mqoDocument.Objects.FirstOrDefault(o => o.Name == mqoEntry.Name);
             if (mqoDocObj == null) return 0;
-
-            // WriteBackFlagsを構築
-            WriteBackFlags flags = WriteBackFlags.None;
-            if (_writeBackPosition) flags |= WriteBackFlags.Position;
-            if (_writeBackUV) flags |= WriteBackFlags.UV;
-            if (_writeBackBoneWeight) flags |= WriteBackFlags.BoneWeight;
 
             // MQO側の面で使用されている頂点インデックスを収集（孤立頂点判定用）
             var usedVertexIndices = new HashSet<int>();
@@ -807,12 +815,20 @@ namespace Poly_Ling.MQO
                             VertexIdHelper.CreateSpecialFaceForVertexId(vIdx, vertexInfo.Id, 0));
                     }
 
-                    // ボーンウェイト特殊面
+                    // ボーンウェイト特殊面（実体側）
                     if (vertexInfo.HasBoneWeight)
                     {
                         var boneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(vertexInfo.BoneWeight.Value);
                         mqoDocObj.Faces.Add(
                             VertexIdHelper.CreateSpecialFaceForBoneWeight(vIdx, boneWeightData, false, 0));
+                    }
+
+                    // タイプA: ミラー側ボーンウェイト特殊面
+                    if (vertexInfo.HasMirrorBoneWeight)
+                    {
+                        var mirrorBoneWeightData = VertexIdHelper.BoneWeightData.FromUnityBoneWeight(vertexInfo.MirrorBoneWeight.Value);
+                        mqoDocObj.Faces.Add(
+                            VertexIdHelper.CreateSpecialFaceForBoneWeight(vIdx, mirrorBoneWeightData, true, 0));
                     }
                 }
 

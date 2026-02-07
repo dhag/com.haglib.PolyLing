@@ -64,6 +64,10 @@ namespace Poly_Ling.MQO
         [Tooltip("ベイクされたミラーメッシュ（Type=BakedMirror）を出力しない")]
         public bool SkipBakedMirror = true;
 
+        /// <summary>名前末尾+のメッシュをミラーとみなしスキップ</summary>
+        [Tooltip("名前末尾が+のメッシュをベイクドミラーとみなし出力しない（ウェイトは実体側に保存）")]
+        public bool SkipNamedMirror = true;
+
         /// <summary>ボーンをMQOに出力</summary>
         [Tooltip("ボーン（Type=Bone）をMQOオブジェクトとして出力（__Armature__の下に配置）")]
         public bool ExportBones = true;
@@ -116,6 +120,7 @@ namespace Poly_Ling.MQO
                 MergeObjects = this.MergeObjects,
                 PreserveObjectAttributes = this.PreserveObjectAttributes,
                 SkipBakedMirror = this.SkipBakedMirror,
+                SkipNamedMirror = this.SkipNamedMirror,
                 ExportBones = this.ExportBones,
                 ExportLocalTransform = this.ExportLocalTransform,
                 EmbedBoneWeightsInMQO = this.EmbedBoneWeightsInMQO,
@@ -139,6 +144,7 @@ namespace Poly_Ling.MQO
                    MergeObjects != o.MergeObjects ||
                    PreserveObjectAttributes != o.PreserveObjectAttributes ||
                    SkipBakedMirror != o.SkipBakedMirror ||
+                   SkipNamedMirror != o.SkipNamedMirror ||
                    ExportBones != o.ExportBones ||
                    ExportLocalTransform != o.ExportLocalTransform ||
                    EmbedBoneWeightsInMQO != o.EmbedBoneWeightsInMQO ||
@@ -161,6 +167,7 @@ namespace Poly_Ling.MQO
             MergeObjects = o.MergeObjects;
             PreserveObjectAttributes = o.PreserveObjectAttributes;
             SkipBakedMirror = o.SkipBakedMirror;
+            SkipNamedMirror = o.SkipNamedMirror;
             ExportBones = o.ExportBones;
             ExportLocalTransform = o.ExportLocalTransform;
             EmbedBoneWeightsInMQO = o.EmbedBoneWeightsInMQO;

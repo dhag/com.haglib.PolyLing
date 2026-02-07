@@ -60,10 +60,19 @@ namespace Poly_Ling.MQO
             // ボーンのワールド位置を計算
             var boneWorldPositions = CalculateBoneWorldPositions(allContexts);
 
-            var sb = new StringBuilder();
+            // ボーンインデックス→名前マップ
+            var boneIndexToName = new Dictionary<int, string>();
+            for (int i = 0; i < allContexts.Count; i++)
+            {
+                if (allContexts[i]?.Type == MeshType.Bone)
+                    boneIndexToName[i] = allContexts[i].Name ?? "";
+            }
 
-            // ヘッダー（コメント行）
-            sb.AppendLine(";PmxBone,\"ボーン名\",\"英名\",変形階層,物理後,位置X,位置Y,位置Z,回転,移動,IK,表示,操作,\"親ボーン名\"");
+            var sb = new StringBuilder();
+            string fmt = "F6";
+
+            // ヘッダー（40カラム PMXEditor互換）
+            sb.AppendLine(new Poly_Ling.CSV.PmxBoneCSVSchema().GenerateHeaderComment());
 
             int exportedCount = 0;
             foreach (var mc in boneContexts)
@@ -73,56 +82,104 @@ namespace Poly_Ling.MQO
                 int boneIndex = allContexts.IndexOf(mc);
                 string boneName = mc.Name ?? "";
 
-                // 親ボーン情報（親がボーンタイプの場合のみ）
-                int parentIndex = mc.HierarchyParentIndex;
+                // 親ボーン名
                 string parentName = "";
+                int parentIndex = mc.HierarchyParentIndex;
                 if (parentIndex >= 0 && parentIndex < allContexts.Count)
                 {
                     var parent = allContexts[parentIndex];
                     if (parent != null && parent.Type == MeshType.Bone)
-                    {
                         parentName = parent.Name ?? "";
-                    }
                 }
 
-                // ワールド位置を取得
+                // ワールド位置
                 Vector3 pos = Vector3.zero;
                 if (boneWorldPositions.TryGetValue(boneIndex, out Vector3 worldPos))
-                {
                     pos = worldPos;
+
+                // IK情報
+                int isIK = mc.IsIK ? 1 : 0;
+                string ikTargetName = "";
+                int ikLoop = 0;
+                float ikAngleDeg = 0f;
+                if (mc.IsIK)
+                {
+                    if (mc.IKTargetIndex >= 0 && boneIndexToName.TryGetValue(mc.IKTargetIndex, out string tn))
+                        ikTargetName = tn;
+                    ikLoop = mc.IKLoopCount;
+                    ikAngleDeg = mc.IKLimitAngle * (180f / Mathf.PI);
                 }
 
-                // BoneTransformからフラグ情報を取得（デフォルト値を使用）
-                int deformHierarchy = 0;
-                int physicsAfter = 0;
-                int canRotate = 1;
-                int canMove = 0;
-                int isIK = 0;
-                int isVisible = 1;
-                int isControllable = 1;
-
-                // PmxBone形式で出力
-                // PmxBone,"ボーン名","英名",変形階層,物理後,位置X,位置Y,位置Z,回転,移動,IK,表示,操作,"親ボーン名"
+                // 40カラム PmxBone行
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                    "PmxBone,\"{0}\",\"\",{1},{2},{3:F6},{4:F6},{5:F6},{6},{7},{8},{9},{10},\"{11}\"",
-                    EscapeCSVQuoted(boneName),
-                    deformHierarchy,
-                    physicsAfter,
-                    pos.x, pos.y, pos.z,
-                    canRotate,
-                    canMove,
-                    isIK,
-                    isVisible,
-                    isControllable,
-                    EscapeCSVQuoted(parentName)));
+                    "PmxBone,\"{0}\",\"\",{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},\"{11}\"," +
+                    "{12},\"{13}\",{14},{15},{16}," +   // 表示先
+                    "{17},{18},{19},{20},\"{21}\"," +    // 付与
+                    "{22},{23},{24},{25}," +             // 軸固定
+                    "{26},{27},{28},{29},{30},{31},{32}," + // ローカル軸
+                    "{33},{34},\"{35}\",{36},{37}",     // 外部親, IK
+                    EscapeCSVQuoted(boneName),           // 1
+                    0,                                   // 3: 変形階層
+                    0,                                   // 4: 物理後
+                    F(pos.x, fmt), F(pos.y, fmt), F(pos.z, fmt),  // 5-7
+                    1,                                   // 8: 回転
+                    0,                                   // 9: 移動
+                    isIK,                                // 10: IK
+                    1,                                   // 11: 表示
+                    1,                                   // 12: 操作
+                    EscapeCSVQuoted(parentName),          // 13
+                    0,                                   // 14: 表示先タイプ
+                    "",                                  // 15: 表示先ボーン名
+                    F(0, fmt), F(0, fmt), F(0, fmt),     // 16-18: 表示先オフセット
+                    0, 0, 0,                             // 19-21: 付与フラグ
+                    F(0, fmt),                           // 22: 付与率
+                    "",                                  // 23: 付与親名
+                    0,                                   // 24: 軸制限
+                    F(0, fmt), F(0, fmt), F(0, fmt),     // 25-27: 制限軸
+                    0,                                   // 28: ローカル軸
+                    F(1, fmt), F(0, fmt), F(0, fmt),     // 29-31: ローカルX軸
+                    F(0, fmt), F(0, fmt), F(1, fmt),     // 32-34: ローカルZ軸
+                    0,                                   // 35: 外部親
+                    0,                                   // 36: 外部親Key
+                    EscapeCSVQuoted(ikTargetName),        // 37: IKTarget
+                    ikLoop,                              // 38: IKLoop
+                    F(ikAngleDeg, fmt)                   // 39: IK単位角
+                ));
+
+                // IKリンク行
+                if (mc.IsIK && mc.IKLinks != null)
+                {
+                    sb.AppendLine(";PmxIKLink,親ボーン名,Linkボーン名,角度制限(0/1),XL[deg],XH[deg],YL[deg],YH[deg],ZL[deg],ZH[deg]");
+                    float r2d = 180f / Mathf.PI;
+                    foreach (var lk in mc.IKLinks)
+                    {
+                        string linkBoneName = "";
+                        if (lk.BoneIndex >= 0 && boneIndexToName.TryGetValue(lk.BoneIndex, out string ln))
+                            linkBoneName = ln;
+
+                        sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                            "PmxIKLink,\"{0}\",\"{1}\",{2},{3},{4},{5},{6},{7},{8}",
+                            EscapeCSVQuoted(boneName),
+                            EscapeCSVQuoted(linkBoneName),
+                            lk.HasLimit ? 1 : 0,
+                            F(lk.LimitMin.x * r2d, fmt), F(lk.LimitMax.x * r2d, fmt),
+                            F(lk.LimitMin.y * r2d, fmt), F(lk.LimitMax.y * r2d, fmt),
+                            F(lk.LimitMin.z * r2d, fmt), F(lk.LimitMax.z * r2d, fmt)));
+                    }
+                }
 
                 exportedCount++;
             }
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
-            Debug.Log($"[MQOBoneWeightCSVWriter] Exported {exportedCount} bones to: {filePath}");
+            Debug.Log($"[MQOBoneWeightCSVWriter] Exported {exportedCount} bones (40col+IKLink) to: {filePath}");
 
             return exportedCount;
+        }
+
+        private static string F(float v, string fmt)
+        {
+            return v.ToString(fmt, CultureInfo.InvariantCulture);
         }
 
         /// <summary>
@@ -203,7 +260,7 @@ namespace Poly_Ling.MQO
             if (model == null || model.MeshContextList == null)
                 return 0;
 
-            // メッシュ、BakedMirror、ボーンを分離
+            // メッシュ、BakedMirror、名前ミラー（+付き）、ボーンを分離
             var meshContexts = new List<MeshContext>();
             var bakedMirrorContexts = new List<MeshContext>();
             var boneContexts = new List<MeshContext>();
@@ -215,7 +272,10 @@ namespace Poly_Ling.MQO
                     boneContexts.Add(mc);
                 else if (mc.Type == MeshType.BakedMirror && mc.MeshObject != null)
                     bakedMirrorContexts.Add(mc);
-                else if (mc.Type == MeshType.Mesh && mc.MeshObject != null)
+                else if (mc.Type != MeshType.BakedMirror && mc.MeshObject != null &&
+                         !string.IsNullOrEmpty(mc.Name) && mc.Name.EndsWith("+"))
+                    bakedMirrorContexts.Add(mc);  // タイプC: 名前末尾+もミラーとして扱う
+                else if (mc.MeshObject != null && mc.Type != MeshType.Morph)
                     meshContexts.Add(mc);
             }
 
@@ -404,23 +464,29 @@ namespace Poly_Ling.MQO
                 }
             }
 
-            // BakedMirrorメッシュのボーンウェイトを出力
-            // BakedMirrorの頂点ウェイトは、対応する実体メッシュ名+"+"で出力
+            // BakedMirror/名前ミラーメッシュのボーンウェイトを出力
+            // ミラーの頂点ウェイトは、対応する実体メッシュ名+"+"で出力
             if (bakedMirrorContexts != null)
             {
                 foreach (var mc in bakedMirrorContexts)
                 {
                     if (mc?.MeshObject == null) continue;
 
-                    // 元のメッシュ名を取得（BakedMirrorSourceIndexから）
+                    // 元のメッシュ名を取得
                     string sourceObjectName = "Object";
                     if (mc.BakedMirrorSourceIndex >= 0 && mc.BakedMirrorSourceIndex < allContexts.Count)
                     {
+                        // B: BakedMirrorSourceIndex から取得
                         var sourceMc = allContexts[mc.BakedMirrorSourceIndex];
                         if (sourceMc != null)
                         {
                             sourceObjectName = sourceMc.Name ?? "Object";
                         }
+                    }
+                    else if (!string.IsNullOrEmpty(mc.Name) && mc.Name.EndsWith("+"))
+                    {
+                        // C: 名前末尾+を除いたものが実体名
+                        sourceObjectName = mc.Name.Substring(0, mc.Name.Length - 1);
                     }
                     
                     // ミラー側として出力（実体メッシュ名+"+"）

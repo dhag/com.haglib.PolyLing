@@ -39,6 +39,12 @@ namespace Poly_Ling.Model
         /// <summary>変更フラグ</summary>
         public bool IsDirty { get; set; }
 
+        /// <summary>
+        /// インポート元ドキュメント（PMXDocument等）
+        /// エクスポート時に物理データ等のパススルーに使用
+        /// </summary>
+        public object SourceDocument { get; set; }
+
         // ================================================================
         // メッシュリスト
         // ================================================================

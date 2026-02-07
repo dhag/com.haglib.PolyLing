@@ -124,6 +124,10 @@ namespace Poly_Ling.PMX
         [Tooltip("材質Memo欄のObjectNameでメッシュをグループ化（頂点順序保持）")]
         public bool UseObjectNameGrouping = true;
 
+        /// <summary>名前末尾+のメッシュをBakedMirrorとして取り込む</summary>
+        [Tooltip("名前末尾が+のメッシュをBakedMirrorとして取り込む")]
+        public bool DetectNamedMirror = true;
+
         // ================================================================
         // ファクトリメソッド
         // ================================================================
@@ -182,7 +186,8 @@ namespace Poly_Ling.PMX
                 ConvertToTPose = this.ConvertToTPose,
                 RecalculateNormals = this.RecalculateNormals,
                 SmoothingAngle = this.SmoothingAngle,
-                UseObjectNameGrouping = this.UseObjectNameGrouping
+                UseObjectNameGrouping = this.UseObjectNameGrouping,
+                DetectNamedMirror = this.DetectNamedMirror
             };
         }
 
@@ -200,7 +205,8 @@ namespace Poly_Ling.PMX
                    ConvertToTPose != o.ConvertToTPose ||
                    RecalculateNormals != o.RecalculateNormals ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
-                   UseObjectNameGrouping != o.UseObjectNameGrouping;
+                   UseObjectNameGrouping != o.UseObjectNameGrouping ||
+                   DetectNamedMirror != o.DetectNamedMirror;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -218,6 +224,7 @@ namespace Poly_Ling.PMX
             RecalculateNormals = o.RecalculateNormals;
             SmoothingAngle = o.SmoothingAngle;
             UseObjectNameGrouping = o.UseObjectNameGrouping;
+            DetectNamedMirror = o.DetectNamedMirror;
         }
 
         // ================================================================

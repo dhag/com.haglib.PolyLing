@@ -439,6 +439,59 @@ namespace Poly_Ling.PMX
                 ConvertMorphs(document, settings, result);
                 Debug.Log($"[PMXImporter] Imported {result.MorphSets.Count} morph sets");
             }
+
+            // 名前末尾+のメッシュをBakedMirrorとして検出
+            if (settings.DetectNamedMirror)
+            {
+                DetectNamedMirrors(result.MeshContexts, boneContextCount);
+            }
+        }
+
+        // ================================================================
+        // 名前ミラー検出（Cタイプ: 名前末尾+）
+        // ================================================================
+
+        /// <summary>
+        /// 名前末尾が+のメッシュをBakedMirrorとして設定
+        /// +を除いた名前のメッシュをソースとし、BakedMirrorSourceIndexを設定
+        /// </summary>
+        public static void DetectNamedMirrors(List<MeshContext> meshContexts, int boneContextCount)
+        {
+            // メッシュ名→インデックスのマッピング（ボーン以降のメッシュのみ）
+            var nameToIndex = new Dictionary<string, int>();
+            for (int i = boneContextCount; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                if (ctx == null || ctx.Type != MeshType.Mesh) continue;
+                if (!nameToIndex.ContainsKey(ctx.Name))
+                    nameToIndex[ctx.Name] = i;
+            }
+
+            int mirrorCount = 0;
+            for (int i = boneContextCount; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                if (ctx == null || ctx.Type != MeshType.Mesh) continue;
+                if (!ctx.Name.EndsWith("+")) continue;
+
+                string sourceName = ctx.Name.Substring(0, ctx.Name.Length - 1);
+                if (nameToIndex.TryGetValue(sourceName, out int sourceIndex))
+                {
+                    ctx.MeshObject.Type = MeshType.BakedMirror;
+                    ctx.Type = MeshType.BakedMirror;
+                    ctx.BakedMirrorSourceIndex = sourceIndex;
+                    meshContexts[sourceIndex].HasBakedMirrorChild = true;
+                    meshContexts[sourceIndex].MirrorType = 1;  // 左右対称
+                    meshContexts[sourceIndex].MirrorAxis = 1;  // X軸
+                    mirrorCount++;
+                    Debug.Log($"[PMXImporter] Named mirror: '{ctx.Name}' → source '{sourceName}' (index {sourceIndex})");
+                }
+            }
+
+            if (mirrorCount > 0)
+            {
+                Debug.Log($"[PMXImporter] Detected {mirrorCount} named mirror meshes (+)");
+            }
         }
 
         // ================================================================

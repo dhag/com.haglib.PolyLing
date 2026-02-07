@@ -413,6 +413,9 @@ namespace Poly_Ling.PMX
         /// <summary>ボーンインデックス</summary>
         public int BoneIndex { get; set; }
 
+        /// <summary>ボーン名（CSV用）</summary>
+        public string BoneName { get; set; }
+
         /// <summary>移動量</summary>
         public Vector3 Translation { get; set; }
 
@@ -426,6 +429,8 @@ namespace Poly_Ling.PMX
     public class PMXMaterialMorphOffset : PMXMorphOffset
     {
         public int MaterialIndex { get; set; }
+        /// <summary>材質名（CSV用）</summary>
+        public string MaterialName { get; set; }
         public byte Operation { get; set; }  // 0:乗算, 1:加算
         public Color Diffuse { get; set; }
         public Color Specular { get; set; }
@@ -444,6 +449,8 @@ namespace Poly_Ling.PMX
     public class PMXGroupMorphOffset : PMXMorphOffset
     {
         public int MorphIndex { get; set; }
+        /// <summary>モーフ名（CSV用）</summary>
+        public string MorphName { get; set; }
         public float Weight { get; set; }
     }
 
@@ -473,6 +480,8 @@ namespace Poly_Ling.PMX
     {
         public bool IsMorph { get; set; }
         public int Index { get; set; }
+        /// <summary>ボーン名またはモーフ名（CSV用、バイナリ読み込み時はインデックスから逆引き）</summary>
+        public string Name { get; set; }
     }
 
     /// <summary>
