@@ -117,6 +117,21 @@ namespace Poly_Ling.PMX
             };
         }
 
+        /// <summary>座標系設定から初期化（逆変換スケール）</summary>
+        public static PMXExportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ)
+        {
+            return new PMXExportSettings
+            {
+                ExportMode = PMXExportMode.Full,
+                Scale = coordinateScale > 0f ? 1f / coordinateScale : 1f,
+                FlipZ = coordinateFlipZ,
+                ExportMaterials = true,
+                ExportBones = true,
+                ExportMorphs = true,
+                OutputBinaryPMX = true
+            };
+        }
+
         /// <summary>部分差し替え用デフォルト設定</summary>
         public static PMXExportSettings CreatePartialReplace()
         {

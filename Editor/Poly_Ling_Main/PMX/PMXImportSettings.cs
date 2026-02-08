@@ -42,8 +42,8 @@ namespace Poly_Ling.PMX
         
         /// <summary>全て</summary>
         All = Mesh | Bones | Morphs | Bodies | Joints,
-        /// <summary>デフォルト（メッシュ＋ボーン）</summary>
-        Default = Mesh | Bones,
+        /// <summary>デフォルト（メッシュ＋ボーン＋モーフ）</summary>
+        Default = Mesh | Bones | Morphs,
         /// <summary>ボーンのみ</summary>
         BonesOnly = Bones,
         /// <summary>物理（剛体＋ジョイント）</summary>
@@ -145,6 +145,17 @@ namespace Poly_Ling.PMX
             {
                 Scale = 0.1f,
                 FlipZ = true,
+                FlipUV_V = true
+            };
+        }
+
+        /// <summary>座標系設定から初期化（CoordinateScale = PMX→Unityスケール）</summary>
+        public static PMXImportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ)
+        {
+            return new PMXImportSettings
+            {
+                Scale = coordinateScale,
+                FlipZ = coordinateFlipZ,
                 FlipUV_V = true
             };
         }

@@ -26,6 +26,11 @@ public partial class PolyLing
         if (!_foldToolPanel)
             return;
 
+        // ToolContextにUndoControllerが未設定の場合、ここで設定
+        // （UpdateToolContextはDrawPreview内で呼ばれるため、左ペインでは未設定の場合がある）
+        if (_toolManager?.toolContext != null && _toolManager.toolContext.UndoController == null)
+            _toolManager.toolContext.UndoController = _undoController;
+
         EditorGUI.indentLevel++;
 
 

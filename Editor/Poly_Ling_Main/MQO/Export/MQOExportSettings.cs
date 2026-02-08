@@ -102,6 +102,24 @@ namespace Poly_Ling.MQO
         public bool UseShiftJIS = true;
 
         // ================================================================
+        // ファクトリメソッド
+        // ================================================================
+
+        /// <summary>
+        /// 座標系設定から初期化（逆変換スケール）
+        /// Unity→MQO = ratio / coordinateScale
+        /// </summary>
+        public static MQOExportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ, float ratio = 10f)
+        {
+            float mqoToUnity = coordinateScale / ratio;
+            return new MQOExportSettings
+            {
+                Scale = mqoToUnity > 0f ? 1f / mqoToUnity : ratio,
+                FlipZ = coordinateFlipZ
+            };
+        }
+
+        // ================================================================
         // 複製・比較
         // ================================================================
 

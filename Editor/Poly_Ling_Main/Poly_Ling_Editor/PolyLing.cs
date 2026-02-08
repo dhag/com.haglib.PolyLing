@@ -283,7 +283,7 @@ public partial class PolyLing : EditorWindow
     private HashSet<int> _foldedBoneRoots = new HashSet<int>();  // 折りたたまれたボーンルートのインデックス
     
     // タイプ別折りたたみフラグ
-    private HashSet<MeshType> _foldedTypes = new HashSet<MeshType> { MeshType.Morph, MeshType.RigidBody, MeshType.RigidBodyJoint, MeshType.Helper, MeshType.Group };
+    private HashSet<MeshType> _foldedTypes = new HashSet<MeshType> { MeshType.Mesh, MeshType.BakedMirror, MeshType.Morph, MeshType.RigidBody, MeshType.RigidBodyJoint, MeshType.Helper, MeshType.Group };
     
     // エクスポート設定（EditorStateContext への委譲）
     private bool _exportAsSkinned

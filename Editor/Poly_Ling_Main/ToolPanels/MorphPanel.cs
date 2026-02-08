@@ -159,8 +159,8 @@ namespace Poly_Ling.Tools.Panels
         // 複数ベースメッシュのバックアップ (baseMeshIndex -> positions)
         private Dictionary<int, Vector3[]> _previewBackups = new Dictionary<int, Vector3[]>();
 
-        // 現在のプレビュー対象ペア (morphMeshIndex, baseMeshIndex)
-        private List<(int morphIndex, int baseIndex)> _previewPairs = new List<(int, int)>();
+        // 現在のプレビュー対象ペア (morphMeshIndex, baseMeshIndex, entryWeight)
+        private List<(int morphIndex, int baseIndex, float entryWeight)> _previewPairs = new List<(int, int, float)>();
 
         // プレビュー対象のモーフセットインデックス
         private int _previewMorphSetIndex = -1;
@@ -313,7 +313,7 @@ namespace Poly_Ling.Tools.Panels
         // 詳細モードUI
         // ================================================================
 
-        private void DrawDetailMode(ModelContext model, MorphSet selectedSet, List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx)> pairs)
+        private void DrawDetailMode(ModelContext model, MorphSet selectedSet, List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)> pairs)
         {
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField(T("SectionDetail"), EditorStyles.boldLabel);
@@ -326,14 +326,14 @@ namespace Poly_Ling.Tools.Panels
                 _settings.SelectedMorphMeshIndex = newMeshIndex;
             }
 
-            if (_settings.SelectedMorphMeshIndex < 0 || _settings.SelectedMorphMeshIndex >= selectedSet.MeshIndices.Count)
+            if (_settings.SelectedMorphMeshIndex < 0 || _settings.SelectedMorphMeshIndex >= selectedSet.MeshEntries.Count)
             {
                 EditorGUILayout.HelpBox(T("SelectMorphMesh"), MessageType.Info);
                 return;
             }
 
             // 選択中のペアを検索
-            int morphMeshIndex = selectedSet.MeshIndices[_settings.SelectedMorphMeshIndex];
+            int morphMeshIndex = selectedSet.MeshEntries[_settings.SelectedMorphMeshIndex].MeshIndex;
             var selectedPair = pairs.Find(p => p.morphIndex == morphMeshIndex);
 
             if (selectedPair.morphCtx == null)
@@ -378,13 +378,15 @@ namespace Poly_Ling.Tools.Panels
         // モーフ-ベースペア構築
         // ================================================================
 
-        private List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx)> BuildMorphBasePairs(ModelContext model, MorphSet set)
+        private List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)> BuildMorphBasePairs(ModelContext model, MorphSet set)
         {
-            var pairs = new List<(int, int, MeshContext, MeshContext)>();
+            var pairs = new List<(int, int, MeshContext, MeshContext, float)>();
 
-            for (int i = 0; i < set.MeshIndices.Count; i++)
+            for (int i = 0; i < set.MeshEntries.Count; i++)
             {
-                int morphIndex = set.MeshIndices[i];
+                var entry = set.MeshEntries[i];
+                int morphIndex = entry.MeshIndex;
+                float weight = entry.Weight;
                 var morphCtx = model.GetMeshContext(morphIndex);
 
                 if (morphCtx == null || !morphCtx.IsMorph) continue;
@@ -394,7 +396,7 @@ namespace Poly_Ling.Tools.Panels
 
                 if (baseCtx?.MeshObject != null)
                 {
-                    pairs.Add((morphIndex, baseIndex, morphCtx, baseCtx));
+                    pairs.Add((morphIndex, baseIndex, morphCtx, baseCtx, weight));
                 }
             }
 
@@ -419,11 +421,14 @@ namespace Poly_Ling.Tools.Panels
         private List<(int index, string name)> BuildMorphMeshOptions(ModelContext model, MorphSet set)
         {
             var options = new List<(int, string)>();
-            for (int i = 0; i < set.MeshIndices.Count; i++)
+            for (int i = 0; i < set.MeshEntries.Count; i++)
             {
-                int meshIndex = set.MeshIndices[i];
+                int meshIndex = set.MeshEntries[i].MeshIndex;
+                float weight = set.MeshEntries[i].Weight;
                 var ctx = model.GetMeshContext(meshIndex);
                 string name = ctx?.Name ?? $"[{meshIndex}]";
+                if (weight < 1f)
+                    name += $" (W:{weight:F2})";
                 options.Add((i, name));
             }
             return options;
@@ -476,23 +481,13 @@ namespace Poly_Ling.Tools.Panels
                 for (int i = 0; i < model.MeshContextCount; i++)
                 {
                     var ctx = model.GetMeshContext(i);
-                    if (ctx != null && ctx.Type == MeshType.Mesh && ctx.Name == baseName)
+                    if (ctx != null && (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror) && ctx.Name == baseName)
                     {
                         return i;
                     }
                 }
-            }
 
-            // パターン2: 同じ頂点数のMeshタイプを検索（最初に見つかったもの）
-            int morphVertexCount = morphMeshContext.MeshObject?.VertexCount ?? 0;
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var ctx = model.GetMeshContext(i);
-                if (ctx != null && ctx.Type == MeshType.Mesh &&
-                    ctx.MeshObject != null && ctx.MeshObject.VertexCount == morphVertexCount)
-                {
-                    return i;
-                }
+                Debug.LogWarning($"[MorphPanel] FindBaseMesh: morph='{meshName}' baseName='{baseName}' NOT FOUND in {model.MeshContextCount} contexts");
             }
 
             return -1;
@@ -502,14 +497,14 @@ namespace Poly_Ling.Tools.Panels
         // バッチプレビュー（複数メッシュ同時）
         // ================================================================
 
-        private void StartBatchPreview(ModelContext model, List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx)> pairs)
+        private void StartBatchPreview(ModelContext model, List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)> pairs)
         {
             EndPreview();
 
             _previewBackups.Clear();
             _previewPairs.Clear();
 
-            foreach (var (morphIndex, baseIndex, morphCtx, baseCtx) in pairs)
+            foreach (var (morphIndex, baseIndex, morphCtx, baseCtx, weight) in pairs)
             {
                 if (baseCtx?.MeshObject == null) continue;
 
@@ -525,7 +520,7 @@ namespace Poly_Ling.Tools.Panels
                     _previewBackups[baseIndex] = backup;
                 }
 
-                _previewPairs.Add((morphIndex, baseIndex));
+                _previewPairs.Add((morphIndex, baseIndex, weight));
             }
 
             _previewMorphSetIndex = _settings.SelectedMorphSetIndex;
@@ -553,7 +548,7 @@ namespace Poly_Ling.Tools.Panels
             }
 
             // 全モーフのオフセットを適用
-            foreach (var (morphIndex, baseIndex) in _previewPairs)
+            foreach (var (morphIndex, baseIndex, entryWeight) in _previewPairs)
             {
                 var morphCtx = model.GetMeshContext(morphIndex);
                 var baseCtx = model.GetMeshContext(baseIndex);
@@ -567,7 +562,7 @@ namespace Poly_Ling.Tools.Panels
                 {
                     if (vertexIndex < baseMesh.VertexCount)
                     {
-                        baseMesh.Vertices[vertexIndex].Position += offset * weight;
+                        baseMesh.Vertices[vertexIndex].Position += offset * (entryWeight * weight);
                     }
                 }
             }

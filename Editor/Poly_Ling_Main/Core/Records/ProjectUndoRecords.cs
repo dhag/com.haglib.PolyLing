@@ -385,7 +385,12 @@ namespace MeshEditor
                 // カテゴリ別選択 (v1.1)
                 selectedMeshIndex = source.selectedMeshIndex,
                 selectedBoneIndex = source.selectedBoneIndex,
-                selectedVertexMorphIndex = source.selectedVertexMorphIndex
+                selectedVertexMorphIndex = source.selectedVertexMorphIndex,
+                // 座標系設定
+                coordinateScale = source.coordinateScale,
+                pmxFlipZ = source.pmxFlipZ,
+                mqoFlipZ = source.mqoFlipZ,
+                mqoPmxRatio = source.mqoPmxRatio
             };
         }
     }

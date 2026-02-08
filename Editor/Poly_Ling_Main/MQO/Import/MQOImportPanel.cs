@@ -292,7 +292,16 @@ namespace Poly_Ling.MQO
             EditorGUILayout.LabelField(T("Preset"), GUILayout.Width(60));
             if (GUILayout.Button(T("Default"), EditorStyles.miniButtonLeft))
             {
-                _settings = MQOImportSettings.CreateDefault();
+                var es = _context?.UndoController?.EditorState;
+                if (es != null)
+                {
+                    float ratio = es.MqoPmxRatio > 0f ? es.MqoPmxRatio : 10f;
+                    _settings = MQOImportSettings.CreateFromCoordinate(es.CoordinateScale, es.MqoFlipZ, ratio);
+                }
+                else
+                {
+                    _settings = MQOImportSettings.CreateDefault();
+                }
             }
             if (GUILayout.Button("MMD", EditorStyles.miniButtonMid))
             {
@@ -887,7 +896,19 @@ namespace Poly_Ling.MQO
                 if (stored != null)
                 {
                     _settings.CopyFrom(stored);
+                    return;
                 }
+            }
+
+            // 保存済み設定がない場合、座標系設定からデフォルト値を適用
+            var editorState = _context?.UndoController?.EditorState;
+            if (editorState != null)
+            {
+                float ratio = editorState.MqoPmxRatio > 0f ? editorState.MqoPmxRatio : 10f;
+                float mqoToUnity = editorState.CoordinateScale / ratio;
+                _settings.Scale = mqoToUnity;
+                _settings.FlipZ = editorState.MqoFlipZ;
+                _settings.BoneScale = ratio;  // PMX→MQO比率
             }
         }
     }

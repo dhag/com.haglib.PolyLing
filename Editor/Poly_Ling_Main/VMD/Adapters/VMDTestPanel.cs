@@ -86,6 +86,15 @@ namespace Poly_Ling.VMD
             {
                 _applier.BuildMapping(Model);
 
+                // 座標系設定をEditorStateContextから取得
+                var editorState = _context?.UndoController?.EditorState;
+                if (editorState != null)
+                {
+                    _applier.PositionScale = editorState.CoordinateScale;
+                    _applyCoordinateConversion = editorState.PmxFlipZ;
+                    _applier.ApplyCoordinateConversion = _applyCoordinateConversion;
+                }
+
                 // VMDがロード済みなら再適用
                 if (_vmd != null)
                 {
@@ -300,6 +309,14 @@ namespace Poly_Ling.VMD
             if (EditorGUI.EndChangeCheck())
             {
                 _applier.ApplyCoordinateConversion = _applyCoordinateConversion;
+                if (_vmd != null) ApplyFrame();
+            }
+
+            EditorGUI.BeginChangeCheck();
+            float newScale = EditorGUILayout.FloatField("Position Scale", _applier.PositionScale);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _applier.PositionScale = newScale;
                 if (_vmd != null) ApplyFrame();
             }
 

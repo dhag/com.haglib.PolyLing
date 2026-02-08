@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Poly_Ling.Data
 {
@@ -26,6 +27,30 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// モーフメッシュエントリ（メッシュインデックス＋ウェイト）
+    /// </summary>
+    [Serializable]
+    public struct MorphMeshEntry
+    {
+        /// <summary>MeshContextリスト内のインデックス</summary>
+        public int MeshIndex;
+
+        /// <summary>このメッシュに適用するウェイト（グループモーフのWeight由来）</summary>
+        public float Weight;
+
+        public MorphMeshEntry(int meshIndex, float weight = 1f)
+        {
+            MeshIndex = meshIndex;
+            Weight = weight;
+        }
+
+        public override string ToString()
+        {
+            return $"({MeshIndex}, W:{Weight:F2})";
+        }
+    }
+
+    /// <summary>
     /// モーフセット
     /// 複数メッシュのモーフを1つの名前でグループ化
     /// </summary>
@@ -44,8 +69,25 @@ namespace Poly_Ling.Data
         /// <summary>モーフタイプ</summary>
         public MorphType Type = MorphType.Vertex;
 
-        /// <summary>所属するモーフメッシュのインデックスリスト</summary>
-        public List<int> MeshIndices = new List<int>();
+        /// <summary>所属するモーフメッシュのエントリリスト（インデックス＋ウェイト）</summary>
+        public List<MorphMeshEntry> MeshEntries = new List<MorphMeshEntry>();
+
+        /// <summary>
+        /// 後方互換用：メッシュインデックスのみのリスト（get/set対応）
+        /// </summary>
+        public List<int> MeshIndices
+        {
+            get => MeshEntries.Select(e => e.MeshIndex).ToList();
+            set
+            {
+                MeshEntries.Clear();
+                if (value != null)
+                {
+                    foreach (var idx in value)
+                        MeshEntries.Add(new MorphMeshEntry(idx, 1f));
+                }
+            }
+        }
 
         /// <summary>作成日時</summary>
         public DateTime CreatedAt = DateTime.Now;
@@ -69,10 +111,10 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>有効なセットか</summary>
-        public bool IsValid => !string.IsNullOrEmpty(Name) && MeshIndices.Count > 0;
+        public bool IsValid => !string.IsNullOrEmpty(Name) && MeshEntries.Count > 0;
 
         /// <summary>メッシュ数</summary>
-        public int MeshCount => MeshIndices.Count;
+        public int MeshCount => MeshEntries.Count;
 
         /// <summary>頂点モーフか</summary>
         public bool IsVertexMorph => Type == MorphType.Vertex;
@@ -88,25 +130,44 @@ namespace Poly_Ling.Data
         // 操作
         // ================================================================
 
-        /// <summary>メッシュを追加</summary>
+        /// <summary>メッシュを追加（weight=1.0）</summary>
         public void AddMesh(int meshIndex)
         {
-            if (!MeshIndices.Contains(meshIndex))
+            AddMesh(meshIndex, 1f);
+        }
+
+        /// <summary>メッシュをウェイト付きで追加</summary>
+        public void AddMesh(int meshIndex, float weight)
+        {
+            if (!ContainsMesh(meshIndex))
             {
-                MeshIndices.Add(meshIndex);
+                MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
             }
         }
 
         /// <summary>メッシュを削除</summary>
         public bool RemoveMesh(int meshIndex)
         {
-            return MeshIndices.Remove(meshIndex);
+            int idx = MeshEntries.FindIndex(e => e.MeshIndex == meshIndex);
+            if (idx >= 0)
+            {
+                MeshEntries.RemoveAt(idx);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>メッシュを含むか</summary>
         public bool ContainsMesh(int meshIndex)
         {
-            return MeshIndices.Contains(meshIndex);
+            return MeshEntries.Exists(e => e.MeshIndex == meshIndex);
+        }
+
+        /// <summary>メッシュインデックスからエントリを取得</summary>
+        public MorphMeshEntry? GetEntry(int meshIndex)
+        {
+            int idx = MeshEntries.FindIndex(e => e.MeshIndex == meshIndex);
+            return idx >= 0 ? MeshEntries[idx] : (MorphMeshEntry?)null;
         }
 
         /// <summary>
@@ -114,12 +175,17 @@ namespace Poly_Ling.Data
         /// </summary>
         public void AdjustIndicesOnRemove(int removedIndex)
         {
-            MeshIndices.Remove(removedIndex);
-            for (int i = 0; i < MeshIndices.Count; i++)
+            // 該当インデックスのエントリを削除
+            MeshEntries.RemoveAll(e => e.MeshIndex == removedIndex);
+
+            // removedIndexより大きいインデックスを-1
+            for (int i = 0; i < MeshEntries.Count; i++)
             {
-                if (MeshIndices[i] > removedIndex)
+                if (MeshEntries[i].MeshIndex > removedIndex)
                 {
-                    MeshIndices[i]--;
+                    var entry = MeshEntries[i];
+                    entry.MeshIndex--;
+                    MeshEntries[i] = entry;
                 }
             }
         }
@@ -129,11 +195,13 @@ namespace Poly_Ling.Data
         /// </summary>
         public void AdjustIndicesOnInsert(int insertedIndex)
         {
-            for (int i = 0; i < MeshIndices.Count; i++)
+            for (int i = 0; i < MeshEntries.Count; i++)
             {
-                if (MeshIndices[i] >= insertedIndex)
+                if (MeshEntries[i].MeshIndex >= insertedIndex)
                 {
-                    MeshIndices[i]++;
+                    var entry = MeshEntries[i];
+                    entry.MeshIndex++;
+                    MeshEntries[i] = entry;
                 }
             }
         }
@@ -150,7 +218,7 @@ namespace Poly_Ling.Data
                 NameEnglish = this.NameEnglish,
                 Panel = this.Panel,
                 Type = this.Type,
-                MeshIndices = new List<int>(this.MeshIndices),
+                MeshEntries = this.MeshEntries.Select(e => new MorphMeshEntry(e.MeshIndex, e.Weight)).ToList(),
                 CreatedAt = this.CreatedAt
             };
         }

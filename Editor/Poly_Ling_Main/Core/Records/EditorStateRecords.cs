@@ -60,6 +60,16 @@ namespace Poly_Ling.UndoSystem
         // カメラ設定
         public bool AutoZoomEnabled = false;      // メッシュ選択時に自動ズーム（デフォルトOFF）
 
+        // 座標系設定（インポート/エクスポートのデフォルト値に使用）
+        /// <summary>座標スケール（PMX→Unity: 0.085, MQO→Unity: 0.0085, 等倍: 1.0）</summary>
+        public float CoordinateScale = 0.085f;
+        /// <summary>PMX Z軸反転（PMX=左手系, Unity=左手系 → デフォルトfalse）</summary>
+        public bool PmxFlipZ = false;
+        /// <summary>MQO Z軸反転（MQO=右手系, Unity=左手系 → デフォルトtrue）</summary>
+        public bool MqoFlipZ = true;
+        /// <summary>MQO/PMX座標比率（MQO座標 = PMX座標 × この値、デフォルト10）</summary>
+        public float MqoPmxRatio = 10f;
+
         // 汎用ツール設定ストレージ
         public ToolSettingsStorage ToolSettings = new ToolSettingsStorage();
 
@@ -119,6 +129,10 @@ namespace Poly_Ling.UndoSystem
                 ShowLocalTransform = ShowLocalTransform,
                 ShowWorldTransform = ShowWorldTransform,
                 AutoZoomEnabled = AutoZoomEnabled,
+                CoordinateScale = CoordinateScale,
+                PmxFlipZ = PmxFlipZ,
+                MqoFlipZ = MqoFlipZ,
+                MqoPmxRatio = MqoPmxRatio,
                 RecordFoldoutChanges = RecordFoldoutChanges,
                 FoldoutStates = new Dictionary<string, bool>(FoldoutStates),
             };
@@ -161,6 +175,10 @@ namespace Poly_Ling.UndoSystem
             ShowLocalTransform = snapshot.ShowLocalTransform;
             ShowWorldTransform = snapshot.ShowWorldTransform;
             AutoZoomEnabled = snapshot.AutoZoomEnabled;
+            CoordinateScale = snapshot.CoordinateScale;
+            PmxFlipZ = snapshot.PmxFlipZ;
+            MqoFlipZ = snapshot.MqoFlipZ;
+            MqoPmxRatio = snapshot.MqoPmxRatio;
             RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
             
             // FoldoutStates復元
@@ -221,6 +239,12 @@ namespace Poly_Ling.UndoSystem
         // カメラ設定
         public bool AutoZoomEnabled;
 
+        // 座標系設定
+        public float CoordinateScale;
+        public bool PmxFlipZ;
+        public bool MqoFlipZ;
+        public float MqoPmxRatio;
+
         // 汎用ツール設定
         public ToolSettingsStorage ToolSettings;
         
@@ -258,6 +282,10 @@ namespace Poly_Ling.UndoSystem
                 ShowLocalTransform != other.ShowLocalTransform ||
                 ShowWorldTransform != other.ShowWorldTransform ||
                 AutoZoomEnabled != other.AutoZoomEnabled ||
+                !Mathf.Approximately(CoordinateScale, other.CoordinateScale) ||
+                PmxFlipZ != other.PmxFlipZ ||
+                MqoFlipZ != other.MqoFlipZ ||
+                !Mathf.Approximately(MqoPmxRatio, other.MqoPmxRatio) ||
                 RecordFoldoutChanges != other.RecordFoldoutChanges)
             {
                 return true;

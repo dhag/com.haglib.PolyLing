@@ -1246,10 +1246,14 @@ public partial class PolyLing
 
                 if (string.IsNullOrEmpty(baseMeshName)) continue;
 
+                // エントリからweightを取得
+                var entry = morphSet.GetEntry(morphIndex);
+                float entryWeight = entry?.Weight ?? 1f;
+
                 // MeshName, BlendShapeName, Weight
                 parts.Add(baseMeshName);
                 parts.Add(morphSet.Name); // BlendShapeName = MorphSet.Name
-                parts.Add("1.0");
+                parts.Add(entryWeight.ToString("F2"));
             }
 
             if (parts.Count > 1) // ClipName以外にも要素がある

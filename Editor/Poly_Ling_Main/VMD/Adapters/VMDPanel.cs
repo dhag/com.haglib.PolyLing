@@ -3,6 +3,7 @@
 // ファイル選択、再生制御、フレームスライダーを提供
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
@@ -28,6 +29,15 @@ namespace Poly_Ling.VMD
         // マッチング情報表示
         private static bool _showMatchingInfo = false;
         private static VMDMatchingReport _matchingReport;
+
+        // 座標系設定
+        private static float _positionScale = 0.085f;
+        private static bool _flipZ = true;
+        private static bool _showCoordinateSettings = false;
+
+        // Humanoidクリップエクスポート用
+        private static GameObject _exportRootObject;
+        private static GameObject[] _exportCreatedObjects;
 
         // ================================================================
         // 初期化
@@ -93,6 +103,11 @@ namespace Poly_Ling.VMD
 
                         EditorGUILayout.Space(8);
 
+                        // 座標系設定
+                        DrawCoordinateSettings();
+
+                        EditorGUILayout.Space(8);
+
                         // 再生コントロール
                         DrawPlaybackControls();
 
@@ -105,6 +120,16 @@ namespace Poly_Ling.VMD
 
                         // マッチング情報
                         DrawMatchingInfo();
+
+                        EditorGUILayout.Space(8);
+
+                        // IKベイク
+                        DrawIKBakeButton(model);
+
+                        EditorGUILayout.Space(8);
+
+                        // Humanoidクリップエクスポート
+                        DrawHumanoidClipExport(model);
                     }
                 }
             }
@@ -318,6 +343,28 @@ namespace Poly_Ling.VMD
             EditorGUILayout.EndHorizontal();
         }
 
+        private static void DrawCoordinateSettings()
+        {
+            _showCoordinateSettings = EditorGUILayout.Foldout(_showCoordinateSettings, "Coordinate Settings");
+
+            if (_showCoordinateSettings)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                {
+                    _positionScale = EditorGUILayout.FloatField("Position Scale", _positionScale);
+                    _flipZ = EditorGUILayout.Toggle("Flip Z", _flipZ);
+
+                    // Applierに反映
+                    if (_player?.Applier != null)
+                    {
+                        _player.Applier.PositionScale = _positionScale;
+                        _player.Applier.ApplyCoordinateConversion = _flipZ;
+                    }
+                }
+                EditorGUILayout.EndVertical();
+            }
+        }
+
         private static void DrawMatchingInfo()
         {
             _showMatchingInfo = EditorGUILayout.Foldout(_showMatchingInfo, "Bone/Morph Matching");
@@ -356,6 +403,206 @@ namespace Poly_Ling.VMD
                 }
                 EditorGUILayout.EndVertical();
             }
+        }
+
+        private static void DrawIKBakeButton(Model.ModelContext model)
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            {
+                EditorGUILayout.LabelField("IK Bake", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox(
+                    "IKキーフレームを解決し、リンクボーンの回転キーフレームに変換します。\n" +
+                    "IKボーン（足IK等）のキーフレームは削除されます。",
+                    MessageType.Info);
+
+                EditorGUI.BeginDisabledGroup(_currentVMD == null || model == null);
+                if (GUILayout.Button("IKをベイクする", GUILayout.Height(28)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "IKベイク確認",
+                        "VMDデータのIKキーフレームをボーンキーフレームに変換します。\n" +
+                        "この操作は元に戻せません。続行しますか？",
+                        "ベイクする", "キャンセル"))
+                    {
+                        ExecuteIKBake(model);
+                    }
+                }
+                EditorGUI.EndDisabledGroup();
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private static void ExecuteIKBake(Model.ModelContext model)
+        {
+            if (_currentVMD == null || model == null || _player?.Applier == null)
+                return;
+
+            try
+            {
+                var bakedNames = VMDIKBaker.BakeIK(_currentVMD, model, _player.Applier);
+
+                if (bakedNames.Count > 0)
+                {
+                    // Applierを再適用して表示を更新
+                    _player.Applier.EnableIK = false;
+                    _player.Applier.ApplyFrame(model, _currentVMD, _player.CurrentFrame);
+
+                    // マッチングレポートを更新
+                    _matchingReport = _player.GetMatchingReport();
+
+                    EditorUtility.DisplayDialog(
+                        "IKベイク完了",
+                        $"以下のIKボーンをベイクしました:\n{string.Join("\n", bakedNames)}",
+                        "OK");
+
+                    SceneView.RepaintAll();
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog(
+                        "IKベイク",
+                        "ベイク対象のIKボーンが見つかりませんでした。",
+                        "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog(
+                    "IKベイクエラー",
+                    $"ベイク中にエラーが発生しました:\n{ex.Message}",
+                    "OK");
+                Debug.LogError($"[VMDPanel] IK Bake failed: {ex}");
+            }
+        }
+
+        private static void DrawHumanoidClipExport(Model.ModelContext model)
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            {
+                EditorGUILayout.LabelField("Humanoid Clip Export", EditorStyles.boldLabel);
+                EditorGUILayout.HelpBox(
+                    "エクスポート済みGameObject（Animator+Humanoid Avatar付き）を指定し、\n" +
+                    "VMDモーションをHumanoid AnimationClipに変換します。\n" +
+                    "IKベイクを先に実行してください。",
+                    MessageType.Info);
+
+                _exportRootObject = (GameObject)EditorGUILayout.ObjectField(
+                    "Root Object", _exportRootObject, typeof(GameObject), true);
+
+                EditorGUI.BeginDisabledGroup(
+                    _currentVMD == null || model == null || _exportRootObject == null);
+                if (GUILayout.Button("Humanoid Clipにエクスポート", GUILayout.Height(28)))
+                {
+                    ExecuteHumanoidClipExport(model);
+                }
+                EditorGUI.EndDisabledGroup();
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private static void ExecuteHumanoidClipExport(Model.ModelContext model)
+        {
+            if (_currentVMD == null || model == null || _exportRootObject == null || _player?.Applier == null)
+                return;
+
+            // Animator/Avatar検証
+            var animator = _exportRootObject.GetComponent<Animator>();
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+            {
+                EditorUtility.DisplayDialog(
+                    "エラー",
+                    "指定されたGameObjectにHumanoid Avatarが設定されたAnimatorがありません。",
+                    "OK");
+                return;
+            }
+
+            // createdObjectsを構築（rootの子孫からMeshContextList名で検索）
+            var createdObjects = BuildCreatedObjectsFromHierarchy(model, _exportRootObject);
+
+            // 保存先を選択
+            string defaultName = !string.IsNullOrEmpty(_currentVMD.ModelName)
+                ? _currentVMD.ModelName : "VMDMotion";
+            string savePath = EditorUtility.SaveFilePanelInProject(
+                "Save Humanoid Animation Clip",
+                defaultName + ".anim",
+                "anim",
+                "AnimationClipの保存先を選択");
+
+            if (string.IsNullOrEmpty(savePath))
+                return;
+
+            try
+            {
+                var clip = VMDToHumanoidClip.Convert(
+                    _currentVMD, model, _player.Applier,
+                    _exportRootObject, createdObjects);
+
+                if (clip != null)
+                {
+                    clip.name = System.IO.Path.GetFileNameWithoutExtension(savePath);
+                    VMDToHumanoidClip.SaveClip(clip, savePath);
+
+                    EditorUtility.DisplayDialog(
+                        "エクスポート完了",
+                        $"Humanoid AnimationClipを保存しました:\n{savePath}",
+                        "OK");
+
+                    // 保存したクリップを選択
+                    var savedClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(savePath);
+                    if (savedClip != null)
+                    {
+                        EditorGUIUtility.PingObject(savedClip);
+                        UnityEditor.Selection.activeObject = savedClip;
+                    }
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog(
+                        "エクスポート失敗",
+                        "AnimationClipの生成に失敗しました。Consoleログを確認してください。",
+                        "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog(
+                    "エクスポートエラー",
+                    $"エクスポート中にエラーが発生しました:\n{ex.Message}",
+                    "OK");
+                Debug.LogError($"[VMDPanel] Humanoid Clip export failed: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// エクスポート済みGameObjectの階層から、MeshContextListの各インデックスに
+        /// 対応するGameObjectを名前検索で構築する。
+        /// </summary>
+        private static GameObject[] BuildCreatedObjectsFromHierarchy(
+            Model.ModelContext model, GameObject root)
+        {
+            var result = new GameObject[model.MeshContextList.Count];
+
+            // root以下の全Transformを名前→GameObjectの辞書にする
+            var allTransforms = root.GetComponentsInChildren<Transform>(true);
+            var nameToGO = new Dictionary<string, GameObject>();
+            foreach (var t in allTransforms)
+            {
+                // 同名がある場合は最初のものを使用
+                if (!nameToGO.ContainsKey(t.name))
+                    nameToGO[t.name] = t.gameObject;
+            }
+
+            for (int i = 0; i < model.MeshContextList.Count; i++)
+            {
+                var ctx = model.MeshContextList[i];
+                if (ctx == null || string.IsNullOrEmpty(ctx.Name))
+                    continue;
+
+                if (nameToGO.TryGetValue(ctx.Name, out var go))
+                    result[i] = go;
+            }
+
+            return result;
         }
 
         // ================================================================
@@ -455,6 +702,20 @@ namespace Poly_Ling.VMD
             {
                 _player.Load(vmd, model);
                 _matchingReport = _player.GetMatchingReport();
+            }
+        }
+
+        /// <summary>
+        /// 座標系設定を更新（EditorStateContextから呼び出す）
+        /// </summary>
+        public static void SetCoordinateSettings(float scale, bool flipZ)
+        {
+            _positionScale = scale;
+            _flipZ = flipZ;
+            if (_player?.Applier != null)
+            {
+                _player.Applier.PositionScale = scale;
+                _player.Applier.ApplyCoordinateConversion = flipZ;
             }
         }
     }

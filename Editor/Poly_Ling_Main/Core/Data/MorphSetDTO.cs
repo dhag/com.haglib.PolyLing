@@ -7,6 +7,16 @@ using System.Collections.Generic;
 namespace Poly_Ling.Serialization
 {
     /// <summary>
+    /// モーフメッシュエントリのシリアライズ用
+    /// </summary>
+    [Serializable]
+    public class MorphMeshEntryDTO
+    {
+        public int meshIndex;
+        public float weight = 1f;
+    }
+
+    /// <summary>
     /// モーフセットのシリアライズ用
     /// </summary>
     [Serializable]
@@ -24,8 +34,11 @@ namespace Poly_Ling.Serialization
         /// <summary>モーフタイプ（1=頂点, 3=UV, ...）</summary>
         public int type = 1;
 
-        /// <summary>メッシュインデックスリスト</summary>
-        public List<int> meshIndices = new List<int>();
+        /// <summary>メッシュエントリリスト（インデックス＋ウェイト）</summary>
+        public List<MorphMeshEntryDTO> meshEntries;
+
+        /// <summary>後方互換用：旧形式のインデックスのみリスト（読み込み時のみ使用）</summary>
+        public List<int> meshIndices;
 
         /// <summary>作成日時（ISO 8601形式）</summary>
         public string createdAt;
@@ -41,15 +54,23 @@ namespace Poly_Ling.Serialization
         {
             if (set == null) return null;
 
+            var entries = new List<MorphMeshEntryDTO>();
+            if (set.MeshEntries != null)
+            {
+                foreach (var e in set.MeshEntries)
+                {
+                    entries.Add(new MorphMeshEntryDTO { meshIndex = e.MeshIndex, weight = e.Weight });
+                }
+            }
+
             return new MorphSetDTO
             {
                 name = set.Name ?? "",
                 nameEnglish = set.NameEnglish ?? "",
                 panel = set.Panel,
                 type = (int)set.Type,
-                meshIndices = set.MeshIndices != null 
-                    ? new List<int>(set.MeshIndices) 
-                    : new List<int>(),
+                meshEntries = entries,
+                meshIndices = null,  // 新形式ではmeshEntriesのみ使用
                 createdAt = set.CreatedAt.ToString("o")
             };
         }
@@ -65,10 +86,25 @@ namespace Poly_Ling.Serialization
                 NameEnglish = nameEnglish ?? "",
                 Panel = panel,
                 Type = (Data.MorphType)type,
-                MeshIndices = meshIndices != null 
-                    ? new List<int>(meshIndices) 
-                    : new List<int>()
+                MeshEntries = new List<Data.MorphMeshEntry>()
             };
+
+            // 新形式（meshEntries）があればそちらを使用
+            if (meshEntries != null && meshEntries.Count > 0)
+            {
+                foreach (var e in meshEntries)
+                {
+                    set.MeshEntries.Add(new Data.MorphMeshEntry(e.meshIndex, e.weight));
+                }
+            }
+            // 後方互換：旧形式（meshIndices）からweight=1.0で復元
+            else if (meshIndices != null && meshIndices.Count > 0)
+            {
+                foreach (var idx in meshIndices)
+                {
+                    set.MeshEntries.Add(new Data.MorphMeshEntry(idx, 1f));
+                }
+            }
 
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(createdAt, out var dt))
             {

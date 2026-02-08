@@ -340,6 +340,15 @@ namespace Poly_Ling.Localization
             ["Position"] = new() { ["en"] = "Position", ["ja"] = "位置", ["hi"] = "いち" },
             ["Rotation"] = new() { ["en"] = "Rotation", ["ja"] = "回転", ["hi"] = "かいてん" },
             ["Scale"] = new() { ["en"] = "Scale", ["ja"] = "スケール", ["hi"] = "おおきさ" },
+            
+            // ============================================================
+            // 座標系設定
+            // ============================================================
+            ["CoordinateSettings"] = new() { ["en"] = "Coordinate", ["ja"] = "座標系", ["hi"] = "ざひょう" },
+            ["CoordinateScale"] = new() { ["en"] = "Scale", ["ja"] = "スケール", ["hi"] = "おおきさ" },
+            ["PmxFlipZ"] = new() { ["en"] = "PMX Flip Z", ["ja"] = "PMX Z反転", ["hi"] = "PMX Zはんてん" },
+            ["MqoFlipZ"] = new() { ["en"] = "MQO Flip Z", ["ja"] = "MQO Z反転", ["hi"] = "MQO Zはんてん" },
+            ["MqoPmxRatio"] = new() { ["en"] = "MQO/PMX Ratio", ["ja"] = "MQO/PMX比率", ["hi"] = "MQO/PMXひりつ" },
         };
         
         // ================================================================

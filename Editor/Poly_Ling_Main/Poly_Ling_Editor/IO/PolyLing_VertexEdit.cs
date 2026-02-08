@@ -31,6 +31,13 @@ public partial class PolyLing
         // スクロール開始
         _rightPaneScroll = EditorGUILayout.BeginScrollView(_rightPaneScroll);
 
+        // ================================================================
+        // 座標系設定（右ペイン最上部）
+        // ================================================================
+        DrawCoordinateSettings();
+
+        EditorGUILayout.Space(3);
+
         var meshContext = _model.CurrentMeshContext;
         if (meshContext == null)
         {
@@ -960,6 +967,63 @@ public partial class PolyLing
 
         // 末尾を優先して表示
         return "..." + path.Substring(path.Length - maxLength + 3);
+    }
+
+    // ================================================================
+    // 座標系設定（右ペイン最上部）
+    // ================================================================
+    private void DrawCoordinateSettings()
+    {
+        bool foldCoordinate = DrawFoldoutWithUndo("CoordinateSettings", L.Get("CoordinateSettings"), false);
+        if (!foldCoordinate) return;
+
+        if (_undoController == null) return;
+
+        var editorState = _undoController.EditorState;
+
+        EditorGUI.indentLevel++;
+
+        // Scale
+        EditorGUI.BeginChangeCheck();
+        float newScale = EditorGUILayout.FloatField(L.Get("CoordinateScale"), editorState.CoordinateScale);
+        if (EditorGUI.EndChangeCheck() && newScale != editorState.CoordinateScale)
+        {
+            _undoController.BeginEditorStateDrag();
+            editorState.CoordinateScale = newScale;
+            _undoController.EndEditorStateDrag("Change Coordinate Scale");
+        }
+
+        // PMX Flip Z
+        EditorGUI.BeginChangeCheck();
+        bool newPmxFlipZ = EditorGUILayout.Toggle(L.Get("PmxFlipZ"), editorState.PmxFlipZ);
+        if (EditorGUI.EndChangeCheck() && newPmxFlipZ != editorState.PmxFlipZ)
+        {
+            _undoController.BeginEditorStateDrag();
+            editorState.PmxFlipZ = newPmxFlipZ;
+            _undoController.EndEditorStateDrag("Toggle PMX FlipZ");
+        }
+
+        // MQO Flip Z
+        EditorGUI.BeginChangeCheck();
+        bool newMqoFlipZ = EditorGUILayout.Toggle(L.Get("MqoFlipZ"), editorState.MqoFlipZ);
+        if (EditorGUI.EndChangeCheck() && newMqoFlipZ != editorState.MqoFlipZ)
+        {
+            _undoController.BeginEditorStateDrag();
+            editorState.MqoFlipZ = newMqoFlipZ;
+            _undoController.EndEditorStateDrag("Toggle MQO FlipZ");
+        }
+
+        // MQO/PMX Ratio
+        EditorGUI.BeginChangeCheck();
+        float newRatio = EditorGUILayout.FloatField(L.Get("MqoPmxRatio"), editorState.MqoPmxRatio);
+        if (EditorGUI.EndChangeCheck() && newRatio != editorState.MqoPmxRatio)
+        {
+            _undoController.BeginEditorStateDrag();
+            editorState.MqoPmxRatio = newRatio;
+            _undoController.EndEditorStateDrag("Change MQO/PMX Ratio");
+        }
+
+        EditorGUI.indentLevel--;
     }
 
 }

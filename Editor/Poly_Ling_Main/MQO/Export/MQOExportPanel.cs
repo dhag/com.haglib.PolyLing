@@ -136,6 +136,19 @@ namespace Poly_Ling.MQO
             window.Show();
         }
 
+        protected override void OnContextSet()
+        {
+            // 座標系設定からデフォルト値を適用
+            var editorState = _context?.UndoController?.EditorState;
+            if (editorState != null)
+            {
+                float ratio = editorState.MqoPmxRatio > 0f ? editorState.MqoPmxRatio : 10f;
+                float mqoToUnity = editorState.CoordinateScale / ratio;
+                _settings.Scale = mqoToUnity > 0f ? 1f / mqoToUnity : ratio;
+                _settings.FlipZ = editorState.MqoFlipZ;
+            }
+        }
+
         // ================================================================
         // GUI
         // ================================================================

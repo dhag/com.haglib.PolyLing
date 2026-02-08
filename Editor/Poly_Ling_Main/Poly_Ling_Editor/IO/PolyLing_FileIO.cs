@@ -47,7 +47,11 @@ public partial class PolyLing
             currentToolName = _currentTool?.Name ?? "Select",
             selectedMeshIndex = _model.PrimarySelectedMeshIndex,
             selectedBoneIndex = _model.PrimarySelectedBoneIndex,
-            selectedVertexMorphIndex = _model.PrimarySelectedMorphIndex
+            selectedVertexMorphIndex = _model.PrimarySelectedMorphIndex,
+            coordinateScale = _undoController?.EditorState?.CoordinateScale ?? 0.085f,
+            pmxFlipZ = _undoController?.EditorState?.PmxFlipZ ?? false,
+            mqoFlipZ = _undoController?.EditorState?.MqoFlipZ ?? true,
+            mqoPmxRatio = _undoController?.EditorState?.MqoPmxRatio ?? 10f
         };
 
         // ModelSerializer.FromModelContext を使用してモデル全体をエクスポート
@@ -143,6 +147,15 @@ public partial class PolyLing
             _showWireframe = state.showWireframe;
             _showVertices = state.showVertices;
             _vertexEditMode = state.vertexEditMode;
+
+            // 座標系設定を復元
+            if (_undoController?.EditorState != null)
+            {
+                _undoController.EditorState.CoordinateScale = state.coordinateScale > 0f ? state.coordinateScale : 0.085f;
+                _undoController.EditorState.PmxFlipZ = state.pmxFlipZ;
+                _undoController.EditorState.MqoFlipZ = state.mqoFlipZ;
+                _undoController.EditorState.MqoPmxRatio = state.mqoPmxRatio > 0f ? state.mqoPmxRatio : 10f;
+            }
 
             // 選択メッシュを復元（v2.0: カテゴリ別対応）
             _model.ClearAllCategorySelection();

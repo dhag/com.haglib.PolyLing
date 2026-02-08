@@ -305,6 +305,8 @@ public partial class PolyLing : EditorWindow
         ctx.SyncMesh = () => SyncMeshFromData(_model?.CurrentMeshContext);
         // v2.1: 複数メッシュ対応 - 選択中の全メッシュの位置を同期
         ctx.SyncMeshPositionsOnly = () => SyncAllSelectedMeshPositions();
+        // モーフプレビュー用: 任意のMeshContextの頂点位置を同期
+        ctx.SyncMeshContextPositionsOnly = (mc) => SyncMeshPositionsOnly(mc);
         
         // GPUバッファのトポロジ再構築コールバック
         // SyncMeshは位置更新のみで軽量、これはトポロジ変更時のみ呼ぶ（重い）

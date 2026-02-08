@@ -178,6 +178,23 @@ namespace Poly_Ling.MQO
             };
         }
 
+        /// <summary>
+        /// 座標系設定から初期化
+        /// MQO→Unity = coordinateScale / ratio
+        /// BoneScale: PMXボーン座標→MQOメッシュ座標の変換（= ratio）
+        /// </summary>
+        public static MQOImportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ, float ratio = 10f)
+        {
+            float mqoToUnity = coordinateScale / ratio;
+            return new MQOImportSettings
+            {
+                Scale = mqoToUnity,
+                FlipZ = coordinateFlipZ,
+                FlipUV_V = true,
+                BoneScale = ratio  // PMXボーン座標→MQO座標の比率
+            };
+        }
+
         /// <summary>等倍設定を作成（スケール1:1）</summary>
         public static MQOImportSettings CreateNoScale()
         {

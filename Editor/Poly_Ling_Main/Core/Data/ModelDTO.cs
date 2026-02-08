@@ -608,6 +608,18 @@ namespace Poly_Ling.Serialization
         /// <summary>ナイフツールのChainMode</summary>
         public bool knifeChainMode;
 
+        /// <summary>座標スケール（PMX→Unity: 0.085, MQO→Unity: 0.0085, 等倍: 1.0）</summary>
+        public float coordinateScale = 0.085f;
+
+        /// <summary>PMX Z軸反転（デフォルトfalse）</summary>
+        public bool pmxFlipZ = false;
+
+        /// <summary>MQO Z軸反転（デフォルトtrue）</summary>
+        public bool mqoFlipZ = true;
+
+        /// <summary>MQO/PMX座標比率（デフォルト10）</summary>
+        public float mqoPmxRatio = 10f;
+
         public static EditorStateDTO CreateDefault()
         {
             return new EditorStateDTO
@@ -626,7 +638,12 @@ namespace Poly_Ling.Serialization
                 //ナイフツールの固有設定
                 knifeMode = "Cut",
                 knifeEdgeSelect = false,
-                knifeChainMode = false
+                knifeChainMode = false,
+                // 座標系設定
+                coordinateScale = 0.085f,
+                pmxFlipZ = false,
+                mqoFlipZ = true,
+                mqoPmxRatio = 10f
             };
         }
     }

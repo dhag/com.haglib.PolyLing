@@ -284,11 +284,25 @@ namespace Poly_Ling.PMX
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button(T("Default")))
-                    _settings = PMXImportSettings.CreateDefault();
+                {
+                    var es = _context?.UndoController?.EditorState;
+                    _settings = es != null
+                        ? PMXImportSettings.CreateFromCoordinate(es.CoordinateScale, es.PmxFlipZ)
+                        : PMXImportSettings.CreateDefault();
+                }
                 if (GUILayout.Button(T("MMDCompatible")))
                     _settings = PMXImportSettings.CreateMMDCompatible();
                 if (GUILayout.Button(T("BonesOnly")))
-                    _settings = PMXImportSettings.CreateBonesOnly();
+                {
+                    var es = _context?.UndoController?.EditorState;
+                    var s = PMXImportSettings.CreateBonesOnly();
+                    if (es != null)
+                    {
+                        s.Scale = es.CoordinateScale;
+                        s.FlipZ = es.PmxFlipZ;
+                    }
+                    _settings = s;
+                }
             }
 
             EditorGUILayout.Space(3);
@@ -662,9 +676,11 @@ namespace Poly_Ling.PMX
                             // MorphSets内のメッシュインデックスにオフセットを適用
                             foreach (var morphSet in _lastResult.MorphSets)
                             {
-                                for (int i = 0; i < morphSet.MeshIndices.Count; i++)
+                                for (int i = 0; i < morphSet.MeshEntries.Count; i++)
                                 {
-                                    morphSet.MeshIndices[i] += existingMeshContextCount;
+                                    var entry = morphSet.MeshEntries[i];
+                                    entry.MeshIndex += existingMeshContextCount;
+                                    morphSet.MeshEntries[i] = entry;
                                 }
                                 _context.Model.MorphSets.Add(morphSet);
                             }
@@ -763,7 +779,16 @@ namespace Poly_Ling.PMX
                 if (stored != null)
                 {
                     _settings.CopyFrom(stored);
+                    return;
                 }
+            }
+
+            // 保存済み設定がない場合、座標系設定からデフォルト値を適用
+            var editorState = _context?.UndoController?.EditorState;
+            if (editorState != null)
+            {
+                _settings.Scale = editorState.CoordinateScale;
+                _settings.FlipZ = editorState.PmxFlipZ;
             }
         }
     }

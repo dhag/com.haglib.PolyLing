@@ -39,6 +39,12 @@ namespace Poly_Ling.VMD
         public bool ApplyCoordinateConversion { get; set; } = false;
 
         /// <summary>
+        /// VMDデルタ位置に適用するスケール（PMX空間→Unity空間）
+        /// EditorStateContext.CoordinateScaleと同じ値を設定する
+        /// </summary>
+        public float PositionScale { get; set; } = 1f;
+
+        /// <summary>
         /// 未マッチのボーン名リスト（デバッグ用）
         /// </summary>
         public List<string> UnmatchedBoneNames { get; private set; } = new List<string>();
@@ -207,6 +213,12 @@ namespace Poly_Ling.VMD
                 if (ApplyCoordinateConversion)
                 {
                     convertedPos = CoordinateConverter.ToUnityPosition(position);
+                }
+
+                // スケール適用（VMDデルタ位置はPMX空間の値なので、Unity空間に合わせる）
+                if (!Mathf.Approximately(PositionScale, 1f))
+                {
+                    convertedPos *= PositionScale;
                 }
 
                 // ★★★ ローカル軸空間変換 - 削除禁止 ★★★

@@ -87,6 +87,17 @@ namespace Poly_Ling.PMX
             window.Show();
         }
 
+        protected override void OnContextSet()
+        {
+            // 座標系設定からデフォルト値を適用
+            var editorState = _context?.UndoController?.EditorState;
+            if (editorState != null)
+            {
+                _settings.Scale = editorState.CoordinateScale > 0f ? 1f / editorState.CoordinateScale : 1f;
+                _settings.FlipZ = editorState.PmxFlipZ;
+            }
+        }
+
         private void OnGUI()
         {
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);

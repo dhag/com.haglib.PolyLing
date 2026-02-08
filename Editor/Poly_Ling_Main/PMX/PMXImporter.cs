@@ -2019,6 +2019,10 @@ namespace Poly_Ling.PMX
 
         /// <summary>
         /// PMXモーフをMeshContext + MorphSetに変換
+        /// グループモーフ対応：
+        /// 1. 頂点/UVモーフを仮MorphSetとして生成
+        /// 2. グループモーフを読み、子モーフのMeshEntriesをweight付きでフラット展開した親MorphSetを作成
+        /// 3. グループに属さない仮MorphSetはweight=1.0で正規のMorphSetにする
         /// </summary>
         private static void ConvertMorphs(PMXDocument document, PMXImportSettings settings, PMXImportResult result)
         {
@@ -2028,9 +2032,15 @@ namespace Poly_Ling.PMX
                 return;
             }
 
-            foreach (var pmxMorph in document.Morphs)
+            // Phase 1: 頂点/UVモーフを仮MorphSetとして生成
+            // PMXモーフインデックス → 仮MorphSet のマッピング
+            var tempMorphSets = new Dictionary<int, MorphSet>();
+
+            for (int i = 0; i < document.Morphs.Count; i++)
             {
-                // 頂点モーフ (type=1) と UVモーフ (type=3-7) のみ対応
+                var pmxMorph = document.Morphs[i];
+                int beforeCount = result.MorphSets.Count;
+
                 if (pmxMorph.MorphType == 1)
                 {
                     ConvertVertexMorph(document, pmxMorph, settings, result);
@@ -2039,7 +2049,97 @@ namespace Poly_Ling.PMX
                 {
                     ConvertUVMorph(document, pmxMorph, settings, result);
                 }
-                // グループモーフ(0)、ボーンモーフ(2)、マテリアルモーフ(8)等は未対応
+                // ボーンモーフ(2)、マテリアルモーフ(8)等は未対応
+
+                // 直前の呼び出しでMorphSetが追加された場合のみ記録
+                if (result.MorphSets.Count > beforeCount)
+                {
+                    tempMorphSets[i] = result.MorphSets[result.MorphSets.Count - 1];
+                }
+            }
+
+            // Phase 2: グループモーフを処理
+            // グループに所属した仮MorphSetを追跡
+            var groupedMorphIndices = new HashSet<int>();
+
+            Debug.Log($"[PMXImporter] Phase 1 complete: {tempMorphSets.Count} temp morph sets created, {result.MorphSets.Count} total morph sets");
+
+            for (int i = 0; i < document.Morphs.Count; i++)
+            {
+                var pmxMorph = document.Morphs[i];
+                if (pmxMorph.MorphType != 0) continue;  // グループモーフのみ
+
+                Debug.Log($"[PMXImporter] Processing group morph [{i}] '{pmxMorph.Name}': {pmxMorph.Offsets.Count} offsets");
+
+                var groupSet = new MorphSet(pmxMorph.Name, MorphType.Group)
+                {
+                    NameEnglish = pmxMorph.NameEnglish ?? "",
+                    Panel = pmxMorph.Panel
+                };
+
+                foreach (var offset in pmxMorph.Offsets)
+                {
+                    if (offset is not PMXGroupMorphOffset groupOffset) continue;
+
+                    int childMorphIndex = groupOffset.MorphIndex;
+
+                    // 名前ベースのフォールバック（CSV入力でインデックスが-1の場合）
+                    if (childMorphIndex < 0 && !string.IsNullOrEmpty(groupOffset.MorphName))
+                    {
+                        for (int j = 0; j < document.Morphs.Count; j++)
+                        {
+                            if (document.Morphs[j].Name == groupOffset.MorphName)
+                            {
+                                childMorphIndex = j;
+                                break;
+                            }
+                        }
+                    }
+
+                    MorphSet childSet = null;
+                    bool found = childMorphIndex >= 0 && tempMorphSets.TryGetValue(childMorphIndex, out childSet);
+                    if (!found)
+                    {
+                        string childName = (childMorphIndex >= 0 && childMorphIndex < document.Morphs.Count) 
+                            ? document.Morphs[childMorphIndex].Name : "?";
+                        int childType = (childMorphIndex >= 0 && childMorphIndex < document.Morphs.Count) 
+                            ? document.Morphs[childMorphIndex].MorphType : -1;
+                        Debug.Log($"[PMXImporter]   Child [{childMorphIndex}] '{childName}' (type={childType}): NOT in tempMorphSets (tempKeys: {string.Join(",", tempMorphSets.Keys.Take(10))})");
+                        continue;
+                    }
+
+                    float groupWeight = groupOffset.Weight;
+
+                    // 子MorphSetのMeshEntriesを親にフラット展開（weight乗算）
+                    foreach (var childEntry in childSet.MeshEntries)
+                    {
+                        groupSet.AddMesh(childEntry.MeshIndex, childEntry.Weight * groupWeight);
+                    }
+
+                    Debug.Log($"[PMXImporter]   Child [{childMorphIndex}] '{childSet.Name}': {childSet.MeshEntries.Count} entries, weight={groupWeight}");
+                    groupedMorphIndices.Add(childMorphIndex);
+                }
+
+                if (groupSet.MeshCount > 0)
+                {
+                    result.MorphSets.Add(groupSet);
+                    Debug.Log($"[PMXImporter] Group morph '{pmxMorph.Name}': {groupSet.MeshCount} meshes from {pmxMorph.Offsets.Count} children");
+                }
+            }
+
+            // Phase 3: グループに属さない仮MorphSetはそのまま残す（weight=1.0で既に追加済み）
+            // グループに属した仮MorphSetをresult.MorphSetsから除去
+            if (groupedMorphIndices.Count > 0)
+            {
+                var groupedSets = new HashSet<MorphSet>();
+                foreach (var idx in groupedMorphIndices)
+                {
+                    if (tempMorphSets.TryGetValue(idx, out var set))
+                        groupedSets.Add(set);
+                }
+                result.MorphSets.RemoveAll(s => groupedSets.Contains(s));
+
+                Debug.Log($"[PMXImporter] Removed {groupedSets.Count} child morph sets absorbed by group morphs");
             }
         }
 

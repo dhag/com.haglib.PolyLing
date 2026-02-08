@@ -67,6 +67,9 @@ namespace Poly_Ling.VMD
         /// <summary>VMDアプライヤ</summary>
         private VMDApplier _applier;
 
+        /// <summary>VMDアプライヤへのアクセス（座標系設定用）</summary>
+        public VMDApplier Applier => _applier;
+
         /// <summary>最後の更新時刻</summary>
         private double _lastUpdateTime;
 
