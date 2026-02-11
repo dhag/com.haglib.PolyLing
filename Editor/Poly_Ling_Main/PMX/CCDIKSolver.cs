@@ -192,7 +192,8 @@ namespace Poly_Ling.VMD
 
                     // --- ボーン回転更新 ---
                     Quaternion currentRot = GetBoneRotation(linkCtx);
-                    Quaternion newRot = rotQ * currentRot;
+                    //Quaternion newRot = rotQ * currentRot;
+                    Quaternion newRot =  currentRot * rotQ;// にする（CCD適用の掛け順）
 
                     // --- 角度制限 ---
                     if (link.HasLimit)
@@ -294,7 +295,8 @@ namespace Poly_Ling.VMD
             bpd.IsActive = true;
 
             Quaternion vmdDelta = GetVMDDelta(bpd);
-            Quaternion ikDelta = newRot * Quaternion.Inverse(vmdDelta);
+            //Quaternion ikDelta = newRot * Quaternion.Inverse(vmdDelta);
+            Quaternion ikDelta = Quaternion.Inverse(vmdDelta) * newRot;// を試す（レイヤー逆算の掛け順）
 
             bpd.SetLayerRotation("IK", ikDelta);
         }
@@ -460,3 +462,110 @@ namespace Poly_Ling.VMD
         }
     }
 }
+/*
+1) CCDの回転適用が逆（最重要）
+
+いま：
+
+Quaternion rotQ = Quaternion.AngleAxis(angle * Mathf.Rad2Deg, rotationAxis).normalized;
+Quaternion currentRot = GetBoneRotation(linkCtx);
+Quaternion newRot = rotQ * currentRot;
+
+
+ここで rotationAxis は linkローカル空間で作っている（toLinkLocal で effectorLocal/targetLocal を作って cross している）ので、rotQ は「ローカル座標でのΔ回転」である。
+
+Unityのローカル回転に「ローカルΔ」を足すなら通常は：
+
+newRot = currentRot * rotQ;
+
+
+rotQ * currentRot は「親側（あるいは別基準）からの前掛け」になりやすく、制限軸・ヒンジ軸と噛み合わず、特定姿勢で暴れる典型パターンになる。
+
+修正案
+Quaternion newRot = currentRot * rotQ;
+
+
+※もし「前掛けが正しい」設計にしたいなら、axis/rotQ を **同じ空間（親空間）**に持ち上げてから前掛けする必要がある。現状は「axisはローカル、適用は前掛け」になっていて座標系が食い違っている。
+
+2) IKレイヤーの逆算も掛け順が逆の疑い（かなり致命的）
+
+いま：
+
+Quaternion vmdDelta = GetVMDDelta(bpd);
+Quaternion ikDelta = newRot * Quaternion.Inverse(vmdDelta);
+bpd.SetLayerRotation("IK", ikDelta);
+
+
+ここは BonePoseData の合成順が不明だが、一般に
+
+合成が total = VMD * IK なら
+IK = inv(VMD) * total
+
+合成が total = IK * VMD なら
+IK = total * inv(VMD)
+
+である。
+
+あなたのコメントから「MikuMikuFlex準拠」を狙っているなら、多くの場合は アニメ（VMD）にIKを“上書き補正”として後段で足す構造になり、合成は total = VMD * IK 側になりがちである。
+その場合、今の式は逆で、正しくは：
+
+Quaternion ikDelta = Quaternion.Inverse(vmdDelta) * newRot;
+
+
+ここが逆だと、VMDが回っているフレームほどIKが逆方向に補正され、ある角度を跨いだ瞬間に破綻しやすい。
+
+すぐ出来る検証
+
+VMDが完全にidentityの状態（vmdDelta=I）でIKだけ動かす
+→ このときはどちらの式でも結果は同じになり、問題が出にくい
+
+VMDが回っている状態でIKを掛ける
+→ 逆順だと急に破綻頻度が増える
+
+3) 180度付近（v1 ≒ -v2）の「軸が立たない」問題が残っている
+
+いまは：
+
+rotationAxis = cross(v1,v2);
+if (rotationAxis.sqrMagnitude < 1e-10f) skip;
+
+
+v1 と v2 がほぼ反対向き（180°）だと cross は 0 に近づくが、角度はπで「本当は回す必要がある」。
+ここを skip すると、反転回避が効かず別リンクに負担が飛び、連鎖的に崩れる。
+
+修正案（簡易）
+
+crossが小さい & dotが負（ほぼ180°）なら、任意の直交軸を作って回す（ただしヒンジならヒンジ軸に寄せる）
+
+4) 「HasLimit=膝」なのに回転軸をヒンジ軸へ射影していない
+
+現状は3軸自由に回してから RestrictRotation() でEulerクランプしている。
+これでも動くことはあるが、CCDは反復なので、
+
+その場で作った回転（3D）
+
+後からクランプで潰される回転（別物）
+
+が毎ステップ発生し、収束せず振動しやすい。MMDの膝が安定するのは「最初からヒンジ成分だけ回す」寄りだからである。
+
+修正案（膝リンクだけでも）
+
+膝なら rotationAxis = Vector3.right に固定し、signedAngle をその軸周りで求める
+
+その角度だけ回す（最初から1軸CCD）
+
+まず直すべき優先順位（効果が大きい順）
+
+newRot = currentRot * rotQ にする（CCD適用の掛け順）
+
+ikDelta = inv(vmdDelta) * newRot を試す（レイヤー逆算の掛け順）
+
+180°近傍のfallback軸
+
+膝リンクだけでも「ヒンジ軸限定CCD」
+
+次の一手
+
+BonePoseData の「レイヤー合成順」が分かると 2) は確定できる。
+BonePoseData.Rotation が実際にどう合成しているか（VMD→IK の順か、逆か）だけ教えてくれれば、SetBoneRotation の式を断言できる。
+*/
