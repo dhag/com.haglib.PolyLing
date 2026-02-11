@@ -336,7 +336,7 @@ namespace Poly_Ling.VMD
             // （BonePoseDataレイヤーは使わない）。
             if (EnableIK)
             {
-                _ikSolver.Solve(model);
+                _ikSolver.Solve(model, frameNumber);
             }
         }
 

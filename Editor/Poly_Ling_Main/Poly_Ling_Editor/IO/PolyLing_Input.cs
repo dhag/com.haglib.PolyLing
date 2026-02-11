@@ -58,7 +58,7 @@ public partial class PolyLing
             {
                 // 通常ホイール: ズーム（Ctrl押下時はゆっくり）
                 _cameraDistance *= _mouseSettings.GetZoomMultiplier(scrollValue, e);
-                _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 80f);
+                _cameraDistance = Mathf.Clamp(_cameraDistance, 0.1f, 20f);//ホイール: ズーム上限下限
             }
             e.Use();
             Repaint();

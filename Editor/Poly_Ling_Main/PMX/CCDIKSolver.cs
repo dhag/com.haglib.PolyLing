@@ -29,12 +29,22 @@ namespace Poly_Ling.VMD
 {
     public class CCDIKSolver
     {
-        public void Solve(Model.ModelContext model)
+        /// <summary>
+        /// デバッグログの有効/無効。falseなら一切ログを出さない。
+        /// trueの場合、左足ＩＫのフレーム128〜131のみログ出力。
+        /// </summary>
+        public bool DebugEnabled = false;
+
+        /// <summary>
+        /// IK解決前に膝リンクへ微小曲げを付与する。
+        /// 直線状態での回転軸不定による膝反転を防止するMMD標準テクニック。
+        /// </summary>
+        public bool KneePreBend = false;// true;
+
+        public void Solve(Model.ModelContext model, float frameNumber = -1f)
         {
             if (model == null || model.MeshContextList == null)
                 return;
-
-            Debug.Log($"[CCDIK SOLVE] MeshContextList.Count={model.MeshContextList.Count}");
 
             // IKレイヤーをクリア
             for (int i = 0; i < model.MeshContextList.Count; i++)
@@ -46,33 +56,32 @@ namespace Poly_Ling.VMD
 
             model.ComputeWorldMatrices();
 
-            int ikCount = 0;
             for (int i = 0; i < model.MeshContextList.Count; i++)
             {
                 var ctx = model.MeshContextList[i];
                 if (ctx == null) continue;
-                if (ctx.IsIK) Debug.Log($"[CCDIK SOLVE] [{i}] '{ctx.Name}' IsIK={ctx.IsIK} IKLinks={ctx.IKLinks?.Count} IKTarget={ctx.IKTargetIndex}");
                 if (!ctx.IsIK || ctx.IKLinks == null || ctx.IKLinks.Count == 0)
                     continue;
                 if (ctx.IKTargetIndex < 0 || ctx.IKTargetIndex >= model.MeshContextList.Count)
                     continue;
 
-                ikCount++;
-                SolveIKBone(model, i);
+                SolveIKBone(model, i, frameNumber);
             }
-            Debug.Log($"[CCDIK SOLVE] Processed {ikCount} IK bones");
         }
 
-        private void SolveIKBone(Model.ModelContext model, int ikBoneIndex)
+        private void SolveIKBone(Model.ModelContext model, int ikBoneIndex, float frameNumber)
         {
             var ikBone = model.MeshContextList[ikBoneIndex];
 
-            // デバッグ（毎Solve呼び出しで1回）
-            bool debugLog = ikBone.Name != null && ikBone.Name.Contains("左足ＩＫ") && _debugCount < 4;
+            // デバッグ条件: フラグON かつ 左足ＩＫ かつ フレーム128〜131
+            bool debugLog = DebugEnabled
+                && ikBone.Name != null
+                && ikBone.Name.Contains("左足ＩＫ")
+                && frameNumber >= 128f && frameNumber <= 131f;
 
             if (debugLog)
             {
-                Debug.Log($"[CCDIK PARAM] IK='{ikBone.Name}' IKLoopCount={ikBone.IKLoopCount} IKLimitAngle={ikBone.IKLimitAngle:F6}rad ({ikBone.IKLimitAngle * Mathf.Rad2Deg:F2}deg)");
+                Debug.Log($"[CCDIK PARAM] frame={frameNumber} IK='{ikBone.Name}' IKLoopCount={ikBone.IKLoopCount} IKLimitAngle={ikBone.IKLimitAngle:F6}rad ({ikBone.IKLimitAngle * Mathf.Rad2Deg:F2}deg)");
                 Debug.Log($"[CCDIK PARAM]   limitMin/Max for links:");
                 foreach (var link in ikBone.IKLinks)
                 {
@@ -85,13 +94,41 @@ namespace Poly_Ling.VMD
                 }
             }
 
+            // --- 膝の初期微小曲げ ---
+            // 角度制限付きリンクがほぼ無回転の場合、微小なX回転を付与して
+            // エフェクタ・リンク直線時の回転軸不定を防止する
+            if (KneePreBend)
+            {
+                bool preBent = false;
+                foreach (var link in ikBone.IKLinks)
+                {
+                    if (!link.HasLimit) continue;
+                    if (link.BoneIndex < 0 || link.BoneIndex >= model.MeshContextList.Count) continue;
+
+                    var linkCtx = model.MeshContextList[link.BoneIndex];
+                    Quaternion rot = GetBoneRotation(linkCtx);
+                    // ほぼidentity（未回転）の場合のみ適用
+                    if (Mathf.Abs(1f - Mathf.Abs(rot.w)) < 0.001f)
+                    {
+                        if (linkCtx.BonePoseData == null)
+                            linkCtx.BonePoseData = new BonePoseData();
+                        // limitMin.xが負（膝のように曲がる方向）なら負方向に微小曲げ
+                        float bendAngle = link.LimitMin.x < 0 ? -0.01f : 0.01f;
+                        Quaternion preBendRot = Quaternion.AngleAxis(bendAngle * Mathf.Rad2Deg, Vector3.right) * rot;
+                        SetBoneRotation(linkCtx, preBendRot);
+                        preBent = true;
+                    }
+                }
+                if (preBent)
+                    model.ComputeWorldMatrices();
+            }
+
             // --- 最適値記録用 ---
             int effectorIndex0 = ikBone.IKTargetIndex;
             Vector3 targetWorld0 = GetWorldPosition(model.MeshContextList[ikBoneIndex]);
             float bestDist = Vector3.Distance(GetWorldPosition(model.MeshContextList[effectorIndex0]), targetWorld0);
             int bestIt = -1;
             var bestRotations = new Dictionary<int, Quaternion>();
-            // 初期状態を記録
             foreach (var link0 in ikBone.IKLinks)
             {
                 if (link0.BoneIndex >= 0 && link0.BoneIndex < model.MeshContextList.Count)
@@ -206,7 +243,6 @@ namespace Poly_Ling.VMD
 
             if (finalDist > bestDist + 1e-6f)
             {
-                // 最適値の方が良い場合のみ復元
                 foreach (var kvp in bestRotations)
                 {
                     var ctx = model.MeshContextList[kvp.Key];
@@ -218,8 +254,6 @@ namespace Poly_Ling.VMD
                     Debug.Log($"[CCDIK RESTORE] Restored to bestIt={bestIt} bestDist={bestDist:F6} (finalDist was {finalDist:F6})");
             }
 
-            if (debugLog) _debugCount++;
-
             // IK結果ログ
             if (debugLog)
             {
@@ -230,8 +264,6 @@ namespace Poly_Ling.VMD
                 Debug.Log($"[CCDIK RESULT] eff='{effFinal.Name}' effWorld={effW} tgtWorld={tgtW} dist={Vector3.Distance(effW,tgtW):F6}");
             }
         }
-
-        private int _debugCount = 0;
 
         // =================================================================
         // ユーティリティ
@@ -261,10 +293,6 @@ namespace Poly_Ling.VMD
             var bpd = ctx.BonePoseData;
             bpd.IsActive = true;
 
-            // Recalculate: blendedRot = RestRot * VMDDelta * IKDelta = newRot
-            // RestRot = identity (translation-only bindpose)
-            // → VMDDelta * IKDelta = newRot
-            // → IKDelta = Inv(VMDDelta) * newRot
             Quaternion vmdDelta = GetVMDDelta(bpd);
             Quaternion ikDelta = newRot * Quaternion.Inverse(vmdDelta);
 
