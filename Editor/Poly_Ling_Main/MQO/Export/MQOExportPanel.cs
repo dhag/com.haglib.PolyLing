@@ -37,7 +37,7 @@ namespace Poly_Ling.MQO
             ["File"] = new() { ["en"] = "File", ["ja"] = "ファイル" },
             ["OutputPath"] = new() { ["en"] = "Output Path", ["ja"] = "出力先" },
             ["Browse"] = new() { ["en"] = "Browse...", ["ja"] = "参照..." },
-            ["Export"] = new() { ["en"] = "Export", ["ja"] = "エクスポート" },
+            ["Export"] = new() { ["en"] = "Re-save", ["ja"] = "再保存" },
 
             // 設定セクション
             ["Settings"] = new() { ["en"] = "Settings", ["ja"] = "設定" },
@@ -192,6 +192,7 @@ namespace Poly_Ling.MQO
                     if (!string.IsNullOrEmpty(path))
                     {
                         _lastFilePath = path;
+                        ExecuteExport();
                     }
                 }
             }

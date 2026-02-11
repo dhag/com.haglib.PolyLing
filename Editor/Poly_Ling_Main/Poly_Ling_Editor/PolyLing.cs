@@ -142,6 +142,12 @@ public partial class PolyLing : EditorWindow
         get => _undoController?.EditorState?.CameraDistance ?? 2f;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.CameraDistance = value; }
     }
+
+    public float _cameraDistanceMin = 0.1f;//カメラ距離の最大値（スクロールホイールで拡大する際の上限）
+    public float _cameraDistanceMax = 10f;//カメラ距離の最大値（スクロールホイールで拡大する際の上限）
+
+
+
     private Vector3 _cameraTarget
     {
         get => _undoController?.EditorState?.CameraTarget ?? Vector3.zero;
@@ -279,6 +285,11 @@ public partial class PolyLing : EditorWindow
     {
         get => _undoController?.EditorState?.ShowBones ?? false;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowBones = value; }
+    }
+    private bool _showFocusPoint
+    {
+        get => _undoController?.EditorState?.ShowFocusPoint ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowFocusPoint = value; }
     }
     private HashSet<int> _foldedBoneRoots = new HashSet<int>();  // 折りたたまれたボーンルートのインデックス
     

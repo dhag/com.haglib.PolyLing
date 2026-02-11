@@ -25,7 +25,7 @@ namespace Poly_Ling.PMX
             ["File"] = new() { ["en"] = "File", ["ja"] = "ファイル" },
             ["OutputPath"] = new() { ["en"] = "Output Path", ["ja"] = "出力先" },
             ["Browse"] = new() { ["en"] = "Browse...", ["ja"] = "参照..." },
-            ["Export"] = new() { ["en"] = "Export", ["ja"] = "エクスポート" },
+            ["Export"] = new() { ["en"] = "Re-save", ["ja"] = "再保存" },
             ["ExportMode"] = new() { ["en"] = "Export Mode", ["ja"] = "エクスポートモード" },
             ["FullExport"] = new() { ["en"] = "Full Export", ["ja"] = "丸ごと出力" },
             ["PartialReplace"] = new() { ["en"] = "Partial Replace", ["ja"] = "部分差し替え" },
@@ -104,6 +104,8 @@ namespace Poly_Ling.PMX
 
             DrawFileSection();
             EditorGUILayout.Space(5);
+            DrawExportButton();
+            EditorGUILayout.Space(5);
             DrawModeSection();
             EditorGUILayout.Space(5);
             DrawSettingsSection();
@@ -115,8 +117,6 @@ namespace Poly_Ling.PMX
                 DrawPartialReplaceOptions();
 
             EditorGUILayout.Space(10);
-            DrawExportButton();
-            EditorGUILayout.Space(5);
             DrawResultSection();
 
             EditorGUILayout.EndScrollView();
@@ -132,7 +132,11 @@ namespace Poly_Ling.PMX
                 {
                     string dir = string.IsNullOrEmpty(_lastFilePath) ? Application.dataPath : Path.GetDirectoryName(_lastFilePath);
                     string path = EditorUtility.SaveFilePanel("Save PMX", dir, GetDefaultFileName(), "pmx");
-                    if (!string.IsNullOrEmpty(path)) _lastFilePath = path;
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        _lastFilePath = path;
+                        ExecuteExport();
+                    }
                 }
             }
 

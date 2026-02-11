@@ -568,4 +568,7 @@ ikDelta = inv(vmdDelta) * newRot を試す（レイヤー逆算の掛け順）
 
 BonePoseData の「レイヤー合成順」が分かると 2) は確定できる。
 BonePoseData.Rotation が実際にどう合成しているか（VMD→IK の順か、逆か）だけ教えてくれれば、SetBoneRotation の式を断言できる。
+
+ジンバルロックの回避。
+
 */

@@ -281,14 +281,12 @@ public partial class PolyLing
             }
         }
 
-        // ボーン形状描画
-        if (_showBones)
-        {
-            DrawBones(localRect, camPos, _cameraTarget);
-        }
-
         // ローカル原点マーカー
         DrawOriginMarker(localRect, camPos, _cameraTarget);
+
+        // カメラ注目点マーカー
+        if (_showFocusPoint)
+            DrawFocusPointMarker(localRect, camPos, _cameraTarget);
 
         // ツールのギズモ描画
         UpdateToolContext(meshContext, localRect, camPos, dist);
@@ -683,6 +681,42 @@ public partial class PolyLing
             originScreen.y - centerSize / 2,
             centerSize,
             centerSize), new Color(1f, 1f, 1f, 0.7f));
+        UnityEditor_Handles.EndGUI();
+    }
+
+
+    /// <summary>
+    /// カメラ注目点を目立つ十字＋ダイヤモンドで描画
+    /// </summary>
+    private void DrawFocusPointMarker(Rect previewRect, Vector3 camPos, Vector3 focusPoint)
+    {
+        Vector2 screenPos = WorldToPreviewPos(focusPoint, previewRect, camPos, focusPoint);
+
+        if (!previewRect.Contains(screenPos))
+            return;
+
+        UnityEditor_Handles.BeginGUI();
+
+        Color markerColor = new Color(1f, 0.8f, 0f, 0.9f);   // 黄橙
+        Color outlineColor = new Color(0f, 0f, 0f, 0.6f);
+
+        float size = 12f;
+
+        // 外枠付き十字線（太め）
+        // 水平線
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - size - 1, screenPos.y - 2, size * 2 + 2, 5), outlineColor);
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - size, screenPos.y - 1, size * 2, 3), markerColor);
+        // 垂直線
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 2, screenPos.y - size - 1, 5, size * 2 + 2), outlineColor);
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 1, screenPos.y - size, 3, size * 2), markerColor);
+
+        // 中央ダイヤモンド（4つの三角形で近似）
+        float d = 4f;
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - d, screenPos.y - 1, d * 2, 3), markerColor);
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 1, screenPos.y - d, 3, d * 2), markerColor);
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 3, screenPos.y - 3, 7, 7), outlineColor);
+        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 2, screenPos.y - 2, 5, 5), markerColor);
+
         UnityEditor_Handles.EndGUI();
     }
 

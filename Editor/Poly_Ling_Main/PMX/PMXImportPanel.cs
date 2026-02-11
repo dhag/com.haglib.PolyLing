@@ -151,13 +151,13 @@ namespace Poly_Ling.PMX
             DrawFileSection();
             EditorGUILayout.Space(5);
 
+            DrawImportButton();
+            EditorGUILayout.Space(5);
+
             DrawSettingsSection();
             EditorGUILayout.Space(5);
 
             DrawPreviewSection();
-            EditorGUILayout.Space(5);
-
-            DrawImportButton();
             EditorGUILayout.Space(5);
 
             DrawResultSection();
@@ -692,12 +692,6 @@ namespace Poly_Ling.PMX
                     if (_context.Model != null && _lastResult.Document != null)
                     {
                         _context.Model.SourceDocument = _lastResult.Document;
-                    }
-
-                    // CCD IKソルバー用にPMXワールド位置を保持
-                    if (_context.Model != null && _lastResult.BoneWorldPositions != null)
-                    {
-                        _context.Model.BoneWorldPositions = _lastResult.BoneWorldPositions;
                     }
 
                     _context.Repaint?.Invoke();

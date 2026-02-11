@@ -171,13 +171,11 @@ public partial class PolyLing
                     }
                     Repaint();
                 }
-                ///
-                ///ズーム設定
-                ///
+
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField(L.Get("Zoom"), EditorStyles.miniLabel);
                 EditorGUI.BeginChangeCheck();
-                float newDist = EditorGUILayout.Slider(_cameraDistance, 0.1f, 20f);//スライダーズームの上限下限（マウスズームは別）：ズーム
+                float newDist = EditorGUILayout.Slider(_cameraDistance,_cameraDistanceMin,_cameraDistanceMax);// 0.1f, 80f);//スライダーの上限下限（マウスズームは別）：ズーム
                 if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newDist, _cameraDistance))
                 {
                     if (!_isCameraDragging) BeginCameraDrag();
@@ -234,6 +232,14 @@ public partial class PolyLing
                 EditorGUILayout.Space(2);
                 EditorGUI.BeginChangeCheck();
                 _showBones = EditorGUILayout.Toggle("Show Bones", _showBones);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    Repaint();
+                }
+
+                // カメラ注目点表示トグル
+                EditorGUI.BeginChangeCheck();
+                _showFocusPoint = EditorGUILayout.Toggle("Show Focus Point", _showFocusPoint);
                 if (EditorGUI.EndChangeCheck())
                 {
                     Repaint();

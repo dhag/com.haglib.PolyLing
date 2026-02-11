@@ -33,6 +33,7 @@ namespace Poly_Ling.UndoSystem
         public bool ShowUnselectedVertices = true;      // 非選択メッシュの頂点
         public bool BackfaceCullingEnabled = true;
         public bool ShowBones = false;                  // ボーン表示
+        public bool ShowFocusPoint = false;              // カメラ注目点表示
         public bool ShowWorkPlaneGizmo = true;          // WorkPlaneギズモ表示
 
         // 編集モード
@@ -115,6 +116,7 @@ namespace Poly_Ling.UndoSystem
                 ShowUnselectedVertices = ShowUnselectedVertices,
                 BackfaceCullingEnabled = BackfaceCullingEnabled,
                 ShowBones = ShowBones,
+                ShowFocusPoint = ShowFocusPoint,
                 ShowWorkPlaneGizmo = ShowWorkPlaneGizmo,
                 VertexEditMode = VertexEditMode,
                 CurrentToolName = CurrentToolName,
@@ -161,6 +163,7 @@ namespace Poly_Ling.UndoSystem
             ShowUnselectedVertices = snapshot.ShowUnselectedVertices;
             BackfaceCullingEnabled = snapshot.BackfaceCullingEnabled;
             ShowBones = snapshot.ShowBones;
+            ShowFocusPoint = snapshot.ShowFocusPoint;
             ShowWorkPlaneGizmo = snapshot.ShowWorkPlaneGizmo;
             VertexEditMode = snapshot.VertexEditMode;
             CurrentToolName = snapshot.CurrentToolName;
@@ -217,6 +220,7 @@ namespace Poly_Ling.UndoSystem
         public bool ShowUnselectedWireframe, ShowUnselectedVertices;
         public bool BackfaceCullingEnabled;
         public bool ShowBones;
+        public bool ShowFocusPoint;
         public bool ShowWorkPlaneGizmo;
         public string CurrentToolName;
 
@@ -268,6 +272,7 @@ namespace Poly_Ling.UndoSystem
                 ShowUnselectedVertices != other.ShowUnselectedVertices ||
                 BackfaceCullingEnabled != other.BackfaceCullingEnabled ||
                 ShowBones != other.ShowBones ||
+                ShowFocusPoint != other.ShowFocusPoint ||
                 ShowWorkPlaneGizmo != other.ShowWorkPlaneGizmo ||
                 VertexEditMode != other.VertexEditMode ||
                 CurrentToolName != other.CurrentToolName ||

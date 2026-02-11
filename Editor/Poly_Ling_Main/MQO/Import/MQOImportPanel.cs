@@ -90,7 +90,7 @@ namespace Poly_Ling.MQO
             ["AndMore"] = new() { ["en"] = "... and {0} more", ["ja"] = "... 他 {0} 件" },
 
             // インポートボタン
-            ["Import"] = new() { ["en"] = "Import", ["ja"] = "インポート" },
+            ["Reload"] = new() { ["en"] = "Reload", ["ja"] = "リロード" },
             ["NoContextWarning"] = new() { ["en"] = "No context set. Open from Poly_Ling window to import directly.", ["ja"] = "コンテキスト未設定。直接インポートするにはMeshFactoryウィンドウから開いてください。" },
 
             // 結果セクション
@@ -164,13 +164,13 @@ namespace Poly_Ling.MQO
             DrawFileSection();
             EditorGUILayout.Space(5);
 
+            DrawImportButton();
+            EditorGUILayout.Space(5);
+
             DrawSettingsSection();
             EditorGUILayout.Space(5);
 
             DrawPreviewSection();
-            EditorGUILayout.Space(5);
-
-            DrawImportButton();
             EditorGUILayout.Space(5);
 
             DrawResultSection();
@@ -204,6 +204,7 @@ namespace Poly_Ling.MQO
                     {
                         _lastFilePath = path;
                         LoadPreview();
+                        ExecuteImport();
                     }
                 }
             }
@@ -264,6 +265,7 @@ namespace Poly_Ling.MQO
                         {
                             _lastFilePath = path;
                             LoadPreview();
+                            ExecuteImport();
                             break;
                         }
                     }
@@ -650,9 +652,10 @@ namespace Poly_Ling.MQO
                 GUI.backgroundColor = new Color(1f, 0.7f, 0.5f);
             }
 
-            if (GUILayout.Button(T("Import"), buttonStyle))
+            if (GUILayout.Button(T("Reload"), buttonStyle))
             {
-                Debug.Log($"[MQOImportPanel] Import button clicked. File: {_lastFilePath}");
+                Debug.Log($"[MQOImportPanel] Reload button clicked. File: {_lastFilePath}");
+                LoadPreview();
                 ExecuteImport();
             }
 
