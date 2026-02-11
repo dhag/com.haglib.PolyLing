@@ -462,7 +462,7 @@ public partial class PolyLing
     /// </summary>
     private void OnCurrentModelChanged(int newIndex)
     {
-        Debug.Log($"[OnCurrentModelChanged] Model index changed to {newIndex}");
+        //Debug.Log($"[OnCurrentModelChanged] Model index changed to {newIndex}");
         
         // _model は _project.CurrentModel を参照するプロパティなので自動的に更新される
         // _meshContextList も _model.MeshContextList を参照するので自動的に更新される
@@ -470,7 +470,7 @@ public partial class PolyLing
         
         if (currentModel == null)
         {
-            Debug.LogWarning("[OnCurrentModelChanged] CurrentModel is null");
+            //Debug.LogWarning("[OnCurrentModelChanged] CurrentModel is null");
             return;
         }
         
@@ -518,7 +518,7 @@ public partial class PolyLing
     /// </summary>
     private void OnModelsChanged()
     {
-        Debug.Log($"[OnModelsChanged] Models count: {_project?.ModelCount ?? 0}");
+        //Debug.Log($"[OnModelsChanged] Models count: {_project?.ModelCount ?? 0}");
         Repaint();
     }
 
@@ -531,13 +531,13 @@ public partial class PolyLing
     {
         if (record == null || _project == null) return;
 
-        Debug.Log($"[OnProjectUndoRedoPerformed] {(isRedo ? "Redo" : "Undo")} operation: {record.Operation}");
+        //Debug.Log($"[OnProjectUndoRedoPerformed] {(isRedo ? "Redo" : "Undo")} operation: {record.Operation}");
 
         // 復元するスナップショットを決定
         ProjectSnapshot snapshot = isRedo ? record.AfterSnapshot : record.BeforeSnapshot;
         if (snapshot == null)
         {
-            Debug.LogWarning("[OnProjectUndoRedoPerformed] Snapshot is null");
+            //Debug.LogWarning("[OnProjectUndoRedoPerformed] Snapshot is null");
             return;
         }
 

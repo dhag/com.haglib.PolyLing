@@ -466,10 +466,12 @@ namespace Poly_Ling.Core
                 // 境界チェック: expandedPositions配列の範囲外アクセスを防ぐ
                 if (expandedOffset + expandedVertexCount > expandedPositions.Length)
                 {
+                    /*
                     // バッファサイズ不整合 - フォールバック処理へ
                     Debug.LogWarning($"[WritebackTransformedVertices] Buffer size mismatch for mesh '{ctx.Name}': " +
                         $"offset={expandedOffset}, count={expandedVertexCount}, bufferSize={expandedPositions.Length}. " +
                         $"Skipping this mesh.");
+                    */
                     expandedOffset += expandedVertexCount;
                     continue;
                 }

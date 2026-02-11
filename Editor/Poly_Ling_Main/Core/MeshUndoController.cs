@@ -896,7 +896,7 @@ namespace Poly_Ling.UndoSystem
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
             float newRotX, float newRotY, float newDist, Vector3 newTarget)
         {
-            Debug.Log($"[RecordViewChangeInternal] Recording to EditorStateStack. Before Focus={_mainGroup.FocusedChildId}");
+            //Debug.Log($"[RecordViewChangeInternal] Recording to EditorStateStack. Before Focus={_mainGroup.FocusedChildId}");
             
             // 完全なスナップショットを取得してカメラ値のみ上書き
             EditorStateSnapshot before = _editorStateContext.Capture();
@@ -915,7 +915,7 @@ namespace Poly_Ling.UndoSystem
             _editorStateStack.Record(record, "Change View");
             FocusEditorState();
             
-            Debug.Log($"[RecordViewChangeInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
+            //Debug.Log($"[RecordViewChangeInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
         }
 
         /// <summary>
@@ -944,7 +944,7 @@ namespace Poly_Ling.UndoSystem
             WorkPlaneSnapshot? oldWorkPlane,
             WorkPlaneSnapshot? newWorkPlane)
         {
-            Debug.Log($"[RecordViewChangeWithWorkPlaneInternal] Recording to EditorStateStack. Before Focus={_mainGroup.FocusedChildId}");
+            //Debug.Log($"[RecordViewChangeWithWorkPlaneInternal] Recording to EditorStateStack. Before Focus={_mainGroup.FocusedChildId}");
             
             // 完全なスナップショットを取得してカメラ値のみ上書き
             EditorStateSnapshot before = _editorStateContext.Capture();
@@ -963,7 +963,7 @@ namespace Poly_Ling.UndoSystem
             _editorStateStack.Record(record, "Change View");
             FocusEditorState();
             
-            Debug.Log($"[RecordViewChangeWithWorkPlaneInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
+            //Debug.Log($"[RecordViewChangeWithWorkPlaneInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
         }
 
         // === サブウインドウ管理 ===
@@ -1034,9 +1034,9 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         internal bool UndoInternal()
         {
-            Debug.Log($"[MeshUndoController.UndoInternal] Before. MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, MeshListStack.Id={_meshListStack.Id}");
+            //Debug.Log($"[MeshUndoController.UndoInternal] Before. MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, MeshListStack.Id={_meshListStack.Id}");
             bool result = _mainGroup.PerformUndo();
-            Debug.Log($"[MeshUndoController.UndoInternal] After. MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, Result={result}");
+            //Debug.Log($"[MeshUndoController.UndoInternal] After. MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, Result={result}");
             return result;
         }
 
@@ -1045,12 +1045,12 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         internal bool RedoInternal()
         {
-            Debug.Log($"[MeshUndoController.RedoInternal] Called. MeshListStack RedoCount={_meshListStack.RedoCount}");
-            Debug.Log($"[MeshUndoController.RedoInternal] MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, MeshListStack.Id={_meshListStack.Id}");
-            Debug.Log($"[MeshUndoController.RedoInternal] VertexEditStack.RedoCount={VertexEditStack.RedoCount}");
-            Debug.Log($"[MeshUndoController.RedoInternal] EditorStateStack.RedoCount={EditorStateStack.RedoCount}");
+            //Debug.Log($"[MeshUndoController.RedoInternal] Called. MeshListStack RedoCount={_meshListStack.RedoCount}");
+            //Debug.Log($"[MeshUndoController.RedoInternal] MainGroup.FocusedChildId={_mainGroup.FocusedChildId}, MeshListStack.Id={_meshListStack.Id}");
+            //Debug.Log($"[MeshUndoController.RedoInternal] VertexEditStack.RedoCount={VertexEditStack.RedoCount}");
+            //Debug.Log($"[MeshUndoController.RedoInternal] EditorStateStack.RedoCount={EditorStateStack.RedoCount}");
             bool result = _mainGroup.PerformRedo();
-            Debug.Log($"[MeshUndoController.RedoInternal] Result={result}");
+            //Debug.Log($"[MeshUndoController.RedoInternal] Result={result}");
             return result;
         }
 
@@ -1068,7 +1068,7 @@ namespace Poly_Ling.UndoSystem
 
             if (ctrl && e.keyCode == KeyCode.Z && !e.shift)
             {
-                Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Z detected, enqueuing UndoCommand");
+                //Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Z detected, enqueuing UndoCommand");
                 if (_commandQueue != null && CanUndo)
                 {
                     _commandQueue.Enqueue(new UndoCommand(this, null));
@@ -1080,7 +1080,7 @@ namespace Poly_Ling.UndoSystem
             if ((ctrl && e.keyCode == KeyCode.Y) ||
                 (ctrl && e.shift && e.keyCode == KeyCode.Z))
             {
-                Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Y or Ctrl+Shift+Z detected, enqueuing RedoCommand");
+                //Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] Ctrl+Y or Ctrl+Shift+Z detected, enqueuing RedoCommand");
                 if (_commandQueue != null && CanRedo)
                 {
                     _commandQueue.Enqueue(new RedoCommand(this, null));

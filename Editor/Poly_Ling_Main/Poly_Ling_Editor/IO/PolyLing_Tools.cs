@@ -758,7 +758,7 @@ public partial class PolyLing : EditorWindow
         // 新規モデルを作成（ProjectContextが処理）
         var newModel = _project.CreateNewModel(name);
         
-        Debug.Log($"[PolyLing] Created new model: {newModel.Name} (index: {_project.CurrentModelIndex})");
+        //Debug.Log($"[PolyLing] Created new model: {newModel.Name} (index: {_project.CurrentModelIndex})");
         
         // ToolContextのModel参照を更新
         _toolManager.toolContext.Model = newModel;
@@ -771,7 +771,7 @@ public partial class PolyLing : EditorWindow
         {
             var record = ProjectRecord.CreateNewModel(beforeSnapshot, afterSnapshot);
             _undoController.RecordProjectOperation(record);
-            Debug.Log($"[PolyLing] Recorded NewModel undo: {_undoController.GetProjectStackDebugInfo()}");
+            //Debug.Log($"[PolyLing] Recorded NewModel undo: {_undoController.GetProjectStackDebugInfo()}");
         }
         
         // バッファを再構築（OnCurrentModelChangedで処理される）

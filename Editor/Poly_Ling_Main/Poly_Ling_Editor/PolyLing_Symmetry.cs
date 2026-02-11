@@ -273,7 +273,7 @@ public partial class PolyLing
         bool dbgMirrorEnabled = dbgBufMgr?.MirrorEnabled ?? false;
         var dbgMirrorPos = dbgBufMgr?.GetMirrorPositions();
 
-        Debug.Log($"[MIRROR] useWorld={dbgUseWorld}, mirrorEnabled={dbgMirrorEnabled}, mirrorPos={dbgMirrorPos != null}, count={dbgMirrorPos?.Length ?? 0}");
+        //Debug.Log($"[MIRROR] useWorld={dbgUseWorld}, mirrorEnabled={dbgMirrorEnabled}, mirrorPos={dbgMirrorPos != null}, count={dbgMirrorPos?.Length ?? 0}");
 
         // ミラー表示対象かチェック（グローバル設定 OR MeshContextごとの設定）
         if (!ShouldDrawMirror(meshContext))

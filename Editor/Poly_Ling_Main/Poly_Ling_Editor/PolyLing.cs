@@ -1137,8 +1137,8 @@ public partial class PolyLing : EditorWindow
             {
                 // Undo/Redo後にUIを再描画
                 var parentModel = _undoController?.MeshUndoContext?.MaterialOwner;
-                Debug.Log($"[PolyLing.OnGUI] After Undo/Redo: _model.MaterialCount={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
-                Debug.Log($"[PolyLing.OnGUI] _model==MaterialOwner? {ReferenceEquals(_model, parentModel)}, _model.Hash={_model?.GetHashCode()}, MaterialOwner.Hash={parentModel?.GetHashCode()}");
+                //Debug.Log($"[PolyLing.OnGUI] After Undo/Redo: _model.MaterialCount={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
+                //Debug.Log($"[PolyLing.OnGUI] _model==MaterialOwner? {ReferenceEquals(_model, parentModel)}, _model.Hash={_model?.GetHashCode()}, MaterialOwner.Hash={parentModel?.GetHashCode()}");
                 Repaint();
             }
         }
@@ -1223,9 +1223,9 @@ public partial class PolyLing : EditorWindow
             float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
             float worldHeightAtDist = 2f * _cameraDistance * Mathf.Tan(fovRad / 2f);
             float pixelToWorld = worldHeightAtDist / _lastPreviewRect.height;
-            Debug.Log($"[CameraPan] delta={e.delta}, worldDelta={worldDelta}, multiplier={multiplier}, " +
-                      $"FOV={_preview.cameraFieldOfView}, camDist={_cameraDistance}, " +
-                      $"rectHeight={_lastPreviewRect.height}, pixelToWorld={pixelToWorld}");
+            //Debug.Log($"[CameraPan] delta={e.delta}, worldDelta={worldDelta}, multiplier={multiplier}, " +
+            //          $"FOV={_preview.cameraFieldOfView}, camDist={_cameraDistance}, " +
+             //         $"rectHeight={_lastPreviewRect.height}, pixelToWorld={pixelToWorld}");
 
             _cameraTarget -= worldDelta * multiplier;
 

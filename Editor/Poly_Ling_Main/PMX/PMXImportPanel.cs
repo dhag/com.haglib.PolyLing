@@ -490,7 +490,7 @@ namespace Poly_Ling.PMX
 
             if (GUILayout.Button(T("Reload"), buttonStyle))
             {
-                Debug.Log($"[PMXImportPanel] Reload button clicked. File: {_lastFilePath}");
+                //Debug.Log($"[PMXImportPanel] Reload button clicked. File: {_lastFilePath}");
                 LoadPreview();
                 ExecuteImport();
             }
@@ -512,9 +512,9 @@ namespace Poly_Ling.PMX
 
             if (_lastResult.Success)
             {
-                Debug.Log($"[PMXImportPanel] Import successful: {_lastResult.MeshContexts.Count} meshes, " +
-                          $"{_lastResult.Stats.TotalVertices} vertices, {_lastResult.Stats.TotalFaces} faces, " +
-                          $"{_lastResult.Materials.Count} materials");
+                //Debug.Log($"[PMXImportPanel] Import successful: {_lastResult.MeshContexts.Count} meshes, " +
+                //          $"{_lastResult.Stats.TotalVertices} vertices, {_lastResult.Stats.TotalFaces} faces, " +
+                //          $"{_lastResult.Materials.Count} materials");
 
                 // コンテキストがあれば追加
                 if (_context != null)
@@ -528,27 +528,27 @@ namespace Poly_Ling.PMX
                     {
                         if (_context.ReplaceAllMeshContexts != null)
                         {
-                            Debug.Log($"[PMXImportPanel] Replace mode: Replacing with {_lastResult.MeshContexts.Count} meshes");
+                            //Debug.Log($"[PMXImportPanel] Replace mode: Replacing with {_lastResult.MeshContexts.Count} meshes");
                             _context.ReplaceAllMeshContexts.Invoke(_lastResult.MeshContexts);
                             handled = true;
                         }
                         else if (_context.ClearAllMeshContexts != null && _context.AddMeshContexts != null)
                         {
                             // フォールバック: Clear + Add（2回のUndo）
-                            Debug.LogWarning("[PMXImportPanel] ReplaceAllMeshContexts not available, using Clear + Add");
+                            //Debug.LogWarning("[PMXImportPanel] ReplaceAllMeshContexts not available, using Clear + Add");
                             _context.ClearAllMeshContexts.Invoke();
                             _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
                             handled = true;
                         }
                         else
                         {
-                            Debug.LogWarning("[PMXImportPanel] Replace not available, falling back to Append mode");
+                            //Debug.LogWarning("[PMXImportPanel] Replace not available, falling back to Append mode");
                         }
 
                         // Replaceモードではマテリアルも置換
                         if (handled && _lastResult.Materials.Count > 0 && _context.ReplaceMaterials != null)
                         {
-                            Debug.Log($"[PMXImportPanel] Replacing materials: {_lastResult.Materials.Count}");
+                            //Debug.Log($"[PMXImportPanel] Replacing materials: {_lastResult.Materials.Count}");
                             _context.ReplaceMaterials.Invoke(_lastResult.Materials);
                         }
 
@@ -556,7 +556,7 @@ namespace Poly_Ling.PMX
                         if (handled && _lastResult.MorphSets.Count > 0 && _context.Model != null)
                         {
                             _context.Model.MorphSets = new List<Data.MorphSet>(_lastResult.MorphSets);
-                            Debug.Log($"[PMXImportPanel] Replaced morph sets: {_lastResult.MorphSets.Count}");
+                            //Debug.Log($"[PMXImportPanel] Replaced morph sets: {_lastResult.MorphSets.Count}");
                         }
                     }
                     // ================================================================
@@ -570,7 +570,7 @@ namespace Poly_Ling.PMX
                             string modelName = Path.GetFileNameWithoutExtension(_lastFilePath);
                             var newModel = _context.CreateNewModel(modelName);
                             
-                            Debug.Log($"[PMXImportPanel] NewModel mode: Created new model '{newModel?.Name}'");
+                            //Debug.Log($"[PMXImportPanel] NewModel mode: Created new model '{newModel?.Name}'");
                             
                             // 新しいモデルにマテリアルを設定（先にマテリアルを追加）
                             if (_lastResult.MaterialReferences.Count > 0)
@@ -578,7 +578,7 @@ namespace Poly_Ling.PMX
                                 if (newModel != null)
                                 {
                                     newModel.MaterialReferences = new List<Materials.MaterialReference>(_lastResult.MaterialReferences);
-                                    Debug.Log($"[PMXImportPanel] Set {_lastResult.MaterialReferences.Count} materials to new model");
+                                    //Debug.Log($"[PMXImportPanel] Set {_lastResult.MaterialReferences.Count} materials to new model");
                                 }
                             }
 
@@ -588,7 +588,7 @@ namespace Poly_Ling.PMX
                                 if (newModel != null)
                                 {
                                     newModel.MorphSets = new List<Data.MorphSet>(_lastResult.MorphSets);
-                                    Debug.Log($"[PMXImportPanel] Set {_lastResult.MorphSets.Count} morph sets to new model");
+                                    //Debug.Log($"[PMXImportPanel] Set {_lastResult.MorphSets.Count} morph sets to new model");
                                 }
                             }
                             
@@ -596,14 +596,14 @@ namespace Poly_Ling.PMX
                             // 注: _context.Model は CreateNewModel で更新されている
                             if (_context.AddMeshContexts != null)
                             {
-                                Debug.Log($"[PMXImportPanel] NewModel mode: Adding {_lastResult.MeshContexts.Count} meshes to new model");
+                                //Debug.Log($"[PMXImportPanel] NewModel mode: Adding {_lastResult.MeshContexts.Count} meshes to new model");
                                 _context.AddMeshContexts.Invoke(_lastResult.MeshContexts);
                             }
                             else
                             {
                                 foreach (var meshContext in _lastResult.MeshContexts)
                                 {
-                                    Debug.Log($"[PMXImportPanel] Adding MeshContext: {meshContext.Name}");
+                                    //Debug.Log($"[PMXImportPanel] Adding MeshContext: {meshContext.Name}");
                                     _context.AddMeshContext?.Invoke(meshContext);
                                 }
                             }
@@ -611,7 +611,7 @@ namespace Poly_Ling.PMX
                         }
                         else
                         {
-                            Debug.LogWarning("[PMXImportPanel] CreateNewModel not available, falling back to Append mode");
+                            //Debug.LogWarning("[PMXImportPanel] CreateNewModel not available, falling back to Append mode");
                         }
                     }
 

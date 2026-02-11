@@ -114,7 +114,7 @@ namespace Poly_Ling.UndoSystem
                 groupId = _activeGroupId >= 0 ? _activeGroupId : Interlocked.Increment(ref _currentGroupId);
             }
 
-            Debug.Log($"[UndoStack.Record] Stack={Id}, Desc={description}, GroupId={groupId}, ActiveGroupId={_activeGroupId}, RecordType={record.GetType().Name}");
+            //Debug.Log($"[UndoStack.Record] Stack={Id}, Desc={description}, GroupId={groupId}, ActiveGroupId={_activeGroupId}, RecordType={record.GetType().Name}");
 
             // キューに追加（スレッドセーフ）
             _pendingQueue.Enqueue(new PendingRecord<TContext>

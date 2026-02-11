@@ -455,13 +455,14 @@ namespace Poly_Ling.Serialization
             }
             // 旧形式・最古形式は廃止: デフォルトマテリアルで初期化
             else
-            {
+            {/*
                 // 旧形式のデータがあれば警告
                 if ((modelDTO.materials != null && modelDTO.materials.Count > 0) ||
                     (modelDTO.meshDTOList.Count > 0 && modelDTO.meshDTOList[0].materialPathList?.Count > 0))
                 {
                     Debug.LogWarning("[ModelSerializer] 旧形式のマテリアルデータは廃止されました。デフォルトマテリアルで初期化します。");
                 }
+                */
                 // デフォルトのマテリアル参照を設定
                 model.MaterialReferences = new List<MaterialReference> { new MaterialReference() };
                 model.CurrentMaterialIndex = 0;

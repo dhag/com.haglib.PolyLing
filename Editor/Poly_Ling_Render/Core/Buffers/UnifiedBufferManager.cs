@@ -559,7 +559,7 @@ namespace Poly_Ling.Core
             _expandedPositionBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3);
             _expandedNormalBuffer = new ComputeBuffer(_expandedVertexCapacity, sizeof(float) * 3);
 
-            Debug.Log($"[EnsureExpandedCapacity] Resized to {_expandedVertexCapacity} (requested: {expandedVertexCount})");
+            //Debug.Log($"[EnsureExpandedCapacity] Resized to {_expandedVertexCapacity} (requested: {expandedVertexCount})");
         }
 
         /// <summary>

@@ -272,7 +272,7 @@ namespace Poly_Ling.Model
             // 新しいモデルをカレントに設定
             CurrentModelIndex = index;
             
-            Debug.Log($"[ProjectContext] Created new model '{name}' at index {index}");
+            //Debug.Log($"[ProjectContext] Created new model '{name}' at index {index}");
             return model;
         }
 

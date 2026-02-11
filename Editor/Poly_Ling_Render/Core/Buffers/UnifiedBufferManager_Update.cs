@@ -76,7 +76,7 @@ namespace Poly_Ling.Core
             
             // デバッグ
             var indices = string.Join(",", _flagManager.SelectedMeshIndices);
-            UnityEngine.Debug.Log($"[SyncSelectionFromModel] FlagManager.SelectedMeshIndices=[{indices}], Active={_flagManager.ActiveMeshIndex}");
+            //UnityEngine.Debug.Log($"[SyncSelectionFromModel] FlagManager.SelectedMeshIndices=[{indices}], Active={_flagManager.ActiveMeshIndex}");
         }
         
         // v2.1: ModelContext参照（複数メッシュ選択用）
@@ -299,7 +299,7 @@ namespace Poly_Ling.Core
 
                 _lineFlags[lineIdx] = flags;
             }
-
+            /*
             // v2.1: MeshSelectedフラグ数をログ出力
             Debug.Log($"[UpdateAllLineSelectionFlags] totalLines={_totalLineCount}, meshSelectedLines={meshSelectedLineCount}, SelectedMeshIndices=[{string.Join(",", _flagManager.SelectedMeshIndices)}]");
 
@@ -308,7 +308,7 @@ namespace Poly_Ling.Core
             {
                 Debug.Log($"[UpdateAllSelectionFlags] EdgeSelected flags set: {edgeSelectedCount}, LineSelected flags set: {lineSelectedCount}");
             }
-
+            */
             // GPUにアップロード
             if (_totalLineCount > 0)
             {

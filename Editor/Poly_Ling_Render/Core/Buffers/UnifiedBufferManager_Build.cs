@@ -90,7 +90,7 @@ namespace Poly_Ling.Core
                 }
             }
 
-            Debug.Log($"[BuildFromTypedEntries] meshCount={meshCount}, totalVerts={totalVerts}, expandedVerts={totalExpandedVerts}, totalLines={totalLines}, totalFaces={totalFaces}");
+            //Debug.Log($"[BuildFromTypedEntries] meshCount={meshCount}, totalVerts={totalVerts}, expandedVerts={totalExpandedVerts}, totalLines={totalLines}, totalFaces={totalFaces}");
             EnsureCapacity(totalVerts, totalLines, totalFaces, totalIndices, meshCount);
             EnsureExpandedCapacity(totalExpandedVerts);
 

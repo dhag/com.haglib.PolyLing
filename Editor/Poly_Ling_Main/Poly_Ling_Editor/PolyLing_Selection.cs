@@ -353,8 +353,8 @@ public partial class PolyLing
                            - up * screenDelta.y * pixelToWorld;
 
         // デバッグ出力
-        Debug.Log($"[ScreenDeltaToWorldDelta] screenDelta={screenDelta}, forward={forward}, right={right}, up={up}, " +
-                  $"pixelToWorld={pixelToWorld}, worldDelta={worldDelta}");
+        //Debug.Log($"[ScreenDeltaToWorldDelta] screenDelta={screenDelta}, forward={forward}, right={right}, up={up}, " +
+        //          $"pixelToWorld={pixelToWorld}, worldDelta={worldDelta}");
 
         return worldDelta;
     }

@@ -51,14 +51,14 @@ namespace Poly_Ling.Commands
         {
             if (command == null)
             {
-                Debug.LogWarning("[CommandQueue] null command ignored");
+                //Debug.LogWarning("[CommandQueue] null command ignored");
                 return;
             }
             
             _queue.Enqueue(command);
             
             // 常にログ出力（デバッグ用）
-            Debug.Log($"[CommandQueue.Enqueue] {command.Description} (queue size: {_queue.Count})\n{UnityEngine.StackTraceUtility.ExtractStackTrace()}");
+            //Debug.Log($"[CommandQueue.Enqueue] {command.Description} (queue size: {_queue.Count})\n{UnityEngine.StackTraceUtility.ExtractStackTrace()}");
         }
 
         /// <summary>
@@ -88,7 +88,7 @@ namespace Poly_Ling.Commands
                     
                     if (EnableDebugLog)
                     {
-                        Debug.Log($"[CommandQueue] Executing: {command.Description}");
+                        //Debug.Log($"[CommandQueue] Executing: {command.Description}");
                     }
                     
                     try
@@ -97,7 +97,7 @@ namespace Poly_Ling.Commands
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[CommandQueue] Error executing '{command.Description}': {ex.Message}\n{ex.StackTrace}");
+                        //Debug.LogError($"[CommandQueue] Error executing '{command.Description}': {ex.Message}\n{ex.StackTrace}");
                     }
                 }
             }
