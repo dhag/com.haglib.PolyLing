@@ -44,8 +44,8 @@ namespace Poly_Ling.Core
         public int ActiveMeshIndex { get; set; } = 0;
 
         // v2.1: 複数メッシュ選択
-        /// <summary>選択されているメッシュインデックスの集合</summary>
-        public HashSet<int> SelectedMeshIndices { get; set; } = new HashSet<int>();
+        /// <summary>選択されているメッシュインデックスのリスト</summary>
+        public List<int> SelectedMeshIndices { get; set; } = new List<int>();
 
         /// <summary>
         /// 指定メッシュが選択されているかチェック（複数選択対応）

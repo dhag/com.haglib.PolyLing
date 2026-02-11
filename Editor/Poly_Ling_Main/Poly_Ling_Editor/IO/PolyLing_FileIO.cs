@@ -163,7 +163,6 @@ public partial class PolyLing
             // メッシュカテゴリ
             if (state.selectedMeshIndex >= 0 && state.selectedMeshIndex < _meshContextList.Count)
             {
-                _model.SelectMesh(state.selectedMeshIndex);
                 _selectedIndex = state.selectedMeshIndex;
 
                 // 選択頂点を復元

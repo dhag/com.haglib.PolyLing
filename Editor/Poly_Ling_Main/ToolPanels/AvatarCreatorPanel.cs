@@ -34,6 +34,12 @@ namespace Poly_Ling.MISC
             ["Create"] = new() { ["en"] = "Create Avatar", ["ja"] = "アバター作成" },
             ["CreateSuccess"] = new() { ["en"] = "Avatar Created!", ["ja"] = "アバター作成完了！" },
             ["CreateFailed"] = new() { ["en"] = "Creation Failed: {0}", ["ja"] = "作成失敗: {0}" },
+            ["FuzzyMatch"] = new() { ["en"] = "Fuzzy Match", ["ja"] = "あいまい検索" },
+            ["MissingRequiredWarning"] = new()
+            {
+                ["en"] = "The following required bones are missing:\n{0}\n\nContinue anyway?",
+                ["ja"] = "以下の必須ボーンが見つかりません:\n{0}\n\nこのまま続行しますか？"
+            },
         };
 
         private static string T(string key) => L.GetFrom(_localize, key);
@@ -58,7 +64,8 @@ namespace Poly_Ling.MISC
 
         private GameObject _rootObject;
         private string _mappingFilePath = "";
-        private Dictionary<string, string> _boneMapping; // Unity名 → PMX名
+        private Dictionary<string, List<string>> _boneMapping; // Unity名 → aliasリスト（優先度順、1列目=Unity名を含む）
+        private bool _fuzzyMatch = true;
         private Vector2 _scrollPosition;
         private bool _foldPreview = true;
 
@@ -128,6 +135,11 @@ namespace Poly_Ling.MISC
 
             EditorGUILayout.Space(10);
 
+            // あいまい検索トグル
+            _fuzzyMatch = EditorGUILayout.Toggle(T("FuzzyMatch"), _fuzzyMatch);
+
+            EditorGUILayout.Space(10);
+
             // プレビュー
             DrawPreviewSection();
 
@@ -192,16 +204,14 @@ namespace Poly_Ling.MISC
             foreach (var kvp in _boneMapping)
             {
                 string unityName = kvp.Key;
-                string pmxName = kvp.Value;
-
-                if (string.IsNullOrEmpty(pmxName)) continue;
+                List<string> aliases = kvp.Value;
 
                 bool found = foundBones.ContainsKey(unityName);
                 if (found) mappedCount++;
 
                 if (!found && RequiredBones.Contains(unityName))
                 {
-                    missingRequired.Add($"{unityName} → {pmxName}");
+                    missingRequired.Add($"{unityName} ({string.Join(", ", aliases)})");
                 }
             }
 
@@ -269,7 +279,7 @@ namespace Poly_Ling.MISC
         {
             try
             {
-                _boneMapping = new Dictionary<string, string>();
+                _boneMapping = new Dictionary<string, List<string>>();
                 var lines = File.ReadAllLines(_mappingFilePath, Encoding.UTF8);
 
                 bool isHeader = true;
@@ -281,17 +291,27 @@ namespace Poly_Ling.MISC
                         continue;
                     }
 
-                    var parts = line.Split(',');
-                    if (parts.Length >= 2)
-                    {
-                        string unityName = parts[0].Trim();
-                        string pmxName = parts[1].Trim();
+                    // コメント行をスキップ
+                    if (line.StartsWith("//")) continue;
 
-                        if (!string.IsNullOrEmpty(unityName))
+                    var parts = line.Split(',');
+                    if (parts.Length < 1) continue;
+
+                    string unityName = parts[0].Trim();
+                    if (string.IsNullOrEmpty(unityName)) continue;
+
+                    // 1列目（Unity名）を最優先aliasとし、2列目以降を追加alias
+                    var aliases = new List<string> { unityName };
+                    for (int i = 1; i < parts.Length; i++)
+                    {
+                        string alias = parts[i].Trim();
+                        if (!string.IsNullOrEmpty(alias))
                         {
-                            _boneMapping[unityName] = pmxName;
+                            aliases.Add(alias);
                         }
                     }
+
+                    _boneMapping[unityName] = aliases;
                 }
 
                 Debug.Log($"[AvatarCreator] Loaded mapping: {_boneMapping.Count} entries");
@@ -313,32 +333,64 @@ namespace Poly_Ling.MISC
             var result = new Dictionary<string, Transform>();
             if (_rootObject == null || _boneMapping == null) return result;
 
-            // PMX名 → Transform のマップを作成
             var allTransforms = _rootObject.GetComponentsInChildren<Transform>(true);
-            var nameToTransform = new Dictionary<string, Transform>();
 
-            foreach (var t in allTransforms)
-            {
-                // 同名がある場合は最初のものを使用
-                if (!nameToTransform.ContainsKey(t.name))
-                {
-                    nameToTransform[t.name] = t;
-                }
-            }
-
-            // Unity名 → Transform に変換
             foreach (var kvp in _boneMapping)
             {
                 string unityName = kvp.Key;
-                string pmxName = kvp.Value;
+                List<string> aliases = kvp.Value;
 
-                if (!string.IsNullOrEmpty(pmxName) && nameToTransform.TryGetValue(pmxName, out var transform))
+                Transform found = FindBoneByAliases(allTransforms, aliases);
+                if (found != null)
                 {
-                    result[unityName] = transform;
+                    result[unityName] = found;
                 }
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// alias優先度順にTransformを検索
+        /// 各aliasにつき: 完全一致(case-insensitive) → 部分一致(case-insensitive, fuzzy時のみ)
+        /// </summary>
+        private Transform FindBoneByAliases(Transform[] allTransforms, List<string> aliases)
+        {
+            foreach (string alias in aliases)
+            {
+                // 完全一致（case-insensitive）
+                foreach (var t in allTransforms)
+                {
+                    if (string.Equals(t.name, alias, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return t;
+                    }
+                }
+
+                // あいまい検索: 部分一致（case-insensitive）
+                if (_fuzzyMatch)
+                {
+                    // Transform名がaliasを含む（例: alias="腰", transform="腰Cylinder" → hit）
+                    foreach (var t in allTransforms)
+                    {
+                        if (t.name.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return t;
+                        }
+                    }
+
+                    // aliasがTransform名を含む（例: alias="ヒップCylinder", transform="ヒップ" → hit）
+                    foreach (var t in allTransforms)
+                    {
+                        if (alias.IndexOf(t.name, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return t;
+                        }
+                    }
+                }
+            }
+
+            return null;
         }
 
         // ================================================================
@@ -378,6 +430,12 @@ namespace Poly_Ling.MISC
                 if (missingRequired.Count > 0)
                 {
                     Debug.LogError($"[AvatarCreator] Missing required bones: {string.Join(", ", missingRequired)}");
+
+                    string message = T("MissingRequiredWarning", string.Join("\n", missingRequired));
+                    if (!EditorUtility.DisplayDialog(T("WindowTitle"), message, "OK", "Cancel"))
+                    {
+                        return;
+                    }
                 }
 
                 // HumanBone配列を作成

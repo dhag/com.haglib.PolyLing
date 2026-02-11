@@ -1332,8 +1332,8 @@ namespace Poly_Ling.UndoSystem
 
             Debug.Log($"[RecordMeshSelectionChangeInternal] Recording to MeshListStack. Before Focus={_mainGroup.FocusedChildId}");
 
-            var oldSelection = new HashSet<int>();
-            var newSelection = new HashSet<int>();
+            var oldSelection = new List<int>();
+            var newSelection = new List<int>();
             if (oldIndex >= 0) oldSelection.Add(oldIndex);
             if (newIndex >= 0) newSelection.Add(newIndex);
 
@@ -1370,8 +1370,8 @@ namespace Poly_Ling.UndoSystem
 
             Debug.Log($"[RecordMeshSelectionChangeInternal+Camera] Recording to MeshListStack. Before Focus={_mainGroup.FocusedChildId}");
 
-            var oldSelection = new HashSet<int>();
-            var newSelection = new HashSet<int>();
+            var oldSelection = new List<int>();
+            var newSelection = new List<int>();
             if (oldIndex >= 0) oldSelection.Add(oldIndex);
             if (newIndex >= 0) newSelection.Add(newIndex);
 

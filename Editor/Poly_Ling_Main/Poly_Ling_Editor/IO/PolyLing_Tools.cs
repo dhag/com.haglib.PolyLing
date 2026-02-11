@@ -1075,9 +1075,6 @@ public partial class PolyLing : EditorWindow
 
         int oldIndex = _selectedIndex;
         _selectedIndex = index;
-        
-        // v2.1: ModelContextの選択も更新（単一選択）
-        _model?.SelectMesh(index);
 
         // Undo記録（選択変更のみ）
         if (_undoController != null)

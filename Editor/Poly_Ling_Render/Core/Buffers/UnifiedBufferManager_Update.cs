@@ -39,6 +39,19 @@ namespace Poly_Ling.Core
         /// v2.1: 複数メッシュ選択をModelContextから同期
         /// </summary>
         /// <param name="model">ModelContext</param>
+        /// <remarks>
+        /// 【既知のバグ】このメソッドはMeshContextListインデックスをそのままFlagManagerに渡している。
+        /// FlagManager/GPU側はunifiedMeshIndex（Drawable限定の通し番号）を期待するため、
+        /// ボーン等の非DrawableオブジェクトのMeshContextListインデックスが渡されると、
+        /// 無関係なDrawableメッシュが「選択」として描画されてしまう。
+        /// 
+        /// 根本原因: MeshContextListインデックスとunifiedMeshIndexを混同している。
+        /// MeshContextListインデックスを直接使わず、ContextToUnifiedMeshIndex()で変換すべき。
+        /// AI生成コードがMeshContextListインデックスの直接使用を繰り返したことが根本的な原因。
+        /// 
+        /// 修正方針: SelectedMeshIndicesの各要素をContextToUnifiedMeshIndex()で変換し、
+        /// -1（非Drawable）を除外してからFlagManagerに渡す必要がある。
+        /// </remarks>
         public void SyncSelectionFromModel(Poly_Ling.Model.ModelContext model)
         {
             if (model == null) return;

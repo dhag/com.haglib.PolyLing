@@ -464,7 +464,7 @@ namespace Poly_Ling.UI
             if (_modelContext == null) return;
 
             // v2.0: カテゴリに応じた選択セットのみを参照
-            HashSet<int> selectedIndices = _category switch
+            IEnumerable<int> selectedIndices = _category switch
             {
                 MeshCategory.Drawable => _modelContext.SelectedMeshIndices,
                 MeshCategory.Bone => _modelContext.SelectedBoneIndices,

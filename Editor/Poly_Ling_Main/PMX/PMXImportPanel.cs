@@ -694,6 +694,12 @@ namespace Poly_Ling.PMX
                         _context.Model.SourceDocument = _lastResult.Document;
                     }
 
+                    // CCD IKソルバー用にPMXワールド位置を保持
+                    if (_context.Model != null && _lastResult.BoneWorldPositions != null)
+                    {
+                        _context.Model.BoneWorldPositions = _lastResult.BoneWorldPositions;
+                    }
+
                     _context.Repaint?.Invoke();
                 }
 

@@ -153,76 +153,60 @@ namespace Poly_Ling.Tools
             _affected.Clear();
             _multiMeshAffected.Clear();
 
-            // プライマリメッシュ
-            if (_ctx.SelectionState != null)
-            {
-                foreach (var v in _ctx.SelectionState.GetAllAffectedVertices(_ctx.MeshObject))
-                    _affected.Add(v);
-            }
-            else if (_ctx.SelectedVertices != null)
-            {
-                foreach (var v in _ctx.SelectedVertices)
-                    _affected.Add(v);
-            }
-
-            // v2.1: プライマリを登録
             var model = _ctx?.Model;
-            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
-            if (primaryMesh >= 0 && _affected.Count > 0)
-            {
-                _multiMeshAffected[primaryMesh] = new HashSet<int>(_affected);
-            }
+            if (model == null) return;
 
-            // v2.1: セカンダリメッシュ
-            if (model != null)
+            // 全選択メッシュを統一的にイテレート
+            foreach (int meshIdx in model.SelectedMeshIndices)
             {
-                foreach (int meshIdx in model.SelectedMeshIndices)
+                var meshContext = model.GetMeshContext(meshIdx);
+                if (meshContext == null || !meshContext.HasSelection)
+                    continue;
+
+                var meshObject = meshContext.MeshObject;
+                if (meshObject == null)
+                    continue;
+
+                var affected = new HashSet<int>();
+                foreach (var v in meshContext.SelectedVertices)
+                    affected.Add(v);
+                foreach (var edge in meshContext.SelectedEdges)
                 {
-                    if (meshIdx == primaryMesh)
-                        continue;
-
-                    var meshContext = model.GetMeshContext(meshIdx);
-                    if (meshContext == null || !meshContext.HasSelection)
-                        continue;
-
-                    var meshObject = meshContext.MeshObject;
-                    if (meshObject == null)
-                        continue;
-
-                    var affected = new HashSet<int>();
-                    foreach (var v in meshContext.SelectedVertices)
-                        affected.Add(v);
-                    foreach (var edge in meshContext.SelectedEdges)
+                    affected.Add(edge.V1);
+                    affected.Add(edge.V2);
+                }
+                foreach (var faceIdx in meshContext.SelectedFaces)
+                {
+                    if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
                     {
-                        affected.Add(edge.V1);
-                        affected.Add(edge.V2);
-                    }
-                    foreach (var faceIdx in meshContext.SelectedFaces)
-                    {
-                        if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
-                        {
-                            foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
-                                affected.Add(vIdx);
-                        }
-                    }
-                    foreach (var lineIdx in meshContext.SelectedLines)
-                    {
-                        if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
-                        {
-                            var face = meshObject.Faces[lineIdx];
-                            if (face.VertexCount == 2)
-                            {
-                                affected.Add(face.VertexIndices[0]);
-                                affected.Add(face.VertexIndices[1]);
-                            }
-                        }
-                    }
-
-                    if (affected.Count > 0)
-                    {
-                        _multiMeshAffected[meshIdx] = affected;
+                        foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                            affected.Add(vIdx);
                     }
                 }
+                foreach (var lineIdx in meshContext.SelectedLines)
+                {
+                    if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
+                    {
+                        var face = meshObject.Faces[lineIdx];
+                        if (face.VertexCount == 2)
+                        {
+                            affected.Add(face.VertexIndices[0]);
+                            affected.Add(face.VertexIndices[1]);
+                        }
+                    }
+                }
+
+                if (affected.Count > 0)
+                {
+                    _multiMeshAffected[meshIdx] = affected;
+                }
+            }
+
+            // プライマリメッシュの影響頂点を _affected にも反映（後方互換）
+            int primaryMesh = model.PrimarySelectedMeshIndex;
+            if (primaryMesh >= 0 && _multiMeshAffected.ContainsKey(primaryMesh))
+            {
+                _affected = new HashSet<int>(_multiMeshAffected[primaryMesh]);
             }
         }
 
@@ -231,17 +215,10 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int GetTotalAffectedCount()
         {
-            int total = _affected.Count;
+            int total = 0;
             foreach (var kv in _multiMeshAffected)
             {
                 total += kv.Value.Count;
-            }
-            // プライマリは両方に含まれるので重複を除く
-            var model = _ctx?.Model;
-            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
-            if (primaryMesh >= 0 && _multiMeshAffected.ContainsKey(primaryMesh))
-            {
-                total -= _multiMeshAffected[primaryMesh].Count;
             }
             return total;
         }

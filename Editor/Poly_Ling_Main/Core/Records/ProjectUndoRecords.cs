@@ -347,7 +347,7 @@ namespace MeshEditor
             }
 
             // カテゴリ別選択状態を復元 (v1.1)
-            if (SelectedMeshIndex >= 0) model.SelectMesh(SelectedMeshIndex);
+            if (SelectedMeshIndex >= 0) model.SelectDrawable(SelectedMeshIndex);
             if (SelectedBoneIndex >= 0) model.SelectBone(SelectedBoneIndex);
             if (SelectedMorphIndex >= 0) model.SelectMorph(SelectedMorphIndex);
             model.CurrentMaterialIndex = CurrentMaterialIndex;

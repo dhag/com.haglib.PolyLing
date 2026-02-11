@@ -252,7 +252,10 @@ namespace Poly_Ling.VMD
                 Quaternion modelRot = ctx.BoneModelRotation;
                 if (modelRot != Quaternion.identity)
                 {
+                    // 回転: Q' = R^-1 * Q * R
                     convertedRot = Quaternion.Inverse(modelRot) * convertedRot * modelRot;
+                    // 位置: P' = R^-1 * P （グローバル空間のデルタをローカル軸空間に変換）
+                    convertedPos = Quaternion.Inverse(modelRot) * convertedPos;
                 }
 
                 if (isDebugBone)

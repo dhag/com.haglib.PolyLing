@@ -624,7 +624,7 @@ namespace Poly_Ling.UI
             if (_treeView == null || _treeRoot == null || Model == null) return;
 
             // v2.0: カテゴリに応じた選択セットのみを参照
-            HashSet<int> selectedIndices = CurrentCategory switch
+            IEnumerable<int> selectedIndices = CurrentCategory switch
             {
                 MeshCategory.Drawable => Model.SelectedMeshIndices,
                 MeshCategory.Bone => Model.SelectedBoneIndices,

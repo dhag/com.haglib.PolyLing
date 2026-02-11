@@ -250,12 +250,13 @@ namespace Poly_Ling.PMX
                 localZ = Vector3.Cross(localX, localY).normalized;
             }
 
-            // 3軸すべてを座標系変換（右手系→左手系）
+            // 座標系変換（右手系→左手系）: 共役変換 R_unity = S * R_rh * S, S=diag(1,1,-1)
+            // X,Y軸: Z成分のみ反転 / Z軸: XY成分反転、Z成分そのまま
             if (convertCoordinate)
             {
                 localX = ConvertDirection(localX);
                 localY = ConvertDirection(localY);
-                localZ = ConvertDirection(localZ);
+                localZ = new Vector3(-localZ.x, -localZ.y, localZ.z);
             }
 
             // デバッグ: Y軸が下向きの場合に警告
@@ -321,15 +322,9 @@ namespace Poly_Ling.PMX
             m.SetColumn(2, new Vector4(z.x, z.y, z.z, 0f));
             m.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
 
-            // ★★★ Inverse必須 - 削除禁止 ★★★
-            // 移植元ライブラリ(NCSHAGLIB)の MatrixHelper.LocalAxisToMatrix4X4 では
-            // System.Numerics.Matrix4x4 の M11=X.x, M12=X.y, M13=X.z と「行」にXYZを格納し、
-            // matrix_to_quaternion() の最後で Quaternion.Inverse(q) をかけている。
-            // 一方、UnityのSetColumn()は「列」にXYZを格納するため、
-            // 元ライブラリとは転置の関係になる。転置行列の回転=逆回転なので、
-            // Inverseで補正しないと回転方向が反転する。
-            // 元ライブラリのコメント: 「なぜかこれが必要」
-            return Quaternion.Inverse(m.rotation);
+            // 共役変換 R_unity = S * R_rh * S により det=+1 の正規直交行列が渡されるため
+            // Inverseは不要。m.rotation がそのまま正しい回転を返す。
+            return m.rotation;
         }
 
         /// <summary>
@@ -377,7 +372,7 @@ namespace Poly_Ling.PMX
                 {
                     x = ConvertDirection(x);
                     y = ConvertDirection(y);
-                    z = ConvertDirection(z);
+                    z = new Vector3(-z.x, -z.y, z.z);
                 }
 
                 Debug.Log($"Bone: {bone.Name}");

@@ -45,6 +45,12 @@ namespace Poly_Ling.Model
         /// </summary>
         public object SourceDocument { get; set; }
 
+        /// <summary>
+        /// 各ボーンのPMXワールド位置（インポート時の初期位置）
+        /// MikuMikuFlexの「ローカル位置」に相当。CCDIKSolverで使用。
+        /// </summary>
+        public Vector3[] BoneWorldPositions { get; set; }
+
         // ================================================================
         // メッシュリスト
         // ================================================================
@@ -133,23 +139,23 @@ namespace Poly_Ling.Model
         /// <summary>現在アクティブな選択カテゴリ</summary>
         public SelectionCategory ActiveCategory { get; private set; } = SelectionCategory.Mesh;
 
-        /// <summary>選択中のメッシュインデックス（Mesh, BakedMirror タイプ）</summary>
-        public HashSet<int> SelectedMeshIndices { get; set; } = new HashSet<int>();
+        /// <summary>選択中のメッシュインデックス（Mesh, BakedMirror タイプ）- 選択順序を保持</summary>
+        public List<int> SelectedMeshIndices { get; set; } = new List<int>();
 
-        /// <summary>選択中のボーンインデックス（Bone タイプ）</summary>
-        public HashSet<int> SelectedBoneIndices { get; set; } = new HashSet<int>();
+        /// <summary>選択中のボーンインデックス（Bone タイプ）- 選択順序を保持</summary>
+        public List<int> SelectedBoneIndices { get; set; } = new List<int>();
 
-        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）</summary>
-        public HashSet<int> SelectedMorphIndices { get; set; } = new HashSet<int>();
+        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）- 選択順序を保持</summary>
+        public List<int> SelectedMorphIndices { get; set; } = new List<int>();
 
-        /// <summary>主選択メッシュインデックス（編集対象・最小インデックス）</summary>
-        public int PrimarySelectedMeshIndex => SelectedMeshIndices.Count > 0 ? SelectedMeshIndices.Min() : -1;
+        /// <summary>主選択メッシュインデックス（編集対象・最初に選択されたもの）</summary>
+        public int PrimarySelectedMeshIndex => SelectedMeshIndices.Count > 0 ? SelectedMeshIndices[0] : -1;
 
-        /// <summary>主選択ボーンインデックス（編集対象・最小インデックス）</summary>
-        public int PrimarySelectedBoneIndex => SelectedBoneIndices.Count > 0 ? SelectedBoneIndices.Min() : -1;
+        /// <summary>主選択ボーンインデックス（編集対象・最初に選択されたもの）</summary>
+        public int PrimarySelectedBoneIndex => SelectedBoneIndices.Count > 0 ? SelectedBoneIndices[0] : -1;
 
-        /// <summary>主選択頂点モーフインデックス（編集対象・最小インデックス）</summary>
-        public int PrimarySelectedMorphIndex => SelectedMorphIndices.Count > 0 ? SelectedMorphIndices.Min() : -1;
+        /// <summary>主選択頂点モーフインデックス（編集対象・最初に選択されたもの）</summary>
+        public int PrimarySelectedMorphIndex => SelectedMorphIndices.Count > 0 ? SelectedMorphIndices[0] : -1;
 
         /// <summary>メッシュが選択されているか</summary>
         public bool HasMeshSelection => SelectedMeshIndices.Count > 0;
@@ -173,8 +179,8 @@ namespace Poly_Ling.Model
         // カテゴリ別選択操作
         // ================================================================
 
-        /// <summary>メッシュを選択（単一選択）</summary>
-        public void SelectMesh(int index)
+        /// <summary>Drawableメッシュを選択（単一選択・Mesh/BakedMirrorカテゴリ専用）</summary>
+        public void SelectDrawable(int index)
         {
             ClearMeshSelection();
             if (index >= 0 && index < Count)
@@ -206,10 +212,10 @@ namespace Poly_Ling.Model
             }
         }
 
-        /// <summary>メッシュ選択に追加</summary>
+        /// <summary>メッシュ選択に追加（重複防止・順序保持）</summary>
         public void AddToMeshSelection(int index)
         {
-            if (index >= 0 && index < Count)
+            if (index >= 0 && index < Count && !SelectedMeshIndices.Contains(index))
             {
                 SelectedMeshIndices.Add(index);
                 ActiveCategory = SelectionCategory.Mesh;
@@ -242,7 +248,8 @@ namespace Poly_Ling.Model
             
             for (int i = start; i <= end; i++)
             {
-                SelectedMeshIndices.Add(i);
+                if (!SelectedMeshIndices.Contains(i))
+                    SelectedMeshIndices.Add(i);
             }
             ActiveCategory = SelectionCategory.Mesh;
         }
@@ -253,20 +260,20 @@ namespace Poly_Ling.Model
             SelectedMeshIndices.Remove(index);
         }
 
-        /// <summary>ボーン選択に追加</summary>
+        /// <summary>ボーン選択に追加（重複防止・順序保持）</summary>
         public void AddToBoneSelection(int index)
         {
-            if (index >= 0 && index < Count)
+            if (index >= 0 && index < Count && !SelectedBoneIndices.Contains(index))
             {
                 SelectedBoneIndices.Add(index);
                 ActiveCategory = SelectionCategory.Bone;
             }
         }
 
-        /// <summary>頂点モーフ選択に追加</summary>
+        /// <summary>頂点モーフ選択に追加（重複防止・順序保持）</summary>
         public void AddToMorphSelection(int index)
         {
-            if (index >= 0 && index < Count)
+            if (index >= 0 && index < Count && !SelectedMorphIndices.Contains(index))
             {
                 SelectedMorphIndices.Add(index);
                 ActiveCategory = SelectionCategory.Morph;
@@ -295,8 +302,10 @@ namespace Poly_Ling.Model
             get
             {
                 var all = new HashSet<int>(SelectedMeshIndices);
-                all.UnionWith(SelectedBoneIndices);
-                all.UnionWith(SelectedMorphIndices);
+                foreach (var i in SelectedBoneIndices)
+                    all.Add(i);
+                foreach (var i in SelectedMorphIndices)
+                    all.Add(i);
                 return all;
             }
         }
@@ -329,7 +338,7 @@ namespace Poly_Ling.Model
         // カテゴリ別選択ヘルパー
         // ================================================================
 
-        /// <summary>タイプに基づいて適切なカテゴリに選択を追加</summary>
+        /// <summary>タイプに基づいて適切なカテゴリに選択を追加（重複防止）</summary>
         public void AddToSelectionByType(int index)
         {
             if (index < 0 || index >= Count) return;
@@ -339,16 +348,19 @@ namespace Poly_Ling.Model
             switch (meshContext.Type)
             {
                 case MeshType.Bone:
-                    SelectedBoneIndices.Add(index);
+                    if (!SelectedBoneIndices.Contains(index))
+                        SelectedBoneIndices.Add(index);
                     ActiveCategory = SelectionCategory.Bone;
                     break;
                 case MeshType.Morph:
-                    SelectedMorphIndices.Add(index);
+                    if (!SelectedMorphIndices.Contains(index))
+                        SelectedMorphIndices.Add(index);
                     ActiveCategory = SelectionCategory.Morph;
                     break;
                 default:
                     // Mesh, BakedMirror, Helper, Group, RigidBody, RigidBodyJoint等
-                    SelectedMeshIndices.Add(index);
+                    if (!SelectedMeshIndices.Contains(index))
+                        SelectedMeshIndices.Add(index);
                     ActiveCategory = SelectionCategory.Mesh;
                     break;
             }
@@ -816,9 +828,9 @@ namespace Poly_Ling.Model
         /// <summary>選択インデックスを検証して無効なものを除去（全カテゴリ）</summary>
         public void ValidateSelection()
         {
-            SelectedMeshIndices.RemoveWhere(i => i < 0 || i >= Count);
-            SelectedBoneIndices.RemoveWhere(i => i < 0 || i >= Count);
-            SelectedMorphIndices.RemoveWhere(i => i < 0 || i >= Count);
+            SelectedMeshIndices.RemoveAll(i => i < 0 || i >= Count);
+            SelectedBoneIndices.RemoveAll(i => i < 0 || i >= Count);
+            SelectedMorphIndices.RemoveAll(i => i < 0 || i >= Count);
         }
 
         // ================================================================
@@ -863,9 +875,9 @@ namespace Poly_Ling.Model
         }
 
         /// <summary>挿入時のインデックス調整ヘルパー</summary>
-        private static HashSet<int> AdjustIndicesForInsert(HashSet<int> indices, int insertIndex)
+        private static List<int> AdjustIndicesForInsert(List<int> indices, int insertIndex)
         {
-            var adjusted = new HashSet<int>();
+            var adjusted = new List<int>(indices.Count);
             foreach (var i in indices)
             {
                 adjusted.Add(i >= insertIndex ? i + 1 : i);
@@ -901,9 +913,9 @@ namespace Poly_Ling.Model
         }
 
         /// <summary>削除時のインデックス調整ヘルパー</summary>
-        private static HashSet<int> AdjustIndicesForRemove(HashSet<int> indices, int removeIndex)
+        private static List<int> AdjustIndicesForRemove(List<int> indices, int removeIndex)
         {
-            var adjusted = new HashSet<int>();
+            var adjusted = new List<int>(indices.Count);
             foreach (var i in indices)
             {
                 if (i < removeIndex)
@@ -941,9 +953,9 @@ namespace Poly_Ling.Model
         }
 
         /// <summary>移動時のインデックス調整ヘルパー</summary>
-        private static HashSet<int> AdjustIndicesForMove(HashSet<int> indices, int fromIndex, int toIndex)
+        private static List<int> AdjustIndicesForMove(List<int> indices, int fromIndex, int toIndex)
         {
-            var adjusted = new HashSet<int>();
+            var adjusted = new List<int>(indices.Count);
             foreach (var i in indices)
             {
                 if (i == fromIndex)

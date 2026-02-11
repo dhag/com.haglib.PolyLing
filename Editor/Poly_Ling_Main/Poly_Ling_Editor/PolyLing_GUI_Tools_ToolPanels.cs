@@ -122,6 +122,11 @@ public partial class PolyLing
             Poly_Ling.Tools.Panels.MorphPanel.Open(_toolManager?.toolContext);
         }
 
+        if (GUILayout.Button("MeshFilter → Skinned"))
+        {
+            Poly_Ling.Tools.Panels.MeshFilterToSkinnedPanel.Open(_toolManager?.toolContext);
+        }
+
         if (GUILayout.Button("モデルブレンド"))
         {
             Poly_Ling.Tools.Panels.ModelBlendPanel.Open(_toolManager?.toolContext);

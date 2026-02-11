@@ -25,29 +25,28 @@ namespace Poly_Ling.UndoSystem
         public string Name;
         public List<MeshContextSnapshot> MeshSnapshots;
         
-        // カテゴリ別選択インデックス（v2.0）
-        public HashSet<int> SelectedMeshIndices;
-        public HashSet<int> SelectedBoneIndices;
-        public HashSet<int> SelectedMorphIndices;
+        // カテゴリ別選択インデックス（v2.0）- 選択順序を保持
+        public List<int> SelectedMeshIndices;
+        public List<int> SelectedBoneIndices;
+        public List<int> SelectedMorphIndices;
         
         // 後方互換用（廃止予定）
         public int SelectedMeshIndex
         {
             get
             {
-                // 全カテゴリ中の最小インデックスを返す
-                var all = new HashSet<int>();
-                if (SelectedMeshIndices != null) all.UnionWith(SelectedMeshIndices);
-                if (SelectedBoneIndices != null) all.UnionWith(SelectedBoneIndices);
-                if (SelectedMorphIndices != null) all.UnionWith(SelectedMorphIndices);
-                return all.Count > 0 ? all.Min() : -1;
+                // 全カテゴリ中の先頭インデックスを返す
+                if (SelectedMeshIndices != null && SelectedMeshIndices.Count > 0) return SelectedMeshIndices[0];
+                if (SelectedBoneIndices != null && SelectedBoneIndices.Count > 0) return SelectedBoneIndices[0];
+                if (SelectedMorphIndices != null && SelectedMorphIndices.Count > 0) return SelectedMorphIndices[0];
+                return -1;
             }
             set
             {
                 // 後方互換: 単一値をメッシュカテゴリに設定
-                SelectedMeshIndices = value >= 0 ? new HashSet<int> { value } : new HashSet<int>();
-                SelectedBoneIndices = new HashSet<int>();
-                SelectedMorphIndices = new HashSet<int>();
+                SelectedMeshIndices = value >= 0 ? new List<int> { value } : new List<int>();
+                SelectedBoneIndices = new List<int>();
+                SelectedMorphIndices = new List<int>();
             }
         }
 
@@ -70,9 +69,9 @@ namespace Poly_Ling.UndoSystem
                 Name = model.Name,
                 MeshSnapshots = new List<MeshContextSnapshot>(),
                 // カテゴリ別選択インデックス（v2.0）
-                SelectedMeshIndices = new HashSet<int>(model.SelectedMeshIndices),
-                SelectedBoneIndices = new HashSet<int>(model.SelectedBoneIndices),
-                SelectedMorphIndices = new HashSet<int>(model.SelectedMorphIndices),
+                SelectedMeshIndices = new List<int>(model.SelectedMeshIndices),
+                SelectedBoneIndices = new List<int>(model.SelectedBoneIndices),
+                SelectedMorphIndices = new List<int>(model.SelectedMorphIndices),
                 CurrentMaterialIndex = model.CurrentMaterialIndex,
                 DefaultCurrentMaterialIndex = model.DefaultCurrentMaterialIndex,
                 AutoSetDefaultMaterials = model.AutoSetDefaultMaterials
@@ -121,11 +120,11 @@ namespace Poly_Ling.UndoSystem
 
             // カテゴリ別選択インデックス復元（v2.0）
             if (SelectedMeshIndices != null)
-                model.SelectedMeshIndices = new HashSet<int>(SelectedMeshIndices);
+                model.SelectedMeshIndices = new List<int>(SelectedMeshIndices);
             if (SelectedBoneIndices != null)
-                model.SelectedBoneIndices = new HashSet<int>(SelectedBoneIndices);
+                model.SelectedBoneIndices = new List<int>(SelectedBoneIndices);
             if (SelectedMorphIndices != null)
-                model.SelectedMorphIndices = new HashSet<int>(SelectedMorphIndices);
+                model.SelectedMorphIndices = new List<int>(SelectedMorphIndices);
 
             // マテリアル復元
             model.MaterialReferences = RestoreMaterialReferences(MaterialReferences);
@@ -171,11 +170,11 @@ namespace Poly_Ling.UndoSystem
             // カテゴリ別選択インデックス復元（v2.0）
             model.ClearAllCategorySelection();
             if (SelectedMeshIndices != null)
-                model.SelectedMeshIndices = new HashSet<int>(SelectedMeshIndices);
+                model.SelectedMeshIndices = new List<int>(SelectedMeshIndices);
             if (SelectedBoneIndices != null)
-                model.SelectedBoneIndices = new HashSet<int>(SelectedBoneIndices);
+                model.SelectedBoneIndices = new List<int>(SelectedBoneIndices);
             if (SelectedMorphIndices != null)
-                model.SelectedMorphIndices = new HashSet<int>(SelectedMorphIndices);
+                model.SelectedMorphIndices = new List<int>(SelectedMorphIndices);
 
             // マテリアル復元
             model.MaterialReferences = RestoreMaterialReferences(MaterialReferences);

@@ -632,7 +632,7 @@ public partial class PolyLing
         }
         
         // 選択ボタン
-        bool isSelected = (index == _selectedIndex);
+        bool isSelected = (index == _selectedBoneIndex);
         string label = $"🦴 {ctx.Name} ({boneCount})";
         bool newSelected = GUILayout.Toggle(isSelected, label, "Button");
         
@@ -665,7 +665,7 @@ public partial class PolyLing
         GUILayout.Space(20 + depth * 12);
         
         // 選択ボタン
-        bool isSelected = (index == _selectedIndex);
+        bool isSelected = (index == _selectedBoneIndex);
         string label = $"├ {ctx.Name}";
         bool newSelected = GUILayout.Toggle(isSelected, label, "Button");
         
@@ -736,7 +736,7 @@ public partial class PolyLing
         }
 
         // メッシュ名ボタン（選択用）- 複数選択対応
-        bool isPrimary = (index == _selectedIndex);
+        bool isPrimary = (index == _selectedMeshIndex);
         bool isSelected = _model?.SelectedMeshIndices.Contains(index) ?? isPrimary;
         
         // 選択状態に応じたマーカー
@@ -770,16 +770,16 @@ public partial class PolyLing
             // Ctrl+クリック: トグル
             _model.ToggleMeshSelection(index);
             // プライマリが解除された場合、別のメッシュをプライマリに
-            if (_model.SelectedMeshIndices.Count > 0 && !_model.SelectedMeshIndices.Contains(_selectedIndex))
+            if (_model.SelectedMeshIndices.Count > 0 && !_model.SelectedMeshIndices.Contains(_selectedMeshIndex))
             {
                 _selectedIndex = _model.PrimarySelectedMeshIndex;
                 SwitchToSelectedMesh();
             }
         }
-        else if (shiftHeld && _selectedIndex >= 0)
+        else if (shiftHeld && _selectedMeshIndex >= 0)
         {
             // Shift+クリック: 範囲選択
-            _model.SelectMeshRange(_selectedIndex, index);
+            _model.SelectMeshRange(_selectedMeshIndex, index);
         }
         else
         {
@@ -831,8 +831,6 @@ public partial class PolyLing
 
         _selectedIndex = index;
         
-        // v2.1: ModelContextの選択も更新（単一選択）
-        _model?.SelectMesh(index);
         ResetEditState();
         InitVertexOffsets();
 

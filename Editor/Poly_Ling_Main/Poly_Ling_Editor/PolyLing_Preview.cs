@@ -281,6 +281,12 @@ public partial class PolyLing
             }
         }
 
+        // ボーン形状描画
+        if (_showBones)
+        {
+            DrawBones(localRect, camPos, _cameraTarget);
+        }
+
         // ローカル原点マーカー
         DrawOriginMarker(localRect, camPos, _cameraTarget);
 

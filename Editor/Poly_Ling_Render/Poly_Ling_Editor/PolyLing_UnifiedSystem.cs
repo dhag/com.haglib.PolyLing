@@ -347,6 +347,16 @@ public partial class PolyLing
     /// <summary>
     /// 統合システムで描画を準備（選択/非選択フィルタリング対応）
     /// </summary>
+    /// <summary>
+    /// Unified描画の準備
+    /// </summary>
+    /// <remarks>
+    /// 【既知のバグ】SyncSelectionFromModel()がMeshContextListインデックスを
+    /// unifiedMeshIndexに変換せずにFlagManagerに渡すため、ボーン等の非Drawableオブジェクトを
+    /// 選択すると無関係なメッシュの頂点・辺が表示される。
+    /// 根本原因: AI生成コードがMeshContextListインデックスの直接使用を繰り返したこと。
+    /// SyncSelectionFromModel内でContextToUnifiedMeshIndex()変換が必要。
+    /// </remarks>
     private void PrepareUnifiedDrawing(
         Camera camera,
         bool showWireframe,

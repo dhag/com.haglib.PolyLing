@@ -285,19 +285,19 @@ namespace Poly_Ling.UndoSystem
         [Obsolete("Use OldSelectedIndices instead")]
         public int OldSelectedIndex
         {
-            get => OldSelectedIndices.Count > 0 ? OldSelectedIndices.Min() : -1;
+            get => OldSelectedIndices.Count > 0 ? OldSelectedIndices[0] : -1;
             set { OldSelectedIndices.Clear(); if (value >= 0) OldSelectedIndices.Add(value); }
         }
 
         [Obsolete("Use NewSelectedIndices instead")]
         public int NewSelectedIndex
         {
-            get => NewSelectedIndices.Count > 0 ? NewSelectedIndices.Min() : -1;
+            get => NewSelectedIndices.Count > 0 ? NewSelectedIndices[0] : -1;
             set { NewSelectedIndices.Clear(); if (value >= 0) NewSelectedIndices.Add(value); }
         }
 
-        public HashSet<int> OldSelectedIndices = new HashSet<int>();
-        public HashSet<int> NewSelectedIndices = new HashSet<int>();
+        public List<int> OldSelectedIndices = new List<int>();
+        public List<int> NewSelectedIndices = new List<int>();
         
         /// <summary>変更前のカメラ状態</summary>
         public CameraSnapshot? OldCameraState;
@@ -403,25 +403,25 @@ namespace Poly_Ling.UndoSystem
     /// </summary>
     public class MeshSelectionChangeRecord : MeshListUndoRecord
     {
-        public HashSet<int> OldSelectedIndices;
-        public HashSet<int> NewSelectedIndices;
+        public List<int> OldSelectedIndices;
+        public List<int> NewSelectedIndices;
         public CameraSnapshot? OldCameraState;
         public CameraSnapshot? NewCameraState;
 
-        public MeshSelectionChangeRecord(HashSet<int> oldSelection, HashSet<int> newSelection)
+        public MeshSelectionChangeRecord(List<int> oldSelection, List<int> newSelection)
         {
-            OldSelectedIndices = new HashSet<int>(oldSelection ?? new HashSet<int>());
-            NewSelectedIndices = new HashSet<int>(newSelection ?? new HashSet<int>());
+            OldSelectedIndices = new List<int>(oldSelection ?? new List<int>());
+            NewSelectedIndices = new List<int>(newSelection ?? new List<int>());
         }
 
         public MeshSelectionChangeRecord(
-            HashSet<int> oldSelection, 
-            HashSet<int> newSelection,
+            List<int> oldSelection, 
+            List<int> newSelection,
             CameraSnapshot? oldCamera,
             CameraSnapshot? newCamera)
         {
-            OldSelectedIndices = new HashSet<int>(oldSelection ?? new HashSet<int>());
-            NewSelectedIndices = new HashSet<int>(newSelection ?? new HashSet<int>());
+            OldSelectedIndices = new List<int>(oldSelection ?? new List<int>());
+            NewSelectedIndices = new List<int>(newSelection ?? new List<int>());
             OldCameraState = oldCamera;
             NewCameraState = newCamera;
         }

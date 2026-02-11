@@ -31,6 +31,12 @@ namespace Poly_Ling.PMX
         /// <summary>インポートされたMeshContextリスト</summary>
         public List<MeshContext> MeshContexts { get; } = new List<MeshContext>();
 
+        /// <summary>
+        /// 各ボーンのPMXワールド位置（インポート時の初期位置）
+        /// CCDIKSolverのSetBonePositionsに渡す用
+        /// </summary>
+        public Vector3[] BoneWorldPositions { get; set; }
+
         /// <summary>インポートされたマテリアル参照リスト（正式形式）</summary>
         public List<MaterialReference> MaterialReferences { get; } = new List<MaterialReference>();
 
@@ -553,6 +559,9 @@ namespace Poly_Ling.PMX
             }
 
             Debug.Log($"[PMXImporter] Imported {document.Bones.Count} bones");
+
+            // CCDIKSolver用にPMXワールド位置を保存
+            result.BoneWorldPositions = boneWorldPositions;
         }
 
         /// <summary>
@@ -565,11 +574,15 @@ namespace Poly_Ling.PMX
             bool hasLocalAxis = (pmxBone.Flags & FLAG_LOCAL_AXIS) != 0;
             bool isIK = (pmxBone.Flags & FLAG_IK) != 0;
 
-            // IKボーン、およびローカル軸フラグがなくIKの親となる移動制御ボーンはidentityを返す
-            // 元ライブラリではBoneMatrixListにローカル軸回転は入らず、bindposeは平行移動のみ
-            // ローカル軸フラグがないボーンにデフォルト軸を自動計算するのは
-            // ローカル軸フラグを持つボーンのみに限定すべき
-            if (isIK || !hasLocalAxis)
+            // 全ボーンに対してローカル軸回転を計算する
+            // ローカル軸フラグ(0x0800)の有無に関わらず、デフォルト軸を自動計算する
+            //
+            // 例外: IKボーンはidentityを返す
+            // IKボーンは操作用ハンドルであり、親子関係は操作の便宜上のもの。
+            // VMDの位置・回転はグローバル空間での値として扱う必要がある。
+            // ローカル軸回転を設定するとVMDApplierのR^-1*Q*R変換で
+            // グローバル空間の値がローカル軸空間に誤変換されてしまう。
+            if (isIK)
             {
                 return Quaternion.identity;
             }
@@ -650,12 +663,13 @@ namespace Poly_Ling.PMX
                 Debug.Log($"[PMX DET] {pmxBone.Name}: PMX(右手系) det={detBefore:F4}  X=({localX.x:F4},{localX.y:F4},{localX.z:F4}) Y=({localY.x:F4},{localY.y:F4},{localY.z:F4}) Z=({localZ.x:F4},{localZ.y:F4},{localZ.z:F4})");
             }
 
-            // 3軸すべてを座標系変換（右手系→左手系）
+            // 座標系変換（右手系→左手系）: 共役変換 R_unity = S * R_rh * S, S=diag(1,1,-1)
+            // X,Y軸: Z成分のみ反転 / Z軸: XY成分反転、Z成分そのまま
             if (settings.FlipZ)
             {
                 localX = new Vector3(localX.x, localX.y, -localX.z);
                 localY = new Vector3(localY.x, localY.y, -localY.z);
-                localZ = new Vector3(localZ.x, localZ.y, -localZ.z);
+                localZ = new Vector3(-localZ.x, -localZ.y, localZ.z);
             }
 
             // デバッグ: Z反転後のdet
@@ -721,15 +735,10 @@ namespace Poly_Ling.PMX
             m.SetColumn(2, new Vector4(z.x, z.y, z.z, 0f));
             m.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
 
-            // ★★★ Inverse必須 - 削除禁止 ★★★
-            // 移植元ライブラリ(NCSHAGLIB)の MatrixHelper.LocalAxisToMatrix4X4 では
-            // System.Numerics.Matrix4x4 の M11=X.x, M12=X.y, M13=X.z と「行」にXYZを格納し、
-            // matrix_to_quaternion() の最後で Quaternion.Inverse(q) をかけている。
-            // 一方、UnityのSetColumn()は「列」にXYZを格納するため、
-            // 元ライブラリとは転置の関係になる。転置行列の回転=逆回転なので、
-            // Inverseで補正しないと回転方向が反転する。
-            // 元ライブラリのコメント: 「なぜかこれが必要」
-            return Quaternion.Inverse(m.rotation);
+            // 共役変換 R_unity = S * R_rh * S により det=+1 の正規直交行列が渡されるため
+            // Inverseは不要。m.rotation がそのまま正しい回転を返す。
+            // （旧実装では3軸全Z反転でdet=-1となり、Inverseで補正していたが誤りだった）
+            return m.rotation;
         }
 
         // ================================================================
@@ -1119,25 +1128,23 @@ namespace Poly_Ling.PMX
             // モデル空間回転を取得
             Quaternion modelRotation = boneModelRotations[boneIndex];
 
-            // ローカル位置・ローカル回転を計算（親の回転を考慮）
+            // ローカル位置・ローカル回転を計算
+            // MikuMikuFlex準拠: 全ボーンtranslation-only bindpose
+            // MikuMikuFlexのローカルポーズ行列:
+            //   Translation(-Position) * RotationQ(回転) * Translation(移動) * Translation(Position)
+            // 回転=identity, 移動=zero のとき ローカルポーズ行列 = Identity
+            // PolyLingではBoneTransform.Position = 親からのワールドオフセット、Rotation = identity
+            // これにより ローカル空間 = グローバル空間 となり、VMDやIKの回転がそのまま適用される
             Vector3 localPosition;
-            Quaternion localRotation;
+            Quaternion localRotation = Quaternion.identity;
             if (parentIndex >= 0)
             {
                 Vector3 parentWorldPos = boneWorldPositions[parentIndex];
-                Quaternion parentModelRotation = boneModelRotations[parentIndex];
-
-                // ワールド空間での差分を親のローカル座標系に変換
-                Vector3 worldOffset = worldPosition - parentWorldPos;
-                localPosition = Quaternion.Inverse(parentModelRotation) * worldOffset;
-
-                // 親からの相対回転
-                localRotation = Quaternion.Inverse(parentModelRotation) * modelRotation;
+                localPosition = worldPosition - parentWorldPos;
             }
             else
             {
                 localPosition = worldPosition;
-                localRotation = modelRotation;
             }
 
             // オイラー角に変換
@@ -1161,9 +1168,8 @@ namespace Poly_Ling.PMX
             };
             meshObject.BoneTransform = boneTransform;
 
-            // BindPoseを設定（ワールド位置・回転の逆変換）
-            // BindPose = ボーンのワールド行列の逆行列
-            Matrix4x4 worldMatrix = Matrix4x4.TRS(worldPosition, modelRotation, Vector3.one);
+            // BindPoseを設定（MikuMikuFlex準拠: translation only）
+            Matrix4x4 worldMatrix = Matrix4x4.TRS(worldPosition, Quaternion.identity, Vector3.one);
             Matrix4x4 bindPose = worldMatrix.inverse;
 
             // MeshContext作成（★MQOと同様に全プロパティを設定）
@@ -1175,7 +1181,7 @@ namespace Poly_Ling.PMX
                 IsVisible = true,
                 BindPose = bindPose,
                 BoneTransform = boneTransform,  // ★BoneTransformを設定
-                BoneModelRotation = modelRotation  // ★VMD変換用のワールド累積回転
+                BoneModelRotation = Quaternion.identity  // MikuMikuFlex準拠: ローカル軸回転は姿勢計算に不使用
             };
 
             // ★MeshContextにもHierarchyParentIndexを設定（重要！）
@@ -1213,12 +1219,24 @@ namespace Poly_Ling.PMX
                         linkIdx = link.BoneIndex;
                     }
 
+                    // 角度制限の座標系変換
+                    // FlipZ=true時、position.z = -zでインポートするため、
+                    // X軸回転とY軸回転の符号が反転する。
+                    // Min/Maxを入れ替えて符号反転で対応。
+                    Vector3 limMin = link.LimitMin;
+                    Vector3 limMax = link.LimitMax;
+                    if (settings.FlipZ)
+                    {
+                        limMin = new Vector3(-link.LimitMax.x, -link.LimitMax.y, link.LimitMin.z);
+                        limMax = new Vector3(-link.LimitMin.x, -link.LimitMin.y, link.LimitMax.z);
+                    }
+
                     meshContext.IKLinks.Add(new IKLinkInfo
                     {
                         BoneIndex = linkIdx,
                         HasLimit = link.HasLimit,
-                        LimitMin = link.LimitMin,
-                        LimitMax = link.LimitMax
+                        LimitMin = limMin,
+                        LimitMax = limMax
                     });
                 }
 
