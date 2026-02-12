@@ -260,6 +260,8 @@ namespace Poly_Ling.Tools
 
         public void OnDeactivate(ToolContext ctx)
         {
+            if (_state == ExtrudeState.Extruding)
+                ctx.ExitTransformDragging?.Invoke();
             Reset();
         }
 
@@ -316,6 +318,7 @@ namespace Poly_Ling.Tools
             InitializePreview(ctx);
 
             _state = ExtrudeState.Extruding;
+            ctx.EnterTransformDragging?.Invoke();
         }
 
         private void UpdateExtrude(ToolContext ctx, Vector2 mousePos)
@@ -349,6 +352,8 @@ namespace Poly_Ling.Tools
 
         private void EndExtrude(ToolContext ctx)
         {
+            ctx.ExitTransformDragging?.Invoke();
+
             if (Mathf.Abs(_extrudeDistance) < 0.001f)
             {
                 _snapshotBefore = null;

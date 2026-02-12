@@ -681,6 +681,7 @@ namespace Poly_Ling.Tools
 
             _currentTransform.Begin(ctx.MeshObject, _affectedVertices, _dragStartPositions);
             _state = MoveState.MovingVertices;
+            ctx.EnterTransformDragging?.Invoke();
         }
 
         private void MoveSelectedVertices(Vector2 screenDelta, ToolContext ctx)
@@ -764,6 +765,7 @@ namespace Poly_Ling.Tools
             {
                 _currentTransform = null;
                 _dragStartPositions = null;
+                ctx.ExitTransformDragging?.Invoke();
                 return;
             }
 
@@ -803,6 +805,7 @@ namespace Poly_Ling.Tools
 
             _currentTransform = null;
             _dragStartPositions = null;
+            ctx.ExitTransformDragging?.Invoke();
         }
 
         // === 軸ドラッグ処理 ===
@@ -841,6 +844,7 @@ namespace Poly_Ling.Tools
 
             _currentTransform.Begin(ctx.MeshObject, _affectedVertices, _dragStartPositions);
             _state = MoveState.AxisDragging;
+            ctx.EnterTransformDragging?.Invoke();
         }
 
         private void MoveVerticesAlongAxis(Vector2 currentScreenPos, ToolContext ctx)
@@ -970,6 +974,7 @@ namespace Poly_Ling.Tools
 
             _currentTransform.Begin(ctx.MeshObject, _affectedVertices, _dragStartPositions);
             _state = MoveState.CenterDragging;
+            ctx.EnterTransformDragging?.Invoke();
         }
 
         private void EndCenterDrag(ToolContext ctx)

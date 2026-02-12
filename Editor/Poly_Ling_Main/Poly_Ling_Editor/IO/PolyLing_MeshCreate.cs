@@ -90,7 +90,7 @@ public partial class PolyLing
         // リストに追加
         _meshContextList.Add(meshContext);
         meshContext.MaterialOwner = _model;  // Phase 1: Materials 委譲用
-        _selectedIndex = _meshContextList.Count - 1;
+        SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
@@ -276,7 +276,7 @@ public partial class PolyLing
 
         _meshContextList.Add(meshContext);
         meshContext.MaterialOwner = _model;  // Phase 1: Materials 委譲用
-        _selectedIndex = _meshContextList.Count - 1;
+        SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
@@ -332,7 +332,7 @@ public partial class PolyLing
 
         if (_selectedIndex >= _meshContextList.Count)
         {
-            _selectedIndex = _meshContextList.Count - 1;
+            SetSelectedIndex(_meshContextList.Count - 1);
         }
 
         if (_selectedIndex >= 0)

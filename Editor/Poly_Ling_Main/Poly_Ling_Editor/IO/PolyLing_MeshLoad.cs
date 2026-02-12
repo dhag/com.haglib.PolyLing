@@ -606,7 +606,7 @@ public partial class PolyLing
         }
 
         // 最初のメッシュを選択（ボーンがあれば最初のメッシュ、なければ0）
-        _selectedIndex = boneStartIndex < _meshContextList.Count ? boneStartIndex : 0;
+        SetSelectedIndex(boneStartIndex < _meshContextList.Count ? boneStartIndex : 0);
 
         // UndoControllerを更新
         if (_undoController != null && _meshContextList.Count > 0)
@@ -929,7 +929,7 @@ public partial class PolyLing
             }
         }
         _meshContextList.Clear();
-        _selectedIndex = -1;
+        SetSelectedIndex(-1);
 
         // 選択をクリア
         _selectedVertices.Clear();
@@ -1004,7 +1004,7 @@ public partial class PolyLing
 
         _meshContextList.Add(meshContext);
         meshContext.MaterialOwner = _model;  // Phase 1: Materials 委譲用
-        _selectedIndex = _meshContextList.Count - 1;
+        SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）

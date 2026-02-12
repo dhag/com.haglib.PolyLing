@@ -329,6 +329,7 @@ public partial class PolyLing
         }
 
         Debug.Log($"[SelectionSets] Loaded: {set.Name}");
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -355,6 +356,7 @@ public partial class PolyLing
         }
 
         Debug.Log($"[SelectionSets] Added: {set.Name}");
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -381,6 +383,7 @@ public partial class PolyLing
         }
 
         Debug.Log($"[SelectionSets] Subtracted: {set.Name}");
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -597,6 +600,7 @@ public partial class PolyLing
         }
 
         Debug.Log($"[SelectionSets] Loaded by name: {setName}");
+        _unifiedAdapter?.RequestNormal();
         Repaint();
         return true;
     }

@@ -312,6 +312,10 @@ public partial class PolyLing : EditorWindow
         // SyncMeshは位置更新のみで軽量、これはトポロジ変更時のみ呼ぶ（重い）
         ctx.NotifyTopologyChanged = () => _unifiedAdapter?.NotifyTopologyChanged();
 
+        // 更新モード制御コールバック
+        ctx.EnterTransformDragging = () => _unifiedAdapter?.EnterTransformDragging();
+        ctx.ExitTransformDragging = () => _unifiedAdapter?.ExitTransformDragging();
+
         // マルチマテリアル対応
         ctx.CurrentMaterialIndex = meshContext?.CurrentMaterialIndex ?? 0;
         ctx.Materials = meshContext?.Materials;

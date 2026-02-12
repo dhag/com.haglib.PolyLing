@@ -246,7 +246,12 @@ namespace Poly_Ling.Tools
                 ctx.SelectionState.Mode |= MeshSelectMode.Edge;
         }
 
-        public void OnDeactivate(ToolContext ctx) => Reset();
+        public void OnDeactivate(ToolContext ctx)
+        {
+            if (_state == BevelState.Beveling)
+                ctx.ExitTransformDragging?.Invoke();
+            Reset();
+        }
 
         public void Reset()
         {
@@ -288,6 +293,7 @@ namespace Poly_Ling.Tools
 
             _dragAmount = Amount;
             _state = BevelState.Beveling;
+            ctx.EnterTransformDragging?.Invoke();
         }
 
         private void UpdateBevel(ToolContext ctx, Vector2 mousePos)
@@ -298,6 +304,8 @@ namespace Poly_Ling.Tools
 
         private void EndBevel(ToolContext ctx)
         {
+            ctx.ExitTransformDragging?.Invoke();
+
             if (_dragAmount < 0.001f)
             {
                 _snapshotBefore = null;

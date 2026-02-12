@@ -272,7 +272,7 @@ public partial class PolyLing
                 if (GUILayout.Button(L.Get("ClearAll")))
                 {
                     CleanupMeshes();
-                    _selectedIndex = -1;
+                    SetSelectedIndex(-1);
                     _vertexOffsets = null;
                     _groupOffsets = null;
                     _undoController?.VertexEditStack.Clear();
@@ -780,7 +780,7 @@ public partial class PolyLing
             // プライマリが解除された場合、別のメッシュをプライマリに
             if (_model.SelectedMeshIndices.Count > 0 && !_model.SelectedMeshIndices.Contains(_selectedMeshIndex))
             {
-                _selectedIndex = _model.PrimarySelectedMeshIndex;
+                SetSelectedIndex(_model.PrimarySelectedMeshIndex);
                 SwitchToSelectedMesh();
             }
         }
@@ -837,7 +837,7 @@ public partial class PolyLing
         // 現在の選択を保存（切り替え前）
         SaveSelectionToCurrentMesh();
 
-        _selectedIndex = index;
+        SetSelectedIndex(index);
         
         ResetEditState();
         InitVertexOffsets();

@@ -289,6 +289,19 @@ namespace Poly_Ling.Tools
         /// <summary>画面再描画を要求</summary>
         public Action Repaint { get; set; }
 
+        // === 更新モード制御 ===
+
+        /// <summary>
+        /// 頂点ドラッグ開始時に呼ぶ（ワイヤ/頂点再構築・ヒットテスト等をスキップ）
+        /// 対応: MoveTool, SculptTool, SimpleMorphPanel等
+        /// </summary>
+        public Action EnterTransformDragging { get; set; }
+
+        /// <summary>
+        /// 頂点ドラッグ終了時に呼ぶ（Normalモードに復帰）
+        /// </summary>
+        public Action ExitTransformDragging { get; set; }
+
         // === ヘルパーメソッド ===
 
         /// <summary>

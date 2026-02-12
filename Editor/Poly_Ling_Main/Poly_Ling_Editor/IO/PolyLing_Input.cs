@@ -61,6 +61,7 @@ public partial class PolyLing
                 _cameraDistance = Mathf.Clamp(_cameraDistance, _cameraDistanceMin, _cameraDistanceMax);// 0.1f, 20f);//ホイール: ズーム上限下限
             }
             e.Use();
+            _unifiedAdapter?.RequestNormal();
             Repaint();
             return;
         }

@@ -252,6 +252,7 @@ namespace Poly_Ling.Tools.Panels
                 if (!_isDragging)
                 {
                     _isDragging = true;
+                    _context?.EnterTransformDragging?.Invoke();
                     // Undo開始
                     var undo = _context?.UndoController;
                     undo?.CaptureMeshObjectSnapshot();
@@ -265,6 +266,7 @@ namespace Poly_Ling.Tools.Panels
             if (_isDragging && Event.current.type == EventType.MouseUp)
             {
                 _isDragging = false;
+                _context?.ExitTransformDragging?.Invoke();
                 // ドラッグ終了時に法線再計算
                 if (_settings.RecalculateNormals)
                 {

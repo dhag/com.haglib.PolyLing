@@ -95,6 +95,7 @@ namespace Poly_Ling.Tools
 
                 _isDragging = true;
                 _currentScreenPos = mousePos;
+                ctx.EnterTransformDragging?.Invoke();
 
                 _beforeSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
                 BuildCaches(ctx.MeshObject);
@@ -119,6 +120,7 @@ namespace Poly_Ling.Tools
                 if (!_isDragging) return false;
 
                 _isDragging = false;
+                ctx.ExitTransformDragging?.Invoke();
 
                 if (_beforeSnapshot != null && ctx.UndoController != null)
                 {

@@ -368,29 +368,36 @@ public partial class PolyLing
     {
         // 背面カリング設定を反映
         _unifiedAdapter.BackfaceCullingEnabled = _undoController?.EditorState.BackfaceCullingEnabled ?? true;
-        
-        // 【暫定】毎フレーム選択状態を同期（TECHNICAL_DEBT参照）
-        SyncSelectionFromLegacy();
+
+        // 更新モードプロファイルを取得
+        var profile = _unifiedAdapter.CurrentProfile;
         
         // ContextIndex → UnifiedMeshIndex に変換
         // 【重要】ContextIndex と UnifiedMeshIndex は異なる可能性がある
         // （IsVisible=false や MeshObject=null のメッシュがあるとずれる）
-        // BufferManager にも UnifiedMeshIndex を渡す必要がある
         int unifiedMeshIndex = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
-        
-        // 選択フラグを直接更新
-        var bufMgr = _unifiedAdapter.BufferManager;
-        if (bufMgr != null)
+
+        // 選択状態の同期・フラグ更新（プロファイルで許可されている場合のみ）
+        if (profile.AllowSelectionSync)
         {
-            // v2.1: 複数選択をModelContextから同期（SetActiveMeshより先に）
-            bufMgr.SyncSelectionFromModel(_model);
-            
-            bufMgr.SetActiveMesh(0, unifiedMeshIndex);  // UnifiedMeshIndex を使用
-            bufMgr.UpdateAllSelectionFlags();
-            
-            // 面・線分の可視性計算（Culledフラグ設定）
-            // カメラ操作中はスキップ可能
-            if (!_unifiedAdapter.SkipGpuVisibilityCompute)
+            SyncSelectionFromLegacy();
+
+            var bufMgr = _unifiedAdapter.BufferManager;
+            if (bufMgr != null)
+            {
+                // v2.1: 複数選択をModelContextから同期（SetActiveMeshより先に）
+                bufMgr.SyncSelectionFromModel(_model);
+                
+                bufMgr.SetActiveMesh(0, unifiedMeshIndex);  // UnifiedMeshIndex を使用
+                bufMgr.UpdateAllSelectionFlags();
+            }
+        }
+
+        // 面・線分の可視性計算（Culledフラグ設定）
+        if (profile.AllowGpuVisibility)
+        {
+            var bufMgr = _unifiedAdapter.BufferManager;
+            if (bufMgr != null)
             {
                 var viewport = new Rect(0, 0, camera.pixelWidth, camera.pixelHeight);
                 bufMgr.DispatchClearBuffersGPU();
@@ -408,10 +415,13 @@ public partial class PolyLing
             camera,
             showWireframe,
             showVertices,
-            showUnselectedWireframe && !_unifiedAdapter.SkipUnselectedWireframe,
-            showUnselectedVertices && !_unifiedAdapter.SkipUnselectedVertices,
+            showUnselectedWireframe && profile.AllowUnselectedOverlay,
+            showUnselectedVertices && profile.AllowUnselectedOverlay,
             meshIndexForDrawing,
             pointSize,
             alpha);
+
+        // ワンショット: Normalモードの処理を1回消費したらIdleに降格
+        _unifiedAdapter.ConsumeNormalMode();
     }
 }

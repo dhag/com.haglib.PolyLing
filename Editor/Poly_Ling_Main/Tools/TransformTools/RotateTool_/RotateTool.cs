@@ -30,6 +30,7 @@ namespace Poly_Ling.Tools
         private HashSet<int> _affected = new HashSet<int>();
         private Dictionary<int, Vector3> _startPositions = new Dictionary<int, Vector3>();
         private bool _isDirty = false;
+        private bool _isSliderDragging = false;
         private ToolContext _ctx;
 
         // v2.1: 複数メッシュ対応
@@ -48,6 +49,11 @@ namespace Poly_Ling.Tools
 
         public void OnDeactivate(ToolContext ctx)
         {
+            if (_isSliderDragging)
+            {
+                _isSliderDragging = false;
+                ctx.ExitTransformDragging?.Invoke();
+            }
             if (_isDirty) ApplyRotation(ctx);
             ResetState();
         }
@@ -58,6 +64,7 @@ namespace Poly_Ling.Tools
         {
             _rotX = _rotY = _rotZ = 0f;
             _isDirty = false;
+            _isSliderDragging = false;
             _startPositions.Clear();
             _affected.Clear();
             // v2.1: 複数メッシュ対応
@@ -102,6 +109,11 @@ namespace Poly_Ling.Tools
 
             if (EditorGUI.EndChangeCheck())
             {
+                if (!_isSliderDragging)
+                {
+                    _isSliderDragging = true;
+                    _ctx?.EnterTransformDragging?.Invoke();
+                }
                 if (_useSnap)
                 {
                     newX = Mathf.Round(newX / _snapAngle) * _snapAngle;
@@ -126,15 +138,30 @@ namespace Poly_Ling.Tools
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(T("Apply")))
             {
+                ExitSliderDragging();
                 ApplyRotation(_ctx);
                 _rotX = _rotY = _rotZ = 0f;
             }
             if (GUILayout.Button(T("Reset")))
             {
+                ExitSliderDragging();
                 RevertToStart();
                 _rotX = _rotY = _rotZ = 0f;
             }
             EditorGUILayout.EndHorizontal();
+
+            // スライダードラッグ終了検出
+            if (_isSliderDragging && Event.current.type == EventType.MouseUp)
+            {
+                ExitSliderDragging();
+            }
+        }
+
+        private void ExitSliderDragging()
+        {
+            if (!_isSliderDragging) return;
+            _isSliderDragging = false;
+            _ctx?.ExitTransformDragging?.Invoke();
         }
 
         private void UpdateAffected()

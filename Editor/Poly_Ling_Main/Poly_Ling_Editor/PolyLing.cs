@@ -639,6 +639,7 @@ public partial class PolyLing : EditorWindow
         {
             _selectedVertices.Add(v);
         }
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -846,6 +847,7 @@ public partial class PolyLing : EditorWindow
         // ここで再度チェックすると、VertexMoveRecord等のUndo時に古い状態を参照してしまう。
 
         Debug.Log($"[OnUndoRedoPerformed] === END === _selectedIndex={_selectedIndex}, _selectedVertices.Count={_selectedVertices.Count}");
+        _unifiedAdapter?.RequestNormal();
         Repaint();
 
         // ミラーキャッシュを無効化（頂点位置変更でも正しく更新されるように）
@@ -867,6 +869,7 @@ public partial class PolyLing : EditorWindow
         if (_commandQueue != null && _commandQueue.Count > 0)
         {
             _commandQueue.ProcessAll();
+            _unifiedAdapter?.RequestNormal();
             Repaint();
         }
 
@@ -876,6 +879,7 @@ public partial class PolyLing : EditorWindow
         if (processed > 0)
         {
             // キューが処理されたらUIを更新
+            _unifiedAdapter?.RequestNormal();
             Repaint();
         }
     }
@@ -913,7 +917,7 @@ public partial class PolyLing : EditorWindow
         }
         else
         {
-            _selectedIndex = _meshContextList.Count > 0 ? 0 : -1;
+            SetSelectedIndex(_meshContextList.Count > 0 ? 0 : -1);
             var fallbackMeshContext = _model.CurrentMeshContext;
             if (fallbackMeshContext != null)
             {
@@ -1247,28 +1251,9 @@ public partial class PolyLing : EditorWindow
 
         _isCameraDragging = true;
         
-        // =====================================================================
-        // 【重要】カメラ操作中の最適化フラグ - 絶対にコメントアウトしないこと！
-        // =====================================================================
-        // これらのフラグを無効化すると、カメラドラッグ中に以下の重い処理が
-        // 毎フレーム実行され、深刻なパフォーマンス低下を引き起こす：
-        // - ヒットテスト（不要なGPU計算）
-        // - 頂点フラグ読み戻し（GPU→CPU転送）
-        // - 可視性計算（ComputeShader実行）
-        // - 非選択メッシュの描画（大量の頂点処理）
-        // - メッシュ再構築（毎フレームList生成+全頂点走査）
-        // 
-        // デバッグ時も個別にテストすること。一括コメントアウト禁止！
-        // =====================================================================
-        if (_unifiedAdapter != null)
-        {
-            _unifiedAdapter.SkipHitTest = true;
-            _unifiedAdapter.SkipVertexFlagsReadback = true;
-            _unifiedAdapter.SkipGpuVisibilityCompute = true;
-            _unifiedAdapter.SkipUnselectedWireframe = true;
-            _unifiedAdapter.SkipUnselectedVertices = true;
-            _unifiedAdapter.SkipMeshRebuild = true;  // カメラ操作中はメッシュ再構築もスキップ
-        }
+        // 更新モード切替: カメラドラッグ中は重い処理を全スキップ
+        // （ヒットテスト、頂点フラグ読み戻し、可視性計算、メッシュ再構築等）
+        _unifiedAdapter?.EnterCameraDragging();
         
         _cameraStartRotX = _rotationX;
         _cameraStartRotY = _rotationY;
@@ -1294,16 +1279,8 @@ public partial class PolyLing : EditorWindow
         if (!_isCameraDragging) return;
         _isCameraDragging = false;
         
-        // ヒットテストを再開
-        if (_unifiedAdapter != null)
-        {
-            _unifiedAdapter.SkipHitTest = false;
-            _unifiedAdapter.SkipVertexFlagsReadback = false;
-            _unifiedAdapter.SkipGpuVisibilityCompute = false;
-            _unifiedAdapter.SkipUnselectedWireframe = false;
-            _unifiedAdapter.SkipUnselectedVertices = false;
-            _unifiedAdapter.SkipMeshRebuild = false;
-        }
+        // 更新モード復帰: 全処理を再開
+        _unifiedAdapter?.ExitCameraDragging();
 
         bool hasChanged =
             !Mathf.Approximately(_cameraStartRotX, _rotationX) ||

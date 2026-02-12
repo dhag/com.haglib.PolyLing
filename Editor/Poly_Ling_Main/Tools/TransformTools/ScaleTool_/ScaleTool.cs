@@ -30,6 +30,7 @@ namespace Poly_Ling.Tools
         private HashSet<int> _affected = new HashSet<int>();
         private Dictionary<int, Vector3> _startPositions = new Dictionary<int, Vector3>();
         private bool _isDirty = false;
+        private bool _isSliderDragging = false;
         private ToolContext _ctx;
 
         // v2.1: 複数メッシュ対応
@@ -48,6 +49,11 @@ namespace Poly_Ling.Tools
 
         public void OnDeactivate(ToolContext ctx)
         {
+            if (_isSliderDragging)
+            {
+                _isSliderDragging = false;
+                ctx.ExitTransformDragging?.Invoke();
+            }
             if (_isDirty) ApplyScale(ctx);
             ResetState();
         }
@@ -58,6 +64,7 @@ namespace Poly_Ling.Tools
         {
             _scaleX = _scaleY = _scaleZ = 1f;
             _isDirty = false;
+            _isSliderDragging = false;
             _startPositions.Clear();
             _affected.Clear();
             // v2.1: 複数メッシュ対応
@@ -114,6 +121,11 @@ namespace Poly_Ling.Tools
                 float newScale = EditorGUILayout.Slider("XYZ", _scaleX,_settings.MIN_SCALE_XYZ ,_settings.MAX_SCALE_XYZ);
                 if (EditorGUI.EndChangeCheck())
                 {
+                    if (!_isSliderDragging)
+                    {
+                        _isSliderDragging = true;
+                        _ctx?.EnterTransformDragging?.Invoke();
+                    }
                     _scaleX = _scaleY = _scaleZ = newScale;
                     UpdatePreview();
                 }
@@ -125,6 +137,11 @@ namespace Poly_Ling.Tools
                 float newZ = EditorGUILayout.Slider("Z", _scaleZ, _settings.MIN_SCALE_Z, _settings.MAX_SCALE_Z);
                 if (EditorGUI.EndChangeCheck())
                 {
+                    if (!_isSliderDragging)
+                    {
+                        _isSliderDragging = true;
+                        _ctx?.EnterTransformDragging?.Invoke();
+                    }
                     _scaleX = newX;
                     _scaleY = newY;
                     _scaleZ = newZ;
@@ -137,15 +154,30 @@ namespace Poly_Ling.Tools
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(T("Apply")))
             {
+                ExitSliderDragging();
                 ApplyScale(_ctx);
                 _scaleX = _scaleY = _scaleZ = 1f;
             }
             if (GUILayout.Button(T("Reset")))
             {
+                ExitSliderDragging();
                 RevertToStart();
                 _scaleX = _scaleY = _scaleZ = 1f;
             }
             EditorGUILayout.EndHorizontal();
+
+            // スライダードラッグ終了検出
+            if (_isSliderDragging && Event.current.type == EventType.MouseUp)
+            {
+                ExitSliderDragging();
+            }
+        }
+
+        private void ExitSliderDragging()
+        {
+            if (!_isSliderDragging) return;
+            _isSliderDragging = false;
+            _ctx?.ExitTransformDragging?.Invoke();
         }
 
         private void UpdateAffected()

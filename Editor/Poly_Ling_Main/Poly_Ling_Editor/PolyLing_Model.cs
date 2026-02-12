@@ -154,6 +154,7 @@ public partial class PolyLing
             Debug.Log($"[SwitchModelWithUndo] Recorded: {oldIndex} -> {newIndex}, {_undoController.GetProjectStackDebugInfo()}");
         }
 
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -224,7 +225,7 @@ public partial class PolyLing
         RefreshUndoControllerReferences();
 
         // 選択リセット
-        _selectedIndex = -1;
+        SetSelectedIndex(-1);
         _selectedVertices.Clear();
         _selectionState?.ClearAll();
 
@@ -599,6 +600,7 @@ public partial class PolyLing
             meshContext.RestoreSelection(snapshot);
             LoadSelectionFromCurrentMesh();
         }
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -629,6 +631,7 @@ public partial class PolyLing
         LoadSelectionFromCurrentMesh();
 
         InitVertexOffsets();
+        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 

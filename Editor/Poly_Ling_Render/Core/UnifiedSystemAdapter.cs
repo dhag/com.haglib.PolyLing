@@ -19,7 +19,7 @@ namespace Poly_Ling.Core
     /// 統合システムアダプター
     /// 既存のSimpleMeshFactoryとUnifiedMeshSystemを段階的に統合
     /// </summary>
-    public class UnifiedSystemAdapter : IDisposable
+    public partial class UnifiedSystemAdapter : IDisposable
     {
         // ============================================================
         // コンポーネント
@@ -43,13 +43,6 @@ namespace Poly_Ling.Core
         private bool _isInitialized = false;
         private bool _disposed = false;
         private bool _useUnifiedRendering = false; // 統合レンダリング使用フラグ
-        private bool _skipHitTest = true;  // ヒットテストをスキップ（カメラ操作中など）
-        private bool _skipVertexFlagsReadback = true;  // 頂点フラグ読み戻しをスキップ
-        private bool _skipGpuVisibilityCompute = false;  // GPU可視性計算をスキップ
-        private bool _skipUnselectedWireframe = false;  // 非選択ワイヤーフレーム描画をスキップ
-        private bool _skipUnselectedVertices = false;   // 非選択頂点描画をスキップ
-        // 【重要】カメラ操作中はtrueにすること。falseのままだと毎フレームメッシュ再構築が走る
-        private bool _skipMeshRebuild = false;          // メッシュ再構築をスキップ（カメラ操作中）
 
         // クワッドメッシュ（頂点描画用）
         private Mesh _quadMesh;
@@ -63,60 +56,6 @@ namespace Poly_Ling.Core
         {
             get => _useUnifiedRendering;
             set => _useUnifiedRendering = value;
-        }
-
-        /// <summary>
-        /// ヒットテストをスキップするか（カメラ操作中など）
-        /// </summary>
-        public bool SkipHitTest
-        {
-            get => _skipHitTest;
-            set => _skipHitTest = value;
-        }
-
-        /// <summary>
-        /// 頂点フラグ読み戻しをスキップするか（カメラ操作中など）
-        /// </summary>
-        public bool SkipVertexFlagsReadback
-        {
-            get => _skipVertexFlagsReadback;
-            set => _skipVertexFlagsReadback = value;
-        }
-
-        /// <summary>
-        /// GPU可視性計算をスキップするか（カメラ操作中など）
-        /// </summary>
-        public bool SkipGpuVisibilityCompute
-        {
-            get => _skipGpuVisibilityCompute;
-            set => _skipGpuVisibilityCompute = value;
-        }
-
-        /// <summary>
-        /// 非選択ワイヤーフレーム描画をスキップするか（カメラ操作中など）
-        /// </summary>
-        public bool SkipUnselectedWireframe
-        {
-            get => _skipUnselectedWireframe;
-            set => _skipUnselectedWireframe = value;
-        }
-
-        /// <summary>
-        /// 非選択頂点描画をスキップするか（カメラ操作中など）
-        /// </summary>
-        public bool SkipUnselectedVertices
-        {
-            get => _skipUnselectedVertices;
-            set => _skipUnselectedVertices = value;
-        }
-
-        /// <summary>
-        /// メッシュ再構築をスキップするか（カメラ操作中など）
-        /// </summary>
-        public bool SkipMeshRebuild
-        {
-            get => _skipMeshRebuild;
-            set => _skipMeshRebuild = value;
         }
 
         /// <summary>
@@ -324,6 +263,7 @@ namespace Poly_Ling.Core
             _unifiedSystem.NotifyTopologyChanged();
             // 即座にトポロジー更新を実行
             _unifiedSystem.ExecuteUpdates(DirtyLevel.Topology);
+            RequestNormal();
         }
 
         /// <summary>
@@ -332,6 +272,7 @@ namespace Poly_Ling.Core
         public void NotifyTransformChanged()
         {
             _unifiedSystem.NotifyTransformChanged();
+            RequestNormal();
         }
 
         /// <summary>
@@ -340,6 +281,7 @@ namespace Poly_Ling.Core
         public void NotifySelectionChanged()
         {
             _unifiedSystem.NotifySelectionChanged();
+            RequestNormal();
         }
 
         // ============================================================
@@ -360,8 +302,8 @@ namespace Poly_Ling.Core
             if (!_isInitialized)
                 return;
 
-            // カメラドラッグ中は全てスキップ（描画はシェーダーがカメラ行列で変換）
-            if (_skipHitTest)
+            // カメラドラッグ中等は全てスキップ（描画はシェーダーがカメラ行列で変換）
+            if (!_currentProfile.AllowHitTest)
                 return;
 
             _unifiedSystem.BeginFrame();
@@ -619,8 +561,8 @@ namespace Poly_Ling.Core
                 return;
             }
 
-            // カメラ操作中はメッシュ再構築をスキップ（キャッシュされたメッシュを使用）
-            bool rebuildMesh = !_skipMeshRebuild;
+            // 更新モードに応じてメッシュ再構築をスキップ（キャッシュされたメッシュを使用）
+            bool rebuildMesh = _currentProfile.AllowMeshRebuild;
 
             // メッシュ構築
             if (showWireframe)
@@ -820,7 +762,7 @@ namespace Poly_Ling.Core
         /// </summary>
         public void ReadBackVertexFlags()
         {
-            if (_skipVertexFlagsReadback)
+            if (!_currentProfile.AllowVertexFlagsReadback)
                 return;
             _unifiedSystem?.BufferManager?.ReadBackVertexFlags();
         }
