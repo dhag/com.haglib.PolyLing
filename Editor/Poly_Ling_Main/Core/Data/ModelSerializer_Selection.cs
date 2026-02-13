@@ -200,7 +200,7 @@ namespace Poly_Ling.Serialization
                 Name = meshDTO.name ?? "UnityMesh",
                 MeshObject = meshObject,
                 UnityMesh = meshObject.ToUnityMesh(),
-                OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
+                OriginalPositions = (Vector3[])meshObject.Positions.Clone(),
                 BoneTransform = ToBoneTransform(meshDTO.exportSettingsDTO),
                 // オブジェクト属性
                 Type = meshType,

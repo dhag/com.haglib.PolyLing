@@ -405,7 +405,7 @@ namespace Poly_Ling.Serialization
                     Name = meshContextData.name ?? "UnityMesh",
                     MeshObject = meshObject,
                     UnityMesh = meshObject.ToUnityMesh(),
-                    OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
+                    OriginalPositions = (Vector3[])meshObject.Positions.Clone(),
                     BoneTransform = ToBoneTransform(meshContextData.exportSettingsDTO),
                     // Materials は ModelData から復元するため、ここでは設定しない
                     // オブジェクト属性
@@ -585,7 +585,7 @@ namespace Poly_Ling.Serialization
                 Name = meshDTO.name ?? "UnityMesh",
                 MeshObject = meshObject,
                 UnityMesh = meshObject.ToUnityMeshShared(),
-                OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray(),
+                OriginalPositions = (Vector3[])meshObject.Positions.Clone(),
                 BoneTransform = ToBoneTransform(meshDTO.exportSettingsDTO),
                 // Phase 1: Materials は ModelContext に集約
                 // オブジェクト属性

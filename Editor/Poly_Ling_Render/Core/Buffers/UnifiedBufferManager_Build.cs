@@ -601,15 +601,13 @@ namespace Poly_Ling.Core
 
             var meshInfo = _meshInfos[meshIndex];
             uint baseOffset = meshInfo.VertexStart;
+            int count = System.Math.Min(meshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
+            if (count <= 0) return;
 
-            for (int v = 0; v < meshObject.VertexCount; v++)
-            {
-                uint globalIdx = baseOffset + (uint)v;
-                if (globalIdx >= _totalVertexCount)
-                    break;
-
-                _positions[globalIdx] = meshObject.Vertices[v].Position;
-            }
+            // ツールがVertices[i].Positionを直接変更するため、
+            // GPU転送前にキャッシュを必ず再構築して最新データを取得する
+            meshObject.InvalidatePositionCache();
+            Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
 
             // GPUにアップロード
             _positionBuffer.SetData(_positions, (int)baseOffset, (int)baseOffset, (int)meshInfo.VertexCount);
@@ -637,15 +635,13 @@ namespace Poly_Ling.Core
                 var meshInfo = _meshInfos[unifiedMeshIdx];
                 uint baseOffset = meshInfo.VertexStart;
                 var meshObject = mc.MeshObject;
+                int count = System.Math.Min(meshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
+                if (count <= 0) continue;
 
-                for (int v = 0; v < meshObject.VertexCount; v++)
-                {
-                    uint globalIdx = baseOffset + (uint)v;
-                    if (globalIdx >= _totalVertexCount)
-                        break;
-
-                    _positions[globalIdx] = meshObject.Vertices[v].Position;
-                }
+                // ツールがVertices[i].Positionを直接変更するため、
+                // GPU転送前にキャッシュを必ず再構築して最新データを取得する
+                meshObject.InvalidatePositionCache();
+                Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
             }
 
             // 全頂点をアップロード

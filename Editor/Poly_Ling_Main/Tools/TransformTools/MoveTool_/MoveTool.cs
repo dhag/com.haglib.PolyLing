@@ -663,12 +663,12 @@ namespace Poly_Ling.Tools
                     if (meshContext?.MeshObject != null)
                     {
                         _multiMeshDragStartPositions[kv.Key] = 
-                            meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+                            (Vector3[])meshContext.MeshObject.Positions.Clone();
                     }
                 }
             }
 
-            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = (Vector3[])ctx.MeshObject.Positions.Clone();
 
             if (UseMagnet)
             {
@@ -826,12 +826,12 @@ namespace Poly_Ling.Tools
                     if (meshContext?.MeshObject != null)
                     {
                         _multiMeshDragStartPositions[kv.Key] = 
-                            meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+                            (Vector3[])meshContext.MeshObject.Positions.Clone();
                     }
                 }
             }
 
-            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = (Vector3[])ctx.MeshObject.Positions.Clone();
 
             if (UseMagnet)
             {
@@ -956,12 +956,12 @@ namespace Poly_Ling.Tools
                     if (meshContext?.MeshObject != null)
                     {
                         _multiMeshDragStartPositions[kv.Key] = 
-                            meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+                            (Vector3[])meshContext.MeshObject.Positions.Clone();
                     }
                 }
             }
 
-            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = (Vector3[])ctx.MeshObject.Positions.Clone();
 
             if (UseMagnet)
             {

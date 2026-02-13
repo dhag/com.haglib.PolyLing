@@ -746,6 +746,91 @@ namespace Poly_Ling.Data
         /// <summary>面リスト</summary>
         public List<Face> Faces = new List<Face>();
 
+        // ================================================================
+        // Position 配列キャッシュ（ハイブリッドSoA）
+        // ================================================================
+        //
+        // 【目的】
+        // Vertices[i].Position への個別アクセスを介さずに、
+        // Position配列をバルクで取得・設定できるようにする。
+        // GPU転送、Undoスナップショット、ネットワーク同期で使用。
+        //
+        // 【使い分け】
+        // - 読み取り: Positions プロパティ（キャッシュ自動構築）
+        // - 書き込み: SetPositions()（Vertex.Positionに書き戻し）
+        // - 無効化: InvalidatePositionCache()（Vertex.Positionを直接変更した後）
+        //
+        // 【注意】
+        // Vertices[i].Position を直接変更した場合は
+        // InvalidatePositionCache() を呼ぶこと。
+        // AddVertex/RemoveVertex 等のトポロジー変更時は自動で無効化される。
+        //
+
+        [NonSerialized]
+        private Vector3[] _positionCache;
+
+        [NonSerialized]
+        private bool _positionCacheDirty = true;
+
+        /// <summary>
+        /// Position配列を取得（キャッシュ付き）
+        /// Vertices[i].Position を変更した場合は InvalidatePositionCache() が必要
+        /// </summary>
+        public Vector3[] Positions
+        {
+            get
+            {
+                if (_positionCacheDirty || _positionCache == null || _positionCache.Length != Vertices.Count)
+                {
+                    RebuildPositionCache();
+                }
+                return _positionCache;
+            }
+        }
+
+        /// <summary>
+        /// Position配列からVertices[i].Positionに書き戻し
+        /// Undo復元、一括位置設定時に使用
+        /// </summary>
+        public void SetPositions(Vector3[] positions)
+        {
+            int count = System.Math.Min(positions.Length, Vertices.Count);
+            for (int i = 0; i < count; i++)
+                Vertices[i].Position = positions[i];
+            // キャッシュも同時更新（再構築を避ける）
+            if (positions.Length == Vertices.Count)
+            {
+                _positionCache = (Vector3[])positions.Clone();
+                _positionCacheDirty = false;
+            }
+            else
+            {
+                _positionCacheDirty = true;
+            }
+        }
+
+        /// <summary>
+        /// Positionキャッシュを無効化
+        /// Vertices[i].Positionを直接変更した後に呼ぶこと
+        /// </summary>
+        public void InvalidatePositionCache()
+        {
+            _positionCacheDirty = true;
+        }
+
+        /// <summary>
+        /// Positionキャッシュを再構築
+        /// </summary>
+        private void RebuildPositionCache()
+        {
+            int count = Vertices.Count;
+            if (_positionCache == null || _positionCache.Length != count)
+                _positionCache = new Vector3[count];
+            for (int i = 0; i < count; i++)
+                _positionCache[i] = Vertices[i].Position;
+            _positionCacheDirty = false;
+        }
+
         /// <summary>
         /// 頂点が展開済みか（PMX形式）
         /// true: 各頂点が1つのUV/法線を持つ（展開済み、PMX互換）
@@ -827,6 +912,7 @@ namespace Poly_Ling.Data
             var vertex = new Vertex(position);
             vertex.Id = GenerateVertexId();
             Vertices.Add(vertex);
+            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -838,6 +924,7 @@ namespace Poly_Ling.Data
             var vertex = new Vertex(position, uv);
             vertex.Id = GenerateVertexId();
             Vertices.Add(vertex);
+            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -849,6 +936,7 @@ namespace Poly_Ling.Data
             var vertex = new Vertex(position, uv, normal);
             vertex.Id = GenerateVertexId();
             Vertices.Add(vertex);
+            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -866,6 +954,7 @@ namespace Poly_Ling.Data
                 RegisterVertexId(vertex.Id);
             }
             Vertices.Add(vertex);
+            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -875,6 +964,7 @@ namespace Poly_Ling.Data
         public int AddVertexRaw(Vertex vertex)
         {
             Vertices.Add(vertex);
+            _positionCacheDirty = true;
             return Vertices.Count - 1;
         }
 
@@ -1666,6 +1756,7 @@ namespace Poly_Ling.Data
         {
             Vertices.Clear();
             Faces.Clear();
+            _positionCacheDirty = true;
         }
 
         /// <summary>

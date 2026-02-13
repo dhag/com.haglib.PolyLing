@@ -138,7 +138,7 @@ namespace Poly_Ling.PMX
             {
                 MeshObject = mesh,
                 Type = MeshType.Mesh,
-                OriginalPositions = mesh.Vertices.ConvertAll(v => v.Position).ToArray()
+                OriginalPositions = (Vector3[])mesh.Positions.Clone()
             };
         }
 

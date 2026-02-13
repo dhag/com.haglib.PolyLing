@@ -948,7 +948,7 @@ public partial class PolyLing
         {
             Name = name,
             MeshObject = meshObject,
-            OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray()
+            OriginalPositions = (Vector3[])meshObject.Positions.Clone()
         };
 
         // BoneTransform: 元オブジェクトのTransformを設定

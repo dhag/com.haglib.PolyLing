@@ -30,9 +30,6 @@ namespace Poly_Ling.UndoSystem
         /// <summary>選択中の頂点インデックス</summary>
         public HashSet<int> SelectedVertices;
 
-        /// <summary>選択中の面インデックス</summary>
-        public HashSet<int> SelectedFaces;
-
         // === 元データ参照（リセット用） ===
 
         /// <summary>元の頂点位置（リセット用）</summary>
@@ -136,14 +133,11 @@ namespace Poly_Ling.UndoSystem
         /// <summary>頂点位置リスト（後方互換）</summary>
         public List<Vector3> Vertices
         {
-            get => MeshObject?.Vertices.Select(v => v.Position).ToList() ?? new List<Vector3>();
+            get => MeshObject != null ? new List<Vector3>(MeshObject.Positions) : new List<Vector3>();
             set
             {
                 if (MeshObject == null) return;
-                for (int i = 0; i < value.Count && i < MeshObject.Vertices.Count; i++)
-                {
-                    MeshObject.Vertices[i].Position = value[i];
-                }
+                MeshObject.SetPositions(value.ToArray());
             }
         }
 
@@ -160,7 +154,6 @@ namespace Poly_Ling.UndoSystem
         {
             MeshObject = new MeshObject();
             SelectedVertices = new HashSet<int>();
-            SelectedFaces = new HashSet<int>();
             // Materials, DefaultMaterials は MaterialOwner 経由で取得
             // MaterialOwner は使用前に必ず設定すること
         }
@@ -178,12 +171,11 @@ namespace Poly_Ling.UndoSystem
             MeshObject = new MeshObject();
             MeshObject.FromUnityMesh(mesh, mergeVertices);
 
-            // 元の位置を保存
-            OriginalPositions = MeshObject.Vertices.Select(v => v.Position).ToArray();
+            // 元の位置を保存（MeshObject.Positionsキャッシュ経由）
+            OriginalPositions = (Vector3[])MeshObject.Positions.Clone();
 
             // 選択クリア
             SelectedVertices.Clear();
-            SelectedFaces.Clear();
         }
 
         /// <summary>
@@ -244,27 +236,25 @@ namespace Poly_Ling.UndoSystem
             if (MeshObject == null || index < 0 || index >= MeshObject.VertexCount)
                 return;
             MeshObject.Vertices[index].Position = position;
+            MeshObject.InvalidatePositionCache();
         }
 
         /// <summary>
-        /// 全頂点位置を配列で取得
+        /// 全頂点位置を配列で取得（MeshObject.Positionsキャッシュ経由）
         /// </summary>
         public Vector3[] GetAllPositions()
         {
             if (MeshObject == null) return new Vector3[0];
-            return MeshObject.Vertices.Select(v => v.Position).ToArray();
+            return (Vector3[])MeshObject.Positions.Clone();
         }
 
         /// <summary>
-        /// 全頂点位置を配列で設定
+        /// 全頂点位置を配列で設定（MeshObject.SetPositions経由）
         /// </summary>
         public void SetAllPositions(Vector3[] positions)
         {
             if (MeshObject == null) return;
-            for (int i = 0; i < positions.Length && i < MeshObject.VertexCount; i++)
-            {
-                MeshObject.Vertices[i].Position = positions[i];
-            }
+            MeshObject.SetPositions(positions);
         }
 
         /// <summary>

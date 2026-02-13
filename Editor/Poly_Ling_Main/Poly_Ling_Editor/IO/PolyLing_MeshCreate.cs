@@ -44,7 +44,7 @@ public partial class PolyLing
         {
             Name = name,
             MeshObject = meshObject.Clone(),
-            OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray()
+            OriginalPositions = (Vector3[])meshObject.Positions.Clone()
         };
 
         // デフォルトマテリアルをコピー
@@ -72,7 +72,7 @@ public partial class PolyLing
                 Debug.Log($"[CreateNewMeshContext] Auto-merged {result.RemovedVertexCount} vertices");
             }
             // OriginalPositionsを更新
-            meshContext.OriginalPositions = meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+            meshContext.OriginalPositions = (Vector3[])meshContext.MeshObject.Positions.Clone();
         }
 
         // MeshObjectから表示用Unity Meshを生成（MaterialIndex適用後）
@@ -168,7 +168,7 @@ public partial class PolyLing
         }
 
         // OriginalPositionsを更新
-        meshContext.OriginalPositions = meshContext.MeshObject.Vertices.Select(v => v.Position).ToArray();
+        meshContext.OriginalPositions = (Vector3[])meshContext.MeshObject.Positions.Clone();
 
         // メッシュ更新
         SyncMeshFromData(meshContext);
@@ -245,7 +245,7 @@ public partial class PolyLing
             Name = name,
             UnityMesh = mesh,
             MeshObject = meshObject,
-            OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray()
+            OriginalPositions = (Vector3[])meshObject.Positions.Clone()
         };
 
         // デフォルトマテリアルをコピー

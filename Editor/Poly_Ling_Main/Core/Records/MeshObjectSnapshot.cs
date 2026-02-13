@@ -142,7 +142,7 @@ namespace Poly_Ling.UndoSystem
             {
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
-                SelectedFaces = new HashSet<int>(ctx.SelectedFaces),
+                SelectedFaces = new HashSet<int>(),
                 Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
                 CurrentMaterialIndex = ctx.CurrentMaterialIndex,
                 DefaultMaterials = ctx.DefaultMaterials != null ? new List<Material>(ctx.DefaultMaterials) : new List<Material> { null },
@@ -177,7 +177,7 @@ namespace Poly_Ling.UndoSystem
             {
                 MeshObject = ctx.MeshObject?.Clone(),
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
-                SelectedFaces = new HashSet<int>(ctx.SelectedFaces),
+                SelectedFaces = new HashSet<int>(),
                 Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
                 CurrentMaterialIndex = ctx.CurrentMaterialIndex,
                 DefaultMaterials = ctx.DefaultMaterials != null ? new List<Material>(ctx.DefaultMaterials) : new List<Material> { null },
@@ -186,11 +186,11 @@ namespace Poly_Ling.UndoSystem
             };
 
             // 【フェーズ1追加】拡張選択を保存
-            // SelectionStateが渡された場合のみ保存。
-            // これによりEdge/Line選択もUndo対象になる。
             if (selectionState != null)
             {
                 snapshot.ExtendedSelection = selectionState.CreateSnapshot();
+                // ExtendedSelectionからFacesを取得（後方互換フィールド）
+                snapshot.SelectedFaces = new HashSet<int>(snapshot.ExtendedSelection.Faces);
             }
 
             return snapshot;
@@ -203,7 +203,6 @@ namespace Poly_Ling.UndoSystem
         {
             ctx.MeshObject = MeshObject?.Clone();
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
-            ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
 
             // マテリアル復元
             if (Materials != null)
@@ -242,7 +241,6 @@ namespace Poly_Ling.UndoSystem
             // === 既存処理（メッシュデータ、レガシー選択、マテリアル） ===
             ctx.MeshObject = MeshObject?.Clone();
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
-            ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
 
             if (Materials != null)
             {
@@ -309,7 +307,7 @@ namespace Poly_Ling.UndoSystem
                     UVs = new Vector2[0],
                     Normals = new Vector3[0],
                     SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
-                    SelectedFaces = new HashSet<int>(ctx.SelectedFaces)
+                    SelectedFaces = new HashSet<int>()
                 };
             }
 
@@ -321,7 +319,7 @@ namespace Poly_Ling.UndoSystem
                 UVs = mesh.uv,
                 Normals = mesh.normals,
                 SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
-                SelectedFaces = new HashSet<int>(ctx.SelectedFaces)
+                SelectedFaces = new HashSet<int>()
             };
             Object.DestroyImmediate(mesh);
             return snapshot;
@@ -344,7 +342,6 @@ namespace Poly_Ling.UndoSystem
             ctx.MeshObject = new MeshObject();
             ctx.MeshObject.FromUnityMesh(tempMesh, true);
             ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
-            ctx.SelectedFaces = new HashSet<int>(SelectedFaces);
 
             Object.DestroyImmediate(tempMesh);
         }

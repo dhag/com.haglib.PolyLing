@@ -519,7 +519,7 @@ namespace Poly_Ling.PMX
             {
                 MeshObject = meshObject,
                 Type = MeshType.Mesh,
-                OriginalPositions = meshObject.Vertices.Select(v => v.Position).ToArray()
+                OriginalPositions = (Vector3[])meshObject.Positions.Clone()
             };
             meshContext.Name = group.ObjectName;
 

@@ -335,7 +335,7 @@ public partial class PolyLing
         int globalVertex = _unifiedAdapter?.HoverVertexIndex ?? -1;
         int globalLine = _unifiedAdapter?.HoverLineIndex ?? -1;
         int globalFace = _unifiedAdapter?.HoverFaceIndex ?? -1;
-        Debug.Log($"[OnMouseDown] Hover: V={globalVertex}, L={globalLine}, F={globalFace}, mode={currentMode}, selV={_selectionState?.Vertices.Count ?? 0}");
+        // Debug.Log($"[OnMouseDown] Hover: V={globalVertex}, L={globalLine}, F={globalFace}, mode={currentMode}, selV={_selectionState?.Vertices.Count ?? 0}");
 
         if (bufferManager != null)
         {
@@ -344,7 +344,7 @@ public partial class PolyLing
             {
                 if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localVertex))
                 {
-                    Debug.Log($"[OnMouseDown] Vertex hit: meshIdx={meshIdx}, localVertex={localVertex}");
+                    // Debug.Log($"[OnMouseDown] Vertex hit: meshIdx={meshIdx}, localVertex={localVertex}");
                     // v2.1: 複数メッシュ対応 - 選択中のメッシュならヒット
                     bool isSelectedMesh = meshIdx == _selectedIndex ||
                         (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
@@ -480,7 +480,7 @@ public partial class PolyLing
 
                     if (dist < handleRadius * 2f)  // 少し大きめの判定範囲
                     {
-                        Debug.Log($"[OnMouseDown] Hit selected vertex {vIdx} at distance {dist}");
+                        // Debug.Log($"[OnMouseDown] Hit selected vertex {vIdx} at distance {dist}");
                         hitIsAlreadySelected = true;
                         break;
                     }
@@ -488,7 +488,7 @@ public partial class PolyLing
             }
         }
 
-        Debug.Log($"[OnMouseDown] hitIsAlreadySelected={hitIsAlreadySelected}, hitType={_hitResultOnMouseDown.HitType}");
+        // Debug.Log($"[OnMouseDown] hitIsAlreadySelected={hitIsAlreadySelected}, hitType={_hitResultOnMouseDown.HitType}");
 
         if (!hitIsAlreadySelected)
         {
@@ -625,11 +625,11 @@ public partial class PolyLing
         // 選択を追加
         if (isSecondaryMesh && _model != null)
         {
-            // セカンダリメッシュ: MeshContextに直接書き込む
+            // セカンダリメッシュ: MeshContext.Selectionに書き込む
             var hitMeshContext = _model.GetMeshContext(hitMeshIdx);
             if (hitMeshContext != null)
             {
-                AddSelectionWithLinkage(hitMeshContext, _hitResultOnMouseDown);
+                AddSelectionWithLinkage(hitMeshContext.Selection, hitMeshContext.MeshObject, _hitResultOnMouseDown);
             }
         }
         else
@@ -656,7 +656,7 @@ public partial class PolyLing
     }
 
     /// <summary>
-    /// 選択を追加（連動ルール適用）- MeshContext用（セカンダリメッシュ）
+    /// 選択を追加（連動ルール適用）
     /// 
     /// 【選択の連動ルール - 追加時】
     /// - 頂点Aを選択 → 頂点A
@@ -664,41 +664,39 @@ public partial class PolyLing
     /// - 辺(A-B)を選択 → 辺(A-B) + 頂点A + 頂点B
     /// - 面Fを選択 → 面F + 面の全辺 + 面の全頂点
     /// </summary>
-    private void AddSelectionWithLinkage(MeshContext meshContext, HitResult hit)
+    private void AddSelectionWithLinkage(SelectionState selection, MeshObject meshObject, HitResult hit)
     {
-        if (meshContext == null || hit.HitType == MeshSelectMode.None)
+        if (selection == null || hit.HitType == MeshSelectMode.None)
             return;
-
-        var meshObject = meshContext.MeshObject;
 
         switch (hit.HitType)
         {
             case MeshSelectMode.Vertex:
                 if (hit.VertexIndex >= 0)
                 {
-                    meshContext.SelectedVertices.Add(hit.VertexIndex);
+                    selection.Vertices.Add(hit.VertexIndex);
                 }
                 break;
 
             case MeshSelectMode.Edge:
                 if (hit.EdgePair.HasValue)
                 {
-                    meshContext.SelectedEdges.Add(hit.EdgePair.Value);
+                    selection.Edges.Add(hit.EdgePair.Value);
                     // 連動: 両端頂点も選択
-                    meshContext.SelectedVertices.Add(hit.EdgePair.Value.V1);
-                    meshContext.SelectedVertices.Add(hit.EdgePair.Value.V2);
+                    selection.Vertices.Add(hit.EdgePair.Value.V1);
+                    selection.Vertices.Add(hit.EdgePair.Value.V2);
                 }
                 break;
 
             case MeshSelectMode.Face:
                 if (hit.FaceIndex >= 0 && meshObject != null && hit.FaceIndex < meshObject.FaceCount)
                 {
-                    meshContext.SelectedFaces.Add(hit.FaceIndex);
+                    selection.Faces.Add(hit.FaceIndex);
                     var face = meshObject.Faces[hit.FaceIndex];
                     // 連動: 面の全頂点を選択
                     foreach (var vIdx in face.VertexIndices)
                     {
-                        meshContext.SelectedVertices.Add(vIdx);
+                        selection.Vertices.Add(vIdx);
                     }
                     // 連動: 面の全辺を選択
                     var verts = face.VertexIndices;
@@ -706,7 +704,7 @@ public partial class PolyLing
                     {
                         int v1 = verts[i];
                         int v2 = verts[(i + 1) % verts.Count];
-                        meshContext.SelectedEdges.Add(new VertexPair(v1, v2));
+                        selection.Edges.Add(new VertexPair(v1, v2));
                     }
                 }
                 break;
@@ -714,13 +712,13 @@ public partial class PolyLing
             case MeshSelectMode.Line:
                 if (hit.LineIndex >= 0 && meshObject != null && hit.LineIndex < meshObject.FaceCount)
                 {
-                    meshContext.SelectedLines.Add(hit.LineIndex);
+                    selection.Lines.Add(hit.LineIndex);
                     var lineFace = meshObject.Faces[hit.LineIndex];
                     // 連動: 線分の両端頂点を選択
                     if (lineFace.VertexCount == 2)
                     {
-                        meshContext.SelectedVertices.Add(lineFace.VertexIndices[0]);
-                        meshContext.SelectedVertices.Add(lineFace.VertexIndices[1]);
+                        selection.Vertices.Add(lineFace.VertexIndices[0]);
+                        selection.Vertices.Add(lineFace.VertexIndices[1]);
                     }
                 }
                 break;
@@ -736,101 +734,8 @@ public partial class PolyLing
     /// - 線分Lを解除 → 線分Lのみ解除（頂点は残る）
     /// - 面Fを解除 → 面Fのみ解除（辺/頂点は残る）
     /// </summary>
-    private void RemoveSelectionWithLinkageFromState(HitResult hit)
-    {
-        if (_selectionState == null || hit.HitType == MeshSelectMode.None)
-            return;
-
-        var meshObject = _model?.CurrentMeshContext?.MeshObject;
-
-        switch (hit.HitType)
-        {
-            case MeshSelectMode.Vertex:
-                if (hit.VertexIndex >= 0)
-                {
-                    int vIdx = hit.VertexIndex;
-                    _selectionState.Vertices.Remove(vIdx);
-
-                    // 連動: この頂点を含む辺を解除
-                    var edgesToRemove = _selectionState.Edges
-                        .Where(e => e.V1 == vIdx || e.V2 == vIdx).ToList();
-                    foreach (var e in edgesToRemove)
-                        _selectionState.Edges.Remove(e);
-
-                    // 連動: この頂点を含む面を解除
-                    if (meshObject != null)
-                    {
-                        var facesToRemove = _selectionState.Faces
-                            .Where(f => f >= 0 && f < meshObject.FaceCount &&
-                                        meshObject.Faces[f].VertexIndices.Contains(vIdx)).ToList();
-                        foreach (var f in facesToRemove)
-                            _selectionState.Faces.Remove(f);
-                    }
-
-                    // 連動: この頂点を含む線分を解除
-                    if (meshObject != null)
-                    {
-                        var linesToRemove = _selectionState.Lines
-                            .Where(l => l >= 0 && l < meshObject.FaceCount &&
-                                        meshObject.Faces[l].VertexCount == 2 &&
-                                        meshObject.Faces[l].VertexIndices.Contains(vIdx)).ToList();
-                        foreach (var l in linesToRemove)
-                            _selectionState.Lines.Remove(l);
-                    }
-                }
-                break;
-
-            case MeshSelectMode.Edge:
-                if (hit.EdgePair.HasValue)
-                {
-                    var edge = hit.EdgePair.Value;
-                    _selectionState.Edges.Remove(edge);
-
-                    // 連動: この辺を含む面を解除
-                    if (meshObject != null)
-                    {
-                        var facesToRemove = _selectionState.Faces
-                            .Where(f => {
-                                if (f < 0 || f >= meshObject.FaceCount) return false;
-                                var verts = meshObject.Faces[f].VertexIndices;
-                                for (int i = 0; i < verts.Count; i++)
-                                {
-                                    int v1 = verts[i];
-                                    int v2 = verts[(i + 1) % verts.Count];
-                                    if ((v1 == edge.V1 && v2 == edge.V2) || (v1 == edge.V2 && v2 == edge.V1))
-                                        return true;
-                                }
-                                return false;
-                            }).ToList();
-                        foreach (var f in facesToRemove)
-                            _selectionState.Faces.Remove(f);
-                    }
-                    // 頂点は残す
-                }
-                break;
-
-            case MeshSelectMode.Line:
-                if (hit.LineIndex >= 0)
-                {
-                    _selectionState.Lines.Remove(hit.LineIndex);
-                    // 頂点は残す
-                }
-                break;
-
-            case MeshSelectMode.Face:
-                if (hit.FaceIndex >= 0)
-                {
-                    _selectionState.Faces.Remove(hit.FaceIndex);
-                    // 辺/頂点は残す
-                }
-                break;
-        }
-
-        // 選択変更通知はExpandLinkedVerticesで行われる
-    }
-
     /// <summary>
-    /// 選択を除外（連動ルール適用）- MeshContext用（セカンダリメッシュ）
+    /// 選択を除外（連動ルール適用）
     /// 
     /// 【選択の連動ルール - 除外時】
     /// - 頂点Aを解除 → 頂点A + 頂点Aを含む線分/辺/面 を解除
@@ -838,12 +743,10 @@ public partial class PolyLing
     /// - 線分Lを解除 → 線分Lのみ解除（頂点は残る）
     /// - 面Fを解除 → 面Fのみ解除（辺/頂点は残る）
     /// </summary>
-    private void RemoveSelectionWithLinkage(MeshContext meshContext, HitResult hit)
+    private void RemoveSelectionWithLinkage(SelectionState selection, MeshObject meshObject, HitResult hit)
     {
-        if (meshContext == null || hit.HitType == MeshSelectMode.None)
+        if (selection == null || hit.HitType == MeshSelectMode.None)
             return;
-
-        var meshObject = meshContext.MeshObject;
 
         switch (hit.HitType)
         {
@@ -851,33 +754,33 @@ public partial class PolyLing
                 if (hit.VertexIndex >= 0)
                 {
                     int vIdx = hit.VertexIndex;
-                    meshContext.SelectedVertices.Remove(vIdx);
+                    selection.Vertices.Remove(vIdx);
 
                     // 連動: この頂点を含む辺を解除
-                    var edgesToRemove = meshContext.SelectedEdges
+                    var edgesToRemove = selection.Edges
                         .Where(e => e.V1 == vIdx || e.V2 == vIdx).ToList();
                     foreach (var e in edgesToRemove)
-                        meshContext.SelectedEdges.Remove(e);
+                        selection.Edges.Remove(e);
 
                     // 連動: この頂点を含む面を解除
                     if (meshObject != null)
                     {
-                        var facesToRemove = meshContext.SelectedFaces
+                        var facesToRemove = selection.Faces
                             .Where(f => f >= 0 && f < meshObject.FaceCount &&
                                         meshObject.Faces[f].VertexIndices.Contains(vIdx)).ToList();
                         foreach (var f in facesToRemove)
-                            meshContext.SelectedFaces.Remove(f);
+                            selection.Faces.Remove(f);
                     }
 
                     // 連動: この頂点を含む線分を解除
                     if (meshObject != null)
                     {
-                        var linesToRemove = meshContext.SelectedLines
+                        var linesToRemove = selection.Lines
                             .Where(l => l >= 0 && l < meshObject.FaceCount &&
                                         meshObject.Faces[l].VertexCount == 2 &&
                                         meshObject.Faces[l].VertexIndices.Contains(vIdx)).ToList();
                         foreach (var l in linesToRemove)
-                            meshContext.SelectedLines.Remove(l);
+                            selection.Lines.Remove(l);
                     }
                 }
                 break;
@@ -886,12 +789,12 @@ public partial class PolyLing
                 if (hit.EdgePair.HasValue)
                 {
                     var edge = hit.EdgePair.Value;
-                    meshContext.SelectedEdges.Remove(edge);
+                    selection.Edges.Remove(edge);
 
                     // 連動: この辺を含む面を解除
                     if (meshObject != null)
                     {
-                        var facesToRemove = meshContext.SelectedFaces
+                        var facesToRemove = selection.Faces
                             .Where(f => {
                                 if (f < 0 || f >= meshObject.FaceCount) return false;
                                 var verts = meshObject.Faces[f].VertexIndices;
@@ -905,7 +808,7 @@ public partial class PolyLing
                                 return false;
                             }).ToList();
                         foreach (var f in facesToRemove)
-                            meshContext.SelectedFaces.Remove(f);
+                            selection.Faces.Remove(f);
                     }
                     // 頂点は残す
                 }
@@ -914,7 +817,7 @@ public partial class PolyLing
             case MeshSelectMode.Line:
                 if (hit.LineIndex >= 0)
                 {
-                    meshContext.SelectedLines.Remove(hit.LineIndex);
+                    selection.Lines.Remove(hit.LineIndex);
                     // 頂点は残す
                 }
                 break;
@@ -922,7 +825,7 @@ public partial class PolyLing
             case MeshSelectMode.Face:
                 if (hit.FaceIndex >= 0)
                 {
-                    meshContext.SelectedFaces.Remove(hit.FaceIndex);
+                    selection.Faces.Remove(hit.FaceIndex);
                     // 辺/頂点は残す
                 }
                 break;
@@ -1093,17 +996,17 @@ public partial class PolyLing
 
                 if (isSecondaryMesh && _model != null)
                 {
-                    // セカンダリメッシュ: MeshContextから除外
+                    // セカンダリメッシュ: MeshContext.Selectionから除外
                     var hitMeshContext = _model.GetMeshContext(hitMeshIdx);
                     if (hitMeshContext != null)
                     {
-                        RemoveSelectionWithLinkage(hitMeshContext, _hitResultOnMouseDown);
+                        RemoveSelectionWithLinkage(hitMeshContext.Selection, hitMeshContext.MeshObject, _hitResultOnMouseDown);
                     }
                 }
                 else
                 {
                     // プライマリメッシュ: _selectionState(= meshContext.Selection)から除外
-                    RemoveSelectionWithLinkageFromState(_hitResultOnMouseDown);
+                    RemoveSelectionWithLinkage(_selectionState, _model?.CurrentMeshContext?.MeshObject, _hitResultOnMouseDown);
 
                     // Edge/Face/Line選択に連動する頂点を追加
                     ExpandLinkedVertices();
@@ -1266,7 +1169,7 @@ public partial class PolyLing
 
         // v2.1: 複数メッシュ対応 - 選択中の全メッシュに対して矩形選択を実行
         var selectedMeshIndices = _model?.SelectedMeshIndices;
-        Debug.Log($"[FinishBoxSelect] _model={_model?.GetHashCode()}, toolCtx.Model={_toolContext?.Model?.GetHashCode()}, same={_model == _toolContext?.Model}");
+        // Debug.Log($"[FinishBoxSelect] _model={_model?.GetHashCode()}, toolCtx.Model={_toolContext?.Model?.GetHashCode()}, same={_model == _toolContext?.Model}");
 
         if (selectedMeshIndices != null && selectedMeshIndices.Count > 0)
         {
@@ -1431,7 +1334,7 @@ public partial class PolyLing
                     }
                 }
 
-                Debug.Log($"[FinishBoxSelect] Mesh {meshIdx}: V={meshContext.SelectedVertices.Count}, E={meshContext.SelectedEdges.Count}, F={meshContext.SelectedFaces.Count}, L={meshContext.SelectedLines.Count}");
+                // Debug.Log($"[FinishBoxSelect] Mesh {meshIdx}: V={meshContext.SelectedVertices.Count}, E={meshContext.SelectedEdges.Count}, F={meshContext.SelectedFaces.Count}, L={meshContext.SelectedLines.Count}");
             }
 
             // _selectionState == meshContext.Selection のため同期不要

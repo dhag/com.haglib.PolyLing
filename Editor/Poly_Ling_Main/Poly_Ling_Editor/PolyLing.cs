@@ -495,7 +495,7 @@ public partial class PolyLing : EditorWindow
 
                 // 1. _selectedIndex は ModelContext.ActiveCategory に応じて自動取得される
                 // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
-                Debug.Log($"[OnReorderCompleted] _selectedIndex={_selectedIndex}, CurrentMesh={_model?.CurrentMeshContext?.Name}");
+                // Debug.Log($"[OnReorderCompleted] _selectedIndex={_selectedIndex}, CurrentMesh={_model?.CurrentMeshContext?.Name}");
 
                 // 2. グローバルバッファを完全再構築
                 _unifiedAdapter?.SetModelContext(_model);
@@ -739,8 +739,8 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnUndoRedoPerformed()
     {
-        Debug.Log($"[OnUndoRedoPerformed] === START === _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
-        Debug.Log($"[OnUndoRedoPerformed] _selectedVertices.Count={_selectedVertices.Count}, ctx.SelectedVertices?.Count={_undoController?.MeshUndoContext?.SelectedVertices?.Count}");
+        // Debug.Log($"[OnUndoRedoPerformed] === START === _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
+        // Debug.Log($"[OnUndoRedoPerformed] _selectedVertices.Count={_selectedVertices.Count}, ctx.SelectedVertices?.Count={_undoController?.MeshUndoContext?.SelectedVertices?.Count}");
         
         // コンテキストからメッシュに反映
         var meshContext = _model.CurrentMeshContext;
@@ -810,22 +810,22 @@ public partial class PolyLing : EditorWindow
 
         // SelectionState を復元
         var ctx2 = _undoController.MeshUndoContext;
-        Debug.Log($"[OnUndoRedoPerformed] SelectionSnapshot check: ctx2.CurrentSelectionSnapshot={ctx2.CurrentSelectionSnapshot != null}, ctx2.SelectedVertices.Count={ctx2.SelectedVertices?.Count ?? -1}");
+        // Debug.Log($"[OnUndoRedoPerformed] SelectionSnapshot check: ctx2.CurrentSelectionSnapshot={ctx2.CurrentSelectionSnapshot != null}, ctx2.SelectedVertices.Count={ctx2.SelectedVertices?.Count ?? -1}");
         if (ctx2.CurrentSelectionSnapshot != null && _selectionState != null)
         {
-            Debug.Log($"[OnUndoRedoPerformed] Restoring from SelectionSnapshot. Snapshot.Vertices.Count={ctx2.CurrentSelectionSnapshot.Vertices?.Count ?? -1}");
+            // Debug.Log($"[OnUndoRedoPerformed] Restoring from SelectionSnapshot. Snapshot.Vertices.Count={ctx2.CurrentSelectionSnapshot.Vertices?.Count ?? -1}");
             // 拡張選択スナップショットから復元（Edge/Face/Lines/Modeを含む完全な復元）
             // _selectionState は meshContext.Selection と同一インスタンスのため、
             // _selectedVertices（プロキシ）も自動的に同期される
             _selectionState.RestoreFromSnapshot(ctx2.CurrentSelectionSnapshot);
             ctx2.CurrentSelectionSnapshot = null;  // 使用済みなのでクリア
-            Debug.Log($"[OnUndoRedoPerformed] After restore: _selectedVertices.Count={_selectedVertices.Count}");
+            // Debug.Log($"[OnUndoRedoPerformed] After restore: _selectedVertices.Count={_selectedVertices.Count}");
         }
         else
         {
             // SelectionSnapshotがない場合は選択状態を変更しない
             // VertexMoveRecord等のUndo時は選択状態は維持される
-            Debug.Log($"[OnUndoRedoPerformed] No SelectionSnapshot, keeping current selection state. _selectedVertices.Count={_selectedVertices.Count}");
+            // Debug.Log($"[OnUndoRedoPerformed] No SelectionSnapshot, keeping current selection state. _selectedVertices.Count={_selectedVertices.Count}");
         }
 
         // MeshListContextからの選択インデックス反映は不要
@@ -833,7 +833,7 @@ public partial class PolyLing : EditorWindow
         // OnMeshListChanged() で _selectedIndex が正しく更新される。
         // ここで再度チェックすると、VertexMoveRecord等のUndo時に古い状態を参照してしまう。
 
-        Debug.Log($"[OnUndoRedoPerformed] === END === _selectedIndex={_selectedIndex}, _selectedVertices.Count={_selectedVertices.Count}");
+        // Debug.Log($"[OnUndoRedoPerformed] === END === _selectedIndex={_selectedIndex}, _selectedVertices.Count={_selectedVertices.Count}");
         _unifiedAdapter?.RequestNormal();
         Repaint();
 
@@ -876,13 +876,13 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnMeshListChanged()
     {
-        Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
+        // Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
+        // Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
 
         // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
         // MeshListContext（= ModelContext）の選択状態はUndo/Redoで自動復元される
 
-        Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
+        // Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
 
         // 選択中のメッシュコンテキストをMeshContextに設定
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
@@ -898,9 +898,9 @@ public partial class PolyLing : EditorWindow
                 // Materials は ModelContext に集約済み
             }
 
-            Debug.Log($"[OnMeshListChanged] Before InitVertexOffsets: _cameraTarget={_cameraTarget}");
+            // Debug.Log($"[OnMeshListChanged] Before InitVertexOffsets: _cameraTarget={_cameraTarget}");
             InitVertexOffsets(updateCamera: false);
-            Debug.Log($"[OnMeshListChanged] After InitVertexOffsets: _cameraTarget={_cameraTarget}");
+            // Debug.Log($"[OnMeshListChanged] After InitVertexOffsets: _cameraTarget={_cameraTarget}");
         }
         else
         {
@@ -928,8 +928,8 @@ public partial class PolyLing : EditorWindow
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
         }
 
-        Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
+        // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
+        // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
         Repaint();
     }
     /*
@@ -938,14 +938,14 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnCameraRestoreRequested(CameraSnapshot camera)
     {
-        Debug.Log($"[OnCameraRestoreRequested] BEFORE: rotX={_rotationX}, rotY={_rotationY}, dist={_cameraDistance}, target={_cameraTarget}");
-        Debug.Log($"[OnCameraRestoreRequested] RESTORING TO: rotX={camera.RotationX}, rotY={camera.RotationY}, dist={camera.CameraDistance}, target={camera.CameraTarget}");
+        // Debug.Log($"[OnCameraRestoreRequested] BEFORE: rotX={_rotationX}, rotY={_rotationY}, dist={_cameraDistance}, target={_cameraTarget}");
+        // Debug.Log($"[OnCameraRestoreRequested] RESTORING TO: rotX={camera.RotationX}, rotY={camera.RotationY}, dist={camera.CameraDistance}, target={camera.CameraTarget}");
         _rotationX = camera.RotationX;
         _rotationY = camera.RotationY;
         _cameraDistance = camera.CameraDistance;
         _cameraTarget = camera.CameraTarget;
         _cameraRestoredByRecord = true; // OnUndoRedoPerformedでの上書きを防ぐ
-        Debug.Log($"[OnCameraRestoreRequested] AFTER: rotX={_rotationX}, rotY={_rotationY}, dist={_cameraDistance}, target={_cameraTarget}");
+        // Debug.Log($"[OnCameraRestoreRequested] AFTER: rotX={_rotationX}, rotY={_rotationY}, dist={_cameraDistance}, target={_cameraTarget}");
         Repaint();
     }*/
 
@@ -1120,7 +1120,7 @@ public partial class PolyLing : EditorWindow
             Event e_ = Event.current;
             if (e_.type == EventType.KeyDown)
             {
-                Debug.Log($"[PolyLing.OnGUI] KeyDown before HandleKeyboardShortcuts: keyCode={e_.keyCode}, ctrl={e_.control || e_.command}, shift={e_.shift}, used={e_.type == EventType.Used}");
+                // Debug.Log($"[PolyLing.OnGUI] KeyDown before HandleKeyboardShortcuts: keyCode={e_.keyCode}, ctrl={e_.control || e_.command}, shift={e_.shift}, used={e_.type == EventType.Used}");
             }
             
             if (_undoController.HandleKeyboardShortcuts(Event.current))

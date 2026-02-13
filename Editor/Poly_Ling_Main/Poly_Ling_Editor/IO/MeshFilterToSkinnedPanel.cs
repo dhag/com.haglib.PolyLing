@@ -365,7 +365,7 @@ namespace Poly_Ling.Tools.Panels
                 // UnityMeshを再構築
                 meshCtx.UnityMesh = meshObj.ToUnityMesh();
                 meshCtx.UnityMesh.name = meshCtx.Name;
-                meshCtx.OriginalPositions = meshObj.Vertices.Select(v => v.Position).ToArray();
+                meshCtx.OriginalPositions = (Vector3[])meshObj.Positions.Clone();
             }
 
             // --- Phase 6: 最終ワールド行列計算 + GPUバッファ再構築 ---

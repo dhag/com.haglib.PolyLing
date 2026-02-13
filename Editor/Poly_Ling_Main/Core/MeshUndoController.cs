@@ -201,10 +201,8 @@ namespace Poly_Ling.UndoSystem
         {
             _meshContext.MeshObject = meshObject;
             _meshContext.TargetMesh = targetMesh;
-            _meshContext.OriginalPositions = meshObject.Vertices
-                .ConvertAll(v => v.Position).ToArray();
+            _meshContext.OriginalPositions = (Vector3[])meshObject.Positions.Clone();
             _meshContext.SelectedVertices.Clear();
-            _meshContext.SelectedFaces.Clear();
             _vertexEditStack.Clear();
         }
 

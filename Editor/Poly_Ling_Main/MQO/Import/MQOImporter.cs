@@ -2033,7 +2033,7 @@ namespace Poly_Ling.MQO
 
             // UnityMesh生成
             mirrorContext.UnityMesh = mirrorMeshObj.ToUnityMesh();
-            mirrorContext.OriginalPositions = mirrorMeshObj.Vertices.Select(v => v.Position).ToArray();
+            mirrorContext.OriginalPositions = (Vector3[])mirrorMeshObj.Positions.Clone();
 
             return mirrorContext;
         }

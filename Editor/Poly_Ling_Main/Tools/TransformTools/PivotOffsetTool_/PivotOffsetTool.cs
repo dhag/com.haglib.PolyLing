@@ -179,7 +179,7 @@ namespace Poly_Ling.Tools
             _totalOffset = Vector3.zero;
 
             // 全頂点の開始位置を記録
-            _dragStartPositions = ctx.MeshObject.Vertices.Select(v => v.Position).ToArray();
+            _dragStartPositions = (Vector3[])ctx.MeshObject.Positions.Clone();
 
             _state = (axis == AxisType.Center) ? ToolState.CenterDragging : ToolState.AxisDragging;
         }
