@@ -264,7 +264,9 @@ namespace Poly_Ling.Core
 
             if (level.Has(DirtyLevel.Selection))
             {
-                ProcessSelectionUpdate();
+                // Selection更新はPrepareUnifiedDrawingのAllowSelectionSyncブロックで実行。
+                // そちらはSyncSelectionFromModel + SetActiveMesh + UpdateAllSelectionFlagsの
+                // 完全なシーケンスを持つため、ここでの重複実行を排除。
             }
 
             if (level.Has(DirtyLevel.Camera))

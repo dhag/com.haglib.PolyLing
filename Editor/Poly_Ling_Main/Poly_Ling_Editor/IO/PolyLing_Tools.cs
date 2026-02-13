@@ -181,9 +181,8 @@ public partial class PolyLing : EditorWindow
             UnityEngine.Debug.Log($"[OnMeshSelectionChanged] SelectedMeshIndices=[{indices}], Primary={_model.PrimarySelectedMeshIndex}");
         }
         
-        // UnifiedBufferManagerにModelContextから選択状態を同期
-        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
-        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+        _unifiedAdapter?.RequestNormal();
         
         // 再描画
         Repaint();
@@ -1105,9 +1104,9 @@ public partial class PolyLing : EditorWindow
             UpdateTopology();
         }
         
-        // v2.1: GPUバッファに選択状態を同期
-        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
-        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+        // 選択変更をワンショットパイプラインに通知
+        // （UpdateTopology()がRequestNormal()を既に呼ぶが、条件外の場合のため明示的に呼ぶ）
+        _unifiedAdapter?.RequestNormal();
 
         Repaint();
         

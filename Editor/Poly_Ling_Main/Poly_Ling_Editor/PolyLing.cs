@@ -500,12 +500,10 @@ public partial class PolyLing : EditorWindow
                 // 2. グローバルバッファを完全再構築
                 _unifiedAdapter?.SetModelContext(_model);
 
-                // 3. 選択メッシュを設定（バッファ再構築後に呼ぶこと！）
-                // SetActiveMeshはContextIndex→UnifiedMeshIndex変換にBufferManagerの
-                // マッピングテーブルを使用する。SetModelContextでバッファが再構築されると
-                // マッピングテーブルも新しくなるため、必ず再構築後に呼ぶ必要がある。
+                // 3. アクティブメッシュをワンショットパイプライン経由で同期
+                // （UpdateTopology()がRequestNormal()を呼ぶため、ここでは不要になる場合あり）
                 _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
-                _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+                _unifiedAdapter?.RequestNormal();
 
                 // 4. MeshUndoContextを再設定（UnityMeshが再構築されるため参照が変わる）
                 var meshContext = _model?.CurrentMeshContext;

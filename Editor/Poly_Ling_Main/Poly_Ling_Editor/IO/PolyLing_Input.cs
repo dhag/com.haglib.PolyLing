@@ -648,8 +648,8 @@ public partial class PolyLing
             _toolManager.toolContext.SelectionState = _selectionState;
         }
 
-        // UnifiedSystemに選択変更を通知
-        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+        _unifiedAdapter?.RequestNormal();
 
         // 表示を即座に更新
         Repaint();
@@ -1019,8 +1019,8 @@ public partial class PolyLing
                     _toolManager.toolContext.SelectionState = _selectionState;
                 }
 
-                // UnifiedSystemに選択変更を通知
-                _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+                // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+                _unifiedAdapter?.RequestNormal();
 
                 // 表示を即座に更新
                 Repaint();
@@ -1381,7 +1381,8 @@ public partial class PolyLing
 
                 // _selectedVertices は _selectionState.Vertices へのプロキシのため同期不要
 
-                _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+                // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+                _unifiedAdapter?.RequestNormal();
             }
         }
 

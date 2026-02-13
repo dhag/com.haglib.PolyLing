@@ -11,7 +11,6 @@ using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Commands;
 using Poly_Ling.Utilities;
-using Poly_Ling.Selection;
 public partial class PolyLing
 {
     // ================================================================
@@ -42,7 +41,7 @@ public partial class PolyLing
         if (meshContext == null)
         {
             // メッシュがない場合はfallback
-            _selectionState = new SelectionState();
+            _selectionState = new Poly_Ling.Selection.SelectionState();
         }
         else
         {
@@ -94,8 +93,8 @@ public partial class PolyLing
             RecordSelectionChange(oldSelection, _selectedVertices);
         }
         
-        // UnifiedSystemに選択変更を通知
-        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+        _unifiedAdapter?.RequestNormal();
         
         Repaint();
     }
@@ -123,8 +122,8 @@ public partial class PolyLing
             RecordSelectionChange(oldSelection, _selectedVertices);
         }
         
-        // UnifiedSystemに選択変更を通知
-        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+        _unifiedAdapter?.RequestNormal();
         
         Repaint();
     }
@@ -138,8 +137,8 @@ public partial class PolyLing
         _selectedVertices.Clear();
         RecordSelectionChange(oldSelection, _selectedVertices);
         
-        // UnifiedSystemに選択変更を通知
-        _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
+        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+        _unifiedAdapter?.RequestNormal();
         
         Repaint();
     }

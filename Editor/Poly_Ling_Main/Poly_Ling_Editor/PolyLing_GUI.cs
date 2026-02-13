@@ -796,9 +796,8 @@ public partial class PolyLing
             return; // SelectMeshAtIndexが通知を行う
         }
         
-        // v2.1: GPUバッファに選択状態を同期
-        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
-        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+        _unifiedAdapter?.RequestNormal();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
@@ -862,9 +861,9 @@ public partial class PolyLing
         _commandQueue?.Enqueue(new RecordMeshSelectionChangeCommand(
             _undoController, oldIndex, _selectedIndex, oldCamera, newCamera));
         
-        // v2.1: GPUバッファに選択状態を同期
-        _unifiedAdapter?.BufferManager?.SyncSelectionFromModel(_model);
-        _unifiedAdapter?.BufferManager?.UpdateAllSelectionFlags();
+        // 選択変更をワンショットパイプラインに通知
+        // （UpdateTopology()がRequestNormal()を既に呼ぶが、明示性のため呼ぶ）
+        _unifiedAdapter?.RequestNormal();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
