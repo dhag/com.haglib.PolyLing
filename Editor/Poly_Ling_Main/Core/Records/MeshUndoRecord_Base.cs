@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Model;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -234,6 +235,136 @@ namespace Poly_Ling.UndoSystem
             }
             // スキニングデータ変更はメッシュ再構築が必要
             ctx.ApplyToMesh();
+        }
+    }
+
+    // ============================================================
+    // 複数メッシュ頂点移動記録
+    // ============================================================
+
+    /// <summary>
+    /// セカンダリメッシュの頂点移動エントリ
+    /// </summary>
+    public struct SecondaryMeshMoveEntry
+    {
+        public int MeshContextIndex;
+        public int[] Indices;
+        public Vector3[] OldPositions;
+        public Vector3[] NewPositions;
+    }
+
+    /// <summary>
+    /// 複数メッシュ対応の頂点移動記録
+    /// プライマリメッシュはctx経由、セカンダリメッシュはModelContext経由で復元
+    /// </summary>
+    public class MultiMeshVertexMoveRecord : MeshUndoRecord
+    {
+        // プライマリメッシュ（既存のVertexMoveRecordと同じ構造）
+        public int[] Indices;
+        public Vector3[] OldPositions;
+        public Vector3[] NewPositions;
+
+        // セカンダリメッシュ
+        public SecondaryMeshMoveEntry[] SecondaryEntries;
+
+        public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Position;
+
+        public MultiMeshVertexMoveRecord(
+            int[] indices, Vector3[] oldPositions, Vector3[] newPositions,
+            SecondaryMeshMoveEntry[] secondaryEntries)
+        {
+            Indices = indices;
+            OldPositions = oldPositions;
+            NewPositions = newPositions;
+            SecondaryEntries = secondaryEntries;
+        }
+
+        public override void Undo(MeshUndoContext ctx)
+        {
+            // プライマリメッシュ
+            for (int i = 0; i < Indices.Length; i++)
+            {
+                ctx.SetVertexPosition(Indices[i], OldPositions[i]);
+            }
+            ctx.ApplyVertexPositionsToMesh();
+
+            // セカンダリメッシュ
+            ApplySecondaryPositions(ctx, isUndo: true);
+        }
+
+        public override void Redo(MeshUndoContext ctx)
+        {
+            // プライマリメッシュ
+            for (int i = 0; i < Indices.Length; i++)
+            {
+                ctx.SetVertexPosition(Indices[i], NewPositions[i]);
+            }
+            ctx.ApplyVertexPositionsToMesh();
+
+            // セカンダリメッシュ
+            ApplySecondaryPositions(ctx, isUndo: false);
+        }
+
+        private void ApplySecondaryPositions(MeshUndoContext ctx, bool isUndo)
+        {
+            if (SecondaryEntries == null || SecondaryEntries.Length == 0)
+                return;
+
+            var model = ctx.MaterialOwner;
+            if (model == null)
+                return;
+
+            for (int e = 0; e < SecondaryEntries.Length; e++)
+            {
+                var entry = SecondaryEntries[e];
+                var meshContext = model.GetMeshContext(entry.MeshContextIndex);
+                if (meshContext?.MeshObject == null)
+                    continue;
+
+                var meshObject = meshContext.MeshObject;
+                var positions = isUndo ? entry.OldPositions : entry.NewPositions;
+
+                for (int i = 0; i < entry.Indices.Length; i++)
+                {
+                    int idx = entry.Indices[i];
+                    if (idx >= 0 && idx < meshObject.VertexCount)
+                    {
+                        meshObject.Vertices[idx].Position = positions[i];
+                    }
+                }
+                meshObject.InvalidatePositionCache();
+
+                // セカンダリのOriginalPositions更新
+                if (meshContext.OriginalPositions != null)
+                {
+                    for (int i = 0; i < entry.Indices.Length; i++)
+                    {
+                        int idx = entry.Indices[i];
+                        if (idx >= 0 && idx < meshContext.OriginalPositions.Length)
+                        {
+                            meshContext.OriginalPositions[idx] = meshObject.Vertices[idx].Position;
+                        }
+                    }
+                }
+
+                // UnityMeshに位置を同期
+                SyncSecondaryUnityMesh(meshContext);
+            }
+        }
+
+        /// <summary>
+        /// セカンダリメッシュのUnityMesh頂点位置を同期
+        /// </summary>
+        private static void SyncSecondaryUnityMesh(MeshContext meshContext)
+        {
+            if (meshContext.UnityMesh == null || meshContext.MeshObject == null)
+                return;
+
+            var newMesh = meshContext.MeshObject.ToUnityMeshShared();
+            meshContext.UnityMesh.vertices = newMesh.vertices;
+            meshContext.UnityMesh.RecalculateNormals();
+            meshContext.UnityMesh.RecalculateBounds();
+            Object.DestroyImmediate(newMesh);
         }
     }
 }

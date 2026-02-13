@@ -1509,9 +1509,7 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            // マテリアル配列を設定（MaterialOwner設定前のフォールバック用、全マテリアル）
-            // ※SimpleMeshFactory側でMaterialOwnerが設定されると、_model.Materialsが使用される
-            meshContext.Materials = new List<Material>(unityMaterials);
+            // マテリアルはインポート後に ReplaceMaterials 経由で ModelContext に設定される
 
             //Debug.Log($"[PMXImporter] Created mesh '{meshName}': V={meshObject.VertexCount}, F={meshObject.FaceCount}, " +
             //          $"LocalMat={materialNames.Count}, GlobalMatCount={document.Materials.Count}, " +

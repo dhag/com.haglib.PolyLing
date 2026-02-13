@@ -795,17 +795,103 @@ namespace Poly_Ling.Tools
                     ? $"Magnet Move {movedIndices.Count} Vertices"
                     : $"Move {movedIndices.Count} Vertices";
 
-                var record = new VertexMoveRecord(
-                    movedIndices.ToArray(),
-                    oldPositions.ToArray(),
-                    newPositions.ToArray());
-                ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, actionName);
+                // セカンダリメッシュのdiff収集
+                var secondaryEntries = CollectSecondaryDiffs(ctx);
+
+                if (secondaryEntries != null && secondaryEntries.Length > 0)
+                {
+                    var record = new MultiMeshVertexMoveRecord(
+                        movedIndices.ToArray(),
+                        oldPositions.ToArray(),
+                        newPositions.ToArray(),
+                        secondaryEntries);
+                    ctx.UndoController.FocusVertexEdit();
+                    ctx.UndoController.VertexEditStack.Record(record, actionName);
+                }
+                else
+                {
+                    var record = new VertexMoveRecord(
+                        movedIndices.ToArray(),
+                        oldPositions.ToArray(),
+                        newPositions.ToArray());
+                    ctx.UndoController.FocusVertexEdit();
+                    ctx.UndoController.VertexEditStack.Record(record, actionName);
+                }
             }
 
             _currentTransform = null;
             _dragStartPositions = null;
             ctx.ExitTransformDragging?.Invoke();
+        }
+
+        /// <summary>
+        /// セカンダリメッシュの頂点移動diffを収集
+        /// </summary>
+        private SecondaryMeshMoveEntry[] CollectSecondaryDiffs(ToolContext ctx)
+        {
+            var model = ctx?.Model;
+            if (model == null || _multiMeshDragStartPositions.Count == 0)
+                return null;
+
+            int primaryMesh = model.PrimarySelectedMeshIndex;
+            var entries = new List<SecondaryMeshMoveEntry>();
+
+            foreach (var kv in _multiMeshDragStartPositions)
+            {
+                int meshIdx = kv.Key;
+                if (meshIdx == primaryMesh) continue;
+
+                var startPositions = kv.Value;
+                var meshContext = model.GetMeshContext(meshIdx);
+                if (meshContext?.MeshObject == null) continue;
+
+                var meshObject = meshContext.MeshObject;
+                var affected = _multiMeshAffectedVertices.ContainsKey(meshIdx)
+                    ? _multiMeshAffectedVertices[meshIdx]
+                    : null;
+                if (affected == null || affected.Count == 0) continue;
+
+                var secIndices = new List<int>();
+                var secOldPos = new List<Vector3>();
+                var secNewPos = new List<Vector3>();
+
+                foreach (int vIdx in affected)
+                {
+                    if (vIdx >= 0 && vIdx < meshObject.VertexCount && vIdx < startPositions.Length)
+                    {
+                        Vector3 cur = meshObject.Vertices[vIdx].Position;
+                        if (Vector3.Distance(startPositions[vIdx], cur) > 0.0001f)
+                        {
+                            secIndices.Add(vIdx);
+                            secOldPos.Add(startPositions[vIdx]);
+                            secNewPos.Add(cur);
+                        }
+                    }
+                }
+
+                if (secIndices.Count > 0)
+                {
+                    entries.Add(new SecondaryMeshMoveEntry
+                    {
+                        MeshContextIndex = meshIdx,
+                        Indices = secIndices.ToArray(),
+                        OldPositions = secOldPos.ToArray(),
+                        NewPositions = secNewPos.ToArray()
+                    });
+
+                    // セカンダリのOriginalPositions更新
+                    if (meshContext.OriginalPositions != null)
+                    {
+                        foreach (int vIdx in secIndices)
+                        {
+                            if (vIdx < meshContext.OriginalPositions.Length)
+                                meshContext.OriginalPositions[vIdx] = meshObject.Vertices[vIdx].Position;
+                        }
+                    }
+                }
+            }
+
+            return entries.Count > 0 ? entries.ToArray() : null;
         }
 
         // === 軸ドラッグ処理 ===

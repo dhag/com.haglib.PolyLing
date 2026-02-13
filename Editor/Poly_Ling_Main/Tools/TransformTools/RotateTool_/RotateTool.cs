@@ -373,7 +373,7 @@ namespace Poly_Ling.Tools
         {
             if (!_isDirty || (_startPositions.Count == 0 && _multiMeshStartPositions.Count == 0)) return;
 
-            // プライマリメッシュのUndo記録
+            // プライマリメッシュのdiff収集
             var indices = new List<int>();
             var oldPos = new List<Vector3>();
             var newPos = new List<Vector3>();
@@ -389,14 +389,7 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            if (indices.Count > 0 && ctx.UndoController != null)
-            {
-                var record = new VertexMoveRecord(indices.ToArray(), oldPos.ToArray(), newPos.ToArray());
-                ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
-            }
-
-            // OriginalPositions更新
+            // OriginalPositions更新（プライマリ）
             if (ctx.OriginalPositions != null)
             {
                 foreach (int i in _affected)
@@ -406,9 +399,11 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            // v2.1: セカンダリメッシュのUndo記録と更新
+            // セカンダリメッシュのdiff収集
             var model = ctx?.Model;
             int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+            var secondaryEntries = new List<SecondaryMeshMoveEntry>();
+
             foreach (var meshKv in _multiMeshStartPositions)
             {
                 if (meshKv.Key == primaryMesh) continue;
@@ -416,9 +411,64 @@ namespace Poly_Ling.Tools
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
 
-                // TODO: セカンダリメッシュのUndo記録（現状はプライマリのみ）
+                var secIndices = new List<int>();
+                var secOldPos = new List<Vector3>();
+                var secNewPos = new List<Vector3>();
 
-                
+                foreach (var posKv in meshKv.Value)
+                {
+                    int i = posKv.Key;
+                    if (i >= 0 && i < meshObject.VertexCount)
+                    {
+                        Vector3 cur = meshObject.Vertices[i].Position;
+                        if (Vector3.Distance(posKv.Value, cur) > 0.0001f)
+                        {
+                            secIndices.Add(i);
+                            secOldPos.Add(posKv.Value);
+                            secNewPos.Add(cur);
+                        }
+                    }
+                }
+
+                if (secIndices.Count > 0)
+                {
+                    secondaryEntries.Add(new SecondaryMeshMoveEntry
+                    {
+                        MeshContextIndex = meshKv.Key,
+                        Indices = secIndices.ToArray(),
+                        OldPositions = secOldPos.ToArray(),
+                        NewPositions = secNewPos.ToArray()
+                    });
+
+                    // セカンダリのOriginalPositions更新
+                    if (meshContext.OriginalPositions != null)
+                    {
+                        foreach (int i in secIndices)
+                        {
+                            if (i < meshContext.OriginalPositions.Length)
+                                meshContext.OriginalPositions[i] = meshObject.Vertices[i].Position;
+                        }
+                    }
+                }
+            }
+
+            // Undo記録（セカンダリの有無で分岐）
+            if ((indices.Count > 0 || secondaryEntries.Count > 0) && ctx.UndoController != null)
+            {
+                ctx.UndoController.FocusVertexEdit();
+
+                if (secondaryEntries.Count > 0)
+                {
+                    var record = new MultiMeshVertexMoveRecord(
+                        indices.ToArray(), oldPos.ToArray(), newPos.ToArray(),
+                        secondaryEntries.ToArray());
+                    ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
+                }
+                else
+                {
+                    var record = new VertexMoveRecord(indices.ToArray(), oldPos.ToArray(), newPos.ToArray());
+                    ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
+                }
             }
 
             _startPositions.Clear();

@@ -768,8 +768,8 @@ public partial class PolyLing : EditorWindow
             // 古い値で上書きしてしまう。選択の復元は SelectionSnapshot 経由でのみ行う。
             // (以前のコード: _selectedVertices = new HashSet<int>(ctx.SelectedVertices);)
 
-            // マテリアル復元は ModelContext に集約済み
-            // TODO: Undo Record からの Materials 復元を実装
+            // マテリアル復元は MeshListChangeRecord.Undo/Redo() が直接 ModelContext.Materials に設定済み。
+            // VertexMoveRecord の Undo 時はマテリアル変更なし（設計上正しい）。
 
             // カリングA 設定をGPUレンダラーに復元
         }
