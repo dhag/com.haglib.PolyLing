@@ -865,7 +865,6 @@ public partial class PolyLing : EditorWindow
         _selectedIndex = -1;
 
         _selectionState?.ClearAll();
-        _selectedVertices.Clear();
         InitVertexOffsets();
 
         // カメラ状態を保存（削除後）
@@ -961,7 +960,6 @@ public partial class PolyLing : EditorWindow
         // 選択を更新
         _selectedIndex = _meshContextList.Count > 0 ? 0 : -1;
         _selectionState?.ClearAll();
-        _selectedVertices.Clear();
 
         InitVertexOffsets();
 
@@ -1034,7 +1032,6 @@ public partial class PolyLing : EditorWindow
             _selectedIndex--;
 
         // 選択クリア
-        _selectedVertices.Clear();
         _selectionState?.ClearAll();
 
         if (_model.HasValidMeshContextSelection)

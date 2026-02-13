@@ -380,7 +380,8 @@ public partial class PolyLing
         // 選択状態の同期・フラグ更新（プロファイルで許可されている場合のみ）
         if (profile.AllowSelectionSync)
         {
-            SyncSelectionFromLegacy();
+            // 選択はmeshContext.Selectionに統一済みのため、同期不要
+            _unifiedAdapter?.NotifySelectionChanged();
 
             var bufMgr = _unifiedAdapter.BufferManager;
             if (bufMgr != null)

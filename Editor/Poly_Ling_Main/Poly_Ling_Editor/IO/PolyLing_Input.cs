@@ -637,15 +637,8 @@ public partial class PolyLing
             // プライマリメッシュ: 元の_selectionOps.ApplyHitResultを使用
             _selectionOps.ApplyHitResult(_hitResultOnMouseDown, shiftHeld, ctrlHeld);
 
-            // _selectedVertices を即座に同期（レガシー互換 + ToolContext用）
-            SyncSelectedVerticesFromState();
-
-            // プライマリメッシュのMeshContextにも同期
-            var primaryMeshContext = _model?.CurrentMeshContext;
-            if (primaryMeshContext != null)
-            {
-                primaryMeshContext.LoadSelectionFrom(_selectionState);
-            }
+            // Edge/Face/Line選択に連動する頂点を追加
+            ExpandLinkedVertices();
         }
 
         // ToolContextも更新（MoveToolが参照する）
@@ -833,7 +826,7 @@ public partial class PolyLing
                 break;
         }
 
-        // 選択変更通知はSyncSelectedVerticesFromStateで行われる
+        // 選択変更通知はExpandLinkedVerticesで行われる
     }
 
     /// <summary>
@@ -937,29 +930,41 @@ public partial class PolyLing
     }
 
     /// <summary>
-    /// SelectionStateから_selectedVerticesへ同期
+    /// Edge/Face/Line選択に連動する頂点をSelection.Verticesに追加
+    /// _selectionState == meshContext.Selection のため、直接追加で両方に反映
     /// </summary>
-    private void SyncSelectedVerticesFromState()
+    private void ExpandLinkedVertices()
     {
-        _selectedVertices.Clear();
+        if (_selectionState == null) return;
+        var meshObject = _model?.CurrentMeshContext?.MeshObject;
+        if (meshObject == null) return;
 
-        // Vertex選択
-        if (_selectionState.Vertices != null)
+        // Edge → Vertices
+        foreach (var edge in _selectionState.Edges)
         {
-            foreach (var v in _selectionState.Vertices)
+            _selectionState.Vertices.Add(edge.V1);
+            _selectionState.Vertices.Add(edge.V2);
+        }
+        // Face → Vertices
+        foreach (var faceIdx in _selectionState.Faces)
+        {
+            if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
             {
-                _selectedVertices.Add(v);
+                foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                    _selectionState.Vertices.Add(vIdx);
             }
         }
-
-        // Edge/Face/Line選択時は関連する頂点も追加
-        var meshObject = _model?.CurrentMeshContext?.MeshObject;
-        if (meshObject != null)
+        // Line → Vertices
+        foreach (var lineIdx in _selectionState.Lines)
         {
-            var affected = _selectionState.GetAllAffectedVertices(meshObject);
-            foreach (var v in affected)
+            if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
             {
-                _selectedVertices.Add(v);
+                var face = meshObject.Faces[lineIdx];
+                if (face.VertexCount == 2)
+                {
+                    _selectionState.Vertices.Add(face.VertexIndices[0]);
+                    _selectionState.Vertices.Add(face.VertexIndices[1]);
+                }
             }
         }
     }
@@ -1097,18 +1102,11 @@ public partial class PolyLing
                 }
                 else
                 {
-                    // プライマリメッシュ: _selectionStateから除外
+                    // プライマリメッシュ: _selectionState(= meshContext.Selection)から除外
                     RemoveSelectionWithLinkageFromState(_hitResultOnMouseDown);
 
-                    // _selectedVertices を即座に同期
-                    SyncSelectedVerticesFromState();
-
-                    // プライマリメッシュのMeshContextにも同期
-                    var primaryMeshContext = _model?.CurrentMeshContext;
-                    if (primaryMeshContext != null)
-                    {
-                        primaryMeshContext.LoadSelectionFrom(_selectionState);
-                    }
+                    // Edge/Face/Line選択に連動する頂点を追加
+                    ExpandLinkedVertices();
                 }
 
                 // ToolContextも更新
@@ -1175,7 +1173,7 @@ public partial class PolyLing
             oldWorkPlane, newWorkPlane));
     }
     /// <summary>
-    /// 拡張選択変更をUndoスタックに記録（キュー経由）
+    /// 選択変更をUndoスタックに記録（SelectionSnapshot版・キュー経由）
     /// </summary>
     private void RecordExtendedSelectionChange(SelectionSnapshot oldSnapshot, HashSet<int> oldLegacyVertices)
     {
@@ -1183,10 +1181,9 @@ public partial class PolyLing
             return;
 
         var newSnapshot = _selectionState.CreateSnapshot();
-        var newLegacyVertices = new HashSet<int>(_selectedVertices);
 
-        // MeshContextの選択状態も更新
-        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(newLegacyVertices);
+        // MeshUndoContextのレガシーフィールドも更新
+        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
 
         var workPlane = _undoController.WorkPlane;
         WorkPlaneSnapshot? oldWorkPlane = null;
@@ -1214,13 +1211,11 @@ public partial class PolyLing
             }
         }
 
-        // Undo記録（キュー経由）
-        _commandQueue?.Enqueue(new RecordExtendedSelectionChangeCommand(
+        // Undo記録（キュー経由・SelectionSnapshot版）
+        _commandQueue?.Enqueue(new RecordSelectionChangeSnapshotCommand(
             _undoController,
             oldSnapshot,
             newSnapshot,
-            oldLegacyVertices,
-            newLegacyVertices,
             oldWorkPlane,
             newWorkPlane));
 
@@ -1439,21 +1434,7 @@ public partial class PolyLing
                 Debug.Log($"[FinishBoxSelect] Mesh {meshIdx}: V={meshContext.SelectedVertices.Count}, E={meshContext.SelectedEdges.Count}, F={meshContext.SelectedFaces.Count}, L={meshContext.SelectedLines.Count}");
             }
 
-            // プライマリメッシュの選択を _selectionState にも同期（レガシー互換）
-            int primaryMesh = _model.PrimarySelectedMeshIndex;
-            if (primaryMesh >= 0)
-            {
-                var primaryContext = _model.GetMeshContext(primaryMesh);
-                primaryContext?.LoadSelectionTo(_selectionState);
-            }
-
-            // _selectedVertices と同期（レガシー互換）
-            _selectedVertices.Clear();
-            if (_selectionState != null)
-            {
-                foreach (var v in _selectionState.Vertices)
-                    _selectedVertices.Add(v);
-            }
+            // _selectionState == meshContext.Selection のため同期不要
 
             // UnifiedSystemに選択変更を通知
             SyncMultiMeshSelectionToGPU();
@@ -1495,9 +1476,7 @@ public partial class PolyLing
                     _selectionOps.SelectInRect(selectRect, meshObject, worldToScreen, additive);
                 }
 
-                _selectedVertices.Clear();
-                foreach (var v in _selectionState.Vertices)
-                    _selectedVertices.Add(v);
+                // _selectedVertices は _selectionState.Vertices へのプロキシのため同期不要
 
                 _unifiedAdapter?.UnifiedSystem?.ProcessSelectionUpdate();
             }
@@ -1564,11 +1543,6 @@ public partial class PolyLing
         // 選択スナップショット
         _selectionSnapshotOnMouseDown = _selectionState?.CreateSnapshot();
 
-        // レガシー選択
-        _legacySelectionOnMouseDown = _selectedVertices != null
-            ? new HashSet<int>(_selectedVertices)
-            : new HashSet<int>();
-
         // トポロジー変更フラグをリセット
         _topologyChangedDuringMouseOperation = false;
 
@@ -1596,7 +1570,6 @@ public partial class PolyLing
         {
             _topologyChangedDuringMouseOperation = false;
             _selectionSnapshotOnMouseDown = null;
-            _legacySelectionOnMouseDown = null;
             _workPlaneSnapshotOnMouseDown = null;
             return;
         }
@@ -1614,7 +1587,6 @@ public partial class PolyLing
         {
             // 変更なし
             _selectionSnapshotOnMouseDown = null;
-            _legacySelectionOnMouseDown = null;
             _workPlaneSnapshotOnMouseDown = null;
             return;
         }
@@ -1654,13 +1626,11 @@ public partial class PolyLing
             }
         }
 
-        // Undo記録（コマンドキュー経由）
-        _commandQueue?.Enqueue(new RecordExtendedSelectionChangeCommand(
+        // Undo記録（コマンドキュー経由・SelectionSnapshot版）
+        _commandQueue?.Enqueue(new RecordSelectionChangeSnapshotCommand(
             _undoController,
             _selectionSnapshotOnMouseDown,
             afterSnapshot,
-            _legacySelectionOnMouseDown,
-            newLegacyVertices,
             _workPlaneSnapshotOnMouseDown,
             newWorkPlane
         ));
@@ -1669,7 +1639,6 @@ public partial class PolyLing
 
         // クリーンアップ
         _selectionSnapshotOnMouseDown = null;
-        _legacySelectionOnMouseDown = null;
         _workPlaneSnapshotOnMouseDown = null;
     }
 

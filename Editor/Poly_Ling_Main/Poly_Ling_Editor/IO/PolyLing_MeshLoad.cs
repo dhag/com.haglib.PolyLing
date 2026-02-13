@@ -931,8 +931,7 @@ public partial class PolyLing
         _meshContextList.Clear();
         SetSelectedIndex(-1);
 
-        // 選択をクリア
-        _selectedVertices.Clear();
+        // 選択をクリア（_selectedVerticesはプロキシなので_selectionState.ClearAll()で十分）
         _selectionState?.ClearAll();
     }
 

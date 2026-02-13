@@ -526,7 +526,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 選択状態変更を記録
+        /// 選択状態変更を記録（後方互換: Vertex/Face HashSet版）
         /// </summary>
         public void RecordSelectionChange(
             HashSet<int> oldVertices,
@@ -538,7 +538,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 選択状態変更を記録（内部用）
+        /// 選択状態変更を記録（後方互換: 内部用）
         /// </summary>
         internal void RecordSelectionChangeInternal(
             HashSet<int> oldVertices,
@@ -546,18 +546,14 @@ namespace Poly_Ling.UndoSystem
             HashSet<int> oldFaces = null,
             HashSet<int> newFaces = null)
         {
-            Debug.Log($"[RecordSelectionChangeInternal] Recording to VertexEditStack. Before Focus={_mainGroup.FocusedChildId}");
-            
-            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            _vertexEditStack.EndGroup();
             var record = new SelectionChangeRecord(oldVertices, newVertices, oldFaces, newFaces);
             _vertexEditStack.Record(record, "Change Selection");
             FocusVertexEdit();
-            
-            Debug.Log($"[RecordSelectionChangeInternal] After FocusVertexEdit(). Focus={_mainGroup.FocusedChildId}");
         }
 
         /// <summary>
-        /// 選択状態変更を記録（WorkPlane連動）
+        /// 選択状態変更を記録（後方互換: WorkPlane連動）
         /// </summary>
         public void RecordSelectionChangeWithWorkPlane(
             HashSet<int> oldVertices,
@@ -572,7 +568,7 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 選択状態変更を記録（WorkPlane連動・内部用）
+        /// 選択状態変更を記録（後方互換: WorkPlane連動・内部用）
         /// </summary>
         internal void RecordSelectionChangeWithWorkPlaneInternal(
             HashSet<int> oldVertices,
@@ -582,7 +578,7 @@ namespace Poly_Ling.UndoSystem
             HashSet<int> oldFaces = null,
             HashSet<int> newFaces = null)
         {
-            _vertexEditStack.EndGroup();  // 独立した操作として記録
+            _vertexEditStack.EndGroup();
             var record = new SelectionChangeRecord(
                 oldVertices, newVertices,
                 oldWorkPlane, newWorkPlane,
@@ -592,42 +588,28 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// 拡張選択変更を記録（Edge/Face/Line対応）
+        /// 選択状態変更を記録（SelectionSnapshot版 — 推奨）
         /// </summary>
-        public void RecordExtendedSelectionChange(
+        public void RecordSelectionChange(
             Poly_Ling.Selection.SelectionSnapshot oldSnapshot,
             Poly_Ling.Selection.SelectionSnapshot newSnapshot,
-            HashSet<int> oldLegacyVertices,
-            HashSet<int> newLegacyVertices,
             WorkPlaneSnapshot? oldWorkPlane = null,
             WorkPlaneSnapshot? newWorkPlane = null)
         {
-            RecordExtendedSelectionChangeInternal(
-                oldSnapshot, newSnapshot,
-                oldLegacyVertices, newLegacyVertices,
-                oldWorkPlane, newWorkPlane);
+            RecordSelectionChangeInternal(oldSnapshot, newSnapshot, oldWorkPlane, newWorkPlane);
         }
 
         /// <summary>
-        /// 拡張選択変更を記録（Edge/Face/Line対応・内部用）
+        /// 選択状態変更を記録（SelectionSnapshot版・内部用）
         /// </summary>
-        internal void RecordExtendedSelectionChangeInternal(
+        internal void RecordSelectionChangeInternal(
             Poly_Ling.Selection.SelectionSnapshot oldSnapshot,
             Poly_Ling.Selection.SelectionSnapshot newSnapshot,
-            HashSet<int> oldLegacyVertices,
-            HashSet<int> newLegacyVertices,
             WorkPlaneSnapshot? oldWorkPlane = null,
             WorkPlaneSnapshot? newWorkPlane = null)
         {
-            var record = new ExtendedSelectionChangeRecord(
-                oldSnapshot,
-                newSnapshot,
-                oldLegacyVertices,
-                newLegacyVertices,
-                oldWorkPlane,
-                newWorkPlane
-            );
-
+            _vertexEditStack.EndGroup();
+            var record = new SelectionChangeRecord(oldSnapshot, newSnapshot, oldWorkPlane, newWorkPlane);
             string desc = newSnapshot?.Mode.ToString() ?? "Selection";
             _vertexEditStack.Record(record, $"Change {desc} Selection");
             FocusVertexEdit();

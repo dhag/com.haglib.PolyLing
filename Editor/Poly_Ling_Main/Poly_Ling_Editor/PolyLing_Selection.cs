@@ -11,64 +11,55 @@ using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Commands;
 using Poly_Ling.Utilities;
+using Poly_Ling.Selection;
 public partial class PolyLing
 {
     // ================================================================
-    // メッシュ切り替え時の選択保存/復元（Phase 5追加）
+    // メッシュ切り替え時の選択参照更新
+    // _selectionState は meshContext.Selection と同一インスタンスのため、
+    // データコピーは不要。参照の差し替えと依存オブジェクトの更新のみ。
     // ================================================================
 
     /// <summary>
-    /// カレント選択を現在のMeshContextに保存
-    /// メッシュ切り替え前に呼び出す
+    /// メッシュ切り替え前: 旧メッシュの選択イベントを解除
     /// </summary>
     private void SaveSelectionToCurrentMesh()
     {
-        var meshContext = _model?.CurrentMeshContext;
-        if (meshContext == null) return;
-
-        // _selectionStateがあればそちらを優先（Edge/Face/Line含む）
+        // _selectionState == meshContext.Selection なのでデータコピー不要
+        // イベント解除のみ
         if (_selectionState != null)
         {
-            meshContext.SaveSelectionFrom(_selectionState);
-        }
-        else
-        {
-            // フォールバック: _selectedVerticesのみ
-            meshContext.SelectedVertices = new HashSet<int>(_selectedVertices);
-            meshContext.SelectedEdges.Clear();
-            meshContext.SelectedFaces.Clear();
-            meshContext.SelectedLines.Clear();
+            _selectionState.OnSelectionChanged -= OnSelectionChanged;
         }
     }
 
     /// <summary>
-    /// 現在のMeshContextから選択を復元
-    /// メッシュ切り替え後に呼び出す
+    /// メッシュ切り替え後: 新メッシュの Selection に参照を差し替え
     /// </summary>
     private void LoadSelectionFromCurrentMesh()
     {
         var meshContext = _model?.CurrentMeshContext;
         if (meshContext == null)
         {
-            // メッシュがない場合はクリア
-            _selectedVertices.Clear();
-            _selectionState?.ClearAll();
-            return;
+            // メッシュがない場合はfallback
+            _selectionState = new SelectionState();
         }
-
-        // _selectionStateがあればそちらに復元（Edge/Face/Line含む）
-        if (_selectionState != null)
+        else
         {
-            meshContext.LoadSelectionTo(_selectionState);
+            _selectionState = meshContext.Selection;
         }
 
-        // _selectedVerticesも同期（レガシー互換）
-        _selectedVertices = new HashSet<int>(meshContext.SelectedVertices);
+        // 依存オブジェクトの参照を更新
+        _selectionState.OnSelectionChanged += OnSelectionChanged;
+        _selectionOps?.SetState(_selectionState);
+
+        // レンダラにも通知
+        _unifiedAdapter?.SetSelectionState(_selectionState);
 
         // UndoContextにも同期
         if (_undoController?.MeshUndoContext != null)
         {
-            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
         }
     }
 
@@ -77,14 +68,8 @@ public partial class PolyLing
     /// </summary>
     private void ClearSelectionWithMeshContext()
     {
-        _selectedVertices.Clear();
+        // _selectionState == meshContext.Selection なので ClearAll で両方クリア
         _selectionState?.ClearAll();
-
-        var meshContext = _model?.CurrentMeshContext;
-        if (meshContext != null)
-        {
-            meshContext.ClearSelection();
-        }
     }
 
     // ================================================================

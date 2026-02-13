@@ -158,6 +158,12 @@ namespace Poly_Ling.Core
         /// </summary>
         public void SetSelectionState(SelectionState selectionState)
         {
+            // 旧参照のイベント解除
+            if (_selectionState != null)
+            {
+                _selectionState.OnSelectionChanged -= OnSelectionChanged;
+            }
+
             _selectionState = selectionState;
             _flagManager.SelectionState = selectionState;
 

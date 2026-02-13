@@ -226,7 +226,6 @@ public partial class PolyLing
 
         // 選択リセット
         SetSelectedIndex(-1);
-        _selectedVertices.Clear();
         _selectionState?.ClearAll();
 
         InitVertexOffsets();
@@ -282,7 +281,6 @@ public partial class PolyLing
             _model.ClearAllCategorySelection();
             _model.AddToSelectionByType(0);
         }
-        _selectedVertices.Clear();
         _selectionState?.ClearAll();
 
         LoadSelectionFromCurrentMesh();
@@ -491,7 +489,6 @@ public partial class PolyLing
         
         // 選択をクリア
         _selectionState?.ClearAll();
-        _selectedVertices.Clear();
         
         // バッファを再構築
         _unifiedAdapter?.SetModelContext(currentModel);
@@ -566,7 +563,6 @@ public partial class PolyLing
 
         // 選択をクリア
         _selectionState?.ClearAll();
-        _selectedVertices.Clear();
 
         // バッファを再構築
         _unifiedAdapter?.SetModelContext(_project.CurrentModel);

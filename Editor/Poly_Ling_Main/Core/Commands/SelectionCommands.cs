@@ -1,5 +1,6 @@
 // Assets/Editor/Poly_Ling_/Core/Commands/SelectionCommands.cs
 // 選択操作のコマンド化（頂点/面/辺/メッシュ）
+// Phase 4: SelectionSnapshot版に統一
 
 using System;
 using System.Collections.Generic;
@@ -10,7 +11,42 @@ using Poly_Ling.Tools;
 namespace Poly_Ling.Commands
 {
     /// <summary>
-    /// 頂点/面選択変更記録コマンド
+    /// 選択変更記録コマンド（SelectionSnapshot版 — 推奨）
+    /// </summary>
+    public class RecordSelectionChangeSnapshotCommand : ICommand
+    {
+        private readonly MeshUndoController _controller;
+        private readonly SelectionSnapshot _oldSnapshot;
+        private readonly SelectionSnapshot _newSnapshot;
+        private readonly WorkPlaneSnapshot? _oldWorkPlane;
+        private readonly WorkPlaneSnapshot? _newWorkPlane;
+
+        public string Description => "Record Selection Change";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Selection;
+
+        public RecordSelectionChangeSnapshotCommand(
+            MeshUndoController controller,
+            SelectionSnapshot oldSnapshot,
+            SelectionSnapshot newSnapshot,
+            WorkPlaneSnapshot? oldWorkPlane = null,
+            WorkPlaneSnapshot? newWorkPlane = null)
+        {
+            _controller = controller;
+            _oldSnapshot = oldSnapshot?.Clone();
+            _newSnapshot = newSnapshot?.Clone();
+            _oldWorkPlane = oldWorkPlane;
+            _newWorkPlane = newWorkPlane;
+        }
+
+        public void Execute()
+        {
+            _controller?.RecordSelectionChangeInternal(
+                _oldSnapshot, _newSnapshot, _oldWorkPlane, _newWorkPlane);
+        }
+    }
+
+    /// <summary>
+    /// 頂点/面選択変更記録コマンド（後方互換: HashSet版）
     /// </summary>
     public class RecordSelectionChangeCommand : ICommand
     {
@@ -74,49 +110,6 @@ namespace Poly_Ling.Commands
             {
                 _controller.RecordSelectionChangeInternal(_oldVertices, _newVertices, _oldFaces, _newFaces);
             }
-        }
-    }
-
-    /// <summary>
-    /// 拡張選択変更記録コマンド（Edge/Face/Line対応）
-    /// </summary>
-    public class RecordExtendedSelectionChangeCommand : ICommand
-    {
-        private readonly MeshUndoController _controller;
-        private readonly SelectionSnapshot _oldSnapshot;
-        private readonly SelectionSnapshot _newSnapshot;
-        private readonly HashSet<int> _oldLegacyVertices;
-        private readonly HashSet<int> _newLegacyVertices;
-        private readonly WorkPlaneSnapshot? _oldWorkPlane;
-        private readonly WorkPlaneSnapshot? _newWorkPlane;
-
-        public string Description => "Record Extended Selection Change";
-        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Selection;
-
-        public RecordExtendedSelectionChangeCommand(
-            MeshUndoController controller,
-            SelectionSnapshot oldSnapshot,
-            SelectionSnapshot newSnapshot,
-            HashSet<int> oldLegacyVertices,
-            HashSet<int> newLegacyVertices,
-            WorkPlaneSnapshot? oldWorkPlane = null,
-            WorkPlaneSnapshot? newWorkPlane = null)
-        {
-            _controller = controller;
-            _oldSnapshot = oldSnapshot;
-            _newSnapshot = newSnapshot;
-            _oldLegacyVertices = oldLegacyVertices != null ? new HashSet<int>(oldLegacyVertices) : null;
-            _newLegacyVertices = newLegacyVertices != null ? new HashSet<int>(newLegacyVertices) : null;
-            _oldWorkPlane = oldWorkPlane;
-            _newWorkPlane = newWorkPlane;
-        }
-
-        public void Execute()
-        {
-            _controller?.RecordExtendedSelectionChangeInternal(
-                _oldSnapshot, _newSnapshot,
-                _oldLegacyVertices, _newLegacyVertices,
-                _oldWorkPlane, _newWorkPlane);
         }
     }
 

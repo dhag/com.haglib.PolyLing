@@ -40,24 +40,47 @@ namespace Poly_Ling.Data
         public Vector3[] OriginalPositions;         // 元の頂点位置（リセット用）
 
         // ================================================================
-        // 選択状態（Phase 1追加）
-        // メッシュ切り替え時に選択を保持するため、各MeshContextが選択を持つ
+        // 選択状態 — SelectionState が Single Source of Truth
+        // 全ての選択アクセスは Selection プロパティ経由
         // ================================================================
 
-        /// <summary>選択中の頂点インデックス</summary>
-        public HashSet<int> SelectedVertices { get; set; } = new HashSet<int>();
+        /// <summary>選択状態（Single Source of Truth）</summary>
+        public SelectionState Selection { get; } = new SelectionState();
 
-        /// <summary>選択中のエッジ（頂点ペア）</summary>
-        public HashSet<VertexPair> SelectedEdges { get; set; } = new HashSet<VertexPair>();
+        /// <summary>選択中の頂点インデックス（Selection.Verticesへのリダイレクト）</summary>
+        public HashSet<int> SelectedVertices
+        {
+            get => Selection.Vertices;
+            set { Selection.Vertices.Clear(); if (value != null) Selection.Vertices.UnionWith(value); }
+        }
 
-        /// <summary>選択中の面インデックス</summary>
-        public HashSet<int> SelectedFaces { get; set; } = new HashSet<int>();
+        /// <summary>選択中のエッジ（Selection.Edgesへのリダイレクト）</summary>
+        public HashSet<VertexPair> SelectedEdges
+        {
+            get => Selection.Edges;
+            set { Selection.Edges.Clear(); if (value != null) Selection.Edges.UnionWith(value); }
+        }
 
-        /// <summary>選択中の線分インデックス（2頂点Face）</summary>
-        public HashSet<int> SelectedLines { get; set; } = new HashSet<int>();
+        /// <summary>選択中の面インデックス（Selection.Facesへのリダイレクト）</summary>
+        public HashSet<int> SelectedFaces
+        {
+            get => Selection.Faces;
+            set { Selection.Faces.Clear(); if (value != null) Selection.Faces.UnionWith(value); }
+        }
 
-        /// <summary>選択モード</summary>
-        public MeshSelectMode SelectMode { get; set; } = MeshSelectMode.Vertex;
+        /// <summary>選択中の線分インデックス（Selection.Linesへのリダイレクト）</summary>
+        public HashSet<int> SelectedLines
+        {
+            get => Selection.Lines;
+            set { Selection.Lines.Clear(); if (value != null) Selection.Lines.UnionWith(value); }
+        }
+
+        /// <summary>選択モード（Selection.Modeへのリダイレクト）</summary>
+        public MeshSelectMode SelectMode
+        {
+            get => Selection.Mode;
+            set => Selection.Mode = value;
+        }
 
         // ================================================================
         // 選択セット（永続的な名前付き選択）
@@ -171,11 +194,11 @@ namespace Poly_Ling.Data
         {
             return new MeshSelectionSnapshot
             {
-                Vertices = new HashSet<int>(SelectedVertices),
-                Edges = new HashSet<VertexPair>(SelectedEdges),
-                Faces = new HashSet<int>(SelectedFaces),
-                Lines = new HashSet<int>(SelectedLines),
-                Mode = SelectMode
+                Vertices = new HashSet<int>(Selection.Vertices),
+                Edges = new HashSet<VertexPair>(Selection.Edges),
+                Faces = new HashSet<int>(Selection.Faces),
+                Lines = new HashSet<int>(Selection.Lines),
+                Mode = Selection.Mode
             };
         }
 
@@ -202,86 +225,15 @@ namespace Poly_Ling.Data
         /// </summary>
         public void ClearSelection()
         {
-            SelectedVertices.Clear();
-            SelectedEdges.Clear();
-            SelectedFaces.Clear();
-            SelectedLines.Clear();
+            Selection.ClearAll();
         }
 
         /// <summary>
         /// 選択があるか
         /// </summary>
-        public bool HasSelection =>
-            SelectedVertices.Count > 0 ||
-            SelectedEdges.Count > 0 ||
-            SelectedFaces.Count > 0 ||
-            SelectedLines.Count > 0;
+        public bool HasSelection => Selection.HasAnySelection;
 
-        /// <summary>
-        /// SelectionStateから選択をコピー（カレント選択→MeshContext）
-        /// </summary>
-        public void SaveSelectionFrom(SelectionState state)
-        {
-            if (state == null)
-            {
-                ClearSelection();
-                return;
-            }
 
-            SelectedVertices = new HashSet<int>(state.Vertices);
-            SelectedEdges = new HashSet<VertexPair>(state.Edges);
-            SelectedFaces = new HashSet<int>(state.Faces);
-            SelectedLines = new HashSet<int>(state.Lines);
-            SelectMode = state.Mode;
-        }
-
-        /// <summary>
-        /// SelectionStateへ選択をコピー（MeshContext→カレント選択）
-        /// 注意: Modeは上書きしない（グローバルなUIモードを保持するため）
-        /// </summary>
-        public void LoadSelectionTo(SelectionState state)
-        {
-            if (state == null) return;
-
-            // 各選択をクリア
-            state.Vertices.Clear();
-            state.Edges.Clear();
-            state.Faces.Clear();
-            state.Lines.Clear();
-            // v2.1: Modeは上書きしない（グローバルなUIモードを保持）
-            // state.Mode = SelectMode;
-
-            foreach (var v in SelectedVertices)
-                state.Vertices.Add(v);
-            foreach (var e in SelectedEdges)
-                state.Edges.Add(e);
-            foreach (var f in SelectedFaces)
-                state.Faces.Add(f);
-            foreach (var l in SelectedLines)
-                state.Lines.Add(l);
-        }
-
-        /// <summary>
-        /// SelectionStateからMeshContextへ選択を読み込み
-        /// </summary>
-        public void LoadSelectionFrom(SelectionState state)
-        {
-            if (state == null) return;
-
-            SelectedVertices.Clear();
-            SelectedEdges.Clear();
-            SelectedFaces.Clear();
-            SelectedLines.Clear();
-
-            foreach (var v in state.Vertices)
-                SelectedVertices.Add(v);
-            foreach (var e in state.Edges)
-                SelectedEdges.Add(e);
-            foreach (var f in state.Faces)
-                SelectedFaces.Add(f);
-            foreach (var l in state.Lines)
-                SelectedLines.Add(l);
-        }
 
         // ================================================================
         // 階層・トランスフォーム（MeshObjectへの参照）

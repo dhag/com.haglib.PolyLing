@@ -219,8 +219,25 @@ public partial class PolyLing : EditorWindow
     private Vector3[] _vertexOffsets;       // 各Vertexのオフセット
     private Vector3[] _groupOffsets;        // グループオフセット（後方互換用、Vertexと1:1）
 
-    // 頂点選択
-    private HashSet<int> _selectedVertices = new HashSet<int>();
+    // 頂点選択（ActiveSelection.Verticesへのプロキシ）
+    private HashSet<int> _selectedVertices
+    {
+        get => _selectionState?.Vertices ?? _selectedVerticesFallback;
+        set
+        {
+            var target = _selectionState?.Vertices;
+            if (target != null)
+            {
+                target.Clear();
+                if (value != null) target.UnionWith(value);
+            }
+            else
+            {
+                _selectedVerticesFallback = value ?? new HashSet<int>();
+            }
+        }
+    }
+    private HashSet<int> _selectedVerticesFallback = new HashSet<int>();
 
     // 編集状態（共通の選択処理用）
     private enum VertexEditState
@@ -380,11 +397,6 @@ public partial class PolyLing : EditorWindow
     /// マウス操作開始時の選択スナップショット
     /// </summary>
     private SelectionSnapshot _selectionSnapshotOnMouseDown;
-
-    /// <summary>
-    /// マウス操作開始時のレガシー選択
-    /// </summary>
-    private HashSet<int> _legacySelectionOnMouseDown;
 
     /// <summary>
     /// マウス操作開始時のWorkPlaneスナップショット
@@ -608,20 +620,16 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void InitializeSelectionSystem()
     {
-        _selectionState = new SelectionState();
+        // MeshContext.Selection を正規のデータソースとして使用
+        var meshContext = _model?.CurrentMeshContext;
+        _selectionState = meshContext?.Selection ?? new SelectionState();
         _meshTopology = new TopologyCache();
         _selectionOps = new SelectionOperations(_selectionState, _meshTopology);
         
         // GPU/CPUヒットテストの閾値を統一（HOVER_LINE_DISTANCE = 18f と同じ）
         _selectionOps.EdgeHitDistance = 18f;
 
-        _selectionState.OnSelectionChanged += SyncSelectionToLegacy;
-
-        // Undo/Redo時の選択状態復元
-        if (_undoController != null)
-        {
-            // _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-        }
+        _selectionState.OnSelectionChanged += OnSelectionChanged;
 
         _lastSelectionSnapshot = _selectionState.CreateSnapshot();
         UpdateTopology();
@@ -629,32 +637,12 @@ public partial class PolyLing : EditorWindow
 
 
     /// <summary>
-    /// 新システム → 既存システムへの同期（移行期間用）
+    /// 選択変更時のコールバック（レンダリング更新）
     /// </summary>
-    private void SyncSelectionToLegacy()
+    private void OnSelectionChanged()
     {
-        // Vertex選択のみ同期（現状の機能を維持）
-        _selectedVertices.Clear();
-        foreach (var v in _selectionState.Vertices)
-        {
-            _selectedVertices.Add(v);
-        }
         _unifiedAdapter?.RequestNormal();
         Repaint();
-    }
-
-    /// <summary>
-    /// 既存システム → 新システムへの同期
-    /// </summary>
-    private void SyncSelectionFromLegacy()
-    {
-        _selectionState.Vertices.Clear();
-        foreach (var v in _selectedVertices)
-        {
-            _selectionState.Vertices.Add(v);
-        }
-        // 統合システムに選択変更を通知
-        _unifiedAdapter?.NotifySelectionChanged();
     }
 
     /// <summary>
@@ -710,7 +698,7 @@ public partial class PolyLing : EditorWindow
         // Selection System クリーンアップ
         if (_selectionState != null)
         {
-            _selectionState.OnSelectionChanged -= SyncSelectionToLegacy;
+            _selectionState.OnSelectionChanged -= OnSelectionChanged;
         }
 
         // ★追加: Undoキュー処理を解除
@@ -827,11 +815,10 @@ public partial class PolyLing : EditorWindow
         {
             Debug.Log($"[OnUndoRedoPerformed] Restoring from SelectionSnapshot. Snapshot.Vertices.Count={ctx2.CurrentSelectionSnapshot.Vertices?.Count ?? -1}");
             // 拡張選択スナップショットから復元（Edge/Face/Lines/Modeを含む完全な復元）
+            // _selectionState は meshContext.Selection と同一インスタンスのため、
+            // _selectedVertices（プロキシ）も自動的に同期される
             _selectionState.RestoreFromSnapshot(ctx2.CurrentSelectionSnapshot);
             ctx2.CurrentSelectionSnapshot = null;  // 使用済みなのでクリア
-
-            // _selectedVertices も同期
-            _selectedVertices = new HashSet<int>(_selectionState.Vertices);
             Debug.Log($"[OnUndoRedoPerformed] After restore: _selectedVertices.Count={_selectedVertices.Count}");
         }
         else
@@ -933,8 +920,7 @@ public partial class PolyLing : EditorWindow
             }
         }
 
-        // 選択クリア
-        _selectedVertices.Clear();
+        // 選択クリア（_selectionState.ClearAll() で _selectedVertices も自動クリア）
         _selectionState?.ClearAll();
 
         if (_undoController != null)
