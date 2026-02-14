@@ -246,8 +246,17 @@ public partial class PolyLing
         // ================================================================
         DrawHoveredFace(localRect, meshContext, selectedDisplayMatrix);
 
-        // 選択面ハイライト描画
-        DrawSelectedFaces(localRect, meshContext, selectedDisplayMatrix);
+        // 選択面ハイライト描画（複数メッシュ対応）
+        if (_model != null && _model.SelectedMeshIndices.Count > 0)
+        {
+            foreach (int meshIdx in _model.SelectedMeshIndices)
+            {
+                var mc = _model.GetMeshContext(meshIdx);
+                if (mc == null || mc.SelectedFaces.Count == 0) continue;
+                Matrix4x4 dm = GetDisplayMatrix(meshIdx);
+                DrawSelectedFaces(localRect, mc, dm);
+            }
+        }
 
         // ================================================================
         // 頂点インデックス表示（2Dオーバーレイ）- v2.1: 複数選択対応
@@ -386,10 +395,10 @@ public partial class PolyLing
     /// </summary>
     private void DrawSelectedFaces(Rect previewRect, MeshContext meshContext, Matrix4x4 displayMatrix)
     {
-        if (meshContext?.MeshObject == null || _selectionState == null)
+        if (meshContext?.MeshObject == null)
             return;
 
-        if (_selectionState.Faces.Count == 0)
+        if (meshContext.SelectedFaces.Count == 0)
             return;
 
         var meshObject = meshContext.MeshObject;
@@ -401,7 +410,7 @@ public partial class PolyLing
         Color fillColor = colors.FaceSelectedFill;
         Color edgeColor = colors.FaceSelectedEdge;
 
-        foreach (int faceIndex in _selectionState.Faces)
+        foreach (int faceIndex in meshContext.SelectedFaces)
         {
             if (faceIndex < 0 || faceIndex >= meshObject.FaceCount)
                 continue;

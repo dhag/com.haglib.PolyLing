@@ -1339,8 +1339,8 @@ public partial class PolyLing
 
             // _selectionState == meshContext.Selection のため同期不要
 
-            // UnifiedSystemに選択変更を通知
-            SyncMultiMeshSelectionToGPU();
+            // 選択変更をパイプラインに通知（PrepareUnifiedDrawingで全フラグ更新）
+            _unifiedAdapter?.RequestNormal();
         }
         else
         {
@@ -1392,41 +1392,6 @@ public partial class PolyLing
         {
             RecordExtendedSelectionChange(oldSnapshot, oldSelection);
         }
-    }
-
-    /// <summary>
-    /// v2.1: 複数メッシュの選択状態をGPUに同期
-    /// </summary>
-    private void SyncMultiMeshSelectionToGPU()
-    {
-        if (_model == null || _unifiedAdapter?.BufferManager == null)
-            return;
-
-        var bufferManager = _unifiedAdapter.BufferManager;
-        var selectedMeshIndices = _model.SelectedMeshIndices;
-
-        // まず全頂点の選択フラグをクリア
-        bufferManager.ClearAllVertexSelectedFlags();
-
-        // 選択中メッシュの選択状態をフラグに反映
-        foreach (int meshIdx in selectedMeshIndices)
-        {
-            var meshContext = _model.GetMeshContext(meshIdx);
-            if (meshContext == null || !meshContext.HasSelection)
-                continue;
-
-            int vertexOffset = _unifiedAdapter.GetVertexOffset(meshIdx);
-
-            // 頂点選択フラグを設定
-            foreach (int localVertex in meshContext.SelectedVertices)
-            {
-                int globalVertex = vertexOffset + localVertex;
-                bufferManager.SetVertexSelectedFlag(globalVertex, true);
-            }
-        }
-
-        // GPUにアップロード
-        bufferManager.UploadVertexFlags();
     }
 
     // ================================================================
