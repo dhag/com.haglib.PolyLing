@@ -310,11 +310,22 @@ namespace Poly_Ling.Model
             }
         }
 
-        /// <summary>主選択インデックス（全カテゴリ中の最小）</summary>
+        /// <summary>主選択インデックス（ActiveCategoryのプライマリ、なければ全カテゴリから最小）</summary>
         public int PrimarySelectedMeshContextIndex
         {
             get
             {
+                // ActiveCategoryのプライマリインデックスを優先
+                int primary = ActiveCategory switch
+                {
+                    SelectionCategory.Mesh => PrimarySelectedMeshIndex,
+                    SelectionCategory.Bone => PrimarySelectedBoneIndex,
+                    SelectionCategory.Morph => PrimarySelectedMorphIndex,
+                    _ => -1
+                };
+                if (primary >= 0) return primary;
+
+                // フォールバック: 全カテゴリから最小
                 var all = SelectedMeshContextIndices;
                 return all.Count > 0 ? all.Min() : -1;
             }
@@ -833,6 +844,16 @@ namespace Poly_Ling.Model
             SelectedMorphIndices.RemoveAll(i => i < 0 || i >= Count);
         }
 
+        /// <summary>全カテゴリの選択インデックスをフラットリストとして取得（Undo記録用）</summary>
+        public List<int> CaptureAllSelectedIndices()
+        {
+            var indices = new List<int>(SelectedMeshIndices.Count + SelectedBoneIndices.Count + SelectedMorphIndices.Count);
+            indices.AddRange(SelectedMeshIndices);
+            indices.AddRange(SelectedBoneIndices);
+            indices.AddRange(SelectedMorphIndices);
+            return indices;
+        }
+
         // ================================================================
         // メッシュリスト操作
         // ================================================================
@@ -851,7 +872,8 @@ namespace Poly_Ling.Model
         }
 
         /// <summary>メッシュを挿入</summary>
-        public void Insert(int index, MeshContext meshContext)
+        /// <param name="adjustSelection">選択インデックスを調整するか（Undo/Redo時はfalse）</param>
+        public void Insert(int index, MeshContext meshContext, bool adjustSelection = true)
         {
             if (meshContext == null)
                 throw new ArgumentNullException(nameof(meshContext));
@@ -862,12 +884,15 @@ namespace Poly_Ling.Model
             InvalidateTypedIndices();
             IsDirty = true;
 
-            // 選択インデックス調整（挿入位置以降は+1）- 各カテゴリ個別に
-            SelectedMeshIndices = AdjustIndicesForInsert(SelectedMeshIndices, index);
-            SelectedBoneIndices = AdjustIndicesForInsert(SelectedBoneIndices, index);
-            SelectedMorphIndices = AdjustIndicesForInsert(SelectedMorphIndices, index);
+            if (adjustSelection)
+            {
+                // 選択インデックス調整（挿入位置以降は+1）- 各カテゴリ個別に
+                SelectedMeshIndices = AdjustIndicesForInsert(SelectedMeshIndices, index);
+                SelectedBoneIndices = AdjustIndicesForInsert(SelectedBoneIndices, index);
+                SelectedMorphIndices = AdjustIndicesForInsert(SelectedMorphIndices, index);
+            }
 
-            // モーフセットのインデックス調整
+            // モーフセットのインデックス調整（常に実行）
             foreach (var set in MorphSets)
             {
                 set.AdjustIndicesOnInsert(index);
@@ -886,8 +911,9 @@ namespace Poly_Ling.Model
         }
 
         /// <summary>メッシュを削除</summary>
+        /// <param name="adjustSelection">選択インデックスを調整するか（Undo/Redo時はfalse）</param>
         /// <returns>削除成功したか</returns>
-        public bool RemoveAt(int index)
+        public bool RemoveAt(int index, bool adjustSelection = true)
         {
             if (index < 0 || index >= MeshContextList.Count)
                 return false;
@@ -896,18 +922,21 @@ namespace Poly_Ling.Model
             InvalidateTypedIndices();
             IsDirty = true;
 
-            // 選択インデックス調整 - 各カテゴリ個別に
-            SelectedMeshIndices = AdjustIndicesForRemove(SelectedMeshIndices, index);
-            SelectedBoneIndices = AdjustIndicesForRemove(SelectedBoneIndices, index);
-            SelectedMorphIndices = AdjustIndicesForRemove(SelectedMorphIndices, index);
+            if (adjustSelection)
+            {
+                // 選択インデックス調整 - 各カテゴリ個別に
+                SelectedMeshIndices = AdjustIndicesForRemove(SelectedMeshIndices, index);
+                SelectedBoneIndices = AdjustIndicesForRemove(SelectedBoneIndices, index);
+                SelectedMorphIndices = AdjustIndicesForRemove(SelectedMorphIndices, index);
 
-            // モーフセットのインデックス調整
+                ValidateSelection();
+            }
+
+            // モーフセットのインデックス調整（常に実行）
             foreach (var set in MorphSets)
             {
                 set.AdjustIndicesOnRemove(index);
             }
-
-            ValidateSelection();
 
             return true;
         }

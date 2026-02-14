@@ -493,7 +493,7 @@ public partial class PolyLing
         }
 
         // Undo記録用：変更前の状態を保存
-        int oldSelectedIndex = _selectedIndex;
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         var oldMeshContextList = new List<MeshContext>(_meshContextList);
 
         // 既存のメッシュリストをクリア
@@ -537,8 +537,8 @@ public partial class PolyLing
             {
                 var boneTransform = boneTransforms[i];
                 var boneCtx = CreateMeshContextFromBone(boneTransform, boneToIndex);
-                _meshContextList.Add(boneCtx);
                 boneCtx.MaterialOwner = _model;
+                _model.Add(boneCtx);
                 
                 // BindPoseを設定（収集できた場合）
                 if (boneBindPoses.TryGetValue(boneTransform, out Matrix4x4 bindPose))
@@ -601,8 +601,8 @@ public partial class PolyLing
             var go = meshGameObjects[i];
             var meshContext = CreateMeshContextFromGameObject(go, goToIndex, materialToIndex, boneToIndex);
 
-            _meshContextList.Add(meshContext);
             meshContext.MaterialOwner = _model;
+            _model.Add(meshContext);
         }
 
         // 最初のメッシュを選択（ボーンがあれば最初のメッシュ、なければ0）
@@ -618,7 +618,7 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト置換）
-            _undoController.MeshListContext.Select(_selectedIndex);
+            var newSelectedIndices = _model.CaptureAllSelectedIndices();
 
             // 複数メッシュ追加をバッチ記録
             var addedContexts = new List<(int Index, MeshContext MeshContext)>();
@@ -628,8 +628,8 @@ public partial class PolyLing
             }
             _undoController.RecordMeshContextsAdd(
                 addedContexts,
-                oldSelectedIndex,
-                _selectedIndex,
+                oldSelectedIndices,
+                newSelectedIndices,
                 null, null,
                 _model.Materials,
                 _model.CurrentMaterialIndex);
@@ -931,7 +931,7 @@ public partial class PolyLing
         _meshContextList.Clear();
         SetSelectedIndex(-1);
 
-        // 選択をクリア（_selectedVerticesはプロキシなので_selectionState.ClearAll()で十分）
+        // 選択をクリア
         _selectionState?.ClearAll();
     }
 
@@ -998,11 +998,11 @@ public partial class PolyLing
         meshContext.UnityMesh = displayMesh;
 
         // Undo記録用に変更前の状態を保存
-        int oldSelectedIndex = _selectedIndex;
+        var oldSelectedIndices2 = _model.CaptureAllSelectedIndices();
         int insertIndex = _meshContextList.Count;
 
-        _meshContextList.Add(meshContext);
-        meshContext.MaterialOwner = _model;  // Phase 1: Materials 委譲用
+        meshContext.MaterialOwner = _model;
+        _model.Add(meshContext);
         SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
 
@@ -1016,8 +1016,8 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト追加）
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
+            var newSelectedIndices2 = _model.CaptureAllSelectedIndices();
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndices2, newSelectedIndices2);
         }
 
         // 統合システムにトポロジー変更を通知

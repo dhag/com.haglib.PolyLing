@@ -138,11 +138,11 @@ public partial class PolyLing
         if (workPlane == null || workPlane.IsLocked) return;
 
         var meshContext = _model.CurrentMeshContext;
-        if (meshContext?.MeshObject == null || _selectedVertices.Count == 0) return;
+        if (meshContext?.MeshObject == null || _selectionState.Vertices.Count == 0) return;
 
         var before = workPlane.CreateSnapshot();
 
-        if (workPlane.UpdateOriginFromSelection(meshContext.MeshObject, _selectedVertices))
+        if (workPlane.UpdateOriginFromSelection(meshContext.MeshObject, _selectionState.Vertices))
         {
             var after = workPlane.CreateSnapshot();
             if (before.IsDifferentFrom(after))

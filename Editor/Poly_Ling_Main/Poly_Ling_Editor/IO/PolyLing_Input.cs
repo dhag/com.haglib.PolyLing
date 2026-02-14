@@ -644,7 +644,7 @@ public partial class PolyLing
         // ToolContextも更新（MoveToolが参照する）
         if (_toolManager?.toolContext != null)
         {
-            _toolManager.toolContext.SelectedVertices = _selectedVertices;
+            _toolManager.toolContext.SelectedVertices = _selectionState.Vertices;
             _toolManager.toolContext.SelectionState = _selectionState;
         }
 
@@ -1015,7 +1015,7 @@ public partial class PolyLing
                 // ToolContextも更新
                 if (_toolManager?.toolContext != null)
                 {
-                    _toolManager.toolContext.SelectedVertices = _selectedVertices;
+                    _toolManager.toolContext.SelectedVertices = _selectionState.Vertices;
                     _toolManager.toolContext.SelectionState = _selectionState;
                 }
 
@@ -1140,7 +1140,7 @@ public partial class PolyLing
         // カリング情報をGPUからCPUに読み戻す（背面カリング対応）
         _unifiedAdapter?.ReadBackVertexFlags();
 
-        HashSet<int> oldSelection = new HashSet<int>(_selectedVertices);
+        HashSet<int> oldSelection = new HashSet<int>(_selectionState.Vertices);
         SelectionSnapshot oldSnapshot = _selectionState?.CreateSnapshot();
 
         // 矩形を正規化
@@ -1379,7 +1379,7 @@ public partial class PolyLing
                     _selectionOps.SelectInRect(selectRect, meshObject, worldToScreen, additive);
                 }
 
-                // _selectedVertices は _selectionState.Vertices へのプロキシのため同期不要
+                // _selectionState.Vertices を直接参照しているため同期不要
 
                 // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
                 _unifiedAdapter?.RequestNormal();
@@ -1387,7 +1387,7 @@ public partial class PolyLing
         }
 
         // 選択が変更されていたら記録
-        if (!oldSelection.SetEquals(_selectedVertices) ||
+        if (!oldSelection.SetEquals(_selectionState.Vertices) ||
             (_selectionState != null && oldSnapshot != null && oldSnapshot.IsDifferentFrom(_selectionState.CreateSnapshot())))
         {
             RecordExtendedSelectionChange(oldSnapshot, oldSelection);
@@ -1496,9 +1496,7 @@ public partial class PolyLing
         }
 
         // 選択が変更された → Undo記録
-        HashSet<int> newLegacyVertices = _selectedVertices != null
-            ? new HashSet<int>(_selectedVertices)
-            : new HashSet<int>();
+        HashSet<int> newLegacyVertices = new HashSet<int>(_selectionState.Vertices);
 
         if (_undoController?.MeshUndoContext != null)
         {

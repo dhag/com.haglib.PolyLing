@@ -351,7 +351,7 @@ public partial class PolyLing
                 }
 
                 // 削除ボタン（選択があるときのみ有効）
-                using (new EditorGUI.DisabledScope(_selectedVertices.Count == 0))
+                using (new EditorGUI.DisabledScope(_selectionState.Vertices.Count == 0))
                 {
                     var oldColor = GUI.backgroundColor;
                     GUI.backgroundColor = new Color(1f, 0.6f, 0.6f); // 薄い赤
@@ -363,7 +363,7 @@ public partial class PolyLing
                 }
 
                 // マージボタン（2つ以上選択があるときのみ有効）
-                using (new EditorGUI.DisabledScope(_selectedVertices.Count < 2))
+                using (new EditorGUI.DisabledScope(_selectionState.Vertices.Count < 2))
                 {
                     var oldColor = GUI.backgroundColor;
                     GUI.backgroundColor = new Color(0.6f, 0.8f, 1f); // 薄い青
@@ -963,7 +963,7 @@ public partial class PolyLing
         if (_selectionState == null) return;
 
         SelectionSnapshot oldSnapshot = _selectionState.CreateSnapshot();
-        HashSet<int> oldLegacySelection = new HashSet<int>(_selectedVertices);
+        HashSet<int> oldLegacySelection = new HashSet<int>(_selectionState.Vertices);
 
         // 現在のモードにフラグをトグル
         if (_selectionState.Mode.Has(toggleMode))
@@ -996,7 +996,7 @@ public partial class PolyLing
         if (_selectionState.Mode == newMode) return;
 
         SelectionSnapshot oldSnapshot = _selectionState.CreateSnapshot();
-        HashSet<int> oldLegacySelection = new HashSet<int>(_selectedVertices);
+        HashSet<int> oldLegacySelection = new HashSet<int>(_selectionState.Vertices);
 
         _selectionState.Mode = newMode;
 
@@ -1058,6 +1058,6 @@ public partial class PolyLing
         _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
         // Materials は ModelContext に集約済み
         // 選択状態を同期
-        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
     }
 }

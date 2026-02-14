@@ -73,13 +73,13 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(MeshUndoContext ctx)
         {
-            Debug.Log($"[VertexMoveRecord.Undo] START. Indices.Length={Indices.Length}, ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
+            // Debug.Log($"[VertexMoveRecord.Undo] START. Indices.Length={Indices.Length}, ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
             for (int i = 0; i < Indices.Length; i++)
             {
                 ctx.SetVertexPosition(Indices[i], OldPositions[i]);
             }
             ctx.ApplyVertexPositionsToMesh();
-            Debug.Log($"[VertexMoveRecord.Undo] END. ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
+            // Debug.Log($"[VertexMoveRecord.Undo] END. ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
         }
 
         public override void Redo(MeshUndoContext ctx)

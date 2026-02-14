@@ -213,7 +213,10 @@ namespace Poly_Ling.UI
             }
             finally
             {
-                _isSyncingFromExternal = false;
+                // TreeView.Rebuild()後に遅延選択イベントが発火するため、
+                // 即座にフラグを解除するとOnSelectionChangedが偽イベントを処理してしまう。
+                // delayCallで次フレームまで抑制を維持する。
+                EditorApplication.delayCall += () => _isSyncingFromExternal = false;
             }
         }
 
@@ -228,7 +231,8 @@ namespace Poly_Ling.UI
             }
             finally
             {
-                _isSyncingFromExternal = false;
+                // TreeView.Rebuild()後の遅延選択イベント抑制
+                EditorApplication.delayCall += () => _isSyncingFromExternal = false;
             }
         }
 

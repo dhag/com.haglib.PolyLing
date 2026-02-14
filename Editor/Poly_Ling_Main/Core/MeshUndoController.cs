@@ -97,6 +97,13 @@ namespace Poly_Ling.UndoSystem
 
         // === イベント ===
         public event Action OnUndoRedoPerformed;
+
+        /// <summary>
+        /// 直前にUndo/Redoが実行されたスタックの種別
+        /// OnUndoRedoPerformedハンドラ内で参照可能
+        /// </summary>
+        public enum UndoStackType { VertexEdit, EditorState, WorkPlane, MeshList, Project, Unknown }
+        public UndoStackType LastUndoRedoStackType { get; private set; } = UndoStackType.Unknown;
         
         /// <summary>
         /// プロジェクトUndo実行時のコールバック（復元処理用）
@@ -156,15 +163,15 @@ namespace Poly_Ling.UndoSystem
             _subWindowGroup = new UndoGroup($"{windowId}/SubWindows", "Sub Panels");
             _mainGroup.AddChild(_subWindowGroup);
 
-            // イベント購読
-            _vertexEditStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _vertexEditStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _editorStateStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _editorStateStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _workPlaneStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _workPlaneStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _meshListStack.OnUndoPerformed += _ => OnUndoRedoPerformed?.Invoke();
-            _meshListStack.OnRedoPerformed += _ => OnUndoRedoPerformed?.Invoke();
+            // イベント購読（スタック種別を記録してからInvoke）
+            _vertexEditStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.VertexEdit; OnUndoRedoPerformed?.Invoke(); };
+            _vertexEditStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.VertexEdit; OnUndoRedoPerformed?.Invoke(); };
+            _editorStateStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.EditorState; OnUndoRedoPerformed?.Invoke(); };
+            _editorStateStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.EditorState; OnUndoRedoPerformed?.Invoke(); };
+            _workPlaneStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.WorkPlane; OnUndoRedoPerformed?.Invoke(); };
+            _workPlaneStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.WorkPlane; OnUndoRedoPerformed?.Invoke(); };
+            _meshListStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList; OnUndoRedoPerformed?.Invoke(); };
+            _meshListStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList; OnUndoRedoPerformed?.Invoke(); };
 
             // グローバルマネージャーに登録（既存があれば削除してから追加）
             var existingChild = UndoManager.Instance.FindById(windowId);
@@ -300,14 +307,14 @@ namespace Poly_Ling.UndoSystem
             EditorStateSnapshot after,
             string description)
         {
-            Debug.Log($"[RecordEditorStateChangeInternal] Recording to EditorStateStack: {description}. Before Focus={_mainGroup.FocusedChildId}");
+            // Debug.Log($"[RecordEditorStateChangeInternal] Recording to EditorStateStack: {description}. Before Focus={_mainGroup.FocusedChildId}");
             
             _editorStateStack.EndGroup();  // 独立した操作として記録
             EditorStateChangeRecord record = new EditorStateChangeRecord(before, after);
             _editorStateStack.Record(record, description);
             FocusEditorState();
             
-            Debug.Log($"[RecordEditorStateChangeInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
+            // Debug.Log($"[RecordEditorStateChangeInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
         }
 
         /// <summary>
@@ -402,14 +409,14 @@ namespace Poly_Ling.UndoSystem
         {
             if (_isDragging) return;
 
-            Debug.Log($"[BeginVertexDragInternal] Starting vertex drag. Focus={_mainGroup.FocusedChildId}");
+            // Debug.Log($"[BeginVertexDragInternal] Starting vertex drag. Focus={_mainGroup.FocusedChildId}");
 
             _isDragging = true;
             _lastVertexPositions = (Vector3[])currentPositions.Clone();
             _dragStartGroupId = _vertexEditStack.BeginGroup("Move Vertices");
             FocusVertexEdit();
             
-            Debug.Log($"[BeginVertexDragInternal] After FocusVertexEdit(). Focus={_mainGroup.FocusedChildId}");
+            // Debug.Log($"[BeginVertexDragInternal] After FocusVertexEdit(). Focus={_mainGroup.FocusedChildId}");
         }
 
         /// <summary>
@@ -446,7 +453,7 @@ namespace Poly_Ling.UndoSystem
         {
             if (!_isDragging) return;
 
-            Debug.Log($"[EndVertexDragInternal] Ending vertex drag. movedCount={movedIndices?.Length ?? 0}. Focus={_mainGroup.FocusedChildId}");
+            // Debug.Log($"[EndVertexDragInternal] Ending vertex drag. movedCount={movedIndices?.Length ?? 0}. Focus={_mainGroup.FocusedChildId}");
 
             _isDragging = false;
 
@@ -467,7 +474,7 @@ namespace Poly_Ling.UndoSystem
                 _vertexEditStack.Record(record, "Move Vertices");
                 FocusVertexEdit();
                 
-                Debug.Log($"[EndVertexDragInternal] Recorded vertex move. Focus={_mainGroup.FocusedChildId}");
+                // Debug.Log($"[EndVertexDragInternal] Recorded vertex move. Focus={_mainGroup.FocusedChildId}");
             }
 
             _vertexEditStack.EndGroup();
@@ -1044,7 +1051,7 @@ namespace Poly_Ling.UndoSystem
 
             bool ctrl = e.control || e.command;
             
-            Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] KeyDown detected: keyCode={e.keyCode}, ctrl={ctrl}, shift={e.shift}");
+            // Debug.Log($"[MeshUndoController.HandleKeyboardShortcuts] KeyDown detected: keyCode={e.keyCode}, ctrl={ctrl}, shift={e.shift}");
 
             if (ctrl && e.keyCode == KeyCode.Z && !e.shift)
             {
@@ -1091,31 +1098,35 @@ namespace Poly_Ling.UndoSystem
         // ================================================================
 
         /// <summary>
-        /// ModelContextを設定（SimpleMeshFactory初期化時に呼び出し）
+        /// ModelContextを設定（_modelと同一インスタンスを共有）
+        /// OnListChangedコールバックは呼び出し側で直接 += すること
         /// </summary>
-        /// <param name="modelContext">モデルコンテキストへの参照</param>
-        /// <param name="onListChanged">リスト変更時のコールバック</param>
-        public void SetModelContext(ModelContext modelContext, Action onListChanged = null)
+        /// <param name="modelContext">モデルコンテキストへの参照（_modelと同一）</param>
+        public void SetModelContext(ModelContext modelContext)
         {
             _modelContext = modelContext;
-            _meshListStack = new UndoStack<ModelContext>(
-                _meshListStack.Id,
-                _meshListStack.DisplayName,
-                _modelContext
-            );
-            if (onListChanged != null)
-            {
-                _modelContext.OnListChanged = onListChanged;
-            }
+            _meshListStack.Context = _modelContext;
         }
 
         /// <summary>
-        /// MeshListを設定（後方互換）
+        /// ModelContextを設定し、OnListChangedコールバックも登録する
+        /// モデル切り替え時に使用
         /// </summary>
-        public void SetMeshList(List<MeshContext> meshList, Action onListChanged = null)
+        public void SetModelContext(ModelContext modelContext, Action onListChanged)
         {
-            _modelContext.MeshContextList = meshList;
-            _modelContext.OnListChanged = onListChanged;
+            // 旧コンテキストからコールバック解除
+            if (_modelContext != null && onListChanged != null)
+            {
+                _modelContext.OnListChanged -= onListChanged;
+            }
+
+            SetModelContext(modelContext);
+
+            // 新コンテキストにコールバック登録
+            if (_modelContext != null && onListChanged != null)
+            {
+                _modelContext.OnListChanged += onListChanged;
+            }
         }
 
         /// <summary>
@@ -1130,17 +1141,11 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// メッシュコンテキスト追加を記録
         /// </summary>
-        /// <param name="meshContext">追加されたメッシュコンテキスト</param>
-        /// <param name="insertIndex">挿入位置</param>
-        /// <param name="oldSelectedMeshContextIndex">追加前の選択インデックス</param>
-        /// <param name="newSelectedMeshContextIndex">追加後の選択インデックス</param>
-        /// <param name="oldCamera">追加前のカメラ状態（オプション）</param>
-        /// <param name="newCamera">追加後のカメラ状態（オプション）</param>
         public void RecordMeshContextAdd(
             MeshContext meshContext, 
             int insertIndex, 
-            int oldSelectedMeshContextIndex, 
-            int newSelectedMeshContextIndex,
+            List<int> oldSelectedIndices, 
+            List<int> newSelectedIndices,
             CameraSnapshot? oldCamera = null,
             CameraSnapshot? newCamera = null)
         {
@@ -1150,8 +1155,8 @@ namespace Poly_Ling.UndoSystem
                 {
                     (insertIndex, MeshContextSnapshot.Capture(meshContext))
                 },
-                OldSelectedIndex = oldSelectedMeshContextIndex,
-                NewSelectedIndex = newSelectedMeshContextIndex,
+                OldSelectedIndices = oldSelectedIndices ?? new List<int>(),
+                NewSelectedIndices = newSelectedIndices ?? new List<int>(),
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
@@ -1165,8 +1170,8 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void RecordMeshContextsAdd(
             List<(int Index, MeshContext MeshContext)> addedContexts,
-            int oldSelectedIndex,
-            int newSelectedIndex,
+            List<int> oldSelectedIndices,
+            List<int> newSelectedIndices,
             CameraSnapshot? oldCamera = null,
             CameraSnapshot? newCamera = null,
             List<Material> oldMaterials = null,
@@ -1177,8 +1182,8 @@ namespace Poly_Ling.UndoSystem
                 AddedMeshContexts = addedContexts
                     .Select(e => (e.Index, MeshContextSnapshot.Capture(e.MeshContext)))
                     .ToList(),
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex,
+                OldSelectedIndices = oldSelectedIndices ?? new List<int>(),
+                NewSelectedIndices = newSelectedIndices ?? new List<int>(),
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera,
                 OldMaterials = oldMaterials != null ? new List<Material>(oldMaterials) : null,
@@ -1190,7 +1195,7 @@ namespace Poly_Ling.UndoSystem
                 : $"Add {addedContexts.Count} Meshes";
 
             _meshListStack.Record(record, desc);
-            _lastMeshListRecord = record;  // 最後のレコードを保持
+            _lastMeshListRecord = record;
             FocusMeshList();
         }
 
@@ -1228,15 +1233,10 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// メッシュコンテキスト削除を記録（複数対応）
         /// </summary>
-        /// <param name="removedContexts">削除されたメッシュコンテキスト（インデックス + コンテキスト）のリスト</param>
-        /// <param name="oldSelectedIndex">削除前の選択インデックス</param>
-        /// <param name="newSelectedIndex">削除後の選択インデックス</param>
-        /// <param name="oldCamera">削除前のカメラ状態（オプション）</param>
-        /// <param name="newCamera">削除後のカメラ状態（オプション）</param>
         public void RecordMeshContextsRemove(
             List<(int Index, MeshContext meshContext)> removedContexts, 
-            int oldSelectedIndex, 
-            int newSelectedIndex,
+            List<int> oldSelectedIndices, 
+            List<int> newSelectedIndices,
             CameraSnapshot? oldCamera = null,
             CameraSnapshot? newCamera = null)
         {
@@ -1245,8 +1245,8 @@ namespace Poly_Ling.UndoSystem
                 RemovedMeshContexts = removedContexts
                     .Select(e => (e.Index, MeshContextSnapshot.Capture(e.meshContext)))
                     .ToList(),
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex,
+                OldSelectedIndices = oldSelectedIndices ?? new List<int>(),
+                NewSelectedIndices = newSelectedIndices ?? new List<int>(),
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
@@ -1273,8 +1273,8 @@ namespace Poly_Ling.UndoSystem
             MeshContext meshContext, 
             int oldIndex, 
             int newIndex, 
-            int oldSelectedIndex, 
-            int newSelectedIndex,
+            List<int> oldSelectedIndices, 
+            List<int> newSelectedIndices,
             CameraSnapshot? oldCamera = null,
             CameraSnapshot? newCamera = null)
         {
@@ -1284,8 +1284,8 @@ namespace Poly_Ling.UndoSystem
             {
                 RemovedMeshContexts = new List<(int, MeshContextSnapshot)> { (oldIndex, snapshot) },
                 AddedMeshContexts = new List<(int, MeshContextSnapshot)> { (newIndex, snapshot) },
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = newSelectedIndex,
+                OldSelectedIndices = oldSelectedIndices ?? new List<int>(),
+                NewSelectedIndices = newSelectedIndices ?? new List<int>(),
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
@@ -1297,69 +1297,52 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// メッシュ選択変更を記録
         /// </summary>
-        public void RecordMeshSelectionChange(int oldIndex, int newIndex)
+        public void RecordMeshSelectionChange(List<int> oldIndices, List<int> newIndices)
         {
-            if (oldIndex == newIndex) return;
-            RecordMeshSelectionChangeInternal(oldIndex, newIndex);
+            if (oldIndices != null && newIndices != null && oldIndices.SequenceEqual(newIndices)) return;
+            RecordMeshSelectionChangeInternal(oldIndices, newIndices);
         }
 
         /// <summary>
         /// メッシュ選択変更を記録（内部用）
         /// </summary>
-        internal void RecordMeshSelectionChangeInternal(int oldIndex, int newIndex)
+        internal void RecordMeshSelectionChangeInternal(List<int> oldIndices, List<int> newIndices)
         {
-            if (oldIndex == newIndex) return;
-
-            Debug.Log($"[RecordMeshSelectionChangeInternal] Recording to MeshListStack. Before Focus={_mainGroup.FocusedChildId}");
-
-            var oldSelection = new List<int>();
-            var newSelection = new List<int>();
-            if (oldIndex >= 0) oldSelection.Add(oldIndex);
-            if (newIndex >= 0) newSelection.Add(newIndex);
-
-            var record = new MeshSelectionChangeRecord(oldSelection, newSelection);
+            var record = new MeshSelectionChangeRecord(
+                oldIndices ?? new List<int>(), 
+                newIndices ?? new List<int>());
             _meshListStack.Record(record, "Select Mesh");
             FocusMeshList();
-            
-            Debug.Log($"[RecordMeshSelectionChangeInternal] After FocusMeshList(). Focus={_mainGroup.FocusedChildId}");
         }
 
         /// <summary>
         /// メッシュ選択変更を記録（カメラ状態付き）
         /// </summary>
         public void RecordMeshSelectionChange(
-            int oldIndex, 
-            int newIndex,
+            List<int> oldIndices, 
+            List<int> newIndices,
             CameraSnapshot? oldCamera,
             CameraSnapshot? newCamera)
         {
-            if (oldIndex == newIndex) return;
-            RecordMeshSelectionChangeInternal(oldIndex, newIndex, oldCamera, newCamera);
+            if (oldIndices != null && newIndices != null && oldIndices.SequenceEqual(newIndices)) return;
+            RecordMeshSelectionChangeInternal(oldIndices, newIndices, oldCamera, newCamera);
         }
 
         /// <summary>
         /// メッシュ選択変更を記録（カメラ状態付き・内部用）
         /// </summary>
         internal void RecordMeshSelectionChangeInternal(
-            int oldIndex, 
-            int newIndex,
+            List<int> oldIndices, 
+            List<int> newIndices,
             CameraSnapshot? oldCamera,
             CameraSnapshot? newCamera)
         {
-            if (oldIndex == newIndex) return;
-
-            Debug.Log($"[RecordMeshSelectionChangeInternal+Camera] Recording to MeshListStack. Before Focus={_mainGroup.FocusedChildId}");
-
-            var oldSelection = new List<int>();
-            var newSelection = new List<int>();
-            if (oldIndex >= 0) oldSelection.Add(oldIndex);
-            if (newIndex >= 0) newSelection.Add(newIndex);
-
-            var record = new MeshSelectionChangeRecord(oldSelection, newSelection, oldCamera, newCamera);
+            var record = new MeshSelectionChangeRecord(
+                oldIndices ?? new List<int>(), 
+                newIndices ?? new List<int>(), 
+                oldCamera, newCamera);
             _meshListStack.Record(record, "Select Mesh");
             FocusMeshList();
-            
-            Debug.Log($"[RecordMeshSelectionChangeInternal+Camera] After FocusMeshList(). Focus={_mainGroup.FocusedChildId}");
         }
 
         // ================================================================

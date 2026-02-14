@@ -314,33 +314,32 @@ namespace Poly_Ling.UndoSystem
                 ctx.CurrentMaterialIndex = OldCurrentMaterialIndex;
             }
             
-            // 追加されたものを削除
+            // 追加されたものを削除（ModelContext API使用: MorphSet調整あり、選択調整なし）
             foreach (var (index, _) in AddedMeshContexts.OrderByDescending(e => e.Index))
             {
                 if (index >= 0 && index < ctx.MeshContextList.Count)
                 {
                     var mc = ctx.MeshContextList[index];
                     if (mc.UnityMesh != null) UnityEngine.Object.DestroyImmediate(mc.UnityMesh);
-                    ctx.MeshContextList.RemoveAt(index);
+                    ctx.RemoveAt(index, adjustSelection: false);
                 }
             }
 
-            // 削除されたものを復元
+            // 削除されたものを復元（ModelContext API使用: MorphSet調整あり、選択調整なし）
             foreach (var (index, snapshot) in RemovedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
-                mc.MaterialOwner = ctx;  // Materials 委譲用
-                ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
+                mc.MaterialOwner = ctx;
+                ctx.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc, adjustSelection: false);
             }
 
-            // v2.0: 新API使用
+            // 選択状態を復元
             ctx.RestoreSelectionFromIndices(OldSelectedIndices);
             ctx.ValidateSelection();
             
             // カメラ状態を復元
             if (OldCameraState.HasValue)
             {
-                Debug.Log($"[MeshListChangeRecord.Undo] Restoring camera: target={OldCameraState.Value.CameraTarget}");
                 ctx.OnCameraRestoreRequested?.Invoke(OldCameraState.Value);
             }
             
@@ -352,8 +351,6 @@ namespace Poly_Ling.UndoSystem
 
         public override void Redo(ModelContext ctx)
         {
-            Debug.Log("[MeshListChangeRecord.Redo] *** CALLED ***");
-            
             // マテリアルを復元
             if (NewMaterials != null)
             {
@@ -361,33 +358,32 @@ namespace Poly_Ling.UndoSystem
                 ctx.CurrentMaterialIndex = NewCurrentMaterialIndex;
             }
             
-            // 削除されたものを削除
+            // 削除されたものを削除（ModelContext API使用: MorphSet調整あり、選択調整なし）
             foreach (var (index, _) in RemovedMeshContexts.OrderByDescending(e => e.Index))
             {
                 if (index >= 0 && index < ctx.MeshContextList.Count)
                 {
                     var mc = ctx.MeshContextList[index];
                     if (mc.UnityMesh != null) UnityEngine.Object.DestroyImmediate(mc.UnityMesh);
-                    ctx.MeshContextList.RemoveAt(index);
+                    ctx.RemoveAt(index, adjustSelection: false);
                 }
             }
 
-            // 追加されたものを復元
+            // 追加されたものを復元（ModelContext API使用: MorphSet調整あり、選択調整なし）
             foreach (var (index, snapshot) in AddedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
-                mc.MaterialOwner = ctx;  // Materials 委譲用
-                ctx.MeshContextList.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc);
+                mc.MaterialOwner = ctx;
+                ctx.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc, adjustSelection: false);
             }
 
-            // v2.0: 新API使用
+            // 選択状態を復元
             ctx.RestoreSelectionFromIndices(NewSelectedIndices);
             ctx.ValidateSelection();
             
             // カメラ状態を復元
             if (NewCameraState.HasValue)
             {
-                Debug.Log($"[MeshListChangeRecord.Redo] Restoring camera: target={NewCameraState.Value.CameraTarget}");
                 ctx.OnCameraRestoreRequested?.Invoke(NewCameraState.Value);
             }
             
@@ -428,39 +424,39 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(ModelContext ctx)
         {
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] START. OldSelectedIndices={string.Join(",", OldSelectedIndices)}, CurrentIndex={ctx.PrimarySelectedMeshContextIndex}");
+            // Debug.Log($"[MeshSelectionChangeRecord.Undo] START. OldSelectedIndices={string.Join(",", OldSelectedIndices)}, CurrentIndex={ctx.PrimarySelectedMeshContextIndex}");
             // v2.0: 新API使用
             ctx.RestoreSelectionFromIndices(OldSelectedIndices);
             ctx.ValidateSelection();
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] After ValidateSelection. NewIndex={ctx.PrimarySelectedMeshContextIndex}");
+            // Debug.Log($"[MeshSelectionChangeRecord.Undo] After ValidateSelection. NewIndex={ctx.PrimarySelectedMeshContextIndex}");
             
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnCameraRestoreRequested");
+            // Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnCameraRestoreRequested");
             if (OldCameraState.HasValue)
             {
-                Debug.Log($"[MeshSelectionChangeRecord.Undo] Restoring camera: target={OldCameraState.Value.CameraTarget}");
+                // Debug.Log($"[MeshSelectionChangeRecord.Undo] Restoring camera: target={OldCameraState.Value.CameraTarget}");
                 ctx.OnCameraRestoreRequested?.Invoke(OldCameraState.Value);
             }
             
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnListChanged");
+            // Debug.Log($"[MeshSelectionChangeRecord.Undo] Before OnListChanged");
             ctx.OnListChanged?.Invoke();
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] After OnListChanged");
+            // Debug.Log($"[MeshSelectionChangeRecord.Undo] After OnListChanged");
             
             // MeshListStackにフォーカスを切り替え（Redo時に正しいスタックで実行されるように）
             ctx.OnFocusMeshListRequested?.Invoke();
-            Debug.Log($"[MeshSelectionChangeRecord.Undo] END");
+            // Debug.Log($"[MeshSelectionChangeRecord.Undo] END");
         }
 
         public override void Redo(ModelContext ctx)
         {
-            Debug.Log("[MeshSelectionChangeRecord.Redo] *** CALLED ***");
+            // Debug.Log("[MeshSelectionChangeRecord.Redo] *** CALLED ***");
             // v2.0: 新API使用
             ctx.RestoreSelectionFromIndices(NewSelectedIndices);
             ctx.ValidateSelection();
             
-            Debug.Log($"[MeshSelectionChangeRecord.Redo] NewCameraState.HasValue={NewCameraState.HasValue}");
+            // Debug.Log($"[MeshSelectionChangeRecord.Redo] NewCameraState.HasValue={NewCameraState.HasValue}");
             if (NewCameraState.HasValue)
             {
-                Debug.Log($"[MeshSelectionChangeRecord.Redo] Restoring camera: dist={NewCameraState.Value.CameraDistance}, target={NewCameraState.Value.CameraTarget}");
+                // Debug.Log($"[MeshSelectionChangeRecord.Redo] Restoring camera: dist={NewCameraState.Value.CameraDistance}, target={NewCameraState.Value.CameraTarget}");
                 ctx.OnCameraRestoreRequested?.Invoke(NewCameraState.Value);
             }
             

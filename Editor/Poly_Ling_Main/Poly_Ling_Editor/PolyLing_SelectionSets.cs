@@ -53,8 +53,7 @@ public partial class PolyLing
         _newSelectionSetName = EditorGUILayout.TextField(_newSelectionSetName, GUILayout.MinWidth(80));
 
         // 保存ボタン（グローバル選択状態をチェック）
-        bool hasSelection = (_selectedVertices != null && _selectedVertices.Count > 0) ||
-                            (_selectionState != null && _selectionState.HasSelection);
+        bool hasSelection = _selectionState.Vertices.Count > 0 || _selectionState.HasSelection;
 
         using (new EditorGUI.DisabledScope(!hasSelection))
         {
@@ -273,7 +272,7 @@ public partial class PolyLing
         // グローバル選択状態から保存
         var set = SelectionSet.FromCurrentSelection(
             name,
-            _selectedVertices,
+            _selectionState.Vertices,
             _selectionState?.Edges,
             _selectionState?.Faces,
             _selectionState?.Lines,
@@ -314,8 +313,8 @@ public partial class PolyLing
         var set = meshContext.SelectionSets[index];
 
         // グローバル選択状態に直接復元
-        _selectedVertices.Clear();
-        _selectedVertices.UnionWith(set.Vertices);
+        _selectionState.Vertices.Clear();
+        _selectionState.Vertices.UnionWith(set.Vertices);
 
         if (_selectionState != null)
         {
@@ -346,7 +345,7 @@ public partial class PolyLing
         // グローバル選択状態に直接追加
         if (set.Vertices != null && set.Vertices.Count > 0)
         {
-            _selectedVertices.UnionWith(set.Vertices);
+            _selectionState.Vertices.UnionWith(set.Vertices);
         }
         if (_selectionState != null)
         {
@@ -373,7 +372,7 @@ public partial class PolyLing
         // グローバル選択状態から直接除外
         if (set.Vertices != null && set.Vertices.Count > 0)
         {
-            _selectedVertices.ExceptWith(set.Vertices);
+            _selectionState.Vertices.ExceptWith(set.Vertices);
         }
         if (_selectionState != null)
         {
@@ -585,8 +584,8 @@ public partial class PolyLing
         }
 
         // グローバル選択状態に復元
-        _selectedVertices.Clear();
-        _selectedVertices.UnionWith(set.Vertices);
+        _selectionState.Vertices.Clear();
+        _selectionState.Vertices.UnionWith(set.Vertices);
 
         if (_selectionState != null)
         {

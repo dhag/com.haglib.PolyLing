@@ -481,10 +481,10 @@ public partial class PolyLing
             _toolManager.toolContext.Model = currentModel;
         }
         
-        // UndoControllerのMeshListを更新
+        // UndoControllerのModelContextを更新
         if (_undoController != null)
         {
-            _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
+            _undoController.SetModelContext(currentModel, OnMeshListChanged);
         }
         
         // 選択をクリア
@@ -555,10 +555,10 @@ public partial class PolyLing
             _toolManager.toolContext.Model = _project.CurrentModel;
         }
 
-        // UndoControllerのMeshListを更新
+        // UndoControllerのModelContextを更新
         if (_undoController != null && _project.CurrentModel != null)
         {
-            _undoController.SetMeshList(_project.CurrentModel.MeshContextList, OnMeshListChanged);
+            _undoController.SetModelContext(_project.CurrentModel, OnMeshListChanged);
         }
 
         // 選択をクリア

@@ -67,7 +67,7 @@ public partial class PolyLing
             // 選択頂点を設定（FromModelContext では設定されないため）
             if (_selectedIndex >= 0 && _selectedIndex < modelDTO.meshDTOList.Count)
             {
-                modelDTO.meshDTOList[_selectedIndex].selectedVertices = _selectedVertices.ToList();
+                modelDTO.meshDTOList[_selectedIndex].selectedVertices = _selectionState.Vertices.ToList();
             }
 
             projectDTO.models.Add(modelDTO);
@@ -105,7 +105,7 @@ public partial class PolyLing
             MeshContextSnapshot snapshot = MeshContextSnapshot.Capture(_meshContextList[i]);
             removedSnapshots.Add((i, snapshot));
         }
-        int oldSelectedIndex = _selectedIndex;
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
 
         // 変更前のカメラ状態を保存
         CameraSnapshot oldCameraState = new CameraSnapshot
@@ -119,8 +119,8 @@ public partial class PolyLing
         // 既存メッシュをクリア（UnityMeshを破棄）
         CleanupMeshes();
         _meshContextList.Clear();
-        _selectedIndex = -1;
-        _selectedVertices.Clear();
+        SetSelectedIndex(-1);
+        _selectionState.Vertices.Clear();
         // 注意: VertexEditStackはクリアしない（Undo可能にするため）
 
         // ModelSerializer.ToModelContext を使用してモデル全体を復元
@@ -163,11 +163,13 @@ public partial class PolyLing
             // メッシュカテゴリ
             if (state.selectedMeshIndex >= 0 && state.selectedMeshIndex < _meshContextList.Count)
             {
-                _selectedIndex = state.selectedMeshIndex;
+                SetSelectedIndex(state.selectedMeshIndex);
 
                 // 選択頂点を復元
                 var selectedMeshContextData = modelDTO.meshDTOList[state.selectedMeshIndex];
-                _selectedVertices = ModelSerializer.ToSelectedVertices(selectedMeshContextData);
+                var restoredVertices = ModelSerializer.ToSelectedVertices(selectedMeshContextData);
+                _selectionState.Vertices.Clear();
+                if (restoredVertices != null) _selectionState.Vertices.UnionWith(restoredVertices);
             }
             
             // ボーンカテゴリ
@@ -185,8 +187,7 @@ public partial class PolyLing
             // フォールバック: 何も選択されていない場合
             if (!_model.HasSelection && _meshContextList.Count > 0)
             {
-                _selectedIndex = 0;
-                _model.Select(0);
+                SetSelectedIndex(0);
             }
 
             // ツールを復元（名前で検索）
@@ -197,8 +198,7 @@ public partial class PolyLing
         }
         else if (_meshContextList.Count > 0)
         {
-            _selectedIndex = 0;
-            _model.Select(0);
+            SetSelectedIndex(0);
         }
 
         // 変更後のカメラ状態を保存
@@ -231,26 +231,25 @@ public partial class PolyLing
                 _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
                 _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
                 _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
-                _undoController.MeshUndoContext.SelectedVertices = _selectedVertices;
+                _undoController.MeshUndoContext.SelectedVertices = _selectionState.Vertices;
             }
         }
 
         // Undo記録（プロジェクトインポート）
         if (_undoController != null)
         {
+            var newSelectedIndices = _model.CaptureAllSelectedIndices();
             var record = new MeshListChangeRecord
             {
                 RemovedMeshContexts = removedSnapshots,
                 AddedMeshContexts = addedSnapshots,
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = _selectedIndex,
+                OldSelectedIndices = oldSelectedIndices,
+                NewSelectedIndices = newSelectedIndices,
                 OldCameraState = oldCameraState,
                 NewCameraState = newCameraState
             };
             _undoController.MeshListStack.Record(record, $"Import Project: {projectDTO.name}");
             _undoController.FocusMeshList();
-            // v2.0: 新API使用
-            _undoController.MeshListContext.Select(_selectedIndex);
         }
 
         Debug.Log($"[PolyLing] Imported project: {projectDTO.name} ({_meshContextList.Count} meshes, {_model.Materials?.Count ?? 0} materialPathList)");

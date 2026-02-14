@@ -294,9 +294,9 @@ public partial class PolyLing : EditorWindow
         };
 
         // 注意: クローンを作成して独立したインスタンスにする
-        // 参照代入するとRecord作成後に_selectedVerticesが変更された時に
+        // 参照代入するとRecord作成後に_selectionState.Verticesが変更された時に
         // Recordの中のデータも変わってしまう
-        ctx.SelectedVertices = new HashSet<int>(_selectedVertices);
+        ctx.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
         ctx.VertexOffsets = _vertexOffsets;
         ctx.GroupOffsets = _groupOffsets;
         ctx.UndoController = _undoController;
@@ -623,10 +623,8 @@ public partial class PolyLing : EditorWindow
         // MaterialOwner を設定（Materials 委譲用）
         meshContext.MaterialOwner = _model;
 
-        int oldIndex = _selectedIndex;
-        int insertIndex = _meshContextList.Count;
-
-        // カメラ状態を保存（追加前）
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -635,12 +633,16 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        _meshContextList.Add(meshContext);
-        _selectedIndex = insertIndex;
+        // ModelContext API経由でリスト操作（MorphSet調整・TypedIndices無効化を含む）
+        int insertIndex = _model.Add(meshContext);
+
+        // 選択を新しいメッシュに設定
+        SetSelectedIndex(insertIndex);
         
         InitVertexOffsets();
 
-        // カメラ状態を保存（追加後）
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -649,18 +651,13 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録 - カメラ状態付き
+        // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldIndex, _selectedIndex, oldCamera, newCamera);
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndices, newSelectedIndices, oldCamera, newCamera);
         }
-
-        LoadMeshContextToUndoController(_model.CurrentMeshContext); 
-        UpdateTopology();  // ← これを追加
-        Repaint();
         
-        // 他のパネルに通知
+        // 他のパネルに通知（MeshUndoContext設定・選択復元・GPU更新を一元処理）
         _model?.OnListChanged?.Invoke();
     }
     /// <summary>
@@ -670,14 +667,10 @@ public partial class PolyLing : EditorWindow
     {
         if (meshContexts == null || meshContexts.Count == 0) return;
 
-        int oldIndex = _selectedIndex;
-        var addedContexts = new List<(int, MeshContext)>();
-        
-        // マテリアル状態を保存（追加前）
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
         var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
-
-        // カメラ状態を保存（追加前）
         CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -686,6 +679,7 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
+        var addedContexts = new List<(int, MeshContext)>();
         foreach (var meshContext in meshContexts)
         {
             if (meshContext == null) continue;
@@ -693,19 +687,20 @@ public partial class PolyLing : EditorWindow
             // MaterialOwner を設定（Materials 委譲用）
             meshContext.MaterialOwner = _model;
 
-            int insertIndex = _meshContextList.Count;
-            _meshContextList.Add(meshContext);
+            // ModelContext API経由でリスト操作
+            int insertIndex = _model.Add(meshContext);
             addedContexts.Add((insertIndex, meshContext));
         }
 
         if (addedContexts.Count == 0) return;
 
         // 最後に追加したものを選択
-        _selectedIndex = _meshContextList.Count - 1;
+        SetSelectedIndex(_meshContextList.Count - 1);
         
         InitVertexOffsets();
 
-        // カメラ状態を保存（追加後）
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -714,16 +709,11 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録（1回でまとめて）- カメラ状態付き、マテリアル状態付き
+        // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextsAdd(addedContexts, oldIndex, _selectedIndex, oldCamera, newCamera, oldMaterials, oldMaterialIndex);
+            _undoController.RecordMeshContextsAdd(addedContexts, oldSelectedIndices, newSelectedIndices, oldCamera, newCamera, oldMaterials, oldMaterialIndex);
         }
-
-        LoadMeshContextToUndoController(_model.CurrentMeshContext);
-        UpdateTopology();
-        Repaint();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
@@ -830,13 +820,10 @@ public partial class PolyLing : EditorWindow
     {
         if (_meshContextList.Count == 0) return;
 
-        int oldIndex = _selectedIndex;
-        
-        // マテリアル状態を保存（削除前）
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
         var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
-
-        // カメラ状態を保存（削除前）
         CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -852,21 +839,21 @@ public partial class PolyLing : EditorWindow
             removedSnapshots.Add((i, MeshContextSnapshot.Capture(_meshContextList[i])));
         }
 
-        // 全メッシュリソースを解放
-        foreach (var meshContext in _meshContextList)
+        // 全メッシュリソースを解放してModelContext API経由で削除（逆順）
+        for (int i = _meshContextList.Count - 1; i >= 0; i--)
         {
-            if (meshContext.UnityMesh != null)
-                DestroyImmediate(meshContext.UnityMesh);
+            if (_meshContextList[i].UnityMesh != null)
+                DestroyImmediate(_meshContextList[i].UnityMesh);
+            _model.RemoveAt(i);
         }
 
-        // クリア
-        _meshContextList.Clear();
-        _selectedIndex = -1;
-
+        // 選択クリア
+        SetSelectedIndex(-1);
         _selectionState?.ClearAll();
         InitVertexOffsets();
 
-        // カメラ状態を保存（削除後）
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -875,24 +862,20 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録 - Materials 対応版
+        // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
             var record = new MeshListChangeRecord
             {
                 RemovedMeshContexts = removedSnapshots,
-                OldSelectedIndex = oldIndex,
-                NewSelectedIndex = _selectedIndex,
+                OldSelectedIndices = oldSelectedIndices,
+                NewSelectedIndices = newSelectedIndices,
                 OldCameraState = oldCamera,
                 NewCameraState = newCamera
             };
             _undoController.RecordMeshListChange(record, "Clear All Meshes", oldMaterials, oldMaterialIndex);
         }
 
-        UpdateTopology();
-        Repaint();
-        
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
     }
@@ -909,13 +892,10 @@ public partial class PolyLing : EditorWindow
             return;
         }
 
-        int oldSelectedIndex = _selectedIndex;
-        
-        // マテリアル状態を保存（置換前）
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
         var oldMaterialIndex = _model?.CurrentMaterialIndex ?? 0;
-
-        // カメラ状態を保存（置換前）
         CameraSnapshot oldCameraState = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -932,37 +912,31 @@ public partial class PolyLing : EditorWindow
             removedSnapshots.Add((i, snapshot));
         }
 
-        // 既存メッシュリソースを解放
-        foreach (var meshContext in _meshContextList)
+        // 既存メッシュリソースを解放してModelContext API経由で削除（逆順）
+        for (int i = _meshContextList.Count - 1; i >= 0; i--)
         {
-            if (meshContext.UnityMesh != null)
-                DestroyImmediate(meshContext.UnityMesh);
+            if (_meshContextList[i].UnityMesh != null)
+                DestroyImmediate(_meshContextList[i].UnityMesh);
+            _model.RemoveAt(i);
         }
-        _meshContextList.Clear();
 
-        // 新しいメッシュを追加
+        // 新しいメッシュをModelContext API経由で追加
         List<(int Index, MeshContextSnapshot Snapshot)> addedSnapshots = new List<(int Index, MeshContextSnapshot Snapshot)>();
         foreach (var meshContext in newMeshContexts)
         {
             if (meshContext == null) continue;
-
-            // MaterialOwner を設定（Materials 委譲用）
             meshContext.MaterialOwner = _model;
-
-            int insertIndex = _meshContextList.Count;
-            _meshContextList.Add(meshContext);
-
-            MeshContextSnapshot snapshot = MeshContextSnapshot.Capture(meshContext);
-            addedSnapshots.Add((insertIndex, snapshot));
+            int insertIndex = _model.Add(meshContext);
+            addedSnapshots.Add((insertIndex, MeshContextSnapshot.Capture(meshContext)));
         }
 
         // 選択を更新
-        _selectedIndex = _meshContextList.Count > 0 ? 0 : -1;
+        SetSelectedIndex(_meshContextList.Count > 0 ? 0 : -1);
         _selectionState?.ClearAll();
-
         InitVertexOffsets();
 
-        // カメラ状態を保存（置換後）
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot newCameraState = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -971,26 +945,20 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録（1回のレコードで削除と追加を両方記録）- Materials 対応版
+        // Undo記録（1回のレコードで削除と追加を両方記録）
         if (_undoController != null)
         {
             MeshListChangeRecord record = new MeshListChangeRecord
             {
                 RemovedMeshContexts = removedSnapshots,
                 AddedMeshContexts = addedSnapshots,
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = _selectedIndex,
+                OldSelectedIndices = oldSelectedIndices,
+                NewSelectedIndices = newSelectedIndices,
                 OldCameraState = oldCameraState,
                 NewCameraState = newCameraState
             };
             _undoController.RecordMeshListChange(record, $"Replace All: {newMeshContexts.Count} meshes", oldMaterials, oldMaterialIndex);
-            _undoController.MeshListContext.Select(_selectedIndex);
         }
-
-
-        LoadMeshContextToUndoController(_model.CurrentMeshContext);
-        UpdateTopology();
-        Repaint();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
@@ -1005,9 +973,9 @@ public partial class PolyLing : EditorWindow
         if (index < 0 || index >= _meshContextList.Count) return;
 
         MeshContext meshContext = _meshContextList[index];
-        int oldIndex = _selectedIndex;
 
-        // カメラ状態を保存（削除前）
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -1022,24 +990,22 @@ public partial class PolyLing : EditorWindow
             DestroyImmediate(meshContext.UnityMesh);
         }
 
-        _meshContextList.RemoveAt(index);
+        // ModelContext API経由で削除（MorphSet調整・選択インデックス調整を含む）
+        _model.RemoveAt(index);
 
-        // インデックス調整
-        if (_selectedIndex >= _meshContextList.Count)
-            _selectedIndex = _meshContextList.Count - 1;
-        else if (_selectedIndex > index)
-            _selectedIndex--;
+        // 選択調整（RemoveAtが全カテゴリ調整済みだが、Mesh選択が空になった場合のフォールバック）
+        if (_selectedIndex < 0 && _meshContextList.Count > 0)
+        {
+            SetSelectedIndex(Mathf.Min(index, _meshContextList.Count - 1));
+        }
 
         // 選択クリア
         _selectionState?.ClearAll();
 
-        if (_model.HasValidMeshContextSelection)
-        {
-            InitVertexOffsets();
-            LoadMeshContextToUndoController(_model.CurrentMeshContext);
-        }
+        InitVertexOffsets();
 
-        // カメラ状態を保存（削除後）
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -1048,15 +1014,12 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録 - カメラ状態付き
+        // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
             List<(int Index, MeshContext meshContext)> removedList = new List<(int Index, MeshContext meshContext)> { (index, meshContext) };
-            _undoController.RecordMeshContextsRemove(removedList, oldIndex, _selectedIndex, oldCamera, newCamera);
+            _undoController.RecordMeshContextsRemove(removedList, oldSelectedIndices, newSelectedIndices, oldCamera, newCamera);
         }
-
-        Repaint();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
@@ -1073,41 +1036,27 @@ public partial class PolyLing : EditorWindow
         // ★Phase 5: 現在の選択を保存（切り替え前）
         SaveSelectionToCurrentMesh();
 
-        int oldIndex = _selectedIndex;
-        _selectedIndex = index;
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
+        SetSelectedIndex(index);
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
 
         // Undo記録（選択変更のみ）
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
-            // MeshListChangeRecordで選択変更を記録
-            MeshListChangeRecord record = new MeshListChangeRecord
-            {
-                OldSelectedIndex = oldIndex,
-                NewSelectedIndex = _selectedIndex
-            };
-            _undoController.MeshListStack.Record(record, "Select UnityMesh");
+            _undoController.RecordMeshSelectionChange(oldSelectedIndices, newSelectedIndices);
         }
         // ★Phase 5: 選択を復元（切り替え後）
-        // 旧: _selectedVertices.Clear(); _selectionState?.ClearAll();
         LoadSelectionFromCurrentMesh();
-        // 選択クリア
-       // _selectedVertices.Clear();
-       // _selectionState?.ClearAll();
 
         if (_model.HasValidMeshContextSelection)
         {
             InitVertexOffsets();
             LoadMeshContextToUndoController(_model.CurrentMeshContext);
-            // UnifiedSystemにトポロジー変更を通知
-            // ※メインパネルのSelectMeshAtIndexと同じ処理
             UpdateTopology();
         }
         
-        // 選択変更をワンショットパイプラインに通知
-        // （UpdateTopology()がRequestNormal()を既に呼ぶが、条件外の場合のため明示的に呼ぶ）
         _unifiedAdapter?.RequestNormal();
-
         Repaint();
         
         // 他のパネルに通知
@@ -1139,13 +1088,13 @@ public partial class PolyLing : EditorWindow
             },
             Materials = new List<Material>(original.Materials ?? new List<Material> { null }),
             CurrentMaterialIndex = original.CurrentMaterialIndex,
-            MaterialOwner = _model  // Materials 委譲用
+            MaterialOwner = _model
         };
 
-        int oldIndex = _selectedIndex;
         int insertIndex = index + 1;
 
-        // カメラ状態を保存（追加前）
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot oldCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -1154,12 +1103,15 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        _meshContextList.Insert(insertIndex, clone);
-        _selectedIndex = insertIndex;
+        // ModelContext API経由で挿入（MorphSet調整・選択インデックス調整を含む）
+        _model.Insert(insertIndex, clone);
 
+        // 選択を複製先に設定
+        SetSelectedIndex(insertIndex);
         InitVertexOffsets();
 
-        // カメラ状態を保存（追加後）
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
         CameraSnapshot newCamera = new CameraSnapshot
         {
             RotationX = _rotationX,
@@ -1168,15 +1120,11 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // Undo記録 - カメラ状態付き
+        // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextAdd(clone, insertIndex, oldIndex, _selectedIndex, oldCamera, newCamera);
+            _undoController.RecordMeshContextAdd(clone, insertIndex, oldSelectedIndices, newSelectedIndices, oldCamera, newCamera);
         }
-
-        LoadMeshContextToUndoController(_model.CurrentMeshContext);
-        Repaint();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();
@@ -1191,34 +1139,21 @@ public partial class PolyLing : EditorWindow
         if (toIndex < 0 || toIndex >= _meshContextList.Count) return;
         if (fromIndex == toIndex) return;
 
-        int oldSelectedIndex = _selectedIndex;
-
+        // 変更前の状態を保存
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         var meshContext = _meshContextList[fromIndex];
-        _meshContextList.RemoveAt(fromIndex);
-        _meshContextList.Insert(toIndex, meshContext);
 
-        // 選択インデックス調整
-        if (_selectedIndex == fromIndex)
-        {
-            _selectedIndex = toIndex;
-        }
-        else if (fromIndex < _selectedIndex && toIndex >= _selectedIndex)
-        {
-            _selectedIndex--;
-        }
-        else if (fromIndex > _selectedIndex && toIndex <= _selectedIndex)
-        {
-            _selectedIndex++;
-        }
+        // ModelContext API経由で移動（選択インデックス調整を含む）
+        _model.Move(fromIndex, toIndex);
+
+        // 変更後の状態を保存
+        var newSelectedIndices = _model.CaptureAllSelectedIndices();
 
         // Undo記録
         if (_undoController != null)
         {
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextReorder(meshContext, fromIndex, toIndex, oldSelectedIndex, _selectedIndex);
+            _undoController.RecordMeshContextReorder(meshContext, fromIndex, toIndex, oldSelectedIndices, newSelectedIndices);
         }
-
-        Repaint();
         
         // 他のパネルに通知
         _model?.OnListChanged?.Invoke();

@@ -145,13 +145,16 @@ namespace Poly_Ling.Commands
         {
             if (_controller == null) return;
 
+            var oldIndices = _oldIndex >= 0 ? new List<int> { _oldIndex } : new List<int>();
+            var newIndices = _newIndex >= 0 ? new List<int> { _newIndex } : new List<int>();
+
             if (_oldCamera.HasValue || _newCamera.HasValue)
             {
-                _controller.RecordMeshSelectionChangeInternal(_oldIndex, _newIndex, _oldCamera, _newCamera);
+                _controller.RecordMeshSelectionChangeInternal(oldIndices, newIndices, _oldCamera, _newCamera);
             }
             else
             {
-                _controller.RecordMeshSelectionChangeInternal(_oldIndex, _newIndex);
+                _controller.RecordMeshSelectionChangeInternal(oldIndices, newIndices);
             }
         }
     }

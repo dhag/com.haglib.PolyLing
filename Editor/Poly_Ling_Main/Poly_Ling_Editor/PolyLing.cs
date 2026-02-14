@@ -56,10 +56,16 @@ public partial class PolyLing : EditorWindow
         }
         set
         {
-            if (_model != null && value >= 0 && value < _model.Count)
+            if (_model == null) return;
+            if (value >= 0 && value < _model.Count)
             {
                 // v2.0: 同一カテゴリのみクリア（他カテゴリの選択は維持）
                 _model.SelectByTypeExclusive(value);
+            }
+            else if (value < 0)
+            {
+                // -1の場合: アクティブカテゴリの選択をクリア
+                _model.ClearAllCategorySelection();
             }
         }
     }
@@ -219,25 +225,7 @@ public partial class PolyLing : EditorWindow
     private Vector3[] _vertexOffsets;       // 各Vertexのオフセット
     private Vector3[] _groupOffsets;        // グループオフセット（後方互換用、Vertexと1:1）
 
-    // 頂点選択（ActiveSelection.Verticesへのプロキシ）
-    private HashSet<int> _selectedVertices
-    {
-        get => _selectionState?.Vertices ?? _selectedVerticesFallback;
-        set
-        {
-            var target = _selectionState?.Vertices;
-            if (target != null)
-            {
-                target.Clear();
-                if (value != null) target.UnionWith(value);
-            }
-            else
-            {
-                _selectedVerticesFallback = value ?? new HashSet<int>();
-            }
-        }
-    }
-    private HashSet<int> _selectedVerticesFallback = new HashSet<int>();
+    // 頂点選択は _selectionState.Vertices を直接参照すること
 
     // 編集状態（共通の選択処理用）
     private enum VertexEditState
@@ -370,7 +358,7 @@ public partial class PolyLing : EditorWindow
     // ================================================================
     // Selection System
     // ================================================================
-    private SelectionState _selectionState;
+    private SelectionState _selectionState = new SelectionState();
     private TopologyCache _meshTopology;
     private SelectionOperations _selectionOps;
     private UnifiedAdapterVisibilityProvider _visibilityProvider;
@@ -387,6 +375,13 @@ public partial class PolyLing : EditorWindow
     private float _cameraStartDistance;
     private Vector3 _cameraStartTarget;
     private WorkPlaneSnapshot? _cameraStartWorkPlaneSnapshot;
+
+    /// <summary>
+    /// MeshList Undo/Redo実行中フラグ。
+    /// OnMeshListChangedで立て、OnUndoRedoPerformedでチェック＆クリア。
+    /// MeshList操作後のOnUndoRedoPerformedでMeshObject上書きを防止する。
+    /// </summary>
+    // (A1統合: _meshListUndoRedoInProgressフラグ廃止 - Dual ModelContext統合により不要)
 
 
     // ================================================================
@@ -467,45 +462,28 @@ public partial class PolyLing : EditorWindow
         // ★追加: Undoキュー処理を登録（ConcurrentQueue対応）
         EditorApplication.update += ProcessUndoQueues;
 
-        // MeshListをUndoコントローラーに設定
-        _undoController.SetMeshList(_meshContextList, OnMeshListChanged);
+        // A1統合: _modelをUndoコントローラーに直接共有
+        _undoController.SetModelContext(_model);
+        _model.OnListChanged += OnMeshListChanged;
 
-        // カメラ復元コールバックを設定
-        if (_undoController.MeshListContext != null)
+        // カメラ復元コールバックを設定（_model に直接設定）
+        if (_model != null)
         {
-            _undoController.MeshListContext.OnCameraRestoreRequested = OnCameraRestoreRequested;
-            _undoController.MeshListContext.OnFocusMeshListRequested = () => _undoController.FocusMeshList();
-            _undoController.MeshListContext.OnReorderCompleted = () => {
+            _model.OnCameraRestoreRequested = OnCameraRestoreRequested;
+            _model.OnFocusMeshListRequested = () => _undoController.FocusMeshList();
+            _model.OnReorderCompleted = () => {
                 // ========================================================
                 // メッシュ順序変更後の完全再構築処理
                 // ========================================================
-                // 
-                // メッシュリストの順序変更は、グローバルバッファ（頂点リスト、面リスト等）の
-                // 完全再構築が必要。SetModelContextがこれを行う。
-                // 
-                // 【重要】以下の処理は必ずこの順序で実行すること：
-                // 1. _selectedIndex を ModelContext から同期
-                // 2. SetModelContext でグローバルバッファを完全再構築
-                // 3. SetActiveMesh で選択メッシュを設定
-                //    ※SetModelContextの後に呼ぶこと！
-                //    ※SetActiveMeshはBufferManagerのマッピングテーブルを使うため、
-                //      バッファ再構築前に呼ぶと古いマッピングで変換されてしまう
-                // 4. MeshUndoContext を再設定（参照が変わるため）
-                // ========================================================
 
-                // 1. _selectedIndex は ModelContext.ActiveCategory に応じて自動取得される
-                // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
-                // Debug.Log($"[OnReorderCompleted] _selectedIndex={_selectedIndex}, CurrentMesh={_model?.CurrentMeshContext?.Name}");
-
-                // 2. グローバルバッファを完全再構築
+                // グローバルバッファを完全再構築
                 _unifiedAdapter?.SetModelContext(_model);
 
-                // 3. アクティブメッシュをワンショットパイプライン経由で同期
-                // （UpdateTopology()がRequestNormal()を呼ぶため、ここでは不要になる場合あり）
+                // アクティブメッシュをワンショットパイプライン経由で同期
                 _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
                 _unifiedAdapter?.RequestNormal();
 
-                // 4. MeshUndoContextを再設定（UnityMeshが再構築されるため参照が変わる）
+                // MeshUndoContextを再設定（UnityMeshが再構築されるため参照が変わる）
                 var meshContext = _model?.CurrentMeshContext;
                 if (meshContext != null && _undoController != null)
                 {
@@ -514,11 +492,10 @@ public partial class PolyLing : EditorWindow
                     _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
                 }
 
-                // 5. トポロジー更新（SelectMeshAtIndexと同じ処理）
-                // SetModelContextだけでは不十分。UpdateTopologyも呼ぶ必要がある。
+                // トポロジー更新
                 UpdateTopology();
             };
-            _undoController.MeshListContext.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
+            _model.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
         }
 
         // ModelContextにWorkPlaneを設定
@@ -722,6 +699,11 @@ public partial class PolyLing : EditorWindow
             _project.OnCurrentModelChanged -= OnCurrentModelChanged;
             _project.OnModelsChanged -= OnModelsChanged;
         }
+        // A1統合: OnListChangedハンドラ解除
+        if (_model != null)
+        {
+            _model.OnListChanged -= OnMeshListChanged;
+        }
         // OnDisable() に追加
         CleanupUnifiedSystem();     // SimpleMeshFactory_UnifiedSystem.cs に定義済み
 
@@ -729,50 +711,42 @@ public partial class PolyLing : EditorWindow
 
     /// <summary>
     /// Undo/Redo実行後のコールバック
-    /// </summary>
-// PolyLing.cs の OnUndoRedoPerformed メソッドを以下に置き換え
-
-    /// <summary>
-    /// Undo/Redo実行後のコールバック
+    /// Phase 4: スタック種別に応じて処理を分岐
     /// </summary>
     private void OnUndoRedoPerformed()
     {
-        // Debug.Log($"[OnUndoRedoPerformed] === START === _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
-        // Debug.Log($"[OnUndoRedoPerformed] _selectedVertices.Count={_selectedVertices.Count}, ctx.SelectedVertices?.Count={_undoController?.MeshUndoContext?.SelectedVertices?.Count}");
-        
-        // コンテキストからメッシュに反映
-        var meshContext = _model.CurrentMeshContext;
-        if (meshContext != null)
+        var stackType = _undoController.LastUndoRedoStackType;
+
+        // ────────────────────────────────────────
+        // VertexEdit Undo/Redo: メッシュデータが変更された → Clone + SyncMeshFromData
+        // ────────────────────────────────────────
+        if (stackType == MeshUndoController.UndoStackType.VertexEdit)
         {
-            var ctx = _undoController.MeshUndoContext;
-
-            if (ctx.MeshObject != null)
+            var meshContext = _model.CurrentMeshContext;
+            if (meshContext != null)
             {
-                // Clone()で新しいインスタンスを作成
-                var clonedMeshObject = ctx.MeshObject.Clone();
-                meshContext.MeshObject = clonedMeshObject;
-                
-                // ctx.MeshObjectも同期（次の操作記録で正しいMeshObjectを参照するため）
-                ctx.MeshObject = clonedMeshObject;
-                
-                SyncMeshFromData(meshContext);
+                var ctx = _undoController.MeshUndoContext;
 
-                if (ctx.MeshObject.VertexCount > 0)
+                if (ctx.MeshObject != null)
                 {
-                    UpdateOffsetsFromData(meshContext);
+                    var clonedMeshObject = ctx.MeshObject.Clone();
+                    meshContext.MeshObject = clonedMeshObject;
+                    ctx.MeshObject = clonedMeshObject;
+                    SyncMeshFromData(meshContext);
+
+                    if (ctx.MeshObject.VertexCount > 0)
+                    {
+                        UpdateOffsetsFromData(meshContext);
+                    }
                 }
             }
-
-            // 注意: ctx.SelectedVertices は SelectionRecord の Undo 時にのみ更新される
-            // VertexMoveRecord の Undo 時は更新されないため、ここで無条件に反映すると
-            // 古い値で上書きしてしまう。選択の復元は SelectionSnapshot 経由でのみ行う。
-            // (以前のコード: _selectedVertices = new HashSet<int>(ctx.SelectedVertices);)
-
-            // マテリアル復元は MeshListChangeRecord.Undo/Redo() が直接 ModelContext.Materials に設定済み。
-            // VertexMoveRecord の Undo 時はマテリアル変更なし（設計上正しい）。
-
-            // カリングA 設定をGPUレンダラーに復元
         }
+        // MeshList Undo/Redo: OnMeshListChangedが処理済み → メッシュ操作不要
+        // EditorState / WorkPlane Undo/Redo: メッシュ変更なし → メッシュ操作不要
+
+        // ────────────────────────────────────────
+        // 共通処理（全スタック種別で実行）
+        // ────────────────────────────────────────
 
         // デフォルトマテリアル復元
         var ctxForDefault = _undoController.MeshUndoContext;
@@ -783,55 +757,25 @@ public partial class PolyLing : EditorWindow
         _defaultCurrentMaterialIndex = ctxForDefault.DefaultCurrentMaterialIndex;
         _autoSetDefaultMaterials = ctxForDefault.AutoSetDefaultMaterials;
 
-        // Single Source of Truth: EditorStateContext が唯一のデータソースのため、
-        // ローカル変数への復元コピーは不要（プロパティ経由で直接参照）
-        // カメラ復元フラグのリセットのみ実行
+        // カメラ復元フラグのリセット
         _cameraRestoredByRecord = false;
 
         // ツール復元
         var editorState = _undoController.EditorState;
         RestoreToolFromName(editorState.CurrentToolName);
-
-        //ナイフツールの固有設定----
-        /*if (_knifeTool != null)
-        {
-            _knifeTool.knifeProperty.Mode = editorStateDTO.knifeProperty.Mode;
-            _knifeTool.knifeProperty.EdgeSelect = editorStateDTO.knifeProperty.EdgeSelect;
-            _knifeTool.knifeProperty.ChainMode = editorStateDTO.knifeProperty.ChainMode;
-        }
-        */
-        //// ツール汎用設定の復元
         ApplyToTools(editorState);
 
         _currentTool?.Reset();
         ResetEditState();
 
-        // SelectionState を復元
+        // SelectionState を復元（VertexEdit Undo/Redo時のみSnapshotが存在する）
         var ctx2 = _undoController.MeshUndoContext;
-        // Debug.Log($"[OnUndoRedoPerformed] SelectionSnapshot check: ctx2.CurrentSelectionSnapshot={ctx2.CurrentSelectionSnapshot != null}, ctx2.SelectedVertices.Count={ctx2.SelectedVertices?.Count ?? -1}");
         if (ctx2.CurrentSelectionSnapshot != null && _selectionState != null)
         {
-            // Debug.Log($"[OnUndoRedoPerformed] Restoring from SelectionSnapshot. Snapshot.Vertices.Count={ctx2.CurrentSelectionSnapshot.Vertices?.Count ?? -1}");
-            // 拡張選択スナップショットから復元（Edge/Face/Lines/Modeを含む完全な復元）
-            // _selectionState は meshContext.Selection と同一インスタンスのため、
-            // _selectedVertices（プロキシ）も自動的に同期される
             _selectionState.RestoreFromSnapshot(ctx2.CurrentSelectionSnapshot);
-            ctx2.CurrentSelectionSnapshot = null;  // 使用済みなのでクリア
-            // Debug.Log($"[OnUndoRedoPerformed] After restore: _selectedVertices.Count={_selectedVertices.Count}");
-        }
-        else
-        {
-            // SelectionSnapshotがない場合は選択状態を変更しない
-            // VertexMoveRecord等のUndo時は選択状態は維持される
-            // Debug.Log($"[OnUndoRedoPerformed] No SelectionSnapshot, keeping current selection state. _selectedVertices.Count={_selectedVertices.Count}");
+            ctx2.CurrentSelectionSnapshot = null;
         }
 
-        // MeshListContextからの選択インデックス反映は不要
-        // MeshSelectionChangeRecord.Undo/Redo() が OnListChanged?.Invoke() を呼び出し、
-        // OnMeshListChanged() で _selectedIndex が正しく更新される。
-        // ここで再度チェックすると、VertexMoveRecord等のUndo時に古い状態を参照してしまう。
-
-        // Debug.Log($"[OnUndoRedoPerformed] === END === _selectedIndex={_selectedIndex}, _selectedVertices.Count={_selectedVertices.Count}");
         _unifiedAdapter?.RequestNormal();
         Repaint();
 
@@ -874,6 +818,9 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnMeshListChanged()
     {
+        // WithUndoメソッドが_meshContextListを直接操作するため、
+        // TypedIndicesキャッシュを明示的に無効化する
+        _model?.InvalidateTypedIndices();
         // Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         // Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
 
@@ -918,13 +865,13 @@ public partial class PolyLing : EditorWindow
             }
         }
 
-        // 選択クリア（_selectionState.ClearAll() で _selectedVertices も自動クリア）
-        _selectionState?.ClearAll();
+        // _selectionState参照を新メッシュのSelectionに差し替え
+        // （イベント解除→新参照設定→イベント登録→レンダラ通知→UndoContext同期）
+        SaveSelectionToCurrentMesh();
+        LoadSelectionFromCurrentMesh();
 
-        if (_undoController != null)
-        {
-            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
-        }
+        // GPUバッファ再構築（メッシュリスト構成変更のため）
+        _unifiedAdapter?.NotifyTopologyChanged();
 
         // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");

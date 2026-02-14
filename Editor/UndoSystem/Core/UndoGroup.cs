@@ -231,11 +231,11 @@ namespace Poly_Ling.UndoSystem
             // ★重要: Undo前に全キューを処理
             ProcessPendingQueue();
             
-            Debug.Log($"[UndoGroup.PerformUndo] Group={Id}, FocusedChildId={_focusedChildId}, Policy={ResolutionPolicy}");
+            // Debug.Log($"[UndoGroup.PerformUndo] Group={Id}, FocusedChildId={_focusedChildId}, Policy={ResolutionPolicy}");
             
             var target = ResolveUndoTarget();
             
-            Debug.Log($"[UndoGroup.PerformUndo] Group={Id}, ResolvedTarget={target?.Id ?? "null"}");
+            // Debug.Log($"[UndoGroup.PerformUndo] Group={Id}, ResolvedTarget={target?.Id ?? "null"}");
             
             return target?.PerformUndo() ?? false;
         }

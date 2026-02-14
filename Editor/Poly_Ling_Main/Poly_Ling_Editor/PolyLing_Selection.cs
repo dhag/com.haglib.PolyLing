@@ -80,17 +80,17 @@ public partial class PolyLing
         if (meshContext?.MeshObject == null)
             return;
 
-        var oldSelection = new HashSet<int>(_selectedVertices);
+        var oldSelection = new HashSet<int>(_selectionState.Vertices);
 
-        _selectedVertices.Clear();
+        _selectionState.Vertices.Clear();
         for (int i = 0; i < meshContext.MeshObject.VertexCount; i++)
         {
-            _selectedVertices.Add(i);
+            _selectionState.Vertices.Add(i);
         }
 
-        if (!oldSelection.SetEquals(_selectedVertices))
+        if (!oldSelection.SetEquals(_selectionState.Vertices))
         {
-            RecordSelectionChange(oldSelection, _selectedVertices);
+            RecordSelectionChange(oldSelection, _selectionState.Vertices);
         }
         
         // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
@@ -105,21 +105,22 @@ public partial class PolyLing
         if (meshContext?.MeshObject == null)
             return;
 
-        var oldSelection = new HashSet<int>(_selectedVertices);
+        var oldSelection = new HashSet<int>(_selectionState.Vertices);
 
         var newSelection = new HashSet<int>();
         for (int i = 0; i < meshContext.MeshObject.VertexCount; i++)
         {
-            if (!_selectedVertices.Contains(i))
+            if (!_selectionState.Vertices.Contains(i))
             {
                 newSelection.Add(i);
             }
         }
-        _selectedVertices = newSelection;
+        _selectionState.Vertices.Clear();
+        _selectionState.Vertices.UnionWith(newSelection);
 
-        if (!oldSelection.SetEquals(_selectedVertices))
+        if (!oldSelection.SetEquals(_selectionState.Vertices))
         {
-            RecordSelectionChange(oldSelection, _selectedVertices);
+            RecordSelectionChange(oldSelection, _selectionState.Vertices);
         }
         
         // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
@@ -130,12 +131,12 @@ public partial class PolyLing
 
     private void ClearSelection()
     {
-        if (_selectedVertices.Count == 0)
+        if (_selectionState.Vertices.Count == 0)
             return;
 
-        var oldSelection = new HashSet<int>(_selectedVertices);
-        _selectedVertices.Clear();
-        RecordSelectionChange(oldSelection, _selectedVertices);
+        var oldSelection = new HashSet<int>(_selectionState.Vertices);
+        _selectionState.Vertices.Clear();
+        RecordSelectionChange(oldSelection, _selectionState.Vertices);
         
         // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
         _unifiedAdapter?.RequestNormal();
@@ -148,7 +149,7 @@ public partial class PolyLing
     /// </summary>
     private void DeleteSelectedVertices()
     {
-        if (_selectedVertices.Count == 0) return;
+        if (_selectionState.Vertices.Count == 0) return;
         var meshContext = _model.CurrentMeshContext;
         if (meshContext?.MeshObject == null) return;
 
@@ -156,10 +157,10 @@ public partial class PolyLing
         MeshObjectSnapshot before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // MeshMergeHelper使用
-        MeshMergeHelper.DeleteVertices(meshContext.MeshObject, new HashSet<int>(_selectedVertices));
+        MeshMergeHelper.DeleteVertices(meshContext.MeshObject, new HashSet<int>(_selectionState.Vertices));
 
         // 選択クリア
-        _selectedVertices.Clear();
+        _selectionState.Vertices.Clear();
         _undoController.MeshUndoContext.SelectedVertices.Clear();
 
         // スナップショット取得（操作後）
@@ -178,7 +179,7 @@ public partial class PolyLing
     /// </summary>
     private void MergeSelectedVertices()
     {
-        if (_selectedVertices.Count < 2) return;
+        if (_selectionState.Vertices.Count < 2) return;
         var meshContext = _model.CurrentMeshContext;
         if (meshContext?.MeshObject == null) return;
 
@@ -186,15 +187,15 @@ public partial class PolyLing
         MeshObjectSnapshot before = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
         // MeshMergeHelper使用
-        int mergedVertex = MeshMergeHelper.MergeVerticesToCentroid(meshContext.MeshObject, new HashSet<int>(_selectedVertices));
+        int mergedVertex = MeshMergeHelper.MergeVerticesToCentroid(meshContext.MeshObject, new HashSet<int>(_selectionState.Vertices));
 
         // 選択を更新（マージ後の1頂点のみ選択）
-        _selectedVertices.Clear();
+        _selectionState.Vertices.Clear();
         if (mergedVertex >= 0)
         {
-            _selectedVertices.Add(mergedVertex);
+            _selectionState.Vertices.Add(mergedVertex);
         }
-        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+        _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
 
         // スナップショット取得（操作後）
         MeshObjectSnapshot  after = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
@@ -222,7 +223,7 @@ public partial class PolyLing
                 // A: 全選択トグル
                 if (meshContext.MeshObject != null)
                 {
-                    if (_selectedVertices.Count == meshContext.MeshObject.VertexCount)
+                    if (_selectionState.Vertices.Count == meshContext.MeshObject.VertexCount)
                     {
                         ClearSelection();
                     }
@@ -244,7 +245,7 @@ public partial class PolyLing
             case KeyCode.Delete:
             case KeyCode.Backspace:
                 // Delete/Backspace: 選択頂点を削除
-                if (_selectedVertices.Count > 0)
+                if (_selectionState.Vertices.Count > 0)
                 {
                     DeleteSelectedVertices();
                     e.Use();

@@ -84,12 +84,12 @@ public partial class PolyLing
         Debug.Log($"[CreateNewMeshContext] name={name}, vertices={meshContext.MeshObject.VertexCount}, faces={meshContext.MeshObject.FaceCount}");
 
         // Undo記録用に変更前の状態を保存
-        int oldSelectedIndex = _selectedIndex;
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         int insertIndex = _meshContextList.Count;
 
-        // リストに追加
-        _meshContextList.Add(meshContext);
-        meshContext.MaterialOwner = _model;  // Phase 1: Materials 委譲用
+        // ModelContext API経由でリスト操作
+        meshContext.MaterialOwner = _model;
+        _model.Add(meshContext);
         SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
 
@@ -103,8 +103,8 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュコンテキスト追加）
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
+            var newSelectedIndices = _model.CaptureAllSelectedIndices();
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndices, newSelectedIndices);
         }
 
         // 統合システムにトポロジー変更を通知
@@ -197,7 +197,7 @@ public partial class PolyLing
         {
             _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
             _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
-            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectedVertices);
+            _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
         }
 
         Debug.Log($"[AddMeshObjectToCurrent] Added {name} to {meshContext.Name}, total vertices={meshContext.MeshObject.VertexCount}, faces={meshContext.MeshObject.FaceCount}");
@@ -271,11 +271,11 @@ public partial class PolyLing
         }
 
         // Undo記録用に変更前の状態を保存
-        int oldSelectedIndex = _selectedIndex;
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         int insertIndex = _meshContextList.Count;
 
-        _meshContextList.Add(meshContext);
-        meshContext.MaterialOwner = _model;  // Phase 1: Materials 委譲用
+        meshContext.MaterialOwner = _model;
+        _model.Add(meshContext);
         SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
 
@@ -289,8 +289,8 @@ public partial class PolyLing
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト追加）
-            _undoController.MeshListContext.Select(_selectedIndex);
-            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndex, _selectedIndex);
+            var newSelectedIndices = _model.CaptureAllSelectedIndices();
+            _undoController.RecordMeshContextAdd(meshContext, insertIndex, oldSelectedIndices, newSelectedIndices);
         }
 
         // 統合システムにトポロジー変更を通知
@@ -311,7 +311,7 @@ public partial class PolyLing
         var meshContext = _meshContextList[index];
 
         // Undo記録用にスナップショットを削除前に保存
-        int oldSelectedIndex = _selectedIndex;
+        var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         MeshContextSnapshot snapshot = null;
         if (_undoController != null)
         {
@@ -324,15 +324,17 @@ public partial class PolyLing
             DestroyImmediate(meshContext.UnityMesh);
         }
 
-        _meshContextList.RemoveAt(index);
+        // ModelContext API経由で削除
+        _model.RemoveAt(index);
 
         // 頂点選択と編集状態をリセット
-        _selectedVertices.Clear();
+        _selectionState.Vertices.Clear();
         ResetEditState();
 
-        if (_selectedIndex >= _meshContextList.Count)
+        // 選択調整（RemoveAtが全カテゴリ調整済みだが、Mesh選択が空になった場合のフォールバック）
+        if (_selectedIndex < 0 && _meshContextList.Count > 0)
         {
-            SetSelectedIndex(_meshContextList.Count - 1);
+            SetSelectedIndex(Mathf.Min(index, _meshContextList.Count - 1));
         }
 
         if (_selectedIndex >= 0)
@@ -341,36 +343,33 @@ public partial class PolyLing
             var newMeshContext = _meshContextList[_selectedIndex];
 
             // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
-            // MeshContextに必要な情報だけを設定
             if (_undoController != null)
             {
                 _undoController.MeshUndoContext.MeshObject = newMeshContext.MeshObject;
                 _undoController.MeshUndoContext.TargetMesh = newMeshContext.UnityMesh;
                 _undoController.MeshUndoContext.OriginalPositions = newMeshContext.OriginalPositions;
                 _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
-                // Materials は ModelContext に集約済み
             }
         }
         else
         {
             _vertexOffsets = null;
             _groupOffsets = null;
-            // メッシュがなくなったときだけClear
             _undoController?.VertexEditStack.Clear();
         }
 
         // Undo記録（メッシュリスト削除）
         if (_undoController != null && snapshot != null)
         {
+            var newSelectedIndices = _model.CaptureAllSelectedIndices();
             var record = new MeshListChangeRecord
             {
                 RemovedMeshContexts = new List<(int, MeshContextSnapshot)> { (index, snapshot) },
-                OldSelectedIndex = oldSelectedIndex,
-                NewSelectedIndex = _selectedIndex
+                OldSelectedIndices = oldSelectedIndices,
+                NewSelectedIndices = newSelectedIndices
             };
             _undoController.MeshListStack.Record(record, $"Remove UnityMesh: {meshContext.Name}");
             _undoController.FocusMeshList();
-            _undoController.MeshListContext.Select(_selectedIndex);
         }
 
         Repaint();
