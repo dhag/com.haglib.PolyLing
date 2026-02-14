@@ -1109,23 +1109,23 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
-        /// ModelContextを設定し、OnListChangedコールバックも登録する
-        /// モデル切り替え時に使用
+        /// ModelContextを設定し、OnListChangedコールバックを付け替える
         /// </summary>
-        public void SetModelContext(ModelContext modelContext, Action onListChanged)
+        public void SetModelContext(ModelContext modelContext, Action onListChangedCallback)
         {
             // 旧コンテキストからコールバック解除
-            if (_modelContext != null && onListChanged != null)
+            if (_modelContext != null && onListChangedCallback != null)
             {
-                _modelContext.OnListChanged -= onListChanged;
+                _modelContext.OnListChanged -= onListChangedCallback;
             }
 
-            SetModelContext(modelContext);
+            _modelContext = modelContext;
+            _meshListStack.Context = _modelContext;
 
             // 新コンテキストにコールバック登録
-            if (_modelContext != null && onListChanged != null)
+            if (_modelContext != null && onListChangedCallback != null)
             {
-                _modelContext.OnListChanged += onListChanged;
+                _modelContext.OnListChanged += onListChangedCallback;
             }
         }
 

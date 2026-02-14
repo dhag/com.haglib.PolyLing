@@ -155,7 +155,7 @@ namespace Poly_Ling.Tools
                 if (createdIndices.Count >= 2)
                 {
                     int lastIdx = createdIndices[1];
-                    Vector3 lastPos = ctx.MeshObject.Vertices[lastIdx].Position;
+                    Vector3 lastPos = ctx.FirstSelectedMeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                     Debug.Log($"[AddFaceTool] Continuous line: next start = V{lastIdx}");
                 }
@@ -176,7 +176,7 @@ namespace Poly_Ling.Tools
                 if (Mode == AddFaceMode.Line && ContinuousLine && createdIndices.Count >= 2)
                 {
                     int lastIdx = createdIndices[createdIndices.Count - 1];
-                    Vector3 lastPos = ctx.MeshObject.Vertices[lastIdx].Position;
+                    Vector3 lastPos = ctx.FirstSelectedMeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                 }
 
@@ -202,7 +202,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshObject == null) return;
+            if (ctx.FirstSelectedMeshObject == null) return;
 
             UnityEditor_Handles.BeginGUI();
 
@@ -421,7 +421,7 @@ namespace Poly_Ling.Tools
             _lastLinePoint = null;
 
             // 選択された頂点を最初の点として使用
-            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.MeshObject != null)
+            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.FirstSelectedMeshObject != null)
             {
                 var selectedList = new List<int>(ctx.SelectedVertices);
 
@@ -430,9 +430,9 @@ namespace Poly_Ling.Tools
                 {
                     foreach (int idx in selectedList)
                     {
-                        if (idx >= 0 && idx < ctx.MeshObject.VertexCount)
+                        if (idx >= 0 && idx < ctx.FirstSelectedMeshObject.VertexCount)
                         {
-                            Vector3 pos = ctx.MeshObject.Vertices[idx].Position;
+                            Vector3 pos = ctx.FirstSelectedMeshObject.Vertices[idx].Position;
                             _points.Add(PointInfo.FromExisting(idx, pos));
                         }
                     }
@@ -445,7 +445,7 @@ namespace Poly_Ling.Tools
                         if (ContinuousLine && createdIndices.Count >= 2)
                         {
                             int lastIdx = createdIndices[1];
-                            Vector3 lastPos = ctx.MeshObject.Vertices[lastIdx].Position;
+                            Vector3 lastPos = ctx.FirstSelectedMeshObject.Vertices[lastIdx].Position;
                             _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                         }
                         _points.Clear();
@@ -457,9 +457,9 @@ namespace Poly_Ling.Tools
                 if (selectedList.Count == 1)
                 {
                     int selectedIdx = selectedList[0];
-                    if (selectedIdx >= 0 && selectedIdx < ctx.MeshObject.VertexCount)
+                    if (selectedIdx >= 0 && selectedIdx < ctx.FirstSelectedMeshObject.VertexCount)
                     {
-                        Vector3 pos = ctx.MeshObject.Vertices[selectedIdx].Position;
+                        Vector3 pos = ctx.FirstSelectedMeshObject.Vertices[selectedIdx].Position;
                         var startPoint = PointInfo.FromExisting(selectedIdx, pos);
 
                         if (Mode == AddFaceMode.Line && ContinuousLine)
@@ -505,7 +505,7 @@ namespace Poly_Ling.Tools
 
             if (hitVertex >= 0)
             {
-                Vector3 pos = ctx.MeshObject.Vertices[hitVertex].Position;
+                Vector3 pos = ctx.FirstSelectedMeshObject.Vertices[hitVertex].Position;
                 return PointInfo.FromExisting(hitVertex, pos);
             }
 
@@ -519,7 +519,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int FindNearestVertexAtScreen(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshObject == null) return -1;
+            if (ctx.FirstSelectedMeshObject == null) return -1;
 
             // ヒット半径（少し大きめに設定）
             float hitRadius = 15f;
@@ -528,10 +528,10 @@ namespace Poly_Ling.Tools
             int nearest = -1;
             float minDist = hitRadius;
 
-            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
                 Vector2 vertScreen = ctx.WorldToScreenPos(
-                    ctx.MeshObject.Vertices[i].Position,
+                    ctx.FirstSelectedMeshObject.Vertices[i].Position,
                     ctx.PreviewRect,
                     ctx.CameraPosition,
                     ctx.CameraTarget);
@@ -583,7 +583,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void UpdatePreview(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.MeshObject == null || !ctx.PreviewRect.Contains(screenPos))
+            if (ctx.FirstSelectedMeshObject == null || !ctx.PreviewRect.Contains(screenPos))
             {
                 _previewValid = false;
                 return;
@@ -594,7 +594,7 @@ namespace Poly_Ling.Tools
 
             if (_previewHitVertex >= 0)
             {
-                _previewPoint = ctx.MeshObject.Vertices[_previewHitVertex].Position;
+                _previewPoint = ctx.FirstSelectedMeshObject.Vertices[_previewHitVertex].Position;
             }
             else
             {
@@ -611,10 +611,10 @@ namespace Poly_Ling.Tools
         {
             var createdIndices = new List<int>();
 
-            if (ctx.MeshObject == null || _points.Count < 2)
+            if (ctx.FirstSelectedMeshObject == null || _points.Count < 2)
                 return createdIndices;
 
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var newVertexIndices = new List<int>();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 

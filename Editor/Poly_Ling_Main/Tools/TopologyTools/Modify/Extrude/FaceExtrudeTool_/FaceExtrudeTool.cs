@@ -99,7 +99,7 @@ namespace Poly_Ling.Tools
             if (_state != ExtrudeState.Idle)
                 return false;
 
-            if (ctx.MeshObject == null || ctx.SelectionState == null)
+            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
                 return false;
 
             _mouseDownScreenPos = mousePos;
@@ -168,7 +168,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshObject == null || ctx.SelectionState == null) return;
+            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null) return;
 
             if (_state == ExtrudeState.Idle || _state == ExtrudeState.PendingAction)
             {
@@ -198,7 +198,7 @@ namespace Poly_Ling.Tools
             {
                 if (_hoverFace >= 0 && !ctx.SelectionState.Faces.Contains(_hoverFace))
                 {
-                    var faceInfo = CreateFaceInfo(ctx.MeshObject, _hoverFace);
+                    var faceInfo = CreateFaceInfo(ctx.FirstSelectedMeshObject, _hoverFace);
                     if (faceInfo.HasValue)
                     {
                         DrawFaceHighlight(ctx, faceInfo.Value, new Color(1f, 1f, 1f, 0.3f));
@@ -207,7 +207,7 @@ namespace Poly_Ling.Tools
 
                 if (_hoverFace >= 0 && ctx.SelectionState.Faces.Contains(_hoverFace))
                 {
-                    var faceInfo = CreateFaceInfo(ctx.MeshObject, _hoverFace);
+                    var faceInfo = CreateFaceInfo(ctx.FirstSelectedMeshObject, _hoverFace);
                     if (faceInfo.HasValue)
                     {
                         DrawFaceHighlight(ctx, faceInfo.Value, new Color(1f, 1f, 1f, 0.5f));
@@ -309,7 +309,7 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.FirstSelectedMeshObject;
                 // 【フェーズ1】SelectionStateを渡してFace選択も保存
                 _snapshotBefore = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
             }
@@ -364,7 +364,7 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.FirstSelectedMeshObject;
                 // 【フェーズ1】SelectionStateを渡してFace選択も保存・復元
                 var snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
@@ -377,7 +377,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteExtrude(ToolContext ctx)
         {
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
 
             Vector3 avgNormal = Vector3.zero;
             if (!IndividualNormals)
@@ -480,7 +480,7 @@ namespace Poly_Ling.Tools
 
             foreach (int faceIdx in ctx.SelectionState.Faces)
             {
-                var info = CreateFaceInfo(ctx.MeshObject, faceIdx);
+                var info = CreateFaceInfo(ctx.FirstSelectedMeshObject, faceIdx);
                 if (info.HasValue)
                     _targetFaces.Add(info.Value);
             }
@@ -525,18 +525,18 @@ namespace Poly_Ling.Tools
 
         private int FindFaceAtPosition(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshObject == null) return -1;
+            if (ctx.FirstSelectedMeshObject == null) return -1;
 
-            for (int fi = 0; fi < ctx.MeshObject.FaceCount; fi++)
+            for (int fi = 0; fi < ctx.FirstSelectedMeshObject.FaceCount; fi++)
             {
-                var face = ctx.MeshObject.Faces[fi];
+                var face = ctx.FirstSelectedMeshObject.Faces[fi];
                 if (face.VertexCount < 3) continue;
 
                 var screenPoints = new List<Vector2>();
                 foreach (int vIdx in face.VertexIndices)
                 {
-                    if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
-                        screenPoints.Add(ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position));
+                    if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
+                        screenPoints.Add(ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position));
                 }
 
                 if (screenPoints.Count >= 3 && PointInPolygon(mousePos, screenPoints))
@@ -571,8 +571,8 @@ namespace Poly_Ling.Tools
             {
                 foreach (int vIdx in faceInfo.VertexIndices)
                 {
-                    if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
-                        _previewPositions.Add(ctx.MeshObject.Vertices[vIdx].Position);
+                    if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
+                        _previewPositions.Add(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
                 }
             }
         }
@@ -596,13 +596,13 @@ namespace Poly_Ling.Tools
 
                 foreach (int vIdx in faceInfo.VertexIndices)
                 {
-                    if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount || idx >= _previewPositions.Count)
+                    if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount || idx >= _previewPositions.Count)
                     {
                         idx++;
                         continue;
                     }
 
-                    Vector3 newPos = ctx.MeshObject.Vertices[vIdx].Position + offset;
+                    Vector3 newPos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position + offset;
 
                     if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
                     {
@@ -638,9 +638,9 @@ namespace Poly_Ling.Tools
                 for (int i = 0; i < vertCount; i++)
                 {
                     int vIdx = faceInfo.VertexIndices[i];
-                    if (vIdx >= ctx.MeshObject.VertexCount || idx + i >= _previewPositions.Count) continue;
+                    if (vIdx >= ctx.FirstSelectedMeshObject.VertexCount || idx + i >= _previewPositions.Count) continue;
 
-                    Vector2 orig = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
+                    Vector2 orig = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
                     Vector2 newPos = ctx.WorldToScreen(_previewPositions[idx + i]);
                     DrawThickLine(orig, newPos, 1.5f);
                 }
@@ -656,8 +656,8 @@ namespace Poly_Ling.Tools
             var screenPoints = new List<Vector2>();
             foreach (int vIdx in faceInfo.VertexIndices)
             {
-                if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
-                    screenPoints.Add(ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position));
+                if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
+                    screenPoints.Add(ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position));
             }
 
             if (screenPoints.Count >= 3)

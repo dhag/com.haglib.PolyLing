@@ -148,6 +148,15 @@ namespace Poly_Ling.UndoSystem
             set => OriginalPositions = value;
         }
 
+        // === 複数メッシュ頂点移動のUndo/Redo通知用 ===
+
+        /// <summary>
+        /// MultiMeshVertexMoveRecord.Undo/Redo時に変更されたメッシュインデックス。
+        /// OnUndoRedoPerformedで処理後にクリアされる。
+        /// 空の場合は単一メッシュ操作（VertexMoveRecord等）→ 従来のctx.MeshObjectフロー。
+        /// </summary>
+        public List<int> DirtyMeshIndices { get; } = new List<int>();
+
         // === コンストラクタ ===
 
         public MeshUndoContext()

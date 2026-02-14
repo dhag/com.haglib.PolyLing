@@ -326,7 +326,7 @@ public partial class PolyLing
 
                 int totalVertices = 0;
 
-                var meshContext = _model.CurrentMeshContext;
+                var meshContext = _model.FirstSelectedMeshContext;
                 if (meshContext?.MeshObject != null)
                 {
                     totalVertices = meshContext.MeshObject.VertexCount;
@@ -744,11 +744,11 @@ public partial class PolyLing
         }
 
         // メッシュ名ボタン（選択用）- 複数選択対応
-        bool isPrimary = (index == _selectedMeshIndex);
-        bool isSelected = _model?.SelectedMeshIndices.Contains(index) ?? isPrimary;
+        bool isLeadSelection = (index == _selectedMeshIndex);
+        bool isSelected = _model?.SelectedMeshIndices.Contains(index) ?? isLeadSelection;
         
         // 選択状態に応じたマーカー
-        string marker = isPrimary ? "▶ " : (isSelected ? "● " : "");
+        string marker = isLeadSelection ? "▶ " : (isSelected ? "● " : "");
         string label = marker + ctx.Name;
         
         // v2.1: クリックイベント時のみ処理（再描画時のToggle再評価を無視）
@@ -758,7 +758,7 @@ public partial class PolyLing
         bool newSelected = GUILayout.Toggle(isSelected, label, "Button");
 
         // クリック処理 - 実際のクリックイベント時のみ
-        if (isClickEvent && (newSelected != isSelected || (newSelected && !isPrimary)))
+        if (isClickEvent && (newSelected != isSelected || (newSelected && !isLeadSelection)))
         {
             HandleMeshClick(index, e.control, e.shift);
         }
@@ -780,7 +780,7 @@ public partial class PolyLing
             // プライマリが解除された場合、別のメッシュをプライマリに
             if (_model.SelectedMeshIndices.Count > 0 && !_model.SelectedMeshIndices.Contains(_selectedMeshIndex))
             {
-                SetSelectedIndex(_model.PrimarySelectedMeshIndex);
+                SetSelectedIndex(_model.FirstMeshIndex);
                 SwitchToSelectedMesh();
             }
         }

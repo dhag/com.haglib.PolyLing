@@ -80,10 +80,10 @@ namespace Poly_Ling.Tools
         protected ModelContext Model => _context?.Model;
 
         /// <summary>現在のMeshContext</summary>
-        protected MeshContext CurrentMeshContent => _context?.CurrentMeshContent;
+        protected MeshContext FirstSelectedMeshContext => _context?.FirstSelectedMeshContext;
 
         /// <summary>現在のMeshObject</summary>
-        protected MeshObject CurrentMeshObject => CurrentMeshContent?.MeshObject;
+        protected MeshObject FirstSelectedMeshObject => FirstSelectedMeshContext?.MeshObject;
 
         /// <summary>有効なメッシュが選択されているか</summary>
         protected bool HasValidSelection => _context?.HasValidMeshSelection ?? false;
@@ -164,13 +164,13 @@ namespace Poly_Ling.Tools
         /// <param name="action">MeshObjectを変更するアクション</param>
         protected void RecordTopologyChange(string operationName, Action<MeshObject> action)
         {
-            if (CurrentMeshObject == null) return;
+            if (FirstSelectedMeshObject == null) return;
 
             var undo = _context?.UndoController;
             var before = undo?.CaptureMeshObjectSnapshot();
 
             // 操作実行
-            action(CurrentMeshObject);
+            action(FirstSelectedMeshObject);
 
             // Unity Meshに反映
             _context?.SyncMesh?.Invoke();
@@ -193,13 +193,13 @@ namespace Poly_Ling.Tools
         /// </summary>
         protected T RecordTopologyChange<T>(string operationName, Func<MeshObject, T> action)
         {
-            if (CurrentMeshObject == null) return default;
+            if (FirstSelectedMeshObject == null) return default;
 
             MeshUndoController undo = _context?.UndoController;
             MeshObjectSnapshot before = undo?.CaptureMeshObjectSnapshot();
 
             // 操作実行
-            T result = action(CurrentMeshObject);
+            T result = action(FirstSelectedMeshObject);
 
             // Unity Meshに反映
             _context?.SyncMesh?.Invoke();

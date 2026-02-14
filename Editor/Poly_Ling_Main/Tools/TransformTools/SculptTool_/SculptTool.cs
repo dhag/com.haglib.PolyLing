@@ -91,14 +91,14 @@ namespace Poly_Ling.Tools
 
             public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
             {
-                if (ctx.MeshObject == null) return false;
+                if (ctx.FirstSelectedMeshObject == null) return false;
 
                 _isDragging = true;
                 _currentScreenPos = mousePos;
                 ctx.EnterTransformDragging?.Invoke();
 
                 _beforeSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-                BuildCaches(ctx.MeshObject);
+                BuildCaches(ctx.FirstSelectedMeshObject);
                 ApplyBrush(ctx, mousePos);
 
                 return true;
@@ -107,7 +107,7 @@ namespace Poly_Ling.Tools
             public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
             {
                 if (!_isDragging) return false;
-                if (ctx.MeshObject == null) return false;
+                if (ctx.FirstSelectedMeshObject == null) return false;
 
                 _currentScreenPos = mousePos;
                 ApplyBrush(ctx, mousePos);
@@ -139,7 +139,7 @@ namespace Poly_Ling.Tools
 
             public void DrawGizmo(ToolContext ctx)
             {
-                if (ctx.MeshObject == null) return;
+                if (ctx.FirstSelectedMeshObject == null) return;
 
                 UnityEditor_Handles.BeginGUI();
 
@@ -209,23 +209,23 @@ namespace Poly_Ling.Tools
             Vector3 brushCenter = FindBrushCenter(ctx, ray);
 
             // ブラシ範囲内の頂点を収集
-            var affectedVertices = GetVerticesInBrushRadius(ctx.MeshObject, brushCenter);
+            var affectedVertices = GetVerticesInBrushRadius(ctx.FirstSelectedMeshObject, brushCenter);
             if (affectedVertices.Count == 0) return;
 
             // モードに応じて変形
             switch (Mode)
             {
                 case SculptMode.Draw:
-                    ApplyDraw(ctx.MeshObject, affectedVertices, brushCenter, ray.direction);
+                    ApplyDraw(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter, ray.direction);
                     break;
                 case SculptMode.Smooth:
-                    ApplySmooth(ctx.MeshObject, affectedVertices, brushCenter);
+                    ApplySmooth(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter);
                     break;
                 case SculptMode.Inflate:
-                    ApplyInflate(ctx.MeshObject, affectedVertices, brushCenter);
+                    ApplyInflate(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter);
                     break;
                 case SculptMode.Flatten:
-                    ApplyFlatten(ctx.MeshObject, affectedVertices, brushCenter);
+                    ApplyFlatten(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter);
                     break;
             }
 
@@ -240,16 +240,16 @@ namespace Poly_Ling.Tools
             float closestDist = float.MaxValue;
             Vector3 closestPoint = ray.origin + ray.direction * 5f; // デフォルト
 
-            foreach (var face in ctx.MeshObject.Faces)
+            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
             {
                 if (face.VertexIndices.Count < 3) continue;
 
                 // 三角形に分割してレイキャスト
                 for (int i = 1; i < face.VertexIndices.Count - 1; i++)
                 {
-                    Vector3 v0 = ctx.MeshObject.Vertices[face.VertexIndices[0]].Position;
-                    Vector3 v1 = ctx.MeshObject.Vertices[face.VertexIndices[i]].Position;
-                    Vector3 v2 = ctx.MeshObject.Vertices[face.VertexIndices[i + 1]].Position;
+                    Vector3 v0 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[0]].Position;
+                    Vector3 v1 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
+                    Vector3 v2 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i + 1]].Position;
 
                     if (RayTriangleIntersection(ray, v0, v1, v2, out float t))
                     {

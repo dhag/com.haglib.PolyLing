@@ -237,7 +237,7 @@ namespace Poly_Ling.Tools
         {
             if (_targetFaceIndex < 0) return;
 
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var face = meshObject.Faces[_targetFaceIndex];
             int n = face.VertexIndices.Count;
 
@@ -306,7 +306,7 @@ namespace Poly_Ling.Tools
                 ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var sortedTargets = _chainTargets.OrderByDescending(t => t.FaceIndex).ToList();
 
             foreach (var (faceIdx, intersections) in sortedTargets)
@@ -370,12 +370,12 @@ namespace Poly_Ling.Tools
             UnityEditor_Handles.color = new Color(1f, 1f, 0f, 0.15f);
             foreach (var (faceIdx, _) in _chainTargets)
             {
-                if (faceIdx < 0 || faceIdx >= ctx.MeshObject.FaceCount) continue;
-                var face = ctx.MeshObject.Faces[faceIdx];
+                if (faceIdx < 0 || faceIdx >= ctx.FirstSelectedMeshObject.FaceCount) continue;
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 var screenPoints = new Vector3[face.VertexCount];
                 for (int i = 0; i < face.VertexCount; i++)
                 {
-                    var worldPos = ctx.MeshObject.Vertices[face.VertexIndices[i]].Position;
+                    var worldPos = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
                     var sp = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     screenPoints[i] = new Vector3(sp.x, sp.y, 0);
                 }

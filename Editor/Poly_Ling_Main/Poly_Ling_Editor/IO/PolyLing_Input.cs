@@ -528,9 +528,9 @@ public partial class PolyLing
             return false;
 
         int hitMeshIdx = _hitMeshIndexOnMouseDown;
-        bool isSecondaryMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
+        bool isOtherMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
 
-        if (isSecondaryMesh && _model != null)
+        if (isOtherMesh && _model != null)
         {
             // セカンダリメッシュ: MeshContextを見る
             var meshContext = _model.GetMeshContext(hitMeshIdx);
@@ -609,7 +609,7 @@ public partial class PolyLing
 
         bool additive = shiftHeld || ctrlHeld;
         int hitMeshIdx = _hitMeshIndexOnMouseDown;
-        bool isSecondaryMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
+        bool isOtherMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
 
         // 非加算モードで全メッシュの全モード選択をクリア
         if (!additive && _model != null)
@@ -623,7 +623,7 @@ public partial class PolyLing
         }
 
         // 選択を追加
-        if (isSecondaryMesh && _model != null)
+        if (isOtherMesh && _model != null)
         {
             // セカンダリメッシュ: MeshContext.Selectionに書き込む
             var hitMeshContext = _model.GetMeshContext(hitMeshIdx);
@@ -839,7 +839,7 @@ public partial class PolyLing
     private void ExpandLinkedVertices()
     {
         if (_selectionState == null) return;
-        var meshObject = _model?.CurrentMeshContext?.MeshObject;
+        var meshObject = _model?.FirstSelectedMeshContext?.MeshObject;
         if (meshObject == null) return;
 
         // Edge → Vertices
@@ -992,9 +992,9 @@ public partial class PolyLing
             {
                 // 選択済み要素をCtrl+クリック → 除外（連動ルール適用）
                 int hitMeshIdx = _hitMeshIndexOnMouseDown;
-                bool isSecondaryMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
+                bool isOtherMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
 
-                if (isSecondaryMesh && _model != null)
+                if (isOtherMesh && _model != null)
                 {
                     // セカンダリメッシュ: MeshContext.Selectionから除外
                     var hitMeshContext = _model.GetMeshContext(hitMeshIdx);
@@ -1006,7 +1006,7 @@ public partial class PolyLing
                 else
                 {
                     // プライマリメッシュ: _selectionState(= meshContext.Selection)から除外
-                    RemoveSelectionWithLinkage(_selectionState, _model?.CurrentMeshContext?.MeshObject, _hitResultOnMouseDown);
+                    RemoveSelectionWithLinkage(_selectionState, _model?.FirstSelectedMeshContext?.MeshObject, _hitResultOnMouseDown);
 
                     // Edge/Face/Line選択に連動する頂点を追加
                     ExpandLinkedVertices();
@@ -1051,7 +1051,7 @@ public partial class PolyLing
             oldWorkPlane = workPlane.CreateSnapshot();
 
             // WorkPlane原点を更新
-            var meshContext = _model.CurrentMeshContext;
+            var meshContext = _model.FirstSelectedMeshContext;
             if (meshContext?.MeshObject != null && newSelection.Count > 0)
             {
                 workPlane.UpdateOriginFromSelection(meshContext.MeshObject, newSelection);
@@ -1097,7 +1097,7 @@ public partial class PolyLing
         {
             oldWorkPlane = workPlane.CreateSnapshot();
 
-            var meshContext = _model.CurrentMeshContext;
+            var meshContext = _model.FirstSelectedMeshContext;
             var affectedVertices = _selectionState.GetAllAffectedVertices(meshContext?.MeshObject);
             if (meshContext?.MeshObject != null && affectedVertices.Count > 0)
             {
@@ -1512,7 +1512,7 @@ public partial class PolyLing
             workPlane.AutoUpdateOriginOnSelection &&
             !workPlane.IsLocked)
         {
-            var meshContext = _model.CurrentMeshContext;
+            var meshContext = _model.FirstSelectedMeshContext;
             var affectedVertices = _selectionState.GetAllAffectedVertices(meshContext?.MeshObject);
             if (meshContext?.MeshObject != null && affectedVertices.Count > 0)
             {

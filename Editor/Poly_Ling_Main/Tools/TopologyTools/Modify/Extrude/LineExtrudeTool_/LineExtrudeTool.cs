@@ -53,7 +53,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshObject == null) return;
+            if (ctx.FirstSelectedMeshObject == null) return;
             if (_selectedLineIndices.Count == 0) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -62,12 +62,12 @@ namespace Poly_Ling.Tools
             UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
             foreach (int lineIdx in _selectedLineIndices)
             {
-                if (lineIdx < 0 || lineIdx >= ctx.MeshObject.FaceCount) continue;
-                var face = ctx.MeshObject.Faces[lineIdx];
+                if (lineIdx < 0 || lineIdx >= ctx.FirstSelectedMeshObject.FaceCount) continue;
+                var face = ctx.FirstSelectedMeshObject.Faces[lineIdx];
                 if (face.VertexCount != 2) continue;
 
-                Vector3 p0 = ctx.MeshObject.Vertices[face.VertexIndices[0]].Position;
-                Vector3 p1 = ctx.MeshObject.Vertices[face.VertexIndices[1]].Position;
+                Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[0]].Position;
+                Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[1]].Position;
 
                 Vector2 sp0 = ctx.WorldToScreen(p0);
                 Vector2 sp1 = ctx.WorldToScreen(p1);
@@ -91,10 +91,10 @@ namespace Poly_Ling.Tools
                     int v0 = loop.VertexIndices[i];
                     int v1 = loop.VertexIndices[next];
                     
-                    if (v0 < ctx.MeshObject.VertexCount && v1 < ctx.MeshObject.VertexCount)
+                    if (v0 < ctx.FirstSelectedMeshObject.VertexCount && v1 < ctx.FirstSelectedMeshObject.VertexCount)
                     {
-                        Vector3 p0 = ctx.MeshObject.Vertices[v0].Position;
-                        Vector3 p1 = ctx.MeshObject.Vertices[v1].Position;
+                        Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[v0].Position;
+                        Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
                         Vector2 sp0 = ctx.WorldToScreen(p0);
                         Vector2 sp1 = ctx.WorldToScreen(p1);
                         UnityEditor_Handles.DrawAAPolyLine(2f, sp0, sp1);
@@ -200,14 +200,14 @@ namespace Poly_Ling.Tools
         {
             _selectedLineIndices.Clear();
 
-            if (ctx.MeshObject == null || ctx.SelectionState == null)
+            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
                 return;
 
             foreach (int lineIdx in ctx.SelectionState.Lines)
             {
-                if (lineIdx >= 0 && lineIdx < ctx.MeshObject.FaceCount)
+                if (lineIdx >= 0 && lineIdx < ctx.FirstSelectedMeshObject.FaceCount)
                 {
-                    var face = ctx.MeshObject.Faces[lineIdx];
+                    var face = ctx.FirstSelectedMeshObject.Faces[lineIdx];
                     if (face.VertexCount == 2)
                     {
                         _selectedLineIndices.Add(lineIdx);
@@ -223,10 +223,10 @@ namespace Poly_Ling.Tools
         {
             _detectedLoops.Clear();
 
-            if (_lastContext?.MeshObject == null || _selectedLineIndices.Count < 3)
+            if (_lastContext?.FirstSelectedMeshObject == null || _selectedLineIndices.Count < 3)
                 return;
 
-            var meshObject = _lastContext.MeshObject;
+            var meshObject = _lastContext.FirstSelectedMeshObject;
 
             // 使用済みラインを追跡
             var remainingLines = new HashSet<int>(_selectedLineIndices);
@@ -365,7 +365,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void SaveAsCSV()
         {
-            if (_lastContext?.MeshObject == null || _detectedLoops.Count == 0)
+            if (_lastContext?.FirstSelectedMeshObject == null || _detectedLoops.Count == 0)
                 return;
 
             string path = EditorUtility.SaveFilePanel(
@@ -377,7 +377,7 @@ namespace Poly_Ling.Tools
             if (string.IsNullOrEmpty(path))
                 return;
 
-            var meshObject = _lastContext.MeshObject;
+            var meshObject = _lastContext.FirstSelectedMeshObject;
             var sb = new StringBuilder();
 
             // ヘッダーコメント

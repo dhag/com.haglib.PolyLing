@@ -89,8 +89,8 @@ namespace Poly_Ling.Tools
 
         // === メッシュデータ ===
 
-        /// <summary>MeshObject</summary>
-        public MeshObject MeshObject { get; set; }
+        /// <summary>選択先頭メッシュのMeshObject（単一メッシュ操作用便宜アクセサ）</summary>
+        public MeshObject FirstSelectedMeshObject => FirstSelectedMeshContext?.MeshObject;
 
         /// <summary>元の頂点位置</summary>
         public Vector3[] OriginalPositions { get; set; }
@@ -157,24 +157,20 @@ namespace Poly_Ling.Tools
         /// <summary>モデルコンテキスト（メッシュリスト管理）</summary>
         public ModelContext Model { get; set; }
 
-        /// <summary>現在選択中のメッシュコンテキスト（便利プロパティ）</summary>
-        public MeshContext CurrentMeshContent => Model?.CurrentMeshContext;
+        /// <summary>選択中の全MeshContext</summary>
+        public List<MeshContext> SelectedMeshContexts => Model?.SelectedMeshContexts ?? new List<MeshContext>();
+
+        /// <summary>選択リストの先頭MeshContext（便宜アクセサ）</summary>
+        public MeshContext FirstSelectedMeshContext => Model?.FirstSelectedMeshContext;
+
+        /// <summary>選択リストの先頭インデックス（便宜アクセサ）</summary>
+        public int FirstSelectedIndex => Model?.FirstSelectedIndex ?? -1;
 
         /// <summary>メッシュリスト（読み取り専用）</summary>
         public IReadOnlyList<MeshContext> MeshList => Model?.MeshContextList;
 
-        /// <summary>選択中のメッシュインデックス（全カテゴリ統合・ActiveCategoryに応じて返す）</summary>
-        public int SelectedMeshIndex => Model?.PrimarySelectedMeshContextIndex ?? -1;
-
-        // v2.0: カテゴリ別選択プロパティ
-        /// <summary>選択中のメッシュインデックス（Mesh/BakedMirror タイプ）</summary>
-        public int PrimarySelectedMeshIndex => Model?.PrimarySelectedMeshIndex ?? -1;
-
-        /// <summary>選択中のボーンインデックス（Bone タイプ）</summary>
-        public int PrimarySelectedBoneIndex => Model?.PrimarySelectedBoneIndex ?? -1;
-
-        /// <summary>選択中の頂点モーフインデックス（Morph タイプ）</summary>
-        public int PrimarySelectedMorphIndex => Model?.PrimarySelectedMorphIndex ?? -1;
+        /// <summary>選択中のメッシュインデックスリスト</summary>
+        public List<int> SelectedMeshIndices => Model?.SelectedMeshIndices ?? new List<int>();
 
         /// <summary>メッシュが選択されているか</summary>
         public bool HasMeshSelection => Model?.HasMeshSelection ?? false;

@@ -117,7 +117,7 @@ namespace Poly_Ling.UI
             }
             
             // 選択中のMeshContextを保存
-            _preSelectedMeshContext = _modelContext.CurrentMeshContext;
+            _preSelectedMeshContext = _modelContext.FirstSelectedMeshContext;
         }
 
         /// <summary>
@@ -142,7 +142,7 @@ namespace Poly_Ling.UI
                 newParentMap[mc] = parent;
             }
             
-            var newSelectedMeshContext = _modelContext.CurrentMeshContext;
+            var newSelectedMeshContext = _modelContext.FirstSelectedMeshContext;
 
             // 順序が同じなら記録しない
             if (ListsEqual(_preOrderedList, newOrderedList) && MapsEqual(_preParentMap, newParentMap))

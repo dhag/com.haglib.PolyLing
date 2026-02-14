@@ -209,7 +209,7 @@ namespace Poly_Ling.Tools.Panels
         private void DrawSelectionHeader()
         {
             int selectedCount = _context?.SelectedVertices?.Count ?? 0;
-            int totalVertices = _context?.MeshObject?.VertexCount ?? 0;
+            int totalVertices = _context?.FirstSelectedMeshObject?.VertexCount ?? 0;
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             EditorGUILayout.LabelField(T("SelectedInfo", selectedCount, totalVertices), EditorStyles.miniLabel);

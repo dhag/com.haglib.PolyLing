@@ -1,6 +1,6 @@
 // Tools/RotateTool.cs
 // 頂点回転ツール
-// シンプル実装版
+// 全選択メッシュを対等に処理（primary/secondary区別なし）
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -27,13 +27,11 @@ namespace Poly_Ling.Tools
 
         // 状態
         private Vector3 _pivot;
-        private HashSet<int> _affected = new HashSet<int>();
-        private Dictionary<int, Vector3> _startPositions = new Dictionary<int, Vector3>();
         private bool _isDirty = false;
         private bool _isSliderDragging = false;
         private ToolContext _ctx;
 
-        // v2.1: 複数メッシュ対応
+        // 全選択メッシュの影響頂点と開始位置
         private Dictionary<int, HashSet<int>> _multiMeshAffected = new Dictionary<int, HashSet<int>>();
         private Dictionary<int, Dictionary<int, Vector3>> _multiMeshStartPositions = new Dictionary<int, Dictionary<int, Vector3>>();
 
@@ -65,9 +63,6 @@ namespace Poly_Ling.Tools
             _rotX = _rotY = _rotZ = 0f;
             _isDirty = false;
             _isSliderDragging = false;
-            _startPositions.Clear();
-            _affected.Clear();
-            // v2.1: 複数メッシュ対応
             _multiMeshAffected.Clear();
             _multiMeshStartPositions.Clear();
         }
@@ -166,13 +161,11 @@ namespace Poly_Ling.Tools
 
         private void UpdateAffected()
         {
-            _affected.Clear();
             _multiMeshAffected.Clear();
 
             var model = _ctx?.Model;
             if (model == null) return;
 
-            // 全選択メッシュを統一的にイテレート
             foreach (int meshIdx in model.SelectedMeshIndices)
             {
                 var meshContext = model.GetMeshContext(meshIdx);
@@ -217,25 +210,13 @@ namespace Poly_Ling.Tools
                     _multiMeshAffected[meshIdx] = affected;
                 }
             }
-
-            // プライマリメッシュの影響頂点を _affected にも反映（後方互換）
-            int primaryMesh = model.PrimarySelectedMeshIndex;
-            if (primaryMesh >= 0 && _multiMeshAffected.ContainsKey(primaryMesh))
-            {
-                _affected = new HashSet<int>(_multiMeshAffected[primaryMesh]);
-            }
         }
 
-        /// <summary>
-        /// v2.1: 全メッシュの選択頂点数を計算
-        /// </summary>
         private int GetTotalAffectedCount()
         {
             int total = 0;
             foreach (var kv in _multiMeshAffected)
-            {
                 total += kv.Value.Count;
-            }
             return total;
         }
 
@@ -253,26 +234,12 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            // v2.1: 全メッシュの選択頂点からピボットを計算
             Vector3 sum = Vector3.zero;
             int totalCount = 0;
-
-            // プライマリメッシュ
-            if (_ctx?.MeshObject != null)
-            {
-                foreach (int i in _affected)
-                {
-                    sum += _ctx.MeshObject.Vertices[i].Position;
-                    totalCount++;
-                }
-            }
-
-            // セカンダリメッシュ
             var model = _ctx?.Model;
-            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+
             foreach (var kv in _multiMeshAffected)
             {
-                if (kv.Key == primaryMesh) continue;
                 var meshContext = model?.GetMeshContext(kv.Key);
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
@@ -292,23 +259,18 @@ namespace Poly_Ling.Tools
 
         private void UpdatePreview()
         {
-            if (_ctx?.MeshObject == null && GetTotalAffectedCount() == 0) return;
+            if (GetTotalAffectedCount() == 0) return;
 
-            // 初回: 開始位置を記録
-            if (_startPositions.Count == 0 && _multiMeshStartPositions.Count == 0)
+            var model = _ctx?.Model;
+            if (model == null) return;
+
+            // 初回: 全メッシュの開始位置を記録
+            if (_multiMeshStartPositions.Count == 0)
             {
                 UpdatePivot();
-                // プライマリ
-                foreach (int i in _affected)
-                    _startPositions[i] = _ctx.MeshObject.Vertices[i].Position;
-
-                // v2.1: セカンダリメッシュ
-                var model = _ctx?.Model;
-                int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
                 foreach (var kv in _multiMeshAffected)
                 {
-                    if (kv.Key == primaryMesh) continue;
-                    var meshContext = model?.GetMeshContext(kv.Key);
+                    var meshContext = model.GetMeshContext(kv.Key);
                     var meshObject = meshContext?.MeshObject;
                     if (meshObject == null) continue;
 
@@ -325,27 +287,9 @@ namespace Poly_Ling.Tools
             // 回転適用（開始位置から計算）
             Quaternion rot = Quaternion.Euler(_rotX, _rotY, _rotZ);
 
-            // プライマリメッシュ
-            if (_ctx?.MeshObject != null)
-            {
-                foreach (int i in _affected)
-                {
-                    if (!_startPositions.ContainsKey(i)) continue;
-                    Vector3 offset = _startPositions[i] - _pivot;
-                    Vector3 rotated = rot * offset;
-                    var v = _ctx.MeshObject.Vertices[i];
-                    v.Position = _pivot + rotated;
-                    _ctx.MeshObject.Vertices[i] = v;
-                }
-            }
-
-            // v2.1: セカンダリメッシュ
-            var model2 = _ctx?.Model;
-            int primaryMesh2 = model2?.PrimarySelectedMeshIndex ?? -1;
             foreach (var kv in _multiMeshStartPositions)
             {
-                if (kv.Key == primaryMesh2) continue;
-                var meshContext = model2?.GetMeshContext(kv.Key);
+                var meshContext = model.GetMeshContext(kv.Key);
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
 
@@ -361,8 +305,6 @@ namespace Poly_Ling.Tools
                         meshObject.Vertices[i] = v;
                     }
                 }
-
-                
             }
 
             _isDirty = true;
@@ -371,49 +313,20 @@ namespace Poly_Ling.Tools
 
         private void ApplyRotation(ToolContext ctx)
         {
-            if (!_isDirty || (_startPositions.Count == 0 && _multiMeshStartPositions.Count == 0)) return;
+            if (!_isDirty || _multiMeshStartPositions.Count == 0) return;
 
-            // プライマリメッシュのdiff収集
-            var indices = new List<int>();
-            var oldPos = new List<Vector3>();
-            var newPos = new List<Vector3>();
-
-            foreach (var kv in _startPositions)
-            {
-                Vector3 cur = ctx.MeshObject.Vertices[kv.Key].Position;
-                if (Vector3.Distance(kv.Value, cur) > 0.0001f)
-                {
-                    indices.Add(kv.Key);
-                    oldPos.Add(kv.Value);
-                    newPos.Add(cur);
-                }
-            }
-
-            // OriginalPositions更新（プライマリ）
-            if (ctx.OriginalPositions != null)
-            {
-                foreach (int i in _affected)
-                {
-                    if (i < ctx.OriginalPositions.Length)
-                        ctx.OriginalPositions[i] = ctx.MeshObject.Vertices[i].Position;
-                }
-            }
-
-            // セカンダリメッシュのdiff収集
             var model = ctx?.Model;
-            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
-            var secondaryEntries = new List<SecondaryMeshMoveEntry>();
+            var allEntries = new List<MeshMoveEntry>();
 
             foreach (var meshKv in _multiMeshStartPositions)
             {
-                if (meshKv.Key == primaryMesh) continue;
                 var meshContext = model?.GetMeshContext(meshKv.Key);
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
 
-                var secIndices = new List<int>();
-                var secOldPos = new List<Vector3>();
-                var secNewPos = new List<Vector3>();
+                var indices = new List<int>();
+                var oldPos = new List<Vector3>();
+                var newPos = new List<Vector3>();
 
                 foreach (var posKv in meshKv.Value)
                 {
@@ -423,27 +336,26 @@ namespace Poly_Ling.Tools
                         Vector3 cur = meshObject.Vertices[i].Position;
                         if (Vector3.Distance(posKv.Value, cur) > 0.0001f)
                         {
-                            secIndices.Add(i);
-                            secOldPos.Add(posKv.Value);
-                            secNewPos.Add(cur);
+                            indices.Add(i);
+                            oldPos.Add(posKv.Value);
+                            newPos.Add(cur);
                         }
                     }
                 }
 
-                if (secIndices.Count > 0)
+                if (indices.Count > 0)
                 {
-                    secondaryEntries.Add(new SecondaryMeshMoveEntry
+                    allEntries.Add(new MeshMoveEntry
                     {
                         MeshContextIndex = meshKv.Key,
-                        Indices = secIndices.ToArray(),
-                        OldPositions = secOldPos.ToArray(),
-                        NewPositions = secNewPos.ToArray()
+                        Indices = indices.ToArray(),
+                        OldPositions = oldPos.ToArray(),
+                        NewPositions = newPos.ToArray()
                     });
 
-                    // セカンダリのOriginalPositions更新
                     if (meshContext.OriginalPositions != null)
                     {
-                        foreach (int i in secIndices)
+                        foreach (int i in indices)
                         {
                             if (i < meshContext.OriginalPositions.Length)
                                 meshContext.OriginalPositions[i] = meshObject.Vertices[i].Position;
@@ -452,49 +364,23 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            // Undo記録（セカンダリの有無で分岐）
-            if ((indices.Count > 0 || secondaryEntries.Count > 0) && ctx.UndoController != null)
+            if (allEntries.Count > 0 && ctx.UndoController != null)
             {
                 ctx.UndoController.FocusVertexEdit();
-
-                if (secondaryEntries.Count > 0)
-                {
-                    var record = new MultiMeshVertexMoveRecord(
-                        indices.ToArray(), oldPos.ToArray(), newPos.ToArray(),
-                        secondaryEntries.ToArray());
-                    ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
-                }
-                else
-                {
-                    var record = new VertexMoveRecord(indices.ToArray(), oldPos.ToArray(), newPos.ToArray());
-                    ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
-                }
+                var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
+                ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
             }
 
-            _startPositions.Clear();
             _multiMeshStartPositions.Clear();
             _isDirty = false;
         }
 
         private void RevertToStart()
         {
-            // プライマリメッシュ
-            if (_ctx?.MeshObject != null)
-            {
-                foreach (var kv in _startPositions)
-                {
-                    var v = _ctx.MeshObject.Vertices[kv.Key];
-                    v.Position = kv.Value;
-                    _ctx.MeshObject.Vertices[kv.Key] = v;
-                }
-            }
-
-            // v2.1: セカンダリメッシュ
             var model = _ctx?.Model;
-            int primaryMesh = model?.PrimarySelectedMeshIndex ?? -1;
+
             foreach (var meshKv in _multiMeshStartPositions)
             {
-                if (meshKv.Key == primaryMesh) continue;
                 var meshContext = model?.GetMeshContext(meshKv.Key);
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
@@ -509,11 +395,8 @@ namespace Poly_Ling.Tools
                         meshObject.Vertices[i] = v;
                     }
                 }
-
-                
             }
 
-            _startPositions.Clear();
             _multiMeshStartPositions.Clear();
             _isDirty = false;
             _ctx.SyncMesh?.Invoke();
@@ -522,20 +405,17 @@ namespace Poly_Ling.Tools
         public void DrawGizmo(ToolContext ctx)
         {
             _ctx = ctx;
-            // v2.1: 全メッシュの選択頂点数をチェック
             if (GetTotalAffectedCount() == 0) return;
 
             var rect = ctx.PreviewRect;
             Vector2 p = ctx.WorldToScreenPos(_pivot, rect, ctx.CameraPosition, ctx.CameraTarget);
             if (!rect.Contains(p)) return;
 
-            // ピボットマーカー
             UnityEditor_Handles.BeginGUI();
             UnityEditor_Handles.color = new Color(1f, 0.8f, 0.2f);
             UnityEditor_Handles.DrawSolidDisc(new Vector3(p.x, p.y, 0), Vector3.forward, 6f);
             UnityEditor_Handles.EndGUI();
 
-            // 軸
             DrawAxis(ctx, rect, p, Vector3.right, Color.red);
             DrawAxis(ctx, rect, p, Vector3.up, Color.green);
             DrawAxis(ctx, rect, p, Vector3.forward, Color.blue);

@@ -36,7 +36,7 @@ public partial class PolyLing
     /// </summary>
     private void DrawSelectionSetsUI()
     {
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null) return;
 
         _foldSelectionSets = EditorGUILayout.Foldout(_foldSelectionSets, L.Get("SelectionDics"), true);
@@ -569,7 +569,7 @@ public partial class PolyLing
     /// <returns>成功したらtrue</returns>
     public bool LoadSelectionSetByName(string setName)
     {
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null)
         {
             Debug.LogWarning("[SelectionSets] No current mesh context.");
@@ -609,7 +609,7 @@ public partial class PolyLing
     /// </summary>
     public List<string> GetSelectionSetNames()
     {
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null)
             return new List<string>();
 

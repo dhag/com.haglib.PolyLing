@@ -145,8 +145,8 @@ namespace Poly_Ling.Tools.MediaPipe
                                                 File.ReadAllText(triPath));
 
                 // ソースメッシュ
-                MeshObject sourceMesh = CurrentMeshObject;
-                MeshContext sourceMeshContext = CurrentMeshContent;
+                MeshObject sourceMesh = FirstSelectedMeshObject;
+                MeshContext sourceMeshContext = FirstSelectedMeshContext;
                 int vertexCount = sourceMesh.VertexCount;
 
                 // 頂点位置配列を作成

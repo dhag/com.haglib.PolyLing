@@ -99,7 +99,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshObject == null) return false;
+            if (ctx.FirstSelectedMeshObject == null) return false;
 
             _isDragging = true;
             _startScreenPos = mousePos;
@@ -110,7 +110,7 @@ namespace Poly_Ling.Tools
                 case EdgeTopoMode.Flip:
                     // 辺をクリックで即時実行
                     var flipEdge = FindNearestEdge(ctx, mousePos);
-                    if (flipEdge.HasValue && flipEdge.Value.IsShared && flipEdge.Value.CanFlip(ctx.MeshObject))
+                    if (flipEdge.HasValue && flipEdge.Value.IsShared && flipEdge.Value.CanFlip(ctx.FirstSelectedMeshObject))
                     {
                         ExecuteFlip(ctx, flipEdge.Value);
                     }
@@ -133,7 +133,7 @@ namespace Poly_Ling.Tools
 
                     if (vertIdx >= 0)
                     {
-                        _startWorldPos = ctx.MeshObject.Vertices[vertIdx].Position;
+                        _startWorldPos = ctx.FirstSelectedMeshObject.Vertices[vertIdx].Position;
                         _currentScreenPos = mousePos;
                     }
                     else
@@ -180,7 +180,7 @@ namespace Poly_Ling.Tools
 
         public void OnMouseMove(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshObject == null) return;
+            if (ctx.FirstSelectedMeshObject == null) return;
 
             switch (Mode)
             {
@@ -199,7 +199,7 @@ namespace Poly_Ling.Tools
 
         public void DrawOverlay(ToolContext ctx, Rect previewRect)
         {
-            if (ctx.MeshObject == null) return;
+            if (ctx.FirstSelectedMeshObject == null) return;
 
             switch (Mode)
             {
@@ -272,7 +272,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshObject == null) return;
+            if (ctx.FirstSelectedMeshObject == null) return;
 
             var mousePos = Event.current.mousePosition;
 
@@ -324,7 +324,7 @@ namespace Poly_Ling.Tools
             EdgeInfo? result = null;
 
             // 全ての辺を走査
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshObject);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.FirstSelectedMeshObject);
 
             foreach (var kvp in edgeToFaces)
             {
@@ -332,8 +332,8 @@ namespace Poly_Ling.Tools
                 var faces = kvp.Value;
 
                 // スクリーン座標を計算
-                Vector3 worldPos1 = ctx.MeshObject.Vertices[v1].Position;
-                Vector3 worldPos2 = ctx.MeshObject.Vertices[v2].Position;
+                Vector3 worldPos1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+                Vector3 worldPos2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
                 Vector2 screenPos1 = ctx.WorldToScreenPos(worldPos1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 Vector2 screenPos2 = ctx.WorldToScreenPos(worldPos2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -416,15 +416,15 @@ namespace Poly_Ling.Tools
             int resultFace = -1;
             int resultVertex = -1;
 
-            for (int f = 0; f < ctx.MeshObject.FaceCount; f++)
+            for (int f = 0; f < ctx.FirstSelectedMeshObject.FaceCount; f++)
             {
-                var face = ctx.MeshObject.Faces[f];
+                var face = ctx.FirstSelectedMeshObject.Faces[f];
                 if (face.VertexIndices.Count != 4) continue;
 
                 for (int i = 0; i < 4; i++)
                 {
                     int vIdx = face.VertexIndices[i];
-                    Vector3 worldPos = ctx.MeshObject.Vertices[vIdx].Position;
+                    Vector3 worldPos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
                     Vector2 screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                     float dist = Vector2.Distance(mousePos, screenPos);
@@ -440,7 +440,7 @@ namespace Poly_Ling.Tools
             // 検証：resultVertexがresultFaceに属しているか
             if (resultFace >= 0 && resultVertex >= 0)
             {
-                var face = ctx.MeshObject.Faces[resultFace];
+                var face = ctx.FirstSelectedMeshObject.Faces[resultFace];
                 if (!face.VertexIndices.Contains(resultVertex))
                 {
                     Debug.LogError($"[Split] BUG: vertex {resultVertex} not in face {resultFace}");
@@ -456,16 +456,16 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int FindQuadFaceContainingPoint(ToolContext ctx, Vector2 mousePos)
         {
-            for (int f = 0; f < ctx.MeshObject.FaceCount; f++)
+            for (int f = 0; f < ctx.FirstSelectedMeshObject.FaceCount; f++)
             {
-                var face = ctx.MeshObject.Faces[f];
+                var face = ctx.FirstSelectedMeshObject.Faces[f];
                 if (face.VertexIndices.Count != 4) continue;
 
                 var screenPositions = new Vector2[4];
                 for (int i = 0; i < 4; i++)
                 {
                     int vIdx = face.VertexIndices[i];
-                    Vector3 worldPos = ctx.MeshObject.Vertices[vIdx].Position;
+                    Vector3 worldPos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
                     screenPositions[i] = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 }
 
@@ -536,9 +536,9 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int FindNearestVertexInFace(ToolContext ctx, Vector2 mousePos, int faceIndex)
         {
-            if (faceIndex < 0 || faceIndex >= ctx.MeshObject.FaceCount) return -1;
+            if (faceIndex < 0 || faceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return -1;
 
-            var face = ctx.MeshObject.Faces[faceIndex];
+            var face = ctx.FirstSelectedMeshObject.Faces[faceIndex];
             if (face.VertexIndices.Count != 4) return -1;
 
             float minDist = float.MaxValue;
@@ -547,7 +547,7 @@ namespace Poly_Ling.Tools
             for (int i = 0; i < 4; i++)
             {
                 int vIdx = face.VertexIndices[i];
-                Vector3 worldPos = ctx.MeshObject.Vertices[vIdx].Position;
+                Vector3 worldPos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
                 Vector2 screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                 float dist = Vector2.Distance(mousePos, screenPos);
@@ -589,9 +589,9 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int FindOppositeVertex(ToolContext ctx, int faceIndex, int startVertex, Vector2 mousePos)
         {
-            if (faceIndex < 0 || faceIndex >= ctx.MeshObject.FaceCount) return -1;
+            if (faceIndex < 0 || faceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return -1;
 
-            var face = ctx.MeshObject.Faces[faceIndex];
+            var face = ctx.FirstSelectedMeshObject.Faces[faceIndex];
             if (face.VertexIndices.Count != 4) return -1;
 
             // 開始頂点の位置を探す
@@ -607,7 +607,7 @@ namespace Poly_Ling.Tools
             int oppositeVertex = face.VertexIndices[oppositeIdx];
 
             // マウスが対角頂点の近くにあるか確認
-            Vector3 worldPos = ctx.MeshObject.Vertices[oppositeVertex].Position;
+            Vector3 worldPos = ctx.FirstSelectedMeshObject.Vertices[oppositeVertex].Position;
             Vector2 screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             float dist = Vector2.Distance(mousePos, screenPos);
 
@@ -631,8 +631,8 @@ namespace Poly_Ling.Tools
         {
             if (!edge.IsShared) return;
 
-            var face1 = ctx.MeshObject.Faces[edge.FaceIndex1];
-            var face2 = ctx.MeshObject.Faces[edge.FaceIndex2];
+            var face1 = ctx.FirstSelectedMeshObject.Faces[edge.FaceIndex1];
+            var face2 = ctx.FirstSelectedMeshObject.Faces[edge.FaceIndex2];
 
             // 両方とも三角形でなければ不可
             if (face1.VertexIndices.Count != 3 || face2.VertexIndices.Count != 3)
@@ -687,9 +687,9 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void ExecuteSplit(ToolContext ctx, int faceIndex, int startVertex, int endVertex)
         {
-            if (faceIndex < 0 || faceIndex >= ctx.MeshObject.FaceCount) return;
+            if (faceIndex < 0 || faceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return;
 
-            var face = ctx.MeshObject.Faces[faceIndex];
+            var face = ctx.FirstSelectedMeshObject.Faces[faceIndex];
             if (face.VertexIndices.Count != 4) return;
 
             // スナップショット（操作前）
@@ -731,8 +731,8 @@ namespace Poly_Ling.Tools
             newFace2.NormalIndices = new List<int> { 0, 0, 0 };
 
             // 元の面を置換、新しい面を追加
-            ctx.MeshObject.Faces[faceIndex] = newFace1;
-            ctx.MeshObject.Faces.Add(newFace2);
+            ctx.FirstSelectedMeshObject.Faces[faceIndex] = newFace1;
+            ctx.FirstSelectedMeshObject.Faces.Add(newFace2);
 
             // メッシュ更新
             ctx.SyncMesh?.Invoke();
@@ -750,8 +750,8 @@ namespace Poly_Ling.Tools
         {
             if (!edge.IsShared) return;
 
-            var face1 = ctx.MeshObject.Faces[edge.FaceIndex1];
-            var face2 = ctx.MeshObject.Faces[edge.FaceIndex2];
+            var face1 = ctx.FirstSelectedMeshObject.Faces[edge.FaceIndex1];
+            var face2 = ctx.FirstSelectedMeshObject.Faces[edge.FaceIndex2];
 
             // スナップショット（操作前）
             MeshObjectSnapshot before = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
@@ -776,11 +776,11 @@ namespace Poly_Ling.Tools
             int removeFirst = Math.Max(edge.FaceIndex1, edge.FaceIndex2);
             int removeSecond = Math.Min(edge.FaceIndex1, edge.FaceIndex2);
 
-            ctx.MeshObject.Faces.RemoveAt(removeFirst);
-            ctx.MeshObject.Faces.RemoveAt(removeSecond);
+            ctx.FirstSelectedMeshObject.Faces.RemoveAt(removeFirst);
+            ctx.FirstSelectedMeshObject.Faces.RemoveAt(removeSecond);
 
             // 新しい面を追加
-            ctx.MeshObject.Faces.Add(newFace);
+            ctx.FirstSelectedMeshObject.Faces.Add(newFace);
 
             // メッシュ更新
             ctx.SyncMesh?.Invoke();
@@ -862,7 +862,7 @@ namespace Poly_Ling.Tools
                 edgeColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
                 lineWidth = 2f;
             }
-            else if (edge.CanFlip(ctx.MeshObject))
+            else if (edge.CanFlip(ctx.FirstSelectedMeshObject))
             {
                 // Flip可能（緑）
                 edgeColor = Color.green;
@@ -889,7 +889,7 @@ namespace Poly_Ling.Tools
                 new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
 
             // 端点を描画
-            float size = edge.IsShared && edge.CanFlip(ctx.MeshObject) ? 8f : 5f;
+            float size = edge.IsShared && edge.CanFlip(ctx.FirstSelectedMeshObject) ? 8f : 5f;
             UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
             UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
 
@@ -901,8 +901,8 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void DrawNewDiagonalPreview(ToolContext ctx, EdgeInfo edge)
         {
-            var face1 = ctx.MeshObject.Faces[edge.FaceIndex1];
-            var face2 = ctx.MeshObject.Faces[edge.FaceIndex2];
+            var face1 = ctx.FirstSelectedMeshObject.Faces[edge.FaceIndex1];
+            var face2 = ctx.FirstSelectedMeshObject.Faces[edge.FaceIndex2];
 
             // 共有辺以外の頂点を見つける
             int opposite1 = -1, opposite2 = -1;
@@ -925,8 +925,8 @@ namespace Poly_Ling.Tools
 
             if (opposite1 >= 0 && opposite2 >= 0)
             {
-                Vector2 sp1 = ctx.WorldToScreenPos(ctx.MeshObject.Vertices[opposite1].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                Vector2 sp2 = ctx.WorldToScreenPos(ctx.MeshObject.Vertices[opposite2].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 sp1 = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[opposite1].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 sp2 = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[opposite2].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                 // 新しい対角線を点線で描画
                 UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.8f);
@@ -984,14 +984,14 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void DrawFaceHighlight(ToolContext ctx, int faceIndex, Color color)
         {
-            if (faceIndex < 0 || faceIndex >= ctx.MeshObject.FaceCount) return;
+            if (faceIndex < 0 || faceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return;
 
-            var face = ctx.MeshObject.Faces[faceIndex];
+            var face = ctx.FirstSelectedMeshObject.Faces[faceIndex];
             var screenPoints = new Vector3[face.VertexIndices.Count];
 
             for (int i = 0; i < face.VertexIndices.Count; i++)
             {
-                var worldPos = ctx.MeshObject.Vertices[face.VertexIndices[i]].Position;
+                var worldPos = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
                 var sp = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 screenPoints[i] = new Vector3(sp.x, sp.y, 0);
             }
@@ -1061,7 +1061,7 @@ namespace Poly_Ling.Tools
 
                 foreach (var (faceIdx, oppVertex, startVertex) in candidates)
                 {
-                    Vector2 oppScreen = ctx.WorldToScreenPos(ctx.MeshObject.Vertices[oppVertex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                    Vector2 oppScreen = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[oppVertex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     float dist = Vector2.Distance(_currentScreenPos, oppScreen);
 
                     if (dist < minDist)
@@ -1083,7 +1083,7 @@ namespace Poly_Ling.Tools
                 // 候補頂点を描画
                 foreach (var (faceIdx, oppVertex, startVertex) in candidates)
                 {
-                    Vector2 oppScreen = ctx.WorldToScreenPos(ctx.MeshObject.Vertices[oppVertex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                    Vector2 oppScreen = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[oppVertex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                     if (oppVertex == nearestCandidate && faceIdx == nearestFace)
                     {
@@ -1142,7 +1142,7 @@ namespace Poly_Ling.Tools
             // 開始頂点未選択時：ホバー中の頂点を表示
             else if (_hoveredVertexIndex >= 0)
             {
-                Vector2 hoverScreen = ctx.WorldToScreenPos(ctx.MeshObject.Vertices[_hoveredVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 hoverScreen = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[_hoveredVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 UnityEditor_Handles.color = Color.white;
                 UnityEditor_Handles.DrawSolidDisc(new Vector3(hoverScreen.x, hoverScreen.y, 0), Vector3.forward, 7f);
             }
@@ -1161,18 +1161,18 @@ namespace Poly_Ling.Tools
 
             // 開始位置と同じ位置にある全ての頂点を収集
             var startVertices = new List<int>();
-            for (int v = 0; v < ctx.MeshObject.Vertices.Count; v++)
+            for (int v = 0; v < ctx.FirstSelectedMeshObject.Vertices.Count; v++)
             {
-                if (Vector3.Distance(ctx.MeshObject.Vertices[v].Position, startWorldPos) < POSITION_EPSILON)
+                if (Vector3.Distance(ctx.FirstSelectedMeshObject.Vertices[v].Position, startWorldPos) < POSITION_EPSILON)
                 {
                     startVertices.Add(v);
                 }
             }
 
             // 各開始頂点について、属する四角形の対角頂点を収集
-            for (int f = 0; f < ctx.MeshObject.FaceCount; f++)
+            for (int f = 0; f < ctx.FirstSelectedMeshObject.FaceCount; f++)
             {
-                var face = ctx.MeshObject.Faces[f];
+                var face = ctx.FirstSelectedMeshObject.Faces[f];
                 if (face.VertexIndices.Count != 4) continue;
 
                 foreach (int startVertex in startVertices)
@@ -1185,7 +1185,7 @@ namespace Poly_Ling.Tools
                     int oppositeVertex = face.VertexIndices[oppositeIdx];
 
                     // 対角頂点が開始位置と同じ位置なら除外
-                    Vector3 oppWorldPos = ctx.MeshObject.Vertices[oppositeVertex].Position;
+                    Vector3 oppWorldPos = ctx.FirstSelectedMeshObject.Vertices[oppositeVertex].Position;
                     if (Vector3.Distance(startWorldPos, oppWorldPos) < POSITION_EPSILON)
                         continue;
 

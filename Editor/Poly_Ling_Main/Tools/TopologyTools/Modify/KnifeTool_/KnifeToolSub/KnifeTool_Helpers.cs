@@ -203,9 +203,9 @@ namespace Poly_Ling.Tools
         {
             var result = new List<(int, int, (Vector3, Vector3))>();
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshObject.Faces[faceIdx];
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)
@@ -213,8 +213,8 @@ namespace Poly_Ling.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    var p1 = ctx.MeshObject.Vertices[v1].Position;
-                    var p2 = ctx.MeshObject.Vertices[v2].Position;
+                    var p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+                    var p2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
                     var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -243,12 +243,12 @@ namespace Poly_Ling.Tools
 
             foreach (var (faceIdx, localIdx, worldPos) in edges)
             {
-                var face = ctx.MeshObject.Faces[faceIdx];
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 int v1 = face.VertexIndices[localIdx];
                 int v2 = face.VertexIndices[(localIdx + 1) % face.VertexCount];
 
-                var p1 = ctx.MeshObject.Vertices[v1].Position;
-                var p2 = ctx.MeshObject.Vertices[v2].Position;
+                var p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+                var p2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
                 var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -271,9 +271,9 @@ namespace Poly_Ling.Tools
         {
             var result = new List<(int, int)>();
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshObject.Faces[faceIdx];
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)
@@ -281,8 +281,8 @@ namespace Poly_Ling.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    var p1 = ctx.MeshObject.Vertices[v1].Position;
-                    var p2 = ctx.MeshObject.Vertices[v2].Position;
+                    var p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+                    var p2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
                     var worldPos = NormalizeEdgeWorldPos(p1, p2);
 
                     if (IsSameEdgePosition(worldPos, edgeWorldPos))
@@ -300,7 +300,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int FindFaceWithBothEdges(ToolContext ctx, (Vector3, Vector3) edge1Pos, (Vector3, Vector3) edge2Pos)
         {
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
 
             for (int faceIdx = 0; faceIdx < meshObject.FaceCount; faceIdx++)
             {

@@ -33,14 +33,14 @@ namespace Poly_Ling.Tools
                     return kvp.Value;
             }
 
-            int newIdx = ctx.MeshObject.VertexCount;
+            int newIdx = ctx.FirstSelectedMeshObject.VertexCount;
             var newVertex = new Vertex(cutPoint);
 
             // UV/法線補間のため辺の端点を探す
             int v1Idx = -1, v2Idx = -1;
-            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
-                var pos = ctx.MeshObject.Vertices[i].Position;
+                var pos = ctx.FirstSelectedMeshObject.Vertices[i].Position;
                 if (v1Idx < 0 && Vector3.Distance(pos, edgePos.Item1) < POSITION_EPSILON) v1Idx = i;
                 else if (v2Idx < 0 && Vector3.Distance(pos, edgePos.Item2) < POSITION_EPSILON) v2Idx = i;
                 if (v1Idx >= 0 && v2Idx >= 0) break;
@@ -48,8 +48,8 @@ namespace Poly_Ling.Tools
 
             if (v1Idx >= 0 && v2Idx >= 0)
             {
-                var v1 = ctx.MeshObject.Vertices[v1Idx];
-                var v2 = ctx.MeshObject.Vertices[v2Idx];
+                var v1 = ctx.FirstSelectedMeshObject.Vertices[v1Idx];
+                var v2 = ctx.FirstSelectedMeshObject.Vertices[v2Idx];
                 
                 // 辺上での比率を計算
                 float t = CalculateTFromCutPoint(edgePos, cutPoint);
@@ -60,7 +60,7 @@ namespace Poly_Ling.Tools
                     newVertex.Normals.Add(Vector3.Lerp(v1.Normals[0], v2.Normals[0], t).normalized);
             }
 
-            ctx.MeshObject.Vertices.Add(newVertex);
+            ctx.FirstSelectedMeshObject.Vertices.Add(newVertex);
             cache[cutPoint] = newIdx;
             addedVertices.Add((newIdx, newVertex.Clone()));
             return newIdx;
@@ -85,11 +85,11 @@ namespace Poly_Ling.Tools
         /// </summary>
         private float CalculateFaceLocalT(ToolContext ctx, int faceIdx, int edgeLocalIdx, Vector3 cutPoint)
         {
-            var face = ctx.MeshObject.Faces[faceIdx];
+            var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
             int v1 = face.VertexIndices[edgeLocalIdx];
             int v2 = face.VertexIndices[(edgeLocalIdx + 1) % face.VertexIndices.Count];
-            var p1 = ctx.MeshObject.Vertices[v1].Position;
-            var p2 = ctx.MeshObject.Vertices[v2].Position;
+            var p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+            var p2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
             
             var edgeVec = p2 - p1;
             float edgeLen = edgeVec.magnitude;
@@ -108,7 +108,7 @@ namespace Poly_Ling.Tools
         {
             if (_targetFaceIndex < 0 || _intersections.Count < 2) return;
 
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var inter0 = _intersections[0];
             var inter1 = _intersections[1];
             var face0 = meshObject.Faces[_targetFaceIndex];
@@ -185,7 +185,7 @@ namespace Poly_Ling.Tools
             HashSet<int> visitedFaces,
             List<(int faceIdx, (Vector3, Vector3) edgePos0, (Vector3, Vector3) edgePos1, Vector3 cutPoint0, Vector3 cutPoint1)> beltInfo)
         {
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var currentEdgePos = fromEdgePos;
             var currentCutPoint = fromCutPoint;
 
@@ -245,7 +245,7 @@ namespace Poly_Ling.Tools
             HashSet<int> visitedFaces,
             List<(int faceIdx, (Vector3, Vector3) edgePos0, (Vector3, Vector3) edgePos1, Vector3 cutPoint0, Vector3 cutPoint1)> beltInfo)
         {
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var currentEdgePos = fromEdgePos;
             var currentCutPoint = fromCutPoint;
 
@@ -356,7 +356,7 @@ namespace Poly_Ling.Tools
                 ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var vertexCache = new Dictionary<Vector3, int>();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 

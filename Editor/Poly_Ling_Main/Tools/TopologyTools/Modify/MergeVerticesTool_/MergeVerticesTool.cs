@@ -77,7 +77,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshObject == null || !ShowPreview) return;
+            if (ctx.FirstSelectedMeshObject == null || !ShowPreview) return;
             if (_preview.Groups == null || _preview.Groups.Count == 0) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -104,8 +104,8 @@ namespace Poly_Ling.Tools
                     Vector3 centroid = Vector3.zero;
                     foreach (int vIdx in group)
                     {
-                        if (vIdx >= 0 && vIdx < ctx.MeshObject.VertexCount)
-                            centroid += ctx.MeshObject.Vertices[vIdx].Position;
+                        if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
+                            centroid += ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
                     }
                     centroid /= group.Count;
 
@@ -115,8 +115,8 @@ namespace Poly_Ling.Tools
                     UnityEditor_Handles.color = color;
                     foreach (int vIdx in group)
                     {
-                        if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount) continue;
-                        Vector2 vScreen = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
+                        if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount) continue;
+                        Vector2 vScreen = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
                         UnityEditor_Handles.DrawAAPolyLine(2f, vScreen, centroidScreen);
                     }
 
@@ -131,8 +131,8 @@ namespace Poly_Ling.Tools
                 GUI.color = color;
                 foreach (int vIdx in group)
                 {
-                    if (vIdx < 0 || vIdx >= ctx.MeshObject.VertexCount) continue;
-                    Vector2 sp = ctx.WorldToScreen(ctx.MeshObject.Vertices[vIdx].Position);
+                    if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount) continue;
+                    Vector2 sp = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
                     float size = 8f;
                     GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size),
                         EditorGUIUtility.whiteTexture);
@@ -241,13 +241,13 @@ namespace Poly_Ling.Tools
             _lastContext = ctx;
 
             // プレビュー更新（毎フレーム再計算 - 選択変更を検出するため）
-            if (ctx.MeshObject != null && ctx.SelectedVertices != null)
+            if (ctx.FirstSelectedMeshObject != null && ctx.SelectedVertices != null)
             {
-                _preview = CalculatePreview(ctx.MeshObject, ctx.SelectedVertices, Threshold);
+                _preview = CalculatePreview(ctx.FirstSelectedMeshObject, ctx.SelectedVertices, Threshold);
             }
 
             // マージ実行
-            if (_pendingMerge && ctx.MeshObject != null)
+            if (_pendingMerge && ctx.FirstSelectedMeshObject != null)
             {
                 ExecuteMerge(ctx);
                 _pendingMerge = false;
@@ -268,7 +268,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteMerge(ToolContext ctx)
         {
-            if (ctx.MeshObject == null || ctx.SelectedVertices == null) return;
+            if (ctx.FirstSelectedMeshObject == null || ctx.SelectedVertices == null) return;
             if (ctx.SelectedVertices.Count < 2) return;
 
             // Undo用スナップショット
@@ -277,7 +277,7 @@ namespace Poly_Ling.Tools
                 : default;
 
             // MeshMergeHelper使用
-            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.MeshObject, ctx.SelectedVertices, Threshold);
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.FirstSelectedMeshObject, ctx.SelectedVertices, Threshold);
 
             if (result.Success)
             {

@@ -148,14 +148,7 @@ namespace Poly_Ling.Model
         /// <summary>選択中の頂点モーフインデックス（Morph タイプ）- 選択順序を保持</summary>
         public List<int> SelectedMorphIndices { get; set; } = new List<int>();
 
-        /// <summary>主選択メッシュインデックス（編集対象・最初に選択されたもの）</summary>
-        public int PrimarySelectedMeshIndex => SelectedMeshIndices.Count > 0 ? SelectedMeshIndices[0] : -1;
 
-        /// <summary>主選択ボーンインデックス（編集対象・最初に選択されたもの）</summary>
-        public int PrimarySelectedBoneIndex => SelectedBoneIndices.Count > 0 ? SelectedBoneIndices[0] : -1;
-
-        /// <summary>主選択頂点モーフインデックス（編集対象・最初に選択されたもの）</summary>
-        public int PrimarySelectedMorphIndex => SelectedMorphIndices.Count > 0 ? SelectedMorphIndices[0] : -1;
 
         /// <summary>メッシュが選択されているか</summary>
         public bool HasMeshSelection => SelectedMeshIndices.Count > 0;
@@ -174,6 +167,15 @@ namespace Poly_Ling.Model
 
         /// <summary>頂点モーフが複数選択されているか</summary>
         public bool IsMorphMultiSelected => SelectedMorphIndices.Count > 1;
+
+        /// <summary>メッシュ選択リストの先頭インデックス</summary>
+        public int FirstMeshIndex => SelectedMeshIndices.Count > 0 ? SelectedMeshIndices[0] : -1;
+
+        /// <summary>ボーン選択リストの先頭インデックス</summary>
+        public int FirstBoneIndex => SelectedBoneIndices.Count > 0 ? SelectedBoneIndices[0] : -1;
+
+        /// <summary>モーフ選択リストの先頭インデックス</summary>
+        public int FirstMorphIndex => SelectedMorphIndices.Count > 0 ? SelectedMorphIndices[0] : -1;
 
         // ================================================================
         // カテゴリ別選択操作
@@ -310,24 +312,18 @@ namespace Poly_Ling.Model
             }
         }
 
-        /// <summary>主選択インデックス（ActiveCategoryのプライマリ、なければ全カテゴリから最小）</summary>
-        public int PrimarySelectedMeshContextIndex
+        /// <summary>ActiveCategoryの選択インデックスリスト</summary>
+        public List<int> ActiveSelectedIndices
         {
             get
             {
-                // ActiveCategoryのプライマリインデックスを優先
-                int primary = ActiveCategory switch
+                return ActiveCategory switch
                 {
-                    SelectionCategory.Mesh => PrimarySelectedMeshIndex,
-                    SelectionCategory.Bone => PrimarySelectedBoneIndex,
-                    SelectionCategory.Morph => PrimarySelectedMorphIndex,
-                    _ => -1
+                    SelectionCategory.Mesh => SelectedMeshIndices,
+                    SelectionCategory.Bone => SelectedBoneIndices,
+                    SelectionCategory.Morph => SelectedMorphIndices,
+                    _ => new List<int>()
                 };
-                if (primary >= 0) return primary;
-
-                // フォールバック: 全カテゴリから最小
-                var all = SelectedMeshContextIndices;
-                return all.Count > 0 ? all.Min() : -1;
             }
         }
 
@@ -337,13 +333,45 @@ namespace Poly_Ling.Model
         /// <summary>複数選択されているか</summary>
         public bool IsMultiSelected => SelectedMeshContextIndices.Count > 1;
 
-        /// <summary>現在選択中のメッシュコンテキスト（主選択）</summary>
-        public MeshContext CurrentMeshContext =>
-            (PrimarySelectedMeshContextIndex >= 0 && PrimarySelectedMeshContextIndex < Count)
-                ? MeshContextList[PrimarySelectedMeshContextIndex] : null;
+        /// <summary>選択中の全MeshContext（ActiveCategory準拠）</summary>
+        public List<MeshContext> SelectedMeshContexts
+        {
+            get
+            {
+                var result = new List<MeshContext>();
+                foreach (int idx in ActiveSelectedIndices)
+                {
+                    if (idx >= 0 && idx < Count)
+                        result.Add(MeshContextList[idx]);
+                }
+                return result;
+            }
+        }
+
+        /// <summary>選択リストの先頭MeshContext（便宜アクセサ・特別扱いではない）</summary>
+        public MeshContext FirstSelectedMeshContext
+        {
+            get
+            {
+                var indices = ActiveSelectedIndices;
+                if (indices.Count == 0) return null;
+                int idx = indices[0];
+                return (idx >= 0 && idx < Count) ? MeshContextList[idx] : null;
+            }
+        }
+
+        /// <summary>選択リストの先頭インデックス（便宜アクセサ）</summary>
+        public int FirstSelectedIndex
+        {
+            get
+            {
+                var indices = ActiveSelectedIndices;
+                return indices.Count > 0 ? indices[0] : -1;
+            }
+        }
 
         /// <summary>有効なメッシュコンテキストが選択されているか</summary>
-        public bool HasValidMeshContextSelection => CurrentMeshContext != null;
+        public bool HasValidMeshContextSelection => ActiveSelectedIndices.Count > 0 && ActiveSelectedIndices[0] >= 0 && ActiveSelectedIndices[0] < Count;
 
         // ================================================================
         // カテゴリ別選択ヘルパー
@@ -1103,13 +1131,21 @@ namespace Poly_Ling.Model
             return combinedBounds ?? new Bounds(Vector3.zero, Vector3.one);
         }
 
-        /// <summary>現在選択中のメッシュのバウンディングボックス</summary>
+        /// <summary>選択中の全メッシュのバウンディングボックス</summary>
         public Bounds CalculateCurrentBounds()
         {
-            if (CurrentMeshContext?.MeshObject == null)
-                return new Bounds(Vector3.zero, Vector3.one);
-
-            return CurrentMeshContext.MeshObject.CalculateBounds();
+            Bounds? combined = null;
+            foreach (var mc in SelectedMeshContexts)
+            {
+                if (mc?.MeshObject == null) continue;
+                var b = mc.MeshObject.CalculateBounds();
+                combined = combined.HasValue
+                    ? new Bounds(
+                        (combined.Value.center + b.center) * 0.5f,
+                        Vector3.Max(combined.Value.max, b.max) - Vector3.Min(combined.Value.min, b.min))
+                    : b;
+            }
+            return combined ?? new Bounds(Vector3.zero, Vector3.one);
         }
 
         // ================================================================

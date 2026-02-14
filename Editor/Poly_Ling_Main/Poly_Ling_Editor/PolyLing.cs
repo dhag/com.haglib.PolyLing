@@ -36,9 +36,9 @@ public partial class PolyLing : EditorWindow
     private List<MeshContext> _meshContextList => _model?.MeshContextList;
     
     // v2.0: カテゴリ別選択インデックス
-    private int _selectedMeshIndex => _model?.PrimarySelectedMeshIndex ?? -1;
-    private int _selectedBoneIndex => _model?.PrimarySelectedBoneIndex ?? -1;
-    private int _selectedMorphIndex => _model?.PrimarySelectedMorphIndex ?? -1;
+    private int _selectedMeshIndex => _model?.FirstMeshIndex ?? -1;
+    private int _selectedBoneIndex => _model?.FirstBoneIndex ?? -1;
+    private int _selectedMorphIndex => _model?.FirstMorphIndex ?? -1;
 
     // アクティブカテゴリに応じた選択インデックス
     private int _selectedIndex
@@ -104,11 +104,11 @@ public partial class PolyLing : EditorWindow
     {
         get
         {
-            return _model.CurrentMeshContext?.GetCurrentMaterial();
+            return _model.FirstSelectedMeshContext?.GetCurrentMaterial();
         }
         set
         {
-            var meshContext = _model.CurrentMeshContext;
+            var meshContext = _model.FirstSelectedMeshContext;
             if (meshContext != null && meshContext.CurrentMaterialIndex >= 0 && meshContext.CurrentMaterialIndex < meshContext.Materials.Count)
             {
                 meshContext.Materials[meshContext.CurrentMaterialIndex] = value;
@@ -484,7 +484,7 @@ public partial class PolyLing : EditorWindow
                 _unifiedAdapter?.RequestNormal();
 
                 // MeshUndoContextを再設定（UnityMeshが再構築されるため参照が変わる）
-                var meshContext = _model?.CurrentMeshContext;
+                var meshContext = _model?.FirstSelectedMeshContext;
                 if (meshContext != null && _undoController != null)
                 {
                     _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
@@ -565,7 +565,7 @@ public partial class PolyLing : EditorWindow
             _visibilityProvider.SetGeometryAccessors(
                 // 線分インデックス → (v1, v2)
                 lineIndex => {
-                    var meshObject = _model?.CurrentMeshContext?.MeshObject;
+                    var meshObject = _model?.FirstSelectedMeshContext?.MeshObject;
                     if (meshObject != null && lineIndex >= 0 && lineIndex < meshObject.FaceCount)
                     {
                         var face = meshObject.Faces[lineIndex];
@@ -576,7 +576,7 @@ public partial class PolyLing : EditorWindow
                 },
                 // 面インデックス → 頂点配列
                 faceIndex => {
-                    var meshObject = _model?.CurrentMeshContext?.MeshObject;
+                    var meshObject = _model?.FirstSelectedMeshContext?.MeshObject;
                     if (meshObject != null && faceIndex >= 0 && faceIndex < meshObject.FaceCount)
                     {
                         return meshObject.Faces[faceIndex].VertexIndices.ToArray();
@@ -596,7 +596,7 @@ public partial class PolyLing : EditorWindow
     private void InitializeSelectionSystem()
     {
         // MeshContext.Selection を正規のデータソースとして使用
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         _selectionState = meshContext?.Selection ?? new SelectionState();
         _meshTopology = new TopologyCache();
         _selectionOps = new SelectionOperations(_selectionState, _meshTopology);
@@ -628,7 +628,7 @@ public partial class PolyLing : EditorWindow
         if (_meshTopology == null)
             return;
 
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext != null)
         {
             _meshTopology.SetMeshObject(meshContext.MeshObject);
@@ -711,23 +711,53 @@ public partial class PolyLing : EditorWindow
 
     /// <summary>
     /// Undo/Redo実行後のコールバック
-    /// Phase 4: スタック種別に応じて処理を分岐
+    /// <summary>
+    /// Undo/Redo実行後のコールバック
+    /// Phase 4: スタック種別で分岐、マルチメッシュ対等処理
     /// </summary>
     private void OnUndoRedoPerformed()
     {
         var stackType = _undoController.LastUndoRedoStackType;
 
         // ────────────────────────────────────────
-        // VertexEdit Undo/Redo: メッシュデータが変更された → Clone + SyncMeshFromData
+        // VertexEdit Undo/Redo
         // ────────────────────────────────────────
         if (stackType == MeshUndoController.UndoStackType.VertexEdit)
         {
-            var meshContext = _model.CurrentMeshContext;
-            if (meshContext != null)
-            {
-                var ctx = _undoController.MeshUndoContext;
+            var ctx = _undoController.MeshUndoContext;
 
-                if (ctx.MeshObject != null)
+            if (ctx.DirtyMeshIndices.Count > 0)
+            {
+                // マルチメッシュ操作: 全メッシュを対等にSyncMeshFromData
+                int currentIndex = _model.FirstSelectedIndex;
+
+                foreach (var idx in ctx.DirtyMeshIndices)
+                {
+                    var mc = _model.GetMeshContext(idx);
+                    if (mc == null) continue;
+
+                    SyncMeshFromData(mc);
+
+                    // カレントメッシュの場合はctx.MeshObject同期 + オフセット更新
+                    if (idx == currentIndex)
+                    {
+                        ctx.MeshObject = mc.MeshObject;
+                        ctx.TargetMesh = mc.UnityMesh;
+                        ctx.OriginalPositions = mc.OriginalPositions;
+
+                        if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
+                        {
+                            UpdateOffsetsFromData(mc);
+                        }
+                    }
+                }
+                ctx.DirtyMeshIndices.Clear();
+            }
+            else
+            {
+                // 単一メッシュ操作（VertexMoveRecord等）: 従来のctx.MeshObjectフロー
+                var meshContext = _model.FirstSelectedMeshContext;
+                if (meshContext != null && ctx.MeshObject != null)
                 {
                     var clonedMeshObject = ctx.MeshObject.Clone();
                     meshContext.MeshObject = clonedMeshObject;
@@ -779,7 +809,7 @@ public partial class PolyLing : EditorWindow
         _unifiedAdapter?.RequestNormal();
         Repaint();
 
-        // ミラーキャッシュを無効化（頂点位置変更でも正しく更新されるように）
+        // ミラーキャッシュを無効化
         InvalidateAllSymmetryCaches();
     }
 
@@ -822,16 +852,16 @@ public partial class PolyLing : EditorWindow
         // TypedIndicesキャッシュを明示的に無効化する
         _model?.InvalidateTypedIndices();
         // Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        // Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.PrimarySelectedMeshContextIndex={_undoController?.MeshListContext?.PrimarySelectedMeshContextIndex}");
+        // Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.FirstSelectedIndex={_undoController?.MeshListContext?.FirstSelectedIndex}");
 
         // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
         // MeshListContext（= ModelContext）の選択状態はUndo/Redoで自動復元される
 
-        // Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
+        // Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
 
         // 選択中のメッシュコンテキストをMeshContextに設定
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext != null)
         {
             // MeshContextに必要な情報だけを設定
@@ -850,7 +880,7 @@ public partial class PolyLing : EditorWindow
         else
         {
             SetSelectedIndex(_meshContextList.Count > 0 ? 0 : -1);
-            var fallbackMeshContext = _model.CurrentMeshContext;
+            var fallbackMeshContext = _model.FirstSelectedMeshContext;
             if (fallbackMeshContext != null)
             {
                 if (_undoController != null)
@@ -874,7 +904,7 @@ public partial class PolyLing : EditorWindow
         _unifiedAdapter?.NotifyTopologyChanged();
 
         // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.CurrentMeshContext?.Name}");
+        // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
         Repaint();
     }
     /*
@@ -965,7 +995,7 @@ public partial class PolyLing : EditorWindow
         if (_model == null || _model.SelectedMeshIndices.Count == 0)
         {
             // フォールバック: プライマリメッシュのみ
-            SyncMeshPositionsOnly(_model?.CurrentMeshContext);
+            SyncMeshPositionsOnly(_model?.FirstSelectedMeshContext);
             return;
         }
 

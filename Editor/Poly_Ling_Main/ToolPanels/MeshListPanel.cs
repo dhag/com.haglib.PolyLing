@@ -170,12 +170,12 @@ namespace Poly_Ling.Tools.Panels
 
             // v2.0: カテゴリ別選択対応 - IsSelectedが全カテゴリをチェック
             bool isSelected = model.IsSelected(index);
-            bool isPrimary = (index == model.PrimarySelectedMeshIndex);
+            bool isLeadSelection = (index == model.FirstMeshIndex);
             bool isFirst = (index == 0);
             bool isLast = (index == model.MeshContextCount - 1);
 
             // 選択中は背景色を変える
-            if (isPrimary)
+            if (isLeadSelection)
             {
                 var bgRect = EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             }
@@ -194,7 +194,7 @@ namespace Poly_Ling.Tools.Panels
             EditorGUILayout.BeginHorizontal();
 
             // 選択マーカー: プライマリ=▶、追加選択=●
-            string marker = isPrimary ? "▶" : (isSelected ? "●" : "  ");
+            string marker = isLeadSelection ? "▶" : (isSelected ? "●" : "  ");
             if (GUILayout.Button(marker, EditorStyles.label, GUILayout.Width(16)))
             {
                 HandleMeshClick(index, model);
@@ -262,10 +262,10 @@ namespace Poly_Ling.Tools.Panels
                 // Ctrl+クリック: トグル
                 model.ToggleMeshSelection(index);
             }
-            else if (e.shift && model.PrimarySelectedMeshIndex >= 0)
+            else if (e.shift && model.FirstMeshIndex >= 0)
             {
                 // Shift+クリック: 範囲選択
-                model.SelectMeshRange(model.PrimarySelectedMeshIndex, index);
+                model.SelectMeshRange(model.FirstMeshIndex, index);
             }
             else
             {
@@ -290,7 +290,7 @@ namespace Poly_Ling.Tools.Panels
 
         private void DrawSelectedMeshInfo()
         {
-            var meshContext = CurrentMeshContent;
+            var meshContext = FirstSelectedMeshContext;
             if (meshContext == null)
             {
                 EditorGUILayout.HelpBox(T("NoMeshSelected"), MessageType.Info);
@@ -309,7 +309,7 @@ namespace Poly_Ling.Tools.Panels
                     // コマンド発行（Undoは本体で記録）
                     _context?.UpdateMeshAttributes?.Invoke(new[]
                     {
-                        new MeshAttributeChange { Index = _context.SelectedMeshIndex, Name = newName }
+                        new MeshAttributeChange { Index = _context.FirstSelectedIndex, Name = newName }
                     });
                 }
 
@@ -342,7 +342,7 @@ namespace Poly_Ling.Tools.Panels
 
                 if (GUILayout.Button(T("MoveToTop")))
                 {
-                    int current = _context.SelectedMeshIndex;
+                    int current = _context.FirstSelectedIndex;
                     if (current > 0)
                     {
                         ReorderMesh(current, 0);
@@ -351,7 +351,7 @@ namespace Poly_Ling.Tools.Panels
 
                 if (GUILayout.Button(T("MoveToBottom")))
                 {
-                    int current = _context.SelectedMeshIndex;
+                    int current = _context.FirstSelectedIndex;
                     int last = Model.MeshContextCount - 1;
                     if (current < last)
                     {
@@ -365,7 +365,7 @@ namespace Poly_Ling.Tools.Panels
 
                 if (GUILayout.Button(T("Duplicate")))
                 {
-                    DuplicateMesh(_context.SelectedMeshIndex);
+                    DuplicateMesh(_context.FirstSelectedIndex);
                 }
 
                 if (GUILayout.Button(T("Delete")))
@@ -373,7 +373,7 @@ namespace Poly_Ling.Tools.Panels
                     if (EditorUtility.DisplayDialog(T("DeleteMeshTitle"),
                         T("DeleteMeshMessage", meshContext.Name), T("Delete"), T("Cancel")))
                     {
-                        RemoveMesh(_context.SelectedMeshIndex);
+                        RemoveMesh(_context.FirstSelectedIndex);
                     }
                 }
 

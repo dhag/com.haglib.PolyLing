@@ -165,7 +165,7 @@ namespace Poly_Ling.Tools
 
         private void CalculateAndAutoSelect(ToolContext ctx)
         {
-            if (ctx == null || ctx.MeshObject == null || ctx.SelectedVertices == null || ctx.SelectedVertices.Count < 2)
+            if (ctx == null || ctx.FirstSelectedMeshObject == null || ctx.SelectedVertices == null || ctx.SelectedVertices.Count < 2)
             {
                 _statsCalculated = false;
                 return;
@@ -174,9 +174,9 @@ namespace Poly_Ling.Tools
             List<Vector3> positions = new List<Vector3>();
             foreach (int idx in ctx.SelectedVertices)
             {
-                if (idx >= 0 && idx < ctx.MeshObject.VertexCount)
+                if (idx >= 0 && idx < ctx.FirstSelectedMeshObject.VertexCount)
                 {
-                    positions.Add(ctx.MeshObject.Vertices[idx].Position);
+                    positions.Add(ctx.FirstSelectedMeshObject.Vertices[idx].Position);
                 }
             }
 
@@ -219,15 +219,15 @@ namespace Poly_Ling.Tools
 
         private Vector3 CalculateAlignTarget()
         {
-            if (_context == null || _context.MeshObject == null || _context.SelectedVertices == null || _context.SelectedVertices.Count == 0)
+            if (_context == null || _context.FirstSelectedMeshObject == null || _context.SelectedVertices == null || _context.SelectedVertices.Count == 0)
                 return Vector3.zero;
 
             List<Vector3> positions = new List<Vector3>();
             foreach (int idx in _context.SelectedVertices)
             {
-                if (idx >= 0 && idx < _context.MeshObject.VertexCount)
+                if (idx >= 0 && idx < _context.FirstSelectedMeshObject.VertexCount)
                 {
-                    positions.Add(_context.MeshObject.Vertices[idx].Position);
+                    positions.Add(_context.FirstSelectedMeshObject.Vertices[idx].Position);
                 }
             }
 
@@ -263,7 +263,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteAlign()
         {
-            if (_context == null || _context.MeshObject == null || _context.SelectedVertices == null || _context.SelectedVertices.Count < 2)
+            if (_context == null || _context.FirstSelectedMeshObject == null || _context.SelectedVertices == null || _context.SelectedVertices.Count < 2)
                 return;
 
             if (!_settings.AlignX && !_settings.AlignY && !_settings.AlignZ)
@@ -283,9 +283,9 @@ namespace Poly_Ling.Tools
             int movedCount = 0;
             foreach (int idx in _context.SelectedVertices)
             {
-                if (idx < 0 || idx >= _context.MeshObject.VertexCount) continue;
+                if (idx < 0 || idx >= _context.FirstSelectedMeshObject.VertexCount) continue;
 
-                Vertex vertex = _context.MeshObject.Vertices[idx];
+                Vertex vertex = _context.FirstSelectedMeshObject.Vertices[idx];
                 Vector3 newPos = vertex.Position;
 
                 if (_settings.AlignX) newPos.x = target.x;

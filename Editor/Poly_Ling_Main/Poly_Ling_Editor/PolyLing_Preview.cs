@@ -82,7 +82,7 @@ public partial class PolyLing
             _lastPreviewRect = rect;
         }
 
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null || _preview == null)
         {
             UnityEditor_Handles.BeginGUI();
@@ -156,8 +156,8 @@ public partial class PolyLing
                         var ctx = _meshContextList[idx];
                         if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
                         
-                        bool isPrimary = (idx == _selectedIndex);
-                        DrawMeshWithMaterials(ctx, ctx.UnityMesh, isPrimary ? 1f : 0.8f, idx);
+                        bool isLeadSelection = (idx == _selectedIndex);
+                        DrawMeshWithMaterials(ctx, ctx.UnityMesh, isLeadSelection ? 1f : 0.8f, idx);
                     }
                 }
                 else if (meshContext != null && meshContext.IsVisible)
@@ -270,8 +270,8 @@ public partial class PolyLing
                     
                     // 表示用行列を取得
                     var displayMatrix = GetDisplayMatrix(meshIdx);
-                    bool isPrimary = (meshIdx == _selectedIndex);
-                    DrawVertexIndicesForMesh(localRect, ctx.MeshObject, meshIdx, isPrimary, camPos, _cameraTarget, displayMatrix);
+                    bool isLeadSelection = (meshIdx == _selectedIndex);
+                    DrawVertexIndicesForMesh(localRect, ctx.MeshObject, meshIdx, isLeadSelection, camPos, _cameraTarget, displayMatrix);
                 }
             }
             else if (meshContext != null && meshContext.IsVisible)
@@ -529,8 +529,8 @@ public partial class PolyLing
     /// v2.1: 指定メッシュの頂点インデックスを表示（複数選択対応）
     /// </summary>
     /// <param name="meshIndex">表示対象のメッシュインデックス</param>
-    /// <param name="isPrimary">プライマリ選択かどうか</param>
-    private void DrawVertexIndicesForMesh(Rect previewRect, MeshObject meshObject, int meshIndex, bool isPrimary, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
+    /// <param name="isLeadSelection">選択先頭かどうか</param>
+    private void DrawVertexIndicesForMesh(Rect previewRect, MeshObject meshObject, int meshIndex, bool isLeadSelection, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
     {
         if (meshObject == null)
             return;
@@ -557,7 +557,7 @@ public partial class PolyLing
         }
 
         // プライマリ選択は通常表示、追加選択は薄い表示
-        var labelStyle = isPrimary ? EditorStyles.miniLabel : EditorStyles.whiteMiniLabel;
+        var labelStyle = isLeadSelection ? EditorStyles.miniLabel : EditorStyles.whiteMiniLabel;
 
         for (int i = 0; i < meshObject.VertexCount; i++)
         {

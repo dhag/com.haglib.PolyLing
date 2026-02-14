@@ -87,7 +87,7 @@ public partial class PolyLing
     /// </summary>
     private void OnBoneTransformFromSelectionClicked()
     {
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.BoneTransform == null) return;
 
         // 選択がなければ何もしない
@@ -111,7 +111,7 @@ public partial class PolyLing
     /// </summary>
     private void OnBoneTransformResetClicked()
     {
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.BoneTransform == null) return;
 
         var before = meshContext.BoneTransform.CreateSnapshot();
@@ -137,7 +137,7 @@ public partial class PolyLing
         var workPlane = _undoController.WorkPlane;
         if (workPlane == null || workPlane.IsLocked) return;
 
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.MeshObject == null || _selectionState.Vertices.Count == 0) return;
 
         var before = workPlane.CreateSnapshot();
@@ -201,7 +201,7 @@ public partial class PolyLing
 
         // グリッドサイズ（バウンディングボックスに基づく）
         float gridSize = 0.5f;
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.MeshObject != null)
         {
             var bounds = meshContext.MeshObject.CalculateBounds();

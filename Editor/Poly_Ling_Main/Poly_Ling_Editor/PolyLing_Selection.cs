@@ -37,7 +37,7 @@ public partial class PolyLing
     /// </summary>
     private void LoadSelectionFromCurrentMesh()
     {
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null)
         {
             // メッシュがない場合はfallback
@@ -76,7 +76,7 @@ public partial class PolyLing
     // ================================================================
     private void SelectAllVertices()
     {
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.MeshObject == null)
             return;
 
@@ -101,7 +101,7 @@ public partial class PolyLing
 
     private void InvertSelection()
     {
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.MeshObject == null)
             return;
 
@@ -150,7 +150,7 @@ public partial class PolyLing
     private void DeleteSelectedVertices()
     {
         if (_selectionState.Vertices.Count == 0) return;
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.MeshObject == null) return;
 
         // スナップショット取得（操作前）
@@ -180,7 +180,7 @@ public partial class PolyLing
     private void MergeSelectedVertices()
     {
         if (_selectionState.Vertices.Count < 2) return;
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext?.MeshObject == null) return;
 
         // スナップショット取得（操作前）

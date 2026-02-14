@@ -45,9 +45,9 @@ public partial class PolyLing
             showVertices = _showVertices,
             vertexEditMode = _vertexEditMode,
             currentToolName = _currentTool?.Name ?? "Select",
-            selectedMeshIndex = _model.PrimarySelectedMeshIndex,
-            selectedBoneIndex = _model.PrimarySelectedBoneIndex,
-            selectedVertexMorphIndex = _model.PrimarySelectedMorphIndex,
+            selectedMeshIndex = _model.FirstMeshIndex,
+            selectedBoneIndex = _model.FirstBoneIndex,
+            selectedVertexMorphIndex = _model.FirstMorphIndex,
             coordinateScale = _undoController?.EditorState?.CoordinateScale ?? 0.085f,
             pmxFlipZ = _undoController?.EditorState?.PmxFlipZ ?? false,
             mqoFlipZ = _undoController?.EditorState?.MqoFlipZ ?? true,
@@ -222,7 +222,7 @@ public partial class PolyLing
         InitVertexOffsets();
 
         // UndoContextを更新
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext != null)
         {
             // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）

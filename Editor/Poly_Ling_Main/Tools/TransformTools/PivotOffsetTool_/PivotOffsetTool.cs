@@ -179,7 +179,7 @@ namespace Poly_Ling.Tools
             _totalOffset = Vector3.zero;
 
             // 全頂点の開始位置を記録
-            _dragStartPositions = (Vector3[])ctx.MeshObject.Positions.Clone();
+            _dragStartPositions = (Vector3[])ctx.FirstSelectedMeshObject.Positions.Clone();
 
             _state = (axis == AxisType.Center) ? ToolState.CenterDragging : ToolState.AxisDragging;
         }
@@ -233,16 +233,16 @@ namespace Poly_Ling.Tools
         private void ApplyOffset(Vector3 delta, ToolContext ctx)
         {
             // 全頂点を移動
-            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
-                var v = ctx.MeshObject.Vertices[i];
+                var v = ctx.FirstSelectedMeshObject.Vertices[i];
                 v.Position += delta;
-                ctx.MeshObject.Vertices[i] = v;
+                ctx.FirstSelectedMeshObject.Vertices[i] = v;
 
                 // オフセット更新
                 if (ctx.VertexOffsets != null && i < ctx.VertexOffsets.Length)
                 {
-                    ctx.VertexOffsets[i] = ctx.MeshObject.Vertices[i].Position - ctx.OriginalPositions[i];
+                    ctx.VertexOffsets[i] = ctx.FirstSelectedMeshObject.Vertices[i].Position - ctx.OriginalPositions[i];
                     ctx.GroupOffsets[i] = ctx.VertexOffsets[i];
                 }
             }
@@ -251,13 +251,13 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshUndoContext.MeshObject = ctx.MeshObject;
+                ctx.UndoController.MeshUndoContext.MeshObject = ctx.FirstSelectedMeshObject;
             }
         }
 
         private void EndDrag(ToolContext ctx)
         {
-            if (_dragStartPositions == null || ctx.MeshObject == null)
+            if (_dragStartPositions == null || ctx.FirstSelectedMeshObject == null)
             {
                 _dragStartPositions = null;
                 _draggingAxis = AxisType.None;
@@ -269,10 +269,10 @@ namespace Poly_Ling.Tools
             var oldPositions = new List<Vector3>();
             var newPositions = new List<Vector3>();
 
-            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
                 Vector3 oldPos = _dragStartPositions[i];
-                Vector3 newPos = ctx.MeshObject.Vertices[i].Position;
+                Vector3 newPos = ctx.FirstSelectedMeshObject.Vertices[i].Position;
 
                 if (Vector3.Distance(oldPos, newPos) > 0.0001f)
                 {

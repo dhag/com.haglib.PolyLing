@@ -37,50 +37,49 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// v2.1: 複数メッシュ選択をModelContextから同期
+        /// Context→Unified変換を正しく行う
         /// </summary>
-        /// <param name="model">ModelContext</param>
-        /// <remarks>
-        /// 【既知のバグ】このメソッドはMeshContextListインデックスをそのままFlagManagerに渡している。
-        /// FlagManager/GPU側はunifiedMeshIndex（Drawable限定の通し番号）を期待するため、
-        /// ボーン等の非DrawableオブジェクトのMeshContextListインデックスが渡されると、
-        /// 無関係なDrawableメッシュが「選択」として描画されてしまう。
-        /// 
-        /// 根本原因: MeshContextListインデックスとunifiedMeshIndexを混同している。
-        /// MeshContextListインデックスを直接使わず、ContextToUnifiedMeshIndex()で変換すべき。
-        /// AI生成コードがMeshContextListインデックスの直接使用を繰り返したことが根本的な原因。
-        /// 
-        /// 修正方針: SelectedMeshIndicesの各要素をContextToUnifiedMeshIndex()で変換し、
-        /// -1（非Drawable）を除外してからFlagManagerに渡す必要がある。
-        /// </remarks>
         public void SyncSelectionFromModel(Poly_Ling.Model.ModelContext model)
         {
             if (model == null) return;
             
-            // v2.1: ModelContext参照を保存
             _modelContext = model;
             
-            // 複数選択を同期
+            // unified→context逆引きマップを構築
+            _unifiedToContextMap.Clear();
+            foreach (var ctxIdx in model.SelectedMeshIndices)
+            {
+                int unifiedIdx = ContextToUnifiedMeshIndex(ctxIdx);
+                if (unifiedIdx >= 0)
+                {
+                    _unifiedToContextMap[unifiedIdx] = ctxIdx;
+                }
+            }
+            
+            // ContextインデックスをUnifiedインデックスに変換して同期
             _flagManager.SelectedMeshIndices.Clear();
-            foreach (var idx in model.SelectedMeshIndices)
+            foreach (var kv in _unifiedToContextMap)
             {
-                _flagManager.SelectedMeshIndices.Add(idx);
+                _flagManager.SelectedMeshIndices.Add(kv.Key);
             }
             
-            // アクティブ（プライマリ）メッシュも同期
-            int primary = model.PrimarySelectedMeshIndex;
-            if (primary >= 0)
+            // 先頭メッシュも同期
+            int firstCtx = model.FirstMeshIndex;
+            if (firstCtx >= 0)
             {
-                _flagManager.ActiveMeshIndex = primary;
-                _flagManager.SelectedMeshIndex = primary;
+                int firstUnified = ContextToUnifiedMeshIndex(firstCtx);
+                if (firstUnified >= 0)
+                {
+                    _flagManager.ActiveMeshIndex = firstUnified;
+                    _flagManager.SelectedMeshIndex = firstUnified;
+                }
             }
-            
-            // デバッグ
-            var indices = string.Join(",", _flagManager.SelectedMeshIndices);
-            //UnityEngine.Debug.Log($"[SyncSelectionFromModel] FlagManager.SelectedMeshIndices=[{indices}], Active={_flagManager.ActiveMeshIndex}");
         }
         
         // v2.1: ModelContext参照（複数メッシュ選択用）
         private Poly_Ling.Model.ModelContext _modelContext;
+        // unified→contextインデックスの逆引きマップ
+        private Dictionary<int, int> _unifiedToContextMap = new Dictionary<int, int>();
 
         /// <summary>
         /// 全頂点の選択フラグを更新
@@ -98,13 +97,13 @@ namespace Poly_Ling.Core
                 var meshInfo = _meshInfos[meshIdx];
                 bool isActiveMesh = (meshIdx == activeMesh) && ((int)meshInfo.ModelIndex == activeModel);
                 
-                // v2.1: このメッシュが選択されているか、MeshContextから選択頂点を取得
+                // unifiedインデックスが選択されているか確認し、contextインデックスでMeshContextを取得
                 bool isMeshSelected = _flagManager.SelectedMeshIndices.Contains(meshIdx);
                 HashSet<int> meshSelectedVertices = null;
                 
-                if (isMeshSelected && _modelContext != null)
+                if (isMeshSelected && _modelContext != null && _unifiedToContextMap.TryGetValue(meshIdx, out int ctxIdx))
                 {
-                    var meshContext = _modelContext.GetMeshContext(meshIdx);
+                    var meshContext = _modelContext.GetMeshContext(ctxIdx);
                     if (meshContext != null && meshContext.SelectedVertices.Count > 0)
                     {
                         meshSelectedVertices = meshContext.SelectedVertices;
@@ -120,20 +119,16 @@ namespace Poly_Ling.Core
                     if (globalIdx >= _totalVertexCount)
                         break;
 
-                    // 既存フラグから階層・選択フラグをクリア（Culledは保持）
                     uint flags = _vertexFlags[globalIdx];
                     flags &= ~((uint)SelectionFlags.HierarchyMask | (uint)SelectionFlags.ElementSelectionMask);
 
-                    // 新しいフラグを設定
                     flags |= (uint)hierarchyFlags;
 
-                    // v2.1: 複数メッシュ選択対応 - MeshContextの選択を使用
                     if (meshSelectedVertices != null && meshSelectedVertices.Contains((int)v))
                     {
                         flags |= (uint)SelectionFlags.VertexSelected;
                         vertexSelectedCount++;
                     }
-                    // フォールバック: アクティブメッシュはSelectionStateを使用
                     else if (hasSelectionState && isActiveMesh && _flagManager.SelectionState.Vertices.Contains((int)v))
                     {
                         flags |= (uint)SelectionFlags.VertexSelected;
@@ -142,21 +137,6 @@ namespace Poly_Ling.Core
 
                     _vertexFlags[globalIdx] = flags;
                 }
-            }
-
-            // デバッグログ: 頂点選択数
-            int totalSelected = 0;
-            if (_modelContext != null)
-            {
-                foreach (int meshIdx in _flagManager.SelectedMeshIndices)
-                {
-                    var ctx = _modelContext.GetMeshContext(meshIdx);
-                    if (ctx != null) totalSelected += ctx.SelectedVertices.Count;
-                }
-            }
-            if (totalSelected > 0 || (hasSelectionState && _flagManager.SelectionState.Vertices.Count > 0))
-            {
-                Debug.Log($"[UpdateAllSelectionFlags] MeshContextTotal={totalSelected}, SelectionState.Vertices={_flagManager.SelectionState?.Vertices.Count ?? 0}, VertexSelectedFlags={vertexSelectedCount}, activeMesh={activeMesh}, meshCount={_meshCount}");
             }
 
             // GPUにアップロード

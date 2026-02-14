@@ -385,7 +385,7 @@ public partial class PolyLing
     /// <param name="updateCamera">trueの場合、AutoZoomが有効ならカメラをメッシュに合わせて調整する</param>
     private void InitVertexOffsets(bool updateCamera = true)
     {
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null)
         {
             _vertexOffsets = null;

@@ -178,7 +178,7 @@ public partial class PolyLing : EditorWindow
         if (_model != null)
         {
             var indices = string.Join(",", _model.SelectedMeshIndices);
-            UnityEngine.Debug.Log($"[OnMeshSelectionChanged] SelectedMeshIndices=[{indices}], Primary={_model.PrimarySelectedMeshIndex}");
+            UnityEngine.Debug.Log($"[OnMeshSelectionChanged] SelectedMeshIndices=[{indices}], First={_model.FirstMeshIndex}");
         }
         
         // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
@@ -248,7 +248,7 @@ public partial class PolyLing : EditorWindow
     {
         var ctx = _toolManager.toolContext;
 
-        ctx.MeshObject = meshContext?.MeshObject;
+        // MeshObjectはToolContext.FirstSelectedMeshContextから自動取得（計算プロパティ）
         ctx.OriginalPositions = meshContext?.OriginalPositions;
         ctx.PreviewRect = rect;
         ctx.CameraPosition = camPos;
@@ -301,7 +301,14 @@ public partial class PolyLing : EditorWindow
         ctx.GroupOffsets = _groupOffsets;
         ctx.UndoController = _undoController;
         ctx.WorkPlane = _undoController?.WorkPlane;
-        ctx.SyncMesh = () => SyncMeshFromData(_model?.CurrentMeshContext);
+        ctx.SyncMesh = () => {
+            // 全選択メッシュを同期
+            if (_model != null)
+            {
+                foreach (var mc in _model.SelectedMeshContexts)
+                    SyncMeshFromData(mc);
+            }
+        };
         // v2.1: 複数メッシュ対応 - 選択中の全メッシュの位置を同期
         ctx.SyncMeshPositionsOnly = () => SyncAllSelectedMeshPositions();
         // モーフプレビュー用: 任意のMeshContextの頂点位置を同期
@@ -1052,7 +1059,7 @@ public partial class PolyLing : EditorWindow
         if (_model.HasValidMeshContextSelection)
         {
             InitVertexOffsets();
-            LoadMeshContextToUndoController(_model.CurrentMeshContext);
+            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
             UpdateTopology();
         }
         

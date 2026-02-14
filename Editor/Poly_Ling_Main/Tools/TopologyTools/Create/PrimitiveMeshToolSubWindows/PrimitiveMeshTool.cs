@@ -137,7 +137,7 @@ namespace Poly_Ling.Tools
             }
 
             // 追加先がない場合は警告
-            if (_settings.AddToCurrentMesh && _context != null && _context.MeshObject == null)
+            if (_settings.AddToCurrentMesh && _context != null && _context.FirstSelectedMeshObject == null)
             {
                 EditorGUILayout.LabelField(T("NoMeshSelected"), EditorStyles.miniLabel);
             }

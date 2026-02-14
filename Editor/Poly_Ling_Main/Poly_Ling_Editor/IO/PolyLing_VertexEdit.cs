@@ -38,7 +38,7 @@ public partial class PolyLing
 
         EditorGUILayout.Space(3);
 
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null)
         {
             EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
@@ -692,7 +692,7 @@ public partial class PolyLing
         _isSliderDragging = false;
 
         if (_sliderDragStartOffsets == null || _vertexOffsets == null) return;
-        var meshContext = _model.CurrentMeshContext;
+        var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null) return;
 
         // 変更された頂点を検出
@@ -873,7 +873,7 @@ public partial class PolyLing
         Debug.Log($"[MaterialUndo] Recorded: {description}");
 
         // 自動デフォルト設定がONの場合、デフォルトを更新
-        var currentMeshContext = _model.CurrentMeshContext;
+        var currentMeshContext = _model.FirstSelectedMeshContext;
         if (currentMeshContext != null)
         {
             AutoUpdateDefaultMaterials(currentMeshContext);

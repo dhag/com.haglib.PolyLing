@@ -163,7 +163,7 @@ namespace Poly_Ling.Tools.Panels
                 return;
             }
 
-            var targetMesh = CurrentMeshObject;
+            var targetMesh = FirstSelectedMeshObject;
             int targetVertexCount = targetMesh?.VertexCount ?? 0;
 
             // ターゲット表示
@@ -171,7 +171,7 @@ namespace Poly_Ling.Tools.Panels
             EditorGUILayout.LabelField(T("Target"), EditorStyles.boldLabel);
             using (new EditorGUI.DisabledScope(true))
             {
-                EditorGUILayout.TextField(CurrentMeshContent?.Name ?? "---");
+                EditorGUILayout.TextField(FirstSelectedMeshContext?.Name ?? "---");
             }
             EditorGUILayout.LabelField($"{T("Vertices")}: {targetVertexCount}", EditorStyles.miniLabel);
 
@@ -303,7 +303,7 @@ namespace Poly_Ling.Tools.Panels
         {
             var options = new List<(int, string, int)>();
             // v2.0: 新API使用
-            int currentIndex = model.PrimarySelectedMeshContextIndex;
+            int currentIndex = model.FirstSelectedIndex;
 
             for (int i = 0; i < model.MeshContextCount; i++)
             {
@@ -372,7 +372,7 @@ namespace Poly_Ling.Tools.Panels
 
             var refA = model.GetMeshContext(_settings.ReferenceAIndex)?.MeshObject;
             var refB = model.GetMeshContext(_settings.ReferenceBIndex)?.MeshObject;
-            var target = CurrentMeshObject;
+            var target = FirstSelectedMeshObject;
 
             if (refA == null || refB == null || target == null)
                 return;

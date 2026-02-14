@@ -24,9 +24,9 @@ namespace Poly_Ling.Tools
             int bestFaceIndex = -1;
             float bestDepth = float.MaxValue;
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshObject.Faces[faceIdx];
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 if (face.VertexCount < 3) continue;
 
                 var screenPoints = new List<Vector2>();
@@ -34,7 +34,7 @@ namespace Poly_Ling.Tools
 
                 foreach (var vIdx in face.VertexIndices)
                 {
-                    var worldPos = ctx.MeshObject.Vertices[vIdx].Position;
+                    var worldPos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
                     var sp = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     screenPoints.Add(sp);
                     avgDepth += Vector3.Distance(worldPos, ctx.CameraPosition);
@@ -86,13 +86,13 @@ namespace Poly_Ling.Tools
             _intersections.Clear();
             _chainTargets.Clear();
 
-            if (ctx.MeshObject == null || ctx.MeshObject.FaceCount == 0) return;
+            if (ctx.FirstSelectedMeshObject == null || ctx.FirstSelectedMeshObject.FaceCount == 0) return;
 
             if (ChainMode && Mode == KnifeMode.Cut)
             {
-                for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
+                for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
                 {
-                    var face = ctx.MeshObject.Faces[faceIdx];
+                    var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                     if (face.VertexCount < 3) continue;
 
                     var intersections = FindIntersectionsForFace(ctx, face);
@@ -127,9 +127,9 @@ namespace Poly_Ling.Tools
                 List<EdgeIntersection> bestIntersections = null;
                 float bestMinDistance = float.MaxValue;
 
-                for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
+                for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
                 {
-                    var face = ctx.MeshObject.Faces[faceIdx];
+                    var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                     if (face.VertexCount < 3) continue;
 
                     var intersections = FindIntersectionsForFace(ctx, face);
@@ -176,8 +176,8 @@ namespace Poly_Ling.Tools
                 int vIdx0 = face.VertexIndices[i];
                 int vIdx1 = face.VertexIndices[nextI];
 
-                var p0 = ctx.MeshObject.Vertices[vIdx0].Position;
-                var p1 = ctx.MeshObject.Vertices[vIdx1].Position;
+                var p0 = ctx.FirstSelectedMeshObject.Vertices[vIdx0].Position;
+                var p1 = ctx.FirstSelectedMeshObject.Vertices[vIdx1].Position;
 
                 var sp0 = ctx.WorldToScreenPos(p0, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
@@ -231,9 +231,9 @@ namespace Poly_Ling.Tools
         private void ExecuteCut(ToolContext ctx)
         {
             if (_intersections.Count < 2) return;
-            if (_targetFaceIndex < 0 || _targetFaceIndex >= ctx.MeshObject.FaceCount) return;
+            if (_targetFaceIndex < 0 || _targetFaceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return;
 
-            var face = ctx.MeshObject.Faces[_targetFaceIndex];
+            var face = ctx.FirstSelectedMeshObject.Faces[_targetFaceIndex];
             var inter0 = _intersections[0];
             var inter1 = _intersections[1];
 
@@ -242,23 +242,23 @@ namespace Poly_Ling.Tools
             var originalFace = face.Clone();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 
-            int newVertexIdx0 = ctx.MeshObject.VertexCount;
+            int newVertexIdx0 = ctx.FirstSelectedMeshObject.VertexCount;
             var newVertex0 = new Vertex(inter0.WorldPos);
-            InterpolateVertexAttributes(ctx.MeshObject, face, inter0.EdgeStartIndex, inter0.EdgeEndIndex, inter0.T, newVertex0);
-            ctx.MeshObject.Vertices.Add(newVertex0);
+            InterpolateVertexAttributes(ctx.FirstSelectedMeshObject, face, inter0.EdgeStartIndex, inter0.EdgeEndIndex, inter0.T, newVertex0);
+            ctx.FirstSelectedMeshObject.Vertices.Add(newVertex0);
             addedVertices.Add((newVertexIdx0, newVertex0.Clone()));
 
-            int newVertexIdx1 = ctx.MeshObject.VertexCount;
+            int newVertexIdx1 = ctx.FirstSelectedMeshObject.VertexCount;
             var newVertex1 = new Vertex(inter1.WorldPos);
-            InterpolateVertexAttributes(ctx.MeshObject, face, inter1.EdgeStartIndex, inter1.EdgeEndIndex, inter1.T, newVertex1);
-            ctx.MeshObject.Vertices.Add(newVertex1);
+            InterpolateVertexAttributes(ctx.FirstSelectedMeshObject, face, inter1.EdgeStartIndex, inter1.EdgeEndIndex, inter1.T, newVertex1);
+            ctx.FirstSelectedMeshObject.Vertices.Add(newVertex1);
             addedVertices.Add((newVertexIdx1, newVertex1.Clone()));
 
             var (face1, face2) = SplitFace(face, inter0, inter1, newVertexIdx0, newVertexIdx1);
 
-            ctx.MeshObject.Faces[_targetFaceIndex] = face1;
-            int newFaceIdx = ctx.MeshObject.FaceCount;
-            ctx.MeshObject.Faces.Add(face2);
+            ctx.FirstSelectedMeshObject.Faces[_targetFaceIndex] = face1;
+            int newFaceIdx = ctx.FirstSelectedMeshObject.FaceCount;
+            ctx.FirstSelectedMeshObject.Faces.Add(face2);
 
             ctx.UndoController?.RecordKnifeCut(
                 _targetFaceIndex,
@@ -432,9 +432,9 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void DrawTargetFaceHighlight(ToolContext ctx)
         {
-            if (_targetFaceIndex < 0 || _targetFaceIndex >= ctx.MeshObject.FaceCount) return;
+            if (_targetFaceIndex < 0 || _targetFaceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return;
 
-            var face = ctx.MeshObject.Faces[_targetFaceIndex];
+            var face = ctx.FirstSelectedMeshObject.Faces[_targetFaceIndex];
             if (face.VertexCount < 3) return;
 
             UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.3f);
@@ -442,7 +442,7 @@ namespace Poly_Ling.Tools
             var points = new Vector3[face.VertexCount + 1];
             for (int i = 0; i < face.VertexCount; i++)
             {
-                var worldPos = ctx.MeshObject.Vertices[face.VertexIndices[i]].Position;
+                var worldPos = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
                 var screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 points[i] = new Vector3(screenPos.x, screenPos.y, 0);
             }

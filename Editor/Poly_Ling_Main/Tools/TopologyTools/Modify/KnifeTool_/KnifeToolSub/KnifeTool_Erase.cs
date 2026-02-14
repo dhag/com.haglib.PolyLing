@@ -21,7 +21,7 @@ namespace Poly_Ling.Tools
             if (_hoveredEdge.Item1 < 0) return false;
 
             // 共有辺かどうか確認
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshObject);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.FirstSelectedMeshObject);
             var key = _hoveredEdge;
 
             if (!edgeToFaces.TryGetValue(key, out var faces) || faces.Count != 2)
@@ -79,7 +79,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private (int, int) FindNearestSharedEdge(ToolContext ctx, Vector2 mousePos)
         {
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.MeshObject);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.FirstSelectedMeshObject);
 
             float bestDist = EDGE_CLICK_THRESHOLD;
             (int, int) bestEdge = (-1, -1);
@@ -90,8 +90,8 @@ namespace Poly_Ling.Tools
                 if (kvp.Value.Count != 2) continue;
 
                 var edge = kvp.Key;
-                var p1 = ctx.MeshObject.Vertices[edge.Item1].Position;
-                var p2 = ctx.MeshObject.Vertices[edge.Item2].Position;
+                var p1 = ctx.FirstSelectedMeshObject.Vertices[edge.Item1].Position;
+                var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
                 var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -111,7 +111,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void MergeFaces(ToolContext ctx, int faceIdx1, int faceIdx2, (int, int) sharedEdge)
         {
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var face1 = meshObject.Faces[faceIdx1];
             var face2 = meshObject.Faces[faceIdx2];
 
@@ -201,7 +201,7 @@ namespace Poly_Ling.Tools
 
             var edgeSet = new HashSet<(int, int)>();
 
-            foreach (var face in ctx.MeshObject.Faces)
+            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
             {
                 int n = face.VertexIndices.Count;
                 for (int i = 0; i < n; i++)
@@ -213,8 +213,8 @@ namespace Poly_Ling.Tools
                     if (edgeSet.Contains(edge)) continue;
                     edgeSet.Add(edge);
 
-                    var p1 = ctx.MeshObject.Vertices[edge.Item1].Position;
-                    var p2 = ctx.MeshObject.Vertices[edge.Item2].Position;
+                    var p1 = ctx.FirstSelectedMeshObject.Vertices[edge.Item1].Position;
+                    var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
                     var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -235,8 +235,8 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void DrawEdge(ToolContext ctx, (int, int) edge)
         {
-            var p1 = ctx.MeshObject.Vertices[edge.Item1].Position;
-            var p2 = ctx.MeshObject.Vertices[edge.Item2].Position;
+            var p1 = ctx.FirstSelectedMeshObject.Vertices[edge.Item1].Position;
+            var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
             var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));

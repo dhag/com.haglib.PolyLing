@@ -36,7 +36,7 @@ namespace Poly_Ling.Tools
                 edge = new VertexPair(legacyEdge.Item1, legacyEdge.Item2);
             }
 
-            var beltData = GetBeltData(toolCtx.MeshObject, edge.Value);
+            var beltData = GetBeltData(toolCtx.FirstSelectedMeshObject, edge.Value);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 SelectionHelper.ApplyVertexSelection(toolCtx, beltData.Vertices.ToList(), ctx.AddToSelection);
@@ -64,7 +64,7 @@ namespace Poly_Ling.Tools
 
             if (!ctx.HoveredEdgePair.HasValue) return;
 
-            var beltData = GetBeltData(toolCtx.MeshObject, ctx.HoveredEdgePair.Value);
+            var beltData = GetBeltData(toolCtx.FirstSelectedMeshObject, ctx.HoveredEdgePair.Value);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 ctx.PreviewVertices.AddRange(beltData.Vertices);

@@ -74,7 +74,7 @@ namespace Poly_Ling.Tools
                 ctx.HoveredVertex = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
                 if (ctx.HoveredVertex >= 0)
                 {
-                    var connectedVerts = GetConnectedVertices(toolCtx.MeshObject, ctx.HoveredVertex);
+                    var connectedVerts = GetConnectedVertices(toolCtx.FirstSelectedMeshObject, ctx.HoveredVertex);
                     if (selectMode.Has(MeshSelectMode.Vertex))
                         ctx.PreviewVertices.AddRange(connectedVerts);
                     if (selectMode.Has(MeshSelectMode.Edge))
@@ -114,7 +114,7 @@ namespace Poly_Ling.Tools
                     var connectedFaces = GetConnectedFaces(toolCtx, ctx.HoveredFace);
                     var connectedVerts = new HashSet<int>();
                     foreach (int fIdx in connectedFaces)
-                        foreach (int vIdx in toolCtx.MeshObject.Faces[fIdx].VertexIndices)
+                        foreach (int vIdx in toolCtx.FirstSelectedMeshObject.Faces[fIdx].VertexIndices)
                             connectedVerts.Add(vIdx);
 
                     if (selectMode.Has(MeshSelectMode.Vertex))
@@ -136,7 +136,7 @@ namespace Poly_Ling.Tools
                     var connectedVerts = new HashSet<int>();
                     foreach (int lIdx in connectedLines)
                     {
-                        var face = toolCtx.MeshObject.Faces[lIdx];
+                        var face = toolCtx.FirstSelectedMeshObject.Faces[lIdx];
                         if (face.VertexCount == 2)
                         {
                             connectedVerts.Add(face.VertexIndices[0]);
@@ -166,7 +166,7 @@ namespace Poly_Ling.Tools
         private void ApplyConnectedFromVertex(AdvancedSelectContext ctx, int startVertex, MeshSelectMode selectMode)
         {
             var toolCtx = ctx.ToolCtx;
-            var connectedVerts = GetConnectedVertices(toolCtx.MeshObject, startVertex);
+            var connectedVerts = GetConnectedVertices(toolCtx.FirstSelectedMeshObject, startVertex);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 SelectionHelper.ApplyVertexSelection(toolCtx, connectedVerts, ctx.AddToSelection);
@@ -221,7 +221,7 @@ namespace Poly_Ling.Tools
             var connectedVerts = new HashSet<int>();
             foreach (int fIdx in connectedFaces)
             {
-                foreach (int vIdx in toolCtx.MeshObject.Faces[fIdx].VertexIndices)
+                foreach (int vIdx in toolCtx.FirstSelectedMeshObject.Faces[fIdx].VertexIndices)
                     connectedVerts.Add(vIdx);
             }
 
@@ -245,7 +245,7 @@ namespace Poly_Ling.Tools
             var connectedVerts = new HashSet<int>();
             foreach (int lIdx in connectedLines)
             {
-                var face = toolCtx.MeshObject.Faces[lIdx];
+                var face = toolCtx.FirstSelectedMeshObject.Faces[lIdx];
                 if (face.VertexCount == 2)
                 {
                     connectedVerts.Add(face.VertexIndices[0]);
@@ -316,7 +316,7 @@ namespace Poly_Ling.Tools
         {
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var faceAdjacency = SelectionHelper.BuildFaceAdjacency(ctx.MeshObject);
+            var faceAdjacency = SelectionHelper.BuildFaceAdjacency(ctx.FirstSelectedMeshObject);
 
             queue.Enqueue(startFace);
             result.Add(startFace);
@@ -338,11 +338,11 @@ namespace Poly_Ling.Tools
 
         private List<int> GetConnectedLines(ToolContext ctx, int startLine)
         {
-            if (ctx.MeshObject == null) return new List<int> { startLine };
+            if (ctx.FirstSelectedMeshObject == null) return new List<int> { startLine };
 
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var lineAdjacency = SelectionHelper.BuildLineAdjacency(ctx.MeshObject);
+            var lineAdjacency = SelectionHelper.BuildLineAdjacency(ctx.FirstSelectedMeshObject);
 
             queue.Enqueue(startLine);
             result.Add(startLine);

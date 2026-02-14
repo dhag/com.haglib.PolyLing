@@ -261,9 +261,9 @@ namespace MeshEditor
                 MeshSnapshots = new List<MeshContextSnapshot>(),
                 MaterialSnapshots = new List<MaterialReferenceSnapshot>(),
                 // カテゴリ別選択 (v1.1)
-                SelectedMeshIndex = modelContext.PrimarySelectedMeshIndex,
-                SelectedBoneIndex = modelContext.PrimarySelectedBoneIndex,
-                SelectedMorphIndex = modelContext.PrimarySelectedMorphIndex,
+                SelectedMeshIndex = modelContext.FirstMeshIndex,
+                SelectedBoneIndex = modelContext.FirstBoneIndex,
+                SelectedMorphIndex = modelContext.FirstMorphIndex,
                 CurrentMaterialIndex = modelContext.CurrentMaterialIndex,
                 EditorState = editorState != null ? CloneEditorState(editorState) : null
             };

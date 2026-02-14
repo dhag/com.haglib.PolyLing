@@ -54,7 +54,7 @@ public partial class PolyLing
     /// </summary>
     public void InvalidateSymmetryCache()
     {
-        _model?.CurrentMeshContext?.InvalidateSymmetryCache();
+        _model?.FirstSelectedMeshContext?.InvalidateSymmetryCache();
     }
 
     /// <summary>
@@ -382,7 +382,7 @@ public partial class PolyLing
         if (_symmetrySettings == null || !_symmetrySettings.IsEnabled)
             return;
 
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext?.MeshObject == null)
             return;
 

@@ -119,7 +119,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void FlipSelectedFaces()
         {
-            if (_context == null || _context.MeshObject == null)
+            if (_context == null || _context.FirstSelectedMeshObject == null)
             {
                 _lastMessage = T("NoMesh"); 
                 return;
@@ -143,15 +143,15 @@ namespace Poly_Ling.Tools
             int flippedCount = 0;
             foreach (int faceIdx in faces)
             {
-                if (faceIdx >= 0 && faceIdx < _context.MeshObject.FaceCount)
+                if (faceIdx >= 0 && faceIdx < _context.FirstSelectedMeshObject.FaceCount)
                 {
-                    _context.MeshObject.Faces[faceIdx].Flip();
+                    _context.FirstSelectedMeshObject.Faces[faceIdx].Flip();
                     flippedCount++;
                 }
             }
 
             // 法線を再計算
-            _context.MeshObject.RecalculateNormals();
+            _context.FirstSelectedMeshObject.RecalculateNormals();
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -175,13 +175,13 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void FlipAllFaces()
         {
-            if (_context == null || _context.MeshObject == null)
+            if (_context == null || _context.FirstSelectedMeshObject == null)
             {
                 _lastMessage = "メッシュが選択されていません";
                 return;
             }
 
-            if (_context.MeshObject.FaceCount == 0)
+            if (_context.FirstSelectedMeshObject.FaceCount == 0)
             {
                 _lastMessage = T("NoFacesExist");
                 return;
@@ -196,14 +196,14 @@ namespace Poly_Ling.Tools
 
             // 全ての面を反転
             int flippedCount = 0;
-            foreach (var face in _context.MeshObject.Faces)
+            foreach (var face in _context.FirstSelectedMeshObject.Faces)
             {
                 face.Flip();
                 flippedCount++;
             }
 
             // 法線を再計算
-            _context.MeshObject.RecalculateNormals();
+            _context.FirstSelectedMeshObject.RecalculateNormals();
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();

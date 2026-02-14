@@ -279,7 +279,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteVertexCut(ToolContext ctx, Vector3 vertexWorldPos, int faceIdx, (Vector3, Vector3) edgeWorldPos, float cutRatio)
         {
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var face = meshObject.Faces[faceIdx];
             int n = face.VertexIndices.Count;
 
@@ -393,7 +393,7 @@ namespace Poly_Ling.Tools
                 ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
                 : null;
 
-            var meshObject = ctx.MeshObject;
+            var meshObject = ctx.FirstSelectedMeshObject;
             var processedFaces = new HashSet<int>();
 
             var firstFace = meshObject.Faces[startFaceIdx];
@@ -526,9 +526,9 @@ namespace Poly_Ling.Tools
             float bestDist = threshold;
             Vector3? bestPos = null;
 
-            for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
-                var worldPos = ctx.MeshObject.Vertices[i].Position;
+                var worldPos = ctx.FirstSelectedMeshObject.Vertices[i].Position;
                 var screenPos = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 float dist = Vector2.Distance(mousePos, screenPos);
                 if (dist < bestDist)
@@ -545,15 +545,15 @@ namespace Poly_Ling.Tools
         {
             var result = new List<(int, int)>();
 
-            for (int faceIdx = 0; faceIdx < ctx.MeshObject.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.MeshObject.Faces[faceIdx];
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 for (int i = 0; i < n; i++)
                 {
                     int vIdx = face.VertexIndices[i];
-                    var pos = ctx.MeshObject.Vertices[vIdx].Position;
+                    var pos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
                     if (Vector3.Distance(pos, vertexWorldPos) < POSITION_EPSILON)
                     {
                         result.Add((faceIdx, i));
@@ -572,7 +572,7 @@ namespace Poly_Ling.Tools
 
             foreach (var (faceIdx, vertexLocalIdx) in facesWithVertex)
             {
-                var face = ctx.MeshObject.Faces[faceIdx];
+                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
                 int n = face.VertexIndices.Count;
 
                 int prevEdgeIdx = (vertexLocalIdx - 1 + n) % n;
@@ -584,8 +584,8 @@ namespace Poly_Ling.Tools
 
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
-                    var p1 = ctx.MeshObject.Vertices[v1].Position;
-                    var p2 = ctx.MeshObject.Vertices[v2].Position;
+                    var p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+                    var p2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
                     var edgePos = NormalizeEdgeWorldPos(p1, p2);
                     result.Add((faceIdx, i, edgePos));
                 }

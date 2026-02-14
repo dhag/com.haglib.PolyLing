@@ -138,9 +138,9 @@ public partial class PolyLing
         InitVertexOffsets();
 
         // MeshContextをUndoControllerにロード
-        if (_model?.CurrentMeshContext != null)
+        if (_model?.FirstSelectedMeshContext != null)
         {
-            LoadMeshContextToUndoController(_model.CurrentMeshContext);
+            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
         }
 
         // ★ 操作後のスナップショットを取得
@@ -286,9 +286,9 @@ public partial class PolyLing
         LoadSelectionFromCurrentMesh();
         InitVertexOffsets();
 
-        if (_model?.CurrentMeshContext != null)
+        if (_model?.FirstSelectedMeshContext != null)
         {
-            LoadMeshContextToUndoController(_model.CurrentMeshContext);
+            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
         }
 
         CameraSnapshot newCamera = CaptureCameraSnapshot();
@@ -481,7 +481,7 @@ public partial class PolyLing
             _toolManager.toolContext.Model = currentModel;
         }
         
-        // UndoControllerのModelContextを更新
+        // UndoControllerのMeshListを更新
         if (_undoController != null)
         {
             _undoController.SetModelContext(currentModel, OnMeshListChanged);
@@ -555,7 +555,7 @@ public partial class PolyLing
             _toolManager.toolContext.Model = _project.CurrentModel;
         }
 
-        // UndoControllerのModelContextを更新
+        // UndoControllerのMeshListを更新
         if (_undoController != null && _project.CurrentModel != null)
         {
             _undoController.SetModelContext(_project.CurrentModel, OnMeshListChanged);
@@ -590,7 +590,7 @@ public partial class PolyLing
     {
         if (snapshot == null) return;
 
-        var meshContext = _model?.CurrentMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext != null)
         {
             meshContext.RestoreSelection(snapshot);
@@ -618,9 +618,9 @@ public partial class PolyLing
         }
 
         // MeshContextをUndoControllerにロード
-        if (_model?.CurrentMeshContext != null)
+        if (_model?.FirstSelectedMeshContext != null)
         {
-            LoadMeshContextToUndoController(_model.CurrentMeshContext);
+            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
         }
 
         // 選択状態を復元

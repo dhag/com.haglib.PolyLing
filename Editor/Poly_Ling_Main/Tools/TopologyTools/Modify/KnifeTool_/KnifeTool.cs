@@ -145,7 +145,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshObject == null) return false;
+            if (ctx.FirstSelectedMeshObject == null) return false;
 
             switch (Mode)
             {
@@ -168,7 +168,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
-            if (ctx.MeshObject == null) return false;
+            if (ctx.FirstSelectedMeshObject == null) return false;
 
             switch (Mode)
             {
@@ -191,7 +191,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.MeshObject == null)
+            if (ctx.FirstSelectedMeshObject == null)
             {
                 _isDragging = false;
                 return false;
@@ -214,7 +214,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.MeshObject == null) return;
+            if (ctx.FirstSelectedMeshObject == null) return;
 
             switch (Mode)
             {

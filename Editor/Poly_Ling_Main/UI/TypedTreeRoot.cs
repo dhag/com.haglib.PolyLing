@@ -246,7 +246,7 @@ namespace Poly_Ling.UI
                 _preParentMap[mc] = parent;
             }
 
-            _preSelectedMeshContext = _modelContext.CurrentMeshContext;
+            _preSelectedMeshContext = _modelContext.FirstSelectedMeshContext;
         }
 
         private void RecordReorderChange()
@@ -267,7 +267,7 @@ namespace Poly_Ling.UI
                 newParentMap[mc] = parent;
             }
 
-            var newSelectedMeshContext = _modelContext.CurrentMeshContext;
+            var newSelectedMeshContext = _modelContext.FirstSelectedMeshContext;
 
             if (ListsEqual(_preOrderedList, newOrderedList) && MapsEqual(_preParentMap, newParentMap))
                 return;

@@ -122,7 +122,7 @@ namespace Poly_Ling.Tools
             EditorGUILayout.Space(5);
 
             // ベイクボタン
-            using (new EditorGUI.DisabledScope(_context?.CurrentMeshContent == null))
+            using (new EditorGUI.DisabledScope(_context?.FirstSelectedMeshContext == null))
             {
                 if (GUILayout.Button(T("BakeMirror"), GUILayout.Height(28)))
                 {
@@ -153,8 +153,8 @@ namespace Poly_Ling.Tools
 
             // 書き戻しボタン
             bool canWriteBack = _lastBakeResult != null &&
-                                _context?.CurrentMeshContent != null &&
-                                _context.CurrentMeshContent.Name == _bakedMeshName;
+                                _context?.FirstSelectedMeshContext != null &&
+                                _context.FirstSelectedMeshContext.Name == _bakedMeshName;
 
             using (new EditorGUI.DisabledScope(!canWriteBack))
             {
@@ -424,14 +424,14 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void ExecuteBakeMirror()
         {
-            if (_context == null || _context.CurrentMeshContent == null)
+            if (_context == null || _context.FirstSelectedMeshContext == null)
             {
                 _statusMessage = T("NoMeshSelected");
                 _statusType = MessageType.Warning;
                 return;
             }
 
-            var sourceMeshContext = _context.CurrentMeshContent;
+            var sourceMeshContext = _context.FirstSelectedMeshContext;
             var sourceMeshObject = sourceMeshContext.MeshObject;
 
             if (sourceMeshObject == null || sourceMeshObject.VertexCount == 0)
@@ -503,7 +503,7 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            var editedMeshContext = _context.CurrentMeshContent;
+            var editedMeshContext = _context.FirstSelectedMeshContext;
             if (editedMeshContext == null || editedMeshContext.Name != _bakedMeshName)
             {
                 _statusMessage = T("SelectBakedMesh");

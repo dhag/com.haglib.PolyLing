@@ -29,7 +29,7 @@ namespace Poly_Ling.Tools
                 edge = new VertexPair(legacyEdge.Item1, legacyEdge.Item2);
             }
 
-            var loopEdges = GetEdgeLoopEdges(toolCtx.MeshObject, edge.Value, ctx.EdgeLoopThreshold);
+            var loopEdges = GetEdgeLoopEdges(toolCtx.FirstSelectedMeshObject, edge.Value, ctx.EdgeLoopThreshold);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
             {
@@ -64,7 +64,7 @@ namespace Poly_Ling.Tools
 
             if (!ctx.HoveredEdgePair.HasValue) return;
 
-            var loopEdges = GetEdgeLoopEdges(toolCtx.MeshObject, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
+            var loopEdges = GetEdgeLoopEdges(toolCtx.FirstSelectedMeshObject, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
             {

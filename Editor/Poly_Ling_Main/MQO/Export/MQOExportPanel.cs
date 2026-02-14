@@ -221,9 +221,9 @@ namespace Poly_Ling.MQO
 
         private string GetDefaultFileName()
         {
-            if (_context?.Model?.CurrentMeshContext != null)
+            if (_context?.Model?.FirstSelectedMeshContext != null)
             {
-                return _context.Model.CurrentMeshContext.Name ?? "export";
+                return _context.Model.FirstSelectedMeshContext.Name ?? "export";
             }
             return "export";
         }
@@ -251,7 +251,7 @@ namespace Poly_Ling.MQO
             if (_settings.ExportSelectedOnly)
             {
                 // 選択中のメッシュのみ
-                var current = _context.Model.CurrentMeshContext;
+                var current = _context.Model.FirstSelectedMeshContext;
                 if (current != null)
                 {
                     result.Add(current);
