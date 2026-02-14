@@ -537,7 +537,7 @@ public partial class PolyLing
             {
                 var boneTransform = boneTransforms[i];
                 var boneCtx = CreateMeshContextFromBone(boneTransform, boneToIndex);
-                boneCtx.MaterialOwner = _model;
+                boneCtx.ParentModelContext = _model;
                 _model.Add(boneCtx);
                 
                 // BindPoseを設定（収集できた場合）
@@ -601,7 +601,7 @@ public partial class PolyLing
             var go = meshGameObjects[i];
             var meshContext = CreateMeshContextFromGameObject(go, goToIndex, materialToIndex, boneToIndex);
 
-            meshContext.MaterialOwner = _model;
+            meshContext.ParentModelContext = _model;
             _model.Add(meshContext);
         }
 
@@ -998,7 +998,7 @@ public partial class PolyLing
         var oldSelectedIndices2 = _model.CaptureAllSelectedIndices();
         int insertIndex = _meshContextList.Count;
 
-        meshContext.MaterialOwner = _model;
+        meshContext.ParentModelContext = _model;
         _model.Add(meshContext);
         SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();

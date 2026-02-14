@@ -506,7 +506,7 @@ public partial class PolyLing : EditorWindow
             {
                 if (meshContext != null)
                 {
-                    meshContext.MaterialOwner = _model;
+                    meshContext.ParentModelContext = _model;
                 }
             }
         }

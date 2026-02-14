@@ -112,7 +112,7 @@ namespace Poly_Ling.UndoSystem
                     var meshContext = meshSnapshot?.ToMeshContext();
                     if (meshContext != null)
                     {
-                        meshContext.MaterialOwner = model;
+                        meshContext.ParentModelContext = model;
                         model.MeshContextList.Add(meshContext);
                     }
                 }
@@ -161,7 +161,7 @@ namespace Poly_Ling.UndoSystem
                     var meshContext = meshSnapshot?.ToMeshContext();
                     if (meshContext != null)
                     {
-                        meshContext.MaterialOwner = model;
+                        meshContext.ParentModelContext = model;
                         model.MeshContextList.Add(meshContext);
                     }
                 }

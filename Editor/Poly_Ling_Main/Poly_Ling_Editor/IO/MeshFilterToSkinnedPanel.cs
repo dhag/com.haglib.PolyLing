@@ -265,7 +265,7 @@ namespace Poly_Ling.Tools.Panels
             for (int i = 0; i < boneCount; i++)
             {
                 model.MeshContextList.Add(boneContexts[i]);
-                boneContexts[i].MaterialOwner = model;
+                boneContexts[i].ParentModelContext = model;
             }
 
             model.MeshContextList.AddRange(oldList);

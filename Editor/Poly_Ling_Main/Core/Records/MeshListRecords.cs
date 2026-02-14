@@ -329,7 +329,7 @@ namespace Poly_Ling.UndoSystem
             foreach (var (index, snapshot) in RemovedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
-                mc.MaterialOwner = ctx;
+                mc.ParentModelContext = ctx;
                 ctx.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc, adjustSelection: false);
             }
 
@@ -373,7 +373,7 @@ namespace Poly_Ling.UndoSystem
             foreach (var (index, snapshot) in AddedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
-                mc.MaterialOwner = ctx;
+                mc.ParentModelContext = ctx;
                 ctx.Insert(Mathf.Clamp(index, 0, ctx.MeshContextList.Count), mc, adjustSelection: false);
             }
 

@@ -179,7 +179,7 @@ public partial class PolyLing
         {
             foreach (var meshContext in _meshContextList)
             {
-                meshContext.MaterialOwner = _model;
+                meshContext.ParentModelContext = _model;
             }
         }
     }
@@ -545,7 +545,7 @@ public partial class PolyLing
             // 各モデルのMeshContextにMaterialOwnerを設定
             foreach (var meshContext in model.MeshContextList)
             {
-                meshContext.MaterialOwner = model;
+                meshContext.ParentModelContext = model;
             }
         });
 

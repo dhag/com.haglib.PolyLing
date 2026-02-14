@@ -1,14 +1,12 @@
 // Tools/SculptTool.cs
-// スカルプトツール - ブラシによるメッシュ変形
+// スカルプトツール - ブラシによるメッシュ変形（複数メッシュ対応）
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
-using Poly_Ling.Commands;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.Tools
@@ -71,11 +69,13 @@ namespace Poly_Ling.Tools
             // === ドラッグ状態 ===
             private bool _isDragging;
             private Vector2 _currentScreenPos;
-            private MeshObjectSnapshot _beforeSnapshot;
 
-            // === キャッシュ ===
-            private Dictionary<int, HashSet<int>> _adjacencyCache;
-            private Dictionary<int, Vector3> _vertexNormalsCache;
+            // === 複数メッシュ: 開始時位置 ===
+            private Dictionary<int, Vector3[]> _originalPositions = new Dictionary<int, Vector3[]>();
+
+            // === メッシュ別キャッシュ ===
+            private Dictionary<int, Dictionary<int, HashSet<int>>> _adjacencyCachePerMesh;
+            private Dictionary<int, Dictionary<int, Vector3>> _vertexNormalsCachePerMesh;
 
             // === モード選択用 ===
             private static readonly SculptMode[] ModeValues = {
@@ -91,23 +91,42 @@ namespace Poly_Ling.Tools
 
             public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
             {
-                if (ctx.FirstSelectedMeshObject == null) return false;
+                var model = ctx.Model;
+                if (model == null || model.SelectedMeshIndices.Count == 0) return false;
 
                 _isDragging = true;
                 _currentScreenPos = mousePos;
                 ctx.EnterTransformDragging?.Invoke();
 
-                _beforeSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-                BuildCaches(ctx.FirstSelectedMeshObject);
-                ApplyBrush(ctx, mousePos);
+                // 全選択メッシュの開始時位置を保存・キャッシュ構築
+                _originalPositions.Clear();
+                _adjacencyCachePerMesh = new Dictionary<int, Dictionary<int, HashSet<int>>>();
+                _vertexNormalsCachePerMesh = new Dictionary<int, Dictionary<int, Vector3>>();
 
+                foreach (int meshIdx in model.SelectedMeshIndices)
+                {
+                    var meshContext = model.GetMeshContext(meshIdx);
+                    if (meshContext?.MeshObject == null) continue;
+
+                    var meshObject = meshContext.MeshObject;
+
+                    // 開始時位置保存
+                    var positions = new Vector3[meshObject.VertexCount];
+                    for (int i = 0; i < meshObject.VertexCount; i++)
+                        positions[i] = meshObject.Vertices[i].Position;
+                    _originalPositions[meshIdx] = positions;
+
+                    // キャッシュ構築
+                    BuildCachesForMesh(meshIdx, meshObject);
+                }
+
+                ApplyBrush(ctx, mousePos);
                 return true;
             }
 
             public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
             {
                 if (!_isDragging) return false;
-                if (ctx.FirstSelectedMeshObject == null) return false;
 
                 _currentScreenPos = mousePos;
                 ApplyBrush(ctx, mousePos);
@@ -122,16 +141,69 @@ namespace Poly_Ling.Tools
                 _isDragging = false;
                 ctx.ExitTransformDragging?.Invoke();
 
-                if (_beforeSnapshot != null && ctx.UndoController != null)
+                // MultiMeshVertexMoveRecordで記録
+                var model = ctx.Model;
+                if (model != null && _originalPositions.Count > 0 && ctx.UndoController != null)
                 {
-                MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-                    ctx.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
-                        ctx.UndoController, _beforeSnapshot, after, $"Sculpt ({Mode})"));
-                    _beforeSnapshot = null;
+                    var allEntries = new List<MeshMoveEntry>();
+
+                    foreach (var kv in _originalPositions)
+                    {
+                        int meshIdx = kv.Key;
+                        var oldPositions = kv.Value;
+                        var meshContext = model.GetMeshContext(meshIdx);
+                        if (meshContext?.MeshObject == null) continue;
+
+                        var meshObject = meshContext.MeshObject;
+
+                        // 変更された頂点を収集
+                        var indices = new List<int>();
+                        var oldPos = new List<Vector3>();
+                        var newPos = new List<Vector3>();
+
+                        for (int i = 0; i < meshObject.VertexCount && i < oldPositions.Length; i++)
+                        {
+                            if (meshObject.Vertices[i].Position != oldPositions[i])
+                            {
+                                indices.Add(i);
+                                oldPos.Add(oldPositions[i]);
+                                newPos.Add(meshObject.Vertices[i].Position);
+                            }
+                        }
+
+                        if (indices.Count > 0)
+                        {
+                            allEntries.Add(new MeshMoveEntry
+                            {
+                                MeshContextIndex = meshIdx,
+                                Indices = indices.ToArray(),
+                                OldPositions = oldPos.ToArray(),
+                                NewPositions = newPos.ToArray()
+                            });
+
+                            // OriginalPositionsキャッシュ更新
+                            if (meshContext.OriginalPositions != null)
+                            {
+                                for (int i = 0; i < meshObject.VertexCount; i++)
+                                {
+                                    if (i < meshContext.OriginalPositions.Length)
+                                        meshContext.OriginalPositions[i] = meshObject.Vertices[i].Position;
+                                }
+                            }
+                        }
+                    }
+
+                    if (allEntries.Count > 0)
+                    {
+                        ctx.UndoController.FocusVertexEdit();
+                        var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
+                        ctx.UndoController.VertexEditStack.Record(record, $"Sculpt ({Mode})");
+                    }
                 }
 
-                _adjacencyCache = null;
-                _vertexNormalsCache = null;
+                _originalPositions.Clear();
+                _adjacencyCachePerMesh = null;
+                _vertexNormalsCachePerMesh = null;
 
                 ctx.Repaint?.Invoke();
                 return true;
@@ -139,7 +211,7 @@ namespace Poly_Ling.Tools
 
             public void DrawGizmo(ToolContext ctx)
             {
-                if (ctx.FirstSelectedMeshObject == null) return;
+                if (ctx.Model == null || ctx.Model.SelectedMeshIndices.Count == 0) return;
 
                 UnityEditor_Handles.BeginGUI();
 
@@ -191,9 +263,9 @@ namespace Poly_Ling.Tools
             public void Reset()
             {
                 _isDragging = false;
-                _beforeSnapshot = null;
-                _adjacencyCache = null;
-                _vertexNormalsCache = null;
+                _originalPositions.Clear();
+                _adjacencyCachePerMesh = null;
+                _vertexNormalsCachePerMesh = null;
             }
 
             // ================================================================
@@ -202,61 +274,92 @@ namespace Poly_Ling.Tools
 
             private void ApplyBrush(ToolContext ctx, Vector2 mousePos)
         {
+            var model = ctx.Model;
+            if (model == null) return;
+
             // マウス位置からレイを取得
             Ray ray = ctx.ScreenPosToRay(mousePos);
 
-            // ブラシ中心のワールド座標を計算（メッシュとの交点、または最近接点）
+            // ブラシ中心のワールド座標を計算（全メッシュでレイキャスト）
             Vector3 brushCenter = FindBrushCenter(ctx, ray);
 
-            // ブラシ範囲内の頂点を収集
-            var affectedVertices = GetVerticesInBrushRadius(ctx.FirstSelectedMeshObject, brushCenter);
-            if (affectedVertices.Count == 0) return;
-
-            // モードに応じて変形
-            switch (Mode)
+            // 全選択メッシュにブラシ適用
+            bool anyAffected = false;
+            foreach (int meshIdx in model.SelectedMeshIndices)
             {
-                case SculptMode.Draw:
-                    ApplyDraw(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter, ray.direction);
-                    break;
-                case SculptMode.Smooth:
-                    ApplySmooth(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter);
-                    break;
-                case SculptMode.Inflate:
-                    ApplyInflate(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter);
-                    break;
-                case SculptMode.Flatten:
-                    ApplyFlatten(ctx.FirstSelectedMeshObject, affectedVertices, brushCenter);
-                    break;
+                var meshContext = model.GetMeshContext(meshIdx);
+                if (meshContext?.MeshObject == null) continue;
+
+                var meshObject = meshContext.MeshObject;
+
+                // ブラシ範囲内の頂点を収集
+                var affectedVertices = GetVerticesInBrushRadius(meshObject, brushCenter);
+                if (affectedVertices.Count == 0) continue;
+
+                // キャッシュ取得
+                Dictionary<int, HashSet<int>> adjacencyCache = null;
+                Dictionary<int, Vector3> vertexNormalsCache = null;
+                _adjacencyCachePerMesh?.TryGetValue(meshIdx, out adjacencyCache);
+                _vertexNormalsCachePerMesh?.TryGetValue(meshIdx, out vertexNormalsCache);
+
+                // モードに応じて変形
+                switch (Mode)
+                {
+                    case SculptMode.Draw:
+                        ApplyDraw(meshObject, affectedVertices, brushCenter, ray.direction, vertexNormalsCache);
+                        break;
+                    case SculptMode.Smooth:
+                        ApplySmooth(meshObject, affectedVertices, brushCenter, adjacencyCache);
+                        break;
+                    case SculptMode.Inflate:
+                        ApplyInflate(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
+                        break;
+                    case SculptMode.Flatten:
+                        ApplyFlatten(meshObject, affectedVertices, brushCenter, vertexNormalsCache);
+                        break;
+                }
+
+                anyAffected = true;
             }
 
-            // メッシュ更新
-            ctx.SyncMesh?.Invoke();
-            ctx.Repaint?.Invoke();
+            if (anyAffected)
+            {
+                // メッシュ更新
+                ctx.SyncMesh?.Invoke();
+                ctx.Repaint?.Invoke();
+            }
         }
 
         private Vector3 FindBrushCenter(ToolContext ctx, Ray ray)
         {
-            // メッシュの各面との交差を試みる
+            var model = ctx.Model;
             float closestDist = float.MaxValue;
             Vector3 closestPoint = ray.origin + ray.direction * 5f; // デフォルト
 
-            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
+            foreach (int meshIdx in model.SelectedMeshIndices)
             {
-                if (face.VertexIndices.Count < 3) continue;
+                var meshContext = model.GetMeshContext(meshIdx);
+                if (meshContext?.MeshObject == null) continue;
 
-                // 三角形に分割してレイキャスト
-                for (int i = 1; i < face.VertexIndices.Count - 1; i++)
+                var meshObject = meshContext.MeshObject;
+
+                foreach (var face in meshObject.Faces)
                 {
-                    Vector3 v0 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[0]].Position;
-                    Vector3 v1 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
-                    Vector3 v2 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i + 1]].Position;
+                    if (face.VertexIndices.Count < 3) continue;
 
-                    if (RayTriangleIntersection(ray, v0, v1, v2, out float t))
+                    for (int i = 1; i < face.VertexIndices.Count - 1; i++)
                     {
-                        if (t > 0 && t < closestDist)
+                        Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
+                        Vector3 v1 = meshObject.Vertices[face.VertexIndices[i]].Position;
+                        Vector3 v2 = meshObject.Vertices[face.VertexIndices[i + 1]].Position;
+
+                        if (RayTriangleIntersection(ray, v0, v1, v2, out float t))
                         {
-                            closestDist = t;
-                            closestPoint = ray.origin + ray.direction * t;
+                            if (t > 0 && t < closestDist)
+                            {
+                                closestDist = t;
+                                closestPoint = ray.origin + ray.direction * t;
+                            }
                         }
                     }
                 }
@@ -316,13 +419,15 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// Draw: 盛り上げ/盛り下げ
         /// </summary>
-        private void ApplyDraw(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3 viewDir)
+        private void ApplyDraw(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Vector3 viewDir, Dictionary<int, Vector3> vertexNormalsCache)
         {
+            if (vertexNormalsCache == null) return;
+
             // ブラシ中心の平均法線を計算
             Vector3 avgNormal = Vector3.zero;
             foreach (var (idx, weight) in vertices)
             {
-                if (_vertexNormalsCache.TryGetValue(idx, out var normal))
+                if (vertexNormalsCache.TryGetValue(idx, out var normal))
                 {
                     avgNormal += normal * weight;
                 }
@@ -347,14 +452,16 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// Smooth: 滑らかにする
         /// </summary>
-        private void ApplySmooth(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter)
+        private void ApplySmooth(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Dictionary<int, HashSet<int>> adjacencyCache)
         {
+            if (adjacencyCache == null) return;
+
             // 各頂点を隣接頂点の平均位置に近づける
             var newPositions = new Dictionary<int, Vector3>();
 
             foreach (var (idx, weight) in vertices)
             {
-                if (_adjacencyCache.TryGetValue(idx, out var neighbors) && neighbors.Count > 0)
+                if (adjacencyCache.TryGetValue(idx, out var neighbors) && neighbors.Count > 0)
                 {
                     Vector3 avgPos = Vector3.zero;
                     foreach (int neighbor in neighbors)
@@ -378,13 +485,15 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// Inflate: 膨らます
         /// </summary>
-        private void ApplyInflate(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter)
+        private void ApplyInflate(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Dictionary<int, Vector3> vertexNormalsCache)
         {
+            if (vertexNormalsCache == null) return;
+
             float direction = Invert ? -1f : 1f;
 
             foreach (var (idx, weight) in vertices)
             {
-                if (_vertexNormalsCache.TryGetValue(idx, out var normal))
+                if (vertexNormalsCache.TryGetValue(idx, out var normal))
                 {
                     Vector3 offset = normal * Strength * weight * direction;
                     meshObject.Vertices[idx].Position += offset;
@@ -395,9 +504,9 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// Flatten: 平らにする
         /// </summary>
-        private void ApplyFlatten(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter)
+        private void ApplyFlatten(MeshObject meshObject, List<(int index, float weight)> vertices, Vector3 brushCenter, Dictionary<int, Vector3> vertexNormalsCache)
         {
-            if (vertices.Count == 0) return;
+            if (vertices.Count == 0 || vertexNormalsCache == null) return;
 
             // ブラシ範囲内の頂点の平均位置と平均法線を計算
             Vector3 avgPos = Vector3.zero;
@@ -409,7 +518,7 @@ namespace Poly_Ling.Tools
                 avgPos += meshObject.Vertices[idx].Position * weight;
                 totalWeight += weight;
 
-                if (_vertexNormalsCache.TryGetValue(idx, out var normal))
+                if (vertexNormalsCache.TryGetValue(idx, out var normal))
                 {
                     avgNormal += normal * weight;
                 }
@@ -442,10 +551,10 @@ namespace Poly_Ling.Tools
         // キャッシュ構築
         // ================================================================
 
-        private void BuildCaches(MeshObject meshObject)
+        private void BuildCachesForMesh(int meshIdx, MeshObject meshObject)
         {
             // 隣接頂点キャッシュ
-            _adjacencyCache = new Dictionary<int, HashSet<int>>();
+            var adjacencyCache = new Dictionary<int, HashSet<int>>();
             foreach (var face in meshObject.Faces)
             {
                 int n = face.VertexIndices.Count;
@@ -454,16 +563,17 @@ namespace Poly_Ling.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    if (!_adjacencyCache.ContainsKey(v1)) _adjacencyCache[v1] = new HashSet<int>();
-                    if (!_adjacencyCache.ContainsKey(v2)) _adjacencyCache[v2] = new HashSet<int>();
+                    if (!adjacencyCache.ContainsKey(v1)) adjacencyCache[v1] = new HashSet<int>();
+                    if (!adjacencyCache.ContainsKey(v2)) adjacencyCache[v2] = new HashSet<int>();
 
-                    _adjacencyCache[v1].Add(v2);
-                    _adjacencyCache[v2].Add(v1);
+                    adjacencyCache[v1].Add(v2);
+                    adjacencyCache[v2].Add(v1);
                 }
             }
+            _adjacencyCachePerMesh[meshIdx] = adjacencyCache;
 
             // 頂点法線キャッシュ
-            _vertexNormalsCache = new Dictionary<int, Vector3>();
+            var vertexNormalsCache = new Dictionary<int, Vector3>();
             var vertexFaceNormals = new Dictionary<int, List<Vector3>>();
 
             foreach (var face in meshObject.Faces)
@@ -491,8 +601,9 @@ namespace Poly_Ling.Tools
                 {
                     avgNormal += n;
                 }
-                _vertexNormalsCache[kvp.Key] = avgNormal.normalized;
+                vertexNormalsCache[kvp.Key] = avgNormal.normalized;
             }
+            _vertexNormalsCachePerMesh[meshIdx] = vertexNormalsCache;
         }
 
         // ================================================================

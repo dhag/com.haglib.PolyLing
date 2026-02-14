@@ -1138,7 +1138,7 @@ public partial class PolyLing
     private void FinishBoxSelect(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt)
     {
         // カリング情報をGPUからCPUに読み戻す（背面カリング対応）
-        _unifiedAdapter?.ReadBackVertexFlags();
+        _unifiedAdapter?.BufferManager?.ReadBackVertexFlags();
 
         HashSet<int> oldSelection = new HashSet<int>(_selectionState.Vertices);
         SelectionSnapshot oldSnapshot = _selectionState?.CreateSnapshot();
@@ -1232,7 +1232,7 @@ public partial class PolyLing
                     // カリングチェック用にVisibilityProviderのMeshIndexを設定
                     if (_visibilityProvider != null)
                     {
-                        _visibilityProvider.MeshIndex = meshIdx;
+                        _visibilityProvider.MeshIndex = _unifiedAdapter?.ContextToUnifiedMeshIndex(meshIdx) ?? meshIdx;
                     }
 
                     for (int i = 0; i < targetMeshObject.VertexCount; i++)

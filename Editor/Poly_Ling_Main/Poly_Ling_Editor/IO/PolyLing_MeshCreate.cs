@@ -88,7 +88,7 @@ public partial class PolyLing
         int insertIndex = _meshContextList.Count;
 
         // ModelContext API経由でリスト操作
-        meshContext.MaterialOwner = _model;
+        meshContext.ParentModelContext = _model;
         _model.Add(meshContext);
         SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();
@@ -268,7 +268,7 @@ public partial class PolyLing
         var oldSelectedIndices = _model.CaptureAllSelectedIndices();
         int insertIndex = _meshContextList.Count;
 
-        meshContext.MaterialOwner = _model;
+        meshContext.ParentModelContext = _model;
         _model.Add(meshContext);
         SetSelectedIndex(_meshContextList.Count - 1);
         InitVertexOffsets();

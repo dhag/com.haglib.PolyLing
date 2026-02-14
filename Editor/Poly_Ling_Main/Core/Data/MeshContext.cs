@@ -635,28 +635,28 @@ namespace Poly_Ling.Data
         // MeshContextはMaterialOwner経由でアクセス
 
         /// <summary>親ModelContextへの参照（マテリアル取得用）- 必須</summary>
-        internal Poly_Ling.Model.ModelContext MaterialOwner { get; set; }
+        internal Poly_Ling.Model.ModelContext ParentModelContext { get; set; }
 
         /// <summary>マテリアルリスト（ModelContextに委譲）</summary>
         public List<Material> Materials
         {
             get
             {
-                if (MaterialOwner == null)
+                if (ParentModelContext == null)
                 {
                     Debug.LogError("[MeshContext] MaterialOwnerが設定されていません。ModelContext.Add()で追加してください。");
                     return new List<Material> { null };
                 }
-                return MaterialOwner.Materials;
+                return ParentModelContext.Materials;
             }
             set
             {
-                if (MaterialOwner == null)
+                if (ParentModelContext == null)
                 {
                     Debug.LogError("[MeshContext] MaterialOwnerが設定されていません。");
                     return;
                 }
-                MaterialOwner.Materials = value;
+                ParentModelContext.Materials = value;
             }
         }
 
@@ -665,29 +665,29 @@ namespace Poly_Ling.Data
         {
             get
             {
-                if (MaterialOwner == null) return 0;
-                return MaterialOwner.CurrentMaterialIndex;
+                if (ParentModelContext == null) return 0;
+                return ParentModelContext.CurrentMaterialIndex;
             }
             set
             {
-                if (MaterialOwner == null)
+                if (ParentModelContext == null)
                 {
                     Debug.LogError("[MeshContext] MaterialOwnerが設定されていません。");
                     return;
                 }
-                MaterialOwner.CurrentMaterialIndex = value;
+                ParentModelContext.CurrentMaterialIndex = value;
             }
         }
 
         /// <summary>サブメッシュ数</summary>
-        public int SubMeshCount => MaterialOwner?.Materials?.Count ?? 1;
+        public int SubMeshCount => ParentModelContext?.Materials?.Count ?? 1;
 
         /// <summary>現在選択中のマテリアルを取得</summary>
         public Material GetCurrentMaterial()
         {
-            if (MaterialOwner == null) return null;
-            var mats = MaterialOwner.Materials;
-            int idx = MaterialOwner.CurrentMaterialIndex;
+            if (ParentModelContext == null) return null;
+            var mats = ParentModelContext.Materials;
+            int idx = ParentModelContext.CurrentMaterialIndex;
             if (idx >= 0 && idx < mats.Count)
                 return mats[idx];
             return null;
@@ -696,8 +696,8 @@ namespace Poly_Ling.Data
         /// <summary>指定スロットのマテリアルを取得</summary>
         public Material GetMaterial(int index)
         {
-            if (MaterialOwner == null) return null;
-            var mats = MaterialOwner.Materials;
+            if (ParentModelContext == null) return null;
+            var mats = ParentModelContext.Materials;
             if (index >= 0 && index < mats.Count)
                 return mats[index];
             return null;

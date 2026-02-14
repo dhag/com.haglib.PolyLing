@@ -627,8 +627,8 @@ public partial class PolyLing : EditorWindow
     {
         if (meshContext == null) return;
 
-        // MaterialOwner を設定（Materials 委譲用）
-        meshContext.MaterialOwner = _model;
+        // ParentModelContext を設定（Materials 委譲用）
+        meshContext.ParentModelContext = _model;
 
         // 変更前の状態を保存
         var oldSelectedIndices = _model.CaptureAllSelectedIndices();
@@ -692,7 +692,7 @@ public partial class PolyLing : EditorWindow
             if (meshContext == null) continue;
 
             // MaterialOwner を設定（Materials 委譲用）
-            meshContext.MaterialOwner = _model;
+            meshContext.ParentModelContext = _model;
 
             // ModelContext API経由でリスト操作
             int insertIndex = _model.Add(meshContext);
@@ -932,7 +932,7 @@ public partial class PolyLing : EditorWindow
         foreach (var meshContext in newMeshContexts)
         {
             if (meshContext == null) continue;
-            meshContext.MaterialOwner = _model;
+            meshContext.ParentModelContext = _model;
             int insertIndex = _model.Add(meshContext);
             addedSnapshots.Add((insertIndex, MeshContextSnapshot.Capture(meshContext)));
         }
@@ -1095,7 +1095,7 @@ public partial class PolyLing : EditorWindow
             },
             Materials = new List<Material>(original.Materials ?? new List<Material> { null }),
             CurrentMaterialIndex = original.CurrentMaterialIndex,
-            MaterialOwner = _model
+            ParentModelContext = _model
         };
 
         int insertIndex = index + 1;
