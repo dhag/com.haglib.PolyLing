@@ -249,10 +249,7 @@ namespace Poly_Ling.Tools
 
             ctx.SyncMesh?.Invoke();
 
-            if (ctx.UndoController != null)
-            {
-                ctx.UndoController.MeshUndoContext.MeshObject = ctx.FirstSelectedMeshObject;
-            }
+            // MeshObject/TargetMesh/OriginalPositions は MeshContextIndex 経由で自動解決
         }
 
         private void EndDrag(ToolContext ctx)

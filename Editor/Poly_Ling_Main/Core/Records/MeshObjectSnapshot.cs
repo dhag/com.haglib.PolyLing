@@ -24,24 +24,8 @@ namespace Poly_Ling.UndoSystem
         public MeshObjectSnapshot Before;
         public MeshObjectSnapshot After;
 
-        // ================================================================
-        // 拡張選択復元用のSelectionState参照
-        // ================================================================
-        //
-        // 【目的】
-        // Undo/Redo時にExtendedSelection（Edge/Line選択）を復元するため
-        // 
-        // 【注意】
-        // - SimpleMeshFactoryの_selectionStateと同じインスタンスを指す
-        // - SimpleMeshFactoryが破棄されると無効になるが、
-        //   通常はエディタウィンドウと同じライフサイクル
-        // - nullの場合は従来動作（Edge/Line選択は復元されない）
-        //
         private SelectionState _selectionStateRef;
 
-        /// <summary>
-        /// コンストラクタ（従来版・後方互換）
-        /// </summary>
         public MeshSnapshotRecord(MeshObjectSnapshot before, MeshObjectSnapshot after)
         {
             Before = before;
@@ -49,17 +33,6 @@ namespace Poly_Ling.UndoSystem
             _selectionStateRef = null;
         }
 
-        /// <summary>
-        /// コンストラクタ（拡張選択対応版）
-        /// 
-        /// 【フェーズ1追加】
-        /// </summary>
-        /// <param name="before">変更前スナップショット</param>
-        /// <param name="after">変更後スナップショット</param>
-        /// <param name="selectionState">
-        /// 拡張選択状態への参照。Undo/Redo時の復元先。
-        /// トポロジー変更ツール（ベベル、押し出し等）は必ずこれを渡すこと。
-        /// </param>
         public MeshSnapshotRecord(
             MeshObjectSnapshot before,
             MeshObjectSnapshot after,
@@ -72,16 +45,18 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(MeshUndoContext ctx)
         {
-            // 【フェーズ1変更】拡張選択対応版ApplyToを呼び出し
-            Before?.ApplyTo(ctx, _selectionStateRef);
-            ctx.ApplyToMesh();
+            if (_selectionStateRef != null)
+                Before?.ApplyTo(ctx, _selectionStateRef);
+            else
+                Before?.ApplyTo(ctx);
         }
 
         public override void Redo(MeshUndoContext ctx)
         {
-            // 【フェーズ1変更】拡張選択対応版ApplyToを呼び出し
-            After?.ApplyTo(ctx, _selectionStateRef);
-            ctx.ApplyToMesh();
+            if (_selectionStateRef != null)
+                After?.ApplyTo(ctx, _selectionStateRef);
+            else
+                After?.ApplyTo(ctx);
         }
     }
 
@@ -132,6 +107,74 @@ namespace Poly_Ling.UndoSystem
         // - Lines: HashSet<int>         ← 新たに保存対象
         //
         public SelectionSnapshot ExtendedSelection;
+
+        /// <summary>
+        /// MeshContext + MeshUndoContext からスナップショットを作成
+        /// </summary>
+        public static MeshObjectSnapshot Capture(MeshContext mc, MeshUndoContext ctx)
+        {
+            return new MeshObjectSnapshot
+            {
+                MeshObject = mc.MeshObject?.Clone(),
+                SelectedVertices = new HashSet<int>(ctx.SelectedVertices),
+                SelectedFaces = new HashSet<int>(),
+                Materials = ctx.Materials != null ? new List<Material>(ctx.Materials) : new List<Material> { null },
+                CurrentMaterialIndex = ctx.CurrentMaterialIndex,
+                DefaultMaterials = ctx.DefaultMaterials != null ? new List<Material>(ctx.DefaultMaterials) : new List<Material> { null },
+                DefaultCurrentMaterialIndex = ctx.DefaultCurrentMaterialIndex,
+                AutoSetDefaultMaterials = ctx.AutoSetDefaultMaterials
+            };
+        }
+
+        /// <summary>
+        /// MeshContext + MeshUndoContext + SelectionState からスナップショットを作成
+        /// </summary>
+        public static MeshObjectSnapshot Capture(MeshContext mc, MeshUndoContext ctx, SelectionState selectionState)
+        {
+            var snapshot = Capture(mc, ctx);
+
+            if (selectionState != null)
+            {
+                snapshot.ExtendedSelection = selectionState.CreateSnapshot();
+                snapshot.SelectedFaces = new HashSet<int>(snapshot.ExtendedSelection.Faces);
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// スナップショットを MeshContext + MeshUndoContext に適用
+        /// </summary>
+        public void ApplyTo(MeshContext mc, MeshUndoContext ctx, SelectionState selectionState)
+        {
+            // メッシュデータ → MeshContext
+            mc.MeshObject = MeshObject?.Clone();
+
+            // 選択・マテリアル → MeshUndoContext
+            ctx.SelectedVertices = new HashSet<int>(SelectedVertices);
+
+            if (Materials != null)
+            {
+                ctx.Materials = new List<Material>(Materials);
+                ctx.CurrentMaterialIndex = CurrentMaterialIndex;
+            }
+
+            if (DefaultMaterials != null)
+            {
+                ctx.DefaultMaterials = new List<Material>(DefaultMaterials);
+            }
+            ctx.DefaultCurrentMaterialIndex = DefaultCurrentMaterialIndex;
+            ctx.AutoSetDefaultMaterials = AutoSetDefaultMaterials;
+
+            if (ExtendedSelection != null && selectionState != null)
+            {
+                selectionState.RestoreFromSnapshot(ExtendedSelection);
+            }
+        }
+
+        // ================================================================
+        // 後方互換: MeshUndoContext のみを取るオーバーロード
+        // ================================================================
 
         /// <summary>
         /// コンテキストからスナップショットを作成（従来版・後方互換）

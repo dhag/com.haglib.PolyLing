@@ -20,25 +20,82 @@ namespace Poly_Ling.UndoSystem
     /// </summary>
     public class MeshUndoContext
     {
-        // === メッシュデータ（新構造） ===
+        // === メッシュコンテキスト解決 ===
 
-        /// <summary>メッシュデータ本体</summary>
-        public MeshObject MeshObject;
+        /// <summary>現在選択中のメッシュを自動解決（ModelContextの選択リストから）</summary>
+        public MeshContext ResolvedMeshContext => MaterialOwner?.FirstSelectedMeshContext;
+
+        // === メッシュデータ（委譲プロパティ） ===
+
+        // fallbackフィールド: ResolvedMeshContextがnullの間（初期化中等）に使用
+        private MeshObject _fallbackMeshObject = new MeshObject();
+        private Mesh _fallbackTargetMesh;
+        private Vector3[] _fallbackOriginalPositions;
+
+        /// <summary>メッシュデータ本体（ResolvedMeshContext経由で自動解決）</summary>
+        public MeshObject MeshObject
+        {
+            get
+            {
+                var mc = ResolvedMeshContext;
+                return mc != null ? mc.MeshObject : _fallbackMeshObject;
+            }
+            set
+            {
+                var mc = ResolvedMeshContext;
+                if (mc != null)
+                    mc.MeshObject = value;
+                else
+                    _fallbackMeshObject = value;
+            }
+        }
+
+        /// <summary>実際のMeshオブジェクト（ResolvedMeshContext経由で自動解決）</summary>
+        public Mesh TargetMesh
+        {
+            get
+            {
+                var mc = ResolvedMeshContext;
+                return mc != null ? mc.UnityMesh : _fallbackTargetMesh;
+            }
+            set
+            {
+                var mc = ResolvedMeshContext;
+                if (mc != null)
+                    mc.UnityMesh = value;
+                else
+                    _fallbackTargetMesh = value;
+            }
+        }
+
+        /// <summary>元の頂点位置（ResolvedMeshContext経由で自動解決）</summary>
+        public Vector3[] OriginalPositions
+        {
+            get
+            {
+                var mc = ResolvedMeshContext;
+                return mc != null ? mc.OriginalPositions : _fallbackOriginalPositions;
+            }
+            set
+            {
+                var mc = ResolvedMeshContext;
+                if (mc != null)
+                    mc.OriginalPositions = value;
+                else
+                    _fallbackOriginalPositions = value;
+            }
+        }
 
         // === 選択状態 ===
 
         /// <summary>選択中の頂点インデックス</summary>
         public HashSet<int> SelectedVertices;
 
-        // === 元データ参照（リセット用） ===
+        // === 元データ参照（委譲プロパティに移行済み） ===
+        // OriginalPositions は上記の委譲プロパティとして定義済み
 
-        /// <summary>元の頂点位置（リセット用）</summary>
-        public Vector3[] OriginalPositions;
-
-        // === Unity UnityMesh 参照 ===
-
-        /// <summary>実際のMeshオブジェクト</summary>
-        public Mesh TargetMesh;
+        // === Unity UnityMesh 参照（委譲プロパティに移行済み） ===
+        // TargetMesh は上記の委譲プロパティとして定義済み
 
         // === WorkPlane参照（選択連動Undo用） ===
 
@@ -157,6 +214,13 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public List<int> DirtyMeshIndices { get; } = new List<int>();
 
+        /// <summary>
+        /// MultiMeshVertexMoveRecord.Undo/Redo時に保留された頂点移動エントリ。
+        /// Record内ではメッシュ解決を行わず、OnUndoRedoPerformedで適用される。
+        /// 処理後にnullに戻される。
+        /// </summary>
+        public MeshMoveEntry[] PendingMeshMoveEntries;
+
         // === コンストラクタ ===
 
         public MeshUndoContext()
@@ -205,7 +269,7 @@ namespace Poly_Ling.UndoSystem
             TargetMesh.RecalculateBounds();
 
             // 一時メッシュを破棄
-            Object.DestroyImmediate(newMesh);
+            UnityEngine.Object.DestroyImmediate(newMesh);
         }
 
         /// <summary>
@@ -222,7 +286,7 @@ namespace Poly_Ling.UndoSystem
             TargetMesh.RecalculateNormals();
             TargetMesh.RecalculateBounds();
 
-            Object.DestroyImmediate(newMesh);
+            UnityEngine.Object.DestroyImmediate(newMesh);
         }
 
         // === 頂点操作ヘルパー ===

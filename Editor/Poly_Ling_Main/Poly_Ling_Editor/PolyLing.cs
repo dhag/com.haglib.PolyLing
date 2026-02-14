@@ -483,15 +483,6 @@ public partial class PolyLing : EditorWindow
                 _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
                 _unifiedAdapter?.RequestNormal();
 
-                // MeshUndoContextを再設定（UnityMeshが再構築されるため参照が変わる）
-                var meshContext = _model?.FirstSelectedMeshContext;
-                if (meshContext != null && _undoController != null)
-                {
-                    _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-                    _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-                    _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
-                }
-
                 // トポロジー更新
                 UpdateTopology();
             };
@@ -728,8 +719,44 @@ public partial class PolyLing : EditorWindow
 
             if (ctx.DirtyMeshIndices.Count > 0)
             {
-                // マルチメッシュ操作: 全メッシュを対等にSyncMeshFromData
+                // マルチメッシュ操作: PendingMeshMoveEntriesの位置データを適用後、SyncMeshFromData
                 int currentIndex = _model.FirstSelectedIndex;
+
+                // PendingMeshMoveEntries がある場合、頂点位置を適用
+                if (ctx.PendingMeshMoveEntries != null)
+                {
+                    foreach (var entry in ctx.PendingMeshMoveEntries)
+                    {
+                        var mc = _model.GetMeshContext(entry.MeshContextIndex);
+                        if (mc?.MeshObject == null) continue;
+
+                        var meshObject = mc.MeshObject;
+                        var positions = entry.NewPositions;
+
+                        for (int i = 0; i < entry.Indices.Length; i++)
+                        {
+                            int idx = entry.Indices[i];
+                            if (idx >= 0 && idx < meshObject.VertexCount)
+                            {
+                                meshObject.Vertices[idx].Position = positions[i];
+                            }
+                        }
+                        meshObject.InvalidatePositionCache();
+
+                        if (mc.OriginalPositions != null)
+                        {
+                            for (int i = 0; i < entry.Indices.Length; i++)
+                            {
+                                int idx = entry.Indices[i];
+                                if (idx >= 0 && idx < mc.OriginalPositions.Length)
+                                {
+                                    mc.OriginalPositions[idx] = meshObject.Vertices[idx].Position;
+                                }
+                            }
+                        }
+                    }
+                    ctx.PendingMeshMoveEntries = null;
+                }
 
                 foreach (var idx in ctx.DirtyMeshIndices)
                 {
@@ -738,7 +765,6 @@ public partial class PolyLing : EditorWindow
 
                     SyncMeshFromData(mc);
 
-                    // カレントメッシュの場合はctx.MeshObject同期 + オフセット更新
                     if (idx == currentIndex)
                     {
                         ctx.MeshObject = mc.MeshObject;
@@ -864,15 +890,6 @@ public partial class PolyLing : EditorWindow
         var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext != null)
         {
-            // MeshContextに必要な情報だけを設定
-            if (_undoController != null)
-            {
-                _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-                _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-                _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
-                // Materials は ModelContext に集約済み
-            }
-
             // Debug.Log($"[OnMeshListChanged] Before InitVertexOffsets: _cameraTarget={_cameraTarget}");
             InitVertexOffsets(updateCamera: false);
             // Debug.Log($"[OnMeshListChanged] After InitVertexOffsets: _cameraTarget={_cameraTarget}");
@@ -883,14 +900,6 @@ public partial class PolyLing : EditorWindow
             var fallbackMeshContext = _model.FirstSelectedMeshContext;
             if (fallbackMeshContext != null)
             {
-                if (_undoController != null)
-                {
-                    _undoController.MeshUndoContext.MeshObject = fallbackMeshContext.MeshObject;
-                    _undoController.MeshUndoContext.TargetMesh = fallbackMeshContext.UnityMesh;
-                    _undoController.MeshUndoContext.OriginalPositions = fallbackMeshContext.OriginalPositions;
-                    // Materials は ModelContext に集約済み
-                }
-
                 InitVertexOffsets(updateCamera: false);
             }
         }

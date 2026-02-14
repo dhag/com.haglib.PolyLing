@@ -1053,9 +1053,6 @@ public partial class PolyLing
 
         // 参照を共有（Cloneしない）- AddFaceToolなどで直接変更されるため
         // 注意: SetMeshObjectは呼ばない（_vertexEditStack.Clear()を避けるため）
-        _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-        _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-        _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
         // Materials は ModelContext に集約済み
         // 選択状態を同期
         _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);

@@ -702,6 +702,81 @@ namespace Poly_Ling.Data
                 return mats[index];
             return null;
         }
+
+        // ================================================================
+        // メッシュ操作メソッド（UndoRecord から直接呼び出される）
+        // ================================================================
+
+        /// <summary>頂点数</summary>
+        public int VertexCount => MeshObject?.VertexCount ?? 0;
+
+        /// <summary>面数</summary>
+        public int FaceCount => MeshObject?.FaceCount ?? 0;
+
+        /// <summary>頂点位置を取得</summary>
+        public Vector3 GetVertexPosition(int index)
+        {
+            if (MeshObject == null || index < 0 || index >= MeshObject.VertexCount)
+                return Vector3.zero;
+            return MeshObject.Vertices[index].Position;
+        }
+
+        /// <summary>頂点位置を設定</summary>
+        public void SetVertexPosition(int index, Vector3 position)
+        {
+            if (MeshObject == null || index < 0 || index >= MeshObject.VertexCount)
+                return;
+            MeshObject.Vertices[index].Position = position;
+            MeshObject.InvalidatePositionCache();
+        }
+
+        /// <summary>全頂点位置を配列で取得（Clone）</summary>
+        public Vector3[] GetAllPositions()
+        {
+            if (MeshObject == null) return new Vector3[0];
+            return (Vector3[])MeshObject.Positions.Clone();
+        }
+
+        /// <summary>全頂点位置を配列で設定</summary>
+        public void SetAllPositions(Vector3[] positions)
+        {
+            if (MeshObject == null) return;
+            MeshObject.SetPositions(positions);
+        }
+
+        /// <summary>
+        /// MeshObjectの全データをUnityMeshに適用
+        /// </summary>
+        public void ApplyToMesh()
+        {
+            if (UnityMesh == null || MeshObject == null) return;
+
+            var newMesh = MeshObject.ToUnityMeshShared();
+
+            UnityMesh.Clear();
+            UnityMesh.vertices = newMesh.vertices;
+            UnityMesh.triangles = newMesh.triangles;
+            UnityMesh.uv = newMesh.uv;
+            UnityMesh.normals = newMesh.normals;
+            UnityMesh.RecalculateBounds();
+
+            UnityEngine.Object.DestroyImmediate(newMesh);
+        }
+
+        /// <summary>
+        /// 頂点位置のみをUnityMeshに適用（高速）
+        /// </summary>
+        public void ApplyVertexPositionsToMesh()
+        {
+            if (UnityMesh == null || MeshObject == null) return;
+
+            var newMesh = MeshObject.ToUnityMeshShared();
+            UnityMesh.vertices = newMesh.vertices;
+            UnityMesh.RecalculateNormals();
+            UnityMesh.RecalculateBounds();
+
+            UnityEngine.Object.DestroyImmediate(newMesh);
+        }
     }
 
     // ================================================================

@@ -286,9 +286,7 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null)
             {
-                ctx.UndoController.MeshUndoContext.MeshObject = ctx.FirstSelectedMeshObject;
-                // 【フェーズ1】SelectionStateを渡してEdge選択も保存
-                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
             }
 
             _dragAmount = Amount;
@@ -317,9 +315,7 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                ctx.UndoController.MeshUndoContext.MeshObject = ctx.FirstSelectedMeshObject;
-                // 【フェーズ1】SelectionStateを渡してEdge選択も保存・復元
-                MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 MeshSnapshotRecord record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
                 ctx.UndoController.VertexEditStack.Record(record, "Bevel Edges");

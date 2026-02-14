@@ -4,7 +4,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -58,11 +57,7 @@ namespace Poly_Ling.UndoSystem
         public Vector3[] OldPositions;
         public Vector3[] NewPositions;
 
-        /// <summary>
-        /// 頂点移動はLevel 4（位置のみ更新）で済む
-        /// </summary>
         public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Position;
-        //public Vector3[] NewPositions;
 
         public VertexMoveRecord(int[] indices, Vector3[] oldPositions, Vector3[] newPositions)
         {
@@ -73,13 +68,11 @@ namespace Poly_Ling.UndoSystem
 
         public override void Undo(MeshUndoContext ctx)
         {
-            // Debug.Log($"[VertexMoveRecord.Undo] START. Indices.Length={Indices.Length}, ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
             for (int i = 0; i < Indices.Length; i++)
             {
                 ctx.SetVertexPosition(Indices[i], OldPositions[i]);
             }
             ctx.ApplyVertexPositionsToMesh();
-            // Debug.Log($"[VertexMoveRecord.Undo] END. ctx.SelectedVertices.Count={ctx.SelectedVertices?.Count ?? -1}");
         }
 
         public override void Redo(MeshUndoContext ctx)
@@ -94,18 +87,14 @@ namespace Poly_Ling.UndoSystem
 
     /// <summary>
     /// 頂点グループ移動記録（グループ化された頂点用）
-    /// 新構造ではVertexがグループに相当
     /// </summary>
     public class VertexGroupMoveRecord : MeshUndoRecord
     {
-        public List<int>[] Groups;  // グループごとの頂点インデックス
+        public List<int>[] Groups;
         public Vector3[] OldOffsets;
         public Vector3[] NewOffsets;
-        public Vector3[] OriginalPositions;  // 元の頂点位置
+        public Vector3[] OriginalPositions;
 
-        /// <summary>
-        /// 頂点グループ移動もLevel 4（位置のみ更新）で済む
-        /// </summary>
         public override MeshUpdateLevel RequiredUpdateLevel => MeshUpdateLevel.Position;
 
         public VertexGroupMoveRecord(
@@ -147,12 +136,9 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // 頂点UV/法線変更記録
+    // 頂点UV変更記録
     // ============================================================
 
-    /// <summary>
-    /// 頂点UV変更記録
-    /// </summary>
     public class VertexUVChangeRecord : MeshUndoRecord
     {
         public int VertexIndex;
@@ -195,9 +181,6 @@ namespace Poly_Ling.UndoSystem
     // ボーンウェイト変更記録
     // ============================================================
 
-    /// <summary>
-    /// ボーンウェイト変更記録
-    /// </summary>
     public class BoneWeightChangeRecord : MeshUndoRecord
     {
         public int[] Indices;
@@ -233,7 +216,6 @@ namespace Poly_Ling.UndoSystem
                     ctx.MeshObject.Vertices[idx].BoneWeight = weights[i];
                 }
             }
-            // スキニングデータ変更はメッシュ再構築が必要
             ctx.ApplyToMesh();
         }
     }
@@ -242,9 +224,6 @@ namespace Poly_Ling.UndoSystem
     // 複数メッシュ頂点移動記録
     // ============================================================
 
-    /// <summary>
-    /// メッシュ頂点移動エントリ（全メッシュ対等）
-    /// </summary>
     public struct MeshMoveEntry
     {
         public int MeshContextIndex;
@@ -255,7 +234,8 @@ namespace Poly_Ling.UndoSystem
 
     /// <summary>
     /// 複数メッシュ対応の頂点移動記録
-    /// 全メッシュを対等に扱う。プライマリ/セカンダリの区別なし。
+    /// Record内ではメッシュ解決せず、PendingMeshMoveEntriesに格納して
+    /// OnUndoRedoPerformedでアプリケーション層が解決・適用する。
     /// </summary>
     public class MultiMeshVertexMoveRecord : MeshUndoRecord
     {
@@ -283,48 +263,29 @@ namespace Poly_Ling.UndoSystem
             if (Entries == null || Entries.Length == 0)
                 return;
 
-            var model = ctx.MaterialOwner;
-            if (model == null)
-                return;
+            ctx.PendingMeshMoveEntries = isUndo ? FlipEntries(Entries) : Entries;
 
             ctx.DirtyMeshIndices.Clear();
-
             for (int e = 0; e < Entries.Length; e++)
             {
-                var entry = Entries[e];
-                var meshContext = model.GetMeshContext(entry.MeshContextIndex);
-                if (meshContext?.MeshObject == null)
-                    continue;
-
-                var meshObject = meshContext.MeshObject;
-                var positions = isUndo ? entry.OldPositions : entry.NewPositions;
-
-                for (int i = 0; i < entry.Indices.Length; i++)
-                {
-                    int idx = entry.Indices[i];
-                    if (idx >= 0 && idx < meshObject.VertexCount)
-                    {
-                        meshObject.Vertices[idx].Position = positions[i];
-                    }
-                }
-                meshObject.InvalidatePositionCache();
-
-                // OriginalPositions更新
-                if (meshContext.OriginalPositions != null)
-                {
-                    for (int i = 0; i < entry.Indices.Length; i++)
-                    {
-                        int idx = entry.Indices[i];
-                        if (idx >= 0 && idx < meshContext.OriginalPositions.Length)
-                        {
-                            meshContext.OriginalPositions[idx] = meshObject.Vertices[idx].Position;
-                        }
-                    }
-                }
-
-                ctx.DirtyMeshIndices.Add(entry.MeshContextIndex);
+                ctx.DirtyMeshIndices.Add(Entries[e].MeshContextIndex);
             }
         }
-    }
 
+        private static MeshMoveEntry[] FlipEntries(MeshMoveEntry[] entries)
+        {
+            var flipped = new MeshMoveEntry[entries.Length];
+            for (int i = 0; i < entries.Length; i++)
+            {
+                flipped[i] = new MeshMoveEntry
+                {
+                    MeshContextIndex = entries[i].MeshContextIndex,
+                    Indices = entries[i].Indices,
+                    OldPositions = entries[i].NewPositions,
+                    NewPositions = entries[i].OldPositions
+                };
+            }
+            return flipped;
+        }
+    }
 }

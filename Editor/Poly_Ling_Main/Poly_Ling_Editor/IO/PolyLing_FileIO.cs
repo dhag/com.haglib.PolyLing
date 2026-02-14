@@ -228,9 +228,6 @@ public partial class PolyLing
             // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
             if (_undoController != null)
             {
-                _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-                _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-                _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
                 _undoController.MeshUndoContext.SelectedVertices = _selectionState.Vertices;
             }
         }

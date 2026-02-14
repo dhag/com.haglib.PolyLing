@@ -97,9 +97,6 @@ public partial class PolyLing
         // MeshContextに必要な情報だけを設定
         if (_undoController != null)
         {
-            _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-            _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-            _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュコンテキスト追加）
@@ -130,7 +127,6 @@ public partial class PolyLing
         MeshObjectSnapshot snapshotBefore = null;
         if (_undoController != null)
         {
-            _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
             snapshotBefore = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
         }
 
@@ -178,7 +174,6 @@ public partial class PolyLing
         // ================================================================
         if (_undoController != null && snapshotBefore != null)
         {
-            _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
             MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(_undoController.MeshUndoContext);
 
             // 直接VertexEditStackに記録（RecordTopologyChangeのEndGroup副作用を回避）
@@ -195,8 +190,7 @@ public partial class PolyLing
         // MeshContextは既に上で設定済み、追加で必要な設定のみ行う
         if (_undoController != null)
         {
-            _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-            _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
+            // TargetMesh/OriginalPositions are auto-resolved via MeshContextIndex
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
         }
 
@@ -283,9 +277,6 @@ public partial class PolyLing
         // MeshContextに必要な情報だけを設定
         if (_undoController != null)
         {
-            _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-            _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-            _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト追加）
@@ -345,9 +336,6 @@ public partial class PolyLing
             // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
             if (_undoController != null)
             {
-                _undoController.MeshUndoContext.MeshObject = newMeshContext.MeshObject;
-                _undoController.MeshUndoContext.TargetMesh = newMeshContext.UnityMesh;
-                _undoController.MeshUndoContext.OriginalPositions = newMeshContext.OriginalPositions;
                 _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
             }
         }

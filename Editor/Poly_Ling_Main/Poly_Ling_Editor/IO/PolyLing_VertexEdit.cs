@@ -751,11 +751,6 @@ public partial class PolyLing
                 _groupOffsets[i] = Vector3.zero;
         }
 
-        if (_undoController != null)
-        {
-            _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-        }
-
         Repaint();
     }
 

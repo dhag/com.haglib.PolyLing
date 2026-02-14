@@ -612,9 +612,6 @@ public partial class PolyLing
         if (_undoController != null && _meshContextList.Count > 0)
         {
             var firstMeshContext = _meshContextList[_selectedIndex];
-            _undoController.MeshUndoContext.MeshObject = firstMeshContext.MeshObject;
-            _undoController.MeshUndoContext.TargetMesh = firstMeshContext.UnityMesh;
-            _undoController.MeshUndoContext.OriginalPositions = firstMeshContext.OriginalPositions;
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト置換）
@@ -1010,9 +1007,6 @@ public partial class PolyLing
         // MeshContextに必要な情報だけを設定
         if (_undoController != null)
         {
-            _undoController.MeshUndoContext.MeshObject = meshContext.MeshObject;
-            _undoController.MeshUndoContext.TargetMesh = meshContext.UnityMesh;
-            _undoController.MeshUndoContext.OriginalPositions = meshContext.OriginalPositions;
             _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>();
 
             // Undo記録（メッシュリスト追加）
