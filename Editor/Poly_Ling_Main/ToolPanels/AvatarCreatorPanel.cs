@@ -76,7 +76,7 @@ namespace Poly_Ling.MISC
         // Open
         // ================================================================
 
-        //[MenuItem("Poly_Ling/Tools/Avatar Creator...")]
+        [MenuItem("Tools/Poly_Ling/Utility/Avatar Creator...")]
         public static void ShowWindow()
         {
             var window = GetWindow<AvatarCreatorPanel>();

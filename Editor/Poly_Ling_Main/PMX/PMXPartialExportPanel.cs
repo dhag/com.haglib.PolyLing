@@ -139,7 +139,7 @@ namespace Poly_Ling.PMX
         // Open
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/PMX Partial Export")]
+        [MenuItem("Tools/Poly_Ling/debug/PMX Partial Export")]
         public static void ShowWindow()
         {
             Open(null);

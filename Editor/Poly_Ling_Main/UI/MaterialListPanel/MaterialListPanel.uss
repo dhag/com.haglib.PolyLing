@@ -1,0 +1,249 @@
+/* MaterialListPanel.uss
+   マテリアルリストパネルのスタイル定義
+*/
+
+/* ================================================================
+   ルート
+   ================================================================ */
+
+.material-panel-root {
+    flex-grow: 1;
+    padding: 4px;
+}
+
+/* ================================================================
+   ヘッダー
+   ================================================================ */
+
+.header {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px;
+    margin-bottom: 4px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+}
+
+.header-title {
+    -unity-font-style: bold;
+    font-size: 12px;
+    margin-right: 8px;
+}
+
+.header-count {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* ================================================================
+   マテリアルリスト
+   ================================================================ */
+
+.material-list {
+    flex-grow: 1;
+    min-height: 60px;
+    max-height: 300px;
+    margin: 4px 0;
+    padding: 2px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.material-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 2px 4px;
+    margin-bottom: 1px;
+    border-radius: 2px;
+    min-height: 22px;
+}
+
+.material-row:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.material-row-selected {
+    background-color: rgba(66, 165, 245, 0.2);
+}
+
+.material-select-btn {
+    width: 22px;
+    height: 20px;
+    margin: 0 2px 0 0;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+    font-size: 12px;
+    -unity-text-align: middle-center;
+}
+
+.material-select-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.material-index-label {
+    width: 26px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    -unity-text-align: middle-right;
+    margin-right: 4px;
+}
+
+.material-field {
+    flex-grow: 1;
+    margin: 0 2px;
+    min-width: 0;
+}
+
+.material-delete-btn {
+    width: 22px;
+    height: 20px;
+    margin: 0 0 0 2px;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+    font-size: 12px;
+    color: rgba(239, 83, 80, 0.8);
+    -unity-text-align: middle-center;
+}
+
+.material-delete-btn:hover {
+    background-color: rgba(239, 83, 80, 0.2);
+    border-radius: 2px;
+}
+
+.material-delete-btn:disabled {
+    color: rgba(255, 255, 255, 0.2);
+}
+
+/* ================================================================
+   追加ボタン
+   ================================================================ */
+
+.btn-add {
+    height: 24px;
+    margin: 4px 0;
+    font-size: 12px;
+}
+
+/* ================================================================
+   ドロップエリア
+   ================================================================ */
+
+.drop-area {
+    min-height: 36px;
+    margin: 4px 0;
+    padding: 4px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    background-color: rgba(0, 0, 0, 0.08);
+    justify-content: center;
+    align-items: center;
+}
+
+.drop-area-highlight {
+    border-color: rgba(66, 165, 245, 0.6);
+    background-color: rgba(66, 165, 245, 0.1);
+}
+
+.drop-area-text {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    -unity-text-align: middle-center;
+}
+
+.drop-area-sub {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.3);
+    -unity-text-align: middle-center;
+}
+
+/* ================================================================
+   カレント表示
+   ================================================================ */
+
+.current-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 2px 4px;
+}
+
+/* ================================================================
+   デフォルト設定
+   ================================================================ */
+
+.default-section {
+    margin: 4px 0;
+    padding: 4px;
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 3px;
+}
+
+.default-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.btn-set-default {
+    height: 22px;
+    font-size: 11px;
+    margin-right: 8px;
+}
+
+.toggle-auto-default {
+    margin: 0;
+}
+
+.default-info-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 2px;
+}
+
+/* ================================================================
+   選択面マテリアル適用
+   ================================================================ */
+
+.apply-section {
+    display: none;
+    margin: 4px 0;
+    padding: 4px;
+    background-color: rgba(33, 150, 243, 0.05);
+    border-width: 1px;
+    border-color: rgba(33, 150, 243, 0.15);
+    border-radius: 3px;
+}
+
+.apply-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 2px;
+}
+
+.selection-info-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 4px;
+}
+
+.btn-apply {
+    height: 24px;
+    font-size: 11px;
+}
+
+/* ================================================================
+   ステータスバー
+   ================================================================ */
+
+.status-label {
+    margin-top: 4px;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    -unity-text-align: middle-left;
+}

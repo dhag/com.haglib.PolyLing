@@ -307,6 +307,8 @@ namespace Poly_Ling.UndoSystem
             EditorStateSnapshot after,
             string description)
         {
+            // パネル設定Undoが無効なら記録スキップ
+            if (!_editorStateContext.UndoPanelSettings) return;
             // Debug.Log($"[RecordEditorStateChangeInternal] Recording to EditorStateStack: {description}. Before Focus={_mainGroup.FocusedChildId}");
             
             _editorStateStack.EndGroup();  // 独立した操作として記録
@@ -883,6 +885,8 @@ namespace Poly_Ling.UndoSystem
             float oldRotX, float oldRotY, float oldDist, Vector3 oldTarget,
             float newRotX, float newRotY, float newDist, Vector3 newTarget)
         {
+            // カメラUndoが無効なら記録スキップ
+            if (!_editorStateContext.UndoCameraChanges) return;
             //Debug.Log($"[RecordViewChangeInternal] Recording to EditorStateStack. Before Focus={_mainGroup.FocusedChildId}");
             
             // 完全なスナップショットを取得してカメラ値のみ上書き
@@ -931,6 +935,8 @@ namespace Poly_Ling.UndoSystem
             WorkPlaneSnapshot? oldWorkPlane,
             WorkPlaneSnapshot? newWorkPlane)
         {
+            // カメラUndoが無効なら記録スキップ
+            if (!_editorStateContext.UndoCameraChanges) return;
             //Debug.Log($"[RecordViewChangeWithWorkPlaneInternal] Recording to EditorStateStack. Before Focus={_mainGroup.FocusedChildId}");
             
             // 完全なスナップショットを取得してカメラ値のみ上書き

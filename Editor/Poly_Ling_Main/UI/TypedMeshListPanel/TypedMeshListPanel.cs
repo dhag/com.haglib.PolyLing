@@ -29,10 +29,10 @@ namespace Poly_Ling.UI
         // 定数
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel.uss";
+        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uxml";
+        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uss";
+        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uxml";
+        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uss";
 
         private enum TabType { Drawable, Bone, Morph }
 
@@ -60,6 +60,7 @@ namespace Poly_Ling.UI
         private Toggle _poseActiveToggle;
         private FloatField _restPosX, _restPosY, _restPosZ;
         private FloatField _restRotX, _restRotY, _restRotZ;
+        private Slider _restRotSliderX, _restRotSliderY, _restRotSliderZ;
         private FloatField _restSclX, _restSclY, _restSclZ;
         private VisualElement _poseLayersContainer;
         private Label _poseNoLayersLabel;
@@ -99,7 +100,7 @@ namespace Poly_Ling.UI
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("Poly_Ling/Typed Mesh List")]
+        [MenuItem("Tools/Poly_Ling/debug/Typed Mesh List")]
         public static void ShowWindow()
         {
             var window = GetWindow<TypedMeshListPanel>();
@@ -1045,6 +1046,9 @@ namespace Poly_Ling.UI
             _restRotX = root.Q<FloatField>("rest-rot-x");
             _restRotY = root.Q<FloatField>("rest-rot-y");
             _restRotZ = root.Q<FloatField>("rest-rot-z");
+            _restRotSliderX = root.Q<Slider>("rest-rot-slider-x");
+            _restRotSliderY = root.Q<Slider>("rest-rot-slider-y");
+            _restRotSliderZ = root.Q<Slider>("rest-rot-slider-z");
             _restSclX = root.Q<FloatField>("rest-scl-x");
             _restSclY = root.Q<FloatField>("rest-scl-y");
             _restSclZ = root.Q<FloatField>("rest-scl-z");
@@ -1073,6 +1077,10 @@ namespace Poly_Ling.UI
             RegisterRestRotField(_restRotX, 0);
             RegisterRestRotField(_restRotY, 1);
             RegisterRestRotField(_restRotZ, 2);
+
+            RegisterRestRotSlider(_restRotSliderX, 0);
+            RegisterRestRotSlider(_restRotSliderY, 1);
+            RegisterRestRotSlider(_restRotSliderZ, 2);
 
             RegisterRestPoseField(_restSclX, (pose, v) => pose.RestScale = SetX(pose.RestScale, v));
             RegisterRestPoseField(_restSclY, (pose, v) => pose.RestScale = SetY(pose.RestScale, v));
@@ -1115,9 +1123,70 @@ namespace Poly_Ling.UI
 
                 pose.RestRotation = Quaternion.Euler(euler);
                 pose.SetDirty();
+
+                // スライダ同期
+                _isSyncingPoseUI = true;
+                try
+                {
+                    var slider = axis == 0 ? _restRotSliderX : (axis == 1 ? _restRotSliderY : _restRotSliderZ);
+                    float normalized = NormalizeAngle(evt.newValue);
+                    slider?.SetValueWithoutNotify(normalized);
+                }
+                finally
+                {
+                    _isSyncingPoseUI = false;
+                }
+
                 UpdateBonePosePanel();
                 NotifyModelChanged();
             });
+        }
+
+        private void RegisterRestRotSlider(Slider slider, int axis)
+        {
+            slider?.RegisterValueChangedCallback(evt =>
+            {
+                if (_isSyncingPoseUI) return;
+                var pose = GetSelectedBonePoseData();
+                if (pose == null) return;
+
+                Vector3 euler = IsQuatValid(pose.RestRotation)
+                    ? pose.RestRotation.eulerAngles
+                    : Vector3.zero;
+
+                if (axis == 0) euler.x = evt.newValue;
+                else if (axis == 1) euler.y = evt.newValue;
+                else euler.z = evt.newValue;
+
+                pose.RestRotation = Quaternion.Euler(euler);
+                pose.SetDirty();
+
+                // FloatField同期
+                _isSyncingPoseUI = true;
+                try
+                {
+                    var floatField = axis == 0 ? _restRotX : (axis == 1 ? _restRotY : _restRotZ);
+                    floatField?.SetValueWithoutNotify((float)System.Math.Round(evt.newValue, 4));
+                }
+                finally
+                {
+                    _isSyncingPoseUI = false;
+                }
+
+                UpdateBonePosePanel();
+                NotifyModelChanged();
+            });
+        }
+
+        /// <summary>
+        /// 角度を -180～180 の範囲に正規化
+        /// </summary>
+        private static float NormalizeAngle(float angle)
+        {
+            angle = angle % 360f;
+            if (angle > 180f) angle -= 360f;
+            if (angle < -180f) angle += 360f;
+            return angle;
         }
 
         private void OnPoseActiveChanged(ChangeEvent<bool> evt)
@@ -1224,6 +1293,9 @@ namespace Poly_Ling.UI
                 SetFloatField(_restRotX, restRot.x, hasPose);
                 SetFloatField(_restRotY, restRot.y, hasPose);
                 SetFloatField(_restRotZ, restRot.z, hasPose);
+                SetSlider(_restRotSliderX, NormalizeAngle(restRot.x), hasPose);
+                SetSlider(_restRotSliderY, NormalizeAngle(restRot.y), hasPose);
+                SetSlider(_restRotSliderZ, NormalizeAngle(restRot.z), hasPose);
                 SetFloatField(_restSclX, restScl.x, hasPose);
                 SetFloatField(_restSclY, restScl.y, hasPose);
                 SetFloatField(_restSclZ, restScl.z, hasPose);
@@ -1354,6 +1426,13 @@ namespace Poly_Ling.UI
             if (field == null) return;
             field.SetValueWithoutNotify((float)System.Math.Round(value, 4));
             field.SetEnabled(enabled);
+        }
+
+        private static void SetSlider(Slider slider, float value, bool enabled)
+        {
+            if (slider == null) return;
+            slider.SetValueWithoutNotify(value);
+            slider.SetEnabled(enabled);
         }
 
         private static Vector3 SetX(Vector3 v, float x) => new Vector3(x, v.y, v.z);

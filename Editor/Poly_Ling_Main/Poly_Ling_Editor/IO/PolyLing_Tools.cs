@@ -170,20 +170,29 @@ public partial class PolyLing : EditorWindow
 
     /// <summary>
     /// v2.1: メッシュ選択変更時のコールバック（複数選択対応）
-    /// MeshListPanelなどからCtrl/Shift+クリックで呼ばれる
+    /// MeshListPanelなどからの選択変更で呼ばれる
     /// </summary>
     private void OnMeshSelectionChanged()
     {
-        // デバッグ: 選択状態を出力
-        if (_model != null)
+        if (_model == null) return;
+
+        // 旧メッシュの選択イベント解除
+        SaveSelectionToCurrentMesh();
+
+        // 新メッシュの_selectionState参照差替え
+        LoadSelectionFromCurrentMesh();
+
+        // 頂点編集対象の初期化
+        if (_model.HasValidMeshContextSelection)
         {
-            var indices = string.Join(",", _model.SelectedMeshIndices);
-            UnityEngine.Debug.Log($"[OnMeshSelectionChanged] SelectedMeshIndices=[{indices}], First={_model.FirstMeshIndex}");
+            InitVertexOffsets();
+            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
+            UpdateTopology();
         }
-        
-        // 選択変更をワンショットパイプラインに通知（PrepareUnifiedDrawingで処理）
+
+        // 選択変更をワンショットパイプラインに通知
         _unifiedAdapter?.RequestNormal();
-        
+
         // 再描画
         Repaint();
     }

@@ -188,6 +188,8 @@ namespace Poly_Ling.Localization
             ["Zoom"] = new() { ["en"] = "Zoom", ["ja"] = "ズーム", ["hi"] = "ずーむ" },
             ["AutoZoom"] = new() { ["en"] = "Auto Zoom", ["ja"] = "オートズーム", ["hi"] = "おーとずーむ" },
             ["UndoFoldout"] = new() { ["en"] = "Undo Foldout Changes", ["ja"] = "開閉をUndo記録", ["hi"] = "ひらきとじをきろく" },
+            ["UndoCamera"] = new() { ["en"] = "Undo Camera Changes", ["ja"] = "カメラ操作をUndo記録", ["hi"] = "かめらそうさをきろく" },
+            ["UndoPanelSettings"] = new() { ["en"] = "Undo Panel Settings", ["ja"] = "パネル設定をUndo記録", ["hi"] = "ぱねるせっていをきろく" },
             ["Language"] = new() { ["en"] = "Language", ["ja"] = "言語", ["hi"] = "ことば" },
 
 

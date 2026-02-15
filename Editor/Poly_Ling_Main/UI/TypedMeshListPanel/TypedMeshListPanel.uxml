@@ -98,6 +98,20 @@
                             <ui:FloatField name="rest-rot-y" label="Y" class="pose-float-field" />
                             <ui:FloatField name="rest-rot-z" label="Z" class="pose-float-field" />
                         </ui:VisualElement>
+                        <ui:VisualElement class="pose-rot-sliders">
+                            <ui:VisualElement class="pose-slider-row">
+                                <ui:Label text="X" class="pose-slider-label" />
+                                <ui:Slider name="rest-rot-slider-x" low-value="-180" high-value="180" value="0" class="pose-rot-slider" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="pose-slider-row">
+                                <ui:Label text="Y" class="pose-slider-label" />
+                                <ui:Slider name="rest-rot-slider-y" low-value="-180" high-value="180" value="0" class="pose-rot-slider" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="pose-slider-row">
+                                <ui:Label text="Z" class="pose-slider-label" />
+                                <ui:Slider name="rest-rot-slider-z" low-value="-180" high-value="180" value="0" class="pose-rot-slider" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
                         <ui:VisualElement class="pose-row">
                             <ui:Label text="Scl" class="pose-field-label" />
                             <ui:FloatField name="rest-scl-x" label="X" class="pose-float-field" />

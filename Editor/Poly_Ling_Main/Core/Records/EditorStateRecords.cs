@@ -77,6 +77,12 @@ namespace Poly_Ling.UndoSystem
         // WorkPlane参照（カメラ連動Undo用）
         public WorkPlaneContext WorkPlane;
 
+        // === Undo記録制御 ===
+        /// <summary>カメラ操作をUndo記録するか</summary>
+        public bool UndoCameraChanges = false;
+        /// <summary>パネル設定（チェックボックス等）をUndo記録するか</summary>
+        public bool UndoPanelSettings = false;
+
         // === Foldout状態 ===
         /// <summary>Foldout開閉をUndo記録するか</summary>
         public bool RecordFoldoutChanges = false;
@@ -135,6 +141,8 @@ namespace Poly_Ling.UndoSystem
                 PmxFlipZ = PmxFlipZ,
                 MqoFlipZ = MqoFlipZ,
                 MqoPmxRatio = MqoPmxRatio,
+                UndoCameraChanges = UndoCameraChanges,
+                UndoPanelSettings = UndoPanelSettings,
                 RecordFoldoutChanges = RecordFoldoutChanges,
                 FoldoutStates = new Dictionary<string, bool>(FoldoutStates),
             };
@@ -182,6 +190,8 @@ namespace Poly_Ling.UndoSystem
             PmxFlipZ = snapshot.PmxFlipZ;
             MqoFlipZ = snapshot.MqoFlipZ;
             MqoPmxRatio = snapshot.MqoPmxRatio;
+            UndoCameraChanges = snapshot.UndoCameraChanges;
+            UndoPanelSettings = snapshot.UndoPanelSettings;
             RecordFoldoutChanges = snapshot.RecordFoldoutChanges;
             
             // FoldoutStates復元
@@ -252,6 +262,10 @@ namespace Poly_Ling.UndoSystem
         // 汎用ツール設定
         public ToolSettingsStorage ToolSettings;
         
+        // Undo記録制御
+        public bool UndoCameraChanges;
+        public bool UndoPanelSettings;
+        
         // Foldout状態
         public bool RecordFoldoutChanges;
         public Dictionary<string, bool> FoldoutStates;
@@ -291,7 +305,9 @@ namespace Poly_Ling.UndoSystem
                 PmxFlipZ != other.PmxFlipZ ||
                 MqoFlipZ != other.MqoFlipZ ||
                 !Mathf.Approximately(MqoPmxRatio, other.MqoPmxRatio) ||
-                RecordFoldoutChanges != other.RecordFoldoutChanges)
+                RecordFoldoutChanges != other.RecordFoldoutChanges ||
+                UndoCameraChanges != other.UndoCameraChanges ||
+                UndoPanelSettings != other.UndoPanelSettings)
             {
                 return true;
             }

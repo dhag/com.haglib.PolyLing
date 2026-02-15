@@ -35,10 +35,10 @@ namespace Poly_Ling.UI
         // 定数
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanel.uss";
+        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanelUXML/MeshListPanel.uxml";
+        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanelUXML/MeshListPanel.uss";
+        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanelUXML/MeshListPanel.uxml";
+        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanelUXML/MeshListPanel.uss";
 
         // ================================================================
         // UI要素
@@ -77,7 +77,7 @@ namespace Poly_Ling.UI
         // ウィンドウ表示
         // ================================================================
 
-        [MenuItem("Poly_Ling/Mesh List (UXML)")]
+        [MenuItem("Tools/Poly_Ling/debug/Mesh List (UXML)")]
         public static void ShowWindow()
         {
             var window = GetWindow<MeshListPanelUXML>();

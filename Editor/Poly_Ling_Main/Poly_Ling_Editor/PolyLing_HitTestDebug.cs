@@ -18,7 +18,7 @@ public partial class PolyLing
     /// <summary>
     /// ヒットテスト検証を有効化（現在は無効化されています）
     /// </summary>
-   // [MenuItem("Tools/PolyLing/Debug/Toggle HitTest Validation")]
+    [MenuItem("Tools/Poly_Ling/debug/Toggle HitTest Validation")]
     public static void ToggleHitTestValidation()
     {
         Debug.Log("[HitTest] Validation is currently disabled.");

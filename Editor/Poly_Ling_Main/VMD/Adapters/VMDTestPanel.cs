@@ -46,7 +46,7 @@ namespace Poly_Ling.VMD
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("PolyLing/VMD Test Panel")]
+        [MenuItem("Tools/Poly_Ling/debug/VMD Test Panel")]
         public static void ShowWindow()
         {
             var window = GetWindow<VMDTestPanel>("VMD Test");

@@ -141,7 +141,7 @@ namespace Poly_Ling.MQO
         // Open
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/MQO Partial Export")]
+        [MenuItem("Tools/Poly_Ling/debug/MQO Partial Export")]
         public static void ShowWindow()
         {
             var panel = GetWindow<MQOPartialExportPanel>();

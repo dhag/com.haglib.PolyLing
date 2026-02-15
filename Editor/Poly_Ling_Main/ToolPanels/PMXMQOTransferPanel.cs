@@ -140,7 +140,7 @@ namespace Poly_Ling.PMX
         // Open
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/PMX-MQO Transfer Panel")]
+        [MenuItem("Tools/Poly_Ling/debug/PMX-MQO Transfer Panel")]
         public static void ShowWindow()
         {
             var window = GetWindow<PMXMQOTransferPanel>();

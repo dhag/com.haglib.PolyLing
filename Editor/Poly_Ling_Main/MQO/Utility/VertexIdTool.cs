@@ -35,7 +35,7 @@ namespace Poly_Ling.MQO.Utility
         // メニュー
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Vertex ID Tool")]
+        [MenuItem("Tools/Poly_Ling/debug/Vertex ID Tool")]
         public static void ShowWindow()
         {
             var window = GetWindow<VertexIdTool>();

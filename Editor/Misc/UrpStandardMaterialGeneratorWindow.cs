@@ -58,7 +58,7 @@ public class UrpStandardMaterialGeneratorWindow : EditorWindow
         "White",
     };
 
-    [MenuItem("Tools/URP Standard Material Generator")]
+    [MenuItem("Tools/Poly_Ling/Utility/URP Standard Material Generator")]
     public static void ShowWindow()
     {
         GetWindow<UrpStandardMaterialGeneratorWindow>(

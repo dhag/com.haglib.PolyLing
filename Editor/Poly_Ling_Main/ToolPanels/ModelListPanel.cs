@@ -66,7 +66,7 @@ namespace Poly_Ling.Tools.Panels
         // ウィンドウを開く
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Model List Panel")]
+        [MenuItem("Tools/Poly_Ling/debug/Model List Panel")]
         public static void OpenFromMenu()
         {
             var panel = GetWindow<ModelListPanel>();

@@ -286,20 +286,11 @@ public partial class PolyLing : EditorWindow
         get => _undoController?.EditorState?.ShowUnselectedVertices ?? true;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedVertices = value; }
     }
-    private bool _showBones
-    {
-        get => _undoController?.EditorState?.ShowBones ?? false;
-        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowBones = value; }
-    }
     private bool _showFocusPoint
     {
         get => _undoController?.EditorState?.ShowFocusPoint ?? false;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowFocusPoint = value; }
     }
-    private HashSet<int> _foldedBoneRoots = new HashSet<int>();  // 折りたたまれたボーンルートのインデックス
-    
-    // タイプ別折りたたみフラグ
-    private HashSet<MeshType> _foldedTypes = new HashSet<MeshType> { MeshType.Mesh, MeshType.BakedMirror, MeshType.Morph, MeshType.RigidBody, MeshType.RigidBodyJoint, MeshType.Helper, MeshType.Group };
     
     // エクスポート設定（EditorStateContext への委譲）
     private bool _exportAsSkinned
@@ -317,7 +308,6 @@ public partial class PolyLing : EditorWindow
     // UIフォールドアウト状態
     private bool _foldDisplay = true;
     private bool _foldPrimitive = true;
-    private bool _foldMaterials = false;  // 材質パネル（デフォルト閉じ）
 
     // ペイン幅
     private float _leftPaneWidth = 320f;
@@ -414,7 +404,7 @@ public partial class PolyLing : EditorWindow
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    [MenuItem("Tools/PolyLing")]
+    [MenuItem("Tools/PolyLingEditor")]
     private static void Open()
     {
         var window = GetWindow<PolyLing>("PolyLing");

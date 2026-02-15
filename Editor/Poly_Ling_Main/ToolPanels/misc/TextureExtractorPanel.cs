@@ -64,7 +64,7 @@ namespace Poly_Ling.Tools
         // メニュー
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Texture Extractor")]
+        [MenuItem("Tools/Poly_Ling/Utility/Texture Extractor")]
         public static void ShowWindow()
         {
             var window = GetWindow<TextureExtractorPanel>("Texture Extractor");

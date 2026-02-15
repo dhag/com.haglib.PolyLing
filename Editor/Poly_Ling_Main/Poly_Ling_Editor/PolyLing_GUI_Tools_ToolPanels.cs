@@ -84,6 +84,15 @@ public partial class PolyLing
             Poly_Ling.PMX.PMXExportPanel.Open(_toolManager?.toolContext);
         }
 
+
+        if (GUILayout.Button("メッシュリストTypedMeshListPanelUXML"))
+        {
+            Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("材質リスト"))
+        {
+            Poly_Ling.UI.MaterialListPanel.Open(_toolManager?.toolContext);
+        }
         if (GUILayout.Button("Selected VertexTools"))
         {
             Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
@@ -92,10 +101,6 @@ public partial class PolyLing
         if (GUILayout.Button("MeshListPanelUXML"))
         {
             Poly_Ling.UI.MeshListPanelUXML.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("TypedMeshListPanelUXML"))
-        {
-            Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
         }
         // UnityMesh List Window（統合版）
         if (GUILayout.Button(L.Get("Window_MeshContextList")))

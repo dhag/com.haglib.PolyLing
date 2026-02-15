@@ -1,0 +1,51 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- 
+    MaterialListPanel.uxml
+    マテリアルリストパネル
+    -->
+    
+    <ui:VisualElement name="material-panel-root" class="material-panel-root">
+        
+        <!-- ヘッダー -->
+        <ui:VisualElement name="header" class="header">
+            <ui:Label name="title-label" text="Materials" class="header-title" />
+            <ui:VisualElement style="flex-grow: 1;" />
+            <ui:Label name="count-label" text="0 slots" class="header-count" />
+        </ui:VisualElement>
+        
+        <!-- マテリアルリスト -->
+        <ui:ScrollView name="material-list" class="material-list" />
+        
+        <!-- 追加ボタン -->
+        <ui:Button name="btn-add" text="+ Add Material Slot" class="btn-add" />
+        
+        <!-- ドロップエリア -->
+        <ui:VisualElement name="drop-area" class="drop-area">
+            <ui:Label text="Drop Materials Here" class="drop-area-text" />
+            <ui:Label text="(複数選択可)" class="drop-area-sub" />
+        </ui:VisualElement>
+        
+        <!-- 現在のスロット表示 -->
+        <ui:Label name="current-label" text="Current: [0]" class="current-label" />
+        
+        <!-- デフォルトマテリアル設定 -->
+        <ui:VisualElement name="default-section" class="default-section">
+            <ui:VisualElement class="default-row">
+                <ui:Button name="btn-set-default" text="Set as Default" class="btn-set-default" />
+                <ui:Toggle name="toggle-auto-default" label="Auto" class="toggle-auto-default" />
+            </ui:VisualElement>
+            <ui:Label name="default-info-label" text="(Default: 0 slots, idx=0)" class="default-info-label" />
+        </ui:VisualElement>
+        
+        <!-- 選択面マテリアル適用 -->
+        <ui:VisualElement name="apply-section" class="apply-section">
+            <ui:Label text="Apply to Selection" class="apply-title" />
+            <ui:Label name="selection-info-label" text="" class="selection-info-label" />
+            <ui:Button name="btn-apply" text="Apply Material [0] to Selection" class="btn-apply" />
+        </ui:VisualElement>
+        
+        <!-- ステータスバー -->
+        <ui:Label name="status-label" text="" class="status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>
