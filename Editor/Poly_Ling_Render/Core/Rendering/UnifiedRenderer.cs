@@ -642,6 +642,103 @@ namespace Poly_Ling.Core.Rendering
         }
 
         // ============================================================
+        // 軽量位置更新（TransformDragging中専用）
+        // トポロジ（インデックス・カラー・UV）は不変のまま頂点位置のみ差し替え
+        // ============================================================
+
+        /// <summary>
+        /// ワイヤーフレームメッシュの頂点位置のみを更新（軽量パス）。
+        /// UpdateWireframeMesh（フル再構築）の代替として、TransformDragging中に使用する。
+        /// カラー・UV・インデックスは前回のフル構築結果を再利用する。
+        /// </summary>
+        public void UpdateWireframePositionsOnly()
+        {
+            if (_bufferManager == null || _wireframeMesh == null) return;
+            if (_wireframeMesh.vertexCount == 0) return;
+
+            var positions = _bufferManager.GetDisplayPositions();
+            var lines = _bufferManager.Lines;
+            int lineCount = _bufferManager.TotalLineCount;
+            int vertexCount = _bufferManager.TotalVertexCount;
+
+            _cachedVertices.Clear();
+
+            for (int i = 0; i < lineCount; i++)
+            {
+                var line = lines[i];
+                int v1 = (int)line.V1;
+                int v2 = (int)line.V2;
+
+                if (v1 < 0 || v1 >= vertexCount || v2 < 0 || v2 >= vertexCount)
+                    continue;
+
+                _cachedVertices.Add(positions[v1]);
+                _cachedVertices.Add(positions[v2]);
+            }
+
+            // 頂点数が前回のフル構築と一致する場合のみ更新（トポロジ不変の保証）
+            if (_cachedVertices.Count == _wireframeMesh.vertexCount)
+            {
+                _wireframeMesh.SetVertices(_cachedVertices);
+            }
+        }
+
+        /// <summary>
+        /// 頂点メッシュ（ポイントビルボード）の位置のみを更新（軽量パス）。
+        /// UpdatePointMesh（フル再構築）の代替として、TransformDragging中に使用する。
+        /// カラー・UV・インデックスは前回のフル構築結果を再利用する。
+        /// </summary>
+        public void UpdatePointPositionsOnly(Camera camera, float pointSize)
+        {
+            if (_bufferManager == null || _pointMesh == null || camera == null) return;
+            if (_pointMesh.vertexCount == 0) return;
+
+            var positions = _bufferManager.GetDisplayPositions();
+            var meshInfos = _bufferManager.MeshInfos;
+            int meshCount = _bufferManager.MeshCount;
+            int totalVertexCount = _bufferManager.TotalVertexCount;
+
+            Vector3 camRight = camera.transform.right;
+            Vector3 camUp = camera.transform.up;
+
+            bool useScreenSpace = _pointMaterial != null && _pointMaterial.GetInt("_UseScreenSpace") > 0;
+            float size = useScreenSpace ? 0f : pointSize;
+            float halfSize = size * 0.5f;
+
+            // ビルボードオフセットを事前計算（全頂点共通）
+            Vector3 offset1 = (-camRight - camUp) * halfSize;
+            Vector3 offset2 = ( camRight - camUp) * halfSize;
+            Vector3 offset3 = (-camRight + camUp) * halfSize;
+            Vector3 offset4 = ( camRight + camUp) * halfSize;
+
+            _cachedVertices.Clear();
+
+            for (int meshIdx = 0; meshIdx < meshCount; meshIdx++)
+            {
+                var meshInfo = meshInfos[meshIdx];
+                int vertStart = (int)meshInfo.VertexStart;
+                int vertEnd = vertStart + (int)meshInfo.VertexCount;
+
+                for (int i = vertStart; i < vertEnd; i++)
+                {
+                    if (i >= totalVertexCount) break;
+
+                    Vector3 center = positions[i];
+                    _cachedVertices.Add(center + offset1);
+                    _cachedVertices.Add(center + offset2);
+                    _cachedVertices.Add(center + offset3);
+                    _cachedVertices.Add(center + offset4);
+                }
+            }
+
+            // 頂点数が前回のフル構築と一致する場合のみ更新（トポロジ不変の保証）
+            if (_cachedVertices.Count == _pointMesh.vertexCount)
+            {
+                _pointMesh.SetVertices(_cachedVertices);
+            }
+        }
+
+        // ============================================================
         // 描画キュー
         // ============================================================
 

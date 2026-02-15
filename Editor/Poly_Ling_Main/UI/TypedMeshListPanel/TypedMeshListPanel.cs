@@ -70,6 +70,10 @@ namespace Poly_Ling.UI
         private Button _btnBakePose;
         private bool _isSyncingPoseUI = false;
 
+        // BonePose Undo用（スライダードラッグ中のスナップショット保持）
+        private BonePoseDataSnapshot? _sliderDragBeforeSnapshot;
+        private int _sliderDragMasterIndex = -1;
+
         // ================================================================
         // データ
         // ================================================================
@@ -1098,8 +1102,12 @@ namespace Poly_Ling.UI
                 if (_isSyncingPoseUI) return;
                 var pose = GetSelectedBonePoseData();
                 if (pose == null) return;
+                int masterIdx = GetSelectedMasterIndex();
+                var before = pose.CreateSnapshot();
                 setter(pose, evt.newValue);
                 pose.SetDirty();
+                var after = pose.CreateSnapshot();
+                RecordBonePoseUndo(masterIdx, before, after, "ボーンポーズ変更");
                 UpdateBonePosePanel();
                 NotifyModelChanged();
             });
@@ -1113,6 +1121,9 @@ namespace Poly_Ling.UI
                 var pose = GetSelectedBonePoseData();
                 if (pose == null) return;
 
+                int masterIdx = GetSelectedMasterIndex();
+                var before = pose.CreateSnapshot();
+
                 Vector3 euler = IsQuatValid(pose.RestRotation)
                     ? pose.RestRotation.eulerAngles
                     : Vector3.zero;
@@ -1123,6 +1134,9 @@ namespace Poly_Ling.UI
 
                 pose.RestRotation = Quaternion.Euler(euler);
                 pose.SetDirty();
+
+                var after = pose.CreateSnapshot();
+                RecordBonePoseUndo(masterIdx, before, after, "ボーン回転変更");
 
                 // スライダ同期
                 _isSyncingPoseUI = true;
@@ -1150,6 +1164,13 @@ namespace Poly_Ling.UI
                 var pose = GetSelectedBonePoseData();
                 if (pose == null) return;
 
+                // ドラッグ開始時にスナップショットを取得（1ドラッグ1記録）
+                if (!_sliderDragBeforeSnapshot.HasValue)
+                {
+                    _sliderDragBeforeSnapshot = pose.CreateSnapshot();
+                    _sliderDragMasterIndex = GetSelectedMasterIndex();
+                }
+
                 Vector3 euler = IsQuatValid(pose.RestRotation)
                     ? pose.RestRotation.eulerAngles
                     : Vector3.zero;
@@ -1176,6 +1197,9 @@ namespace Poly_Ling.UI
                 UpdateBonePosePanel();
                 NotifyModelChanged();
             });
+
+            // ドラッグ完了時にUndo記録をコミット
+            slider?.RegisterCallback<PointerCaptureOutEvent>(_ => CommitSliderDragUndo("ボーン回転変更"));
         }
 
         /// <summary>
@@ -1194,6 +1218,9 @@ namespace Poly_Ling.UI
             if (_isSyncingPoseUI) return;
             var ctx = GetSelectedMeshContext();
             if (ctx == null) return;
+
+            int masterIdx = GetSelectedMasterIndex();
+            var before = ctx.BonePoseData?.CreateSnapshot();
 
             if (evt.newValue)
             {
@@ -1215,6 +1242,9 @@ namespace Poly_Ling.UI
                     ctx.BonePoseData.SetDirty();
                 }
             }
+
+            var after = ctx.BonePoseData?.CreateSnapshot();
+            RecordBonePoseUndo(masterIdx, before, after, evt.newValue ? "ボーンポーズ有効化" : "ボーンポーズ無効化");
             UpdateBonePosePanel();
             NotifyModelChanged();
         }
@@ -1223,6 +1253,9 @@ namespace Poly_Ling.UI
         {
             var ctx = GetSelectedMeshContext();
             if (ctx == null) return;
+
+            int masterIdx = GetSelectedMasterIndex();
+            var before = ctx.BonePoseData?.CreateSnapshot();
 
             if (ctx.BonePoseData == null)
             {
@@ -1235,6 +1268,9 @@ namespace Poly_Ling.UI
             {
                 Log("BonePoseDataは既に存在");
             }
+
+            var after = ctx.BonePoseData?.CreateSnapshot();
+            RecordBonePoseUndo(masterIdx, before, after, "ボーンポーズ初期化");
             UpdateBonePosePanel();
             NotifyModelChanged();
         }
@@ -1243,7 +1279,11 @@ namespace Poly_Ling.UI
         {
             var pose = GetSelectedBonePoseData();
             if (pose == null) return;
+            int masterIdx = GetSelectedMasterIndex();
+            var before = pose.CreateSnapshot();
             pose.ClearAllLayers();
+            var after = pose.CreateSnapshot();
+            RecordBonePoseUndo(masterIdx, before, after, "全レイヤークリア");
             UpdateBonePosePanel();
             NotifyModelChanged();
             Log("全レイヤーをクリア");
@@ -1253,8 +1293,19 @@ namespace Poly_Ling.UI
         {
             var ctx = GetSelectedMeshContext();
             if (ctx == null || ctx.BonePoseData == null) return;
+
+            int masterIdx = GetSelectedMasterIndex();
+            var beforePose = ctx.BonePoseData.CreateSnapshot();
+            Matrix4x4 oldBindPose = ctx.BindPose;
+
             ctx.BonePoseData.BakeToBindPose(ctx.WorldMatrix);
             ctx.BindPose = ctx.WorldMatrix.inverse;
+
+            var afterPose = ctx.BonePoseData.CreateSnapshot();
+            Matrix4x4 newBindPose = ctx.BindPose;
+
+            RecordBonePoseUndo(masterIdx, beforePose, afterPose, "BindPoseにベイク",
+                oldBindPose, newBindPose);
             UpdateBonePosePanel();
             NotifyModelChanged();
             Log("BindPoseにベイク完了");
@@ -1419,6 +1470,51 @@ namespace Poly_Ling.UI
         private BonePoseData GetSelectedBonePoseData()
         {
             return GetSelectedMeshContext()?.BonePoseData;
+        }
+
+        private int GetSelectedMasterIndex()
+        {
+            if (_selectedAdapters.Count != 1) return -1;
+            return _selectedAdapters[0].MasterIndex;
+        }
+
+        /// <summary>
+        /// BonePose変更をUndoスタックに記録
+        /// </summary>
+        private void RecordBonePoseUndo(
+            int masterIndex,
+            BonePoseDataSnapshot? before,
+            BonePoseDataSnapshot? after,
+            string description,
+            Matrix4x4? oldBindPose = null,
+            Matrix4x4? newBindPose = null)
+        {
+            var undoController = _toolContext?.UndoController;
+            if (undoController == null) return;
+
+            var record = new BonePoseChangeRecord
+            {
+                MasterIndex = masterIndex,
+                OldSnapshot = before,
+                NewSnapshot = after,
+                OldBindPose = oldBindPose,
+                NewBindPose = newBindPose
+            };
+            undoController.MeshListStack.Record(record, description);
+            undoController.FocusMeshList();
+        }
+
+        /// <summary>
+        /// スライダードラッグ完了時にUndo記録をコミット
+        /// </summary>
+        private void CommitSliderDragUndo(string description)
+        {
+            if (!_sliderDragBeforeSnapshot.HasValue) return;
+            var pose = GetSelectedBonePoseData();
+            var after = pose?.CreateSnapshot();
+            RecordBonePoseUndo(_sliderDragMasterIndex, _sliderDragBeforeSnapshot, after, description);
+            _sliderDragBeforeSnapshot = null;
+            _sliderDragMasterIndex = -1;
         }
 
         private static void SetFloatField(FloatField field, float value, bool enabled)

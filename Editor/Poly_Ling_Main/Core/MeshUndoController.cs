@@ -114,8 +114,11 @@ namespace Poly_Ling.UndoSystem
         public MeshUndoController(string windowId = "MainEditor")
         {
             // メイングループ作成
+            // ★★★ 禁忌: TimestampOnly / FocusThenTimestamp は使用禁止 ★★★
+            // DateTime.Now.Ticks は同一フレーム内で同値になり得るため順序不定。
+            // 必ず OperationLog を使用すること。
             _mainGroup = new UndoGroup(windowId, "UnityMesh Editor");
-            _mainGroup.ResolutionPolicy = UndoResolutionPolicy.TimestampOnly;
+            _mainGroup.ResolutionPolicy = UndoResolutionPolicy.OperationLog;
 
             // 頂点編集スタック
             _meshContext = new MeshUndoContext();

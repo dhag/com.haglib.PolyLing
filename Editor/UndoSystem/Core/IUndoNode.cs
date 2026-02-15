@@ -182,16 +182,40 @@ namespace Poly_Ling.UndoSystem
 
     /// <summary>
     /// グローバルUndo時の調停ポリシー
+    /// 
+    /// ★★★ 禁忌事項 ★★★
+    /// TimestampOnly / FocusThenTimestamp は使用禁止。
+    /// DateTime.Now.Ticks による順序管理は、同一フレーム内で同値になり得るため
+    /// Undo/Redo順序が不定になる。マルチスタック環境では致命的な欠陥となる。
+    /// 必ず OperationLog を使用すること。
     /// </summary>
     public enum UndoResolutionPolicy
     {
         /// <summary>フォーカス中のノードを優先</summary>
         FocusPriority,
         
-        /// <summary>最新タイムスタンプの操作を優先</summary>
+        /// <summary>
+        /// 【使用禁止】最新タイムスタンプの操作を優先。
+        /// DateTime.Now.Ticks は同一フレーム内で同値になり得るため順序不定。
+        /// OperationLog を使用すること。
+        /// </summary>
+        [Obsolete("TimestampOnly は順序不定バグの原因。OperationLog を使用せよ。", error: false)]
         TimestampOnly,
         
-        /// <summary>フォーカス優先、空ならタイムスタンプ</summary>
-        FocusThenTimestamp
+        /// <summary>
+        /// 【使用禁止】フォーカス優先、空ならタイムスタンプ。
+        /// タイムスタンプへのフォールバックが順序不定を引き起こす。
+        /// OperationLog を使用すること。
+        /// </summary>
+        [Obsolete("FocusThenTimestamp は順序不定バグの原因。OperationLog を使用せよ。", error: false)]
+        FocusThenTimestamp,
+        
+        /// <summary>
+        /// オペレーションログ方式（推奨・唯一の正解）。
+        /// Record()された順序をグローバルログで管理し、
+        /// Undo/Redoは常にログの末尾/先頭から順に実行する。
+        /// タイムスタンプ不使用。記録順がそのままUndo/Redo順序。
+        /// </summary>
+        OperationLog
     }
 }

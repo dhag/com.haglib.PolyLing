@@ -78,7 +78,8 @@ namespace Poly_Ling.UndoSystem
         private UndoManager()
         {
             _root = new UndoGroup("Root", "Undo Manager");
-            _root.ResolutionPolicy = UndoResolutionPolicy.FocusThenTimestamp;
+            // グローバルルートはFocusPriorityで十分（子グループが自前のOperationLogで解決する）
+            _root.ResolutionPolicy = UndoResolutionPolicy.FocusPriority;
         }
 
         /// <summary>

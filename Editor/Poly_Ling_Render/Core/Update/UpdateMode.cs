@@ -149,15 +149,29 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// 頂点ドラッグ中: 位置更新のみ、重い処理はスキップ
-        /// （Phase 2で使用開始）
+        /// 
+        /// ★★★ 禁忌（絶対厳守） ★★★
+        /// AllowMeshRebuild, AllowHitTest, AllowGpuVisibility, AllowSelectionSync を
+        /// true にしてはならない。ドラッグ中に毎フレーム走ると1FPS以下に落ちる。
+        /// 
+        /// ドラッグ中の表示更新が必要な場合:
+        /// - トポロジ変更を伴わない表示専用入口を使用すること
+        ///   → UnifiedMeshSystem.ProcessTransformUpdate()
+        ///     （_bufferManager.UpdatePositions: Array.Copy + SetData のみ）
+        /// - ホバーチェック無効化はこのプロファイルのAllowHitTest=falseで制御済み
+        /// - AllowMeshRebuild=true のプロファイルでRequestNormalを通してはならない
+        /// 
+        /// 過去の障害:
+        /// - AllowMeshRebuild=true → 1FPS（ワイヤー全再構築が毎ドラッグフレーム実行）
+        /// ★★★★★★★★★★★★★★★★★★★★
         /// </summary>
         public static UpdateModeProfile TransformDragging => new UpdateModeProfile(
-            allowHitTest: false,
+            allowHitTest: false,           // ★禁忌: trueにしてはならない
             allowVertexFlagsReadback: false,
-            allowGpuVisibility: false,
+            allowGpuVisibility: false,     // ★禁忌: trueにしてはならない
             allowUnselectedOverlay: false,
-            allowMeshRebuild: false,
-            allowSelectionSync: false
+            allowMeshRebuild: false,       // ★禁忌: trueにしてはならない（1FPS障害の原因）
+            allowSelectionSync: false      // ★禁忌: trueにしてはならない
         );
 
         /// <summary>

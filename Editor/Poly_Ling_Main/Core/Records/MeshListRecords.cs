@@ -96,6 +96,9 @@ namespace Poly_Ling.UndoSystem
         /// <summary>ボーンポーズデータ</summary>
         public BonePoseData BonePoseData;
 
+        /// <summary>BindPose（スキニング基準行列）</summary>
+        public Matrix4x4 BindPose;
+
         /// <summary>
         /// MeshContextからスナップショットを作成
         /// </summary>
@@ -138,7 +141,9 @@ namespace Poly_Ling.UndoSystem
                 MorphBaseData = meshContext.MorphBaseData?.Clone(),
                 ExcludeFromExport = meshContext.ExcludeFromExport,
                 // BonePoseData（Phase BonePose追加）
-                BonePoseData = meshContext.BonePoseData?.Clone()
+                BonePoseData = meshContext.BonePoseData?.Clone(),
+                // BindPose（スキニング基準行列）
+                BindPose = meshContext.BindPose
             };
 
             // マテリアルを安全に保存
@@ -235,6 +240,9 @@ namespace Poly_Ling.UndoSystem
 
             // BonePoseData復元（Phase BonePose追加）
             meshContext.BonePoseData = BonePoseData?.Clone();
+
+            // BindPose復元（スキニング基準行列）
+            meshContext.BindPose = BindPose;
 
             return meshContext;
         }
@@ -524,6 +532,69 @@ namespace Poly_Ling.UndoSystem
         public override string ToString()
         {
             return $"MeshAttributesBatchChange: {NewValues?.Count ?? 0} changes";
+        }
+    }
+
+    /// <summary>
+    /// BonePose変更記録
+    /// ボーンのRestPose/Layer/Active/BindPose変更をUndo/Redo
+    /// </summary>
+    public class BonePoseChangeRecord : MeshListUndoRecord
+    {
+        /// <summary>対象MeshContextのMasterIndex</summary>
+        public int MasterIndex;
+
+        /// <summary>変更前のBonePoseDataスナップショット（null = BonePoseData未存在）</summary>
+        public BonePoseDataSnapshot? OldSnapshot;
+
+        /// <summary>変更後のBonePoseDataスナップショット</summary>
+        public BonePoseDataSnapshot? NewSnapshot;
+
+        /// <summary>変更前のBindPose（BakePose時のみ使用、それ以外はnull）</summary>
+        public Matrix4x4? OldBindPose;
+
+        /// <summary>変更後のBindPose（BakePose時のみ使用、それ以外はnull）</summary>
+        public Matrix4x4? NewBindPose;
+
+        public override void Undo(ModelContext ctx)
+        {
+            Apply(ctx, OldSnapshot, OldBindPose);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            Apply(ctx, NewSnapshot, NewBindPose);
+        }
+
+        private void Apply(ModelContext ctx, BonePoseDataSnapshot? snapshot, Matrix4x4? bindPose)
+        {
+            if (ctx == null) return;
+            if (MasterIndex < 0 || MasterIndex >= ctx.MeshContextCount) return;
+
+            var mc = ctx.GetMeshContext(MasterIndex);
+            if (mc == null) return;
+
+            if (snapshot.HasValue)
+            {
+                if (mc.BonePoseData == null)
+                    mc.BonePoseData = new BonePoseData();
+                mc.BonePoseData.ApplySnapshot(snapshot);
+            }
+            else
+            {
+                mc.BonePoseData = null;
+            }
+
+            if (bindPose.HasValue)
+                mc.BindPose = bindPose.Value;
+
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            return $"BonePoseChange: MasterIndex={MasterIndex}";
         }
     }
 }

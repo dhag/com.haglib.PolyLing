@@ -242,19 +242,23 @@ public partial class PolyLing
         Matrix4x4 selectedDisplayMatrix = GetDisplayMatrix(_selectedIndex);
 
         // ================================================================
-        // 面ホバー描画（2Dオーバーレイ）
+        // 面ホバー・選択面描画（2Dオーバーレイ）
+        // ワイヤーフレーム非表示時は面・線分のオーバーレイも非表示
         // ================================================================
-        DrawHoveredFace(localRect, meshContext, selectedDisplayMatrix);
-
-        // 選択面ハイライト描画（複数メッシュ対応）
-        if (_model != null && _model.SelectedMeshIndices.Count > 0)
+        if (_showWireframe)
         {
-            foreach (int meshIdx in _model.SelectedMeshIndices)
+            DrawHoveredFace(localRect, meshContext, selectedDisplayMatrix);
+
+            // 選択面ハイライト描画（複数メッシュ対応）
+            if (_model != null && _model.SelectedMeshIndices.Count > 0)
             {
-                var mc = _model.GetMeshContext(meshIdx);
-                if (mc == null || mc.SelectedFaces.Count == 0) continue;
-                Matrix4x4 dm = GetDisplayMatrix(meshIdx);
-                DrawSelectedFaces(localRect, mc, dm);
+                foreach (int meshIdx in _model.SelectedMeshIndices)
+                {
+                    var mc = _model.GetMeshContext(meshIdx);
+                    if (mc == null || mc.SelectedFaces.Count == 0) continue;
+                    Matrix4x4 dm = GetDisplayMatrix(meshIdx);
+                    DrawSelectedFaces(localRect, mc, dm);
+                }
             }
         }
 

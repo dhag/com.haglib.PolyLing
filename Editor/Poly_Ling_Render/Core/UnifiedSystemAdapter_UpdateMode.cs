@@ -12,6 +12,26 @@
 // データ変更が起きると RequestNormal() で Normal に昇格。
 // PrepareUnifiedDrawing が1回処理した後、ConsumeNormalMode() で Idle に自動降格。
 // これにより「何もしていない時」は一切の重い処理が走らない。
+//
+// ★★★ 禁忌（絶対厳守） ★★★
+//
+// 1. TransformDragging中にRequestNormal()のガードを迂回してはならない。
+//    UpdateFrame() → ProcessUpdates/ExecuteUpdates の全パイプラインが
+//    毎ドラッグフレームで走ると1FPS以下に落ちる。
+//
+// 2. AllowMeshRebuild=true のプロファイルをTransformDragging中に適用してはならない。
+//    UpdateWireframeMesh/UpdatePointMeshは全ライン・全頂点を走査する重い処理。
+//
+// 3. ドラッグ中のリアルタイム表示更新が必要な場合:
+//    - トポロジ変更を伴わない表示専用入口を使用すること
+//      → UnifiedMeshSystem.ProcessTransformUpdate()
+//        （_bufferManager.UpdatePositions: Array.Copy + SetData のみ）
+//    - ホバーチェック無効化はUpdateModeProfile.AllowHitTest=falseで制御済み
+//      （TransformDraggingプロファイルで既にfalse）
+//    - RequestNormal経由の一時昇格は禁止
+//
+// 過去の障害: AllowMeshRebuild=true + RequestNormal迂回 → 1FPS
+// ★★★★★★★★★★★★★★★★★★★★
 
 using UnityEngine;
 
@@ -31,6 +51,20 @@ namespace Poly_Ling.Core
 
         /// <summary>現在の更新モードプロファイル（各処理の許可/禁止を参照）</summary>
         public UpdateModeProfile CurrentProfile => _currentProfile;
+
+        // ============================================================
+        // リアルタイムトランスフォーム更新（未実装・フラグのみ）
+        // ============================================================
+
+        /// <summary>
+        /// ドラッグ中にワイヤーフレーム・頂点オーバーレイをリアルタイム更新するか。
+        /// true（デフォルト）だが、現時点では動作に影響しない。
+        /// 今後の軽量パス実装で使用予定。
+        /// 
+        /// 【禁忌】このフラグを理由にAllowMeshRebuild=trueのプロファイルを
+        /// TransformDragging中に適用してはならない。1FPS以下に落ちる。
+        /// </summary>
+        public bool RealtimeTransformUpdate { get; set; } = true;
 
         // ============================================================
         // ワンショット制御

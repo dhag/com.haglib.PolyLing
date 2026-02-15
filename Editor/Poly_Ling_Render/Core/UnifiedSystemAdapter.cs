@@ -289,7 +289,25 @@ namespace Poly_Ling.Core
         // ============================================================
 
         /// <summary>
-        /// フレーム更新
+        /// フレーム更新（毎フレーム呼ばれる）
+        /// 
+        /// ★★★ 禁忌（絶対厳守） ★★★
+        /// この関数はAllowHitTest=false時に早期リターンする。
+        /// TransformDragging中にこのガードを迂回・削除してはならない。
+        /// BeginFrame/ProcessUpdates/ExecuteUpdates/EndFrame の全パイプラインが
+        /// 毎ドラッグフレームで実行されると、全メッシュのGPU転送・スクリーン座標計算・
+        /// ヒットテストが毎フレーム走り、1FPS以下に落ちる。
+        ///
+        /// ドラッグ中のリアルタイム表示更新が必要な場合:
+        /// - トポロジ変更を伴わない表示専用入口を使用すること
+        ///   → UnifiedMeshSystem.ProcessTransformUpdate()
+        ///     （_bufferManager.UpdatePositions: Array.Copy + SetData のみ）
+        /// - ホバーチェック無効化はUpdateModeProfile.AllowHitTest=falseで制御
+        ///   （TransformDraggingプロファイルで既にfalse）
+        /// - この関数を経由してはならない
+        ///
+        /// 過去の障害: RequestNormal迂回 + AllowMeshRebuild=true → 1FPS
+        /// ★★★★★★★★★★★★★★★★★★★★
         /// </summary>
         public void UpdateFrame(
             Vector3 cameraPosition,
@@ -302,7 +320,7 @@ namespace Poly_Ling.Core
             if (!_isInitialized)
                 return;
 
-            // カメラドラッグ中等は全てスキップ（描画はシェーダーがカメラ行列で変換）
+            // ★禁忌ガード: このreturnを削除・迂回してはならない
             if (!_currentProfile.AllowHitTest)
                 return;
 
@@ -536,7 +554,23 @@ namespace Poly_Ling.Core
         }
         */
         /// <summary>
-        /// メッシュを構築してキューに追加（選択/非選択フィルタリング対応）
+        /// 描画準備（ワイヤーフレーム・頂点メッシュの構築とキューイング）
+        ///
+        /// ★★★ 禁忌（絶対厳守） ★★★
+        /// AllowMeshRebuild=true のプロファイルを TransformDragging中に適用してはならない。
+        /// UpdateWireframeMesh / UpdatePointMesh は全ライン・全頂点を走査して
+        /// Mesh頂点・カラー・インデックスを毎回再構築する重い処理であり、
+        /// 毎ドラッグフレームで実行すると1FPS以下に落ちる。
+        ///
+        /// ドラッグ中のワイヤーフレーム更新が必要な場合:
+        /// - トポロジ（インデックス・カラー・フラグ）は不変のまま
+        ///   頂点位置のみを差し替える軽量パスを使用すること
+        ///   → UnifiedMeshSystem.ProcessTransformUpdate()
+        ///     （_bufferManager.UpdatePositions: Array.Copy + SetData のみ）
+        /// - この関数のrebuildMeshパスを経由してはならない
+        ///
+        /// 過去の障害: AllowMeshRebuild=true → 1FPS（ワイヤー全再構築が毎フレーム実行）
+        /// ★★★★★★★★★★★★★★★★★★★★
         /// </summary>
         /// <param name="camera">カメラ</param>
         /// <param name="showWireframe">ワイヤーフレームを表示するか</param>
@@ -563,6 +597,29 @@ namespace Poly_Ling.Core
 
             // 更新モードに応じてメッシュ再構築をスキップ（キャッシュされたメッシュを使用）
             bool rebuildMesh = _currentProfile.AllowMeshRebuild;
+
+            // TransformDragging中の軽量位置更新パス
+            // フル再構築(AllowMeshRebuild)は走らせず、頂点位置のみ差し替え
+            bool lightweightPositionUpdate = !rebuildMesh
+                && _currentMode == UpdateMode.TransformDragging
+                && RealtimeTransformUpdate;
+
+            if (lightweightPositionUpdate)
+            {
+                // ① MeshObject.Positions → _bufferManager._positions → GPUバッファ同期
+                _unifiedSystem.ProcessTransformUpdate();
+
+                // ② ワイヤーフレーム・ポイントメッシュの頂点位置のみ更新
+                //    （カラー・UV・インデックスは前回フル構築のキャッシュを再利用）
+                if (showWireframe)
+                {
+                    _renderer.UpdateWireframePositionsOnly();
+                }
+                if (showVertices)
+                {
+                    _renderer.UpdatePointPositionsOnly(camera, pointSize);
+                }
+            }
 
             // メッシュ構築
             if (showWireframe)
