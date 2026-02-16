@@ -956,7 +956,7 @@ public partial class PolyLing : EditorWindow
         NotifyUnifiedTransformChanged();
         // ★GPUバッファを再構築（トポロジ変更対応）
         // 頂点数/面数が変わる可能性があるため、常にトポロジ変更として扱う
-        //_unifiedAdapter?.NotifyTopologyChanged();
+        _unifiedAdapter?.NotifyTopologyChanged();
     }
 
     /// <summary>

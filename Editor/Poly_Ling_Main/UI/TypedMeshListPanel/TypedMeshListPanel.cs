@@ -56,12 +56,10 @@ namespace Poly_Ling.UI
         private VisualElement _morphParentPopupContainer;
         private VisualElement _morphPanelPopupContainer;
         private TextField _morphNameField;
-        private VisualElement _morphTargetMorphPopupContainer;
         private Button _btnMeshToMorph, _btnMorphToMesh;
         private PopupField<int> _morphSourceMeshPopup;
         private PopupField<int> _morphParentPopup;
         private PopupField<int> _morphPanelPopup;
-        private PopupField<int> _morphTargetMorphPopup;
 
         // モーフセット
         private TextField _morphSetNameField;
@@ -1629,7 +1627,6 @@ namespace Poly_Ling.UI
             _morphSourceMeshPopupContainer = root.Q<VisualElement>("morph-source-mesh-container");
             _morphParentPopupContainer = root.Q<VisualElement>("morph-parent-container");
             _morphPanelPopupContainer = root.Q<VisualElement>("morph-panel-container");
-            _morphTargetMorphPopupContainer = root.Q<VisualElement>("morph-target-morph-container");
 
             // モーフセット
             _morphSetNameField = root.Q<TextField>("morph-set-name-field");
@@ -1769,7 +1766,6 @@ namespace Poly_Ling.UI
             RebuildPopup(ref _morphParentPopup, _morphParentPopupContainer, BuildDrawableMeshChoices(), "morph-popup");
             RebuildPopup(ref _morphPanelPopup, _morphPanelPopupContainer,
                 new List<(int, string)> { (0, "眉"), (1, "目"), (2, "口"), (3, "その他") }, "morph-popup", 3);
-            RebuildPopup(ref _morphTargetMorphPopup, _morphTargetMorphPopupContainer, BuildMorphChoices(), "morph-popup");
         }
 
         private List<(int index, string name)> BuildDrawableMeshChoices()
@@ -1777,15 +1773,6 @@ namespace Poly_Ling.UI
             var choices = new List<(int, string)>();
             if (Model == null) return choices;
             foreach (var entry in Model.TypedIndices.GetEntries(MeshCategory.Drawable))
-                choices.Add((entry.MasterIndex, $"[{entry.MasterIndex}] {entry.Name}"));
-            return choices;
-        }
-
-        private List<(int index, string name)> BuildMorphChoices()
-        {
-            var choices = new List<(int, string)>();
-            if (Model == null) return choices;
-            foreach (var entry in Model.TypedIndices.GetEntries(MeshCategory.Morph))
                 choices.Add((entry.MasterIndex, $"[{entry.MasterIndex}] {entry.Name}"));
             return choices;
         }
@@ -1847,10 +1834,20 @@ namespace Poly_Ling.UI
                 OldName = ctx.Name, OldExcludeFromExport = ctx.ExcludeFromExport,
             };
 
-            ctx.SetAsMorph(morphName);
+            // 親メッシュのMeshObjectをBasePositionsの基準として渡す
+            MeshObject baseMeshObject = null;
+            if (parentIdx >= 0 && parentIdx < Model.MeshContextCount)
+            {
+                var parentCtx = Model.GetMeshContext(parentIdx);
+                baseMeshObject = parentCtx?.MeshObject;
+            }
+            ctx.SetAsMorph(morphName, baseMeshObject);
             ctx.MorphPanel = panel;
             ctx.MorphParentIndex = parentIdx;
             ctx.Type = MeshType.Morph;
+
+            ctx.IsVisible = false; // 非表示にしておく
+
             if (ctx.MeshObject != null) ctx.MeshObject.Type = MeshType.Morph;
             ctx.ExcludeFromExport = true;
 
@@ -1860,7 +1857,14 @@ namespace Poly_Ling.UI
             record.NewExcludeFromExport = ctx.ExcludeFromExport;
 
             RecordMorphUndo(record, "メッシュ→モーフ変換");
+
+            // 変換元を選択リストから除去し、有効なDrawableを選択
+            Model.RemoveFromSelectionByType(sourceIdx);
             Model.TypedIndices?.Invalidate();
+            var drawables = Model.TypedIndices.GetEntries(MeshCategory.Drawable);
+            if (drawables.Count > 0 && !Model.HasMeshSelection)
+                Model.SelectDrawable(drawables[0].MasterIndex);
+
             NotifyModelChanged();
             RefreshMorphEditor();
             MorphLog($"'{ctx.Name}' をモーフに変換");
@@ -1874,35 +1878,66 @@ namespace Poly_Ling.UI
         {
             if (Model == null) return;
 
-            int targetIdx = _morphTargetMorphPopup?.value ?? -1;
-            if (targetIdx < 0 || targetIdx >= Model.MeshContextCount)
-            { MorphLog("対象モーフを選択してください"); return; }
-
-            var ctx = Model.GetMeshContext(targetIdx);
-            if (ctx == null) { MorphLog("メッシュが無効です"); return; }
-            if (!ctx.IsMorph && ctx.Type != MeshType.Morph) { MorphLog("モーフではありません"); return; }
-
-            var record = new MorphConversionRecord
+            // チェック済みモーフを収集
+            var targets = new List<int>();
+            foreach (var morphIdx in _morphTestCheckedSet)
             {
-                MasterIndex = targetIdx,
-                OldType = ctx.Type, NewType = MeshType.Mesh,
-                OldMorphBaseData = ctx.MorphBaseData?.Clone(),
-                OldMorphParentIndex = ctx.MorphParentIndex,
-                OldName = ctx.Name, OldExcludeFromExport = ctx.ExcludeFromExport,
-                NewMorphBaseData = null, NewMorphParentIndex = -1,
-                NewName = ctx.Name, NewExcludeFromExport = false,
-            };
+                if (morphIdx < 0 || morphIdx >= Model.MeshContextCount) continue;
+                var ctx = Model.GetMeshContext(morphIdx);
+                if (ctx != null && (ctx.IsMorph || ctx.Type == MeshType.Morph))
+                    targets.Add(morphIdx);
+            }
 
-            ctx.ClearMorphData();
-            ctx.Type = MeshType.Mesh;
-            if (ctx.MeshObject != null) ctx.MeshObject.Type = MeshType.Mesh;
-            ctx.ExcludeFromExport = false;
+            if (targets.Count == 0)
+            { MorphLog("チェック済みのモーフがありません"); return; }
 
-            RecordMorphUndo(record, "モーフ→メッシュ変換");
+            // モーフプレビュー終了
+            EndMorphPreview();
+            _morphTestWeight?.SetValueWithoutNotify(0f);
+
+            var convertedNames = new List<string>();
+            foreach (int targetIdx in targets)
+            {
+                var ctx = Model.GetMeshContext(targetIdx);
+                if (ctx == null) continue;
+
+                var record = new MorphConversionRecord
+                {
+                    MasterIndex = targetIdx,
+                    OldType = ctx.Type, NewType = MeshType.Mesh,
+                    OldMorphBaseData = ctx.MorphBaseData?.Clone(),
+                    OldMorphParentIndex = ctx.MorphParentIndex,
+                    OldName = ctx.Name, OldExcludeFromExport = ctx.ExcludeFromExport,
+                    NewMorphBaseData = null, NewMorphParentIndex = -1,
+                    NewName = ctx.Name, NewExcludeFromExport = false,
+                };
+
+                ctx.ClearMorphData();
+                ctx.Type = MeshType.Mesh;
+                if (ctx.MeshObject != null) ctx.MeshObject.Type = MeshType.Mesh;
+                ctx.ExcludeFromExport = false;
+
+                RecordMorphUndo(record, $"モーフ→メッシュ: {ctx.Name}");
+
+                // チェックリストから除去
+                _morphTestCheckedSet.Remove(targetIdx);
+                convertedNames.Add(ctx.Name);
+            }
+
+            // 変換したメッシュを選択リストから除去
+            foreach (int idx in targets)
+                Model.RemoveFromSelectionByType(idx);
+
             Model.TypedIndices?.Invalidate();
+
+            // Drawableが残っていれば先頭を選択
+            var drawables = Model.TypedIndices.GetEntries(MeshCategory.Drawable);
+            if (drawables.Count > 0 && !Model.HasMeshSelection)
+                Model.SelectDrawable(drawables[0].MasterIndex);
+
             NotifyModelChanged();
             RefreshMorphEditor();
-            MorphLog($"'{ctx.Name}' をメッシュに戻した");
+            MorphLog($"{convertedNames.Count}件をメッシュに戻した: {string.Join(", ", convertedNames)}");
         }
 
         // ----------------------------------------------------------------

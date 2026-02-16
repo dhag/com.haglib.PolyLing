@@ -482,12 +482,14 @@ namespace Poly_Ling.Data
         /// モーフ基準データを設定（現在のメッシュ状態を基準として保存）
         /// </summary>
         /// <param name="morphName">モーフ名</param>
-        public void SetAsMorph(string morphName)
+        public void SetAsMorph(string morphName, MeshObject baseMeshObject = null)
         {
             if (MeshObject == null || MeshObject.VertexCount == 0)
                 return;
 
-            MorphBaseData = MorphBaseData.FromMeshObject(MeshObject, morphName);
+            // baseMeshObjectが指定された場合、親メッシュの位置をBasePositionsに使用
+            // PMXインポータではbaseMeshObject=null（呼び出し時点でMeshObjectが親のクローン）
+            MorphBaseData = MorphBaseData.FromMeshObject(baseMeshObject ?? MeshObject, morphName);
         }
 
         /// <summary>

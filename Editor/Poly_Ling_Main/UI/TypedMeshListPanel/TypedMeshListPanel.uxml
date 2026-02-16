@@ -198,11 +198,8 @@
                     <ui:Button name="btn-mesh-to-morph" text="モーフに変換" class="morph-action-button" />
                     <!-- モーフ → メッシュ -->
                     <ui:Label text="モーフ → メッシュ" class="morph-subsection-label" style="margin-top: 8px;" />
-                    <ui:VisualElement class="morph-field-row">
-                        <ui:Label text="対象" class="morph-field-label" />
-                        <ui:VisualElement name="morph-target-morph-container" class="morph-popup" />
-                    </ui:VisualElement>
-                    <ui:Button name="btn-morph-to-mesh" text="メッシュに戻す" class="morph-action-button" />
+                    <ui:Label text="リストのチェックで対象を選択" class="morph-info-label" />
+                    <ui:Button name="btn-morph-to-mesh" text="チェック済みモーフをメッシュに戻す" class="morph-action-button" />
                 </ui:VisualElement>
             </ui:Foldout>
             

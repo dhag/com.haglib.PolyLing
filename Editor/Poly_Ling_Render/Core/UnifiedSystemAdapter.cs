@@ -406,8 +406,8 @@ namespace Poly_Ling.Core
                 if (ctx?.MeshObject == null)
                     continue;
 
-                // ボーンはスキップ
-                if (ctx.Type == MeshType.Bone)
+                // ボーン・モーフはスキップ（GPUバッファはDrawableのみ）
+                if (ctx.Type == MeshType.Bone || ctx.Type == MeshType.Morph)
                     continue;
 
                 var meshObject = ctx.MeshObject;
@@ -507,7 +507,7 @@ namespace Poly_Ling.Core
                 if (ctx?.MeshObject == null)
                     continue;
 
-                if (ctx.Type == MeshType.Bone)
+                if (ctx.Type == MeshType.Bone || ctx.Type == MeshType.Morph)
                     continue;
 
                 int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
