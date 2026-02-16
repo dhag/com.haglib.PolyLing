@@ -64,10 +64,10 @@ namespace Poly_Ling.UI
         private PopupField<int> _morphTargetMorphPopup;
 
         // モーフセット
-        private TextField _MorphExpressionNameField;
-        private VisualElement _MorphExpressionTypePopupContainer;
-        private PopupField<int> _MorphExpressionTypePopup;
-        private Button _btnCreateMorphExpression;
+        private TextField _morphSetNameField;
+        private VisualElement _morphSetTypePopupContainer;
+        private PopupField<int> _morphSetTypePopup;
+        private Button _btnCreateMorphSet;
 
         // 詳細パネル
         private Foldout _detailFoldout;
@@ -1632,9 +1632,9 @@ namespace Poly_Ling.UI
             _morphTargetMorphPopupContainer = root.Q<VisualElement>("morph-target-morph-container");
 
             // モーフセット
-            _MorphExpressionNameField = root.Q<TextField>("morph-set-name-field");
-            _MorphExpressionTypePopupContainer = root.Q<VisualElement>("morph-set-type-container");
-            _btnCreateMorphExpression = root.Q<Button>("btn-create-morph-set");
+            _morphSetNameField = root.Q<TextField>("morph-set-name-field");
+            _morphSetTypePopupContainer = root.Q<VisualElement>("morph-set-type-container");
+            _btnCreateMorphSet = root.Q<Button>("btn-create-morph-set");
 
             // ボタンイベント
             _btnMeshToMorph = root.Q<Button>("btn-mesh-to-morph");
@@ -1642,7 +1642,7 @@ namespace Poly_Ling.UI
 
             _btnMeshToMorph?.RegisterCallback<ClickEvent>(_ => OnMeshToMorph());
             _btnMorphToMesh?.RegisterCallback<ClickEvent>(_ => OnMorphToMesh());
-            _btnCreateMorphExpression?.RegisterCallback<ClickEvent>(_ => OnCreateMorphExpression());
+            _btnCreateMorphSet?.RegisterCallback<ClickEvent>(_ => OnCreateMorphSet());
 
             root.Q<Button>("btn-morph-test-reset")?.RegisterCallback<ClickEvent>(_ => OnMorphTestReset());
             root.Q<Button>("btn-morph-test-select-all")?.RegisterCallback<ClickEvent>(_ => OnMorphTestSelectAll(true));
@@ -1650,6 +1650,9 @@ namespace Poly_Ling.UI
 
             // ウェイトスライダー
             _morphTestWeight?.RegisterValueChangedCallback(OnMorphTestWeightChanged);
+
+            // 初期データ投入（display:none状態でもitemsSourceにデータを入れておく）
+            RefreshMorphListData();
         }
 
         // ----------------------------------------------------------------
@@ -1690,16 +1693,21 @@ namespace Poly_Ling.UI
 
             if (toggle != null)
             {
+                // 前回のコールバックを解除
+                if (toggle.userData is EventCallback<ChangeEvent<bool>> prevCb)
+                    toggle.UnregisterValueChangedCallback(prevCb);
+
                 int masterIdx = data.masterIndex;
                 toggle.SetValueWithoutNotify(_morphTestCheckedSet.Contains(masterIdx));
-                toggle.UnregisterValueChangedCallback(null); // 安全のため
-                toggle.RegisterValueChangedCallback(evt =>
+                EventCallback<ChangeEvent<bool>> cb = evt =>
                 {
                     if (evt.newValue)
                         _morphTestCheckedSet.Add(masterIdx);
                     else
                         _morphTestCheckedSet.Remove(masterIdx);
-                });
+                };
+                toggle.RegisterValueChangedCallback(cb);
+                toggle.userData = cb;
             }
         }
 
@@ -1713,7 +1721,7 @@ namespace Poly_Ling.UI
 
             RefreshMorphListData();
             RefreshMorphConvertSection();
-            RefreshMorphExpressionSection();
+            RefreshMorphSetSection();
         }
 
         /// <summary>
@@ -2049,27 +2057,27 @@ namespace Poly_Ling.UI
         // モーフセット（新規作成のみ、管理はMorphPanelで）
         // ----------------------------------------------------------------
 
-        private void RefreshMorphExpressionSection()
+        private void RefreshMorphSetSection()
         {
             if (Model == null) return;
 
-            RebuildPopup(ref _MorphExpressionTypePopup, _MorphExpressionTypePopupContainer,
+            RebuildPopup(ref _morphSetTypePopup, _morphSetTypePopupContainer,
                 new List<(int, string)> { ((int)MorphType.Vertex, "Vertex"), ((int)MorphType.UV, "UV") },
                 "morph-popup", (int)MorphType.Vertex);
         }
 
-        private void OnCreateMorphExpression()
+        private void OnCreateMorphSet()
         {
             if (Model == null) return;
 
-            string setName = _MorphExpressionNameField?.value?.Trim() ?? "";
+            string setName = _morphSetNameField?.value?.Trim() ?? "";
             if (string.IsNullOrEmpty(setName))
                 setName = Model.GenerateUniqueMorphExpressionName("MorphExpression");
 
             if (Model.FindMorphExpressionByName(setName) != null)
             { MorphLog($"セット名 '{setName}' は既に存在します"); return; }
 
-            int typeInt = _MorphExpressionTypePopup?.value ?? (int)MorphType.Vertex;
+            int typeInt = _morphSetTypePopup?.value ?? (int)MorphType.Vertex;
             var set = new MorphExpression(setName, (MorphType)typeInt);
 
             foreach (var morphIdx in _morphTestCheckedSet)
