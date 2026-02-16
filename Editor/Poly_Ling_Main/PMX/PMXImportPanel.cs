@@ -553,10 +553,10 @@ namespace Poly_Ling.PMX
                         }
 
                         // Replaceモードではモーフセットも置換
-                        if (handled && _lastResult.MorphSets.Count > 0 && _context.Model != null)
+                        if (handled && _lastResult.MorphExpressions.Count > 0 && _context.Model != null)
                         {
-                            _context.Model.MorphSets = new List<Data.MorphSet>(_lastResult.MorphSets);
-                            //Debug.Log($"[PMXImportPanel] Replaced morph sets: {_lastResult.MorphSets.Count}");
+                            _context.Model.MorphExpressions = new List<Data.MorphExpression>(_lastResult.MorphExpressions);
+                            //Debug.Log($"[PMXImportPanel] Replaced morph sets: {_lastResult.MorphExpressions.Count}");
                         }
                     }
                     // ================================================================
@@ -583,12 +583,12 @@ namespace Poly_Ling.PMX
                             }
 
                             // 新しいモデルにモーフセットを設定
-                            if (_lastResult.MorphSets.Count > 0)
+                            if (_lastResult.MorphExpressions.Count > 0)
                             {
                                 if (newModel != null)
                                 {
-                                    newModel.MorphSets = new List<Data.MorphSet>(_lastResult.MorphSets);
-                                    //Debug.Log($"[PMXImportPanel] Set {_lastResult.MorphSets.Count} morph sets to new model");
+                                    newModel.MorphExpressions = new List<Data.MorphExpression>(_lastResult.MorphExpressions);
+                                    //Debug.Log($"[PMXImportPanel] Set {_lastResult.MorphExpressions.Count} morph sets to new model");
                                 }
                             }
                             
@@ -671,20 +671,20 @@ namespace Poly_Ling.PMX
                         }
 
                         // Appendモードではモーフセットを追加（インデックス調整済み）
-                        if (_lastResult.MorphSets.Count > 0 && _context.Model != null)
+                        if (_lastResult.MorphExpressions.Count > 0 && _context.Model != null)
                         {
-                            // MorphSets内のメッシュインデックスにオフセットを適用
-                            foreach (var morphSet in _lastResult.MorphSets)
+                            // MorphExpressions内のメッシュインデックスにオフセットを適用
+                            foreach (var MorphExpression in _lastResult.MorphExpressions)
                             {
-                                for (int i = 0; i < morphSet.MeshEntries.Count; i++)
+                                for (int i = 0; i < MorphExpression.MeshEntries.Count; i++)
                                 {
-                                    var entry = morphSet.MeshEntries[i];
+                                    var entry = MorphExpression.MeshEntries[i];
                                     entry.MeshIndex += existingMeshContextCount;
-                                    morphSet.MeshEntries[i] = entry;
+                                    MorphExpression.MeshEntries[i] = entry;
                                 }
-                                _context.Model.MorphSets.Add(morphSet);
+                                _context.Model.MorphExpressions.Add(MorphExpression);
                             }
-                            Debug.Log($"[PMXImportPanel] Added {_lastResult.MorphSets.Count} morph sets");
+                            Debug.Log($"[PMXImportPanel] Added {_lastResult.MorphExpressions.Count} morph sets");
                         }
                     }
                     

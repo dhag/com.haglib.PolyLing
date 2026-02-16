@@ -1,4 +1,4 @@
-// Assets/Editor/Poly_Ling_/Core/Data/MorphSet.cs
+// Assets/Editor/Poly_Ling_/Core/Data/MorphExpression.cs
 // モーフセット（複数メッシュのモーフをグループ化）
 // PMXエクスポート時に統合して1つのモーフとして出力
 
@@ -55,7 +55,7 @@ namespace Poly_Ling.Data
     /// 複数メッシュのモーフを1つの名前でグループ化
     /// </summary>
     [Serializable]
-    public class MorphSet
+    public class MorphExpression
     {
         /// <summary>モーフ名</summary>
         public string Name = "";
@@ -96,11 +96,11 @@ namespace Poly_Ling.Data
         // コンストラクタ
         // ================================================================
 
-        public MorphSet()
+        public MorphExpression()
         {
         }
 
-        public MorphSet(string name, MorphType type = MorphType.Vertex)
+        public MorphExpression(string name, MorphType type = MorphType.Vertex)
         {
             Name = name;
             Type = type;
@@ -210,9 +210,9 @@ namespace Poly_Ling.Data
         // クローン
         // ================================================================
 
-        public MorphSet Clone()
+        public MorphExpression Clone()
         {
-            return new MorphSet
+            return new MorphExpression
             {
                 Name = this.Name,
                 NameEnglish = this.NameEnglish,
@@ -229,7 +229,7 @@ namespace Poly_Ling.Data
 
         public override string ToString()
         {
-            return $"MorphSet[{Name}]: {Type}, {MeshCount} meshes";
+            return $"MorphExpression[{Name}]: {Type}, {MeshCount} meshes";
         }
     }
 }

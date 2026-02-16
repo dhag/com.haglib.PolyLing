@@ -161,7 +161,7 @@ public partial class PolyLing
         // BlendShape焼き込み チェックボックス（Undo対応）
         // モーフセットがある場合のみ表示
         // ================================================================
-        if (_model.HasMorphSets)
+        if (_model.HasMorphExpressions)
         {
             EditorGUI.BeginChangeCheck();
             bool newBakeBlendShapes = EditorGUILayout.Toggle(L.Get("BakeBlendShapes"), _bakeBlendShapes);

@@ -488,51 +488,51 @@ namespace Poly_Ling.Model
         public WorkPlaneContext WorkPlane { get; set; }
 
         // ================================================================
-        // MorphSets（モーフグループ管理）
+        // MorphExpressions（モーフグループ管理）
         // ================================================================
 
         /// <summary>モーフセットリスト</summary>
-        public List<MorphSet> MorphSets { get; set; } = new List<MorphSet>();
+        public List<MorphExpression> MorphExpressions { get; set; } = new List<MorphExpression>();
 
         /// <summary>モーフセット数</summary>
-        public int MorphSetCount => MorphSets?.Count ?? 0;
+        public int MorphExpressionCount => MorphExpressions?.Count ?? 0;
 
         /// <summary>モーフセットがあるか</summary>
-        public bool HasMorphSets => MorphSetCount > 0;
+        public bool HasMorphExpressions => MorphExpressionCount > 0;
 
         /// <summary>モーフセットを追加</summary>
-        public MorphSet AddMorphSet(string name, MorphType type = MorphType.Vertex)
+        public MorphExpression AddMorphExpression(string name, MorphType type = MorphType.Vertex)
         {
-            var set = new MorphSet(name, type);
-            MorphSets.Add(set);
+            var set = new MorphExpression(name, type);
+            MorphExpressions.Add(set);
             return set;
         }
 
         /// <summary>モーフセットを削除</summary>
-        public bool RemoveMorphSet(MorphSet set)
+        public bool RemoveMorphExpression(MorphExpression set)
         {
-            return MorphSets.Remove(set);
+            return MorphExpressions.Remove(set);
         }
 
         /// <summary>名前でモーフセットを検索</summary>
-        public MorphSet FindMorphSetByName(string name)
+        public MorphExpression FindMorphExpressionByName(string name)
         {
-            return MorphSets.Find(s => s.Name == name);
+            return MorphExpressions.Find(s => s.Name == name);
         }
 
         /// <summary>メッシュインデックスでモーフセットを検索</summary>
-        public MorphSet FindMorphSetByMesh(int meshIndex)
+        public MorphExpression FindMorphExpressionByMesh(int meshIndex)
         {
-            return MorphSets.Find(s => s.ContainsMesh(meshIndex));
+            return MorphExpressions.Find(s => s.ContainsMesh(meshIndex));
         }
 
         /// <summary>一意なモーフセット名を生成</summary>
-        public string GenerateUniqueMorphSetName(string baseName = "Morph")
+        public string GenerateUniqueMorphExpressionName(string baseName = "Morph")
         {
             string name = baseName;
             int counter = 1;
 
-            while (FindMorphSetByName(name) != null)
+            while (FindMorphExpressionByName(name) != null)
             {
                 name = $"{baseName}_{counter}";
                 counter++;
@@ -921,7 +921,7 @@ namespace Poly_Ling.Model
             }
 
             // モーフセットのインデックス調整（常に実行）
-            foreach (var set in MorphSets)
+            foreach (var set in MorphExpressions)
             {
                 set.AdjustIndicesOnInsert(index);
             }
@@ -961,7 +961,7 @@ namespace Poly_Ling.Model
             }
 
             // モーフセットのインデックス調整（常に実行）
-            foreach (var set in MorphSets)
+            foreach (var set in MorphExpressions)
             {
                 set.AdjustIndicesOnRemove(index);
             }

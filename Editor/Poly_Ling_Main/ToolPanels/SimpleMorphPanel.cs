@@ -16,7 +16,7 @@ namespace Poly_Ling.Tools.Panels
     /// 簡易モーフパネル設定
     /// </summary>
     [Serializable]
-    public class SimpleMorphSettings : IToolSettings
+    public class SimpleMorphExpressiontings : IToolSettings
     {
         /// <summary>リファレンスA のメッシュインデックス</summary>
         public int ReferenceAIndex = -1;
@@ -36,7 +36,7 @@ namespace Poly_Ling.Tools.Panels
 
         public IToolSettings Clone()
         {
-            return new SimpleMorphSettings
+            return new SimpleMorphExpressiontings
             {
                 ReferenceAIndex = this.ReferenceAIndex,
                 ReferenceBIndex = this.ReferenceBIndex,
@@ -48,7 +48,7 @@ namespace Poly_Ling.Tools.Panels
 
         public bool IsDifferentFrom(IToolSettings other)
         {
-            if (other is not SimpleMorphSettings o)
+            if (other is not SimpleMorphExpressiontings o)
                 return true;
 
             return ReferenceAIndex != o.ReferenceAIndex ||
@@ -60,7 +60,7 @@ namespace Poly_Ling.Tools.Panels
 
         public void CopyFrom(IToolSettings other)
         {
-            if (other is not SimpleMorphSettings o)
+            if (other is not SimpleMorphExpressiontings o)
                 return;
 
             ReferenceAIndex = o.ReferenceAIndex;
@@ -83,7 +83,7 @@ namespace Poly_Ling.Tools.Panels
         public override string Name => "SimpleMorph";
         public override string Title => "Simple Morph";
 
-        private SimpleMorphSettings _settings = new SimpleMorphSettings();
+        private SimpleMorphExpressiontings _settings = new SimpleMorphExpressiontings();
         public override IToolSettings Settings => _settings;
 
         public override string GetLocalizedTitle() => T("WindowTitle");

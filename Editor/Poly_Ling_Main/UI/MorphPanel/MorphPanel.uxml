@@ -1,0 +1,63 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- MorphPanel.uxml: モーフセット管理・プレビュー (UIToolkit) -->
+    
+    <ui:VisualElement name="morph-panel-root" class="morph-panel-root">
+        
+        <!-- 警告ラベル（コンテキスト未設定/モデルなし/セットなし） -->
+        <ui:Label name="warning-label" text="" class="mp-warning" />
+        
+        <!-- CSV -->
+        <ui:VisualElement class="mp-csv-row">
+            <ui:Button name="btn-csv-import" text="CSV読込" class="mp-btn-small" />
+            <ui:Button name="btn-csv-export" text="CSV保存" class="mp-btn-small" />
+        </ui:VisualElement>
+        
+        <!-- セット一覧 -->
+        <ui:Label text="モーフセット" class="mp-section-label" />
+        <ui:ListView name="set-listview" selection-type="Single" class="mp-set-listview" />
+        
+        <!-- セット詳細 -->
+        <ui:VisualElement name="set-detail" class="mp-set-detail">
+            <ui:VisualElement class="mp-field-row">
+                <ui:Label text="名前" class="mp-field-label" />
+                <ui:TextField name="set-name" class="mp-text-field" />
+            </ui:VisualElement>
+            <ui:VisualElement class="mp-field-row">
+                <ui:Label text="英語名" class="mp-field-label" />
+                <ui:TextField name="set-name-en" class="mp-text-field" />
+            </ui:VisualElement>
+            <ui:VisualElement class="mp-field-row">
+                <ui:Label text="パネル" class="mp-field-label" />
+                <ui:VisualElement name="set-panel-container" class="mp-popup" />
+            </ui:VisualElement>
+            <ui:VisualElement class="mp-field-row">
+                <ui:Label text="タイプ" class="mp-field-label" />
+                <ui:Label name="set-type-label" text="" class="mp-value-label" />
+            </ui:VisualElement>
+            
+            <!-- エントリ一覧 -->
+            <ui:Label text="エントリ" class="mp-subsection-label" />
+            <ui:ListView name="entry-listview" selection-type="None" class="mp-entry-listview" />
+            
+            <ui:Button name="btn-delete-set" text="セットを削除" class="mp-btn-danger" />
+        </ui:VisualElement>
+        
+        <!-- プレビュー -->
+        <ui:VisualElement name="preview-section" class="mp-preview-section">
+            <ui:Label text="プレビュー" class="mp-section-label" />
+            <ui:Label name="preview-info" text="" class="mp-info-label" />
+            <ui:VisualElement class="mp-field-row">
+                <ui:Label text="ウェイト" class="mp-field-label" />
+                <ui:Slider name="preview-weight" low-value="0" high-value="1" value="0" class="mp-weight-slider" />
+            </ui:VisualElement>
+            <ui:VisualElement class="mp-btn-row">
+                <ui:Button name="btn-reset" text="リセット" class="mp-btn-small" />
+                <ui:Button name="btn-end-preview" text="プレビュー終了" class="mp-btn-small" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="mp-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>

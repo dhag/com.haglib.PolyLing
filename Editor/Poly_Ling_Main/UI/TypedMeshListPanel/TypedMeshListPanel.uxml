@@ -11,7 +11,7 @@
         <ui:VisualElement name="tab-header" class="tab-header">
             <ui:Button name="tab-drawable" text="メッシュ" tooltip="Mesh + BakedMirror" class="tab-button tab-active" />
             <ui:Button name="tab-bone" text="ボーン" tooltip="Bone" class="tab-button" />
-            <ui:Button name="tab-morph" text="モーフ" tooltip="Morph (開発中)" class="tab-button" />
+            <ui:Button name="tab-morph" text="モーフ" tooltip="Morph" class="tab-button" />
         </ui:VisualElement>
         
         <!-- メインコンテンツ -->
@@ -164,9 +164,83 @@
             
         </ui:VisualElement>
         
-        <!-- モーフ用プレースホルダー -->
-        <ui:VisualElement name="morph-placeholder" class="placeholder">
-            <ui:Label text="モーフ機能は開発中です" class="placeholder-text" />
+        <!-- モーフエディタ（Phase MorphEditor v2: UIToolkit ListView） -->
+        <ui:VisualElement name="morph-editor" class="morph-editor">
+            
+            <!-- ======== モーフリスト（ListView＋チェックボックス） ======== -->
+            <ui:VisualElement name="morph-list-header" class="header">
+                <ui:Label name="morph-count-label" text="モーフ: 0" class="header-label" />
+                <ui:VisualElement style="flex-grow: 1;" />
+            </ui:VisualElement>
+            <ui:ListView name="morph-listview" selection-type="None" class="morph-listview" />
+            
+            <!-- ======== 変換セクション ======== -->
+            <ui:Foldout name="morph-convert-foldout" text="変換" value="true" class="morph-section-foldout">
+                <ui:VisualElement class="morph-section-panel">
+                    <!-- メッシュ → モーフ -->
+                    <ui:Label text="メッシュ → モーフ" class="morph-subsection-label" />
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="対象" class="morph-field-label" />
+                        <ui:VisualElement name="morph-source-mesh-container" class="morph-popup" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="モーフ名" class="morph-field-label" />
+                        <ui:TextField name="morph-name-field" value="" class="morph-text-field" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="親メッシュ" class="morph-field-label" />
+                        <ui:VisualElement name="morph-parent-container" class="morph-popup" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="パネル" class="morph-field-label" />
+                        <ui:VisualElement name="morph-panel-container" class="morph-popup" />
+                    </ui:VisualElement>
+                    <ui:Button name="btn-mesh-to-morph" text="モーフに変換" class="morph-action-button" />
+                    <!-- モーフ → メッシュ -->
+                    <ui:Label text="モーフ → メッシュ" class="morph-subsection-label" style="margin-top: 8px;" />
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="対象" class="morph-field-label" />
+                        <ui:VisualElement name="morph-target-morph-container" class="morph-popup" />
+                    </ui:VisualElement>
+                    <ui:Button name="btn-morph-to-mesh" text="メッシュに戻す" class="morph-action-button" />
+                </ui:VisualElement>
+            </ui:Foldout>
+            
+            <!-- ======== 簡易モーフテスト ======== -->
+            <ui:Foldout name="morph-test-foldout" text="簡易モーフテスト" value="true" class="morph-section-foldout">
+                <ui:VisualElement class="morph-section-panel">
+                    <ui:Label text="リストのチェックでテスト対象を選択" class="morph-info-label" />
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="ウェイト" class="morph-field-label" />
+                        <ui:Slider name="morph-test-weight" low-value="0" high-value="1" value="0" class="morph-test-slider" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="morph-test-buttons">
+                        <ui:Button name="btn-morph-test-reset" text="リセット" class="morph-action-button-small" />
+                        <ui:Button name="btn-morph-test-select-all" text="全選択" class="morph-action-button-small" />
+                        <ui:Button name="btn-morph-test-deselect-all" text="全解除" class="morph-action-button-small" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:Foldout>
+            
+            <!-- ======== モーフセット ======== -->
+            <ui:Foldout name="morph-set-foldout" text="モーフセット" value="false" class="morph-section-foldout">
+                <ui:VisualElement class="morph-section-panel">
+                    <ui:Label text="チェック済みモーフからセットを生成" class="morph-info-label" />
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="セット名" class="morph-field-label" />
+                        <ui:TextField name="morph-set-name-field" value="" class="morph-text-field" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="morph-field-row">
+                        <ui:Label text="タイプ" class="morph-field-label" />
+                        <ui:VisualElement name="morph-set-type-container" class="morph-popup" />
+                    </ui:VisualElement>
+                    <ui:Button name="btn-create-morph-set" text="モーフセット生成" class="morph-action-button" />
+                </ui:VisualElement>
+            </ui:Foldout>
+            
+            <!-- ステータス -->
+            <ui:Label name="morph-status-label" text="" class="status-label" />
+            
         </ui:VisualElement>
         
         <!-- ステータスバー -->

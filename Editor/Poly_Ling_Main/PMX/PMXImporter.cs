@@ -63,7 +63,7 @@ namespace Poly_Ling.PMX
         public PMXDocument Document { get; set; }
 
         /// <summary>インポートされたモーフセット</summary>
-        public List<MorphSet> MorphSets { get; } = new List<MorphSet>();
+        public List<MorphExpression> MorphExpressions { get; } = new List<MorphExpression>();
 
         /// <summary>材質グループ情報（モーフ変換で使用）</summary>
         public List<MaterialGroupInfo> MaterialGroupInfos { get; } = new List<MaterialGroupInfo>();
@@ -443,7 +443,7 @@ namespace Poly_Ling.PMX
             if (settings.ShouldImportMorphs && document.Morphs.Count > 0)
             {
                 ConvertMorphs(document, settings, result);
-                //Debug.Log($"[PMXImporter] Imported {result.MorphSets.Count} morph sets");
+                //Debug.Log($"[PMXImporter] Imported {result.MorphExpressions.Count} morph sets");
             }
 
             // 名前末尾+のメッシュをBakedMirrorとして検出
@@ -2034,11 +2034,11 @@ namespace Poly_Ling.PMX
         // ================================================================
 
         /// <summary>
-        /// PMXモーフをMeshContext + MorphSetに変換
+        /// PMXモーフをMeshContext + MorphExpressionに変換
         /// グループモーフ対応：
-        /// 1. 頂点/UVモーフを仮MorphSetとして生成
-        /// 2. グループモーフを読み、子モーフのMeshEntriesをweight付きでフラット展開した親MorphSetを作成
-        /// 3. グループに属さない仮MorphSetはweight=1.0で正規のMorphSetにする
+        /// 1. 頂点/UVモーフを仮MorphExpressionとして生成
+        /// 2. グループモーフを読み、子モーフのMeshEntriesをweight付きでフラット展開した親MorphExpressionを作成
+        /// 3. グループに属さない仮MorphExpressionはweight=1.0で正規のMorphExpressionにする
         /// </summary>
         private static void ConvertMorphs(PMXDocument document, PMXImportSettings settings, PMXImportResult result)
         {
@@ -2048,14 +2048,14 @@ namespace Poly_Ling.PMX
                 return;
             }
 
-            // Phase 1: 頂点/UVモーフを仮MorphSetとして生成
-            // PMXモーフインデックス → 仮MorphSet のマッピング
-            var tempMorphSets = new Dictionary<int, MorphSet>();
+            // Phase 1: 頂点/UVモーフを仮MorphExpressionとして生成
+            // PMXモーフインデックス → 仮MorphExpression のマッピング
+            var tempMorphExpressions = new Dictionary<int, MorphExpression>();
 
             for (int i = 0; i < document.Morphs.Count; i++)
             {
                 var pmxMorph = document.Morphs[i];
-                int beforeCount = result.MorphSets.Count;
+                int beforeCount = result.MorphExpressions.Count;
 
                 if (pmxMorph.MorphType == 1)
                 {
@@ -2067,18 +2067,18 @@ namespace Poly_Ling.PMX
                 }
                 // ボーンモーフ(2)、マテリアルモーフ(8)等は未対応
 
-                // 直前の呼び出しでMorphSetが追加された場合のみ記録
-                if (result.MorphSets.Count > beforeCount)
+                // 直前の呼び出しでMorphExpressionが追加された場合のみ記録
+                if (result.MorphExpressions.Count > beforeCount)
                 {
-                    tempMorphSets[i] = result.MorphSets[result.MorphSets.Count - 1];
+                    tempMorphExpressions[i] = result.MorphExpressions[result.MorphExpressions.Count - 1];
                 }
             }
 
             // Phase 2: グループモーフを処理
-            // グループに所属した仮MorphSetを追跡
+            // グループに所属した仮MorphExpressionを追跡
             var groupedMorphIndices = new HashSet<int>();
 
-            //Debug.Log($"[PMXImporter] Phase 1 complete: {tempMorphSets.Count} temp morph sets created, {result.MorphSets.Count} total morph sets");
+            //Debug.Log($"[PMXImporter] Phase 1 complete: {tempMorphExpressions.Count} temp morph sets created, {result.MorphExpressions.Count} total morph sets");
 
             for (int i = 0; i < document.Morphs.Count; i++)
             {
@@ -2087,7 +2087,7 @@ namespace Poly_Ling.PMX
 
                 //Debug.Log($"[PMXImporter] Processing group morph [{i}] '{pmxMorph.Name}': {pmxMorph.Offsets.Count} offsets");
 
-                var groupSet = new MorphSet(pmxMorph.Name, MorphType.Group)
+                var groupSet = new MorphExpression(pmxMorph.Name, MorphType.Group)
                 {
                     NameEnglish = pmxMorph.NameEnglish ?? "",
                     Panel = pmxMorph.Panel
@@ -2112,21 +2112,21 @@ namespace Poly_Ling.PMX
                         }
                     }
 
-                    MorphSet childSet = null;
-                    bool found = childMorphIndex >= 0 && tempMorphSets.TryGetValue(childMorphIndex, out childSet);
+                    MorphExpression childSet = null;
+                    bool found = childMorphIndex >= 0 && tempMorphExpressions.TryGetValue(childMorphIndex, out childSet);
                     if (!found)
                     {
                         string childName = (childMorphIndex >= 0 && childMorphIndex < document.Morphs.Count) 
                             ? document.Morphs[childMorphIndex].Name : "?";
                         int childType = (childMorphIndex >= 0 && childMorphIndex < document.Morphs.Count) 
                             ? document.Morphs[childMorphIndex].MorphType : -1;
-                        //Debug.Log($"[PMXImporter]   Child [{childMorphIndex}] '{childName}' (type={childType}): NOT in tempMorphSets (tempKeys: {string.Join(",", tempMorphSets.Keys.Take(10))})");
+                        //Debug.Log($"[PMXImporter]   Child [{childMorphIndex}] '{childName}' (type={childType}): NOT in tempMorphExpressions (tempKeys: {string.Join(",", tempMorphExpressions.Keys.Take(10))})");
                         continue;
                     }
 
                     float groupWeight = groupOffset.Weight;
 
-                    // 子MorphSetのMeshEntriesを親にフラット展開（weight乗算）
+                    // 子MorphExpressionのMeshEntriesを親にフラット展開（weight乗算）
                     foreach (var childEntry in childSet.MeshEntries)
                     {
                         groupSet.AddMesh(childEntry.MeshIndex, childEntry.Weight * groupWeight);
@@ -2138,22 +2138,22 @@ namespace Poly_Ling.PMX
 
                 if (groupSet.MeshCount > 0)
                 {
-                    result.MorphSets.Add(groupSet);
+                    result.MorphExpressions.Add(groupSet);
                     //Debug.Log($"[PMXImporter] Group morph '{pmxMorph.Name}': {groupSet.MeshCount} meshes from {pmxMorph.Offsets.Count} children");
                 }
             }
 
-            // Phase 3: グループに属さない仮MorphSetはそのまま残す（weight=1.0で既に追加済み）
-            // グループに属した仮MorphSetをresult.MorphSetsから除去
+            // Phase 3: グループに属さない仮MorphExpressionはそのまま残す（weight=1.0で既に追加済み）
+            // グループに属した仮MorphExpressionをresult.MorphExpressionsから除去
             if (groupedMorphIndices.Count > 0)
             {
-                var groupedSets = new HashSet<MorphSet>();
+                var groupedSets = new HashSet<MorphExpression>();
                 foreach (var idx in groupedMorphIndices)
                 {
-                    if (tempMorphSets.TryGetValue(idx, out var set))
+                    if (tempMorphExpressions.TryGetValue(idx, out var set))
                         groupedSets.Add(set);
                 }
-                result.MorphSets.RemoveAll(s => groupedSets.Contains(s));
+                result.MorphExpressions.RemoveAll(s => groupedSets.Contains(s));
 
                 //Debug.Log($"[PMXImporter] Removed {groupedSets.Count} child morph sets absorbed by group morphs");
             }
@@ -2202,8 +2202,8 @@ namespace Poly_Ling.PMX
                 return;
             }
 
-            // MorphSetを作成
-            var morphSet = new MorphSet(pmxMorph.Name, MorphType.Vertex)
+            // MorphExpressionを作成
+            var morphExpression = new MorphExpression(pmxMorph.Name, MorphType.Vertex)
             {
                 NameEnglish = pmxMorph.NameEnglish ?? "",
                 Panel = pmxMorph.Panel
@@ -2255,12 +2255,12 @@ namespace Poly_Ling.PMX
                 // 結果に追加
                 int morphMeshIndex = result.MeshContexts.Count;
                 result.MeshContexts.Add(morphMesh);
-                morphSet.AddMesh(morphMeshIndex);
+                morphExpression.AddMesh(morphMeshIndex);
             }
 
-            if (morphSet.MeshCount > 0)
+            if (morphExpression.MeshCount > 0)
             {
-                result.MorphSets.Add(morphSet);
+                result.MorphExpressions.Add(morphExpression);
             }
         }
 
@@ -2322,8 +2322,8 @@ namespace Poly_Ling.PMX
                 _ => MorphType.UV
             };
 
-            // MorphSetを作成
-            var morphSet = new MorphSet(pmxMorph.Name, morphType)
+            // MorphExpressionを作成
+            var MorphExpression = new MorphExpression(pmxMorph.Name, morphType)
             {
                 NameEnglish = pmxMorph.NameEnglish ?? "",
                 Panel = pmxMorph.Panel
@@ -2379,12 +2379,12 @@ namespace Poly_Ling.PMX
                 // 結果に追加
                 int morphMeshIndex = result.MeshContexts.Count;
                 result.MeshContexts.Add(morphMesh);
-                morphSet.AddMesh(morphMeshIndex);
+                MorphExpression.AddMesh(morphMeshIndex);
             }
 
-            if (morphSet.MeshCount > 0)
+            if (MorphExpression.MeshCount > 0)
             {
-                result.MorphSets.Add(morphSet);
+                result.MorphExpressions.Add(MorphExpression);
             }
         }
     }

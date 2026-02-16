@@ -1,4 +1,4 @@
-// Assets/Editor/Poly_Ling_/Core/Data/MorphSetDTO.cs
+// Assets/Editor/Poly_Ling_/Core/Data/MorphExpressionDTO.cs
 // モーフセットのシリアライズ用データ構造
 
 using System;
@@ -20,7 +20,7 @@ namespace Poly_Ling.Serialization
     /// モーフセットのシリアライズ用
     /// </summary>
     [Serializable]
-    public class MorphSetDTO
+    public class MorphExpressionDTO
     {
         /// <summary>モーフ名</summary>
         public string name = "";
@@ -48,9 +48,9 @@ namespace Poly_Ling.Serialization
         // ================================================================
 
         /// <summary>
-        /// MorphSetからDTOを作成
+        /// MorphExpressionからDTOを作成
         /// </summary>
-        public static MorphSetDTO FromMorphSet(Data.MorphSet set)
+        public static MorphExpressionDTO FromMorphExpression(Data.MorphExpression set)
         {
             if (set == null) return null;
 
@@ -63,7 +63,7 @@ namespace Poly_Ling.Serialization
                 }
             }
 
-            return new MorphSetDTO
+            return new MorphExpressionDTO
             {
                 name = set.Name ?? "",
                 nameEnglish = set.NameEnglish ?? "",
@@ -76,11 +76,11 @@ namespace Poly_Ling.Serialization
         }
 
         /// <summary>
-        /// DTOからMorphSetを作成
+        /// DTOからMorphExpressionを作成
         /// </summary>
-        public Data.MorphSet ToMorphSet()
+        public Data.MorphExpression ToMorphExpression()
         {
-            var set = new Data.MorphSet
+            var set = new Data.MorphExpression
             {
                 Name = name ?? "",
                 NameEnglish = nameEnglish ?? "",

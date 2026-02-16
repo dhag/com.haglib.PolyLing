@@ -472,6 +472,13 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// モーフ親メッシュのマスターインデックス
+        /// このモーフが適用されるベースメッシュを明示的に指定
+        /// -1 = 未指定（名前規則ベースで検索）
+        /// </summary>
+        public int MorphParentIndex { get; set; } = -1;
+
+        /// <summary>
         /// モーフ基準データを設定（現在のメッシュ状態を基準として保存）
         /// </summary>
         /// <param name="morphName">モーフ名</param>
@@ -489,6 +496,7 @@ namespace Poly_Ling.Data
         public void ClearMorphData()
         {
             MorphBaseData = null;
+            MorphParentIndex = -1;
         }
 
         /// <summary>

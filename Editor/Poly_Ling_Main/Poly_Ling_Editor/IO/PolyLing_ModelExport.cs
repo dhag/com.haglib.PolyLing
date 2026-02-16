@@ -57,18 +57,18 @@ public partial class PolyLing
 
     /// <summary>
     /// メッシュにBlendShapeをベイクする
-    /// MorphSetを参照し、対応するMorphメッシュから差分を計算して追加
+    /// MorphExpressionを参照し、対応するMorphメッシュから差分を計算して追加
     /// </summary>
     /// <param name="mesh">BlendShapeを追加するUnity Mesh</param>
     /// <param name="baseMeshContext">ベースとなるMeshContext</param>
     /// <param name="baseMeshIndex">ベースメッシュの_meshContextList内インデックス</param>
     private void BakeBlendShapesToMesh(Mesh mesh, MeshContext baseMeshContext, int baseMeshIndex)
     {
-        if (mesh == null || baseMeshContext == null || _model?.MorphSets == null)
+        if (mesh == null || baseMeshContext == null || _model?.MorphExpressions == null)
             return;
 
-        var morphSets = _model.MorphSets;
-        if (morphSets.Count == 0)
+        var MorphExpressions = _model.MorphExpressions;
+        if (MorphExpressions.Count == 0)
             return;
 
         int vertexCount = mesh.vertexCount;
@@ -76,15 +76,15 @@ public partial class PolyLing
 
         int addedCount = 0;
 
-        foreach (var morphSet in morphSets)
+        foreach (var MorphExpression in MorphExpressions)
         {
-            if (!morphSet.IsValid || morphSet.Type != MorphType.Vertex)
+            if (!MorphExpression.IsValid || MorphExpression.Type != MorphType.Vertex)
                 continue;
 
-            // このMorphSetに含まれるMorphメッシュの中から、ベースメッシュに対応するものを探す
+            // このMorphExpressionに含まれるMorphメッシュの中から、ベースメッシュに対応するものを探す
             MeshContext morphMeshContext = null;
 
-            foreach (int morphIndex in morphSet.MeshIndices)
+            foreach (int morphIndex in MorphExpression.MeshIndices)
             {
                 if (morphIndex < 0 || morphIndex >= _meshContextList.Count)
                     continue;
@@ -126,7 +126,7 @@ public partial class PolyLing
                 continue;
 
             // BlendShapeFrameを追加（weight=100で完全適用）
-            mesh.AddBlendShapeFrame(morphSet.Name, 100f, expandedDeltas, null, null);
+            mesh.AddBlendShapeFrame(MorphExpression.Name, 100f, expandedDeltas, null, null);
             addedCount++;
         }
 
@@ -894,7 +894,7 @@ public partial class PolyLing
         // 作成したルートオブジェクト、または最初のルートオブジェクトを選択
         GameObject objectToSelect = createdRoot ?? firstRootObject;
 
-        // BlendShapeSync をアタッチ（MorphSetがある場合）
+        // BlendShapeSync をアタッチ（MorphExpressionがある場合）
         if (objectToSelect != null)
         {
             AttachBlendShapeSync(objectToSelect);
@@ -1209,22 +1209,22 @@ public partial class PolyLing
     /// </summary>
     private string GenerateBlendShapeMappingCSV()
     {
-        if (_model?.MorphSets == null || _model.MorphSets.Count == 0)
+        if (_model?.MorphExpressions == null || _model.MorphExpressions.Count == 0)
             return "";
 
         var lines = new System.Collections.Generic.List<string>();
         lines.Add("# ClipName,MeshName,BlendShapeName,Weight,...");
 
-        foreach (var morphSet in _model.MorphSets)
+        foreach (var MorphExpression in _model.MorphExpressions)
         {
             // 頂点モーフのみ
-            if (morphSet.Type != MorphType.Vertex) continue;
-            if (!morphSet.IsValid) continue;
+            if (MorphExpression.Type != MorphType.Vertex) continue;
+            if (!MorphExpression.IsValid) continue;
 
             var parts = new System.Collections.Generic.List<string>();
-            parts.Add(morphSet.Name); // ClipName = MorphSet.Name
+            parts.Add(MorphExpression.Name); // ClipName = MorphExpression.Name
 
-            foreach (var morphIndex in morphSet.MeshIndices)
+            foreach (var morphIndex in MorphExpression.MeshIndices)
             {
                 if (morphIndex < 0 || morphIndex >= _meshContextList.Count)
                     continue;
@@ -1247,12 +1247,12 @@ public partial class PolyLing
                 if (string.IsNullOrEmpty(baseMeshName)) continue;
 
                 // エントリからweightを取得
-                var entry = morphSet.GetEntry(morphIndex);
+                var entry = MorphExpression.GetEntry(morphIndex);
                 float entryWeight = entry?.Weight ?? 1f;
 
                 // MeshName, BlendShapeName, Weight
                 parts.Add(baseMeshName);
-                parts.Add(morphSet.Name); // BlendShapeName = MorphSet.Name
+                parts.Add(MorphExpression.Name); // BlendShapeName = MorphExpression.Name
                 parts.Add(entryWeight.ToString("F2"));
             }
 
@@ -1270,7 +1270,7 @@ public partial class PolyLing
     /// </summary>
     private void AttachBlendShapeSync(GameObject root)
     {
-        if (_model?.MorphSets == null || _model.MorphSets.Count == 0) return;
+        if (_model?.MorphExpressions == null || _model.MorphExpressions.Count == 0) return;
 
         string csv = GenerateBlendShapeMappingCSV();
         if (string.IsNullOrEmpty(csv)) return;

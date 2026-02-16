@@ -649,7 +649,7 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // ModelContext API経由でリスト操作（MorphSet調整・TypedIndices無効化を含む）
+        // ModelContext API経由でリスト操作（MorphExpression調整・TypedIndices無効化を含む）
         int insertIndex = _model.Add(meshContext);
 
         // 選択を新しいメッシュに設定
@@ -1006,7 +1006,7 @@ public partial class PolyLing : EditorWindow
             DestroyImmediate(meshContext.UnityMesh);
         }
 
-        // ModelContext API経由で削除（MorphSet調整・選択インデックス調整を含む）
+        // ModelContext API経由で削除（MorphExpression調整・選択インデックス調整を含む）
         _model.RemoveAt(index);
 
         // 選択調整（RemoveAtが全カテゴリ調整済みだが、Mesh選択が空になった場合のフォールバック）
@@ -1119,7 +1119,7 @@ public partial class PolyLing : EditorWindow
             CameraTarget = _cameraTarget
         };
 
-        // ModelContext API経由で挿入（MorphSet調整・選択インデックス調整を含む）
+        // ModelContext API経由で挿入（MorphExpression調整・選択インデックス調整を含む）
         _model.Insert(insertIndex, clone);
 
         // 選択を複製先に設定

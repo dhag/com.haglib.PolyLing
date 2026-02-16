@@ -350,10 +350,10 @@ namespace Poly_Ling.Serialization
             }
 
             // ================================================================
-            // MorphSets
+            // MorphExpressions
             // ================================================================
 
-            SaveMorphSetsToDTO(model, modelDTO);
+            SaveMorphExpressionsToDTO(model, modelDTO);
 
             return modelDTO;
         }
@@ -502,10 +502,10 @@ namespace Poly_Ling.Serialization
             }
 
             // ================================================================
-            // MorphSets復元
+            // MorphExpressions復元
             // ================================================================
 
-            LoadMorphSetsFromDTO(modelDTO, model);
+            LoadMorphExpressionsFromDTO(modelDTO, model);
 
             return model;
         }
@@ -912,6 +912,9 @@ namespace Poly_Ling.Serialization
                 meshDTO.morphBaseData = null;
             }
 
+            // モーフ親インデックス
+            meshDTO.morphParentIndex = meshContext.MorphParentIndex;
+
             // エクスポート除外フラグ
             meshDTO.excludeFromExport = meshContext.ExcludeFromExport;
         }
@@ -933,31 +936,34 @@ namespace Poly_Ling.Serialization
                 meshContext.MorphBaseData = null;
             }
 
+            // モーフ親インデックス
+            meshContext.MorphParentIndex = meshDTO.morphParentIndex;
+
             // エクスポート除外フラグ
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;
         }
 
         // ================================================================
-        // MorphSets シリアライズ
+        // MorphExpressions シリアライズ
         // ================================================================
 
         /// <summary>
         /// ModelContextのモーフセットをModelDTOに保存
         /// </summary>
-        public static void SaveMorphSetsToDTO(Model.ModelContext model, ModelDTO modelDTO)
+        public static void SaveMorphExpressionsToDTO(Model.ModelContext model, ModelDTO modelDTO)
         {
             if (model == null || modelDTO == null) return;
 
-            modelDTO.morphSets = new List<MorphSetDTO>();
+            modelDTO.morphExpressions = new List<MorphExpressionDTO>();
 
-            if (model.MorphSets != null)
+            if (model.MorphExpressions != null)
             {
-                foreach (var set in model.MorphSets)
+                foreach (var set in model.MorphExpressions)
                 {
-                    var dto = MorphSetDTO.FromMorphSet(set);
+                    var dto = MorphExpressionDTO.FromMorphExpression(set);
                     if (dto != null)
                     {
-                        modelDTO.morphSets.Add(dto);
+                        modelDTO.morphExpressions.Add(dto);
                     }
                 }
             }
@@ -966,20 +972,20 @@ namespace Poly_Ling.Serialization
         /// <summary>
         /// ModelDTOのモーフセットをModelContextに復元
         /// </summary>
-        public static void LoadMorphSetsFromDTO(ModelDTO modelDTO, Model.ModelContext model)
+        public static void LoadMorphExpressionsFromDTO(ModelDTO modelDTO, Model.ModelContext model)
         {
             if (modelDTO == null || model == null) return;
 
-            model.MorphSets = new List<Data.MorphSet>();
+            model.MorphExpressions = new List<Data.MorphExpression>();
 
-            if (modelDTO.morphSets != null)
+            if (modelDTO.morphExpressions != null)
             {
-                foreach (var dto in modelDTO.morphSets)
+                foreach (var dto in modelDTO.morphExpressions)
                 {
-                    var set = dto?.ToMorphSet();
+                    var set = dto?.ToMorphExpression();
                     if (set != null)
                     {
-                        model.MorphSets.Add(set);
+                        model.MorphExpressions.Add(set);
                     }
                 }
             }

@@ -84,7 +84,7 @@ namespace Poly_Ling.Serialization
         /// モーフセット一覧
         /// 複数メッシュのモーフをグループ化
         /// </summary>
-        public List<MorphSetDTO> morphSets = new List<MorphSetDTO>();
+        public List<MorphExpressionDTO> morphExpressions = new List<MorphExpressionDTO>();
 
         // === ファクトリメソッド ===
 
@@ -227,6 +227,12 @@ namespace Poly_Ling.Serialization
         /// null = モーフではない通常メッシュ
         /// </summary>
         public MorphBaseDataDTO morphBaseData;
+
+        /// <summary>
+        /// モーフ親メッシュのインデックス
+        /// -1 = 未指定（名前規則ベースで検索）
+        /// </summary>
+        public int morphParentIndex = -1;
 
         /// <summary>
         /// ボーンポーズデータ（RestPose + Manualレイヤー）

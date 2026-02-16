@@ -86,6 +86,9 @@ namespace Poly_Ling.UndoSystem
         /// <summary>モーフ基準データ</summary>
         public MorphBaseData MorphBaseData;
 
+        /// <summary>モーフ親メッシュのマスターインデックス</summary>
+        public int MorphParentIndex;
+
         /// <summary>エクスポートから除外するか</summary>
         public bool ExcludeFromExport;
 
@@ -139,6 +142,7 @@ namespace Poly_Ling.UndoSystem
                                 ?? new List<SelectionSet>(),
                 // モーフデータ（Phase Morph追加）
                 MorphBaseData = meshContext.MorphBaseData?.Clone(),
+                MorphParentIndex = meshContext.MorphParentIndex,
                 ExcludeFromExport = meshContext.ExcludeFromExport,
                 // BonePoseData（Phase BonePose追加）
                 BonePoseData = meshContext.BonePoseData?.Clone(),
@@ -236,6 +240,7 @@ namespace Poly_Ling.UndoSystem
 
             // モーフデータを復元（Phase Morph追加）
             meshContext.MorphBaseData = MorphBaseData?.Clone();
+            meshContext.MorphParentIndex = MorphParentIndex;
             meshContext.ExcludeFromExport = ExcludeFromExport;
 
             // BonePoseData復元（Phase BonePose追加）
@@ -322,7 +327,7 @@ namespace Poly_Ling.UndoSystem
                 ctx.CurrentMaterialIndex = OldCurrentMaterialIndex;
             }
             
-            // 追加されたものを削除（ModelContext API使用: MorphSet調整あり、選択調整なし）
+            // 追加されたものを削除（ModelContext API使用: MorphExpression調整あり、選択調整なし）
             foreach (var (index, _) in AddedMeshContexts.OrderByDescending(e => e.Index))
             {
                 if (index >= 0 && index < ctx.MeshContextList.Count)
@@ -333,7 +338,7 @@ namespace Poly_Ling.UndoSystem
                 }
             }
 
-            // 削除されたものを復元（ModelContext API使用: MorphSet調整あり、選択調整なし）
+            // 削除されたものを復元（ModelContext API使用: MorphExpression調整あり、選択調整なし）
             foreach (var (index, snapshot) in RemovedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
@@ -366,7 +371,7 @@ namespace Poly_Ling.UndoSystem
                 ctx.CurrentMaterialIndex = NewCurrentMaterialIndex;
             }
             
-            // 削除されたものを削除（ModelContext API使用: MorphSet調整あり、選択調整なし）
+            // 削除されたものを削除（ModelContext API使用: MorphExpression調整あり、選択調整なし）
             foreach (var (index, _) in RemovedMeshContexts.OrderByDescending(e => e.Index))
             {
                 if (index >= 0 && index < ctx.MeshContextList.Count)
@@ -377,7 +382,7 @@ namespace Poly_Ling.UndoSystem
                 }
             }
 
-            // 追加されたものを復元（ModelContext API使用: MorphSet調整あり、選択調整なし）
+            // 追加されたものを復元（ModelContext API使用: MorphExpression調整あり、選択調整なし）
             foreach (var (index, snapshot) in AddedMeshContexts.OrderBy(e => e.Index))
             {
                 var mc = snapshot.ToMeshContext();
@@ -595,6 +600,237 @@ namespace Poly_Ling.UndoSystem
         public override string ToString()
         {
             return $"BonePoseChange: MasterIndex={MasterIndex}";
+        }
+    }
+
+    // ============================================================
+    // モーフ変換記録（Phase MorphEditor追加）
+    // ============================================================
+
+    /// <summary>
+    /// モーフ変換（Mesh↔Morph）のUndo記録
+    /// Type, MorphBaseData, MorphParentIndex, ExcludeFromExport を保存/復元
+    /// </summary>
+    public class MorphConversionRecord : MeshListUndoRecord
+    {
+        /// <summary>対象MeshContextのMasterIndex</summary>
+        public int MasterIndex;
+
+        /// <summary>変更前のType</summary>
+        public MeshType OldType;
+        /// <summary>変更後のType</summary>
+        public MeshType NewType;
+
+        /// <summary>変更前のMorphBaseData</summary>
+        public MorphBaseData OldMorphBaseData;
+        /// <summary>変更後のMorphBaseData</summary>
+        public MorphBaseData NewMorphBaseData;
+
+        /// <summary>変更前のMorphParentIndex</summary>
+        public int OldMorphParentIndex;
+        /// <summary>変更後のMorphParentIndex</summary>
+        public int NewMorphParentIndex;
+
+        /// <summary>変更前の名前</summary>
+        public string OldName;
+        /// <summary>変更後の名前</summary>
+        public string NewName;
+
+        /// <summary>変更前のExcludeFromExport</summary>
+        public bool OldExcludeFromExport;
+        /// <summary>変更後のExcludeFromExport</summary>
+        public bool NewExcludeFromExport;
+
+        public override void Undo(ModelContext ctx)
+        {
+            Apply(ctx, OldType, OldMorphBaseData, OldMorphParentIndex, OldName, OldExcludeFromExport);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            Apply(ctx, NewType, NewMorphBaseData, NewMorphParentIndex, NewName, NewExcludeFromExport);
+        }
+
+        private void Apply(ModelContext ctx, MeshType type, MorphBaseData morphData,
+            int morphParentIndex, string name, bool excludeFromExport)
+        {
+            if (ctx == null) return;
+            if (MasterIndex < 0 || MasterIndex >= ctx.MeshContextCount) return;
+
+            var mc = ctx.GetMeshContext(MasterIndex);
+            if (mc == null) return;
+
+            mc.Type = type;
+            if (mc.MeshObject != null) mc.MeshObject.Type = type;
+            mc.MorphBaseData = morphData?.Clone();
+            mc.MorphParentIndex = morphParentIndex;
+            mc.Name = name;
+            mc.ExcludeFromExport = excludeFromExport;
+
+            ctx.TypedIndices?.Invalidate();
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            return $"MorphConversion: [{MasterIndex}] {OldType} → {NewType}";
+        }
+    }
+
+    // ============================================================
+    // モーフセット変更記録（Phase MorphEditor追加）
+    // ============================================================
+
+    /// <summary>
+    /// モーフセットの追加/削除のUndo記録
+    /// </summary>
+    public class MorphExpressionChangeRecord : MeshListUndoRecord
+    {
+        /// <summary>追加されたモーフセット（Undo時に削除）</summary>
+        public MorphExpression AddExpression;
+        /// <summary>追加位置</summary>
+        public int AddedIndex;
+
+        /// <summary>削除されたモーフセット（Undo時に復元）</summary>
+        public MorphExpression RemovedExpression;
+        /// <summary>削除位置</summary>
+        public int RemovedIndex;
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+
+            // 追加されたものを削除
+            if (AddExpression != null && AddedIndex >= 0 && AddedIndex < ctx.MorphExpressions.Count)
+            {
+                ctx.MorphExpressions.RemoveAt(AddedIndex);
+            }
+
+            // 削除されたものを復元
+            if (RemovedExpression != null)
+            {
+                int idx = Mathf.Clamp(RemovedIndex, 0, ctx.MorphExpressions.Count);
+                ctx.MorphExpressions.Insert(idx, RemovedExpression.Clone());
+            }
+
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+
+            // 削除されたものを削除
+            if (RemovedExpression != null && RemovedIndex >= 0 && RemovedIndex < ctx.MorphExpressions.Count)
+            {
+                ctx.MorphExpressions.RemoveAt(RemovedIndex);
+            }
+
+            // 追加されたものを追加
+            if (AddExpression != null)
+            {
+                int idx = Mathf.Clamp(AddedIndex, 0, ctx.MorphExpressions.Count);
+                ctx.MorphExpressions.Insert(idx, AddExpression.Clone());
+            }
+
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            if (AddExpression != null) return $"MorphExpressionAdd: {AddExpression.Name}";
+            if (RemovedExpression != null) return $"MorphExpressionRemove: {RemovedExpression.Name}";
+            return "MorphExpressionChange";
+        }
+    }
+
+    // ============================================================
+    // モーフセット編集記録（Phase MorphEditor追加）
+    // ============================================================
+
+    /// <summary>
+    /// モーフセット内のエントリ/ウェイト/属性変更のUndo記録
+    /// Before/Afterスナップショット方式で全変更を網羅
+    /// </summary>
+    public class MorphExpressionEditRecord : MeshListUndoRecord
+    {
+        /// <summary>対象セットのインデックス</summary>
+        public int SetIndex;
+
+        /// <summary>変更前のスナップショット</summary>
+        public MorphExpression OldSnapshot;
+
+        /// <summary>変更後のスナップショット</summary>
+        public MorphExpression NewSnapshot;
+
+        public override void Undo(ModelContext ctx)
+        {
+            Apply(ctx, OldSnapshot);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            Apply(ctx, NewSnapshot);
+        }
+
+        private void Apply(ModelContext ctx, MorphExpression snapshot)
+        {
+            if (ctx == null || snapshot == null) return;
+            if (SetIndex < 0 || SetIndex >= ctx.MorphExpressions.Count) return;
+
+            ctx.MorphExpressions[SetIndex] = snapshot.Clone();
+
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            return $"MorphExpressionEdit: [{SetIndex}] {OldSnapshot?.Name ?? "?"}";
+        }
+    }
+
+    // ============================================================
+    // モーフセット一括変更記録（CSV読み込み用、Phase MorphEditor追加）
+    // ============================================================
+
+    /// <summary>
+    /// 全モーフセットリストの一括置換（CSV読み込み等）のUndo記録
+    /// </summary>
+    public class MorphExpressionListReplaceRecord : MeshListUndoRecord
+    {
+        /// <summary>変更前の全セットリスト</summary>
+        public List<MorphExpression> OldSets;
+
+        /// <summary>変更後の全セットリスト</summary>
+        public List<MorphExpression> NewSets;
+
+        public override void Undo(ModelContext ctx)
+        {
+            Apply(ctx, OldSets);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            Apply(ctx, NewSets);
+        }
+
+        private void Apply(ModelContext ctx, List<MorphExpression> sets)
+        {
+            if (ctx == null || sets == null) return;
+
+            ctx.MorphExpressions = sets.Select(s => s.Clone()).ToList();
+
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            return $"MorphExpressionListReplace: {OldSets?.Count ?? 0} → {NewSets?.Count ?? 0} sets";
         }
     }
 }

@@ -358,20 +358,128 @@
 }
 
 /* ================================================================
-   プレースホルダー
+   モーフエディタ（Phase MorphEditor v2: UIToolkit ListView）
    ================================================================ */
 
-.placeholder {
+.morph-editor {
     display: none;
     flex-grow: 1;
-    justify-content: center;
-    align-items: center;
-    padding: 32px;
+    padding: 0;
 }
 
-.placeholder-text {
-    font-size: 14px;
+/* モーフ ListView（チェックボックス付きリスト） */
+
+.morph-listview {
+    min-height: 60px;
+    max-height: 180px;
+    margin: 4px 0;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+/* セクション共通 */
+
+.morph-section-foldout {
+    margin-top: 4px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.15);
+    border-radius: 3px;
+}
+
+.morph-section-panel {
+    padding: 4px 8px;
+}
+
+.morph-subsection-label {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 4px;
+    padding-bottom: 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.morph-field-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 3px;
+}
+
+.morph-field-label {
+    width: 60px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    flex-shrink: 0;
+}
+
+.morph-popup {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.morph-text-field {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.morph-info-label {
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 4px;
+}
+
+.morph-action-button {
+    margin-top: 4px;
+    height: 22px;
+    font-size: 12px;
+}
+
+.morph-action-button-small {
+    flex-grow: 1;
+    margin: 0 1px;
+    height: 20px;
+    font-size: 11px;
+}
+
+/* モーフリスト行 */
+
+.morph-list-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 1px 4px;
+}
+
+.morph-list-toggle {
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.morph-list-name {
+    flex-grow: 1;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.morph-list-info {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+/* テスト */
+
+.morph-test-slider {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.morph-test-buttons {
+    flex-direction: row;
+    margin-top: 2px;
 }
 
 /* ================================================================
