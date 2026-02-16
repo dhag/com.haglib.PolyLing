@@ -77,11 +77,11 @@ namespace Poly_Ling.Serialization
         public Dictionary<string, int> humanoidBoneMapping = new Dictionary<string, int>();
 
         // ================================================================
-        // モーフセット
+        // モーフエクスプレッション
         // ================================================================
 
         /// <summary>
-        /// モーフセット一覧
+        /// モーフエクスプレッション一覧
         /// 複数メッシュのモーフをグループ化
         /// </summary>
         public List<MorphExpressionDTO> morphExpressions = new List<MorphExpressionDTO>();

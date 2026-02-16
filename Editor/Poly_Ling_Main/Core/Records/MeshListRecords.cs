@@ -679,20 +679,20 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // モーフセット変更記録（Phase MorphEditor追加）
+    // モーフエクスプレッション変更記録（Phase MorphEditor追加）
     // ============================================================
 
     /// <summary>
-    /// モーフセットの追加/削除のUndo記録
+    /// モーフエクスプレッションの追加/削除のUndo記録
     /// </summary>
     public class MorphExpressionChangeRecord : MeshListUndoRecord
     {
-        /// <summary>追加されたモーフセット（Undo時に削除）</summary>
+        /// <summary>追加されたモーフエクスプレッション（Undo時に削除）</summary>
         public MorphExpression AddExpression;
         /// <summary>追加位置</summary>
         public int AddedIndex;
 
-        /// <summary>削除されたモーフセット（Undo時に復元）</summary>
+        /// <summary>削除されたモーフエクスプレッション（Undo時に復元）</summary>
         public MorphExpression RemovedExpression;
         /// <summary>削除位置</summary>
         public int RemovedIndex;
@@ -748,11 +748,11 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // モーフセット編集記録（Phase MorphEditor追加）
+    // モーフエクスプレッション編集記録（Phase MorphEditor追加）
     // ============================================================
 
     /// <summary>
-    /// モーフセット内のエントリ/ウェイト/属性変更のUndo記録
+    /// モーフエクスプレッション内のエントリ/ウェイト/属性変更のUndo記録
     /// Before/Afterスナップショット方式で全変更を網羅
     /// </summary>
     public class MorphExpressionEditRecord : MeshListUndoRecord
@@ -794,11 +794,11 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // モーフセット一括変更記録（CSV読み込み用、Phase MorphEditor追加）
+    // モーフエクスプレッション一括変更記録（CSV読み込み用、Phase MorphEditor追加）
     // ============================================================
 
     /// <summary>
-    /// 全モーフセットリストの一括置換（CSV読み込み等）のUndo記録
+    /// 全モーフエクスプレッションリストの一括置換（CSV読み込み等）のUndo記録
     /// </summary>
     public class MorphExpressionListReplaceRecord : MeshListUndoRecord
     {

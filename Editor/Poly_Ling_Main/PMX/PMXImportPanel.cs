@@ -552,7 +552,7 @@ namespace Poly_Ling.PMX
                             _context.ReplaceMaterials.Invoke(_lastResult.Materials);
                         }
 
-                        // Replaceモードではモーフセットも置換
+                        // Replaceモードではモーフエクスプレッションも置換
                         if (handled && _lastResult.MorphExpressions.Count > 0 && _context.Model != null)
                         {
                             _context.Model.MorphExpressions = new List<Data.MorphExpression>(_lastResult.MorphExpressions);
@@ -582,7 +582,7 @@ namespace Poly_Ling.PMX
                                 }
                             }
 
-                            // 新しいモデルにモーフセットを設定
+                            // 新しいモデルにモーフエクスプレッションを設定
                             if (_lastResult.MorphExpressions.Count > 0)
                             {
                                 if (newModel != null)
@@ -670,7 +670,7 @@ namespace Poly_Ling.PMX
                             _context.AddMaterials.Invoke(_lastResult.Materials);
                         }
 
-                        // Appendモードではモーフセットを追加（インデックス調整済み）
+                        // Appendモードではモーフエクスプレッションを追加（インデックス調整済み）
                         if (_lastResult.MorphExpressions.Count > 0 && _context.Model != null)
                         {
                             // MorphExpressions内のメッシュインデックスにオフセットを適用

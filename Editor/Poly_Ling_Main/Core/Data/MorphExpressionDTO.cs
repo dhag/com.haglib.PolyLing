@@ -1,5 +1,5 @@
 // Assets/Editor/Poly_Ling_/Core/Data/MorphExpressionDTO.cs
-// モーフセットのシリアライズ用データ構造
+// モーフエクスプレッションのシリアライズ用データ構造
 
 using System;
 using System.Collections.Generic;
@@ -17,7 +17,7 @@ namespace Poly_Ling.Serialization
     }
 
     /// <summary>
-    /// モーフセットのシリアライズ用
+    /// モーフエクスプレッションのシリアライズ用
     /// </summary>
     [Serializable]
     public class MorphExpressionDTO

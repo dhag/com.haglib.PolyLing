@@ -62,6 +62,50 @@ namespace Poly_Ling.UndoSystem
     }
 
     /// <summary>
+    /// モーフ選択の変更を記録するレコード（他カテゴリの選択を壊さない）
+    /// </summary>
+    [Serializable]
+    public class MorphSelectionChangeRecord : IUndoRecord<ModelContext>
+    {
+        public UndoOperationInfo Info { get; set; }
+        public int[] OldMorphIndices { get; set; }
+        public int[] NewMorphIndices { get; set; }
+
+        public MorphSelectionChangeRecord() { }
+
+        public MorphSelectionChangeRecord(int[] oldIndices, int[] newIndices)
+        {
+            OldMorphIndices = oldIndices ?? Array.Empty<int>();
+            NewMorphIndices = newIndices ?? Array.Empty<int>();
+        }
+
+        public void Undo(ModelContext context)
+        {
+            if (context == null) return;
+            context.ClearMorphSelection();
+            foreach (var idx in OldMorphIndices)
+                context.AddToMorphSelection(idx);
+            context.OnListChanged?.Invoke();
+            context.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public void Redo(ModelContext context)
+        {
+            if (context == null) return;
+            context.ClearMorphSelection();
+            foreach (var idx in NewMorphIndices)
+                context.AddToMorphSelection(idx);
+            context.OnListChanged?.Invoke();
+            context.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString()
+        {
+            return $"MorphSelectionChange: [{string.Join(",", OldMorphIndices)}] → [{string.Join(",", NewMorphIndices)}]";
+        }
+    }
+
+    /// <summary>
     /// メッシュの順序・階層変更を記録するレコード（D&D用）
     /// </summary>
     [Serializable]

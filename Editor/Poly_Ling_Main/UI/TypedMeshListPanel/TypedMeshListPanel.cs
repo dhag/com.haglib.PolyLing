@@ -61,11 +61,11 @@ namespace Poly_Ling.UI
         private PopupField<int> _morphParentPopup;
         private PopupField<int> _morphPanelPopup;
 
-        // モーフセット
+        // モーフエクスプレッション
         private TextField _morphSetNameField;
         private VisualElement _morphSetTypePopupContainer;
         private PopupField<int> _morphSetTypePopup;
-        private Button _btnCreateMorphSet;
+        private Button _btnCreateMorphExpression;
 
         // 詳細パネル
         private Foldout _detailFoldout;
@@ -111,7 +111,7 @@ namespace Poly_Ling.UI
         private bool _isMorphPreviewActive = false;
         private Dictionary<int, Vector3[]> _morphPreviewBackups = new Dictionary<int, Vector3[]>();
         private List<(int morphIndex, int baseIndex)> _morphTestChecked = new List<(int, int)>();
-        private HashSet<int> _morphTestCheckedSet = new HashSet<int>();
+        private bool _isSyncingMorphSelection = false;
 
         // モーフリストのデータソース
         private List<(int masterIndex, string name, string info)> _morphListData = new List<(int, string, string)>();
@@ -162,6 +162,8 @@ namespace Poly_Ling.UI
         private void Cleanup()
         {
             EndMorphPreview();
+            if (_morphListView != null)
+                _morphListView.selectionChanged -= OnMorphListSelectionChanged;
             UnsubscribeFromModel();
             if (_toolContext?.UndoController != null)
                 _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
@@ -249,7 +251,9 @@ namespace Poly_Ling.UI
 
                 // モーフタブの場合はモーフエディタも更新
                 if (_currentTab == TabType.Morph)
+                {
                     RefreshMorphEditor();
+                }
             }
             finally
             {
@@ -1621,6 +1625,8 @@ namespace Poly_Ling.UI
                 _morphListView.bindItem = MorphListBindItem;
                 _morphListView.fixedItemHeight = 20;
                 _morphListView.itemsSource = _morphListData;
+                _morphListView.selectionType = SelectionType.Multiple;
+                _morphListView.selectionChanged += OnMorphListSelectionChanged;
             }
 
             // PopupFieldコンテナ
@@ -1628,10 +1634,10 @@ namespace Poly_Ling.UI
             _morphParentPopupContainer = root.Q<VisualElement>("morph-parent-container");
             _morphPanelPopupContainer = root.Q<VisualElement>("morph-panel-container");
 
-            // モーフセット
+            // モーフエクスプレッション
             _morphSetNameField = root.Q<TextField>("morph-set-name-field");
             _morphSetTypePopupContainer = root.Q<VisualElement>("morph-set-type-container");
-            _btnCreateMorphSet = root.Q<Button>("btn-create-morph-set");
+            _btnCreateMorphExpression = root.Q<Button>("btn-create-morph-set");
 
             // ボタンイベント
             _btnMeshToMorph = root.Q<Button>("btn-mesh-to-morph");
@@ -1639,7 +1645,7 @@ namespace Poly_Ling.UI
 
             _btnMeshToMorph?.RegisterCallback<ClickEvent>(_ => OnMeshToMorph());
             _btnMorphToMesh?.RegisterCallback<ClickEvent>(_ => OnMorphToMesh());
-            _btnCreateMorphSet?.RegisterCallback<ClickEvent>(_ => OnCreateMorphSet());
+            _btnCreateMorphExpression?.RegisterCallback<ClickEvent>(_ => OnCreateMorphExpression());
 
             root.Q<Button>("btn-morph-test-reset")?.RegisterCallback<ClickEvent>(_ => OnMorphTestReset());
             root.Q<Button>("btn-morph-test-select-all")?.RegisterCallback<ClickEvent>(_ => OnMorphTestSelectAll(true));
@@ -1661,10 +1667,6 @@ namespace Poly_Ling.UI
             var row = new VisualElement();
             row.AddToClassList("morph-list-row");
 
-            var toggle = new Toggle();
-            toggle.AddToClassList("morph-list-toggle");
-            row.Add(toggle);
-
             var nameLabel = new Label();
             nameLabel.AddToClassList("morph-list-name");
             row.Add(nameLabel);
@@ -1681,31 +1683,11 @@ namespace Poly_Ling.UI
             if (index < 0 || index >= _morphListData.Count) return;
             var data = _morphListData[index];
 
-            var toggle = element.Q<Toggle>();
             var nameLabel = element.Q<Label>(className: "morph-list-name");
             var infoLabel = element.Q<Label>(className: "morph-list-info");
 
             if (nameLabel != null) nameLabel.text = data.name;
             if (infoLabel != null) infoLabel.text = data.info;
-
-            if (toggle != null)
-            {
-                // 前回のコールバックを解除
-                if (toggle.userData is EventCallback<ChangeEvent<bool>> prevCb)
-                    toggle.UnregisterValueChangedCallback(prevCb);
-
-                int masterIdx = data.masterIndex;
-                toggle.SetValueWithoutNotify(_morphTestCheckedSet.Contains(masterIdx));
-                EventCallback<ChangeEvent<bool>> cb = evt =>
-                {
-                    if (evt.newValue)
-                        _morphTestCheckedSet.Add(masterIdx);
-                    else
-                        _morphTestCheckedSet.Remove(masterIdx);
-                };
-                toggle.RegisterValueChangedCallback(cb);
-                toggle.userData = cb;
-            }
         }
 
         // ----------------------------------------------------------------
@@ -1718,7 +1700,7 @@ namespace Poly_Ling.UI
 
             RefreshMorphListData();
             RefreshMorphConvertSection();
-            RefreshMorphSetSection();
+            RefreshMorphExpressionSection();
         }
 
         /// <summary>
@@ -1752,6 +1734,70 @@ namespace Poly_Ling.UI
                 _morphCountLabel.text = $"モーフ: {_morphListData.Count}";
 
             _morphListView?.RefreshItems();
+            SyncMorphListViewSelection();
+        }
+
+        // ----------------------------------------------------------------
+        // モーフリスト選択 (ListView selectionChanged)
+        // ----------------------------------------------------------------
+
+        private void OnMorphListSelectionChanged(IEnumerable<object> selection)
+        {
+            if (_isSyncingMorphSelection || Model == null) return;
+
+            var oldIndices = Model.SelectedMorphIndices.ToArray();
+
+            // ListView選択 → Model.SelectedMorphIndices
+            Model.ClearMorphSelection();
+            foreach (var item in selection)
+            {
+                if (item is (int masterIndex, string, string))
+                    Model.AddToMorphSelection(masterIndex);
+            }
+
+            var newIndices = Model.SelectedMorphIndices.ToArray();
+
+            // Undo記録（変化があった場合のみ）
+            if (!oldIndices.SequenceEqual(newIndices))
+            {
+                var undoController = _toolContext?.UndoController;
+                if (undoController != null)
+                {
+                    var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
+                    undoController.MeshListStack.Record(record, "モーフ選択変更");
+                    undoController.FocusMeshList();
+                }
+            }
+
+            _toolContext?.OnMeshSelectionChanged?.Invoke();
+            _toolContext?.Repaint?.Invoke();
+        }
+
+        /// <summary>
+        /// Model.SelectedMorphIndices → ListView選択に同期（Undo/Redo・外部変更時用）
+        /// </summary>
+        private void SyncMorphListViewSelection()
+        {
+            if (_morphListView == null || Model == null) return;
+
+            _isSyncingMorphSelection = true;
+            try
+            {
+                var selectedListIndices = new List<int>();
+                var selectedMorphExpression = new HashSet<int>(Model.SelectedMorphIndices);
+
+                for (int i = 0; i < _morphListData.Count; i++)
+                {
+                    if (selectedMorphExpression.Contains(_morphListData[i].masterIndex))
+                        selectedListIndices.Add(i);
+                }
+
+                _morphListView.SetSelectionWithoutNotify(selectedListIndices);
+            }
+            finally
+            {
+                _isSyncingMorphSelection = false;
+            }
         }
 
         // ----------------------------------------------------------------
@@ -1878,9 +1924,9 @@ namespace Poly_Ling.UI
         {
             if (Model == null) return;
 
-            // チェック済みモーフを収集
+            // 選択中のモーフを収集
             var targets = new List<int>();
-            foreach (var morphIdx in _morphTestCheckedSet)
+            foreach (var morphIdx in Model.SelectedMorphIndices.ToList())
             {
                 if (morphIdx < 0 || morphIdx >= Model.MeshContextCount) continue;
                 var ctx = Model.GetMeshContext(morphIdx);
@@ -1889,7 +1935,7 @@ namespace Poly_Ling.UI
             }
 
             if (targets.Count == 0)
-            { MorphLog("チェック済みのモーフがありません"); return; }
+            { MorphLog("モーフが選択されていません"); return; }
 
             // モーフプレビュー終了
             EndMorphPreview();
@@ -1918,9 +1964,6 @@ namespace Poly_Ling.UI
                 ctx.ExcludeFromExport = false;
 
                 RecordMorphUndo(record, $"モーフ→メッシュ: {ctx.Name}");
-
-                // チェックリストから除去
-                _morphTestCheckedSet.Remove(targetIdx);
                 convertedNames.Add(ctx.Name);
             }
 
@@ -1961,19 +2004,36 @@ namespace Poly_Ling.UI
         private void OnMorphTestSelectAll(bool select)
         {
             if (Model == null) return;
-            _morphTestCheckedSet.Clear();
+
+            var oldIndices = Model.SelectedMorphIndices.ToArray();
+
+            Model.ClearMorphSelection();
             if (select)
                 foreach (var d in _morphListData)
-                    _morphTestCheckedSet.Add(d.masterIndex);
+                    Model.AddToMorphSelection(d.masterIndex);
+
+            var newIndices = Model.SelectedMorphIndices.ToArray();
+
+            // Undo記録
+            if (!oldIndices.SequenceEqual(newIndices))
+            {
+                var undoController = _toolContext?.UndoController;
+                if (undoController != null)
+                {
+                    var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
+                    undoController.MeshListStack.Record(record, select ? "モーフ全選択" : "モーフ全解除");
+                    undoController.FocusMeshList();
+                }
+            }
 
             EndMorphPreview();
             _morphTestWeight?.SetValueWithoutNotify(0f);
-            _morphListView?.RefreshItems();
+            SyncMorphListViewSelection();
         }
 
         private void ApplyMorphTest(float weight)
         {
-            if (Model == null || _morphTestCheckedSet.Count == 0) return;
+            if (Model == null || Model.SelectedMorphIndices.Count == 0) return;
 
             if (!_isMorphPreviewActive) StartMorphPreview();
 
@@ -2016,7 +2076,7 @@ namespace Poly_Ling.UI
             _morphTestChecked.Clear();
             _morphPreviewBackups.Clear();
 
-            foreach (var morphIdx in _morphTestCheckedSet)
+            foreach (var morphIdx in Model.SelectedMorphIndices)
             {
                 var morphCtx = Model.GetMeshContext(morphIdx);
                 if (morphCtx == null || !morphCtx.IsMorph) continue;
@@ -2089,10 +2149,10 @@ namespace Poly_Ling.UI
         }
 
         // ----------------------------------------------------------------
-        // モーフセット（新規作成のみ、管理はMorphPanelで）
+        // モーフエクスプレッション（新規作成のみ、管理はMorphPanelで）
         // ----------------------------------------------------------------
 
-        private void RefreshMorphSetSection()
+        private void RefreshMorphExpressionSection()
         {
             if (Model == null) return;
 
@@ -2101,7 +2161,7 @@ namespace Poly_Ling.UI
                 "morph-popup", (int)MorphType.Vertex);
         }
 
-        private void OnCreateMorphSet()
+        private void OnCreateMorphExpression()
         {
             if (Model == null) return;
 
@@ -2115,7 +2175,7 @@ namespace Poly_Ling.UI
             int typeInt = _morphSetTypePopup?.value ?? (int)MorphType.Vertex;
             var set = new MorphExpression(setName, (MorphType)typeInt);
 
-            foreach (var morphIdx in _morphTestCheckedSet)
+            foreach (var morphIdx in Model.SelectedMorphIndices)
             {
                 var morphCtx = Model.GetMeshContext(morphIdx);
                 if (morphCtx != null && morphCtx.IsMorph)
@@ -2123,7 +2183,7 @@ namespace Poly_Ling.UI
             }
 
             if (set.MeshCount == 0)
-            { MorphLog("チェック済みのモーフがありません"); return; }
+            { MorphLog("モーフが選択されていません"); return; }
 
             int addIndex = Model.MorphExpressions.Count;
             var record = new MorphExpressionChangeRecord
@@ -2131,11 +2191,11 @@ namespace Poly_Ling.UI
                 AddExpression = set.Clone(),
                 AddedIndex = addIndex,
             };
-            RecordMorphUndo(record, $"モーフセット生成: {setName}");
+            RecordMorphUndo(record, $"モーフエクスプレッション生成: {setName}");
 
             Model.MorphExpressions.Add(set);
             NotifyModelChanged();
-            MorphLog($"モーフセット '{setName}' を生成 ({set.MeshCount}件)");
+            MorphLog($"モーフエクスプレッション '{setName}' を生成 ({set.MeshCount}件)");
         }
 
         // ----------------------------------------------------------------

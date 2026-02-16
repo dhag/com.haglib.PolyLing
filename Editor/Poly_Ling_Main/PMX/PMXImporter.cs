@@ -62,7 +62,7 @@ namespace Poly_Ling.PMX
         /// <summary>元のPMXドキュメント</summary>
         public PMXDocument Document { get; set; }
 
-        /// <summary>インポートされたモーフセット</summary>
+        /// <summary>インポートされたモーフエクスプレッション</summary>
         public List<MorphExpression> MorphExpressions { get; } = new List<MorphExpression>();
 
         /// <summary>材質グループ情報（モーフ変換で使用）</summary>

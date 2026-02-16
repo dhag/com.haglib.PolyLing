@@ -948,7 +948,7 @@ namespace Poly_Ling.Serialization
         // ================================================================
 
         /// <summary>
-        /// ModelContextのモーフセットをModelDTOに保存
+        /// ModelContextのモーフエクスプレッションをModelDTOに保存
         /// </summary>
         public static void SaveMorphExpressionsToDTO(Model.ModelContext model, ModelDTO modelDTO)
         {
@@ -970,7 +970,7 @@ namespace Poly_Ling.Serialization
         }
 
         /// <summary>
-        /// ModelDTOのモーフセットをModelContextに復元
+        /// ModelDTOのモーフエクスプレッションをModelContextに復元
         /// </summary>
         public static void LoadMorphExpressionsFromDTO(ModelDTO modelDTO, Model.ModelContext model)
         {

@@ -1,5 +1,5 @@
 // Assets/Editor/Poly_Ling_/ToolPanels/MorphPanel.cs
-// モーフセット管理・プレビューパネル (UIToolkit)
+// モーフエクスプレッション管理・プレビューパネル (UIToolkit)
 
 using System;
 using System.Collections.Generic;
@@ -51,7 +51,7 @@ namespace Poly_Ling.Tools.Panels
 
 
     /// <summary>
-    /// モーフセット管理・プレビューパネル (UIToolkit)
+    /// モーフエクスプレッション管理・プレビューパネル (UIToolkit)
     /// </summary>
     public class MorphPanel : IToolPanelBase
     {
@@ -296,7 +296,7 @@ namespace Poly_Ling.Tools.Panels
 
             if (!model.HasMorphExpressions)
             {
-                _warningLabel.text = "モーフセットがありません";
+                _warningLabel.text = "モーフエクスプレッションがありません";
                 _warningLabel.style.display = DisplayStyle.Flex;
                 if (_setDetail != null) _setDetail.style.display = DisplayStyle.None;
                 if (_previewSection != null) _previewSection.style.display = DisplayStyle.None;
@@ -450,7 +450,7 @@ namespace Poly_Ling.Tools.Panels
             set.Panel = newPanel;
 
             record.NewSnapshot = set.Clone();
-            RecordUndo(record, $"モーフセット属性変更: {newName}");
+            RecordUndo(record, $"モーフエクスプレッション属性変更: {newName}");
 
             // リスト表示更新
             if (_selectedSetIndex < _setListData.Count)
@@ -519,7 +519,7 @@ namespace Poly_Ling.Tools.Panels
                     OldSnapshot = _entryEditSnapshot,
                     NewSnapshot = set.Clone(),
                 };
-                RecordUndo(record, $"モーフセットウェイト変更: {set.Name}");
+                RecordUndo(record, $"モーフエクスプレッションウェイト変更: {set.Name}");
             }
             _entryEditSnapshot = null;
         }
@@ -534,7 +534,7 @@ namespace Poly_Ling.Tools.Panels
             if (model == null || _selectedSetIndex < 0 || _selectedSetIndex >= model.MorphExpressionCount) return;
 
             var set = model.MorphExpressions[_selectedSetIndex];
-            if (!EditorUtility.DisplayDialog("削除確認", $"モーフセット '{set.Name}' を削除しますか？", "削除", "キャンセル"))
+            if (!EditorUtility.DisplayDialog("削除確認", $"モーフエクスプレッション '{set.Name}' を削除しますか？", "削除", "キャンセル"))
                 return;
 
             EndPreview();
@@ -544,12 +544,12 @@ namespace Poly_Ling.Tools.Panels
                 RemovedExpression = set.Clone(),
                 RemovedIndex = _selectedSetIndex,
             };
-            RecordUndo(record, $"モーフセット削除: {set.Name}");
+            RecordUndo(record, $"モーフエクスプレッション削除: {set.Name}");
 
             model.MorphExpressions.RemoveAt(_selectedSetIndex);
             _selectedSetIndex = -1;
             _settings.SelectedMorphExpressionIndex = -1;
-            StatusLog($"モーフセット '{set.Name}' を削除");
+            StatusLog($"モーフエクスプレッション '{set.Name}' を削除");
             RefreshAll();
         }
 
@@ -867,7 +867,7 @@ namespace Poly_Ling.Tools.Panels
         {
             var model = Model;
             if (model == null || model.MorphExpressionCount == 0)
-            { StatusLog("保存するモーフセットがありません"); return; }
+            { StatusLog("保存するモーフエクスプレッションがありません"); return; }
 
             string path = EditorUtility.SaveFilePanel("BlendShapeSync CSV保存", "", "blendshape_sync.csv", "csv");
             if (string.IsNullOrEmpty(path)) return;

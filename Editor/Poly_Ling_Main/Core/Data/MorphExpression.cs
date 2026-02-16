@@ -1,5 +1,5 @@
 // Assets/Editor/Poly_Ling_/Core/Data/MorphExpression.cs
-// モーフセット（複数メッシュのモーフをグループ化）
+// モーフエクスプレッション（複数メッシュのモーフをグループ化）
 // PMXエクスポート時に統合して1つのモーフとして出力
 
 using System;
@@ -51,7 +51,7 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
-    /// モーフセット
+    /// モーフエクスプレッション
     /// 複数メッシュのモーフを1つの名前でグループ化
     /// </summary>
     [Serializable]

@@ -491,16 +491,16 @@ namespace Poly_Ling.Model
         // MorphExpressions（モーフグループ管理）
         // ================================================================
 
-        /// <summary>モーフセットリスト</summary>
+        /// <summary>モーフエクスプレッションリスト</summary>
         public List<MorphExpression> MorphExpressions { get; set; } = new List<MorphExpression>();
 
-        /// <summary>モーフセット数</summary>
+        /// <summary>モーフエクスプレッション数</summary>
         public int MorphExpressionCount => MorphExpressions?.Count ?? 0;
 
-        /// <summary>モーフセットがあるか</summary>
+        /// <summary>モーフエクスプレッションがあるか</summary>
         public bool HasMorphExpressions => MorphExpressionCount > 0;
 
-        /// <summary>モーフセットを追加</summary>
+        /// <summary>モーフエクスプレッションを追加</summary>
         public MorphExpression AddMorphExpression(string name, MorphType type = MorphType.Vertex)
         {
             var set = new MorphExpression(name, type);
@@ -508,25 +508,25 @@ namespace Poly_Ling.Model
             return set;
         }
 
-        /// <summary>モーフセットを削除</summary>
+        /// <summary>モーフエクスプレッションを削除</summary>
         public bool RemoveMorphExpression(MorphExpression set)
         {
             return MorphExpressions.Remove(set);
         }
 
-        /// <summary>名前でモーフセットを検索</summary>
+        /// <summary>名前でモーフエクスプレッションを検索</summary>
         public MorphExpression FindMorphExpressionByName(string name)
         {
             return MorphExpressions.Find(s => s.Name == name);
         }
 
-        /// <summary>メッシュインデックスでモーフセットを検索</summary>
+        /// <summary>メッシュインデックスでモーフエクスプレッションを検索</summary>
         public MorphExpression FindMorphExpressionByMesh(int meshIndex)
         {
             return MorphExpressions.Find(s => s.ContainsMesh(meshIndex));
         }
 
-        /// <summary>一意なモーフセット名を生成</summary>
+        /// <summary>一意なモーフエクスプレッション名を生成</summary>
         public string GenerateUniqueMorphExpressionName(string baseName = "Morph")
         {
             string name = baseName;
@@ -920,7 +920,7 @@ namespace Poly_Ling.Model
                 SelectedMorphIndices = AdjustIndicesForInsert(SelectedMorphIndices, index);
             }
 
-            // モーフセットのインデックス調整（常に実行）
+            // モーフエクスプレッションのインデックス調整（常に実行）
             foreach (var set in MorphExpressions)
             {
                 set.AdjustIndicesOnInsert(index);
@@ -960,7 +960,7 @@ namespace Poly_Ling.Model
                 ValidateSelection();
             }
 
-            // モーフセットのインデックス調整（常に実行）
+            // モーフエクスプレッションのインデックス調整（常に実行）
             foreach (var set in MorphExpressions)
             {
                 set.AdjustIndicesOnRemove(index);

@@ -452,11 +452,6 @@
     padding: 1px 4px;
 }
 
-.morph-list-toggle {
-    margin-right: 4px;
-    flex-shrink: 0;
-}
-
 .morph-list-name {
     flex-grow: 1;
     font-size: 11px;
