@@ -603,6 +603,68 @@ namespace Poly_Ling.UndoSystem
         }
     }
 
+    /// <summary>
+    /// 複数ボーンのBonePoseData変更を一括記録するレコード
+    /// </summary>
+    public class MultiBonePoseChangeRecord : MeshListUndoRecord
+    {
+        public struct Entry
+        {
+            public int MasterIndex;
+            public BonePoseDataSnapshot? OldSnapshot;
+            public BonePoseDataSnapshot? NewSnapshot;
+            public Matrix4x4? OldBindPose;
+            public Matrix4x4? NewBindPose;
+        }
+
+        public List<Entry> Entries = new List<Entry>();
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            foreach (var e in Entries)
+                ApplyEntry(ctx, e.MasterIndex, e.OldSnapshot, e.OldBindPose);
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            foreach (var e in Entries)
+                ApplyEntry(ctx, e.MasterIndex, e.NewSnapshot, e.NewBindPose);
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        private static void ApplyEntry(ModelContext ctx, int masterIndex,
+            BonePoseDataSnapshot? snapshot, Matrix4x4? bindPose)
+        {
+            if (masterIndex < 0 || masterIndex >= ctx.MeshContextCount) return;
+            var mc = ctx.GetMeshContext(masterIndex);
+            if (mc == null) return;
+
+            if (snapshot.HasValue)
+            {
+                if (mc.BonePoseData == null)
+                    mc.BonePoseData = new BonePoseData();
+                mc.BonePoseData.ApplySnapshot(snapshot);
+            }
+            else
+            {
+                mc.BonePoseData = null;
+            }
+
+            if (bindPose.HasValue)
+                mc.BindPose = bindPose.Value;
+        }
+
+        public override string ToString()
+        {
+            return $"MultiBonePoseChange: {Entries.Count} bones";
+        }
+    }
+
     // ============================================================
     // モーフ変換記録（Phase MorphEditor追加）
     // ============================================================
@@ -679,20 +741,20 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // モーフエクスプレッション変更記録（Phase MorphEditor追加）
+    // モーフセット変更記録（Phase MorphEditor追加）
     // ============================================================
 
     /// <summary>
-    /// モーフエクスプレッションの追加/削除のUndo記録
+    /// モーフセットの追加/削除のUndo記録
     /// </summary>
     public class MorphExpressionChangeRecord : MeshListUndoRecord
     {
-        /// <summary>追加されたモーフエクスプレッション（Undo時に削除）</summary>
+        /// <summary>追加されたモーフセット（Undo時に削除）</summary>
         public MorphExpression AddExpression;
         /// <summary>追加位置</summary>
         public int AddedIndex;
 
-        /// <summary>削除されたモーフエクスプレッション（Undo時に復元）</summary>
+        /// <summary>削除されたモーフセット（Undo時に復元）</summary>
         public MorphExpression RemovedExpression;
         /// <summary>削除位置</summary>
         public int RemovedIndex;
@@ -748,11 +810,11 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // モーフエクスプレッション編集記録（Phase MorphEditor追加）
+    // モーフセット編集記録（Phase MorphEditor追加）
     // ============================================================
 
     /// <summary>
-    /// モーフエクスプレッション内のエントリ/ウェイト/属性変更のUndo記録
+    /// モーフセット内のエントリ/ウェイト/属性変更のUndo記録
     /// Before/Afterスナップショット方式で全変更を網羅
     /// </summary>
     public class MorphExpressionEditRecord : MeshListUndoRecord
@@ -794,11 +856,11 @@ namespace Poly_Ling.UndoSystem
     }
 
     // ============================================================
-    // モーフエクスプレッション一括変更記録（CSV読み込み用、Phase MorphEditor追加）
+    // モーフセット一括変更記録（CSV読み込み用、Phase MorphEditor追加）
     // ============================================================
 
     /// <summary>
-    /// 全モーフエクスプレッションリストの一括置換（CSV読み込み等）のUndo記録
+    /// 全モーフセットリストの一括置換（CSV読み込み等）のUndo記録
     /// </summary>
     public class MorphExpressionListReplaceRecord : MeshListUndoRecord
     {

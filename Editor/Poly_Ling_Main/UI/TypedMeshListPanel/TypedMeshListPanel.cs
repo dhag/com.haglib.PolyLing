@@ -61,11 +61,11 @@ namespace Poly_Ling.UI
         private PopupField<int> _morphParentPopup;
         private PopupField<int> _morphPanelPopup;
 
-        // モーフエクスプレッション
+        // モーフセット
         private TextField _morphSetNameField;
         private VisualElement _morphSetTypePopupContainer;
         private PopupField<int> _morphSetTypePopup;
-        private Button _btnCreateMorphExpression;
+        private Button _btnCreateMorphSet;
 
         // 詳細パネル
         private Foldout _detailFoldout;
@@ -92,8 +92,7 @@ namespace Poly_Ling.UI
         private bool _isSyncingPoseUI = false;
 
         // BonePose Undo用（スライダードラッグ中のスナップショット保持）
-        private BonePoseDataSnapshot? _sliderDragBeforeSnapshot;
-        private int _sliderDragMasterIndex = -1;
+        private Dictionary<int, BonePoseDataSnapshot> _sliderDragBeforeSnapshots = new Dictionary<int, BonePoseDataSnapshot>();
 
         // ================================================================
         // データ
@@ -1157,14 +1156,17 @@ namespace Poly_Ling.UI
             field?.RegisterValueChangedCallback(evt =>
             {
                 if (_isSyncingPoseUI) return;
-                var pose = GetSelectedBonePoseData();
-                if (pose == null) return;
-                int masterIdx = GetSelectedMasterIndex();
-                var before = pose.CreateSnapshot();
-                setter(pose, evt.newValue);
-                pose.SetDirty();
-                var after = pose.CreateSnapshot();
-                RecordBonePoseUndo(masterIdx, before, after, "ボーンポーズ変更");
+                var targets = GetSelectedBonePoseDatas();
+                if (targets.Count == 0) return;
+
+                var beforeSnapshots = CaptureSnapshots(targets);
+                foreach (var (_, _, pose) in targets)
+                {
+                    setter(pose, evt.newValue);
+                    pose.SetDirty();
+                }
+                var afterSnapshots = CaptureSnapshots(targets);
+                RecordMultiBonePoseUndo(targets, beforeSnapshots, afterSnapshots, "ボーンポーズ変更");
                 UpdateBonePosePanel();
                 NotifyModelChanged();
             });
@@ -1175,25 +1177,25 @@ namespace Poly_Ling.UI
             field?.RegisterValueChangedCallback(evt =>
             {
                 if (_isSyncingPoseUI) return;
-                var pose = GetSelectedBonePoseData();
-                if (pose == null) return;
+                var targets = GetSelectedBonePoseDatas();
+                if (targets.Count == 0) return;
 
-                int masterIdx = GetSelectedMasterIndex();
-                var before = pose.CreateSnapshot();
+                var beforeSnapshots = CaptureSnapshots(targets);
+                foreach (var (_, _, pose) in targets)
+                {
+                    Vector3 euler = IsQuatValid(pose.RestRotation)
+                        ? pose.RestRotation.eulerAngles
+                        : Vector3.zero;
 
-                Vector3 euler = IsQuatValid(pose.RestRotation)
-                    ? pose.RestRotation.eulerAngles
-                    : Vector3.zero;
+                    if (axis == 0) euler.x = evt.newValue;
+                    else if (axis == 1) euler.y = evt.newValue;
+                    else euler.z = evt.newValue;
 
-                if (axis == 0) euler.x = evt.newValue;
-                else if (axis == 1) euler.y = evt.newValue;
-                else euler.z = evt.newValue;
-
-                pose.RestRotation = Quaternion.Euler(euler);
-                pose.SetDirty();
-
-                var after = pose.CreateSnapshot();
-                RecordBonePoseUndo(masterIdx, before, after, "ボーン回転変更");
+                    pose.RestRotation = Quaternion.Euler(euler);
+                    pose.SetDirty();
+                }
+                var afterSnapshots = CaptureSnapshots(targets);
+                RecordMultiBonePoseUndo(targets, beforeSnapshots, afterSnapshots, "ボーン回転変更");
 
                 // スライダ同期
                 _isSyncingPoseUI = true;
@@ -1218,26 +1220,29 @@ namespace Poly_Ling.UI
             slider?.RegisterValueChangedCallback(evt =>
             {
                 if (_isSyncingPoseUI) return;
-                var pose = GetSelectedBonePoseData();
-                if (pose == null) return;
+                var targets = GetSelectedBonePoseDatas();
+                if (targets.Count == 0) return;
 
                 // ドラッグ開始時にスナップショットを取得（1ドラッグ1記録）
-                if (!_sliderDragBeforeSnapshot.HasValue)
+                if (_sliderDragBeforeSnapshots.Count == 0)
                 {
-                    _sliderDragBeforeSnapshot = pose.CreateSnapshot();
-                    _sliderDragMasterIndex = GetSelectedMasterIndex();
+                    foreach (var (idx, _, pose) in targets)
+                        _sliderDragBeforeSnapshots[idx] = pose.CreateSnapshot();
                 }
 
-                Vector3 euler = IsQuatValid(pose.RestRotation)
-                    ? pose.RestRotation.eulerAngles
-                    : Vector3.zero;
+                foreach (var (_, _, pose) in targets)
+                {
+                    Vector3 euler = IsQuatValid(pose.RestRotation)
+                        ? pose.RestRotation.eulerAngles
+                        : Vector3.zero;
 
-                if (axis == 0) euler.x = evt.newValue;
-                else if (axis == 1) euler.y = evt.newValue;
-                else euler.z = evt.newValue;
+                    if (axis == 0) euler.x = evt.newValue;
+                    else if (axis == 1) euler.y = evt.newValue;
+                    else euler.z = evt.newValue;
 
-                pose.RestRotation = Quaternion.Euler(euler);
-                pose.SetDirty();
+                    pose.RestRotation = Quaternion.Euler(euler);
+                    pose.SetDirty();
+                }
 
                 // FloatField同期
                 _isSyncingPoseUI = true;
@@ -1273,74 +1278,80 @@ namespace Poly_Ling.UI
         private void OnPoseActiveChanged(ChangeEvent<bool> evt)
         {
             if (_isSyncingPoseUI) return;
-            var ctx = GetSelectedMeshContext();
-            if (ctx == null) return;
+            var boneContexts = GetSelectedBoneContexts();
+            if (boneContexts.Count == 0) return;
 
-            int masterIdx = GetSelectedMasterIndex();
-            var before = ctx.BonePoseData?.CreateSnapshot();
+            var beforeSnapshots = new Dictionary<int, BonePoseDataSnapshot?>();
+            foreach (var (idx, ctx) in boneContexts)
+                beforeSnapshots[idx] = ctx.BonePoseData?.CreateSnapshot();
 
-            if (evt.newValue)
+            foreach (var (_, ctx) in boneContexts)
             {
-                // ON: BonePoseDataがなければIdentityで自動生成
-                if (ctx.BonePoseData == null)
+                if (evt.newValue)
                 {
-                    // RestPose = Identity（デルタなし = 見た目変わらない）
-                    ctx.BonePoseData = new BonePoseData();
-                }
-                ctx.BonePoseData.IsActive = true;
-                ctx.BonePoseData.SetDirty();
-            }
-            else
-            {
-                // OFF: データは残してIsActiveだけfalse
-                if (ctx.BonePoseData != null)
-                {
-                    ctx.BonePoseData.IsActive = false;
+                    if (ctx.BonePoseData == null)
+                        ctx.BonePoseData = new BonePoseData();
+                    ctx.BonePoseData.IsActive = true;
                     ctx.BonePoseData.SetDirty();
                 }
+                else
+                {
+                    if (ctx.BonePoseData != null)
+                    {
+                        ctx.BonePoseData.IsActive = false;
+                        ctx.BonePoseData.SetDirty();
+                    }
+                }
             }
 
-            var after = ctx.BonePoseData?.CreateSnapshot();
-            RecordBonePoseUndo(masterIdx, before, after, evt.newValue ? "ボーンポーズ有効化" : "ボーンポーズ無効化");
+            var afterSnapshots = new Dictionary<int, BonePoseDataSnapshot?>();
+            foreach (var (idx, ctx) in boneContexts)
+                afterSnapshots[idx] = ctx.BonePoseData?.CreateSnapshot();
+
+            RecordMultiBonePoseUndoRaw(beforeSnapshots, afterSnapshots,
+                evt.newValue ? "ボーンポーズ有効化" : "ボーンポーズ無効化");
             UpdateBonePosePanel();
             NotifyModelChanged();
         }
 
         private void OnInitPoseClicked()
         {
-            var ctx = GetSelectedMeshContext();
-            if (ctx == null) return;
+            var boneContexts = GetSelectedBoneContexts();
+            if (boneContexts.Count == 0) return;
 
-            int masterIdx = GetSelectedMasterIndex();
-            var before = ctx.BonePoseData?.CreateSnapshot();
+            var beforeSnapshots = new Dictionary<int, BonePoseDataSnapshot?>();
+            foreach (var (idx, ctx) in boneContexts)
+                beforeSnapshots[idx] = ctx.BonePoseData?.CreateSnapshot();
 
-            if (ctx.BonePoseData == null)
+            foreach (var (_, ctx) in boneContexts)
             {
-                // RestPose = Identity
-                ctx.BonePoseData = new BonePoseData();
-                ctx.BonePoseData.IsActive = true;
-                Log("BonePoseData初期化完了（Identity）");
-            }
-            else
-            {
-                Log("BonePoseDataは既に存在");
+                if (ctx.BonePoseData == null)
+                {
+                    ctx.BonePoseData = new BonePoseData();
+                    ctx.BonePoseData.IsActive = true;
+                }
             }
 
-            var after = ctx.BonePoseData?.CreateSnapshot();
-            RecordBonePoseUndo(masterIdx, before, after, "ボーンポーズ初期化");
+            var afterSnapshots = new Dictionary<int, BonePoseDataSnapshot?>();
+            foreach (var (idx, ctx) in boneContexts)
+                afterSnapshots[idx] = ctx.BonePoseData?.CreateSnapshot();
+
+            RecordMultiBonePoseUndoRaw(beforeSnapshots, afterSnapshots, "ボーンポーズ初期化");
             UpdateBonePosePanel();
             NotifyModelChanged();
+            Log("BonePoseData初期化完了");
         }
 
         private void OnResetLayersClicked()
         {
-            var pose = GetSelectedBonePoseData();
-            if (pose == null) return;
-            int masterIdx = GetSelectedMasterIndex();
-            var before = pose.CreateSnapshot();
-            pose.ClearAllLayers();
-            var after = pose.CreateSnapshot();
-            RecordBonePoseUndo(masterIdx, before, after, "全レイヤークリア");
+            var targets = GetSelectedBonePoseDatas();
+            if (targets.Count == 0) return;
+
+            var beforeSnapshots = CaptureSnapshots(targets);
+            foreach (var (_, _, pose) in targets)
+                pose.ClearAllLayers();
+            var afterSnapshots = CaptureSnapshots(targets);
+            RecordMultiBonePoseUndo(targets, beforeSnapshots, afterSnapshots, "全レイヤークリア");
             UpdateBonePosePanel();
             NotifyModelChanged();
             Log("全レイヤーをクリア");
@@ -1348,28 +1359,54 @@ namespace Poly_Ling.UI
 
         private void OnBakePoseClicked()
         {
-            var ctx = GetSelectedMeshContext();
-            if (ctx == null || ctx.BonePoseData == null) return;
+            var boneContexts = GetSelectedBoneContexts();
+            if (boneContexts.Count == 0) return;
 
-            int masterIdx = GetSelectedMasterIndex();
-            var beforePose = ctx.BonePoseData.CreateSnapshot();
-            Matrix4x4 oldBindPose = ctx.BindPose;
+            // BonePoseDataを持つもののみ対象
+            var targets = new List<(int idx, MeshContext ctx)>();
+            foreach (var (idx, ctx) in boneContexts)
+            {
+                if (ctx.BonePoseData != null)
+                    targets.Add((idx, ctx));
+            }
+            if (targets.Count == 0) return;
 
-            ctx.BonePoseData.BakeToBindPose(ctx.WorldMatrix);
-            ctx.BindPose = ctx.WorldMatrix.inverse;
+            var record = new MultiBonePoseChangeRecord();
+            foreach (var (idx, ctx) in targets)
+            {
+                var beforePose = ctx.BonePoseData.CreateSnapshot();
+                Matrix4x4 oldBindPose = ctx.BindPose;
 
-            var afterPose = ctx.BonePoseData.CreateSnapshot();
-            Matrix4x4 newBindPose = ctx.BindPose;
+                ctx.BonePoseData.BakeToBindPose(ctx.WorldMatrix);
+                ctx.BindPose = ctx.WorldMatrix.inverse;
 
-            RecordBonePoseUndo(masterIdx, beforePose, afterPose, "BindPoseにベイク",
-                oldBindPose, newBindPose);
+                var afterPose = ctx.BonePoseData.CreateSnapshot();
+                Matrix4x4 newBindPose = ctx.BindPose;
+
+                record.Entries.Add(new MultiBonePoseChangeRecord.Entry
+                {
+                    MasterIndex = idx,
+                    OldSnapshot = beforePose,
+                    NewSnapshot = afterPose,
+                    OldBindPose = oldBindPose,
+                    NewBindPose = newBindPose
+                });
+            }
+
+            var undoController = _toolContext?.UndoController;
+            if (undoController != null)
+            {
+                undoController.MeshListStack.Record(record, "BindPoseにベイク");
+                undoController.FocusMeshList();
+            }
+
             UpdateBonePosePanel();
             NotifyModelChanged();
-            Log("BindPoseにベイク完了");
+            Log($"BindPoseにベイク完了 ({targets.Count}件)");
         }
 
         /// <summary>
-        /// BonePoseパネルの表示を更新
+        /// BonePoseパネルの表示を更新（複数選択対応・Unity-style混合値）
         /// </summary>
         private void UpdateBonePosePanel()
         {
@@ -1379,44 +1416,79 @@ namespace Poly_Ling.UI
             _isSyncingPoseUI = true;
             try
             {
-                var ctx = GetSelectedMeshContext();
+                var boneContexts = GetSelectedBoneContexts();
 
-                // BonePoseData
-                var pose = ctx?.BonePoseData;
-                bool hasPose = pose != null;
-
-                _poseActiveToggle?.SetValueWithoutNotify(hasPose && pose.IsActive);
-                _poseActiveToggle?.SetEnabled(ctx != null);
-
-                // RestPose
-                Vector3 restPos = hasPose ? pose.RestPosition : Vector3.zero;
-                Vector3 restRot = hasPose && IsQuatValid(pose.RestRotation)
-                    ? pose.RestRotation.eulerAngles
-                    : Vector3.zero;
-                Vector3 restScl = hasPose ? pose.RestScale : Vector3.one;
-
-                SetFloatField(_restPosX, restPos.x, hasPose);
-                SetFloatField(_restPosY, restPos.y, hasPose);
-                SetFloatField(_restPosZ, restPos.z, hasPose);
-                SetFloatField(_restRotX, restRot.x, hasPose);
-                SetFloatField(_restRotY, restRot.y, hasPose);
-                SetFloatField(_restRotZ, restRot.z, hasPose);
-                SetSlider(_restRotSliderX, NormalizeAngle(restRot.x), hasPose);
-                SetSlider(_restRotSliderY, NormalizeAngle(restRot.y), hasPose);
-                SetSlider(_restRotSliderZ, NormalizeAngle(restRot.z), hasPose);
-                SetFloatField(_restSclX, restScl.x, hasPose);
-                SetFloatField(_restSclY, restScl.y, hasPose);
-                SetFloatField(_restSclZ, restScl.z, hasPose);
-
-                // レイヤー一覧
-                UpdateLayersList(pose);
-
-                // 合成結果
-                if (hasPose)
+                if (boneContexts.Count == 0)
                 {
-                    Vector3 pos = pose.Position;
-                    Vector3 rot = IsQuatValid(pose.Rotation)
-                        ? pose.Rotation.eulerAngles
+                    // 選択なし
+                    SetPoseFieldsEmpty();
+                    return;
+                }
+
+                // 全選択ボーンのBonePoseDataを収集
+                var poses = new List<BonePoseData>();
+                foreach (var (_, ctx) in boneContexts)
+                {
+                    if (ctx.BonePoseData != null)
+                        poses.Add(ctx.BonePoseData);
+                }
+
+                bool allHavePose = poses.Count == boneContexts.Count;
+                bool noneHavePose = poses.Count == 0;
+
+                // Active トグル
+                if (allHavePose)
+                {
+                    bool firstActive = poses[0].IsActive;
+                    bool allSame = poses.TrueForAll(p => p.IsActive == firstActive);
+                    _poseActiveToggle?.SetValueWithoutNotify(allSame ? firstActive : false);
+                    SetMixedValue(_poseActiveToggle, !allSame);
+                }
+                else if (noneHavePose)
+                {
+                    _poseActiveToggle?.SetValueWithoutNotify(false);
+                    SetMixedValue(_poseActiveToggle, false);
+                }
+                else
+                {
+                    _poseActiveToggle?.SetValueWithoutNotify(false);
+                    SetMixedValue(_poseActiveToggle, true);
+                }
+                _poseActiveToggle?.SetEnabled(boneContexts.Count > 0);
+
+                // RestPose フィールド
+                if (allHavePose && poses.Count > 0)
+                {
+                    SetMixedFloatField(_restPosX, poses, p => p.RestPosition.x, true);
+                    SetMixedFloatField(_restPosY, poses, p => p.RestPosition.y, true);
+                    SetMixedFloatField(_restPosZ, poses, p => p.RestPosition.z, true);
+
+                    SetMixedRotField(_restRotX, _restRotSliderX, poses, 0, true);
+                    SetMixedRotField(_restRotY, _restRotSliderY, poses, 1, true);
+                    SetMixedRotField(_restRotZ, _restRotSliderZ, poses, 2, true);
+
+                    SetMixedFloatField(_restSclX, poses, p => p.RestScale.x, true);
+                    SetMixedFloatField(_restSclY, poses, p => p.RestScale.y, true);
+                    SetMixedFloatField(_restSclZ, poses, p => p.RestScale.z, true);
+                }
+                else
+                {
+                    SetFloatField(_restPosX, 0, false); SetFloatField(_restPosY, 0, false); SetFloatField(_restPosZ, 0, false);
+                    SetFloatField(_restRotX, 0, false); SetFloatField(_restRotY, 0, false); SetFloatField(_restRotZ, 0, false);
+                    SetSlider(_restRotSliderX, 0, false); SetSlider(_restRotSliderY, 0, false); SetSlider(_restRotSliderZ, 0, false);
+                    SetFloatField(_restSclX, 1, false); SetFloatField(_restSclY, 1, false); SetFloatField(_restSclZ, 1, false);
+                }
+
+                // レイヤー一覧（単一選択のみ）
+                BonePoseData singlePose = (boneContexts.Count == 1 && allHavePose) ? poses[0] : null;
+                UpdateLayersList(singlePose);
+
+                // 合成結果（単一選択のみ）
+                if (singlePose != null)
+                {
+                    Vector3 pos = singlePose.Position;
+                    Vector3 rot = IsQuatValid(singlePose.Rotation)
+                        ? singlePose.Rotation.eulerAngles
                         : Vector3.zero;
                     if (_poseResultPos != null)
                         _poseResultPos.text = $"Pos: ({pos.x:F3}, {pos.y:F3}, {pos.z:F3})";
@@ -1425,19 +1497,20 @@ namespace Poly_Ling.UI
                 }
                 else
                 {
-                    if (_poseResultPos != null) _poseResultPos.text = "Pos: -";
-                    if (_poseResultRot != null) _poseResultRot.text = "Rot: -";
+                    if (_poseResultPos != null) _poseResultPos.text = boneContexts.Count > 1 ? "Pos: (複数選択)" : "Pos: -";
+                    if (_poseResultRot != null) _poseResultRot.text = boneContexts.Count > 1 ? "Rot: (複数選択)" : "Rot: -";
                 }
 
-                // Initボタンは廃止（Activeトグルで自動生成）
+                // Initボタン
                 _btnInitPose?.SetEnabled(false);
                 if (_btnInitPose != null)
                     _btnInitPose.style.display = DisplayStyle.None;
-                _btnResetLayers?.SetEnabled(hasPose && pose.LayerCount > 0);
+                _btnResetLayers?.SetEnabled(allHavePose && poses.Any(p => p.LayerCount > 0));
 
-                // BindPose
-                if (ctx != null)
+                // BindPose（単一選択のみ値表示）
+                if (boneContexts.Count == 1)
                 {
+                    var ctx = boneContexts[0].ctx;
                     Matrix4x4 bp = ctx.BindPose;
                     Vector3 bpPos = (Vector3)bp.GetColumn(3);
                     Vector3 bpRot = IsQuatValid(bp.rotation)
@@ -1454,17 +1527,86 @@ namespace Poly_Ling.UI
                 }
                 else
                 {
-                    if (_bindposePos != null) _bindposePos.text = "Pos: -";
-                    if (_bindposeRot != null) _bindposeRot.text = "Rot: -";
-                    if (_bindposeScl != null) _bindposeScl.text = "Scl: -";
+                    if (_bindposePos != null) _bindposePos.text = boneContexts.Count > 1 ? "Pos: (複数選択)" : "Pos: -";
+                    if (_bindposeRot != null) _bindposeRot.text = boneContexts.Count > 1 ? "Rot: (複数選択)" : "Rot: -";
+                    if (_bindposeScl != null) _bindposeScl.text = boneContexts.Count > 1 ? "Scl: (複数選択)" : "Scl: -";
                 }
 
-                _btnBakePose?.SetEnabled(hasPose);
+                _btnBakePose?.SetEnabled(allHavePose);
             }
             finally
             {
                 _isSyncingPoseUI = false;
             }
+        }
+
+        private void SetPoseFieldsEmpty()
+        {
+            _poseActiveToggle?.SetValueWithoutNotify(false);
+            _poseActiveToggle?.SetEnabled(false);
+            SetMixedValue(_poseActiveToggle, false);
+
+            SetFloatField(_restPosX, 0, false); SetFloatField(_restPosY, 0, false); SetFloatField(_restPosZ, 0, false);
+            SetFloatField(_restRotX, 0, false); SetFloatField(_restRotY, 0, false); SetFloatField(_restRotZ, 0, false);
+            SetSlider(_restRotSliderX, 0, false); SetSlider(_restRotSliderY, 0, false); SetSlider(_restRotSliderZ, 0, false);
+            SetFloatField(_restSclX, 1, false); SetFloatField(_restSclY, 1, false); SetFloatField(_restSclZ, 1, false);
+
+            UpdateLayersList(null);
+
+            if (_poseResultPos != null) _poseResultPos.text = "Pos: -";
+            if (_poseResultRot != null) _poseResultRot.text = "Rot: -";
+            _btnInitPose?.SetEnabled(false);
+            if (_btnInitPose != null) _btnInitPose.style.display = DisplayStyle.None;
+            _btnResetLayers?.SetEnabled(false);
+
+            if (_bindposePos != null) _bindposePos.text = "Pos: -";
+            if (_bindposeRot != null) _bindposeRot.text = "Rot: -";
+            if (_bindposeScl != null) _bindposeScl.text = "Scl: -";
+            _btnBakePose?.SetEnabled(false);
+        }
+
+        /// <summary>Unity-style: 値が全一致→表示、不一致→showMixedValue</summary>
+        private void SetMixedFloatField(FloatField field, List<BonePoseData> poses,
+            Func<BonePoseData, float> getter, bool enabled)
+        {
+            if (field == null) return;
+            float first = getter(poses[0]);
+            bool allSame = poses.TrueForAll(p => Mathf.Abs(getter(p) - first) < 0.0001f);
+            field.SetValueWithoutNotify(allSame ? (float)System.Math.Round(first, 4) : 0f);
+            field.showMixedValue = !allSame;
+            field.SetEnabled(enabled);
+        }
+
+        /// <summary>Unity-style: 回転フィールドとスライダーの混合値処理</summary>
+        private void SetMixedRotField(FloatField field, Slider slider, List<BonePoseData> poses,
+            int axis, bool enabled)
+        {
+            if (field == null) return;
+            float first = GetEulerAxis(poses[0], axis);
+            bool allSame = poses.TrueForAll(p => Mathf.Abs(GetEulerAxis(p, axis) - first) < 0.01f);
+            float val = allSame ? first : 0f;
+            field.SetValueWithoutNotify((float)System.Math.Round(val, 4));
+            field.showMixedValue = !allSame;
+            field.SetEnabled(enabled);
+            if (slider != null)
+            {
+                slider.SetValueWithoutNotify(allSame ? NormalizeAngle(val) : 0f);
+                slider.SetEnabled(enabled && allSame);
+            }
+        }
+
+        private static float GetEulerAxis(BonePoseData pose, int axis)
+        {
+            Vector3 euler = IsQuatValid(pose.RestRotation)
+                ? pose.RestRotation.eulerAngles
+                : Vector3.zero;
+            return axis == 0 ? euler.x : (axis == 1 ? euler.y : euler.z);
+        }
+
+        private static void SetMixedValue(Toggle toggle, bool mixed)
+        {
+            if (toggle == null) return;
+            toggle.showMixedValue = mixed;
         }
 
         private void UpdateLayersList(BonePoseData pose)
@@ -1535,49 +1677,130 @@ namespace Poly_Ling.UI
             return _selectedAdapters[0].MasterIndex;
         }
 
+        /// <summary>選択中の全ボーンの(masterIndex, MeshContext)リスト</summary>
+        private List<(int idx, MeshContext ctx)> GetSelectedBoneContexts()
+        {
+            var result = new List<(int, MeshContext)>();
+            foreach (var adapter in _selectedAdapters)
+            {
+                var ctx = adapter.Entry.Context;
+                if (ctx != null)
+                    result.Add((adapter.MasterIndex, ctx));
+            }
+            return result;
+        }
+
+        /// <summary>選択中の全ボーンの(masterIndex, MeshContext, BonePoseData)リスト（BonePoseData有りのみ）</summary>
+        private List<(int idx, MeshContext ctx, BonePoseData pose)> GetSelectedBonePoseDatas()
+        {
+            var result = new List<(int, MeshContext, BonePoseData)>();
+            foreach (var adapter in _selectedAdapters)
+            {
+                var ctx = adapter.Entry.Context;
+                if (ctx?.BonePoseData != null)
+                    result.Add((adapter.MasterIndex, ctx, ctx.BonePoseData));
+            }
+            return result;
+        }
+
+        /// <summary>スナップショット一括取得</summary>
+        private Dictionary<int, BonePoseDataSnapshot> CaptureSnapshots(
+            List<(int idx, MeshContext ctx, BonePoseData pose)> targets)
+        {
+            var dict = new Dictionary<int, BonePoseDataSnapshot>();
+            foreach (var (idx, _, pose) in targets)
+                dict[idx] = pose.CreateSnapshot();
+            return dict;
+        }
+
         /// <summary>
-        /// BonePose変更をUndoスタックに記録
+        /// 複数ボーンのBonePose変更をUndoスタックに記録
         /// </summary>
-        private void RecordBonePoseUndo(
-            int masterIndex,
-            BonePoseDataSnapshot? before,
-            BonePoseDataSnapshot? after,
-            string description,
-            Matrix4x4? oldBindPose = null,
-            Matrix4x4? newBindPose = null)
+        private void RecordMultiBonePoseUndo(
+            List<(int idx, MeshContext ctx, BonePoseData pose)> targets,
+            Dictionary<int, BonePoseDataSnapshot> before,
+            Dictionary<int, BonePoseDataSnapshot> after,
+            string description)
         {
             var undoController = _toolContext?.UndoController;
             if (undoController == null) return;
 
-            var record = new BonePoseChangeRecord
+            var record = new MultiBonePoseChangeRecord();
+            foreach (var (idx, _, _) in targets)
             {
-                MasterIndex = masterIndex,
-                OldSnapshot = before,
-                NewSnapshot = after,
-                OldBindPose = oldBindPose,
-                NewBindPose = newBindPose
-            };
+                record.Entries.Add(new MultiBonePoseChangeRecord.Entry
+                {
+                    MasterIndex = idx,
+                    OldSnapshot = before.TryGetValue(idx, out var b) ? b : (BonePoseDataSnapshot?)null,
+                    NewSnapshot = after.TryGetValue(idx, out var a) ? a : (BonePoseDataSnapshot?)null,
+                });
+            }
             undoController.MeshListStack.Record(record, description);
             undoController.FocusMeshList();
         }
 
         /// <summary>
-        /// スライダードラッグ完了時にUndo記録をコミット
+        /// 複数ボーンのBonePose変更をUndoスタックに記録（nullable snapshot辞書版）
+        /// </summary>
+        private void RecordMultiBonePoseUndoRaw(
+            Dictionary<int, BonePoseDataSnapshot?> before,
+            Dictionary<int, BonePoseDataSnapshot?> after,
+            string description)
+        {
+            var undoController = _toolContext?.UndoController;
+            if (undoController == null) return;
+
+            var record = new MultiBonePoseChangeRecord();
+            foreach (var kvp in before)
+            {
+                after.TryGetValue(kvp.Key, out var afterVal);
+                record.Entries.Add(new MultiBonePoseChangeRecord.Entry
+                {
+                    MasterIndex = kvp.Key,
+                    OldSnapshot = kvp.Value,
+                    NewSnapshot = afterVal,
+                });
+            }
+            undoController.MeshListStack.Record(record, description);
+            undoController.FocusMeshList();
+        }
+
+        /// <summary>
+        /// スライダードラッグ完了時にUndo記録をコミット（複数ボーン対応）
         /// </summary>
         private void CommitSliderDragUndo(string description)
         {
-            if (!_sliderDragBeforeSnapshot.HasValue) return;
-            var pose = GetSelectedBonePoseData();
-            var after = pose?.CreateSnapshot();
-            RecordBonePoseUndo(_sliderDragMasterIndex, _sliderDragBeforeSnapshot, after, description);
-            _sliderDragBeforeSnapshot = null;
-            _sliderDragMasterIndex = -1;
+            if (_sliderDragBeforeSnapshots.Count == 0) return;
+
+            var targets = GetSelectedBonePoseDatas();
+            var afterSnapshots = CaptureSnapshots(targets);
+
+            var undoController = _toolContext?.UndoController;
+            if (undoController != null)
+            {
+                var record = new MultiBonePoseChangeRecord();
+                foreach (var kvp in _sliderDragBeforeSnapshots)
+                {
+                    afterSnapshots.TryGetValue(kvp.Key, out var afterVal);
+                    record.Entries.Add(new MultiBonePoseChangeRecord.Entry
+                    {
+                        MasterIndex = kvp.Key,
+                        OldSnapshot = kvp.Value,
+                        NewSnapshot = afterVal,
+                    });
+                }
+                undoController.MeshListStack.Record(record, description);
+                undoController.FocusMeshList();
+            }
+
+            _sliderDragBeforeSnapshots.Clear();
         }
 
         private static void SetFloatField(FloatField field, float value, bool enabled)
         {
             if (field == null) return;
             field.SetValueWithoutNotify((float)System.Math.Round(value, 4));
+            field.showMixedValue = false;
             field.SetEnabled(enabled);
         }
 
@@ -1634,10 +1857,10 @@ namespace Poly_Ling.UI
             _morphParentPopupContainer = root.Q<VisualElement>("morph-parent-container");
             _morphPanelPopupContainer = root.Q<VisualElement>("morph-panel-container");
 
-            // モーフエクスプレッション
+            // モーフセット
             _morphSetNameField = root.Q<TextField>("morph-set-name-field");
             _morphSetTypePopupContainer = root.Q<VisualElement>("morph-set-type-container");
-            _btnCreateMorphExpression = root.Q<Button>("btn-create-morph-set");
+            _btnCreateMorphSet = root.Q<Button>("btn-create-morph-set");
 
             // ボタンイベント
             _btnMeshToMorph = root.Q<Button>("btn-mesh-to-morph");
@@ -1645,7 +1868,7 @@ namespace Poly_Ling.UI
 
             _btnMeshToMorph?.RegisterCallback<ClickEvent>(_ => OnMeshToMorph());
             _btnMorphToMesh?.RegisterCallback<ClickEvent>(_ => OnMorphToMesh());
-            _btnCreateMorphExpression?.RegisterCallback<ClickEvent>(_ => OnCreateMorphExpression());
+            _btnCreateMorphSet?.RegisterCallback<ClickEvent>(_ => OnCreateMorphSet());
 
             root.Q<Button>("btn-morph-test-reset")?.RegisterCallback<ClickEvent>(_ => OnMorphTestReset());
             root.Q<Button>("btn-morph-test-select-all")?.RegisterCallback<ClickEvent>(_ => OnMorphTestSelectAll(true));
@@ -1700,7 +1923,7 @@ namespace Poly_Ling.UI
 
             RefreshMorphListData();
             RefreshMorphConvertSection();
-            RefreshMorphExpressionSection();
+            RefreshMorphSetSection();
         }
 
         /// <summary>
@@ -1784,11 +2007,11 @@ namespace Poly_Ling.UI
             try
             {
                 var selectedListIndices = new List<int>();
-                var selectedMorphExpression = new HashSet<int>(Model.SelectedMorphIndices);
+                var selectedMorphSet = new HashSet<int>(Model.SelectedMorphIndices);
 
                 for (int i = 0; i < _morphListData.Count; i++)
                 {
-                    if (selectedMorphExpression.Contains(_morphListData[i].masterIndex))
+                    if (selectedMorphSet.Contains(_morphListData[i].masterIndex))
                         selectedListIndices.Add(i);
                 }
 
@@ -2149,10 +2372,10 @@ namespace Poly_Ling.UI
         }
 
         // ----------------------------------------------------------------
-        // モーフエクスプレッション（新規作成のみ、管理はMorphPanelで）
+        // モーフセット（新規作成のみ、管理はMorphPanelで）
         // ----------------------------------------------------------------
 
-        private void RefreshMorphExpressionSection()
+        private void RefreshMorphSetSection()
         {
             if (Model == null) return;
 
@@ -2161,7 +2384,7 @@ namespace Poly_Ling.UI
                 "morph-popup", (int)MorphType.Vertex);
         }
 
-        private void OnCreateMorphExpression()
+        private void OnCreateMorphSet()
         {
             if (Model == null) return;
 
@@ -2191,11 +2414,11 @@ namespace Poly_Ling.UI
                 AddExpression = set.Clone(),
                 AddedIndex = addIndex,
             };
-            RecordMorphUndo(record, $"モーフエクスプレッション生成: {setName}");
+            RecordMorphUndo(record, $"モーフセット生成: {setName}");
 
             Model.MorphExpressions.Add(set);
             NotifyModelChanged();
-            MorphLog($"モーフエクスプレッション '{setName}' を生成 ({set.MeshCount}件)");
+            MorphLog($"モーフセット '{setName}' を生成 ({set.MeshCount}件)");
         }
 
         // ----------------------------------------------------------------
