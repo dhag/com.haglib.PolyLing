@@ -93,34 +93,27 @@ public partial class PolyLing
         {
             Poly_Ling.UI.MaterialListPanel.Open(_toolManager?.toolContext);
         }
-        if (GUILayout.Button("Selected VertexTools"))
+        if (GUILayout.Button("UV展開"))
+        {
+            Poly_Ling.UI.UVUnwrapPanel.Open(_toolManager?.toolContext);
+        }
+
+        if (GUILayout.Button("UV編集"))
+        {
+            Poly_Ling.UI.UVEditPanel.Open(_toolManager?.toolContext);
+        }
+
+
+        if (GUILayout.Button("選択頂点の編集"))
         {
             Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("MeshListPanelUXML"))
-        {
-            Poly_Ling.UI.MeshListPanelUXML.Open(_toolManager?.toolContext);
-        }
-        // UnityMesh List Window（統合版）
-        if (GUILayout.Button(L.Get("Window_MeshContextList")))
-        {
-            MeshListPanel.Open(_toolManager?.toolContext);
-        }
+
         if (GUILayout.Button("モデル選択"))
         {
             Poly_Ling.Tools.Panels.ModelListPanel.Open(_toolManager?.toolContext);
-        }
-
-        // Simple Morph
-        if (GUILayout.Button(L.Get("SimpleMorph")))
-        {
-            SimpleMorphPanel.Open(_toolManager?.toolContext);
-        }
-
-
-
-        
+        }        
         
         if(GUILayout.Button("モーフ確認"))
         {
@@ -139,11 +132,31 @@ public partial class PolyLing
 
 
 
-        if (GUILayout.Button("YET PMX Bone Weight Export..."))
+
+        if (GUILayout.Button("__old_MeshListPanelUXML"))
+        {
+            Poly_Ling.UI.MeshListPanelUXML.Open(_toolManager?.toolContext);
+        }
+        // UnityMesh List Window（統合版）
+        if (GUILayout.Button("__old_Window_MeshContextList"))
+        {
+            MeshListPanel.Open(_toolManager?.toolContext);
+        }
+        // Simple Morph
+        if (GUILayout.Button("__old_SimpleMorph"))
+        {
+            SimpleMorphPanel.Open(_toolManager?.toolContext);
+        }
+
+
+
+
+
+        if (GUILayout.Button("__old_PMX Bone Weight Export..."))
         {
             Poly_Ling.PMX.PMXBoneWeightExportPanel.ShowWindow();
         }
-        if (GUILayout.Button("YET PMX ←→ MQO"))
+        if (GUILayout.Button("__old_PMX ←→ MQO"))
         {
             Poly_Ling.PMX.PMXMQOTransferPanel.ShowWindow();
         }
