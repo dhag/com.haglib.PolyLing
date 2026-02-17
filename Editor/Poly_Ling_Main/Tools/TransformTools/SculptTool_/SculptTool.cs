@@ -218,7 +218,9 @@ namespace Poly_Ling.Tools
                 Color brushColor = Invert ? new Color(1f, 0.5f, 0.5f, 0.5f) : new Color(0.5f, 0.8f, 1f, 0.5f);
                 UnityEditor_Handles.color = brushColor;
 
-                Vector2 centerScreen = _currentScreenPos;
+                // GUI.BeginClip後のローカル座標系でのマウス位置を使用
+                // _currentScreenPosはBeginClip前のグローバル座標のため、左ペイン幅分ずれる
+                Vector2 centerScreen = Event.current.mousePosition;
                 float screenRadius = EstimateBrushScreenRadius(ctx);
 
                 DrawCircle(centerScreen, screenRadius, 32);
@@ -613,8 +615,13 @@ namespace Poly_Ling.Tools
         private float EstimateBrushScreenRadius(ToolContext ctx)
         {
             // ブラシ中心付近でのスクリーン半径を概算
+            // カメラのright方向を使用（ワールドX固定だとカメラ回転でサイズが変わる）
             Vector3 testPoint = ctx.CameraTarget;
-            Vector3 offsetPoint = testPoint + Vector3.right * BrushRadius;
+            Vector3 camRight = Vector3.Cross(
+                (ctx.CameraTarget - ctx.CameraPosition).normalized, Vector3.up).normalized;
+            if (camRight.sqrMagnitude < 0.001f)
+                camRight = Vector3.right;
+            Vector3 offsetPoint = testPoint + camRight * BrushRadius;
 
             Vector2 sp1 = ctx.WorldToScreenPos(testPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             Vector2 sp2 = ctx.WorldToScreenPos(offsetPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);

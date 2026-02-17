@@ -168,8 +168,9 @@ namespace Poly_Ling.Tools
             if (_state != MoveState.Idle)
             {
                 // 前回の操作が完了していない場合（MouseUpが届かなかった場合など）
+                // または二段階呼び出しの2回目で選択がクリアされた後の再呼び出し時
                 // 強制的にリセットして新しい操作を受け付ける
-                //Reset();
+                Reset();
             }
 
             _mouseDownScreenPos = mousePos;
@@ -181,8 +182,27 @@ namespace Poly_Ling.Tools
             _ctrlHeld = Event.current != null && Event.current.control;
 
             // ================================================================
-            // 選択はSimpleMeshFactoryが既に処理済み
-            // ここでは選択済み頂点を取得するだけ
+            // ★ ホバー結果から「マウス直下の要素」を保存
+            //
+            // 【必須機能：クリック＋ドラッグ = 選択と同時に移動】
+            // この機能はモデリングにおいて必須の操作パターンである。
+            // 選択処理はPolyLing_Input側が担当するが、MoveToolは
+            // 「何がクリックされたか」を独自に保持しておく必要がある。
+            // 理由: PolyLing_Inputは二段階呼び出し（1回目:軸チェック、
+            //        選択処理後に2回目:移動準備）を行うが、2回目の
+            //        UpdateAffectedVerticesが選択更新を拾えないケースがある。
+            //        ホバー結果を保持することで、StartMoveFromSelectionで
+            //        フォールバック追加が可能になる。
+            //
+            // 【仕様】
+            // ・クリック＋ドラッグ: 選択と同時に移動開始（Shift/修飾キー不問）
+            // ・ドラッグ開始時はCtrlキーを無視する（除外選択はクリックのみ）
+            // ================================================================
+            _hitVertexOnMouseDown = ctx.GetHoverVertexIndex();
+
+            // ================================================================
+            // 選択はPolyLing_Inputが処理する
+            // ここでは現在の選択済み頂点を取得する
             // ================================================================
             UpdateAffectedVertices(ctx);
 
@@ -211,16 +231,19 @@ namespace Poly_Ling.Tools
             }
 
             // ================================================================
-            // 2. 選択済み要素があれば移動準備
+            // 2. 移動準備
+            //    - 選択済み要素がある → そのままPendingAction
+            //    - 選択はないがホバー頂点がある → PolyLing_Inputがこの後選択するので
+            //      PendingActionに入って待機（StartMoveFromSelectionで解決）
             // ================================================================
-            if (totalAffectedCount > 0)
+            if (totalAffectedCount > 0 || _hitVertexOnMouseDown >= 0)
             {
                 _state = MoveState.PendingAction;
-                _pendingHitType = PendingHitType.Selection;  // 汎用的な「選択済み」
-                return false;  // イベントは消費しない（SimpleMeshFactoryの処理を妨げない）
+                _pendingHitType = PendingHitType.Selection;
+                return false;  // イベントは消費しない（PolyLing_Inputの選択処理を妨げない）
             }
 
-            return false;  // 何もない
+            return false;  // 何もない（Idle維持を明示）
         }
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
@@ -234,7 +257,10 @@ namespace Poly_Ling.Tools
                     float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
                     if (dragDistance > DragThreshold)
                     {
-                        // ★ Phase 6: 選択済み要素を移動開始
+                        // ★ 選択済み要素の移動開始（選択と同時移動を含む）
+                        // 【仕様】ドラッグ開始時はCtrlキーを無視する。
+                        //   Ctrl+クリック（ドラッグなし）→ 除外選択（PolyLing_InputのHandleClickが処理）
+                        //   Ctrl+ドラッグ → 通常の移動（ここで処理。Ctrl状態は見ない）
                         StartMoveFromSelection(ctx);
                     }
                     ctx.Repaint?.Invoke();
@@ -628,10 +654,88 @@ namespace Poly_Ling.Tools
             BeginMove(ctx);
         }
 
+        /// <summary>
+        /// 選択済み要素の移動を開始する
+        ///
+        /// 【必須機能：クリック＋ドラッグ = 選択と同時に移動】
+        /// モデリング操作の基本パターンであり、以下の全ケースで動作する必要がある:
+        /// ・何も選択されていない状態で頂点をクリック＋ドラッグ → その頂点を移動
+        /// ・既存選択がある状態でShift+新頂点クリック＋ドラッグ → 全選択頂点を移動（新頂点含む）
+        /// ・既存選択がある状態でクリック＋ドラッグ → 全選択頂点を移動
+        /// ・ドラッグ開始時はCtrlキーを無視する（除外選択はクリックのみで行う仕様）
+        ///
+        /// 【アーキテクチャ上の注意】
+        /// 選択処理はPolyLing_Input側が担当し、MoveToolは移動のみ担当するが、
+        /// 二段階呼び出しのタイミング問題で、UpdateAffectedVerticesが最新の
+        /// 選択状態を取得できないケースがある。EnsureHitVertexInAffectedSetは
+        /// その場合のフォールバックとして、ホバーで検出した頂点を影響セットに
+        /// 明示的に追加する。
+        /// </summary>
         private void StartMoveFromSelection(ToolContext ctx)
         {
             UpdateAffectedVertices(ctx);
+
+            // ★ フォールバック: ホバーで検出した頂点が影響セットに含まれていない場合、
+            //    明示的に追加する（選択と同時移動のエッジケース対策）
+            EnsureHitVertexInAffectedSet(ctx);
+
             BeginMove(ctx);
+        }
+
+        /// <summary>
+        /// OnMouseDownで保存したホバー頂点が影響セットに含まれていることを保証する。
+        /// 
+        /// PolyLing_InputのApplySelectionOnMouseDownで選択は追加されているはずだが、
+        /// UpdateAffectedVerticesのタイミングで拾えない場合に備えた防御的コード。
+        /// 選択されたメッシュを走査し、ヒット頂点がそのメッシュの選択に含まれていれば
+        /// 影響セットに追加する。選択にも含まれていない場合は、頂点インデックスが有効な
+        /// 最初のメッシュの選択と影響セットの両方に追加する。
+        /// </summary>
+        private void EnsureHitVertexInAffectedSet(ToolContext ctx)
+        {
+            if (_hitVertexOnMouseDown < 0 || ctx.Model == null)
+                return;
+
+            // 既に影響セットに含まれていればOK
+            foreach (var kv in _multiMeshAffectedVertices)
+            {
+                if (kv.Value.Contains(_hitVertexOnMouseDown))
+                    return;
+            }
+
+            // 影響セットに含まれていない → 選択済みメッシュから探して追加
+            // まず、選択に含まれているメッシュを探す
+            foreach (int meshIdx in ctx.Model.SelectedMeshIndices)
+            {
+                var mc = ctx.Model.GetMeshContext(meshIdx);
+                if (mc?.MeshObject == null) continue;
+                if (_hitVertexOnMouseDown >= mc.MeshObject.VertexCount) continue;
+
+                if (mc.SelectedVertices.Contains(_hitVertexOnMouseDown))
+                {
+                    // 選択には含まれているがUpdateAffectedVerticesで拾えなかった
+                    if (!_multiMeshAffectedVertices.ContainsKey(meshIdx))
+                        _multiMeshAffectedVertices[meshIdx] = new HashSet<int>();
+                    _multiMeshAffectedVertices[meshIdx].Add(_hitVertexOnMouseDown);
+                    return;
+                }
+            }
+
+            // 最終フォールバック: どのメッシュの選択にも含まれていない場合
+            // （PolyLing_Inputの選択処理が間に合わなかったケース）
+            // 頂点インデックスが有効な最初のメッシュに追加する
+            foreach (int meshIdx in ctx.Model.SelectedMeshIndices)
+            {
+                var mc = ctx.Model.GetMeshContext(meshIdx);
+                if (mc?.MeshObject == null) continue;
+                if (_hitVertexOnMouseDown >= mc.MeshObject.VertexCount) continue;
+
+                mc.SelectedVertices.Add(_hitVertexOnMouseDown);
+                if (!_multiMeshAffectedVertices.ContainsKey(meshIdx))
+                    _multiMeshAffectedVertices[meshIdx] = new HashSet<int>();
+                _multiMeshAffectedVertices[meshIdx].Add(_hitVertexOnMouseDown);
+                return;
+            }
         }
 
         private void BeginMove(ToolContext ctx)

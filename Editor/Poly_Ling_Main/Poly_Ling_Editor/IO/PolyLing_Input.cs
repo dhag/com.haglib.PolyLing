@@ -27,6 +27,8 @@ public partial class PolyLing
     // ホバー状態の保存（クリック時に使用）
     private Vector2 _lastHoverMousePos;
     private Poly_Ling.Rendering.GPUHitTestResult _lastHoverHitResult;
+    private bool _isHoverActive = false;  // プレビューエリア内でホバー中か
+    private int _lastHoverMeshIndex = -1;  // ホバー中の頂点が属するメッシュインデックス
 
     // ================================================================
     // 入力処理（MeshObjectベース）
@@ -35,6 +37,12 @@ public partial class PolyLing
     {
         Event e = Event.current;
         Vector2 mousePos = e.mousePosition;
+
+        // ★ 毎イベントでホバー結果を最新化
+        // Repaintで更新された_hoveredVertexIndex等を_lastHoverHitResultに反映する。
+        // これにより、MouseDownイベント時にRepaintで計算されたGPU精度のホバー値を
+        // そのまま使用でき、左ペイン表示値との一致が保証される。
+        UpdateLastHoverHitResultFromUnified();
 
         // ツールコンテキストを更新
         UpdateToolContext(meshContext, rect, camPos, camDist);
@@ -194,34 +202,82 @@ public partial class PolyLing
                     _currentTool.OnMouseDrag(_toolContext, mousePos, Vector2.zero);
                     Repaint();
                 }
-                if (e.type == EventType.MouseMove)
+                // ★ ホバー更新はIdleプロファイルのAllowHitTest=trueにより
+                //    Repaint時のUpdateFrame→ProcessMouseUpdateで自動実行される。
+                //    MouseMoveではRepaint()を要求するだけで十分。
+                if (e.type == EventType.MouseMove && rect.Contains(e.mousePosition))
                 {
-                    UpdateHoverOnMouseMove(e.mousePosition, rect);
+                    _unifiedAdapter?.RequestNormal();
+                    Repaint();
                 }
 
                 break;
         }
     }
-    /// <summary>
-    /// マウス移動時のホバー更新
-    /// 実際のホバー計算はUpdateUnifiedFrameで実行済み
-    /// ここではマウス位置の保存とRepaintのみ行う
-    /// </summary>
-    private void UpdateHoverOnMouseMove(Vector2 mousePos, Rect rect)
-    {
-        if (!rect.Contains(mousePos))
-            return;
-
-        if (Vector2.Distance(mousePos, _lastHoverMousePos) < 1f)
-            return;
-
-        _lastHoverMousePos = mousePos;
-
-        // ホバー結果はUnifiedSystemから取得（UpdateUnifiedFrameで更新済み）
-        UpdateLastHoverHitResultFromUnified();
-
-        Repaint();
-    }
+    // ================================================================
+    // ★★★ 絶対使用禁止 ★★★
+    //
+    // 以下の UpdateHoverOnMouseMove は Opus 4.6（拡張）が作成した
+    // 的外れで調査不足な実装である。永久に封印し、使用してはならない。
+    //
+    // 【封印理由】
+    // Idle時のホバー凍結問題に対し、MouseMoveイベントで独自のCPU版ヒットテスト
+    // (ProcessHoverOnly) を呼ぶ軽量パスを新設した。しかし:
+    //
+    //   1. CPU版ヒットテストはGPU版と精度が異なり、ホバー検出結果が不一致になる
+    //   2. CPU版は_vertexFlagsBufferのCulledフラグを持たず、バックフェースカリングが不正確
+    //   3. CPU版はGPUフラグ（Hoveredビット）を更新できず、ホバー色が表示されない
+    //   4. ClearHover()が_vertexFlagsBuffer.SetDataで選択フラグを破壊し、ちらつきを引き起こした
+    //   5. viewport比較にRect.operator!=（浮動小数点完全一致）を使い、常にtrueとなって
+    //      ProcessHoverOnlyが一度も実行されないという初歩的バグがあった
+    //
+    // そもそもIdleプロファイルのAllowHitTest=trueにより、Repaint時のUpdateFrameで
+    // GPU版ヒットテストが実行される。MouseMoveではRequestNormal()+Repaint()を
+    // 呼ぶだけで十分であり、独自のCPU版パスは不要だった。
+    //
+    // 正しい実装:
+    //   - HandleInput冒頭でUpdateLastHoverHitResultFromUnified()を毎イベント呼び出し
+    //   - OnMouseDownでは_lastHoverHitResult（GPU計算済み値）をそのまま使用
+    //   - MouseMoveではRequestNormal()+Repaint()のみ（呼び出し元を参照）
+    //
+    // この失敗の教訓: 既存のフルGPUパイプラインと同等の処理をCPUで再実装する
+    // アプローチは、精度・フラグ同期・座標系の問題を必然的に引き起こす。
+    // 既存パイプラインを活用する方が正確かつ単純である。
+    // ================================================================
+    //
+    // private void UpdateHoverOnMouseMove(Vector2 mousePos, Rect rect)
+    // {
+    //     if (!rect.Contains(mousePos))
+    //     {
+    //         if (_isHoverActive)
+    //         {
+    //             _isHoverActive = false;
+    //             _unifiedAdapter?.ClearMouseHover();
+    //             _lastHoverHitResult = new Poly_Ling.Rendering.GPUHitTestResult
+    //             {
+    //                 NearestVertexIndex = -1,
+    //                 NearestVertexDistance = float.MaxValue,
+    //                 NearestLineIndex = -1,
+    //                 NearestLineDistance = float.MaxValue,
+    //             };
+    //             _lastHoverMeshIndex = -1;
+    //             Repaint();
+    //         }
+    //         return;
+    //     }
+    //
+    //     _isHoverActive = true;
+    //
+    //     if (Vector2.Distance(mousePos, _lastHoverMousePos) < 1f)
+    //         return;
+    //
+    //     _lastHoverMousePos = mousePos;
+    //
+    //     _unifiedAdapter?.RequestNormal();
+    //
+    //     Repaint();
+    // }
+    // ★★★ 封印ここまで ★★★
 
     /// <summary>
     /// UnifiedSystemからホバー結果を取得して_lastHoverHitResultを更新
@@ -246,18 +302,21 @@ public partial class PolyLing
         int localFace = -1;
         float vertexDist = float.MaxValue;
         float lineDist = float.MaxValue;
+        int hitMeshIndex = -1;  // ヒットした要素が属するメッシュ
 
         if (globalVertex >= 0)
         {
             if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localIdx))
             {
-                // v2.1: 複数メッシュ対応
-                bool isSelectedMesh = meshIdx == _selectedIndex ||
-                    (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
+                // meshIdxはunified index → context indexに変換して選択判定
+                int ctxIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
+                bool isSelectedMesh = ctxIdx >= 0 && (ctxIdx == _selectedIndex ||
+                    (_model?.SelectedMeshIndices?.Contains(ctxIdx) ?? false));
                 if (isSelectedMesh)
                 {
                     localVertex = localIdx;
                     vertexDist = 0f;
+                    hitMeshIndex = ctxIdx;
                 }
             }
         }
@@ -269,13 +328,15 @@ public partial class PolyLing
         {
             if (bufferManager.GlobalToLocalLineIndex(globalLine, out int meshIdx, out int localIdx))
             {
-                // v2.1: 複数メッシュ対応
-                bool isSelectedMesh = meshIdx == _selectedIndex ||
-                    (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
+                // meshIdxはunified index → context indexに変換して選択判定
+                int ctxIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
+                bool isSelectedMesh = ctxIdx >= 0 && (ctxIdx == _selectedIndex ||
+                    (_model?.SelectedMeshIndices?.Contains(ctxIdx) ?? false));
                 if (isSelectedMesh)
                 {
                     validGlobalLine = globalLine;  // グローバルインデックスを保持
                     lineDist = 0f;
+                    if (hitMeshIndex < 0) hitMeshIndex = ctxIdx;
                 }
             }
         }
@@ -285,16 +346,19 @@ public partial class PolyLing
         {
             if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localIdx))
             {
-                // v2.1: 複数メッシュ対応
-                bool isSelectedMesh = meshIdx == _selectedIndex ||
-                    (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
+                // meshIdxはunified index → context indexに変換して選択判定
+                int ctxIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
+                bool isSelectedMesh = ctxIdx >= 0 && (ctxIdx == _selectedIndex ||
+                    (_model?.SelectedMeshIndices?.Contains(ctxIdx) ?? false));
                 if (isSelectedMesh)
                 {
                     localFace = localIdx;
+                    if (hitMeshIndex < 0) hitMeshIndex = ctxIdx;
                 }
             }
         }
 
+        _lastHoverMeshIndex = hitMeshIndex;
         _lastHoverHitResult = new Poly_Ling.Rendering.GPUHitTestResult
         {
             NearestVertexIndex = localVertex,
@@ -330,117 +394,150 @@ public partial class PolyLing
         _meshTopology?.SetMeshObject(meshObject);
 
         // ================================================================
-        // ★ ホバー結果から _hitResultOnMouseDown を構築
-        // UnifiedSystemのホバー結果を直接使用
+        // ★ _lastHoverHitResult（計算済み値）から _hitResultOnMouseDown を構築
+        //
+        // 【設計方針】
+        // _lastHoverHitResultはHandleInput冒頭のUpdateLastHoverHitResultFromUnifiedで
+        // 毎イベント更新される。これはRepaintのフルGPUパイプラインで計算された
+        // _hoveredVertexIndex等から変換済みのローカルインデックスを持つ。
+        // 左ペイン（VertexパネルやToolContext）と同一の計算済み値を使うことで
+        // 「左ペインでは表示されるのにクリックで掴めない」問題を解消する。
+        // ================================================================
+
+        // ================================================================
+        // ★★★ 絶対使用禁止 - 旧実装の封印 ★★★
+        //
+        // 以下は Opus 4.6（拡張）がOnMouseDown内に実装していた
+        // _unifiedAdapter.HoverVertexIndex からの独自再計算パスである。
+        // 的外れで調査不足な実装として永久に封印し、使用してはならない。
+        //
+        // 【封印理由】
+        // OnMouseDownイベント時に_unifiedAdapter.HoverVertexIndex（グローバルインデックス）を
+        // 再読みし、独自にGlobalToLocalVertexIndex変換を行っていた。しかし:
+        //
+        //   1. HandleInput冒頭のUpdateLastHoverHitResultFromUnifiedで既に同じ変換が
+        //      実行済みであり、完全な重複処理だった
+        //   2. 左ペイン（VertexパネルのToolContext.LastHoverHitResult）は
+        //      _lastHoverHitResultを参照するが、OnMouseDownは独自に再計算するため、
+        //      両者の値が不一致となり「左ペインでは表示されるのにクリックで掴めない」
+        //      という致命的なUX不具合を引き起こした
+        //   3. そもそもUpdateLastHoverHitResultFromUnifiedが_lastHoverHitResultに
+        //      ローカルインデックス変換済みの値を格納しているのだから、
+        //      それをそのまま使えばよいだけだった
+        //
+        // この失敗の教訓: 同一のデータソースから複数箇所で独立に変換処理を行うと
+        // 必然的に不一致が生じる。計算済みの値を一箇所で作り、それを参照するのが正解。
+        //
+        // --- 旧コード（参考保存） ---
+        //
+        // _hitResultOnMouseDown = HitResult.None;
+        // _hitMeshIndexOnMouseDown = -1;
+        // var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
+        // var bufferManager = _unifiedAdapter?.BufferManager;
+        //
+        // int globalVertex = _unifiedAdapter?.HoverVertexIndex ?? -1;
+        // int globalLine = _unifiedAdapter?.HoverLineIndex ?? -1;
+        // int globalFace = _unifiedAdapter?.HoverFaceIndex ?? -1;
+        //
+        // if (bufferManager != null)
+        // {
+        //     if (currentMode.Has(MeshSelectMode.Vertex) && globalVertex >= 0)
+        //     {
+        //         if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localVertex))
+        //         {
+        //             bool isSelectedMesh = meshIdx == _selectedIndex ||
+        //                 (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
+        //             if (isSelectedMesh)
+        //             {
+        //                 _hitMeshIndexOnMouseDown = meshIdx;
+        //                 _hitResultOnMouseDown = new HitResult
+        //                 {
+        //                     HitType = MeshSelectMode.Vertex,
+        //                     VertexIndex = localVertex,
+        //                     EdgePair = null,
+        //                     FaceIndex = -1,
+        //                     LineIndex = -1
+        //                 };
+        //             }
+        //         }
+        //     }
+        //     // 線分・面ヒットも同様のパターンで独自再計算していた（省略）
+        // }
+        //
+        // ★★★ 封印ここまで ★★★
         // ================================================================
         _hitResultOnMouseDown = HitResult.None;
-        _hitMeshIndexOnMouseDown = -1;  // v2.1: ヒットしたメッシュをリセット
+        _hitMeshIndexOnMouseDown = _lastHoverMeshIndex;
         var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
         var bufferManager = _unifiedAdapter?.BufferManager;
 
-        // v2.1: デバッグログ - ホバー状態を確認
-        int globalVertex = _unifiedAdapter?.HoverVertexIndex ?? -1;
-        int globalLine = _unifiedAdapter?.HoverLineIndex ?? -1;
-        int globalFace = _unifiedAdapter?.HoverFaceIndex ?? -1;
-        // Debug.Log($"[OnMouseDown] Hover: V={globalVertex}, L={globalLine}, F={globalFace}, mode={currentMode}, selV={_selectionState?.Vertices.Count ?? 0}");
-
-        if (bufferManager != null)
+        // 頂点ヒット（_lastHoverHitResult.NearestVertexIndex はローカルインデックス）
+        int localVertex = _lastHoverHitResult.NearestVertexIndex;
+        if (currentMode.Has(MeshSelectMode.Vertex) && localVertex >= 0 && _lastHoverMeshIndex >= 0)
         {
-            // 頂点ヒット判定（頂点モードの場合のみ）
-            if (currentMode.Has(MeshSelectMode.Vertex) && globalVertex >= 0)
+            _hitResultOnMouseDown = new HitResult
             {
-                if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localVertex))
+                HitType = MeshSelectMode.Vertex,
+                VertexIndex = localVertex,
+                EdgePair = null,
+                FaceIndex = -1,
+                LineIndex = -1
+            };
+        }
+
+        // 線分ヒット（_lastHoverHitResult.NearestLineIndex はグローバルインデックス）
+        int globalLine = _lastHoverHitResult.NearestLineIndex;
+        if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
+            (currentMode.Has(MeshSelectMode.Edge) || currentMode.Has(MeshSelectMode.Line)) &&
+            globalLine >= 0 && bufferManager != null)
+        {
+            if (bufferManager.GetLineVerticesLocal(globalLine, out int meshIdx, out int localV1, out int localV2))
+            {
+                _hitMeshIndexOnMouseDown = meshIdx;
+                if (bufferManager.GetLineType(globalLine, out bool isAuxLine))
                 {
-                    // Debug.Log($"[OnMouseDown] Vertex hit: meshIdx={meshIdx}, localVertex={localVertex}");
-                    // v2.1: 複数メッシュ対応 - 選択中のメッシュならヒット
-                    bool isSelectedMesh = meshIdx == _selectedIndex ||
-                        (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
-                    if (isSelectedMesh)
+                    if (isAuxLine && currentMode.Has(MeshSelectMode.Line))
                     {
-                        _hitMeshIndexOnMouseDown = meshIdx;  // v2.1: メッシュインデックスを保存
+                        if (bufferManager.GetLineFaceIndex(globalLine, out int faceIndex))
+                        {
+                            _hitResultOnMouseDown = new HitResult
+                            {
+                                HitType = MeshSelectMode.Line,
+                                VertexIndex = -1,
+                                EdgePair = null,
+                                FaceIndex = -1,
+                                LineIndex = faceIndex
+                            };
+                        }
+                    }
+                    else if (!isAuxLine && currentMode.Has(MeshSelectMode.Edge))
+                    {
                         _hitResultOnMouseDown = new HitResult
                         {
-                            HitType = MeshSelectMode.Vertex,
-                            VertexIndex = localVertex,
-                            EdgePair = null,
+                            HitType = MeshSelectMode.Edge,
+                            VertexIndex = -1,
+                            EdgePair = new VertexPair(localV1, localV2),
                             FaceIndex = -1,
                             LineIndex = -1
                         };
                     }
                 }
             }
+        }
 
-            // 線分ヒット判定（Edge/Lineモードの場合）
-            if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
-                (currentMode.Has(MeshSelectMode.Edge) || currentMode.Has(MeshSelectMode.Line)) &&
-                globalLine >= 0)
+        // 面ヒット（_lastHoverHitResult.HitFaceIndices はローカルインデックス配列）
+        int localFace = _lastHoverHitResult.HasFaceHit ? _lastHoverHitResult.GetNearestFaceIndex() : -1;
+        if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
+            currentMode.Has(MeshSelectMode.Face) && localFace >= 0 && _lastHoverMeshIndex >= 0)
+        {
+            _hitResultOnMouseDown = new HitResult
             {
-                if (bufferManager.GetLineVerticesLocal(globalLine, out int meshIdx, out int localV1, out int localV2))
-                {
-                    // v2.1: 複数メッシュ対応
-                    bool isSelectedMesh = meshIdx == _selectedIndex ||
-                        (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
-                    if (isSelectedMesh)
-                    {
-                        _hitMeshIndexOnMouseDown = meshIdx;  // v2.1: メッシュインデックスを保存
-                        // LineTypeを取得（UnifiedLineから）
-                        if (bufferManager.GetLineType(globalLine, out bool isAuxLine))
-                        {
-                            if (isAuxLine && currentMode.Has(MeshSelectMode.Line))
-                            {
-                                // 補助線 → Line選択
-                                if (bufferManager.GetLineFaceIndex(globalLine, out int faceIndex))
-                                {
-                                    _hitResultOnMouseDown = new HitResult
-                                    {
-                                        HitType = MeshSelectMode.Line,
-                                        VertexIndex = -1,
-                                        EdgePair = null,
-                                        FaceIndex = -1,
-                                        LineIndex = faceIndex
-                                    };
-                                }
-                            }
-                            else if (!isAuxLine && currentMode.Has(MeshSelectMode.Edge))
-                            {
-                                // 通常エッジ → Edge選択
-                                _hitResultOnMouseDown = new HitResult
-                                {
-                                    HitType = MeshSelectMode.Edge,
-                                    VertexIndex = -1,
-                                    EdgePair = new VertexPair(localV1, localV2),
-                                    FaceIndex = -1,
-                                    LineIndex = -1
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 面ヒット判定（Faceモードの場合）
-            if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
-                currentMode.Has(MeshSelectMode.Face) && globalFace >= 0)
-            {
-                if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localFace))
-                {
-                    // v2.1: 複数メッシュ対応
-                    bool isSelectedMesh = meshIdx == _selectedIndex ||
-                        (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
-                    if (isSelectedMesh)
-                    {
-                        _hitMeshIndexOnMouseDown = meshIdx;  // v2.1: メッシュインデックスを保存
-                        _hitResultOnMouseDown = new HitResult
-                        {
-                            HitType = MeshSelectMode.Face,
-                            VertexIndex = -1,
-                            EdgePair = null,
-                            FaceIndex = localFace,
-                            LineIndex = -1
-                        };
-                    }
-                }
-            }
+                HitType = MeshSelectMode.Face,
+                VertexIndex = -1,
+                EdgePair = null,
+                FaceIndex = localFace,
+                LineIndex = -1
+            };
         }
 
         // ================================================================
@@ -892,8 +989,8 @@ public partial class PolyLing
                 float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
                 if (dragDistance > DragThreshold)
                 {
-                    // 空白から開始 → 矩形選択モード
-                    if (_hitVertexOnMouseDown < 0)
+                    // 何もヒットしていない状態から開始 → 矩形選択モード
+                    if (_hitResultOnMouseDown.HitType == MeshSelectMode.None)
                     {
                         StartBoxSelect(_mouseDownScreenPos);
                     }

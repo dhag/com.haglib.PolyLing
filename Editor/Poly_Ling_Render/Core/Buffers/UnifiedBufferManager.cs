@@ -52,6 +52,9 @@ namespace Poly_Ling.Core
         // MeshContextsのインデックス → UnifiedSystem内メッシュインデックス
         private Dictionary<int, int> _contextToUnifiedMeshIndex = new Dictionary<int, int>();
         
+        // UnifiedSystem内メッシュインデックス → MeshContextsのインデックス（逆引き）
+        private Dictionary<int, int> _unifiedToContextMeshIndex = new Dictionary<int, int>();
+        
         /// <summary>
         /// MeshContextsのインデックスをUnifiedSystem内メッシュインデックスに変換
         /// </summary>
@@ -59,6 +62,16 @@ namespace Poly_Ling.Core
         {
             if (_contextToUnifiedMeshIndex.TryGetValue(contextIndex, out int unifiedIndex))
                 return unifiedIndex;
+            return -1;
+        }
+        
+        /// <summary>
+        /// UnifiedSystem内メッシュインデックスをMeshContextsのインデックスに変換
+        /// </summary>
+        public int UnifiedToContextMeshIndex(int unifiedIndex)
+        {
+            if (_unifiedToContextMeshIndex.TryGetValue(unifiedIndex, out int contextIndex))
+                return contextIndex;
             return -1;
         }
 

@@ -44,6 +44,11 @@ namespace Poly_Ling.Core
         private bool _disposed = false;
         private bool _useUnifiedRendering = false; // 統合レンダリング使用フラグ
 
+        // ★ ホバー軽量更新用のviewport記録
+        // UpdateFrame（Repaint, Normalモード時）で更新される。
+        // UpdateHoverOnly（MouseMove時）でviewport変更を検出するために使用。
+        private Rect _lastKnownViewport;
+
         // クワッドメッシュ（頂点描画用）
         private Mesh _quadMesh;
 
@@ -79,6 +84,17 @@ namespace Poly_Ling.Core
         public int HoverVertexIndex => _unifiedSystem?.HoveredVertexIndex ?? -1;
         public int HoverLineIndex => _unifiedSystem?.HoveredLineIndex ?? -1;
         public int HoverFaceIndex => _unifiedSystem?.HoveredFaceIndex ?? -1;
+
+        /// <summary>
+        /// ホバー状態を全てクリアする。
+        /// マウスが表示エリア外に出た場合に呼び出す。
+        /// </summary>
+        public void ClearMouseHover()
+        {
+            if (!_isInitialized)
+                return;
+            _unifiedSystem?.ClearAllHover();
+        }
 
         /// <summary>
         /// 指定メッシュのローカル頂点ホバーインデックスを取得
@@ -324,6 +340,9 @@ namespace Poly_Ling.Core
             if (!_currentProfile.AllowHitTest)
                 return;
 
+            // ★ viewport記録: UpdateHoverOnlyのviewport変更検出で参照される
+            _lastKnownViewport = viewport;
+
             _unifiedSystem.BeginFrame();
 
             // カメラ更新
@@ -337,6 +356,72 @@ namespace Poly_Ling.Core
             _unifiedSystem.ExecuteUpdates(level);
 
             _unifiedSystem.EndFrame();
+        }
+
+        // ============================================================
+        // 軽量ホバー更新
+        // ============================================================
+        //
+        // 【背景】
+        // ワンショット方式により、通常時はIdleモード（AllowHitTest=false）で
+        // UpdateFrameが全スキップされ、ホバー結果（_hoveredVertexIndex等）が凍結する。
+        // これにより「マウス直下の要素」が古いまま残り、クリック+ドラッグ=選択同時移動が失敗する。
+        //
+        // 【解決策】
+        // MouseMoveイベント時にヒットテストのみを実行する軽量パスを提供する。
+        // スクリーン座標は直前のRepaintで計算済みのものを再利用するため、
+        // Topology/Transform/Selection/Cameraの再計算は不要。
+        //
+        // 【★★★ 禁忌（絶対厳守） ★★★】
+        // このメソッドをRepaintイベントやOnGUIの毎フレーム処理に組み込んではならない。
+        // MouseMoveイベント（ユーザーがマウスを動かした時のみ発火）からのみ呼び出すこと。
+        // Repaint毎に呼ぶとGPUヒットテスト（ComputeScreenPositions+DispatchVertexHitTest等）が
+        // 毎描画フレームで実行され、パフォーマンスが深刻に劣化する。
+        //
+        // 呼び出し元: PolyLing_Input.UpdateHoverOnMouseMove()
+        //   → EventType.MouseMove かつ rect.Contains(mousePos) の場合のみ
+        // ★★★★★★★★★★★★★★★★★★★★
+
+        /// <summary>
+        /// ホバー専用の軽量更新パス
+        ///
+        /// TransformDragging/CameraDragging中は何もしない（禁忌維持）。
+        /// viewportが変更された場合（ウインドウリサイズ等）はスクリーン座標が無効なため
+        /// RequestNormal()を発行して次のRepaintでフルパイプラインを実行させ、
+        /// この回のヒットテストはスキップする。
+        /// </summary>
+        /// <param name="localMousePos">ローカル座標系のマウス位置（rect.position を引いた値）</param>
+        /// <param name="viewport">現在のプレビューエリアサイズ new Rect(0, 0, width, height)</param>
+        public void UpdateHoverOnly(Vector2 localMousePos, Rect viewport)
+        {
+            if (!_isInitialized)
+                return;
+
+            // ドラッグ中はホバー更新禁止（TransformDragging/CameraDragging）
+            if (_currentMode == UpdateMode.TransformDragging ||
+                _currentMode == UpdateMode.CameraDragging)
+                return;
+
+            // viewport変更検出（ウインドウリサイズ等）
+            // スクリーン座標が古いためヒットテスト結果は不正確になる。
+            // RequestNormal()で次のRepaintでフルパイプラインを実行させ、
+            // _lastKnownViewportはそのUpdateFrame内で更新される。
+            //
+            // ★ 近似比較（1px許容）を使う理由:
+            //   Rect.operator!= は浮動小数点の完全一致比較。
+            //   IMGUIのGUILayoutUtility.GetRectはRepaintイベントとMouseMoveイベントで
+            //   微小な浮動小数点差（DPIスケーリング等）を返すことがある。
+            //   完全一致だとProcessHoverOnlyが一度も実行されず、ホバーが凍結する。
+            //   1px以上の変更は実際のリサイズとみなしてフルパイプラインに委譲する。
+            if (Mathf.Abs(_lastKnownViewport.width - viewport.width) > 1f ||
+                Mathf.Abs(_lastKnownViewport.height - viewport.height) > 1f)
+            {
+                RequestNormal();
+                return;
+            }
+
+            // 軽量パス: マウス位置更新 + ヒットテストのみ
+            _unifiedSystem.ProcessHoverOnly(localMousePos);
         }
 
         /// <summary>

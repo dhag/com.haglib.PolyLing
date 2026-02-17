@@ -123,7 +123,17 @@ namespace Poly_Ling.Core
         /// <summary>
         /// マウス/ヒットテスト更新（Level 1）
         /// </summary>
-        public void ProcessMouseUpdate()
+        /// <param name="cpuOnly">
+        /// trueの場合、GPU版ヒットテストを使わずCPU版のみ使用する。
+        /// ProcessHoverOnly（軽量ホバー更新パス）から呼ばれる場合はtrue。
+        ///
+        /// 【理由】GPU版はDispatchClearBuffersGPUで_VertexFlagsBuffer（選択フラグ含む）を
+        /// ゼロクリアする。フルパイプライン内（Normal時）ではPrepareUnifiedDrawingの
+        /// AllowSelectionSync=trueで選択フラグが再設定されるが、Idle時は再設定されず
+        /// 選択表示が消えてちらつく。CPU版はスクリーン座標配列を読むだけで
+        /// GPUバッファを一切変更しないため安全。
+        /// </param>
+        public void ProcessMouseUpdate(bool cpuOnly = false)
         {
             // ヒットテスト入力設定
             _bufferManager.SetHitTestInput(_mousePosition, _hitRadius, _viewport);
@@ -132,12 +142,14 @@ namespace Poly_Ling.Core
             int newHoveredLine;
             int newHoveredFace;
 
-            // GPU計算が利用可能ならGPU版を使用
-            if (_bufferManager.GpuComputeAvailable && _useGpuHitTest)
+            // GPU計算が利用可能かつcpuOnly=falseならGPU版を使用
+            if (!cpuOnly && _bufferManager.GpuComputeAvailable && _useGpuHitTest)
             {
                 Matrix4x4 viewProjection = _projectionMatrix * _viewMatrix;
 
                 // 正しい順序でGPU計算を実行
+                // ★注意: DispatchClearBuffersGPUは_VertexFlagsBuffer等を全クリアする。
+                //   フルパイプライン外（cpuOnly=true）では絶対に実行してはならない。
                 _bufferManager.DispatchClearBuffersGPU();
                 _bufferManager.ComputeScreenPositionsGPU(viewProjection, _viewport);
                 _bufferManager.DispatchFaceVisibilityGPU();
@@ -215,20 +227,30 @@ namespace Poly_Ling.Core
 
             if (changed)
             {
-                // ホバーフラグを更新（有効なもののみ）
-                _bufferManager.ClearHover();
-                
-                if (_hoveredVertexIndex >= 0)
+                // ★ cpuOnly時はGPUバッファを触らない。
+                // ClearHover()は_vertexFlagsBuffer.SetData(_vertexFlags, ...)を実行するが、
+                // CPU側_vertexFlagsにはGPU専用フラグ（Culled等）が含まれていないため、
+                // SetDataでGPUバッファが上書きされてCulledフラグが消失し、
+                // 描画が破壊される（選択表示の消失、ちらつき等）。
+                // cpuOnly時はホバーインデックス変数のみ更新し、
+                // GPUバッファへの反映は次のNormal時フルパイプラインに任せる。
+                if (!cpuOnly)
                 {
-                    _bufferManager.SetHoverVertex(_hoveredVertexIndex);
-                }
-                if (_hoveredLineIndex >= 0)
-                {
-                    _bufferManager.SetHoverLine(_hoveredLineIndex);
-                }
-                if (_hoveredFaceIndex >= 0)
-                {
-                    _bufferManager.SetHoverFace(_hoveredFaceIndex);
+                    // ホバーフラグを更新（有効なもののみ）
+                    _bufferManager.ClearHover();
+                    
+                    if (_hoveredVertexIndex >= 0)
+                    {
+                        _bufferManager.SetHoverVertex(_hoveredVertexIndex);
+                    }
+                    if (_hoveredLineIndex >= 0)
+                    {
+                        _bufferManager.SetHoverLine(_hoveredLineIndex);
+                    }
+                    if (_hoveredFaceIndex >= 0)
+                    {
+                        _bufferManager.SetHoverFace(_hoveredFaceIndex);
+                    }
                 }
             }
         }
@@ -280,6 +302,22 @@ namespace Poly_Ling.Core
             {
                 ProcessMouseUpdate();
             }
+        }
+
+        // ============================================================
+        // ホバー状態クリア
+        // ============================================================
+
+        /// <summary>
+        /// ホバー状態を全てクリアする。
+        /// マウスが表示エリア外に出た場合に呼び出す。
+        /// </summary>
+        public void ClearAllHover()
+        {
+            _hoveredVertexIndex = -1;
+            _hoveredLineIndex = -1;
+            _hoveredFaceIndex = -1;
+            _bufferManager.ClearHover();
         }
 
         // ============================================================
@@ -377,6 +415,50 @@ namespace Poly_Ling.Core
 
                 _updateManager.MarkSelectionDirty();
             }
+        }
+
+        // ============================================================
+        // 軽量ホバー更新パス
+        // ============================================================
+        //
+        // 【背景と経緯】
+        // 通常のホバー更新はUpdateFrame（Repaintイベント時、AllowHitTest=true時のみ）で行われる。
+        // しかしワンショット方式（Normal→Idle自動降格）により、Idle時はAllowHitTest=falseとなり
+        // UpdateFrame全体がスキップされ、_hoveredVertexIndex等が凍結する。
+        //
+        // この凍結により「マウス直下の要素」が古いまま残り、以下の問題が発生した:
+        //   - OnMouseDownでホバー結果から_hitResultOnMouseDownを構築 → 古い要素を参照
+        //   - クリック+ドラッグ=選択同時移動が失敗（頂点がない位置でもヒット判定される等）
+        //   - Shift+新頂点クリック+ドラッグで新頂点が取り残される
+        //
+        // 【解決策】
+        // MouseMoveイベント時（かつプレビューエリア内のみ）に、ヒットテストだけを実行する
+        // 軽量パスを追加した。フルパイプライン（Topology/Transform/Selection/Camera全更新）は不要で、
+        // ProcessMouseUpdate（CPU/GPUヒットテスト）のみを実行する。
+        //
+        // 【★★★ 禁忌（絶対厳守） ★★★】
+        // このメソッドをRepaintイベントやUpdate/OnGUIの毎フレーム処理から呼んではならない。
+        // MouseMoveイベント（ユーザーがマウスを実際に動かした時のみ発火）専用である。
+        // 毎フレーム呼び出すとGPUヒットテストが毎フレーム走り、パフォーマンスが劣化する。
+        //
+        // 呼び出し元: UnifiedSystemAdapter.UpdateHoverOnly()
+        //           → PolyLing_Input.UpdateHoverOnMouseMove()（MouseMoveイベント内）
+        // ★★★★★★★★★★★★★★★★★★★★
+
+        /// <summary>
+        /// ホバー専用の軽量更新
+        /// マウス位置を設定し、ヒットテスト（ProcessMouseUpdate）のみ実行する。
+        /// カメラ/トポロジ/選択の再計算は行わない。
+        /// スクリーン座標は直前のProcessCameraUpdateで計算済みのものを使用する。
+        /// </summary>
+        /// <param name="mousePosition">ローカル座標系のマウス位置（BeginClip後相当）</param>
+        public void ProcessHoverOnly(Vector2 mousePosition)
+        {
+            _mousePosition = mousePosition;
+            // ★ cpuOnly=true: GPUバッファ（選択フラグ等）を破壊しない。
+            // GPU版はDispatchClearBuffersGPUで_VertexFlagsBufferをゼロクリアし、
+            // Idle時はAllowSelectionSync=falseのため再設定されずちらつく。
+            ProcessMouseUpdate(cpuOnly: true);
         }
 
         // ============================================================

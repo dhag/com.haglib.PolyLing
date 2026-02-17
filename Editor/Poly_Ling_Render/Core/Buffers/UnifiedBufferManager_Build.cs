@@ -96,6 +96,7 @@ namespace Poly_Ling.Core
 
             // マッピングをクリア
             _contextToUnifiedMeshIndex.Clear();
+            _unifiedToContextMeshIndex.Clear();
 
             // データ構築
             uint vertexOffset = 0;
@@ -112,8 +113,9 @@ namespace Poly_Ling.Core
 
                 int masterIndex = entry.MasterIndex;  // MeshContextList内のインデックス
 
-                // マッピングを記録: MeshContextListインデックス → UnifiedMeshインデックス
+                // マッピングを記録: MeshContextListインデックス ↔ UnifiedMeshインデックス
                 _contextToUnifiedMeshIndex[masterIndex] = _meshCount;
+                _unifiedToContextMeshIndex[_meshCount] = masterIndex;
 
                 var meshObject = meshContext.MeshObject;
 
@@ -230,6 +232,7 @@ namespace Poly_Ling.Core
 
             // マッピングをクリア
             _contextToUnifiedMeshIndex.Clear();
+            _unifiedToContextMeshIndex.Clear();
 
             // データ構築
             uint vertexOffset = 0;
@@ -243,8 +246,9 @@ namespace Poly_Ling.Core
                 if (meshContext?.MeshObject == null)
                     continue;
 
-                // マッピングを記録: MeshContextインデックス → UnifiedMeshインデックス
+                // マッピングを記録: MeshContextインデックス ↔ UnifiedMeshインデックス
                 _contextToUnifiedMeshIndex[meshIdx] = _meshCount;
+                _unifiedToContextMeshIndex[_meshCount] = meshIdx;
 
                 var meshObject = meshContext.MeshObject;
 
