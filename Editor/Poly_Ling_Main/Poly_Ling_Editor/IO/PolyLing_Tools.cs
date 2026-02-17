@@ -166,6 +166,14 @@ public partial class PolyLing : EditorWindow
         
         // v2.1: 複数メッシュ選択変更時のコールバック（GPUバッファ同期）
         ctx.OnMeshSelectionChanged = OnMeshSelectionChanged;
+
+        // カメラ注目点移動コールバック
+        ctx.FocusCameraOn = (pos) =>
+        {
+            _cameraTarget = pos;
+            _unifiedAdapter?.RequestNormal();
+            Repaint();
+        };
     }
 
     /// <summary>

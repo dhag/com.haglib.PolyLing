@@ -896,17 +896,25 @@ namespace Poly_Ling.PMX
             }
 
             // 補正回転を計算・適用
+            // correctionはワールド空間での回転。BoneTransform.Rotationはローカル空間のため変換が必要。
+            // parentWorldRotはworldMatricesから回転を抽出して取得
             Quaternion correction = Quaternion.FromToRotation(currentDirection, targetDirection);
             Debug.Log($"[PMXImporter] T-Pose: {sideName} arm correction={correction.eulerAngles}");
 
             var upperArmContext = meshContexts[upperArmIndex];
             if (upperArmContext?.BoneTransform != null)
             {
-                Quaternion currentRotation = Quaternion.Euler(upperArmContext.BoneTransform.Rotation);
-                // 左右とも同じ乗算順序（correction * currentRotation）
-                Quaternion newRotation = correction * currentRotation;
-                Debug.Log($"[PMXImporter] T-Pose: {sideName} arm rotation: {upperArmContext.BoneTransform.Rotation} -> {newRotation.eulerAngles}");
-                upperArmContext.BoneTransform.Rotation = newRotation.eulerAngles;
+                Quaternion parentWorldRot = Quaternion.identity;
+                int parentIdx = upperArmContext.HierarchyParentIndex;
+                if (parentIdx >= 0 && worldMatrices.TryGetValue(parentIdx, out Matrix4x4 parentWorld))
+                {
+                    parentWorldRot = parentWorld.rotation;
+                }
+
+                Quaternion currentLocalRot = Quaternion.Euler(upperArmContext.BoneTransform.Rotation);
+                Quaternion newLocalRot = Quaternion.Inverse(parentWorldRot) * correction * parentWorldRot * currentLocalRot;
+                Debug.Log($"[PMXImporter] T-Pose: {sideName} arm rotation: {upperArmContext.BoneTransform.Rotation} -> {newLocalRot.eulerAngles}");
+                upperArmContext.BoneTransform.Rotation = newLocalRot.eulerAngles;
             }
         }
 
@@ -957,16 +965,23 @@ namespace Poly_Ling.PMX
             }
 
             // 補正回転を計算・適用
+            // correctionはワールド空間での回転。BoneTransform.Rotationはローカル空間のため変換が必要。
+            // newLocalRot = Inv(parentWorldRot) * correction * parentWorldRot * currentLocalRot
             Quaternion correction = Quaternion.FromToRotation(currentDirection, targetDirection);
             Debug.Log($"[PMXImporter] T-Pose: {sideName} arm correction angle={angle:F1}°, correction={correction.eulerAngles}");
 
             var upperArmContext = meshContexts[upperArmIndex];
             if (upperArmContext?.BoneTransform != null)
             {
-                Quaternion currentRotation = Quaternion.Euler(upperArmContext.BoneTransform.Rotation);
-                Quaternion newRotation = correction * currentRotation;
-                Debug.Log($"[PMXImporter] T-Pose: {sideName} arm rotation: {upperArmContext.BoneTransform.Rotation} -> {newRotation.eulerAngles}");
-                upperArmContext.BoneTransform.Rotation = newRotation.eulerAngles;
+                Quaternion parentWorldRot = Quaternion.identity;
+                int parentIdx = upperArmContext.HierarchyParentIndex;
+                if (parentIdx >= 0 && parentIdx < meshContexts.Count)
+                    parentWorldRot = meshContexts[parentIdx].BoneModelRotation;
+
+                Quaternion currentLocalRot = Quaternion.Euler(upperArmContext.BoneTransform.Rotation);
+                Quaternion newLocalRot = Quaternion.Inverse(parentWorldRot) * correction * parentWorldRot * currentLocalRot;
+                Debug.Log($"[PMXImporter] T-Pose: {sideName} arm rotation: {upperArmContext.BoneTransform.Rotation} -> {newLocalRot.eulerAngles}");
+                upperArmContext.BoneTransform.Rotation = newLocalRot.eulerAngles;
             }
         }
 
@@ -1129,22 +1144,22 @@ namespace Poly_Ling.PMX
             Quaternion modelRotation = boneModelRotations[boneIndex];
 
             // ローカル位置・ローカル回転を計算
-            // MikuMikuFlex準拠: 全ボーンtranslation-only bindpose
-            // MikuMikuFlexのローカルポーズ行列:
-            //   Translation(-Position) * RotationQ(回転) * Translation(移動) * Translation(Position)
-            // 回転=identity, 移動=zero のとき ローカルポーズ行列 = Identity
-            // PolyLingではBoneTransform.Position = 親からのワールドオフセット、Rotation = identity
-            // これにより ローカル空間 = グローバル空間 となり、VMDやIKの回転がそのまま適用される
+            // ローカル回転 = Inverse(親ワールド回転) * 自身ワールド回転
+            // ローカル位置 = Inverse(親ワールド回転) * (自身ワールド位置 - 親ワールド位置)
             Vector3 localPosition;
-            Quaternion localRotation = Quaternion.identity;
+            Quaternion localRotation;
             if (parentIndex >= 0)
             {
+                Quaternion parentModelRotation = boneModelRotations[parentIndex];
                 Vector3 parentWorldPos = boneWorldPositions[parentIndex];
-                localPosition = worldPosition - parentWorldPos;
+                Quaternion invParentRot = Quaternion.Inverse(parentModelRotation);
+                localPosition = invParentRot * (worldPosition - parentWorldPos);
+                localRotation = invParentRot * modelRotation;
             }
             else
             {
                 localPosition = worldPosition;
+                localRotation = modelRotation;
             }
 
             // オイラー角に変換
@@ -1168,8 +1183,8 @@ namespace Poly_Ling.PMX
             };
             meshObject.BoneTransform = boneTransform;
 
-            // BindPoseを設定（MikuMikuFlex準拠: translation only）
-            Matrix4x4 worldMatrix = Matrix4x4.TRS(worldPosition, Quaternion.identity, Vector3.one);
+            // BindPoseを設定（ワールド位置+回転の逆行列）
+            Matrix4x4 worldMatrix = Matrix4x4.TRS(worldPosition, modelRotation, Vector3.one);
             Matrix4x4 bindPose = worldMatrix.inverse;
 
             // MeshContext作成（★MQOと同様に全プロパティを設定）
@@ -1181,7 +1196,7 @@ namespace Poly_Ling.PMX
                 IsVisible = true,
                 BindPose = bindPose,
                 BoneTransform = boneTransform,  // ★BoneTransformを設定
-                BoneModelRotation = Quaternion.identity  // MikuMikuFlex準拠: ローカル軸回転は姿勢計算に不使用
+                BoneModelRotation = modelRotation  // ローカル軸のワールド空間回転（VMDApplierのR^-1*Q*R変換に使用）
             };
 
             // ★MeshContextにもHierarchyParentIndexを設定（重要！）

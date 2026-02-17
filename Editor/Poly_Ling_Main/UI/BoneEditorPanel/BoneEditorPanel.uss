@@ -1,0 +1,84 @@
+/* BoneEditorPanel.uss: ボーンエディタパネル */
+
+.be-root {
+    flex-grow: 1;
+    padding: 4px;
+}
+
+.be-warning {
+    font-size: 12px;
+    color: #ff9800;
+    margin: 8px 4px;
+    white-space: normal;
+}
+
+/* セクション */
+
+.be-section {
+    margin: 4px 0;
+    padding: 4px 6px;
+}
+
+.be-section-label {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 2px 0 4px 0;
+}
+
+.be-info-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 2px;
+}
+
+/* 詳細 */
+
+.be-detail {
+    margin: 2px 0;
+    padding: 4px 6px;
+    border-width: 1px;
+    border-color: rgba(66, 165, 245, 0.3);
+    border-radius: 3px;
+    background-color: rgba(66, 165, 245, 0.05);
+}
+
+/* フィールド */
+
+.be-field-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.be-field-label {
+    width: 70px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    flex-shrink: 0;
+}
+
+.be-value-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.85);
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ボタン */
+
+.be-btn {
+    height: 22px;
+    font-size: 11px;
+    margin: 2px 0;
+}
+
+/* ステータス */
+
+.be-status-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 4px;
+    min-height: 14px;
+}

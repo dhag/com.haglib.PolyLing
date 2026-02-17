@@ -1,0 +1,58 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- UVEditPanel.uxml: UV編集パネル -->
+    
+    <ui:VisualElement name="uv-edit-root" class="uv-edit-root">
+        
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="uv-warning" />
+        
+        <!-- UVキャンバス -->
+        <ui:VisualElement name="uv-canvas" class="uv-canvas" />
+        
+        <!-- 情報バー -->
+        <ui:VisualElement class="uv-info-bar">
+            <ui:Label name="info-label" text="" class="uv-info-label" />
+            <ui:Button name="btn-fit" text="Fit" tooltip="UV領域にフィット" class="uv-btn-small" />
+        </ui:VisualElement>
+        
+        <!-- 一括変換セクション -->
+        <ui:VisualElement name="transform-section" class="uv-transform-section">
+            <ui:Label text="一括変換" class="uv-section-label" />
+            
+            <!-- 移動 -->
+            <ui:VisualElement class="uv-field-row">
+                <ui:Label text="移動" class="uv-field-label" />
+                <ui:Label text="U" class="uv-axis-label" />
+                <uie:FloatField name="move-u" value="0" class="uv-float-field" />
+                <ui:Label text="V" class="uv-axis-label" />
+                <uie:FloatField name="move-v" value="0" class="uv-float-field" />
+            </ui:VisualElement>
+            
+            <!-- スケール -->
+            <ui:VisualElement class="uv-field-row">
+                <ui:Label text="スケール" class="uv-field-label" />
+                <ui:Label text="U" class="uv-axis-label" />
+                <uie:FloatField name="scale-u" value="1" class="uv-float-field" />
+                <ui:Label text="V" class="uv-axis-label" />
+                <uie:FloatField name="scale-v" value="1" class="uv-float-field" />
+            </ui:VisualElement>
+            
+            <!-- 回転 -->
+            <ui:VisualElement class="uv-field-row">
+                <ui:Label text="回転" class="uv-field-label" />
+                <uie:FloatField name="rotate-deg" value="0" class="uv-float-field-wide" />
+                <ui:Label text="°" class="uv-unit-label" />
+            </ui:VisualElement>
+            
+            <!-- ボタン -->
+            <ui:VisualElement class="uv-btn-row">
+                <ui:Button name="btn-apply" text="適用" class="uv-btn-primary" />
+                <ui:Button name="btn-reset-params" text="リセット" class="uv-btn-small" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="uv-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>

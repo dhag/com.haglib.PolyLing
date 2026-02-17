@@ -285,6 +285,9 @@ namespace Poly_Ling.Tools
         /// <summary>画面再描画を要求</summary>
         public Action Repaint { get; set; }
 
+        /// <summary>カメラ注目点を指定位置に移動</summary>
+        public Action<Vector3> FocusCameraOn { get; set; }
+
         // === 更新モード制御 ===
 
         /// <summary>

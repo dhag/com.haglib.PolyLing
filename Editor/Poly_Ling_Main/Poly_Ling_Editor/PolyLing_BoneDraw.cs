@@ -62,8 +62,7 @@ public partial class PolyLing
             if (ctx == null || ctx.Type != MeshType.Bone)
                 continue;
 
-            bool isSelected = (i == _selectedIndex) ||
-                              (_model?.SelectedMeshIndices.Contains(i) ?? false);
+            bool isSelected = _model?.SelectedBoneIndices.Contains(i) ?? false;
 
             Color wireColor = isSelected ? BoneWireSelectedColor : BoneWireColor;
 

@@ -134,17 +134,9 @@ namespace Poly_Ling.Tools
         private Vector2 _gizmoScreenOffset = new Vector2(60, -60);  // 重心からのスクリーンオフセット（右上）
         private float _handleHitRadius = 10f;  // 軸先端のヒット半径（ピクセル）
 
-        // ================================================================
-        // Phase 7: 描画時のスクリーン座標キャッシュ
-        // DrawAxisGizmo（Repaintイベント）で計算した座標を保存し、
-        // FindAxisHandleAtScreenPos（MouseDownイベント）で使用する。
-        // これによりカメラ位置の不整合を解消。
-        // ================================================================
-        private Vector2 _cachedOriginScreen;
-        private Vector2 _cachedXEnd;
-        private Vector2 _cachedYEnd;
-        private Vector2 _cachedZEnd;
-        private bool _gizmoCacheValid = false;
+        // 共有AxisGizmo（描画・ヒットテスト・デルタ計算用）
+        private AxisGizmo _axisGizmo = new AxisGizmo();
+
         private float _handleSize = 8f;  // 軸先端のハンドルサイズ（ピクセル）
         private float _centerSize = 14f;  // 中央四角のサイズ（ピクセル）
         private float _screenAxisLength = 50f;  // 軸の長さ（ピクセル）
@@ -403,9 +395,6 @@ namespace Poly_Ling.Tools
             // 修飾キー状態クリア
             _shiftHeld = false;
             _ctrlHeld = false;
-
-            // Phase 7: ギズモキャッシュ無効化
-            _gizmoCacheValid = false;
         }
 
         // === 影響を受ける頂点の更新 ===
@@ -687,16 +676,9 @@ namespace Poly_Ling.Tools
             if (GetTotalAffectedCount(ctx) == 0 || _meshTransforms.Count == 0)
                 return;
 
-            Vector3 worldDelta = ctx.ScreenDeltaToWorldDelta(
-                screenDelta, ctx.CameraPosition, ctx.CameraTarget,
-                ctx.CameraDistance, ctx.PreviewRect);
-
-            // DisplayMatrixが非identityの場合、移動ベクトルを変換
-            if (ctx.DisplayMatrix != Matrix4x4.identity)
-            {
-                Matrix4x4 inverseMatrix = ctx.DisplayMatrix.inverse;
-                worldDelta = inverseMatrix.MultiplyVector(worldDelta);
-            }
+            // AxisGizmoで自由移動デルタを計算
+            SyncAxisGizmo(ctx);
+            Vector3 worldDelta = _axisGizmo.ComputeFreeDelta(screenDelta, ctx);
 
             // 全メッシュのトランスフォームにdeltaを適用
             foreach (var kv in _meshTransforms)
@@ -835,31 +817,10 @@ namespace Poly_Ling.Tools
             if (screenDelta.sqrMagnitude < 0.001f)
                 return;
 
-            // ワールド座標での軸方向
-            Vector3 axisDir = GetAxisDirection(_draggingAxis);
-
-            // 軸方向のスクリーン投影
-            Vector3 axisScreenDir = GetAxisScreenDirection(ctx, axisDir);
-            Vector2 axisScreenDir2D = new Vector2(axisScreenDir.x, axisScreenDir.y);
-
-            if (axisScreenDir2D.sqrMagnitude < 0.001f)
-                return;
-
-            axisScreenDir2D.Normalize();
-
-            // スクリーン移動量を軸方向成分に分解
-            float axisScreenMovement = Vector2.Dot(screenDelta, axisScreenDir2D);
-
-            // スクリーン移動量をワールド移動量に変換
-            float worldScale = ctx.CameraDistance * 0.001f;
-            Vector3 worldDeltaFrame = axisDir * axisScreenMovement * worldScale;
-
-            // DisplayMatrix変換
-            if (ctx.DisplayMatrix != Matrix4x4.identity)
-            {
-                Matrix4x4 inverseMatrix = ctx.DisplayMatrix.inverse;
-                worldDeltaFrame = inverseMatrix.MultiplyVector(worldDeltaFrame);
-            }
+            // AxisGizmoで軸拘束デルタを計算
+            SyncAxisGizmo(ctx);
+            Vector3 worldDeltaFrame = _axisGizmo.ComputeAxisDelta(
+                screenDelta, (AxisGizmo.AxisType)(int)_draggingAxis, ctx);
 
             // 全メッシュのトランスフォームにdeltaを適用
             foreach (var kv in _meshTransforms)
@@ -953,140 +914,33 @@ namespace Poly_Ling.Tools
             _gizmoCenter = _selectionCenter;
         }
 
-        private Vector2 GetGizmoOriginScreen(ToolContext ctx)
-        {
-            // ギズモ中心のスクリーン座標 + オフセット
-            // _gizmoCenterはメッシュ座標系、WorldToScreenPos内でDisplayMatrixが適用される
-            Vector2 centerScreen = ctx.WorldToScreenPos(
-                _gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            return centerScreen + _gizmoScreenOffset;
-        }
-
-        private Vector3 GetAxisScreenDirection(ToolContext ctx, Vector3 worldAxis)
-        {
-            // DisplayMatrixで軸方向を変換（回転のみ）
-            Vector3 transformedAxis = ctx.DisplayMatrix.MultiplyVector(worldAxis).normalized;
-
-            // カメラ距離に応じてスケール調整（近くても遠くても安定した方向計算）
-            float scale = Mathf.Max(0.1f, ctx.CameraDistance * 0.1f);
-
-            // ギズモ中心からワールド軸方向に進んだ点のスクリーン座標を計算
-            // _gizmoCenterはメッシュ座標系なので、軸方向もメッシュ座標系で加算
-            Vector3 axisEnd = _gizmoCenter + worldAxis * scale;
-            Vector2 centerScreen = ctx.WorldToScreenPos(
-                _gizmoCenter, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Vector2 axisEndScreen = ctx.WorldToScreenPos(
-                axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-
-            Vector2 diff = axisEndScreen - centerScreen;
-            if (diff.magnitude < 0.001f)
-            {
-                // 軸がカメラ方向と平行（スクリーン上でほぼ点になる）
-                return Vector3.zero;
-            }
-
-            Vector2 screenDir = diff.normalized;
-            return new Vector3(screenDir.x, screenDir.y, 0);
-        }
-
-        private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 worldAxis, Vector2 originScreen)
-        {
-            // スクリーン空間での軸方向を計算
-            Vector3 screenDir = GetAxisScreenDirection(ctx, worldAxis);
-            return originScreen + new Vector2(screenDir.x, screenDir.y) * _screenAxisLength;
-        }
+        // GetGizmoOriginScreen, GetAxisScreenDirection, GetAxisScreenEnd は AxisGizmo に移行済み
 
         private void DrawAxisGizmo(ToolContext ctx)
         {
-            Vector2 originScreen = GetGizmoOriginScreen(ctx);
-
-            // 軸の色
-            Color xColor = (_draggingAxis == AxisType.X || _hoveredAxis == AxisType.X)
-                ? new Color(1f, 0.3f, 0.3f, 1f)
-                : new Color(0.8f, 0.2f, 0.2f, 0.7f);
-
-            Color yColor = (_draggingAxis == AxisType.Y || _hoveredAxis == AxisType.Y)
-                ? new Color(0.3f, 1f, 0.3f, 1f)
-                : new Color(0.2f, 0.8f, 0.2f, 0.7f);
-
-            Color zColor = (_draggingAxis == AxisType.Z || _hoveredAxis == AxisType.Z)
-                ? new Color(0.3f, 0.3f, 1f, 1f)
-                : new Color(0.2f, 0.2f, 0.8f, 0.7f);
-
-            // 軸先端の位置
-            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
-            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
-            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
-
-            // ================================================================
-            // Phase 7: スクリーン座標をキャッシュ
-            // ================================================================
-            _cachedOriginScreen = originScreen;
-            _cachedXEnd = xEnd;
-            _cachedYEnd = yEnd;
-            _cachedZEnd = zEnd;
-            _gizmoCacheValid = true;
-
-            // 軸線を描画
-            float lineWidth = 2f;
-            DrawAxisLine(originScreen, xEnd, xColor, lineWidth);
-            DrawAxisLine(originScreen, yEnd, yColor, lineWidth);
-            DrawAxisLine(originScreen, zEnd, zColor, lineWidth);
-
-            // 軸先端のハンドルを描画
-            DrawAxisHandle(xEnd, xColor, _hoveredAxis == AxisType.X, "X");
-            DrawAxisHandle(yEnd, yColor, _hoveredAxis == AxisType.Y, "Y");
-            DrawAxisHandle(zEnd, zColor, _hoveredAxis == AxisType.Z, "Z");
-
-            // 中央の四角を描画
-            bool centerHovered = (_hoveredAxis == AxisType.Center);
-            Color centerColor = centerHovered
-                ? new Color(1f, 1f, 1f, 0.9f)
-                : new Color(0.8f, 0.8f, 0.8f, 0.6f);
-
-            float halfCenter = _centerSize / 2;
-            Rect centerRect = new Rect(
-                originScreen.x - halfCenter,
-                originScreen.y - halfCenter,
-                _centerSize,
-                _centerSize);
-
-            // 中央の枠線
-
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.DrawRect(centerRect, centerColor);
-            UnityEditor_Handles.color = centerHovered ? Color.white : new Color(0.5f, 0.5f, 0.5f);
-            UnityEditor_Handles.DrawSolidRectangleWithOutline(centerRect, Color.clear, UnityEditor_Handles.color);
-            UnityEditor_Handles.EndGUI();
+            // AxisGizmo状態を同期して描画委譲
+            SyncAxisGizmo(ctx);
+            _axisGizmo.Draw(ctx);
         }
 
-        private void DrawAxisLine(Vector2 from, Vector2 to, Color color, float lineWidth)
+        /// <summary>AxisGizmoの状態をMoveTool内部状態と同期</summary>
+        private void SyncAxisGizmo(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = color;
-            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
-                new Vector3(from.x, from.y, 0),
-                new Vector3(to.x, to.y, 0));
-            UnityEditor_Handles.EndGUI();
+            _axisGizmo.Center = _gizmoCenter;
+            _axisGizmo.ScreenOffset = _gizmoScreenOffset;
+            _axisGizmo.HandleHitRadius = _handleHitRadius;
+            _axisGizmo.HandleSize = _handleSize;
+            _axisGizmo.CenterSize = _centerSize;
+            _axisGizmo.ScreenAxisLength = _screenAxisLength;
+
+            // AxisType列挙値は同じ値を持つためキャスト変換
+            _axisGizmo.HoveredAxis = (AxisGizmo.AxisType)(int)_hoveredAxis;
+            _axisGizmo.DraggingAxis = (AxisGizmo.AxisType)(int)_draggingAxis;
         }
 
-        private void DrawAxisHandle(Vector2 pos, Color color, bool hovered, string label)
-        {
-            float size = hovered ? _handleSize * 1.3f : _handleSize;
-
-            Rect handleRect = new Rect(pos.x - size / 2, pos.y - size / 2, size, size);
-
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.DrawRect(handleRect, color);
-            UnityEditor_Handles.color = Color.white;
-            UnityEditor_Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
-            UnityEditor_Handles.EndGUI();
-
-            GUIStyle style = new GUIStyle(EditorStyles.miniLabel);
-            style.normal.textColor = color;
-            style.fontStyle = hovered ? FontStyle.Bold : FontStyle.Normal;
-            GUI.Label(new Rect(pos.x + size / 2 + 2, pos.y - 8, 20, 16), label, style);
-        }
+        // === 旧ギズモヘルパー → AxisGizmoに移行済み ===
+        // DrawAxisLine, DrawAxisHandle, GetGizmoOriginScreen,
+        // GetAxisScreenEnd, GetAxisScreenDirection は AxisGizmo クラスに統合
 
         private AxisType FindAxisHandleAtScreenPos(Vector2 screenPos, ToolContext ctx)
         {
@@ -1094,51 +948,15 @@ namespace Poly_Ling.Tools
             if (GetTotalAffectedCount(ctx) == 0)
                 return AxisType.None;
 
-            // 毎回スクリーン座標を計算（キャッシュ廃止）
             UpdateGizmoCenter(ctx);
-            Vector2 originScreen = GetGizmoOriginScreen(ctx);
-            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
-            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
-            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
-
-            // 中央四角のヒットテスト（優先）
-            float halfCenter = _centerSize / 2 + 2;  // 少し大きめ
-            if (Mathf.Abs(screenPos.x - originScreen.x) < halfCenter &&
-                Mathf.Abs(screenPos.y - originScreen.y) < halfCenter)
-            {
-                return AxisType.Center;
-            }
-
-            // X軸先端
-            if (Vector2.Distance(screenPos, xEnd) < _handleHitRadius)
-            {
-                return AxisType.X;
-            }
-
-            // Y軸先端
-            if (Vector2.Distance(screenPos, yEnd) < _handleHitRadius)
-            {
-                return AxisType.Y;
-            }
-
-            // Z軸先端
-            if (Vector2.Distance(screenPos, zEnd) < _handleHitRadius)
-            {
-                return AxisType.Z;
-            }
-
-            return AxisType.None;
+            SyncAxisGizmo(ctx);
+            var result = _axisGizmo.FindAxisAtScreenPos(screenPos, ctx);
+            return (AxisType)(int)result;
         }
 
         private Vector3 GetAxisDirection(AxisType axis)
         {
-            switch (axis)
-            {
-                case AxisType.X: return Vector3.right;
-                case AxisType.Y: return Vector3.up;
-                case AxisType.Z: return Vector3.forward;
-                default: return Vector3.zero;
-            }
+            return AxisGizmo.GetAxisDirection((AxisGizmo.AxisType)(int)axis);
         }
 
         // === 状態アクセス ===

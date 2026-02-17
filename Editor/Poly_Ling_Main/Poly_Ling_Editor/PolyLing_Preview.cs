@@ -305,6 +305,12 @@ public partial class PolyLing
         UpdateToolContext(meshContext, localRect, camPos, dist);
         _currentTool?.DrawGizmo(_toolContext);
 
+        // ボーンのワイヤフレーム描画
+        DrawBones(localRect, camPos, _cameraTarget);
+
+        // ボーン移動ギズモ描画
+        DrawBoneGizmo(localRect, camPos, _cameraTarget);
+
         // WorkPlaneギズモ描画
         if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
         {

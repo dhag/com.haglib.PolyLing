@@ -1,0 +1,56 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- UVUnwrapPanel.uxml: UV展開パネル -->
+    
+    <ui:VisualElement name="unwrap-root" class="unwrap-root">
+        
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="unwrap-warning" />
+        
+        <!-- 投影方式 -->
+        <ui:VisualElement name="projection-section" class="unwrap-section">
+            <ui:Label text="投影方式" class="unwrap-section-label" />
+            <ui:VisualElement class="unwrap-btn-grid">
+                <ui:Button name="btn-planar-xy" text="Planar XY" class="unwrap-proj-btn" />
+                <ui:Button name="btn-planar-xz" text="Planar XZ" class="unwrap-proj-btn" />
+                <ui:Button name="btn-planar-yz" text="Planar YZ" class="unwrap-proj-btn" />
+                <ui:Button name="btn-box" text="Box" class="unwrap-proj-btn" />
+                <ui:Button name="btn-cylindrical" text="Cylindrical" class="unwrap-proj-btn" />
+                <ui:Button name="btn-spherical" text="Spherical" class="unwrap-proj-btn" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- パラメータ -->
+        <ui:VisualElement name="params-section" class="unwrap-section">
+            <ui:Label text="パラメータ" class="unwrap-section-label" />
+            
+            <ui:VisualElement class="unwrap-field-row">
+                <ui:Label text="スケール" class="unwrap-field-label" />
+                <uie:FloatField name="param-scale" value="1" class="unwrap-float-field" />
+            </ui:VisualElement>
+            
+            <ui:VisualElement class="unwrap-field-row">
+                <ui:Label text="オフセット" class="unwrap-field-label" />
+                <ui:Label text="U" class="unwrap-axis-label" />
+                <uie:FloatField name="param-offset-u" value="0" class="unwrap-float-field" />
+                <ui:Label text="V" class="unwrap-axis-label" />
+                <uie:FloatField name="param-offset-v" value="0" class="unwrap-float-field" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- 対象 -->
+        <ui:VisualElement name="target-section" class="unwrap-section">
+            <ui:Label text="対象" class="unwrap-section-label" />
+            <ui:Label name="target-info" text="" class="unwrap-info-label" />
+        </ui:VisualElement>
+        
+        <!-- ボタン -->
+        <ui:VisualElement class="unwrap-btn-row">
+            <ui:Button name="btn-apply" text="適用" class="unwrap-btn-primary" />
+            <ui:Button name="btn-reset" text="リセット" class="unwrap-btn-small" />
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="unwrap-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>

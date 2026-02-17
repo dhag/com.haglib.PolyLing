@@ -1,0 +1,68 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- BoneEditorPanel.uxml: ボーンエディタパネル -->
+    
+    <ui:VisualElement name="bone-editor-root" class="be-root">
+        
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="be-warning" />
+        
+        <!-- 選択情報 -->
+        <ui:VisualElement name="selection-section" class="be-section">
+            <ui:Label text="選択ボーン" class="be-section-label" />
+            <ui:Label name="selection-count-label" text="未選択" class="be-info-label" />
+            
+            <!-- 先頭ボーン詳細 -->
+            <ui:VisualElement name="bone-detail" class="be-detail">
+                <ui:VisualElement class="be-field-row">
+                    <ui:Label text="名前" class="be-field-label" />
+                    <ui:Label name="bone-name-label" text="-" class="be-value-label" />
+                </ui:VisualElement>
+                <ui:VisualElement class="be-field-row">
+                    <ui:Label text="MasterIdx" class="be-field-label" />
+                    <ui:Label name="master-index-label" text="-" class="be-value-label" />
+                </ui:VisualElement>
+                <ui:VisualElement class="be-field-row">
+                    <ui:Label text="BoneIdx" class="be-field-label" />
+                    <ui:Label name="bone-index-label" text="-" class="be-value-label" />
+                </ui:VisualElement>
+                <ui:VisualElement class="be-field-row">
+                    <ui:Label text="親ボーン" class="be-field-label" />
+                    <ui:Label name="parent-bone-label" text="-" class="be-value-label" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- RestPose表示 -->
+        <ui:VisualElement name="pose-section" class="be-section">
+            <ui:Label text="RestPose" class="be-section-label" />
+            <ui:VisualElement class="be-field-row">
+                <ui:Label text="Position" class="be-field-label" />
+                <ui:Label name="rest-pos-label" text="(0, 0, 0)" class="be-value-label" />
+            </ui:VisualElement>
+            <ui:VisualElement class="be-field-row">
+                <ui:Label text="Rotation" class="be-field-label" />
+                <ui:Label name="rest-rot-label" text="(0, 0, 0)" class="be-value-label" />
+            </ui:VisualElement>
+            <ui:VisualElement class="be-field-row">
+                <ui:Label text="Scale" class="be-field-label" />
+                <ui:Label name="rest-scl-label" text="(1, 1, 1)" class="be-value-label" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- WorldMatrix表示 -->
+        <ui:VisualElement name="world-section" class="be-section">
+            <ui:Label text="WorldPosition" class="be-section-label" />
+            <ui:Label name="world-pos-label" text="(0, 0, 0)" class="be-value-label" />
+        </ui:VisualElement>
+        
+        <!-- 操作ボタン -->
+        <ui:VisualElement name="action-section" class="be-section">
+            <ui:Button name="btn-reset-pose" text="ポーズリセット" class="be-btn" />
+            <ui:Button name="btn-focus-bone" text="カメラフォーカス" class="be-btn" />
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="be-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>

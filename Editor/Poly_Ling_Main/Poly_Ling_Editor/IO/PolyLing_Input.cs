@@ -85,6 +85,13 @@ public partial class PolyLing
         // 右ドラッグ: カメラ回転（常に有効）
         HandleCameraRotation(e);
 
+        // ボーン操作（選択・ギズモ・ドラッグ移動）
+        if (HandleBoneInput(e, mousePos, rect, camPos, lookAt))
+        {
+            e.Use();
+            return;
+        }
+
         // 頂点編集モードでなければ終了
         if (!_vertexEditMode)
             return;
