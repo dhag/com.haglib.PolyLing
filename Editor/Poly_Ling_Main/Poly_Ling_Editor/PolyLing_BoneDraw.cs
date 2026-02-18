@@ -64,6 +64,10 @@ public partial class PolyLing
 
             bool isSelected = _model?.SelectedBoneIndices.Contains(i) ?? false;
 
+            // 非選択ボーンをスキップ（ShowUnselectedBones=false の場合）
+            if (!isSelected && !_showUnselectedBones)
+                continue;
+
             Color wireColor = isSelected ? BoneWireSelectedColor : BoneWireColor;
 
             if (!ExtractRotation(ctx.WorldMatrix, out Vector3 bonePos, out Quaternion boneRot))

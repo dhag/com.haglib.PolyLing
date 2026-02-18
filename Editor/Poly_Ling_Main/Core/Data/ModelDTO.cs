@@ -626,6 +626,12 @@ namespace Poly_Ling.Serialization
         /// <summary>MQO/PMX座標比率（デフォルト10）</summary>
         public float mqoPmxRatio = 10f;
 
+        /// <summary>ボーン表示</summary>
+        public bool showBones = true;
+
+        /// <summary>非選択ボーンも表示</summary>
+        public bool showUnselectedBones = false;
+
         public static EditorStateDTO CreateDefault()
         {
             return new EditorStateDTO

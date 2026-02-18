@@ -293,51 +293,40 @@ public partial class PolyLing
             return;
 
         // グローバルインデックスを取得
+        // ★ ProcessMouseUpdateでメッシュ選択フィルタリング済み
+        //    選択されていないメッシュの要素は既に-1になっている
         int globalVertex = _unifiedAdapter.HoverVertexIndex;
         int globalLine = _unifiedAdapter.HoverLineIndex;
         int globalFace = _unifiedAdapter.HoverFaceIndex;
 
-        // 選択中メッシュのインデックスかチェックし、ローカルインデックスに変換
+        // グローバル→ローカル変換のみ（選択判定はProcessMouseUpdateに統合済み）
         int localVertex = -1;
         int localFace = -1;
         float vertexDist = float.MaxValue;
         float lineDist = float.MaxValue;
-        int hitMeshIndex = -1;  // ヒットした要素が属するメッシュ
+        int hitMeshIndex = -1;
 
         if (globalVertex >= 0)
         {
             if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localIdx))
             {
-                // meshIdxはunified index → context indexに変換して選択判定
                 int ctxIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
-                bool isSelectedMesh = ctxIdx >= 0 && (ctxIdx == _selectedIndex ||
-                    (_model?.SelectedMeshIndices?.Contains(ctxIdx) ?? false));
-                if (isSelectedMesh)
-                {
-                    localVertex = localIdx;
-                    vertexDist = 0f;
-                    hitMeshIndex = ctxIdx;
-                }
+                localVertex = localIdx;
+                vertexDist = 0f;
+                hitMeshIndex = ctxIdx;
             }
         }
 
         // 線分はグローバルインデックスのまま保持（_edgeCacheはグローバルリスト）
-        // ただし選択中メッシュの線分かチェック
         int validGlobalLine = -1;
         if (globalLine >= 0)
         {
             if (bufferManager.GlobalToLocalLineIndex(globalLine, out int meshIdx, out int localIdx))
             {
-                // meshIdxはunified index → context indexに変換して選択判定
                 int ctxIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
-                bool isSelectedMesh = ctxIdx >= 0 && (ctxIdx == _selectedIndex ||
-                    (_model?.SelectedMeshIndices?.Contains(ctxIdx) ?? false));
-                if (isSelectedMesh)
-                {
-                    validGlobalLine = globalLine;  // グローバルインデックスを保持
-                    lineDist = 0f;
-                    if (hitMeshIndex < 0) hitMeshIndex = ctxIdx;
-                }
+                validGlobalLine = globalLine;
+                lineDist = 0f;
+                if (hitMeshIndex < 0) hitMeshIndex = ctxIdx;
             }
         }
 
@@ -346,15 +335,9 @@ public partial class PolyLing
         {
             if (bufferManager.GlobalToLocalFaceIndex(globalFace, out int meshIdx, out int localIdx))
             {
-                // meshIdxはunified index → context indexに変換して選択判定
                 int ctxIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
-                bool isSelectedMesh = ctxIdx >= 0 && (ctxIdx == _selectedIndex ||
-                    (_model?.SelectedMeshIndices?.Contains(ctxIdx) ?? false));
-                if (isSelectedMesh)
-                {
-                    localFace = localIdx;
-                    if (hitMeshIndex < 0) hitMeshIndex = ctxIdx;
-                }
+                localFace = localIdx;
+                if (hitMeshIndex < 0) hitMeshIndex = ctxIdx;
             }
         }
 
@@ -493,7 +476,9 @@ public partial class PolyLing
         {
             if (bufferManager.GetLineVerticesLocal(globalLine, out int meshIdx, out int localV1, out int localV2))
             {
-                _hitMeshIndexOnMouseDown = meshIdx;
+                // meshIdxはunified index → context indexに変換（UpdateLastHoverHitResultFromUnifiedと同じ変換）
+                int ctxMeshIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
+                _hitMeshIndexOnMouseDown = ctxMeshIdx >= 0 ? ctxMeshIdx : _lastHoverMeshIndex;
                 if (bufferManager.GetLineType(globalLine, out bool isAuxLine))
                 {
                     if (isAuxLine && currentMode.Has(MeshSelectMode.Line))

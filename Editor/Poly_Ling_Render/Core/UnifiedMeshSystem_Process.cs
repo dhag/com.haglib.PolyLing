@@ -170,6 +170,37 @@ namespace Poly_Ling.Core
                 newHoveredFace = _bufferManager.FindNearestFace(_mousePosition, _backfaceCullingEnabled);
             }
 
+            // ================================================================
+            // メッシュ選択フィルタリング（統合）
+            // 選択されていないメッシュの要素はホバー対象外にする。
+            // これにより描画側（シェーダーのMeshSelectedフラグ）と
+            // 入力側（ホバー検出）のフィルタリングが一致する。
+            // ================================================================
+            if (newHoveredVertex >= 0)
+            {
+                if (_bufferManager.GlobalToLocalVertexIndex(newHoveredVertex, out int vMeshIdx, out int vLocalIdx))
+                {
+                    if (!_flagManager.IsMeshSelected(vMeshIdx))
+                        newHoveredVertex = -1;
+                }
+            }
+            if (newHoveredLine >= 0)
+            {
+                if (_bufferManager.GlobalToLocalLineIndex(newHoveredLine, out int lMeshIdx, out int lLocalIdx))
+                {
+                    if (!_flagManager.IsMeshSelected(lMeshIdx))
+                        newHoveredLine = -1;
+                }
+            }
+            if (newHoveredFace >= 0)
+            {
+                if (_bufferManager.GlobalToLocalFaceIndex(newHoveredFace, out int fMeshIdx, out int fLocalIdx))
+                {
+                    if (!_flagManager.IsMeshSelected(fMeshIdx))
+                        newHoveredFace = -1;
+                }
+            }
+
             // 選択モードを取得
             var mode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
             bool hasVertexMode = (mode & MeshSelectMode.Vertex) != 0;

@@ -54,6 +54,10 @@ public partial class PolyLing
             mqoPmxRatio = _undoController?.EditorState?.MqoPmxRatio ?? 10f
         };
 
+        // ボーン表示設定
+        editorStateDTO.showBones = _showBones;
+        editorStateDTO.showUnselectedBones = _showUnselectedBones;
+
         // ModelSerializer.FromModelContext を使用してモデル全体をエクスポート
         // これにより Materials も正しく保存される
         var modelDTO = ModelSerializer.FromModelContext(
@@ -155,6 +159,10 @@ public partial class PolyLing
                 _undoController.EditorState.PmxFlipZ = state.pmxFlipZ;
                 _undoController.EditorState.MqoFlipZ = state.mqoFlipZ;
                 _undoController.EditorState.MqoPmxRatio = state.mqoPmxRatio > 0f ? state.mqoPmxRatio : 10f;
+
+                // ボーン表示設定を復元
+                _undoController.EditorState.ShowBones = state.showBones;
+                _undoController.EditorState.ShowUnselectedBones = state.showUnselectedBones;
             }
 
             // 選択メッシュを復元（v2.0: カテゴリ別対応）

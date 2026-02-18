@@ -273,18 +273,28 @@ public partial class PolyLing : EditorWindow
     }
     private bool _showVertexIndices
     {
-        get => _undoController?.EditorState?.ShowVertexIndices ?? true;
+        get => _undoController?.EditorState?.ShowVertexIndices ?? false;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowVertexIndices = value; }
     }
     private bool _showUnselectedWireframe
     {
-        get => _undoController?.EditorState?.ShowUnselectedWireframe ?? true;
+        get => _undoController?.EditorState?.ShowUnselectedWireframe ?? false;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedWireframe = value; }
     }
     private bool _showUnselectedVertices
     {
-        get => _undoController?.EditorState?.ShowUnselectedVertices ?? true;
+        get => _undoController?.EditorState?.ShowUnselectedVertices ?? false;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedVertices = value; }
+    }
+    private bool _showBones
+    {
+        get => _undoController?.EditorState?.ShowBones ?? true;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowBones = value; }
+    }
+    private bool _showUnselectedBones
+    {
+        get => _undoController?.EditorState?.ShowUnselectedBones ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedBones = value; }
     }
     private bool _showFocusPoint
     {

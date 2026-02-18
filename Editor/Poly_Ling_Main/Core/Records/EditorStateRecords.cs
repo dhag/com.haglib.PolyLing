@@ -28,11 +28,12 @@ namespace Poly_Ling.UndoSystem
         public bool ShowVertices = true;
         public bool ShowMesh = true;                    // メッシュ本体表示
         public bool ShowSelectedMeshOnly = false;       // 選択メッシュのみ表示
-        public bool ShowVertexIndices = true;
-        public bool ShowUnselectedWireframe = true;     // 非選択メッシュのワイヤフレーム
-        public bool ShowUnselectedVertices = true;      // 非選択メッシュの頂点
+        public bool ShowVertexIndices = false;           // 頂点インデックス表示（デフォルトOFF）
+        public bool ShowUnselectedWireframe = false;     // 非選択メッシュのワイヤフレーム（デフォルトOFF）
+        public bool ShowUnselectedVertices = false;      // 非選択メッシュの頂点（デフォルトOFF）
         public bool BackfaceCullingEnabled = true;
-        public bool ShowBones = false;                  // ボーン表示
+        public bool ShowBones = true;                   // ボーン表示（デフォルトON）
+        public bool ShowUnselectedBones = false;        // 非選択ボーンも表示（デフォルトOFF）
         public bool ShowFocusPoint = false;              // カメラ注目点表示
         public bool ShowWorkPlaneGizmo = true;          // WorkPlaneギズモ表示
 
@@ -122,6 +123,7 @@ namespace Poly_Ling.UndoSystem
                 ShowUnselectedVertices = ShowUnselectedVertices,
                 BackfaceCullingEnabled = BackfaceCullingEnabled,
                 ShowBones = ShowBones,
+                ShowUnselectedBones = ShowUnselectedBones,
                 ShowFocusPoint = ShowFocusPoint,
                 ShowWorkPlaneGizmo = ShowWorkPlaneGizmo,
                 VertexEditMode = VertexEditMode,
@@ -171,6 +173,7 @@ namespace Poly_Ling.UndoSystem
             ShowUnselectedVertices = snapshot.ShowUnselectedVertices;
             BackfaceCullingEnabled = snapshot.BackfaceCullingEnabled;
             ShowBones = snapshot.ShowBones;
+            ShowUnselectedBones = snapshot.ShowUnselectedBones;
             ShowFocusPoint = snapshot.ShowFocusPoint;
             ShowWorkPlaneGizmo = snapshot.ShowWorkPlaneGizmo;
             VertexEditMode = snapshot.VertexEditMode;
@@ -230,6 +233,7 @@ namespace Poly_Ling.UndoSystem
         public bool ShowUnselectedWireframe, ShowUnselectedVertices;
         public bool BackfaceCullingEnabled;
         public bool ShowBones;
+        public bool ShowUnselectedBones;
         public bool ShowFocusPoint;
         public bool ShowWorkPlaneGizmo;
         public string CurrentToolName;
@@ -286,6 +290,7 @@ namespace Poly_Ling.UndoSystem
                 ShowUnselectedVertices != other.ShowUnselectedVertices ||
                 BackfaceCullingEnabled != other.BackfaceCullingEnabled ||
                 ShowBones != other.ShowBones ||
+                ShowUnselectedBones != other.ShowUnselectedBones ||
                 ShowFocusPoint != other.ShowFocusPoint ||
                 ShowWorkPlaneGizmo != other.ShowWorkPlaneGizmo ||
                 VertexEditMode != other.VertexEditMode ||

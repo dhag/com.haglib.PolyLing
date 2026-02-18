@@ -90,7 +90,11 @@ public partial class PolyLing
         // ModelContext API経由でリスト操作
         meshContext.ParentModelContext = _model;
         _model.Add(meshContext);
-        SetSelectedIndex(_meshContextList.Count - 1);
+        int newIndex = _meshContextList.Count - 1;
+        SetSelectedIndex(newIndex);
+        _model.SelectDrawable(newIndex);       // SelectedMeshIndicesに追加（描画・ホバーフィルタに必要）
+        SaveSelectionToCurrentMesh();           // 旧メッシュのイベント解除
+        LoadSelectionFromCurrentMesh();         // 新メッシュのSelectionに_selectionStateを同期
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）

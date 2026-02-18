@@ -98,6 +98,14 @@ public partial class PolyLing
                 // 頂点インデックス（選択メッシュのみ）
                 bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);
 
+                // ボーン表示
+                bool newShowBones = EditorGUILayout.Toggle(L.Get("ShowBones"), _showBones);
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginDisabledGroup(!newShowBones);
+                bool newShowUnselectedBones = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedBones);
+                EditorGUI.EndDisabledGroup();
+                EditorGUI.indentLevel--;
+
                 if (EditorGUI.EndChangeCheck())
                 {
                     bool hasDisplayChange =
@@ -107,7 +115,9 @@ public partial class PolyLing
                         newShowVertexIndices != _showVertexIndices ||
                         newShowSelectedMeshOnly != _showSelectedMeshOnly ||
                         newShowUnselectedVertices != _showUnselectedVertices ||
-                        newShowUnselectedWireframe != _showUnselectedWireframe;
+                        newShowUnselectedWireframe != _showUnselectedWireframe ||
+                        newShowBones != _showBones ||
+                        newShowUnselectedBones != _showUnselectedBones;
 
                     if (hasDisplayChange && _undoController != null)
                     {
@@ -122,6 +132,8 @@ public partial class PolyLing
                     _showSelectedMeshOnly = newShowSelectedMeshOnly;
                     _showUnselectedVertices = newShowUnselectedVertices;
                     _showUnselectedWireframe = newShowUnselectedWireframe;
+                    _showBones = newShowBones;
+                    _showUnselectedBones = newShowUnselectedBones;
 
                     if (_undoController != null)
                     {
