@@ -98,14 +98,14 @@ public partial class PolyLing
             Poly_Ling.UI.UVUnwrapPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("アジの開き（LSCM）"))
-        {
-            Poly_Ling.UI.LscmUnwrapPanel.Open(_toolManager?.toolContext);
-        }
-
         if (GUILayout.Button("UV編集"))
         {
             Poly_Ling.UI.UVEditPanel.Open(_toolManager?.toolContext);
+        }
+
+        if (GUILayout.Button("UVZ"))
+        {
+            Poly_Ling.UI.UVZPanel.Open(_toolManager?.toolContext);
         }
 
 

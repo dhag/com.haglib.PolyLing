@@ -1,0 +1,114 @@
+/* UVZPanel.uss */
+
+.uvz-root {
+    flex-grow: 1;
+    flex-direction: column;
+    padding: 4px;
+}
+
+.uvz-warning {
+    color: #FFCC00;
+    -unity-font-style: bold;
+    padding: 4px;
+    display: none;
+}
+
+.uvz-main {
+    flex-direction: column;
+}
+
+/* セクション */
+.uvz-section {
+    padding: 4px;
+    margin-bottom: 4px;
+    border-bottom-width: 1px;
+    border-color: #444444;
+}
+
+.uvz-section-label {
+    -unity-font-style: bold;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+/* 情報ラベル */
+.uvz-info-label {
+    color: #AAAAAA;
+    font-size: 11px;
+    padding: 2px 0;
+}
+
+.uvz-hint-label {
+    color: #888888;
+    font-size: 10px;
+    padding: 2px 0;
+    -unity-font-style: italic;
+    white-space: normal;
+}
+
+/* フィールド行 */
+.uvz-field-row {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    margin-bottom: 2px;
+}
+
+.uvz-field-label {
+    width: 90px;
+    font-size: 11px;
+    -unity-text-align: middle-left;
+}
+
+.uvz-float-field {
+    width: 80px;
+}
+
+/* ターゲット選択 */
+.uvz-target-container {
+    margin: 4px 0;
+}
+
+.uvz-popup {
+    margin: 2px 0;
+}
+
+/* ボタン行 */
+.uvz-btn-row {
+    padding: 4px 0;
+}
+
+.uvz-btn-primary {
+    height: 28px;
+    background-color: #3A6EA5;
+    color: white;
+    border-radius: 3px;
+    -unity-font-style: bold;
+    font-size: 12px;
+}
+
+.uvz-btn-primary:hover {
+    background-color: #4A7EB5;
+}
+
+.uvz-btn-secondary {
+    height: 26px;
+    background-color: #5A8A5A;
+    color: white;
+    border-radius: 3px;
+    -unity-font-style: bold;
+    font-size: 11px;
+}
+
+.uvz-btn-secondary:hover {
+    background-color: #6A9A6A;
+}
+
+/* ステータス */
+.uvz-status-label {
+    color: #888888;
+    font-size: 10px;
+    padding: 2px 4px;
+    -unity-text-align: middle-left;
+    white-space: normal;
+}

@@ -1,0 +1,67 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- UVZPanel.uxml: UVZパネル -->
+    
+    <ui:VisualElement name="uvz-root" class="uvz-root">
+        
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="uvz-warning" />
+        
+        <!-- メインセクション -->
+        <ui:VisualElement name="main-section" class="uvz-main">
+            
+            <!-- 対象情報 -->
+            <ui:VisualElement class="uvz-section">
+                <ui:Label text="対象メッシュ" class="uvz-section-label" />
+                <ui:Label name="target-info" text="" class="uvz-info-label" />
+                <ui:Label name="camera-info" text="" class="uvz-info-label" />
+            </ui:VisualElement>
+            
+            <!-- スケール設定 -->
+            <ui:VisualElement class="uvz-section">
+                <ui:Label text="スケール" class="uvz-section-label" />
+                
+                <ui:VisualElement class="uvz-field-row">
+                    <ui:Label text="UV スケール" class="uvz-field-label" />
+                    <uie:FloatField name="field-uv-scale" value="10" class="uvz-float-field" />
+                </ui:VisualElement>
+                <ui:Label text="UV値(0〜1)に掛ける倍率。大きいほどXY方向に広がる" class="uvz-hint-label" />
+                
+                <ui:VisualElement class="uvz-field-row">
+                    <ui:Label text="深度スケール" class="uvz-field-label" />
+                    <uie:FloatField name="field-depth-scale" value="1" class="uvz-float-field" />
+                </ui:VisualElement>
+                <ui:Label text="カメラ深度に掛ける倍率" class="uvz-hint-label" />
+            </ui:VisualElement>
+            
+            <!-- UV→XYZ -->
+            <ui:VisualElement class="uvz-section">
+                <ui:Label text="UV → XYZ（展開）" class="uvz-section-label" />
+                <ui:Label text="選択メッシュのUV(u,v)をXY、カメラ深度をZとする新メッシュを生成" class="uvz-hint-label" />
+                <ui:VisualElement class="uvz-btn-row">
+                    <ui:Button name="btn-uv-to-xyz" text="UVZメッシュ生成" class="uvz-btn-primary" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+        </ui:VisualElement>
+        
+        <!-- 書き戻しセクション -->
+        <ui:VisualElement name="writeback-section" class="uvz-main">
+            
+            <ui:VisualElement class="uvz-section">
+                <ui:Label text="XYZ → UV（書き戻し）" class="uvz-section-label" />
+                <ui:Label text="選択メッシュ(UVZ)のXY座標をターゲットのUVとして書き戻す" class="uvz-hint-label" />
+                
+                <ui:VisualElement name="writeback-target-container" class="uvz-target-container" />
+                
+                <ui:VisualElement class="uvz-btn-row">
+                    <ui:Button name="btn-xyz-to-uv" text="UVに書き戻し" class="uvz-btn-secondary" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="uvz-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>
