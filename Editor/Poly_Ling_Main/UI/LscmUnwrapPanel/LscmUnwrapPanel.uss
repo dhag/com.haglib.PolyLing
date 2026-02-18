@@ -1,0 +1,97 @@
+/* LscmUnwrapPanel.uss */
+
+.lscm-root {
+    flex-grow: 1;
+    flex-direction: column;
+    padding: 4px;
+}
+
+.lscm-warning {
+    color: #FFCC00;
+    -unity-font-style: bold;
+    padding: 4px;
+    display: none;
+}
+
+.lscm-main {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+/* セクション */
+.lscm-section {
+    padding: 4px;
+    margin-bottom: 4px;
+    border-bottom-width: 1px;
+    border-color: #444444;
+}
+
+.lscm-section-label {
+    -unity-font-style: bold;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+/* 情報ラベル */
+.lscm-info-label {
+    color: #AAAAAA;
+    font-size: 11px;
+    padding: 2px 0;
+}
+
+.lscm-hint-label {
+    color: #888888;
+    font-size: 10px;
+    padding: 2px 0;
+    -unity-font-style: italic;
+}
+
+/* トグル */
+.lscm-toggle {
+    margin: 2px 0;
+}
+
+/* フィールド行 */
+.lscm-field-row {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    margin-bottom: 2px;
+}
+
+.lscm-field-label {
+    width: 80px;
+    font-size: 11px;
+    -unity-text-align: middle-left;
+}
+
+.lscm-int-field {
+    width: 80px;
+}
+
+/* ボタン行 */
+.lscm-btn-row {
+    padding: 6px 4px;
+}
+
+.lscm-btn-primary {
+    height: 28px;
+    background-color: #3A6EA5;
+    color: white;
+    border-radius: 3px;
+    -unity-font-style: bold;
+    font-size: 12px;
+}
+
+.lscm-btn-primary:hover {
+    background-color: #4A7EB5;
+}
+
+/* ステータス */
+.lscm-status-label {
+    color: #888888;
+    font-size: 10px;
+    padding: 2px 4px;
+    -unity-text-align: middle-left;
+    white-space: normal;
+}

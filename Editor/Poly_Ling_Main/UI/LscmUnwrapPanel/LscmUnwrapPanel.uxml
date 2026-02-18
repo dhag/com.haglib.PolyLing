@@ -1,0 +1,48 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- LscmUnwrapPanel.uxml: アジの開き（LSCM UV展開）パネル -->
+    
+    <ui:VisualElement name="lscm-root" class="lscm-root">
+        
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="lscm-warning" />
+        
+        <!-- メインセクション -->
+        <ui:VisualElement name="main-section" class="lscm-main">
+            
+            <!-- 対象情報 -->
+            <ui:VisualElement class="lscm-section">
+                <ui:Label text="対象メッシュ" class="lscm-section-label" />
+                <ui:Label name="target-info" text="" class="lscm-info-label" />
+            </ui:VisualElement>
+            
+            <!-- Seam情報 -->
+            <ui:VisualElement class="lscm-section">
+                <ui:Label text="Seam（切れ目）" class="lscm-section-label" />
+                <ui:Label name="seam-info" text="" class="lscm-info-label" />
+                <ui:Label text="※ エッジ選択モードで切りたい辺を選択してください" class="lscm-hint-label" />
+            </ui:VisualElement>
+            
+            <!-- 設定 -->
+            <ui:VisualElement class="lscm-section">
+                <ui:Label text="設定" class="lscm-section-label" />
+                
+                <ui:Toggle name="toggle-boundary-seam" label="境界エッジもSeamにする" value="true" class="lscm-toggle" />
+                
+                <ui:VisualElement class="lscm-field-row">
+                    <ui:Label text="最大反復数" class="lscm-field-label" />
+                    <uie:IntegerField name="field-max-iter" value="3000" class="lscm-int-field" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <!-- 実行ボタン -->
+            <ui:VisualElement class="lscm-btn-row">
+                <ui:Button name="btn-unwrap" text="UV展開（LSCM）" class="lscm-btn-primary" />
+            </ui:VisualElement>
+            
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="lscm-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>
