@@ -315,8 +315,8 @@ namespace Poly_Ling.Tools.Panels
         private void AutoMapFromPMX(List<string> boneNames)
         {
             _previewMapping = new HumanoidBoneMapping();
-            int count = _previewMapping.AutoMapFromPMX(boneNames);
-            Debug.Log($"[HumanoidMappingPanel] Auto-mapped {count} bones from PMX standard names");
+            int count = _previewMapping.AutoMapFromEmbeddedCSV(boneNames);
+            Debug.Log($"[HumanoidMappingPanel] Auto-mapped {count} bones from embedded mapping");
             Repaint();
         }
 

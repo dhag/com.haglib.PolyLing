@@ -58,10 +58,6 @@ public partial class PolyLing
             Poly_Ling.MISC.AvatarCreatorPanel.ShowWindow();
         }
 
-        if (GUILayout.Button("アバターマッピング辞書インポート"))
-        {
-            Poly_Ling.Tools.Panels.HumanoidMappingPanel.Open(_toolManager?.toolContext);
-        }
 
         if (GUILayout.Button("mesh <part>→ PMX"))
         {
@@ -133,6 +129,14 @@ public partial class PolyLing
         if (GUILayout.Button("MeshFilter → Skinned"))
         {
             Poly_Ling.Tools.Panels.MeshFilterToSkinnedPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("アバターマッピング辞書インポート"))
+        {
+            Poly_Ling.Tools.Panels.HumanoidMappingPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("Tpose"))
+        {
+            Poly_Ling.Tools.Panels.TPosePanel.Open(_toolManager?.toolContext);
         }
 
         if (GUILayout.Button("モデルブレンド"))

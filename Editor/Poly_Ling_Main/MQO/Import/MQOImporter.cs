@@ -531,7 +531,7 @@ namespace Poly_Ling.MQO
             if (settings.ConvertToTPose && boneContextCount > 0)
             {
                 Debug.Log($"[MQOImporter] Converting to T-Pose...");
-                PMXImporter.ConvertToTPoseFromMeshContexts(result.MeshContexts);
+                TPoseConverter.ConvertToTPoseByBoneNames(result.MeshContexts);
             }
         }
 

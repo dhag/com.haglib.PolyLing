@@ -207,6 +207,85 @@ namespace Poly_Ling.Data
             { "右小指３", "Right Little Distal" }
         };
 
+        /// <summary>
+        /// 埋め込みボーンマッピング（CSV由来）
+        /// Unity Humanoid名 → エイリアスリスト（優先度順、1列目=Unity名自身を含む）
+        /// UpperChestは存在しないモデルも多いためオプション扱い
+        /// </summary>
+        public static readonly Dictionary<string, List<string>> EmbeddedMapping = new()
+        {
+            // 体幹
+            { "Hips", new List<string> { "Hips", "hip", "センター", "ヒップ" } },
+            { "Spine", new List<string> { "Spine", "上半身", "背骨" } },
+            { "Chest", new List<string> { "Chest", "上半身2", "背骨2", "胸" } },
+            { "UpperChest", new List<string> { "UpperChest", "上半身3", "背骨3", "胸2" } },
+            { "Neck", new List<string> { "Neck", "首" } },
+            { "Head", new List<string> { "Head", "頭" } },
+
+            // 目・顎
+            { "LeftEye", new List<string> { "LeftEye", "左目" } },
+            { "RightEye", new List<string> { "RightEye", "右目" } },
+            { "Jaw", new List<string> { "Jaw" } },
+
+            // 左腕
+            { "LeftShoulder", new List<string> { "LeftShoulder", "左肩" } },
+            { "LeftUpperArm", new List<string> { "LeftUpperArm", "左腕" } },
+            { "LeftLowerArm", new List<string> { "LeftLowerArm", "左ひじ" } },
+            { "LeftHand", new List<string> { "LeftHand", "左手首" } },
+
+            // 右腕
+            { "RightShoulder", new List<string> { "RightShoulder", "右肩" } },
+            { "RightUpperArm", new List<string> { "RightUpperArm", "右腕" } },
+            { "RightLowerArm", new List<string> { "RightLowerArm", "右ひじ" } },
+            { "RightHand", new List<string> { "RightHand", "右手首" } },
+
+            // 左脚
+            { "LeftUpperLeg", new List<string> { "LeftUpperLeg", "左足" } },
+            { "LeftLowerLeg", new List<string> { "LeftLowerLeg", "左ひざ" } },
+            { "LeftFoot", new List<string> { "LeftFoot", "左足首" } },
+            { "LeftToes", new List<string> { "LeftToes", "左つま先" } },
+
+            // 右脚
+            { "RightUpperLeg", new List<string> { "RightUpperLeg", "右足" } },
+            { "RightLowerLeg", new List<string> { "RightLowerLeg", "右ひざ" } },
+            { "RightFoot", new List<string> { "RightFoot", "右足首" } },
+            { "RightToes", new List<string> { "RightToes", "右つま先" } },
+
+            // 左手指
+            { "Left Thumb Proximal", new List<string> { "Left Thumb Proximal", "左親指１" } },
+            { "Left Thumb Intermediate", new List<string> { "Left Thumb Intermediate", "左親指２" } },
+            { "Left Thumb Distal", new List<string> { "Left Thumb Distal" } },
+            { "Left Index Proximal", new List<string> { "Left Index Proximal", "左人指１" } },
+            { "Left Index Intermediate", new List<string> { "Left Index Intermediate", "左人指２" } },
+            { "Left Index Distal", new List<string> { "Left Index Distal", "左人指３" } },
+            { "Left Middle Proximal", new List<string> { "Left Middle Proximal", "左中指１" } },
+            { "Left Middle Intermediate", new List<string> { "Left Middle Intermediate", "左中指２" } },
+            { "Left Middle Distal", new List<string> { "Left Middle Distal", "左中指３" } },
+            { "Left Ring Proximal", new List<string> { "Left Ring Proximal", "左薬指１" } },
+            { "Left Ring Intermediate", new List<string> { "Left Ring Intermediate", "左薬指２" } },
+            { "Left Ring Distal", new List<string> { "Left Ring Distal", "左薬指３" } },
+            { "Left Little Proximal", new List<string> { "Left Little Proximal", "左小指１" } },
+            { "Left Little Intermediate", new List<string> { "Left Little Intermediate", "左小指２" } },
+            { "Left Little Distal", new List<string> { "Left Little Distal", "左小指３" } },
+
+            // 右手指
+            { "Right Thumb Proximal", new List<string> { "Right Thumb Proximal", "右親指１" } },
+            { "Right Thumb Intermediate", new List<string> { "Right Thumb Intermediate", "右親指２" } },
+            { "Right Thumb Distal", new List<string> { "Right Thumb Distal" } },
+            { "Right Index Proximal", new List<string> { "Right Index Proximal", "右人指１" } },
+            { "Right Index Intermediate", new List<string> { "Right Index Intermediate", "右人指２" } },
+            { "Right Index Distal", new List<string> { "Right Index Distal", "右人指３" } },
+            { "Right Middle Proximal", new List<string> { "Right Middle Proximal", "右中指１" } },
+            { "Right Middle Intermediate", new List<string> { "Right Middle Intermediate", "右中指２" } },
+            { "Right Middle Distal", new List<string> { "Right Middle Distal", "右中指３" } },
+            { "Right Ring Proximal", new List<string> { "Right Ring Proximal", "右薬指１" } },
+            { "Right Ring Intermediate", new List<string> { "Right Ring Intermediate", "右薬指２" } },
+            { "Right Ring Distal", new List<string> { "Right Ring Distal", "右薬指３" } },
+            { "Right Little Proximal", new List<string> { "Right Little Proximal", "右小指１" } },
+            { "Right Little Intermediate", new List<string> { "Right Little Intermediate", "右小指２" } },
+            { "Right Little Distal", new List<string> { "Right Little Distal", "右小指３" } },
+        };
+
         // ================================================================
         // インスタンスデータ
         // ================================================================
@@ -327,18 +406,12 @@ namespace Poly_Ling.Data
                 if (fuzzyMatch)
                 {
                     // 候補名がエイリアスを含む（例: alias="右手首", candidate="右手首Cylinder" → hit）
+                    // 逆方向（alias.Contains(candidate)）は誤マッチの原因になるため除外
+                    // 例: alias="上半身3"がcandidate="上半身"にマッチしてしまう
                     for (int i = 0; i < candidateNames.Count; i++)
                     {
                         if (candidateNames[i] != null &&
                             candidateNames[i].IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
-                            return i;
-                    }
-
-                    // エイリアスが候補名を含む（例: alias="右手首Cylinder", candidate="右手首" → hit）
-                    for (int i = 0; i < candidateNames.Count; i++)
-                    {
-                        if (candidateNames[i] != null &&
-                            alias.IndexOf(candidateNames[i], StringComparison.OrdinalIgnoreCase) >= 0)
                             return i;
                     }
                 }
@@ -403,6 +476,53 @@ namespace Poly_Ling.Data
             if (unmapped.Count > 0)
             {
                 Debug.LogWarning($"[HumanoidBoneMapping] AutoMapFromPMX: {unmapped.Count} unmatched:\n  " +
+                                 string.Join("\n  ", unmapped));
+            }
+
+            return mappedCount;
+        }
+
+        /// <summary>
+        /// 埋め込みマッピングデータを使用して自動設定（あいまい検索対応）
+        /// AutoMapFromPMXの後継。EmbeddedMappingを使用。
+        /// </summary>
+        /// <param name="boneNames">ボーン名リスト（インデックス = MeshContextListのインデックス）</param>
+        /// <param name="fuzzyMatch">あいまい検索を有効にするか（デフォルトtrue）</param>
+        /// <returns>マッピングされたボーン数</returns>
+        public int AutoMapFromEmbeddedCSV(IList<string> boneNames, bool fuzzyMatch = true)
+        {
+            if (boneNames == null)
+                return 0;
+
+            int mappedCount = 0;
+            var unmapped = new List<string>();
+
+            foreach (var kvp in EmbeddedMapping)
+            {
+                string humanoidName = kvp.Key;
+                List<string> aliases = kvp.Value;
+
+                // 既にマッピングがある場合はスキップ
+                if (_boneIndexMap.ContainsKey(humanoidName))
+                    continue;
+
+                int foundIndex = FindBoneByAliases(boneNames, aliases, fuzzyMatch);
+                if (foundIndex >= 0)
+                {
+                    _boneIndexMap[humanoidName] = foundIndex;
+                    mappedCount++;
+                }
+                else
+                {
+                    // 必須ボーンのみ警告出力
+                    if (RequiredBones.Contains(humanoidName))
+                        unmapped.Add($"{humanoidName} ({string.Join(", ", aliases)})");
+                }
+            }
+
+            if (unmapped.Count > 0)
+            {
+                Debug.LogWarning($"[HumanoidBoneMapping] AutoMapFromEmbeddedCSV: {unmapped.Count} required bones unmatched:\n  " +
                                  string.Join("\n  ", unmapped));
             }
 
@@ -502,6 +622,28 @@ namespace Poly_Ling.Data
         /// Humanoid Avatarを作成可能か（必須ボーンが揃っているか）
         /// </summary>
         public bool CanCreateAvatar => GetMissingRequiredBones().Count == 0;
+
+        // ================================================================
+        // T-Pose用ヘルパー
+        // ================================================================
+
+        /// <summary>
+        /// 腕ボーンのインデックスを取得（TPoseConverter用）
+        /// </summary>
+        /// <param name="isLeft">左腕ならtrue</param>
+        /// <param name="upperArmIndex">UpperArmのMeshContextインデックス</param>
+        /// <param name="lowerArmIndex">LowerArmのMeshContextインデックス</param>
+        /// <returns>両方見つかればtrue</returns>
+        public bool GetArmBoneIndices(bool isLeft, out int upperArmIndex, out int lowerArmIndex)
+        {
+            string upperName = isLeft ? "LeftUpperArm" : "RightUpperArm";
+            string lowerName = isLeft ? "LeftLowerArm" : "RightLowerArm";
+
+            upperArmIndex = Get(upperName);
+            lowerArmIndex = Get(lowerName);
+
+            return upperArmIndex >= 0 && lowerArmIndex >= 0;
+        }
 
         // ================================================================
         // UNDO用: Clone / CopyFrom
