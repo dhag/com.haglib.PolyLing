@@ -605,6 +605,22 @@ public partial class PolyLing
             _model.Add(meshContext);
         }
 
+        // HierarchyParentIndexからDepthを計算（タイプ別リストのツリー表示用）
+        for (int i = 0; i < _meshContextList.Count; i++)
+        {
+            var ctx = _meshContextList[i];
+            if (ctx == null) continue;
+            int depth = 0;
+            int current = ctx.HierarchyParentIndex;
+            int safety = 100;
+            while (current >= 0 && current < _meshContextList.Count && safety-- > 0)
+            {
+                depth++;
+                current = _meshContextList[current].HierarchyParentIndex;
+            }
+            ctx.Depth = depth;
+        }
+
         // 最初のメッシュを選択（ボーンがあれば最初のメッシュ、なければ0）
         SetSelectedIndex(boneStartIndex < _meshContextList.Count ? boneStartIndex : 0);
 

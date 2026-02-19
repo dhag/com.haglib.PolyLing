@@ -66,7 +66,7 @@ namespace Poly_Ling.Tools.Panels
         // ================================================================
 
         private string _csvFilePath = "";
-        private Dictionary<string, string> _csvMapping; // Unity名 → ボーン名（CSV読み込み結果）
+        private List<string> _csvLines; // CSV生行リスト（ヘッダー含む）
         private HumanoidBoneMapping _previewMapping;    // プレビュー用マッピング
         private Vector2 _scrollPosition;
         private bool _foldPreview = true;
@@ -290,33 +290,10 @@ namespace Poly_Ling.Tools.Panels
 
             try
             {
-                // CSV読み込み（Unity名 → ボーン名）
-                _csvMapping = new Dictionary<string, string>();
-                var lines = File.ReadAllLines(_csvFilePath, Encoding.UTF8);
+                // CSV生行リストを保持（LoadFromCSVに直接渡す）
+                _csvLines = new List<string>(File.ReadAllLines(_csvFilePath, Encoding.UTF8));
 
-                bool isHeader = true;
-                foreach (var line in lines)
-                {
-                    if (isHeader)
-                    {
-                        isHeader = false;
-                        continue;
-                    }
-
-                    var parts = line.Split(',');
-                    if (parts.Length >= 2)
-                    {
-                        string unityName = parts[0].Trim();
-                        string boneName = parts[1].Trim();
-
-                        if (!string.IsNullOrEmpty(unityName) && !string.IsNullOrEmpty(boneName))
-                        {
-                            _csvMapping[unityName] = boneName;
-                        }
-                    }
-                }
-
-                Debug.Log($"[HumanoidMappingPanel] Loaded CSV: {_csvMapping.Count} entries");
+                Debug.Log($"[HumanoidMappingPanel] Loaded CSV: {_csvLines.Count} lines");
 
                 // プレビューマッピングを作成
                 CreatePreviewMapping(boneNames);
@@ -324,7 +301,7 @@ namespace Poly_Ling.Tools.Panels
             catch (Exception ex)
             {
                 Debug.LogError($"[HumanoidMappingPanel] Failed to load CSV: {ex.Message}");
-                _csvMapping = null;
+                _csvLines = null;
                 _previewMapping = null;
             }
 
@@ -349,22 +326,14 @@ namespace Poly_Ling.Tools.Panels
 
         private void CreatePreviewMapping(List<string> boneNames)
         {
-            if (_csvMapping == null || _csvMapping.Count == 0)
+            if (_csvLines == null || _csvLines.Count == 0)
             {
                 _previewMapping = null;
                 return;
             }
 
             _previewMapping = new HumanoidBoneMapping();
-            
-            // CSV行をリストに変換してLoadFromCSVを使用
-            var csvLines = new List<string> { "UnityName,BoneName" }; // ヘッダー
-            foreach (var kvp in _csvMapping)
-            {
-                csvLines.Add($"{kvp.Key},{kvp.Value}");
-            }
-
-            int count = _previewMapping.LoadFromCSV(csvLines, boneNames);
+            int count = _previewMapping.LoadFromCSV(_csvLines, boneNames);
             Debug.Log($"[HumanoidMappingPanel] Preview mapping created: {count} bones");
         }
 

@@ -620,7 +620,18 @@ public partial class PolyLing
             if (!ShouldExportAsGameObject(meshContext.Type))
                 continue;
 
-            GameObject go = new GameObject(meshContext.Name);
+            // Armature/Meshes構造で同名ボーンとメッシュが存在する場合、
+            // メッシュ側に_meshサフィックスを付与（AvatarBuilderの重複名エラー回避）
+            string goName = meshContext.Name;
+            if (useArmatureMeshesStructure && hasBone && meshContext.Type != MeshType.Bone)
+            {
+                bool hasDuplicateBoneName = _meshContextList.Any(ctx =>
+                    ctx != null && ctx.Type == MeshType.Bone && ctx.Name == meshContext.Name);
+                if (hasDuplicateBoneName)
+                    goName = meshContext.Name + "_mesh";
+            }
+
+            GameObject go = new GameObject(goName);
             createdObjects[i] = go;
         }
 
@@ -719,18 +730,7 @@ public partial class PolyLing
             if (masterIndex >= 0 && masterIndex < createdObjects.Length && createdObjects[masterIndex] != null)
             {
                 bones[bi] = createdObjects[masterIndex].transform;
-                
-                // MeshContext.BindPoseが設定されていればそれを使用、なければ計算
-                var boneCtx = entry.Context;
-                if (boneCtx != null && boneCtx.BindPose != Matrix4x4.identity)
-                {
-                    bindPoses[bi] = boneCtx.BindPose;
-                }
-                else
-                {
-                    // バインドポーズ = ワールド→ローカル変換行列
-                    bindPoses[bi] = bones[bi].worldToLocalMatrix;
-                }
+                bindPoses[bi] = entry.Context.BindPose;
             }
         }
         

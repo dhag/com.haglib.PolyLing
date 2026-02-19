@@ -1064,58 +1064,7 @@ namespace Poly_Ling.PMX
         /// </summary>
         public static Dictionary<int, Matrix4x4> CalculateWorldMatrices(List<MeshContext> meshContexts)
         {
-            var worldMatrices = new Dictionary<int, Matrix4x4>();
-
-            // トポロジカルソート順（親が先）で処理するため、複数パスが必要
-            int maxIterations = meshContexts.Count;
-            for (int iteration = 0; iteration < maxIterations; iteration++)
-            {
-                bool anyAdded = false;
-
-                for (int i = 0; i < meshContexts.Count; i++)
-                {
-                    if (worldMatrices.ContainsKey(i))
-                        continue;
-
-                    var ctx = meshContexts[i];
-                    if (ctx?.BoneTransform == null)
-                        continue;
-
-                    int parentIndex = ctx.HierarchyParentIndex;
-                    Matrix4x4 parentWorld;
-
-                    if (parentIndex < 0)
-                    {
-                        // ルートボーン
-                        parentWorld = Matrix4x4.identity;
-                    }
-                    else if (worldMatrices.TryGetValue(parentIndex, out parentWorld))
-                    {
-                        // 親が計算済み
-                    }
-                    else
-                    {
-                        // 親がまだ計算されていない、次のイテレーションで
-                        continue;
-                    }
-
-                    // ローカル変換行列
-                    Matrix4x4 localMatrix = Matrix4x4.TRS(
-                        ctx.BoneTransform.Position,
-                        Quaternion.Euler(ctx.BoneTransform.Rotation),
-                        ctx.BoneTransform.Scale
-                    );
-
-                    // ワールド変換行列
-                    worldMatrices[i] = parentWorld * localMatrix;
-                    anyAdded = true;
-                }
-
-                if (!anyAdded)
-                    break;
-            }
-
-            return worldMatrices;
+            return ModelContext.CalculateWorldMatrices(meshContexts);
         }
 
         /// <summary>

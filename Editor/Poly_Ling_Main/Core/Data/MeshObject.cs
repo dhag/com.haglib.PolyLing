@@ -1564,8 +1564,6 @@ namespace Poly_Ling.Data
             Clear();
             if (mesh == null) return;
 
-            Name = mesh.name;
-
             var srcVerts = mesh.vertices;
             var srcUVs = mesh.uv;
             var srcNormals = mesh.normals;

@@ -296,11 +296,63 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
+        // 共通あいまい検索
+        // ================================================================
+
+        /// <summary>
+        /// エイリアスリストを使って候補名リストからあいまい検索
+        /// AvatarCreatorPanel と HumanoidBoneMapping で共通使用
+        /// 優先度: 完全一致 → 候補名がエイリアスを含む → エイリアスが候補名を含む
+        /// </summary>
+        /// <param name="candidateNames">検索対象の名前リスト</param>
+        /// <param name="aliases">エイリアスリスト（優先度順）</param>
+        /// <param name="fuzzyMatch">あいまい検索を有効にするか</param>
+        /// <returns>マッチした候補のインデックス（不一致時 -1）</returns>
+        public static int FindBoneByAliases(IList<string> candidateNames, List<string> aliases, bool fuzzyMatch = true)
+        {
+            if (candidateNames == null || aliases == null)
+                return -1;
+
+            foreach (string alias in aliases)
+            {
+                if (string.IsNullOrEmpty(alias)) continue;
+
+                // 完全一致（case-insensitive）
+                for (int i = 0; i < candidateNames.Count; i++)
+                {
+                    if (string.Equals(candidateNames[i], alias, StringComparison.OrdinalIgnoreCase))
+                        return i;
+                }
+
+                if (fuzzyMatch)
+                {
+                    // 候補名がエイリアスを含む（例: alias="右手首", candidate="右手首Cylinder" → hit）
+                    for (int i = 0; i < candidateNames.Count; i++)
+                    {
+                        if (candidateNames[i] != null &&
+                            candidateNames[i].IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
+                            return i;
+                    }
+
+                    // エイリアスが候補名を含む（例: alias="右手首Cylinder", candidate="右手首" → hit）
+                    for (int i = 0; i < candidateNames.Count; i++)
+                    {
+                        if (candidateNames[i] != null &&
+                            alias.IndexOf(candidateNames[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                            return i;
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        // ================================================================
         // 自動マッピング
         // ================================================================
 
         /// <summary>
-        /// ボーン名からPMXデフォルトマッピングを使用して自動設定
+        /// ボーン名からPMXデフォルトマッピングを使用して自動設定（あいまい検索対応）
         /// </summary>
         /// <param name="boneNames">ボーン名リスト（インデックス = MeshContextListのインデックス）</param>
         /// <returns>マッピングされたボーン数</returns>
@@ -309,32 +361,58 @@ namespace Poly_Ling.Data
             if (boneNames == null)
                 return 0;
 
-            int mappedCount = 0;
-
-            for (int i = 0; i < boneNames.Count; i++)
+            // DefaultPMXMappingを Unity名 → エイリアスリスト に再構成
+            // 同じUnity名に複数のPMX名がマッピングされている場合をまとめる
+            var unityToAliases = new Dictionary<string, List<string>>();
+            foreach (var kvp in DefaultPMXMapping)
             {
-                string boneName = boneNames[i];
-                if (string.IsNullOrEmpty(boneName))
+                string pmxName = kvp.Key;
+                string humanoidName = kvp.Value;
+                if (!unityToAliases.TryGetValue(humanoidName, out var list))
+                {
+                    list = new List<string>();
+                    unityToAliases[humanoidName] = list;
+                }
+                list.Add(pmxName);
+            }
+
+            int mappedCount = 0;
+            var unmapped = new List<string>();
+
+            foreach (var kvp in unityToAliases)
+            {
+                string humanoidName = kvp.Key;
+                List<string> aliases = kvp.Value;
+
+                // 既にマッピングがある場合はスキップ
+                if (_boneIndexMap.ContainsKey(humanoidName))
                     continue;
 
-                // PMX名 → Unity Humanoid名
-                if (DefaultPMXMapping.TryGetValue(boneName, out string humanoidName))
+                int foundIndex = FindBoneByAliases(boneNames, aliases);
+                if (foundIndex >= 0)
                 {
-                    // 既にマッピングがある場合は上書きしない（最初に見つかったものを使用）
-                    if (!_boneIndexMap.ContainsKey(humanoidName))
-                    {
-                        _boneIndexMap[humanoidName] = i;
-                        mappedCount++;
-                    }
+                    _boneIndexMap[humanoidName] = foundIndex;
+                    mappedCount++;
                 }
+                else
+                {
+                    unmapped.Add($"{humanoidName} ({string.Join(", ", aliases)})");
+                }
+            }
+
+            if (unmapped.Count > 0)
+            {
+                Debug.LogWarning($"[HumanoidBoneMapping] AutoMapFromPMX: {unmapped.Count} unmatched:\n  " +
+                                 string.Join("\n  ", unmapped));
             }
 
             return mappedCount;
         }
 
         /// <summary>
-        /// CSV形式のマッピングデータを読み込み
-        /// 形式: UnityHumanoidName,BoneName
+        /// CSV形式のマッピングデータを読み込み（あいまい検索対応）
+        /// 形式: UnityHumanoidName,Alias1,Alias2,...
+        /// AvatarCreatorPanelと同じCSV形式・検索方式
         /// </summary>
         /// <param name="csvLines">CSVの行リスト</param>
         /// <param name="boneNames">ボーン名リスト（インデックス = MeshContextListのインデックス）</param>
@@ -344,18 +422,9 @@ namespace Poly_Ling.Data
             if (csvLines == null || boneNames == null)
                 return 0;
 
-            // ボーン名 → インデックス のマップを作成
-            var nameToIndex = new Dictionary<string, int>();
-            for (int i = 0; i < boneNames.Count; i++)
-            {
-                if (!string.IsNullOrEmpty(boneNames[i]) && !nameToIndex.ContainsKey(boneNames[i]))
-                {
-                    nameToIndex[boneNames[i]] = i;
-                }
-            }
-
             int mappedCount = 0;
             bool isHeader = true;
+            var unmapped = new List<string>();
 
             foreach (var line in csvLines)
             {
@@ -366,22 +435,41 @@ namespace Poly_Ling.Data
                     continue;
                 }
 
+                // コメント行をスキップ
+                if (line.StartsWith("//")) continue;
+
                 var parts = line.Split(',');
-                if (parts.Length < 2)
-                    continue;
+                if (parts.Length < 1) continue;
 
                 string unityName = parts[0].Trim();
-                string boneName = parts[1].Trim();
+                if (string.IsNullOrEmpty(unityName)) continue;
 
-                if (string.IsNullOrEmpty(unityName) || string.IsNullOrEmpty(boneName))
-                    continue;
-
-                // ボーン名からインデックスを検索
-                if (nameToIndex.TryGetValue(boneName, out int index))
+                // 1列目（Unity名）を最優先エイリアスとし、2列目以降を追加エイリアス
+                var aliases = new List<string> { unityName };
+                for (int i = 1; i < parts.Length; i++)
                 {
-                    _boneIndexMap[unityName] = index;
+                    string alias = parts[i].Trim();
+                    if (!string.IsNullOrEmpty(alias))
+                        aliases.Add(alias);
+                }
+
+                // あいまい検索でボーンを検索
+                int foundIndex = FindBoneByAliases(boneNames, aliases);
+                if (foundIndex >= 0)
+                {
+                    _boneIndexMap[unityName] = foundIndex;
                     mappedCount++;
                 }
+                else
+                {
+                    unmapped.Add($"{unityName} ({string.Join(", ", aliases)})");
+                }
+            }
+
+            if (unmapped.Count > 0)
+            {
+                Debug.LogWarning($"[HumanoidBoneMapping] LoadFromCSV: {unmapped.Count} unmatched:\n  " +
+                                 string.Join("\n  ", unmapped));
             }
 
             return mappedCount;

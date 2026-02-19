@@ -915,13 +915,8 @@ namespace Poly_Ling.MQO
                 }
             }
 
-            // BindPoseを計算（PMXImporterと同じ方式）
-            // BoneTransformのローカル位置・回転からワールド行列を計算し、その逆行列をBindPoseとする
-            var worldMatrices = PMXImporter.CalculateWorldMatrices(result.BoneContexts);
-            foreach (var kv in worldMatrices)
-            {
-                result.BoneContexts[kv.Key].BindPose = kv.Value.inverse;
-            }
+            // BindPoseを計算（ModelContext共通メソッド）
+            ModelContext.ComputeBindPosesFromList(result.BoneContexts);
 
             Debug.Log($"[MQOImporter] Imported {result.BoneContexts.Count} bones from __Armature__");
             return result;

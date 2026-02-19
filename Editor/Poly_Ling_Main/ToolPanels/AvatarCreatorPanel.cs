@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.Data;
 using Poly_Ling.Localization;
 
 namespace Poly_Ling.MISC
@@ -352,45 +353,13 @@ namespace Poly_Ling.MISC
 
         /// <summary>
         /// alias優先度順にTransformを検索
-        /// 各aliasにつき: 完全一致(case-insensitive) → 部分一致(case-insensitive, fuzzy時のみ)
+        /// HumanoidBoneMapping.FindBoneByAliases を使用（共通ロジック）
         /// </summary>
         private Transform FindBoneByAliases(Transform[] allTransforms, List<string> aliases)
         {
-            foreach (string alias in aliases)
-            {
-                // 完全一致（case-insensitive）
-                foreach (var t in allTransforms)
-                {
-                    if (string.Equals(t.name, alias, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return t;
-                    }
-                }
-
-                // あいまい検索: 部分一致（case-insensitive）
-                if (_fuzzyMatch)
-                {
-                    // Transform名がaliasを含む（例: alias="腰", transform="腰Cylinder" → hit）
-                    foreach (var t in allTransforms)
-                    {
-                        if (t.name.IndexOf(alias, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return t;
-                        }
-                    }
-
-                    // aliasがTransform名を含む（例: alias="ヒップCylinder", transform="ヒップ" → hit）
-                    foreach (var t in allTransforms)
-                    {
-                        if (alias.IndexOf(t.name, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return t;
-                        }
-                    }
-                }
-            }
-
-            return null;
+            var names = allTransforms.Select(t => t.name).ToList();
+            int idx = HumanoidBoneMapping.FindBoneByAliases(names, aliases, _fuzzyMatch);
+            return idx >= 0 ? allTransforms[idx] : null;
         }
 
         // ================================================================

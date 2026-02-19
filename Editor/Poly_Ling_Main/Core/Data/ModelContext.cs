@@ -1191,6 +1191,100 @@ namespace Poly_Ling.Model
         }
 
         /// <summary>
+        /// 全ボーンのBindPoseを計算（WorldMatrix.inverse）
+        /// ComputeWorldMatrices()の後に呼ぶこと
+        /// </summary>
+        public void ComputeBindPoses()
+        {
+            if (MeshContextList == null) return;
+
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var ctx = MeshContextList[i];
+                if (ctx == null || ctx.Type != MeshType.Bone) continue;
+
+                ctx.BindPose = ctx.WorldMatrix.inverse;
+            }
+        }
+
+        /// <summary>
+        /// ワールド行列とBindPoseを一括計算
+        /// </summary>
+        public void ComputeWorldAndBindPoses()
+        {
+            ComputeWorldMatrices();
+            ComputeBindPoses();
+        }
+
+        /// <summary>
+        /// MeshContextリストからワールド行列を計算（静的メソッド・インポート時用）
+        /// HierarchyParentIndexとBoneTransformに基づいて親→子の順で計算
+        /// </summary>
+        public static Dictionary<int, Matrix4x4> CalculateWorldMatrices(List<MeshContext> meshContexts)
+        {
+            var worldMatrices = new Dictionary<int, Matrix4x4>();
+
+            int maxIterations = meshContexts.Count;
+            for (int iteration = 0; iteration < maxIterations; iteration++)
+            {
+                bool anyAdded = false;
+
+                for (int i = 0; i < meshContexts.Count; i++)
+                {
+                    if (worldMatrices.ContainsKey(i))
+                        continue;
+
+                    var ctx = meshContexts[i];
+                    if (ctx?.BoneTransform == null)
+                        continue;
+
+                    int parentIndex = ctx.HierarchyParentIndex;
+                    Matrix4x4 parentWorld;
+
+                    if (parentIndex < 0)
+                    {
+                        parentWorld = Matrix4x4.identity;
+                    }
+                    else if (worldMatrices.TryGetValue(parentIndex, out parentWorld))
+                    {
+                        // 親が計算済み
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    Matrix4x4 localMatrix = Matrix4x4.TRS(
+                        ctx.BoneTransform.Position,
+                        Quaternion.Euler(ctx.BoneTransform.Rotation),
+                        ctx.BoneTransform.Scale
+                    );
+
+                    worldMatrices[i] = parentWorld * localMatrix;
+                    anyAdded = true;
+                }
+
+                if (!anyAdded)
+                    break;
+            }
+
+            return worldMatrices;
+        }
+
+        /// <summary>
+        /// MeshContextリストのBindPoseを一括計算（静的メソッド・インポート時用）
+        /// CalculateWorldMatrices + BindPose = inverse を一括実行
+        /// </summary>
+        public static void ComputeBindPosesFromList(List<MeshContext> meshContexts)
+        {
+            var worldMatrices = CalculateWorldMatrices(meshContexts);
+            foreach (var kv in worldMatrices)
+            {
+                meshContexts[kv.Key].BindPose = kv.Value.inverse;
+            }
+        }
+
+        /// <summary>
         /// HierarchyParentIndexに基づいてトポロジカルソート
         /// 親が先に来るようにインデックスを並べ替える
         /// </summary>

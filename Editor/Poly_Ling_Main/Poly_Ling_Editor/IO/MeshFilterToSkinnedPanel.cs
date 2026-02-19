@@ -3,11 +3,11 @@
 //
 // 処理概要:
 //   1. MeshType.Meshの各MeshContextに対応するMeshType.Boneを作成
-//      - BoneTransformはPositionのみコピー、Rotation=0, Scale=1
-//      - Rotation/ScaleはPMXと同様にワールド空間頂点に焼きこむ（不可逆）
+//      - 元のワールド位置からローカル位置を再計算（Rotation=0, Scale=1前提）
+//      - localPos = worldPos - parentWorldPos
 //   2. トップメッシュをルートボーンとする
 //   3. 頂点を元のワールド行列（Scale/Rotation込み）でワールド空間に変換
-//   4. BindPose = ベイク後ボーンのWorldMatrix.inverse
+//   4. BindPose = ComputeWorldAndBindPoses()で一括計算
 //   5. BoneWeightは各頂点が対応ボーン100%（MeshContextListインデックス）
 //
 // PMXインポートと同じ構造:
@@ -211,22 +211,49 @@ namespace Poly_Ling.Tools.Panels
             }
 
             // --- Phase 1: ボーンMeshContextを作成 ---
-            // Positionのみコピー。Rotation/Scaleはベイク（頂点に焼きこむ）ので消す
+            // ワールド位置から新しいローカル位置を計算
+            // Rotation=0, Scale=1なので localPos = worldPos - parentWorldPos
             var boneContexts = new List<MeshContext>(boneCount);
+
+            // 各メッシュのワールド位置を取得
+            var worldPositions = new Vector3[meshEntries.Count];
+            for (int i = 0; i < meshEntries.Count; i++)
+            {
+                int idx = meshEntries[i].Index;
+                worldPositions[i] = savedWorldMatrices[idx].GetColumn(3); // 平行移動成分
+            }
 
             for (int i = 0; i < meshEntries.Count; i++)
             {
                 var srcCtx = meshEntries[i].Context;
-                var srcBt = srcCtx.BoneTransform;
 
                 var boneMeshObject = new MeshObject(srcCtx.Name)
                 {
                     Type = MeshType.Bone
                 };
 
+                // 親を決定
+                int srcParent = srcCtx.HierarchyParentIndex;
+                int parentBoneNum = -1;
+                if (srcParent >= 0 && oldIndexToBoneNum.TryGetValue(srcParent, out int pbn))
+                {
+                    parentBoneNum = pbn;
+                }
+
+                // ローカル位置 = ワールド位置 - 親ワールド位置
+                Vector3 localPos;
+                if (parentBoneNum >= 0)
+                {
+                    localPos = worldPositions[i] - worldPositions[parentBoneNum];
+                }
+                else
+                {
+                    localPos = worldPositions[i];
+                }
+
                 var boneBt = new BoneTransform
                 {
-                    Position = srcBt.Position,
+                    Position = localPos,
                     Rotation = Vector3.zero,
                     Scale = Vector3.one,
                     UseLocalTransform = true
@@ -242,18 +269,8 @@ namespace Poly_Ling.Tools.Panels
                     UnityMesh = null
                 };
 
-                // ボーンの親: 元メッシュの親がメッシュ群に含まれていればそのボーン番号
-                int srcParent = srcCtx.HierarchyParentIndex;
-                if (srcParent >= 0 && oldIndexToBoneNum.TryGetValue(srcParent, out int parentBoneNum))
-                {
-                    boneCtx.ParentIndex = parentBoneNum;
-                    boneCtx.HierarchyParentIndex = parentBoneNum;
-                }
-                else
-                {
-                    boneCtx.ParentIndex = -1;
-                    boneCtx.HierarchyParentIndex = -1;
-                }
+                boneCtx.ParentIndex = parentBoneNum;
+                boneCtx.HierarchyParentIndex = parentBoneNum;
 
                 boneContexts.Add(boneCtx);
             }
@@ -303,19 +320,10 @@ namespace Poly_Ling.Tools.Panels
                 }
             }
 
-            // --- Phase 3: ワールド行列を再計算 ---
-            model.ComputeWorldMatrices();
+            // --- Phase 3: ワールド行列 + BindPose一括計算 ---
+            model.ComputeWorldAndBindPoses();
 
-            // --- Phase 4: BindPose = ベイク後WorldMatrix.inverse ---
-            // ボーンはRotation=0, Scale=1なのでWorldMatrixはPosition親子の累積のみ
-            // SkinningMatrix = WorldMatrix × WorldMatrix.inverse = identity
-            // 頂点はPhase 5でワールド空間に変換済みなのでidentity × ワールド座標 = 正しい位置
-            for (int i = 0; i < boneCount; i++)
-            {
-                model.MeshContextList[i].BindPose = model.MeshContextList[i].WorldMatrix.inverse;
-            }
-
-            // --- Phase 5: 頂点ワールド変換 + BoneWeight設定 ---
+            // --- Phase 4: 頂点ワールド変換 + BoneWeight設定 ---
             for (int i = 0; i < meshEntries.Count; i++)
             {
                 int oldIndex = meshEntries[i].Index;
@@ -368,9 +376,16 @@ namespace Poly_Ling.Tools.Panels
                 meshCtx.OriginalPositions = (Vector3[])meshObj.Positions.Clone();
             }
 
-            // --- Phase 6: 最終ワールド行列計算 + GPUバッファ再構築 ---
+            // --- Phase 5: 最終ワールド行列計算 + GPUバッファ再構築 ---
             model.ComputeWorldMatrices();
             _context?.OnTopologyChanged();
+
+            // --- Phase 6: ExportAsSkinned フラグを設定 ---
+            foreach (var ctx in model.MeshContextList)
+            {
+                if (ctx?.BoneTransform != null)
+                    ctx.BoneTransform.ExportAsSkinned = true;
+            }
 
             Debug.Log($"[MeshFilterToSkinned] Created {boneCount} bones from {meshEntries.Count} meshes");
             EditorUtility.DisplayDialog(T("WindowTitle"), T("ConvertSuccess", boneCount), "OK");
