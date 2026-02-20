@@ -1,0 +1,131 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- SkinWeightPaintPanel.uxml: スキンウェイトペイントツール -->
+    
+    <ui:VisualElement name="swp-root" class="swp-root">
+        
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="swp-warning" />
+        
+        <!-- ワークフローガイド -->
+        <ui:VisualElement name="workflow-guide" class="swp-workflow">
+            <ui:VisualElement name="step-1" class="swp-step">
+                <ui:Label text="①" class="swp-step-num" />
+                <ui:Label name="step-1-text" text="メッシュを選択" class="swp-step-text" />
+                <ui:Label name="step-1-status" text="✓" class="swp-step-ok" />
+            </ui:VisualElement>
+            <ui:VisualElement name="step-2" class="swp-step">
+                <ui:Label text="②" class="swp-step-num" />
+                <ui:Label name="step-2-text" text="下のリストからボーンを選択" class="swp-step-text" />
+                <ui:Label name="step-2-status" text="" class="swp-step-ok" />
+            </ui:VisualElement>
+            <ui:VisualElement name="step-3" class="swp-step">
+                <ui:Label text="③" class="swp-step-num" />
+                <ui:Label name="step-3-text" text="プレビュー上を左ドラッグでペイント" class="swp-step-text" />
+                <ui:Label name="step-3-status" text="" class="swp-step-ok" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        
+        <!-- メインセクション -->
+        <ui:VisualElement name="main-section" class="swp-main">
+            
+            <!-- ===== ペイントモード ===== -->
+            <ui:VisualElement class="swp-section">
+                <ui:Label text="Paint Mode" class="swp-section-label" />
+                <ui:VisualElement class="swp-mode-row">
+                    <ui:Button name="btn-mode-replace" text="Replace" class="swp-mode-btn swp-mode-active" />
+                    <ui:Button name="btn-mode-add" text="Add" class="swp-mode-btn" />
+                    <ui:Button name="btn-mode-scale" text="Scale" class="swp-mode-btn" />
+                    <ui:Button name="btn-mode-smooth" text="Smooth" class="swp-mode-btn" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <!-- ===== ブラシ設定 ===== -->
+            <ui:VisualElement class="swp-section">
+                <ui:Label text="Brush" class="swp-section-label" />
+                
+                <!-- Radius -->
+                <ui:VisualElement class="swp-field-row">
+                    <ui:Label text="Radius" class="swp-field-label" />
+                    <ui:Slider name="slider-radius" low-value="0.001" high-value="1.0" value="0.05" class="swp-slider" />
+                    <uie:FloatField name="field-radius" value="0.05" class="swp-float-field" />
+                </ui:VisualElement>
+                
+                <!-- Strength -->
+                <ui:VisualElement class="swp-field-row">
+                    <ui:Label text="Strength" class="swp-field-label" />
+                    <ui:Slider name="slider-strength" low-value="0.0" high-value="1.0" value="1.0" class="swp-slider" />
+                    <uie:FloatField name="field-strength" value="1.0" class="swp-float-field" />
+                </ui:VisualElement>
+                
+                <!-- Falloff -->
+                <ui:VisualElement class="swp-field-row">
+                    <ui:Label text="Falloff" class="swp-field-label" />
+                    <uie:EnumField name="field-falloff" class="swp-enum-field" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <!-- ===== ウェイト値 ===== -->
+            <ui:VisualElement class="swp-section">
+                <ui:Label text="Weight Value" class="swp-section-label" />
+                <ui:VisualElement class="swp-field-row">
+                    <ui:Label text="Value" class="swp-field-label" />
+                    <ui:Slider name="slider-weight-value" low-value="0.0" high-value="1.0" value="1.0" class="swp-slider" />
+                    <uie:FloatField name="field-weight-value" value="1.0" class="swp-float-field" />
+                </ui:VisualElement>
+                <!-- プリセットボタン -->
+                <ui:VisualElement class="swp-preset-row">
+                    <ui:Button name="btn-val-0" text="0" class="swp-preset-btn" />
+                    <ui:Button name="btn-val-025" text=".25" class="swp-preset-btn" />
+                    <ui:Button name="btn-val-05" text=".5" class="swp-preset-btn" />
+                    <ui:Button name="btn-val-075" text=".75" class="swp-preset-btn" />
+                    <ui:Button name="btn-val-1" text="1" class="swp-preset-btn" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <!-- ===== 対象ボーン ===== -->
+            <ui:VisualElement class="swp-section swp-bone-section">
+                <ui:VisualElement class="swp-bone-header-row">
+                    <ui:Label text="Target Bone" class="swp-section-label" />
+                    <ui:Label name="bone-count-label" text="(0)" class="swp-bone-count" />
+                </ui:VisualElement>
+                <ui:Label name="target-bone-label" text="(未選択)" class="swp-target-bone-name" />
+                
+                <!-- ボーンフィルタ -->
+                <ui:TextField name="field-bone-filter" class="swp-bone-filter" />
+                
+                <!-- ボーンリスト -->
+                <ui:ScrollView name="bone-list-scroll" class="swp-bone-list-scroll">
+                    <ui:VisualElement name="bone-list-container" class="swp-bone-list-container" />
+                </ui:ScrollView>
+            </ui:VisualElement>
+            
+            <!-- ===== 選択頂点の影響ボーン ===== -->
+            <ui:VisualElement class="swp-section">
+                <ui:Label text="Vertex Influences" class="swp-section-label" />
+                <ui:Label name="vertex-info-label" text="選択頂点なし" class="swp-info-label" />
+                <ui:ScrollView name="influence-list-scroll" class="swp-influence-scroll">
+                    <ui:VisualElement name="influence-list-container" class="swp-influence-container" />
+                </ui:ScrollView>
+            </ui:VisualElement>
+            
+            <!-- ===== 操作ボタン ===== -->
+            <ui:VisualElement class="swp-section">
+                <ui:Label text="Operations" class="swp-section-label" />
+                <ui:VisualElement class="swp-ops-row">
+                    <ui:Button name="btn-flood" text="Flood" tooltip="選択ボーンのウェイトを全選択頂点に一括設定" class="swp-ops-btn" />
+                    <ui:Button name="btn-normalize" text="Normalize" tooltip="選択頂点のウェイトを正規化（合計1.0）" class="swp-ops-btn" />
+                    <ui:Button name="btn-prune" text="Prune" tooltip="閾値以下の微小ウェイトを除去" class="swp-ops-btn" />
+                </ui:VisualElement>
+                <ui:VisualElement class="swp-field-row">
+                    <ui:Label text="Prune Below" class="swp-field-label" />
+                    <uie:FloatField name="field-prune-threshold" value="0.01" class="swp-float-field" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+        </ui:VisualElement>
+        
+        <!-- ステータス -->
+        <ui:Label name="status-label" text="" class="swp-status-label" />
+        
+    </ui:VisualElement>
+</ui:UXML>

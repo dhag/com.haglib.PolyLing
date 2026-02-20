@@ -1,0 +1,342 @@
+/* SkinWeightPaintPanel.uss */
+
+.swp-root {
+    flex-grow: 1;
+    flex-direction: column;
+    padding: 4px;
+}
+
+.swp-warning {
+    color: #FFCC00;
+    -unity-font-style: bold;
+    padding: 4px;
+    display: none;
+}
+
+/* ===== ワークフローガイド ===== */
+.swp-workflow {
+    padding: 6px;
+    margin-bottom: 4px;
+    border-bottom-width: 2px;
+    border-color: #555555;
+    background-color: #2A2A2A;
+    border-radius: 4px;
+}
+
+.swp-step {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-bottom: 1px;
+}
+
+.swp-step-current {
+    background-color: #2A4060;
+    border-width: 1px;
+    border-color: #4A80C0;
+}
+
+.swp-step-done {
+    opacity: 0.6;
+}
+
+.swp-step-pending {
+    opacity: 0.4;
+}
+
+.swp-step-num {
+    font-size: 12px;
+    width: 20px;
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+}
+
+.swp-step-text {
+    flex-grow: 1;
+    font-size: 11px;
+    -unity-text-align: middle-left;
+    margin-left: 4px;
+}
+
+.swp-step-ok {
+    color: #66FF66;
+    font-size: 12px;
+    width: 20px;
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+}
+
+.swp-main {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+/* ===== セクション ===== */
+.swp-section {
+    padding: 4px;
+    margin-bottom: 2px;
+    border-bottom-width: 1px;
+    border-color: #444444;
+}
+
+.swp-section-label {
+    -unity-font-style: bold;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.swp-info-label {
+    color: #AAAAAA;
+    font-size: 11px;
+    padding: 2px 0;
+}
+
+/* ===== ペイントモードボタン ===== */
+.swp-mode-row {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
+.swp-mode-btn {
+    flex-grow: 1;
+    height: 24px;
+    margin: 0 1px;
+    font-size: 11px;
+    background-color: #3C3C3C;
+    border-color: #555555;
+    border-width: 1px;
+    border-radius: 2px;
+}
+
+.swp-mode-btn:hover {
+    background-color: #4A4A4A;
+}
+
+.swp-mode-active {
+    background-color: #3A6EA5;
+    color: white;
+    border-color: #5A8EC5;
+}
+
+.swp-mode-active:hover {
+    background-color: #4A7EB5;
+}
+
+/* ===== フィールド行 ===== */
+.swp-field-row {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    margin-bottom: 2px;
+}
+
+.swp-field-label {
+    width: 72px;
+    font-size: 11px;
+    -unity-text-align: middle-left;
+    min-width: 72px;
+}
+
+.swp-slider {
+    flex-grow: 1;
+    margin-right: 4px;
+}
+
+.swp-float-field {
+    width: 54px;
+    min-width: 54px;
+}
+
+.swp-enum-field {
+    flex-grow: 1;
+}
+
+/* ===== プリセットボタン ===== */
+.swp-preset-row {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 2px;
+}
+
+.swp-preset-btn {
+    flex-grow: 1;
+    height: 20px;
+    margin: 0 1px;
+    font-size: 10px;
+    background-color: #3C3C3C;
+    border-radius: 2px;
+}
+
+.swp-preset-btn:hover {
+    background-color: #4A4A4A;
+}
+
+/* ===== ボーンセクション ===== */
+.swp-bone-section {
+    flex-shrink: 0;
+}
+
+.swp-bone-header-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.swp-bone-count {
+    color: #888888;
+    font-size: 10px;
+}
+
+.swp-target-bone-name {
+    color: #66BBFF;
+    font-size: 12px;
+    -unity-font-style: bold;
+    padding: 2px 0;
+    margin-bottom: 2px;
+}
+
+.swp-bone-filter {
+    margin-bottom: 2px;
+    height: 20px;
+    font-size: 11px;
+}
+
+.swp-bone-list-scroll {
+    max-height: 160px;
+    min-height: 60px;
+    border-width: 1px;
+    border-color: #333333;
+    border-radius: 2px;
+    background-color: #2A2A2A;
+}
+
+.swp-bone-list-container {
+    flex-direction: column;
+}
+
+/* ボーンリスト項目 */
+.swp-bone-item {
+    flex-direction: row;
+    align-items: center;
+    height: 20px;
+    padding: 0 4px;
+    border-bottom-width: 1px;
+    border-color: #333333;
+}
+
+.swp-bone-item:hover {
+    background-color: #3A3A3A;
+}
+
+.swp-bone-item-selected {
+    background-color: #2A4A6A;
+}
+
+.swp-bone-item-selected:hover {
+    background-color: #3A5A7A;
+}
+
+.swp-bone-item-idx {
+    color: #666666;
+    font-size: 10px;
+    width: 28px;
+    -unity-text-align: middle-right;
+    margin-right: 4px;
+}
+
+.swp-bone-item-name {
+    flex-grow: 1;
+    font-size: 11px;
+    -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===== 影響ボーン一覧 ===== */
+.swp-influence-scroll {
+    max-height: 120px;
+    min-height: 40px;
+    border-width: 1px;
+    border-color: #333333;
+    border-radius: 2px;
+    background-color: #2A2A2A;
+}
+
+.swp-influence-container {
+    flex-direction: column;
+}
+
+.swp-influence-row {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    padding: 0 4px;
+    border-bottom-width: 1px;
+    border-color: #333333;
+}
+
+.swp-influence-row:hover {
+    background-color: #3A3A3A;
+}
+
+.swp-influence-name {
+    flex-grow: 1;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.swp-influence-bar-bg {
+    width: 60px;
+    height: 10px;
+    background-color: #222222;
+    border-radius: 2px;
+    margin: 0 4px;
+    overflow: hidden;
+}
+
+.swp-influence-bar {
+    height: 100%;
+    background-color: #4A88C8;
+    border-radius: 2px;
+}
+
+.swp-influence-value {
+    width: 44px;
+    min-width: 44px;
+    font-size: 10px;
+    -unity-text-align: middle-right;
+}
+
+/* ===== 操作ボタン ===== */
+.swp-ops-row {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.swp-ops-btn {
+    flex-grow: 1;
+    height: 26px;
+    margin: 0 2px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    background-color: #3C3C3C;
+    border-radius: 3px;
+}
+
+.swp-ops-btn:hover {
+    background-color: #4A4A4A;
+}
+
+/* ===== ステータス ===== */
+.swp-status-label {
+    color: #888888;
+    font-size: 10px;
+    padding: 2px 4px;
+    -unity-text-align: middle-left;
+    white-space: normal;
+}

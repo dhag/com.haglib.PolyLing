@@ -86,6 +86,9 @@ namespace Poly_Ling.Core
         public int HoveredVertexIndex => _hoveredVertexIndex;
         public int HoveredLineIndex => _hoveredLineIndex;
         public int HoveredFaceIndex => _hoveredFaceIndex;
+
+        /// <summary>ホバーハイライトを抑止（ウェイトペイント等のブラシ系ツール用）</summary>
+        public bool SuppressHover { get; set; }
         
         /// <summary>バックフェースカリング有効/無効</summary>
         public bool BackfaceCullingEnabled

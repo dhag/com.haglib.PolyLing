@@ -126,6 +126,11 @@ public partial class PolyLing
             Poly_Ling.UI.BoneEditorPanel.Open(_toolManager?.toolContext);
         }
 
+        if (GUILayout.Button("スキンウェイトペイント"))
+        {
+            Poly_Ling.UI.SkinWeightPaintPanel.Open(_toolManager?.toolContext, _toolManager);
+        }
+
         if (GUILayout.Button("MeshFilter → Skinned"))
         {
             Poly_Ling.Tools.Panels.MeshFilterToSkinnedPanel.Open(_toolManager?.toolContext);

@@ -360,6 +360,21 @@ namespace Poly_Ling.Model
             }
         }
 
+        /// <summary>
+        /// ActiveCategoryに依存せず、常にSelectedMeshIndicesから描画メッシュを返す。
+        /// SelectBoneでActiveCategoryがBoneに変わっても描画メッシュ参照を維持する。
+        /// 用途: SkinWeightPaintTool/Panel等、ボーン選択中も描画メッシュへの参照が必要な場面。
+        /// </summary>
+        public MeshContext FirstSelectedDrawableMeshContext
+        {
+            get
+            {
+                if (SelectedMeshIndices.Count == 0) return null;
+                int idx = SelectedMeshIndices[0];
+                return (idx >= 0 && idx < Count) ? MeshContextList[idx] : null;
+            }
+        }
+
         /// <summary>選択リストの先頭インデックス（便宜アクセサ）</summary>
         public int FirstSelectedIndex
         {

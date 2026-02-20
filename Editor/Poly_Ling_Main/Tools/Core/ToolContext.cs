@@ -297,6 +297,12 @@ namespace Poly_Ling.Tools
         public Action EnterTransformDragging { get; set; }
 
         /// <summary>
+        /// ホバーハイライトの抑止設定（ブラシ系ツール用）
+        /// true で抑止、false で通常
+        /// </summary>
+        public Action<bool> SetSuppressHover { get; set; }
+
+        /// <summary>
         /// 頂点ドラッグ終了時に呼ぶ（Normalモードに復帰）
         /// </summary>
         public Action ExitTransformDragging { get; set; }

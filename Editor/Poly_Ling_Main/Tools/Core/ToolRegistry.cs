@@ -53,6 +53,8 @@ namespace Poly_Ling.Tools
             () => new PrimitiveMeshTool(),
             () => new MirrorEditTool(),
 
+            () => new SkinWeightPaintTool(),
+
         };
 
         // ================================================================

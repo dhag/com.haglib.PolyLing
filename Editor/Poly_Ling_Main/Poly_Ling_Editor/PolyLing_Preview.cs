@@ -82,7 +82,22 @@ public partial class PolyLing
             _lastPreviewRect = rect;
         }
 
+        // ================================================================
+        // ★★★ 重要: この meshContext 取得は全ツール共通のプレビュー入口 ★★★
+        // 通常は FirstSelectedMeshContext（ActiveCategory準拠）を使用する。
+        // ただし SkinWeightPaintTool 有効時は、ボーンをクリックすると
+        // ActiveCategory=Bone になり FirstSelectedMeshContext がボーンの
+        // MeshContext を返してしまう。その場合は描画メッシュ専用の
+        // FirstSelectedDrawableMeshContext にフォールバックして
+        // 描画メッシュ参照を維持する。
+        // 他のツールに影響しないよう、条件は厳密に限定すること。
+        // このフォールバックを削除するとウェイトペイント中に
+        // ボーンを選択した瞬間プレビューが消える。
+        // ================================================================
         var meshContext = _model.FirstSelectedMeshContext;
+        if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
+            meshContext = _model.FirstSelectedDrawableMeshContext;
+
         if (meshContext == null || _preview == null)
         {
             UnityEditor_Handles.BeginGUI();
@@ -176,6 +191,11 @@ public partial class PolyLing
 
                     // 複数選択対応: 選択メッシュは明るく表示
                     bool isSelected = (_model?.SelectedMeshIndices.Contains(i) ?? false) || (i == _selectedIndex);
+
+                    // ウェイト可視化中: 非選択メッシュは描画しない（ヒートマップを見やすく）
+                    if (Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive && !isSelected)
+                        continue;
+
                     DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f, i);
                 }
             }
@@ -650,6 +670,26 @@ public partial class PolyLing
         }
 
         int subMeshCount = mesh.subMeshCount;
+
+        // ウェイト可視化モード: 描画直前に頂点カラーを計算・設定
+        if (Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive &&
+            meshContext != null && _model != null &&
+            _model.SelectedMeshIndices.Contains(meshIndex >= 0 ? meshIndex : 0))
+        {
+            Material visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
+            if (visMat != null)
+            {
+                // 毎フレーム頂点カラーを再計算（SyncMeshのmesh.Clear()に影響されない）
+                int targetBone = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
+                Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
+                    mesh, meshContext.MeshObject, targetBone);
+
+                for (int i = 0; i < subMeshCount; i++)
+                    _preview.DrawMesh(mesh, displayMatrix, visMat, i);
+                return;
+            }
+        }
+
         Material defaultMat = GetPreviewMaterial();
 
         for (int i = 0; i < subMeshCount; i++)

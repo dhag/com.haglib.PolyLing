@@ -135,6 +135,18 @@ namespace Poly_Ling.Core
         /// </param>
         public void ProcessMouseUpdate(bool cpuOnly = false)
         {
+            // ホバー抑止モード（ブラシ系ツール等）
+            if (SuppressHover)
+            {
+                bool hadHover = _hoveredVertexIndex >= 0 || _hoveredLineIndex >= 0 || _hoveredFaceIndex >= 0;
+                _hoveredVertexIndex = -1;
+                _hoveredLineIndex = -1;
+                _hoveredFaceIndex = -1;
+                if (hadHover && !cpuOnly)
+                    _bufferManager.ClearHover();
+                return;
+            }
+
             // ヒットテスト入力設定
             _bufferManager.SetHitTestInput(_mousePosition, _hitRadius, _viewport);
 

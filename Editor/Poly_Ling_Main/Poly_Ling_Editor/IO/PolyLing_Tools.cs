@@ -339,6 +339,13 @@ public partial class PolyLing : EditorWindow
         ctx.EnterTransformDragging = () => _unifiedAdapter?.EnterTransformDragging();
         ctx.ExitTransformDragging = () => _unifiedAdapter?.ExitTransformDragging();
 
+        // ホバー抑止制御
+        ctx.SetSuppressHover = (suppress) =>
+        {
+            if (_unifiedAdapter?.UnifiedSystem != null)
+                _unifiedAdapter.UnifiedSystem.SuppressHover = suppress;
+        };
+
         // マルチマテリアル対応
         ctx.CurrentMaterialIndex = meshContext?.CurrentMaterialIndex ?? 0;
         ctx.Materials = meshContext?.Materials;

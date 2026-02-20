@@ -100,8 +100,8 @@ public partial class PolyLing
             return;
         }
 
-        // 頂点編集モードでなければ終了
-        if (!_vertexEditMode)
+        // 頂点編集モードでなければ終了（ブラシ系ツールは例外）
+        if (!_vertexEditMode && !(_currentTool is Poly_Ling.Tools.SkinWeightPaintTool))
             return;
 
         var meshObject = meshContext.MeshObject;
