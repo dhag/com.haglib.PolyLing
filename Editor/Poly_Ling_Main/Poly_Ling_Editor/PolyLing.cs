@@ -296,6 +296,11 @@ public partial class PolyLing : EditorWindow
         get => _undoController?.EditorState?.ShowUnselectedBones ?? false;
         set { if (_undoController?.EditorState != null) _undoController.EditorState.ShowUnselectedBones = value; }
     }
+    private bool _boneDisplayAlongY
+    {
+        get => _undoController?.EditorState?.BoneDisplayAlongY ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.BoneDisplayAlongY = value; }
+    }
     private bool _showFocusPoint
     {
         get => _undoController?.EditorState?.ShowFocusPoint ?? false;

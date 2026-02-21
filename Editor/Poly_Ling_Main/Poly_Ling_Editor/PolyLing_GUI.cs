@@ -103,6 +103,7 @@ public partial class PolyLing
                 EditorGUI.indentLevel++;
                 EditorGUI.BeginDisabledGroup(!newShowBones);
                 bool newShowUnselectedBones = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedBones);
+                bool newBoneDisplayAlongY = EditorGUILayout.Toggle(L.Get("BoneAlongY"), _boneDisplayAlongY);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
 
@@ -117,7 +118,8 @@ public partial class PolyLing
                         newShowUnselectedVertices != _showUnselectedVertices ||
                         newShowUnselectedWireframe != _showUnselectedWireframe ||
                         newShowBones != _showBones ||
-                        newShowUnselectedBones != _showUnselectedBones;
+                        newShowUnselectedBones != _showUnselectedBones ||
+                        newBoneDisplayAlongY != _boneDisplayAlongY;
 
                     if (hasDisplayChange && _undoController != null)
                     {
@@ -134,6 +136,7 @@ public partial class PolyLing
                     _showUnselectedWireframe = newShowUnselectedWireframe;
                     _showBones = newShowBones;
                     _showUnselectedBones = newShowUnselectedBones;
+                    _boneDisplayAlongY = newBoneDisplayAlongY;
 
                     if (_undoController != null)
                     {

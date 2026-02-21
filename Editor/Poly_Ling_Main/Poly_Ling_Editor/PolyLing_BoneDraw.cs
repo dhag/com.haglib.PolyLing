@@ -73,6 +73,10 @@ public partial class PolyLing
             if (!ExtractRotation(ctx.WorldMatrix, out Vector3 bonePos, out Quaternion boneRot))
                 continue;
 
+            // ボーン形状をY軸方向に表示（形状はX軸方向に定義されているため、Z軸-90度回転で変換）
+            if (_boneDisplayAlongY)
+                boneRot *= Quaternion.Euler(0f, 0f, -90f);
+
             DrawSingleBone(previewRect, camPos, lookAt, bonePos, boneRot, wireColor);
 
             // デバッグ: WorldMatrixのローカル軸を線で描画

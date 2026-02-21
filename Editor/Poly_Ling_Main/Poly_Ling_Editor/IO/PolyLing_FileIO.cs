@@ -57,6 +57,7 @@ public partial class PolyLing
         // ボーン表示設定
         editorStateDTO.showBones = _showBones;
         editorStateDTO.showUnselectedBones = _showUnselectedBones;
+        editorStateDTO.boneDisplayAlongY = _boneDisplayAlongY;
 
         // ModelSerializer.FromModelContext を使用してモデル全体をエクスポート
         // これにより Materials も正しく保存される
@@ -163,6 +164,7 @@ public partial class PolyLing
                 // ボーン表示設定を復元
                 _undoController.EditorState.ShowBones = state.showBones;
                 _undoController.EditorState.ShowUnselectedBones = state.showUnselectedBones;
+                _undoController.EditorState.BoneDisplayAlongY = state.boneDisplayAlongY;
             }
 
             // 選択メッシュを復元（v2.0: カテゴリ別対応）

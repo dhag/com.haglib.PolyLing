@@ -3,15 +3,14 @@
 //
 // 処理概要:
 //   1. MeshType.Meshの各MeshContextに対応するMeshType.Boneを作成
-//      - 元のワールド位置からローカル位置を再計算（Rotation=0, Scale=1前提）
-//      - localPos = worldPos - parentWorldPos
+//      - 元のMeshContextのローカルトランスフォーム（Position/Rotation/Scale）をそのまま引き継ぐ
 //   2. トップメッシュをルートボーンとする
 //   3. 頂点を元のワールド行列（Scale/Rotation込み）でワールド空間に変換
 //   4. BindPose = ComputeWorldAndBindPoses()で一括計算
 //   5. BoneWeightは各頂点が対応ボーン100%（MeshContextListインデックス）
 //
 // PMXインポートと同じ構造:
-//   - ボーン: Position=ローカル位置, Rotation=0, Scale=1
+//   - ボーン: 元のMeshContextのPosition/Rotation/Scaleを引き継ぐ
 //   - 頂点: ワールド空間
 //   - BindPose: ワールド行列の逆行列
 
@@ -52,6 +51,17 @@ namespace Poly_Ling.Tools.Panels
             ["ConvertSuccess"] = new() { ["en"] = "Conversion completed: {0} bones created", ["ja"] = "変換完了: {0}個のボーンを作成" },
             ["Preview"] = new() { ["en"] = "Preview", ["ja"] = "プレビュー" },
             ["BoneHierarchy"] = new() { ["en"] = "Bone Hierarchy", ["ja"] = "ボーン階層" },
+            ["BoneAxisSettings"] = new() { ["en"] = "Bone Axis Settings", ["ja"] = "ボーン軸設定" },
+            ["SwapAxisRotated"] = new()
+            {
+                ["en"] = "Rotated bones: Swap to PMX axis (Y→X)",
+                ["ja"] = "回転ありボーン: PMX軸に入替 (Y→X)"
+            },
+            ["SetAxisIdentity"] = new()
+            {
+                ["en"] = "Identity bones: Set X=Up, Y=Side (PMX style)",
+                ["ja"] = "回転なしボーン: X軸上向き・Y軸横向きに設定"
+            },
         };
 
         private static string T(string key) => L.GetFrom(_localize, key);
@@ -63,6 +73,8 @@ namespace Poly_Ling.Tools.Panels
 
         private Vector2 _scrollPosition;
         private bool _foldPreview = true;
+        private bool _swapAxisForRotatedBones = false;
+        private bool _setAxisForIdentityBones = false;
 
         // ================================================================
         // Open
@@ -135,10 +147,17 @@ namespace Poly_Ling.Tools.Panels
 
             EditorGUILayout.Space(15);
 
+            // === ボーン軸設定 ===
+            EditorGUILayout.LabelField(T("BoneAxisSettings"), EditorStyles.boldLabel);
+            _swapAxisForRotatedBones = EditorGUILayout.ToggleLeft(T("SwapAxisRotated"), _swapAxisForRotatedBones);
+            _setAxisForIdentityBones = EditorGUILayout.ToggleLeft(T("SetAxisIdentity"), _setAxisForIdentityBones);
+
+            EditorGUILayout.Space(10);
+
             EditorGUI.BeginDisabledGroup(hasBones);
             if (GUILayout.Button(T("Convert"), GUILayout.Height(30)))
             {
-                ExecuteConversion(model, meshEntries);
+                ExecuteConversion(model, meshEntries, _swapAxisForRotatedBones, _setAxisForIdentityBones);
             }
             EditorGUI.EndDisabledGroup();
 
@@ -190,7 +209,8 @@ namespace Poly_Ling.Tools.Panels
         // 変換実行
         // ================================================================
 
-        private void ExecuteConversion(ModelContext model, List<MeshEntry> meshEntries)
+        private void ExecuteConversion(ModelContext model, List<MeshEntry> meshEntries,
+            bool swapAxisForRotated, bool setAxisForIdentity)
         {
             int boneCount = meshEntries.Count;
 
@@ -211,17 +231,8 @@ namespace Poly_Ling.Tools.Panels
             }
 
             // --- Phase 1: ボーンMeshContextを作成 ---
-            // ワールド位置から新しいローカル位置を計算
-            // Rotation=0, Scale=1なので localPos = worldPos - parentWorldPos
+            // 元のMeshContextのローカルトランスフォーム（Position/Rotation/Scale）をそのまま引き継ぐ
             var boneContexts = new List<MeshContext>(boneCount);
-
-            // 各メッシュのワールド位置を取得
-            var worldPositions = new Vector3[meshEntries.Count];
-            for (int i = 0; i < meshEntries.Count; i++)
-            {
-                int idx = meshEntries[i].Index;
-                worldPositions[i] = savedWorldMatrices[idx].GetColumn(3); // 平行移動成分
-            }
 
             for (int i = 0; i < meshEntries.Count; i++)
             {
@@ -240,22 +251,12 @@ namespace Poly_Ling.Tools.Panels
                     parentBoneNum = pbn;
                 }
 
-                // ローカル位置 = ワールド位置 - 親ワールド位置
-                Vector3 localPos;
-                if (parentBoneNum >= 0)
-                {
-                    localPos = worldPositions[i] - worldPositions[parentBoneNum];
-                }
-                else
-                {
-                    localPos = worldPositions[i];
-                }
-
+                // 元のローカルトランスフォームをそのまま使用
                 var boneBt = new BoneTransform
                 {
-                    Position = localPos,
-                    Rotation = Vector3.zero,
-                    Scale = Vector3.one,
+                    Position = srcCtx.BoneTransform.Position,
+                    Rotation = srcCtx.BoneTransform.Rotation,
+                    Scale = srcCtx.BoneTransform.Scale,
                     UseLocalTransform = true
                 };
                 boneMeshObject.BoneTransform = boneBt;
@@ -273,6 +274,93 @@ namespace Poly_Ling.Tools.Panels
                 boneCtx.HierarchyParentIndex = parentBoneNum;
 
                 boneContexts.Add(boneCtx);
+            }
+
+            // --- Phase 1.5: ボーン軸の調整 ---
+            if (swapAxisForRotated || setAxisForIdentity)
+            {
+                int n = boneContexts.Count;
+
+                // 1. 変更前のワールド位置を保存
+                var savedWorldPos = new Vector3[n];
+                var worldMats = new Matrix4x4[n];
+                var computed = new bool[n];
+
+                for (int pass = 0; pass < n; pass++)
+                {
+                    bool anyAdded = false;
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (computed[i]) continue;
+                        var bt = boneContexts[i].BoneTransform;
+                        int parentIdx = boneContexts[i].HierarchyParentIndex;
+
+                        Matrix4x4 parentWorld;
+                        if (parentIdx < 0)
+                            parentWorld = Matrix4x4.identity;
+                        else if (computed[parentIdx])
+                            parentWorld = worldMats[parentIdx];
+                        else
+                            continue;
+
+                        worldMats[i] = parentWorld * Matrix4x4.TRS(bt.Position, Quaternion.Euler(bt.Rotation), bt.Scale);
+                        savedWorldPos[i] = new Vector3(worldMats[i].m03, worldMats[i].m13, worldMats[i].m23);
+                        computed[i] = true;
+                        anyAdded = true;
+                    }
+                    if (!anyAdded) break;
+                }
+
+                // 2. 回転を変更
+                Quaternion swapYtoX = Quaternion.Euler(0f, 0f, 90f);
+                for (int i = 0; i < n; i++)
+                {
+                    var bt = boneContexts[i].BoneTransform;
+                    if (bt == null) continue;
+
+                    bool isIdentity = bt.Rotation == Vector3.zero;
+
+                    if (!isIdentity && swapAxisForRotated)
+                    {
+                        Quaternion original = Quaternion.Euler(bt.Rotation);
+                        bt.Rotation = (original * swapYtoX).eulerAngles;
+                    }
+                    else if (isIdentity && setAxisForIdentity)
+                    {
+                        bt.Rotation = new Vector3(0f, 0f, 90f);
+                    }
+                }
+
+                // 3. Positionを再計算（各ボーンが元のワールド位置を維持するように）
+                computed = new bool[n];
+                var newWorldMats = new Matrix4x4[n];
+
+                for (int pass = 0; pass < n; pass++)
+                {
+                    bool anyAdded = false;
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (computed[i]) continue;
+                        var bt = boneContexts[i].BoneTransform;
+                        int parentIdx = boneContexts[i].HierarchyParentIndex;
+
+                        Matrix4x4 parentWorld;
+                        if (parentIdx < 0)
+                            parentWorld = Matrix4x4.identity;
+                        else if (computed[parentIdx])
+                            parentWorld = newWorldMats[parentIdx];
+                        else
+                            continue;
+
+                        // 親の新ワールド行列の逆で元のワールド位置を逆変換 → 新しいローカル位置
+                        bt.Position = parentWorld.inverse.MultiplyPoint3x4(savedWorldPos[i]);
+
+                        newWorldMats[i] = parentWorld * Matrix4x4.TRS(bt.Position, Quaternion.Euler(bt.Rotation), bt.Scale);
+                        computed[i] = true;
+                        anyAdded = true;
+                    }
+                    if (!anyAdded) break;
+                }
             }
 
             // --- Phase 2: リスト再構築 ---

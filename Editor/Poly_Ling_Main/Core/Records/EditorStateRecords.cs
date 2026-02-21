@@ -34,6 +34,7 @@ namespace Poly_Ling.UndoSystem
         public bool BackfaceCullingEnabled = true;
         public bool ShowBones = true;                   // ボーン表示（デフォルトON）
         public bool ShowUnselectedBones = false;        // 非選択ボーンも表示（デフォルトOFF）
+        public bool BoneDisplayAlongY = false;          // ボーン形状をY軸方向に表示（デフォルトOFF）
         public bool ShowFocusPoint = false;              // カメラ注目点表示
         public bool ShowWorkPlaneGizmo = true;          // WorkPlaneギズモ表示
 
@@ -124,6 +125,7 @@ namespace Poly_Ling.UndoSystem
                 BackfaceCullingEnabled = BackfaceCullingEnabled,
                 ShowBones = ShowBones,
                 ShowUnselectedBones = ShowUnselectedBones,
+                BoneDisplayAlongY = BoneDisplayAlongY,
                 ShowFocusPoint = ShowFocusPoint,
                 ShowWorkPlaneGizmo = ShowWorkPlaneGizmo,
                 VertexEditMode = VertexEditMode,
@@ -174,6 +176,7 @@ namespace Poly_Ling.UndoSystem
             BackfaceCullingEnabled = snapshot.BackfaceCullingEnabled;
             ShowBones = snapshot.ShowBones;
             ShowUnselectedBones = snapshot.ShowUnselectedBones;
+            BoneDisplayAlongY = snapshot.BoneDisplayAlongY;
             ShowFocusPoint = snapshot.ShowFocusPoint;
             ShowWorkPlaneGizmo = snapshot.ShowWorkPlaneGizmo;
             VertexEditMode = snapshot.VertexEditMode;
@@ -234,6 +237,7 @@ namespace Poly_Ling.UndoSystem
         public bool BackfaceCullingEnabled;
         public bool ShowBones;
         public bool ShowUnselectedBones;
+        public bool BoneDisplayAlongY;
         public bool ShowFocusPoint;
         public bool ShowWorkPlaneGizmo;
         public string CurrentToolName;
@@ -291,6 +295,7 @@ namespace Poly_Ling.UndoSystem
                 BackfaceCullingEnabled != other.BackfaceCullingEnabled ||
                 ShowBones != other.ShowBones ||
                 ShowUnselectedBones != other.ShowUnselectedBones ||
+                BoneDisplayAlongY != other.BoneDisplayAlongY ||
                 ShowFocusPoint != other.ShowFocusPoint ||
                 ShowWorkPlaneGizmo != other.ShowWorkPlaneGizmo ||
                 VertexEditMode != other.VertexEditMode ||

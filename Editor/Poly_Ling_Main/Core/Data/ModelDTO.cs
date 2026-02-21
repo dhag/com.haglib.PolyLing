@@ -632,6 +632,9 @@ namespace Poly_Ling.Serialization
         /// <summary>非選択ボーンも表示</summary>
         public bool showUnselectedBones = false;
 
+        /// <summary>ボーン形状をY軸方向に表示</summary>
+        public bool boneDisplayAlongY = false;
+
         public static EditorStateDTO CreateDefault()
         {
             return new EditorStateDTO

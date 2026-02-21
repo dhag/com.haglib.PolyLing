@@ -181,6 +181,7 @@ namespace Poly_Ling.Localization
             // ============================================================
             ["ShowMesh"] = new() { ["en"] = "Mesh", ["ja"] = "メッシュ", ["hi"] = "めっしゅ" },
             ["ShowUnselected"] = new() { ["en"] = "Show Unselected", ["ja"] = "非選択も表示", ["hi"] = "ほかもみせる" },
+            ["BoneAlongY"] = new() { ["en"] = "Bone shape along Y", ["ja"] = "ボーン形状をY軸方向" },
             ["Wireframe"] = new() { ["en"] = "Wireframe", ["ja"] = "ワイヤーフレーム", ["hi"] = "わいやー" },
             ["ShowVertices"] = new() { ["en"] = "Show Vertices", ["ja"] = "頂点を表示", ["hi"] = "てんをみせる" },
             ["ShowVertexIndices"] = new() { ["en"] = "Show Vertex Indices", ["ja"] = "頂点インデックス表示" },
