@@ -395,13 +395,13 @@ namespace Poly_Ling.MQO
                 if (!face.IsSpecialFace || face.VertexCount != 4)
                     continue;
 
-                // UV属性とCOL属性が必要
+                // UV属性とCOL属性が両方必要
                 if (face.UVs == null || face.UVs.Length < 4)
                     continue;
                 if (face.VertexColors == null || face.VertexColors.Length < 4)
                     continue;
 
-                int vertexIndex = face.VertexIndices[0];
+                int vertexIndex = face.VertexIndices[0];//0-4のいずれも同じインデックスなので、どれか1つを使用して頂点を特定
 
                 // UV[3].yでミラーフラグを判定（0=実体、1=ミラー）
                 bool isMirror = face.UVs[3].y >= 0.5f;

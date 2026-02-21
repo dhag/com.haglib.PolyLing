@@ -85,6 +85,14 @@ namespace Poly_Ling.MQO
         [Tooltip("全てのオブジェクトを1つのメッシュに統合する")]
         public bool MergeObjects = false;
 
+        /// <summary>MQOファイルからボーンインデックスを読み込まない</summary>
+        [Tooltip("MQO特殊面からボーンインデックス情報を読み込まない")]
+        public bool SkipMqoBoneIndices = false;
+
+        /// <summary>MQOファイルからウェイトを読み込まない</summary>
+        [Tooltip("MQO特殊面からボーンウェイト情報を読み込まない")]
+        public bool SkipMqoBoneWeights = false;
+
         // ================================================================
         // 詳細設定
         // ================================================================
@@ -222,6 +230,8 @@ namespace Poly_Ling.MQO
                 SkipHiddenObjects = this.SkipHiddenObjects,
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 MergeObjects = this.MergeObjects,
+                SkipMqoBoneIndices = this.SkipMqoBoneIndices,
+                SkipMqoBoneWeights = this.SkipMqoBoneWeights,
                 NormalMode = this.NormalMode,
                 SmoothingAngle = this.SmoothingAngle,
                 BoneWeightCSVPath = this.BoneWeightCSVPath,
@@ -246,6 +256,8 @@ namespace Poly_Ling.MQO
                    SkipHiddenObjects != o.SkipHiddenObjects ||
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    MergeObjects != o.MergeObjects ||
+                   SkipMqoBoneIndices != o.SkipMqoBoneIndices ||
+                   SkipMqoBoneWeights != o.SkipMqoBoneWeights ||
                    NormalMode != o.NormalMode ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
                    BoneWeightCSVPath != o.BoneWeightCSVPath ||
@@ -269,6 +281,8 @@ namespace Poly_Ling.MQO
             SkipHiddenObjects = o.SkipHiddenObjects;
             SkipEmptyObjects = o.SkipEmptyObjects;
             MergeObjects = o.MergeObjects;
+            SkipMqoBoneIndices = o.SkipMqoBoneIndices;
+            SkipMqoBoneWeights = o.SkipMqoBoneWeights;
             NormalMode = o.NormalMode;
             SmoothingAngle = o.SmoothingAngle;
             BoneWeightCSVPath = o.BoneWeightCSVPath;

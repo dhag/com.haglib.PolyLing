@@ -1056,50 +1056,55 @@ namespace Poly_Ling.MQO
 
             // 四角形特殊面からボーンウェイトを抽出（VertexIdHelper使用）
             // 実体側ウェイト（UV[3].y == 0）
-            var boneWeightMap = VertexIdHelper.ExtractBoneWeightsFromSpecialFaces(mqoObj.Faces);
-            foreach (var kvp in boneWeightMap)
+            if (!settings.SkipMqoBoneIndices || !settings.SkipMqoBoneWeights)
             {
-                int vertIndex = kvp.Key;
-                var bw = kvp.Value;
-
-                if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
+                //辞書形式で取得（頂点インデックス → ボーンウェイト情報）
+                var boneWeightMap = VertexIdHelper.ExtractBoneWeightsFromSpecialFaces(mqoObj.Faces);
+                foreach (var kvp in boneWeightMap)
                 {
-                    var vertex = meshObject.Vertices[vertIndex];
-                    vertex.BoneWeight = new BoneWeight
+                    int vertIndex = kvp.Key;
+                    var bw = kvp.Value;
+
+                    if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
                     {
-                        boneIndex0 = bw.BoneIndex0,
-                        boneIndex1 = bw.BoneIndex1,
-                        boneIndex2 = bw.BoneIndex2,
-                        boneIndex3 = bw.BoneIndex3,
-                        weight0 = bw.Weight0,
-                        weight1 = bw.Weight1,
-                        weight2 = bw.Weight2,
-                        weight3 = bw.Weight3
-                    };
+                        //Debug.Log($"[MQOImporter] Applying bone weight from special face: vertexIndex={vertIndex}, boneIndices=({bw.BoneIndex0},{bw.BoneIndex1},{bw.BoneIndex2},{bw.BoneIndex3}), weights=({bw.Weight0},{bw.Weight1},{bw.Weight2},{bw.Weight3})");
+                        var vertex = meshObject.Vertices[vertIndex];
+                        vertex.BoneWeight = new BoneWeight
+                        {
+                            boneIndex0 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex0,
+                            boneIndex1 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex1,
+                            boneIndex2 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex2,
+                            boneIndex3 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex3,
+                            weight0 = settings.SkipMqoBoneWeights ? 0f : bw.Weight0,
+                            weight1 = settings.SkipMqoBoneWeights ? 0f : bw.Weight1,
+                            weight2 = settings.SkipMqoBoneWeights ? 0f : bw.Weight2,
+                            weight3 = settings.SkipMqoBoneWeights ? 0f : bw.Weight3
+                        };
+                    }
                 }
-            }
 
-            // ミラー側ウェイト（UV[3].y == 1）
-            var mirrorBoneWeightMap = VertexIdHelper.ExtractMirrorBoneWeightsFromSpecialFaces(mqoObj.Faces);
-            foreach (var kvp in mirrorBoneWeightMap)
-            {
-                int vertIndex = kvp.Key;
-                var bw = kvp.Value;
-
-                if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
+                // ミラー側ウェイト（UV[3].y == 1）
+                var mirrorBoneWeightMap = VertexIdHelper.ExtractMirrorBoneWeightsFromSpecialFaces(mqoObj.Faces);
+                foreach (var kvp in mirrorBoneWeightMap)
                 {
-                    var vertex = meshObject.Vertices[vertIndex];
-                    vertex.MirrorBoneWeight = new BoneWeight
+                    int vertIndex = kvp.Key;
+                    var bw = kvp.Value;
+
+                    if (vertIndex >= 0 && vertIndex < meshObject.Vertices.Count)
                     {
-                        boneIndex0 = bw.BoneIndex0,
-                        boneIndex1 = bw.BoneIndex1,
-                        boneIndex2 = bw.BoneIndex2,
-                        boneIndex3 = bw.BoneIndex3,
-                        weight0 = bw.Weight0,
-                        weight1 = bw.Weight1,
-                        weight2 = bw.Weight2,
-                        weight3 = bw.Weight3
-                    };
+                        var vertex = meshObject.Vertices[vertIndex];
+                        vertex.MirrorBoneWeight = new BoneWeight
+                        {
+                            boneIndex0 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex0,
+                            boneIndex1 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex1,
+                            boneIndex2 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex2,
+                            boneIndex3 = settings.SkipMqoBoneIndices ? 0 : bw.BoneIndex3,
+                            weight0 = settings.SkipMqoBoneWeights ? 0f : bw.Weight0,
+                            weight1 = settings.SkipMqoBoneWeights ? 0f : bw.Weight1,
+                            weight2 = settings.SkipMqoBoneWeights ? 0f : bw.Weight2,
+                            weight3 = settings.SkipMqoBoneWeights ? 0f : bw.Weight3
+                        };
+                    }
                 }
             }
 
@@ -1714,6 +1719,7 @@ namespace Poly_Ling.MQO
         /// </summary>
         private static void CalculateSmoothNormals(MeshObject meshObject, float smoothingAngle)
         {
+            //Debug.Log($"[MQOImporter normal] Smooth normals calculated (angle={smoothingAngle}°)");
             float cosThreshold = Mathf.Cos(smoothingAngle * Mathf.Deg2Rad);
 
             // 各面の法線を計算して保持
@@ -1721,16 +1727,22 @@ namespace Poly_Ling.MQO
             for (int fi = 0; fi < meshObject.FaceCount; fi++)
             {
                 var face = meshObject.Faces[fi];
+
                 if (face.VertexCount < 3)
                 {
                     faceNormals[fi] = Vector3.up;
                     continue;
                 }
 
+
                 Vector3 p0 = meshObject.Vertices[face.VertexIndices[0]].Position;
                 Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
                 Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
-                faceNormals[fi] = Vector3.Cross(p1 - p0, p2 - p0).normalized;
+                faceNormals[fi] = Vector3.Cross((p1 - p0).normalized, (p2 - p0).normalized).normalized;
+                if (faceNormals[fi].magnitude < 0.5)
+                {
+                    Debug.Log($"[MQOImporter] Normals calculated {p0}, {p1}, {p2}");
+                }
             }
 
             // 位置→(面インデックス, 頂点インデックス in 面, NormalSubIndex) のマッピング
@@ -1770,6 +1782,7 @@ namespace Poly_Ling.MQO
                 {
                     Vector3 baseFaceNormal = faceNormals[faceIdx];
                     Vector3 smoothedNormal = baseFaceNormal;
+                    //Debug.Log($"[MQOImporter] Smooth normals calculated (baseFaceNormal={smoothedNormal}°, positions={vertInFace})");
 
                     foreach (var (otherFaceIdx, _, _) in faceVerts)
                     {
@@ -1786,6 +1799,8 @@ namespace Poly_Ling.MQO
                     }
 
                     smoothedNormal = smoothedNormal.normalized;
+                    //Debug.Log($"[MQOImporter] Smooth normals calculated (normal={smoothedNormal}°, positions={vertInFace})");
+
 
                     // 頂点の法線を更新
                     int vertIdx = meshObject.Faces[faceIdx].VertexIndices[vertInFace];

@@ -62,6 +62,8 @@ namespace Poly_Ling.MQO
             ["SkipHiddenObjects"] = new() { ["en"] = "Skip Hidden Objects", ["ja"] = "非表示オブジェクトをスキップ" },
             ["SkipEmptyObjects"] = new() { ["en"] = "Skip Empty Objects", ["ja"] = "空オブジェクトをスキップ" },
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
+            ["SkipMqoBoneIndices"] = new() { ["en"] = "Skip Bone Indices from MQO", ["ja"] = "MQOからボーンインデックスを読込まない" },
+            ["SkipMqoBoneWeights"] = new() { ["en"] = "Skip Bone Weights from MQO", ["ja"] = "MQOからウェイトを読込まない" },
             ["Normals"] = new() { ["en"] = "Normals", ["ja"] = "法線" },
             ["NormalMode"] = new() { ["en"] = "Normal Mode", ["ja"] = "法線モード" },
             ["SmoothingAngle"] = new() { ["en"] = "Smoothing Angle", ["ja"] = "スムージング角度" },
@@ -337,6 +339,12 @@ namespace Poly_Ling.MQO
             _settings.SkipHiddenObjects = EditorGUILayout.Toggle(T("SkipHiddenObjects"), _settings.SkipHiddenObjects);
             _settings.SkipEmptyObjects = EditorGUILayout.Toggle(T("SkipEmptyObjects"), _settings.SkipEmptyObjects);
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
+            _settings.SkipMqoBoneIndices = EditorGUILayout.Toggle(
+                new GUIContent(T("SkipMqoBoneIndices"), "MQO特殊面からボーンインデックスを読み込まない"),
+                _settings.SkipMqoBoneIndices);
+            _settings.SkipMqoBoneWeights = EditorGUILayout.Toggle(
+                new GUIContent(T("SkipMqoBoneWeights"), "MQO特殊面からウェイトを読み込まない"),
+                _settings.SkipMqoBoneWeights);
 
             EditorGUILayout.Space(3);
 
