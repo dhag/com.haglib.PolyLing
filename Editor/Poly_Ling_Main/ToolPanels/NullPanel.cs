@@ -49,7 +49,7 @@ namespace Poly_Ling.Tools.Panels
         // ================================================================
 
         private Vector2 _scrollPos;
-        private bool _showInfo = true;
+        //private bool _showInfo = true;
 
         // ================================================================
         // Open

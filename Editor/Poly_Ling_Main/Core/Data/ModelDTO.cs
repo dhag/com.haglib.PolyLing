@@ -155,8 +155,8 @@ namespace Poly_Ling.Serialization
         public List<string> materialPathList = new List<string>();
 
         /// <summary>[廃止] 現在選択中のマテリアルインデックス</summary>
-        [System.Obsolete("ModelDTO.currentMaterialIndexを使用してください")]
-        public int currentMaterialIndex = 0;
+        //[System.Obsolete("ModelDTO.currentMaterialIndexを使用してください")]
+        //public int currentMaterialIndex = 0;
 
         // ================================================================
         // 階層情報

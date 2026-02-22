@@ -27,7 +27,7 @@ public partial class PolyLing
     // ホバー状態の保存（クリック時に使用）
     private Vector2 _lastHoverMousePos;
     private Poly_Ling.Rendering.GPUHitTestResult _lastHoverHitResult;
-    private bool _isHoverActive = false;  // プレビューエリア内でホバー中か
+    //private bool _isHoverActive = false;  // プレビューエリア内でホバー中か
     private int _lastHoverMeshIndex = -1;  // ホバー中の頂点が属するメッシュインデックス
 
     // ================================================================

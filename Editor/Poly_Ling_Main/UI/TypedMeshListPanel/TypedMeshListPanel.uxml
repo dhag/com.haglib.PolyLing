@@ -40,6 +40,9 @@
                     <ui:Button name="btn-indent" text="→" tooltip="階層を下げる" class="toolbar-button" />
                 </ui:VisualElement>
                 <ui:VisualElement class="toolbar-group">
+                    <ui:Button name="btn-show" text="👁" tooltip="選択を表示" class="toolbar-button" />
+                    <ui:Button name="btn-hide" text="−" tooltip="選択を非表示" class="toolbar-button" />
+                    <ui:VisualElement class="toolbar-spacer" />
                     <ui:Button name="btn-duplicate" text="D" tooltip="複製" class="toolbar-button" />
                     <ui:Button name="btn-delete" text="X" tooltip="削除" class="toolbar-button-danger" />
                 </ui:VisualElement>

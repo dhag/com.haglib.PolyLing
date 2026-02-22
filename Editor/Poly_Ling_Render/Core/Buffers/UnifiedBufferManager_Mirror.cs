@@ -22,7 +22,7 @@ namespace Poly_Ling.Core
         private Matrix4x4 _mirrorMatrix = Matrix4x4.identity;
 
         private int _mirrorVertexCount = 0;
-        private int _mirrorLineCount = 0;
+        //private int _mirrorLineCount = 0;
 
         /// <summary>ミラー有効</summary>
         public bool MirrorEnabled => _mirrorEnabled;

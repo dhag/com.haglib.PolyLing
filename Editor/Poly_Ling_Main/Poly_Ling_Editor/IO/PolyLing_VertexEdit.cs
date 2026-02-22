@@ -379,6 +379,22 @@ public partial class PolyLing
         }
         EditorGUILayout.EndHorizontal();
 
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button(L.Get("ExportModelCsv")))
+        {
+            ExportModelCsv();
+        }
+        if (GUILayout.Button(L.Get("ImportModelCsv")))
+        {
+            ImportModelCsv();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (GUILayout.Button(L.Get("MergeModelCsv")))
+        {
+            MergeModelCsv();
+        }
+
         EditorGUILayout.EndScrollView();
         EditorGUILayout.EndVertical();
     }

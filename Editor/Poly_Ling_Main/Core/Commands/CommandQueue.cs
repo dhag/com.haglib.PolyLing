@@ -95,7 +95,7 @@ namespace Poly_Ling.Commands
                     {
                         command.Execute();
                     }
-                    catch (Exception ex)
+                    catch 
                     {
                         //Debug.LogError($"[CommandQueue] Error executing '{command.Description}': {ex.Message}\n{ex.StackTrace}");
                     }

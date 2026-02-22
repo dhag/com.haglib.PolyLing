@@ -105,6 +105,7 @@ namespace Poly_Ling.UI
         private TabType _currentTab = TabType.Drawable;
         private List<TypedTreeAdapter> _selectedAdapters = new List<TypedTreeAdapter>();
         private bool _isSyncingFromExternal = false;
+        private bool _refreshScheduled = false;
 
         // モーフテストのプレビュー状態
         private bool _isMorphPreviewActive = false;
@@ -174,7 +175,7 @@ namespace Poly_Ling.UI
             BuildUI();
             SetupTreeView();
             RegisterButtonEvents();
-            RefreshAll();
+            RefreshAllImmediate();
         }
 
         // ================================================================
@@ -198,7 +199,7 @@ namespace Poly_Ling.UI
                 if (_toolContext.UndoController != null)
                     _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
 
-                RefreshAll();
+                RefreshAllImmediate();
             }
         }
 
@@ -212,7 +213,7 @@ namespace Poly_Ling.UI
                 _isSyncingFromExternal = true;
                 try
                 {
-                    RefreshTree();
+                    RefreshTreeImmediate();
                     SyncTreeViewSelection();
                     UpdateDetailPanel();
                     NotifyModelChanged();
@@ -410,7 +411,7 @@ namespace Poly_Ling.UI
             }
 
             _selectedAdapters.Clear();
-            RefreshAll();
+            RefreshAllImmediate();
             Log($"{tab} タブ");
         }
 
@@ -427,11 +428,24 @@ namespace Poly_Ling.UI
         {
             if (_treeView == null) return;
 
+            _treeView.fixedItemHeight = 20;
             _treeView.makeItem = MakeTreeItem;
             _treeView.bindItem = BindTreeItem;
             _treeView.selectionType = SelectionType.Multiple;
             _treeView.selectionChanged += OnSelectionChanged;
             _treeView.itemExpandedChanged += OnItemExpandedChanged;
+        }
+
+        /// <summary>
+        /// BindTreeItem の Q&lt;&gt;() 呼び出しを排除するためのキャッシュ
+        /// </summary>
+        private class TreeItemCache
+        {
+            public Label NameLabel;
+            public Label InfoLabel;
+            public Button VisBtn;
+            public Button LockBtn;
+            public Button SymBtn;
         }
 
         private VisualElement MakeTreeItem()
@@ -465,11 +479,24 @@ namespace Poly_Ling.UI
             attrContainer.style.flexDirection = FlexDirection.Row;
             attrContainer.style.flexShrink = 0;
 
-            attrContainer.Add(CreateAttributeButton("vis-btn", "👁", "可視性切り替え"));
-            attrContainer.Add(CreateAttributeButton("lock-btn", "🔒", "ロック切り替え"));
-            attrContainer.Add(CreateAttributeButton("sym-btn", "⇆", "対称切り替え"));
+            var visBtn = CreateAttributeButton("vis-btn", "👁", "可視性切り替え");
+            var lockBtn = CreateAttributeButton("lock-btn", "🔒", "ロック切り替え");
+            var symBtn = CreateAttributeButton("sym-btn", "⇆", "対称切り替え");
+            attrContainer.Add(visBtn);
+            attrContainer.Add(lockBtn);
+            attrContainer.Add(symBtn);
 
             container.Add(attrContainer);
+
+            // キャッシュを保存
+            container.userData = new TreeItemCache
+            {
+                NameLabel = nameLabel,
+                InfoLabel = infoLabel,
+                VisBtn = visBtn,
+                LockBtn = lockBtn,
+                SymBtn = symBtn
+            };
 
             return container;
         }
@@ -499,48 +526,58 @@ namespace Poly_Ling.UI
             var adapter = _treeView.GetItemDataForIndex<TypedTreeAdapter>(index);
             if (adapter == null) return;
 
-            var nameLabel = element.Q<Label>("name");
-            if (nameLabel != null)
-                nameLabel.text = adapter.DisplayName;
+            var cache = element.userData as TreeItemCache;
+            if (cache == null)
+            {
+                // フォールバック（通常到達しない）
+                cache = new TreeItemCache
+                {
+                    NameLabel = element.Q<Label>("name"),
+                    InfoLabel = element.Q<Label>("info"),
+                    VisBtn = element.Q<Button>("vis-btn"),
+                    LockBtn = element.Q<Button>("lock-btn"),
+                    SymBtn = element.Q<Button>("sym-btn")
+                };
+                element.userData = cache;
+            }
 
-            var infoLabel = element.Q<Label>("info");
-            if (infoLabel != null)
+            if (cache.NameLabel != null)
+                cache.NameLabel.text = adapter.DisplayName;
+
+            if (cache.InfoLabel != null)
             {
                 bool showInfo = _showInfoToggle?.value ?? true;
                 if (_currentTab == TabType.Bone)
                 {
                     int boneIdx = Model?.TypedIndices.MasterToBoneIndex(adapter.MasterIndex) ?? -1;
-                    infoLabel.text = showInfo ? $"Bone:{boneIdx}" : "";
+                    cache.InfoLabel.text = showInfo ? $"Bone:{boneIdx}" : "";
                 }
                 else
                 {
-                    infoLabel.text = showInfo ? adapter.GetInfoString() : "";
+                    cache.InfoLabel.text = showInfo ? adapter.GetInfoString() : "";
                 }
-                infoLabel.style.display = showInfo ? DisplayStyle.Flex : DisplayStyle.None;
+                cache.InfoLabel.style.display = showInfo ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             // 属性ボタン
-            var visBtn = element.Q<Button>("vis-btn");
-            if (visBtn != null)
+            if (cache.VisBtn != null)
             {
-                UpdateAttributeButton(visBtn, adapter.IsVisible, "👁", "−");
-                SetupAttributeButtonCallback(visBtn, adapter, OnVisibilityToggle);
+                UpdateAttributeButton(cache.VisBtn, adapter.IsVisible, "👁", "−");
+                cache.VisBtn.clickable = new Clickable(() => OnVisibilityToggle(adapter));
             }
 
-            var lockBtn = element.Q<Button>("lock-btn");
-            if (lockBtn != null)
+            if (cache.LockBtn != null)
             {
-                UpdateAttributeButton(lockBtn, adapter.IsLocked, "🔒", "🔓");
-                SetupAttributeButtonCallback(lockBtn, adapter, OnLockToggle);
+                UpdateAttributeButton(cache.LockBtn, adapter.IsLocked, "🔒", "🔓");
+                cache.LockBtn.clickable = new Clickable(() => OnLockToggle(adapter));
             }
 
-            var symBtn = element.Q<Button>("sym-btn");
-            if (symBtn != null)
+            if (cache.SymBtn != null)
             {
                 bool hasMirror = adapter.MirrorType > 0 || adapter.IsBakedMirror;
-                UpdateAttributeButton(symBtn, hasMirror, adapter.GetMirrorTypeDisplay(), "");
-                SetupAttributeButtonCallback(symBtn, adapter, OnSymmetryToggle);
-                symBtn.style.display = _currentTab == TabType.Drawable ? DisplayStyle.Flex : DisplayStyle.None;
+                UpdateAttributeButton(cache.SymBtn, hasMirror, adapter.GetMirrorTypeDisplay(), "");
+                cache.SymBtn.clickable = new Clickable(() => OnSymmetryToggle(adapter));
+                cache.SymBtn.style.display = _currentTab == TabType.Drawable ? DisplayStyle.Flex : DisplayStyle.None;
             }
         }
 
@@ -548,11 +585,6 @@ namespace Poly_Ling.UI
         {
             btn.text = isActive ? activeIcon : inactiveIcon;
             btn.style.opacity = isActive ? 1f : 0.3f;
-        }
-
-        private void SetupAttributeButtonCallback(Button btn, TypedTreeAdapter adapter, Action<TypedTreeAdapter> callback)
-        {
-            btn.clickable = new Clickable(() => callback(adapter));
         }
 
         // ================================================================
@@ -570,6 +602,28 @@ namespace Poly_Ling.UI
                 new MeshAttributeChange { Index = index, IsVisible = newValue }
             });
             Log($"可視性: {adapter.DisplayName} → {(newValue ? "表示" : "非表示")}");
+        }
+
+        /// <summary>
+        /// 選択中のアイテムの可視性をまとめて設定
+        /// </summary>
+        private void SetSelectedVisibility(bool visible)
+        {
+            if (_selectedAdapters.Count == 0) return;
+
+            var changes = new List<MeshAttributeChange>();
+            foreach (var adapter in _selectedAdapters)
+            {
+                int idx = adapter.MasterIndex;
+                if (idx < 0) continue;
+                if (adapter.IsVisible == visible) continue; // 既に同じ状態ならスキップ
+                changes.Add(new MeshAttributeChange { Index = idx, IsVisible = visible });
+            }
+
+            if (changes.Count == 0) return;
+
+            _toolContext?.UpdateMeshAttributes?.Invoke(changes.ToArray());
+            Log($"一括{(visible ? "表示" : "非表示")}: {changes.Count}件");
         }
 
         private void OnLockToggle(TypedTreeAdapter adapter)
@@ -764,6 +818,8 @@ namespace Poly_Ling.UI
             root.Q<Button>("btn-indent")?.RegisterCallback<ClickEvent>(_ => IndentSelected());
             root.Q<Button>("btn-duplicate")?.RegisterCallback<ClickEvent>(_ => DuplicateSelected());
             root.Q<Button>("btn-delete")?.RegisterCallback<ClickEvent>(_ => DeleteSelected());
+            root.Q<Button>("btn-show")?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(true));
+            root.Q<Button>("btn-hide")?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(false));
             root.Q<Button>("btn-to-top")?.RegisterCallback<ClickEvent>(_ => MoveToTop());
             root.Q<Button>("btn-to-bottom")?.RegisterCallback<ClickEvent>(_ => MoveToBottom());
         }
@@ -979,9 +1035,43 @@ namespace Poly_Ling.UI
             UpdateDetailPanel();
         }
 
+        /// <summary>
+        /// 即時リフレッシュ（初期化・タブ切替・D&D完了後など遅延不可の場面用）
+        /// </summary>
+        private void RefreshAllImmediate()
+        {
+            RefreshTreeImmediate();
+            UpdateHeader();
+            UpdateDetailPanel();
+        }
+
         private void RefreshTree()
         {
             if (_treeView == null || _treeRoot == null) return;
+
+            if (_refreshScheduled) return;
+            _refreshScheduled = true;
+
+            EditorApplication.delayCall += () =>
+            {
+                _refreshScheduled = false;
+                if (_treeView == null || _treeRoot == null) return;
+
+                var treeData = TreeViewHelper.BuildTreeData(_treeRoot.RootItems);
+                _treeView.SetRootItems(treeData);
+                _treeView.Rebuild();
+
+                RestoreExpandedStates(_treeRoot.RootItems);
+            };
+        }
+
+        /// <summary>
+        /// 即時リフレッシュ（タブ切り替え等、遅延不可の場面用）
+        /// </summary>
+        private void RefreshTreeImmediate()
+        {
+            if (_treeView == null || _treeRoot == null) return;
+            _refreshScheduled = false;
 
             var treeData = TreeViewHelper.BuildTreeData(_treeRoot.RootItems);
             _treeView.SetRootItems(treeData);
@@ -992,12 +1082,11 @@ namespace Poly_Ling.UI
 
         private void RestoreExpandedStates(List<TypedTreeAdapter> items)
         {
+            // 展開済みアイテムのみ処理（CollapseItemはデフォルト状態なので不要）
             foreach (var item in items)
             {
                 if (item.IsExpanded)
                     _treeView.ExpandItem(item.Id, false);
-                else
-                    _treeView.CollapseItem(item.Id, false);
 
                 if (item.HasChildren)
                     RestoreExpandedStates(item.Children);

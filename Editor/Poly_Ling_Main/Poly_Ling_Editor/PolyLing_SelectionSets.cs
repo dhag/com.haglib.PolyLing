@@ -693,7 +693,7 @@ public partial class PolyLing
                 string filePath = Path.Combine(folderPath, fileName);
 
                 // 種別とデータを決定
-                CSVDataType dataType;
+                //CSVDataType dataType;
                 List<string> lines = new List<string>();
 
                 // ヘッダー
@@ -706,7 +706,7 @@ public partial class PolyLing
                     
                     if (hasVertexIds)
                     {
-                        dataType = CSVDataType.VertexId;
+                        //dataType = CSVDataType.VertexId;
                         lines.Add("# vertexId");
                         foreach (int vIdx in set.Vertices)
                         {
@@ -716,7 +716,7 @@ public partial class PolyLing
                     }
                     else
                     {
-                        dataType = CSVDataType.Vertex;
+                        //dataType = CSVDataType.Vertex;
                         lines.Add("# vertex");
                         foreach (int vIdx in set.Vertices)
                         {
@@ -726,7 +726,7 @@ public partial class PolyLing
                 }
                 else if (set.Edges.Count > 0)
                 {
-                    dataType = CSVDataType.Edge;
+                    //dataType = CSVDataType.Edge;
                     lines.Add("# edge");
                     foreach (var edge in set.Edges)
                     {
@@ -735,7 +735,7 @@ public partial class PolyLing
                 }
                 else if (set.Faces.Count > 0)
                 {
-                    dataType = CSVDataType.Face;
+                    //dataType = CSVDataType.Face;
                     lines.Add("# face");
                     foreach (int fIdx in set.Faces)
                     {
@@ -744,7 +744,7 @@ public partial class PolyLing
                 }
                 else if (set.Lines.Count > 0)
                 {
-                    dataType = CSVDataType.Line;
+                    //dataType = CSVDataType.Line;
                     lines.Add("# line");
                     foreach (int lIdx in set.Lines)
                     {

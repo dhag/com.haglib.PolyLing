@@ -650,7 +650,9 @@ namespace Poly_Ling.PMX
                 if (map.flipZ)
                     z = new Vector3(-z.x, -z.y, z.z);
                 else
-                    z = z;
+                {
+                    //z = z;
+                }
 
                 Debug.Log($"Bone: {bone.Name}");
                 Debug.Log($"  LocalX: ({x.x:F4}, {x.y:F4}, {x.z:F4})");

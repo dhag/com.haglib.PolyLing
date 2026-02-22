@@ -109,6 +109,12 @@ namespace Poly_Ling.MQO
             ["ImportBonesFromArmature"] = new() { ["en"] = "Import Bones from __Armature__", ["ja"] = "__Armature__からボーンをインポート" },
             ["ConvertToTPose"] = new() { ["en"] = "Convert to T-Pose", ["ja"] = "Tポーズに変換" },
             
+            // ボーン/ウェイト設定
+            ["BoneWeightSettings"] = new() { ["en"] = "Bone / Weight", ["ja"] = "ボーン/ウェイト" },
+            ["MqoSpecialFaces"] = new() { ["en"] = "A: MQO Special Faces", ["ja"] = "A: MQO特殊面" },
+            ["ArmatureBones"] = new() { ["en"] = "B: __Armature__", ["ja"] = "B: __Armature__" },
+            ["ExternalCSV"] = new() { ["en"] = "C: External CSV", ["ja"] = "C: 外部CSV" },
+            
             // デバッグ設定
             ["DebugSettings"] = new() { ["en"] = "Debug Settings", ["ja"] = "デバッグ設定" },
             ["DebugVertexInfo"] = new() { ["en"] = "Output Vertex Debug Info", ["ja"] = "頂点デバッグ情報を出力" },
@@ -339,12 +345,6 @@ namespace Poly_Ling.MQO
             _settings.SkipHiddenObjects = EditorGUILayout.Toggle(T("SkipHiddenObjects"), _settings.SkipHiddenObjects);
             _settings.SkipEmptyObjects = EditorGUILayout.Toggle(T("SkipEmptyObjects"), _settings.SkipEmptyObjects);
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
-            _settings.SkipMqoBoneIndices = EditorGUILayout.Toggle(
-                new GUIContent(T("SkipMqoBoneIndices"), "MQO特殊面からボーンインデックスを読み込まない"),
-                _settings.SkipMqoBoneIndices);
-            _settings.SkipMqoBoneWeights = EditorGUILayout.Toggle(
-                new GUIContent(T("SkipMqoBoneWeights"), "MQO特殊面からウェイトを読み込まない"),
-                _settings.SkipMqoBoneWeights);
 
             EditorGUILayout.Space(3);
 
@@ -354,92 +354,6 @@ namespace Poly_Ling.MQO
             if (_settings.NormalMode == NormalMode.Smooth)
             {
                 _settings.SmoothingAngle = EditorGUILayout.Slider(T("SmoothingAngle"), _settings.SmoothingAngle, 0f, 180f);//スライダーの上限下限
-            }
-
-            EditorGUILayout.Space(3);
-
-            // ボーンウェイトCSV（ドラッグ&ドロップ対応）
-            EditorGUILayout.LabelField(T("BoneWeightCSV"), EditorStyles.miniLabel);
-
-            // ドラッグ&ドロップエリア
-            Rect dropAreaWeight = EditorGUILayout.BeginHorizontal();
-            {
-                // ファイル名表示（ドロップエリアとしても機能）
-                string displayPath = string.IsNullOrEmpty(_settings.BoneWeightCSVPath)
-                    ? T("CSVNotSet")
-                    : Path.GetFileName(_settings.BoneWeightCSVPath);
-                EditorGUILayout.LabelField(displayPath, EditorStyles.textField);
-
-                // 参照ボタン
-                if (GUILayout.Button(T("Browse"), GUILayout.Width(60)))
-                {
-                    string path = EditorUtility.OpenFilePanel(
-                        T("BoneWeightCSV"),
-                        string.IsNullOrEmpty(_settings.BoneWeightCSVPath) ? "" : Path.GetDirectoryName(_settings.BoneWeightCSVPath),
-                        "csv");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        _settings.BoneWeightCSVPath = path;
-                    }
-                }
-
-                // クリアボタン
-                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(_settings.BoneWeightCSVPath));
-                if (GUILayout.Button(T("Clear"), GUILayout.Width(50)))
-                {
-                    _settings.BoneWeightCSVPath = "";
-                }
-                EditorGUI.EndDisabledGroup();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            // ドラッグ&ドロップ処理
-            HandleCSVDragAndDrop(dropAreaWeight, path => _settings.BoneWeightCSVPath = path);
-
-            // ボーンCSV（PmxBone形式、ドラッグ&ドロップ対応）
-            EditorGUILayout.LabelField(T("BoneCSV"), EditorStyles.miniLabel);
-
-            Rect dropAreaBone = EditorGUILayout.BeginHorizontal();
-            {
-                // ファイル名表示
-                string displayPath = string.IsNullOrEmpty(_settings.BoneCSVPath)
-                    ? T("CSVNotSet")
-                    : Path.GetFileName(_settings.BoneCSVPath);
-                EditorGUILayout.LabelField(displayPath, EditorStyles.textField);
-
-                // 参照ボタン
-                if (GUILayout.Button(T("Browse"), GUILayout.Width(60)))
-                {
-                    string path = EditorUtility.OpenFilePanel(
-                        T("BoneCSV"),
-                        string.IsNullOrEmpty(_settings.BoneCSVPath) ? "" : Path.GetDirectoryName(_settings.BoneCSVPath),
-                        "csv");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        _settings.BoneCSVPath = path;
-                    }
-                }
-
-                // クリアボタン
-                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(_settings.BoneCSVPath));
-                if (GUILayout.Button(T("Clear"), GUILayout.Width(50)))
-                {
-                    _settings.BoneCSVPath = "";
-                }
-                EditorGUI.EndDisabledGroup();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            // ドラッグ&ドロップ処理
-            HandleCSVDragAndDrop(dropAreaBone, path => _settings.BoneCSVPath = path);
-
-            // BoneScale設定（BoneCSVが指定されている場合のみ表示）
-            if (!string.IsNullOrEmpty(_settings.BoneCSVPath))
-            {
-                EditorGUILayout.Space(4);
-                _settings.BoneScale = EditorGUILayout.FloatField(
-                    new GUIContent("Bone Scale", "PMXボーン座標に適用するスケール（MQOメッシュとの座標系合わせ用、通常10.0）"),
-                    _settings.BoneScale);
             }
 
             EditorGUI.indentLevel--;
@@ -452,19 +366,116 @@ namespace Poly_Ling.MQO
                 new GUIContent(T("BakeMirror"), "ミラー属性を持つメッシュのミラー側を実体メッシュとして生成"),
                 _settings.BakeMirror);
             
+            // ================================================================
+            // ボーン/ウェイト設定
+            // ================================================================
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField(T("BoneWeightSettings"), EditorStyles.boldLabel);
+            
+            // --- A: MQO特殊面 ---
+            EditorGUILayout.LabelField(T("MqoSpecialFaces"), EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+            _settings.SkipMqoBoneIndices = EditorGUILayout.Toggle(
+                new GUIContent(T("SkipMqoBoneIndices"), "MQO特殊面からボーンインデックスを読み込まない"),
+                _settings.SkipMqoBoneIndices);
+            _settings.SkipMqoBoneWeights = EditorGUILayout.Toggle(
+                new GUIContent(T("SkipMqoBoneWeights"), "MQO特殊面からウェイトを読み込まない"),
+                _settings.SkipMqoBoneWeights);
+            EditorGUI.indentLevel--;
+            
+            EditorGUILayout.Space(3);
+            
+            // --- B: __Armature__ ---
+            EditorGUILayout.LabelField(T("ArmatureBones"), EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
             _settings.ImportBonesFromArmature = EditorGUILayout.Toggle(
                 new GUIContent(T("ImportBonesFromArmature"), "MQO内の__Armature__オブジェクト以下をボーン構造としてインポート"),
                 _settings.ImportBonesFromArmature);
-
-            // ボーンインポートが有効な場合のみTポーズ変換オプションを表示
             if (_settings.ImportBonesFromArmature)
             {
-                EditorGUI.indentLevel++;
                 _settings.ConvertToTPose = EditorGUILayout.Toggle(
                     new GUIContent(T("ConvertToTPose"), "腕ボーンを水平に回転させてTポーズに変換（スキニング頂点も変換）"),
                     _settings.ConvertToTPose);
-                EditorGUI.indentLevel--;
             }
+            EditorGUI.indentLevel--;
+            
+            EditorGUILayout.Space(3);
+            
+            // --- C: 外部CSV ---
+            EditorGUILayout.LabelField(T("ExternalCSV"), EditorStyles.miniLabel);
+            EditorGUI.indentLevel++;
+            
+            // ボーンウェイトCSV（ドラッグ&ドロップ対応）
+            EditorGUILayout.LabelField(T("BoneWeightCSV"), EditorStyles.miniLabel);
+            Rect dropAreaWeight = EditorGUILayout.BeginHorizontal();
+            {
+                string displayPath = string.IsNullOrEmpty(_settings.BoneWeightCSVPath)
+                    ? T("CSVNotSet")
+                    : Path.GetFileName(_settings.BoneWeightCSVPath);
+                EditorGUILayout.LabelField(displayPath, EditorStyles.textField);
+
+                if (GUILayout.Button(T("Browse"), GUILayout.Width(60)))
+                {
+                    string path = EditorUtility.OpenFilePanel(
+                        T("BoneWeightCSV"),
+                        string.IsNullOrEmpty(_settings.BoneWeightCSVPath) ? "" : Path.GetDirectoryName(_settings.BoneWeightCSVPath),
+                        "csv");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        _settings.BoneWeightCSVPath = path;
+                    }
+                }
+
+                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(_settings.BoneWeightCSVPath));
+                if (GUILayout.Button(T("Clear"), GUILayout.Width(50)))
+                {
+                    _settings.BoneWeightCSVPath = "";
+                }
+                EditorGUI.EndDisabledGroup();
+            }
+            EditorGUILayout.EndHorizontal();
+            HandleCSVDragAndDrop(dropAreaWeight, path => _settings.BoneWeightCSVPath = path);
+
+            // ボーンCSV（PmxBone形式、ドラッグ&ドロップ対応）
+            EditorGUILayout.LabelField(T("BoneCSV"), EditorStyles.miniLabel);
+            Rect dropAreaBone = EditorGUILayout.BeginHorizontal();
+            {
+                string displayPath = string.IsNullOrEmpty(_settings.BoneCSVPath)
+                    ? T("CSVNotSet")
+                    : Path.GetFileName(_settings.BoneCSVPath);
+                EditorGUILayout.LabelField(displayPath, EditorStyles.textField);
+
+                if (GUILayout.Button(T("Browse"), GUILayout.Width(60)))
+                {
+                    string path = EditorUtility.OpenFilePanel(
+                        T("BoneCSV"),
+                        string.IsNullOrEmpty(_settings.BoneCSVPath) ? "" : Path.GetDirectoryName(_settings.BoneCSVPath),
+                        "csv");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        _settings.BoneCSVPath = path;
+                    }
+                }
+
+                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(_settings.BoneCSVPath));
+                if (GUILayout.Button(T("Clear"), GUILayout.Width(50)))
+                {
+                    _settings.BoneCSVPath = "";
+                }
+                EditorGUI.EndDisabledGroup();
+            }
+            EditorGUILayout.EndHorizontal();
+            HandleCSVDragAndDrop(dropAreaBone, path => _settings.BoneCSVPath = path);
+
+            // BoneScale設定（BoneCSVが指定されている場合のみ表示）
+            if (!string.IsNullOrEmpty(_settings.BoneCSVPath))
+            {
+                EditorGUILayout.Space(4);
+                _settings.BoneScale = EditorGUILayout.FloatField(
+                    new GUIContent("Bone Scale", "PMXボーン座標に適用するスケール（MQOメッシュとの座標系合わせ用、通常10.0）"),
+                    _settings.BoneScale);
+            }
+            EditorGUI.indentLevel--;
             
             // ================================================================
             // デバッグ設定

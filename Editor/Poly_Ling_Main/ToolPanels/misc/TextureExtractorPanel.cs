@@ -328,7 +328,7 @@ namespace Poly_Ling.Tools
             var texPattern = new Regex(@"tex\s*\(\s*""([^""]+)""\s*\)", RegexOptions.IgnoreCase);
             var matches = texPattern.Matches(content);
 
-            string currentMaterial = "";
+            //string currentMaterial = "";
 
             // マテリアル名も取得
             var materialPattern = new Regex(@"""([^""]+)""\s*\{[^}]*?tex\s*\(\s*""([^""]+)""\s*\)", RegexOptions.Singleline);

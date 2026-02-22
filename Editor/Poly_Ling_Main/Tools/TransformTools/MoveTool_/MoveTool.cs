@@ -125,7 +125,7 @@ namespace Poly_Ling.Tools
             SelectedFace,
             SelectedLine
         }
-        private PendingHitType _pendingHitType = PendingHitType.None;
+        //private PendingHitType _pendingHitType = PendingHitType.None;
         private VertexPair _pendingEdgePair;
         private int _pendingFaceIndex = -1;
         private int _pendingLineIndex = -1;
@@ -239,7 +239,7 @@ namespace Poly_Ling.Tools
             if (totalAffectedCount > 0 || _hitVertexOnMouseDown >= 0)
             {
                 _state = MoveState.PendingAction;
-                _pendingHitType = PendingHitType.Selection;
+                //_pendingHitType = PendingHitType.Selection;
                 return false;  // イベントは消費しない（PolyLing_Inputの選択処理を妨げない）
             }
 
@@ -413,7 +413,7 @@ namespace Poly_Ling.Tools
             _multiMeshAffectedVertices.Clear();
 
             // Pending情報クリア
-            _pendingHitType = PendingHitType.None;
+            //_pendingHitType = PendingHitType.None;
             _pendingEdgePair = default;
             _pendingFaceIndex = -1;
             _pendingLineIndex = -1;

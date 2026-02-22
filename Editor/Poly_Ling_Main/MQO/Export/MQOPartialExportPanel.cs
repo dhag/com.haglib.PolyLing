@@ -38,7 +38,6 @@ namespace Poly_Ling.MQO
             // ラベル
             ["MQOFile"] = new() { ["en"] = "MQO File", ["ja"] = "MQOファイル" },
             ["Expanded"] = new() { ["en"] = "Model Expanded", ["ja"] = "モデル展開済み" },
-            ["Scale"] = new() { ["en"] = "Scale", ["ja"] = "スケール" },
             ["ExportScale"] = new() { ["en"] = "Export Scale", ["ja"] = "エクスポートスケール" },
             ["FlipZ"] = new() { ["en"] = "Flip Z", ["ja"] = "Z反転" },
             ["SkipBakedMirror"] = new() { ["en"] = "Skip Baked Mirror (flag only)", ["ja"] = "ベイクミラーをスキップ（フラグのみ）" },
@@ -91,8 +90,7 @@ namespace Poly_Ling.MQO
 
         // オプション
         // PMXは展開後の値しか得られない
-        private float _scale = 10f;
-        private float _exportScale = 0.85f;
+        private float _exportScale = 0.085f;
         private bool _flipZ = true;
         private bool _skipBakedMirror = true;
         private bool _skipNamedMirror = true;
@@ -244,7 +242,6 @@ namespace Poly_Ling.MQO
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                _scale = EditorGUILayout.FloatField(T("Scale"), _scale, GUILayout.Width(150));
                 _exportScale = EditorGUILayout.FloatField(T("ExportScale"), _exportScale, GUILayout.Width(200));
                 _flipZ = EditorGUILayout.ToggleLeft(T("FlipZ"), _flipZ, GUILayout.Width(80));
             }
@@ -677,7 +674,7 @@ namespace Poly_Ling.MQO
 
                         // 座標変換: Model → MQO
                         if (_flipZ) pos.z = -pos.z;
-                        pos *= _scale / _exportScale;
+                        pos /= _exportScale;
 
                         // MeshContextとMQODocument両方を更新
                         mqoVertex.Position = pos;

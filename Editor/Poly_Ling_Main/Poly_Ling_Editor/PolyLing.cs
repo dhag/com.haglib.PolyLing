@@ -329,8 +329,8 @@ public partial class PolyLing : EditorWindow
     private float _rightPaneWidth = 220f;
 
     // スプリッター
-    private bool _isDraggingLeftSplitter = false;
-    private bool _isDraggingRightSplitter = false;
+    //private bool _isDraggingLeftSplitter = false;
+    //private bool _isDraggingRightSplitter = false;
     private Rect _leftSplitterRect;
     private Rect _rightSplitterRect;
     private const float SplitterWidth = 6f;
@@ -375,7 +375,7 @@ public partial class PolyLing : EditorWindow
 
     // カメラドラッグ用
     private bool _isCameraDragging = false;
-    private bool _cameraRestoredByRecord = false; // MeshSelectionChangeRecord等からカメラ復元済みフラグ
+    //private bool _cameraRestoredByRecord = false; // MeshSelectionChangeRecord等からカメラ復元済みフラグ
     private float _cameraStartRotX, _cameraStartRotY, _cameraStartRotZ;
     private float _cameraStartDistance;
     private Vector3 _cameraStartTarget;
@@ -819,7 +819,7 @@ public partial class PolyLing : EditorWindow
         _autoSetDefaultMaterials = ctxForDefault.AutoSetDefaultMaterials;
 
         // カメラ復元フラグのリセット
-        _cameraRestoredByRecord = false;
+        //_cameraRestoredByRecord = false;
 
         // ツール復元
         var editorState = _undoController.EditorState;
@@ -1135,8 +1135,8 @@ public partial class PolyLing : EditorWindow
                 EndCameraDrag();
             }
             // スプリッタードラッグ終了
-            _isDraggingLeftSplitter = false;
-            _isDraggingRightSplitter = false;
+            //_isDraggingLeftSplitter = false;
+            //_isDraggingRightSplitter = false;
         }
 
         HandleScrollWheel();
@@ -1391,10 +1391,10 @@ public partial class PolyLing : EditorWindow
                 if (e.button == 0 && splitterRect.Contains(e.mousePosition))
                 {
                     GUIUtility.hotControl = controlId;
-                    if (isLeftSplitter)
-                        _isDraggingLeftSplitter = true;
-                    else
-                        _isDraggingRightSplitter = true;
+                    //if (isLeftSplitter)
+                    //    _isDraggingLeftSplitter = true;
+                    //else
+                    //    _isDraggingRightSplitter = true;
                     e.Use();
                 }
                 break;
@@ -1421,10 +1421,10 @@ public partial class PolyLing : EditorWindow
                 if (GUIUtility.hotControl == controlId)
                 {
                     GUIUtility.hotControl = 0;
-                    if (isLeftSplitter)
-                        _isDraggingLeftSplitter = false;
-                    else
-                        _isDraggingRightSplitter = false;
+                    //if (isLeftSplitter)
+                    //    _isDraggingLeftSplitter = false;
+                    //else
+                    //    _isDraggingRightSplitter = false;
                     e.Use();
                 }
                 break;

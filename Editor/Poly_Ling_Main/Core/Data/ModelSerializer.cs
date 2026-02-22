@@ -94,7 +94,8 @@ namespace Poly_Ling.Serialization
 
             // 注: materialPathList への書き込みは廃止
             // マテリアルは ModelDTO.materialReferences で一元管理
-            meshDTO.currentMaterialIndex = currentMaterialIndex;
+            //廃止　meshDTO.currentMaterialIndex = currentMaterialIndex;
+
 
             return meshDTO;
         }
@@ -483,10 +484,10 @@ namespace Poly_Ling.Serialization
             // 旧形式は廃止: デフォルト値で初期化
             else
             {
-                if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
-                {
-                    Debug.LogWarning("[ModelSerializer] 旧形式のデフォルトマテリアルデータは廃止されました。");
-                }
+                //if (modelDTO.defaultMaterials != null && modelDTO.defaultMaterials.Count > 0)
+                //{
+                //    Debug.LogWarning("[ModelSerializer] 旧形式のデフォルトマテリアルデータは廃止されました。");
+                //}
                 model.DefaultMaterialReferences = new List<MaterialReference> { new MaterialReference() };
                 model.DefaultCurrentMaterialIndex = 0;
                 model.AutoSetDefaultMaterials = modelDTO.autoSetDefaultMaterials;

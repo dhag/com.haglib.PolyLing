@@ -13,7 +13,7 @@ public partial class PolyLing
     // ヒットテスト検証（デバッグ用）- 無効化済み
     // ================================================================
 
-    private bool _enableHitTestValidation = false;
+   // private bool _enableHitTestValidation = false;
 
     /// <summary>
     /// ヒットテスト検証を有効化（現在は無効化されています）

@@ -1025,7 +1025,7 @@ namespace Poly_Ling.PMX
             List<ObjectGroup> objectGroups,
             Dictionary<string, HashSet<int>> materialToVertices)
         {
-            Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: called with {objectGroups.Count} groups");
+            //Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: called with {objectGroups.Count} groups");
 
             // ObjectName未設定の非ミラーグループを特定
             var fallbackIndices = new List<int>();
@@ -1055,22 +1055,22 @@ namespace Poly_Ling.PMX
                 }
                 else
                 {
-                    Debug.Log($"[PMXImporter] Skipping group '{group.ObjectName}' (has explicit ObjectName in Memo)");
+                    //Debug.Log($"[PMXImporter] Skipping group '{group.ObjectName}' (has explicit ObjectName in Memo)");
                 }
             }
 
             // 対象グループが1以下ならマージ不要
             if (fallbackGroups.Count <= 1)
             {
-                Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: early return (fallbackGroups.Count={fallbackGroups.Count}, total objectGroups={objectGroups.Count})");
+               // Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: early return (fallbackGroups.Count={fallbackGroups.Count}, total objectGroups={objectGroups.Count})");
                 return objectGroups;
             }
 
-            Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: {fallbackGroups.Count} groups without ObjectName");
+            //Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: {fallbackGroups.Count} groups without ObjectName");
             foreach (var g in fallbackGroups)
             {
                 var mats = string.Join(", ", g.Materials.ConvertAll(m => m.MaterialName));
-                Debug.Log($"  Group '{g.ObjectName}' IsBakedMirror={g.IsBakedMirror}: [{mats}]");
+               // Debug.Log($"  Group '{g.ObjectName}' IsBakedMirror={g.IsBakedMirror}: [{mats}]");
             }
 
             // フォールバック材質の頂点セットを収集
@@ -1082,11 +1082,11 @@ namespace Poly_Ling.PMX
                     if (materialToVertices.TryGetValue(matInfo.MaterialName, out var verts))
                     {
                         fallbackMatToVerts[matInfo.MaterialName] = verts;
-                        Debug.Log($"[PMXImporter] Material '{matInfo.MaterialName}': {verts.Count} vertices");
+                       // Debug.Log($"[PMXImporter] Material '{matInfo.MaterialName}': {verts.Count} vertices");
                     }
                     else
                     {
-                        Debug.LogWarning($"[PMXImporter] Material '{matInfo.MaterialName}' not found in materialToVertices!");
+                       // Debug.LogWarning($"[PMXImporter] Material '{matInfo.MaterialName}' not found in materialToVertices!");
                     }
                 }
             }
@@ -1097,7 +1097,7 @@ namespace Poly_Ling.PMX
             Debug.Log($"[PMXImporter] Union-Find result: {mergedMaterialGroups.Count} groups");
             foreach (var mg in mergedMaterialGroups)
             {
-                Debug.Log($"  Merged group: [{string.Join(", ", mg)}]");
+                //Debug.Log($"  Merged group: [{string.Join(", ", mg)}]");
             }
 
             // マージが発生したか確認
@@ -1745,7 +1745,7 @@ namespace Poly_Ling.PMX
                         //Debug.LogWarning($"[PMXImporter] Failed to load image data: {fullPath}");
                     }
                 }
-                catch (System.Exception e)
+                catch// (System.Exception e)
                 {
                     //Debug.LogWarning($"[PMXImporter] Failed to read texture file: {fullPath} - {e.Message}");
                 }
