@@ -364,6 +364,10 @@ namespace Poly_Ling.PMX
 
                 // PMX追加仕様：ObjectNameでグループ化
                 var objectGroups = PMX.PMXHelper.BuildObjectGroups(document);
+
+                // ObjectName未設定のグループ同士で共有頂点によるマージを適用
+                objectGroups = MergeGroupsBySharedVertices(document, objectGroups, materialToVertices);
+
                 result.Stats.MaterialGroupCount = objectGroups.Count;
 
                 //Debug.Log($"[PMXImporter] {materialToFaces.Count} materials grouped into {objectGroups.Count} meshes by ObjectName");
@@ -974,25 +978,29 @@ namespace Poly_Ling.PMX
                     parent[px] = py;
             }
 
-            // 頂点インデックスから材質インデックスへのマッピング
-            var vertexToMaterials = new Dictionary<int, List<int>>();
+            // 各材質の頂点インデックス範囲（min, max）を算出
+            var ranges = new (int min, int max)[n];
             for (int i = 0; i < n; i++)
             {
-                foreach (int vIdx in materialToVertices[materialNames[i]])
+                var verts = materialToVertices[materialNames[i]];
+                int min = int.MaxValue, max = int.MinValue;
+                foreach (int vIdx in verts)
                 {
-                    if (!vertexToMaterials.ContainsKey(vIdx))
-                        vertexToMaterials[vIdx] = new List<int>();
-                    vertexToMaterials[vIdx].Add(i);
+                    if (vIdx < min) min = vIdx;
+                    if (vIdx > max) max = vIdx;
                 }
+                ranges[i] = (min, max);
             }
 
-            // 同じ頂点を使用する材質をUnion
-            foreach (var kvp in vertexToMaterials)
+            // 頂点インデックス範囲がオーバーラップする材質をUnion
+            for (int i = 0; i < n; i++)
             {
-                var matIndices = kvp.Value;
-                for (int i = 1; i < matIndices.Count; i++)
+                for (int j = i + 1; j < n; j++)
                 {
-                    Union(matIndices[0], matIndices[i]);
+                    if (ranges[i].min <= ranges[j].max && ranges[j].min <= ranges[i].max)
+                    {
+                        Union(i, j);
+                    }
                 }
             }
 
@@ -1007,6 +1015,189 @@ namespace Poly_Ling.PMX
             }
 
             return groups.Values.ToList();
+        }
+
+        /// <summary>
+        /// 共有頂点を持つグループをマージ（ObjectName未設定のグループのみ対象）
+        /// </summary>
+        private static List<ObjectGroup> MergeGroupsBySharedVertices(
+            PMXDocument document,
+            List<ObjectGroup> objectGroups,
+            Dictionary<string, HashSet<int>> materialToVertices)
+        {
+            Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: called with {objectGroups.Count} groups");
+
+            // ObjectName未設定の非ミラーグループを特定
+            var fallbackIndices = new List<int>();
+            var fallbackGroups = new List<ObjectGroup>();
+
+            for (int i = 0; i < objectGroups.Count; i++)
+            {
+                var group = objectGroups[i];
+                if (group.IsBakedMirror)
+                {
+                    Debug.Log($"[PMXImporter] Skipping group '{group.ObjectName}' (IsBakedMirror)");
+                    continue;
+                }
+
+                // Memo欄にObjectNameが明示的に設定されているか確認
+                bool hasExplicitObjectName = group.Materials.Any(m =>
+                {
+                    var mat = document.Materials[m.MaterialIndex];
+                    var (objName, _) = PMXHelper.ParseMaterialMemo(mat.Memo);
+                    return !string.IsNullOrEmpty(objName);
+                });
+
+                if (!hasExplicitObjectName)
+                {
+                    fallbackIndices.Add(i);
+                    fallbackGroups.Add(group);
+                }
+                else
+                {
+                    Debug.Log($"[PMXImporter] Skipping group '{group.ObjectName}' (has explicit ObjectName in Memo)");
+                }
+            }
+
+            // 対象グループが1以下ならマージ不要
+            if (fallbackGroups.Count <= 1)
+            {
+                Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: early return (fallbackGroups.Count={fallbackGroups.Count}, total objectGroups={objectGroups.Count})");
+                return objectGroups;
+            }
+
+            Debug.Log($"[PMXImporter] MergeGroupsBySharedVertices: {fallbackGroups.Count} groups without ObjectName");
+            foreach (var g in fallbackGroups)
+            {
+                var mats = string.Join(", ", g.Materials.ConvertAll(m => m.MaterialName));
+                Debug.Log($"  Group '{g.ObjectName}' IsBakedMirror={g.IsBakedMirror}: [{mats}]");
+            }
+
+            // フォールバック材質の頂点セットを収集
+            var fallbackMatToVerts = new Dictionary<string, HashSet<int>>();
+            foreach (var group in fallbackGroups)
+            {
+                foreach (var matInfo in group.Materials)
+                {
+                    if (materialToVertices.TryGetValue(matInfo.MaterialName, out var verts))
+                    {
+                        fallbackMatToVerts[matInfo.MaterialName] = verts;
+                        Debug.Log($"[PMXImporter] Material '{matInfo.MaterialName}': {verts.Count} vertices");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[PMXImporter] Material '{matInfo.MaterialName}' not found in materialToVertices!");
+                    }
+                }
+            }
+
+            // Union-Findで共有頂点を持つ材質をグループ化
+            var mergedMaterialGroups = GroupMaterialsBySharedVertices(fallbackMatToVerts);
+
+            Debug.Log($"[PMXImporter] Union-Find result: {mergedMaterialGroups.Count} groups");
+            foreach (var mg in mergedMaterialGroups)
+            {
+                Debug.Log($"  Merged group: [{string.Join(", ", mg)}]");
+            }
+
+            // マージが発生したか確認
+            if (!mergedMaterialGroups.Any(g => g.Count > 1))
+                return objectGroups;
+
+            // 強い警告を出力
+            foreach (var mergedGroup in mergedMaterialGroups)
+            {
+                if (mergedGroup.Count > 1)
+                {
+                    Debug.LogWarning(
+                        $"[PMXImporter] ⚠⚠⚠ 共有頂点により材質がマージされました ⚠⚠⚠\n" +
+                        $"  材質: [{string.Join(", ", mergedGroup)}]\n" +
+                        $"  これらの材質は頂点を共有しているため、1つのMeshContextに格納されます。\n" +
+                        $"  意図しない場合は、PMXエディタで材質Memo欄にObjectNameを設定してください。");
+                }
+            }
+
+            // 材質名→マージグループインデックスのマッピング
+            var matToMergedIdx = new Dictionary<string, int>();
+            for (int gi = 0; gi < mergedMaterialGroups.Count; gi++)
+            {
+                foreach (var matName in mergedMaterialGroups[gi])
+                {
+                    matToMergedIdx[matName] = gi;
+                }
+            }
+
+            // マージされたObjectGroupを生成
+            var newMergedGroups = new ObjectGroup[mergedMaterialGroups.Count];
+            for (int gi = 0; gi < mergedMaterialGroups.Count; gi++)
+            {
+                var matNames = mergedMaterialGroups[gi];
+                if (matNames.Count == 1)
+                {
+                    // マージなし: 元のグループをそのまま使用
+                    newMergedGroups[gi] = fallbackGroups.First(
+                        g => g.Materials.Any(m => m.MaterialName == matNames[0]));
+                }
+                else
+                {
+                    // マージ: 新しいObjectGroupを作成
+                    var newGroup = new ObjectGroup
+                    {
+                        ObjectName = matNames[0],
+                        IsBakedMirror = false
+                    };
+
+                    // 材質を元の順序（MaterialIndex昇順）で追加
+                    var allMatInfos = new List<MaterialObjectInfo>();
+                    foreach (var matName in matNames)
+                    {
+                        var srcGroup = fallbackGroups.First(
+                            g => g.Materials.Any(m => m.MaterialName == matName));
+                        allMatInfos.Add(srcGroup.Materials.First(m => m.MaterialName == matName));
+                    }
+                    allMatInfos.Sort((a, b) => a.MaterialIndex.CompareTo(b.MaterialIndex));
+
+                    foreach (var matInfo in allMatInfos)
+                    {
+                        newGroup.Materials.Add(matInfo);
+                    }
+
+                    // 頂点インデックスを再収集
+                    PMXHelper.CollectGroupVertices(document, newGroup);
+
+                    newMergedGroups[gi] = newGroup;
+                }
+            }
+
+            // objectGroupsリストを再構築（元の順序を保持）
+            var result = new List<ObjectGroup>();
+            var processedMergeIndices = new HashSet<int>();
+
+            for (int i = 0; i < objectGroups.Count; i++)
+            {
+                int fallbackPos = fallbackIndices.IndexOf(i);
+                if (fallbackPos < 0)
+                {
+                    // フォールバックでないグループはそのまま
+                    result.Add(objectGroups[i]);
+                }
+                else
+                {
+                    // フォールバックグループ → マージ結果に差し替え
+                    var firstMatName = fallbackGroups[fallbackPos].Materials[0].MaterialName;
+                    int mergedIdx = matToMergedIdx[firstMatName];
+
+                    if (!processedMergeIndices.Contains(mergedIdx))
+                    {
+                        // このマージグループの最初の出現位置に挿入
+                        result.Add(newMergedGroups[mergedIdx]);
+                        processedMergeIndices.Add(mergedIdx);
+                    }
+                    // 以降の出現はスキップ（既にマージ済み）
+                }
+            }
+
+            return result;
         }
 
         /// <summary>

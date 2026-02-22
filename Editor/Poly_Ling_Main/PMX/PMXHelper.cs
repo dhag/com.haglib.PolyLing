@@ -232,7 +232,7 @@ namespace Poly_Ling.PMX
         /// グループの頂点インデックスを収集
         /// 使用される頂点の最小〜最大範囲をそのまま切り出す
         /// </summary>
-        private static void CollectGroupVertices(PMXDocument document, ObjectGroup group)
+        internal static void CollectGroupVertices(PMXDocument document, ObjectGroup group)
         {
             int minIndex = int.MaxValue;
             int maxIndex = int.MinValue;

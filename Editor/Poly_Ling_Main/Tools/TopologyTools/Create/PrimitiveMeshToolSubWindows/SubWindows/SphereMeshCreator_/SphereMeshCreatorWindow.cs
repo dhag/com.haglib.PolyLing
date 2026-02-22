@@ -98,7 +98,7 @@ public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshC
         _params.MeshName = EditorGUILayout.TextField(T("Name"), _params.MeshName);
         EditorGUILayout.Space(5);
 
-        _params.Radius = EditorGUILayout.Slider(T("Radius"), _params.Radius, 0.1f, 5f);
+        _params.Radius = EditorGUILayout.Slider(T("Radius"), _params.Radius, 0.01f, 2f);
 
         _params.CubeSphere = EditorGUILayout.Toggle(T("CubeSphere"), _params.CubeSphere);
 
