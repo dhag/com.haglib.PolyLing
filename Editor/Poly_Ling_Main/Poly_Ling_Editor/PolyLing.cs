@@ -31,6 +31,9 @@ public partial class PolyLing : EditorWindow
     // ================================================================
     private ProjectContext _project = new ProjectContext();
 
+    /// <summary>外部からToolContextを参照するための公開プロパティ（RemoteServer等）</summary>
+    public ToolContext CurrentToolContext => _toolManager?.toolContext;
+
     // 後方互換プロパティ（既存コードを壊さない）
     private ModelContext _model => _project.CurrentModel;
     private List<MeshContext> _meshContextList => _model?.MeshContextList;

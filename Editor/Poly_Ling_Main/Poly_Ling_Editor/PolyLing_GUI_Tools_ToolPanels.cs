@@ -11,6 +11,7 @@ using Poly_Ling.Tools;
 using Poly_Ling.Tools.Panels;
 using Poly_Ling.Selection;
 using Poly_Ling.Localization;
+using Poly_Ling.Remote;
 
 
 public partial class PolyLing
@@ -148,6 +149,12 @@ public partial class PolyLing
         {
             Poly_Ling.Tools.Panels.ModelBlendPanel.Open(_toolManager?.toolContext);
         }
+
+        if (GUILayout.Button("リモートサーバ"))
+        {
+            RemoteServer.Open(_toolManager?.toolContext);
+        }
+        
 
 
 
