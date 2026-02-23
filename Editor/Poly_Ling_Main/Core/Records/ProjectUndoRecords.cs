@@ -387,10 +387,10 @@ namespace MeshEditor
                 selectedBoneIndex = source.selectedBoneIndex,
                 selectedVertexMorphIndex = source.selectedVertexMorphIndex,
                 // 座標系設定
-                coordinateScale = source.coordinateScale,
+                pmxUnityRatio = source.pmxUnityRatio,
                 pmxFlipZ = source.pmxFlipZ,
                 mqoFlipZ = source.mqoFlipZ,
-                mqoPmxRatio = source.mqoPmxRatio
+                mqoUnityRatio = source.mqoUnityRatio
             };
         }
     }

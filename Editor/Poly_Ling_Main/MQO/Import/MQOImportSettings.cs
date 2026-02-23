@@ -53,9 +53,9 @@ namespace Poly_Ling.MQO
         // 座標変換設定
         // ================================================================
 
-        /// <summary>スケール（MQO→Unity）デフォルト0.1（1/10）</summary>
-        [Tooltip("MQO座標をUnity座標に変換するスケール（デフォルト: 0.1 = 1/10）")]
-        public float Scale = 0.1f;
+        /// <summary>スケール（MQO→Unity）デフォルト0.01（MqoUnityRatio）</summary>
+        [Tooltip("MQO座標をUnity座標に変換するスケール（デフォルト: 0.01 = MqoUnityRatio）")]
+        public float Scale = 0.01f;
 
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転する（MQOは右手系、Unityは左手系）")]
@@ -182,24 +182,24 @@ namespace Poly_Ling.MQO
             {
                 Scale = 0.1f,
                 FlipZ = true,
-                FlipUV_V = false
+                FlipUV_V = false,
+                BoneScale = 1f  // MMD互換MQOはPMXスケール、ボーンも同スケール
             };
         }
 
         /// <summary>
         /// 座標系設定から初期化
-        /// MQO→Unity = coordinateScale / ratio
-        /// BoneScale: PMXボーン座標→MQOメッシュ座標の変換（= ratio）
+        /// Scale = mqoUnityRatio（MQO→Unity比率）
+        /// BoneScale = pmxUnityRatio / mqoUnityRatio（PMXボーン座標→MQO座標の変換）
         /// </summary>
-        public static MQOImportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ, float ratio = 10f)
+        public static MQOImportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ, float pmxUnityRatio = 0.1f)
         {
-            float mqoToUnity = coordinateScale / ratio;
             return new MQOImportSettings
             {
-                Scale = mqoToUnity,
-                FlipZ = coordinateFlipZ,
+                Scale = mqoUnityRatio,
+                FlipZ = flipZ,
                 FlipUV_V = true,
-                BoneScale = ratio  // PMXボーン座標→MQO座標の比率
+                BoneScale = mqoUnityRatio > 0f ? pmxUnityRatio / mqoUnityRatio : 10f  // PMXボーン座標→MQO座標の比率
             };
         }
 

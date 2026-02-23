@@ -305,8 +305,7 @@ namespace Poly_Ling.MQO
                 var es = _context?.UndoController?.EditorState;
                 if (es != null)
                 {
-                    float ratio = es.MqoPmxRatio > 0f ? es.MqoPmxRatio : 10f;
-                    _settings = MQOImportSettings.CreateFromCoordinate(es.CoordinateScale, es.MqoFlipZ, ratio);
+                    _settings = MQOImportSettings.CreateFromCoordinate(es.MqoUnityRatio, es.MqoFlipZ, es.PmxUnityRatio);
                 }
                 else
                 {
@@ -926,11 +925,11 @@ namespace Poly_Ling.MQO
             var editorState = _context?.UndoController?.EditorState;
             if (editorState != null)
             {
-                float ratio = editorState.MqoPmxRatio > 0f ? editorState.MqoPmxRatio : 10f;
-                float mqoToUnity = editorState.CoordinateScale / ratio;
-                _settings.Scale = mqoToUnity;
+                _settings.Scale = editorState.MqoUnityRatio;
                 _settings.FlipZ = editorState.MqoFlipZ;
-                _settings.BoneScale = ratio;  // PMX→MQO比率
+                _settings.BoneScale = editorState.MqoUnityRatio > 0f
+                    ? editorState.PmxUnityRatio / editorState.MqoUnityRatio
+                    : 10f;  // PMX→MQO比率
             }
         }
     }

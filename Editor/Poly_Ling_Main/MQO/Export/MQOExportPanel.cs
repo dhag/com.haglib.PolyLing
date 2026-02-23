@@ -142,9 +142,7 @@ namespace Poly_Ling.MQO
             var editorState = _context?.UndoController?.EditorState;
             if (editorState != null)
             {
-                float ratio = editorState.MqoPmxRatio > 0f ? editorState.MqoPmxRatio : 10f;
-                float mqoToUnity = editorState.CoordinateScale / ratio;
-                _settings.Scale = mqoToUnity > 0f ? 1f / mqoToUnity : ratio;
+                _settings.Scale = editorState.MqoUnityRatio > 0f ? 1f / editorState.MqoUnityRatio : 100f;
                 _settings.FlipZ = editorState.MqoFlipZ;
             }
         }

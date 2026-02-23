@@ -568,10 +568,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"selectedMeshIndex,{es.selectedMeshIndex}");
             sb.AppendLine($"selectedBoneIndex,{es.selectedBoneIndex}");
             sb.AppendLine($"selectedVertexMorphIndex,{es.selectedVertexMorphIndex}");
-            sb.AppendLine($"coordinateScale,{Fl(es.coordinateScale)}");
+            sb.AppendLine($"pmxUnityRatio,{Fl(es.pmxUnityRatio)}");
             sb.AppendLine($"pmxFlipZ,{es.pmxFlipZ}");
             sb.AppendLine($"mqoFlipZ,{es.mqoFlipZ}");
-            sb.AppendLine($"mqoPmxRatio,{Fl(es.mqoPmxRatio)}");
+            sb.AppendLine($"mqoUnityRatio,{Fl(es.mqoUnityRatio)}");
             sb.AppendLine($"showBones,{es.showBones}");
             sb.AppendLine($"showUnselectedBones,{es.showUnselectedBones}");
             sb.AppendLine($"boneDisplayAlongY,{es.boneDisplayAlongY}");
@@ -604,10 +604,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "selectedMeshIndex": es.selectedMeshIndex = PInt(cols, 1, -1); break;
                     case "selectedBoneIndex": es.selectedBoneIndex = PInt(cols, 1, -1); break;
                     case "selectedVertexMorphIndex": es.selectedVertexMorphIndex = PInt(cols, 1, -1); break;
-                    case "coordinateScale": es.coordinateScale = PFl(cols, 1, 0.085f); break;
+                    case "pmxUnityRatio": case "coordinateScale": es.pmxUnityRatio = PFl(cols, 1, 0.1f); break;// 旧coordinateScale互換
                     case "pmxFlipZ": es.pmxFlipZ = PBool(cols, 1); break;
                     case "mqoFlipZ": es.mqoFlipZ = PBool(cols, 1, true); break;
-                    case "mqoPmxRatio": es.mqoPmxRatio = PFl(cols, 1, 10f); break;
+                    case "mqoUnityRatio": es.mqoUnityRatio = PFl(cols, 1, 0.01f); break;
+                    case "mqoPmxRatio": float oldRatio = PFl(cols, 1, 10f); es.mqoUnityRatio = oldRatio > 0f ? es.pmxUnityRatio / oldRatio : 0.01f; break; // 旧mqoPmxRatio互換
                     case "showBones": es.showBones = PBool(cols, 1, true); break;
                     case "showUnselectedBones": es.showUnselectedBones = PBool(cols, 1); break;
                     case "boneDisplayAlongY": es.boneDisplayAlongY = PBool(cols, 1); break;

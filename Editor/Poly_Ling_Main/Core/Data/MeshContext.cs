@@ -390,8 +390,12 @@ namespace Poly_Ling.Data
         // オブジェクト属性（MQOからインポート）
         // ================================================================
 
-        /// <summary>メッシュの種類</summary>
-        public MeshType Type { get; set; } = MeshType.Mesh;
+        /// <summary>メッシュの種類（MeshObject.Typeに委譲）</summary>
+        public MeshType Type
+        {
+            get => MeshObject?.Type ?? MeshType.Mesh;
+            set { if (MeshObject != null) MeshObject.Type = value; }
+        }
 
         // ----------------------------------------------------------------
         // 親子関係について

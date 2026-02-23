@@ -76,7 +76,7 @@ namespace Poly_Ling.PMX
             ["ExportFailed"] = new() { ["en"] = "Export failed: {0}", ["ja"] = "エクスポート失敗: {0}" },
 
             // ツールチップ
-            ["ScaleTooltip"] = new() { ["en"] = "Model coordinates × Scale = PMX coordinates", ["ja"] = "モデル座標 × スケール = PMX座標" },
+            ["ScaleTooltip"] = new() { ["en"] = "Unity coordinates × Scale = PMX coordinates", ["ja"] = "Unity座標 × スケール = PMX座標" },
         };
 
         private static string T(string key) => L.GetFrom(_localize, key);
@@ -93,7 +93,7 @@ namespace Poly_Ling.PMX
         private List<MeshMaterialMapping> _mappings = new List<MeshMaterialMapping>();
 
         // 出力オプション
-        private float _scale = 0.1f;
+        private float _scale = 10f; // Unity→PMX: 1/PmxUnityRatio
         private bool _flipZ = true;
         private bool _flipUV_V = true;
         private bool _replacePositions = true;
@@ -562,7 +562,7 @@ namespace Poly_Ling.PMX
                 if (_outputCSV)
                 {
                     string csvPath = Path.ChangeExtension(savePath, ".csv");
-                    PMXCSVWriter.Save(_pmxDocument, csvPath, 6);
+                    PMXCSVWriter.Save(_pmxDocument, csvPath);
                 }
 
                 _lastResult = T("ExportSuccess", $"{totalTransferred} vertices → {Path.GetFileName(savePath)}");
@@ -707,6 +707,14 @@ namespace Poly_Ling.PMX
 
         protected override void OnContextSet()
         {
+            // EditorStateからスケール取得（Unity→PMX = 1/PmxUnityRatio）
+            var es = _context?.UndoController?.EditorState;
+            if (es != null)
+            {
+                _scale = es.PmxUnityRatio > 0f ? 1f / es.PmxUnityRatio : 10f;
+                _flipZ = es.PmxFlipZ;
+            }
+
             _mappings.Clear();
             if (_pmxDocument != null)
             {

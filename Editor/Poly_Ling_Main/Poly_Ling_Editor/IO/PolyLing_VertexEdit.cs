@@ -509,14 +509,14 @@ public partial class PolyLing
 
         EditorGUI.indentLevel++;
 
-        // Scale
+        // PMX→Unity Ratio
         EditorGUI.BeginChangeCheck();
-        float newScale = EditorGUILayout.FloatField(L.Get("CoordinateScale"), editorState.CoordinateScale);
-        if (EditorGUI.EndChangeCheck() && newScale != editorState.CoordinateScale)
+        float newPmxRatio = EditorGUILayout.FloatField(L.Get("PmxUnityRatio"), editorState.PmxUnityRatio);
+        if (EditorGUI.EndChangeCheck() && newPmxRatio != editorState.PmxUnityRatio)
         {
             _undoController.BeginEditorStateDrag();
-            editorState.CoordinateScale = newScale;
-            _undoController.EndEditorStateDrag("Change Coordinate Scale");
+            editorState.PmxUnityRatio = newPmxRatio;
+            _undoController.EndEditorStateDrag("Change PMX→Unity Ratio");
         }
 
         // PMX Flip Z
@@ -539,14 +539,14 @@ public partial class PolyLing
             _undoController.EndEditorStateDrag("Toggle MQO FlipZ");
         }
 
-        // MQO/PMX Ratio
+        // MQO→Unity Ratio
         EditorGUI.BeginChangeCheck();
-        float newRatio = EditorGUILayout.FloatField(L.Get("MqoPmxRatio"), editorState.MqoPmxRatio);
-        if (EditorGUI.EndChangeCheck() && newRatio != editorState.MqoPmxRatio)
+        float newMqoRatio = EditorGUILayout.FloatField(L.Get("MqoUnityRatio"), editorState.MqoUnityRatio);
+        if (EditorGUI.EndChangeCheck() && newMqoRatio != editorState.MqoUnityRatio)
         {
             _undoController.BeginEditorStateDrag();
-            editorState.MqoPmxRatio = newRatio;
-            _undoController.EndEditorStateDrag("Change MQO/PMX Ratio");
+            editorState.MqoUnityRatio = newMqoRatio;
+            _undoController.EndEditorStateDrag("Change MQO→Unity Ratio");
         }
 
         EditorGUI.indentLevel--;

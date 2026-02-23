@@ -90,7 +90,7 @@ namespace Poly_Ling.MQO
 
         // オプション
         // PMXは展開後の値しか得られない
-        private float _exportScale = 0.085f;
+        private float _exportScale = 0.01f; // MqoUnityRatio: Unity→MQO = ÷0.01 = ×100
         private bool _flipZ = true;
         private bool _skipBakedMirror = true;
         private bool _skipNamedMirror = true;
@@ -163,6 +163,8 @@ namespace Poly_Ling.MQO
         public void SetContext(ToolContext ctx)
         {
             _context = ctx;
+            var es = ctx?.UndoController?.EditorState;
+            if (es != null) _exportScale = es.MqoUnityRatio > 0f ? es.MqoUnityRatio : 0.01f;
             BuildModelList();
             if (_mqoDocument != null)
             {

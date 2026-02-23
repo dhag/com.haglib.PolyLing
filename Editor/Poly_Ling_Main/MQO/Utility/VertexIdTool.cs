@@ -18,6 +18,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -1249,8 +1250,9 @@ namespace Poly_Ling.MQO.Utility
     /// </summary>
     public static class MQOWriter
     {
-        public static void WriteToFile(MQODocument doc, string filePath)
+        public static void WriteToFile(MQODocument doc, string filePath, int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
+            string fmt = $"F{decimalPrecision}";
             using (var writer = new StreamWriter(filePath, false, System.Text.Encoding.GetEncoding("shift_jis")))
             {
                 // ヘッダー
@@ -1278,12 +1280,12 @@ namespace Poly_Ling.MQO.Utility
                     {
                         var sb = new System.Text.StringBuilder();
                         sb.Append($"\t\"{mat.Name}\"");
-                        sb.Append($" col({mat.Color.r:F3} {mat.Color.g:F3} {mat.Color.b:F3} {mat.Color.a:F3})");
-                        sb.Append($" dif({mat.Diffuse:F3})");
-                        sb.Append($" amb({mat.Ambient:F3})");
-                        sb.Append($" emi({mat.Emissive:F3})");
-                        sb.Append($" spc({mat.Specular:F3})");
-                        sb.Append($" power({mat.Power:F2})");
+                        sb.Append($" col({mat.Color.r.ToString(fmt, CultureInfo.InvariantCulture)} {mat.Color.g.ToString(fmt, CultureInfo.InvariantCulture)} {mat.Color.b.ToString(fmt, CultureInfo.InvariantCulture)} {mat.Color.a.ToString(fmt, CultureInfo.InvariantCulture)})");
+                        sb.Append($" dif({mat.Diffuse.ToString(fmt, CultureInfo.InvariantCulture)})");
+                        sb.Append($" amb({mat.Ambient.ToString(fmt, CultureInfo.InvariantCulture)})");
+                        sb.Append($" emi({mat.Emissive.ToString(fmt, CultureInfo.InvariantCulture)})");
+                        sb.Append($" spc({mat.Specular.ToString(fmt, CultureInfo.InvariantCulture)})");
+                        sb.Append($" power({mat.Power.ToString("F2", CultureInfo.InvariantCulture)})");
 
                         // テクスチャパス（重要！）
                         if (!string.IsNullOrEmpty(mat.TexturePath))
@@ -1312,14 +1314,14 @@ namespace Poly_Ling.MQO.Utility
                 // オブジェクト
                 foreach (var obj in doc.Objects)
                 {
-                    WriteObject(writer, obj);
+                    WriteObject(writer, obj, fmt);
                 }
 
                 writer.WriteLine("Eof");
             }
         }
 
-        private static void WriteObject(StreamWriter writer, MQOObject obj)
+        private static void WriteObject(StreamWriter writer, MQOObject obj, string fmt)
         {
             writer.WriteLine($"Object \"{obj.Name}\" {{");
 
@@ -1337,13 +1339,13 @@ namespace Poly_Ling.MQO.Utility
                     if (v == (int)v)
                         writer.WriteLine($"\t{attr.Name} {(int)v}");
                     else
-                        writer.WriteLine($"\t{attr.Name} {v:F4}");
+                        writer.WriteLine($"\t{attr.Name} {v.ToString(fmt, CultureInfo.InvariantCulture)}");
                 }
                 else
                 {
                     // 複数値の場合
                     var values = string.Join(" ", attr.Values.Select(v =>
-                        v == (int)v ? ((int)v).ToString() : v.ToString("F4")));
+                        v == (int)v ? ((int)v).ToString() : v.ToString(fmt, CultureInfo.InvariantCulture)));
                     writer.WriteLine($"\t{attr.Name} {values}");
                 }
             }
@@ -1375,7 +1377,7 @@ namespace Poly_Ling.MQO.Utility
             writer.WriteLine($"\tvertex {obj.Vertices.Count} {{");
             foreach (var v in obj.Vertices)
             {
-                writer.WriteLine($"\t\t{v.Position.x:F4} {v.Position.y:F4} {v.Position.z:F4}");
+                writer.WriteLine($"\t\t{v.Position.x.ToString(fmt, CultureInfo.InvariantCulture)} {v.Position.y.ToString(fmt, CultureInfo.InvariantCulture)} {v.Position.z.ToString(fmt, CultureInfo.InvariantCulture)}");
             }
             writer.WriteLine("\t}");
 
@@ -1384,7 +1386,7 @@ namespace Poly_Ling.MQO.Utility
             writer.WriteLine($"\tface {faces.Count} {{");
             foreach (var face in faces)
             {
-                WriteFace(writer, face);
+                WriteFace(writer, face, fmt);
             }
             writer.WriteLine("\t}");
 
@@ -1392,7 +1394,7 @@ namespace Poly_Ling.MQO.Utility
             writer.WriteLine();
         }
 
-        private static void WriteFace(StreamWriter writer, MQOFace face)
+        private static void WriteFace(StreamWriter writer, MQOFace face, string fmt)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append($"\t\t{face.VertexIndices.Length} V(");
@@ -1412,7 +1414,7 @@ namespace Poly_Ling.MQO.Utility
                 for (int i = 0; i < face.UVs.Length; i++)
                 {
                     if (i > 0) sb.Append(" ");
-                    sb.Append($"{face.UVs[i].x:F5} {face.UVs[i].y:F5}");
+                    sb.Append($"{face.UVs[i].x.ToString(fmt, CultureInfo.InvariantCulture)} {face.UVs[i].y.ToString(fmt, CultureInfo.InvariantCulture)}");
                 }
                 sb.Append(")");
             }

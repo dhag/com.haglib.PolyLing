@@ -48,10 +48,10 @@ public partial class PolyLing
             selectedMeshIndex = _model.FirstMeshIndex,
             selectedBoneIndex = _model.FirstBoneIndex,
             selectedVertexMorphIndex = _model.FirstMorphIndex,
-            coordinateScale = _undoController?.EditorState?.CoordinateScale ?? 0.085f,
+            pmxUnityRatio = _undoController?.EditorState?.PmxUnityRatio ?? 0.1f,// 0.085f,
             pmxFlipZ = _undoController?.EditorState?.PmxFlipZ ?? false,
             mqoFlipZ = _undoController?.EditorState?.MqoFlipZ ?? true,
-            mqoPmxRatio = _undoController?.EditorState?.MqoPmxRatio ?? 10f
+            mqoUnityRatio = _undoController?.EditorState?.MqoUnityRatio ?? 0.01f
         };
 
         // ボーン表示設定
@@ -156,10 +156,10 @@ public partial class PolyLing
             // 座標系設定を復元
             if (_undoController?.EditorState != null)
             {
-                _undoController.EditorState.CoordinateScale = state.coordinateScale > 0f ? state.coordinateScale : 0.085f;
+                _undoController.EditorState.PmxUnityRatio = state.pmxUnityRatio > 0f ? state.pmxUnityRatio : 0.1f;// 0.085f;
                 _undoController.EditorState.PmxFlipZ = state.pmxFlipZ;
                 _undoController.EditorState.MqoFlipZ = state.mqoFlipZ;
-                _undoController.EditorState.MqoPmxRatio = state.mqoPmxRatio > 0f ? state.mqoPmxRatio : 10f;
+                _undoController.EditorState.MqoUnityRatio = state.mqoUnityRatio > 0f ? state.mqoUnityRatio : 0.01f;
 
                 // ボーン表示設定を復元
                 _undoController.EditorState.ShowBones = state.showBones;

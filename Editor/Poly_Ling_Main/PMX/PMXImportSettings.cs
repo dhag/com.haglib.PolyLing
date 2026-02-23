@@ -149,13 +149,13 @@ namespace Poly_Ling.PMX
             };
         }
 
-        /// <summary>座標系設定から初期化（CoordinateScale = PMX→Unityスケール）</summary>
-        public static PMXImportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ)
+        /// <summary>座標系設定から初期化（pmxUnityRatio = PMX→Unity比率）</summary>
+        public static PMXImportSettings CreateFromCoordinate(float pmxUnityRatio, bool flipZ)
         {
             return new PMXImportSettings
             {
-                Scale = coordinateScale,
-                FlipZ = coordinateFlipZ,
+                Scale = pmxUnityRatio,
+                FlipZ = flipZ,
                 FlipUV_V = true
             };
         }

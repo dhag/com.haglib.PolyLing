@@ -40,7 +40,7 @@ namespace Poly_Ling.VMD
 
         /// <summary>
         /// VMDデルタ位置に適用するスケール（PMX空間→Unity空間）
-        /// EditorStateContext.CoordinateScaleと同じ値を設定する
+        /// EditorStateContext.PmxUnityRatioと同じ値を設定する
         /// </summary>
         public float PositionScale { get; set; } = 1f;
 

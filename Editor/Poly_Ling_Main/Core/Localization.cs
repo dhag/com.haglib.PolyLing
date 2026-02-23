@@ -352,10 +352,10 @@ namespace Poly_Ling.Localization
             // 座標系設定
             // ============================================================
             ["CoordinateSettings"] = new() { ["en"] = "Coordinate", ["ja"] = "座標系", ["hi"] = "ざひょう" },
-            ["CoordinateScale"] = new() { ["en"] = "Scale", ["ja"] = "スケール", ["hi"] = "おおきさ" },
+            ["PmxUnityRatio"] = new() { ["en"] = "PMX→Unity Ratio", ["ja"] = "PMX→Unity比率", ["hi"] = "PMX→Unityひりつ" },
             ["PmxFlipZ"] = new() { ["en"] = "PMX Flip Z", ["ja"] = "PMX Z反転", ["hi"] = "PMX Zはんてん" },
             ["MqoFlipZ"] = new() { ["en"] = "MQO Flip Z", ["ja"] = "MQO Z反転", ["hi"] = "MQO Zはんてん" },
-            ["MqoPmxRatio"] = new() { ["en"] = "MQO/PMX Ratio", ["ja"] = "MQO/PMX比率", ["hi"] = "MQO/PMXひりつ" },
+            ["MqoUnityRatio"] = new() { ["en"] = "MQO→Unity Ratio", ["ja"] = "MQO→Unity比率", ["hi"] = "MQO→Unityひりつ" },
         };
         
         // ================================================================

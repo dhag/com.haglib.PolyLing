@@ -93,7 +93,7 @@ namespace Poly_Ling.PMX
             var editorState = _context?.UndoController?.EditorState;
             if (editorState != null)
             {
-                _settings.Scale = editorState.CoordinateScale > 0f ? 1f / editorState.CoordinateScale : 1f;
+                _settings.Scale = editorState.PmxUnityRatio > 0f ? 1f / editorState.PmxUnityRatio : 1f;
                 _settings.FlipZ = editorState.PmxFlipZ;
             }
         }

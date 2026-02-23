@@ -27,7 +27,7 @@ namespace Poly_Ling.MQO
         /// <param name="filePath">出力ファイルパス</param>
         /// <param name="model">ModelContext</param>
         /// <returns>出力したボーン数</returns>
-        public static int ExportBoneCSV(string filePath, ModelContext model)
+        public static int ExportBoneCSV(string filePath, ModelContext model, int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             if (model == null || model.MeshContextList == null)
                 return 0;
@@ -41,7 +41,7 @@ namespace Poly_Ling.MQO
                 }
             }
 
-            return ExportBoneCSV(filePath, boneContexts, model.MeshContextList);
+            return ExportBoneCSV(filePath, boneContexts, model.MeshContextList, decimalPrecision);
         }
 
         /// <summary>
@@ -52,7 +52,7 @@ namespace Poly_Ling.MQO
         /// <param name="boneContexts">ボーンMeshContextのリスト</param>
         /// <param name="allContexts">全MeshContextのリスト（親インデックス解決用）</param>
         /// <returns>出力したボーン数</returns>
-        public static int ExportBoneCSV(string filePath, IList<MeshContext> boneContexts, IList<MeshContext> allContexts)
+        public static int ExportBoneCSV(string filePath, IList<MeshContext> boneContexts, IList<MeshContext> allContexts, int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             if (boneContexts == null || boneContexts.Count == 0)
                 return 0;
@@ -69,7 +69,7 @@ namespace Poly_Ling.MQO
             }
 
             var sb = new StringBuilder();
-            string fmt = "F6";
+            string fmt = $"F{decimalPrecision}";
 
             // ヘッダー（40カラム PMXEditor互換）
             sb.AppendLine(new Poly_Ling.CSV.PmxBoneCSVSchema().GenerateHeaderComment());
@@ -255,7 +255,7 @@ namespace Poly_Ling.MQO
         /// <param name="filePath">出力ファイルパス</param>
         /// <param name="model">ModelContext</param>
         /// <returns>出力した頂点数</returns>
-        public static int ExportWeightCSV(string filePath, ModelContext model)
+        public static int ExportWeightCSV(string filePath, ModelContext model, int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             if (model == null || model.MeshContextList == null)
                 return 0;
@@ -279,7 +279,7 @@ namespace Poly_Ling.MQO
                     meshContexts.Add(mc);
             }
 
-            return ExportWeightCSV(filePath, meshContexts, bakedMirrorContexts, boneContexts, model.MeshContextList);
+            return ExportWeightCSV(filePath, meshContexts, bakedMirrorContexts, boneContexts, model.MeshContextList, decimalPrecision);
         }
 
         /// <summary>
@@ -294,10 +294,11 @@ namespace Poly_Ling.MQO
             string filePath,
             IList<MeshContext> meshContexts,
             IList<MeshContext> boneContexts,
-            IList<MeshContext> allContexts)
+            IList<MeshContext> allContexts,
+            int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             // BakedMirrorなしで呼び出された場合は空リストを渡す
-            return ExportWeightCSV(filePath, meshContexts, new List<MeshContext>(), boneContexts, allContexts);
+            return ExportWeightCSV(filePath, meshContexts, new List<MeshContext>(), boneContexts, allContexts, decimalPrecision);
         }
 
         /// <summary>
@@ -314,10 +315,13 @@ namespace Poly_Ling.MQO
             IList<MeshContext> meshContexts,
             IList<MeshContext> bakedMirrorContexts,
             IList<MeshContext> boneContexts,
-            IList<MeshContext> allContexts)
+            IList<MeshContext> allContexts,
+            int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             if (meshContexts == null || meshContexts.Count == 0)
                 return 0;
+
+            string weightRowFmt = $"{{0}},{{1}},{{2}},{{3}},{{4}},{{5}},{{6}},{{7:F{decimalPrecision}}},{{8:F{decimalPrecision}}},{{9:F{decimalPrecision}}},{{10:F{decimalPrecision}}}";
 
             // ボーンインデックス→名前マップを作成
             var boneIndexToName = new Dictionary<int, string>();
@@ -389,7 +393,7 @@ namespace Poly_Ling.MQO
                     }
 
                     sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                        "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                        weightRowFmt,
                         EscapeCSV(objectName),
                         vertexId,
                         vIdx,
@@ -446,7 +450,7 @@ namespace Poly_Ling.MQO
                         }
 
                         sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                            "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                            weightRowFmt,
                             EscapeCSV(mirrorObjectName),
                             vertexId,
                             vIdx,
@@ -530,7 +534,7 @@ namespace Poly_Ling.MQO
                         }
 
                         sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                            "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                            weightRowFmt,
                             EscapeCSV(mirrorObjectName),
                             vertexId,
                             vIdx,

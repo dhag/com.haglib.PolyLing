@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using Poly_Ling.MQO;
 using UnityEngine;
 
 namespace Poly_Ling.PMX
@@ -33,7 +34,7 @@ namespace Poly_Ling.PMX
         public PMXExportMode ExportMode = PMXExportMode.Full;
 
         /// <summary>出力スケール（1.0 = そのまま）</summary>
-        public float Scale = 1.0f;
+        public float Scale = 10f; // Unity→PMX: 1/PmxUnityRatio
 
         /// <summary>Z軸反転（Unity→PMX座標系）</summary>
         public bool FlipZ = true;
@@ -96,7 +97,7 @@ namespace Poly_Ling.PMX
         public bool OutputCSV = false;
 
         /// <summary>小数点以下の桁数</summary>
-        public int DecimalPrecision = 6;
+        public int DecimalPrecision = MQOExportSettings.DefaultDecimalPrecision;
 
         // ================================================================
         // デフォルト設定
@@ -108,7 +109,7 @@ namespace Poly_Ling.PMX
             return new PMXExportSettings
             {
                 ExportMode = PMXExportMode.Full,
-                Scale = 1.0f,
+                Scale = 10f, // 1/PmxUnityRatio
                 FlipZ = true,
                 ExportMaterials = true,
                 ExportBones = true,
@@ -118,13 +119,13 @@ namespace Poly_Ling.PMX
         }
 
         /// <summary>座標系設定から初期化（逆変換スケール）</summary>
-        public static PMXExportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ)
+        public static PMXExportSettings CreateFromCoordinate(float pmxUnityRatio, bool flipZ)
         {
             return new PMXExportSettings
             {
                 ExportMode = PMXExportMode.Full,
-                Scale = coordinateScale > 0f ? 1f / coordinateScale : 1f,
-                FlipZ = coordinateFlipZ,
+                Scale = pmxUnityRatio > 0f ? 1f / pmxUnityRatio : 10f,
+                FlipZ = flipZ,
                 ExportMaterials = true,
                 ExportBones = true,
                 ExportMorphs = true,
@@ -138,7 +139,7 @@ namespace Poly_Ling.PMX
             return new PMXExportSettings
             {
                 ExportMode = PMXExportMode.PartialReplace,
-                Scale = 1.0f,
+                Scale = 10f, // 1/PmxUnityRatio
                 FlipZ = true,
                 ReplacePositions = true,
                 ReplaceNormals = true,

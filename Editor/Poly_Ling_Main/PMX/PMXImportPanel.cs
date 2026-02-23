@@ -287,7 +287,7 @@ namespace Poly_Ling.PMX
                 {
                     var es = _context?.UndoController?.EditorState;
                     _settings = es != null
-                        ? PMXImportSettings.CreateFromCoordinate(es.CoordinateScale, es.PmxFlipZ)
+                        ? PMXImportSettings.CreateFromCoordinate(es.PmxUnityRatio, es.PmxFlipZ)
                         : PMXImportSettings.CreateDefault();
                 }
                 if (GUILayout.Button(T("MMDCompatible")))
@@ -298,7 +298,7 @@ namespace Poly_Ling.PMX
                     var s = PMXImportSettings.CreateBonesOnly();
                     if (es != null)
                     {
-                        s.Scale = es.CoordinateScale;
+                        s.Scale = es.PmxUnityRatio;
                         s.FlipZ = es.PmxFlipZ;
                     }
                     _settings = s;
@@ -787,7 +787,7 @@ namespace Poly_Ling.PMX
             var editorState = _context?.UndoController?.EditorState;
             if (editorState != null)
             {
-                _settings.Scale = editorState.CoordinateScale;
+                _settings.Scale = editorState.PmxUnityRatio;
                 _settings.FlipZ = editorState.PmxFlipZ;
             }
         }

@@ -28,6 +28,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using Poly_Ling.MQO;
 using UnityEngine;
 
 namespace Poly_Ling.CSV
@@ -231,7 +232,7 @@ namespace Poly_Ling.CSV
         /// コンストラクタ
         /// </summary>
         /// <param name="decimalPrecision">小数点以下の桁数（デフォルト6）</param>
-        public CSVWriter(int decimalPrecision = 6)
+        public CSVWriter(int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             _decimalPrecision = decimalPrecision;
             _floatFormat = $"F{decimalPrecision}";

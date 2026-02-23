@@ -867,6 +867,9 @@ namespace Poly_Ling.PMX
 
             try
             {
+                int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision;
+                string weightRowFmt = $"{{0}},{{1}},{{2}},{{3}},{{4}},{{5}},{{6}},{{7:F{decimalPrecision}}},{{8:F{decimalPrecision}}},{{9:F{decimalPrecision}}},{{10:F{decimalPrecision}}}";
+
                 var sb = new StringBuilder();
                 sb.AppendLine("MqoObjectName,VertexID,VertexIndex,Bone0,Bone1,Bone2,Bone3,Weight0,Weight1,Weight2,Weight3");
 
@@ -907,7 +910,7 @@ namespace Poly_Ling.PMX
                             for (int iuv = 0; iuv < uvCount; iuv++)
                             {
                                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                                    "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                                    weightRowFmt,
                                     meshContext.Name,
                                     -1,
                                     vIdx,
@@ -940,7 +943,7 @@ namespace Poly_Ling.PMX
                                 }
 
                                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                                    "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                                    weightRowFmt,
                                     meshContext.Name,
                                     vertexId,
                                     vIdx,
@@ -986,7 +989,7 @@ namespace Poly_Ling.PMX
                                 for (int iuv = 0; iuv < uvCount; iuv++)
                                 {
                                     sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                                        "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                                        weightRowFmt,
                                         mirrorObjectName,
                                         -1,
                                         vIdx,
@@ -1019,7 +1022,7 @@ namespace Poly_Ling.PMX
                                     }
 
                                     sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
-                                        "{0},{1},{2},{3},{4},{5},{6},{7:F6},{8:F6},{9:F6},{10:F6}",
+                                        weightRowFmt,
                                         mirrorObjectName,
                                         vertexId,
                                         vIdx,

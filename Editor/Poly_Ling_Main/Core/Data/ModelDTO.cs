@@ -614,8 +614,8 @@ namespace Poly_Ling.Serialization
         /// <summary>ナイフツールのChainMode</summary>
         public bool knifeChainMode;
 
-        /// <summary>座標スケール（PMX→Unity: 0.085, MQO→Unity: 0.0085, 等倍: 1.0）</summary>
-        public float coordinateScale = 0.085f;
+        /// <summary>PMX→Unity座標比率（デフォルト0.1、旧0.085）</summary>
+        public float pmxUnityRatio = 0.1f;// 0.085f;
 
         /// <summary>PMX Z軸反転（デフォルトfalse）</summary>
         public bool pmxFlipZ = false;
@@ -623,8 +623,8 @@ namespace Poly_Ling.Serialization
         /// <summary>MQO Z軸反転（デフォルトtrue）</summary>
         public bool mqoFlipZ = true;
 
-        /// <summary>MQO/PMX座標比率（デフォルト10）</summary>
-        public float mqoPmxRatio = 10f;
+        /// <summary>MQO→Unity座標比率（デフォルト0.01）</summary>
+        public float mqoUnityRatio = 0.01f;
 
         /// <summary>ボーン表示</summary>
         public bool showBones = true;
@@ -655,10 +655,10 @@ namespace Poly_Ling.Serialization
                 knifeEdgeSelect = false,
                 knifeChainMode = false,
                 // 座標系設定
-                coordinateScale = 0.085f,
+                pmxUnityRatio = 0.1f,// 0.085f,
                 pmxFlipZ = false,
                 mqoFlipZ = true,
-                mqoPmxRatio = 10f
+                mqoUnityRatio = 0.01f
             };
         }
     }

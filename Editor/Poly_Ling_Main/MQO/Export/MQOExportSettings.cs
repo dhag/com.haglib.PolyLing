@@ -16,9 +16,9 @@ namespace Poly_Ling.MQO
         // 座標系変換
         // ================================================================
 
-        /// <summary>スケール係数</summary>
+        /// <summary>スケール係数（Unity→MQO: 1/MqoUnityRatio = 100）</summary>
         [Tooltip("エクスポート時のスケール係数")]
-        public float Scale = 10f;
+        public float Scale = 100f;
 
         /// <summary>Y軸とZ軸を入れ替え（Unity Y-up → MQO Z-up）</summary>
         [Tooltip("Y軸とZ軸を入れ替え")]
@@ -92,10 +92,13 @@ namespace Poly_Ling.MQO
         // 出力形式
         // ================================================================
 
+        /// <summary>小数点以下の桁数のデフォルト値</summary>
+        public const int DefaultDecimalPrecision = 6;
+
         /// <summary>小数点以下の桁数</summary>
         [Tooltip("座標・UV等の小数点以下桁数")]
-        [Range(1, 8)]
-        public int DecimalPrecision = 4;
+        [Range(1, 9)]
+        public int DecimalPrecision = DefaultDecimalPrecision;
 
         /// <summary>Shift-JISエンコード</summary>
         [Tooltip("Shift-JISでエンコード（メタセコイア互換）")]
@@ -107,15 +110,14 @@ namespace Poly_Ling.MQO
 
         /// <summary>
         /// 座標系設定から初期化（逆変換スケール）
-        /// Unity→MQO = ratio / coordinateScale
+        /// Unity→MQO = 1 / mqoUnityRatio
         /// </summary>
-        public static MQOExportSettings CreateFromCoordinate(float coordinateScale, bool coordinateFlipZ, float ratio = 10f)
+        public static MQOExportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ)
         {
-            float mqoToUnity = coordinateScale / ratio;
             return new MQOExportSettings
             {
-                Scale = mqoToUnity > 0f ? 1f / mqoToUnity : ratio,
-                FlipZ = coordinateFlipZ
+                Scale = mqoUnityRatio > 0f ? 1f / mqoUnityRatio : 100f,
+                FlipZ = flipZ
             };
         }
 

@@ -1,0 +1,231 @@
+// MQOVertexRestoreWindow.cs
+// 壊れたMQOファイルの頂点位置を別のMQOから復旧するユーティリティ
+// Menu: Tools/Poly_Ling/Utility/MQO Vertex Restore
+
+using System.Collections.Generic;
+using System.IO;
+using UnityEditor;
+using UnityEngine;
+using Poly_Ling.MQO;
+using Poly_Ling.MQO.Utility;
+
+namespace Poly_Ling.Editor.Utility
+{
+    public class MQOVertexRestoreWindow : EditorWindow
+    {
+        [MenuItem("Tools/Poly_Ling/Utility/MQO 頂点のみ復旧")]
+        public static void ShowWindow()
+        {
+            GetWindow<MQOVertexRestoreWindow>("MQO Vertex Restore");
+        }
+
+        private string _pathA = "";
+        private string _pathB = "";
+        private MQODocument _docA;
+        private MQODocument _docB;
+        private int _decimalPrecision = 5;
+        private Vector2 _scroll;
+
+        private class ObjectEntry
+        {
+            public string Name;
+            public int VertCountA;
+            public int VertCountB;
+            public bool Checked;
+            public bool Match; // 頂点数一致
+        }
+
+        private List<ObjectEntry> _entries = new List<ObjectEntry>();
+
+        private void OnGUI()
+        {
+            EditorGUILayout.LabelField("MQO Vertex Position Restore", EditorStyles.boldLabel);
+            EditorGUILayout.Space(4);
+
+            // A: 位置データソース
+            EditorGUILayout.LabelField("A: 位置データソース（正しい頂点位置を持つMQO）");
+            EditorGUILayout.BeginHorizontal();
+            _pathA = EditorGUILayout.TextField(_pathA);
+            if (GUILayout.Button("...", GUILayout.Width(30)))
+            {
+                string path = EditorUtility.OpenFilePanel("Select Source MQO (A)", "", "mqo");
+                if (!string.IsNullOrEmpty(path)) _pathA = path;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            // B: 復旧先
+            EditorGUILayout.LabelField("B: 復旧先（頂点位置を書き戻すMQO）");
+            EditorGUILayout.BeginHorizontal();
+            _pathB = EditorGUILayout.TextField(_pathB);
+            if (GUILayout.Button("...", GUILayout.Width(30)))
+            {
+                string path = EditorUtility.OpenFilePanel("Select Target MQO (B)", "", "mqo");
+                if (!string.IsNullOrEmpty(path)) _pathB = path;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+            _decimalPrecision = EditorGUILayout.IntSlider("Decimal Precision", _decimalPrecision, 1, 9);
+
+            EditorGUILayout.Space(4);
+
+            // 読み込み
+            if (GUILayout.Button("Load"))
+            {
+                LoadFiles();
+            }
+
+            if (_entries.Count == 0) return;
+
+            EditorGUILayout.Space(8);
+
+            // 一括操作
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("All ON", GUILayout.Width(60)))
+            {
+                foreach (var e in _entries) if (e.Match) e.Checked = true;
+            }
+            if (GUILayout.Button("All OFF", GUILayout.Width(60)))
+            {
+                foreach (var e in _entries) e.Checked = false;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // オブジェクト一覧
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+            foreach (var e in _entries)
+            {
+                EditorGUILayout.BeginHorizontal();
+
+                GUI.enabled = e.Match;
+                e.Checked = EditorGUILayout.ToggleLeft(
+                    $"{e.Name}  (A:{e.VertCountA}  B:{e.VertCountB}){(e.Match ? "" : "  ✗ 頂点数不一致")}",
+                    e.Checked);
+                GUI.enabled = true;
+
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndScrollView();
+
+            EditorGUILayout.Space(8);
+
+            // 実行
+            int checkedCount = 0;
+            foreach (var e in _entries) if (e.Checked) checkedCount++;
+
+            GUI.enabled = checkedCount > 0;
+            if (GUILayout.Button($"Restore Positions ({checkedCount} objects)"))
+            {
+                Execute();
+            }
+            GUI.enabled = true;
+        }
+
+        private void LoadFiles()
+        {
+            _entries.Clear();
+            _docA = null;
+            _docB = null;
+
+            if (!File.Exists(_pathA))
+            {
+                EditorUtility.DisplayDialog("Error", $"File A not found:\n{_pathA}", "OK");
+                return;
+            }
+            if (!File.Exists(_pathB))
+            {
+                EditorUtility.DisplayDialog("Error", $"File B not found:\n{_pathB}", "OK");
+                return;
+            }
+
+            _docA = MQOParser.ParseFile(_pathA);
+            _docB = MQOParser.ParseFile(_pathB);
+
+            if (_docA == null || _docB == null)
+            {
+                EditorUtility.DisplayDialog("Error", "Failed to parse MQO files.", "OK");
+                return;
+            }
+
+            // B側のオブジェクト名→インデックスマップ
+            var bMap = new Dictionary<string, int>();
+            for (int i = 0; i < _docB.Objects.Count; i++)
+            {
+                bMap[_docB.Objects[i].Name] = i;
+            }
+
+            // A側のオブジェクトを列挙
+            for (int i = 0; i < _docA.Objects.Count; i++)
+            {
+                var objA = _docA.Objects[i];
+                var entry = new ObjectEntry
+                {
+                    Name = objA.Name,
+                    VertCountA = objA.Vertices.Count,
+                    VertCountB = -1,
+                    Checked = false,
+                    Match = false,
+                };
+
+                if (bMap.TryGetValue(objA.Name, out int bIdx))
+                {
+                    var objB = _docB.Objects[bIdx];
+                    entry.VertCountB = objB.Vertices.Count;
+                    entry.Match = objA.Vertices.Count == objB.Vertices.Count;
+                    entry.Checked = entry.Match;
+                }
+
+                _entries.Add(entry);
+            }
+        }
+
+        private void Execute()
+        {
+            // B側のオブジェクト名→インデックスマップ
+            var bMap = new Dictionary<string, int>();
+            for (int i = 0; i < _docB.Objects.Count; i++)
+            {
+                bMap[_docB.Objects[i].Name] = i;
+            }
+
+            int restored = 0;
+            foreach (var entry in _entries)
+            {
+                if (!entry.Checked || !entry.Match) continue;
+                if (!bMap.TryGetValue(entry.Name, out int bIdx)) continue;
+
+                // A側のオブジェクトを名前で探す
+                MQOObject objA = null;
+                foreach (var o in _docA.Objects)
+                {
+                    if (o.Name == entry.Name) { objA = o; break; }
+                }
+                if (objA == null) continue;
+
+                var objB = _docB.Objects[bIdx];
+
+                // 頂点位置をA→Bにコピー
+                for (int v = 0; v < objA.Vertices.Count; v++)
+                {
+                    objB.Vertices[v].Position = objA.Vertices[v].Position;
+                }
+
+                restored++;
+            }
+
+            // 保存
+            string defaultDir = Path.GetDirectoryName(_pathB);
+            string defaultName = Path.GetFileNameWithoutExtension(_pathB) + "_restored.mqo";
+            string savePath = EditorUtility.SaveFilePanel("Save Restored MQO", defaultDir, defaultName, "mqo");
+
+            if (string.IsNullOrEmpty(savePath)) return;
+
+            MQOWriter.WriteToFile(_docB, savePath, _decimalPrecision);
+
+            EditorUtility.DisplayDialog("Complete",
+                $"Restored {restored} objects.\nSaved to:\n{savePath}", "OK");
+        }
+    }
+}

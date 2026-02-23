@@ -6,13 +6,14 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using Poly_Ling.MQO;
 using UnityEngine;
 
 namespace Poly_Ling.PMX
 {
     public static class PMXCSVWriter
     {
-        public static void Save(PMXDocument document, string filePath, int decimalPrecision = 6)
+        public static void Save(PMXDocument document, string filePath, int decimalPrecision = MQOExportSettings.DefaultDecimalPrecision)
         {
             var sb = new StringBuilder();
             string fmt = $"F{decimalPrecision}";

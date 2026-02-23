@@ -90,7 +90,7 @@ namespace Poly_Ling.VMD
                 var editorState = _context?.UndoController?.EditorState;
                 if (editorState != null)
                 {
-                    _applier.PositionScale = editorState.CoordinateScale;
+                    _applier.PositionScale = editorState.PmxUnityRatio;
                     _applyCoordinateConversion = editorState.PmxFlipZ;
                     _applier.ApplyCoordinateConversion = _applyCoordinateConversion;
                 }
