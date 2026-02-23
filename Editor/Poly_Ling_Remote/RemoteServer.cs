@@ -72,6 +72,13 @@ namespace Poly_Ling.Remote
         private const int MaxLogLines = 50;
 
         // ================================================================
+        // キャプチャ画像リスト
+        // ================================================================
+
+        private readonly List<ImageEntry> _capturedImages = new List<ImageEntry>();
+        private ushort _nextImageId;
+
+        // ================================================================
         // ウィンドウ管理
         // ================================================================
 
@@ -84,6 +91,30 @@ namespace Poly_Ling.Remote
         public void SetContext(ToolContext ctx)
         {
             // 互換用（動的取得のため何もしない）
+        }
+
+        /// <summary>
+        /// 開いているRemoteServerインスタンスを取得（未オープン時はnull）
+        /// </summary>
+        public static RemoteServer FindInstance()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<RemoteServer>();
+            return (windows != null && windows.Length > 0) ? windows[0] : null;
+        }
+
+        /// <summary>
+        /// キャプチャした画像を送信リストに追加
+        /// Texture2DはこのメソッドがコピーするのでDestroyImmediate可
+        /// </summary>
+        public void AddCapturedImage(Texture2D tex)
+        {
+            if (tex == null) return;
+
+            var entry = RemoteImageSerializer.FromTexture2DJPEG(tex, _nextImageId++, 85);
+            _capturedImages.Add(entry);
+
+            Log($"キャプチャ追加: ID={entry.Id} {entry.Width}x{entry.Height} ({entry.Data.Length}B)");
+            Repaint();
         }
 
         // ================================================================
@@ -132,6 +163,38 @@ namespace Poly_Ling.Remote
 
                 if (GUILayout.Button("Send Project"))
                     SendProject();
+
+                // ================================================================
+                // キャプチャ画像リスト
+                // ================================================================
+                EditorGUILayout.Space(5);
+                EditorGUILayout.LabelField("Captured Images", EditorStyles.miniBoldLabel);
+
+                if (_capturedImages.Count == 0)
+                {
+                    EditorGUILayout.LabelField("  (empty)", EditorStyles.miniLabel);
+                }
+                else
+                {
+                    long totalBytes = 0;
+                    foreach (var img in _capturedImages) totalBytes += img.Data.Length;
+                    EditorGUILayout.LabelField(
+                        $"  {_capturedImages.Count} 枚 ({totalBytes / 1024}KB)",
+                        EditorStyles.miniLabel);
+                }
+
+                EditorGUILayout.BeginHorizontal();
+                using (new EditorGUI.DisabledScope(_capturedImages.Count == 0))
+                {
+                    if (GUILayout.Button("Send Images"))
+                        SendCapturedImages();
+                    if (GUILayout.Button("Clear"))
+                    {
+                        _capturedImages.Clear();
+                        Log("キャプチャリストクリア");
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
             }
 
             EditorGUILayout.Space(5);
@@ -927,6 +990,21 @@ namespace Poly_Ling.Remote
             {
                 BroadcastBinaryAsync(data);
                 Log($"テスト画像送信: {images.Count}枚 ({data.Length}B)");
+            }
+        }
+
+        /// <summary>
+        /// キャプチャ画像リストを全クライアントにバイナリ送信
+        /// </summary>
+        private void SendCapturedImages()
+        {
+            if (_capturedImages.Count == 0) return;
+
+            byte[] data = RemoteImageSerializer.Serialize(_capturedImages);
+            if (data != null)
+            {
+                BroadcastBinaryAsync(data);
+                Log($"キャプチャ画像送信: {_capturedImages.Count}枚 ({data.Length}B)");
             }
         }
 

@@ -1161,8 +1161,8 @@ public partial class PolyLing : EditorWindow
         // 右スプリッター
         DrawSplitter(ref _rightSplitterRect, false);
 
-        // 右ペイン：頂点編集
-        DrawVertexEditor();
+        // 右ペイン
+        DrawRightPane();
 
         EditorGUILayout.EndHorizontal();
 

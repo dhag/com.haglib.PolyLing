@@ -9,10 +9,15 @@ using Poly_Ling.Data;
 using Poly_Ling.Selection;
 using Poly_Ling.Rendering;
 using Poly_Ling.Core.Rendering;
+using Poly_Ling.Remote;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 public partial class PolyLing
 {
+    // ================================================================
+    // プレビューキャプチャ
+    // ================================================================
+    private bool _captureRequested;
     // ================================================================
     // 描画キャッシュ
     // ================================================================
@@ -258,6 +263,13 @@ public partial class PolyLing
         Texture result = _preview.EndPreview();
         GUI.DrawTexture(localRect, result, ScaleMode.StretchToFill, false);
 
+        // キャプチャ処理
+        if (_captureRequested)
+        {
+            _captureRequested = false;
+            CapturePreviewToRemote(result);
+        }
+
         // 選択メッシュ用の表示行列を取得
         Matrix4x4 selectedDisplayMatrix = GetDisplayMatrix(_selectedIndex);
 
@@ -354,6 +366,44 @@ public partial class PolyLing
 
         // クリップ領域を終了
         GUI.EndClip();
+    }
+
+    // ================================================================
+    // プレビューキャプチャ → Remote送信キュー
+    // ================================================================
+
+    /// <summary>
+    /// プレビューテクスチャをキャプチャしてRemoteServerの画像リストに追加
+    /// </summary>
+    private void CapturePreviewToRemote(Texture src)
+    {
+        if (src == null) return;
+
+        // RenderTextureに転写してTexture2Dに変換
+        var rt = RenderTexture.GetTemporary(src.width, src.height, 0, RenderTextureFormat.ARGB32);
+        var prev = RenderTexture.active;
+        Graphics.Blit(src, rt);
+        RenderTexture.active = rt;
+
+        var tex2d = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+        tex2d.ReadPixels(new Rect(0, 0, src.width, src.height), 0, 0);
+        tex2d.Apply();
+
+        RenderTexture.active = prev;
+        RenderTexture.ReleaseTemporary(rt);
+
+        // RemoteServerの画像リストに追加
+        var server = RemoteServer.FindInstance();
+        if (server != null)
+        {
+            server.AddCapturedImage(tex2d);
+        }
+        else
+        {
+            Debug.LogWarning("[PolyLing] RemoteServer が開かれていません");
+        }
+
+        DestroyImmediate(tex2d);
     }
 
     // ================================================================

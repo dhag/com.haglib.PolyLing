@@ -1,20 +1,79 @@
-// Assets/Editor/PolyLing.VertexEdit.cs
-// 右ペイン（頂点エディタ、スライダー編集）
-// Phase2: マルチマテリアル対応版
-// Phase6: マテリアルUndo対応版
+// Assets/Editor/Poly_Ling/PolyLing/PolyLing_RightPane.cs
+// 右ペインUI描画（外枠、キャプチャ、モデルファイルIO、頂点エディタ呼び出し）
 
-using System.Linq;
-using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
-using Poly_Ling.Data;
-using Poly_Ling.Tools;
-using Poly_Ling.UndoSystem;
-using Poly_Ling.Commands;
 using Poly_Ling.Localization;
-using static Poly_Ling.Gizmo.GLGizmoDrawer;
+using Poly_Ling.Remote;
+using Poly_Ling.Commands;
+using Poly_Ling.Data;
+using Poly_Ling.UndoSystem;
+using System.Collections.Generic;
+using System.Linq;
+
 public partial class PolyLing
 {
+    // ================================================================
+    // 右ペイン
+    // ================================================================
+    private void DrawRightPane()
+    {
+        EditorGUILayout.BeginVertical(GUILayout.Width(_rightPaneWidth));
+        EditorGUILayout.LabelField(L.Get("VertexEditor"), EditorStyles.boldLabel);
+
+        // ================================================================
+        // キャプチャボタン
+        // ================================================================
+        if (GUILayout.Button("📷 Capture Preview"))
+        {
+            _captureRequested = true;
+            Repaint();
+        }
+
+        EditorGUILayout.Space(3);
+
+        // ================================================================
+        // モデル保存/読み込み（常に表示）
+        // ================================================================
+        EditorGUILayout.LabelField(L.Get("ModelFile"), EditorStyles.miniBoldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button(L.Get("ExportModel")))
+        {
+            ExportModel();
+        }
+        if (GUILayout.Button(L.Get("ImportModel")))
+        {
+            ImportModel();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button(L.Get("ExportModelCsv")))
+        {
+            ExportModelCsv();
+        }
+        if (GUILayout.Button(L.Get("ImportModelCsv")))
+        {
+            ImportModelCsv();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (GUILayout.Button(L.Get("MergeModelCsv")))
+        {
+            MergeModelCsv();
+        }
+
+        EditorGUILayout.Space(5);
+
+        // ================================================================
+        // 頂点エディタ（スクロールコンテンツ）
+        // ================================================================
+        DrawRightPane_();
+
+        EditorGUILayout.EndVertical();
+    }
+
     // ================================================================
     // 右ペイン：スクロール位置
     // ================================================================
@@ -22,12 +81,10 @@ public partial class PolyLing
 
     // ================================================================
     // 右ペイン：頂点エディタ（MeshObjectベース）
+    // DrawRightPane() から呼ばれるスクロール内コンテンツ
     // ================================================================
-    private void DrawVertexEditor()
+    private void DrawRightPane_()
     {
-        EditorGUILayout.BeginVertical(GUILayout.Width(_rightPaneWidth));
-        EditorGUILayout.LabelField(L.Get("VertexEditor"), EditorStyles.boldLabel);
-
         // スクロール開始
         _rightPaneScroll = EditorGUILayout.BeginScrollView(_rightPaneScroll);
 
@@ -43,7 +100,6 @@ public partial class PolyLing
         {
             EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
             EditorGUILayout.EndScrollView();
-            EditorGUILayout.EndVertical();
             return;
         }
 
@@ -53,7 +109,6 @@ public partial class PolyLing
         {
             EditorGUILayout.HelpBox(L.Get("InvalidMeshData"), MessageType.Warning);
             EditorGUILayout.EndScrollView();
-            EditorGUILayout.EndVertical();
             return;
         }
 
@@ -288,7 +343,7 @@ public partial class PolyLing
                 _addAnimatorComponent = EditorGUILayout.Toggle(
                     L.Get("AddAnimatorComponent"),
                     _addAnimatorComponent);
-                
+
                 // Avatar生成オプション（Animator追加時のみ表示）
                 if (_addAnimatorComponent)
                 {
@@ -361,42 +416,7 @@ public partial class PolyLing
             }
         }
 
-        EditorGUILayout.Space(10);
-
-        // ================================================================
-        // モデル保存/読み込み
-        // ================================================================
-        EditorGUILayout.LabelField(L.Get("ModelFile"), EditorStyles.miniBoldLabel);
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(L.Get("ExportModel")))
-        {
-            ExportModel();
-        }
-        if (GUILayout.Button(L.Get("ImportModel")))
-        {
-            ImportModel();
-        }
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(L.Get("ExportModelCsv")))
-        {
-            ExportModelCsv();
-        }
-        if (GUILayout.Button(L.Get("ImportModelCsv")))
-        {
-            ImportModelCsv();
-        }
-        EditorGUILayout.EndHorizontal();
-
-        if (GUILayout.Button(L.Get("MergeModelCsv")))
-        {
-            MergeModelCsv();
-        }
-
         EditorGUILayout.EndScrollView();
-        EditorGUILayout.EndVertical();
     }
 
 
