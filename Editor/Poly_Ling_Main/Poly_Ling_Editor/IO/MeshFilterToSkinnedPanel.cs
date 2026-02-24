@@ -48,6 +48,7 @@ namespace Poly_Ling.Tools.Panels
             ["AlreadyHasBones"] = new() { ["en"] = "Model already has bones", ["ja"] = "既にボーンが存在します" },
             ["RootBone"] = new() { ["en"] = "Root Bone (top mesh)", ["ja"] = "ルートボーン (トップメッシュ)" },
             ["Convert"] = new() { ["en"] = "Convert", ["ja"] = "変換実行" },
+            ["ConvertWarning"] = new() { ["en"] = "This operation cannot be undone.\nProceed with conversion?", ["ja"] = "この操作は元に戻せません。\n変換を実行しますか？" },
             ["ConvertSuccess"] = new() { ["en"] = "Conversion completed: {0} bones created", ["ja"] = "変換完了: {0}個のボーンを作成" },
             ["Preview"] = new() { ["en"] = "Preview", ["ja"] = "プレビュー" },
             ["BoneHierarchy"] = new() { ["en"] = "Bone Hierarchy", ["ja"] = "ボーン階層" },
@@ -157,7 +158,13 @@ namespace Poly_Ling.Tools.Panels
             EditorGUI.BeginDisabledGroup(hasBones);
             if (GUILayout.Button(T("Convert"), GUILayout.Height(30)))
             {
-                ExecuteConversion(model, meshEntries, _swapAxisForRotatedBones, _setAxisForIdentityBones);
+                if (EditorUtility.DisplayDialog(
+                    T("WindowTitle"),
+                    T("ConvertWarning"),
+                    "OK", "Cancel"))
+                {
+                    ExecuteConversion(model, meshEntries, _swapAxisForRotatedBones, _setAxisForIdentityBones);
+                }
             }
             EditorGUI.EndDisabledGroup();
 

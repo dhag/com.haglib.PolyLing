@@ -11,6 +11,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Localization;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Tools.Panels
 {
@@ -125,6 +126,7 @@ namespace Poly_Ling.Tools.Panels
         // ================================================================
 
         private bool _isDragging = false;
+        private MultiMeshVertexSnapshot _dragBeforeSnapshot;
         private Vector2 _scrollPosition;
 
         // ================================================================
@@ -245,8 +247,8 @@ namespace Poly_Ling.Tools.Panels
                     if (!_isDragging)
                     {
                         _isDragging = true;
-                        // 全メッシュのスナップショットを取る（Undo用）
-                        CaptureAllMeshSnapshots();
+                        // Undo用: before状態をキャプチャ
+                        _dragBeforeSnapshot = MultiMeshVertexSnapshot.Capture(currentModel);
                         // オリジナル頂点位置をキャッシュ（プレビュー用）
                         BuildOriginalPositionCache(project);
                     }
@@ -273,6 +275,16 @@ namespace Poly_Ling.Tools.Panels
                     RecalculateAllNormals(currentModel);
                     _context?.SyncMesh?.Invoke();
                     _context?.Repaint?.Invoke();
+                }
+
+                // Undo記録
+                var undo = _context?.UndoController;
+                if (undo != null && _dragBeforeSnapshot != null)
+                {
+                    var afterSnapshot = MultiMeshVertexSnapshot.Capture(currentModel);
+                    var record = new MultiMeshVertexSnapshotRecord(_dragBeforeSnapshot, afterSnapshot, "Model Blend");
+                    undo.MeshListStack.Record(record, "Model Blend");
+                    _dragBeforeSnapshot = null;
                 }
             }
 
@@ -344,8 +356,8 @@ namespace Poly_Ling.Tools.Panels
             // 正規化されたウェイト
             float[] normalizedWeights = NormalizeWeightArray(_settings.Weights);
 
-            // 全メッシュのスナップショットを記録
-            CaptureAllMeshSnapshots();
+            // Undo用: before状態をキャプチャ
+            var beforeSnapshot = MultiMeshVertexSnapshot.Capture(currentModel);
 
             // Drawableメッシュのみを対象にブレンド
             var targetDrawables = currentModel.DrawableMeshes;
@@ -396,6 +408,16 @@ namespace Poly_Ling.Tools.Panels
             // Unity Meshに反映
             _context?.SyncMesh?.Invoke();
             _context?.Repaint?.Invoke();
+
+            // Undo記録
+            var undo = _context?.UndoController;
+            if (undo != null)
+            {
+                var afterSnapshot = MultiMeshVertexSnapshot.Capture(currentModel);
+                var record = new MultiMeshVertexSnapshotRecord(beforeSnapshot, afterSnapshot, "Apply Model Blend");
+                undo.MeshListStack.Record(record, "Apply Model Blend");
+            }
+
             Repaint();
         }
 

@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Localization;
 using Poly_Ling.Model;
+using Poly_Ling.Records;
 using Poly_Ling.Tools;
 
 namespace Poly_Ling.Tools.Panels
@@ -192,9 +193,27 @@ namespace Poly_Ling.Tools.Panels
             if (mapping == null || mapping.IsEmpty)
                 return;
 
+            // before状態をキャプチャ
+            var beforeState = new TPoseBackup();
+            TPoseConverter.CaptureBackup(Model.MeshContextList, beforeState);
+            var oldTPoseBackup = Model.TPoseBackup;
+
+            // Tポーズ適用
             var backup = new TPoseBackup();
             TPoseConverter.ConvertToTPose(Model.MeshContextList, mapping, backup);
             Model.TPoseBackup = backup;
+
+            // after状態をキャプチャ
+            var afterState = new TPoseBackup();
+            TPoseConverter.CaptureBackup(Model.MeshContextList, afterState);
+
+            // Undo記録
+            var undo = _context?.UndoController;
+            if (undo != null)
+            {
+                var record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose");
+                undo.MeshListStack.Record(record, "Apply T-Pose");
+            }
 
             _statusMessage = T("TPoseApplied");
             _statusType = MessageType.Info;
@@ -210,10 +229,29 @@ namespace Poly_Ling.Tools.Panels
             if (Model?.TPoseBackup == null)
                 return;
 
-            TPoseConverter.RestoreFromBackup(Model.MeshContextList, Model.TPoseBackup);
-            Model.TPoseBackup = null;
-            _bakeOriginal = false;
+            // before状態をキャプチャ
+            var beforeState = new TPoseBackup();
+            TPoseConverter.CaptureBackup(Model.MeshContextList, beforeState);
+            var oldTPoseBackup = Model.TPoseBackup;
 
+            // 復元
+            TPoseConverter.RestoreFromBackup(Model.MeshContextList, Model.TPoseBackup);
+
+            // after状態をキャプチャ
+            var afterState = new TPoseBackup();
+            TPoseConverter.CaptureBackup(Model.MeshContextList, afterState);
+
+            Model.TPoseBackup = null;
+
+            // Undo記録
+            var undo = _context?.UndoController;
+            if (undo != null)
+            {
+                var record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose");
+                undo.MeshListStack.Record(record, "Restore Original Pose");
+            }
+
+            _bakeOriginal = false;
             _statusMessage = T("PoseRestored");
             _statusType = MessageType.Info;
 

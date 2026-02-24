@@ -13,6 +13,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Localization;
 using Poly_Ling.Tools;
+using Poly_Ling.UndoSystem;
 using Poly_Ling.Materials;
 using Poly_Ling.PMX;
 
@@ -226,6 +227,14 @@ namespace Poly_Ling.MQO
                         LoadMQOAndMatch();
                     }
                 }
+
+                using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(_mqoFilePath) || !File.Exists(_mqoFilePath)))
+                {
+                    if (GUILayout.Button("↻", GUILayout.Width(25)))
+                    {
+                        LoadMQOAndMatch();
+                    }
+                }
             }
 
             if (_matchHelper.MQODocument != null)
@@ -404,6 +413,9 @@ namespace Poly_Ling.MQO
 
                 bool topologyChanged = false;
 
+                // Undo用: before状態をキャプチャ
+                var beforeSnapshot = MultiMeshVertexSnapshot.Capture(Model);
+
                 // メッシュ構造インポート（頂点位置も同時に処理可能）
                 if (_importMeshStructure && selectedModels.Count > 0 && selectedMQOs.Count > 0)
                 {
@@ -450,6 +462,15 @@ namespace Poly_Ling.MQO
 
                 _context?.Repaint?.Invoke();
                 SceneView.RepaintAll();
+
+                // Undo記録
+                var undo = _context?.UndoController;
+                if (undo != null)
+                {
+                    var afterSnapshot = MultiMeshVertexSnapshot.Capture(Model);
+                    var record = new MultiMeshVertexSnapshotRecord(beforeSnapshot, afterSnapshot, "MQO Partial Import");
+                    undo.MeshListStack.Record(record, "MQO Partial Import");
+                }
 
                 _lastResult = T("ImportSuccess", string.Join(", ", results));
             }

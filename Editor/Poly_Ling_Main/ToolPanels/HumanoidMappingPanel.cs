@@ -12,6 +12,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Localization;
 using Poly_Ling.Model;
+using Poly_Ling.Records;
 using Poly_Ling.Tools;
 
 namespace Poly_Ling.Tools.Panels
@@ -446,10 +447,18 @@ namespace Poly_Ling.Tools.Panels
         {
             if (_previewMapping == null || Model == null) return;
 
-            // モデルのHumanoidMappingにコピー
+            var before = Model.HumanoidMapping.Clone();
             Model.HumanoidMapping.CopyFrom(_previewMapping);
-            Model.IsDirty = true;
+            var after = Model.HumanoidMapping.Clone();
 
+            var undo = _context?.UndoController;
+            if (undo != null)
+            {
+                var record = new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping");
+                undo.MeshListStack.Record(record, "Apply Humanoid Mapping");
+            }
+
+            Model.IsDirty = true;
             Debug.Log($"[HumanoidMappingPanel] {T("ApplySuccess", _previewMapping.Count)}");
             Repaint();
         }
@@ -458,9 +467,18 @@ namespace Poly_Ling.Tools.Panels
         {
             if (Model == null) return;
 
+            var before = Model.HumanoidMapping.Clone();
             Model.HumanoidMapping.ClearAll();
-            Model.IsDirty = true;
+            var after = Model.HumanoidMapping.Clone();
 
+            var undo = _context?.UndoController;
+            if (undo != null)
+            {
+                var record = new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping");
+                undo.MeshListStack.Record(record, "Clear Humanoid Mapping");
+            }
+
+            Model.IsDirty = true;
             _previewMapping = null;
             Debug.Log("[HumanoidMappingPanel] Mapping cleared");
             Repaint();

@@ -13,6 +13,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Localization;
 using Poly_Ling.Tools;
+using Poly_Ling.UndoSystem;
 using Poly_Ling.Materials;
 using Poly_Ling.MQO; // PartialMeshEntry, PMXMQOTransferPanel
 
@@ -207,6 +208,14 @@ namespace Poly_Ling.PMX
                     if (!string.IsNullOrEmpty(path))
                     {
                         _pmxFilePath = path;
+                        LoadPMXAndMatch();
+                    }
+                }
+
+                using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(_pmxFilePath) || !File.Exists(_pmxFilePath)))
+                {
+                    if (GUILayout.Button("↻", GUILayout.Width(25)))
+                    {
                         LoadPMXAndMatch();
                     }
                 }
@@ -611,6 +620,9 @@ namespace Poly_Ling.PMX
 
                 bool topologyChanged = false;
 
+                // Undo用: before状態をキャプチャ
+                var beforeSnapshot = MultiMeshVertexSnapshot.Capture(Model);
+
                 if (selectedModels.Count > 0 && selectedPMXs.Count > 0)
                 {
                     // 面構成（トポロジ変更）
@@ -653,6 +665,15 @@ namespace Poly_Ling.PMX
 
                 _context?.Repaint?.Invoke();
                 SceneView.RepaintAll();
+
+                // Undo記録
+                var undo = _context?.UndoController;
+                if (undo != null)
+                {
+                    var afterSnapshot = MultiMeshVertexSnapshot.Capture(Model);
+                    var record = new MultiMeshVertexSnapshotRecord(beforeSnapshot, afterSnapshot, "PMX Partial Import");
+                    undo.MeshListStack.Record(record, "PMX Partial Import");
+                }
 
                 _lastResult = T("ImportSuccess", string.Join(", ", results));
             }
