@@ -364,6 +364,12 @@ public partial class PolyLing
             DrawBoxSelectOverlay(rect);
         }
 
+        // 投げ縄選択オーバーレイ描画
+        if (_editState == VertexEditState.LassoSelecting)
+        {
+            DrawLassoSelectOverlay(rect);
+        }
+
         // クリップ領域を終了
         GUI.EndClip();
     }
@@ -852,6 +858,40 @@ public partial class PolyLing
         var boxColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
         UnityEditor_Handles.DrawRect(selectRect, boxColors.BoxSelectFill);
         DrawRectBorder(selectRect, boxColors.BoxSelectBorder);
+
+        UnityEditor_Handles.EndGUI();
+    }
+
+    private void DrawLassoSelectOverlay(Rect clipRect)
+    {
+        if (_lassoPoints == null || _lassoPoints.Count < 2)
+            return;
+
+        UnityEditor_Handles.BeginGUI();
+
+        var boxColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
+        Color borderColor = boxColors.BoxSelectBorder;
+
+        // _lassoPointsはウィンドウ座標 → clipRectのオフセットを引いてローカル座標に変換
+        Vector2 offset = clipRect.position;
+
+        // 投げ縄の線分を描画
+        UnityEditor_Handles.color = borderColor;
+        for (int i = 0; i < _lassoPoints.Count - 1; i++)
+        {
+            Vector2 p1 = _lassoPoints[i] - offset;
+            Vector2 p2 = _lassoPoints[i + 1] - offset;
+            UnityEditor_Handles.DrawLine(p1, p2);
+        }
+
+        // 閉じ線（最後の点→最初の点）
+        if (_lassoPoints.Count >= 3)
+        {
+            Vector2 first = _lassoPoints[0] - offset;
+            Vector2 last = _lassoPoints[_lassoPoints.Count - 1] - offset;
+            UnityEditor_Handles.color = new Color(borderColor.r, borderColor.g, borderColor.b, borderColor.a * 0.5f);
+            UnityEditor_Handles.DrawLine(last, first);
+        }
 
         UnityEditor_Handles.EndGUI();
     }

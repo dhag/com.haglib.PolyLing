@@ -974,10 +974,17 @@ public partial class PolyLing
                 float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
                 if (dragDistance > DragThreshold)
                 {
-                    // 何もヒットしていない状態から開始 → 矩形選択モード
+                    // 何もヒットしていない状態から開始 → ドラッグ選択モード
                     if (_hitResultOnMouseDown.HitType == MeshSelectMode.None)
                     {
-                        StartBoxSelect(_mouseDownScreenPos);
+                        if (_dragSelectMode == DragSelectMode.Lasso)
+                        {
+                            StartLassoSelect(_mouseDownScreenPos);
+                        }
+                        else
+                        {
+                            StartBoxSelect(_mouseDownScreenPos);
+                        }
                     }
                     else
                     {
@@ -993,6 +1000,17 @@ public partial class PolyLing
             case VertexEditState.BoxSelecting:
                 // 矩形選択範囲を更新
                 _boxSelectEnd = mousePos;
+                e.Use();
+                Repaint();
+                break;
+
+            case VertexEditState.LassoSelecting:
+                // 投げ縄選択: ポイントを追加（前回ポイントと距離があれば）
+                if (_lassoPoints.Count == 0 ||
+                    Vector2.Distance(mousePos, _lassoPoints[_lassoPoints.Count - 1]) > 2f)
+                {
+                    _lassoPoints.Add(mousePos);
+                }
                 e.Use();
                 Repaint();
                 break;
@@ -1018,6 +1036,11 @@ public partial class PolyLing
             case VertexEditState.BoxSelecting:
                 // 矩形選択完了
                 FinishBoxSelect(shiftHeld, ctrlHeld, meshObject, rect, camPos, lookAt);
+                break;
+
+            case VertexEditState.LassoSelecting:
+                // 投げ縄選択完了
+                FinishLassoSelect(shiftHeld, ctrlHeld, meshObject, rect, camPos, lookAt);
                 break;
         }
 
@@ -1048,6 +1071,7 @@ public partial class PolyLing
         _hitResultOnMouseDown = HitResult.None;  // 追加
         _boxSelectStart = Vector2.zero;
         _boxSelectEnd = Vector2.zero;
+        _lassoPoints.Clear();
     }
     // ================================================================
     // クリック処理
@@ -1222,6 +1246,16 @@ public partial class PolyLing
         _boxSelectStart = startPos;
         _boxSelectEnd = startPos;
         _editState = VertexEditState.BoxSelecting;
+    }
+
+    // ================================================================
+    // 投げ縄選択
+    // ================================================================
+    private void StartLassoSelect(Vector2 startPos)
+    {
+        _lassoPoints.Clear();
+        _lassoPoints.Add(startPos);
+        _editState = VertexEditState.LassoSelecting;
     }
 
     private void FinishBoxSelect(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt)
@@ -1481,6 +1515,289 @@ public partial class PolyLing
         {
             RecordExtendedSelectionChange(oldSnapshot, oldSelection);
         }
+    }
+
+    // ================================================================
+    // 投げ縄選択の完了処理
+    // ================================================================
+    private void FinishLassoSelect(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt)
+    {
+        // ポイント数が不足している場合は何もしない
+        if (_lassoPoints.Count < 3)
+            return;
+
+        // カリング情報をGPUからCPUに読み戻す（背面カリング対応）
+        _unifiedAdapter?.BufferManager?.ReadBackVertexFlags();
+
+        HashSet<int> oldSelection = new HashSet<int>(_selectionState.Vertices);
+        SelectionSnapshot oldSnapshot = _selectionState?.CreateSnapshot();
+
+        // ワールドモード判定
+        var editorState = _undoController?.EditorState;
+        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
+
+        // GPU変換後の座標を取得（ワールドモード時のみ）
+        Vector3[] displayPositions = null;
+        if (useWorldTransform && _unifiedAdapter?.BufferManager != null)
+        {
+            displayPositions = _unifiedAdapter.BufferManager.GetDisplayPositions();
+        }
+
+        bool additive = shiftHeld || ctrlHeld;
+
+        // 選択モード取得
+        var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
+
+        // 投げ縄ポリゴン（ウィンドウ座標のまま使用）
+        var lasso = _lassoPoints;
+
+        // 複数メッシュ対応
+        var selectedMeshIndices = _model?.SelectedMeshIndices;
+
+        if (selectedMeshIndices != null && selectedMeshIndices.Count > 0)
+        {
+            // 加算モードでない場合、全メッシュの選択をクリア
+            if (!additive)
+            {
+                foreach (int meshIdx in selectedMeshIndices)
+                {
+                    var ctx = _model.GetMeshContext(meshIdx);
+                    ctx?.ClearSelection();
+                }
+                _selectionState?.ClearAll();
+            }
+
+            foreach (int meshIdx in selectedMeshIndices)
+            {
+                var meshContext = _model.GetMeshContext(meshIdx);
+                if (meshContext == null || meshContext.MeshObject == null)
+                    continue;
+
+                var targetMeshObject = meshContext.MeshObject;
+
+                // 表示用トランスフォーム行列を取得
+                Matrix4x4 displayMatrix = GetDisplayMatrix(meshIdx);
+
+                // 頂点オフセットを取得
+                int vertexOffset = _unifiedAdapter?.GetVertexOffset(meshIdx) ?? 0;
+
+                // ワールド→スクリーン変換デリゲート
+                Func<Vector3, Vector2> worldToScreen = (worldPos) =>
+                {
+                    Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(worldPos);
+                    return WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
+                };
+
+                // 頂点インデックスからスクリーン座標を取得
+                Func<int, Vector2> vertexIndexToScreen;
+                if (useWorldTransform && displayPositions != null)
+                {
+                    int localOffset = vertexOffset;
+                    vertexIndexToScreen = (vertexIndex) =>
+                    {
+                        int globalIndex = localOffset + vertexIndex;
+                        if (globalIndex >= 0 && globalIndex < displayPositions.Length)
+                        {
+                            return WorldToPreviewPos(displayPositions[globalIndex], previewRect, camPos, lookAt);
+                        }
+                        return worldToScreen(targetMeshObject.Vertices[vertexIndex].Position);
+                    };
+                }
+                else
+                {
+                    vertexIndexToScreen = (vertexIndex) =>
+                        worldToScreen(targetMeshObject.Vertices[vertexIndex].Position);
+                }
+
+                // 頂点選択
+                if (currentMode.Has(MeshSelectMode.Vertex))
+                {
+                    if (_visibilityProvider != null)
+                    {
+                        _visibilityProvider.MeshIndex = _unifiedAdapter?.ContextToUnifiedMeshIndex(meshIdx) ?? meshIdx;
+                    }
+
+                    for (int i = 0; i < targetMeshObject.VertexCount; i++)
+                    {
+                        if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                            continue;
+
+                        if (IsPointInLasso(vertexIndexToScreen(i), lasso))
+                        {
+                            meshContext.SelectedVertices.Add(i);
+                        }
+                    }
+                }
+
+                // エッジ選択
+                if (currentMode.Has(MeshSelectMode.Edge))
+                {
+                    var topology = new TopologyCache();
+                    topology.SetMeshObject(targetMeshObject);
+
+                    foreach (var pair in topology.AllEdgePairs)
+                    {
+                        if (_visibilityProvider != null)
+                        {
+                            bool v1Visible = _visibilityProvider.IsVertexVisible(pair.V1);
+                            bool v2Visible = _visibilityProvider.IsVertexVisible(pair.V2);
+                            if (!v1Visible && !v2Visible)
+                                continue;
+                        }
+
+                        if (IsPointInLasso(vertexIndexToScreen(pair.V1), lasso) &&
+                            IsPointInLasso(vertexIndexToScreen(pair.V2), lasso))
+                        {
+                            meshContext.SelectedEdges.Add(pair);
+                        }
+                    }
+                }
+
+                // 面選択
+                if (currentMode.Has(MeshSelectMode.Face))
+                {
+                    for (int faceIdx = 0; faceIdx < targetMeshObject.FaceCount; faceIdx++)
+                    {
+                        var face = targetMeshObject.Faces[faceIdx];
+                        if (face.VertexCount < 3) continue;
+
+                        if (_visibilityProvider != null)
+                        {
+                            bool anyVisible = false;
+                            foreach (int vIdx in face.VertexIndices)
+                            {
+                                if (_visibilityProvider.IsVertexVisible(vIdx))
+                                {
+                                    anyVisible = true;
+                                    break;
+                                }
+                            }
+                            if (!anyVisible) continue;
+                        }
+
+                        bool allInLasso = true;
+                        foreach (int vIdx in face.VertexIndices)
+                        {
+                            if (!IsPointInLasso(vertexIndexToScreen(vIdx), lasso))
+                            {
+                                allInLasso = false;
+                                break;
+                            }
+                        }
+                        if (allInLasso) meshContext.SelectedFaces.Add(faceIdx);
+                    }
+                }
+
+                // 線分選択
+                if (currentMode.Has(MeshSelectMode.Line))
+                {
+                    for (int faceIdx = 0; faceIdx < targetMeshObject.FaceCount; faceIdx++)
+                    {
+                        var face = targetMeshObject.Faces[faceIdx];
+                        if (face.VertexCount != 2) continue;
+
+                        if (_visibilityProvider != null)
+                        {
+                            bool v1Visible = _visibilityProvider.IsVertexVisible(face.VertexIndices[0]);
+                            bool v2Visible = _visibilityProvider.IsVertexVisible(face.VertexIndices[1]);
+                            if (!v1Visible && !v2Visible)
+                                continue;
+                        }
+
+                        if (IsPointInLasso(vertexIndexToScreen(face.VertexIndices[0]), lasso) &&
+                            IsPointInLasso(vertexIndexToScreen(face.VertexIndices[1]), lasso))
+                        {
+                            meshContext.SelectedLines.Add(faceIdx);
+                        }
+                    }
+                }
+            }
+
+            // _selectionState == meshContext.Selection のため同期不要
+
+            // 選択変更をパイプラインに通知
+            _unifiedAdapter?.RequestNormal();
+        }
+        else
+        {
+            // フォールバック：従来の単一メッシュ処理
+            Matrix4x4 displayMatrix = GetDisplayMatrix(_selectedIndex);
+            int vertexOffset = _unifiedAdapter?.GetVertexOffset(_selectedIndex) ?? 0;
+
+            Func<int, Vector2> vertexIndexToScreen;
+            if (useWorldTransform && displayPositions != null)
+            {
+                vertexIndexToScreen = (vertexIndex) =>
+                {
+                    int globalIndex = vertexOffset + vertexIndex;
+                    if (globalIndex >= 0 && globalIndex < displayPositions.Length)
+                    {
+                        return WorldToPreviewPos(displayPositions[globalIndex], previewRect, camPos, lookAt);
+                    }
+                    Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[vertexIndex].Position);
+                    return WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
+                };
+            }
+            else
+            {
+                vertexIndexToScreen = (vertexIndex) =>
+                {
+                    Vector3 transformedPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[vertexIndex].Position);
+                    return WorldToPreviewPos(transformedPos, previewRect, camPos, lookAt);
+                };
+            }
+
+            if (_selectionState != null)
+            {
+                if (!additive)
+                    _selectionState.ClearAll();
+
+                if (currentMode.Has(MeshSelectMode.Vertex))
+                {
+                    for (int i = 0; i < meshObject.VertexCount; i++)
+                    {
+                        if (_visibilityProvider != null && !_visibilityProvider.IsVertexVisible(i))
+                            continue;
+                        if (IsPointInLasso(vertexIndexToScreen(i), lasso))
+                            _selectionState.Vertices.Add(i);
+                    }
+                }
+
+                _unifiedAdapter?.RequestNormal();
+            }
+        }
+
+        // 選択が変更されていたら記録
+        if (!oldSelection.SetEquals(_selectionState.Vertices) ||
+            (_selectionState != null && oldSnapshot != null && oldSnapshot.IsDifferentFrom(_selectionState.CreateSnapshot())))
+        {
+            RecordExtendedSelectionChange(oldSnapshot, oldSelection);
+        }
+    }
+
+    /// <summary>
+    /// 点が投げ縄ポリゴン内にあるかを判定（Ray Castingアルゴリズム）
+    /// </summary>
+    private static bool IsPointInLasso(Vector2 point, List<Vector2> polygon)
+    {
+        if (polygon == null || polygon.Count < 3) return false;
+
+        bool inside = false;
+        int count = polygon.Count;
+        int j = count - 1;
+
+        for (int i = 0; i < count; i++)
+        {
+            if ((polygon[i].y > point.y) != (polygon[j].y > point.y) &&
+                point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) /
+                          (polygon[j].y - polygon[i].y) + polygon[i].x)
+            {
+                inside = !inside;
+            }
+            j = i;
+        }
+
+        return inside;
     }
 
     // ================================================================

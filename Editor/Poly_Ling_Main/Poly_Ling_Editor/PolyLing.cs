@@ -235,9 +235,20 @@ public partial class PolyLing : EditorWindow
     {
         Idle,              // 待機
         PendingAction,     // MouseDown後、ドラッグかクリックか判定中
-        BoxSelecting       // 矩形選択中
+        BoxSelecting,      // 矩形選択中
+        LassoSelecting     // 投げ縄選択中
     }
     private VertexEditState _editState = VertexEditState.Idle;
+
+    /// <summary>
+    /// ドラッグ選択モード（矩形 / 投げ縄）
+    /// </summary>
+    public enum DragSelectMode
+    {
+        Box,    // 矩形選択
+        Lasso   // 投げ縄選択
+    }
+    private DragSelectMode _dragSelectMode = DragSelectMode.Box;
 
     // マウス操作用
     private Vector2 _mouseDownScreenPos;      // MouseDown時のスクリーン座標
@@ -246,6 +257,7 @@ public partial class PolyLing : EditorWindow
     private int _hitMeshIndexOnMouseDown = -1; // MouseDown時にヒットしたメッシュインデックス（v2.1複数メッシュ対応）
     private Vector2 _boxSelectStart;          // 矩形選択開始点
     private Vector2 _boxSelectEnd;            // 矩形選択終了点
+    private List<Vector2> _lassoPoints = new List<Vector2>();  // 投げ縄選択のポイントリスト
     private const float DragThreshold = 0f;   // ドラッグ判定の閾値（ピクセル）
 
     // 表示設定（EditorStateContext への委譲）

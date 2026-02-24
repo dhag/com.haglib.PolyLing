@@ -11,7 +11,7 @@ namespace Poly_Ling.Tools
         {
             ["ClickToSelect"] = new() { ["en"] = "Click to select vertices", ["ja"] = "クリックで頂点を選択", ["hi"] = "クリックしてえらぶ" },
             ["ShiftClick"] = new() { ["en"] = "Shift+Click: Add to selection", ["ja"] = "Shift+クリック: 選択に追加", ["hi"] = "Shift+クリック: ついか" },
-            ["DragSelect"] = new() { ["en"] = "Drag: Box select", ["ja"] = "ドラッグ: 矩形選択", ["hi"] = "ドラッグ: しかくでえらぶ" },
+            ["DragSelect"] = new() { ["en"] = "Drag: Box/Lasso select", ["ja"] = "ドラッグ: 矩形/投げ縄選択", ["hi"] = "ドラッグ: しかく/なげなわでえらぶ" },
         };
 
         private static string T(string key) => L.GetFrom(Texts, key);

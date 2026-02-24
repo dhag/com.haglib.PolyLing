@@ -393,6 +393,9 @@ public partial class PolyLing
                 // === 選択モード切り替え ===
                 DrawSelectionModeToolbar();
 
+                // === ドラッグ選択モード切り替え（矩形/投げ縄） ===
+                DrawDragSelectModeToolbar();
+
                 int totalVertices = 0;
 
                 var meshContext = _model.FirstSelectedMeshContext;
@@ -487,6 +490,37 @@ public partial class PolyLing
 
             EditorGUILayout.EndScrollView();
         }
+    }
+
+    /// <summary>
+    /// ドラッグ選択モード切り替えツールバー（矩形/投げ縄）
+    /// </summary>
+    private void DrawDragSelectModeToolbar()
+    {
+        EditorGUILayout.BeginHorizontal();
+
+        var buttonStyle = EditorStyles.miniButton;
+        var oldColor = GUI.backgroundColor;
+
+        // Box（矩形選択）
+        bool boxActive = _dragSelectMode == DragSelectMode.Box;
+        if (boxActive) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
+        if (GUILayout.Button("☐ Box", buttonStyle))
+        {
+            _dragSelectMode = DragSelectMode.Box;
+        }
+        GUI.backgroundColor = oldColor;
+
+        // Lasso（投げ縄選択）
+        bool lassoActive = _dragSelectMode == DragSelectMode.Lasso;
+        if (lassoActive) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
+        if (GUILayout.Button("◯ Lasso", buttonStyle))
+        {
+            _dragSelectMode = DragSelectMode.Lasso;
+        }
+        GUI.backgroundColor = oldColor;
+
+        EditorGUILayout.EndHorizontal();
     }
 
     /// <summary>
