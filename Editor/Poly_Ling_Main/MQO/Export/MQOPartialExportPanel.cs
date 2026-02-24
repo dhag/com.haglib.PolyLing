@@ -77,16 +77,7 @@ namespace Poly_Ling.MQO
 
         private ToolContext _context;
         private string _mqoFilePath = "";
-        private MQODocument _mqoDocument;
-
-        // モデル側リスト
-        private List<MeshEntry> _modelMeshes = new List<MeshEntry>();
-
-        // MQO側リスト
-        private List<MQOEntry> _mqoObjects = new List<MQOEntry>();
-
-        // MQOインポート結果（展開後頂点数計算用）
-        private MQOImportResult _mqoImportResult;
+        private MQOPartialMatchHelper _matchHelper = new MQOPartialMatchHelper();
 
         // オプション
         // PMXは展開後の値しか得られない
@@ -105,31 +96,7 @@ namespace Poly_Ling.MQO
         private Vector2 _scrollRight;
         private string _lastResult = "";
 
-        // ================================================================
-        // データクラス
-        // ================================================================
-
-        private class MeshEntry
-        {
-            public bool Selected;
-            public int Index;              // DrawableMeshes内のインデックス
-            public string Name;
-            public int VertexCount;        // 生頂点数
-            public int ExpandedVertexCount; // 展開後頂点数
-            public bool IsBakedMirror;
-            public MeshContext Context;
-            public HashSet<int> IsolatedVertices;
-        }
-
-        private class MQOEntry
-        {
-            public bool Selected;
-            public int Index;              // MQODocument.Objects内のインデックス
-            public string Name;
-            public int VertexCount;        // 生頂点数
-            public int ExpandedVertexCount; // 展開後頂点数
-            public MeshContext MeshContext; // インポート結果のMeshContext
-        }
+        // データクラスはMQOPartialMatchHelper内のPartialMeshEntry/PartialMQOEntryを使用
 
         // ================================================================
         // プロパティ
@@ -156,7 +123,7 @@ namespace Poly_Ling.MQO
             panel.titleContent = new GUIContent(T("WindowTitle"));
             panel.minSize = new Vector2(700, 500);
             panel._context = ctx;
-            panel.BuildModelList();
+            panel._matchHelper.BuildModelList(ctx?.Model, panel._skipBakedMirror, panel._skipNamedMirror);
             panel.Show();
         }
 
@@ -165,10 +132,10 @@ namespace Poly_Ling.MQO
             _context = ctx;
             var es = ctx?.UndoController?.EditorState;
             if (es != null) _exportScale = es.MqoUnityRatio > 0f ? es.MqoUnityRatio : 0.01f;
-            BuildModelList();
-            if (_mqoDocument != null)
+            _matchHelper.BuildModelList(Model, _skipBakedMirror, _skipNamedMirror);
+            if (_matchHelper.MQODocument != null)
             {
-                AutoMatch();
+                _matchHelper.AutoMatch();
             }
         }
 
@@ -208,7 +175,7 @@ namespace Poly_Ling.MQO
                 var rect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
                 _mqoFilePath = EditorGUI.TextField(rect, _mqoFilePath);
 
-                HandleDropOnRect(rect, ".mqo", path =>
+                MQOPartialMatchHelper.HandleDropOnRect(rect, ".mqo", path =>
                 {
                     _mqoFilePath = path;
                     LoadMQOAndMatch();
@@ -226,10 +193,10 @@ namespace Poly_Ling.MQO
                 }
             }
 
-            if (_mqoDocument != null)
+            if (_matchHelper.MQODocument != null)
             {
-                int nonEmpty = _mqoObjects.Count;
-                int total = _mqoDocument.Objects.Count;
+                int nonEmpty = _matchHelper.MQOObjects.Count;
+                int total = _matchHelper.MQODocument.Objects.Count;
                 EditorGUILayout.LabelField($"Objects: {nonEmpty} / {total}", EditorStyles.miniLabel);
             }
         }
@@ -252,16 +219,16 @@ namespace Poly_Ling.MQO
             _skipBakedMirror = EditorGUILayout.ToggleLeft(T("SkipBakedMirror"), _skipBakedMirror);
             if (prevSkip != _skipBakedMirror)
             {
-                BuildModelList();
-                if (_mqoDocument != null) AutoMatch();
+                _matchHelper.BuildModelList(Model, _skipBakedMirror, _skipNamedMirror);
+                if (_matchHelper.MQODocument != null) _matchHelper.AutoMatch();
             }
 
             bool prevSkipNamed = _skipNamedMirror;
             _skipNamedMirror = EditorGUILayout.ToggleLeft(T("SkipNamedMirror"), _skipNamedMirror);
             if (prevSkipNamed != _skipNamedMirror)
             {
-                BuildModelList();
-                if (_mqoDocument != null) AutoMatch();
+                _matchHelper.BuildModelList(Model, _skipBakedMirror, _skipNamedMirror);
+                if (_matchHelper.MQODocument != null) _matchHelper.AutoMatch();
             }
 
             // WriteBackオプション
@@ -276,107 +243,12 @@ namespace Poly_Ling.MQO
         }
 
         // ================================================================
-        // 左右リストセクション
+        // 左右リストセクション（_matchHelperに委譲）
         // ================================================================
 
         private void DrawDualListSection()
         {
-            if (_context == null)
-            {
-                EditorGUILayout.HelpBox(T("NoContext"), MessageType.Warning);
-                return;
-            }
-            if (Model == null)
-            {
-                EditorGUILayout.HelpBox(T("NoModel"), MessageType.Warning);
-                return;
-            }
-            if (_mqoDocument == null)
-            {
-                EditorGUILayout.HelpBox(T("SelectMQOFirst"), MessageType.Info);
-                return;
-            }
-
-            float halfWidth = (position.width - 30) / 2;
-
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                // 左リスト（モデル側）
-                using (new EditorGUILayout.VerticalScope(GUILayout.Width(halfWidth)))
-                {
-                    DrawListHeader(T("ModelMeshes"), _modelMeshes, true);
-                    _scrollLeft = EditorGUILayout.BeginScrollView(_scrollLeft, GUILayout.Height(300));
-                    DrawModelList();
-                    EditorGUILayout.EndScrollView();
-                }
-
-                // 右リスト（MQO側）
-                using (new EditorGUILayout.VerticalScope(GUILayout.Width(halfWidth)))
-                {
-                    DrawListHeader(T("MQOObjects"), _mqoObjects, false);
-                    _scrollRight = EditorGUILayout.BeginScrollView(_scrollRight, GUILayout.Height(300));
-                    DrawMQOList();
-                    EditorGUILayout.EndScrollView();
-                }
-            }
-        }
-
-        private void DrawListHeader<TEntry>(string title, List<TEntry> list, bool isModel)
-        {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
-                GUILayout.FlexibleSpace();
-                if (GUILayout.Button(T("SelectAll"), GUILayout.Width(50)))
-                {
-                    if (isModel)
-                        foreach (var m in _modelMeshes) m.Selected = true;
-                    else
-                        foreach (var m in _mqoObjects) m.Selected = true;
-                }
-                if (GUILayout.Button(T("SelectNone"), GUILayout.Width(50)))
-                {
-                    if (isModel)
-                        foreach (var m in _modelMeshes) m.Selected = false;
-                    else
-                        foreach (var m in _mqoObjects) m.Selected = false;
-                }
-            }
-        }
-
-        private void DrawModelList()
-        {
-            foreach (var entry in _modelMeshes)
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    entry.Selected = EditorGUILayout.Toggle(entry.Selected, GUILayout.Width(20));
-
-                    // PMXは展開後の値しか得られないので常にExpandedVertexCount
-                    int verts = entry.ExpandedVertexCount;
-                    string label = $"{entry.Name} ({verts})";
-
-                    if (entry.IsBakedMirror || (!string.IsNullOrEmpty(entry.Name) && entry.Name.EndsWith("+")))
-                    {
-                        GUI.color = new Color(0.7f, 0.7f, 1f);
-                    }
-                    EditorGUILayout.LabelField(label);
-                    GUI.color = Color.white;
-                }
-            }
-        }
-
-        private void DrawMQOList()
-        {
-            foreach (var entry in _mqoObjects)
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    entry.Selected = EditorGUILayout.Toggle(entry.Selected, GUILayout.Width(20));
-                    // MQO側は展開後頂点数を表示（モデル側と比較するため）
-                    EditorGUILayout.LabelField($"{entry.Name} ({entry.ExpandedVertexCount})");
-                }
-            }
+            _matchHelper.DrawDualListSection(_context, position.width, ref _scrollLeft, ref _scrollRight);
         }
 
         // ================================================================
@@ -385,18 +257,17 @@ namespace Poly_Ling.MQO
 
         private void DrawExportSection()
         {
-            int modelCount = _modelMeshes.Count(m => m.Selected);
-            int mqoCount = _mqoObjects.Count(m => m.Selected);
+            int modelCount = _matchHelper.ModelMeshes.Count(m => m.Selected);
+            int mqoCount = _matchHelper.MQOObjects.Count(m => m.Selected);
 
             // PMXは展開後の値しか得られないので常にExpandedVertexCount
-            int modelVerts = _modelMeshes.Where(m => m.Selected)
-                .Sum(m => m.ExpandedVertexCount);
-            int mqoVerts = _mqoObjects.Where(m => m.Selected).Sum(m => m.ExpandedVertexCount);
+            int modelVerts = _matchHelper.SelectedModelVertexCount;
+            int mqoVerts = _matchHelper.SelectedMQOVertexCount;
 
             EditorGUILayout.LabelField(T("Selection", modelCount, mqoCount) + $"  Verts: {modelVerts} → {mqoVerts}");
 
             bool vertexMatch = modelVerts == mqoVerts;
-            bool canExport = modelCount > 0 && mqoCount > 0 && _mqoDocument != null;
+            bool canExport = modelCount > 0 && mqoCount > 0 && _matchHelper.MQODocument != null;
 
             if (!vertexMatch && canExport)
             {
@@ -418,154 +289,23 @@ namespace Poly_Ling.MQO
         }
 
         // ================================================================
-        // データ構築
-        // ================================================================
-
-        private void BuildModelList()
-        {
-            _modelMeshes.Clear();
-
-            var model = Model;
-            if (model == null) return;
-
-            var drawables = model.DrawableMeshes;
-            if (drawables == null) return;
-
-            for (int i = 0; i < drawables.Count; i++)
-            {
-                var entry = drawables[i];
-                var ctx = entry.Context;
-                if (ctx?.MeshObject == null) continue;
-
-                var mo = ctx.MeshObject;
-                if (mo.VertexCount == 0) continue;
-
-                // ベイクミラーフラグでスキップ
-                if (_skipBakedMirror && ctx.IsBakedMirror) continue;
-
-                // 名前末尾+のメッシュをスキップ（Type=BakedMirrorでないもの）
-                if (_skipNamedMirror && !ctx.IsBakedMirror &&
-                    !string.IsNullOrEmpty(ctx.Name) && ctx.Name.EndsWith("+")) continue;
-
-                var isolated = PMXMQOTransferPanel.GetIsolatedVertices(mo);
-                int expandedCount = PMXMQOTransferPanel.CalculateExpandedVertexCount(mo, isolated);
-
-                _modelMeshes.Add(new MeshEntry
-                {
-                    Selected = false,
-                    Index = i,
-                    Name = ctx.Name,
-                    VertexCount = mo.VertexCount,
-                    ExpandedVertexCount = expandedCount,
-                    IsBakedMirror = ctx.IsBakedMirror,
-                    Context = ctx,
-                    IsolatedVertices = isolated
-                });
-            }
-        }
-
-        private void BuildMQOList()
-        {
-            _mqoObjects.Clear();
-
-            if (_mqoImportResult == null || !_mqoImportResult.Success) return;
-
-            // インポート結果のMeshContextsを使用
-            foreach (var meshContext in _mqoImportResult.MeshContexts)
-            {
-                var mo = meshContext.MeshObject;
-                if (mo == null || mo.VertexCount == 0) continue;
-
-                var isolated = PMXMQOTransferPanel.GetIsolatedVertices(mo);
-                int expandedCount = PMXMQOTransferPanel.CalculateExpandedVertexCount(mo, isolated);
-
-                _mqoObjects.Add(new MQOEntry
-                {
-                    Selected = false,
-                    Index = _mqoObjects.Count,
-                    Name = meshContext.Name,
-                    VertexCount = mo.VertexCount,
-                    ExpandedVertexCount = expandedCount,
-                    MeshContext = meshContext
-                });
-            }
-        }
-
-        // ================================================================
-        // MQO読み込みと自動照合
+        // MQO読み込みと自動照合（_matchHelperに委譲）
         // ================================================================
 
         private void LoadMQOAndMatch()
         {
-            LoadMQO();
-            BuildMQOList();
+            _matchHelper.LoadMQO(_mqoFilePath, _flipZ, false); // visibleOnly=false（エクスポートは全オブジェクト対象）
 
-            // モデルリストも（再）構築
-            if (_modelMeshes.Count == 0)
+            if (_matchHelper.ModelMeshes.Count == 0)
             {
-                BuildModelList();
+                _matchHelper.BuildModelList(Model, _skipBakedMirror, _skipNamedMirror);
             }
 
-            if (_mqoDocument != null)
+            if (_matchHelper.MQODocument != null)
             {
-                AutoMatch();
+                _matchHelper.AutoMatch();
             }
             Repaint();
-        }
-
-        private void LoadMQO()
-        {
-            if (string.IsNullOrEmpty(_mqoFilePath) || !File.Exists(_mqoFilePath))
-            {
-                _mqoDocument = null;
-                _mqoImportResult = null;
-                return;
-            }
-
-            try
-            {
-                // MQODocumentをパース
-                _mqoDocument = MQOParser.ParseFile(_mqoFilePath);
-
-                // MQOをインポートしてMeshContextを取得（展開後頂点数計算用）
-                var settings = new MQOImportSettings
-                {
-                    ImportMaterials = false,
-                    SkipHiddenObjects = true,
-                    MergeObjects = false,
-                    FlipZ = _flipZ,
-                    FlipUV_V = false,
-                    BakeMirror = false
-                };
-                _mqoImportResult = MQOImporter.ImportFile(_mqoFilePath, settings);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[MQOPartialExport] Load failed: {ex.Message}");
-                _mqoDocument = null;
-                _mqoImportResult = null;
-            }
-        }
-
-        private void AutoMatch()
-        {
-            // PMXは展開後の値しか得られないので、展開後頂点数で照合
-            // 頂点がないオブジェクトは照合しない
-            foreach (var model in _modelMeshes)
-            {
-                model.Selected = false;
-                if (model.ExpandedVertexCount == 0) continue;
-                
-                // 同じ展開後頂点数のMQOオブジェクトを探す
-                var match = _mqoObjects.FirstOrDefault(m => 
-                    m.ExpandedVertexCount == model.ExpandedVertexCount && 
-                    m.ExpandedVertexCount > 0);
-                if (match != null)
-                {
-                    model.Selected = true;
-                    match.Selected = true;
-                }
-            }
         }
 
         // ================================================================
@@ -583,8 +323,8 @@ namespace Poly_Ling.MQO
                     return;
 
                 // 選択されたものをリスト化
-                var selectedModels = _modelMeshes.Where(m => m.Selected).ToList();
-                var selectedMQOs = _mqoObjects.Where(m => m.Selected).ToList();
+                var selectedModels = _matchHelper.SelectedModelMeshes;
+                var selectedMQOs = _matchHelper.SelectedMQOObjects;
 
                 int transferred = 0;
                 int modelVertexOffset = 0;  // モデル側の頂点オフセット
@@ -597,12 +337,11 @@ namespace Poly_Ling.MQO
                 }
 
                 // 保存
-                Utility.MQOWriter.WriteToFile(_mqoDocument, savePath);
+                Utility.MQOWriter.WriteToFile(_matchHelper.MQODocument, savePath);
 
                 // 結果表示
-                int totalModelVerts = _modelMeshes.Where(m => m.Selected)
-                    .Sum(m => m.ExpandedVertexCount);
-                int totalMqoVerts = _mqoObjects.Where(m => m.Selected).Sum(m => m.ExpandedVertexCount);
+                int totalModelVerts = _matchHelper.SelectedModelVertexCount;
+                int totalMqoVerts = _matchHelper.SelectedMQOVertexCount;
 
                 _lastResult = T("ExportSuccess", $"{transferred} vertices → {Path.GetFileName(savePath)}");
                 if (totalModelVerts != totalMqoVerts)
@@ -611,8 +350,7 @@ namespace Poly_Ling.MQO
                 }
 
                 // リロード
-                LoadMQO();
-                BuildMQOList();
+                _matchHelper.LoadMQO(_mqoFilePath, _flipZ, false);
             }
             catch (Exception ex)
             {
@@ -629,14 +367,14 @@ namespace Poly_Ling.MQO
         /// Position, UV, BoneWeight書き戻し対応
         /// 孤立頂点（面に使われていない頂点）はスキップ
         /// </summary>
-        private int TransferToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, ref int modelVertexOffset)
+        private int TransferToMQO(PartialMQOEntry mqoEntry, List<PartialMeshEntry> modelMeshes, ref int modelVertexOffset)
         {
             var mqoMeshContext = mqoEntry.MeshContext;
             var mqoMo = mqoMeshContext?.MeshObject;
             if (mqoMo == null) return 0;
 
             // MQODocument側のオブジェクトを名前で検索
-            var mqoDocObj = _mqoDocument.Objects.FirstOrDefault(o => o.Name == mqoEntry.Name);
+            var mqoDocObj = _matchHelper.MQODocument.Objects.FirstOrDefault(o => o.Name == mqoEntry.Name);
             if (mqoDocObj == null) return 0;
 
             // MQO側の面で使用されている頂点インデックスを収集（孤立頂点判定用）
@@ -713,7 +451,7 @@ namespace Poly_Ling.MQO
         /// MQO側の面のUVIndicesを使って、対応する展開後インデックスを特定
         /// 孤立頂点はスキップ
         /// </summary>
-        private void WriteBackUVsToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj, HashSet<int> usedVertexIndices)
+        private void WriteBackUVsToMQO(PartialMQOEntry mqoEntry, List<PartialMeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj, HashSet<int> usedVertexIndices)
         {
             var mqoMo = mqoEntry.MeshContext?.MeshObject;
             if (mqoMo == null) return;
@@ -782,7 +520,7 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// ボーンウェイトを特殊面として書き戻す（既存削除→新規追加）
         /// </summary>
-        private void WriteBackBoneWeightsToMQO(MQOEntry mqoEntry, List<MeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj, HashSet<int> usedVertexIndices)
+        private void WriteBackBoneWeightsToMQO(PartialMQOEntry mqoEntry, List<PartialMeshEntry> modelMeshes, int startOffset, MQOObject mqoDocObj, HashSet<int> usedVertexIndices)
         {
             var mqoMo = mqoEntry.MeshContext?.MeshObject;
             if (mqoMo == null) return;
@@ -842,7 +580,7 @@ namespace Poly_Ling.MQO
         /// モデル側の指定オフセットからUVを取得
         /// PMXは展開後の値しか得られないので展開後インデックスで処理
         /// </summary>
-        private Vector2? GetModelVertexUV(List<MeshEntry> modelMeshes, int offset)
+        private Vector2? GetModelVertexUV(List<PartialMeshEntry> modelMeshes, int offset)
         {
             int currentOffset = 0;
 
@@ -884,7 +622,7 @@ namespace Poly_Ling.MQO
         /// モデル側の指定オフセットから頂点情報を取得
         /// PMXは展開後の値しか得られないので展開後インデックスで処理
         /// </summary>
-        private Vertex GetModelVertexInfo(List<MeshEntry> modelMeshes, int offset)
+        private Vertex GetModelVertexInfo(List<PartialMeshEntry> modelMeshes, int offset)
         {
             int currentOffset = 0;
 
@@ -925,7 +663,7 @@ namespace Poly_Ling.MQO
         /// モデル側の指定オフセットから頂点位置を取得
         /// PMXは展開後の値しか得られないので展開後インデックスで処理
         /// </summary>
-        private Vector3? GetModelVertexPosition(List<MeshEntry> modelMeshes, int offset)
+        private Vector3? GetModelVertexPosition(List<PartialMeshEntry> modelMeshes, int offset)
         {
             int currentOffset = 0;
 
@@ -962,32 +700,5 @@ namespace Poly_Ling.MQO
             return null;
         }
 
-        // ================================================================
-        // ユーティリティ
-        // ================================================================
-
-        private void HandleDropOnRect(Rect rect, string ext, Action<string> onDrop)
-        {
-            var evt = Event.current;
-            if (!rect.Contains(evt.mousePosition)) return;
-
-            if (evt.type == EventType.DragUpdated)
-            {
-                if (DragAndDrop.paths.Length > 0 && Path.GetExtension(DragAndDrop.paths[0]).ToLower() == ext)
-                {
-                    DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-                    evt.Use();
-                }
-            }
-            else if (evt.type == EventType.DragPerform)
-            {
-                if (DragAndDrop.paths.Length > 0 && Path.GetExtension(DragAndDrop.paths[0]).ToLower() == ext)
-                {
-                    DragAndDrop.AcceptDrag();
-                    onDrop(DragAndDrop.paths[0]);
-                    evt.Use();
-                }
-            }
-        }
     }
 }

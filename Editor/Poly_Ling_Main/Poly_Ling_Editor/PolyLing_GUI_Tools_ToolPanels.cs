@@ -68,6 +68,10 @@ public partial class PolyLing
         {
         Poly_Ling.MQO.MQOPartialExportPanel.Open(_toolManager?.toolContext);
         }
+        if (GUILayout.Button("MQO <part>→ mesh"))
+        {
+        Poly_Ling.MQO.MQOPartialImportPanel.Open(_toolManager?.toolContext);
+        }
 
         //EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
         if (GUILayout.Button("MQO Export"))
