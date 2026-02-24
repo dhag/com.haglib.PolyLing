@@ -45,6 +45,7 @@ namespace Poly_Ling.MQO
             ["SkipNamedMirror"] = new() { ["en"] = "Skip Named Mirror (+)", ["ja"] = "名前ミラー(+)をスキップ" },
             ["NormalMode"] = new() { ["en"] = "Normal Mode", ["ja"] = "法線モード" },
             ["SmoothingAngle"] = new() { ["en"] = "Smoothing Angle", ["ja"] = "スムージング角度" },
+            ["RecalcNormals"] = new() { ["en"] = "Recalculate Normals", ["ja"] = "法線再計算" },
 
             // チェックボックス
             ["VertexPosition"] = new() { ["en"] = "Vertex Position", ["ja"] = "頂点位置" },
@@ -93,6 +94,9 @@ namespace Poly_Ling.MQO
 
         // ミラー
         private bool _bakeMirror = true;
+
+        // 法線再計算
+        private bool _recalcNormals = true;
 
         // UI状態
         private Vector2 _scrollLeft;
@@ -262,15 +266,24 @@ namespace Poly_Ling.MQO
                 _flipZ = EditorGUILayout.ToggleLeft(T("FlipZ"), _flipZ, GUILayout.Width(80));
             }
 
-            // メッシュ構造インポート時のみUV反転と法線設定を表示
+            // メッシュ構造インポート時のみUV反転とミラー設定を表示
             if (_importMeshStructure)
             {
                 _flipUV_V = EditorGUILayout.ToggleLeft(T("FlipUV_V"), _flipUV_V);
                 _bakeMirror = EditorGUILayout.ToggleLeft(T("BakeMirror"), _bakeMirror);
-                _normalMode = (NormalMode)EditorGUILayout.EnumPopup(T("NormalMode"), _normalMode);
-                if (_normalMode == NormalMode.Smooth)
+            }
+
+            // 法線再計算（頂点位置 or メッシュ構造の時に表示）
+            if (_importVertexPosition || _importMeshStructure)
+            {
+                _recalcNormals = EditorGUILayout.ToggleLeft(T("RecalcNormals"), _recalcNormals);
+                if (_recalcNormals)
                 {
-                    _smoothingAngle = EditorGUILayout.Slider(T("SmoothingAngle"), _smoothingAngle, 0f, 180f);
+                    _normalMode = (NormalMode)EditorGUILayout.EnumPopup(T("NormalMode"), _normalMode);
+                    if (_normalMode == NormalMode.Smooth)
+                    {
+                        _smoothingAngle = EditorGUILayout.Slider(T("SmoothingAngle"), _smoothingAngle, 0f, 180f);
+                    }
                 }
             }
 
@@ -405,6 +418,17 @@ namespace Poly_Ling.MQO
                 {
                     int count = ExecuteVertexPositionImport(selectedModels, selectedMQOs);
                     results.Add($"Position: {count} vertices");
+
+                    // 法線再計算
+                    if (_recalcNormals)
+                    {
+                        foreach (var entry in selectedModels)
+                        {
+                            var mo = entry.Context?.MeshObject;
+                            if (mo != null) RecalculateNormals(mo);
+                        }
+                        results.Add("Normals: recalculated");
+                    }
                 }
 
                 // 材質インポート
@@ -784,13 +808,13 @@ namespace Poly_Ling.MQO
                 modelMo.Vertices.AddRange(newRealVertices);
                 modelMo.Faces.Clear();
                 modelMo.Faces.AddRange(newRealFaces);
-                RecalculateNormals(modelMo);
+                if (_recalcNormals) RecalculateNormals(modelMo);
 
                 peerMo.Vertices.Clear();
                 peerMo.Vertices.AddRange(newMirrorVertices);
                 peerMo.Faces.Clear();
                 peerMo.Faces.AddRange(newMirrorFaces);
-                RecalculateNormals(peerMo);
+                if (_recalcNormals) RecalculateNormals(peerMo);
 
                 Debug.Log($"[MQOPartialImport] MeshStructure: real={newRealVertices.Count}v/{newRealFaces.Count}f, mirror={newMirrorVertices.Count}v/{newMirrorFaces.Count}f (peer split)");
             }
@@ -817,7 +841,7 @@ namespace Poly_Ling.MQO
                 if (isMirrored && _bakeMirror)
                     modelMo.Faces.AddRange(newMirrorFaces);
 
-                RecalculateNormals(modelMo);
+                if (_recalcNormals) RecalculateNormals(modelMo);
 
                 Debug.Log($"[MQOPartialImport] MeshStructure: old={oldRealVertices.Count} → new={modelMo.VertexCount} verts, {modelMo.FaceCount} faces" +
                           (isMirrored ? $" (mirror={(_bakeMirror ? "bake" : "flag")})" : ""));

@@ -908,6 +908,7 @@ namespace Poly_Ling.Model
             if (meshContext == null)
                 throw new ArgumentNullException(nameof(meshContext));
 
+            meshContext.ParentModelContext = this;
             MeshContextList.Add(meshContext);
             InvalidateTypedIndices();
             IsDirty = true;
@@ -923,6 +924,7 @@ namespace Poly_Ling.Model
             if (index < 0 || index > MeshContextList.Count)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
+            meshContext.ParentModelContext = this;
             MeshContextList.Insert(index, meshContext);
             InvalidateTypedIndices();
             IsDirty = true;

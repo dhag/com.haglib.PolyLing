@@ -210,6 +210,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     }
                 }
             }
+
+            // BindPose (4x4 matrix, 16 values, row-major)
+            var bp2 = mc.BindPose;
+            if (bp2 != Matrix4x4.identity)
+            {
+                sb.AppendLine($"bindPose,{F(bp2.m00)},{F(bp2.m01)},{F(bp2.m02)},{F(bp2.m03)},{F(bp2.m10)},{F(bp2.m11)},{F(bp2.m12)},{F(bp2.m13)},{F(bp2.m20)},{F(bp2.m21)},{F(bp2.m22)},{F(bp2.m23)},{F(bp2.m30)},{F(bp2.m31)},{F(bp2.m32)},{F(bp2.m33)}");
+            }
         }
 
         // ================================================================
@@ -459,6 +466,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         if (mc.IKLinks == null) mc.IKLinks = new List<IKLinkInfo>();
                         mc.IKLinks.Add(ReadIKLink(cols));
                         break;
+                    case "bindPose":
+                        mc.BindPose = ReadMatrix4x4(cols);
+                        break;
                     case "morphParentIndex":
                         mc.MorphParentIndex = ParseInt(cols, 1, -1);
                         break;
@@ -525,6 +535,21 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 Rotation = new Vector3(ParseFloat(cols, 5), ParseFloat(cols, 6), ParseFloat(cols, 7)),
                 Scale = new Vector3(ParseFloat(cols, 8, 1f), ParseFloat(cols, 9, 1f), ParseFloat(cols, 10, 1f))
             };
+        }
+
+        // ================================================================
+        // Read: BindPose (Matrix4x4)
+        // ================================================================
+
+        private static Matrix4x4 ReadMatrix4x4(string[] cols)
+        {
+            // bindPose,m00,m01,m02,m03,m10,m11,m12,m13,m20,m21,m22,m23,m30,m31,m32,m33
+            var m = new Matrix4x4();
+            m.m00 = ParseFloat(cols, 1); m.m01 = ParseFloat(cols, 2); m.m02 = ParseFloat(cols, 3); m.m03 = ParseFloat(cols, 4);
+            m.m10 = ParseFloat(cols, 5); m.m11 = ParseFloat(cols, 6); m.m12 = ParseFloat(cols, 7); m.m13 = ParseFloat(cols, 8);
+            m.m20 = ParseFloat(cols, 9); m.m21 = ParseFloat(cols, 10); m.m22 = ParseFloat(cols, 11); m.m23 = ParseFloat(cols, 12);
+            m.m30 = ParseFloat(cols, 13); m.m31 = ParseFloat(cols, 14); m.m32 = ParseFloat(cols, 15); m.m33 = ParseFloat(cols, 16);
+            return m;
         }
 
         // ================================================================
