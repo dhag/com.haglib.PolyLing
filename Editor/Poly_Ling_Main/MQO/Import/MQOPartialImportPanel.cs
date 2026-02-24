@@ -440,15 +440,14 @@ namespace Poly_Ling.MQO
 
         // ================================================================
         // 頂点位置インポート
-        // MQO側の頂点位置をモデル側にペアごとに転送
-        // 孤立頂点（面に未使用）はスキップし、残りを順番に1:1マッピング
+        // MQO側の頂点位置をモデル側に展開辞書ベースで転送
+        // PMX展開済み頂点（1頂点1UV）に対し、MQO頂点のUV数分を同一位置で更新
         // ================================================================
 
         private int ExecuteVertexPositionImport(List<PartialMeshEntry> modelMeshes, List<PartialMQOEntry> mqoObjects)
         {
             int totalUpdated = 0;
 
-            // ペアで処理（選択順に1:1対応）
             int pairCount = Math.Min(modelMeshes.Count, mqoObjects.Count);
 
             for (int p = 0; p < pairCount; p++)
@@ -465,7 +464,8 @@ namespace Poly_Ling.MQO
 
         /// <summary>
         /// MQO側の頂点位置をモデル側に転送（1ペア分）
-        /// 孤立頂点をスキップした残りを順番にマッピング
+        /// 展開辞書に従い、MQO頂点1個 → PMX展開頂点N個に同一位置を設定
+        /// BakedMirrorPeerがある場合、ミラー側にもミラー変換した位置を設定
         /// </summary>
         private int TransferVertexPositions(PartialMeshEntry modelEntry, PartialMQOEntry mqoEntry)
         {
@@ -473,40 +473,61 @@ namespace Poly_Ling.MQO
             var mqoMo = mqoEntry.MeshContext?.MeshObject;
             if (modelMo == null || mqoMo == null) return 0;
 
-            // モデル側: 孤立頂点セット
-            var modelIsolated = modelEntry.IsolatedVertices;
+            bool isMirrored = mqoEntry.IsMirrored;
+            bool hasPeer = modelEntry.BakedMirrorPeer != null;
+            var peerMo = hasPeer ? modelEntry.BakedMirrorPeer.Context?.MeshObject : null;
 
-            // MQO側: 面で使用されている頂点のインデックスセット
+            // MQO側: 面で使用されている頂点セット
             var mqoUsed = new HashSet<int>();
             foreach (var face in mqoMo.Faces)
                 foreach (var vi in face.VertexIndices)
                     mqoUsed.Add(vi);
 
-            // MQO側の非孤立頂点位置をリスト化
-            var mqoPositions = new List<Vector3>();
+            // 展開辞書: MQO頂点を順に走査し、UV数分だけPMXオフセットを消費
+            int pmxOffset = 0;
+            int updated = 0;
+
             for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
             {
                 if (!mqoUsed.Contains(vIdx)) continue;
-                mqoPositions.Add(mqoMo.Vertices[vIdx].Position);
-            }
 
-            // モデル側の非孤立頂点に順番にMQO位置を割り当て
-            int mqoIdx = 0;
-            int updated = 0;
-            for (int vIdx = 0; vIdx < modelMo.VertexCount; vIdx++)
-            {
-                if (modelIsolated.Contains(vIdx)) continue;
-                if (mqoIdx >= mqoPositions.Count) break;
+                var mqoVertex = mqoMo.Vertices[vIdx];
+                int uvCount = Math.Max(1, mqoVertex.UVs.Count);
 
-                Vector3 pos = mqoPositions[mqoIdx];
-
-                // 座標変換: MQO → Unity
+                // MQO → Unity座標変換
+                Vector3 pos = mqoVertex.Position;
                 pos *= _importScale;
                 if (_flipZ) pos.z = -pos.z;
 
-                modelMo.Vertices[vIdx].Position = pos;
-                mqoIdx++;
-                updated++;
+                // 実体側: UV展開数分のPMX頂点に同一位置を設定
+                for (int u = 0; u < uvCount; u++)
+                {
+                    int idx = pmxOffset + u;
+                    if (idx < modelMo.VertexCount)
+                    {
+                        modelMo.Vertices[idx].Position = pos;
+                        updated++;
+                    }
+                }
+
+                // ミラー側（MQOがミラー＆BakedMirrorPeerがある場合）
+                if (isMirrored && hasPeer && peerMo != null)
+                {
+                    var mirrorAxis = mqoEntry.MeshContext.GetMirrorSymmetryAxis();
+                    Vector3 mirrorPos = MirrorPosition(pos, mirrorAxis);
+
+                    for (int u = 0; u < uvCount; u++)
+                    {
+                        int idx = pmxOffset + u;
+                        if (idx < peerMo.VertexCount)
+                        {
+                            peerMo.Vertices[idx].Position = mirrorPos;
+                            updated++;
+                        }
+                    }
+                }
+
+                pmxOffset += uvCount;
             }
 
             return updated;
