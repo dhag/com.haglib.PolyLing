@@ -51,6 +51,11 @@ namespace Poly_Ling.Model
         /// </summary>
         public Vector3[] BoneWorldPositions { get; set; }
 
+        /// <summary>
+        /// Tポーズ変換前の姿勢バックアップ（CSV保存対象）
+        /// </summary>
+        public TPoseBackup TPoseBackup { get; set; }
+
         // ================================================================
         // メッシュリスト
         // ================================================================

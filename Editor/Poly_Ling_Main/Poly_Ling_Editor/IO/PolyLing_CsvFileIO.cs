@@ -178,6 +178,9 @@ public partial class PolyLing
             _model.MorphExpressions = firstLoaded.MorphExpressions;
         }
 
+        // TPoseBackup 復元
+        _model.TPoseBackup = firstLoaded.TPoseBackup;
+
         // ================================================================
         // 追加モデル（index 1+）: AddModel
         // ================================================================
@@ -353,6 +356,9 @@ public partial class PolyLing
         {
             _model.MorphExpressions = loadedModel.MorphExpressions;
         }
+
+        // TPoseBackup 復元
+        _model.TPoseBackup = loadedModel.TPoseBackup;
 
         // WorkPlane 復元
         if (loadedWorkPlane != null && _undoController?.WorkPlane != null)

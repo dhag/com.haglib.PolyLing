@@ -113,6 +113,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (workPlane != null)
                 WriteWorkPlaneCsv(modelFolderPath, workPlane);
 
+            // tposebackup.csv
+            if (model.TPoseBackup != null)
+                WriteTPoseBackupCsv(modelFolderPath, model.TPoseBackup);
+
             // textures フォルダ作成
             Directory.CreateDirectory(Path.Combine(modelFolderPath, "textures"));
         }
@@ -213,6 +217,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string wpPath = Path.Combine(modelFolderPath, "workplane.csv");
             if (File.Exists(wpPath))
                 workPlane = ReadWorkPlaneCsv(wpPath);
+
+            // tposebackup.csv
+            string tpPath = Path.Combine(modelFolderPath, "tposebackup.csv");
+            if (File.Exists(tpPath))
+                model.TPoseBackup = ReadTPoseBackupCsv(tpPath);
 
             return model;
         }
@@ -700,6 +709,117 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             return result;
+        }
+
+        // ================================================================
+        // TPoseBackup CSV
+        // ================================================================
+
+        private static void WriteTPoseBackupCsv(string folderPath, TPoseBackup backup)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_TPoseBackup,version,1.0");
+
+            // BoneRotations: boneRot,index,rx,ry,rz
+            foreach (var kvp in backup.BoneRotations)
+            {
+                var r = kvp.Value;
+                sb.AppendLine($"boneRot,{kvp.Key},{Fl(r.x)},{Fl(r.y)},{Fl(r.z)}");
+            }
+
+            // WorldMatrices: worldMat,index,m00..m33
+            foreach (var kvp in backup.WorldMatrices)
+            {
+                var m = kvp.Value;
+                sb.AppendLine($"worldMat,{kvp.Key},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+            }
+
+            // BindPoses: bindPose,index,m00..m33
+            foreach (var kvp in backup.BindPoses)
+            {
+                var m = kvp.Value;
+                sb.AppendLine($"bindPose,{kvp.Key},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+            }
+
+            // VertexPositions: vtxPos,meshIndex,count,px0,py0,pz0,...
+            foreach (var kvp in backup.VertexPositions)
+            {
+                var positions = kvp.Value;
+                sb.Append($"vtxPos,{kvp.Key},{positions.Length}");
+                for (int i = 0; i < positions.Length; i++)
+                {
+                    var p = positions[i];
+                    sb.Append($",{Fl(p.x)},{Fl(p.y)},{Fl(p.z)}");
+                }
+                sb.AppendLine();
+            }
+
+            File.WriteAllText(Path.Combine(folderPath, "tposebackup.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static TPoseBackup ReadTPoseBackupCsv(string path)
+        {
+            var backup = new TPoseBackup();
+            var lines = File.ReadAllLines(path, Encoding.UTF8);
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+
+                var cols = SplitCsvLine(line);
+                if (cols.Length < 2) continue;
+
+                string key = cols[0];
+                int idx = PInt(cols, 1);
+
+                switch (key)
+                {
+                    case "boneRot":
+                        backup.BoneRotations[idx] = new Vector3(
+                            PFl(cols, 2), PFl(cols, 3), PFl(cols, 4));
+                        break;
+
+                    case "worldMat":
+                        backup.WorldMatrices[idx] = ReadMat(cols, 2);
+                        break;
+
+                    case "bindPose":
+                        backup.BindPoses[idx] = ReadMat(cols, 2);
+                        break;
+
+                    case "vtxPos":
+                    {
+                        int count = PInt(cols, 2);
+                        var positions = new Vector3[count];
+                        int ci = 3;
+                        for (int v = 0; v < count; v++)
+                        {
+                            positions[v] = new Vector3(
+                                PFl(cols, ci), PFl(cols, ci + 1), PFl(cols, ci + 2));
+                            ci += 3;
+                        }
+                        backup.VertexPositions[idx] = positions;
+                        break;
+                    }
+                }
+            }
+
+            // 空のバックアップなら null を返す
+            if (backup.BoneRotations.Count == 0 && backup.VertexPositions.Count == 0)
+                return null;
+
+            return backup;
+        }
+
+        private static Matrix4x4 ReadMat(string[] cols, int start)
+        {
+            var m = new Matrix4x4();
+            m.m00 = PFl(cols, start);     m.m01 = PFl(cols, start + 1); m.m02 = PFl(cols, start + 2); m.m03 = PFl(cols, start + 3);
+            m.m10 = PFl(cols, start + 4); m.m11 = PFl(cols, start + 5); m.m12 = PFl(cols, start + 6); m.m13 = PFl(cols, start + 7);
+            m.m20 = PFl(cols, start + 8); m.m21 = PFl(cols, start + 9); m.m22 = PFl(cols, start + 10); m.m23 = PFl(cols, start + 11);
+            m.m30 = PFl(cols, start + 12); m.m31 = PFl(cols, start + 13); m.m32 = PFl(cols, start + 14); m.m33 = PFl(cols, start + 15);
+            return m;
         }
 
         // ================================================================

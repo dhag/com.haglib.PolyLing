@@ -67,7 +67,6 @@ namespace Poly_Ling.Tools.Panels
         // フィールド
         // ================================================================
 
-        private TPoseBackup _backup;
         private bool _bakeOriginal;
         private string _statusMessage;
         private MessageType _statusType;
@@ -131,7 +130,7 @@ namespace Poly_Ling.Tools.Panels
             // バックアップ状態表示
             // ================================================================
 
-            if (_backup != null)
+            if (Model.TPoseBackup != null)
             {
                 GUI.color = new Color(0.5f, 1f, 0.5f);
                 EditorGUILayout.LabelField(T("HasBackup"));
@@ -161,7 +160,7 @@ namespace Poly_Ling.Tools.Panels
                             T("ConfirmBake"),
                             "OK", "Cancel"))
                         {
-                            _backup = null;
+                            Model.TPoseBackup = null;
                             _bakeOriginal = false;
                             _statusMessage = T("BackupDiscarded");
                             _statusType = MessageType.Info;
@@ -193,8 +192,9 @@ namespace Poly_Ling.Tools.Panels
             if (mapping == null || mapping.IsEmpty)
                 return;
 
-            _backup = new TPoseBackup();
-            TPoseConverter.ConvertToTPose(Model.MeshContextList, mapping, _backup);
+            var backup = new TPoseBackup();
+            TPoseConverter.ConvertToTPose(Model.MeshContextList, mapping, backup);
+            Model.TPoseBackup = backup;
 
             _statusMessage = T("TPoseApplied");
             _statusType = MessageType.Info;
@@ -207,11 +207,11 @@ namespace Poly_Ling.Tools.Panels
 
         private void RestoreOriginal()
         {
-            if (_backup == null || Model == null)
+            if (Model?.TPoseBackup == null)
                 return;
 
-            TPoseConverter.RestoreFromBackup(Model.MeshContextList, _backup);
-            _backup = null;
+            TPoseConverter.RestoreFromBackup(Model.MeshContextList, Model.TPoseBackup);
+            Model.TPoseBackup = null;
             _bakeOriginal = false;
 
             _statusMessage = T("PoseRestored");
@@ -230,8 +230,6 @@ namespace Poly_Ling.Tools.Panels
         protected override void OnContextSet()
         {
             _statusMessage = null;
-            // モデルが変わった場合バックアップは無効
-            _backup = null;
             _bakeOriginal = false;
         }
     }
