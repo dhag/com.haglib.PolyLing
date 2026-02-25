@@ -1343,18 +1343,18 @@ namespace Poly_Ling.MQO
             // MaterialReferenceを作成し、ソースパスを設定
             var matRef = new MaterialReference(material);
 
-            // ソースパスを設定（元のMQOファイルの相対パスをそのまま保存）
+            // ソースパスを絶対パスで設定
             if (!string.IsNullOrEmpty(mqoMat.TexturePath))
             {
-                matRef.Data.SourceTexturePath = mqoMat.TexturePath;
+                matRef.Data.SourceTexturePath = ResolveTexturePath(mqoMat.TexturePath, settings.BaseDir);
             }
             if (!string.IsNullOrEmpty(mqoMat.AlphaMapPath))
             {
-                matRef.Data.SourceAlphaMapPath = mqoMat.AlphaMapPath;
+                matRef.Data.SourceAlphaMapPath = ResolveTexturePath(mqoMat.AlphaMapPath, settings.BaseDir);
             }
             if (!string.IsNullOrEmpty(mqoMat.BumpMapPath))
             {
-                matRef.Data.SourceBumpMapPath = mqoMat.BumpMapPath;
+                matRef.Data.SourceBumpMapPath = ResolveTexturePath(mqoMat.BumpMapPath, settings.BaseDir);
             }
 
             return matRef;

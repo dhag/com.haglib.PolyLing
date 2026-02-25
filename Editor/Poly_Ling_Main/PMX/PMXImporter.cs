@@ -317,11 +317,17 @@ namespace Poly_Ling.PMX
             // マテリアルをUnityマテリアルに変換（Mesh読み込み時のみ）
             if (settings.ShouldImportMesh && settings.ImportMaterials)
             {
+                string baseDir = GetBaseDirectory(document.FilePath);
                 foreach (var pmxMat in document.Materials)
                 {
                     var mat = ConvertMaterial(pmxMat, document, settings);
-                    // MaterialReferenceでラップして追加
-                    result.MaterialReferences.Add(new MaterialReference(mat));
+                    var matRef = new MaterialReference(mat);
+
+                    // ソーステクスチャパスを絶対パスで設定
+                    if (!string.IsNullOrEmpty(pmxMat.TexturePath))
+                        matRef.Data.SourceTexturePath = ResolveTextureFullPath(pmxMat.TexturePath, baseDir);
+
+                    result.MaterialReferences.Add(matRef);
                 }
                 //Debug.Log($"[PMXImporter] Imported {result.MaterialCount} materials");
             }
@@ -1627,6 +1633,24 @@ namespace Poly_Ling.PMX
                 return "";
 
             return Path.GetDirectoryName(filePath);
+        }
+
+        /// <summary>
+        /// テクスチャパスを絶対パスに解決（SourceTexturePath保存用）
+        /// </summary>
+        private static string ResolveTextureFullPath(string texturePath, string baseDir)
+        {
+            if (string.IsNullOrEmpty(texturePath)) return null;
+
+            string normalized = texturePath.Replace('\\', '/');
+            if (Path.IsPathRooted(normalized)) return normalized;
+
+            if (!string.IsNullOrEmpty(baseDir))
+            {
+                try { return Path.GetFullPath(Path.Combine(baseDir, normalized)).Replace('\\', '/'); }
+                catch { return normalized; }
+            }
+            return normalized;
         }
 
         /// <summary>
