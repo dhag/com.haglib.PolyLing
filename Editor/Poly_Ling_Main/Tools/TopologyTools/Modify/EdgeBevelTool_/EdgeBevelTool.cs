@@ -519,7 +519,7 @@ namespace Poly_Ling.Tools
             Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
             Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
 
-            return Vector3.Cross(p1 - p0, p2 - p0).normalized;
+            return NormalHelper.CalculateFaceNormal(p0, p1, p2);
         }
 
         private Vector3 CalculateFaceCenter(MeshObject meshObject, Face face)

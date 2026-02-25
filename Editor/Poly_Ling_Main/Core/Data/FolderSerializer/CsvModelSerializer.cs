@@ -767,7 +767,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 string line = lines[i].Trim();
                 if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
 
-                var cols = SplitCsvLine(line);
+                var cols = Split(line);
                 if (cols.Length < 2) continue;
 
                 string key = cols[0];

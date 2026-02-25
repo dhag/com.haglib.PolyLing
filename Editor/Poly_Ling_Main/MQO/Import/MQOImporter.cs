@@ -1694,7 +1694,7 @@ namespace Poly_Ling.MQO
             Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
             Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
 
-            Vector3 normal = Vector3.Cross(p1 - p0, p2 - p0).normalized;
+            Vector3 normal = NormalHelper.CalculateFaceNormal(p0, p1, p2);
 
             // 各頂点の法線を更新
             for (int i = 0; i < face.VertexCount; i++)
@@ -1738,11 +1738,7 @@ namespace Poly_Ling.MQO
                 Vector3 p0 = meshObject.Vertices[face.VertexIndices[0]].Position;
                 Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
                 Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
-                faceNormals[fi] = Vector3.Cross((p1 - p0).normalized, (p2 - p0).normalized).normalized;
-                if (faceNormals[fi].magnitude < 0.5)
-                {
-                    Debug.Log($"[MQOImporter] Normals calculated {p0}, {p1}, {p2}");
-                }
+                faceNormals[fi] = NormalHelper.CalculateFaceNormal(p0, p1, p2);
             }
 
             // 位置→(面インデックス, 頂点インデックス in 面, NormalSubIndex) のマッピング

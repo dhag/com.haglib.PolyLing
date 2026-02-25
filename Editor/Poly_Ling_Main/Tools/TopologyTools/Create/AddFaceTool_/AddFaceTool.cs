@@ -740,14 +740,7 @@ namespace Poly_Ling.Tools
             Vector3 p1 = meshObject.Vertices[face.VertexIndices[1]].Position;
             Vector3 p2 = meshObject.Vertices[face.VertexIndices[2]].Position;
 
-            Vector3 v1 = p1 - p0;
-            Vector3 v2 = p2 - p0;
-            Vector3 normal = Vector3.Cross(v1, v2).normalized;
-
-            if (normal.sqrMagnitude < 0.001f)
-                return Vector3.up;
-
-            return normal;
+            return NormalHelper.CalculateFaceNormal(p0, p1, p2);
         }
 
         // === 公開メソッド ===

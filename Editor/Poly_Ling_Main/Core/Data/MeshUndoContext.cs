@@ -23,7 +23,7 @@ namespace Poly_Ling.UndoSystem
         // === メッシュコンテキスト解決 ===
 
         /// <summary>現在選択中のメッシュを自動解決（ModelContextの選択リストから）</summary>
-        public MeshContext ResolvedMeshContext => MaterialOwner?.FirstSelectedMeshContext;
+        public MeshContext ResolvedMeshContext => ParentModelContext?.FirstSelectedMeshContext;
 
         // === メッシュデータ（委譲プロパティ） ===
 
@@ -110,43 +110,43 @@ namespace Poly_Ling.UndoSystem
         // === マテリアル（ModelContext に委譲） ===
 
         /// <summary>マテリアル委譲用ModelContextへの参照 - 必須</summary>
-        public ModelContext MaterialOwner { get; set; }
+        public ModelContext ParentModelContext { get; set; }
 
         /// <summary>マテリアルリスト（ModelContextに委譲）</summary>
         public List<Material> Materials
         {
             get
             {
-                if (MaterialOwner == null)
+                if (ParentModelContext == null)
                 {
                     Debug.LogError("[MeshUndoContext] MaterialOwnerが設定されていません。");
                     return new List<Material>();
                 }
-                return MaterialOwner.Materials;
+                return ParentModelContext.Materials;
             }
             set
             {
-                if (MaterialOwner == null)
+                if (ParentModelContext == null)
                 {
                     Debug.LogError("[MeshUndoContext] MaterialOwnerが設定されていません。");
                     return;
                 }
-                MaterialOwner.Materials = value ?? new List<Material>();
+                ParentModelContext.Materials = value ?? new List<Material>();
             }
         }
 
         /// <summary>現在選択中のマテリアルインデックス</summary>
         public int CurrentMaterialIndex
         {
-            get => MaterialOwner?.CurrentMaterialIndex ?? 0;
+            get => ParentModelContext?.CurrentMaterialIndex ?? 0;
             set
             {
-                if (MaterialOwner == null)
+                if (ParentModelContext == null)
                 {
                     Debug.LogError("[MeshUndoContext] MaterialOwnerが設定されていません。");
                     return;
                 }
-                MaterialOwner.CurrentMaterialIndex = value;
+                ParentModelContext.CurrentMaterialIndex = value;
             }
         }
 
@@ -155,33 +155,33 @@ namespace Poly_Ling.UndoSystem
         /// <summary>新規メッシュ作成時に適用されるデフォルトマテリアルリスト</summary>
         public List<Material> DefaultMaterials
         {
-            get => MaterialOwner?.DefaultMaterials ?? new List<Material> { null };
+            get => ParentModelContext?.DefaultMaterials ?? new List<Material> { null };
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.DefaultMaterials = value ?? new List<Material> { null };
+                if (ParentModelContext != null)
+                    ParentModelContext.DefaultMaterials = value ?? new List<Material> { null };
             }
         }
 
         /// <summary>新規メッシュ作成時に適用されるデフォルトカレントマテリアルインデックス</summary>
         public int DefaultCurrentMaterialIndex
         {
-            get => MaterialOwner?.DefaultCurrentMaterialIndex ?? 0;
+            get => ParentModelContext?.DefaultCurrentMaterialIndex ?? 0;
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.DefaultCurrentMaterialIndex = value;
+                if (ParentModelContext != null)
+                    ParentModelContext.DefaultCurrentMaterialIndex = value;
             }
         }
 
         /// <summary>マテリアル変更時に自動でデフォルトに設定するか</summary>
         public bool AutoSetDefaultMaterials
         {
-            get => MaterialOwner?.AutoSetDefaultMaterials ?? true;
+            get => ParentModelContext?.AutoSetDefaultMaterials ?? true;
             set
             {
-                if (MaterialOwner != null)
-                    MaterialOwner.AutoSetDefaultMaterials = value;
+                if (ParentModelContext != null)
+                    ParentModelContext.AutoSetDefaultMaterials = value;
             }
         }
 

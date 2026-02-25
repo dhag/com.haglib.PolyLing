@@ -629,8 +629,8 @@ namespace Poly_Ling.UI
             Vector3 p1 = meshObj.Vertices[i1].Position;
             Vector3 p2 = meshObj.Vertices[i2].Position;
 
-            Vector3 normal = Vector3.Cross(p1 - p0, p2 - p0).normalized;
-            return normal.sqrMagnitude > 0.0001f ? normal : Vector3.up;
+            Vector3 normal = NormalHelper.CalculateFaceNormal(p0, p1, p2);
+            return normal;
         }
 
         /// <summary>

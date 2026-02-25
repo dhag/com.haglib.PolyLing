@@ -708,7 +708,7 @@ namespace Poly_Ling.Tools
             Vector3 p0 = md.Vertices[f.VertexIndices[0]].Position;
             Vector3 p1 = md.Vertices[f.VertexIndices[1]].Position;
             Vector3 p2 = md.Vertices[f.VertexIndices[2]].Position;
-            return Vector3.Cross(p1 - p0, p2 - p0).normalized;
+            return NormalHelper.CalculateFaceNormal(p0, p1, p2);
         }
 
         private Vector3 GetSelectionCenter(ToolContext ctx)

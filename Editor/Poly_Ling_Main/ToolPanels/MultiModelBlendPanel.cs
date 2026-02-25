@@ -28,7 +28,7 @@ namespace Poly_Ling.Tools.Panels
         public bool RecalculateNormals = true;
 
         /// <summary>リアルタイムプレビュー</summary>
-        public bool RealtimePreview = true;
+        public bool RealtimePreview = false;
 
         public IToolSettings Clone()
         {
@@ -108,11 +108,15 @@ namespace Poly_Ling.Tools.Panels
             ["TotalWeight"] = new() { ["en"] = "Total", ["ja"] = "合計", ["hi"] = "ごうけい" },
             ["RecalcNormals"] = new() { ["en"] = "Recalculate normals", ["ja"] = "法線を再計算", ["hi"] = "ほうせん" },
             ["RealtimePreview"] = new() { ["en"] = "Realtime preview", ["ja"] = "リアルタイムプレビュー", ["hi"] = "りあるたいむ" },
+            ["BlendMeshes"] = new() { ["en"] = "Blend Meshes", ["ja"] = "合成メッシュ", ["hi"] = "めっしゅ" },
+            ["All"] = new() { ["en"] = "All", ["ja"] = "全て", ["hi"] = "すべて" },
+            ["None"] = new() { ["en"] = "None", ["ja"] = "なし", ["hi"] = "なし" },
             ["Meshes"] = new() { ["en"] = "meshes", ["ja"] = "メッシュ", ["hi"] = "めっしゅ" },
             ["Vertices"] = new() { ["en"] = "V", ["ja"] = "V", ["hi"] = "V" },
 
             // ボタン
             ["Apply"] = new() { ["en"] = "Apply", ["ja"] = "適用", ["hi"] = "てきよう" },
+            ["Preview"] = new() { ["en"] = "Preview", ["ja"] = "プレビュー", ["hi"] = "ぷれびゅー" },
             ["Normalize"] = new() { ["en"] = "Normalize", ["ja"] = "正規化", ["hi"] = "せいきか" },
             ["EqualWeights"] = new() { ["en"] = "Equal", ["ja"] = "均等", ["hi"] = "きんとう" },
             ["ResetFirst"] = new() { ["en"] = "Reset to 1st", ["ja"] = "1番目にリセット", ["hi"] = "りせっと" },
@@ -128,6 +132,11 @@ namespace Poly_Ling.Tools.Panels
         private bool _isDragging = false;
         private MultiMeshVertexSnapshot _dragBeforeSnapshot;
         private Vector2 _scrollPosition;
+
+        // メッシュごとのブレンド有効/無効
+        private List<bool> _meshEnabled = new List<bool>();
+        private Vector2 _meshScrollPosition;
+        private bool _meshFoldout = true;
 
         // ================================================================
         // オリジナル頂点位置キャッシュ
@@ -196,6 +205,11 @@ namespace Poly_Ling.Tools.Panels
             {
                 EditorGUILayout.TextField($"{currentModel?.Name ?? "---"} ({drawableCount} {T("Meshes")})");
             }
+
+            EditorGUILayout.Space(10);
+
+            // メッシュ選択セクション
+            DrawMeshSelectionSection(currentModel);
 
             EditorGUILayout.Space(10);
 
@@ -337,10 +351,83 @@ namespace Poly_Ling.Tools.Panels
 
             EditorGUILayout.Space(5);
 
-            // 適用ボタン
-            if (GUILayout.Button(T("Apply"), GUILayout.Height(30)))
+            // プレビュー＋適用ボタン
+            using (new EditorGUILayout.HorizontalScope())
             {
-                ApplyBlend(project);
+                if (!_settings.RealtimePreview)
+                {
+                    if (GUILayout.Button(T("Preview"), GUILayout.Height(30)))
+                    {
+                        ApplyBlendPreview(project);
+                    }
+                }
+
+                if (GUILayout.Button(T("Apply"), GUILayout.Height(30)))
+                {
+                    ApplyBlend(project);
+                }
+            }
+        }
+
+        // ================================================================
+        // メッシュ選択セクション
+        // ================================================================
+
+        private void SyncMeshEnabledToDrawableCount(int count)
+        {
+            while (_meshEnabled.Count < count)
+                _meshEnabled.Add(true);
+            if (_meshEnabled.Count > count)
+                _meshEnabled.RemoveRange(count, _meshEnabled.Count - count);
+        }
+
+        private void DrawMeshSelectionSection(ModelContext currentModel)
+        {
+            var drawables = currentModel?.DrawableMeshes;
+            int drawableCount = drawables?.Count ?? 0;
+            if (drawableCount == 0) return;
+
+            SyncMeshEnabledToDrawableCount(drawableCount);
+
+            int enabledCount = _meshEnabled.Count(e => e);
+
+            _meshFoldout = EditorGUILayout.Foldout(_meshFoldout,
+                $"{T("BlendMeshes")} ({enabledCount}/{drawableCount})", true);
+
+            if (!_meshFoldout) return;
+
+            using (new EditorGUI.IndentLevelScope())
+            {
+                // All / None ボタン
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button(T("All"), EditorStyles.miniButtonLeft, GUILayout.Width(50)))
+                    {
+                        for (int i = 0; i < _meshEnabled.Count; i++)
+                            _meshEnabled[i] = true;
+                    }
+                    if (GUILayout.Button(T("None"), EditorStyles.miniButtonRight, GUILayout.Width(50)))
+                    {
+                        for (int i = 0; i < _meshEnabled.Count; i++)
+                            _meshEnabled[i] = false;
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+
+                // メッシュリスト（スクロール）
+                _meshScrollPosition = EditorGUILayout.BeginScrollView(_meshScrollPosition, GUILayout.MaxHeight(120));
+
+                for (int i = 0; i < drawableCount; i++)
+                {
+                    var entry = drawables[i];
+                    string name = entry.Name;
+                    if (string.IsNullOrEmpty(name)) name = $"Mesh [{i}]";
+
+                    int vertCount = entry.MeshObject?.VertexCount ?? 0;
+                    _meshEnabled[i] = EditorGUILayout.ToggleLeft($"{name} ({vertCount}V)", _meshEnabled[i]);
+                }
+
+                EditorGUILayout.EndScrollView();
             }
         }
 
@@ -365,6 +452,9 @@ namespace Poly_Ling.Tools.Panels
 
             for (int drawIdx = 0; drawIdx < drawableCount; drawIdx++)
             {
+                // メッシュ選択チェック
+                if (drawIdx < _meshEnabled.Count && !_meshEnabled[drawIdx]) continue;
+
                 var targetEntry = targetDrawables[drawIdx];
                 var targetMesh = targetEntry.Context?.MeshObject;
                 if (targetMesh == null) continue;
@@ -441,6 +531,9 @@ namespace Poly_Ling.Tools.Panels
 
             for (int drawIdx = 0; drawIdx < drawableCount; drawIdx++)
             {
+                // メッシュ選択チェック
+                if (drawIdx < _meshEnabled.Count && !_meshEnabled[drawIdx]) continue;
+
                 var targetEntry = targetDrawables[drawIdx];
                 var targetMesh = targetEntry.Context?.MeshObject;
                 if (targetMesh == null) continue;
@@ -652,10 +745,11 @@ namespace Poly_Ling.Tools.Panels
         {
             if (model == null) return;
 
-            // Drawableメッシュのみ法線再計算
+            // Drawableメッシュのみ法線再計算（有効メッシュのみ）
             var drawables = model.DrawableMeshes;
             for (int i = 0; i < drawables.Count; i++)
             {
+                if (i < _meshEnabled.Count && !_meshEnabled[i]) continue;
                 var mesh = drawables[i].Context?.MeshObject;
                 mesh?.RecalculateSmoothNormals();
             }
@@ -753,7 +847,7 @@ namespace Poly_Ling.Tools.Panels
             Repaint();
         }
 
-        private void OnDestroy()
+        private new void OnDestroy()
         {
             UnsubscribeFromProject();
         }

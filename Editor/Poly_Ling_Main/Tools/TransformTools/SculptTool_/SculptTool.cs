@@ -586,7 +586,7 @@ namespace Poly_Ling.Tools
                 Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
                 Vector3 v1 = meshObject.Vertices[face.VertexIndices[1]].Position;
                 Vector3 v2 = meshObject.Vertices[face.VertexIndices[2]].Position;
-                Vector3 faceNormal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
+                Vector3 faceNormal = NormalHelper.CalculateFaceNormal(v0, v1, v2);
 
                 foreach (int vIdx in face.VertexIndices)
                 {

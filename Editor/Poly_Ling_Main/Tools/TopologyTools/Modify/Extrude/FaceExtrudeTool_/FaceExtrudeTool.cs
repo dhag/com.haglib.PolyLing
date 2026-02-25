@@ -507,7 +507,7 @@ namespace Poly_Ling.Tools
                 Vector3 p0 = meshObject.Vertices[vertIndices[0]].Position;
                 Vector3 p1 = meshObject.Vertices[vertIndices[1]].Position;
                 Vector3 p2 = meshObject.Vertices[vertIndices[2]].Position;
-                normal = Vector3.Cross(p1 - p0, p2 - p0).normalized;
+                normal = NormalHelper.CalculateFaceNormal(p0, p1, p2);
             }
 
             return new FaceExtrudeInfo

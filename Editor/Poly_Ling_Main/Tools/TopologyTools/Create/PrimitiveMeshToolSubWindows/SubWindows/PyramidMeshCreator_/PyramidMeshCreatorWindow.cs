@@ -221,9 +221,7 @@ public partial class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMes
             Vector3 p1 = basePositions[(i + 1) % _params.Sides];
 
             // 法線計算
-            Vector3 edge1 = p1 - p0;
-            Vector3 edge2 = apex - p0;
-            Vector3 normal = Vector3.Cross(edge1, edge2).normalized;
+            Vector3 normal = NormalHelper.CalculateFaceNormal(p0, p1, apex);
 
             // 頂点追加
             md.Vertices.Add(new Vertex(p0, new Vector2(0, 0), normal));

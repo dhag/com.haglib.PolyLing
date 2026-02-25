@@ -50,6 +50,7 @@ namespace Poly_Ling.MQO
 
             // チェックボックス
             ["VertexPosition"] = new() { ["en"] = "Vertex Position", ["ja"] = "頂点位置" },
+            ["VertexId"] = new() { ["en"] = "Vertex ID", ["ja"] = "頂点ID" },
             ["MeshStructure"] = new() { ["en"] = "Mesh Structure (Faces + UV)", ["ja"] = "メッシュ構造（面＋UV）" },
             ["MaterialContent"] = new() { ["en"] = "Material Content (by name)", ["ja"] = "材質内容（名前マッチング）" },
             ["BakeMirror"] = new() { ["en"] = "Bake Mirror", ["ja"] = "ミラーベイク" },
@@ -90,6 +91,7 @@ namespace Poly_Ling.MQO
 
         // インポート対象チェックボックス
         private bool _importVertexPosition = true;
+        private bool _importVertexId = false;
         private bool _importMeshStructure = false;
         private bool _importMaterialContent = false;
 
@@ -110,11 +112,11 @@ namespace Poly_Ling.MQO
 
         private ModelContext Model => _context?.Model;
 
-        /// <summary>メッシュマッチングが必要か（頂点位置 or メッシュ構造が有効）</summary>
-        private bool NeedsMeshMatching => _importVertexPosition || _importMeshStructure;
+        /// <summary>メッシュマッチングが必要か（頂点位置 or 頂点ID or メッシュ構造が有効）</summary>
+        private bool NeedsMeshMatching => _importVertexPosition || _importVertexId || _importMeshStructure;
 
         /// <summary>何か1つでもインポート対象が選択されているか</summary>
-        private bool HasAnyTarget => _importVertexPosition || _importMeshStructure || _importMaterialContent;
+        private bool HasAnyTarget => _importVertexPosition || _importVertexId || _importMeshStructure || _importMaterialContent;
 
         // ================================================================
         // Open
@@ -256,6 +258,7 @@ namespace Poly_Ling.MQO
             using (new EditorGUILayout.HorizontalScope())
             {
                 _importVertexPosition = EditorGUILayout.ToggleLeft(T("VertexPosition"), _importVertexPosition, GUILayout.Width(120));
+                _importVertexId = EditorGUILayout.ToggleLeft(T("VertexId"), _importVertexId, GUILayout.Width(100));
                 _importMeshStructure = EditorGUILayout.ToggleLeft(T("MeshStructure"), _importMeshStructure, GUILayout.Width(220));
                 _importMaterialContent = EditorGUILayout.ToggleLeft(T("MaterialContent"), _importMaterialContent);
             }
@@ -350,7 +353,7 @@ namespace Poly_Ling.MQO
 
                 EditorGUILayout.LabelField(T("Selection", modelCount, mqoCount) + $"  Verts: {modelVerts} ← {mqoVerts}");
 
-                if (_importVertexPosition && !_importMeshStructure && modelVerts != mqoVerts && modelCount > 0 && mqoCount > 0)
+                if ((_importVertexPosition || _importVertexId) && !_importMeshStructure && modelVerts != mqoVerts && modelCount > 0 && mqoCount > 0)
                 {
                     EditorGUILayout.HelpBox(T("VertexMismatch", modelVerts, mqoVerts), MessageType.Warning);
                 }
@@ -443,6 +446,14 @@ namespace Poly_Ling.MQO
                     }
                 }
 
+                // 頂点IDインポート
+                if (_importVertexId && selectedModels.Count > 0 && selectedMQOs.Count > 0)
+                {
+                    int count = ExecuteVertexIdImport(selectedModels, selectedMQOs);
+                    if (count > 0)
+                        results.Add($"VertexID: {count} vertices");
+                }
+
                 // 材質インポート
                 if (_importMaterialContent)
                 {
@@ -459,6 +470,9 @@ namespace Poly_Ling.MQO
                 {
                     _context?.SyncMesh?.Invoke();
                 }
+
+                if (_importVertexId || _importMaterialContent)
+                    Model.IsDirty = true;
 
                 _context?.Repaint?.Invoke();
                 SceneView.RepaintAll();
@@ -567,6 +581,74 @@ namespace Poly_Ling.MQO
                         if (idx < peerMo.VertexCount)
                         {
                             peerMo.Vertices[idx].Position = mirrorPos;
+                            updated++;
+                        }
+                    }
+                }
+
+                pmxOffset += uvCount;
+            }
+
+            return updated;
+        }
+
+        // ================================================================
+        // 頂点IDインポート
+        // MQO側の頂点IDをモデル側に転送（展開辞書に従い1→N対応）
+        // ================================================================
+
+        private int ExecuteVertexIdImport(List<PartialMeshEntry> modelMeshes, List<PartialMQOEntry> mqoObjects)
+        {
+            int totalUpdated = 0;
+            int pairCount = Math.Min(modelMeshes.Count, mqoObjects.Count);
+
+            for (int p = 0; p < pairCount; p++)
+            {
+                int count = TransferVertexIds(modelMeshes[p], mqoObjects[p]);
+                totalUpdated += count;
+            }
+
+            return totalUpdated;
+        }
+
+        /// <summary>
+        /// MQO側の頂点IDをモデル側に転送（1ペア分）
+        /// 展開辞書に従い、MQO頂点1個 → PMX展開頂点N個に同一IDを設定
+        /// </summary>
+        private int TransferVertexIds(PartialMeshEntry modelEntry, PartialMQOEntry mqoEntry)
+        {
+            var modelMo = modelEntry.Context?.MeshObject;
+            var mqoMo = mqoEntry.MeshContext?.MeshObject;
+            if (modelMo == null || mqoMo == null) return 0;
+
+            // MQO側: 面で使用されている頂点セット
+            var mqoUsed = new HashSet<int>();
+            foreach (var face in mqoMo.Faces)
+                foreach (var vi in face.VertexIndices)
+                    mqoUsed.Add(vi);
+
+            // 展開辞書: MQO頂点を順に走査し、UV数分だけPMXオフセットを消費
+            int pmxOffset = 0;
+            int updated = 0;
+
+            for (int vIdx = 0; vIdx < mqoMo.VertexCount; vIdx++)
+            {
+                if (!mqoUsed.Contains(vIdx)) continue;
+
+                var mqoVertex = mqoMo.Vertices[vIdx];
+                int uvCount = Math.Max(1, mqoVertex.UVs.Count);
+                int vertexId = mqoVertex.Id;
+
+                // MQO側でIDが設定されている場合のみ転送（-1 = IDなし）
+                if (vertexId >= 0)
+                {
+                    for (int u = 0; u < uvCount; u++)
+                    {
+                        int idx = pmxOffset + u;
+                        if (idx < modelMo.VertexCount)
+                        {
+                            modelMo.Vertices[idx].Id = vertexId;
+                            modelMo.RegisterVertexId(vertexId);
                             updated++;
                         }
                     }
@@ -902,7 +984,7 @@ namespace Poly_Ling.MQO
                     var v0 = mo.Vertices[face.VertexIndices[0]].Position;
                     var v1 = mo.Vertices[face.VertexIndices[1]].Position;
                     var v2 = mo.Vertices[face.VertexIndices[2]].Position;
-                    var normal = Vector3.Cross(v1 - v0, v2 - v0).normalized;
+                    var normal = NormalHelper.CalculateFaceNormal(v0, v1, v2);
 
                     face.NormalIndices.Clear();
                     for (int i = 0; i < face.VertexCount; i++)
@@ -940,7 +1022,7 @@ namespace Poly_Ling.MQO
                 var v0 = mo.Vertices[face.VertexIndices[0]].Position;
                 var v1 = mo.Vertices[face.VertexIndices[1]].Position;
                 var v2 = mo.Vertices[face.VertexIndices[2]].Position;
-                faceNormals.Add(Vector3.Cross(v1 - v0, v2 - v0).normalized);
+                faceNormals.Add(NormalHelper.CalculateFaceNormal(v0, v1, v2));
             }
 
             // 頂点→参照面のマッピング

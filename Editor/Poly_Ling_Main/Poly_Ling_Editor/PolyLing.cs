@@ -516,7 +516,7 @@ public partial class PolyLing : EditorWindow
         // ★Phase 1: MeshUndoContext.MaterialOwner を設定（Materials Undo用）
         if (_undoController.MeshUndoContext != null && _model != null)
         {
-            _undoController.MeshUndoContext.MaterialOwner = _model;
+            _undoController.MeshUndoContext.ParentModelContext = _model;
         }
 
         // ★Phase 1: 既存 MeshContext にも MaterialOwner を設定
@@ -1130,7 +1130,7 @@ public partial class PolyLing : EditorWindow
             if (_undoController.HandleKeyboardShortcuts(Event.current))
             {
                 // Undo/Redo後にUIを再描画
-                var parentModel = _undoController?.MeshUndoContext?.MaterialOwner;
+                var parentModel = _undoController?.MeshUndoContext?.ParentModelContext;
                 //Debug.Log($"[PolyLing.OnGUI] After Undo/Redo: _model.MaterialCount={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
                 //Debug.Log($"[PolyLing.OnGUI] _model==MaterialOwner? {ReferenceEquals(_model, parentModel)}, _model.Hash={_model?.GetHashCode()}, MaterialOwner.Hash={parentModel?.GetHashCode()}");
                 Repaint();

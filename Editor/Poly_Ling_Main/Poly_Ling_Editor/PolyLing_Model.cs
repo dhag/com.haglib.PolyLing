@@ -171,7 +171,7 @@ public partial class PolyLing
         // MeshUndoContextのMaterialOwnerを更新
         if (_undoController.MeshUndoContext != null)
         {
-            _undoController.MeshUndoContext.MaterialOwner = _model;
+            _undoController.MeshUndoContext.ParentModelContext = _model;
         }
 
         // 各MeshContextのMaterialOwnerを更新
