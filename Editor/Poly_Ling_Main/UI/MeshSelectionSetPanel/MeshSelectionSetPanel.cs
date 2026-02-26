@@ -58,12 +58,14 @@ namespace Poly_Ling.UI
 
         // メッシュリスト操作
         private Button _btnCopy, _btnCut, _btnPaste;
+        private Button _btnSaveMeshCsv, _btnLoadMeshCsv;
 
         // セット管理
         private TextField _setNameField;
         private Button _btnSave;
         private ListView _setListView;
         private Button _btnLoad, _btnAdd, _btnDelete, _btnRename;
+        private Button _btnSaveDic, _btnLoadDic;
 
         // ================================================================
         // プロパティ
@@ -79,14 +81,14 @@ namespace Poly_Ling.UI
         public static void ShowWindow()
         {
             var window = GetWindow<MeshSelectionSetPanel>();
-            window.titleContent = new GUIContent("Mesh Selection Sets");
+            window.titleContent = new GUIContent("メッシュ選択辞書");
             window.minSize = new Vector2(300, 400);
         }
 
         public static MeshSelectionSetPanel Open(ToolContext ctx)
         {
             var window = GetWindow<MeshSelectionSetPanel>();
-            window.titleContent = new GUIContent("Mesh Selection Sets");
+            window.titleContent = new GUIContent("メッシュ選択辞書");
             window.minSize = new Vector2(300, 400);
             window.SetContext(ctx);
             window.Show();
@@ -262,27 +264,46 @@ namespace Poly_Ling.UI
             clipRow.style.marginTop = 2;
             clipRow.style.height = 24;
 
-            _btnCopy = new Button(OnCopyMeshes) { text = "Copy" };
+            _btnCopy = new Button(OnCopyMeshes) { text = "複製" };
             _btnCopy.style.flexGrow = 1;
             _btnCopy.style.minHeight = 22;
             _btnCopy.SetEnabled(false);
             clipRow.Add(_btnCopy);
 
-            _btnCut = new Button(OnCutMeshes) { text = "Cut" };
+            _btnCut = new Button(OnCutMeshes) { text = "切取り" };
             _btnCut.style.flexGrow = 1;
             _btnCut.style.minHeight = 22;
             _btnCut.SetEnabled(false);
             clipRow.Add(_btnCut);
 
-            _btnPaste = new Button(OnPasteMeshes) { text = "Paste" };
+            _btnPaste = new Button(OnPasteMeshes) { text = "貼付け" };
             _btnPaste.style.flexGrow = 1;
             _btnPaste.style.minHeight = 22;
             clipRow.Add(_btnPaste);
 
             root.Add(clipRow);
 
-            // ---- 選択セットセクション ----
-            var setSection = new Foldout { text = "Selection Sets", value = true };
+            // ---- CSVファイル保存/読み込みボタン行 ----
+            var csvRow = new VisualElement();
+            csvRow.style.flexDirection = FlexDirection.Row;
+            csvRow.style.marginTop = 2;
+            csvRow.style.height = 24;
+
+            _btnSaveMeshCsv = new Button(OnSaveMeshesToCsv) { text = "メッシュCSV↓" };
+            _btnSaveMeshCsv.style.flexGrow = 1;
+            _btnSaveMeshCsv.style.minHeight = 22;
+            _btnSaveMeshCsv.SetEnabled(false);
+            csvRow.Add(_btnSaveMeshCsv);
+
+            _btnLoadMeshCsv = new Button(OnLoadMeshesFromCsv) { text = "メッシュCSV↑" };
+            _btnLoadMeshCsv.style.flexGrow = 1;
+            _btnLoadMeshCsv.style.minHeight = 22;
+            csvRow.Add(_btnLoadMeshCsv);
+
+            root.Add(csvRow);
+
+            // ---- 選択辞書セクション ----
+            var setSection = new Foldout { text = "選択辞書", value = true };
             setSection.style.marginTop = 4;
             setSection.style.flexShrink = 0;
 
@@ -297,7 +318,7 @@ namespace Poly_Ling.UI
             _setNameField.style.minHeight = 20;
             saveRow.Add(_setNameField);
 
-            _btnSave = new Button(OnSaveSet) { text = "Save" };
+            _btnSave = new Button(OnSaveSet) { text = "辞書化" };
             _btnSave.style.width = 50;
             _btnSave.style.minHeight = 20;
             saveRow.Add(_btnSave);
@@ -321,31 +342,49 @@ namespace Poly_Ling.UI
             opRow.style.marginTop = 4;
             opRow.style.height = 24;
 
-            _btnLoad = new Button(OnLoadSet) { text = "Load" };
+            _btnLoad = new Button(OnLoadSet) { text = "呼出し" };
             _btnLoad.style.flexGrow = 1;
             _btnLoad.style.minHeight = 22;
             _btnLoad.SetEnabled(false);
             opRow.Add(_btnLoad);
 
-            _btnAdd = new Button(OnAddSet) { text = "Add" };
+            _btnAdd = new Button(OnAddSet) { text = "追加" };
             _btnAdd.style.flexGrow = 1;
             _btnAdd.style.minHeight = 22;
             _btnAdd.SetEnabled(false);
             opRow.Add(_btnAdd);
 
-            _btnRename = new Button(OnRenameSet) { text = "Rename" };
+            _btnRename = new Button(OnRenameSet) { text = "✎" };
             _btnRename.style.flexGrow = 1;
             _btnRename.style.minHeight = 22;
             _btnRename.SetEnabled(false);
             opRow.Add(_btnRename);
 
-            _btnDelete = new Button(OnDeleteSet) { text = "Delete" };
+            _btnDelete = new Button(OnDeleteSet) { text = "削除" };
             _btnDelete.style.flexGrow = 1;
             _btnDelete.style.minHeight = 22;
             _btnDelete.SetEnabled(false);
             opRow.Add(_btnDelete);
 
             setSection.Add(opRow);
+
+            // 辞書ファイル保存/読み込み行
+            var dicFileRow = new VisualElement();
+            dicFileRow.style.flexDirection = FlexDirection.Row;
+            dicFileRow.style.marginTop = 4;
+            dicFileRow.style.height = 24;
+
+            _btnSaveDic = new Button(OnSaveDicFile) { text = "辞書の保存" };
+            _btnSaveDic.style.flexGrow = 1;
+            _btnSaveDic.style.minHeight = 22;
+            dicFileRow.Add(_btnSaveDic);
+
+            _btnLoadDic = new Button(OnLoadDicFile) { text = "辞書ファイルを開く" };
+            _btnLoadDic.style.flexGrow = 1;
+            _btnLoadDic.style.minHeight = 22;
+            dicFileRow.Add(_btnLoadDic);
+
+            setSection.Add(dicFileRow);
 
             root.Add(setSection);
 
@@ -636,6 +675,7 @@ namespace Poly_Ling.UI
             bool hasSelection = _meshListView?.selectedIndices?.Any() ?? false;
             _btnCopy?.SetEnabled(hasSelection);
             _btnCut?.SetEnabled(hasSelection);
+            _btnSaveMeshCsv?.SetEnabled(hasSelection);
         }
 
         private void OnCopyMeshes()
@@ -814,6 +854,233 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
+        // メッシュCSVファイル保存/読み込み
+        // ================================================================
+
+        private void OnSaveMeshesToCsv()
+        {
+            if (Model == null) return;
+
+            var selected = GetSelectedMeshEntries();
+            if (selected.Count == 0)
+            {
+                SetStatus("No meshes selected");
+                return;
+            }
+
+            string defaultName = selected.Count == 1 ? selected[0].MeshContext?.Name ?? "mesh" : "meshes";
+            string path = EditorUtility.SaveFilePanel(
+                "Save Selected Meshes (CSV)", Application.dataPath, defaultName, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                int boneCount = selected.Count(e => e.MeshContext?.Type == MeshType.Bone);
+                int morphCount = selected.Count(e => e.MeshContext?.Type == MeshType.Morph);
+                int meshCount = selected.Count - boneCount - morphCount;
+
+                string fileType = "mesh";
+                if (boneCount > meshCount && boneCount > morphCount) fileType = "bone";
+                else if (morphCount > meshCount && morphCount > boneCount) fileType = "morph";
+
+                CsvMeshSerializer.WriteFile(path, selected, fileType);
+                SetStatus($"Saved: {selected.Count} mesh(es) to CSV");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Save failed: {ex.Message}");
+                Debug.LogError($"[MeshSelectionSetPanel] CSV save failed: {ex.Message}");
+            }
+        }
+
+        private void OnLoadMeshesFromCsv()
+        {
+            if (Model == null) return;
+
+            string path = EditorUtility.OpenFilePanel("Load Meshes (CSV)", Application.dataPath, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            List<CsvMeshEntry> entries;
+            try
+            {
+                entries = CsvMeshSerializer.ReadFile(path);
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Load failed: {ex.Message}");
+                Debug.LogError($"[MeshSelectionSetPanel] CSV load failed: {ex.Message}");
+                return;
+            }
+
+            if (entries == null || entries.Count == 0)
+            {
+                SetStatus("No valid mesh data in file");
+                return;
+            }
+
+            var existingNames = new HashSet<string>();
+            for (int i = 0; i < Model.MeshContextCount; i++)
+            {
+                var mc = Model.GetMeshContext(i);
+                if (mc != null && !string.IsNullOrEmpty(mc.Name))
+                    existingNames.Add(mc.Name);
+            }
+
+            int addedCount = 0;
+            foreach (var entry in entries)
+            {
+                var mc = entry.MeshContext;
+                if (mc == null) continue;
+
+                if (existingNames.Contains(mc.Name))
+                {
+                    string baseName = mc.Name;
+                    int suffix = 2;
+                    string candidate = $"{baseName}_{suffix}";
+                    while (existingNames.Contains(candidate)) { suffix++; candidate = $"{baseName}_{suffix}"; }
+                    mc.Name = candidate;
+                    if (mc.MeshObject != null) mc.MeshObject.Name = candidate;
+                }
+
+                existingNames.Add(mc.Name);
+                Model.Add(mc);
+                addedCount++;
+            }
+
+            Model.OnListChanged?.Invoke();
+            _toolContext?.Repaint?.Invoke();
+            SetStatus($"Loaded: {addedCount} mesh(es) from CSV");
+        }
+
+        // ================================================================
+        // 辞書ファイル保存/読み込み（MeshSelectionSet CSV）
+        // ================================================================
+
+        private void OnSaveDicFile()
+        {
+            if (Model == null) return;
+            var sets = Model.MeshSelectionSets;
+            if (sets == null || sets.Count == 0)
+            {
+                SetStatus("No dictionaries to save");
+                return;
+            }
+
+            string path = EditorUtility.SaveFilePanel(
+                "Save Mesh Selection Dictionary", Application.dataPath,
+                $"{Model.Name}_MeshDic", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                var lines = new List<string>();
+                lines.Add("# MeshSelectionDictionary");
+                lines.Add($"# model,{Model.Name}");
+
+                foreach (var set in sets)
+                {
+                    // 空行で区切り
+                    lines.Add("");
+                    lines.Add($"# set,{set.Name},{set.Category}");
+                    foreach (string meshName in set.MeshNames)
+                    {
+                        lines.Add(meshName);
+                    }
+                }
+
+                File.WriteAllLines(path, lines, System.Text.Encoding.UTF8);
+                SetStatus($"Saved: {sets.Count} dictionaries");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Save failed: {ex.Message}");
+                Debug.LogError($"[MeshSelectionSetPanel] Dic save failed: {ex.Message}");
+            }
+        }
+
+        private void OnLoadDicFile()
+        {
+            if (Model == null) return;
+
+            string path = EditorUtility.OpenFilePanel(
+                "Open Mesh Selection Dictionary", Application.dataPath, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                string[] fileLines = File.ReadAllLines(path, System.Text.Encoding.UTF8);
+
+                var loadedSets = new List<MeshSelectionSet>();
+                MeshSelectionSet currentSet = null;
+
+                foreach (string line in fileLines)
+                {
+                    string trimmed = line.Trim();
+                    if (string.IsNullOrEmpty(trimmed)) continue;
+
+                    if (trimmed.StartsWith("# set,"))
+                    {
+                        // "# set,Name,Category" 形式
+                        string[] parts = trimmed.Substring(6).Split(',');
+                        string setName = parts.Length > 0 ? parts[0].Trim() : "MeshSet";
+                        var category = ModelContext.SelectionCategory.Mesh;
+                        if (parts.Length > 1 && Enum.TryParse<ModelContext.SelectionCategory>(parts[1].Trim(), out var cat))
+                            category = cat;
+
+                        currentSet = new MeshSelectionSet(setName) { Category = category };
+                        loadedSets.Add(currentSet);
+                    }
+                    else if (trimmed.StartsWith("#"))
+                    {
+                        continue; // その他のコメント行
+                    }
+                    else if (currentSet != null)
+                    {
+                        // メッシュ名データ行
+                        if (!currentSet.MeshNames.Contains(trimmed))
+                            currentSet.MeshNames.Add(trimmed);
+                    }
+                }
+
+                if (loadedSets.Count == 0)
+                {
+                    SetStatus("No dictionaries found in file");
+                    return;
+                }
+
+                // マージ確認
+                bool replace = false;
+                if (Model.MeshSelectionSets.Count > 0)
+                {
+                    int choice = EditorUtility.DisplayDialogComplex(
+                        "Load Dictionary",
+                        $"Found {loadedSets.Count} dictionaries.\nCurrent model has {Model.MeshSelectionSets.Count} dictionaries.\n\nHow to load?",
+                        "Replace All", "Cancel", "Merge (Add)");
+                    if (choice == 1) return;
+                    replace = (choice == 0);
+                }
+
+                if (replace)
+                    Model.MeshSelectionSets.Clear();
+
+                foreach (var set in loadedSets)
+                {
+                    if (Model.FindMeshSelectionSetByName(set.Name) != null)
+                        set.Name = Model.GenerateUniqueMeshSelectionSetName(set.Name);
+                    Model.MeshSelectionSets.Add(set);
+                }
+
+                RefreshSetList();
+                SetStatus($"Loaded: {loadedSets.Count} dictionaries");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Load failed: {ex.Message}");
+                Debug.LogError($"[MeshSelectionSetPanel] Dic load failed: {ex.Message}");
+            }
+        }
+
+        // ================================================================
         // 選択セット操作
         // ================================================================
 
@@ -984,6 +1251,9 @@ namespace Poly_Ling.UI
             _btnAdd?.SetEnabled(hasSelection);
             _btnDelete?.SetEnabled(hasSelection);
             _btnRename?.SetEnabled(hasSelection);
+
+            bool hasSets = Model?.MeshSelectionSets?.Count > 0;
+            _btnSaveDic?.SetEnabled(hasSets);
         }
 
         // ================================================================

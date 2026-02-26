@@ -46,7 +46,10 @@ public partial class PolyLing
 
             EditorGUILayout.Space(5);
 
-            DrawSelectionSetsUI();
+            if (GUILayout.Button(L.Get("PartsSelectionDicPanel")))
+            {
+                Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
+            }
 
             // ================================================================
             // スクロール領域開始（常にスクロールバー表示）

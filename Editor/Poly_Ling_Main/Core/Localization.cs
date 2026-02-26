@@ -205,6 +205,12 @@ namespace Poly_Ling.Localization
             // ============================================================
             // Selection Dics セクション
             // ============================================================
+            ["PartsSelectionDicPanel"] = new() { ["en"] = "Parts Selection Dictionary", ["ja"] = "パーツ選択辞書", ["hi"] = "ぱーつせんたくじしょ" },
+            ["TargetMesh"] = new() { ["en"] = "Target Mesh", ["ja"] = "対象メッシュ", ["hi"] = "たいしょう" },
+            ["CurrentSelection"] = new() { ["en"] = "Current", ["ja"] = "現在の選択", ["hi"] = "いまのせんたく" },
+            ["NoSelection"] = new() { ["en"] = "(none)", ["ja"] = "(なし)", ["hi"] = "(なし)" },
+            ["SaveDicFile"] = new() { ["en"] = "Save Dictionary", ["ja"] = "辞書の保存", ["hi"] = "じしょのほぞん" },
+            ["OpenDicFile"] = new() { ["en"] = "Open Dictionary", ["ja"] = "辞書ファイルを開く", ["hi"] = "じしょをひらく" },
             ["SelectionDics"] = new() { ["en"] = "Selection Dictionary", ["ja"] = "選択辞書", ["hi"] = "せんたくじしょ" },
             ["HashingSelection"] = new() { ["en"] = "Hashing", ["ja"] = "辞書化", ["hi"] = "じしょにする" },
             ["To Current"] = new() { ["en"] = "To Current", ["ja"] = "呼出し", ["hi"] = "よびだし" },

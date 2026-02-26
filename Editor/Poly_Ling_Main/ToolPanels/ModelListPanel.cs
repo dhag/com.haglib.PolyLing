@@ -1,6 +1,6 @@
 // ModelListPanel.cs
 // モデルリスト管理ウィンドウ
-// モデルの一覧表示と選択
+// モデルの一覧表示と選択、名前変更
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -38,9 +38,10 @@ namespace Poly_Ling.Tools.Panels
             ["NoProject"] = new() { ["en"] = "No project available", ["ja"] = "プロジェクトがありません" },
             ["NoModels"] = new() { ["en"] = "No models", ["ja"] = "モデルがありません" },
             ["Meshes"] = new() { ["en"] = "meshes", ["ja"] = "メッシュ" },
-            ["Current"] = new() { ["en"] = "Current", ["ja"] = "選択中" },
             ["Delete"] = new() { ["en"] = "Delete", ["ja"] = "削除" },
             ["ConfirmDelete"] = new() { ["en"] = "Delete model \"{0}\"?", ["ja"] = "モデル「{0}」を削除しますか？" },
+            ["ModelName"] = new() { ["en"] = "Model Name", ["ja"] = "モデル名" },
+            ["Rename"] = new() { ["en"] = "Rename", ["ja"] = "改名" },
         };
 
         private static string T(string key)
@@ -61,6 +62,9 @@ namespace Poly_Ling.Tools.Panels
         // ================================================================
 
         private Vector2 _scrollPosition;
+        private bool _isRenaming = false;
+        private int _renamingIndex = -1;
+        private string _renamingName = "";
 
         // ================================================================
         // ウィンドウを開く
@@ -70,8 +74,8 @@ namespace Poly_Ling.Tools.Panels
         public static void OpenFromMenu()
         {
             var panel = GetWindow<ModelListPanel>();
-            panel.titleContent = new GUIContent("Model List");
-            panel.minSize = new Vector2(250, 200);
+            panel.titleContent = new GUIContent(T("WindowTitle"));
+            panel.minSize = new Vector2(280, 220);
             panel.Show();
         }
 
@@ -79,7 +83,7 @@ namespace Poly_Ling.Tools.Panels
         {
             var panel = GetWindow<ModelListPanel>();
             panel.titleContent = new GUIContent(T("WindowTitle"));
-            panel.minSize = new Vector2(250, 200);
+            panel.minSize = new Vector2(280, 220);
             panel.SetContext(ctx);
             panel.Show();
         }
@@ -107,7 +111,10 @@ namespace Poly_Ling.Tools.Panels
             // ヘッダー
             EditorGUILayout.LabelField(T("Models"), EditorStyles.boldLabel);
 
-            EditorGUILayout.Space(5);
+            // モデル名変更（現在選択中のモデル）
+            DrawModelNameEditor(project);
+
+            EditorGUILayout.Space(3);
 
             // モデルリスト
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
@@ -117,23 +124,68 @@ namespace Poly_Ling.Tools.Panels
             {
                 int result = DrawModelItem(project, i);
                 if (result >= 0)
-                {
                     deleteIndex = result;
-                }
             }
 
             EditorGUILayout.EndScrollView();
 
             // ループ外で削除実行
             if (deleteIndex >= 0)
-            {
                 DeleteModel(deleteIndex);
-            }
         }
 
-        /// <summary>
-        /// モデルアイテムを描画
-        /// </summary>
+        // ================================================================
+        // モデル名編集
+        // ================================================================
+
+        private void DrawModelNameEditor(ProjectContext project)
+        {
+            int currentIndex = project.CurrentModelIndex;
+            if (currentIndex < 0 || currentIndex >= project.ModelCount) return;
+
+            var model = project.GetModel(currentIndex);
+            if (model == null) return;
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(T("ModelName"), GUILayout.Width(60));
+
+            if (_isRenaming && _renamingIndex == currentIndex)
+            {
+                _renamingName = EditorGUILayout.TextField(_renamingName);
+                if (GUILayout.Button("✓", GUILayout.Width(22)))
+                {
+                    if (!string.IsNullOrEmpty(_renamingName) && _renamingName != model.Name)
+                    {
+                        model.Name = _renamingName;
+                        project.OnModelsChanged?.Invoke();
+                    }
+                    _isRenaming = false;
+                    _renamingIndex = -1;
+                }
+                if (GUILayout.Button("✕", GUILayout.Width(22)))
+                {
+                    _isRenaming = false;
+                    _renamingIndex = -1;
+                }
+            }
+            else
+            {
+                EditorGUILayout.LabelField(model.Name, EditorStyles.boldLabel);
+                if (GUILayout.Button("✎", GUILayout.Width(22)))
+                {
+                    _isRenaming = true;
+                    _renamingIndex = currentIndex;
+                    _renamingName = model.Name;
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        // ================================================================
+        // モデルアイテム描画（リスト行クリック選択）
+        // ================================================================
+
         /// <returns>削除要求があればそのインデックス、なければ-1</returns>
         private int DrawModelItem(ProjectContext project, int index)
         {
@@ -142,25 +194,17 @@ namespace Poly_Ling.Tools.Panels
 
             bool isCurrent = (index == project.CurrentModelIndex);
 
-            // 背景色
-            if (isCurrent)
-            {
-                var rect = EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-            }
-            else
-            {
-                EditorGUILayout.BeginHorizontal();
-            }
+            // 選択中は背景色を変える
+            var style = isCurrent ? EditorStyles.helpBox : GUIStyle.none;
+            EditorGUILayout.BeginHorizontal(style);
 
-            // 選択ボタン（ラジオボタン風）
-            bool selected = GUILayout.Toggle(isCurrent, "", GUILayout.Width(20));
-            if (selected && !isCurrent)
+            // クリック可能なモデル名（ボタンとして描画）
+            var labelStyle = isCurrent ? EditorStyles.boldLabel : EditorStyles.label;
+            if (GUILayout.Button(model.Name, labelStyle, GUILayout.ExpandWidth(true)))
             {
-                SelectModel(index);
+                if (!isCurrent)
+                    SelectModel(index);
             }
-
-            // モデル名
-            EditorGUILayout.LabelField(model.Name, GUILayout.ExpandWidth(true));
 
             // メッシュ数
             int meshCount = model.MeshContextCount;
@@ -170,7 +214,8 @@ namespace Poly_Ling.Tools.Panels
             int deleteRequest = -1;
             if (GUILayout.Button("×", GUILayout.Width(20)))
             {
-                if (EditorUtility.DisplayDialog(T("Delete"), string.Format(T("ConfirmDelete"), model.Name), "OK", "Cancel"))
+                if (EditorUtility.DisplayDialog(T("Delete"),
+                    string.Format(T("ConfirmDelete"), model.Name), "OK", "Cancel"))
                 {
                     deleteRequest = index;
                 }
@@ -180,31 +225,25 @@ namespace Poly_Ling.Tools.Panels
             return deleteRequest;
         }
 
-        /// <summary>
-        /// モデルを選択
-        /// </summary>
+        // ================================================================
+        // 操作
+        // ================================================================
+
         private void SelectModel(int index)
         {
             if (_context?.SelectModel != null)
             {
-                // ToolContext経由で選択（Undo対応）
                 _context.SelectModel(index);
                 Repaint();
             }
             else
             {
-                // 直接選択（フォールバック）
                 var project = _context?.Project;
                 if (project != null && project.SelectModel(index))
-                {
                     Repaint();
-                }
             }
         }
 
-        /// <summary>
-        /// モデルを削除
-        /// </summary>
         private void DeleteModel(int index)
         {
             var project = _context?.Project;

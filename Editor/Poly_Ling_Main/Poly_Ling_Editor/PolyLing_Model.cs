@@ -77,17 +77,6 @@ public partial class PolyLing
 
         EditorGUILayout.EndHorizontal();
 
-        // モデル名編集
-        if (_model != null)
-        {
-            EditorGUI.BeginChangeCheck();
-            string newName = EditorGUILayout.TextField(_model.Name);
-            if (EditorGUI.EndChangeCheck() && !string.IsNullOrEmpty(newName))
-            {
-                RenameModelWithUndo(newName);
-            }
-        }
-
         EditorGUILayout.EndVertical();
 
         EditorGUILayout.Space(5);

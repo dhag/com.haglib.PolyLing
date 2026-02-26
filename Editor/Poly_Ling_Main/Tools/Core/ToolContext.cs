@@ -155,7 +155,22 @@ namespace Poly_Ling.Tools
         // === モデルコンテキスト（Phase 3追加） ===
 
         /// <summary>モデルコンテキスト（メッシュリスト管理）</summary>
-        public ModelContext Model { get; set; }
+        private ModelContext _model;
+        public ModelContext Model
+        {
+            get => _model;
+            set
+            {
+                if (_model != value)
+                {
+                    _model = value;
+                    OnModelChanged?.Invoke();
+                }
+            }
+        }
+
+        /// <summary>Model参照が変わったときに発火するイベント</summary>
+        public Action OnModelChanged { get; set; }
 
         /// <summary>選択中の全MeshContext</summary>
         public List<MeshContext> SelectedMeshContexts => Model?.SelectedMeshContexts ?? new List<MeshContext>();

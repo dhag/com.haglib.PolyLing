@@ -174,6 +174,9 @@ public partial class PolyLing : EditorWindow
             _unifiedAdapter?.RequestNormal();
             Repaint();
         };
+
+        // 開いているパネルへToolContextを再配布
+        ToolContextReconnector.ReconnectAll(ctx);
     }
 
     /// <summary>

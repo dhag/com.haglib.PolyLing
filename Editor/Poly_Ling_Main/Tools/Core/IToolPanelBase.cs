@@ -46,7 +46,7 @@ namespace Poly_Ling.Tools
     /// 独立ウィンドウ型ツールの基底クラス
     /// EditorWindow + IToolPanelを実装
     /// </summary>
-    public abstract class IToolPanelBase : EditorWindow, IToolPanel
+    public abstract class IToolPanelBase : EditorWindow, IToolPanel, IToolContextReceiver
     {
         // ================================================================
         // 抽象メンバー

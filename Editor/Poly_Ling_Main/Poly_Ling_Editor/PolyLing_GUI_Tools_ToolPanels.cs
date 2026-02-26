@@ -119,7 +119,11 @@ public partial class PolyLing
         {
             Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
         }
-        if (GUILayout.Button("選択メッシュの編集"))
+        if (GUILayout.Button(L.Get("PartsSelectionDicPanel")))
+        {
+            Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("メッシュ選択辞書"))
         {
             Poly_Ling.UI.MeshSelectionSetPanel.Open(_toolManager?.toolContext);
         }

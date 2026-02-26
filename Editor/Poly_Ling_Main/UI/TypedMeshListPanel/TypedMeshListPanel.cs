@@ -23,7 +23,7 @@ namespace Poly_Ling.UI
     /// タイプ別メッシュリストパネル
     /// タブでDrawable/Bone/Morphを切り替え、各タブでMeshListPanelと同等の機能を提供
     /// </summary>
-    public class TypedMeshListPanel : EditorWindow
+    public class TypedMeshListPanel : EditorWindow, IToolContextReceiver
     {
         // ================================================================
         // 定数
@@ -101,6 +101,7 @@ namespace Poly_Ling.UI
         [NonSerialized] private ToolContext _toolContext;
         [NonSerialized] private TypedTreeRoot _treeRoot;
         [NonSerialized] private TreeViewDragDropHelper<TypedTreeAdapter> _dragDropHelper;
+        [NonSerialized] private ModelContext _subscribedModel;
 
         private TabType _currentTab = TabType.Drawable;
         private List<TypedTreeAdapter> _selectedAdapters = new List<TypedTreeAdapter>();
@@ -165,8 +166,12 @@ namespace Poly_Ling.UI
             if (_morphListView != null)
                 _morphListView.selectionChanged -= OnMorphListSelectionChanged;
             UnsubscribeFromModel();
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
+            if (_toolContext != null)
+            {
+                if (_toolContext.UndoController != null)
+                    _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
+                _toolContext.OnModelChanged -= OnModelReferenceChanged;
+            }
             CleanupDragDrop();
         }
 
@@ -185,10 +190,40 @@ namespace Poly_Ling.UI
         public void SetContext(ToolContext ctx)
         {
             UnsubscribeFromModel();
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
+            if (_toolContext != null)
+            {
+                if (_toolContext.UndoController != null)
+                    _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
+                _toolContext.OnModelChanged -= OnModelReferenceChanged;
+            }
 
             _toolContext = ctx;
+
+            if (_toolContext != null)
+            {
+                _toolContext.OnModelChanged += OnModelReferenceChanged;
+
+                if (_toolContext.Model != null)
+                {
+                    CreateTreeRoot();
+                    SetupDragDrop();
+                    SubscribeToModel();
+
+                    if (_toolContext.UndoController != null)
+                        _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
+
+                    RefreshAllImmediate();
+                }
+            }
+        }
+
+        /// <summary>
+        /// ToolContext.Modelの参照が差し替わったときに呼ばれる
+        /// 旧Modelの購読を解除し、新Modelに再購読してリフレッシュする
+        /// </summary>
+        private void OnModelReferenceChanged()
+        {
+            UnsubscribeFromModel();
 
             if (_toolContext?.Model != null)
             {
@@ -197,7 +232,10 @@ namespace Poly_Ling.UI
                 SubscribeToModel();
 
                 if (_toolContext.UndoController != null)
+                {
+                    _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
                     _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
+                }
 
                 RefreshAllImmediate();
             }
@@ -229,13 +267,19 @@ namespace Poly_Ling.UI
         private void SubscribeToModel()
         {
             if (Model != null)
+            {
                 Model.OnListChanged += OnModelListChanged;
+                _subscribedModel = Model;
+            }
         }
 
         private void UnsubscribeFromModel()
         {
-            if (_toolContext?.Model != null)
-                _toolContext.Model.OnListChanged -= OnModelListChanged;
+            if (_subscribedModel != null)
+            {
+                _subscribedModel.OnListChanged -= OnModelListChanged;
+                _subscribedModel = null;
+            }
         }
 
         private void OnModelListChanged()
@@ -246,7 +290,7 @@ namespace Poly_Ling.UI
             try
             {
                 _treeRoot?.Rebuild();
-                RefreshAll();
+                RefreshAllImmediate();
                 SyncTreeViewSelection();
 
                 // モーフタブの場合はモーフエディタも更新
@@ -270,7 +314,7 @@ namespace Poly_Ling.UI
             try
             {
                 _treeRoot?.Rebuild();
-                RefreshAll();
+                RefreshAllImmediate();
                 SyncTreeViewSelection();
 
                 // モーフタブの場合はモーフエディタも更新
