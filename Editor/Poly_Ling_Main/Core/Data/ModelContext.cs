@@ -562,6 +562,52 @@ namespace Poly_Ling.Model
         }
         
         // ================================================================
+        // MeshSelectionSets（メッシュ選択セット・名前ベース）
+        // ================================================================
+
+        /// <summary>メッシュ選択セットリスト</summary>
+        public List<MeshSelectionSet> MeshSelectionSets { get; set; } = new List<MeshSelectionSet>();
+
+        /// <summary>メッシュ選択セット数</summary>
+        public int MeshSelectionSetCount => MeshSelectionSets?.Count ?? 0;
+
+        /// <summary>メッシュ選択セットがあるか</summary>
+        public bool HasMeshSelectionSets => MeshSelectionSetCount > 0;
+
+        /// <summary>現在の選択をメッシュ選択セットとして保存</summary>
+        public MeshSelectionSet SaveCurrentMeshSelectionAsSet(string name, SelectionCategory category)
+        {
+            var set = MeshSelectionSet.FromCurrentSelection(name, this, category);
+            MeshSelectionSets.Add(set);
+            return set;
+        }
+
+        /// <summary>メッシュ選択セットを削除</summary>
+        public bool RemoveMeshSelectionSet(MeshSelectionSet set)
+        {
+            return MeshSelectionSets.Remove(set);
+        }
+
+        /// <summary>名前でメッシュ選択セットを検索</summary>
+        public MeshSelectionSet FindMeshSelectionSetByName(string name)
+        {
+            return MeshSelectionSets.Find(s => s.Name == name);
+        }
+
+        /// <summary>一意なメッシュ選択セット名を生成</summary>
+        public string GenerateUniqueMeshSelectionSetName(string baseName = "MeshSet")
+        {
+            string name = baseName;
+            int counter = 1;
+            while (FindMeshSelectionSetByName(name) != null)
+            {
+                name = $"{baseName}_{counter}";
+                counter++;
+            }
+            return name;
+        }
+
+        // ================================================================
         // Materials（モデル単位で実データを保持）
         // MaterialReference によるパラメータ＋キャッシュ管理
         // ================================================================

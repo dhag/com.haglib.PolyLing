@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Selection;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Serialization
 {
@@ -85,6 +86,13 @@ namespace Poly_Ling.Serialization
         /// 複数メッシュのモーフをグループ化
         /// </summary>
         public List<MorphExpressionDTO> morphExpressions = new List<MorphExpressionDTO>();
+
+        // ================================================================
+        // メッシュ選択セット（名前ベース）
+        // ================================================================
+
+        /// <summary>メッシュ選択セット</summary>
+        public List<MeshSelectionSetDTO> meshSelectionSets = new List<MeshSelectionSetDTO>();
 
         // === ファクトリメソッド ===
 

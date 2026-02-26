@@ -105,6 +105,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (model.MorphExpressions != null && model.MorphExpressions.Count > 0)
                 WriteMorphGroupsCsv(modelFolderPath, model);
 
+            // meshselsets.csv
+            if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
+                WriteMeshSelSetsCsv(modelFolderPath, model);
+
             // editorstate.csv
             if (editorState != null)
                 WriteEditorStateCsv(modelFolderPath, editorState);
@@ -212,6 +216,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // morphgroups.csv
             ReadMorphGroupsCsv(modelFolderPath, model);
+
+            // meshselsets.csv
+            ReadMeshSelSetsCsv(modelFolderPath, model);
 
             // editorstate.csv
             string esPath = Path.Combine(modelFolderPath, "editorstate.csv");
@@ -559,6 +566,61 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 }
 
                 model.MorphExpressions.Add(me);
+            }
+        }
+
+        // ================================================================
+        // meshselsets.csv（メッシュ選択セット）
+        // ================================================================
+
+        private static void WriteMeshSelSetsCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_MeshSelSets,version,1.0");
+
+            foreach (var ms in model.MeshSelectionSets)
+            {
+                // name,category,nameCount,meshName0,meshName1,...
+                sb.Append($"{Esc(ms.Name)},{ms.Category},{ms.MeshNames.Count}");
+                foreach (var meshName in ms.MeshNames)
+                {
+                    sb.Append($",{Esc(meshName)}");
+                }
+                sb.AppendLine();
+            }
+
+            File.WriteAllText(Path.Combine(folderPath, "meshselsets.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadMeshSelSetsCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "meshselsets.csv");
+            if (!File.Exists(path)) return;
+
+            model.MeshSelectionSets = new List<MeshSelectionSet>();
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 3) continue;
+
+                var ms = new MeshSelectionSet(Unesc(cols[0]));
+
+                if (Enum.TryParse<ModelContext.SelectionCategory>(cols[1], out var cat))
+                    ms.Category = cat;
+
+                int nameCount = PInt(cols, 2);
+                for (int i = 0; i < nameCount; i++)
+                {
+                    int ci = 3 + i;
+                    if (ci >= cols.Length) break;
+                    string meshName = Unesc(cols[ci]);
+                    if (!string.IsNullOrEmpty(meshName))
+                        ms.MeshNames.Add(meshName);
+                }
+
+                model.MeshSelectionSets.Add(ms);
             }
         }
 

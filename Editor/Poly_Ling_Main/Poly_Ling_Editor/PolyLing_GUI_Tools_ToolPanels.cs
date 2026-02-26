@@ -88,7 +88,7 @@ public partial class PolyLing
         {
             Poly_Ling.PMX.PMXExportPanel.Open(_toolManager?.toolContext);
         }
-
+        EditorGUILayout.Space(5);
 
         if (GUILayout.Button("メッシュリストTypedMeshListPanelUXML"))
         {
@@ -98,6 +98,7 @@ public partial class PolyLing
         {
             Poly_Ling.UI.MaterialListPanel.Open(_toolManager?.toolContext);
         }
+        EditorGUILayout.Space(5);
         if (GUILayout.Button("UV展開"))
         {
             Poly_Ling.UI.UVUnwrapPanel.Open(_toolManager?.toolContext);
@@ -113,19 +114,22 @@ public partial class PolyLing
             Poly_Ling.UI.UVZPanel.Open(_toolManager?.toolContext);
         }
 
-
+        EditorGUILayout.Space(5);
         if (GUILayout.Button("選択頂点の編集"))
         {
             Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
         }
-
+        if (GUILayout.Button("選択メッシュの編集"))
+        {
+            Poly_Ling.UI.MeshSelectionSetPanel.Open(_toolManager?.toolContext);
+        }
 
         if (GUILayout.Button("モデル選択"))
         {
             Poly_Ling.Tools.Panels.ModelListPanel.Open(_toolManager?.toolContext);
-        }        
-        
-        if(GUILayout.Button("モーフ確認"))
+        }
+        EditorGUILayout.Space(5);
+        if (GUILayout.Button("モーフ確認"))
         {
             Poly_Ling.Tools.Panels.MorphPanel.Open(_toolManager?.toolContext);
         }

@@ -356,6 +356,12 @@ namespace Poly_Ling.Serialization
 
             SaveMorphExpressionsToDTO(model, modelDTO);
 
+            // ================================================================
+            // MeshSelectionSets
+            // ================================================================
+
+            SaveMeshSelectionSetsToDTO(model, modelDTO);
+
             return modelDTO;
         }
 
@@ -507,6 +513,12 @@ namespace Poly_Ling.Serialization
             // ================================================================
 
             LoadMorphExpressionsFromDTO(modelDTO, model);
+
+            // ================================================================
+            // MeshSelectionSets復元
+            // ================================================================
+
+            LoadMeshSelectionSetsFromDTO(modelDTO, model);
 
             return model;
         }
@@ -988,6 +1000,50 @@ namespace Poly_Ling.Serialization
                     {
                         model.MorphExpressions.Add(set);
                     }
+                }
+            }
+        }
+
+        // ================================================================
+        // MeshSelectionSets シリアライズ
+        // ================================================================
+
+        /// <summary>
+        /// ModelContextのメッシュ選択セットをModelDTOに保存
+        /// </summary>
+        public static void SaveMeshSelectionSetsToDTO(Model.ModelContext model, ModelDTO modelDTO)
+        {
+            if (model == null || modelDTO == null) return;
+
+            modelDTO.meshSelectionSets = new List<Data.MeshSelectionSetDTO>();
+
+            if (model.MeshSelectionSets != null)
+            {
+                foreach (var set in model.MeshSelectionSets)
+                {
+                    var dto = Data.MeshSelectionSetDTO.FromMeshSelectionSet(set);
+                    if (dto != null)
+                        modelDTO.meshSelectionSets.Add(dto);
+                }
+            }
+        }
+
+        /// <summary>
+        /// ModelDTOのメッシュ選択セットをModelContextに復元
+        /// </summary>
+        public static void LoadMeshSelectionSetsFromDTO(ModelDTO modelDTO, Model.ModelContext model)
+        {
+            if (modelDTO == null || model == null) return;
+
+            model.MeshSelectionSets = new List<Data.MeshSelectionSet>();
+
+            if (modelDTO.meshSelectionSets != null)
+            {
+                foreach (var dto in modelDTO.meshSelectionSets)
+                {
+                    var set = dto?.ToMeshSelectionSet();
+                    if (set != null)
+                        model.MeshSelectionSets.Add(set);
                 }
             }
         }

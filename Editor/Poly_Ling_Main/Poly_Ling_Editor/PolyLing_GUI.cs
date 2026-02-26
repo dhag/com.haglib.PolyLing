@@ -21,8 +21,6 @@ public partial class PolyLing
     {
         using (new EditorGUILayout.VerticalScope(GUILayout.Width(_leftPaneWidth)))
         {
-              EditorGUILayout.LabelField("UnityMesh Factory", EditorStyles.boldLabel);
-       
               // ★Phase 2: モデル選択UI
               DrawModelSelector();
         
@@ -49,51 +47,6 @@ public partial class PolyLing
             EditorGUILayout.Space(5);
 
             DrawSelectionSetsUI();
-
-            // ================================================================
-            // キャプチャボタン
-            // ================================================================
-            if (GUILayout.Button("📷 Capture Preview"))
-            {
-                _captureRequested = true;
-                Repaint();
-            }
-
-            EditorGUILayout.Space(3);
-
-            // ================================================================
-            // モデル保存/読み込み（常に表示）
-            // ================================================================
-            EditorGUILayout.LabelField(L.Get("ModelFile"), EditorStyles.miniBoldLabel);
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(L.Get("ExportModel")))
-            {
-                ExportModel();
-            }
-            if (GUILayout.Button(L.Get("ImportModel")))
-            {
-                ImportModel();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(L.Get("ExportModelCsv")))
-            {
-                ExportModelCsv();
-            }
-            if (GUILayout.Button(L.Get("ImportModelCsv")))
-            {
-                ImportModelCsv();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            if (GUILayout.Button(L.Get("MergeModelCsv")))
-            {
-                MergeModelCsv();
-            }
-
-            EditorGUILayout.Space(3);
 
             // ================================================================
             // スクロール領域開始（常にスクロールバー表示）
