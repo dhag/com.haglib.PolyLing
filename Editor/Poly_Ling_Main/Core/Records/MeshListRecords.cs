@@ -77,7 +77,7 @@ namespace Poly_Ling.UndoSystem
         public MeshSelectionSnapshot Selection;
 
         /// <summary>選択セット（Phase 9追加）</summary>
-        public List<SelectionSet> SelectionSets;
+        public List<PartsSelectionSet> PartsSelectionSetList;
 
         // ================================================================
         // モーフデータ（Phase Morph追加）
@@ -138,8 +138,8 @@ namespace Poly_Ling.UndoSystem
                 // 選択状態（Phase 1追加）
                 Selection = meshContext.CaptureSelection(),
                 // 選択セット（Phase 9追加）
-                SelectionSets = meshContext.SelectionSets?.Select(s => s.Clone()).ToList()
-                                ?? new List<SelectionSet>(),
+                PartsSelectionSetList = meshContext.PartsSelectionSetList?.Select(s => s.Clone()).ToList()
+                                ?? new List<PartsSelectionSet>(),
                 // モーフデータ（Phase Morph追加）
                 MorphBaseData = meshContext.MorphBaseData?.Clone(),
                 MorphParentIndex = meshContext.MorphParentIndex,
@@ -235,8 +235,8 @@ namespace Poly_Ling.UndoSystem
             }
 
             // 選択セットを復元（Phase 9追加）
-            meshContext.SelectionSets = SelectionSets?.Select(s => s.Clone()).ToList()
-                                        ?? new List<SelectionSet>();
+            meshContext.PartsSelectionSetList = PartsSelectionSetList?.Select(s => s.Clone()).ToList()
+                                        ?? new List<PartsSelectionSet>();
 
             // モーフデータを復元（Phase Morph追加）
             meshContext.MorphBaseData = MorphBaseData?.Clone();

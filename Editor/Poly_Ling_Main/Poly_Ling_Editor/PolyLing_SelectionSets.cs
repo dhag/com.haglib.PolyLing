@@ -68,19 +68,19 @@ public partial class PolyLing
         // ================================================================
         // 選択セットリスト
         // ================================================================
-        if (meshContext.SelectionSets.Count > 0)
+        if (meshContext.PartsSelectionSetList.Count > 0)
         {
             EditorGUILayout.Space(3);
 
             // スクロールビュー
-            float listHeight = Mathf.Min(meshContext.SelectionSets.Count * 22f + 10f, 150f);
+            float listHeight = Mathf.Min(meshContext.PartsSelectionSetList.Count * 22f + 10f, 150f);
             _selectionSetsScroll = EditorGUILayout.BeginScrollView(
                 _selectionSetsScroll,
                 GUILayout.Height(listHeight));
 
-            for (int i = 0; i < meshContext.SelectionSets.Count; i++)
+            for (int i = 0; i < meshContext.PartsSelectionSetList.Count; i++)
             {
-                var set = meshContext.SelectionSets[i];
+                var set = meshContext.PartsSelectionSetList[i];
                 DrawSelectionSetItem(meshContext, set, i);
             }
 
@@ -95,19 +95,19 @@ public partial class PolyLing
             {
                 if (GUILayout.Button(L.Get("To Current"), GUILayout.Width(45)))
                 {
-                    LoadSelectedSelectionSet(meshContext);
+                    LoadSelectedPartsSelectionSet(meshContext);
                 }
                 if (GUILayout.Button(L.Get("Add"), GUILayout.Width(35)))
                 {
-                    AddSelectedSelectionSet(meshContext);
+                    AddSelectedPartsSelectionSet(meshContext);
                 }
                 if (GUILayout.Button(L.Get("Subtract"), GUILayout.Width(45)))
                 {
-                    SubtractSelectedSelectionSet(meshContext);
+                    SubtractSelectedPartsSelectionSet(meshContext);
                 }
                 if (GUILayout.Button(L.Get("Delete"), GUILayout.Width(45)))
                 {
-                    DeleteSelectedSelectionSet(meshContext);
+                    DeleteSelectedPartsSelectionSet(meshContext);
                 }
             }
 
@@ -164,7 +164,7 @@ public partial class PolyLing
     /// <summary>
     /// 選択セットアイテムを描画
     /// </summary>
-    private void DrawSelectionSetItem(MeshContext meshContext, SelectionSet set, int index)
+    private void DrawSelectionSetItem(MeshContext meshContext, PartsSelectionSet set, int index)
     {
         bool isSelected = (_selectedSelectionSetIndex == index);
 
@@ -270,7 +270,7 @@ public partial class PolyLing
         }
 
         // グローバル選択状態から保存
-        var set = SelectionSet.FromCurrentSelection(
+        var set = PartsSelectionSet.FromCurrentSelection(
             name,
             _selectionState.Vertices,
             _selectionState?.Edges,
@@ -279,13 +279,13 @@ public partial class PolyLing
             _selectionState?.Mode ?? MeshSelectMode.Vertex
         );
 
-        meshContext.SelectionSets.Add(set);
+        meshContext.PartsSelectionSetList.Add(set);
 
         // 入力欄クリア
         _newSelectionSetName = "";
 
         // 新しいセットを選択
-        _selectedSelectionSetIndex = meshContext.SelectionSets.Count - 1;
+        _selectedSelectionSetIndex = meshContext.PartsSelectionSetList.Count - 1;
 
         Debug.Log($"[SelectionSets] Saved: {name} ({set.Summary})");
         Repaint();
@@ -294,9 +294,9 @@ public partial class PolyLing
     /// <summary>
     /// 選択中のセットをロード
     /// </summary>
-    private void LoadSelectedSelectionSet(MeshContext meshContext)
+    private void LoadSelectedPartsSelectionSet(MeshContext meshContext)
     {
-        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.SelectionSets.Count)
+        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.PartsSelectionSetList.Count)
             return;
 
         LoadSelectionSetAtIndex(meshContext, _selectedSelectionSetIndex);
@@ -307,10 +307,10 @@ public partial class PolyLing
     /// </summary>
     private void LoadSelectionSetAtIndex(MeshContext meshContext, int index)
     {
-        if (index < 0 || index >= meshContext.SelectionSets.Count)
+        if (index < 0 || index >= meshContext.PartsSelectionSetList.Count)
             return;
 
-        var set = meshContext.SelectionSets[index];
+        var set = meshContext.PartsSelectionSetList[index];
 
         // グローバル選択状態に直接復元
         _selectionState.Vertices.Clear();
@@ -335,12 +335,12 @@ public partial class PolyLing
     /// <summary>
     /// 選択中のセットを現在の選択に追加
     /// </summary>
-    private void AddSelectedSelectionSet(MeshContext meshContext)
+    private void AddSelectedPartsSelectionSet(MeshContext meshContext)
     {
-        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.SelectionSets.Count)
+        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.PartsSelectionSetList.Count)
             return;
 
-        var set = meshContext.SelectionSets[_selectedSelectionSetIndex];
+        var set = meshContext.PartsSelectionSetList[_selectedSelectionSetIndex];
 
         // グローバル選択状態に直接追加
         if (set.Vertices != null && set.Vertices.Count > 0)
@@ -362,12 +362,12 @@ public partial class PolyLing
     /// <summary>
     /// 選択中のセットを現在の選択から除外
     /// </summary>
-    private void SubtractSelectedSelectionSet(MeshContext meshContext)
+    private void SubtractSelectedPartsSelectionSet(MeshContext meshContext)
     {
-        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.SelectionSets.Count)
+        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.PartsSelectionSetList.Count)
             return;
 
-        var set = meshContext.SelectionSets[_selectedSelectionSetIndex];
+        var set = meshContext.PartsSelectionSetList[_selectedSelectionSetIndex];
 
         // グローバル選択状態から直接除外
         if (set.Vertices != null && set.Vertices.Count > 0)
@@ -389,12 +389,12 @@ public partial class PolyLing
     /// <summary>
     /// 選択中のセットを削除
     /// </summary>
-    private void DeleteSelectedSelectionSet(MeshContext meshContext)
+    private void DeleteSelectedPartsSelectionSet(MeshContext meshContext)
     {
-        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.SelectionSets.Count)
+        if (_selectedSelectionSetIndex < 0 || _selectedSelectionSetIndex >= meshContext.PartsSelectionSetList.Count)
             return;
 
-        var set = meshContext.SelectionSets[_selectedSelectionSetIndex];
+        var set = meshContext.PartsSelectionSetList[_selectedSelectionSetIndex];
         string name = set.Name;
 
         if (EditorUtility.DisplayDialog(
@@ -422,7 +422,7 @@ public partial class PolyLing
     /// </summary>
     private void SaveSelectionSetsToFile(MeshContext meshContext)
     {
-        if (meshContext.SelectionSets.Count == 0)
+        if (meshContext.PartsSelectionSetList.Count == 0)
         {
             Debug.LogWarning("[SelectionSets] No selection sets to save.");
             return;
@@ -451,7 +451,7 @@ public partial class PolyLing
                 sets = new List<SelectionSetDTO>()
             };
 
-            foreach (var set in meshContext.SelectionSets)
+            foreach (var set in meshContext.PartsSelectionSetList)
             {
                 var dto = SelectionSetDTO.FromSelectionSet(set);
                 if (dto != null)
@@ -505,11 +505,11 @@ public partial class PolyLing
 
             // 既存セットとのマージ確認
             bool replace = false;
-            if (meshContext.SelectionSets.Count > 0)
+            if (meshContext.PartsSelectionSetList.Count > 0)
             {
                 int choice = EditorUtility.DisplayDialogComplex(
                     "Load Selection Sets",
-                    $"Found {fileData.sets.Count} sets in file.\nCurrent mesh has {meshContext.SelectionSets.Count} sets.\n\nHow do you want to load?",
+                    $"Found {fileData.sets.Count} sets in file.\nCurrent mesh has {meshContext.PartsSelectionSetList.Count} sets.\n\nHow do you want to load?",
                     "Replace All",
                     "Cancel",
                     "Merge (Add)"
@@ -526,7 +526,7 @@ public partial class PolyLing
 
             if (replace)
             {
-                meshContext.SelectionSets.Clear();
+                meshContext.PartsSelectionSetList.Clear();
             }
 
             int loadedCount = 0;
@@ -540,7 +540,7 @@ public partial class PolyLing
                     {
                         set.Name = meshContext.GenerateUniqueSelectionSetName(set.Name);
                     }
-                    meshContext.SelectionSets.Add(set);
+                    meshContext.PartsSelectionSetList.Add(set);
                     loadedCount++;
                 }
             }
@@ -614,7 +614,7 @@ public partial class PolyLing
             return new List<string>();
 
         var names = new List<string>();
-        foreach (var set in meshContext.SelectionSets)
+        foreach (var set in meshContext.PartsSelectionSetList)
         {
             names.Add(set.Name);
         }
@@ -657,7 +657,7 @@ public partial class PolyLing
     /// </summary>
     private void ExportSelectionSetsToCSV(MeshContext meshContext)
     {
-        if (meshContext.SelectionSets.Count == 0)
+        if (meshContext.PartsSelectionSetList.Count == 0)
         {
             Debug.LogWarning("[SelectionSets] No selection sets to export.");
             return;
@@ -685,7 +685,7 @@ public partial class PolyLing
             }
 
             int exportedCount = 0;
-            foreach (var set in meshContext.SelectionSets)
+            foreach (var set in meshContext.PartsSelectionSetList)
             {
                 // ファイル名: Selected_セット名.csv
                 string safeName = SanitizeFileName(set.Name);
@@ -862,7 +862,7 @@ public partial class PolyLing
             }
 
             // SelectionSet作成
-            var set = new SelectionSet(setName);
+            var set = new PartsSelectionSet(setName);
             set.Mode = DataTypeToMode(dataType);
 
             switch (dataType)
@@ -900,8 +900,8 @@ public partial class PolyLing
                 set.Name = meshContext.GenerateUniqueSelectionSetName(set.Name);
             }
 
-            meshContext.SelectionSets.Add(set);
-            _selectedSelectionSetIndex = meshContext.SelectionSets.Count - 1;
+            meshContext.PartsSelectionSetList.Add(set);
+            _selectedSelectionSetIndex = meshContext.PartsSelectionSetList.Count - 1;
 
             Debug.Log($"[SelectionSets] Imported: {set.Name} ({set.Summary})");
             Repaint();

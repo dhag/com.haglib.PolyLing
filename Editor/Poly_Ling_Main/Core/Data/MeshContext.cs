@@ -87,14 +87,14 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>保存された選択セットのリスト</summary>
-        public List<SelectionSet> SelectionSets { get; set; } = new List<SelectionSet>();
+        public List<PartsSelectionSet> PartsSelectionSetList { get; set; } = new List<PartsSelectionSet>();
 
         /// <summary>
         /// 現在の選択を名前付きセットとして保存
         /// </summary>
-        public SelectionSet SaveCurrentSelectionAsSet(string name)
+        public PartsSelectionSet SaveCurrentSelectionAsSet(string name)
         {
-            var set = SelectionSet.FromCurrentSelection(
+            var set = PartsSelectionSet.FromCurrentSelection(
                 name,
                 SelectedVertices,
                 SelectedEdges,
@@ -102,14 +102,14 @@ namespace Poly_Ling.Data
                 SelectedLines,
                 SelectMode
             );
-            SelectionSets.Add(set);
+            PartsSelectionSetList.Add(set);
             return set;
         }
 
         /// <summary>
         /// 選択セットから選択を復元（置き換え）
         /// </summary>
-        public void LoadSelectionSet(SelectionSet set)
+        public void LoadSelectionSet(PartsSelectionSet set)
         {
             if (set == null) return;
 
@@ -123,7 +123,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 選択セットを現在の選択に追加（Union）
         /// </summary>
-        public void AddSelectionSet(SelectionSet set)
+        public void AddSelectionSet(PartsSelectionSet set)
         {
             if (set == null) return;
 
@@ -136,7 +136,7 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 選択セットを現在の選択から除外（Subtract）
         /// </summary>
-        public void SubtractSelectionSet(SelectionSet set)
+        public void SubtractSelectionSet(PartsSelectionSet set)
         {
             if (set == null) return;
 
@@ -149,17 +149,17 @@ namespace Poly_Ling.Data
         /// <summary>
         /// 選択セットを削除
         /// </summary>
-        public bool RemoveSelectionSet(SelectionSet set)
+        public bool RemoveSelectionSet(PartsSelectionSet set)
         {
-            return SelectionSets.Remove(set);
+            return PartsSelectionSetList.Remove(set);
         }
 
         /// <summary>
         /// 選択セットを名前で検索
         /// </summary>
-        public SelectionSet FindSelectionSetByName(string name)
+        public PartsSelectionSet FindSelectionSetByName(string name)
         {
-            return SelectionSets.FirstOrDefault(s => s.Name == name);
+            return PartsSelectionSetList.FirstOrDefault(s => s.Name == name);
         }
 
         /// <summary>
@@ -167,7 +167,7 @@ namespace Poly_Ling.Data
         /// </summary>
         public string GenerateUniqueSelectionSetName(string baseName = "SelectionSet")
         {
-            var existingNames = new HashSet<string>(SelectionSets.Select(s => s.Name));
+            var existingNames = new HashSet<string>(PartsSelectionSetList.Select(s => s.Name));
 
             if (!existingNames.Contains(baseName))
                 return baseName;

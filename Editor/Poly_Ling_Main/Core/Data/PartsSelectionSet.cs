@@ -15,10 +15,10 @@ namespace Poly_Ling.Selection
     /// 頂点/エッジ/面/線の選択状態を保存
     /// </summary>
     [Serializable]
-    public class SelectionSet
+    public class PartsSelectionSet
     {
         /// <summary>セット名</summary>
-        public string Name { get; set; } = "SelectionSet";
+        public string Name { get; set; } = "PartsSelectionSet";
 
         /// <summary>作成日時</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -69,9 +69,9 @@ namespace Poly_Ling.Selection
         // コンストラクタ
         // ================================================================
 
-        public SelectionSet() { }
+        public PartsSelectionSet() { }
 
-        public SelectionSet(string name)
+        public PartsSelectionSet(string name)
         {
             Name = name;
         }
@@ -83,11 +83,11 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// MeshSelectionSnapshotから作成
         /// </summary>
-        public static SelectionSet FromSnapshot(MeshSelectionSnapshot snapshot, string name)
+        public static PartsSelectionSet FromSnapshot(MeshSelectionSnapshot snapshot, string name)
         {
-            if (snapshot == null) return new SelectionSet(name);
+            if (snapshot == null) return new PartsSelectionSet(name);
 
-            return new SelectionSet(name)
+            return new PartsSelectionSet(name)
             {
                 Mode = snapshot.Mode,
                 Vertices = new HashSet<int>(snapshot.Vertices ?? new HashSet<int>()),
@@ -100,7 +100,7 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// 現在の選択状態から作成
         /// </summary>
-        public static SelectionSet FromCurrentSelection(
+        public static PartsSelectionSet FromCurrentSelection(
             string name,
             HashSet<int> vertices,
             HashSet<VertexPair> edges,
@@ -108,7 +108,7 @@ namespace Poly_Ling.Selection
             HashSet<int> lines,
             MeshSelectMode mode)
         {
-            return new SelectionSet(name)
+            return new PartsSelectionSet(name)
             {
                 Mode = mode,
                 Vertices = new HashSet<int>(vertices ?? new HashSet<int>()),
@@ -140,9 +140,9 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// クローン作成
         /// </summary>
-        public SelectionSet Clone()
+        public PartsSelectionSet Clone()
         {
-            return new SelectionSet(Name)
+            return new PartsSelectionSet(Name)
             {
                 CreatedAt = CreatedAt,
                 Mode = Mode,
@@ -161,7 +161,7 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// 他のセットを追加（Union）
         /// </summary>
-        public void Add(SelectionSet other)
+        public void Add(PartsSelectionSet other)
         {
             if (other == null) return;
             Vertices.UnionWith(other.Vertices);
@@ -173,7 +173,7 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// 他のセットを除外（Subtract）
         /// </summary>
-        public void Subtract(SelectionSet other)
+        public void Subtract(PartsSelectionSet other)
         {
             if (other == null) return;
             Vertices.ExceptWith(other.Vertices);
@@ -185,7 +185,7 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// 他のセットとの交差（Intersect）
         /// </summary>
-        public void Intersect(SelectionSet other)
+        public void Intersect(PartsSelectionSet other)
         {
             if (other == null)
             {
@@ -249,7 +249,7 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// SelectionSetからDTOを作成
         /// </summary>
-        public static SelectionSetDTO FromSelectionSet(SelectionSet set)
+        public static SelectionSetDTO FromSelectionSet(PartsSelectionSet set)
         {
             if (set == null) return null;
 
@@ -271,9 +271,9 @@ namespace Poly_Ling.Selection
         /// <summary>
         /// DTOからSelectionSetを復元
         /// </summary>
-        public SelectionSet ToSelectionSet()
+        public PartsSelectionSet ToSelectionSet()
         {
-            var set = new SelectionSet(name ?? "SelectionSet");
+            var set = new PartsSelectionSet(name ?? "SelectionSet");
 
             // CreatedAt
             if (!string.IsNullOrEmpty(createdAt) && DateTime.TryParse(createdAt, out var dt))

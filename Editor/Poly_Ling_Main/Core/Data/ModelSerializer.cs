@@ -809,9 +809,9 @@ namespace Poly_Ling.Serialization
 
             meshDTO.selectionSets = new List<SelectionSetDTO>();
 
-            if (meshContext.SelectionSets != null)
+            if (meshContext.PartsSelectionSetList != null)
             {
-                foreach (var set in meshContext.SelectionSets)
+                foreach (var set in meshContext.PartsSelectionSetList)
                 {
                     var dto = SelectionSetDTO.FromSelectionSet(set);
                     if (dto != null)
@@ -829,7 +829,7 @@ namespace Poly_Ling.Serialization
         {
             if (meshDTO == null || meshContext == null) return;
 
-            meshContext.SelectionSets = new List<Selection.SelectionSet>();
+            meshContext.PartsSelectionSetList = new List<Selection.PartsSelectionSet>();
 
             if (meshDTO.selectionSets != null)
             {
@@ -838,7 +838,7 @@ namespace Poly_Ling.Serialization
                     var set = dto?.ToSelectionSet();
                     if (set != null)
                     {
-                        meshContext.SelectionSets.Add(set);
+                        meshContext.PartsSelectionSetList.Add(set);
                     }
                 }
             }

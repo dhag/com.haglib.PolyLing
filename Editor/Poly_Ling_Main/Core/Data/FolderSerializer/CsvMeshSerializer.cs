@@ -261,9 +261,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static void WriteSelectionSets(StringBuilder sb, MeshContext mc)
         {
-            if (mc.SelectionSets == null || mc.SelectionSets.Count == 0) return;
+            if (mc.PartsSelectionSetList == null || mc.PartsSelectionSetList.Count == 0) return;
 
-            foreach (var ss in mc.SelectionSets)
+            foreach (var ss in mc.PartsSelectionSetList)
             {
                 // ss,name,mode,vertexCount,v0,v1,...,edgeCount,e0v1,e0v2,...,faceCount,f0,...,lineCount,l0,...
                 sb.Append($"ss,{EscapeCsv(ss.Name)},{ss.Mode}");
@@ -716,13 +716,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
         private static void ReadSelectionSet(string[] cols, MeshContext mc)
         {
             // ss,name,mode,vCount,v...,eCount,e1,e2,...,fCount,f...,lCount,l...
-            if (mc.SelectionSets == null) mc.SelectionSets = new List<SelectionSet>();
+            if (mc.PartsSelectionSetList == null) mc.PartsSelectionSetList = new List<PartsSelectionSet>();
 
             int idx = 1;
             string name = UnescapeCsv(cols.Length > idx ? cols[idx] : "Set"); idx++;
             string modeStr = cols.Length > idx ? cols[idx] : "Vertex"; idx++;
 
-            var ss = new SelectionSet(name);
+            var ss = new PartsSelectionSet(name);
             if (Enum.TryParse<MeshSelectMode>(modeStr, out var mode))
                 ss.Mode = mode;
 
@@ -750,7 +750,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             for (int l = 0; l < lCount; l++)
                 ss.Lines.Add(ParseInt(cols, idx++));
 
-            mc.SelectionSets.Add(ss);
+            mc.PartsSelectionSetList.Add(ss);
         }
 
         // ================================================================
