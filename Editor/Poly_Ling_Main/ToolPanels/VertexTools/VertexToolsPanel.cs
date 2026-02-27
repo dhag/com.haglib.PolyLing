@@ -34,6 +34,7 @@ namespace Poly_Ling.Tools.Panels
         {
             new ToolEntry("AlignSection", () => new AlignVerticesTool(), needsUpdate: false),
             new ToolEntry("MergeSection", () => new MergeVerticesTool(), needsUpdate: true),
+            new ToolEntry("PlanarizeSection", () => new PlanarizeAlongBonesTool(), needsUpdate: false),
             // 新しいツールはここに追加:
             // new ToolEntry("YourSection", () => new YourTool(), needsUpdate: false),
         };
@@ -194,11 +195,8 @@ namespace Poly_Ling.Tools.Panels
                     //     yourTool.Update(_context);
                     // }
                 }
-                else
-                {
-                    // Update不要なツールはOnActivateで再計算
-                    _tools[i].OnActivate(_context);
-                }
+                // needsUpdate: false のツールはフレーム更新不要
+                // OnActivate()はコンテキスト設定時（OnContextSet）で1回だけ呼ぶ
             }
         }
 

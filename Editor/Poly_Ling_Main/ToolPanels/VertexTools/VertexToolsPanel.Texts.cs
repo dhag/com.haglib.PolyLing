@@ -77,6 +77,14 @@ namespace Poly_Ling.Tools.Panels
                 ["ja"] = "頂点マージ", 
                 ["hi"] = "ちょうてんまーじ" 
             },
+
+            // Planarize セクション
+            ["PlanarizeSection"] = new() 
+            { 
+                ["en"] = "Planarize Along Bones", 
+                ["ja"] = "ボーン間平面化", 
+                ["hi"] = "ぼーんかんへいめんか" 
+            },
             ["MergeHelp"] = new() 
             { 
                 ["en"] = "Merge selected vertices into one", 
