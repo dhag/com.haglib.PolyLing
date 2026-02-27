@@ -76,23 +76,12 @@ Shader "Poly_Ling/Point3D_Overlay"
                 {
                     uint idx = (uint)v.uv2.x;
                     uint flags = _VertexFlagsBuffer[idx];
-                    bool isMeshSelected = (flags & FLAG_MESH_SELECTED) != 0;
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
                     bool isCulled = (flags & FLAG_CULLED) != 0;
                     bool isHovered = (flags & FLAG_HOVERED) != 0;
                     
                     // 非表示メッシュをスキップ
                     if (isHidden)
-                    {
-                        o.pos = float4(99999, 99999, 99999, 1);
-                        o.fillColor = 0;
-                        o.borderColor = 0;
-                        o.uv = 0;
-                        return o;
-                    }
-                    
-                    // 選択メッシュでない場合は非表示
-                    if (!isMeshSelected)
                     {
                         o.pos = float4(99999, 99999, 99999, 1);
                         o.fillColor = 0;

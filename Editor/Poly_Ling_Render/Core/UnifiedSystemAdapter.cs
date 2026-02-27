@@ -650,8 +650,8 @@ namespace Poly_Ling.Core
         /// ドラッグ中のワイヤーフレーム更新が必要な場合:
         /// - トポロジ（インデックス・カラー・フラグ）は不変のまま
         ///   頂点位置のみを差し替える軽量パスを使用すること
-        ///   → UnifiedMeshSystem.ProcessTransformUpdate()
-        ///     （_bufferManager.UpdatePositions: Array.Copy + SetData のみ）
+        ///   → UnifiedMeshSystem.ProcessTransformUpdateSelectedOnly()
+        ///     （選択メッシュの _bufferManager.UpdatePositions のみ）
         /// - この関数のrebuildMeshパスを経由してはならない
         ///
         /// 過去の障害: AllowMeshRebuild=true → 1FPS（ワイヤー全再構築が毎フレーム実行）
@@ -684,18 +684,19 @@ namespace Poly_Ling.Core
             bool rebuildMesh = _currentProfile.AllowMeshRebuild;
 
             // TransformDragging中の軽量位置更新パス
-            // フル再構築(AllowMeshRebuild)は走らせず、頂点位置のみ差し替え
+            // フル再構築(AllowMeshRebuild)は走らせず、選択メッシュの頂点位置のみ差し替え
+            // 非選択メッシュはドラッグ中位置不変のため更新不要
             bool lightweightPositionUpdate = !rebuildMesh
                 && _currentMode == UpdateMode.TransformDragging
                 && RealtimeTransformUpdate;
 
             if (lightweightPositionUpdate)
             {
-                // ① MeshObject.Positions → _bufferManager._positions → GPUバッファ同期
-                _unifiedSystem.ProcessTransformUpdate();
+                // ① 選択メッシュのみ MeshObject.Positions → GPUバッファ同期
+                _unifiedSystem.ProcessTransformUpdateSelectedOnly();
 
-                // ② ワイヤーフレーム・ポイントメッシュの頂点位置のみ更新
-                //    （カラー・UV・インデックスは前回フル構築のキャッシュを再利用）
+                // ② 選択メッシュのワイヤーフレーム・ポイントメッシュの頂点位置のみ更新
+                //    非選択メッシュは位置不変のため更新不要
                 if (showWireframe)
                 {
                     _renderer.UpdateWireframePositionsOnly();
@@ -711,16 +712,9 @@ namespace Poly_Ling.Core
             {
                 if (rebuildMesh)
                 {
-                    // UpdateWireframeMesh(selectedMeshIndex, showUnselected, cam, lineWidthPx, selectedAlpha, unselectedAlpha)
-                    _renderer.UpdateWireframeMesh(
-                        selectedMeshIndex,
-                        showUnselectedWireframe,
-                        camera,
-                        1.0f,       // lineWidthPx
-                        alpha,      // selectedAlpha
-                        0.4f);      // unselectedAlpha
+                    _renderer.UpdateWireframeMeshSelected(alpha);
+                    _renderer.UpdateWireframeMeshUnselected(0.4f);
                 }
-                // v2.1: 非選択表示フラグを渡す
                 _renderer.QueueWireframe(showUnselectedWireframe);
             }
 
@@ -728,16 +722,9 @@ namespace Poly_Ling.Core
             {
                 if (rebuildMesh)
                 {
-                    // UpdatePointMesh(camera, selectedMeshIndex, showUnselected, pointSize, selectedAlpha, unselectedAlpha)
-                    _renderer.UpdatePointMesh(
-                        camera,
-                        selectedMeshIndex,
-                        showUnselectedVertices,
-                        pointSize,
-                        alpha,      // selectedAlpha
-                        0.4f);      // unselectedAlpha
+                    _renderer.UpdatePointMeshSelected(camera, pointSize, alpha);
+                    _renderer.UpdatePointMeshUnselected(camera, pointSize, 0.4f);
                 }
-                // v2.1: 非選択表示フラグを渡す
                 _renderer.QueuePoints(showUnselectedVertices);
             }
         }

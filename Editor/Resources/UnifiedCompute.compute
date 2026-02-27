@@ -2,12 +2,8 @@
 // 統合ComputeShader
 // フラグベースのスクリーン座標計算・カリング・ヒットテスト
 //
-// 【将来課題】
-// ComputeVertexHitTest / ComputeLineHitTest / ComputeFaceHitTest の各カーネルは
-// 現在、全メッシュの要素を対象にヒットテストを実行している。
-// 選択メッシュ（FLAG_MESH_SELECTED）のフィルタはCPU側のFindNearest*FromGPUで行っている。
-// GPU側で FLAG_MESH_SELECTED をチェックして非選択メッシュをスキップすれば、
-// GPU→CPU転送量の削減とCPUループの高速化が期待できる。
+// ヒットテストカーネルはGPU側でFLAG_MESH_SELECTEDをチェックし、
+// 非選択メッシュをスキップする。
 
 #pragma kernel ClearBuffers
 #pragma kernel ClearFaceBuffers
@@ -361,6 +357,13 @@ void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
         return;
     }
     
+    // 非選択メッシュはスキップ
+    if (!HAS_FLAG(flags, FLAG_MESH_SELECTED))
+    {
+        _VertexHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
     // カリングチェック（バックフェースカリング有効時のみ）
     if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
     {
@@ -419,6 +422,13 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     
     // 非表示はスキップ
     if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _LineHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+    
+    // 非選択メッシュはスキップ
+    if (!HAS_FLAG(flags, FLAG_MESH_SELECTED))
     {
         _LineHitDistanceBuffer[index] = 1e10;
         return;
@@ -609,6 +619,14 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     
     // 非表示はヒットなし
     if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _FaceHitBuffer[faceIndex] = 0.0;
+        _FaceHitDepthBuffer[faceIndex] = 1e10;
+        return;
+    }
+    
+    // 非選択メッシュはスキップ
+    if (!HAS_FLAG(flags, FLAG_MESH_SELECTED))
     {
         _FaceHitBuffer[faceIndex] = 0.0;
         _FaceHitDepthBuffer[faceIndex] = 1e10;

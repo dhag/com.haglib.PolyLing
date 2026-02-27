@@ -1155,15 +1155,7 @@ namespace Poly_Ling.Core
         /// GPU版: 最近接頂点を検索（深度バッファから）
         /// GPU側で距離がhitRadius内の頂点のみ深度を書き込んでいる
         /// hitRadius外は1e10が書き込まれている
-        ///
-        /// 【フィルタ】選択中メッシュ（MeshSelected）に属する頂点のみ候補とする。
-        /// GPU側の計算シェーダは全頂点を対象にヒットテストを行うため、
-        /// 非選択メッシュの頂点もヒット判定に通過してしまう。
-        /// CPU側で選択メッシュフィルタを適用することで正確な結果を得る。
-        ///
-        /// 【将来課題】計算シェーダ（ComputeVertexHitTest）側で
-        /// FLAG_MESH_SELECTEDをチェックして非選択メッシュをスキップすれば
-        /// GPU→CPU転送量の削減とCPUループの高速化が期待できる。
+        /// GPU側でFLAG_MESH_SELECTEDチェック済み（非選択メッシュは1e10）
         /// </summary>
         public int FindNearestVertexFromGPU(float hitRadius)
         {
@@ -1172,12 +1164,7 @@ namespace Poly_Ling.Core
 
             for (int i = 0; i < _totalVertexCount; i++)
             {
-                // 選択メッシュに属さない頂点はスキップ
-                if ((_vertexFlags[i] & (uint)SelectionFlags.MeshSelected) == 0)
-                    continue;
-
-                // GPU側でhitRadius外は1e10が書き込まれている
-                // 1e9より大きい値は無効とみなす（深度は通常-1〜1の範囲）
+                // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている
                 float depth = _hitVertexDistances[i];
                 if (depth < 1e9f && depth < nearestDepth)
                 {
@@ -1195,9 +1182,7 @@ namespace Poly_Ling.Core
         /// GPU版: 最近接線分を検索（深度バッファから）
         /// GPU側で距離がhitRadius内の線分のみ深度を書き込んでいる
         /// hitRadius外は1e10が書き込まれている
-        ///
-        /// 【フィルタ】選択中メッシュ（MeshSelected）に属する線分のみ候補とする。
-        /// 【将来課題】計算シェーダ（ComputeLineHitTest）側でFLAG_MESH_SELECTEDフィルタを追加。
+        /// GPU側でFLAG_MESH_SELECTEDチェック済み（非選択メッシュは1e10）
         /// </summary>
         public int FindNearestLineFromGPU(float hitRadius)
         {
@@ -1206,12 +1191,7 @@ namespace Poly_Ling.Core
 
             for (int i = 0; i < _totalLineCount; i++)
             {
-                // 選択メッシュに属さない線分はスキップ
-                if ((_lineFlags[i] & (uint)SelectionFlags.MeshSelected) == 0)
-                    continue;
-
-                // GPU側でhitRadius外は1e10が書き込まれている
-                // 1e9より大きい値は無効とみなす
+                // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている
                 float depth = _hitLineDistances[i];
                 if (depth < 1e9f && depth < nearestDepth)
                 {
@@ -1225,9 +1205,7 @@ namespace Poly_Ling.Core
 
         /// <summary>
         /// GPU版: 最近接面を検索（ヒットバッファから）
-        ///
-        /// 【フィルタ】選択中メッシュ（MeshSelected）に属する面のみ候補とする。
-        /// 【将来課題】計算シェーダ（ComputeFaceHitTest）側でFLAG_MESH_SELECTEDフィルタを追加。
+        /// GPU側でFLAG_MESH_SELECTEDチェック済み（非選択メッシュはhit=0, depth=1e10）
         /// </summary>
         public int FindNearestFaceFromGPU()
         {
@@ -1236,10 +1214,6 @@ namespace Poly_Ling.Core
 
             for (int i = 0; i < _totalFaceCount; i++)
             {
-                // 選択メッシュに属さない面はスキップ
-                if ((_faceFlags[i] & (uint)SelectionFlags.MeshSelected) == 0)
-                    continue;
-
                 if (_faceHitResults[i] > 0.5f && _faceHitDepths[i] < nearestDepth)
                 {
                     nearestDepth = _faceHitDepths[i];

@@ -82,6 +82,21 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// 選択メッシュのみ位置更新（TransformDragging軽量パス用）
+        /// 非選択メッシュはドラッグ中位置不変のため更新不要。
+        /// </summary>
+        public void ProcessTransformUpdateSelectedOnly()
+        {
+            if (_currentModel == null)
+                return;
+
+            foreach (int contextIdx in _currentModel.SelectedMeshIndices)
+            {
+                ProcessTransformUpdate(contextIdx);
+            }
+        }
+
+        /// <summary>
         /// 選択フラグ更新（Level 3）
         /// </summary>
         public void ProcessSelectionUpdate()
