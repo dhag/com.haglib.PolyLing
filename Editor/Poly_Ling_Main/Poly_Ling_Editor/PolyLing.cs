@@ -987,6 +987,8 @@ public partial class PolyLing : EditorWindow
         // ★GPUバッファを再構築（トポロジ変更対応）
         // 頂点数/面数が変わる可能性があるため、常にトポロジ変更として扱う
         _unifiedAdapter?.NotifyTopologyChanged();
+        // ★LiveSync: ヒエラルキーへの自動同期（対象メッシュのみ）
+        LiveSyncAutoUpdate(meshContext);
     }
 
     /// <summary>
@@ -1014,6 +1016,8 @@ public partial class PolyLing : EditorWindow
 
         // GPUバッファの位置情報を更新
         NotifyUnifiedTransformChanged();
+        // LiveSync: ヒエラルキーへの自動同期（対象メッシュのみ）
+        LiveSyncAutoUpdate(meshContext);
     }
 
     /// <summary>

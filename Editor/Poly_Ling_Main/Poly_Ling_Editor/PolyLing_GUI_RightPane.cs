@@ -414,6 +414,35 @@ public partial class PolyLing
                     OverwriteToHierarchy();
                 }
             }
+
+            // ================================================================
+            // LiveSync: ヒエラルキーとの同期
+            // ================================================================
+            EditorGUILayout.Space(4);
+
+            if (HasLiveSyncTarget)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(L.Get("LiveSyncTarget"), _liveSyncTarget.name, EditorStyles.miniLabel);
+                if (GUILayout.Button("×", GUILayout.Width(20)))
+                {
+                    ClearLiveSyncTarget();
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                _liveSyncAutoEnabled = EditorGUILayout.Toggle(_liveSyncAutoEnabled, GUILayout.Width(16));
+                EditorGUILayout.LabelField(L.Get("LiveSyncAuto"), GUILayout.MinWidth(60));
+                if (GUILayout.Button(L.Get("LiveSyncApply")))
+                {
+                    LiveSyncApply();
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            else
+            {
+                EditorGUILayout.LabelField(L.Get("LiveSyncNoTarget"), EditorStyles.miniLabel);
+            }
         }
 
         EditorGUILayout.EndScrollView();

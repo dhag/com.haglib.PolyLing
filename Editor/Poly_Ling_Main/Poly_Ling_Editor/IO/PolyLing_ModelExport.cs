@@ -14,6 +14,75 @@ using Poly_Ling.Data;
 public partial class PolyLing
 {
     // ================================================================
+    // LiveSync: ヒエラルキーへのリアルタイム同期
+    // ================================================================
+
+    /// <summary>同期先のルートGameObject</summary>
+    private GameObject _liveSyncTarget;
+
+    /// <summary>LiveSync自動同期（SyncMeshFromData連動）</summary>
+    private bool _liveSyncAutoEnabled;
+
+    /// <summary>
+    /// LiveSyncターゲットが有効かどうか（GO未削除チェック）
+    /// </summary>
+    private bool HasLiveSyncTarget => _liveSyncTarget != null;
+
+    /// <summary>
+    /// LiveSync自動同期: 単一メッシュ更新（SyncMeshFromDataから呼ばれる）
+    /// </summary>
+    private void LiveSyncAutoUpdate(MeshContext meshContext)
+    {
+        if (!_liveSyncAutoEnabled || !HasLiveSyncTarget || meshContext == null)
+            return;
+
+        if (!ShouldExportAsMesh(meshContext.Type))
+            return;
+
+        OverwriteSingleMeshToTarget(_liveSyncTarget, meshContext);
+    }
+
+    /// <summary>
+    /// LiveSync自動同期: 選択メッシュ全体（ExitTransformDraggingから呼ばれる）
+    /// </summary>
+    private void LiveSyncAutoUpdateSelected()
+    {
+        if (!_liveSyncAutoEnabled || !HasLiveSyncTarget || _model == null)
+            return;
+
+        foreach (int meshIdx in _model.SelectedMeshIndices)
+        {
+            var mc = _model.GetMeshContext(meshIdx);
+            if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0)
+                continue;
+            if (!ShouldExportAsMesh(mc.Type))
+                continue;
+
+            OverwriteSingleMeshToTarget(_liveSyncTarget, mc);
+        }
+    }
+
+    /// <summary>
+    /// LiveSync手動反映（Applyボタンから呼ばれる）
+    /// </summary>
+    private void LiveSyncApply()
+    {
+        if (!HasLiveSyncTarget)
+            return;
+
+        OverwriteToTarget(_liveSyncTarget, false, meshOnly: true);
+    }
+
+    /// <summary>
+    /// LiveSyncターゲットをクリア
+    /// </summary>
+    private void ClearLiveSyncTarget()
+    {
+        _liveSyncTarget = null;
+        _liveSyncAutoEnabled = false;
+    }
+
+    // ================================================================
     // エクスポートフィルタリング
     // ================================================================
 
@@ -418,6 +487,9 @@ public partial class PolyLing
             EditorGUIUtility.PingObject(objectToSelect);
         }
 
+        // LiveSync: エクスポート先を保持
+        _liveSyncTarget = objectToSelect;
+
         Debug.Log($"Added model to hierarchy: {_meshContextList.Count} objects (with hierarchy structure)");
     }
 
@@ -434,14 +506,22 @@ public partial class PolyLing
             return;
         }
 
-        if (_meshContextList.Count == 0)
-        {
-            EditorUtility.DisplayDialog("Error", "エクスポートするメッシュがありません", "OK");
-            return;
-        }
+        OverwriteToTarget(targetRoot, true);
+    }
 
-        // 共有マテリアル配列を取得
-        Material[] sharedMaterials = GetMaterialsForSave(null);
+    /// <summary>
+    /// 指定ルートのヒエラルキーに同名メッシュを上書き（実処理）
+    /// </summary>
+    /// <param name="targetRoot">上書き先のルートGameObject</param>
+    /// <param name="showDialog">完了ダイアログを表示するか</param>
+    /// <param name="meshOnly">trueの場合メッシュジオメトリのみ更新（マテリアル処理スキップ）</param>
+    private void OverwriteToTarget(GameObject targetRoot, bool showDialog, bool meshOnly = false)
+    {
+        if (targetRoot == null || _meshContextList == null || _meshContextList.Count == 0)
+            return;
+
+        // マテリアル配列（meshOnly時はスキップ）
+        Material[] sharedMaterials = meshOnly ? null : GetMaterialsForSave(null);
 
         int overwriteCount = 0;
         int skipCount = 0;
@@ -470,8 +550,8 @@ public partial class PolyLing
 
             // MeshObjectからUnity Meshを生成
             Mesh newMesh;
-            Material[] materialsToUse;
-            if (_bakeMirror && meshContext.IsMirrored)
+            Material[] materialsToUse = null;
+            if (!meshOnly && _bakeMirror && meshContext.IsMirrored)
             {
                 newMesh = BakeMirrorToUnityMesh(meshContext, _mirrorFlipU, out var usedMatIndices);
                 materialsToUse = GetMaterialsForBakedMirror(usedMatIndices, sharedMaterials, meshContext.MirrorMaterialOffset);
@@ -488,9 +568,10 @@ public partial class PolyLing
             var smr = targetGO.GetComponent<SkinnedMeshRenderer>();
             if (smr != null)
             {
-                Undo.RecordObject(smr, $"Overwrite Mesh {meshName}");
+                if (!meshOnly) Undo.RecordObject(smr, $"Overwrite Mesh {meshName}");
                 smr.sharedMesh = newMesh;
-                smr.sharedMaterials = materialsToUse;
+                if (!meshOnly && materialsToUse != null)
+                    smr.sharedMaterials = materialsToUse;
                 overwriteCount++;
                 messages.Add($"[SMR] {meshName}");
                 continue;
@@ -500,14 +581,17 @@ public partial class PolyLing
             var mf = targetGO.GetComponent<MeshFilter>();
             if (mf != null)
             {
-                Undo.RecordObject(mf, $"Overwrite Mesh {meshName}");
+                if (!meshOnly) Undo.RecordObject(mf, $"Overwrite Mesh {meshName}");
                 mf.sharedMesh = newMesh;
 
-                var mr = targetGO.GetComponent<MeshRenderer>();
-                if (mr != null)
+                if (!meshOnly && materialsToUse != null)
                 {
-                    Undo.RecordObject(mr, $"Overwrite Materials {meshName}");
-                    mr.sharedMaterials = materialsToUse;
+                    var mr = targetGO.GetComponent<MeshRenderer>();
+                    if (mr != null)
+                    {
+                        Undo.RecordObject(mr, $"Overwrite Materials {meshName}");
+                        mr.sharedMaterials = materialsToUse;
+                    }
                 }
                 overwriteCount++;
                 messages.Add($"[MF] {meshName}");
@@ -518,18 +602,56 @@ public partial class PolyLing
             skipCount++;
         }
 
-        if (overwriteCount > 0)
+        if (overwriteCount > 0 && !meshOnly)
         {
-            Debug.Log($"[OverwriteToHierarchy] Overwritten {overwriteCount} meshes:\n" + string.Join("\n", messages));
+            Debug.Log($"[OverwriteToTarget] Overwritten {overwriteCount} meshes:\n" + string.Join("\n", messages));
         }
 
-        if (skipCount > 0)
+        if (skipCount > 0 && !meshOnly)
         {
-            Debug.Log($"[OverwriteToHierarchy] Skipped {skipCount} meshes (not found or no mesh component)");
+            Debug.Log($"[OverwriteToTarget] Skipped {skipCount} meshes (not found or no mesh component)");
         }
 
-        EditorUtility.DisplayDialog("完了", 
-            $"上書き: {overwriteCount} メッシュ\nスキップ: {skipCount} メッシュ", "OK");
+        if (showDialog)
+        {
+            EditorUtility.DisplayDialog("完了", 
+                $"上書き: {overwriteCount} メッシュ\nスキップ: {skipCount} メッシュ", "OK");
+        }
+    }
+
+    /// <summary>
+    /// 単一メッシュのみヒエラルキーに上書き（LiveSync用軽量版）
+    /// マテリアル・Undo・ログをスキップ
+    /// </summary>
+    private void OverwriteSingleMeshToTarget(GameObject targetRoot, MeshContext meshContext)
+    {
+        if (targetRoot == null || meshContext?.MeshObject == null || meshContext.MeshObject.VertexCount == 0)
+            return;
+
+        string meshName = meshContext.Name;
+
+        Transform found = FindChildByName(targetRoot.transform, meshName);
+        if (found == null)
+            return;
+
+        GameObject targetGO = found.gameObject;
+
+        Mesh newMesh = meshContext.MeshObject.ToUnityMeshShared(
+            _model.MaterialCount > 0 ? _model.MaterialCount : meshContext.MeshObject.SubMeshCount);
+        newMesh.name = meshName;
+
+        var smr = targetGO.GetComponent<SkinnedMeshRenderer>();
+        if (smr != null)
+        {
+            smr.sharedMesh = newMesh;
+            return;
+        }
+
+        var mf = targetGO.GetComponent<MeshFilter>();
+        if (mf != null)
+        {
+            mf.sharedMesh = newMesh;
+        }
     }
 
     /// <summary>
@@ -905,6 +1027,9 @@ public partial class PolyLing
             Selection.activeGameObject = objectToSelect;
             EditorGUIUtility.PingObject(objectToSelect);
         }
+
+        // LiveSync: エクスポート先を保持
+        _liveSyncTarget = objectToSelect;
 
         Debug.Log($"Added model to hierarchy as SkinnedMesh: {boneCount} bones, {_meshContextList.Count} objects");
     }

@@ -340,7 +340,10 @@ public partial class PolyLing : EditorWindow
 
         // 更新モード制御コールバック
         ctx.EnterTransformDragging = () => _unifiedAdapter?.EnterTransformDragging();
-        ctx.ExitTransformDragging = () => _unifiedAdapter?.ExitTransformDragging();
+        ctx.ExitTransformDragging = () => {
+            _unifiedAdapter?.ExitTransformDragging();
+            LiveSyncAutoUpdateSelected();
+        };
 
         // ホバー抑止制御
         ctx.SetSuppressHover = (suppress) =>
