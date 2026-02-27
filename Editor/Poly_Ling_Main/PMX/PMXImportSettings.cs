@@ -9,6 +9,18 @@ using Poly_Ling.Tools;
 namespace Poly_Ling.PMX
 {
     /// <summary>
+    /// 材質不透明度(Diffuse.a &lt; 1.0)とテクスチャが両方ある場合の動作
+    /// PMX/MQO共通で使用
+    /// </summary>
+    public enum AlphaConflictMode
+    {
+        /// <summary>Transparent（材質不透明度を優先、半透明ブレンディング）</summary>
+        PreferTransparent,
+        /// <summary>AlphaClip（テクスチャアルファを優先、アルファテスト）</summary>
+        PreferAlphaClip,
+    }
+
+    /// <summary>
     /// PMXインポートモード
     /// </summary>
     public enum PMXImportMode
@@ -129,6 +141,19 @@ namespace Poly_Ling.PMX
         public bool DetectNamedMirror = true;
 
         // ================================================================
+        // アルファ設定
+        // ================================================================
+
+        /// <summary>アルファカットオフ値 (0-1)（テクスチャアルファのしきい値）</summary>
+        [Tooltip("テクスチャアルファチャンネルのカットオフしきい値")]
+        [Range(0f, 1f)]
+        public float AlphaCutoff = 0.5f;
+
+        /// <summary>材質不透明度とテクスチャアルファが競合する場合の動作</summary>
+        [Tooltip("Diffuse.a < 1.0 かつテクスチャがある場合の動作")]
+        public AlphaConflictMode AlphaConflict = AlphaConflictMode.PreferTransparent;
+
+        // ================================================================
         // ファクトリメソッド
         // ================================================================
 
@@ -198,7 +223,9 @@ namespace Poly_Ling.PMX
                 RecalculateNormals = this.RecalculateNormals,
                 SmoothingAngle = this.SmoothingAngle,
                 UseObjectNameGrouping = this.UseObjectNameGrouping,
-                DetectNamedMirror = this.DetectNamedMirror
+                DetectNamedMirror = this.DetectNamedMirror,
+                AlphaCutoff = this.AlphaCutoff,
+                AlphaConflict = this.AlphaConflict
             };
         }
 
@@ -217,7 +244,9 @@ namespace Poly_Ling.PMX
                    RecalculateNormals != o.RecalculateNormals ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
                    UseObjectNameGrouping != o.UseObjectNameGrouping ||
-                   DetectNamedMirror != o.DetectNamedMirror;
+                   DetectNamedMirror != o.DetectNamedMirror ||
+                   !Mathf.Approximately(AlphaCutoff, o.AlphaCutoff) ||
+                   AlphaConflict != o.AlphaConflict;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -236,6 +265,8 @@ namespace Poly_Ling.PMX
             SmoothingAngle = o.SmoothingAngle;
             UseObjectNameGrouping = o.UseObjectNameGrouping;
             DetectNamedMirror = o.DetectNamedMirror;
+            AlphaCutoff = o.AlphaCutoff;
+            AlphaConflict = o.AlphaConflict;
         }
 
         // ================================================================

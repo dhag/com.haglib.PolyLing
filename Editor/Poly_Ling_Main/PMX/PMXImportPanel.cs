@@ -94,6 +94,13 @@ namespace Poly_Ling.PMX
             ["Import"] = new() { ["en"] = "Import", ["ja"] = "インポート" },
             ["Reload"] = new() { ["en"] = "Reload", ["ja"] = "リロード" },
             ["DetectNamedMirror"] = new() { ["en"] = "Detect Named Mirror (+)", ["ja"] = "名前ミラー(+)を検出" },
+
+            // アルファ設定
+            ["AlphaSettings"] = new() { ["en"] = "Alpha", ["ja"] = "アルファ" },
+            ["AlphaCutoff"] = new() { ["en"] = "Alpha Cutoff", ["ja"] = "アルファカットオフ" },
+            ["AlphaConflict"] = new() { ["en"] = "Opacity + Texture", ["ja"] = "不透明度+テクスチャ競合時" },
+            ["AlphaConflictTransparent"] = new() { ["en"] = "Transparent (Opacity priority)", ["ja"] = "トランスペアレント（不透明度優先）" },
+            ["AlphaConflictAlphaClip"] = new() { ["en"] = "Alpha Clip (Texture priority)", ["ja"] = "アルファクリップ（テクスチャ優先）" },
             ["NoContextWarning"] = new() { ["en"] = "No context set. Open from Poly_Ling window to import directly.", ["ja"] = "コンテキスト未設定。直接インポートするにはMeshFactoryウィンドウから開いてください。" },
 
             // 結果セクション
@@ -350,6 +357,22 @@ namespace Poly_Ling.PMX
             using (new EditorGUI.IndentLevelScope())
             {
                 _settings.ConvertToTPose = EditorGUILayout.Toggle(T("ConvertToTPose"), _settings.ConvertToTPose);
+            }
+            EditorGUI.EndDisabledGroup();
+
+            EditorGUILayout.Space(3);
+
+            // アルファ設定（Mesh読み込み時のみ有効）
+            EditorGUI.BeginDisabledGroup(!_settings.ShouldImportMesh);
+            EditorGUILayout.LabelField(T("AlphaSettings"), EditorStyles.miniBoldLabel);
+            using (new EditorGUI.IndentLevelScope())
+            {
+                _settings.AlphaCutoff = EditorGUILayout.Slider(T("AlphaCutoff"), _settings.AlphaCutoff, 0f, 1f);
+
+                int conflictIndex = (int)_settings.AlphaConflict;
+                string[] conflictOptions = new[] { T("AlphaConflictTransparent"), T("AlphaConflictAlphaClip") };
+                int newConflictIndex = EditorGUILayout.Popup(T("AlphaConflict"), conflictIndex, conflictOptions);
+                _settings.AlphaConflict = (AlphaConflictMode)newConflictIndex;
             }
             EditorGUI.EndDisabledGroup();
 

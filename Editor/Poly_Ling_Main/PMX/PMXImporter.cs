@@ -1520,22 +1520,35 @@ namespace Poly_Ling.PMX
             Color color = pmxMat.Diffuse;
             SetMaterialColor(material, color);
 
-            // 非透過度（Diffuse.a）が1未満の場合は透過マテリアルに設定
-            if (color.a < 1f - 0.001f)
+            // アルファ処理（4ケース分岐）
+            bool hasLowOpacity = color.a < 1f - 0.001f;
+            bool hasTexture = !string.IsNullOrEmpty(pmxMat.TexturePath);
+
+            if (hasLowOpacity && hasTexture)
             {
+                // ケース4: 材質不透明度 < 1.0 かつ テクスチャあり（競合）
+                if (settings.AlphaConflict == AlphaConflictMode.PreferTransparent)
+                {
+                    // 半透明ブレンディング優先
+                    SetMaterialTransparent(material);
+                }
+                else
+                {
+                    // テクスチャアルファ優先（AlphaClip）
+                    SetMaterialAlphaClip(material, settings.AlphaCutoff);
+                }
+            }
+            else if (hasLowOpacity)
+            {
+                // ケース1: 材質不透明度 < 1.0、テクスチャなし → Transparent
                 SetMaterialTransparent(material);
-                //Debug.Log($"[PMXImporter] Material '{pmxMat.Name}' set to Transparent (alpha={color.a:F2})");
             }
-            // アルファクリップ設定
-            if (material.HasProperty("_AlphaClip"))
+            else if (hasTexture)
             {
-                material.SetFloat("_AlphaClip", 1f);
-                material.EnableKeyword("_ALPHATEST_ON");
+                // ケース2: 不透明度 = 1.0、テクスチャあり → AlphaClip
+                SetMaterialAlphaClip(material, settings.AlphaCutoff);
             }
-            if (material.HasProperty("_Cutoff"))
-            {
-                material.SetFloat("_Cutoff", 0.5f);
-            }
+            // ケース3: 不透明度 = 1.0、テクスチャなし → Opaque, AlphaClip=OFF（何もしない）
 
             // その他のプロパティ
             if (material.HasProperty("_Smoothness"))
@@ -1622,6 +1635,23 @@ namespace Poly_Ling.PMX
             material.EnableKeyword("_ALPHABLEND_ON");
             material.DisableKeyword("_ALPHATEST_ON");
             material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        }
+
+        /// <summary>
+        /// マテリアルをアルファクリップモードに設定（URP/Standard両対応）
+        /// Opaque + AlphaTest で、しきい値以下のピクセルを切り抜く
+        /// </summary>
+        private static void SetMaterialAlphaClip(Material material, float cutoff)
+        {
+            if (material.HasProperty("_AlphaClip"))
+            {
+                material.SetFloat("_AlphaClip", 1f);
+                material.EnableKeyword("_ALPHATEST_ON");
+            }
+            if (material.HasProperty("_Cutoff"))
+            {
+                material.SetFloat("_Cutoff", cutoff);
+            }
         }
 
         /// <summary>

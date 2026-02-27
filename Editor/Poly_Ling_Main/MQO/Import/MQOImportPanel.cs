@@ -11,6 +11,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Localization;
 using Poly_Ling.Materials;
+using Poly_Ling.PMX; // AlphaConflictMode
 
 //using MeshContext = MeshContext;
 
@@ -64,6 +65,13 @@ namespace Poly_Ling.MQO
             ["MergeAllObjects"] = new() { ["en"] = "Merge All Objects", ["ja"] = "全オブジェクト統合" },
             ["SkipMqoBoneIndices"] = new() { ["en"] = "Skip Bone Indices from MQO", ["ja"] = "MQOからボーンインデックスを読込まない" },
             ["SkipMqoBoneWeights"] = new() { ["en"] = "Skip Bone Weights from MQO", ["ja"] = "MQOからウェイトを読込まない" },
+
+            // アルファ設定
+            ["AlphaSettings"] = new() { ["en"] = "Alpha", ["ja"] = "アルファ" },
+            ["AlphaCutoff"] = new() { ["en"] = "Alpha Cutoff", ["ja"] = "アルファカットオフ" },
+            ["AlphaConflict"] = new() { ["en"] = "Opacity + Texture", ["ja"] = "不透明度+テクスチャ競合時" },
+            ["AlphaConflictTransparent"] = new() { ["en"] = "Transparent (Opacity priority)", ["ja"] = "トランスペアレント（不透明度優先）" },
+            ["AlphaConflictAlphaClip"] = new() { ["en"] = "Alpha Clip (Texture priority)", ["ja"] = "アルファクリップ（テクスチャ優先）" },
             ["Normals"] = new() { ["en"] = "Normals", ["ja"] = "法線" },
             ["NormalMode"] = new() { ["en"] = "Normal Mode", ["ja"] = "法線モード" },
             ["SmoothingAngle"] = new() { ["en"] = "Smoothing Angle", ["ja"] = "スムージング角度" },
@@ -344,6 +352,17 @@ namespace Poly_Ling.MQO
             _settings.SkipHiddenObjects = EditorGUILayout.Toggle(T("SkipHiddenObjects"), _settings.SkipHiddenObjects);
             _settings.SkipEmptyObjects = EditorGUILayout.Toggle(T("SkipEmptyObjects"), _settings.SkipEmptyObjects);
             _settings.MergeObjects = EditorGUILayout.Toggle(T("MergeAllObjects"), _settings.MergeObjects);
+
+            EditorGUILayout.Space(3);
+
+            // アルファ設定
+            EditorGUILayout.LabelField(T("AlphaSettings"), EditorStyles.miniLabel);
+            _settings.AlphaCutoff = EditorGUILayout.Slider(T("AlphaCutoff"), _settings.AlphaCutoff, 0f, 1f);
+
+            int conflictIndex = (int)_settings.AlphaConflict;
+            string[] conflictOptions = new[] { T("AlphaConflictTransparent"), T("AlphaConflictAlphaClip") };
+            int newConflictIndex = EditorGUILayout.Popup(T("AlphaConflict"), conflictIndex, conflictOptions);
+            _settings.AlphaConflict = (AlphaConflictMode)newConflictIndex;
 
             EditorGUILayout.Space(3);
 

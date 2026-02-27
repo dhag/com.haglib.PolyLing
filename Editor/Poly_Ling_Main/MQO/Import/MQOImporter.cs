@@ -1293,24 +1293,33 @@ namespace Poly_Ling.MQO
             Color color = mqoMat.Color;
             SetMaterialColor(material, color);
 
-            // 不透明度（Color.a）が1未満の場合は透過マテリアルに設定
-            if (color.a < 1f - 0.001f)
+            // アルファ処理（4ケース分岐）
+            bool hasLowOpacity = color.a < 1f - 0.001f;
+            bool hasTexture = !string.IsNullOrEmpty(mqoMat.TexturePath);
+
+            if (hasLowOpacity && hasTexture)
             {
+                // ケース4: 材質不透明度 < 1.0 かつ テクスチャあり（競合）
+                if (settings.AlphaConflict == AlphaConflictMode.PreferTransparent)
+                {
+                    SetMaterialTransparent(material);
+                }
+                else
+                {
+                    SetMaterialAlphaClip(material, settings.AlphaCutoff);
+                }
+            }
+            else if (hasLowOpacity)
+            {
+                // ケース1: 材質不透明度 < 1.0、テクスチャなし → Transparent
                 SetMaterialTransparent(material);
-                Debug.Log($"[MQOImporter] Material '{mqoMat.Name}' set to Transparent (alpha={color.a:F2})");
             }
-
-
-            // アルファクリップ設定
-            if (material.HasProperty("_AlphaClip"))
+            else if (hasTexture)
             {
-                material.SetFloat("_AlphaClip", 1f);
-                material.EnableKeyword("_ALPHATEST_ON");
+                // ケース2: 不透明度 = 1.0、テクスチャあり → AlphaClip
+                SetMaterialAlphaClip(material, settings.AlphaCutoff);
             }
-            if (material.HasProperty("_Cutoff"))
-            {
-                material.SetFloat("_Cutoff", 0.5f);
-            }
+            // ケース3: 不透明度 = 1.0、テクスチャなし → Opaque, AlphaClip=OFF（何もしない）
 
 
 
@@ -1447,6 +1456,23 @@ namespace Poly_Ling.MQO
             material.EnableKeyword("_ALPHABLEND_ON");
             material.DisableKeyword("_ALPHATEST_ON");
             material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        }
+
+        /// <summary>
+        /// マテリアルをアルファクリップモードに設定（URP/Standard両対応）
+        /// Opaque + AlphaTest で、しきい値以下のピクセルを切り抜く
+        /// </summary>
+        private static void SetMaterialAlphaClip(Material material, float cutoff)
+        {
+            if (material.HasProperty("_AlphaClip"))
+            {
+                material.SetFloat("_AlphaClip", 1f);
+                material.EnableKeyword("_ALPHATEST_ON");
+            }
+            if (material.HasProperty("_Cutoff"))
+            {
+                material.SetFloat("_Cutoff", cutoff);
+            }
         }
 
         /// <summary>

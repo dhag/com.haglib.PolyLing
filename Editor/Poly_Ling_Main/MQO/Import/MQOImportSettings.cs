@@ -6,6 +6,7 @@
 using System;
 using UnityEngine;
 using Poly_Ling.Tools;
+using Poly_Ling.PMX; // AlphaConflictMode
 
 namespace Poly_Ling.MQO
 {
@@ -92,6 +93,19 @@ namespace Poly_Ling.MQO
         /// <summary>MQOファイルからウェイトを読み込まない</summary>
         [Tooltip("MQO特殊面からボーンウェイト情報を読み込まない")]
         public bool SkipMqoBoneWeights = false;
+
+        // ================================================================
+        // アルファ設定
+        // ================================================================
+
+        /// <summary>アルファカットオフ値 (0-1)（テクスチャアルファのしきい値）</summary>
+        [Tooltip("テクスチャアルファチャンネルのカットオフしきい値")]
+        [Range(0f, 1f)]
+        public float AlphaCutoff = 0.5f;
+
+        /// <summary>材質不透明度とテクスチャアルファが競合する場合の動作</summary>
+        [Tooltip("Color.a < 1.0 かつテクスチャがある場合の動作")]
+        public AlphaConflictMode AlphaConflict = AlphaConflictMode.PreferTransparent;
 
         // ================================================================
         // 詳細設定
@@ -232,6 +246,8 @@ namespace Poly_Ling.MQO
                 MergeObjects = this.MergeObjects,
                 SkipMqoBoneIndices = this.SkipMqoBoneIndices,
                 SkipMqoBoneWeights = this.SkipMqoBoneWeights,
+                AlphaCutoff = this.AlphaCutoff,
+                AlphaConflict = this.AlphaConflict,
                 NormalMode = this.NormalMode,
                 SmoothingAngle = this.SmoothingAngle,
                 BoneWeightCSVPath = this.BoneWeightCSVPath,
@@ -258,6 +274,8 @@ namespace Poly_Ling.MQO
                    MergeObjects != o.MergeObjects ||
                    SkipMqoBoneIndices != o.SkipMqoBoneIndices ||
                    SkipMqoBoneWeights != o.SkipMqoBoneWeights ||
+                   !Mathf.Approximately(AlphaCutoff, o.AlphaCutoff) ||
+                   AlphaConflict != o.AlphaConflict ||
                    NormalMode != o.NormalMode ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
                    BoneWeightCSVPath != o.BoneWeightCSVPath ||
@@ -283,6 +301,8 @@ namespace Poly_Ling.MQO
             MergeObjects = o.MergeObjects;
             SkipMqoBoneIndices = o.SkipMqoBoneIndices;
             SkipMqoBoneWeights = o.SkipMqoBoneWeights;
+            AlphaCutoff = o.AlphaCutoff;
+            AlphaConflict = o.AlphaConflict;
             NormalMode = o.NormalMode;
             SmoothingAngle = o.SmoothingAngle;
             BoneWeightCSVPath = o.BoneWeightCSVPath;
