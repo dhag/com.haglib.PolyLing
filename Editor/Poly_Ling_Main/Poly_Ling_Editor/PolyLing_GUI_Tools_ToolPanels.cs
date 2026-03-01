@@ -114,6 +114,8 @@ public partial class PolyLing
             Poly_Ling.UI.UVZPanel.Open(_toolManager?.toolContext);
         }
 
+
+
         EditorGUILayout.Space(5);
         if (GUILayout.Button("選択頂点の編集"))
         {
@@ -170,10 +172,14 @@ public partial class PolyLing
         {
             RemoteServer.Open(_toolManager?.toolContext);
         }
-        
 
 
 
+        EditorGUILayout.Space(15);
+        if (GUILayout.Button("Yet減数化000"))
+        {
+            Poly_Ling.Tools.Panels.QuadDecimator.QuadPreservingDecimatorPanel.Open(_toolManager?.toolContext);
+        }
 
         if (GUILayout.Button("__old_MeshListPanelUXML"))
         {
@@ -188,6 +194,11 @@ public partial class PolyLing
         if (GUILayout.Button("__old_SimpleMorph"))
         {
             SimpleMorphPanel.Open(_toolManager?.toolContext);
+        }
+        // 簡易ブレンド
+        if (GUILayout.Button("簡易ブレンド"))
+        {
+            SimpleBlendPanel.Open(_toolManager?.toolContext);
         }
 
 

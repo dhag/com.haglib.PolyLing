@@ -637,6 +637,9 @@ namespace Poly_Ling.Data
         /// </summary>
         public bool HasBakedMirrorChild { get; set; } = false;
 
+        /// <summary>Memo欄のIsMirrorフラグ由来のミラーか（PMXインポート時に設定）</summary>
+        public bool IsMirrorFromMemo { get; set; } = false;
+
         public MeshContext()
         {
             BoneTransform = new BoneTransform();

@@ -206,42 +206,6 @@ public partial class PolyLing
             }
         }
 
-        // ミラーメッシュ描画（グローバル設定 OR MeshContextごとの設定）
-        // 条件判定はDrawMirroredMesh内で行う
-        if (_showMesh)
-        {
-            if (_showSelectedMeshOnly)
-            {
-                // 複数選択対応
-                if (_model != null && _model.SelectedMeshIndices.Count > 0)
-                {
-                    foreach (int idx in _model.SelectedMeshIndices)
-                    {
-                        if (idx < 0 || idx >= _meshContextList.Count) continue;
-                        var ctx = _meshContextList[idx];
-                        if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
-                        
-                        DrawMirroredMesh(ctx, ctx.UnityMesh);
-                    }
-                }
-                else if (meshContext != null && meshContext.IsVisible)
-                {
-                    DrawMirroredMesh(meshContext, mesh);
-                }
-            }
-            else
-            {
-                for (int i = 0; i < _meshContextList.Count; i++)
-                {
-                    var ctx = _meshContextList[i];
-                    if (ctx?.UnityMesh == null) continue;
-                    if (!ctx.IsVisible) continue;
-
-                    DrawMirroredMesh(ctx, ctx.UnityMesh);
-                }
-            }
-        }
-
         // ================================================================
         // ワイヤフレーム・頂点描画（UnifiedSystem使用）
         // ================================================================

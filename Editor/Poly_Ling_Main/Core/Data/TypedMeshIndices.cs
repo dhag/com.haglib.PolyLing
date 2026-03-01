@@ -275,6 +275,10 @@ namespace Poly_Ling.Data
                         _cache[MeshCategory.Drawable].Add(entry);
                         break;
 
+                    case MeshType.MirrorSide:
+                        _cache[MeshCategory.Drawable].Add(entry);
+                        break;
+
                     case MeshType.Bone:
                         _cache[MeshCategory.Bone].Add(entry);
                         // ボーンインデックスマッピングを構築

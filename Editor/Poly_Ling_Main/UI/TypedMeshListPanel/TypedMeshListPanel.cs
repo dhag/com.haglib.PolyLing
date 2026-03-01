@@ -45,6 +45,7 @@ namespace Poly_Ling.UI
         private TreeView _treeView;
         private Label _countLabel, _statusLabel;
         private Toggle _showInfoToggle;
+        private Toggle _showMirrorSideToggle;
 
         // モーフエディタUI（Phase MorphEditor v2: UIToolkit ListView）
         private Label _morphCountLabel, _morphStatusLabel;
@@ -382,6 +383,7 @@ namespace Poly_Ling.UI
             _treeView = root.Q<TreeView>("mesh-tree");
             _countLabel = root.Q<Label>("count-label");
             _showInfoToggle = root.Q<Toggle>("show-info-toggle");
+            _showMirrorSideToggle = root.Q<Toggle>("show-mirror-toggle");
             _statusLabel = root.Q<Label>("status-label");
 
             _detailFoldout = root.Q<Foldout>("detail-foldout");
@@ -402,6 +404,7 @@ namespace Poly_Ling.UI
 
             // Info表示トグル
             _showInfoToggle?.RegisterValueChangedCallback(_ => RefreshTree());
+            _showMirrorSideToggle?.RegisterValueChangedCallback(_ => RefreshTree());
 
             // 名前フィールド
             _meshNameField?.RegisterValueChangedCallback(OnNameFieldChanged);
@@ -585,8 +588,35 @@ namespace Poly_Ling.UI
                 element.userData = cache;
             }
 
+            // ミラー状態判定
+            bool isMirrorSide = (adapter.MeshContext?.IsBakedMirror == true)
+                             || (Model != null && adapter.MeshContext != null && Model.IsMirrorSide(adapter.MeshContext));
+            bool isRealSide = Model != null && adapter.MeshContext != null && Model.IsRealSide(adapter.MeshContext);
+            bool hasBakedMirrorChild = adapter.MeshContext?.HasBakedMirrorChild ?? false;
+
             if (cache.NameLabel != null)
-                cache.NameLabel.text = adapter.DisplayName;
+            {
+                if (isMirrorSide)
+                {
+                    cache.NameLabel.text = $"🪞 {adapter.DisplayName}";
+                    cache.NameLabel.style.opacity = 0.4f;
+                }
+                else if (isRealSide)
+                {
+                    cache.NameLabel.text = $"⇆ {adapter.DisplayName}";
+                    cache.NameLabel.style.opacity = 1f;
+                }
+                else if (hasBakedMirrorChild)
+                {
+                    cache.NameLabel.text = $"⇆B {adapter.DisplayName}";
+                    cache.NameLabel.style.opacity = 1f;
+                }
+                else
+                {
+                    cache.NameLabel.text = adapter.DisplayName;
+                    cache.NameLabel.style.opacity = 1f;
+                }
+            }
 
             if (cache.InfoLabel != null)
             {
@@ -618,8 +648,17 @@ namespace Poly_Ling.UI
 
             if (cache.SymBtn != null)
             {
-                bool hasMirror = adapter.MirrorType > 0 || adapter.IsBakedMirror;
-                UpdateAttributeButton(cache.SymBtn, hasMirror, adapter.GetMirrorTypeDisplay(), "");
+                bool hasMirror = adapter.MirrorType > 0 || adapter.IsBakedMirror || isMirrorSide || isRealSide || hasBakedMirrorChild;
+                string symIcon;
+                if (isMirrorSide)
+                    symIcon = "🪞";
+                else if (isRealSide)
+                    symIcon = "⇆";
+                else if (hasBakedMirrorChild)
+                    symIcon = "⇆B";
+                else
+                    symIcon = adapter.GetMirrorTypeDisplay();
+                UpdateAttributeButton(cache.SymBtn, hasMirror, symIcon, "");
                 cache.SymBtn.clickable = new Clickable(() => OnSymmetryToggle(adapter));
                 cache.SymBtn.style.display = _currentTab == TabType.Drawable ? DisplayStyle.Flex : DisplayStyle.None;
             }
@@ -716,7 +755,13 @@ namespace Poly_Ling.UI
             foreach (var item in selection)
             {
                 if (item is TypedTreeAdapter adapter)
+                {
+                    // MirrorPairのミラー側・BakedMirrorは選択不可
+                    if (adapter.MeshContext?.IsBakedMirror == true
+                        || (Model != null && adapter.MeshContext != null && Model.IsMirrorSide(adapter.MeshContext)))
+                        continue;
                     _selectedAdapters.Add(adapter);
+                }
             }
 
             var newIndices = _selectedAdapters.Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
@@ -1101,6 +1146,7 @@ namespace Poly_Ling.UI
                 _refreshScheduled = false;
                 if (_treeView == null || _treeRoot == null) return;
 
+                _treeRoot.Rebuild(GetMirrorSideFilter());
                 var treeData = TreeViewHelper.BuildTreeData(_treeRoot.RootItems);
                 _treeView.SetRootItems(treeData);
                 _treeView.Rebuild();
@@ -1117,11 +1163,22 @@ namespace Poly_Ling.UI
             if (_treeView == null || _treeRoot == null) return;
             _refreshScheduled = false;
 
+            _treeRoot.Rebuild(GetMirrorSideFilter());
             var treeData = TreeViewHelper.BuildTreeData(_treeRoot.RootItems);
             _treeView.SetRootItems(treeData);
             _treeView.Rebuild();
 
             RestoreExpandedStates(_treeRoot.RootItems);
+        }
+
+        /// <summary>
+        /// ミラートグルに応じたフィルタを返す（トグルOFF時にミラー側を除外）
+        /// </summary>
+        private Predicate<MeshContext> GetMirrorSideFilter()
+        {
+            bool showMirror = _showMirrorSideToggle?.value ?? false;
+            if (showMirror) return null; // フィルタなし
+            return mc => Model != null && Model.IsMirrorSide(mc);
         }
 
         private void RestoreExpandedStates(List<TypedTreeAdapter> items)
@@ -2497,7 +2554,7 @@ namespace Poly_Ling.UI
                 for (int i = 0; i < Model.MeshContextCount; i++)
                 {
                     var ctx = Model.GetMeshContext(i);
-                    if (ctx != null && (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror) && ctx.Name == baseName)
+                    if (ctx != null && (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror || ctx.Type == MeshType.MirrorSide) && ctx.Name == baseName)
                         return i;
                 }
             }

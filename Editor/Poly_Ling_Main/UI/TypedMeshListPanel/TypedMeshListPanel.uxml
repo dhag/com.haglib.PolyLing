@@ -22,6 +22,7 @@
                 <ui:Label name="count-label" text="Items: 0" class="header-label" />
                 <ui:VisualElement style="flex-grow: 1;" />
                 <ui:Toggle name="show-info-toggle" label="Info" value="true" class="header-toggle" />
+                <ui:Toggle name="show-mirror-toggle" label="🪞" value="false" class="header-toggle" tooltip="ミラー側メッシュを表示" />
                 <ui:Button name="btn-add" text="+" tooltip="新規追加" class="header-button" />
             </ui:VisualElement>
             

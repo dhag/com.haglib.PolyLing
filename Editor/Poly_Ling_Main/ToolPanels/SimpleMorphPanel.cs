@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
+using Poly_Ling.Symmetry;
 using Poly_Ling.Localization;
 
 namespace Poly_Ling.Tools.Panels
@@ -395,6 +396,8 @@ namespace Poly_Ling.Tools.Panels
                     mesh.RecalculateSmoothNormals();
                 }
             });
+
+            SyncMirrorMesh();
         }
 
         private void ApplyBlendRealtime(MeshObject refA, MeshObject refB, MeshObject target, int vertexCount)
@@ -403,6 +406,7 @@ namespace Poly_Ling.Tools.Panels
 
             // Unity Meshに反映（リアルタイム中は法線再計算しない）
             _context?.SyncMesh?.Invoke();
+            SyncMirrorMesh();
             _context?.Repaint?.Invoke();
         }
 
@@ -413,6 +417,68 @@ namespace Poly_Ling.Tools.Panels
                 Vector3 posA = refA.Vertices[i].Position;
                 Vector3 posB = refB.Vertices[i].Position;
                 target.Vertices[i].Position = Vector3.Lerp(posA, posB, ratio);
+            }
+        }
+
+        // ================================================================
+        // ミラーメッシュ同期
+        // ================================================================
+
+        /// <summary>
+        /// ターゲットメッシュのBakedMirror子またはMirrorPairミラー側を同期する
+        /// </summary>
+        private void SyncMirrorMesh()
+        {
+            var model = Model;
+            var ctx = FirstSelectedMeshContext;
+            if (model == null || ctx?.MeshObject == null) return;
+
+            // MirrorPair方式（PMXインポート）
+            var pair = model.GetMirrorPair(ctx);
+            if (pair != null && pair.Real == ctx && pair.IsValid)
+            {
+                pair.SyncPositions();
+                _context?.SyncMeshContextPositionsOnly?.Invoke(pair.Mirror);
+                return;
+            }
+
+            // BakedMirror方式（MQOインポート）
+            if (!ctx.HasBakedMirrorChild) return;
+
+            int targetIdx = model.MeshContextList.IndexOf(ctx);
+            if (targetIdx < 0) return;
+
+            var targetMo = ctx.MeshObject;
+            var axis = ctx.GetMirrorSymmetryAxis();
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc?.MeshObject == null) continue;
+                if (mc.BakedMirrorSourceIndex != targetIdx) continue;
+                if (mc.MeshObject.VertexCount != targetMo.VertexCount) continue;
+
+                var mirrorMo = mc.MeshObject;
+                for (int v = 0; v < targetMo.VertexCount; v++)
+                {
+                    var pos = targetMo.Vertices[v].Position;
+                    switch (axis)
+                    {
+                        case SymmetryAxis.X:
+                            mirrorMo.Vertices[v].Position = new Vector3(-pos.x, pos.y, pos.z);
+                            break;
+                        case SymmetryAxis.Y:
+                            mirrorMo.Vertices[v].Position = new Vector3(pos.x, -pos.y, pos.z);
+                            break;
+                        case SymmetryAxis.Z:
+                            mirrorMo.Vertices[v].Position = new Vector3(pos.x, pos.y, -pos.z);
+                            break;
+                        default:
+                            mirrorMo.Vertices[v].Position = new Vector3(-pos.x, pos.y, pos.z);
+                            break;
+                    }
+                }
+                _context?.SyncMeshContextPositionsOnly?.Invoke(mc);
             }
         }
 

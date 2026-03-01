@@ -109,6 +109,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
                 WriteMeshSelSetsCsv(modelFolderPath, model);
 
+            // mirrorpairs.csv
+            if (model.MirrorPairs != null && model.MirrorPairs.Count > 0)
+                WriteMirrorPairsCsv(modelFolderPath, model);
+
             // editorstate.csv
             if (editorState != null)
                 WriteEditorStateCsv(modelFolderPath, editorState);
@@ -219,6 +223,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // meshselsets.csv
             ReadMeshSelSetsCsv(modelFolderPath, model);
+
+            // mirrorpairs.csv
+            ReadMirrorPairsCsv(modelFolderPath, model);
 
             // editorstate.csv
             string esPath = Path.Combine(modelFolderPath, "editorstate.csv");
@@ -621,6 +628,70 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 }
 
                 model.MeshSelectionSets.Add(ms);
+            }
+        }
+
+        // ================================================================
+        // mirrorpairs.csv（ミラーペア情報）
+        // ================================================================
+
+        private static void WriteMirrorPairsCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_MirrorPairs,version,1.0");
+
+            foreach (var pair in model.MirrorPairs)
+            {
+                int realIdx = model.MeshContextList.IndexOf(pair.Real);
+                int mirrorIdx = model.MeshContextList.IndexOf(pair.Mirror);
+                if (realIdx < 0 || mirrorIdx < 0) continue;
+
+                // realIndex,mirrorIndex,axis
+                sb.AppendLine($"{realIdx},{mirrorIdx},{(int)pair.Axis}");
+            }
+
+            File.WriteAllText(Path.Combine(folderPath, "mirrorpairs.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadMirrorPairsCsv(string folderPath, ModelContext model)
+        {
+            string path = Path.Combine(folderPath, "mirrorpairs.csv");
+            if (!File.Exists(path)) return;
+
+            model.MirrorPairs = new List<MirrorPair>();
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 3) continue;
+
+                int realIdx = PInt(cols, 0, -1);
+                int mirrorIdx = PInt(cols, 1, -1);
+                int axis = PInt(cols, 2, 0);
+
+                if (realIdx < 0 || realIdx >= model.Count) continue;
+                if (mirrorIdx < 0 || mirrorIdx >= model.Count) continue;
+
+                var realCtx = model.GetMeshContext(realIdx);
+                var mirrorCtx = model.GetMeshContext(mirrorIdx);
+                if (realCtx == null || mirrorCtx == null) continue;
+
+                var pair = new MirrorPair
+                {
+                    Real = realCtx,
+                    Mirror = mirrorCtx,
+                    Axis = (Poly_Ling.Symmetry.SymmetryAxis)axis
+                };
+                if (pair.Build())
+                {
+                    model.MirrorPairs.Add(pair);
+                    Debug.Log($"[CsvModelSerializer] Restored MirrorPair: {realCtx.Name} ↔ {mirrorCtx.Name}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[CsvModelSerializer] Failed to rebuild MirrorPair: {realCtx.Name} ↔ {mirrorCtx.Name}: {pair.BuildLog}");
+                }
             }
         }
 

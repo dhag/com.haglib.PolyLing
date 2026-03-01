@@ -750,7 +750,7 @@ namespace Poly_Ling.Tools.Panels
                 for (int i = 0; i < model.MeshContextCount; i++)
                 {
                     var ctx = model.GetMeshContext(i);
-                    if (ctx != null && (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror) && ctx.Name == baseName)
+                    if (ctx != null && (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror || ctx.Type == MeshType.MirrorSide) && ctx.Name == baseName)
                         return i;
                 }
             }

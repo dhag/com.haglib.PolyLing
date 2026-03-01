@@ -498,7 +498,9 @@ namespace Poly_Ling.Data
         /// <summary>グループ</summary>
         Group = 6,
         /// <summary>ベイクされたミラーメッシュ</summary>
-        BakedMirror = 7
+        BakedMirror = 7,
+        /// <summary>MirrorPairのミラー側（サーフェス描画のみ、頂点・辺・ヒットテスト対象外）</summary>
+        MirrorSide = 8
     }
 
     // ============================================================

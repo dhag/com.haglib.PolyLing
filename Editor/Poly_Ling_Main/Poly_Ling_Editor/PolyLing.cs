@@ -817,6 +817,15 @@ public partial class PolyLing : EditorWindow
                 }
             }
         }
+        // MirrorPair再同期: VertexEdit Undo/Redo後にReal→Mirrorを再同期
+        if (stackType == MeshUndoController.UndoStackType.VertexEdit && _model?.MirrorPairs != null)
+        {
+            foreach (var pair in _model.MirrorPairs)
+            {
+                pair.SyncPositions();
+                SyncMeshPositionsOnly(pair.Mirror);
+            }
+        }
         // MeshList Undo/Redo: OnMeshListChangedが処理済み → メッシュ操作不要
         // EditorState / WorkPlane Undo/Redo: メッシュ変更なし → メッシュ操作不要
 

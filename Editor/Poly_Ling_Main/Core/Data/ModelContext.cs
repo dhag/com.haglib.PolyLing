@@ -830,6 +830,133 @@ namespace Poly_Ling.Model
         public SymmetrySettings SymmetrySettings { get; } = new SymmetrySettings();
 
         // ================================================================
+        // ミラーペア
+        // ================================================================
+
+        /// <summary>ミラーペアのリスト（実体側↔ミラー側の対応）</summary>
+        public List<MirrorPair> MirrorPairs { get; set; } = new List<MirrorPair>();
+
+        /// <summary>
+        /// 指定MeshContextが属するMirrorPairを取得（実体側・ミラー側どちらでも検索）
+        /// </summary>
+        public MirrorPair GetMirrorPair(MeshContext meshContext)
+        {
+            if (meshContext == null || MirrorPairs == null) return null;
+            for (int i = 0; i < MirrorPairs.Count; i++)
+            {
+                var pair = MirrorPairs[i];
+                if (pair.Real == meshContext || pair.Mirror == meshContext)
+                    return pair;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 指定MeshContextがミラー側（編集不可側）かどうか
+        /// MirrorPair方式と旧BakedMirror方式の両方をチェック
+        /// </summary>
+        public bool IsMirrorSide(MeshContext meshContext)
+        {
+            if (meshContext == null) return false;
+
+            // 旧BakedMirror方式
+            if (meshContext.IsBakedMirror) return true;
+
+            // MirrorPair方式
+            if (MirrorPairs != null)
+            {
+                for (int i = 0; i < MirrorPairs.Count; i++)
+                {
+                    if (MirrorPairs[i].Mirror == meshContext)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 指定MeshContextが実体側（ミラー元）かどうか
+        /// </summary>
+        public bool IsRealSide(MeshContext meshContext)
+        {
+            if (meshContext == null || MirrorPairs == null) return false;
+            for (int i = 0; i < MirrorPairs.Count; i++)
+            {
+                if (MirrorPairs[i].Real == meshContext)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 全ミラーペアの位置を同期する（Real→Mirror）
+        /// </summary>
+        public void SyncAllMirrorPositions()
+        {
+            if (MirrorPairs == null) return;
+            for (int i = 0; i < MirrorPairs.Count; i++)
+            {
+                MirrorPairs[i].SyncPositions();
+            }
+        }
+
+        /// <summary>
+        /// モーフMeshContextのミラー側カウンターパートを検索する。
+        /// MorphParentIndex→MirrorPair→同一MorphExpression内のミラー側モーフを返す。
+        /// </summary>
+        /// <param name="morphCtx">Real側のモーフMeshContext</param>
+        /// <returns>Mirror側のモーフMeshContext、見つからない場合null</returns>
+        public MeshContext FindMirrorMorph(MeshContext morphCtx)
+        {
+            if (morphCtx == null || !morphCtx.IsMorph) return null;
+
+            // モーフの親メッシュを取得
+            int parentIdx = morphCtx.MorphParentIndex;
+            if (parentIdx < 0 || parentIdx >= Count) return null;
+            var parentCtx = GetMeshContext(parentIdx);
+
+            // 親メッシュのMirrorPairを検索（Real側であること）
+            var pair = GetMirrorPair(parentCtx);
+            if (pair == null || pair.Real != parentCtx) return null;
+
+            // Mirror側親メッシュのインデックス
+            int mirrorParentIdx = MeshContextList.IndexOf(pair.Mirror);
+            if (mirrorParentIdx < 0) return null;
+
+            // このモーフが属するMorphExpressionを検索
+            int morphIdx = MeshContextList.IndexOf(morphCtx);
+            if (morphIdx < 0) return null;
+
+            foreach (var expr in MorphExpressions)
+            {
+                bool containsThisMorph = false;
+                for (int i = 0; i < expr.MeshEntries.Count; i++)
+                {
+                    if (expr.MeshEntries[i].MeshIndex == morphIdx)
+                    {
+                        containsThisMorph = true;
+                        break;
+                    }
+                }
+                if (!containsThisMorph) continue;
+
+                // 同じMorphExpression内でMirror側親のモーフを検索
+                for (int i = 0; i < expr.MeshEntries.Count; i++)
+                {
+                    int candidateIdx = expr.MeshEntries[i].MeshIndex;
+                    if (candidateIdx == morphIdx) continue;
+                    if (candidateIdx < 0 || candidateIdx >= Count) continue;
+
+                    var candidate = GetMeshContext(candidateIdx);
+                    if (candidate != null && candidate.IsMorph && candidate.MorphParentIndex == mirrorParentIdx)
+                        return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        // ================================================================
         // Humanoidボーンマッピング
         // ================================================================
 
@@ -1135,6 +1262,7 @@ namespace Poly_Ling.Model
             }
 
             MeshContextList.Clear();
+            MirrorPairs.Clear();
             ClearAllCategorySelection();
             InvalidateTypedIndices();
             IsDirty = true;

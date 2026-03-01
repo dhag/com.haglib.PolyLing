@@ -71,6 +71,9 @@ namespace Poly_Ling.MQO
         /// <summary>インポート統計</summary>
         public MQOImportStats Stats { get; } = new MQOImportStats();
 
+        /// <summary>構築されたMirrorPairリスト</summary>
+        public List<MirrorPair> MirrorPairs { get; } = new List<MirrorPair>();
+
         /// <summary>
         /// 全MeshContextの面のMaterialIndexにオフセットを加算
         /// Appendモードで既存マテリアルがある場合に使用
@@ -465,10 +468,11 @@ namespace Poly_Ling.MQO
             result.Stats.ObjectCount = result.MeshContexts.Count - boneContextCount;
 
             // ================================================================
-            // ベイクミラー処理
-            // BakedMirrorはソースメッシュの直後に挿入する
+            // ミラー処理
+            // IsMirroredなメッシュに対してミラー側MeshContextを生成
+            // BakeMirror=true: BakedMirror（独立メッシュ）
+            // BakeMirror=false: MirrorPair（Real↔Mirror同期、MeshType.MirrorSide）
             // ================================================================
-            if (settings.BakeMirror)
             {
                 int insertedCount = 0;
 
@@ -478,24 +482,52 @@ namespace Poly_Ling.MQO
                     var ctx = result.MeshContexts[i];
                     if (ctx.IsMirrored && ctx.Type == MeshType.Mesh)
                     {
-                        var bakedMirror = CreateBakedMirrorMesh(ctx, i, settings);
-                        if (bakedMirror != null)
+                        var mirrorMesh = CreateBakedMirrorMesh(ctx, i, settings);
+                        if (mirrorMesh == null) continue;
+
+                        if (settings.BakeMirror)
                         {
-                            // ソースメッシュの直後に挿入
-                            result.MeshContexts.Insert(i + 1, bakedMirror);
-                            insertedCount++;
-                            
-                            // ソースにベイクドミラー子フラグを設定（二重表示防止）
+                            // ベイクドミラー: 独立メッシュ
+                            // MeshType.BakedMirrorはCreateBakedMirrorMeshで設定済み
+                            result.MeshContexts.Insert(i + 1, mirrorMesh);
                             ctx.HasBakedMirrorChild = true;
-                            
-                            Debug.Log($"[MQOImporter] Created baked mirror: {bakedMirror.Name} (source: {ctx.Name}, inserted at {i + 1})");
+                            insertedCount++;
+                            Debug.Log($"[MQOImporter] Created baked mirror: {mirrorMesh.Name} (source: {ctx.Name})");
+                        }
+                        else
+                        {
+                            // MirrorPair: Real↔Mirror同期
+                            mirrorMesh.Type = MeshType.MirrorSide;
+                            mirrorMesh.Name = ctx.Name + "+";
+                            result.MeshContexts.Insert(i + 1, mirrorMesh);
+                            insertedCount++;
+
+                            // MirrorPairを構築
+                            var pair = new MirrorPair
+                            {
+                                Real = ctx,
+                                Mirror = mirrorMesh,
+                                Axis = ctx.GetMirrorSymmetryAxis()
+                            };
+
+                            bool success = pair.Build();
+                            if (success)
+                            {
+                                result.MirrorPairs.Add(pair);
+                                Debug.Log($"[MQOImporter] MirrorPair built: '{ctx.Name}' ↔ '{mirrorMesh.Name}'\n{pair.BuildLog}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[MQOImporter] MirrorPair build failed: '{ctx.Name}' ↔ '{mirrorMesh.Name}'\n{pair.BuildLog}");
+                            }
                         }
                     }
                 }
 
                 if (insertedCount > 0)
                 {
-                    Debug.Log($"[MQOImporter] Baked {insertedCount} mirror meshes (inserted after sources)");
+                    string mode = settings.BakeMirror ? "baked" : "mirror pair";
+                    Debug.Log($"[MQOImporter] Created {insertedCount} {mode} meshes");
                 }
             }
 

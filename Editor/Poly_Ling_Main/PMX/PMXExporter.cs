@@ -618,9 +618,10 @@ namespace Poly_Ling.PMX
 
                 string objectName = ctx.Name ?? "Unnamed";
                 
-                // BakedMirrorの場合、元のオブジェクト名を使用（"+"接尾辞を除去）
-                bool isMirror = ctx.IsBakedMirror;
-                if (isMirror && objectName.EndsWith("+"))
+                // BakedMirror/MirrorSideはミラー側として扱う
+                bool isMirror = ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide;
+                // BakedMirrorのみ"+"除去して実体側と同一グループに統合
+                if (ctx.IsBakedMirror && objectName.EndsWith("+"))
                 {
                     objectName = objectName.TrimEnd('+');
                 }
@@ -641,7 +642,7 @@ namespace Poly_Ling.PMX
             {
                 foreach (var ctx in objectGroups[objectName])
                 {
-                    bool isMirror = ctx.IsBakedMirror;
+                    bool isMirror = ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide;
                     if (isMirror)
                         mirrorMeshes.Add((ctx, objectName, true));
                     else

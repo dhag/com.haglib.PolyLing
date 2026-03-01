@@ -136,9 +136,13 @@ namespace Poly_Ling.PMX
         [Tooltip("材質Memo欄のObjectNameでメッシュをグループ化（頂点順序保持）")]
         public bool UseObjectNameGrouping = true;
 
-        /// <summary>名前末尾+のメッシュをBakedMirrorとして取り込む</summary>
-        [Tooltip("名前末尾が+のメッシュをBakedMirrorとして取り込む")]
+        /// <summary>名前末尾+のメッシュもミラーとみなす</summary>
+        [Tooltip("名前末尾が+のメッシュもミラーとみなす（OFFの場合はMemo欄IsMirrorのみ）")]
         public bool DetectNamedMirror = true;
+
+        /// <summary>ミラーをベイク（OFFの場合はMirrorPair同期）</summary>
+        [Tooltip("ONの場合はベイクドミラー、OFFの場合はMirrorPairで同期")]
+        public bool BakeMirror = false;
 
         // ================================================================
         // アルファ設定
@@ -224,6 +228,7 @@ namespace Poly_Ling.PMX
                 SmoothingAngle = this.SmoothingAngle,
                 UseObjectNameGrouping = this.UseObjectNameGrouping,
                 DetectNamedMirror = this.DetectNamedMirror,
+                BakeMirror = this.BakeMirror,
                 AlphaCutoff = this.AlphaCutoff,
                 AlphaConflict = this.AlphaConflict
             };
@@ -245,6 +250,7 @@ namespace Poly_Ling.PMX
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
                    UseObjectNameGrouping != o.UseObjectNameGrouping ||
                    DetectNamedMirror != o.DetectNamedMirror ||
+                   BakeMirror != o.BakeMirror ||
                    !Mathf.Approximately(AlphaCutoff, o.AlphaCutoff) ||
                    AlphaConflict != o.AlphaConflict;
         }
@@ -265,6 +271,7 @@ namespace Poly_Ling.PMX
             SmoothingAngle = o.SmoothingAngle;
             UseObjectNameGrouping = o.UseObjectNameGrouping;
             DetectNamedMirror = o.DetectNamedMirror;
+            BakeMirror = o.BakeMirror;
             AlphaCutoff = o.AlphaCutoff;
             AlphaConflict = o.AlphaConflict;
         }

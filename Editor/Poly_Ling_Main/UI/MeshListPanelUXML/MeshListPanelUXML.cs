@@ -574,11 +574,36 @@ namespace Poly_Ling.UI
             var adapter = _treeView.GetItemDataForIndex<MeshTreeAdapter>(index);
             if (adapter == null) return;
 
+            // ミラー状態判定
+            bool isMirrorSide = (adapter.MeshContext?.IsBakedMirror == true)
+                             || (Model != null && adapter.MeshContext != null && Model.IsMirrorSide(adapter.MeshContext));
+            bool isRealSide = Model != null && adapter.MeshContext != null && Model.IsRealSide(adapter.MeshContext);
+            bool hasBakedMirrorChild = adapter.MeshContext?.HasBakedMirrorChild ?? false;
+
             // 名前
             var nameLabel = element.Q<Label>("name");
             if (nameLabel != null)
             {
-                nameLabel.text = adapter.DisplayName;
+                if (isMirrorSide)
+                {
+                    nameLabel.text = $"🪞 {adapter.DisplayName}";
+                    nameLabel.style.opacity = 0.4f;
+                }
+                else if (isRealSide)
+                {
+                    nameLabel.text = $"⇆ {adapter.DisplayName}";
+                    nameLabel.style.opacity = 1f;
+                }
+                else if (hasBakedMirrorChild)
+                {
+                    nameLabel.text = $"⇆B {adapter.DisplayName}";
+                    nameLabel.style.opacity = 1f;
+                }
+                else
+                {
+                    nameLabel.text = adapter.DisplayName;
+                    nameLabel.style.opacity = 1f;
+                }
             }
 
             // 情報（トグルで表示切り替え）
@@ -612,11 +637,19 @@ namespace Poly_Ling.UI
             var symBtn = element.Q<Button>("sym-btn");
             if (symBtn != null)
             {
-                bool isSymmetric = adapter.MirrorType > 0 || adapter.IsBakedMirror;
-                string symText = adapter.GetMirrorTypeDisplay();
+                bool hasSymmetry = adapter.MirrorType > 0 || adapter.IsBakedMirror || isMirrorSide || isRealSide || hasBakedMirrorChild;
+                string symText;
+                if (isMirrorSide)
+                    symText = "🪞";
+                else if (isRealSide)
+                    symText = "⇆";
+                else if (hasBakedMirrorChild)
+                    symText = "⇆B";
+                else
+                    symText = adapter.GetMirrorTypeDisplay();
                 if (string.IsNullOrEmpty(symText)) symText = "−";
                 
-                UpdateAttributeButton(symBtn, isSymmetric, symText, "−");
+                UpdateAttributeButton(symBtn, hasSymmetry, symText, "−");
                 
                 // ベイクドミラーは特別な色
                 if (adapter.IsBakedMirror)
@@ -880,6 +913,10 @@ namespace Poly_Ling.UI
             {
                 if (item is MeshTreeAdapter adapter)
                 {
+                    // MirrorPairのミラー側・BakedMirrorは選択不可
+                    if (adapter.MeshContext?.IsBakedMirror == true
+                        || (Model != null && adapter.MeshContext != null && Model.IsMirrorSide(adapter.MeshContext)))
+                        continue;
                     _selectedAdapters.Add(adapter);
                 }
             }

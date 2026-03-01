@@ -109,7 +109,8 @@ namespace Poly_Ling.UI
         /// <summary>
         /// タイプ別リストからツリーを再構築
         /// </summary>
-        public void Rebuild()
+        /// <param name="excludeFilter">trueを返すMeshContextをツリーから除外する（null=フィルタなし）</param>
+        public void Rebuild(Predicate<MeshContext> excludeFilter = null)
         {
             _rootItems.Clear();
             _adapterMap.Clear();
@@ -127,11 +128,13 @@ namespace Poly_Ling.UI
 
             if (entries == null) return;
 
-            // アダプターを作成
+            // アダプターを作成（フィルタ対象は除外）
             var allAdapters = new List<TypedTreeAdapter>();
             for (int i = 0; i < entries.Count; i++)
             {
                 var entry = entries[i];
+                if (excludeFilter != null && entry.Context != null && excludeFilter(entry.Context))
+                    continue;
                 var adapter = new TypedTreeAdapter(entry, _modelContext, i);
                 allAdapters.Add(adapter);
                 _adapterMap[entry.Context] = adapter;

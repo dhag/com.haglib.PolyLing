@@ -1,6 +1,5 @@
 // Assets/Editor/SimpleMeshFactory_Symmetry.cs
-// 対称モード関連（UI、ミラー描画）
-// Phase2: SymmetryMeshCache統合 - 正しい面反転でミラー表示
+// 対称モード関連（UI、対称平面描画）
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -19,12 +18,6 @@ public partial class PolyLing
     // 後方互換プロパティ（ModelContextに移行）
     private SymmetrySettings _symmetrySettings => _model?.SymmetrySettings;
 
-    // ミラー描画用マテリアル
-    private Material _mirrorMaterial;
-
-    // ミラーメッシュキャッシュ（Phase2追加）
-    // MeshUndoContext.SymmetryCacheを使用（各MeshContextが自身のキャッシュを持つ）
-
     // UI状態
     private bool _foldSymmetry = true;
 
@@ -38,36 +31,12 @@ public partial class PolyLing
     public SymmetrySettings SymmetrySettings => _model.SymmetrySettings;
 
     // ================================================================
-    // 初期化・クリーンアップ
+    // 初期化・クリーンアップ（後方互換: 呼び出し元が存在するため空実装を残す）
     // ================================================================
 
-    /// <summary>
-    /// 対称キャッシュを初期化（MeshUndoContext.SymmetryCacheで遅延初期化されるため不要）
-    /// </summary>
-    private void InitializeSymmetryCache()
-    {
-        // MeshUndoContext.SymmetryCacheプロパティで遅延初期化されるため何もしない
-    }
-
-    /// <summary>
-    /// 対称キャッシュを無効化（トポロジー変更時に呼び出す）
-    /// </summary>
-    public void InvalidateSymmetryCache()
-    {
-        _model?.FirstSelectedMeshContext?.InvalidateSymmetryCache();
-    }
-
-    /// <summary>
-    /// 全メッシュの対称キャッシュを無効化
-    /// </summary>
-    public void InvalidateAllSymmetryCaches()
-    {
-        if (_meshContextList == null) return;
-        foreach (var ctx in _meshContextList)
-        {
-            ctx?.InvalidateSymmetryCache();
-        }
-    }
+    private void InitializeSymmetryCache() { }
+    public void InvalidateSymmetryCache() { }
+    public void InvalidateAllSymmetryCaches() { }
 
     // ================================================================
     // UI描画
@@ -80,7 +49,7 @@ public partial class PolyLing
     {
         _foldSymmetry = DrawFoldoutWithUndo("Symmetry", L.Get("Symmetry"), true);
         if (!_foldSymmetry) return;
-        if (_symmetrySettings == null) return;  // Phase 1: null チェック
+        if (_symmetrySettings == null) return;
 
         EditorGUI.indentLevel++;
 
@@ -88,7 +57,6 @@ public partial class PolyLing
         if (!_symmetrySettings.IsEnabled)
         {
             _symmetrySettings.IsEnabled = true;
-            InvalidateSymmetryCache();
             ApplySymmetryToUnifiedSystem();
         }
 
@@ -101,7 +69,6 @@ public partial class PolyLing
         if (EditorGUI.EndChangeCheck())
         {
             _symmetrySettings.Axis = newAxis;
-            InvalidateSymmetryCache();
             ApplySymmetryToUnifiedSystem();
             Repaint();
         }
@@ -112,7 +79,6 @@ public partial class PolyLing
         if (EditorGUI.EndChangeCheck())
         {
             _symmetrySettings.PlaneOffset = newOffset;
-            InvalidateSymmetryCache();
             ApplySymmetryToUnifiedSystem();
             Repaint();
         }
@@ -125,7 +91,6 @@ public partial class PolyLing
             if (GUILayout.Button(L.Get("ResetOffset"), EditorStyles.miniButton, GUILayout.Width(80)))
             {
                 _symmetrySettings.PlaneOffset = 0f;
-                InvalidateSymmetryCache();
                 ApplySymmetryToUnifiedSystem();
                 Repaint();
             }
@@ -138,18 +103,11 @@ public partial class PolyLing
         EditorGUILayout.LabelField(L.Get("DisplayOptions"), EditorStyles.miniLabel);
 
         EditorGUI.BeginChangeCheck();
-        bool showMesh = EditorGUILayout.Toggle(L.Get("MirrorMesh"), _symmetrySettings.ShowMirrorMesh);
-        bool showWire = EditorGUILayout.Toggle(L.Get("MirrorWireframe"), _symmetrySettings.ShowMirrorWireframe);
         bool showPlane = EditorGUILayout.Toggle(L.Get("SymmetryPlane"), _symmetrySettings.ShowSymmetryPlane);
-        float alpha = EditorGUILayout.Slider(L.Get("MirrorAlpha"), _symmetrySettings.MirrorAlpha, 0.1f, 1f);//スライダーの上限下限
 
         if (EditorGUI.EndChangeCheck())
         {
-            _symmetrySettings.ShowMirrorMesh = showMesh;
-            _symmetrySettings.ShowMirrorWireframe = showWire;
             _symmetrySettings.ShowSymmetryPlane = showPlane;
-            _symmetrySettings.MirrorAlpha = alpha;
-            UpdateMirrorMaterialAlpha();
             Repaint();
         }
 
@@ -157,65 +115,8 @@ public partial class PolyLing
     }
 
     // ================================================================
-    // ミラーメッシュ描画（Phase2: SymmetryMeshCache使用）
+    // 対称平面描画
     // ================================================================
-
-    /// <summary>
-    /// メッシュコンテキストがミラー表示対象かどうか判定
-    /// MeshContextにIsMirroredフラグがあれば表示対象
-    /// </summary>
-    private bool ShouldDrawMirror(MeshContext meshContext)
-    {
-        if (meshContext == null) return false;
-
-        // MeshContextにミラーフラグがないメッシュは対象外
-        if (!meshContext.IsMirrored)
-            return false;
-
-        // グローバル設定で「ミラーメッシュ」をOFFにしている場合は表示しない
-        // ただし、グローバルミラーが無効でもMeshContextごとのミラーは表示する
-        if (_symmetrySettings != null && !_symmetrySettings.ShowMirrorMesh)
-            return false;
-
-        // BakedMirrorの子が存在する場合はSymmetryCacheを使わない（二重表示防止）
-        if (HasBakedMirrorChild(meshContext))
-            return false;
-
-        return true;
-    }
-
-    /// <summary>
-    /// 指定されたMeshContextをソースとするBakedMirrorが存在するか確認
-    /// MeshContext.HasBakedMirrorChildプロパティを参照
-    /// </summary>
-    private bool HasBakedMirrorChild(MeshContext meshContext)
-    {
-        return meshContext?.HasBakedMirrorChild ?? false;
-    }
-
-    /// <summary>
-    /// ミラーワイヤーフレーム表示対象かどうか判定
-    /// MeshContextにIsMirroredフラグがあれば表示対象
-    /// </summary>
-    private bool ShouldDrawMirrorWireframe(MeshContext meshContext)
-    {
-        if (meshContext == null) return false;
-
-        // MeshContextにミラーフラグがないメッシュは対象外
-        if (!meshContext.IsMirrored)
-            return false;
-
-        // グローバル設定で「ミラーワイヤーフレーム」をOFFにしている場合は表示しない
-        // ただし、グローバルミラーが無効でもMeshContextごとのミラーは表示する
-        if (_symmetrySettings != null && !_symmetrySettings.ShowMirrorWireframe)
-            return false;
-
-        // BakedMirrorの子が存在する場合はSymmetryCacheを使わない（二重表示防止）
-        if (HasBakedMirrorChild(meshContext))
-            return false;
-
-        return true;
-    }
 
     /// <summary>
     /// 対称平面表示対象かどうか判定
@@ -232,404 +133,6 @@ public partial class PolyLing
 
         return true;
     }
-
-    /// <summary>
-    /// MeshContextに適用する対称設定を取得
-    /// MeshContextごとの設定があればそれを優先、なければグローバル設定
-    /// </summary>
-    private SymmetrySettings GetEffectiveSymmetrySettings(MeshContext meshContext)
-    {
-        if (meshContext == null) return _symmetrySettings;
-
-        // MeshContextにミラー設定がある場合は一時的なSymmetrySettingsを作成
-        if (meshContext.IsMirrored)
-        {
-            var settings = new SymmetrySettings
-            {
-                IsEnabled = true,
-                Axis = meshContext.GetMirrorSymmetryAxis(),
-                PlaneOffset = meshContext.MirrorDistance,
-                ShowMirrorMesh = true,
-                ShowMirrorWireframe = _symmetrySettings?.ShowMirrorWireframe ?? true,
-                ShowSymmetryPlane = false,  // MeshContextごとの場合は平面表示しない
-                MirrorAlpha = _symmetrySettings?.MirrorAlpha ?? 0.5f
-            };
-            return settings;
-        }
-
-        // グローバル設定を使用
-        return _symmetrySettings;
-    }
-
-    /// <summary>
-    /// ミラーメッシュを描画（正しい面反転付き）
-    /// </summary>
-    private void DrawMirroredMesh(MeshContext meshContext, Mesh mesh)
-    {
-        // デバッグ：詳細情報
-        var dbgEditorState = _undoController?.EditorState;
-        bool dbgUseWorld = dbgEditorState?.ShowWorldTransform ?? false;
-        var dbgBufMgr = _unifiedAdapter?.BufferManager;
-        bool dbgMirrorEnabled = dbgBufMgr?.MirrorEnabled ?? false;
-        var dbgMirrorPos = dbgBufMgr?.GetMirrorPositions();
-
-        //Debug.Log($"[MIRROR] useWorld={dbgUseWorld}, mirrorEnabled={dbgMirrorEnabled}, mirrorPos={dbgMirrorPos != null}, count={dbgMirrorPos?.Length ?? 0}");
-
-        // ミラー表示対象かチェック（グローバル設定 OR MeshContextごとの設定）
-        if (!ShouldDrawMirror(meshContext))
-            return;
-        if (meshContext?.MeshObject == null)
-            return;
-
-        // 有効な対称設定を取得
-        var effectiveSettings = GetEffectiveSymmetrySettings(meshContext);
-        if (effectiveSettings == null)
-            return;
-
-        // MeshContextのキャッシュを更新（必要な場合のみ再構築）
-        meshContext.SymmetryCache.Update(meshContext.MeshObject, effectiveSettings);
-
-        // スキニング有効時はGPU計算済みミラー座標で位置を更新
-        var editorState = _undoController?.EditorState;
-        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
-
-        // デバッグ（1フレームに1回だけ）
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"[MirrorSkinning] useWorldTransform={useWorldTransform}, adapter={_unifiedAdapter != null}, bufferMgr={_unifiedAdapter?.BufferManager != null}");
-        }
-
-        if (useWorldTransform && _unifiedAdapter?.BufferManager != null)
-        {
-            var bufferManager = _unifiedAdapter.BufferManager;
-            var mirrorPositions = bufferManager.GetMirrorPositions();
-
-            // デバッグ
-            if (Time.frameCount % 60 == 0)
-            {
-                Debug.Log($"[MirrorSkinning] mirrorPositions={mirrorPositions != null}, count={mirrorPositions?.Length ?? 0}, mirrorEnabled={bufferManager.MirrorEnabled}");
-            }
-
-            if (mirrorPositions != null)
-            {
-                // MeshContextのインデックスを取得
-                int contextIndex = _meshContextList?.IndexOf(meshContext) ?? -1;
-
-                // デバッグ
-                if (Time.frameCount % 60 == 0)
-                {
-                    Debug.Log($"[MirrorSkinning] contextIndex={contextIndex}, meshContextListCount={_meshContextList?.Count ?? 0}");
-                }
-
-                if (contextIndex >= 0)
-                {
-                    int unifiedMeshIndex = bufferManager.ContextToUnifiedMeshIndex(contextIndex);
-
-                    // デバッグ
-                    if (Time.frameCount % 60 == 0)
-                    {
-                        Debug.Log($"[MirrorSkinning] unifiedMeshIndex={unifiedMeshIndex}");
-                    }
-
-                    if (unifiedMeshIndex >= 0)
-                    {
-                        var meshInfos = bufferManager.MeshInfos;
-                        if (meshInfos != null && unifiedMeshIndex < meshInfos.Length)
-                        {
-                            int vertexOffset = (int)meshInfos[unifiedMeshIndex].VertexStart;
-
-                            // デバッグ
-                            if (Time.frameCount % 60 == 0)
-                            {
-                                Debug.Log($"[MirrorSkinning] Calling UpdateWithSkinnedPositions: vertexOffset={vertexOffset}, vertexCount={meshContext.MeshObject?.VertexCount ?? 0}");
-                            }
-
-                            meshContext.SymmetryCache.UpdateWithSkinnedPositions(
-                                mirrorPositions, meshContext.MeshObject, vertexOffset, effectiveSettings);
-                        }
-                    }
-                }
-            }
-        }
-
-        Mesh mirrorMesh = meshContext.SymmetryCache.MirrorMesh;
-        if (mirrorMesh == null || mirrorMesh.vertexCount == 0)
-            return;
-
-        // マテリアルを準備
-        Material mirrorMat = GetMirrorMaterial();
-
-        int subMeshCount = mirrorMesh.subMeshCount;
-        for (int i = 0; i < subMeshCount; i++)
-        {
-            Material baseMat = null;
-            if (_model.MaterialCount > 0 && i < _model.MaterialCount)
-            {
-                baseMat = _model.GetMaterial(i);
-            }
-            Material mat = (baseMat != null) ? baseMat : mirrorMat;
-
-            // 反転済みメッシュを単位行列で描画（頂点は既にミラー位置）
-            Graphics.DrawMesh(mirrorMesh, Matrix4x4.identity, mat, 0, _preview.camera, i);
-        }
-    }
-
-    /// <summary>
-    /// 頂点位置のみ更新（移動操作中の軽量更新）
-    /// </summary>
-    public void UpdateSymmetryPositionsOnly()
-    {
-        if (_symmetrySettings == null || !_symmetrySettings.IsEnabled)
-            return;
-
-        var meshContext = _model?.FirstSelectedMeshContext;
-        if (meshContext?.MeshObject == null)
-            return;
-
-        // 有効な対称設定を取得
-        var effectiveSettings = GetEffectiveSymmetrySettings(meshContext);
-        if (effectiveSettings == null)
-            return;
-
-        meshContext.SymmetryCache.UpdatePositionsOnly(meshContext.MeshObject, effectiveSettings);
-    }
-
-    /// <summary>
-    /// ミラー用マテリアルを取得
-    /// </summary>
-    private Material GetMirrorMaterial()
-    {
-        if (_mirrorMaterial != null)
-            return _mirrorMaterial;
-
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
-            shader = Shader.Find("Standard");
-        if (shader == null)
-            shader = Shader.Find("Unlit/Color");
-
-        if (shader != null)
-        {
-            _mirrorMaterial = new Material(shader);
-            // 片面描画（正しい法線方向なのでカリング有効）
-            _mirrorMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Back);
-            UpdateMirrorMaterialAlpha();
-        }
-        return _mirrorMaterial;
-    }
-
-    /// <summary>
-    /// ミラーマテリアルの透明度を更新
-    /// </summary>
-    private void UpdateMirrorMaterialAlpha()
-    {
-        if (_mirrorMaterial == null || _symmetrySettings == null) return;
-
-        float alpha = _symmetrySettings.MirrorAlpha;
-        Color col = new Color(0.6f, 0.6f, 0.7f, alpha);
-
-        _mirrorMaterial.SetColor("_BaseColor", col);
-        _mirrorMaterial.SetColor("_Color", col);
-
-        // 透明度が1未満の場合は透明設定
-        if (alpha < 0.99f)
-        {
-            _mirrorMaterial.SetFloat("_Surface", 1); // Transparent
-            _mirrorMaterial.SetFloat("_Blend", 0);   // Alpha
-            _mirrorMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            _mirrorMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            // ZWriteを有効にしてミラーワイヤフレームのZTestを機能させる
-            _mirrorMaterial.SetInt("_ZWrite", 1);
-            _mirrorMaterial.renderQueue = 2450;  // Geometry（2000）より後、Transparent（3000）より前
-        }
-        else
-        {
-            // 不透明の場合
-            _mirrorMaterial.SetFloat("_Surface", 0); // Opaque
-            _mirrorMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
-            _mirrorMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.Zero);
-            _mirrorMaterial.SetInt("_ZWrite", 1);
-            _mirrorMaterial.renderQueue = -1;
-        }
-    }
-
-    // ================================================================
-    // ミラーワイヤーフレーム描画
-    // ================================================================
-
-    /// <summary>
-    /// ミラーワイヤーフレームを描画
-    /// </summary>
-    private void DrawMirroredWireframe(Rect previewRect, MeshContext meshContext, Vector3 camPos, Vector3 lookAt, int meshIndex = -1)
-    {
-        // ミラーワイヤーフレーム表示対象かチェック
-        if (!ShouldDrawMirrorWireframe(meshContext))
-            return;
-
-        var meshObject = meshContext?.MeshObject;
-        if (meshObject == null)
-            return;
-
-        // MeshContextのミラー設定を使用
-        var effectiveSettings = GetEffectiveSymmetrySettings(meshContext);
-        if (effectiveSettings == null)
-            return;
-
-        Matrix4x4 mirrorMatrix = effectiveSettings.GetMirrorMatrix();
-
-        // 表示用トランスフォーム行列を取得し、ミラー行列と合成
-        Matrix4x4 displayMatrix = GetDisplayMatrix(meshIndex);
-        Matrix4x4 combinedMatrix = displayMatrix * mirrorMatrix;
-
-        float alpha = effectiveSettings.MirrorAlpha * 0.7f;  // ワイヤーフレームはやや薄く
-
-        var edges = new HashSet<(int, int)>();
-        var lines = new List<(int, int)>();
-
-        // 各面からエッジを抽出
-        foreach (var face in meshObject.Faces)
-        {
-            if (face.VertexCount == 2)
-            {
-                lines.Add((face.VertexIndices[0], face.VertexIndices[1]));
-            }
-            else if (face.VertexCount >= 3)
-            {
-                for (int i = 0; i < face.VertexCount; i++)
-                {
-                    int a = face.VertexIndices[i];
-                    int b = face.VertexIndices[(i + 1) % face.VertexCount];
-                    AddEdge(edges, a, b);
-                }
-            }
-        }
-
-        UnityEditor_Handles.BeginGUI();
-
-        // 通常のエッジを描画（シアン、やや薄く）
-        UnityEditor_Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
-        foreach (var edge in edges)
-        {
-            Vector3 p1World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
-            Vector3 p2World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
-
-            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
-            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
-
-            if (previewRect.Contains(p1) || previewRect.Contains(p2))
-            {
-                UnityEditor_Handles.DrawLine(
-                    new Vector3(p1.x, p1.y, 0),
-                    new Vector3(p2.x, p2.y, 0));
-            }
-        }
-
-        // 補助線を描画（ピンク、やや薄く）
-        UnityEditor_Handles.color = new Color(1f, 0.5f, 0.8f, alpha);
-        foreach (var line in lines)
-        {
-            if (line.Item1 < 0 || line.Item1 >= meshObject.VertexCount ||
-                line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
-                continue;
-
-            Vector3 p1World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
-            Vector3 p2World = combinedMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
-
-            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
-            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
-
-            if (previewRect.Contains(p1) || previewRect.Contains(p2))
-            {
-                UnityEditor_Handles.DrawAAPolyLine(3f,
-                    new Vector3(p1.x, p1.y, 0),
-                    new Vector3(p2.x, p2.y, 0));
-            }
-        }
-
-        UnityEditor_Handles.EndGUI();
-    }
-
-    /// <summary>
-    /// 旧シグネチャ（後方互換用）- MeshObjectのみ渡された場合
-    /// </summary>
-    private void DrawMirroredWireframe(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt)
-    {
-        // 旧コードからの呼び出し - グローバル設定でフィルター
-        if (_symmetrySettings == null || !_symmetrySettings.IsEnabled || !_symmetrySettings.ShowMirrorWireframe)
-            return;
-
-        if (meshObject == null)
-            return;
-
-        Matrix4x4 mirrorMatrix = _symmetrySettings.GetMirrorMatrix();
-        float alpha = _symmetrySettings.MirrorAlpha * 0.7f;
-
-        var edges = new HashSet<(int, int)>();
-        var lines = new List<(int, int)>();
-
-        foreach (var face in meshObject.Faces)
-        {
-            if (face.VertexCount == 2)
-            {
-                lines.Add((face.VertexIndices[0], face.VertexIndices[1]));
-            }
-            else if (face.VertexCount >= 3)
-            {
-                for (int i = 0; i < face.VertexCount; i++)
-                {
-                    int a = face.VertexIndices[i];
-                    int b = face.VertexIndices[(i + 1) % face.VertexCount];
-                    AddEdge(edges, a, b);
-                }
-            }
-        }
-
-        UnityEditor_Handles.BeginGUI();
-
-        UnityEditor_Handles.color = new Color(0f, 0.8f, 0.8f, alpha);
-        foreach (var edge in edges)
-        {
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[edge.Item2].Position);
-
-            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
-            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
-
-            if (previewRect.Contains(p1) || previewRect.Contains(p2))
-            {
-                UnityEditor_Handles.DrawLine(
-                    new Vector3(p1.x, p1.y, 0),
-                    new Vector3(p2.x, p2.y, 0));
-            }
-        }
-
-        UnityEditor_Handles.color = new Color(1f, 0.5f, 0.8f, alpha);
-        foreach (var line in lines)
-        {
-            if (line.Item1 < 0 || line.Item1 >= meshObject.VertexCount ||
-                line.Item2 < 0 || line.Item2 >= meshObject.VertexCount)
-                continue;
-
-            Vector3 p1World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item1].Position);
-            Vector3 p2World = mirrorMatrix.MultiplyPoint3x4(meshObject.Vertices[line.Item2].Position);
-
-            Vector2 p1 = WorldToPreviewPos(p1World, previewRect, camPos, lookAt);
-            Vector2 p2 = WorldToPreviewPos(p2World, previewRect, camPos, lookAt);
-
-            if (previewRect.Contains(p1) || previewRect.Contains(p2))
-            {
-                UnityEditor_Handles.DrawAAPolyLine(3f,
-                    new Vector3(p1.x, p1.y, 0),
-                    new Vector3(p2.x, p2.y, 0));
-            }
-        }
-
-        UnityEditor_Handles.EndGUI();
-    }
-
-    // ================================================================
-    // 対称平面描画
-    // ================================================================
 
     /// <summary>
     /// 対称平面を描画
@@ -728,23 +231,9 @@ public partial class PolyLing
     // ================================================================
 
     /// <summary>
-    /// ミラー関連リソースをクリーンアップ
+    /// ミラー関連リソースをクリーンアップ（後方互換: 呼び出し元が存在するため残す）
     /// </summary>
     private void CleanupMirrorResources()
     {
-        if (_mirrorMaterial != null)
-        {
-            DestroyImmediate(_mirrorMaterial);
-            _mirrorMaterial = null;
-        }
-
-        // 全MeshContextのキャッシュをクリア
-        if (_meshContextList != null)
-        {
-            foreach (var ctx in _meshContextList)
-            {
-                ctx?.ClearSymmetryCache();
-            }
-        }
     }
 }

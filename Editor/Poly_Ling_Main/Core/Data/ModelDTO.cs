@@ -94,6 +94,13 @@ namespace Poly_Ling.Serialization
         /// <summary>メッシュ選択セット</summary>
         public List<MeshSelectionSetDTO> meshSelectionSets = new List<MeshSelectionSetDTO>();
 
+        // ================================================================
+        // MirrorPair（ミラーペア情報）
+        // ================================================================
+
+        /// <summary>ミラーペア情報（Real↔Mirror のメッシュインデックスペア）</summary>
+        public List<MirrorPairDTO> mirrorPairs = new List<MirrorPairDTO>();
+
         // === ファクトリメソッド ===
 
         public static ModelDTO Create(string modelName)
@@ -756,6 +763,9 @@ namespace Poly_Ling.Serialization
         /// <summary>モーフパネル（PMX: 0=眉, 1=目, 2=口, 3=その他）</summary>
         public int panel = 3;
 
+        /// <summary>対称モーフか（デフォルトtrue）</summary>
+        public bool isSymmetric = true;
+
         /// <summary>作成日時（ISO 8601形式）</summary>
         public string createdAt;
 
@@ -909,5 +919,26 @@ namespace Poly_Ling.Serialization
                 createdAt = DateTime.Now.ToString("o")
             };
         }
+    }
+
+    // ================================================================
+    // ミラーペアデータ
+    // ================================================================
+
+    /// <summary>
+    /// ミラーペア情報のシリアライズ用構造
+    /// Real側とMirror側のメッシュインデックスペアを保持
+    /// </summary>
+    [Serializable]
+    public class MirrorPairDTO
+    {
+        /// <summary>Real側メッシュインデックス（MeshContextList内）</summary>
+        public int realIndex;
+
+        /// <summary>Mirror側メッシュインデックス（MeshContextList内）</summary>
+        public int mirrorIndex;
+
+        /// <summary>ミラー軸（0=X, 1=Y, 2=Z）</summary>
+        public int axis = 0;
     }
 }

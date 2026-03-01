@@ -232,6 +232,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 var mbd = mc.MorphBaseData;
                 sb.AppendLine($"morphName,{EscapeCsv(mbd.MorphName)}");
                 sb.AppendLine($"morphPanel,{mbd.Panel}");
+                sb.AppendLine($"morphIsSymmetric,{mbd.IsSymmetric}");
 
                 // 基準位置
                 if (mbd.BasePositions != null)
@@ -372,6 +373,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var morphBaseUVs = new List<Vector2>();
             string morphName = "";
             int morphPanel = 3;
+            bool morphIsSymmetric = true;
             bool hasMorphBase = false;
 
             while (i < lines.Length)
@@ -479,6 +481,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "morphPanel":
                         morphPanel = ParseInt(cols, 1, 3);
                         break;
+                    case "morphIsSymmetric":
+                        morphIsSymmetric = ParseBool(cols, 1);
+                        break;
                     case "mb":
                         morphBasePositions.Add(new Vector3(
                             ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)));
@@ -508,6 +513,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 {
                     MorphName = morphName,
                     Panel = morphPanel,
+                    IsSymmetric = morphIsSymmetric,
                     BasePositions = morphBasePositions.ToArray(),
                     BaseUVs = morphBaseUVs.Count > 0 ? morphBaseUVs.ToArray() : null
                 };

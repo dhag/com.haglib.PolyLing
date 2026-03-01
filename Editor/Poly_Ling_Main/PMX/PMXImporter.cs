@@ -65,6 +65,9 @@ namespace Poly_Ling.PMX
         /// <summary>インポートされたモーフエクスプレッション</summary>
         public List<MorphExpression> MorphExpressions { get; } = new List<MorphExpression>();
 
+        /// <summary>検出されたミラーペア</summary>
+        public List<MirrorPair> MirrorPairs { get; } = new List<MirrorPair>();
+
         /// <summary>材質グループ情報（モーフ変換で使用）</summary>
         public List<MaterialGroupInfo> MaterialGroupInfos { get; } = new List<MaterialGroupInfo>();
 
@@ -410,6 +413,8 @@ namespace Poly_Ling.PMX
                     {
                         // ObjectNameをMeshContext名に設定
                         meshContext.Name = objectGroup.ObjectName;
+                        // Memo欄のIsMirrorフラグを記録
+                        meshContext.IsMirrorFromMemo = objectGroup.IsBakedMirror;
                         groupInfo.Name = meshContext.Name;
                         result.MeshContexts.Add(meshContext);
                         result.MaterialGroupInfos.Add(groupInfo);
@@ -456,21 +461,109 @@ namespace Poly_Ling.PMX
                 //Debug.Log($"[PMXImporter] Imported {result.MorphExpressions.Count} morph sets");
             }
 
-            // 名前末尾+のメッシュをBakedMirrorとして検出
-            if (settings.DetectNamedMirror)
-            {
-                //DetectNamedMirrors(result.MeshContexts, boneContextCount);
-            }
+            // ミラーペア検出・構築（常に実行）
+            DetectAndBuildMirrorPairs(result, boneContextCount, settings);
         }
 
         // ================================================================
-        // 名前ミラー検出（Cタイプ: 名前末尾+）
+        // ミラーペア検出・構築（名前末尾+ から自動検出）
         // ================================================================
 
         /// <summary>
-        /// 名前末尾が+のメッシュをBakedMirrorとして設定
-        /// +を除いた名前のメッシュをソースとし、BakedMirrorSourceIndexを設定
+        /// ミラーメッシュを検出し、設定に応じてMirrorPairまたはBakedMirrorとして構成する。
+        /// 
+        /// DetectNamedMirror=false: Memo欄IsMirrorフラグのあるメッシュのみミラーとして検出
+        /// DetectNamedMirror=true: Memo欄に加え、名前末尾「+」のメッシュもミラーとして検出
+        /// 
+        /// BakeMirror=false: MirrorPairを構築（Real↔Mirror同期）
+        /// BakeMirror=true: ベイクドミラー（独立メッシュ、MeshType.BakedMirror）
         /// </summary>
+        private static void DetectAndBuildMirrorPairs(PMXImportResult result, int boneContextCount, PMXImportSettings settings)
+        {
+            var meshContexts = result.MeshContexts;
+
+            // メッシュ名→インデックスのマッピング（ボーン以降のメッシュのみ）
+            var nameToIndex = new Dictionary<string, int>();
+            for (int i = boneContextCount; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                if (ctx == null || ctx.Type != MeshType.Mesh) continue;
+                if (!nameToIndex.ContainsKey(ctx.Name))
+                    nameToIndex[ctx.Name] = i;
+            }
+
+            int pairCount = 0;
+            int bakedCount = 0;
+            for (int i = boneContextCount; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                if (ctx == null || ctx.Type != MeshType.Mesh) continue;
+                if (!ctx.Name.EndsWith("+")) continue;
+
+                // DetectNamedMirror=false: Memo欄IsMirrorのみ対象
+                // DetectNamedMirror=true: Memo欄 + 名前末尾「+」も対象
+                if (!settings.DetectNamedMirror && !ctx.IsMirrorFromMemo)
+                    continue;
+
+                string sourceName = ctx.Name.Substring(0, ctx.Name.Length - 1);
+                if (!nameToIndex.TryGetValue(sourceName, out int sourceIndex))
+                    continue;
+
+                var realCtx = meshContexts[sourceIndex];
+                var mirrorCtx = ctx;
+
+                if (settings.BakeMirror)
+                {
+                    // ベイクドミラー: 独立メッシュとして扱う
+                    mirrorCtx.Type = MeshType.BakedMirror;
+                    mirrorCtx.BakedMirrorSourceIndex = sourceIndex;
+                    realCtx.HasBakedMirrorChild = true;
+                    bakedCount++;
+                    Debug.Log($"[PMXImporter] BakedMirror: '{sourceName}' → '{ctx.Name}'");
+                }
+                else
+                {
+                    // MirrorPairを構築
+                    var pair = new MirrorPair
+                    {
+                        Real = realCtx,
+                        Mirror = mirrorCtx,
+                        Axis = Poly_Ling.Symmetry.SymmetryAxis.X
+                    };
+
+                    bool success = pair.Build();
+
+                    if (success)
+                    {
+                        // 実体側にミラー情報を設定
+                        realCtx.MirrorType = 1;    // 左右対称
+                        realCtx.MirrorAxis = 1;    // X軸
+
+                        // ミラー側: サーフェス描画のみ（頂点・辺・ヒットテスト対象外）
+                        mirrorCtx.Type = MeshType.MirrorSide;
+
+                        result.MirrorPairs.Add(pair);
+                        pairCount++;
+                        Debug.Log($"[PMXImporter] MirrorPair built: '{sourceName}' ↔ '{ctx.Name}'\n{pair.BuildLog}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[PMXImporter] MirrorPair build failed: '{sourceName}' ↔ '{ctx.Name}'\n{pair.BuildLog}");
+                    }
+                }
+            }
+
+            if (pairCount > 0)
+                Debug.Log($"[PMXImporter] Built {pairCount} mirror pairs");
+            if (bakedCount > 0)
+                Debug.Log($"[PMXImporter] Created {bakedCount} baked mirrors");
+        }
+
+        /// <summary>
+        /// 旧メソッド（後方互換・参照用に残す）
+        /// 名前末尾が+のメッシュをBakedMirrorとして設定
+        /// </summary>
+        [System.Obsolete("Use DetectAndBuildMirrorPairs instead")]
         public static void DetectNamedMirrors(List<MeshContext> meshContexts, int boneContextCount)
         {
             // メッシュ名→インデックスのマッピング（ボーン以降のメッシュのみ）

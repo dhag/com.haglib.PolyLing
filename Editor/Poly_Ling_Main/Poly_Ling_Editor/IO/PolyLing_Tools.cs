@@ -342,6 +342,37 @@ public partial class PolyLing : EditorWindow
         ctx.EnterTransformDragging = () => _unifiedAdapter?.EnterTransformDragging();
         ctx.ExitTransformDragging = () => {
             _unifiedAdapter?.ExitTransformDragging();
+            // MirrorPair同期: Real→Mirror の頂点位置を書き込み、Mirror側UnityMeshを更新
+            if (_model?.MirrorPairs != null)
+            {
+                foreach (var pair in _model.MirrorPairs)
+                {
+                    pair.SyncPositions();
+                    SyncMeshPositionsOnly(pair.Mirror);
+                }
+            }
+            // 対称モーフ同期: Real側モーフ編集時、Mirror側モーフにオフセットX反転で書き込み
+            if (_model != null && _model.HasMorphSelection)
+            {
+                foreach (int morphIdx in _model.SelectedMorphIndices)
+                {
+                    var morphCtx = _model.GetMeshContext(morphIdx);
+                    if (morphCtx?.IsMorph != true) continue;
+                    if (morphCtx.MorphBaseData?.IsSymmetric != true) continue;
+
+                    var mirrorMorph = _model.FindMirrorMorph(morphCtx);
+                    if (mirrorMorph == null) continue;
+
+                    var parentCtx = _model.GetMeshContext(morphCtx.MorphParentIndex);
+                    var pair = _model.GetMirrorPair(parentCtx);
+                    if (pair == null) continue;
+
+                    pair.SyncMorphSymmetric(
+                        morphCtx.MorphBaseData, mirrorMorph.MorphBaseData,
+                        morphCtx.MeshObject, mirrorMorph.MeshObject);
+                    SyncMeshPositionsOnly(mirrorMorph);
+                }
+            }
             LiveSyncAutoUpdateSelected();
         };
 

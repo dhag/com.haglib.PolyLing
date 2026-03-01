@@ -148,7 +148,7 @@ namespace Poly_Ling.MQO
 
         /// <summary>ミラーをベイク（実体化）</summary>
         [Tooltip("ミラー属性を持つメッシュのミラー側を実体メッシュとして生成する")]
-        public bool BakeMirror = true;
+        public bool BakeMirror = false;
 
         /// <summary>__Armature__からボーンをインポート</summary>
         [Tooltip("MQO内の__Armature__オブジェクト以下をボーン構造としてインポートする")]

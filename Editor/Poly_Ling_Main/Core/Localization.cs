@@ -175,6 +175,7 @@ namespace Poly_Ling.Localization
             // ウィンドウタイトル（キーは "Window_" + IToolPanel.Name）
             // ============================================================
             ["Window_MeshContextList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュオブジェクトリスト", ["hi"] = "ずけいりすと" },
+            ["Window_QuadDecimator"] = new() { ["en"] = "Quad Decimator", ["ja"] = "Quad保持 減数化" },
             
             // ============================================================
             // Displayセクション

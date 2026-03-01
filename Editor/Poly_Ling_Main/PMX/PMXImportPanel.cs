@@ -93,7 +93,8 @@ namespace Poly_Ling.PMX
             // インポートボタン
             ["Import"] = new() { ["en"] = "Import", ["ja"] = "インポート" },
             ["Reload"] = new() { ["en"] = "Reload", ["ja"] = "リロード" },
-            ["DetectNamedMirror"] = new() { ["en"] = "Detect Named Mirror (+)", ["ja"] = "名前ミラー(+)を検出" },
+            ["DetectNamedMirror"] = new() { ["en"] = "Also treat name (+) as mirror", ["ja"] = "名前ミラー(+)もミラーとみなす" },
+            ["BakeMirror"] = new() { ["en"] = "Bake Mirror", ["ja"] = "ミラーをベイク" },
 
             // アルファ設定
             ["AlphaSettings"] = new() { ["en"] = "Alpha", ["ja"] = "アルファ" },
@@ -349,6 +350,7 @@ namespace Poly_Ling.PMX
             {
                 _settings.ImportMaterials = EditorGUILayout.Toggle(T("ImportMaterials"), _settings.ImportMaterials);
                 _settings.DetectNamedMirror = EditorGUILayout.Toggle(T("DetectNamedMirror"), _settings.DetectNamedMirror);
+                _settings.BakeMirror = EditorGUILayout.Toggle(T("BakeMirror"), _settings.BakeMirror);
             }
             EditorGUI.EndDisabledGroup();
 
@@ -715,6 +717,16 @@ namespace Poly_Ling.PMX
                     if (_context.Model != null && _lastResult.Document != null)
                     {
                         _context.Model.SourceDocument = _lastResult.Document;
+                    }
+
+                    // ミラーペアをModelContextに登録
+                    if (_context.Model != null && _lastResult.MirrorPairs.Count > 0)
+                    {
+                        foreach (var pair in _lastResult.MirrorPairs)
+                        {
+                            _context.Model.MirrorPairs.Add(pair);
+                        }
+                        Debug.Log($"[PMXImportPanel] Registered {_lastResult.MirrorPairs.Count} mirror pairs");
                     }
 
                     _context.Repaint?.Invoke();

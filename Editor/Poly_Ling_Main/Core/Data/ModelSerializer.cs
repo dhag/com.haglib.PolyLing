@@ -362,6 +362,12 @@ namespace Poly_Ling.Serialization
 
             SaveMeshSelectionSetsToDTO(model, modelDTO);
 
+            // ================================================================
+            // MirrorPairs
+            // ================================================================
+
+            SaveMirrorPairsToDTO(model, modelDTO);
+
             return modelDTO;
         }
 
@@ -519,6 +525,12 @@ namespace Poly_Ling.Serialization
             // ================================================================
 
             LoadMeshSelectionSetsFromDTO(modelDTO, model);
+
+            // ================================================================
+            // MirrorPairs復元
+            // ================================================================
+
+            LoadMirrorPairsFromDTO(modelDTO, model);
 
             return model;
         }
@@ -860,6 +872,7 @@ namespace Poly_Ling.Serialization
             {
                 morphName = data.MorphName ?? "",
                 panel = data.Panel,
+                isSymmetric = data.IsSymmetric,
                 createdAt = data.CreatedAt.ToString("o")
             };
 
@@ -893,6 +906,7 @@ namespace Poly_Ling.Serialization
             {
                 MorphName = dto.morphName ?? "",
                 Panel = dto.panel,
+                IsSymmetric = dto.isSymmetric,
                 BasePositions = dto.GetBasePositions(),
                 BaseNormals = dto.GetBaseNormals(),
                 BaseUVs = dto.GetBaseUVs()
@@ -1000,6 +1014,77 @@ namespace Poly_Ling.Serialization
                     {
                         model.MorphExpressions.Add(set);
                     }
+                }
+            }
+        }
+
+        // ================================================================
+        // MirrorPairs シリアライズ
+        // ================================================================
+
+        /// <summary>
+        /// ModelContextのMirrorPairsをModelDTOに保存
+        /// </summary>
+        public static void SaveMirrorPairsToDTO(Model.ModelContext model, ModelDTO modelDTO)
+        {
+            if (model == null || modelDTO == null) return;
+
+            modelDTO.mirrorPairs = new List<MirrorPairDTO>();
+
+            if (model.MirrorPairs != null)
+            {
+                foreach (var pair in model.MirrorPairs)
+                {
+                    int realIdx = model.MeshContextList.IndexOf(pair.Real);
+                    int mirrorIdx = model.MeshContextList.IndexOf(pair.Mirror);
+                    if (realIdx < 0 || mirrorIdx < 0) continue;
+
+                    modelDTO.mirrorPairs.Add(new MirrorPairDTO
+                    {
+                        realIndex = realIdx,
+                        mirrorIndex = mirrorIdx,
+                        axis = (int)pair.Axis
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// ModelDTOのMirrorPairsをModelContextに復元
+        /// MeshContextList構築後に呼ぶこと。Build()でVertexMap/BonePairMapを再構築する。
+        /// </summary>
+        public static void LoadMirrorPairsFromDTO(ModelDTO modelDTO, Model.ModelContext model)
+        {
+            if (modelDTO == null || model == null) return;
+
+            model.MirrorPairs = new List<Data.MirrorPair>();
+
+            if (modelDTO.mirrorPairs == null) return;
+
+            foreach (var dto in modelDTO.mirrorPairs)
+            {
+                if (dto.realIndex < 0 || dto.realIndex >= model.Count) continue;
+                if (dto.mirrorIndex < 0 || dto.mirrorIndex >= model.Count) continue;
+
+                var realCtx = model.GetMeshContext(dto.realIndex);
+                var mirrorCtx = model.GetMeshContext(dto.mirrorIndex);
+                if (realCtx == null || mirrorCtx == null) continue;
+
+                var pair = new Data.MirrorPair
+                {
+                    Real = realCtx,
+                    Mirror = mirrorCtx,
+                    Axis = (Poly_Ling.Symmetry.SymmetryAxis)dto.axis
+                };
+
+                if (pair.Build())
+                {
+                    model.MirrorPairs.Add(pair);
+                    Debug.Log($"[ModelSerializer] Restored MirrorPair: {realCtx.Name} ↔ {mirrorCtx.Name} (VertexMap={pair.VertexMap.Length}, BonePairMap={pair.BonePairMap.Count})");
+                }
+                else
+                {
+                    Debug.LogWarning($"[ModelSerializer] Failed to rebuild MirrorPair: {realCtx.Name} ↔ {mirrorCtx.Name}: {pair.BuildLog}");
                 }
             }
         }
