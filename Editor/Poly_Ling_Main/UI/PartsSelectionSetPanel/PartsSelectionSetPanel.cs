@@ -16,7 +16,7 @@ using Poly_Ling.Localization;
 
 namespace Poly_Ling.UI
 {
-    public class PartsSelectionSetPanel : IToolPanelBase
+    public class PartsSelectionSetPanel : IToolPanelBase, IToolContextReceiver
     {
         // ================================================================
         // IToolPanel

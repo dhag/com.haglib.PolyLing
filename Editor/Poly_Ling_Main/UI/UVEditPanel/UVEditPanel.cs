@@ -99,7 +99,7 @@ namespace Poly_Ling.UI
     /// UV編集パネル
     /// 選択メッシュの既存UVを2Dビューで表示・頂点選択移動・一括変換
     /// </summary>
-    public class UVEditPanel : IToolPanelBase
+    public class UVEditPanel : IToolPanelBase, IToolContextReceiver
     {
         // ================================================================
         // IToolPanel

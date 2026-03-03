@@ -57,7 +57,7 @@ namespace Poly_Ling.Tools.Panels
 
         public static void Open(ToolContext ctx)
         {
-            var toolPanel = GetWindow<MeshListPanel>();
+            var toolPanel = GetWindow<NullPanel>();
             toolPanel.titleContent = new GUIContent(L.Get("Window_NullPanel"));
             toolPanel.minSize = new Vector2(300, 250);
             toolPanel.SetContext(ctx);

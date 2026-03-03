@@ -41,23 +41,16 @@ namespace Poly_Ling.UI
     // パネル本体
     // ================================================================
 
-    public class SkinWeightPaintPanel : EditorWindow
+    public class SkinWeightPaintPanel : IToolPanelBaseUXML
     {
         // ================================================================
         // アセットパス
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uss";
-
-        // ================================================================
-        // コンテキスト
-        // ================================================================
-
-        [NonSerialized] private ToolContext _toolContext;
-        private ModelContext Model => _toolContext?.Model;
+        protected override string UxmlPackagePath => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uxml";
+        protected override string UxmlAssetsPath  => "Assets/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uxml";
+        protected override string UssPackagePath  => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uss";
+        protected override string UssAssetsPath   => "Assets/Editor/Poly_Ling_Main/UI/SkinWeightPaintPanel/SkinWeightPaintPanel.uss";
 
         /// <summary>ToolManager参照（ツール切替用）</summary>
         [NonSerialized] private Poly_Ling.Tools.ToolManager _toolManager;
@@ -156,18 +149,11 @@ namespace Poly_Ling.UI
         // ライフサイクル
         // ================================================================
 
-        private void OnDisable() => Cleanup();
-        private void OnDestroy() => Cleanup();
-
-        private void Cleanup()
+        protected override void OnCleanup()
         {
             // ツール連携解除
             if (Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel == this)
                 Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel = null;
-
-            UnsubscribeFromModel();
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
         }
 
         private void OnEnable()
@@ -177,28 +163,11 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
-        // CreateGUI
+        // UI構築
         // ================================================================
 
-        private void CreateGUI()
+        protected override void OnCreateGUI(VisualElement root)
         {
-            var root = rootVisualElement;
-
-            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath)
-                          ?? AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPathAssets);
-            if (visualTree != null)
-                visualTree.CloneTree(root);
-            else
-            {
-                root.Add(new Label($"UXML not found: {UxmlPath}"));
-                return;
-            }
-
-            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPath)
-                          ?? AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPathAssets);
-            if (styleSheet != null)
-                root.styleSheets.Add(styleSheet);
-
             BindUI(root);
         }
 
@@ -298,8 +267,6 @@ namespace Poly_Ling.UI
             root.Q<Button>("btn-flood")?.RegisterCallback<ClickEvent>(_ => ExecuteFlood());
             root.Q<Button>("btn-normalize")?.RegisterCallback<ClickEvent>(_ => ExecuteNormalize());
             root.Q<Button>("btn-prune")?.RegisterCallback<ClickEvent>(_ => ExecutePrune());
-
-            RefreshAll();
         }
 
         // ================================================================
@@ -335,50 +302,18 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
-        // コンテキスト設定
+        // コンテキスト設定（基底クラスのSetContextを利用）
         // ================================================================
 
-        public void SetContext(ToolContext ctx)
+        protected override void OnContextSet()
         {
-            UnsubscribeFromModel();
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-
-            _toolContext = ctx;
-
-            if (_toolContext?.Model != null)
-            {
-                SubscribeToModel();
-                if (_toolContext.UndoController != null)
-                    _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-            }
-
             // ボーン選択同期: モデルのボーン選択をターゲットに反映
             SyncTargetBoneFromModelSelection();
-
-            RefreshAll();
         }
 
-        private void SubscribeToModel()
-        {
-            if (Model != null)
-                Model.OnListChanged += OnModelListChanged;
-        }
-
-        private void UnsubscribeFromModel()
-        {
-            if (_toolContext?.Model != null)
-                _toolContext.Model.OnListChanged -= OnModelListChanged;
-        }
-
-        private void OnModelListChanged()
+        protected override void OnModelListChanged()
         {
             SyncTargetBoneFromModelSelection();
-            RefreshAll();
-        }
-
-        private void OnUndoRedoPerformed()
-        {
             RefreshAll();
         }
 
@@ -439,14 +374,14 @@ namespace Poly_Ling.UI
         // 表示更新
         // ================================================================
 
-        private void RefreshAll()
+        protected override void RefreshAll()
         {
             if (_warningLabel == null) return;
 
             // ワークフローガイドは常に更新
             UpdateWorkflowGuide();
 
-            if (_toolContext == null || Model == null)
+            if (ToolCtx == null || Model == null)
             {
                 SetWarning("ToolContextが未設定です。PolyLingウィンドウから開いてください。");
                 SetMainVisible(false);
@@ -600,7 +535,7 @@ namespace Poly_Ling.UI
             // SelectBoneはActiveCategoryをBoneに変え、FirstSelectedMeshContextが
             // 描画メッシュではなくボーンを返すようになり、ペイントが効かなくなる
 
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
 
             UpdateWorkflowGuide();
             RebuildBoneList();
@@ -756,7 +691,7 @@ namespace Poly_Ling.UI
                 return;
             }
 
-            var undo = _toolContext?.UndoController;
+            var undo = ToolCtx?.UndoController;
             var before = undo?.CaptureMeshObjectSnapshot();
 
             var mo = meshCtx.MeshObject;
@@ -794,12 +729,12 @@ namespace Poly_Ling.UI
             if (undo != null && before != null)
             {
                 var after = undo.CaptureMeshObjectSnapshot();
-                _toolContext?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                ToolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     undo, before, after, "Flood Skin Weight"));
             }
 
-            _toolContext?.SyncMesh?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             RefreshAll();
         }
 
@@ -821,7 +756,7 @@ namespace Poly_Ling.UI
                 return;
             }
 
-            var undo = _toolContext?.UndoController;
+            var undo = ToolCtx?.UndoController;
             var before = undo?.CaptureMeshObjectSnapshot();
 
             var mo = meshCtx.MeshObject;
@@ -838,12 +773,12 @@ namespace Poly_Ling.UI
             if (undo != null && before != null)
             {
                 var after = undo.CaptureMeshObjectSnapshot();
-                _toolContext?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                ToolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     undo, before, after, "Normalize Skin Weights"));
             }
 
-            _toolContext?.SyncMesh?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             RefreshAll();
         }
 
@@ -865,7 +800,7 @@ namespace Poly_Ling.UI
                 return;
             }
 
-            var undo = _toolContext?.UndoController;
+            var undo = ToolCtx?.UndoController;
             var before = undo?.CaptureMeshObjectSnapshot();
 
             var mo = meshCtx.MeshObject;
@@ -898,12 +833,12 @@ namespace Poly_Ling.UI
             if (undo != null && before != null)
             {
                 var after = undo.CaptureMeshObjectSnapshot();
-                _toolContext?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                ToolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     undo, before, after, "Prune Skin Weights"));
             }
 
-            _toolContext?.SyncMesh?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             RefreshAll();
 
             if (_statusLabel != null)

@@ -34,7 +34,7 @@ namespace Poly_Ling.PMX
     /// <summary>
     /// PMX部分インポートパネル
     /// </summary>
-    public class PMXPartialImportPanel : EditorWindow
+    public class PMXPartialImportPanel : EditorWindow, IToolContextReceiver
     {
         // ================================================================
         // ローカライズ辞書

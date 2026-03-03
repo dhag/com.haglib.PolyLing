@@ -19,7 +19,7 @@ namespace Poly_Ling.MQO
     /// <summary>
     /// MQO部分エクスポートパネル
     /// </summary>
-    public class MQOPartialExportPanel : EditorWindow
+    public class MQOPartialExportPanel : EditorWindow, IToolContextReceiver
     {
         // ================================================================
         // ローカライズ辞書

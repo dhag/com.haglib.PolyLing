@@ -53,7 +53,7 @@ namespace Poly_Ling.Tools.Panels
     /// <summary>
     /// モーフエクスプレッション管理・プレビューパネル (UIToolkit)
     /// </summary>
-    public class MorphPanel : IToolPanelBase
+    public class MorphPanel : IToolPanelBase, IToolContextReceiver
     {
         // ================================================================
         // IToolPanel

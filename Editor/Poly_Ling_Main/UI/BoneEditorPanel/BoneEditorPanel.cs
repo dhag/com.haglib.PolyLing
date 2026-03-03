@@ -15,23 +15,16 @@ using Poly_Ling.Model;
 
 namespace Poly_Ling.UI
 {
-    public class BoneEditorPanel : EditorWindow
+    public class BoneEditorPanel : IToolPanelBaseUXML
     {
         // ================================================================
-        // アセットパス
+        // UXML/USSパス
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uss";
-
-        // ================================================================
-        // コンテキスト
-        // ================================================================
-
-        [NonSerialized] private ToolContext _toolContext;
-        private ModelContext Model => _toolContext?.Model;
+        protected override string UxmlPackagePath => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uxml";
+        protected override string UxmlAssetsPath  => "Assets/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uxml";
+        protected override string UssPackagePath  => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uss";
+        protected override string UssAssetsPath   => "Assets/Editor/Poly_Ling_Main/UI/BoneEditorPanel/BoneEditorPanel.uss";
 
         // ================================================================
         // UI要素
@@ -61,46 +54,10 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
-        // ライフサイクル
+        // UI構築
         // ================================================================
 
-        private void OnDisable() => Cleanup();
-        private void OnDestroy() => Cleanup();
-
-        private void Cleanup()
-        {
-            UnsubscribeFromModel();
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-        }
-
-        // ================================================================
-        // CreateGUI
-        // ================================================================
-
-        private void CreateGUI()
-        {
-            var root = rootVisualElement;
-
-            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath)
-                          ?? AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPathAssets);
-            if (visualTree != null)
-                visualTree.CloneTree(root);
-            else
-            {
-                root.Add(new Label($"UXML not found: {UxmlPath}"));
-                return;
-            }
-
-            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPath)
-                          ?? AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPathAssets);
-            if (styleSheet != null)
-                root.styleSheets.Add(styleSheet);
-
-            BindUI(root);
-        }
-
-        private void BindUI(VisualElement root)
+        protected override void OnCreateGUI(VisualElement root)
         {
             _warningLabel = root.Q<Label>("warning-label");
             _selectionCountLabel = root.Q<Label>("selection-count-label");
@@ -120,64 +77,18 @@ namespace Poly_Ling.UI
             // ボタン
             root.Q<Button>("btn-reset-pose")?.RegisterCallback<ClickEvent>(_ => OnResetPose());
             root.Q<Button>("btn-focus-bone")?.RegisterCallback<ClickEvent>(_ => OnFocusBone());
-
-            RefreshAll();
-        }
-
-        // ================================================================
-        // コンテキスト設定
-        // ================================================================
-
-        public void SetContext(ToolContext ctx)
-        {
-            UnsubscribeFromModel();
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-
-            _toolContext = ctx;
-
-            if (_toolContext?.Model != null)
-            {
-                SubscribeToModel();
-                if (_toolContext.UndoController != null)
-                    _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-            }
-
-            RefreshAll();
-        }
-
-        private void SubscribeToModel()
-        {
-            if (Model != null)
-                Model.OnListChanged += OnModelListChanged;
-        }
-
-        private void UnsubscribeFromModel()
-        {
-            if (_toolContext?.Model != null)
-                _toolContext.Model.OnListChanged -= OnModelListChanged;
-        }
-
-        private void OnModelListChanged()
-        {
-            RefreshAll();
-        }
-
-        private void OnUndoRedoPerformed()
-        {
-            RefreshAll();
         }
 
         // ================================================================
         // 表示更新
         // ================================================================
 
-        private void RefreshAll()
+        protected override void RefreshAll()
         {
             if (_warningLabel == null) return; // UIバインド前
 
             // コンテキスト未設定
-            if (_toolContext == null || Model == null)
+            if (ToolCtx == null || Model == null)
             {
                 SetWarning("ToolContextが未設定です。PolyLingウィンドウから開いてください。");
                 SetDetailVisible(false);
@@ -326,8 +237,7 @@ namespace Poly_Ling.UI
             }
 
             // Undo記録
-            var undoController = _toolContext?.UndoController;
-            if (undoController != null)
+            if (UndoController != null)
             {
                 var record = new MultiBonePoseChangeRecord();
                 foreach (var (idx, ctx) in contexts)
@@ -339,13 +249,13 @@ namespace Poly_Ling.UI
                         NewSnapshot = ctx.BonePoseData.CreateSnapshot(),
                     });
                 }
-                undoController.MeshListStack.Record(record, "ボーンポーズリセット");
-                undoController.FocusMeshList();
+                UndoController.MeshListStack.Record(record, "ボーンポーズリセット");
+                UndoController.FocusMeshList();
             }
 
             Model.OnListChanged?.Invoke();
-            _toolContext?.SyncMesh?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             RefreshAll();
         }
 
@@ -361,7 +271,7 @@ namespace Poly_Ling.UI
             Vector3 worldPos = new Vector3(worldMatrix.m03, worldMatrix.m13, worldMatrix.m23);
 
             // ToolContext経由でカメラ注目点を変更
-            _toolContext?.FocusCameraOn?.Invoke(worldPos);
+            ToolCtx?.FocusCameraOn?.Invoke(worldPos);
         }
     }
 }

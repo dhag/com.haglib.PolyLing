@@ -1174,7 +1174,6 @@ namespace Poly_Ling.MQO
                 Name = mqoObj.Name,
                 MeshObject = meshObject,
                 OriginalPositions = originalPositions,
-                Materials = new List<Material>(),
                 // オブジェクト属性をコピー
                 Depth = mqoObj.Depth,
                 IsVisible = mqoObj.IsVisible,

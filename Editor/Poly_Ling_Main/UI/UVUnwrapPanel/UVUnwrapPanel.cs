@@ -75,7 +75,7 @@ namespace Poly_Ling.UI
     /// UV展開パネル
     /// 投影方式によるUV自動生成（選択メッシュ全体に適用）
     /// </summary>
-    public class UVUnwrapPanel : IToolPanelBase
+    public class UVUnwrapPanel : IToolPanelBase, IToolContextReceiver
     {
         // ================================================================
         // IToolPanel

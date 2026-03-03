@@ -22,17 +22,16 @@ namespace Poly_Ling.UI
     /// マテリアルリストパネル
     /// ModelContextのマテリアルスロットを管理するUIToolkitベースのEditorWindow
     /// </summary>
-    public class MaterialListPanel : EditorWindow
+    public class MaterialListPanel : IToolPanelBaseUXML
     {
         // ================================================================
-        // 定数
+        // UXML/USSパス
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uss";
-
+        protected override string UxmlPackagePath => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uxml";
+        protected override string UxmlAssetsPath  => "Assets/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uxml";
+        protected override string UssPackagePath  => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uss";
+        protected override string UssAssetsPath   => "Assets/Editor/Poly_Ling_Main/UI/MaterialListPanel/MaterialListPanel.uss";
 
         // ================================================================
         // UI要素
@@ -54,16 +53,13 @@ namespace Poly_Ling.UI
         // データ
         // ================================================================
 
-        [NonSerialized] private ToolContext _toolContext;
         [NonSerialized] private bool _isSyncing = false;
 
         // ================================================================
         // プロパティ
         // ================================================================
 
-        private ModelContext Model => _toolContext?.Model;
-        private MeshUndoController UndoController => _toolContext?.UndoController;
-        private SelectionState SelectionState => _toolContext?.SelectionState;
+        private SelectionState SelectionState => ToolCtx?.SelectionState;
 
         // ================================================================
         // ウィンドウ
@@ -88,89 +84,11 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
-        // ライフサイクル
-        // ================================================================
-
-        private void OnDisable() => Cleanup();
-        private void OnDestroy() => Cleanup();
-
-        private void Cleanup()
-        {
-            UnsubscribeEvents();
-        }
-
-        private void CreateGUI()
-        {
-            BuildUI();
-            RegisterEvents();
-            RefreshAll();
-        }
-
-        // ================================================================
-        // コンテキスト設定
-        // ================================================================
-
-        public void SetContext(ToolContext ctx)
-        {
-            UnsubscribeEvents();
-            _toolContext = ctx;
-            SubscribeEvents();
-            RefreshAll();
-        }
-
-        private void SubscribeEvents()
-        {
-            if (Model != null)
-                Model.OnListChanged += OnModelChanged;
-            if (UndoController != null)
-                UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-        }
-
-        private void UnsubscribeEvents()
-        {
-            if (_toolContext?.Model != null)
-                _toolContext.Model.OnListChanged -= OnModelChanged;
-            if (_toolContext?.UndoController != null)
-                _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-        }
-
-        private void OnModelChanged()
-        {
-            if (_isSyncing) return;
-            RefreshAll();
-        }
-
-        private void OnUndoRedoPerformed()
-        {
-            RefreshAll();
-        }
-
-        // ================================================================
         // UI構築
         // ================================================================
 
-        private void BuildUI()
+        protected override void OnCreateGUI(VisualElement root)
         {
-            var root = rootVisualElement;
-
-            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath)
-                          ?? AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPathAssets);
-
-            if (visualTree != null)
-            {
-                visualTree.CloneTree(root);
-            }
-            else
-            {
-                root.Add(new Label($"UXML not found: {UxmlPath}"));
-                return;
-            }
-
-            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPath)
-                          ?? AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPathAssets);
-            if (styleSheet != null)
-                root.styleSheets.Add(styleSheet);
-
             // UI要素取得
             _titleLabel = root.Q<Label>("title-label");
             _countLabel = root.Q<Label>("count-label");
@@ -185,10 +103,8 @@ namespace Poly_Ling.UI
             _selectionInfoLabel = root.Q<Label>("selection-info-label");
             _btnApply = root.Q<Button>("btn-apply");
             _statusLabel = root.Q<Label>("status-label");
-        }
 
-        private void RegisterEvents()
-        {
+            // イベント登録
             _btnAdd?.RegisterCallback<ClickEvent>(_ => OnAddSlotClicked());
             _btnSetDefault?.RegisterCallback<ClickEvent>(_ => OnSetDefaultClicked());
             _toggleAutoDefault?.RegisterValueChangedCallback(OnAutoDefaultChanged);
@@ -207,10 +123,20 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
+        // イベントハンドラ（カスタム）
+        // ================================================================
+
+        protected override void OnModelListChanged()
+        {
+            if (_isSyncing) return;
+            RefreshAll();
+        }
+
+        // ================================================================
         // リフレッシュ
         // ================================================================
 
-        private void RefreshAll()
+        protected override void RefreshAll()
         {
             RefreshMaterialList();
             RefreshCurrentLabel();
@@ -424,7 +350,7 @@ namespace Poly_Ling.UI
             RecordMaterialChange(before, $"Remove Material Slot [{index}]");
 
             // メッシュを更新
-            _toolContext?.SyncMesh?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
             RefreshAll();
             NotifyChanged();
             Log($"Material slot [{index}] removed");
@@ -487,7 +413,7 @@ namespace Poly_Ling.UI
 
             if (changed)
             {
-                _toolContext?.SyncMesh?.Invoke();
+                ToolCtx?.SyncMesh?.Invoke();
                 RecordMaterialChange(before, $"Apply Material [{materialIndex}] to {selState.Faces.Count} faces");
                 RefreshAll();
                 NotifyChanged();
@@ -542,7 +468,6 @@ namespace Poly_Ling.UI
             if (before == null || UndoController == null) return;
 
             var after = UndoController.CaptureMeshObjectSnapshot();
-            var queue = _toolContext?.UndoController?.MainGroup;
 
             // CommandQueue経由がベストだが、直接記録も可
             UndoController.RecordTopologyChange(before, after, description);
@@ -567,8 +492,8 @@ namespace Poly_Ling.UI
                     Model.IsDirty = true;
                     Model.OnListChanged?.Invoke();
                 }
-                _toolContext?.SyncMesh?.Invoke();
-                _toolContext?.Repaint?.Invoke();
+                ToolCtx?.SyncMesh?.Invoke();
+                ToolCtx?.Repaint?.Invoke();
             }
             finally
             {

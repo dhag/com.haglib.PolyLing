@@ -1,0 +1,30 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- ModelListPanel.uxml: モデルリスト管理パネル -->
+
+    <ui:VisualElement name="model-list-root" class="ml-root">
+
+        <!-- 警告ラベル（プロジェクト無し / モデル無し） -->
+        <ui:Label name="warning-label" text="" class="ml-warning" />
+
+        <!-- モデル名編集セクション -->
+        <ui:VisualElement name="rename-section" class="ml-section">
+            <ui:VisualElement name="rename-display" class="ml-rename-row">
+                <ui:Label text="Model Name" name="rename-caption" class="ml-field-label" />
+                <ui:Label name="current-name-label" text="-" class="ml-current-name" />
+                <ui:Button name="btn-start-rename" text="✎" class="ml-icon-btn" />
+            </ui:VisualElement>
+            <ui:VisualElement name="rename-edit" class="ml-rename-row" style="display:none;">
+                <ui:Label text="Model Name" name="rename-edit-caption" class="ml-field-label" />
+                <ui:TextField name="rename-field" class="ml-rename-field" />
+                <ui:Button name="btn-confirm-rename" text="✓" class="ml-icon-btn" />
+                <ui:Button name="btn-cancel-rename" text="✕" class="ml-icon-btn" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- モデルリスト -->
+        <ui:ScrollView name="model-scroll" class="ml-scroll">
+            <ui:VisualElement name="model-list-container" class="ml-list-container" />
+        </ui:ScrollView>
+
+    </ui:VisualElement>
+</ui:UXML>

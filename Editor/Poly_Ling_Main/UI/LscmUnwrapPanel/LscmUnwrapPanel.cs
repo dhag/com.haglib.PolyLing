@@ -56,7 +56,7 @@ namespace Poly_Ling.UI
     /// アジの開き（LSCM UV展開）パネル
     /// 選択エッジをSeam（切れ目）として、共形写像（LSCM）でUV展開する。
     /// </summary>
-    public class LscmUnwrapPanel : IToolPanelBase
+    public class LscmUnwrapPanel : IToolPanelBase, IToolContextReceiver
     {
         // ================================================================
         // IToolPanel

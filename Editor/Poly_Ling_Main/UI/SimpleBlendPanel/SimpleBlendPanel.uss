@@ -1,0 +1,126 @@
+/* SimpleBlendPanel.uss */
+
+.sb-root {
+    flex-grow: 1;
+    padding: 4px;
+}
+
+.sb-warning {
+    font-size: 12px;
+    color: #ff9800;
+    margin: 8px 4px;
+    white-space: normal;
+}
+
+/* セクション */
+
+.sb-section {
+    margin: 4px 0;
+}
+
+.sb-section-header {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 8px 4px 4px 4px;
+}
+
+/* ターゲットリスト */
+
+.sb-target-list {
+    margin: 2px 0;
+}
+
+.sb-target-entry {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 1px 4px;
+    padding: 3px 6px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 2px;
+}
+
+/* トグル */
+
+.sb-toggle {
+    font-size: 11px;
+    margin: 2px 0;
+}
+
+/* 候補リスト */
+
+.sb-candidate-scroll {
+    max-height: 160px;
+    margin: 2px 0;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.sb-candidate-row {
+    padding: 3px 6px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.sb-candidate-row:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.sb-candidate-row--selected {
+    background-color: rgba(51, 102, 204, 0.4);
+    color: rgba(255, 255, 255, 1.0);
+}
+
+.sb-info-message {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 4px 4px;
+    padding: 4px 8px;
+    background-color: rgba(66, 165, 245, 0.05);
+    border-radius: 3px;
+    white-space: normal;
+}
+
+/* 不一致警告 */
+
+.sb-mismatch-warning {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 2px 4px;
+    padding: 4px 8px;
+    background-color: rgba(66, 165, 245, 0.05);
+    border-radius: 3px;
+    white-space: normal;
+}
+
+/* プレビュー中ラベル */
+
+.sb-previewing {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: #fdd835;
+    margin: 8px 4px;
+}
+
+/* スライダー */
+
+.sb-slider {
+    margin: 4px 0;
+}
+
+/* ボタン */
+
+.sb-button-row {
+    flex-direction: row;
+    margin-top: 12px;
+}
+
+.sb-btn {
+    flex-grow: 1;
+    height: 24px;
+    font-size: 12px;
+    margin: 0 2px;
+}

@@ -57,7 +57,7 @@ namespace Poly_Ling.UI
     /// UV値をXY、カメラ平面からの深度をZとする新メッシュを生成する。
     /// また、XYZからUVへの書き戻しも行う。
     /// </summary>
-    public class UVZPanel : IToolPanelBase
+    public class UVZPanel : IToolPanelBase, IToolContextReceiver
     {
         // ================================================================
         // IToolPanel

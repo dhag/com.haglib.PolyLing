@@ -23,16 +23,19 @@ namespace Poly_Ling.UI
     /// タイプ別メッシュリストパネル
     /// タブでDrawable/Bone/Morphを切り替え、各タブでMeshListPanelと同等の機能を提供
     /// </summary>
-    public class TypedMeshListPanel : EditorWindow, IToolContextReceiver
+    public class TypedMeshListPanel : IToolPanelBaseUXML
     {
         // ================================================================
         // 定数
         // ================================================================
 
-        private const string UxmlPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uxml";
-        private const string UssPath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uss";
-        private const string UxmlPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uxml";
-        private const string UssPathAssets = "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uss";
+        protected override string UxmlPackagePath => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uxml";
+        protected override string UxmlAssetsPath  => "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uxml";
+        protected override string UssPackagePath  => "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uss";
+        protected override string UssAssetsPath   => "Assets/Editor/Poly_Ling_Main/UI/TypedMeshListPanel/TypedMeshListPanel.uss";
+
+        // 基底クラス設定: OnModelChanged（モデル参照変更）を購読
+        protected override bool SubscribeModelReferenceChanged => true;
 
         private enum TabType { Drawable, Bone, Morph }
 
@@ -99,10 +102,8 @@ namespace Poly_Ling.UI
         // データ
         // ================================================================
 
-        [NonSerialized] private ToolContext _toolContext;
         [NonSerialized] private TypedTreeRoot _treeRoot;
         [NonSerialized] private TreeViewDragDropHelper<TypedTreeAdapter> _dragDropHelper;
-        [NonSerialized] private ModelContext _subscribedModel;
 
         private TabType _currentTab = TabType.Drawable;
         private List<TypedTreeAdapter> _selectedAdapters = new List<TypedTreeAdapter>();
@@ -121,8 +122,6 @@ namespace Poly_Ling.UI
         // ================================================================
         // プロパティ
         // ================================================================
-
-        private ModelContext Model => _toolContext?.Model;
 
         private MeshCategory CurrentCategory => _currentTab switch
         {
@@ -158,95 +157,49 @@ namespace Poly_Ling.UI
         // ライフサイクル
         // ================================================================
 
-        private void OnDisable() => Cleanup();
-        private void OnDestroy() => Cleanup();
-
-        private void Cleanup()
+        protected override void OnCleanup()
         {
             EndMorphPreview();
             if (_morphListView != null)
                 _morphListView.selectionChanged -= OnMorphListSelectionChanged;
-            UnsubscribeFromModel();
-            if (_toolContext != null)
-            {
-                if (_toolContext.UndoController != null)
-                    _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-                _toolContext.OnModelChanged -= OnModelReferenceChanged;
-            }
             CleanupDragDrop();
         }
 
-        private void CreateGUI()
+        protected override void OnCreateGUI(VisualElement root)
         {
-            BuildUI();
+            BindUIElements(root);
             SetupTreeView();
             RegisterButtonEvents();
-            RefreshAllImmediate();
         }
 
         // ================================================================
-        // コンテキスト設定
+        // コンテキスト設定（基底クラスのSetContextを利用）
         // ================================================================
 
-        public void SetContext(ToolContext ctx)
+        protected override void OnContextSet()
         {
-            UnsubscribeFromModel();
-            if (_toolContext != null)
-            {
-                if (_toolContext.UndoController != null)
-                    _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-                _toolContext.OnModelChanged -= OnModelReferenceChanged;
-            }
-
-            _toolContext = ctx;
-
-            if (_toolContext != null)
-            {
-                _toolContext.OnModelChanged += OnModelReferenceChanged;
-
-                if (_toolContext.Model != null)
-                {
-                    CreateTreeRoot();
-                    SetupDragDrop();
-                    SubscribeToModel();
-
-                    if (_toolContext.UndoController != null)
-                        _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-
-                    RefreshAllImmediate();
-                }
-            }
-        }
-
-        /// <summary>
-        /// ToolContext.Modelの参照が差し替わったときに呼ばれる
-        /// 旧Modelの購読を解除し、新Modelに再購読してリフレッシュする
-        /// </summary>
-        private void OnModelReferenceChanged()
-        {
-            UnsubscribeFromModel();
-
-            if (_toolContext?.Model != null)
+            if (Model != null)
             {
                 CreateTreeRoot();
                 SetupDragDrop();
-                SubscribeToModel();
-
-                if (_toolContext.UndoController != null)
-                {
-                    _toolContext.UndoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-                    _toolContext.UndoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-                }
-
-                RefreshAllImmediate();
             }
+        }
+
+        protected override void OnModelReferenceChanged()
+        {
+            if (Model != null)
+            {
+                CreateTreeRoot();
+                SetupDragDrop();
+            }
+            RefreshAllImmediate();
         }
 
         private void CreateTreeRoot()
         {
             if (Model == null) return;
 
-            _treeRoot = new TypedTreeRoot(Model, _toolContext, CurrentCategory);
+            _treeRoot = new TypedTreeRoot(Model, ToolCtx, CurrentCategory);
             _treeRoot.OnChanged = () =>
             {
                 _isSyncingFromExternal = true;
@@ -256,7 +209,7 @@ namespace Poly_Ling.UI
                     SyncTreeViewSelection();
                     UpdateDetailPanel();
                     NotifyModelChanged();
-                    _toolContext?.UndoController?.MeshListContext?.OnReorderCompleted?.Invoke();
+                    ToolCtx?.UndoController?.MeshListContext?.OnReorderCompleted?.Invoke();
                 }
                 finally
                 {
@@ -265,25 +218,7 @@ namespace Poly_Ling.UI
             };
         }
 
-        private void SubscribeToModel()
-        {
-            if (Model != null)
-            {
-                Model.OnListChanged += OnModelListChanged;
-                _subscribedModel = Model;
-            }
-        }
-
-        private void UnsubscribeFromModel()
-        {
-            if (_subscribedModel != null)
-            {
-                _subscribedModel.OnListChanged -= OnModelListChanged;
-                _subscribedModel = null;
-            }
-        }
-
-        private void OnModelListChanged()
+        protected override void OnModelListChanged()
         {
             if (_isSyncingFromExternal) return;
 
@@ -302,14 +237,12 @@ namespace Poly_Ling.UI
             }
             finally
             {
-                // TreeView.Rebuild()後に遅延選択イベントが発火するため、
-                // 即座にフラグを解除するとOnSelectionChangedが偽イベントを処理してしまう。
-                // delayCallで次フレームまで抑制を維持する。
+                // TreeView.Rebuild()後の遅延選択イベント抑制
                 EditorApplication.delayCall += () => _isSyncingFromExternal = false;
             }
         }
 
-        private void OnUndoRedoPerformed()
+        protected override void OnUndoRedoPerformed()
         {
             _isSyncingFromExternal = true;
             try
@@ -341,8 +274,8 @@ namespace Poly_Ling.UI
                 Model.IsDirty = true;
                 Model.OnListChanged?.Invoke();
             }
-            _toolContext?.SyncMesh?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             _isSyncingFromExternal = false;
         }
 
@@ -350,28 +283,8 @@ namespace Poly_Ling.UI
         // UI構築
         // ================================================================
 
-        private void BuildUI()
+        private void BindUIElements(VisualElement root)
         {
-            var root = rootVisualElement;
-
-            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath)
-                          ?? AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPathAssets);
-
-            if (visualTree != null)
-            {
-                visualTree.CloneTree(root);
-            }
-            else
-            {
-                root.Add(new Label($"UXML not found: {UxmlPath}"));
-                return;
-            }
-
-            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPath)
-                          ?? AssetDatabase.LoadAssetAtPath<StyleSheet>(UssPathAssets);
-            if (styleSheet != null)
-                root.styleSheets.Add(styleSheet);
-
             // UI要素取得
             _tabDrawable = root.Q<Button>("tab-drawable");
             _tabBone = root.Q<Button>("tab-bone");
@@ -680,7 +593,7 @@ namespace Poly_Ling.UI
             if (index < 0) return;
 
             bool newValue = !adapter.IsVisible;
-            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            ToolCtx?.UpdateMeshAttributes?.Invoke(new[]
             {
                 new MeshAttributeChange { Index = index, IsVisible = newValue }
             });
@@ -705,7 +618,7 @@ namespace Poly_Ling.UI
 
             if (changes.Count == 0) return;
 
-            _toolContext?.UpdateMeshAttributes?.Invoke(changes.ToArray());
+            ToolCtx?.UpdateMeshAttributes?.Invoke(changes.ToArray());
             Log($"一括{(visible ? "表示" : "非表示")}: {changes.Count}件");
         }
 
@@ -715,7 +628,7 @@ namespace Poly_Ling.UI
             if (index < 0) return;
 
             bool newValue = !adapter.IsLocked;
-            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            ToolCtx?.UpdateMeshAttributes?.Invoke(new[]
             {
                 new MeshAttributeChange { Index = index, IsLocked = newValue }
             });
@@ -734,7 +647,7 @@ namespace Poly_Ling.UI
             if (index < 0) return;
 
             int newMirrorType = (adapter.MirrorType + 1) % 4;
-            _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+            ToolCtx?.UpdateMeshAttributes?.Invoke(new[]
             {
                 new MeshAttributeChange { Index = index, MirrorType = newMirrorType }
             });
@@ -785,7 +698,7 @@ namespace Poly_Ling.UI
 
                     // v2.1: 複数選択対応 - SelectMeshContextは単一選択になるため呼ばない
                     // 代わりにOnMeshSelectionChangedでGPUバッファを同期
-                    _toolContext?.OnMeshSelectionChanged?.Invoke();
+                    ToolCtx?.OnMeshSelectionChanged?.Invoke();
 
                     // 本体エディタに反映
                     if (Model != null)
@@ -793,8 +706,8 @@ namespace Poly_Ling.UI
                         Model.IsDirty = true;
                         Model.OnListChanged?.Invoke();
                     }
-                    _toolContext?.SyncMesh?.Invoke();
-                    _toolContext?.Repaint?.Invoke();
+                    ToolCtx?.SyncMesh?.Invoke();
+                    ToolCtx?.Repaint?.Invoke();
                 }
                 finally
                 {
@@ -807,7 +720,7 @@ namespace Poly_Ling.UI
 
         private void RecordMultiSelectionChange(int[] oldIndices, int[] newIndices)
         {
-            var undoController = _toolContext?.UndoController;
+            var undoController = ToolCtx?.UndoController;
             if (undoController == null) return;
 
             var record = new MeshMultiSelectionChangeRecord(oldIndices, newIndices);
@@ -918,7 +831,7 @@ namespace Poly_Ling.UI
             if (_selectedAdapters.Count == 1 && !string.IsNullOrEmpty(evt.newValue))
             {
                 var adapter = _selectedAdapters[0];
-                _toolContext?.UpdateMeshAttributes?.Invoke(new[]
+                ToolCtx?.UpdateMeshAttributes?.Invoke(new[]
                 {
                     new MeshAttributeChange { Index = adapter.MasterIndex, Name = evt.newValue }
                 });
@@ -932,7 +845,7 @@ namespace Poly_Ling.UI
 
         private void OnAdd()
         {
-            if (_toolContext?.AddMeshContext == null) return;
+            if (ToolCtx?.AddMeshContext == null) return;
 
             var newCtx = new MeshContext
             {
@@ -940,9 +853,9 @@ namespace Poly_Ling.UI
                 UnityMesh = new Mesh(),
                 OriginalPositions = new Vector3[0]
             };
-            _toolContext.AddMeshContext(newCtx);
+            ToolCtx.AddMeshContext(newCtx);
             _treeRoot?.Rebuild();
-            RefreshAll();
+            RefreshDeferred();
             Log("新規追加");
         }
 
@@ -1033,11 +946,11 @@ namespace Poly_Ling.UI
             {
                 int index = adapter.MasterIndex;
                 if (index >= 0)
-                    _toolContext?.DuplicateMeshContent?.Invoke(index);
+                    ToolCtx?.DuplicateMeshContent?.Invoke(index);
             }
 
             _treeRoot?.Rebuild();
-            RefreshAll();
+            RefreshDeferred();
             Log($"複製: {_selectedAdapters.Count}個");
         }
 
@@ -1060,12 +973,12 @@ namespace Poly_Ling.UI
             {
                 int index = adapter.MasterIndex;
                 if (index >= 0)
-                    _toolContext?.RemoveMeshContext?.Invoke(index);
+                    ToolCtx?.RemoveMeshContext?.Invoke(index);
             }
 
             _selectedAdapters.Clear();
             _treeRoot?.Rebuild();
-            RefreshAll();
+            RefreshDeferred();
             Log("削除完了");
         }
 
@@ -1117,7 +1030,12 @@ namespace Poly_Ling.UI
         // 更新
         // ================================================================
 
-        private void RefreshAll()
+        protected override void RefreshAll()
+        {
+            RefreshAllImmediate();
+        }
+
+        private void RefreshDeferred()
         {
             RefreshTree();
             UpdateHeader();
@@ -1583,7 +1501,7 @@ namespace Poly_Ling.UI
                 });
             }
 
-            var undoController = _toolContext?.UndoController;
+            var undoController = ToolCtx?.UndoController;
             if (undoController != null)
             {
                 undoController.MeshListStack.Record(record, "BindPoseにベイク");
@@ -1912,7 +1830,7 @@ namespace Poly_Ling.UI
             Dictionary<int, BonePoseDataSnapshot> after,
             string description)
         {
-            var undoController = _toolContext?.UndoController;
+            var undoController = ToolCtx?.UndoController;
             if (undoController == null) return;
 
             var record = new MultiBonePoseChangeRecord();
@@ -1937,7 +1855,7 @@ namespace Poly_Ling.UI
             Dictionary<int, BonePoseDataSnapshot?> after,
             string description)
         {
-            var undoController = _toolContext?.UndoController;
+            var undoController = ToolCtx?.UndoController;
             if (undoController == null) return;
 
             var record = new MultiBonePoseChangeRecord();
@@ -1965,7 +1883,7 @@ namespace Poly_Ling.UI
             var targets = GetSelectedBonePoseDatas();
             var afterSnapshots = CaptureSnapshots(targets);
 
-            var undoController = _toolContext?.UndoController;
+            var undoController = ToolCtx?.UndoController;
             if (undoController != null)
             {
                 var record = new MultiBonePoseChangeRecord();
@@ -2173,7 +2091,7 @@ namespace Poly_Ling.UI
             // Undo記録（変化があった場合のみ）
             if (!oldIndices.SequenceEqual(newIndices))
             {
-                var undoController = _toolContext?.UndoController;
+                var undoController = ToolCtx?.UndoController;
                 if (undoController != null)
                 {
                     var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
@@ -2182,8 +2100,8 @@ namespace Poly_Ling.UI
                 }
             }
 
-            _toolContext?.OnMeshSelectionChanged?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.OnMeshSelectionChanged?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
         }
 
         /// <summary>
@@ -2409,8 +2327,8 @@ namespace Poly_Ling.UI
         {
             EndMorphPreview();
             _morphTestWeight?.SetValueWithoutNotify(0f);
-            _toolContext?.SyncMesh?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.SyncMesh?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             MorphLog("モーフテストリセット");
         }
 
@@ -2430,7 +2348,7 @@ namespace Poly_Ling.UI
             // Undo記録
             if (!oldIndices.SequenceEqual(newIndices))
             {
-                var undoController = _toolContext?.UndoController;
+                var undoController = ToolCtx?.UndoController;
                 if (undoController != null)
                 {
                     var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
@@ -2477,9 +2395,9 @@ namespace Poly_Ling.UI
             foreach (var baseIndex in _morphPreviewBackups.Keys)
             {
                 var baseCtx = Model.GetMeshContext(baseIndex);
-                if (baseCtx != null) _toolContext?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
+                if (baseCtx != null) ToolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
             }
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
         }
 
         private void StartMorphPreview()
@@ -2534,13 +2452,13 @@ namespace Poly_Ling.UI
                     int count = Mathf.Min(backup.Length, baseMesh.VertexCount);
                     for (int i = 0; i < count; i++)
                         baseMesh.Vertices[i].Position = backup[i];
-                    _toolContext?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
+                    ToolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
                 }
             }
             _isMorphPreviewActive = false;
             _morphPreviewBackups.Clear();
             _morphTestChecked.Clear();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
         }
 
         private int FindBaseMeshByName(MeshContext morphCtx)
@@ -2617,7 +2535,7 @@ namespace Poly_Ling.UI
 
         private void RecordMorphUndo(MeshListUndoRecord record, string description)
         {
-            var undoController = _toolContext?.UndoController;
+            var undoController = ToolCtx?.UndoController;
             if (undoController == null) return;
             undoController.MeshListStack.Record(record, description);
             undoController.FocusMeshList();

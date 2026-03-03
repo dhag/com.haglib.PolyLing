@@ -132,7 +132,7 @@ public partial class PolyLing
 
         if (GUILayout.Button("モデル選択"))
         {
-            Poly_Ling.Tools.Panels.ModelListPanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.ModelListPanel.Open(_toolManager?.toolContext);
         }
         EditorGUILayout.Space(5);
         if (GUILayout.Button("モーフ確認"))
@@ -156,16 +156,16 @@ public partial class PolyLing
         }
         if (GUILayout.Button("アバターマッピング辞書インポート"))
         {
-            Poly_Ling.Tools.Panels.HumanoidMappingPanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.HumanoidMappingPanel.Open(_toolManager?.toolContext);
         }
         if (GUILayout.Button("Tpose"))
         {
-            Poly_Ling.Tools.Panels.TPosePanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.TPosePanel.Open(_toolManager?.toolContext);
         }
 
         if (GUILayout.Button("モデルブレンド"))
         {
-            Poly_Ling.Tools.Panels.ModelBlendPanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.MultiModelBlendPanel.Open(_toolManager?.toolContext);
         }
 
         if (GUILayout.Button("リモートサーバ"))
@@ -178,27 +178,18 @@ public partial class PolyLing
         EditorGUILayout.Space(15);
         if (GUILayout.Button("Yet減数化000"))
         {
-            Poly_Ling.Tools.Panels.QuadDecimator.QuadPreservingDecimatorPanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.QuadDecimatorPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("__old_MeshListPanelUXML"))
-        {
-            Poly_Ling.UI.MeshListPanelUXML.Open(_toolManager?.toolContext);
-        }
-        // UnityMesh List Window（統合版）
-        if (GUILayout.Button("__old_Window_MeshContextList"))
-        {
-            MeshListPanel.Open(_toolManager?.toolContext);
-        }
         // Simple Morph
         if (GUILayout.Button("__old_SimpleMorph"))
         {
-            SimpleMorphPanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.SimpleMorphPanel.Open(_toolManager?.toolContext);
         }
         // 簡易ブレンド
         if (GUILayout.Button("簡易ブレンド"))
         {
-            SimpleBlendPanel.Open(_toolManager?.toolContext);
+            Poly_Ling.UI.SimpleBlendPanel.Open(_toolManager?.toolContext);
         }
 
 

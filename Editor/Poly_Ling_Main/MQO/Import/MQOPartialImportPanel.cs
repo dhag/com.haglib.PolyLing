@@ -22,7 +22,7 @@ namespace Poly_Ling.MQO
     /// <summary>
     /// MQO部分インポートパネル
     /// </summary>
-    public class MQOPartialImportPanel : EditorWindow
+    public class MQOPartialImportPanel : EditorWindow, IToolContextReceiver
     {
         // ================================================================
         // ローカライズ辞書

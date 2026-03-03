@@ -17,8 +17,15 @@ using Poly_Ling.Serialization.FolderSerializer;
 
 namespace Poly_Ling.UI
 {
-    public class MeshSelectionSetPanel : EditorWindow
+    public class MeshSelectionSetPanel : IToolPanelBaseUXML
     {
+        // ================================================================
+        // 基底クラス設定
+        // ================================================================
+
+        protected override bool SubscribeUndoRedo => false;
+        protected override bool SubscribeMeshSelectionChanged => true;
+
         // ================================================================
         // 定数
         // ================================================================
@@ -29,8 +36,6 @@ namespace Poly_Ling.UI
         // ================================================================
         // データ
         // ================================================================
-
-        [NonSerialized] private ToolContext _toolContext;
 
         // フィルタ状態
         private string _nameFilter = "";
@@ -68,12 +73,6 @@ namespace Poly_Ling.UI
         private Button _btnSaveDic, _btnLoadDic;
 
         // ================================================================
-        // プロパティ
-        // ================================================================
-
-        private ModelContext Model => _toolContext?.Model;
-
-        // ================================================================
         // ウィンドウ
         // ================================================================
 
@@ -96,75 +95,33 @@ namespace Poly_Ling.UI
         }
 
         // ================================================================
-        // ライフサイクル
+        // イベントハンドラ
         // ================================================================
 
-        private void OnDisable() => Cleanup();
-        private void OnDestroy() => Cleanup();
-
-        private void Cleanup()
-        {
-            if (_toolContext != null)
-            {
-                if (_toolContext.Model != null)
-                    _toolContext.Model.OnListChanged -= OnModelChanged;
-                _toolContext.OnMeshSelectionChanged -= OnSelectionChangedExternal;
-            }
-        }
-
-        private void CreateGUI()
-        {
-            BuildUI();
-            ApplyFilter();
-        }
-
-        // ================================================================
-        // コンテキスト
-        // ================================================================
-
-        public void SetContext(ToolContext ctx)
-        {
-            if (_toolContext != null)
-            {
-                if (_toolContext.Model != null)
-                    _toolContext.Model.OnListChanged -= OnModelChanged;
-                _toolContext.OnMeshSelectionChanged -= OnSelectionChangedExternal;
-            }
-
-            _toolContext = ctx;
-
-            if (_toolContext != null)
-            {
-                if (_toolContext.Model != null)
-                    _toolContext.Model.OnListChanged += OnModelChanged;
-                _toolContext.OnMeshSelectionChanged += OnSelectionChangedExternal;
-                ApplyFilter();
-                RefreshSetList();
-            }
-        }
-
-        private void OnModelChanged()
+        protected override void OnModelListChanged()
         {
             ApplyFilter();
             RefreshSetList();
         }
 
-        /// <summary>
-        /// 他パネルからの選択変更通知 → メッシュリストの選択表示を同期
-        /// </summary>
-        private void OnSelectionChangedExternal()
+        protected override void OnMeshSelectionChanged()
         {
             SyncMeshListSelection();
             UpdateClipboardButtons();
+        }
+
+        protected override void RefreshAll()
+        {
+            ApplyFilter();
+            RefreshSetList();
         }
 
         // ================================================================
         // UI構築
         // ================================================================
 
-        private void BuildUI()
+        protected override void OnCreateGUI(VisualElement root)
         {
-            var root = rootVisualElement;
             root.style.paddingLeft = 4;
             root.style.paddingRight = 4;
             root.style.paddingTop = 4;
@@ -651,8 +608,8 @@ namespace Poly_Ling.UI
                         Model.AddToMorphSelection(idx);
                 }
 
-                _toolContext?.OnMeshSelectionChanged?.Invoke();
-                _toolContext?.Repaint?.Invoke();
+                ToolCtx?.OnMeshSelectionChanged?.Invoke();
+                ToolCtx?.Repaint?.Invoke();
                 UpdateClipboardButtons();
             }
             finally
@@ -663,13 +620,8 @@ namespace Poly_Ling.UI
 
         // ================================================================
         // クリップボード操作（Copy / Cut / Paste）
-        // 対象: メッシュリストで選択中のMeshContext群
-        // フォーマット: CsvMeshSerializer（プロジェクトCSV保存と同一）
         // ================================================================
 
-        /// <summary>
-        /// メッシュリスト選択状態に応じてCopy/Cutボタンの有効/無効を更新
-        /// </summary>
         private void UpdateClipboardButtons()
         {
             bool hasSelection = _meshListView?.selectedIndices?.Any() ?? false;
@@ -708,7 +660,6 @@ namespace Poly_Ling.UI
             string csv = SerializeEntriesToCsv(selected);
             GUIUtility.systemCopyBuffer = csv;
 
-            // インデックス降順で削除（後ろから消さないとインデックスがずれる）
             var masterIndices = selected.Select(e => e.GlobalIndex).OrderByDescending(i => i).ToList();
             foreach (int idx in masterIndices)
             {
@@ -719,7 +670,7 @@ namespace Poly_Ling.UI
             }
 
             Model.OnListChanged?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             SetStatus($"Cut: {selected.Count} mesh(es)");
         }
 
@@ -754,7 +705,6 @@ namespace Poly_Ling.UI
                 return;
             }
 
-            // 名前重複チェック用
             var existingNames = new HashSet<string>();
             for (int i = 0; i < Model.MeshContextCount; i++)
             {
@@ -769,7 +719,6 @@ namespace Poly_Ling.UI
                 var mc = entry.MeshContext;
                 if (mc == null) continue;
 
-                // 名前重複時はユニーク名生成
                 if (existingNames.Contains(mc.Name))
                 {
                     string baseName = mc.Name;
@@ -790,9 +739,8 @@ namespace Poly_Ling.UI
             }
 
             Model.OnListChanged?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
 
-            // mirrorPeer情報からMirrorPair構築
             CsvModelSerializer.BuildMirrorPairsFromEntries(entries, Model);
 
             SetStatus($"Pasted: {addedCount} mesh(es)");
@@ -802,9 +750,6 @@ namespace Poly_Ling.UI
         // クリップボード: ヘルパー
         // ================================================================
 
-        /// <summary>
-        /// メッシュリストで選択中のFilteredMeshEntryからCsvMeshEntryリストを構築
-        /// </summary>
         private List<CsvMeshEntry> GetSelectedMeshEntries()
         {
             var result = new List<CsvMeshEntry>();
@@ -829,19 +774,13 @@ namespace Poly_Ling.UI
             return result;
         }
 
-        /// <summary>
-        /// CsvMeshEntryリストをCSV文字列にシリアライズ（CsvMeshSerializerと同一フォーマット）
-        /// </summary>
         private string SerializeEntriesToCsv(List<CsvMeshEntry> entries)
         {
-            // MirrorPeer情報設定 + MirrorSide同梱
             CsvModelSerializer.EnrichEntriesWithMirrorPeers(entries, Model);
 
             string tempPath = Path.Combine(Path.GetTempPath(), $"polyling_copy_{Guid.NewGuid():N}.csv");
             try
             {
-                // ReadFileはヘッダに関係なく各エントリのtype行でタイプ判定するため、
-                // fileTypeは多数派を使用（混在しても読み込み可能）
                 int boneCount = entries.Count(e => e.MeshContext?.Type == MeshType.Bone);
                 int morphCount = entries.Count(e => e.MeshContext?.Type == MeshType.Morph);
                 int meshCount = entries.Count - boneCount - morphCount;
@@ -882,7 +821,6 @@ namespace Poly_Ling.UI
 
             try
             {
-                // MirrorPeer情報設定 + MirrorSide同梱
                 CsvModelSerializer.EnrichEntriesWithMirrorPeers(selected, Model);
 
                 int boneCount = selected.Count(e => e.MeshContext?.Type == MeshType.Bone);
@@ -958,9 +896,8 @@ namespace Poly_Ling.UI
             }
 
             Model.OnListChanged?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
 
-            // mirrorPeer情報からMirrorPair構築
             CsvModelSerializer.BuildMirrorPairsFromEntries(entries, Model);
 
             SetStatus($"Loaded: {addedCount} mesh(es) from CSV");
@@ -993,7 +930,6 @@ namespace Poly_Ling.UI
 
                 foreach (var set in sets)
                 {
-                    // 空行で区切り
                     lines.Add("");
                     lines.Add($"# set,{set.Name},{set.Category}");
                     foreach (string meshName in set.MeshNames)
@@ -1034,7 +970,6 @@ namespace Poly_Ling.UI
 
                     if (trimmed.StartsWith("# set,"))
                     {
-                        // "# set,Name,Category" 形式
                         string[] parts = trimmed.Substring(6).Split(',');
                         string setName = parts.Length > 0 ? parts[0].Trim() : "MeshSet";
                         var category = ModelContext.SelectionCategory.Mesh;
@@ -1046,11 +981,10 @@ namespace Poly_Ling.UI
                     }
                     else if (trimmed.StartsWith("#"))
                     {
-                        continue; // その他のコメント行
+                        continue;
                     }
                     else if (currentSet != null)
                     {
-                        // メッシュ名データ行
                         if (!currentSet.MeshNames.Contains(trimmed))
                             currentSet.MeshNames.Add(trimmed);
                     }
@@ -1062,7 +996,6 @@ namespace Poly_Ling.UI
                     return;
                 }
 
-                // マージ確認
                 bool replace = false;
                 if (Model.MeshSelectionSets.Count > 0)
                 {
@@ -1159,8 +1092,8 @@ namespace Poly_Ling.UI
             var set = sets[_selectedSetListIndex];
             set.ApplyTo(Model);
 
-            _toolContext?.OnMeshSelectionChanged?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.OnMeshSelectionChanged?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             SyncMeshListSelection();
             SetStatus($"Loaded: {set.Name}");
         }
@@ -1175,8 +1108,8 @@ namespace Poly_Ling.UI
             var set = sets[_selectedSetListIndex];
             set.AddTo(Model);
 
-            _toolContext?.OnMeshSelectionChanged?.Invoke();
-            _toolContext?.Repaint?.Invoke();
+            ToolCtx?.OnMeshSelectionChanged?.Invoke();
+            ToolCtx?.Repaint?.Invoke();
             SyncMeshListSelection();
             SetStatus($"Added: {set.Name}");
         }

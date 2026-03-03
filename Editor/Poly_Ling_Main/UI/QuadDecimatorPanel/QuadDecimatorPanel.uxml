@@ -1,0 +1,55 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- QuadDecimatorPanel.uxml: Quad保持減数化パネル -->
+
+    <ui:VisualElement name="quad-decimator-root" class="qd-root">
+
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="qd-warning" />
+
+        <!-- メインコンテンツ -->
+        <ui:ScrollView name="main-content" class="qd-scroll" style="display:none;">
+
+            <!-- ヘッダー -->
+            <ui:Label name="header-label" text="Quad-Preserving Decimator" class="qd-header" />
+            <ui:Label name="description-label" text="" class="qd-description" />
+
+            <!-- メッシュ情報 -->
+            <ui:VisualElement name="mesh-info-section" class="qd-section">
+                <ui:Label name="mesh-info-header" text="Mesh Info" class="qd-section-header" />
+                <ui:Label name="no-mesh-label" text="" class="qd-warning" style="display:none;" />
+                <ui:VisualElement name="mesh-info-detail" class="qd-indent">
+                    <ui:Label name="total-faces-label" text="" class="qd-info-label" />
+                    <ui:Label name="quad-count-label" text="" class="qd-info-label" />
+                    <ui:Label name="tri-count-label" text="" class="qd-info-label" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <!-- パラメータ -->
+            <ui:VisualElement name="params-section" class="qd-section">
+                <ui:Slider name="slider-target-ratio" label="Target Ratio" low-value="0.1" high-value="0.95" value="0.5" show-input-field="true" class="qd-slider" />
+                <ui:SliderInt name="slider-max-passes" label="Max Passes" low-value="1" high-value="20" value="5" show-input-field="true" class="qd-slider" />
+                <ui:Slider name="slider-normal-angle" label="Normal Angle (°)" low-value="1" high-value="45" value="15" show-input-field="true" class="qd-slider" />
+                <ui:Slider name="slider-hard-angle" label="Hard Edge Angle (°)" low-value="5" high-value="60" value="25" show-input-field="true" class="qd-slider" />
+                <ui:Slider name="slider-uv-seam" label="UV Seam Threshold" low-value="0" high-value="0.1" value="0.01" show-input-field="true" class="qd-slider" />
+            </ui:VisualElement>
+
+            <!-- 実行ボタン -->
+            <ui:Button name="btn-execute" text="Decimate" class="qd-btn-execute" />
+            <ui:Label name="no-quads-label" text="" class="qd-info-message" style="display:none;" />
+
+            <!-- 結果 -->
+            <ui:VisualElement name="result-section" class="qd-section" style="display:none;">
+                <ui:Label name="result-header" text="Result" class="qd-section-header" />
+                <ui:VisualElement class="qd-indent">
+                    <ui:Label name="original-faces-label" text="" class="qd-info-label" />
+                    <ui:Label name="result-faces-label" text="" class="qd-info-label" />
+                    <ui:Label name="reduction-label" text="" class="qd-info-label" />
+                    <ui:Label name="passes-label" text="" class="qd-info-label" />
+                </ui:VisualElement>
+                <ui:VisualElement name="pass-logs-container" class="qd-indent qd-pass-logs" />
+            </ui:VisualElement>
+
+        </ui:ScrollView>
+
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,88 @@
+/* SimpleMorphPanel.uss */
+
+.sm-root {
+    flex-grow: 1;
+    padding: 4px;
+}
+
+.sm-warning {
+    font-size: 12px;
+    color: #ff9800;
+    margin: 8px 4px;
+    white-space: normal;
+}
+
+/* セクション */
+
+.sm-section {
+    margin: 4px 0;
+}
+
+.sm-section-header {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 6px 4px 2px 4px;
+}
+
+/* ターゲット */
+
+.sm-target-name {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 2px 4px;
+    padding: 4px 6px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.sm-info-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 1px 4px;
+}
+
+/* トグル */
+
+.sm-toggle {
+    font-size: 11px;
+    margin: 2px 0;
+}
+
+/* ドロップダウン */
+
+.sm-dropdown {
+    margin: 2px 0;
+}
+
+/* メッセージ */
+
+.sm-info-message {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 12px 4px;
+    padding: 6px 8px;
+    background-color: rgba(66, 165, 245, 0.05);
+    border-radius: 3px;
+    white-space: normal;
+}
+
+/* スライダー */
+
+.sm-slider {
+    margin: 4px 0;
+}
+
+/* ボタン行 */
+
+.sm-button-row {
+    flex-direction: row;
+    margin-top: 12px;
+}
+
+.sm-btn {
+    flex-grow: 1;
+    height: 24px;
+    font-size: 12px;
+    margin: 0 2px;
+}

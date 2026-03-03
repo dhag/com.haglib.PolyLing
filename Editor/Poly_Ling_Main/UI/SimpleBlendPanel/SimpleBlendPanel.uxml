@@ -1,0 +1,52 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- SimpleBlendPanel.uxml: 簡易ブレンドパネル -->
+
+    <ui:VisualElement name="simple-blend-root" class="sb-root">
+
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="sb-warning" />
+
+        <!-- メインコンテンツ -->
+        <ui:VisualElement name="main-content" style="display:none;">
+
+            <!-- ターゲットメッシュ -->
+            <ui:VisualElement class="sb-section">
+                <ui:Label name="target-header" text="Target Meshes" class="sb-section-header" />
+                <ui:VisualElement name="target-list-container" class="sb-target-list" />
+            </ui:VisualElement>
+
+            <!-- オプション -->
+            <ui:VisualElement class="sb-section">
+                <ui:Toggle name="toggle-recalc-normals" label="Recalculate normals" class="sb-toggle" />
+                <ui:Toggle name="toggle-selected-only" label="Selected vertices only" class="sb-toggle" />
+                <ui:Toggle name="toggle-match-by-id" label="Match by vertex ID" class="sb-toggle" />
+            </ui:VisualElement>
+
+            <!-- ソースメッシュ -->
+            <ui:VisualElement class="sb-section">
+                <ui:Label name="source-header" text="Source Mesh" class="sb-section-header" />
+                <ui:Label name="no-candidate-label" text="" class="sb-info-message" style="display:none;" />
+                <ui:ScrollView name="candidate-scroll" class="sb-candidate-scroll" />
+            </ui:VisualElement>
+
+            <!-- 頂点数不一致警告 -->
+            <ui:VisualElement name="mismatch-container" />
+
+            <!-- プレビュー表示 -->
+            <ui:Label name="previewing-label" text="" class="sb-previewing" style="display:none;" />
+
+            <!-- ブレンドセクション -->
+            <ui:VisualElement name="blend-section" style="display:none;">
+                <ui:Label name="blend-header" text="Blend Weight" class="sb-section-header" />
+                <ui:Slider name="slider-blend" low-value="0" high-value="1" value="0" show-input-field="true" class="sb-slider" />
+
+                <ui:VisualElement class="sb-button-row">
+                    <ui:Button name="btn-apply" text="Apply (Create Backup)" class="sb-btn" />
+                    <ui:Button name="btn-cancel" text="Cancel" class="sb-btn" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

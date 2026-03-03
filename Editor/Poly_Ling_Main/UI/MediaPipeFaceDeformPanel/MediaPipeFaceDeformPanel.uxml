@@ -1,0 +1,23 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- MediaPipeFaceDeformPanel.uxml: MediaPipeフェイス変形パネル -->
+
+    <ui:VisualElement name="mp-deform-root" class="mpd-root">
+
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="mpd-warning" />
+
+        <!-- メインコンテンツ -->
+        <ui:VisualElement name="main-content" style="display:none;">
+
+            <!-- 実行ボタン -->
+            <ui:Button name="btn-execute" text="Execute" class="mpd-btn-execute" />
+
+            <!-- ステータス -->
+            <ui:VisualElement name="status-section" style="display:none;">
+                <ui:Label name="status-label" text="" class="mpd-status" />
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

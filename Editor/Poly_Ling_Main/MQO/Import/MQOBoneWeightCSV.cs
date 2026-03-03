@@ -22,7 +22,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using Poly_Ling.MQO.CSV;
+using Poly_Ling.CSV;
 
 namespace Poly_Ling.MQO
 {

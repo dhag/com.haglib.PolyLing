@@ -1,0 +1,61 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!-- MultiModelBlendPanel.uxml: モデルブレンドパネル -->
+
+    <ui:VisualElement name="model-blend-root" class="mb-root">
+
+        <!-- 警告ラベル -->
+        <ui:Label name="warning-label" text="" class="mb-warning" />
+
+        <!-- メインコンテンツ -->
+        <ui:ScrollView name="main-content" class="mb-scroll" style="display:none;">
+
+            <!-- ターゲット表示 -->
+            <ui:VisualElement class="mb-section">
+                <ui:Label name="target-header" text="Target (Current Model)" class="mb-section-header" />
+                <ui:Label name="target-info-label" text="---" class="mb-target-info" />
+            </ui:VisualElement>
+
+            <!-- メッシュ選択セクション -->
+            <ui:Foldout name="foldout-mesh-selection" text="Blend Meshes" value="true" class="mb-foldout">
+                <ui:VisualElement class="mb-button-row-small">
+                    <ui:Button name="btn-mesh-all" text="All" class="mb-mini-btn" />
+                    <ui:Button name="btn-mesh-none" text="None" class="mb-mini-btn" />
+                </ui:VisualElement>
+                <ui:ScrollView name="mesh-toggle-scroll" class="mb-mesh-scroll" />
+            </ui:Foldout>
+
+            <!-- オプション -->
+            <ui:VisualElement class="mb-section">
+                <ui:Toggle name="toggle-recalc-normals" label="Recalculate normals" class="mb-toggle" />
+                <ui:Toggle name="toggle-realtime-preview" label="Realtime preview" class="mb-toggle" />
+            </ui:VisualElement>
+
+            <!-- モデルリスト＋ウェイトスライダー -->
+            <ui:VisualElement class="mb-section">
+                <ui:Label name="models-header" text="Models" class="mb-section-header" />
+                <ui:VisualElement name="model-sliders-container" />
+            </ui:VisualElement>
+
+            <!-- 警告コンテナ -->
+            <ui:VisualElement name="warnings-container" />
+
+            <!-- 合計ウェイト -->
+            <ui:Label name="total-weight-label" text="" class="mb-total-weight" />
+
+            <!-- ウェイト操作ボタン -->
+            <ui:VisualElement class="mb-button-row">
+                <ui:Button name="btn-equal" text="Equal" class="mb-btn" />
+                <ui:Button name="btn-normalize" text="Normalize" class="mb-btn" />
+                <ui:Button name="btn-reset-first" text="Reset to 1st" class="mb-btn" />
+            </ui:VisualElement>
+
+            <!-- プレビュー＋適用ボタン -->
+            <ui:VisualElement class="mb-button-row mb-apply-row">
+                <ui:Button name="btn-preview" text="Preview" class="mb-btn-primary" />
+                <ui:Button name="btn-apply" text="Apply" class="mb-btn-primary" />
+            </ui:VisualElement>
+
+        </ui:ScrollView>
+
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,97 @@
+/* QuadDecimatorPanel.uss */
+
+.qd-root {
+    flex-grow: 1;
+    padding: 4px;
+}
+
+.qd-scroll {
+    flex-grow: 1;
+}
+
+.qd-warning {
+    font-size: 12px;
+    color: #ff9800;
+    margin: 8px 4px;
+    white-space: normal;
+}
+
+/* ヘッダー */
+
+.qd-header {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 4px 4px 2px 4px;
+}
+
+.qd-description {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 2px 4px 8px 4px;
+    padding: 6px 8px;
+    background-color: rgba(66, 165, 245, 0.08);
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: rgba(66, 165, 245, 0.2);
+    white-space: normal;
+}
+
+/* セクション */
+
+.qd-section {
+    margin: 4px 0;
+}
+
+.qd-section-header {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 4px 4px 2px 4px;
+}
+
+.qd-indent {
+    margin-left: 12px;
+}
+
+.qd-info-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 1px 4px;
+}
+
+/* スライダー */
+
+.qd-slider {
+    margin: 2px 0;
+}
+
+/* 実行ボタン */
+
+.qd-btn-execute {
+    height: 30px;
+    font-size: 12px;
+    margin: 8px 0 4px 0;
+}
+
+.qd-info-message {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 4px 4px;
+    padding: 4px 8px;
+    background-color: rgba(66, 165, 245, 0.05);
+    border-radius: 3px;
+    white-space: normal;
+}
+
+/* パスログ */
+
+.qd-pass-logs {
+    margin-top: 4px;
+}
+
+.qd-pass-log-entry {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0 4px;
+}
