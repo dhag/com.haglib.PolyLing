@@ -791,6 +791,10 @@ namespace Poly_Ling.UI
 
             Model.OnListChanged?.Invoke();
             _toolContext?.Repaint?.Invoke();
+
+            // mirrorPeer情報からMirrorPair構築
+            CsvModelSerializer.BuildMirrorPairsFromEntries(entries, Model);
+
             SetStatus($"Pasted: {addedCount} mesh(es)");
         }
 
@@ -830,6 +834,9 @@ namespace Poly_Ling.UI
         /// </summary>
         private string SerializeEntriesToCsv(List<CsvMeshEntry> entries)
         {
+            // MirrorPeer情報設定 + MirrorSide同梱
+            CsvModelSerializer.EnrichEntriesWithMirrorPeers(entries, Model);
+
             string tempPath = Path.Combine(Path.GetTempPath(), $"polyling_copy_{Guid.NewGuid():N}.csv");
             try
             {
@@ -875,6 +882,9 @@ namespace Poly_Ling.UI
 
             try
             {
+                // MirrorPeer情報設定 + MirrorSide同梱
+                CsvModelSerializer.EnrichEntriesWithMirrorPeers(selected, Model);
+
                 int boneCount = selected.Count(e => e.MeshContext?.Type == MeshType.Bone);
                 int morphCount = selected.Count(e => e.MeshContext?.Type == MeshType.Morph);
                 int meshCount = selected.Count - boneCount - morphCount;
@@ -949,6 +959,10 @@ namespace Poly_Ling.UI
 
             Model.OnListChanged?.Invoke();
             _toolContext?.Repaint?.Invoke();
+
+            // mirrorPeer情報からMirrorPair構築
+            CsvModelSerializer.BuildMirrorPairsFromEntries(entries, Model);
+
             SetStatus($"Loaded: {addedCount} mesh(es) from CSV");
         }
 

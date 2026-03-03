@@ -211,6 +211,12 @@ public partial class PolyLing : EditorWindow
         set { if (_undoController?.EditorState != null) _undoController.EditorState.BakeBlendShapes = value; }
     }
 
+    private bool _useNameBasedSave
+    {
+        get => _undoController?.EditorState?.UseNameBasedSave ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.UseNameBasedSave = value; }
+    }
+
     [SerializeField]
     private bool _saveOnMemoryMaterials = true;  // オンメモリマテリアルをアセットとして保存
 

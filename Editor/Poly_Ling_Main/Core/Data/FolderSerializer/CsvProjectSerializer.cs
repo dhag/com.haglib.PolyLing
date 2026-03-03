@@ -40,7 +40,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             ProjectContext project,
             List<WorkPlaneContext> workPlanes = null,
             List<EditorStateDTO> editorStates = null,
-            string defaultName = "Project")
+            string defaultName = "Project",
+            bool useNameBased = false)
         {
             string folderPath = EditorUtility.SaveFolderPanel(
                 "Export Project Folder",
@@ -51,7 +52,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (string.IsNullOrEmpty(folderPath))
                 return false;
 
-            return Export(folderPath, project, workPlanes, editorStates);
+            return Export(folderPath, project, workPlanes, editorStates, useNameBased);
         }
 
         /// <summary>
@@ -61,7 +62,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             ModelContext model,
             WorkPlaneContext workPlane = null,
             EditorStateDTO editorState = null,
-            string defaultName = "Project")
+            string defaultName = "Project",
+            bool useNameBased = false)
         {
             string folderPath = EditorUtility.SaveFolderPanel(
                 "Export Project Folder",
@@ -80,7 +82,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var workPlanes = workPlane != null ? new List<WorkPlaneContext> { workPlane } : null;
             var editorStates = editorState != null ? new List<EditorStateDTO> { editorState } : null;
 
-            return Export(folderPath, project, workPlanes, editorStates);
+            return Export(folderPath, project, workPlanes, editorStates, useNameBased);
         }
 
         // ================================================================
@@ -166,7 +168,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string projectFolderPath,
             ProjectContext project,
             List<WorkPlaneContext> workPlanes = null,
-            List<EditorStateDTO> editorStates = null)
+            List<EditorStateDTO> editorStates = null,
+            bool useNameBased = false)
         {
             if (string.IsNullOrEmpty(projectFolderPath) || project == null)
                 return false;
@@ -190,7 +193,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     var wp = workPlanes != null && i < workPlanes.Count ? workPlanes[i] : null;
                     var es = editorStates != null && i < editorStates.Count ? editorStates[i] : null;
 
-                    CsvModelSerializer.SaveModel(modelFolderPath, model, es, wp);
+                    CsvModelSerializer.SaveModel(modelFolderPath, model, es, wp, useNameBased);
                 }
 
                 Debug.Log($"[CsvProjectSerializer] Exported to: {projectFolderPath} ({project.ModelCount} models)");

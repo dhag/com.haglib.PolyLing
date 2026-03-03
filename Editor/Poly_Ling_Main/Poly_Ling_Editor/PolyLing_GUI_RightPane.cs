@@ -59,6 +59,23 @@ public partial class PolyLing
         }
         EditorGUILayout.EndHorizontal();
 
+        // 名前ベース保存チェックボックス
+        EditorGUI.BeginChangeCheck();
+        bool newUseNameBased = EditorGUILayout.Toggle(L.Get("UseNameBasedSave"), _useNameBasedSave);
+        if (EditorGUI.EndChangeCheck() && newUseNameBased != _useNameBasedSave)
+        {
+            if (_undoController != null)
+            {
+                _undoController.BeginEditorStateDrag();
+            }
+            _useNameBasedSave = newUseNameBased;
+            if (_undoController != null)
+            {
+                _undoController.EditorState.UseNameBasedSave = _useNameBasedSave;
+                _undoController.EndEditorStateDrag("Toggle Name-Based Save");
+            }
+        }
+
         if (GUILayout.Button(L.Get("MergeModelCsv")))
         {
             MergeModelCsv();

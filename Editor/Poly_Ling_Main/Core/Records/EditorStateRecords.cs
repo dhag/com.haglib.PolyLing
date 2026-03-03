@@ -55,6 +55,7 @@ namespace Poly_Ling.UndoSystem
         public bool MirrorFlipU = true;
         public bool ExportAsSkinned = false;            // スキンメッシュとしてエクスポート
         public bool BakeBlendShapes = false;            // モーフをBlendShapeとして焼き込む
+        public bool UseNameBasedSave = false;           // 名前ベースCSV保存
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform = false;   // 自身のBoneTransformを反映
@@ -138,6 +139,7 @@ namespace Poly_Ling.UndoSystem
                 MirrorFlipU = MirrorFlipU,
                 ExportAsSkinned = ExportAsSkinned,
                 BakeBlendShapes = BakeBlendShapes,
+                UseNameBasedSave = UseNameBasedSave,
                 ShowLocalTransform = ShowLocalTransform,
                 ShowWorldTransform = ShowWorldTransform,
                 AutoZoomEnabled = AutoZoomEnabled,
@@ -189,6 +191,7 @@ namespace Poly_Ling.UndoSystem
             MirrorFlipU = snapshot.MirrorFlipU;
             ExportAsSkinned = snapshot.ExportAsSkinned;
             BakeBlendShapes = snapshot.BakeBlendShapes;
+            UseNameBasedSave = snapshot.UseNameBasedSave;
             ShowLocalTransform = snapshot.ShowLocalTransform;
             ShowWorldTransform = snapshot.ShowWorldTransform;
             AutoZoomEnabled = snapshot.AutoZoomEnabled;
@@ -253,6 +256,7 @@ namespace Poly_Ling.UndoSystem
         public bool MirrorFlipU;
         public bool ExportAsSkinned;
         public bool BakeBlendShapes;
+        public bool UseNameBasedSave;
 
         // トランスフォーム表示モード
         public bool ShowLocalTransform;
@@ -308,6 +312,7 @@ namespace Poly_Ling.UndoSystem
                 MirrorFlipU != other.MirrorFlipU ||
                 ExportAsSkinned != other.ExportAsSkinned ||
                 BakeBlendShapes != other.BakeBlendShapes ||
+                UseNameBasedSave != other.UseNameBasedSave ||
                 ShowLocalTransform != other.ShowLocalTransform ||
                 ShowWorldTransform != other.ShowWorldTransform ||
                 AutoZoomEnabled != other.AutoZoomEnabled ||

@@ -28,6 +28,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         public string Name;
         public string File;   // "mesh","bone","morph"
         public int OrderInFile;
+        public bool IsNameBased;
     }
 
     /// <summary>
@@ -42,16 +43,31 @@ namespace Poly_Ling.Serialization.FolderSerializer
         /// <summary>
         /// ModelContextをフォルダに保存
         /// </summary>
+        /// <param name="useNameBased">名前ベース参照モード</param>
         public static void SaveModel(
             string modelFolderPath,
             ModelContext model,
             EditorStateDTO editorState = null,
-            WorkPlaneContext workPlane = null)
+            WorkPlaneContext workPlane = null,
+            bool useNameBased = false)
         {
             if (model == null) return;
             Directory.CreateDirectory(modelFolderPath);
 
             string modelName = SanitizeFileName(model.Name ?? "Model");
+
+            // 名前ベース用: インデックス→名前辞書を構築
+            Dictionary<int, string> indexToName = null;
+            if (useNameBased)
+            {
+                indexToName = new Dictionary<int, string>();
+                for (int idx = 0; idx < model.MeshContextCount; idx++)
+                {
+                    var m = model.GetMeshContext(idx);
+                    if (m != null)
+                        indexToName[idx] = m.Name ?? $"Unnamed_{idx}";
+                }
+            }
 
             // メッシュをタイプ別に分類
             var meshEntries = new List<CsvMeshEntry>();
@@ -79,31 +95,34 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 }
             }
 
+            // MirrorPair情報をReal側entryに設定 + MirrorSide同梱
+            EnrichEntriesWithMirrorPeers(meshEntries, model);
+
             // mesh/bone/morph CSV
             string meshFile = $"{modelName}.mesh.csv";
             string boneFile = $"{modelName}.bone.csv";
             string morphFile = $"{modelName}.morph.csv";
 
             if (meshEntries.Count > 0)
-                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, meshFile), meshEntries, "mesh");
+                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, meshFile), meshEntries, "mesh", useNameBased, indexToName);
             if (boneEntries.Count > 0)
-                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, boneFile), boneEntries, "bone");
+                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, boneFile), boneEntries, "bone", useNameBased, indexToName);
             if (morphEntries.Count > 0)
-                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, morphFile), morphEntries, "morph");
+                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, morphFile), morphEntries, "morph", useNameBased, indexToName);
 
             // model.csv (順序マスター)
-            WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries, morphEntries);
+            WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries, morphEntries, useNameBased);
 
             // materials.csv
             WriteMaterialsCsv(modelFolderPath, model);
 
             // humanoid.csv
             if (model.HumanoidMapping != null && !model.HumanoidMapping.IsEmpty)
-                WriteHumanoidCsv(modelFolderPath, model);
+                WriteHumanoidCsv(modelFolderPath, model, useNameBased, indexToName);
 
             // morphgroups.csv
             if (model.MorphExpressions != null && model.MorphExpressions.Count > 0)
-                WriteMorphGroupsCsv(modelFolderPath, model);
+                WriteMorphGroupsCsv(modelFolderPath, model, useNameBased, indexToName);
 
             // meshselsets.csv
             if (model.MeshSelectionSets != null && model.MeshSelectionSets.Count > 0)
@@ -111,11 +130,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // mirrorpairs.csv
             if (model.MirrorPairs != null && model.MirrorPairs.Count > 0)
-                WriteMirrorPairsCsv(modelFolderPath, model);
+                WriteMirrorPairsCsv(modelFolderPath, model, useNameBased);
 
             // editorstate.csv
             if (editorState != null)
-                WriteEditorStateCsv(modelFolderPath, editorState);
+                WriteEditorStateCsv(modelFolderPath, editorState, useNameBased, indexToName);
 
             // workplane.csv
             if (workPlane != null)
@@ -123,7 +142,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             // tposebackup.csv
             if (model.TPoseBackup != null)
-                WriteTPoseBackupCsv(modelFolderPath, model.TPoseBackup);
+                WriteTPoseBackupCsv(modelFolderPath, model.TPoseBackup, useNameBased, indexToName);
 
             // textures フォルダにテクスチャをコピー
             string texturesFolder = Path.Combine(modelFolderPath, "textures");
@@ -188,25 +207,67 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             // model.csv のentry順にMeshContextListを構築
-            var lookup = new Dictionary<int, MeshContext>();
+            // entryByName形式かentry形式かで検索方法を変える
+            bool hasNameBasedEntries = entries.Exists(e => e.IsNameBased);
+
+            // 全読み込みエントリをフラットリスト化
+            var allOwnEntries = new List<CsvMeshEntry>();
             foreach (var kvp in ownMeshEntries)
+                allOwnEntries.AddRange(kvp.Value);
+
+            if (hasNameBasedEntries)
             {
-                foreach (var me in kvp.Value)
+                // 名前ベース: model.csv の entryByName 順に名前で検索
+                var nameLookup = new Dictionary<string, CsvMeshEntry>();
+                foreach (var me in allOwnEntries)
+                {
+                    if (me.MeshContext != null && !string.IsNullOrEmpty(me.MeshContext.Name))
+                    {
+                        // 重複名の場合は最初のもの優先
+                        if (!nameLookup.ContainsKey(me.MeshContext.Name))
+                            nameLookup[me.MeshContext.Name] = me;
+                    }
+                }
+
+                foreach (var entry in entries)
+                {
+                    if (nameLookup.TryGetValue(entry.Name, out var found))
+                    {
+                        model.Add(found.MeshContext);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[CsvModelSerializer] MeshContext not found for name={entry.Name}");
+                    }
+                }
+            }
+            else
+            {
+                // インデックスベース: 従来通り
+                var lookup = new Dictionary<int, MeshContext>();
+                foreach (var me in allOwnEntries)
                 {
                     lookup[me.GlobalIndex] = me.MeshContext;
                 }
+
+                foreach (var entry in entries)
+                {
+                    if (lookup.TryGetValue(entry.GlobalIndex, out var mc))
+                    {
+                        model.Add(mc);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[CsvModelSerializer] MeshContext not found for globalIndex={entry.GlobalIndex} ({entry.Name})");
+                    }
+                }
             }
 
-            foreach (var entry in entries)
+            // 名前ベースエントリの参照解決（親/IK/BoneWeight等）
+            if (hasNameBasedEntries)
             {
-                if (lookup.TryGetValue(entry.GlobalIndex, out var mc))
-                {
-                    model.Add(mc);
-                }
-                else
-                {
-                    Debug.LogWarning($"[CsvModelSerializer] MeshContext not found for globalIndex={entry.GlobalIndex} ({entry.Name})");
-                }
+                var nameToIndex = BuildNameToIndex(model);
+                CsvMeshSerializer.ResolveNameReferences(allOwnEntries, nameToIndex);
             }
 
             // materials.csv
@@ -227,10 +288,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // mirrorpairs.csv
             ReadMirrorPairsCsv(modelFolderPath, model);
 
+            // エントリのmirrorPeer情報からもMirrorPairを構築
+            // （部分インポート用：mirrorpairs.csvが無い場合でもペアを復元）
+            BuildMirrorPairsFromEntries(allOwnEntries, model);
+
             // editorstate.csv
             string esPath = Path.Combine(modelFolderPath, "editorstate.csv");
             if (File.Exists(esPath))
-                editorState = ReadEditorStateCsv(esPath);
+                editorState = ReadEditorStateCsv(esPath, model);
 
             // workplane.csv
             string wpPath = Path.Combine(modelFolderPath, "workplane.csv");
@@ -240,7 +305,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // tposebackup.csv
             string tpPath = Path.Combine(modelFolderPath, "tposebackup.csv");
             if (File.Exists(tpPath))
-                model.TPoseBackup = ReadTPoseBackupCsv(tpPath);
+                model.TPoseBackup = ReadTPoseBackupCsv(tpPath, model);
 
             return model;
         }
@@ -253,12 +318,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string folderPath, ModelContext model,
             List<CsvMeshEntry> meshEntries,
             List<CsvMeshEntry> boneEntries,
-            List<CsvMeshEntry> morphEntries)
+            List<CsvMeshEntry> morphEntries,
+            bool useNameBased = false)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_Model,version,1.0");
             sb.AppendLine($"name,{Esc(model.Name)}");
             sb.AppendLine($"meshCount,{model.MeshContextCount}");
+            if (useNameBased)
+                sb.AppendLine("nameBasedMode,true");
 
             // 全エントリをglobalIndex順にマージして出力
             var allEntries = new List<(int globalIndex, string file, int orderInFile, string type, string name)>();
@@ -284,7 +352,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             foreach (var e in allEntries)
             {
-                sb.AppendLine($"entry,{e.globalIndex},{e.type},{Esc(e.name)},{e.file},{e.orderInFile}");
+                if (useNameBased)
+                {
+                    // entryByName,name,type,file,orderInFile
+                    sb.AppendLine($"entryByName,{Esc(e.name)},{e.type},{e.file},{e.orderInFile}");
+                }
+                else
+                {
+                    sb.AppendLine($"entry,{e.globalIndex},{e.type},{Esc(e.name)},{e.file},{e.orderInFile}");
+                }
             }
 
             File.WriteAllText(Path.Combine(folderPath, "model.csv"), sb.ToString(), Encoding.UTF8);
@@ -297,6 +373,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             if (!File.Exists(path)) return (modelName, entries);
 
+            int autoIndex = 0;
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
                 var cols = Split(line);
@@ -306,6 +383,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 {
                     case "name":
                         modelName = cols.Length > 1 ? Unesc(cols[1]) : "Model";
+                        break;
+                    case "nameBasedMode":
+                        // 読み取り確認用（特別な処理は不要、entryByNameで自動判別）
                         break;
                     case "entry":
                         // entry,globalIndex,type,name,file,orderInFile
@@ -318,6 +398,21 @@ namespace Poly_Ling.Serialization.FolderSerializer
                                 Name = Unesc(cols[3]),
                                 File = cols[4],
                                 OrderInFile = PInt(cols, 5)
+                            });
+                        }
+                        break;
+                    case "entryByName":
+                        // entryByName,name,type,file,orderInFile
+                        if (cols.Length >= 5)
+                        {
+                            entries.Add(new ModelEntry
+                            {
+                                GlobalIndex = autoIndex++,
+                                Type = cols[2],
+                                Name = Unesc(cols[1]),
+                                File = cols[3],
+                                OrderInFile = PInt(cols, 4),
+                                IsNameBased = true
                             });
                         }
                         break;
@@ -477,7 +572,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // humanoid.csv
         // ================================================================
 
-        private static void WriteHumanoidCsv(string folderPath, ModelContext model)
+        private static void WriteHumanoidCsv(string folderPath, ModelContext model,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_Humanoid,version,1.0");
@@ -485,7 +581,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var dict = model.HumanoidMapping.ToDictionary();
             foreach (var kvp in dict)
             {
-                sb.AppendLine($"{Esc(kvp.Key)},{kvp.Value}");
+                if (useNameBased && indexToName != null)
+                {
+                    string boneName = indexToName.TryGetValue(kvp.Value, out var n) ? n : "";
+                    sb.AppendLine($"{Esc(kvp.Key)},{Esc(boneName)}");
+                }
+                else
+                {
+                    sb.AppendLine($"{Esc(kvp.Key)},{kvp.Value}");
+                }
             }
 
             File.WriteAllText(Path.Combine(folderPath, "humanoid.csv"), sb.ToString(), Encoding.UTF8);
@@ -497,6 +601,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (!File.Exists(path)) return;
 
             var dict = new Dictionary<string, int>();
+            var nameDict = new Dictionary<string, string>(); // humanoidBoneName → meshContextName
+            bool isNameBased = false;
+
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
                 if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
@@ -504,9 +611,30 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (cols.Length >= 2)
                 {
                     string boneName = Unesc(cols[0]);
-                    int boneIndex = PInt(cols, 1, -1);
-                    if (boneIndex >= 0)
+                    string value = cols[1];
+
+                    if (int.TryParse(value, out int boneIndex) && boneIndex >= 0)
+                    {
+                        // インデックスベース
                         dict[boneName] = boneIndex;
+                    }
+                    else
+                    {
+                        // 名前ベース
+                        isNameBased = true;
+                        nameDict[boneName] = Unesc(value);
+                    }
+                }
+            }
+
+            if (isNameBased && nameDict.Count > 0)
+            {
+                // 名前→インデックス辞書を構築して解決
+                var nameToIndex = BuildNameToIndex(model);
+                foreach (var kvp in nameDict)
+                {
+                    if (nameToIndex.TryGetValue(kvp.Value, out int idx))
+                        dict[kvp.Key] = idx;
                 }
             }
 
@@ -518,18 +646,27 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // morphgroups.csv
         // ================================================================
 
-        private static void WriteMorphGroupsCsv(string folderPath, ModelContext model)
+        private static void WriteMorphGroupsCsv(string folderPath, ModelContext model,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_MorphGroups,version,1.0");
 
             foreach (var me in model.MorphExpressions)
             {
-                // name,nameEnglish,panel,type,entryCount,meshIndex0:weight0,...
+                // name,nameEnglish,panel,type,entryCount,meshRef0:weight0,...
                 sb.Append($"{Esc(me.Name)},{Esc(me.NameEnglish)},{me.Panel},{(int)me.Type},{me.MeshEntries.Count}");
                 foreach (var entry in me.MeshEntries)
                 {
-                    sb.Append($",{entry.MeshIndex}:{Fl(entry.Weight)}");
+                    if (useNameBased && indexToName != null)
+                    {
+                        string meshName = indexToName.TryGetValue(entry.MeshIndex, out var n) ? n : "";
+                        sb.Append($",{Esc(meshName)}:{Fl(entry.Weight)}");
+                    }
+                    else
+                    {
+                        sb.Append($",{entry.MeshIndex}:{Fl(entry.Weight)}");
+                    }
                 }
                 sb.AppendLine();
             }
@@ -543,7 +680,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (!File.Exists(path)) return;
 
             model.MorphExpressions = new List<MorphExpression>();
+            bool needsNameResolution = false;
+            // 一時格納: (expressionIndex, entryIndex) → meshName
+            var nameRefs = new List<(int exprIdx, int entryIdx, string meshName)>();
 
+            int exprIdx = 0;
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
                 if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
@@ -566,13 +707,40 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     var parts = cols[ci].Split(':');
                     if (parts.Length >= 2)
                     {
-                        int meshIndex = int.TryParse(parts[0], out var mi) ? mi : 0;
                         float weight = float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var w) ? w : 1f;
-                        me.MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
+
+                        if (int.TryParse(parts[0], out var meshIndex))
+                        {
+                            // インデックスベース
+                            me.MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
+                        }
+                        else
+                        {
+                            // 名前ベース → 仮インデックス-1で格納、後で解決
+                            me.MeshEntries.Add(new MorphMeshEntry(-1, weight));
+                            nameRefs.Add((exprIdx, me.MeshEntries.Count - 1, Unesc(parts[0])));
+                            needsNameResolution = true;
+                        }
                     }
                 }
 
                 model.MorphExpressions.Add(me);
+                exprIdx++;
+            }
+
+            // 名前解決
+            if (needsNameResolution)
+            {
+                var nameToIndex = BuildNameToIndex(model);
+                foreach (var (ei, enti, meshName) in nameRefs)
+                {
+                    if (ei < model.MorphExpressions.Count && enti < model.MorphExpressions[ei].MeshEntries.Count)
+                    {
+                        int resolved = nameToIndex.TryGetValue(meshName, out var idx) ? idx : -1;
+                        var entry = model.MorphExpressions[ei].MeshEntries[enti];
+                        model.MorphExpressions[ei].MeshEntries[enti] = new MorphMeshEntry(resolved, entry.Weight);
+                    }
+                }
             }
         }
 
@@ -635,19 +803,28 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // mirrorpairs.csv（ミラーペア情報）
         // ================================================================
 
-        private static void WriteMirrorPairsCsv(string folderPath, ModelContext model)
+        private static void WriteMirrorPairsCsv(string folderPath, ModelContext model,
+            bool useNameBased = false)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_MirrorPairs,version,1.0");
 
             foreach (var pair in model.MirrorPairs)
             {
-                int realIdx = model.MeshContextList.IndexOf(pair.Real);
-                int mirrorIdx = model.MeshContextList.IndexOf(pair.Mirror);
-                if (realIdx < 0 || mirrorIdx < 0) continue;
-
-                // realIndex,mirrorIndex,axis
-                sb.AppendLine($"{realIdx},{mirrorIdx},{(int)pair.Axis}");
+                if (useNameBased)
+                {
+                    string realName = pair.Real?.Name ?? "";
+                    string mirrorName = pair.Mirror?.Name ?? "";
+                    if (string.IsNullOrEmpty(realName) || string.IsNullOrEmpty(mirrorName)) continue;
+                    sb.AppendLine($"{Esc(realName)},{Esc(mirrorName)},{(int)pair.Axis}");
+                }
+                else
+                {
+                    int realIdx = model.MeshContextList.IndexOf(pair.Real);
+                    int mirrorIdx = model.MeshContextList.IndexOf(pair.Mirror);
+                    if (realIdx < 0 || mirrorIdx < 0) continue;
+                    sb.AppendLine($"{realIdx},{mirrorIdx},{(int)pair.Axis}");
+                }
             }
 
             File.WriteAllText(Path.Combine(folderPath, "mirrorpairs.csv"), sb.ToString(), Encoding.UTF8);
@@ -666,15 +843,30 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 var cols = Split(line);
                 if (cols.Length < 3) continue;
 
-                int realIdx = PInt(cols, 0, -1);
-                int mirrorIdx = PInt(cols, 1, -1);
                 int axis = PInt(cols, 2, 0);
+                MeshContext realCtx = null;
+                MeshContext mirrorCtx = null;
 
-                if (realIdx < 0 || realIdx >= model.Count) continue;
-                if (mirrorIdx < 0 || mirrorIdx >= model.Count) continue;
+                if (int.TryParse(cols[0], out int realIdx) && int.TryParse(cols[1], out int mirrorIdx))
+                {
+                    // インデックスベース
+                    if (realIdx < 0 || realIdx >= model.Count) continue;
+                    if (mirrorIdx < 0 || mirrorIdx >= model.Count) continue;
+                    realCtx = model.GetMeshContext(realIdx);
+                    mirrorCtx = model.GetMeshContext(mirrorIdx);
+                }
+                else
+                {
+                    // 名前ベース
+                    string realName = Unesc(cols[0]);
+                    string mirrorName = Unesc(cols[1]);
+                    var nameToIndex = BuildNameToIndex(model);
+                    if (nameToIndex.TryGetValue(realName, out int ri))
+                        realCtx = model.GetMeshContext(ri);
+                    if (nameToIndex.TryGetValue(mirrorName, out int mi))
+                        mirrorCtx = model.GetMeshContext(mi);
+                }
 
-                var realCtx = model.GetMeshContext(realIdx);
-                var mirrorCtx = model.GetMeshContext(mirrorIdx);
                 if (realCtx == null || mirrorCtx == null) continue;
 
                 var pair = new MirrorPair
@@ -695,11 +887,174 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
         }
 
+        /// <summary>
+        /// エントリリストにMirrorPeer情報を設定し、MirrorSideが未含の場合は追加する。
+        /// Copy/Cut/SaveCsv/SaveModelの全エクスポートパスで共通使用する。
+        /// </summary>
+        public static void EnrichEntriesWithMirrorPeers(List<CsvMeshEntry> entries, ModelContext model)
+        {
+            if (entries == null || model == null) return;
+
+            // 既存エントリのMeshContextセット
+            var existingMcs = new HashSet<MeshContext>();
+            var mcToEntry = new Dictionary<MeshContext, CsvMeshEntry>();
+            foreach (var e in entries)
+            {
+                if (e.MeshContext != null)
+                {
+                    existingMcs.Add(e.MeshContext);
+                    mcToEntry[e.MeshContext] = e;
+                }
+            }
+
+            // 追加すべきMirrorSideを収集（ループ中にentriesを変更しないため）
+            var toAdd = new List<(int insertAfter, CsvMeshEntry entry)>();
+            var handledReals = new HashSet<MeshContext>();
+
+            // (1) MirrorPairsからペア情報を設定
+            if (model.MirrorPairs != null)
+            {
+                foreach (var pair in model.MirrorPairs)
+                {
+                    if (pair.Real == null || pair.Mirror == null) continue;
+                    if (!mcToEntry.TryGetValue(pair.Real, out var realEntry)) continue;
+
+                    realEntry.MirrorPeerName = pair.Mirror.Name;
+                    realEntry.MirrorPeerAxis = (int)pair.Axis;
+                    handledReals.Add(pair.Real);
+
+                    if (!existingMcs.Contains(pair.Mirror))
+                    {
+                        int mirrorGlobalIndex = model.MeshContextList.IndexOf(pair.Mirror);
+                        var mirrorEntry = new CsvMeshEntry
+                        {
+                            GlobalIndex = mirrorGlobalIndex >= 0 ? mirrorGlobalIndex : 0,
+                            MeshContext = pair.Mirror
+                        };
+                        int realPos = entries.IndexOf(realEntry);
+                        toAdd.Add((realPos, mirrorEntry));
+                        existingMcs.Add(pair.Mirror);
+                    }
+                }
+            }
+
+            // (2) MirrorPairsで処理されなかったmirrorType>0のエントリ → 命名規則で検索
+            // モデル全体のMeshContext名→MeshContext辞書
+            Dictionary<string, MeshContext> nameToMc = null;
+
+            foreach (var e in entries)
+            {
+                if (e.MeshContext == null) continue;
+                if (handledReals.Contains(e.MeshContext)) continue;
+                if (e.MeshContext.MirrorType <= 0) continue;
+                if (!string.IsNullOrEmpty(e.MirrorPeerName)) continue; // 既に設定済み
+
+                // 命名規則: Real名+"+" がMirrorSide
+                if (nameToMc == null)
+                {
+                    nameToMc = new Dictionary<string, MeshContext>();
+                    for (int i = 0; i < model.MeshContextCount; i++)
+                    {
+                        var mc = model.GetMeshContext(i);
+                        if (mc != null && !string.IsNullOrEmpty(mc.Name) && !nameToMc.ContainsKey(mc.Name))
+                            nameToMc[mc.Name] = mc;
+                    }
+                }
+
+                string mirrorName = e.MeshContext.Name + "+";
+                if (!nameToMc.TryGetValue(mirrorName, out var mirrorMc)) continue;
+
+                e.MirrorPeerName = mirrorName;
+                e.MirrorPeerAxis = e.MeshContext.MirrorAxis;
+
+                if (!existingMcs.Contains(mirrorMc))
+                {
+                    int mirrorGlobalIndex = model.MeshContextList.IndexOf(mirrorMc);
+                    var mirrorEntry = new CsvMeshEntry
+                    {
+                        GlobalIndex = mirrorGlobalIndex >= 0 ? mirrorGlobalIndex : 0,
+                        MeshContext = mirrorMc
+                    };
+                    int realPos = entries.IndexOf(e);
+                    toAdd.Add((realPos, mirrorEntry));
+                    existingMcs.Add(mirrorMc);
+                }
+
+                Debug.Log($"[CsvModelSerializer] EnrichMirrorPeer by naming: {e.MeshContext.Name} → {mirrorName}");
+            }
+
+            // Real直後に挿入（後ろから挿入してインデックスずれを防止）
+            for (int i = toAdd.Count - 1; i >= 0; i--)
+            {
+                entries.Insert(toAdd[i].insertAfter + 1, toAdd[i].entry);
+            }
+        }
+
+        /// <summary>
+        /// エントリのmirrorPeer情報からMirrorPairを構築してModelContextに追加
+        /// 既にペアが存在する場合は重複追加しない
+        /// </summary>
+        public static void BuildMirrorPairsFromEntries(List<CsvMeshEntry> entries, ModelContext model)
+        {
+            if (entries == null || model == null) return;
+            if (model.MirrorPairs == null)
+                model.MirrorPairs = new List<MirrorPair>();
+
+            // 既存ペアのReal名セット（重複防止）
+            var existingRealNames = new HashSet<string>();
+            foreach (var p in model.MirrorPairs)
+            {
+                if (p.Real != null)
+                    existingRealNames.Add(p.Real.Name);
+            }
+
+            // MeshContext名→MeshContext逆引き
+            var nameToCtx = new Dictionary<string, MeshContext>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc != null && !string.IsNullOrEmpty(mc.Name) && !nameToCtx.ContainsKey(mc.Name))
+                    nameToCtx[mc.Name] = mc;
+            }
+
+            foreach (var entry in entries)
+            {
+                if (string.IsNullOrEmpty(entry.MirrorPeerName)) continue;
+                if (entry.MeshContext == null) continue;
+
+                string realName = entry.MeshContext.Name;
+                if (string.IsNullOrEmpty(realName)) continue;
+                if (existingRealNames.Contains(realName)) continue;
+
+                if (!nameToCtx.TryGetValue(entry.MirrorPeerName, out var mirrorCtx)) continue;
+                if (!nameToCtx.TryGetValue(realName, out var realCtx)) continue;
+
+                var pair = new MirrorPair
+                {
+                    Real = realCtx,
+                    Mirror = mirrorCtx,
+                    Axis = (Poly_Ling.Symmetry.SymmetryAxis)entry.MirrorPeerAxis
+                };
+
+                if (pair.Build())
+                {
+                    model.MirrorPairs.Add(pair);
+                    existingRealNames.Add(realName);
+                    Debug.Log($"[CsvModelSerializer] MirrorPair from entry: {realName} ↔ {entry.MirrorPeerName}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[CsvModelSerializer] MirrorPair build failed from entry: {realName} ↔ {entry.MirrorPeerName}: {pair.BuildLog}");
+                }
+            }
+        }
+
         // ================================================================
         // editorstate.csv
         // ================================================================
 
-        private static void WriteEditorStateCsv(string folderPath, EditorStateDTO es)
+        private static void WriteEditorStateCsv(string folderPath, EditorStateDTO es,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_EditorState,version,1.0");
@@ -712,9 +1067,23 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"showVertices,{es.showVertices}");
             sb.AppendLine($"vertexEditMode,{es.vertexEditMode}");
             sb.AppendLine($"currentToolName,{Esc(es.currentToolName ?? "")}");
-            sb.AppendLine($"selectedMeshIndex,{es.selectedMeshIndex}");
-            sb.AppendLine($"selectedBoneIndex,{es.selectedBoneIndex}");
-            sb.AppendLine($"selectedVertexMorphIndex,{es.selectedVertexMorphIndex}");
+
+            if (useNameBased && indexToName != null)
+            {
+                string meshName = indexToName.TryGetValue(es.selectedMeshIndex, out var mn) ? mn : "";
+                string boneName = indexToName.TryGetValue(es.selectedBoneIndex, out var bn) ? bn : "";
+                string morphName = indexToName.TryGetValue(es.selectedVertexMorphIndex, out var vmn) ? vmn : "";
+                sb.AppendLine($"selectedMeshName,{Esc(meshName)}");
+                sb.AppendLine($"selectedBoneName,{Esc(boneName)}");
+                sb.AppendLine($"selectedVertexMorphName,{Esc(morphName)}");
+            }
+            else
+            {
+                sb.AppendLine($"selectedMeshIndex,{es.selectedMeshIndex}");
+                sb.AppendLine($"selectedBoneIndex,{es.selectedBoneIndex}");
+                sb.AppendLine($"selectedVertexMorphIndex,{es.selectedVertexMorphIndex}");
+            }
+
             sb.AppendLine($"pmxUnityRatio,{Fl(es.pmxUnityRatio)}");
             sb.AppendLine($"pmxFlipZ,{es.pmxFlipZ}");
             sb.AppendLine($"mqoFlipZ,{es.mqoFlipZ}");
@@ -726,10 +1095,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
             File.WriteAllText(Path.Combine(folderPath, "editorstate.csv"), sb.ToString(), Encoding.UTF8);
         }
 
-        private static EditorStateDTO ReadEditorStateCsv(string path)
+        private static EditorStateDTO ReadEditorStateCsv(string path, ModelContext model = null)
         {
             var es = EditorStateDTO.CreateDefault();
             if (!File.Exists(path)) return es;
+
+            // 名前ベース一時格納
+            string selectedMeshName = null;
+            string selectedBoneName = null;
+            string selectedVertexMorphName = null;
 
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
@@ -751,6 +1125,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "selectedMeshIndex": es.selectedMeshIndex = PInt(cols, 1, -1); break;
                     case "selectedBoneIndex": es.selectedBoneIndex = PInt(cols, 1, -1); break;
                     case "selectedVertexMorphIndex": es.selectedVertexMorphIndex = PInt(cols, 1, -1); break;
+                    case "selectedMeshName": selectedMeshName = Unesc(cols[1]); break;
+                    case "selectedBoneName": selectedBoneName = Unesc(cols[1]); break;
+                    case "selectedVertexMorphName": selectedVertexMorphName = Unesc(cols[1]); break;
                     case "pmxUnityRatio": case "coordinateScale": es.pmxUnityRatio = PFl(cols, 1, 0.1f); break;// 旧coordinateScale互換
                     case "pmxFlipZ": es.pmxFlipZ = PBool(cols, 1); break;
                     case "mqoFlipZ": es.mqoFlipZ = PBool(cols, 1, true); break;
@@ -760,6 +1137,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "showUnselectedBones": es.showUnselectedBones = PBool(cols, 1); break;
                     case "boneDisplayAlongY": es.boneDisplayAlongY = PBool(cols, 1); break;
                 }
+            }
+
+            // 名前ベース解決
+            if (model != null && (selectedMeshName != null || selectedBoneName != null || selectedVertexMorphName != null))
+            {
+                var nameToIndex = BuildNameToIndex(model);
+                if (selectedMeshName != null && nameToIndex.TryGetValue(selectedMeshName, out int mi))
+                    es.selectedMeshIndex = mi;
+                if (selectedBoneName != null && nameToIndex.TryGetValue(selectedBoneName, out int bi))
+                    es.selectedBoneIndex = bi;
+                if (selectedVertexMorphName != null && nameToIndex.TryGetValue(selectedVertexMorphName, out int vi))
+                    es.selectedVertexMorphIndex = vi;
             }
 
             return es;
@@ -837,53 +1226,125 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var result = new List<CsvMeshEntry>();
             if (!Directory.Exists(folderPath)) return result;
 
+            // 指定フォルダ直下を検索
+            SearchMeshCsvFiles(folderPath, result);
+
+            return result;
+        }
+
+        private static void SearchMeshCsvFiles(string folder, List<CsvMeshEntry> result)
+        {
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // 1. 命名規約ファイル (*.mesh.csv, *.bone.csv, *.morph.csv)
             foreach (var type in new[] { "mesh", "bone", "morph" })
             {
-                var csvFiles = Directory.GetFiles(folderPath, $"*.{type}.csv");
+                var csvFiles = Directory.GetFiles(folder, $"*.{type}.csv");
                 foreach (var csvFile in csvFiles)
                 {
+                    found.Add(csvFile);
                     result.AddRange(CsvMeshSerializer.ReadFile(csvFile));
                 }
             }
 
-            return result;
+            // 2. 命名規約に合わないCSVファイルをヘッダで判別
+            var allCsvFiles = Directory.GetFiles(folder, "*.csv");
+            foreach (var csvFile in allCsvFiles)
+            {
+                if (found.Contains(csvFile)) continue;
+
+                try
+                {
+                    using (var reader = new StreamReader(csvFile, Encoding.UTF8))
+                    {
+                        string firstLine = reader.ReadLine();
+                        if (firstLine != null)
+                        {
+                            firstLine = firstLine.TrimStart('\uFEFF').Trim(); // BOM除去
+                            if (firstLine.StartsWith("#PolyLing_Mesh") ||
+                                firstLine.StartsWith("#PolyLing_Bone") ||
+                                firstLine.StartsWith("#PolyLing_Morph"))
+                            {
+                                result.AddRange(CsvMeshSerializer.ReadFile(csvFile));
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[CsvModelSerializer] Failed to read CSV header: {csvFile}: {ex.Message}");
+                }
+            }
         }
 
         // ================================================================
         // TPoseBackup CSV
         // ================================================================
 
-        private static void WriteTPoseBackupCsv(string folderPath, TPoseBackup backup)
+        private static void WriteTPoseBackupCsv(string folderPath, TPoseBackup backup,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing_TPoseBackup,version,1.0");
 
-            // BoneRotations: boneRot,index,rx,ry,rz
+            // BoneRotations
             foreach (var kvp in backup.BoneRotations)
             {
                 var r = kvp.Value;
-                sb.AppendLine($"boneRot,{kvp.Key},{Fl(r.x)},{Fl(r.y)},{Fl(r.z)}");
+                if (useNameBased && indexToName != null)
+                {
+                    string name = indexToName.TryGetValue(kvp.Key, out var n) ? n : "";
+                    sb.AppendLine($"boneRotByName,{Esc(name)},{Fl(r.x)},{Fl(r.y)},{Fl(r.z)}");
+                }
+                else
+                {
+                    sb.AppendLine($"boneRot,{kvp.Key},{Fl(r.x)},{Fl(r.y)},{Fl(r.z)}");
+                }
             }
 
-            // WorldMatrices: worldMat,index,m00..m33
+            // WorldMatrices
             foreach (var kvp in backup.WorldMatrices)
             {
                 var m = kvp.Value;
-                sb.AppendLine($"worldMat,{kvp.Key},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+                if (useNameBased && indexToName != null)
+                {
+                    string name = indexToName.TryGetValue(kvp.Key, out var n) ? n : "";
+                    sb.AppendLine($"worldMatByName,{Esc(name)},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+                }
+                else
+                {
+                    sb.AppendLine($"worldMat,{kvp.Key},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+                }
             }
 
-            // BindPoses: bindPose,index,m00..m33
+            // BindPoses
             foreach (var kvp in backup.BindPoses)
             {
                 var m = kvp.Value;
-                sb.AppendLine($"bindPose,{kvp.Key},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+                if (useNameBased && indexToName != null)
+                {
+                    string name = indexToName.TryGetValue(kvp.Key, out var n) ? n : "";
+                    sb.AppendLine($"bindPoseByName,{Esc(name)},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+                }
+                else
+                {
+                    sb.AppendLine($"bindPose,{kvp.Key},{Fl(m.m00)},{Fl(m.m01)},{Fl(m.m02)},{Fl(m.m03)},{Fl(m.m10)},{Fl(m.m11)},{Fl(m.m12)},{Fl(m.m13)},{Fl(m.m20)},{Fl(m.m21)},{Fl(m.m22)},{Fl(m.m23)},{Fl(m.m30)},{Fl(m.m31)},{Fl(m.m32)},{Fl(m.m33)}");
+                }
             }
 
-            // VertexPositions: vtxPos,meshIndex,count,px0,py0,pz0,...
+            // VertexPositions（メッシュインデックスキー）
             foreach (var kvp in backup.VertexPositions)
             {
                 var positions = kvp.Value;
-                sb.Append($"vtxPos,{kvp.Key},{positions.Length}");
+                if (useNameBased && indexToName != null)
+                {
+                    string name = indexToName.TryGetValue(kvp.Key, out var n) ? n : "";
+                    sb.Append($"vtxPosByName,{Esc(name)},{positions.Length}");
+                }
+                else
+                {
+                    sb.Append($"vtxPos,{kvp.Key},{positions.Length}");
+                }
                 for (int i = 0; i < positions.Length; i++)
                 {
                     var p = positions[i];
@@ -895,10 +1356,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             File.WriteAllText(Path.Combine(folderPath, "tposebackup.csv"), sb.ToString(), Encoding.UTF8);
         }
 
-        private static TPoseBackup ReadTPoseBackupCsv(string path)
+        private static TPoseBackup ReadTPoseBackupCsv(string path, ModelContext model = null)
         {
             var backup = new TPoseBackup();
             var lines = File.ReadAllLines(path, Encoding.UTF8);
+            Dictionary<string, int> nameToIndex = null;
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -909,41 +1371,91 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (cols.Length < 2) continue;
 
                 string key = cols[0];
-                int idx = PInt(cols, 1);
 
                 switch (key)
                 {
                     case "boneRot":
+                    {
+                        int idx = PInt(cols, 1);
                         backup.BoneRotations[idx] = new Vector3(
                             PFl(cols, 2), PFl(cols, 3), PFl(cols, 4));
                         break;
-
+                    }
+                    case "boneRotByName":
+                    {
+                        if (nameToIndex == null && model != null) nameToIndex = BuildNameToIndex(model);
+                        string name = Unesc(cols[1]);
+                        int idx = nameToIndex != null && nameToIndex.TryGetValue(name, out var ni) ? ni : -1;
+                        if (idx >= 0)
+                            backup.BoneRotations[idx] = new Vector3(PFl(cols, 2), PFl(cols, 3), PFl(cols, 4));
+                        break;
+                    }
                     case "worldMat":
+                    {
+                        int idx = PInt(cols, 1);
                         backup.WorldMatrices[idx] = ReadMat(cols, 2);
                         break;
-
+                    }
+                    case "worldMatByName":
+                    {
+                        if (nameToIndex == null && model != null) nameToIndex = BuildNameToIndex(model);
+                        string name = Unesc(cols[1]);
+                        int idx = nameToIndex != null && nameToIndex.TryGetValue(name, out var ni) ? ni : -1;
+                        if (idx >= 0)
+                            backup.WorldMatrices[idx] = ReadMat(cols, 2);
+                        break;
+                    }
                     case "bindPose":
+                    {
+                        int idx = PInt(cols, 1);
                         backup.BindPoses[idx] = ReadMat(cols, 2);
                         break;
-
+                    }
+                    case "bindPoseByName":
+                    {
+                        if (nameToIndex == null && model != null) nameToIndex = BuildNameToIndex(model);
+                        string name = Unesc(cols[1]);
+                        int idx = nameToIndex != null && nameToIndex.TryGetValue(name, out var ni) ? ni : -1;
+                        if (idx >= 0)
+                            backup.BindPoses[idx] = ReadMat(cols, 2);
+                        break;
+                    }
                     case "vtxPos":
                     {
+                        int idx = PInt(cols, 1);
                         int count = PInt(cols, 2);
                         var positions = new Vector3[count];
                         int ci = 3;
                         for (int v = 0; v < count; v++)
                         {
-                            positions[v] = new Vector3(
-                                PFl(cols, ci), PFl(cols, ci + 1), PFl(cols, ci + 2));
+                            positions[v] = new Vector3(PFl(cols, ci), PFl(cols, ci + 1), PFl(cols, ci + 2));
                             ci += 3;
                         }
                         backup.VertexPositions[idx] = positions;
                         break;
                     }
+                    case "vtxPosByName":
+                    {
+                        if (nameToIndex == null && model != null) nameToIndex = BuildNameToIndex(model);
+                        string name = Unesc(cols[1]);
+                        int idx = nameToIndex != null && nameToIndex.TryGetValue(name, out var ni) ? ni : -1;
+                        if (idx >= 0)
+                        {
+                            int count = PInt(cols, 2);
+                            var positions = new Vector3[count];
+                            int ci = 3;
+                            for (int v = 0; v < count; v++)
+                            {
+                                positions[v] = new Vector3(PFl(cols, ci), PFl(cols, ci + 1), PFl(cols, ci + 2));
+                                ci += 3;
+                            }
+                            backup.VertexPositions[idx] = positions;
+                        }
+                        break;
+                    }
                 }
             }
 
-            // 空のバックアップなら null を返す
             if (backup.BoneRotations.Count == 0 && backup.VertexPositions.Count == 0)
                 return null;
 
@@ -1292,6 +1804,30 @@ namespace Poly_Ling.Serialization.FolderSerializer
             foreach (char c in Path.GetInvalidFileNameChars())
                 name = name.Replace(c, '_');
             return name;
+        }
+
+        // ================================================================
+        // 名前→インデックス辞書構築
+        // ================================================================
+
+        /// <summary>
+        /// ModelContextのMeshContextListから名前→インデックス辞書を構築
+        /// </summary>
+        private static Dictionary<string, int> BuildNameToIndex(ModelContext model)
+        {
+            var dict = new Dictionary<string, int>();
+            if (model == null) return dict;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc != null && !string.IsNullOrEmpty(mc.Name))
+                {
+                    // 重複名の場合は最初のもの優先
+                    if (!dict.ContainsKey(mc.Name))
+                        dict[mc.Name] = i;
+                }
+            }
+            return dict;
         }
 
         private static string Esc(string s)

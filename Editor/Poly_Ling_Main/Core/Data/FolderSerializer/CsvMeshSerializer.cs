@@ -21,6 +21,40 @@ namespace Poly_Ling.Serialization.FolderSerializer
     {
         public int GlobalIndex;
         public MeshContext MeshContext;
+
+        // ================================================================
+        // 名前ベース参照（読み込み時に一時格納、後でインデックスに解決）
+        // ================================================================
+        public bool IsNameBased;
+        public string ParentName;
+        public string HierarchyParentName;
+        public string BakedMirrorSourceName;
+        public string MorphParentName;
+        public string IKTargetName;
+        public List<NamedIKLink> IKLinksByName;
+        /// <summary>頂点ごとのBoneWeight参照ボーン名 [name0,name1,name2,name3]</summary>
+        public List<string[]> VertexBoneNames;
+        /// <summary>頂点ごとのMirrorBoneWeight参照ボーン名</summary>
+        public List<string[]> VertexMirrorBoneNames;
+
+        // ================================================================
+        // ミラーペア情報（部分インポート時にペア再構築するため）
+        // ================================================================
+        /// <summary>ミラーペア相手のメッシュ名（Real側に記録）</summary>
+        public string MirrorPeerName;
+        /// <summary>ミラーペアの軸（0=X, 1=Y, 2=Z）</summary>
+        public int MirrorPeerAxis = -1;
+    }
+
+    /// <summary>
+    /// 名前ベースIKリンク情報（読み込み一時格納用）
+    /// </summary>
+    public class NamedIKLink
+    {
+        public string BoneName;
+        public bool HasLimit;
+        public Vector3 LimitMin;
+        public Vector3 LimitMax;
     }
 
     /// <summary>
@@ -40,7 +74,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
         /// <summary>
         /// メッシュリストをCSVファイルに書き込み
         /// </summary>
-        public static void WriteFile(string path, List<CsvMeshEntry> entries, string fileType)
+        /// <param name="useNameBased">名前ベース参照モード</param>
+        /// <param name="indexToName">MeshContextListインデックス→名前の辞書（名前ベース時必須）</param>
+        public static void WriteFile(string path, List<CsvMeshEntry> entries, string fileType,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             if (entries == null || entries.Count == 0) return;
 
@@ -61,18 +98,19 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (mc == null) continue;
 
                 sb.AppendLine(Separator);
-                WriteMeshHeader(sb, entry.GlobalIndex, mc);
+                WriteMeshHeader(sb, entry.GlobalIndex, mc, useNameBased, indexToName,
+                    entry.MirrorPeerName, entry.MirrorPeerAxis);
 
                 // ボーン固有データ
                 if (mc.Type == MeshType.Bone)
                 {
-                    WriteBoneData(sb, mc);
+                    WriteBoneData(sb, mc, useNameBased, indexToName);
                 }
 
                 // モーフ固有データ
                 if (mc.Type == MeshType.Morph)
                 {
-                    WriteMorphData(sb, mc);
+                    WriteMorphData(sb, mc, useNameBased, indexToName);
                 }
 
                 // 選択セット
@@ -83,7 +121,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 {
                     foreach (var v in mc.MeshObject.Vertices)
                     {
-                        WriteVertex(sb, v);
+                        if (useNameBased)
+                            WriteVertexNameBased(sb, v, indexToName);
+                        else
+                            WriteVertex(sb, v);
                     }
 
                     // 面
@@ -139,14 +180,29 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // Write: ヘッダ
         // ================================================================
 
-        private static void WriteMeshHeader(StringBuilder sb, int globalIndex, MeshContext mc)
+        private static void WriteMeshHeader(StringBuilder sb, int globalIndex, MeshContext mc,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null,
+            string mirrorPeerName = null, int mirrorPeerAxis = -1)
         {
             sb.AppendLine($"name,{EscapeCsv(mc.Name)}");
-            sb.AppendLine($"index,{globalIndex}");
-            sb.AppendLine($"type,{mc.Type}");
-            sb.AppendLine($"parentIndex,{mc.ParentIndex}");
-            sb.AppendLine($"depth,{mc.Depth}");
-            sb.AppendLine($"hierarchyParentIndex,{mc.HierarchyParentIndex}");
+
+            if (useNameBased)
+            {
+                // 名前ベース: indexは省略、参照はすべて名前
+                sb.AppendLine($"type,{mc.Type}");
+                sb.AppendLine($"parentName,{EscapeCsv(ResolveName(mc.ParentIndex, indexToName))}");
+                sb.AppendLine($"depth,{mc.Depth}");
+                sb.AppendLine($"hierarchyParentName,{EscapeCsv(ResolveName(mc.HierarchyParentIndex, indexToName))}");
+            }
+            else
+            {
+                sb.AppendLine($"index,{globalIndex}");
+                sb.AppendLine($"type,{mc.Type}");
+                sb.AppendLine($"parentIndex,{mc.ParentIndex}");
+                sb.AppendLine($"depth,{mc.Depth}");
+                sb.AppendLine($"hierarchyParentIndex,{mc.HierarchyParentIndex}");
+            }
+
             sb.AppendLine($"isVisible,{mc.IsVisible}");
             sb.AppendLine($"isLocked,{mc.IsLocked}");
             sb.AppendLine($"isFolding,{mc.IsFolding}");
@@ -155,20 +211,45 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"mirrorAxis,{mc.MirrorAxis}");
             sb.AppendLine($"mirrorDistance,{F(mc.MirrorDistance)}");
             sb.AppendLine($"mirrorMaterialOffset,{mc.MirrorMaterialOffset}");
-            sb.AppendLine($"bakedMirrorSourceIndex,{mc.BakedMirrorSourceIndex}");
+
+            if (useNameBased)
+            {
+                sb.AppendLine($"bakedMirrorSourceName,{EscapeCsv(ResolveName(mc.BakedMirrorSourceIndex, indexToName))}");
+            }
+            else
+            {
+                sb.AppendLine($"bakedMirrorSourceIndex,{mc.BakedMirrorSourceIndex}");
+            }
+
             sb.AppendLine($"hasBakedMirrorChild,{mc.HasBakedMirrorChild}");
             sb.AppendLine($"excludeFromExport,{mc.ExcludeFromExport}");
+
+            // ミラーペア情報（Real側のみ出力）
+            if (!string.IsNullOrEmpty(mirrorPeerName))
+            {
+                sb.AppendLine($"mirrorPeer,{EscapeCsv(mirrorPeerName)},{mirrorPeerAxis}");
+            }
 
             // BoneTransform
             var bt = mc.BoneTransform ?? new BoneTransform();
             sb.AppendLine($"boneTransform,{bt.UseLocalTransform},{F(bt.Position.x)},{F(bt.Position.y)},{F(bt.Position.z)},{F(bt.Rotation.x)},{F(bt.Rotation.y)},{F(bt.Rotation.z)},{F(bt.Scale.x)},{F(bt.Scale.y)},{F(bt.Scale.z)}");
         }
 
+        /// <summary>
+        /// インデックスから名前を解決。-1や見つからない場合は空文字
+        /// </summary>
+        private static string ResolveName(int index, Dictionary<int, string> indexToName)
+        {
+            if (index < 0 || indexToName == null) return "";
+            return indexToName.TryGetValue(index, out var name) ? name : "";
+        }
+
         // ================================================================
         // Write: ボーン固有
         // ================================================================
 
-        private static void WriteBoneData(StringBuilder sb, MeshContext mc)
+        private static void WriteBoneData(StringBuilder sb, MeshContext mc,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
             // BonePoseData
             if (mc.BonePoseData != null)
@@ -201,12 +282,28 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // IK
             if (mc.IsIK)
             {
-                sb.AppendLine($"ik,{mc.IKTargetIndex},{mc.IKLoopCount},{F(mc.IKLimitAngle)}");
-                if (mc.IKLinks != null)
+                if (useNameBased)
                 {
-                    foreach (var link in mc.IKLinks)
+                    string targetName = ResolveName(mc.IKTargetIndex, indexToName);
+                    sb.AppendLine($"ikByName,{EscapeCsv(targetName)},{mc.IKLoopCount},{F(mc.IKLimitAngle)}");
+                    if (mc.IKLinks != null)
                     {
-                        sb.AppendLine($"ikLink,{link.BoneIndex},{link.HasLimit},{F(link.LimitMin.x)},{F(link.LimitMin.y)},{F(link.LimitMin.z)},{F(link.LimitMax.x)},{F(link.LimitMax.y)},{F(link.LimitMax.z)}");
+                        foreach (var link in mc.IKLinks)
+                        {
+                            string linkName = ResolveName(link.BoneIndex, indexToName);
+                            sb.AppendLine($"ikLinkByName,{EscapeCsv(linkName)},{link.HasLimit},{F(link.LimitMin.x)},{F(link.LimitMin.y)},{F(link.LimitMin.z)},{F(link.LimitMax.x)},{F(link.LimitMax.y)},{F(link.LimitMax.z)}");
+                        }
+                    }
+                }
+                else
+                {
+                    sb.AppendLine($"ik,{mc.IKTargetIndex},{mc.IKLoopCount},{F(mc.IKLimitAngle)}");
+                    if (mc.IKLinks != null)
+                    {
+                        foreach (var link in mc.IKLinks)
+                        {
+                            sb.AppendLine($"ikLink,{link.BoneIndex},{link.HasLimit},{F(link.LimitMin.x)},{F(link.LimitMin.y)},{F(link.LimitMin.z)},{F(link.LimitMax.x)},{F(link.LimitMax.y)},{F(link.LimitMax.z)}");
+                        }
                     }
                 }
             }
@@ -223,9 +320,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // Write: モーフ固有
         // ================================================================
 
-        private static void WriteMorphData(StringBuilder sb, MeshContext mc)
+        private static void WriteMorphData(StringBuilder sb, MeshContext mc,
+            bool useNameBased = false, Dictionary<int, string> indexToName = null)
         {
-            sb.AppendLine($"morphParentIndex,{mc.MorphParentIndex}");
+            if (useNameBased)
+            {
+                sb.AppendLine($"morphParentName,{EscapeCsv(ResolveName(mc.MorphParentIndex, indexToName))}");
+            }
+            else
+            {
+                sb.AppendLine($"morphParentIndex,{mc.MorphParentIndex}");
+            }
 
             if (mc.MorphBaseData != null && mc.MorphBaseData.IsValid)
             {
@@ -314,6 +419,58 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 var mbw = v.MirrorBoneWeight.Value;
                 sb.Append($",8,{mbw.boneIndex0},{mbw.boneIndex1},{mbw.boneIndex2},{mbw.boneIndex3},{F(mbw.weight0)},{F(mbw.weight1)},{F(mbw.weight2)},{F(mbw.weight3)}");
+            }
+            else
+            {
+                sb.Append(",0");
+            }
+
+            // UVs
+            sb.Append($",{v.UVs.Count}");
+            foreach (var uv in v.UVs)
+                sb.Append($",{F(uv.x)},{F(uv.y)}");
+
+            // Normals
+            sb.Append($",{v.Normals.Count}");
+            foreach (var n in v.Normals)
+                sb.Append($",{F(n.x)},{F(n.y)},{F(n.z)}");
+
+            sb.AppendLine();
+        }
+
+        // ================================================================
+        // Write: 頂点（名前ベース）
+        // ================================================================
+
+        private static void WriteVertexNameBased(StringBuilder sb, Vertex v, Dictionary<int, string> indexToName)
+        {
+            // vn,id,px,py,pz,flags,bwCount(0or8),boneName0..3,w0..3,mbwCount,...,uvCount,uv...,nrmCount,nrm...
+            sb.Append($"vn,{v.Id},{F(v.Position.x)},{F(v.Position.y)},{F(v.Position.z)},{(byte)v.Flags}");
+
+            // BoneWeight (名前ベース)
+            if (v.BoneWeight.HasValue)
+            {
+                var bw = v.BoneWeight.Value;
+                string n0 = ResolveName(bw.boneIndex0, indexToName);
+                string n1 = ResolveName(bw.boneIndex1, indexToName);
+                string n2 = ResolveName(bw.boneIndex2, indexToName);
+                string n3 = ResolveName(bw.boneIndex3, indexToName);
+                sb.Append($",8,{EscapeCsv(n0)},{EscapeCsv(n1)},{EscapeCsv(n2)},{EscapeCsv(n3)},{F(bw.weight0)},{F(bw.weight1)},{F(bw.weight2)},{F(bw.weight3)}");
+            }
+            else
+            {
+                sb.Append(",0");
+            }
+
+            // MirrorBoneWeight (名前ベース)
+            if (v.MirrorBoneWeight.HasValue)
+            {
+                var mbw = v.MirrorBoneWeight.Value;
+                string n0 = ResolveName(mbw.boneIndex0, indexToName);
+                string n1 = ResolveName(mbw.boneIndex1, indexToName);
+                string n2 = ResolveName(mbw.boneIndex2, indexToName);
+                string n3 = ResolveName(mbw.boneIndex3, indexToName);
+                sb.Append($",8,{EscapeCsv(n0)},{EscapeCsv(n1)},{EscapeCsv(n2)},{EscapeCsv(n3)},{F(mbw.weight0)},{F(mbw.weight1)},{F(mbw.weight2)},{F(mbw.weight3)}");
             }
             else
             {
@@ -443,6 +600,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "hasBakedMirrorChild":
                         mc.HasBakedMirrorChild = ParseBool(cols, 1);
                         break;
+                    case "mirrorPeer":
+                        // mirrorPeer,peerName,axis
+                        if (cols.Length >= 2)
+                            entry.MirrorPeerName = UnescapeCsv(cols[1]);
+                        if (cols.Length >= 3)
+                            entry.MirrorPeerAxis = ParseInt(cols, 2, 0);
+                        break;
                     case "excludeFromExport":
                         mc.ExcludeFromExport = ParseBool(cols, 1);
                         break;
@@ -500,6 +664,65 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "f":
                         meshObject.Faces.Add(ReadFace(cols));
+                        break;
+
+                    // ================================================================
+                    // 名前ベース参照（自動判別）
+                    // ================================================================
+                    case "parentName":
+                        entry.IsNameBased = true;
+                        entry.ParentName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        break;
+                    case "hierarchyParentName":
+                        entry.HierarchyParentName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        break;
+                    case "bakedMirrorSourceName":
+                        entry.BakedMirrorSourceName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        break;
+                    case "morphParentName":
+                        entry.MorphParentName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        entry.IsNameBased = true;
+                        break;
+                    case "ikByName":
+                        mc.IsIK = true;
+                        entry.IKTargetName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        mc.IKLoopCount = ParseInt(cols, 2);
+                        mc.IKLimitAngle = ParseFloat(cols, 3);
+                        if (mc.IKLinks == null) mc.IKLinks = new List<IKLinkInfo>();
+                        entry.IsNameBased = true;
+                        break;
+                    case "ikLinkByName":
+                        if (entry.IKLinksByName == null) entry.IKLinksByName = new List<NamedIKLink>();
+                        entry.IKLinksByName.Add(new NamedIKLink
+                        {
+                            BoneName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "",
+                            HasLimit = ParseBool(cols, 2),
+                            LimitMin = new Vector3(ParseFloat(cols, 3), ParseFloat(cols, 4), ParseFloat(cols, 5)),
+                            LimitMax = new Vector3(ParseFloat(cols, 6), ParseFloat(cols, 7), ParseFloat(cols, 8))
+                        });
+                        break;
+                    case "vn":
+                        var (vtx, boneNames, mirrorBoneNames) = ReadVertexNameBased(cols);
+                        meshObject.Vertices.Add(vtx);
+                        if (boneNames != null)
+                        {
+                            if (entry.VertexBoneNames == null) entry.VertexBoneNames = new List<string[]>();
+                            entry.VertexBoneNames.Add(boneNames);
+                        }
+                        else
+                        {
+                            if (entry.VertexBoneNames != null) entry.VertexBoneNames.Add(null);
+                        }
+                        if (mirrorBoneNames != null)
+                        {
+                            if (entry.VertexMirrorBoneNames == null) entry.VertexMirrorBoneNames = new List<string[]>();
+                            entry.VertexMirrorBoneNames.Add(mirrorBoneNames);
+                        }
+                        else
+                        {
+                            if (entry.VertexMirrorBoneNames != null) entry.VertexMirrorBoneNames.Add(null);
+                        }
+                        entry.IsNameBased = true;
                         break;
                 }
 
@@ -674,6 +897,95 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             return vertex;
         }
+
+        // ================================================================
+        // Read: 頂点（名前ベース）
+        // ================================================================
+
+        /// <summary>
+        /// 名前ベース頂点行を読み込み。ボーン名は一時的にstring[]で返し、後でインデックス解決する
+        /// BoneWeightにはダミー値(0)を設定しておく
+        /// </summary>
+        private static (Vertex vertex, string[] boneNames, string[] mirrorBoneNames) ReadVertexNameBased(string[] cols)
+        {
+            // vn,id,px,py,pz,flags,bwCount,[boneName0..3,w0..3],mbwCount,[...],uvCount,[uv...],nrmCount,[nrm...]
+            int idx = 1;
+            int id = ParseInt(cols, idx++);
+            float px = ParseFloat(cols, idx++);
+            float py = ParseFloat(cols, idx++);
+            float pz = ParseFloat(cols, idx++);
+            byte flags = (byte)ParseInt(cols, idx++);
+
+            var vertex = new Vertex(id, new Vector3(px, py, pz));
+            vertex.Flags = (VertexFlags)flags;
+
+            string[] boneNames = null;
+            string[] mirrorBoneNames = null;
+
+            // BoneWeight (名前ベース)
+            int bwCount = ParseInt(cols, idx++);
+            if (bwCount == 8)
+            {
+                boneNames = new string[4];
+                boneNames[0] = UnescapeCsv(SafeGet(cols, idx++));
+                boneNames[1] = UnescapeCsv(SafeGet(cols, idx++));
+                boneNames[2] = UnescapeCsv(SafeGet(cols, idx++));
+                boneNames[3] = UnescapeCsv(SafeGet(cols, idx++));
+                float w0 = ParseFloat(cols, idx++);
+                float w1 = ParseFloat(cols, idx++);
+                float w2 = ParseFloat(cols, idx++);
+                float w3 = ParseFloat(cols, idx++);
+                // ダミーインデックスで仮設定（後で名前解決で上書き）
+                vertex.BoneWeight = new BoneWeight
+                {
+                    boneIndex0 = 0, boneIndex1 = 0, boneIndex2 = 0, boneIndex3 = 0,
+                    weight0 = w0, weight1 = w1, weight2 = w2, weight3 = w3
+                };
+            }
+
+            // MirrorBoneWeight (名前ベース)
+            int mbwCount = ParseInt(cols, idx++);
+            if (mbwCount == 8)
+            {
+                mirrorBoneNames = new string[4];
+                mirrorBoneNames[0] = UnescapeCsv(SafeGet(cols, idx++));
+                mirrorBoneNames[1] = UnescapeCsv(SafeGet(cols, idx++));
+                mirrorBoneNames[2] = UnescapeCsv(SafeGet(cols, idx++));
+                mirrorBoneNames[3] = UnescapeCsv(SafeGet(cols, idx++));
+                float w0 = ParseFloat(cols, idx++);
+                float w1 = ParseFloat(cols, idx++);
+                float w2 = ParseFloat(cols, idx++);
+                float w3 = ParseFloat(cols, idx++);
+                vertex.MirrorBoneWeight = new BoneWeight
+                {
+                    boneIndex0 = 0, boneIndex1 = 0, boneIndex2 = 0, boneIndex3 = 0,
+                    weight0 = w0, weight1 = w1, weight2 = w2, weight3 = w3
+                };
+            }
+
+            // UVs
+            int uvCount = ParseInt(cols, idx++);
+            for (int u = 0; u < uvCount; u++)
+            {
+                float ux = ParseFloat(cols, idx++);
+                float uy = ParseFloat(cols, idx++);
+                vertex.UVs.Add(new Vector2(ux, uy));
+            }
+
+            // Normals
+            int nrmCount = ParseInt(cols, idx++);
+            for (int n = 0; n < nrmCount; n++)
+            {
+                float nx = ParseFloat(cols, idx++);
+                float ny = ParseFloat(cols, idx++);
+                float nz = ParseFloat(cols, idx++);
+                vertex.Normals.Add(new Vector3(nx, ny, nz));
+            }
+
+            return (vertex, boneNames, mirrorBoneNames);
+        }
+
+        private static string SafeGet(string[] cols, int idx) => idx < cols.Length ? cols[idx] : "";
 
         // ================================================================
         // Read: 面
@@ -858,6 +1170,112 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "True") return true;
             if (s.Equals("false", StringComparison.OrdinalIgnoreCase) || s == "False") return false;
             return def;
+        }
+
+        // ================================================================
+        // 名前ベース参照の解決
+        // ================================================================
+
+        /// <summary>
+        /// 名前ベースで読み込んだエントリの参照をインデックスに解決する
+        /// </summary>
+        /// <param name="entries">読み込んだエントリ一覧</param>
+        /// <param name="nameToIndex">名前→インデックスの辞書（呼び出し元で構築）</param>
+        public static void ResolveNameReferences(List<CsvMeshEntry> entries, Dictionary<string, int> nameToIndex)
+        {
+            if (entries == null || nameToIndex == null) return;
+
+            foreach (var entry in entries)
+            {
+                if (!entry.IsNameBased) continue;
+                var mc = entry.MeshContext;
+                if (mc == null) continue;
+
+                // ParentIndex
+                if (!string.IsNullOrEmpty(entry.ParentName))
+                    mc.ParentIndex = LookupIndex(entry.ParentName, nameToIndex);
+
+                // HierarchyParentIndex
+                if (!string.IsNullOrEmpty(entry.HierarchyParentName))
+                    mc.HierarchyParentIndex = LookupIndex(entry.HierarchyParentName, nameToIndex);
+
+                // BakedMirrorSourceIndex
+                if (!string.IsNullOrEmpty(entry.BakedMirrorSourceName))
+                    mc.BakedMirrorSourceIndex = LookupIndex(entry.BakedMirrorSourceName, nameToIndex);
+
+                // MorphParentIndex
+                if (!string.IsNullOrEmpty(entry.MorphParentName))
+                    mc.MorphParentIndex = LookupIndex(entry.MorphParentName, nameToIndex);
+
+                // IKTargetIndex
+                if (!string.IsNullOrEmpty(entry.IKTargetName))
+                    mc.IKTargetIndex = LookupIndex(entry.IKTargetName, nameToIndex);
+
+                // IKLinks
+                if (entry.IKLinksByName != null && entry.IKLinksByName.Count > 0)
+                {
+                    mc.IKLinks = new List<IKLinkInfo>();
+                    foreach (var nl in entry.IKLinksByName)
+                    {
+                        mc.IKLinks.Add(new IKLinkInfo
+                        {
+                            BoneIndex = LookupIndex(nl.BoneName, nameToIndex),
+                            HasLimit = nl.HasLimit,
+                            LimitMin = nl.LimitMin,
+                            LimitMax = nl.LimitMax
+                        });
+                    }
+                }
+
+                // 頂点 BoneWeight
+                if (entry.VertexBoneNames != null)
+                {
+                    var vertices = mc.MeshObject?.Vertices;
+                    if (vertices != null)
+                    {
+                        for (int vi = 0; vi < entry.VertexBoneNames.Count && vi < vertices.Count; vi++)
+                        {
+                            var names = entry.VertexBoneNames[vi];
+                            if (names == null || !vertices[vi].BoneWeight.HasValue) continue;
+                            var bw = vertices[vi].BoneWeight.Value;
+                            bw.boneIndex0 = LookupIndex(names[0], nameToIndex);
+                            bw.boneIndex1 = LookupIndex(names[1], nameToIndex);
+                            bw.boneIndex2 = LookupIndex(names[2], nameToIndex);
+                            bw.boneIndex3 = LookupIndex(names[3], nameToIndex);
+                            vertices[vi].BoneWeight = bw;
+                        }
+                    }
+                }
+
+                // 頂点 MirrorBoneWeight
+                if (entry.VertexMirrorBoneNames != null)
+                {
+                    var vertices = mc.MeshObject?.Vertices;
+                    if (vertices != null)
+                    {
+                        for (int vi = 0; vi < entry.VertexMirrorBoneNames.Count && vi < vertices.Count; vi++)
+                        {
+                            var names = entry.VertexMirrorBoneNames[vi];
+                            if (names == null || !vertices[vi].MirrorBoneWeight.HasValue) continue;
+                            var mbw = vertices[vi].MirrorBoneWeight.Value;
+                            mbw.boneIndex0 = LookupIndex(names[0], nameToIndex);
+                            mbw.boneIndex1 = LookupIndex(names[1], nameToIndex);
+                            mbw.boneIndex2 = LookupIndex(names[2], nameToIndex);
+                            mbw.boneIndex3 = LookupIndex(names[3], nameToIndex);
+                            vertices[vi].MirrorBoneWeight = mbw;
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 名前からインデックスを検索。見つからない場合は-1
+        /// </summary>
+        private static int LookupIndex(string name, Dictionary<string, int> nameToIndex)
+        {
+            if (string.IsNullOrEmpty(name)) return -1;
+            return nameToIndex.TryGetValue(name, out int idx) ? idx : -1;
         }
     }
 }

@@ -37,7 +37,8 @@ public partial class PolyLing
             _project,
             workPlane != null ? new List<WorkPlaneContext> { workPlane } : null,
             editorStateDTO != null ? new List<EditorStateDTO> { editorStateDTO } : null,
-            _project.Name ?? "Project"
+            _project.Name ?? "Project",
+            _useNameBasedSave
         );
     }
 
@@ -451,7 +452,7 @@ public partial class PolyLing
 
         // フォルダ内の全メッシュエントリを読み込み
         var entries = CsvModelSerializer.LoadAllMeshEntriesFromFolder(folderPath);
-        if (entries.Count == 0)
+        if (entries == null || entries.Count == 0)
         {
             EditorUtility.DisplayDialog("Add from CSV", "読み込み可能なデータが見つかりません。", "OK");
             return;
@@ -469,8 +470,29 @@ public partial class PolyLing
             return;
         }
 
+        // 名前ベースエントリの参照解決（マージ後のモデル全体から辞書構築）
+        bool hasNameBased = false;
+        foreach (var e in entries) { if (e.IsNameBased) { hasNameBased = true; break; } }
+        if (hasNameBased)
+        {
+            var nameToIndex = new Dictionary<string, int>();
+            for (int i = 0; i < _meshContextList.Count; i++)
+            {
+                var mc = _meshContextList[i];
+                if (mc != null && !string.IsNullOrEmpty(mc.Name) && !nameToIndex.ContainsKey(mc.Name))
+                    nameToIndex[mc.Name] = i;
+            }
+            CsvMeshSerializer.ResolveNameReferences(entries, nameToIndex);
+        }
+
+        // mirrorPeer情報からMirrorPairを構築
+        CsvModelSerializer.BuildMirrorPairsFromEntries(entries, _model);
+
         // オフセット配列を初期化
         InitVertexOffsets();
+
+        // タイプ別リスト等のUI更新をトリガー
+        _model.OnListChanged?.Invoke();
 
         // Undo記録
         if (_undoController != null)
@@ -497,6 +519,7 @@ public partial class PolyLing
 
     /// <summary>
     /// エントリリストを現在のモデルにマージ（名前衝突ダイアログ付き）
+    /// MirrorSideはReal側と同じ操作を自動適用。衝突が複数なら一括操作を先に選択可能。
     /// </summary>
     /// <returns>(追加数, 差替数, スキップ数, 削除スナップショット, 追加スナップショット)</returns>
     private (int added, int replaced, int skipped,
@@ -514,9 +537,59 @@ public partial class PolyLing
             existingNames[_meshContextList[i].Name] = i;
         }
 
+        // MirrorSide名セット構築（Real側の選択に自動追従させる）
+        var mirrorSideNames = new HashSet<string>();
+        foreach (var e in entries)
+        {
+            if (!string.IsNullOrEmpty(e.MirrorPeerName))
+                mirrorSideNames.Add(e.MirrorPeerName);
+        }
+
+        // 衝突するエントリ数を事前カウント（MirrorSide除く）
+        int conflictCount = 0;
+        foreach (var e in entries)
+        {
+            if (e.MeshContext == null) continue;
+            string name = e.MeshContext.Name;
+            if (mirrorSideNames.Contains(name)) continue;
+            if (existingNames.ContainsKey(name)) conflictCount++;
+        }
+
+        // 一括操作モード: -1=未決定, 0=すべて差し替え, 1=すべてスキップ, 2=すべて追加, 3=個別確認
+        int batchMode = -1;
+        if (conflictCount >= 2)
+        {
+            int first = EditorUtility.DisplayDialogComplex(
+                "名前の重複",
+                $"既存メッシュと名前が重複するエントリが{conflictCount}件あります。\nどうしますか？",
+                "すべて差し替え",     // 0
+                "すべて追加",         // 1
+                "その他…"             // 2
+            );
+            if (first == 0)
+                batchMode = 0; // すべて差し替え
+            else if (first == 1)
+                batchMode = 2; // すべて追加
+            else
+            {
+                int second = EditorUtility.DisplayDialogComplex(
+                    "名前の重複",
+                    $"重複{conflictCount}件の処理を選んでください。",
+                    "すべてスキップ",     // 0
+                    "個別に確認",         // 1
+                    ""                    // 2（未使用）
+                );
+                batchMode = (second == 0) ? 1 : 3;
+            }
+        }
+
         int addedCount = 0;
         int replacedCount = 0;
         int skippedCount = 0;
+
+        // Real側の選択結果を記録（MirrorSideに適用するため）
+        // key=Real名, value=選択(0=差替, 1=スキップ, 2=名前変更追加)
+        var realChoices = new Dictionary<string, int>();
 
         foreach (var entry in entries)
         {
@@ -527,14 +600,46 @@ public partial class PolyLing
 
             if (existingNames.TryGetValue(name, out int existingIndex))
             {
-                // 名前衝突 → ダイアログ
-                int choice = EditorUtility.DisplayDialogComplex(
-                    "名前の重複",
-                    $"「{name}」は既に存在します。\nどうしますか？",
-                    "差し替え",     // 0
-                    "スキップ",     // 1
-                    "名前変更して追加" // 2
-                );
+                int choice;
+
+                if (mirrorSideNames.Contains(name))
+                {
+                    // MirrorSide → 対応するReal側の選択に追従
+                    // Real名を逆引き（このMirrorSide名をMirrorPeerNameに持つentryのReal名）
+                    string realName = null;
+                    foreach (var e in entries)
+                    {
+                        if (e.MirrorPeerName == name && e.MeshContext != null)
+                        {
+                            realName = e.MeshContext.Name;
+                            break;
+                        }
+                    }
+                    choice = (realName != null && realChoices.TryGetValue(realName, out int rc)) ? rc : 0;
+                }
+                else if (batchMode == 0 || batchMode == 1 || batchMode == 2)
+                {
+                    // 0=すべて差し替え, 1=すべてスキップ, 2=すべて追加(名前変更)
+                    choice = batchMode;
+                }
+                else if (conflictCount == 1 || batchMode == 3)
+                {
+                    choice = EditorUtility.DisplayDialogComplex(
+                        "名前の重複",
+                        $"「{name}」は既に存在します。\nどうしますか？",
+                        "差し替え",     // 0
+                        "スキップ",     // 1
+                        "名前変更して追加" // 2
+                    );
+                }
+                else
+                {
+                    choice = 0; // フォールバック
+                }
+
+                // Real側の選択を記録
+                if (!mirrorSideNames.Contains(name))
+                    realChoices[name] = choice;
 
                 switch (choice)
                 {
@@ -545,6 +650,7 @@ public partial class PolyLing
                             Object.DestroyImmediate(_meshContextList[existingIndex].UnityMesh);
 
                         _model.MeshContextList[existingIndex] = mc;
+                        _model.InvalidateTypedIndices();
                         addedSnapshots.Add((existingIndex, MeshContextSnapshot.Capture(mc)));
                         replacedCount++;
                         break;
