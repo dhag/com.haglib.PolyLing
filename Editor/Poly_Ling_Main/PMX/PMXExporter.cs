@@ -748,11 +748,66 @@ namespace Poly_Ling.PMX
                         SetMaterialObjectName(document, matIdx, objectName, isMirror, ctx.Depth);
                 }
             }
+
+            // PolyLingメタUVモーフを生成（頂点ID・UVサブインデックス保存用）
+            BuildPolyLingMetaMorph(ctx, document, meshVertexStart, objectName);
         }
 
         /// <summary>
         /// 材質のMemo欄にObjectNameを設定
         /// </summary>
+        // PolyLingメタモーフのプレフィックス
+        private const string PolyLingMetaMorphPrefix = "__PLM_";
+
+        /// <summary>
+        /// PolyLingメタUVモーフを生成。
+        /// 頂点ID・UVサブインデックスをPMXのUVモーフに記録する。
+        /// Offset = (-1, uvSubIndex, localVertexIndex, Vertex.Id)
+        /// </summary>
+        private static void BuildPolyLingMetaMorph(
+            MeshContext ctx,
+            PMXDocument document,
+            int meshVertexStart,
+            string objectName)
+        {
+            var meshObject = ctx.MeshObject;
+            if (meshObject == null || meshObject.VertexCount == 0) return;
+
+            // 頂点インデックス → UVサブインデックス（最初に見つかった面コーナーの値）
+            var vertexUVSubIndex = new Dictionary<int, int>();
+            foreach (var face in meshObject.Faces)
+            {
+                for (int ci = 0; ci < face.VertexIndices.Count && ci < face.UVIndices.Count; ci++)
+                {
+                    int vi = face.VertexIndices[ci];
+                    if (!vertexUVSubIndex.ContainsKey(vi))
+                        vertexUVSubIndex[vi] = face.UVIndices[ci];
+                }
+            }
+
+            var morph = new PMXMorph
+            {
+                Name = PolyLingMetaMorphPrefix + objectName,
+                NameEnglish = PolyLingMetaMorphPrefix + objectName,
+                Panel = 0,
+                MorphType = 3  // UVモーフ
+            };
+
+            for (int localIndex = 0; localIndex < meshObject.VertexCount; localIndex++)
+            {
+                var vertex = meshObject.Vertices[localIndex];
+                int uvSubIndex = vertexUVSubIndex.TryGetValue(localIndex, out int s) ? s : 0;
+
+                morph.Offsets.Add(new PMXUVMorphOffset
+                {
+                    VertexIndex = meshVertexStart + localIndex,
+                    Offset = new Vector4(-1f, uvSubIndex, localIndex, vertex.Id)
+                });
+            }
+
+            document.Morphs.Add(morph);
+        }
+
         private static void SetMaterialObjectName(
             PMXDocument document,
             int materialIndex,

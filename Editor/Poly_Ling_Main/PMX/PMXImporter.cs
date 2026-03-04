@@ -469,6 +469,9 @@ namespace Poly_Ling.PMX
                 //Debug.Log($"[PMXImporter] Imported {result.MorphExpressions.Count} morph sets");
             }
 
+            // PolyLingメタモーフを適用（ShouldImportMorphsに関わらず常に実行）
+            ApplyPolyLingMetaMorphs(document, result);
+
             // ミラーペア検出・構築（常に実行）
             DetectAndBuildMirrorPairs(result, boneContextCount, settings);
         }
@@ -2073,6 +2076,66 @@ namespace Poly_Ling.PMX
         /// 2. グループモーフを読み、子モーフのMeshEntriesをweight付きでフラット展開した親MorphExpressionを作成
         /// 3. グループに属さない仮MorphExpressionはweight=1.0で正規のMorphExpressionにする
         /// </summary>
+        /// <summary>
+        /// PolyLingメタUVモーフ（__PLM_ プレフィックス）を適用する。
+        /// 各MeshContextの頂点IDとUVサブインデックスを復元する。
+        /// </summary>
+        private static void ApplyPolyLingMetaMorphs(PMXDocument document, PMXImportResult result)
+        {
+            foreach (var pmxMorph in document.Morphs)
+            {
+                if (pmxMorph.MorphType != 3) continue;
+                if (pmxMorph.Name?.StartsWith("__PLM_") != true) continue;
+
+                // 対象MeshContextを特定（MaterialGroupInfoのPmxToLocalIndexで検索）
+                foreach (var offset in pmxMorph.Offsets)
+                {
+                    if (offset is not PMXUVMorphOffset uvOffset) continue;
+
+                    int pmxVertexIndex = uvOffset.VertexIndex;
+                    int uvSubIndex = Mathf.RoundToInt(uvOffset.Offset.y);
+                    int localIndex = Mathf.RoundToInt(uvOffset.Offset.z);
+                    int vertexId = Mathf.RoundToInt(uvOffset.Offset.w);
+
+                    // このPMX頂点インデックスが属するMeshContextを探す
+                    for (int gi = 0; gi < result.MaterialGroupInfos.Count; gi++)
+                    {
+                        var groupInfo = result.MaterialGroupInfos[gi];
+                        if (!groupInfo.PmxToLocalIndex.TryGetValue(pmxVertexIndex, out int mappedLocal)) continue;
+                        // mappedLocalはインポート時に再構築されたローカルインデックス
+                        // localIndexはエクスポート時のMeshObjectインデックス（一致するはず）
+
+                        if (groupInfo.MeshContextIndex < 0 || groupInfo.MeshContextIndex >= result.MeshContexts.Count) break;
+                        var meshContext = result.MeshContexts[groupInfo.MeshContextIndex];
+                        if (meshContext?.MeshObject == null) break;
+                        var meshObject = meshContext.MeshObject;
+
+                        // 頂点IDを復元
+                        if (mappedLocal < meshObject.VertexCount)
+                        {
+                            meshObject.Vertices[mappedLocal].Id = vertexId;
+                            meshObject.RegisterVertexId(vertexId);
+                        }
+
+                        // 面コーナーのUVサブインデックスを復元
+                        foreach (var face in meshObject.Faces)
+                        {
+                            for (int ci = 0; ci < face.VertexIndices.Count; ci++)
+                            {
+                                if (face.VertexIndices[ci] == mappedLocal)
+                                {
+                                    while (face.UVIndices.Count <= ci)
+                                        face.UVIndices.Add(0);
+                                    face.UVIndices[ci] = uvSubIndex;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         private static void ConvertMorphs(PMXDocument document, PMXImportSettings settings, PMXImportResult result)
         {
             if (result.MaterialGroupInfos.Count == 0)
@@ -2096,6 +2159,8 @@ namespace Poly_Ling.PMX
                 }
                 else if (pmxMorph.MorphType >= 3 && pmxMorph.MorphType <= 7)
                 {
+                    // PolyLingメタモーフはApplyPolyLingMetaMorphsで処理するのでスキップ
+                    if (pmxMorph.Name?.StartsWith("__PLM_") == true) continue;
                     ConvertUVMorph(document, pmxMorph, settings, result);
                 }
                 // ボーンモーフ(2)、マテリアルモーフ(8)等は未対応
