@@ -33,6 +33,9 @@ namespace Poly_Ling.PMX
 
         /// <summary>面開始インデックス（PMXDocument.Faces内）</summary>
         public int FaceStartIndex { get; set; }
+
+        /// <summary>階層デプス（-1 = 指定なし）</summary>
+        public int Depth { get; set; } = -1;
     }
 
     /// <summary>
@@ -45,6 +48,9 @@ namespace Poly_Ling.PMX
 
         /// <summary>ベイクされたミラーか</summary>
         public bool IsBakedMirror { get; set; }
+
+        /// <summary>階層デプス（-1 = 指定なし）</summary>
+        public int Depth { get; set; } = -1;
 
         /// <summary>グループに含まれる材質情報（PMX順序を保持）</summary>
         public List<MaterialObjectInfo> Materials { get; } = new List<MaterialObjectInfo>();
@@ -99,13 +105,14 @@ namespace Poly_Ling.PMX
         /// </summary>
         /// <param name="memo">材質のMemo欄</param>
         /// <returns>(ObjectName, IsMirror) タプル。ObjectNameがない場合はnull</returns>
-        public static (string objectName, bool isMirror) ParseMaterialMemo(string memo)
+        public static (string objectName, bool isMirror, int depth) ParseMaterialMemo(string memo)
         {
             string objectName = null;
             bool isMirror = false;
+            int depth = -1;
 
             if (string.IsNullOrWhiteSpace(memo))
-                return (objectName, isMirror);
+                return (objectName, isMirror, depth);
 
             // CSV形式でパース
             var parts = memo.Split(',');
@@ -126,9 +133,17 @@ namespace Poly_Ling.PMX
                         i++; // 次の要素をスキップ
                     }
                 }
+                else if (part.Equals("depth", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 < parts.Length && int.TryParse(parts[i + 1].Trim(), out int d))
+                    {
+                        depth = d;
+                        i++;
+                    }
+                }
             }
 
-            return (objectName, isMirror);
+            return (objectName, isMirror, depth);
         }
 
         /// <summary>
@@ -137,9 +152,9 @@ namespace Poly_Ling.PMX
         /// <param name="objectName">オブジェクト名</param>
         /// <param name="isMirror">ミラーフラグ</param>
         /// <returns>Memo文字列</returns>
-        public static string BuildMaterialMemo(string objectName, bool isMirror)
+        public static string BuildMaterialMemo(string objectName, bool isMirror, int depth = -1)
         {
-            if (string.IsNullOrEmpty(objectName) && !isMirror)
+            if (string.IsNullOrEmpty(objectName) && !isMirror && depth < 0)
                 return "";
 
             var parts = new List<string>();
@@ -149,6 +164,9 @@ namespace Poly_Ling.PMX
             
             if (isMirror)
                 parts.Add("IsMirror");
+
+            if (depth >= 0)
+                parts.Add($"depth,{depth}");
 
             return string.Join(",", parts);
         }
@@ -177,7 +195,7 @@ namespace Poly_Ling.PMX
             for (int i = 0; i < document.Materials.Count; i++)
             {
                 var mat = document.Materials[i];
-                var (objectName, isMirror) = ParseMaterialMemo(mat.Memo);
+                var (objectName, isMirror, depth) = ParseMaterialMemo(mat.Memo);
 
                 // ObjectNameがなければ材質名を使用
                 if (string.IsNullOrEmpty(objectName))
@@ -193,7 +211,8 @@ namespace Poly_Ling.PMX
                     ObjectName = groupKey,
                     IsMirror = isMirror,
                     FaceCount = mat.FaceCount,
-                    FaceStartIndex = faceOffset
+                    FaceStartIndex = faceOffset,
+                    Depth = depth
                 });
 
                 faceOffset += mat.FaceCount;
@@ -211,7 +230,8 @@ namespace Poly_Ling.PMX
                     {
                         // ミラー側は"+"付きの名前を保持
                         ObjectName = matInfo.ObjectName,
-                        IsBakedMirror = matInfo.IsMirror
+                        IsBakedMirror = matInfo.IsMirror,
+                        Depth = matInfo.Depth
                     };
                     groupOrder.Add(matInfo.ObjectName);
                 }
@@ -260,6 +280,66 @@ namespace Poly_Ling.PMX
                 int localIndex = group.VertexIndices.Count;
                 group.VertexIndices.Add(pmxIndex);
                 group.PmxToLocalIndex[pmxIndex] = localIndex;
+            }
+        }
+
+        // ================================================================
+        // 階層デプス → ParentIndex 変換
+        // ================================================================
+
+        /// <summary>
+        /// MeshContextリストのDepthフィールドからParentIndexを計算する。
+        /// depth == -1 の場合、直前にdepthが指定されたメッシュの子として扱う。
+        /// </summary>
+        /// <param name="meshContexts">対象MeshContextリスト（インデックスはindexOffset基準）</param>
+        /// <param name="indexOffset">meshContexts[0]のグローバルインデックス</param>
+        public static void CalcParentIndicesFromDepth(
+            List<MeshContext> meshContexts,
+            int indexOffset)
+        {
+            if (meshContexts == null || meshContexts.Count == 0) return;
+
+            // スタック: (globalIndex, depth)
+            var stack = new Stack<(int index, int depth)>();
+            // 直前にdepth指定されたエントリの depth（未指定メッシュの親候補として使用）
+            int lastExplicitDepth = -1;
+            int lastExplicitIndex = -1;
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                int globalIndex = indexOffset + i;
+                int myDepth = ctx.Depth; // -1 = 未指定
+
+                if (myDepth < 0)
+                {
+                    // depth未指定 → 直前のdepth指定メッシュの子
+                    if (lastExplicitIndex >= 0)
+                    {
+                        ctx.ParentIndex = lastExplicitIndex;
+                        ctx.Depth = lastExplicitDepth + 1;
+                    }
+                    else
+                    {
+                        ctx.ParentIndex = -1;
+                    }
+                    // スタックは更新しない
+                    continue;
+                }
+
+                // depth指定あり
+                // スタックから自分以上のdepthを除去
+                while (stack.Count > 0 && stack.Peek().depth >= myDepth)
+                    stack.Pop();
+
+                if (stack.Count > 0)
+                    ctx.ParentIndex = stack.Peek().index;
+                else
+                    ctx.ParentIndex = -1;
+
+                stack.Push((globalIndex, myDepth));
+                lastExplicitDepth = myDepth;
+                lastExplicitIndex = globalIndex;
             }
         }
 
@@ -649,7 +729,7 @@ namespace Poly_Ling.PMX
                 // 材質のMemo欄にObjectNameを設定
                 if (matIndex < document.Materials.Count)
                 {
-                    string memo = BuildMaterialMemo(objectName ?? meshContext.Name, isMirror);
+                    string memo = BuildMaterialMemo(objectName ?? meshContext.Name, isMirror, meshContext.Depth);
                     if (!string.IsNullOrEmpty(memo))
                     {
                         var mat = document.Materials[matIndex];

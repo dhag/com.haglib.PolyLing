@@ -612,7 +612,9 @@ namespace Poly_Ling.PMX
 
             foreach (var ctx in meshContexts)
             {
-                if (ctx?.MeshObject == null || ctx.MeshObject.VertexCount == 0) continue;
+                if (ctx?.MeshObject == null) continue;
+                // 空メッシュかつミラーはスキップ（ミラー材質を作らない）
+                if (ctx.MeshObject.VertexCount == 0 && (ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide)) continue;
                 if (ctx.Type == MeshType.Morph) continue;  // モーフは除外
                 if (ctx.ExcludeFromExport) continue;       // エクスポート除外
 
@@ -733,7 +735,18 @@ namespace Poly_Ling.PMX
                 }
 
                 // 材質のMemo欄にObjectNameを設定
-                SetMaterialObjectName(document, matIndex, objectName, isMirror);
+                SetMaterialObjectName(document, matIndex, objectName, isMirror, ctx.Depth);
+            }
+
+            // 空メッシュの場合: facesByMaterialが空のためMemoが設定されない → PMXMaterialNamesから設定
+            if (meshObject.Faces.Count == 0 && ctx.PMXMaterialNames != null)
+            {
+                foreach (var matName in ctx.PMXMaterialNames)
+                {
+                    int matIdx = document.GetMaterialIndex(matName);
+                    if (matIdx >= 0)
+                        SetMaterialObjectName(document, matIdx, objectName, isMirror, ctx.Depth);
+                }
             }
         }
 
@@ -744,13 +757,14 @@ namespace Poly_Ling.PMX
             PMXDocument document,
             int materialIndex,
             string objectName,
-            bool isMirror)
+            bool isMirror,
+            int depth = -1)
         {
             if (materialIndex < 0 || materialIndex >= document.Materials.Count)
                 return;
 
             var mat = document.Materials[materialIndex];
-            string newMemo = PMXHelper.BuildMaterialMemo(objectName, isMirror);
+            string newMemo = PMXHelper.BuildMaterialMemo(objectName, isMirror, depth);
 
             if (string.IsNullOrEmpty(newMemo))
                 return;

@@ -551,6 +551,9 @@ namespace Poly_Ling.Data
         /// </summary>
         public bool ExcludeFromExport { get; set; } = false;
 
+        /// <summary>PMX材質名リスト（PMXインポート時に設定、空メッシュエクスポート用）</summary>
+        public List<string> PMXMaterialNames { get; set; } = new List<string>();
+
         // ================================================================
         // ミラー設定（MQOからインポート）
         // ================================================================

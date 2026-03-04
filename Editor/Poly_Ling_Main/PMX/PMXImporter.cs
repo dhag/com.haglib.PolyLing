@@ -415,6 +415,8 @@ namespace Poly_Ling.PMX
                         meshContext.Name = objectGroup.ObjectName;
                         // Memo欄のIsMirrorフラグを記録
                         meshContext.IsMirrorFromMemo = objectGroup.IsBakedMirror;
+                        // Memo欄のdepthを記録
+                        meshContext.Depth = objectGroup.Depth;
                         groupInfo.Name = meshContext.Name;
                         result.MeshContexts.Add(meshContext);
                         result.MaterialGroupInfos.Add(groupInfo);
@@ -423,7 +425,13 @@ namespace Poly_Ling.PMX
                 }
 
                 result.Stats.MeshCount = result.MeshContexts.Count - boneContextCount;
-                //Debug.Log($"[PMXImporter] Imported {result.Stats.MeshCount} mesh contexts");
+
+                // depthからParentIndexを計算
+                if (result.Stats.MeshCount > 0)
+                {
+                    var meshOnly = result.MeshContexts.Skip(boneContextCount).ToList();
+                    PMXHelper.CalcParentIndicesFromDepth(meshOnly, boneContextCount);
+                }
             }
 
             // Tポーズ変換（メッシュ作成後に実行）
@@ -1143,7 +1151,7 @@ namespace Poly_Ling.PMX
                 bool hasExplicitObjectName = group.Materials.Any(m =>
                 {
                     var mat = document.Materials[m.MaterialIndex];
-                    var (objName, _) = PMXHelper.ParseMaterialMemo(mat.Memo);
+                    var (objName, _, _) = PMXHelper.ParseMaterialMemo(mat.Memo);
                     return !string.IsNullOrEmpty(objName);
                 });
 
@@ -1318,9 +1326,6 @@ namespace Poly_Ling.PMX
                     allFaces.AddRange(faces);
             }
 
-            if (allFaces.Count == 0)
-                return null;
-
             // 使用する頂点インデックスを収集
             var usedVertexIndices = new HashSet<int>();
             foreach (var face in allFaces)
@@ -1467,9 +1472,12 @@ namespace Poly_Ling.PMX
                 MeshObject = meshObject
             };
 
+            // PMX材質名リストを保存（空メッシュのエクスポート時に使用）
+            meshContext.PMXMaterialNames = new List<string>(materialNames);
+
             // Unity Mesh生成
             // Face.MaterialIndexはグローバルインデックスなので、使用されている最大インデックス+1をサブメッシュ数とする
-            int maxMatIndex = materialNameToGlobalIndex.Values.Max();
+            int maxMatIndex = materialNameToGlobalIndex.Count > 0 ? materialNameToGlobalIndex.Values.Max() : 0;
             int subMeshCount = maxMatIndex + 1;
             meshContext.UnityMesh = meshObject.ToUnityMesh(subMeshCount);
 
