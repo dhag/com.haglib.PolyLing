@@ -70,6 +70,11 @@ namespace Poly_Ling.PMX
                     PMXCSVWriter.Save(document, csvPath, settings.DecimalPrecision);
                 }
 
+                if (settings.OutputFaceMeta)
+                {
+                    PMXFaceMetaWriter.Save(meshOnlyContexts, outputPath);
+                }
+
                 result.Success = true;
                 result.OutputPath = outputPath;
                 result.VertexCount = document.Vertices.Count;

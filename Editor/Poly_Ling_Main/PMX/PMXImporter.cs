@@ -472,6 +472,14 @@ namespace Poly_Ling.PMX
             // PolyLingメタモーフを適用（ShouldImportMorphsに関わらず常に実行）
             ApplyPolyLingMetaMorphs(document, result);
 
+            // フェースメタ (.plmface.csv) が存在すれば適用
+            if (!string.IsNullOrEmpty(document.FilePath))
+            {
+                var faceMeta = PMXFaceMetaReader.Load(document.FilePath);
+                if (faceMeta != null)
+                    PMXFaceMetaReader.Apply(faceMeta, result.MeshContexts);
+            }
+
             // ミラーペア検出・構築（常に実行）
             DetectAndBuildMirrorPairs(result, boneContextCount, settings);
         }

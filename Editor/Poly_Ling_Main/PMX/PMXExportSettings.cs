@@ -96,6 +96,9 @@ namespace Poly_Ling.PMX
         /// <summary>CSV形式でも出力</summary>
         public bool OutputCSV = false;
 
+        /// <summary>フェースメタ (.plmface.csv) を出力</summary>
+        public bool OutputFaceMeta = true;
+
         /// <summary>小数点以下の桁数</summary>
         public int DecimalPrecision = MQOExportSettings.DefaultDecimalPrecision;
 
