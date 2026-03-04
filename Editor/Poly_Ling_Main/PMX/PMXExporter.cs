@@ -72,7 +72,11 @@ namespace Poly_Ling.PMX
 
                 if (settings.OutputFaceMeta)
                 {
-                    PMXFaceMetaWriter.Save(meshOnlyContexts, outputPath);
+                    var meshOnlyContexts = model.MeshContextList?
+                        .Where(ctx => ctx != null && ctx.Type != MeshType.Bone)
+                        .ToList();
+                    if (meshOnlyContexts != null)
+                        PMXFaceMetaWriter.Save(meshOnlyContexts, outputPath);
                 }
 
                 result.Success = true;
