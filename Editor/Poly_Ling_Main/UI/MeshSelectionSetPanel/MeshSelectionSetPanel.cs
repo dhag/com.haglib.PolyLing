@@ -677,72 +677,31 @@ namespace Poly_Ling.UI
         private void OnPasteMeshes()
         {
             if (Model == null) return;
-
             string clipboard = GUIUtility.systemCopyBuffer;
             if (string.IsNullOrEmpty(clipboard))
             {
                 SetStatus("Clipboard is empty");
                 return;
             }
-
             List<CsvMeshEntry> entries;
             try
             {
-                string tempPath = Path.Combine(Path.GetTempPath(), $"polyling_paste_{Guid.NewGuid():N}.csv");
-                File.WriteAllText(tempPath, clipboard, System.Text.Encoding.UTF8);
-                entries = CsvMeshSerializer.ReadFile(tempPath);
-                File.Delete(tempPath);
+                entries = MeshClipboardHelper.DeserializeFromCsv(clipboard);
             }
             catch (Exception ex)
             {
                 SetStatus($"Paste failed: {ex.Message}");
                 return;
             }
-
             if (entries == null || entries.Count == 0)
             {
                 SetStatus("No valid mesh data in clipboard");
                 return;
             }
-
-            var existingNames = new HashSet<string>();
-            for (int i = 0; i < Model.MeshContextCount; i++)
-            {
-                var mc = Model.GetMeshContext(i);
-                if (mc != null && !string.IsNullOrEmpty(mc.Name))
-                    existingNames.Add(mc.Name);
-            }
-
-            int addedCount = 0;
-            foreach (var entry in entries)
-            {
-                var mc = entry.MeshContext;
-                if (mc == null) continue;
-
-                if (existingNames.Contains(mc.Name))
-                {
-                    string baseName = mc.Name;
-                    int suffix = 2;
-                    string candidate = $"{baseName}_{suffix}";
-                    while (existingNames.Contains(candidate))
-                    {
-                        suffix++;
-                        candidate = $"{baseName}_{suffix}";
-                    }
-                    mc.Name = candidate;
-                    if (mc.MeshObject != null) mc.MeshObject.Name = candidate;
-                }
-
-                existingNames.Add(mc.Name);
-                Model.Add(mc);
-                addedCount++;
-            }
-
+            MeshClipboardHelper.ResolveDuplicateNames(entries, Model);
+            int addedCount = MeshClipboardHelper.AddEntriesToModel(entries, Model);
             Model.OnListChanged?.Invoke();
             ToolCtx?.Repaint?.Invoke();
-
-            CsvModelSerializer.BuildMirrorPairsFromEntries(entries, Model);
-
             SetStatus($"Pasted: {addedCount} mesh(es)");
         }
 
@@ -776,27 +735,7 @@ namespace Poly_Ling.UI
 
         private string SerializeEntriesToCsv(List<CsvMeshEntry> entries)
         {
-            CsvModelSerializer.EnrichEntriesWithMirrorPeers(entries, Model);
-
-            string tempPath = Path.Combine(Path.GetTempPath(), $"polyling_copy_{Guid.NewGuid():N}.csv");
-            try
-            {
-                int boneCount = entries.Count(e => e.MeshContext?.Type == MeshType.Bone);
-                int morphCount = entries.Count(e => e.MeshContext?.Type == MeshType.Morph);
-                int meshCount = entries.Count - boneCount - morphCount;
-
-                string fileType = "mesh";
-                if (boneCount > meshCount && boneCount > morphCount) fileType = "bone";
-                else if (morphCount > meshCount && morphCount > boneCount) fileType = "morph";
-
-                CsvMeshSerializer.WriteFile(tempPath, entries, fileType);
-                string csv = File.ReadAllText(tempPath, System.Text.Encoding.UTF8);
-                return csv;
-            }
-            finally
-            {
-                if (File.Exists(tempPath)) File.Delete(tempPath);
-            }
+            return MeshClipboardHelper.SerializeEntriesToCsv(entries, Model);
         }
 
         // ================================================================
@@ -806,101 +745,30 @@ namespace Poly_Ling.UI
         private void OnSaveMeshesToCsv()
         {
             if (Model == null) return;
-
             var selected = GetSelectedMeshEntries();
             if (selected.Count == 0)
             {
                 SetStatus("No meshes selected");
                 return;
             }
-
-            string defaultName = selected.Count == 1 ? selected[0].MeshContext?.Name ?? "mesh" : "meshes";
-            string path = EditorUtility.SaveFilePanel(
-                "Save Selected Meshes (CSV)", Application.dataPath, defaultName, "csv");
-            if (string.IsNullOrEmpty(path)) return;
-
-            try
-            {
-                CsvModelSerializer.EnrichEntriesWithMirrorPeers(selected, Model);
-
-                int boneCount = selected.Count(e => e.MeshContext?.Type == MeshType.Bone);
-                int morphCount = selected.Count(e => e.MeshContext?.Type == MeshType.Morph);
-                int meshCount = selected.Count - boneCount - morphCount;
-
-                string fileType = "mesh";
-                if (boneCount > meshCount && boneCount > morphCount) fileType = "bone";
-                else if (morphCount > meshCount && morphCount > boneCount) fileType = "morph";
-
-                CsvMeshSerializer.WriteFile(path, selected, fileType);
+            if (MeshCsvIOHelper.SaveSelectedMeshesToCsv(selected, Model))
                 SetStatus($"Saved: {selected.Count} mesh(es) to CSV");
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Save failed: {ex.Message}");
-                Debug.LogError($"[MeshSelectionSetPanel] CSV save failed: {ex.Message}");
-            }
+            else
+                SetStatus("Save cancelled or failed");
         }
 
         private void OnLoadMeshesFromCsv()
         {
             if (Model == null) return;
-
-            string path = EditorUtility.OpenFilePanel("Load Meshes (CSV)", Application.dataPath, "csv");
-            if (string.IsNullOrEmpty(path)) return;
-
-            List<CsvMeshEntry> entries;
-            try
-            {
-                entries = CsvMeshSerializer.ReadFile(path);
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Load failed: {ex.Message}");
-                Debug.LogError($"[MeshSelectionSetPanel] CSV load failed: {ex.Message}");
-                return;
-            }
-
+            var entries = MeshCsvIOHelper.LoadMeshesFromCsv(Model);
             if (entries == null || entries.Count == 0)
             {
-                SetStatus("No valid mesh data in file");
+                SetStatus("No valid mesh data loaded");
                 return;
             }
-
-            var existingNames = new HashSet<string>();
-            for (int i = 0; i < Model.MeshContextCount; i++)
-            {
-                var mc = Model.GetMeshContext(i);
-                if (mc != null && !string.IsNullOrEmpty(mc.Name))
-                    existingNames.Add(mc.Name);
-            }
-
-            int addedCount = 0;
-            foreach (var entry in entries)
-            {
-                var mc = entry.MeshContext;
-                if (mc == null) continue;
-
-                if (existingNames.Contains(mc.Name))
-                {
-                    string baseName = mc.Name;
-                    int suffix = 2;
-                    string candidate = $"{baseName}_{suffix}";
-                    while (existingNames.Contains(candidate)) { suffix++; candidate = $"{baseName}_{suffix}"; }
-                    mc.Name = candidate;
-                    if (mc.MeshObject != null) mc.MeshObject.Name = candidate;
-                }
-
-                existingNames.Add(mc.Name);
-                Model.Add(mc);
-                addedCount++;
-            }
-
             Model.OnListChanged?.Invoke();
             ToolCtx?.Repaint?.Invoke();
-
-            CsvModelSerializer.BuildMirrorPairsFromEntries(entries, Model);
-
-            SetStatus($"Loaded: {addedCount} mesh(es) from CSV");
+            SetStatus($"Loaded: {entries.Count} mesh(es) from CSV");
         }
 
         // ================================================================
@@ -916,115 +784,41 @@ namespace Poly_Ling.UI
                 SetStatus("No dictionaries to save");
                 return;
             }
-
-            string path = EditorUtility.SaveFilePanel(
-                "Save Mesh Selection Dictionary", Application.dataPath,
-                $"{Model.Name}_MeshDic", "csv");
-            if (string.IsNullOrEmpty(path)) return;
-
-            try
-            {
-                var lines = new List<string>();
-                lines.Add("# MeshSelectionDictionary");
-                lines.Add($"# model,{Model.Name}");
-
-                foreach (var set in sets)
-                {
-                    lines.Add("");
-                    lines.Add($"# set,{set.Name},{set.Category}");
-                    foreach (string meshName in set.MeshNames)
-                    {
-                        lines.Add(meshName);
-                    }
-                }
-
-                File.WriteAllLines(path, lines, System.Text.Encoding.UTF8);
+            if (MeshDictionaryIOHelper.SaveDictionaryFile(sets, Model))
                 SetStatus($"Saved: {sets.Count} dictionaries");
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Save failed: {ex.Message}");
-                Debug.LogError($"[MeshSelectionSetPanel] Dic save failed: {ex.Message}");
-            }
+            else
+                SetStatus("Save cancelled or failed");
         }
 
         private void OnLoadDicFile()
         {
             if (Model == null) return;
-
-            string path = EditorUtility.OpenFilePanel(
-                "Open Mesh Selection Dictionary", Application.dataPath, "csv");
-            if (string.IsNullOrEmpty(path)) return;
-
-            try
+            var loadedSets = MeshDictionaryIOHelper.LoadDictionaryFile(Model);
+            if (loadedSets == null || loadedSets.Count == 0)
             {
-                string[] fileLines = File.ReadAllLines(path, System.Text.Encoding.UTF8);
-
-                var loadedSets = new List<MeshSelectionSet>();
-                MeshSelectionSet currentSet = null;
-
-                foreach (string line in fileLines)
-                {
-                    string trimmed = line.Trim();
-                    if (string.IsNullOrEmpty(trimmed)) continue;
-
-                    if (trimmed.StartsWith("# set,"))
-                    {
-                        string[] parts = trimmed.Substring(6).Split(',');
-                        string setName = parts.Length > 0 ? parts[0].Trim() : "MeshSet";
-                        var category = ModelContext.SelectionCategory.Mesh;
-                        if (parts.Length > 1 && Enum.TryParse<ModelContext.SelectionCategory>(parts[1].Trim(), out var cat))
-                            category = cat;
-
-                        currentSet = new MeshSelectionSet(setName) { Category = category };
-                        loadedSets.Add(currentSet);
-                    }
-                    else if (trimmed.StartsWith("#"))
-                    {
-                        continue;
-                    }
-                    else if (currentSet != null)
-                    {
-                        if (!currentSet.MeshNames.Contains(trimmed))
-                            currentSet.MeshNames.Add(trimmed);
-                    }
-                }
-
-                if (loadedSets.Count == 0)
-                {
-                    SetStatus("No dictionaries found in file");
-                    return;
-                }
-
-                bool replace = false;
-                if (Model.MeshSelectionSets.Count > 0)
-                {
-                    int choice = EditorUtility.DisplayDialogComplex(
-                        "Load Dictionary",
-                        $"Found {loadedSets.Count} dictionaries.\nCurrent model has {Model.MeshSelectionSets.Count} dictionaries.\n\nHow to load?",
-                        "Replace All", "Cancel", "Merge (Add)");
-                    if (choice == 1) return;
-                    replace = (choice == 0);
-                }
-
-                if (replace)
-                    Model.MeshSelectionSets.Clear();
-
-                foreach (var set in loadedSets)
-                {
-                    if (Model.FindMeshSelectionSetByName(set.Name) != null)
-                        set.Name = Model.GenerateUniqueMeshSelectionSetName(set.Name);
-                    Model.MeshSelectionSets.Add(set);
-                }
-
-                RefreshSetList();
-                SetStatus($"Loaded: {loadedSets.Count} dictionaries");
+                SetStatus("No dictionaries found in file");
+                return;
             }
-            catch (Exception ex)
+            bool replace = false;
+            if (Model.MeshSelectionSets.Count > 0)
             {
-                SetStatus($"Load failed: {ex.Message}");
-                Debug.LogError($"[MeshSelectionSetPanel] Dic load failed: {ex.Message}");
+                int choice = EditorUtility.DisplayDialogComplex(
+                    "Load Dictionary",
+                    $"Found {loadedSets.Count} dictionaries.\nCurrent model has {Model.MeshSelectionSets.Count} dictionaries.\n\nHow to load?",
+                    "Replace All", "Cancel", "Merge (Add)");
+                if (choice == 1) return;
+                replace = (choice == 0);
             }
+            if (replace)
+                Model.MeshSelectionSets.Clear();
+            foreach (var set in loadedSets)
+            {
+                if (Model.FindMeshSelectionSetByName(set.Name) != null)
+                    set.Name = Model.GenerateUniqueMeshSelectionSetName(set.Name);
+                Model.MeshSelectionSets.Add(set);
+            }
+            RefreshSetList();
+            SetStatus($"Loaded: {loadedSets.Count} dictionaries");
         }
 
         // ================================================================
