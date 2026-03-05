@@ -1,0 +1,6 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:VisualElement name="root" style="flex-grow: 1;">
+        <ui:Label name="status-label" style="font-size: 11px; padding: 2px 4px; color: #88cc88;" />
+        <ui:IMGUIContainer name="preview-container" style="flex-grow: 1;" />
+    </ui:VisualElement>
+</ui:UXML>

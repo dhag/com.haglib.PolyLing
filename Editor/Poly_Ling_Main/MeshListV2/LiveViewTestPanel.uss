@@ -1,0 +1,46 @@
+.test-root {
+    padding: 8px;
+    flex-grow: 1;
+}
+
+.title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.status {
+    font-size: 11px;
+    color: #88cc88;
+    margin-bottom: 8px;
+}
+
+.status.error {
+    color: #cc4444;
+}
+
+.section {
+    margin-bottom: 8px;
+    padding: 4px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 3px;
+}
+
+.section-header {
+    font-size: 12px;
+    -unity-font-style: bold;
+    margin-bottom: 2px;
+    color: #aaccff;
+}
+
+.row {
+    font-size: 11px;
+    padding-left: 8px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
+
+.refresh-btn {
+    height: 24px;
+    margin-top: 4px;
+}

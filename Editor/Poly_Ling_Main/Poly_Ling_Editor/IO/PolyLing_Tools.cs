@@ -205,6 +205,7 @@ public partial class PolyLing : EditorWindow
         _unifiedAdapter?.RequestNormal();
 
         // 再描画
+        NotifyPanels();
         Repaint();
     }
 

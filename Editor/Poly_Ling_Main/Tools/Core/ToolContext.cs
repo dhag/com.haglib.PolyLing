@@ -172,6 +172,9 @@ namespace Poly_Ling.Tools
         /// <summary>Model参照が変わったときに発火するイベント</summary>
         public Action OnModelChanged { get; set; }
 
+        /// <summary>ProjectSummary配信イベント（メインルーチンからパネルへの唯一のデータ経路）</summary>
+        public Action<ProjectSummary> OnProjectSummaryChanged { get; set; }
+
         /// <summary>選択中の全MeshContext</summary>
         public List<MeshContext> SelectedMeshContexts => Model?.SelectedMeshContexts ?? new List<MeshContext>();
 

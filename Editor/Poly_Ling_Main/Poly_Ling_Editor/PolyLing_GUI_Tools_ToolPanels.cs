@@ -94,6 +94,21 @@ public partial class PolyLing
         {
             Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
         }
+        if (GUILayout.Button("メッシュリストV2 (Summary)"))
+        {
+            if (_panelContext != null)
+                Poly_Ling.MeshListV2.MeshListPanelV2.Open(_panelContext);
+        }
+        if (GUILayout.Button("LiveView テスト"))
+        {
+            if (_liveProjectView != null)
+                Poly_Ling.MeshListV2.LiveViewTestPanel.Open(_liveProjectView);
+        }
+        if (GUILayout.Button("Viewport テスト"))
+        {
+            if (_liveProjectView != null)
+                Poly_Ling.MeshListV2.ViewportTestPanel.Open(_liveProjectView);
+        }
         if (GUILayout.Button("材質リスト"))
         {
             Poly_Ling.UI.MaterialListPanel.Open(_toolManager?.toolContext);

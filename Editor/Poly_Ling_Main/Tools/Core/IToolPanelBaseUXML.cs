@@ -56,6 +56,15 @@ namespace Poly_Ling.Tools
         /// <summary>現在のMeshUndoController</summary>
         protected MeshUndoController UndoController => _toolContext?.UndoController;
 
+        /// <summary>最新のProjectSummary（メインルーチンから配信）</summary>
+        protected ProjectSummary CurrentSummary { get; private set; }
+
+        /// <summary>
+        /// Summary受信中フラグ。trueの間はパネルからコマンドを送らないこと。
+        /// Summary受信 → UI更新 → イベント発火 → コマンド送信 → 再びSummary受信、のループを防止する。
+        /// </summary>
+        protected bool IsReceivingSummary { get; private set; }
+
         // ================================================================
         // UXML/USSパス（派生クラスで指定）
         // ================================================================
@@ -87,6 +96,9 @@ namespace Poly_Ling.Tools
 
         /// <summary>ToolContext.OnMeshSelectionChanged を購読するか（デフォルト: false）</summary>
         protected virtual bool SubscribeMeshSelectionChanged => false;
+
+        /// <summary>ToolContext.OnProjectSummaryChanged を購読するか（デフォルト: false）</summary>
+        protected virtual bool SubscribeProjectSummary => false;
 
         // ================================================================
         // 抽象メンバー
@@ -196,6 +208,10 @@ namespace Poly_Ling.Tools
             // ToolContext.OnMeshSelectionChanged
             if (SubscribeMeshSelectionChanged)
                 _toolContext.OnMeshSelectionChanged += HandleMeshSelectionChanged;
+
+            // ToolContext.OnProjectSummaryChanged
+            if (SubscribeProjectSummary)
+                _toolContext.OnProjectSummaryChanged += HandleProjectSummaryChanged;
         }
 
         private void UnsubscribeAll()
@@ -220,6 +236,10 @@ namespace Poly_Ling.Tools
             // ToolContext.OnMeshSelectionChanged
             if (SubscribeMeshSelectionChanged)
                 _toolContext.OnMeshSelectionChanged -= HandleMeshSelectionChanged;
+
+            // ToolContext.OnProjectSummaryChanged
+            if (SubscribeProjectSummary)
+                _toolContext.OnProjectSummaryChanged -= HandleProjectSummaryChanged;
         }
 
         // ================================================================
@@ -238,6 +258,27 @@ namespace Poly_Ling.Tools
 
         /// <summary>ToolContext.OnMeshSelectionChanged時の処理</summary>
         protected virtual void OnMeshSelectionChanged() { }
+
+        /// <summary>
+        /// ProjectSummary受信時の処理。
+        /// IsReceivingSummaryフラグが自動で立つ。
+        /// この中でコマンドを送らないこと（書き戻しループ防止）。
+        /// </summary>
+        protected virtual void OnProjectSummaryReceived(ProjectSummary summary) { }
+
+        private void HandleProjectSummaryChanged(ProjectSummary summary)
+        {
+            CurrentSummary = summary;
+            IsReceivingSummary = true;
+            try
+            {
+                OnProjectSummaryReceived(summary);
+            }
+            finally
+            {
+                IsReceivingSummary = false;
+            }
+        }
 
         /// <summary>
         /// モデル参照が変更された時の処理。

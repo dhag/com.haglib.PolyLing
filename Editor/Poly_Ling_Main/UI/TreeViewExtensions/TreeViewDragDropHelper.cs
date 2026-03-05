@@ -301,22 +301,26 @@ namespace UIList.UIToolkitExtensions
             treeView.CapturePointer(pointerId);
 
             // ドラッグラベルを表示
-            dragLabel.text = draggedItems.Count == 1
-                ? draggedItems[0].DisplayName
-                : $"{draggedItems.Count}個のアイテム";
-            dragLabel.style.display = DisplayStyle.Flex;
+            if (dragLabel != null)
+            {
+                dragLabel.text = draggedItems.Count == 1
+                    ? draggedItems[0].DisplayName
+                    : $"{draggedItems.Count}個のアイテム";
+                dragLabel.style.display = DisplayStyle.Flex;
+            }
         }
 
         private void EndDrag()
         {
             draggedItems.Clear();
             isDragging = false;
-            dragIndicator.style.display = DisplayStyle.None;
-            dragLabel.style.display = DisplayStyle.None;
+            if (dragIndicator != null) dragIndicator.style.display = DisplayStyle.None;
+            if (dragLabel != null) dragLabel.style.display = DisplayStyle.None;
         }
 
         private void UpdateDragLabelPosition(Vector2 screenPos)
         {
+            if (dragLabel == null || treeView?.parent == null) return;
             var localPos = treeView.parent.WorldToLocal(screenPos);
             dragLabel.style.left = localPos.x + 15;
             dragLabel.style.top = localPos.y + 15;
@@ -332,10 +336,11 @@ namespace UIList.UIToolkitExtensions
 
             if (target == null || !IsDropAllowed(target, dropPos))
             {
-                dragIndicator.style.display = DisplayStyle.None;
+                if (dragIndicator != null) dragIndicator.style.display = DisplayStyle.None;
                 return;
             }
 
+            if (dragIndicator == null) return;
             dragIndicator.style.display = DisplayStyle.Flex;
             PositionIndicator(element, dropPos);
         }
@@ -381,6 +386,7 @@ namespace UIList.UIToolkitExtensions
         /// </summary>
         private void PositionIndicator(VisualElement rowElement, DropPosition dropPos)
         {
+            if (dragIndicator == null || rowElement == null || treeView?.parent == null) return;
             var rowRect = rowElement.worldBound;
             var parentRect = treeView.parent.worldBound;
 

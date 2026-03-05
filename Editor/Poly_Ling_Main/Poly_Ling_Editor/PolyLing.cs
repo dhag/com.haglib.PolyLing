@@ -458,6 +458,9 @@ public partial class PolyLing : EditorWindow
         if (_project.ModelCount == 0)
             _project.AddModel(new ModelContext("Model"));
 
+        // PanelContext初期化（全パネル共有）
+        InitPanelContext();
+
         InitPreview();
         wantsMouseMove = true;
 
@@ -949,6 +952,7 @@ public partial class PolyLing : EditorWindow
 
         // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
+        NotifyPanels();
         Repaint();
     }
     /*
