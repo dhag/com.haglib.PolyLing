@@ -53,27 +53,41 @@ public partial class PolyLing
     // ================================================================
     private void DrawPreview()
     {
-        // ワールド変換行列を計算（親子関係を解決）
+        // ================================================================
+        // 計算（常に実行。ViewportPanel経由の入力処理でも必要）
+        // ================================================================
         _model?.ComputeWorldMatrices();
 
-        // GPU変換を更新（ローカル/ワールド表示モードに応じて）
         var editorState = _undoController?.EditorState;
         bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
         bool useLocalTransform = editorState?.ShowLocalTransform ?? false;
-
-        // ワールドモード: WorldMatrix（親子関係適用）
-        // ローカルモード: LocalMatrix（親子関係無視）
-        // どちらでもない: 変換なし
         if (useWorldTransform || useLocalTransform)
         {
-            _unifiedAdapter?.UpdateTransform(useWorldTransform);  // trueならWorld、falseならLocal
-
-            // スキンドメッシュの面描画用：GPU変換後の頂点をUnityMeshに書き戻す
+            _unifiedAdapter?.UpdateTransform(useWorldTransform);
             if (useWorldTransform)
-            {
                 _unifiedAdapter?.WritebackTransformedVertices();
-            }
         }
+
+        // ViewportPanelが開いている場合: プレースホルダー表示のみ
+        // HandleInputはViewportPanel側のProcessInputFromViewportで実行される
+        if (Poly_Ling.MeshListV2.ViewportPanel.IsOpen)
+        {
+            Rect placeholder = GUILayoutUtility.GetRect(
+                200, 10000, 200, 10000,
+                GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            if (Event.current.type == EventType.Repaint)
+            {
+                _lastPreviewRect = placeholder;
+                EditorGUI.DrawRect(placeholder, new Color(0.15f, 0.15f, 0.15f));
+                EditorGUI.LabelField(placeholder, "Viewport Panel Active",
+                    new GUIStyle(EditorStyles.centeredGreyMiniLabel) { fontSize = 14 });
+            }
+            return;
+        }
+
+        // ================================================================
+        // 通常フロー（ViewportPanel閉時）
+        // ================================================================
 
         Rect rect = GUILayoutUtility.GetRect(
             200, 10000,
@@ -370,13 +384,13 @@ public partial class PolyLing
         }
 
         // 矩形選択オーバーレイ描画
-        if (_editState == VertexEditState.BoxSelecting)
+        if (_inp.EditState == VertexEditState.BoxSelecting)
         {
             DrawBoxSelectOverlay(rect);
         }
 
         // 投げ縄選択オーバーレイ描画
-        if (_editState == VertexEditState.LassoSelecting)
+        if (_inp.EditState == VertexEditState.LassoSelecting)
         {
             DrawLassoSelectOverlay(rect);
         }
@@ -853,10 +867,10 @@ public partial class PolyLing
     {
         UnityEditor_Handles.BeginGUI();
 
-        // _boxSelectStart/End はウィンドウ座標で記録されている
+        // _inp.BoxSelectStart/End はウィンドウ座標で記録されている
         // GUI.BeginClip(clipRect) 後はローカル座標系なので、clipRectの位置を引く
-        Vector2 localStart = _boxSelectStart - clipRect.position;
-        Vector2 localEnd = _boxSelectEnd - clipRect.position;
+        Vector2 localStart = _inp.BoxSelectStart - clipRect.position;
+        Vector2 localEnd = _inp.BoxSelectEnd - clipRect.position;
 
         Rect selectRect = new Rect(
             Mathf.Min(localStart.x, localEnd.x),
@@ -875,7 +889,7 @@ public partial class PolyLing
 
     private void DrawLassoSelectOverlay(Rect clipRect)
     {
-        if (_lassoPoints == null || _lassoPoints.Count < 2)
+        if (_inp.LassoPoints == null || _inp.LassoPoints.Count < 2)
             return;
 
         UnityEditor_Handles.BeginGUI();
@@ -883,23 +897,23 @@ public partial class PolyLing
         var boxColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
         Color borderColor = boxColors.BoxSelectBorder;
 
-        // _lassoPointsはウィンドウ座標 → clipRectのオフセットを引いてローカル座標に変換
+        // _inp.LassoPointsはウィンドウ座標 → clipRectのオフセットを引いてローカル座標に変換
         Vector2 offset = clipRect.position;
 
         // 投げ縄の線分を描画
         UnityEditor_Handles.color = borderColor;
-        for (int i = 0; i < _lassoPoints.Count - 1; i++)
+        for (int i = 0; i < _inp.LassoPoints.Count - 1; i++)
         {
-            Vector2 p1 = _lassoPoints[i] - offset;
-            Vector2 p2 = _lassoPoints[i + 1] - offset;
+            Vector2 p1 = _inp.LassoPoints[i] - offset;
+            Vector2 p2 = _inp.LassoPoints[i + 1] - offset;
             UnityEditor_Handles.DrawLine(p1, p2);
         }
 
         // 閉じ線（最後の点→最初の点）
-        if (_lassoPoints.Count >= 3)
+        if (_inp.LassoPoints.Count >= 3)
         {
-            Vector2 first = _lassoPoints[0] - offset;
-            Vector2 last = _lassoPoints[_lassoPoints.Count - 1] - offset;
+            Vector2 first = _inp.LassoPoints[0] - offset;
+            Vector2 last = _inp.LassoPoints[_inp.LassoPoints.Count - 1] - offset;
             UnityEditor_Handles.color = new Color(borderColor.r, borderColor.g, borderColor.b, borderColor.a * 0.5f);
             UnityEditor_Handles.DrawLine(last, first);
         }

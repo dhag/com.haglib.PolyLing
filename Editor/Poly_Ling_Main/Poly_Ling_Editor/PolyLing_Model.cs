@@ -469,9 +469,6 @@ public partial class PolyLing
         {
             _toolManager.toolContext.Model = currentModel;
         }
-
-        // MeshListOpsのコンテキスト更新
-        UpdateMeshListOpsContext();
         
         // UndoControllerのMeshListを更新
         if (_undoController != null)
@@ -500,7 +497,10 @@ public partial class PolyLing
         
         // トポロジ更新
         UpdateTopology();
-        NotifyPanels();
+
+        // パネルシステム更新（モデル切り替え）
+        UpdateMeshListOpsContext();
+
         Repaint();
     }
 
@@ -510,7 +510,7 @@ public partial class PolyLing
     private void OnModelsChanged()
     {
         //Debug.Log($"[OnModelsChanged] Models count: {_project?.ModelCount ?? 0}");
-        NotifyPanels();
+        NotifyPanels(ChangeKind.ListStructure);
         Repaint();
     }
 

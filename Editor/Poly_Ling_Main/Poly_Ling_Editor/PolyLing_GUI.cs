@@ -460,20 +460,20 @@ public partial class PolyLing
         var oldColor = GUI.backgroundColor;
 
         // Box（矩形選択）
-        bool boxActive = _dragSelectMode == DragSelectMode.Box;
+        bool boxActive = _inp.DragSelectMode == DragSelectMode.Box;
         if (boxActive) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
         if (GUILayout.Button("☐ Box", buttonStyle))
         {
-            _dragSelectMode = DragSelectMode.Box;
+            _inp.DragSelectMode = DragSelectMode.Box;
         }
         GUI.backgroundColor = oldColor;
 
         // Lasso（投げ縄選択）
-        bool lassoActive = _dragSelectMode == DragSelectMode.Lasso;
+        bool lassoActive = _inp.DragSelectMode == DragSelectMode.Lasso;
         if (lassoActive) GUI.backgroundColor = new Color(0.6f, 0.9f, 0.6f);
         if (GUILayout.Button("◯ Lasso", buttonStyle))
         {
-            _dragSelectMode = DragSelectMode.Lasso;
+            _inp.DragSelectMode = DragSelectMode.Lasso;
         }
         GUI.backgroundColor = oldColor;
 

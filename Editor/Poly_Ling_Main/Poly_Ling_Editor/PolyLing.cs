@@ -126,6 +126,64 @@ public partial class PolyLing : EditorWindow
     // ================================================================
     private PreviewRenderUtility _preview;
     private UnifiedSystemAdapter _unifiedAdapter;
+
+    // ================================================================
+    // ViewportPanel用公開アクセサ
+    // ================================================================
+
+    /// <summary>ViewportPanelが描画に使用するUnifiedSystemAdapter</summary>
+    public UnifiedSystemAdapter SharedUnifiedAdapter => _unifiedAdapter;
+
+    /// <summary>カメラ回転X（deg）</summary>
+    public float CameraRotationX { get => _rotationX; set => _rotationX = value; }
+    /// <summary>カメラ回転Y（deg）</summary>
+    public float CameraRotationY { get => _rotationY; set => _rotationY = value; }
+    /// <summary>カメラ回転Z（deg）</summary>
+    public float CameraRotationZ { get => _rotationZ; set => _rotationZ = value; }
+    /// <summary>カメラ距離</summary>
+    public float CameraDistanceValue { get => _cameraDistance; set => _cameraDistance = value; }
+    /// <summary>カメラ注目点</summary>
+    public Vector3 CameraTargetValue { get => _cameraTarget; set => _cameraTarget = value; }
+    /// <summary>カメラFOV</summary>
+    public float CameraFOV => _preview?.cameraFieldOfView ?? 30f;
+
+    /// <summary>
+    /// ViewportPanelから呼び出す入力処理。
+    /// ViewportPanelのIMGUIコンテキスト内で呼ばれ、Event.currentはViewportPanelのイベント。
+    /// </summary>
+    public void ProcessViewportInput(Rect viewportRect)
+    {
+        if (_model == null) return;
+
+        // 計算（ComputeWorldMatricesは冪等なので重複呼び出しOK）
+        _model.ComputeWorldMatrices();
+
+        var editorState = _undoController?.EditorState;
+        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
+        bool useLocalTransform = editorState?.ShowLocalTransform ?? false;
+        if (useWorldTransform || useLocalTransform)
+        {
+            _unifiedAdapter?.UpdateTransform(useWorldTransform);
+            if (useWorldTransform)
+                _unifiedAdapter?.WritebackTransformedVertices();
+        }
+
+        // MeshContext取得
+        var meshContext = _model.FirstSelectedMeshContext;
+        if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
+            meshContext = _model.FirstSelectedDrawableMeshContext;
+        if (meshContext == null) return;
+
+        // カメラ
+        float dist = _cameraDistance;
+        Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
+        Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -dist);
+
+        _lastPreviewRect = viewportRect;
+
+        // 入力処理（HandleInputはこのpartial classのメソッド）
+        HandleInput(viewportRect, meshContext, camPos, _cameraTarget, dist);
+    }
     private Rect _lastPreviewRect;  // 最後に計算されたプレビュー領域（注目点移動で使用）
 
     // ================================================================
@@ -238,35 +296,8 @@ public partial class PolyLing : EditorWindow
 
     // 頂点選択は _selectionState.Vertices を直接参照すること
 
-    // 編集状態（共通の選択処理用）
-    private enum VertexEditState
-    {
-        Idle,              // 待機
-        PendingAction,     // MouseDown後、ドラッグかクリックか判定中
-        BoxSelecting,      // 矩形選択中
-        LassoSelecting     // 投げ縄選択中
-    }
-    private VertexEditState _editState = VertexEditState.Idle;
-
-    /// <summary>
-    /// ドラッグ選択モード（矩形 / 投げ縄）
-    /// </summary>
-    public enum DragSelectMode
-    {
-        Box,    // 矩形選択
-        Lasso   // 投げ縄選択
-    }
-    private DragSelectMode _dragSelectMode = DragSelectMode.Box;
-
-    // マウス操作用
-    private Vector2 _mouseDownScreenPos;      // MouseDown時のスクリーン座標
-    private int _hitVertexOnMouseDown = -1;   // MouseDown時にヒットした頂点（-1なら空白）
-    private HitResult _hitResultOnMouseDown;  // MouseDown時のヒットテスト結果（新選択システム用）
-    private int _hitMeshIndexOnMouseDown = -1; // MouseDown時にヒットしたメッシュインデックス（v2.1複数メッシュ対応）
-    private Vector2 _boxSelectStart;          // 矩形選択開始点
-    private Vector2 _boxSelectEnd;            // 矩形選択終了点
-    private List<Vector2> _lassoPoints = new List<Vector2>();  // 投げ縄選択のポイントリスト
-    private const float DragThreshold = 0f;   // ドラッグ判定の閾値（ピクセル）
+    // 入力状態（ViewportInputStateに集約）
+    private ViewportInputState _inp = new ViewportInputState();
 
     // 表示設定（EditorStateContext への委譲）
     private bool _showWireframe
@@ -414,22 +445,9 @@ public partial class PolyLing : EditorWindow
 
     // ================================================================
     // 【フェーズ2追加】選択Undo管理
+    // （_inp.SelectionSnapshotOnMouseDown, _inp.WorkPlaneSnapshotOnMouseDown,
+    //   _inp.TopologyChangedDuringMouseOp は _inp に移動済み）
     // ================================================================
-
-    /// <summary>
-    /// マウス操作開始時の選択スナップショット
-    /// </summary>
-    private SelectionSnapshot _selectionSnapshotOnMouseDown;
-
-    /// <summary>
-    /// マウス操作開始時のWorkPlaneスナップショット
-    /// </summary>
-    private WorkPlaneSnapshot? _workPlaneSnapshotOnMouseDown;
-
-    /// <summary>
-    /// このマウス操作中にトポロジー変更があったか
-    /// </summary>
-    private bool _topologyChangedDuringMouseOperation;
 
 
 
@@ -588,6 +606,9 @@ public partial class PolyLing : EditorWindow
         if (_selectedIndex >= 0)
             _unifiedAdapter.SetActiveMesh(0, _selectedIndex);
         _unifiedAdapter.UseUnifiedRendering = true;
+
+        // パネルコンテキスト初期化（LiveProjectView生成）
+        InitPanelContext();
 
         // VisibilityProviderを設定（背面カリング対応）
         if (_unifiedAdapter != null && _selectionOps != null)
@@ -964,6 +985,9 @@ public partial class PolyLing : EditorWindow
         // GPUバッファ再構築（メッシュリスト構成変更のため）
         _unifiedAdapter?.NotifyTopologyChanged();
 
+        // パネル通知（リスト構造変更）
+        NotifyPanels(ChangeKind.ListStructure);
+
         // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
         Repaint();
@@ -1034,8 +1058,17 @@ public partial class PolyLing : EditorWindow
         var meshObject = meshContext.MeshObject;
         var unityMesh = meshContext.UnityMesh;
 
-        // 頂点位置配列を構築
+        // 頂点数が一致しない場合はフルSync
         int vertexCount = meshObject.VertexCount;
+        if (vertexCount != unityMesh.vertexCount)
+        {
+            SyncMeshFromData(meshContext);
+            _unifiedAdapter?.NotifyTransformChanged();
+            LiveSyncAutoUpdate(meshContext);
+            return;
+        }
+
+        // 頂点位置配列を構築
         var vertices = new Vector3[vertexCount];
         for (int i = 0; i < vertexCount; i++)
         {
@@ -1073,8 +1106,15 @@ public partial class PolyLing : EditorWindow
             var meshObject = meshContext.MeshObject;
             var unityMesh = meshContext.UnityMesh;
 
-            // 頂点位置配列を構築
+            // 頂点数が一致しない場合はフルSync（triangles再構築含む）
             int vertexCount = meshObject.VertexCount;
+            if (vertexCount != unityMesh.vertexCount)
+            {
+                SyncMeshFromData(meshContext);
+                continue;
+            }
+
+            // 頂点位置配列を構築
             var vertices = new Vector3[vertexCount];
             for (int i = 0; i < vertexCount; i++)
             {
@@ -1220,6 +1260,9 @@ public partial class PolyLing : EditorWindow
 
     private void HandleScrollWheel()
     {
+        // ViewportPanelが開いている場合、カメラ操作はパネル側で処理
+        if (Poly_Ling.MeshListV2.ViewportPanel.IsOpen) return;
+
         Event e = Event.current;
 
         // 中ボタンドラッグで視点XY移動（パン）
@@ -1537,6 +1580,96 @@ public partial class PolyLing : EditorWindow
     private void UpdateSplitterCursor()
     {
         // DrawSplitter内で処理するため、ここでは何もしない
+    }
+
+    // ================================================================
+    // ViewportPanel連携（入力処理+オーバーレイ描画）
+    // ================================================================
+
+    /// <summary>
+    /// ViewportPanelのOnHandleInputコールバックから呼ばれる。
+    /// ViewportPanel上のイベントをPolyLingのHandleInputに委譲。
+    /// </summary>
+    public void ProcessInputFromViewport(Poly_Ling.MeshListV2.ViewportEvent evt, Poly_Ling.MeshListV2.ViewportCore core)
+    {
+        if (_model == null) return;
+
+        // meshContext取得（DrawPreviewと同じロジック）
+        var meshContext = _model.FirstSelectedMeshContext;
+        if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
+            meshContext = _model.FirstSelectedDrawableMeshContext;
+        if (meshContext == null) return;
+
+        // カメラ同期: ViewportCore → PolyLing
+        _cameraTarget = evt.CameraTarget;
+        _cameraDistance = evt.CameraDistance;
+        _rotationX = evt.RotX;
+        _rotationY = evt.RotY;
+
+        // PolyLingのadapterにもカメラ情報を渡す（ホバーヒットテスト用）
+        _unifiedAdapter?.UpdateFrame(
+            evt.CameraPos, evt.CameraTarget, evt.CameraFOV,
+            evt.Rect, Event.current.mousePosition, _rotationZ);
+
+        // ViewportCoreのカリング設定を同期
+        if (_unifiedAdapter != null && core != null)
+            _unifiedAdapter.BackfaceCullingEnabled = core.BackfaceCulling;
+
+        // 入力処理
+        HandleInput(evt.Rect, meshContext, evt.CameraPos, evt.CameraTarget, evt.CameraDistance);
+
+        // Repaintイベント以外（MouseDrag等）で入力処理が行われた場合のみ後処理
+        if (Event.current.type != EventType.Repaint)
+        {
+            // ViewportCoreのアダプターにも変換変更を通知
+            core?.Adapter?.NotifyTransformChanged();
+
+            // ViewportPanelのRepaintを要求
+            core?.RequestRepaint?.Invoke();
+        }
+
+        // カメラ同期: PolyLing → ViewportCore（HandleInputがカメラを変更した場合）
+        if (core != null)
+        {
+            core.Target = _cameraTarget;
+            core.Distance = _cameraDistance;
+            core.RotX = _rotationX;
+            core.RotY = _rotationY;
+        }
+    }
+
+    /// <summary>
+    /// ViewportPanelのOnDrawOverlayコールバックから呼ばれる。
+    /// ツールギズモ、矩形/投げ縄選択オーバーレイを描画。
+    /// </summary>
+    public void DrawOverlayFromViewport(Poly_Ling.MeshListV2.ViewportEvent evt, Poly_Ling.MeshListV2.ViewportCore core)
+    {
+        if (_model == null) return;
+
+        var meshContext = _model.FirstSelectedMeshContext;
+        if (meshContext == null) return;
+
+        // ToolContext更新
+        UpdateToolContext(meshContext, evt.Rect, evt.CameraPos, evt.CameraDistance);
+
+        // ツールギズモ描画
+        _currentTool?.DrawGizmo(_toolContext);
+
+        // ボーン移動ギズモ描画
+        if (_showBones)
+            DrawBoneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
+
+        // WorkPlaneギズモ描画
+        if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
+            DrawWorkPlaneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
+
+        // 矩形選択オーバーレイ
+        if (_inp.EditState == VertexEditState.BoxSelecting)
+            DrawBoxSelectOverlay(evt.Rect);
+
+        // 投げ縄選択オーバーレイ
+        if (_inp.EditState == VertexEditState.LassoSelecting)
+            DrawLassoSelectOverlay(evt.Rect);
     }
 }
 

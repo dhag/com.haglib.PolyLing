@@ -109,6 +109,18 @@ public partial class PolyLing
             if (_liveProjectView != null)
                 Poly_Ling.MeshListV2.ViewportTestPanel.Open(_liveProjectView);
         }
+        if (GUILayout.Button("Viewport"))
+        {
+            if (_liveProjectView != null)
+            {
+                var vp = Poly_Ling.MeshListV2.ViewportPanel.Open(_liveProjectView, _panelContext);
+                if (vp?.Core != null)
+                {
+                    vp.Core.OnHandleInput = evt => ProcessInputFromViewport(evt, vp.Core);
+                    vp.Core.OnDrawOverlay = evt => DrawOverlayFromViewport(evt, vp.Core);
+                }
+            }
+        }
         if (GUILayout.Button("材質リスト"))
         {
             Poly_Ling.UI.MaterialListPanel.Open(_toolManager?.toolContext);

@@ -204,8 +204,10 @@ public partial class PolyLing : EditorWindow
         // 選択変更をワンショットパイプラインに通知
         _unifiedAdapter?.RequestNormal();
 
+        // パネル通知（選択変更）
+        NotifyPanels(ChangeKind.Selection);
+
         // 再描画
-        NotifyPanels();
         Repaint();
     }
 
@@ -285,7 +287,7 @@ public partial class PolyLing : EditorWindow
         // ホバー時のGPUヒットテスト結果をToolContextに渡す
         // ツールはこれを優先的に使用してホバーとクリックの整合性を保つ
         // ================================================================
-        ctx.LastHoverHitResult = _lastHoverHitResult;
+        ctx.LastHoverHitResult = _inp.LastHoverHitResult;
         ctx.HoverVertexRadius = HOVER_VERTEX_RADIUS;
         ctx.HoverLineDistance = HOVER_LINE_DISTANCE;
 

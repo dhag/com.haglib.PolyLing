@@ -16,19 +16,15 @@ public partial class PolyLing
     // ホバー/クリック処理
     // ================================================================
     // 
-    // UnifiedSystemがホバー計算を行い、結果を _lastHoverHitResult に反映。
-    // クリック時は _lastHoverHitResult を使用して選択処理を行う。
+    // UnifiedSystemがホバー計算を行い、結果を _inp.LastHoverHitResult に反映。
+    // クリック時は _inp.LastHoverHitResult を使用して選択処理を行う。
     // ================================================================
 
     // ホバー判定の閾値（MouseSettingsから取得）
     private float HOVER_VERTEX_RADIUS => _mouseSettings.HoverVertexRadius;
     private float HOVER_LINE_DISTANCE => _mouseSettings.HoverLineDistance;
 
-    // ホバー状態の保存（クリック時に使用）
-    private Vector2 _lastHoverMousePos;
-    private Poly_Ling.Rendering.GPUHitTestResult _lastHoverHitResult;
-    //private bool _isHoverActive = false;  // プレビューエリア内でホバー中か
-    private int _lastHoverMeshIndex = -1;  // ホバー中の頂点が属するメッシュインデックス
+    // ホバー状態は _inp (ViewportInputState) に移動済み
 
     // ================================================================
     // 入力処理（MeshObjectベース）
@@ -39,7 +35,7 @@ public partial class PolyLing
         Vector2 mousePos = e.mousePosition;
 
         // ★ 毎イベントでホバー結果を最新化
-        // Repaintで更新された_hoveredVertexIndex等を_lastHoverHitResultに反映する。
+        // Repaintで更新された_hoveredVertexIndex等を_inp.LastHoverHitResultに反映する。
         // これにより、MouseDownイベント時にRepaintで計算されたGPU精度のホバー値を
         // そのまま使用でき、左ペイン表示値との一致が保証される。
         UpdateLastHoverHitResultFromUnified();
@@ -237,7 +233,7 @@ public partial class PolyLing
     //
     // 正しい実装:
     //   - HandleInput冒頭でUpdateLastHoverHitResultFromUnified()を毎イベント呼び出し
-    //   - OnMouseDownでは_lastHoverHitResult（GPU計算済み値）をそのまま使用
+    //   - OnMouseDownでは_inp.LastHoverHitResult（GPU計算済み値）をそのまま使用
     //   - MouseMoveではRequestNormal()+Repaint()のみ（呼び出し元を参照）
     //
     // この失敗の教訓: 既存のフルGPUパイプラインと同等の処理をCPUで再実装する
@@ -253,14 +249,14 @@ public partial class PolyLing
     //         {
     //             _isHoverActive = false;
     //             _unifiedAdapter?.ClearMouseHover();
-    //             _lastHoverHitResult = new Poly_Ling.Rendering.GPUHitTestResult
+    //             _inp.LastHoverHitResult = new Poly_Ling.Rendering.GPUHitTestResult
     //             {
     //                 NearestVertexIndex = -1,
     //                 NearestVertexDistance = float.MaxValue,
     //                 NearestLineIndex = -1,
     //                 NearestLineDistance = float.MaxValue,
     //             };
-    //             _lastHoverMeshIndex = -1;
+    //             _inp.LastHoverMeshIndex = -1;
     //             Repaint();
     //         }
     //         return;
@@ -268,10 +264,10 @@ public partial class PolyLing
     //
     //     _isHoverActive = true;
     //
-    //     if (Vector2.Distance(mousePos, _lastHoverMousePos) < 1f)
+    //     if (Vector2.Distance(mousePos, _inp.LastHoverMousePos) < 1f)
     //         return;
     //
-    //     _lastHoverMousePos = mousePos;
+    //     _inp.LastHoverMousePos = mousePos;
     //
     //     _unifiedAdapter?.RequestNormal();
     //
@@ -280,7 +276,7 @@ public partial class PolyLing
     // ★★★ 封印ここまで ★★★
 
     /// <summary>
-    /// UnifiedSystemからホバー結果を取得して_lastHoverHitResultを更新
+    /// UnifiedSystemからホバー結果を取得して_inp.LastHoverHitResultを更新
     /// Note: インデックスはグローバルインデックスとして保持
     /// </summary>
     private void UpdateLastHoverHitResultFromUnified()
@@ -341,8 +337,8 @@ public partial class PolyLing
             }
         }
 
-        _lastHoverMeshIndex = hitMeshIndex;
-        _lastHoverHitResult = new Poly_Ling.Rendering.GPUHitTestResult
+        _inp.LastHoverMeshIndex = hitMeshIndex;
+        _inp.LastHoverHitResult = new Poly_Ling.Rendering.GPUHitTestResult
         {
             NearestVertexIndex = localVertex,
             NearestVertexDistance = vertexDist,
@@ -364,10 +360,10 @@ public partial class PolyLing
     private void OnMouseDown(Event e, Vector2 mousePos, MeshObject meshObject, Rect rect,
         Vector3 camPos, Vector3 lookAt, float handleRadius, MeshContext meshContext)
     {
-        if (_editState != VertexEditState.Idle)
+        if (_inp.EditState != VertexEditState.Idle)
             return;
 
-        _mouseDownScreenPos = mousePos;
+        _inp.MouseDownScreenPos = mousePos;
 
         // 修飾キー状態を取得
         bool shiftHeld = e.shift;
@@ -377,10 +373,10 @@ public partial class PolyLing
         _meshTopology?.SetMeshObject(meshObject);
 
         // ================================================================
-        // ★ _lastHoverHitResult（計算済み値）から _hitResultOnMouseDown を構築
+        // ★ _inp.LastHoverHitResult（計算済み値）から _inp.HitResultOnMouseDown を構築
         //
         // 【設計方針】
-        // _lastHoverHitResultはHandleInput冒頭のUpdateLastHoverHitResultFromUnifiedで
+        // _inp.LastHoverHitResultはHandleInput冒頭のUpdateLastHoverHitResultFromUnifiedで
         // 毎イベント更新される。これはRepaintのフルGPUパイプラインで計算された
         // _hoveredVertexIndex等から変換済みのローカルインデックスを持つ。
         // 左ペイン（VertexパネルやToolContext）と同一の計算済み値を使うことで
@@ -401,10 +397,10 @@ public partial class PolyLing
         //   1. HandleInput冒頭のUpdateLastHoverHitResultFromUnifiedで既に同じ変換が
         //      実行済みであり、完全な重複処理だった
         //   2. 左ペイン（VertexパネルのToolContext.LastHoverHitResult）は
-        //      _lastHoverHitResultを参照するが、OnMouseDownは独自に再計算するため、
+        //      _inp.LastHoverHitResultを参照するが、OnMouseDownは独自に再計算するため、
         //      両者の値が不一致となり「左ペインでは表示されるのにクリックで掴めない」
         //      という致命的なUX不具合を引き起こした
-        //   3. そもそもUpdateLastHoverHitResultFromUnifiedが_lastHoverHitResultに
+        //   3. そもそもUpdateLastHoverHitResultFromUnifiedが_inp.LastHoverHitResultに
         //      ローカルインデックス変換済みの値を格納しているのだから、
         //      それをそのまま使えばよいだけだった
         //
@@ -413,8 +409,8 @@ public partial class PolyLing
         //
         // --- 旧コード（参考保存） ---
         //
-        // _hitResultOnMouseDown = HitResult.None;
-        // _hitMeshIndexOnMouseDown = -1;
+        // _inp.HitResultOnMouseDown = HitResult.None;
+        // _inp.HitMeshIndexOnMouseDown = -1;
         // var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
         // var bufferManager = _unifiedAdapter?.BufferManager;
         //
@@ -432,8 +428,8 @@ public partial class PolyLing
         //                 (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
         //             if (isSelectedMesh)
         //             {
-        //                 _hitMeshIndexOnMouseDown = meshIdx;
-        //                 _hitResultOnMouseDown = new HitResult
+        //                 _inp.HitMeshIndexOnMouseDown = meshIdx;
+        //                 _inp.HitResultOnMouseDown = new HitResult
         //                 {
         //                     HitType = MeshSelectMode.Vertex,
         //                     VertexIndex = localVertex,
@@ -449,16 +445,16 @@ public partial class PolyLing
         //
         // ★★★ 封印ここまで ★★★
         // ================================================================
-        _hitResultOnMouseDown = HitResult.None;
-        _hitMeshIndexOnMouseDown = _lastHoverMeshIndex;
+        _inp.HitResultOnMouseDown = HitResult.None;
+        _inp.HitMeshIndexOnMouseDown = _inp.LastHoverMeshIndex;
         var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
         var bufferManager = _unifiedAdapter?.BufferManager;
 
-        // 頂点ヒット（_lastHoverHitResult.NearestVertexIndex はローカルインデックス）
-        int localVertex = _lastHoverHitResult.NearestVertexIndex;
-        if (currentMode.Has(MeshSelectMode.Vertex) && localVertex >= 0 && _lastHoverMeshIndex >= 0)
+        // 頂点ヒット（_inp.LastHoverHitResult.NearestVertexIndex はローカルインデックス）
+        int localVertex = _inp.LastHoverHitResult.NearestVertexIndex;
+        if (currentMode.Has(MeshSelectMode.Vertex) && localVertex >= 0 && _inp.LastHoverMeshIndex >= 0)
         {
-            _hitResultOnMouseDown = new HitResult
+            _inp.HitResultOnMouseDown = new HitResult
             {
                 HitType = MeshSelectMode.Vertex,
                 VertexIndex = localVertex,
@@ -468,9 +464,9 @@ public partial class PolyLing
             };
         }
 
-        // 線分ヒット（_lastHoverHitResult.NearestLineIndex はグローバルインデックス）
-        int globalLine = _lastHoverHitResult.NearestLineIndex;
-        if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
+        // 線分ヒット（_inp.LastHoverHitResult.NearestLineIndex はグローバルインデックス）
+        int globalLine = _inp.LastHoverHitResult.NearestLineIndex;
+        if (_inp.HitResultOnMouseDown.HitType == MeshSelectMode.None &&
             (currentMode.Has(MeshSelectMode.Edge) || currentMode.Has(MeshSelectMode.Line)) &&
             globalLine >= 0 && bufferManager != null)
         {
@@ -478,14 +474,14 @@ public partial class PolyLing
             {
                 // meshIdxはunified index → context indexに変換（UpdateLastHoverHitResultFromUnifiedと同じ変換）
                 int ctxMeshIdx = bufferManager.UnifiedToContextMeshIndex(meshIdx);
-                _hitMeshIndexOnMouseDown = ctxMeshIdx >= 0 ? ctxMeshIdx : _lastHoverMeshIndex;
+                _inp.HitMeshIndexOnMouseDown = ctxMeshIdx >= 0 ? ctxMeshIdx : _inp.LastHoverMeshIndex;
                 if (bufferManager.GetLineType(globalLine, out bool isAuxLine))
                 {
                     if (isAuxLine && currentMode.Has(MeshSelectMode.Line))
                     {
                         if (bufferManager.GetLineFaceIndex(globalLine, out int faceIndex))
                         {
-                            _hitResultOnMouseDown = new HitResult
+                            _inp.HitResultOnMouseDown = new HitResult
                             {
                                 HitType = MeshSelectMode.Line,
                                 VertexIndex = -1,
@@ -497,7 +493,7 @@ public partial class PolyLing
                     }
                     else if (!isAuxLine && currentMode.Has(MeshSelectMode.Edge))
                     {
-                        _hitResultOnMouseDown = new HitResult
+                        _inp.HitResultOnMouseDown = new HitResult
                         {
                             HitType = MeshSelectMode.Edge,
                             VertexIndex = -1,
@@ -510,12 +506,12 @@ public partial class PolyLing
             }
         }
 
-        // 面ヒット（_lastHoverHitResult.HitFaceIndices はローカルインデックス配列）
-        int localFace = _lastHoverHitResult.HasFaceHit ? _lastHoverHitResult.GetNearestFaceIndex() : -1;
-        if (_hitResultOnMouseDown.HitType == MeshSelectMode.None &&
-            currentMode.Has(MeshSelectMode.Face) && localFace >= 0 && _lastHoverMeshIndex >= 0)
+        // 面ヒット（_inp.LastHoverHitResult.HitFaceIndices はローカルインデックス配列）
+        int localFace = _inp.LastHoverHitResult.HasFaceHit ? _inp.LastHoverHitResult.GetNearestFaceIndex() : -1;
+        if (_inp.HitResultOnMouseDown.HitType == MeshSelectMode.None &&
+            currentMode.Has(MeshSelectMode.Face) && localFace >= 0 && _inp.LastHoverMeshIndex >= 0)
         {
-            _hitResultOnMouseDown = new HitResult
+            _inp.HitResultOnMouseDown = new HitResult
             {
                 HitType = MeshSelectMode.Face,
                 VertexIndex = -1,
@@ -528,11 +524,11 @@ public partial class PolyLing
         // ================================================================
         // ★ Phase 6: 選択済み要素クリック時は選択変更なし（Blender風）
         // ================================================================
-        bool hitIsAlreadySelected = IsHitResultAlreadySelected(_hitResultOnMouseDown);
+        bool hitIsAlreadySelected = IsHitResultAlreadySelected(_inp.HitResultOnMouseDown);
 
         // v2.1: ヒットなしでも選択頂点がある場合、その上でクリックしたかチェック
         // ワールドモードでホバーが検出されない場合の対策
-        if (!hitIsAlreadySelected && _hitResultOnMouseDown.HitType == MeshSelectMode.None)
+        if (!hitIsAlreadySelected && _inp.HitResultOnMouseDown.HitType == MeshSelectMode.None)
         {
             // 選択済み頂点があり、その近くでクリックした場合は選択を保持
             if (_selectionState != null && _selectionState.Vertices.Count > 0)
@@ -577,7 +573,7 @@ public partial class PolyLing
             }
         }
 
-        // Debug.Log($"[OnMouseDown] hitIsAlreadySelected={hitIsAlreadySelected}, hitType={_hitResultOnMouseDown.HitType}");
+        // Debug.Log($"[OnMouseDown] hitIsAlreadySelected={hitIsAlreadySelected}, hitType={_inp.HitResultOnMouseDown.HitType}");
 
         if (!hitIsAlreadySelected)
         {
@@ -587,16 +583,16 @@ public partial class PolyLing
         // else: 選択済み要素 → 選択変更なし（ドラッグで移動可能、MouseUpでトグル判定）
 
         // レガシー互換: ヒット結果がVertexの場合は従来の変数も更新
-        if (_hitResultOnMouseDown.HitType == MeshSelectMode.Vertex && _hitResultOnMouseDown.VertexIndex >= 0)
+        if (_inp.HitResultOnMouseDown.HitType == MeshSelectMode.Vertex && _inp.HitResultOnMouseDown.VertexIndex >= 0)
         {
-            _hitVertexOnMouseDown = _hitResultOnMouseDown.VertexIndex;
+            _inp.HitVertexOnMouseDown = _inp.HitResultOnMouseDown.VertexIndex;
         }
         else
         {
-            _hitVertexOnMouseDown = -1;
+            _inp.HitVertexOnMouseDown = -1;
         }
 
-        _editState = VertexEditState.PendingAction;
+        _inp.EditState = VertexEditState.PendingAction;
         e.Use();
     }
 
@@ -616,7 +612,7 @@ public partial class PolyLing
         if (hit.HitType == MeshSelectMode.None)
             return false;
 
-        int hitMeshIdx = _hitMeshIndexOnMouseDown;
+        int hitMeshIdx = _inp.HitMeshIndexOnMouseDown;
         bool isOtherMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
 
         if (isOtherMesh && _model != null)
@@ -697,7 +693,7 @@ public partial class PolyLing
             return;
 
         bool additive = shiftHeld || ctrlHeld;
-        int hitMeshIdx = _hitMeshIndexOnMouseDown;
+        int hitMeshIdx = _inp.HitMeshIndexOnMouseDown;
         bool isOtherMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
 
         // 非加算モードで全メッシュの全モード選択をクリア
@@ -718,13 +714,13 @@ public partial class PolyLing
             var hitMeshContext = _model.GetMeshContext(hitMeshIdx);
             if (hitMeshContext != null)
             {
-                AddSelectionWithLinkage(hitMeshContext.Selection, hitMeshContext.MeshObject, _hitResultOnMouseDown);
+                AddSelectionWithLinkage(hitMeshContext.Selection, hitMeshContext.MeshObject, _inp.HitResultOnMouseDown);
             }
         }
         else
         {
             // プライマリメッシュ: 元の_selectionOps.ApplyHitResultを使用
-            _selectionOps.ApplyHitResult(_hitResultOnMouseDown, shiftHeld, ctrlHeld);
+            _selectionOps.ApplyHitResult(_inp.HitResultOnMouseDown, shiftHeld, ctrlHeld);
 
             // Edge/Face/Line選択に連動する頂点を追加
             ExpandLinkedVertices();
@@ -967,30 +963,30 @@ public partial class PolyLing
     private void OnMouseDrag(Event e, Vector2 mousePos, MeshObject meshObject, Rect rect,
         Vector3 camPos, Vector3 lookAt, float camDist, MeshContext meshContext)
     {
-        switch (_editState)
+        switch (_inp.EditState)
         {
             case VertexEditState.PendingAction:
                 // ドラッグ閾値を超えたか（矩形選択とかの開始）判定
-                float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
-                if (dragDistance > DragThreshold)
+                float dragDistance = Vector2.Distance(mousePos, _inp.MouseDownScreenPos);
+                if (dragDistance > ViewportInputState.DragThreshold)
                 {
                     // 何もヒットしていない状態から開始 → ドラッグ選択モード
-                    if (_hitResultOnMouseDown.HitType == MeshSelectMode.None)
+                    if (_inp.HitResultOnMouseDown.HitType == MeshSelectMode.None)
                     {
-                        if (_dragSelectMode == DragSelectMode.Lasso)
+                        if (_inp.DragSelectMode == DragSelectMode.Lasso)
                         {
-                            StartLassoSelect(_mouseDownScreenPos);
+                            StartLassoSelect(_inp.MouseDownScreenPos);
                         }
                         else
                         {
-                            StartBoxSelect(_mouseDownScreenPos);
+                            StartBoxSelect(_inp.MouseDownScreenPos);
                         }
                     }
                     else
                     {
                         // 頂点上からのドラッグはツールに委譲済み
                         // Selectツール時は何もしない
-                        _editState = VertexEditState.Idle;
+                        _inp.EditState = VertexEditState.Idle;
                     }
                 }
                 e.Use();
@@ -999,17 +995,17 @@ public partial class PolyLing
 
             case VertexEditState.BoxSelecting:
                 // 矩形選択範囲を更新
-                _boxSelectEnd = mousePos;
+                _inp.BoxSelectEnd = mousePos;
                 e.Use();
                 Repaint();
                 break;
 
             case VertexEditState.LassoSelecting:
                 // 投げ縄選択: ポイントを追加（前回ポイントと距離があれば）
-                if (_lassoPoints.Count == 0 ||
-                    Vector2.Distance(mousePos, _lassoPoints[_lassoPoints.Count - 1]) > 2f)
+                if (_inp.LassoPoints.Count == 0 ||
+                    Vector2.Distance(mousePos, _inp.LassoPoints[_inp.LassoPoints.Count - 1]) > 2f)
                 {
-                    _lassoPoints.Add(mousePos);
+                    _inp.LassoPoints.Add(mousePos);
                 }
                 e.Use();
                 Repaint();
@@ -1026,7 +1022,7 @@ public partial class PolyLing
         bool shiftHeld = e.shift;
         bool ctrlHeld = e.control;
 
-        switch (_editState)
+        switch (_inp.EditState)
         {
             case VertexEditState.PendingAction:
                 // ドラッグなし = クリック
@@ -1066,12 +1062,12 @@ public partial class PolyLing
     /// </summary>
     private void ResetEditState()
     {
-        _editState = VertexEditState.Idle;
-        _hitVertexOnMouseDown = -1;
-        _hitResultOnMouseDown = HitResult.None;  // 追加
-        _boxSelectStart = Vector2.zero;
-        _boxSelectEnd = Vector2.zero;
-        _lassoPoints.Clear();
+        _inp.EditState = VertexEditState.Idle;
+        _inp.HitVertexOnMouseDown = -1;
+        _inp.HitResultOnMouseDown = HitResult.None;  // 追加
+        _inp.BoxSelectStart = Vector2.zero;
+        _inp.BoxSelectEnd = Vector2.zero;
+        _inp.LassoPoints.Clear();
     }
     // ================================================================
     // クリック処理
@@ -1085,7 +1081,7 @@ public partial class PolyLing
     /// - ドラッグあり: 移動する（選択は維持）
     /// 
     /// そのため、MouseDown時点では除外せず、MouseUp時（ここ）で判定する。
-    /// ドラッグが発生した場合は_editStateがPendingActionではなくなるため、
+    /// ドラッグが発生した場合は_inp.EditStateがPendingActionではなくなるため、
     /// この関数は呼ばれない。
     /// 
     /// 【選択の連動ルール - 除外時】
@@ -1098,13 +1094,13 @@ public partial class PolyLing
     {
         // Ctrl+選択済み要素の場合、ここで除外を実行
         // （MouseDown時はドラッグ移動の可能性があるため保留していた）
-        if (ctrlHeld && _hitResultOnMouseDown.HitType != MeshSelectMode.None)
+        if (ctrlHeld && _inp.HitResultOnMouseDown.HitType != MeshSelectMode.None)
         {
-            bool hitIsAlreadySelected = IsHitResultAlreadySelected(_hitResultOnMouseDown);
+            bool hitIsAlreadySelected = IsHitResultAlreadySelected(_inp.HitResultOnMouseDown);
             if (hitIsAlreadySelected)
             {
                 // 選択済み要素をCtrl+クリック → 除外（連動ルール適用）
-                int hitMeshIdx = _hitMeshIndexOnMouseDown;
+                int hitMeshIdx = _inp.HitMeshIndexOnMouseDown;
                 bool isOtherMesh = hitMeshIdx >= 0 && hitMeshIdx != _selectedIndex;
 
                 if (isOtherMesh && _model != null)
@@ -1113,13 +1109,13 @@ public partial class PolyLing
                     var hitMeshContext = _model.GetMeshContext(hitMeshIdx);
                     if (hitMeshContext != null)
                     {
-                        RemoveSelectionWithLinkage(hitMeshContext.Selection, hitMeshContext.MeshObject, _hitResultOnMouseDown);
+                        RemoveSelectionWithLinkage(hitMeshContext.Selection, hitMeshContext.MeshObject, _inp.HitResultOnMouseDown);
                     }
                 }
                 else
                 {
                     // プライマリメッシュ: _selectionState(= meshContext.Selection)から除外
-                    RemoveSelectionWithLinkage(_selectionState, _model?.FirstSelectedMeshContext?.MeshObject, _hitResultOnMouseDown);
+                    RemoveSelectionWithLinkage(_selectionState, _model?.FirstSelectedMeshContext?.MeshObject, _inp.HitResultOnMouseDown);
 
                     // Edge/Face/Line選択に連動する頂点を追加
                     ExpandLinkedVertices();
@@ -1243,9 +1239,9 @@ public partial class PolyLing
     // ================================================================
     private void StartBoxSelect(Vector2 startPos)
     {
-        _boxSelectStart = startPos;
-        _boxSelectEnd = startPos;
-        _editState = VertexEditState.BoxSelecting;
+        _inp.BoxSelectStart = startPos;
+        _inp.BoxSelectEnd = startPos;
+        _inp.EditState = VertexEditState.BoxSelecting;
     }
 
     // ================================================================
@@ -1253,9 +1249,9 @@ public partial class PolyLing
     // ================================================================
     private void StartLassoSelect(Vector2 startPos)
     {
-        _lassoPoints.Clear();
-        _lassoPoints.Add(startPos);
-        _editState = VertexEditState.LassoSelecting;
+        _inp.LassoPoints.Clear();
+        _inp.LassoPoints.Add(startPos);
+        _inp.EditState = VertexEditState.LassoSelecting;
     }
 
     private void FinishBoxSelect(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt)
@@ -1268,10 +1264,10 @@ public partial class PolyLing
 
         // 矩形を正規化
         Rect selectRect = new Rect(
-            Mathf.Min(_boxSelectStart.x, _boxSelectEnd.x),
-            Mathf.Min(_boxSelectStart.y, _boxSelectEnd.y),
-            Mathf.Abs(_boxSelectEnd.x - _boxSelectStart.x),
-            Mathf.Abs(_boxSelectEnd.y - _boxSelectStart.y)
+            Mathf.Min(_inp.BoxSelectStart.x, _inp.BoxSelectEnd.x),
+            Mathf.Min(_inp.BoxSelectStart.y, _inp.BoxSelectEnd.y),
+            Mathf.Abs(_inp.BoxSelectEnd.x - _inp.BoxSelectStart.x),
+            Mathf.Abs(_inp.BoxSelectEnd.y - _inp.BoxSelectStart.y)
         );
 
         // v2.1: ワールドモード判定
@@ -1523,7 +1519,7 @@ public partial class PolyLing
     private void FinishLassoSelect(bool shiftHeld, bool ctrlHeld, MeshObject meshObject, Rect previewRect, Vector3 camPos, Vector3 lookAt)
     {
         // ポイント数が不足している場合は何もしない
-        if (_lassoPoints.Count < 3)
+        if (_inp.LassoPoints.Count < 3)
             return;
 
         // カリング情報をGPUからCPUに読み戻す（背面カリング対応）
@@ -1549,7 +1545,7 @@ public partial class PolyLing
         var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
 
         // 投げ縄ポリゴン（ウィンドウ座標のまま使用）
-        var lasso = _lassoPoints;
+        var lasso = _inp.LassoPoints;
 
         // 複数メッシュ対応
         var selectedMeshIndices = _model?.SelectedMeshIndices;
@@ -1816,20 +1812,20 @@ public partial class PolyLing
     private void CaptureSelectionSnapshotForUndo()
     {
         // 選択スナップショット
-        _selectionSnapshotOnMouseDown = _selectionState?.CreateSnapshot();
+        _inp.SelectionSnapshotOnMouseDown = _selectionState?.CreateSnapshot();
 
         // トポロジー変更フラグをリセット
-        _topologyChangedDuringMouseOperation = false;
+        _inp.TopologyChangedDuringMouseOp = false;
 
         // WorkPlane連動用（AutoUpdateOriginOnSelection有効時）
         var workPlane = _undoController?.WorkPlane;
         if (workPlane != null && workPlane.AutoUpdateOriginOnSelection && !workPlane.IsLocked)
         {
-            _workPlaneSnapshotOnMouseDown = workPlane.CreateSnapshot();
+            _inp.WorkPlaneSnapshotOnMouseDown = workPlane.CreateSnapshot();
         }
         else
         {
-            _workPlaneSnapshotOnMouseDown = null;
+            _inp.WorkPlaneSnapshotOnMouseDown = null;
         }
     }
 
@@ -1841,16 +1837,16 @@ public partial class PolyLing
     private void RecordSelectionChangeIfNeeded()
     {
         // トポロジー変更があった場合はスキップ
-        if (_topologyChangedDuringMouseOperation)
+        if (_inp.TopologyChangedDuringMouseOp)
         {
-            _topologyChangedDuringMouseOperation = false;
-            _selectionSnapshotOnMouseDown = null;
-            _workPlaneSnapshotOnMouseDown = null;
+            _inp.TopologyChangedDuringMouseOp = false;
+            _inp.SelectionSnapshotOnMouseDown = null;
+            _inp.WorkPlaneSnapshotOnMouseDown = null;
             return;
         }
 
         // スナップショットがない場合はスキップ
-        if (_selectionSnapshotOnMouseDown == null || _selectionState == null)
+        if (_inp.SelectionSnapshotOnMouseDown == null || _selectionState == null)
         {
             return;
         }
@@ -1858,11 +1854,11 @@ public partial class PolyLing
         // 変更チェック
         SelectionSnapshot afterSnapshot = _selectionState.CreateSnapshot();
 
-        if (!_selectionSnapshotOnMouseDown.IsDifferentFrom(afterSnapshot))
+        if (!_inp.SelectionSnapshotOnMouseDown.IsDifferentFrom(afterSnapshot))
         {
             // 変更なし
-            _selectionSnapshotOnMouseDown = null;
-            _workPlaneSnapshotOnMouseDown = null;
+            _inp.SelectionSnapshotOnMouseDown = null;
+            _inp.WorkPlaneSnapshotOnMouseDown = null;
             return;
         }
 
@@ -1878,7 +1874,7 @@ public partial class PolyLing
         WorkPlaneSnapshot? newWorkPlane = null;
         var workPlane = _undoController?.WorkPlane;
 
-        if (_workPlaneSnapshotOnMouseDown.HasValue &&
+        if (_inp.WorkPlaneSnapshotOnMouseDown.HasValue &&
             workPlane != null &&
             workPlane.AutoUpdateOriginOnSelection &&
             !workPlane.IsLocked)
@@ -1892,27 +1888,27 @@ public partial class PolyLing
 
             newWorkPlane = workPlane.CreateSnapshot();
 
-            if (!_workPlaneSnapshotOnMouseDown.Value.IsDifferentFrom(newWorkPlane.Value))
+            if (!_inp.WorkPlaneSnapshotOnMouseDown.Value.IsDifferentFrom(newWorkPlane.Value))
             {
                 newWorkPlane = null;
-                _workPlaneSnapshotOnMouseDown = null;
+                _inp.WorkPlaneSnapshotOnMouseDown = null;
             }
         }
 
         // Undo記録（コマンドキュー経由・SelectionSnapshot版）
         _commandQueue?.Enqueue(new RecordSelectionChangeSnapshotCommand(
             _undoController,
-            _selectionSnapshotOnMouseDown,
+            _inp.SelectionSnapshotOnMouseDown,
             afterSnapshot,
-            _workPlaneSnapshotOnMouseDown,
+            _inp.WorkPlaneSnapshotOnMouseDown,
             newWorkPlane
         ));
 
         _lastSelectionSnapshot = afterSnapshot;
 
         // クリーンアップ
-        _selectionSnapshotOnMouseDown = null;
-        _workPlaneSnapshotOnMouseDown = null;
+        _inp.SelectionSnapshotOnMouseDown = null;
+        _inp.WorkPlaneSnapshotOnMouseDown = null;
     }
 
     /// <summary>
@@ -1921,6 +1917,6 @@ public partial class PolyLing
     /// </summary>
     public void SetTopologyChangedFlag()
     {
-        _topologyChangedDuringMouseOperation = true;
+        _inp.TopologyChangedDuringMouseOp = true;
     }
 }
