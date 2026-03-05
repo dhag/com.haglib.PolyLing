@@ -9,6 +9,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Transforms;
 using Poly_Ling.Tools;
@@ -124,6 +125,7 @@ public partial class PolyLing : EditorWindow
     // プレビュー
     // ================================================================
     private PreviewRenderUtility _preview;
+    private UnifiedSystemAdapter _unifiedAdapter;
     private Rect _lastPreviewRect;  // 最後に計算されたプレビュー領域（注目点移動で使用）
 
     // ================================================================
@@ -458,9 +460,6 @@ public partial class PolyLing : EditorWindow
         if (_project.ModelCount == 0)
             _project.AddModel(new ModelContext("Model"));
 
-        // PanelContext初期化（全パネル共有）
-        InitPanelContext();
-
         InitPreview();
         wantsMouseMove = true;
 
@@ -570,11 +569,25 @@ public partial class PolyLing : EditorWindow
         _drawCache = new MeshDrawCache();
 
         // 統合システム初期化（失敗時はウィンドウを閉じる）
-        if (!InitializeUnifiedSystem())
+        _unifiedAdapter = new UnifiedSystemAdapter();
+        if (!_unifiedAdapter.Initialize())
         {
+            Debug.LogError("[PolyLing] Failed to initialize unified system");
+            _unifiedAdapter?.Dispose();
+            _unifiedAdapter = null;
+            EditorUtility.DisplayDialog(
+                "Initialization Error",
+                "Failed to initialize unified rendering system.\nThe editor window will be closed.",
+                "OK");
             Close();
             return;
         }
+        _unifiedAdapter.SetModelContext(_model);
+        _unifiedAdapter.SetSelectionState(_selectionState);
+        _unifiedAdapter.SetSymmetrySettings(_model?.SymmetrySettings);
+        if (_selectedIndex >= 0)
+            _unifiedAdapter.SetActiveMesh(0, _selectedIndex);
+        _unifiedAdapter.UseUnifiedRendering = true;
 
         // VisibilityProviderを設定（背面カリング対応）
         if (_unifiedAdapter != null && _selectionOps != null)
@@ -725,7 +738,8 @@ public partial class PolyLing : EditorWindow
             _model.OnListChanged -= OnMeshListChanged;
         }
         // OnDisable() に追加
-        CleanupUnifiedSystem();     // SimpleMeshFactory_UnifiedSystem.cs に定義済み
+        _unifiedAdapter?.Dispose();
+        _unifiedAdapter = null;
 
     }
 
@@ -952,7 +966,6 @@ public partial class PolyLing : EditorWindow
 
         // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
-        NotifyPanels();
         Repaint();
     }
     /*
@@ -1002,7 +1015,7 @@ public partial class PolyLing : EditorWindow
         // ★Phase2追加: 対称表示キャッシュを無効化
         InvalidateSymmetryCache();
         // ★GPUバッファの位置情報を更新
-        NotifyUnifiedTransformChanged();
+        _unifiedAdapter?.NotifyTransformChanged();
         // ★GPUバッファを再構築（トポロジ変更対応）
         // 頂点数/面数が変わる可能性があるため、常にトポロジ変更として扱う
         _unifiedAdapter?.NotifyTopologyChanged();
@@ -1034,7 +1047,7 @@ public partial class PolyLing : EditorWindow
         unityMesh.RecalculateBounds();
 
         // GPUバッファの位置情報を更新
-        NotifyUnifiedTransformChanged();
+        _unifiedAdapter?.NotifyTransformChanged();
         // LiveSync: ヒエラルキーへの自動同期（対象メッシュのみ）
         LiveSyncAutoUpdate(meshContext);
     }
@@ -1074,7 +1087,7 @@ public partial class PolyLing : EditorWindow
         }
 
         // GPUバッファの位置情報を更新
-        NotifyUnifiedTransformChanged();
+        _unifiedAdapter?.NotifyTransformChanged();
     }
 
 

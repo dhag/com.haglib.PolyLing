@@ -9,6 +9,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Selection;
 using Poly_Ling.Rendering;
 using Poly_Ling.Core.Rendering;
+using Poly_Ling.Core;
 using Poly_Ling.Remote;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
@@ -155,7 +156,10 @@ public partial class PolyLing
 
         // ★新システム毎フレーム更新（ローカル座標系を使用）
         Vector2 mousePos = Event.current.mousePosition;
-        UpdateUnifiedFrame(localRect, mousePos);
+        _unifiedAdapter?.UpdateFrame(
+            camPos, _cameraTarget,
+            _preview?.cameraFieldOfView ?? 30f,
+            localRect, mousePos, _rotationZ);
 
 
 
@@ -210,19 +214,62 @@ public partial class PolyLing
         // ワイヤフレーム・頂点描画（UnifiedSystem使用）
         // ================================================================
         var pointSize =ShaderColorSettings.Default.VertexPointScale;
-        PrepareUnifiedDrawing(
-            _preview.camera,
-            _showWireframe,
-            _showVertices,
-            _showUnselectedWireframe,
-            _showUnselectedVertices,
-            pointSize);
 
-        DrawUnifiedQueued(_preview);
+        if (_unifiedAdapter != null)
+        {
+            // 背面カリング設定を反映
+            _unifiedAdapter.BackfaceCullingEnabled = _undoController?.EditorState.BackfaceCullingEnabled ?? true;
+
+            var profile = _unifiedAdapter.CurrentProfile;
+
+            // ContextIndex → UnifiedMeshIndex に変換
+            int unifiedMeshIndex = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
+
+            // 選択状態の同期・フラグ更新
+            if (profile.AllowSelectionSync)
+            {
+                var bufMgr = _unifiedAdapter.BufferManager;
+                if (bufMgr != null)
+                {
+                    bufMgr.SyncSelectionFromModel(_model);
+                    bufMgr.SetActiveMesh(0, unifiedMeshIndex);
+                    bufMgr.UpdateAllSelectionFlags();
+                }
+            }
+
+            // 面・線分の可視性計算（Culledフラグ設定）
+            if (profile.AllowGpuVisibility)
+            {
+                var bufMgr = _unifiedAdapter.BufferManager;
+                if (bufMgr != null)
+                {
+                    var viewport = new Rect(0, 0, _preview.camera.pixelWidth, _preview.camera.pixelHeight);
+                    bufMgr.DispatchClearBuffersGPU();
+                    bufMgr.ComputeScreenPositionsGPU(_preview.camera.projectionMatrix * _preview.camera.worldToCameraMatrix, viewport);
+                    bufMgr.DispatchFaceVisibilityGPU();
+                    bufMgr.DispatchLineVisibilityGPU();
+                }
+            }
+
+            int meshIndexForDrawing = (_model != null && _model.SelectedMeshIndices.Count > 1) ? -1 : unifiedMeshIndex;
+
+            _unifiedAdapter.PrepareDrawing(
+                _preview.camera,
+                _showWireframe,
+                _showVertices,
+                _showUnselectedWireframe && profile.AllowUnselectedOverlay,
+                _showUnselectedVertices && profile.AllowUnselectedOverlay,
+                meshIndexForDrawing,
+                pointSize);
+
+            _unifiedAdapter.ConsumeNormalMode();
+
+            _unifiedAdapter.DrawQueued(_preview);
+        }
 
         _preview.camera.Render();
 
-        CleanupUnifiedDrawing();
+        _unifiedAdapter?.CleanupQueued();
 
         Texture result = _preview.EndPreview();
         GUI.DrawTexture(localRect, result, ScaleMode.StretchToFill, false);

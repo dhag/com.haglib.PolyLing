@@ -57,7 +57,7 @@ public partial class PolyLing
         if (!_symmetrySettings.IsEnabled)
         {
             _symmetrySettings.IsEnabled = true;
-            ApplySymmetryToUnifiedSystem();
+            _unifiedAdapter?.SetSymmetrySettings(_model?.SymmetrySettings);
         }
 
         // 詳細設定（常に表示）
@@ -69,7 +69,7 @@ public partial class PolyLing
         if (EditorGUI.EndChangeCheck())
         {
             _symmetrySettings.Axis = newAxis;
-            ApplySymmetryToUnifiedSystem();
+            _unifiedAdapter?.SetSymmetrySettings(_model?.SymmetrySettings);
             Repaint();
         }
 
@@ -79,7 +79,7 @@ public partial class PolyLing
         if (EditorGUI.EndChangeCheck())
         {
             _symmetrySettings.PlaneOffset = newOffset;
-            ApplySymmetryToUnifiedSystem();
+            _unifiedAdapter?.SetSymmetrySettings(_model?.SymmetrySettings);
             Repaint();
         }
 
@@ -91,7 +91,7 @@ public partial class PolyLing
             if (GUILayout.Button(L.Get("ResetOffset"), EditorStyles.miniButton, GUILayout.Width(80)))
             {
                 _symmetrySettings.PlaneOffset = 0f;
-                ApplySymmetryToUnifiedSystem();
+                _unifiedAdapter?.SetSymmetrySettings(_model?.SymmetrySettings);
                 Repaint();
             }
             EditorGUILayout.EndHorizontal();

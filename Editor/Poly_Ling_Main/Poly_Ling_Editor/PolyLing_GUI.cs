@@ -11,6 +11,7 @@ using Poly_Ling.Localization;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Data;
 using Poly_Ling.Commands;
+using Poly_Ling.Core;
 
 public partial class PolyLing
 {
@@ -640,5 +641,79 @@ public partial class PolyLing
         // Materials は ModelContext に集約済み
         // 選択状態を同期
         _undoController.MeshUndoContext.SelectedVertices = new HashSet<int>(_selectionState.Vertices);
+    }
+
+    // ================================================================
+    // Unified System デバッグUI（PolyLing_UnifiedSystem.csから移動）
+    // ================================================================
+
+    private bool _foldUnifiedSystem = false;
+
+    private void DrawUnifiedSystemUI()
+    {
+        if (_unifiedAdapter == null) return;
+
+        _foldUnifiedSystem = EditorGUILayout.Foldout(_foldUnifiedSystem, "Unified System", true);
+        if (!_foldUnifiedSystem) return;
+
+        EditorGUI.indentLevel++;
+
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("Statistics", EditorStyles.boldLabel);
+
+        var bufferManager = _unifiedAdapter.BufferManager;
+        if (bufferManager != null)
+        {
+            EditorGUILayout.LabelField($"Vertices: {bufferManager.TotalVertexCount}");
+            EditorGUILayout.LabelField($"Lines: {bufferManager.TotalLineCount}");
+            EditorGUILayout.LabelField($"Faces: {bufferManager.TotalFaceCount}");
+            EditorGUILayout.LabelField($"Meshes: {bufferManager.MeshCount}");
+            EditorGUILayout.LabelField($"Mirror: {(bufferManager.MirrorEnabled ? "On" : "Off")}");
+        }
+
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("Hover", EditorStyles.boldLabel);
+
+        var unifiedSys = _unifiedAdapter.UnifiedSystem;
+        int globalVertex = _unifiedAdapter.HoverVertexIndex;
+        string vertexStr = $"Vertex: {globalVertex}";
+        if (globalVertex >= 0 && unifiedSys != null && unifiedSys.GetHoveredVertexLocal(out int vMesh, out int vLocal))
+            vertexStr += $" (Mesh{vMesh}, Local{vLocal})";
+        EditorGUILayout.LabelField(vertexStr);
+
+        int globalLine = _unifiedAdapter.HoverLineIndex;
+        string lineStr = $"Line: {globalLine}";
+        if (globalLine >= 0 && bufferManager != null && bufferManager.GetLineVerticesLocal(globalLine, out int lMesh, out int lV1, out int lV2))
+            lineStr += $" (Mesh{lMesh}, V{lV1}-V{lV2})";
+        EditorGUILayout.LabelField(lineStr);
+
+        int globalFace = _unifiedAdapter.HoverFaceIndex;
+        string faceStr = $"Face: {globalFace}";
+        if (globalFace >= 0 && unifiedSys != null && unifiedSys.GetHoveredFaceLocal(out int fMesh, out int fLocal))
+            faceStr += $" (Mesh{fMesh}, Local{fLocal})";
+        EditorGUILayout.LabelField(faceStr);
+
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("Debug", EditorStyles.boldLabel);
+
+        if (GUILayout.Button("Log Status"))
+            _unifiedAdapter.LogStatus();
+
+        if (GUILayout.Button("Rebuild All"))
+        {
+            _unifiedAdapter.SetModelContext(_model);
+            _unifiedAdapter.NotifyTopologyChanged();
+            var sysAll = _unifiedAdapter.UnifiedSystem;
+            if (sysAll != null)
+            {
+                sysAll.BeginFrame();
+                var level = sysAll.ProcessUpdates();
+                sysAll.ExecuteUpdates(level);
+                sysAll.EndFrame();
+            }
+            Repaint();
+        }
+
+        EditorGUI.indentLevel--;
     }
 }
