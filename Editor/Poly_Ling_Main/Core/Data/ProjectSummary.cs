@@ -16,6 +16,11 @@ namespace Poly_Ling.Data
         /// <summary>全モデルのリスト</summary>
         public IReadOnlyList<ModelSummary> Models { get; }
 
+        // IProjectView
+        public int ModelCount => Models?.Count ?? 0;
+        public IModelView GetModelView(int index)
+            => (Models != null && index >= 0 && index < Models.Count) ? Models[index] : null;
+
         public ProjectSummary(
             string projectName, int currentModelIndex,
             ModelSummary currentModel,

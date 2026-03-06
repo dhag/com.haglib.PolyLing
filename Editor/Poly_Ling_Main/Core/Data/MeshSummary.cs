@@ -2,6 +2,7 @@
 // MeshContextからUI表示に必要なメタデータのみを抽出した構造体
 // IMeshView/IBonePoseViewを実装し、統一インタフェースとして使用可能
 
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Model;
 
@@ -85,6 +86,14 @@ namespace Poly_Ling.Data
 
         // IMeshView.BonePose（IBonePoseViewとして返す）
         IBonePoseView IMeshView.BonePose => BonePoseData;
+
+        // パーツ選択辞書（スナップショットでは常に空）
+        int IMeshView.PartsSelectionSetCount => 0;
+        IReadOnlyList<IPartsSetView> IMeshView.PartsSelectionSets => System.Array.Empty<IPartsSetView>();
+        int IMeshView.SelectedVertexCount => 0;
+        int IMeshView.SelectedEdgeCount   => 0;
+        int IMeshView.SelectedFaceCount   => 0;
+        int IMeshView.SelectedLineCount   => 0;
 
         // 表示用プロパティ
         public string MirrorTypeDisplay

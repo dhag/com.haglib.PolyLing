@@ -5,6 +5,7 @@
 
 using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.Data
 {
@@ -71,6 +72,28 @@ namespace Poly_Ling.Data
         string InfoString { get; }
         string MirrorTypeDisplay { get; }
         bool HasMirrorIcon { get; }
+
+        // パーツ選択辞書
+        int PartsSelectionSetCount { get; }
+        IReadOnlyList<IPartsSetView> PartsSelectionSets { get; }
+
+        // 現在のパーツ選択状態（件数のみ）
+        int SelectedVertexCount { get; }
+        int SelectedEdgeCount   { get; }
+        int SelectedFaceCount   { get; }
+        int SelectedLineCount   { get; }
+    }
+
+    /// <summary>パーツ選択セットの軽量サマリ</summary>
+    public interface IPartsSetView
+    {
+        string Name    { get; }
+        MeshSelectMode Mode { get; }
+        string Summary { get; }
+        int VertexCount { get; }
+        int EdgeCount   { get; }
+        int FaceCount   { get; }
+        int LineCount   { get; }
     }
 
     // ================================================================
@@ -106,5 +129,11 @@ namespace Poly_Ling.Data
         string ProjectName { get; }
         int CurrentModelIndex { get; }
         IModelView CurrentModel { get; }
+
+        /// <summary>プロジェクト内のモデル総数</summary>
+        int ModelCount { get; }
+
+        /// <summary>指定インデックスのモデルビューを返す。範囲外は null。</summary>
+        IModelView GetModelView(int index);
     }
 }

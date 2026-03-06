@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Model;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.Data
 {
@@ -192,6 +193,28 @@ namespace Poly_Ling.Data
 
         public bool HasMirrorIcon => MirrorType > 0 || IsBakedMirror || IsMirrorSide || IsRealSide || HasBakedMirrorChild;
 
+        // パーツ選択辞書
+        public int PartsSelectionSetCount => _ctx?.PartsSelectionSetList?.Count ?? 0;
+        public IReadOnlyList<IPartsSetView> PartsSelectionSets
+        {
+            get
+            {
+                var list = _ctx?.PartsSelectionSetList;
+                if (list == null || list.Count == 0) return _emptyPartsSetList;
+                var result = new IPartsSetView[list.Count];
+                for (int i = 0; i < list.Count; i++)
+                    result[i] = new LivePartsSetView(list[i]);
+                return result;
+            }
+        }
+        private static readonly IPartsSetView[] _emptyPartsSetList = Array.Empty<IPartsSetView>();
+
+        // 現在のパーツ選択状態（件数のみ）
+        public int SelectedVertexCount => _ctx?.Selection?.Vertices?.Count ?? 0;
+        public int SelectedEdgeCount   => _ctx?.Selection?.Edges?.Count   ?? 0;
+        public int SelectedFaceCount   => _ctx?.Selection?.Faces?.Count   ?? 0;
+        public int SelectedLineCount   => _ctx?.Selection?.Lines?.Count   ?? 0;
+
         // 面カウント（詳細パネル用のみ呼ばれるため毎回計算で問題なし）
         private void CountFaces(out int tri, out int quad, out int ngon)
         {
@@ -296,6 +319,16 @@ namespace Poly_Ling.Data
 
         public string ProjectName => _project.Name;
         public int CurrentModelIndex => _project.CurrentModelIndex;
+        public int ModelCount => _project.ModelCount;
+
+        public IModelView GetModelView(int index)
+        {
+            var m = _project.GetModel(index);
+            if (m == null) return null;
+            if (index == _project.CurrentModelIndex && _currentModelView != null)
+                return _currentModelView;
+            return new LiveModelView(m);
+        }
 
         public IModelView CurrentModel
         {
@@ -327,5 +360,27 @@ namespace Poly_Ling.Data
         {
             _currentModelView?.InvalidateLists();
         }
+    }
+
+    // ================================================================
+    // LivePartsSetView
+    // ================================================================
+
+    public class LivePartsSetView : IPartsSetView
+    {
+        private readonly PartsSelectionSet _set;
+
+        public LivePartsSetView(PartsSelectionSet set)
+        {
+            _set = set ?? throw new ArgumentNullException(nameof(set));
+        }
+
+        public string Name    => _set.Name;
+        public MeshSelectMode Mode => _set.Mode;
+        public string Summary => _set.Summary;
+        public int VertexCount => _set.Vertices?.Count ?? 0;
+        public int EdgeCount   => _set.Edges?.Count   ?? 0;
+        public int FaceCount   => _set.Faces?.Count   ?? 0;
+        public int LineCount   => _set.Lines?.Count   ?? 0;
     }
 }

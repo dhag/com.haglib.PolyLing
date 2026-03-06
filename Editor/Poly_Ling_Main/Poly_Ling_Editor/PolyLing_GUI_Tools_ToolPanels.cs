@@ -152,6 +152,11 @@ public partial class PolyLing
         {
             Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
         }
+        if (GUILayout.Button("パーツ選択辞書 V2"))
+        {
+            if (_panelContext != null)
+                Poly_Ling.UI.PartsSelectionSetPanelV2.Open(_panelContext);
+        }
         if (GUILayout.Button("メッシュ選択辞書"))
         {
             Poly_Ling.UI.MeshSelectionSetPanel.Open(_toolManager?.toolContext);
@@ -160,6 +165,11 @@ public partial class PolyLing
         if (GUILayout.Button("モデル選択"))
         {
             Poly_Ling.UI.ModelListPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("モデルリスト V2"))
+        {
+            if (_panelContext != null)
+                Poly_Ling.UI.ModelListPanelV2.Open(_panelContext);
         }
         EditorGUILayout.Space(5);
         if (GUILayout.Button("モーフ確認"))
@@ -193,6 +203,11 @@ public partial class PolyLing
         if (GUILayout.Button("モデルブレンド"))
         {
             Poly_Ling.UI.MultiModelBlendPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("モデルブレンド V2"))
+        {
+            if (_panelContext != null)
+                Poly_Ling.UI.MultiModelBlendPanelV2.Open(_panelContext);
         }
 
         if (GUILayout.Button("リモートサーバ"))

@@ -2,9 +2,6 @@
 // パネルからメインルーチンへの操作要求
 // すべてプリミティブ値で構成される
 
-using System.Collections.Generic;
-using UnityEngine;
-
 namespace Poly_Ling.Data
 {
     public abstract class PanelCommand
@@ -336,23 +333,6 @@ namespace Poly_Ling.Data
             Weights      = weights;
             MeshEnabled  = meshEnabled;
             RecalcNormals = recalcNormals;
-        }
-    }
-
-    /// <summary>ブレンドプレビュー（Undo記録なし）</summary>
-    public class PreviewModelBlendCommand : PanelCommand
-    {
-        public int CloneModelIndex { get; }
-        public float[] Weights     { get; }
-        public bool[]  MeshEnabled { get; }
-        public PreviewModelBlendCommand(
-            int sourceModelIndex, int cloneModelIndex,
-            float[] weights, bool[] meshEnabled)
-            : base(sourceModelIndex)
-        {
-            CloneModelIndex = cloneModelIndex;
-            Weights      = weights;
-            MeshEnabled  = meshEnabled;
         }
     }
 
