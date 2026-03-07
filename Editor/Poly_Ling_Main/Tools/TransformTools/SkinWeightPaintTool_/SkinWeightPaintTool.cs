@@ -37,7 +37,7 @@ namespace Poly_Ling.Tools
         /// アクティブなSkinWeightPaintPanel（パネル側から設定される）
         /// パネルが開いていない場合はnull → ツール内の_settingsを使用
         /// </summary>
-        public static SkinWeightPaintPanel ActivePanel { get; set; }
+        public static ISkinWeightPaintPanel ActivePanel { get; set; }
 
         // パネルから設定を読む（パネルがなければ自分の設定を使う）
         private SkinWeightPaintMode PaintMode => ActivePanel?.CurrentPaintMode ?? _settings.PaintMode;

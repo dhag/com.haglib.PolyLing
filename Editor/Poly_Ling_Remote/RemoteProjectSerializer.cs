@@ -57,8 +57,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEditor;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
+using Poly_Ling.Materials;
 
 namespace Poly_Ling.Remote
 {
@@ -156,6 +158,15 @@ namespace Poly_Ling.Remote
                 var mc = model.MeshContextList[i];
                 WriteMeshContext(w, mc);
             }
+
+            // マテリアル
+            var matRefs = model.MaterialReferences;
+            w.Write((ushort)matRefs.Count);
+            for (int i = 0; i < matRefs.Count; i++)
+            {
+                var data = matRefs[i]?.Data ?? new MaterialData();
+                WriteMaterialData(w, data);
+            }
         }
 
         private static ModelContext ReadModel(BinaryReader r)
@@ -180,6 +191,23 @@ namespace Poly_Ling.Remote
 
             // 選択状態復元
             model.SelectedMeshIndices = selectedIndices;
+
+            // マテリアル
+            ushort matCount = r.ReadUInt16();
+            var matList = new System.Collections.Generic.List<UnityEngine.Material>(matCount);
+            for (int i = 0; i < matCount; i++)
+            {
+                var (data, tex) = ReadMaterialData(r);
+                var mat = MaterialDataConverter.ToMaterial(data);
+                if (mat != null && tex != null)
+                {
+                    if (mat.HasProperty("_BaseMap"))  mat.SetTexture("_BaseMap",  tex);
+                    if (mat.HasProperty("_MainTex"))  mat.SetTexture("_MainTex",  tex);
+                }
+                matList.Add(mat);
+            }
+            if (matList.Count > 0)
+                model.Materials = matList;
 
             return model;
         }
@@ -277,13 +305,17 @@ namespace Poly_Ling.Remote
             }
 
             // --- ボーン ---
+            // BoneTransform setter は MeshObject != null が必要なため、
+            // ここでは値を一時保持し MeshObject 設定後に適用する
             bool hasBoneTransform = r.ReadBoolean();
+            Vector3 btPosition = Vector3.zero;
+            Vector3 btRotation = Vector3.zero;
+            Vector3 btScale = Vector3.one;
             if (hasBoneTransform)
             {
-                mc.BoneTransform = new Tools.BoneTransform();
-                mc.BoneTransform.Position = ReadVector3(r);
-                mc.BoneTransform.Rotation = ReadVector3(r);
-                mc.BoneTransform.Scale = ReadVector3(r);
+                btPosition = ReadVector3(r);
+                btRotation = ReadVector3(r);
+                btScale = ReadVector3(r);
             }
 
             mc.WorldMatrix = ReadMatrix4x4(r);
@@ -303,12 +335,131 @@ namespace Poly_Ling.Remote
                 mc.MeshObject = RemoteBinarySerializer.Deserialize(meshData);
             }
 
+            // meshDataLen==0 でも BoneTransform が必要な場合は空 MeshObject を生成
+            if (hasBoneTransform && mc.MeshObject == null)
+            {
+                mc.MeshObject = new MeshObject();
+            }
+
+            // MeshObject 設定後に BoneTransform を適用
+            if (hasBoneTransform)
+            {
+                mc.BoneTransform = new Tools.BoneTransform();
+                mc.BoneTransform.Position = btPosition;
+                mc.BoneTransform.Rotation = btRotation;
+                mc.BoneTransform.Scale = btScale;
+            }
+
             return mc;
+        }
+
+        // ================================================================
+        // マテリアル シリアライズ
+        // ================================================================
+
+        private static void WriteMaterialData(BinaryWriter w, MaterialData d)
+        {
+            WriteString(w, d.Name ?? string.Empty);
+            w.Write((byte)d.ShaderType);
+            w.Write(d.BaseColor.Length >= 4 ? d.BaseColor[0] : 1f);
+            w.Write(d.BaseColor.Length >= 4 ? d.BaseColor[1] : 1f);
+            w.Write(d.BaseColor.Length >= 4 ? d.BaseColor[2] : 1f);
+            w.Write(d.BaseColor.Length >= 4 ? d.BaseColor[3] : 1f);
+            w.Write((byte)d.Surface);
+            w.Write((byte)d.CullMode);
+            w.Write(d.AlphaClipEnabled);
+            w.Write(d.AlphaCutoff);
+            w.Write(d.EmissionEnabled);
+            w.Write(d.EmissionColor.Length >= 4 ? d.EmissionColor[0] : 0f);
+            w.Write(d.EmissionColor.Length >= 4 ? d.EmissionColor[1] : 0f);
+            w.Write(d.EmissionColor.Length >= 4 ? d.EmissionColor[2] : 0f);
+            w.Write(d.EmissionColor.Length >= 4 ? d.EmissionColor[3] : 1f);
+
+            // BaseMapテクスチャ (PNG inline, 0=なし)
+            byte[] pngData = null;
+            if (!string.IsNullOrEmpty(d.BaseMapPath))
+            {
+                var tex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(d.BaseMapPath);
+                if (tex != null)
+                    pngData = EncodeTextureAsPNG(tex);
+            }
+            // フォールバック: AssetDB外テクスチャ（MQO等）はSourceTexturePathから直接読む
+            if (pngData == null && !string.IsNullOrEmpty(d.SourceTexturePath) && System.IO.File.Exists(d.SourceTexturePath))
+            {
+                pngData = System.IO.File.ReadAllBytes(d.SourceTexturePath);
+            }
+            if (pngData != null)
+            {
+                w.Write((uint)pngData.Length);
+                w.Write(pngData);
+            }
+            else
+            {
+                w.Write((uint)0);
+            }
+        }
+
+        private static (MaterialData data, Texture2D tex) ReadMaterialData(BinaryReader r)
+        {
+            var d = new MaterialData();
+            d.Name        = ReadString(r);
+            d.ShaderType  = (ShaderType)r.ReadByte();
+            float r0 = r.ReadSingle(), g0 = r.ReadSingle(), b0 = r.ReadSingle(), a0 = r.ReadSingle();
+            d.BaseColor   = new float[] { r0, g0, b0, a0 };
+            d.Surface     = (SurfaceType)r.ReadByte();
+            d.CullMode    = (CullModeType)r.ReadByte();
+            d.AlphaClipEnabled = r.ReadBoolean();
+            d.AlphaCutoff = r.ReadSingle();
+            d.EmissionEnabled = r.ReadBoolean();
+            float er = r.ReadSingle(), eg = r.ReadSingle(), eb = r.ReadSingle(), ea = r.ReadSingle();
+            d.EmissionColor = new float[] { er, eg, eb, ea };
+
+            // BaseMapテクスチャ
+            uint texLen = r.ReadUInt32();
+            Texture2D tex = null;
+            if (texLen > 0)
+            {
+                byte[] pngData = r.ReadBytes((int)texLen);
+                tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                tex.LoadImage(pngData);
+                tex.name = d.Name;
+            }
+            return (d, tex);
         }
 
         // ================================================================
         // プリミティブ書き込みヘルパー
         // ================================================================
+
+        /// <summary>
+        /// Read/Write無効テクスチャもRenderTexture経由でPNGエンコード
+        /// </summary>
+        private static byte[] EncodeTextureAsPNG(Texture2D src)
+        {
+            if (src == null) return null;
+
+            // isReadable なら直接エンコード
+            if (src.isReadable)
+            {
+                var data = src.EncodeToPNG();
+                return (data != null && data.Length > 0) ? data : null;
+            }
+
+            // 非Readable: RenderTexture経由でピクセル読み返し
+            var rt = RenderTexture.GetTemporary(src.width, src.height, 0, RenderTextureFormat.ARGB32);
+            Graphics.Blit(src, rt);
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            var readable = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+            readable.ReadPixels(new Rect(0, 0, src.width, src.height), 0, 0);
+            readable.Apply();
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+
+            var result = readable.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(readable);
+            return (result != null && result.Length > 0) ? result : null;
+        }
 
         private static void WriteString(BinaryWriter w, string s)
         {

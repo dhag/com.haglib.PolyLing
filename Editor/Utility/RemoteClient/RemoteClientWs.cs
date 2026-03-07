@@ -12,6 +12,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 
 namespace PolyLingRemoteClient
 {
@@ -38,7 +39,7 @@ namespace PolyLingRemoteClient
         private TcpClient _tcp;
         private NetworkStream _stream;
         private CancellationTokenSource _cts;
-        private readonly Random _maskRng = new Random();
+        private readonly System.Random _maskRng = new System.Random();
 
         public bool IsConnected
         {
@@ -124,8 +125,11 @@ namespace PolyLingRemoteClient
         /// <summary>フレームを1つ受信</summary>
         public async Task<WsFrame?> ReceiveFrameAsync(CancellationToken ct)
         {
-            if (!IsConnected) return null;
-
+            if (!IsConnected)
+            {
+                Debug.LogWarning("WebSocket is not connected.");
+                return null;
+            }
             try
             {
                 byte[] header = new byte[2];
@@ -136,8 +140,10 @@ namespace PolyLingRemoteClient
                 long payloadLen = header[1] & 0x7F;
 
                 if (opcode == 0x08)
+                {
+                    Debug.Log("WebSocket close frame received.");
                     return new WsFrame { Type = WsFrameType.Close };
-
+                }
                 // 拡張長
                 if (payloadLen == 126)
                 {
@@ -153,13 +159,18 @@ namespace PolyLingRemoteClient
                     for (int i = 0; i < 8; i++)
                         payloadLen = (payloadLen << 8) | ext[i];
                 }
+                //Debug.Log($"WebSocket frame received: opcode={opcode}, masked={masked}, payloadLen={payloadLen}");
 
                 // マスクキー（サーバーからは通常なし）
                 byte[] maskKey = null;
                 if (masked)
                 {
                     maskKey = new byte[4];
-                    if (!await ReadExactAsync(maskKey, 0, 4, ct)) return null;
+                    if (!await ReadExactAsync(maskKey, 0, 4, ct))
+                    {
+                        Debug.LogWarning("WebSocket frame masked but failed to read mask key.");
+                        return null;
+                    }
                 }
 
                 // ペイロード（50MB上限）
@@ -167,7 +178,11 @@ namespace PolyLingRemoteClient
                 byte[] payload = new byte[payloadLen];
                 if (payloadLen > 0)
                 {
-                    if (!await ReadExactAsync(payload, 0, (int)payloadLen, ct)) return null;
+                    if (!await ReadExactAsync(payload, 0, (int)payloadLen, ct))
+                    {
+                        Debug.LogWarning("WebSocket frame payload read failed.");
+                        return null;
+                    }
                 }
 
                 if (masked && maskKey != null)
@@ -180,17 +195,32 @@ namespace PolyLingRemoteClient
                 if (opcode == 0x09)
                 {
                     await SendFrameAsync(0x8A, payload); // Pong
+                    Debug.Log("WebSocket ping received, sent pong.");
                     return new WsFrame { Type = WsFrameType.Ping };
                 }
 
                 if (opcode == 0x02)
+                {
+                    Debug.Log("WebSocket binary frame received.");
                     return new WsFrame { Type = WsFrameType.Binary, Binary = payload };
-                else
+                }
+                else {
+                    Debug.Log("WebSocket text frame received.");
                     return new WsFrame { Type = WsFrameType.Text, Text = Encoding.UTF8.GetString(payload) };
+                }
             }
-            catch (OperationCanceledException) { return null; }
-            catch (IOException) { return null; }
-            catch { return null; }
+            catch (OperationCanceledException) {
+                Debug.Log("WebSocket receive canceled.");
+                return null;
+            }
+            catch (IOException) {
+                Debug.Log("WebSocket receive failed (IO).");
+                return null;
+            }
+            catch {
+                Debug.Log("WebSocket receive failed.");
+                return null;
+            }
         }
 
         // ================================================================

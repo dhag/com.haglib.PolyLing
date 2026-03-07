@@ -1,8 +1,6 @@
 // RemoteClient/RemoteClient.cs
 // PolyLing Remote Client — EditorWindow
-// サーバーからプロジェクト全体(PLRP)を受信し、ProjectContextとして復元・表示する
-//
-// Poly_Ling依存: ProjectContext, ModelContext, MeshContext, RemoteProjectSerializer等を使用
+// サーバーからプロジェクト全体(PLRP)を受信し、左ペイン=ツリー、右ペイン=3Dビューポートで表示
 
 using System;
 using System.Collections.Concurrent;
@@ -36,7 +34,6 @@ namespace Poly_Ling.Remote
         private bool _isConnected;
         private readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
 
-        // リクエスト管理
         private int _requestId;
         private readonly Dictionary<string, Action<string>> _textCallbacks
             = new Dictionary<string, Action<string>>();
@@ -53,6 +50,12 @@ namespace Poly_Ling.Remote
         private string _projectStatus = "未受信";
 
         // ================================================================
+        // ビューポート
+        // ================================================================
+
+        private RemoteViewportCore _viewport;
+
+        // ================================================================
         // GUI状態
         // ================================================================
 
@@ -64,6 +67,10 @@ namespace Poly_Ling.Remote
 
         private readonly List<string> _logMessages = new List<string>();
         private const int MaxLogLines = 30;
+
+        // レイアウト
+        private float _splitX = 260f;
+        private bool _draggingSplit;
 
         // ================================================================
         // ウィンドウ
@@ -78,12 +85,17 @@ namespace Poly_Ling.Remote
         private void OnEnable()
         {
             EditorApplication.update += ProcessMainThreadQueue;
+            _viewport = new RemoteViewportCore();
+            _viewport.RequestRepaint = Repaint;
+            _viewport.Init();
         }
 
         private void OnDisable()
         {
             EditorApplication.update -= ProcessMainThreadQueue;
             Disconnect();
+            _viewport?.Dispose();
+            _viewport = null;
         }
 
         private void ProcessMainThreadQueue()
@@ -103,18 +115,114 @@ namespace Poly_Ling.Remote
 
         private void OnGUI()
         {
-            EditorGUILayout.LabelField("PolyLing Remote Client", EditorStyles.boldLabel);
-            EditorGUILayout.Space(4);
+            float totalW = position.width;
+            float totalH = position.height;
+
+            // ドラッグでスプリッタ移動
+            HandleSplitDrag(totalH);
+
+            float leftW = Mathf.Clamp(_splitX, 180f, totalW - 100f);
+            float rightW = totalW - leftW - 4f;
+
+            // 左ペイン
+            GUILayout.BeginArea(new Rect(0, 0, leftW, totalH));
+            DrawLeftPane(leftW, totalH);
+            GUILayout.EndArea();
+
+            // スプリッタ
+            var splitRect = new Rect(leftW, 0, 4f, totalH);
+            EditorGUI.DrawRect(splitRect, new Color(0.2f, 0.2f, 0.2f));
+            EditorGUIUtility.AddCursorRect(splitRect, MouseCursor.ResizeHorizontal);
+
+            // 右ペイン（3Dビューポート）
+            GUILayout.BeginArea(new Rect(leftW + 4f, 0, rightW, totalH));
+            DrawViewport(new Rect(0, 0, rightW, totalH));
+            GUILayout.EndArea();
+        }
+
+        private void HandleSplitDrag(float totalH)
+        {
+            float leftW = Mathf.Clamp(_splitX, 180f, position.width - 100f);
+            var splitRect = new Rect(leftW, 0, 6f, totalH);
+            int id = GUIUtility.GetControlID(FocusType.Passive);
+            var e = Event.current;
+
+            switch (e.type)
+            {
+                case EventType.MouseDown:
+                    if (splitRect.Contains(e.mousePosition)) { _draggingSplit = true; GUIUtility.hotControl = id; e.Use(); }
+                    break;
+                case EventType.MouseDrag:
+                    if (_draggingSplit) { _splitX = Mathf.Clamp(e.mousePosition.x, 180f, position.width - 100f); e.Use(); Repaint(); }
+                    break;
+                case EventType.MouseUp:
+                    if (_draggingSplit) { _draggingSplit = false; GUIUtility.hotControl = 0; e.Use(); }
+                    break;
+            }
+        }
+
+        // ================================================================
+        // 左ペイン
+        // ================================================================
+
+        private void DrawLeftPane(float w, float h)
+        {
+            EditorGUILayout.LabelField("Remote Client", EditorStyles.boldLabel);
+            EditorGUILayout.Space(2);
 
             DrawConnectionUI();
-            EditorGUILayout.Space(4);
+            EditorGUILayout.Space(2);
             DrawProjectSummary();
-            EditorGUILayout.Space(4);
-            DrawModelMeshTree();
-            EditorGUILayout.Space(4);
-            DrawMeshDetail();
-            EditorGUILayout.Space(4);
+            EditorGUILayout.Space(2);
+
+            float treeH = Mathf.Max(100f, h - 340f);
+            DrawModelMeshTree(treeH);
+
+            EditorGUILayout.Space(2);
             DrawLog();
+        }
+
+        // ================================================================
+        // 3Dビューポート（右ペイン）
+        // ================================================================
+
+        private void DrawViewport(Rect rect)
+        {
+            if (_viewport == null) return;
+
+            var model = GetSelectedModel();
+
+            if (model == null)
+            {
+                EditorGUI.DrawRect(rect, new Color(0.13f, 0.13f, 0.13f));
+                var style = new GUIStyle(EditorStyles.label);
+                style.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+                style.alignment = TextAnchor.MiddleCenter;
+                GUI.Label(rect, _project == null ? "プロジェクト未受信" : "モデルを選択してください", style);
+                return;
+            }
+
+            // IMGUIのRect描画
+            if (Event.current.type == EventType.Repaint)
+                EditorGUI.DrawRect(rect, new Color(0.13f, 0.13f, 0.13f));
+
+            _viewport.Draw(rect, model);
+
+            // モデル名オーバーレイ
+            if (Event.current.type == EventType.Repaint)
+            {
+                var labelStyle = new GUIStyle(EditorStyles.miniLabel);
+                labelStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f);
+                GUI.Label(new Rect(rect.x + 4, rect.y + 2, rect.width - 8, 16),
+                    $"[{_selectedModelIndex}] {model.Name}", labelStyle);
+            }
+        }
+
+        private ModelContext GetSelectedModel()
+        {
+            if (_project == null || _selectedModelIndex < 0 || _selectedModelIndex >= _project.ModelCount)
+                return null;
+            return _project.Models[_selectedModelIndex];
         }
 
         // ================================================================
@@ -126,28 +234,27 @@ namespace Poly_Ling.Remote
             EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(_isConnected))
             {
-                _host = EditorGUILayout.TextField("Host", _host);
-                _port = EditorGUILayout.IntField("Port", _port, GUILayout.Width(80));
+                _host = EditorGUILayout.TextField(_host, GUILayout.ExpandWidth(true));
+                _port = EditorGUILayout.IntField(_port, GUILayout.Width(55));
             }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
             if (!_isConnected)
             {
-                if (GUILayout.Button("Connect", GUILayout.Width(100)))
+                if (GUILayout.Button("Connect", GUILayout.Width(80)))
                     Connect();
             }
             else
             {
-                EditorGUILayout.LabelField("● Connected", EditorStyles.boldLabel,
-                    GUILayout.Width(100));
-                if (GUILayout.Button("Disconnect", GUILayout.Width(100)))
+                EditorGUILayout.LabelField("● Connected", EditorStyles.boldLabel, GUILayout.Width(90));
+                if (GUILayout.Button("Cut", GUILayout.Width(40)))
                     Disconnect();
             }
 
             using (new EditorGUI.DisabledScope(!_isConnected))
             {
-                if (GUILayout.Button("Fetch Project", GUILayout.Width(110)))
+                if (GUILayout.Button("Fetch Project"))
                     FetchProject();
             }
             EditorGUILayout.EndHorizontal();
@@ -159,47 +266,31 @@ namespace Poly_Ling.Remote
 
         private void DrawProjectSummary()
         {
-            EditorGUILayout.LabelField("Project", EditorStyles.miniBoldLabel);
-
             if (_project == null)
             {
-                EditorGUILayout.LabelField($"  Status: {_projectStatus}");
+                EditorGUILayout.LabelField(_projectStatus, EditorStyles.miniLabel);
                 return;
             }
 
-            EditorGUILayout.LabelField($"  Name: {_project.Name}");
-            EditorGUILayout.LabelField($"  Models: {_project.ModelCount}");
-            EditorGUILayout.LabelField($"  Current: [{_project.CurrentModelIndex}] " +
-                $"{_project.CurrentModel?.Name ?? "none"}");
+            int totalV = 0, totalF = 0;
+            foreach (var m in _project.Models)
+                foreach (var mc in m.MeshContextList) { totalV += mc.VertexCount; totalF += mc.FaceCount; }
 
-            int totalMeshes = 0;
-            int totalVertices = 0;
-            int totalFaces = 0;
-            foreach (var model in _project.Models)
-            {
-                totalMeshes += model.Count;
-                foreach (var mc in model.MeshContextList)
-                {
-                    totalVertices += mc.VertexCount;
-                    totalFaces += mc.FaceCount;
-                }
-            }
             EditorGUILayout.LabelField(
-                $"  Total: {totalMeshes} meshes, {totalVertices:N0} verts, {totalFaces:N0} faces");
+                $"{_project.Name}  {_project.ModelCount}M  V:{totalV:N0} F:{totalF:N0}",
+                EditorStyles.miniLabel);
         }
 
         // ================================================================
         // モデル/メッシュツリー
         // ================================================================
 
-        private void DrawModelMeshTree()
+        private void DrawModelMeshTree(float height)
         {
-            EditorGUILayout.LabelField("Model / Mesh Tree", EditorStyles.miniBoldLabel);
-
             if (_project == null) return;
 
             _treeScroll = EditorGUILayout.BeginScrollView(_treeScroll,
-                GUILayout.MinHeight(150), GUILayout.MaxHeight(400));
+                GUILayout.Height(height));
 
             for (int mi = 0; mi < _project.ModelCount; mi++)
             {
@@ -207,31 +298,34 @@ namespace Poly_Ling.Remote
                 bool isCurrent = mi == _project.CurrentModelIndex;
                 bool isExpanded = _expandedModels.Contains(mi);
 
-                // モデル行
                 EditorGUILayout.BeginHorizontal();
+                bool isModelSelected = _selectedModelIndex == mi;
+                var bg = GUI.backgroundColor;
+                if (isModelSelected) GUI.backgroundColor = new Color(0.4f, 0.7f, 1f);
 
-                var foldoutStyle = isCurrent ? EditorStyles.boldLabel : EditorStyles.label;
                 string prefix = isCurrent ? "★ " : "  ";
-                string modelLabel = $"{prefix}[{mi}] {model.Name} ({model.Count} meshes)";
-
-                bool newExpanded = EditorGUILayout.Foldout(isExpanded, modelLabel, true);
-                if (newExpanded != isExpanded)
+                string modelLabel = $"{prefix}[{mi}] {model.Name}";
+                bool newExp = EditorGUILayout.Foldout(isExpanded, modelLabel, true);
+                if (newExp != isExpanded)
                 {
-                    if (newExpanded) _expandedModels.Add(mi);
-                    else _expandedModels.Remove(mi);
+                    if (newExp) _expandedModels.Add(mi); else _expandedModels.Remove(mi);
                 }
 
+                // モデル選択ボタン
+                if (GUILayout.Button("▶", GUILayout.Width(22)))
+                {
+                    _selectedModelIndex = mi;
+                    _selectedMeshIndex = -1;
+                    Repaint();
+                }
+                GUI.backgroundColor = bg;
                 EditorGUILayout.EndHorizontal();
 
-                // メッシュリスト
                 if (isExpanded)
                 {
                     EditorGUI.indentLevel++;
                     for (int si = 0; si < model.Count; si++)
-                    {
-                        var mc = model.MeshContextList[si];
-                        DrawMeshRow(mi, si, mc);
-                    }
+                        DrawMeshRow(mi, si, model.MeshContextList[si]);
                     EditorGUI.indentLevel--;
                 }
             }
@@ -242,93 +336,27 @@ namespace Poly_Ling.Remote
         private void DrawMeshRow(int modelIndex, int meshIndex, MeshContext mc)
         {
             bool isSelected = _selectedModelIndex == modelIndex && _selectedMeshIndex == meshIndex;
-            int indent = mc.Depth * 12;
+            int indent = mc.Depth * 8;
 
             EditorGUILayout.BeginHorizontal();
             GUILayout.Space(indent);
 
-            // 選択ボタン
-            var bgColor = GUI.backgroundColor;
+            var bg = GUI.backgroundColor;
             if (isSelected) GUI.backgroundColor = new Color(0.4f, 0.6f, 1f);
 
             string visIcon = mc.IsVisible ? "●" : "○";
-            string lockIcon = mc.IsLocked ? "🔒" : "";
-            string typeStr = mc.Type != MeshType.Mesh ? $"[{mc.Type}]" : "";
-            string label = $"{visIcon} {meshIndex}: {mc.Name} {typeStr}{lockIcon}";
-            string detail = $"V:{mc.VertexCount} F:{mc.FaceCount}";
+            string label = $"{visIcon} {meshIndex}: {mc.Name}";
 
-            if (GUILayout.Button(label, EditorStyles.miniButtonLeft, GUILayout.MinWidth(180)))
+            if (GUILayout.Button(label, EditorStyles.miniButtonLeft))
             {
                 _selectedModelIndex = modelIndex;
                 _selectedMeshIndex = meshIndex;
+                Repaint();
             }
 
-            GUILayout.Label(detail, EditorStyles.miniLabel, GUILayout.Width(100));
-            GUI.backgroundColor = bgColor;
-
+            GUILayout.Label($"V:{mc.VertexCount}", EditorStyles.miniLabel, GUILayout.Width(50));
+            GUI.backgroundColor = bg;
             EditorGUILayout.EndHorizontal();
-        }
-
-        // ================================================================
-        // メッシュ詳細
-        // ================================================================
-
-        private void DrawMeshDetail()
-        {
-            if (_project == null || _selectedModelIndex < 0 || _selectedMeshIndex < 0)
-                return;
-
-            if (_selectedModelIndex >= _project.ModelCount)
-                return;
-
-            var model = _project.Models[_selectedModelIndex];
-            if (_selectedMeshIndex >= model.Count)
-                return;
-
-            var mc = model.MeshContextList[_selectedMeshIndex];
-
-            EditorGUILayout.LabelField("Mesh Detail", EditorStyles.miniBoldLabel);
-
-            using (new EditorGUI.DisabledScope(true))
-            {
-                EditorGUILayout.TextField("Name", mc.Name);
-                EditorGUILayout.EnumPopup("Type", mc.Type);
-                EditorGUILayout.Toggle("Visible", mc.IsVisible);
-                EditorGUILayout.Toggle("Locked", mc.IsLocked);
-                EditorGUILayout.IntField("Vertices", mc.VertexCount);
-                EditorGUILayout.IntField("Faces", mc.FaceCount);
-                EditorGUILayout.IntField("Depth", mc.Depth);
-                EditorGUILayout.IntField("Parent", mc.ParentIndex);
-                EditorGUILayout.IntField("MirrorType", mc.MirrorType);
-                EditorGUILayout.Toggle("ExcludeExport", mc.ExcludeFromExport);
-
-                if (mc.IsMorph)
-                {
-                    EditorGUILayout.LabelField("Morph", EditorStyles.miniBoldLabel);
-                    EditorGUILayout.TextField("MorphName", mc.MorphName);
-                    EditorGUILayout.IntField("MorphPanel", mc.MorphPanel);
-                    EditorGUILayout.IntField("MorphParent", mc.MorphParentIndex);
-                }
-
-                if (mc.BoneTransform != null)
-                {
-                    EditorGUILayout.LabelField("Bone", EditorStyles.miniBoldLabel);
-                    EditorGUILayout.Vector3Field("Position", mc.BoneTransform.Position);
-                    EditorGUILayout.Vector3Field("Rotation", mc.BoneTransform.Rotation);
-                    EditorGUILayout.Vector3Field("Scale", mc.BoneTransform.Scale);
-                }
-
-                if (mc.IsIK)
-                {
-                    EditorGUILayout.LabelField("IK", EditorStyles.miniBoldLabel);
-                    EditorGUILayout.IntField("IKTarget", mc.IKTargetIndex);
-                    EditorGUILayout.IntField("IKLoopCount", mc.IKLoopCount);
-                    EditorGUILayout.FloatField("IKLimitAngle", mc.IKLimitAngle);
-                }
-
-                // BindPose/WorldMatrix表示
-                EditorGUILayout.LabelField("WorldMatrix", mc.WorldMatrix.ToString());
-            }
         }
 
         // ================================================================
@@ -350,17 +378,9 @@ namespace Poly_Ling.Remote
                 bool ok = await _ws.ConnectAsync(_host, _port, _cts.Token);
                 _mainThreadQueue.Enqueue(() =>
                 {
-                    if (ok)
-                    {
-                        _isConnected = true;
-                        Log($"接続成功: {_host}:{_port}");
-                        Repaint();
-                    }
-                    else
-                    {
-                        Log("接続失敗");
-                        Repaint();
-                    }
+                    if (ok) { _isConnected = true; Log($"接続: {_host}:{_port}"); }
+                    else Log("接続失敗");
+                    Repaint();
                 });
 
                 if (ok)
@@ -433,14 +453,8 @@ namespace Poly_Ling.Remote
             string id = ExtractJsonString(json, "id");
             string type = ExtractJsonString(json, "type");
 
-            if (type == "push")
-            {
-                string eventName = ExtractJsonString(json, "event");
-                Log($"Push: {eventName}");
-                return;
-            }
+            if (type == "push") { Log($"Push: {ExtractJsonString(json, "event")}"); return; }
 
-            // binaryCallbackがあれば直後のバイナリ待ち
             if (id != null && _binaryCallbacks.ContainsKey(id))
             {
                 _lastTextResponseId = id;
@@ -457,7 +471,6 @@ namespace Poly_Ling.Remote
 
         private void HandleBinaryMessage(byte[] data)
         {
-            // リクエストと紐づけ
             if (_lastTextResponseId != null &&
                 _binaryCallbacks.TryGetValue(_lastTextResponseId, out var cb))
             {
@@ -468,16 +481,11 @@ namespace Poly_Ling.Remote
                 return;
             }
 
-            // 紐づけなし → マジックで判定
             uint magic = RemoteMagic.Read(data);
             if (magic == RemoteMagic.Project)
-            {
                 ProcessProjectBinary(data);
-            }
             else
-            {
-                Log($"バイナリ受信（未紐づけ）: {data.Length}B magic=0x{magic:X8}");
-            }
+                Log($"バイナリ受信: {data.Length}B magic=0x{magic:X8}");
         }
 
         // ================================================================
@@ -496,31 +504,44 @@ namespace Poly_Ling.Remote
             _projectStatus = "受信中...";
             Repaint();
 
-            SendBinaryQuery(json, (textResp, binaryData) =>
-            {
-                ProcessProjectBinary(binaryData);
-            });
-
+            SendBinaryQuery(json, (textResp, binaryData) => ProcessProjectBinary(binaryData));
             Log("project クエリ送信");
         }
 
         private void ProcessProjectBinary(byte[] data)
         {
+            UnityEngine.Debug.Log($"[RemoteClient] ProcessProjectBinary called: {data?.Length ?? 0}B");
             if (data == null || data.Length < 8)
             {
                 _projectStatus = "受信エラー: データなし";
-                Log("プロジェクトデータなし");
                 Repaint();
                 return;
             }
 
+            UnityEngine.Debug.Log($"[RemoteClient] Deserialize start: {data.Length}B");
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            _project = RemoteProjectSerializer.Deserialize(data);
+            try
+            {
+                _project = RemoteProjectSerializer.Deserialize(data);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                UnityEngine.Debug.LogError($"[RemoteClient] Deserialize EXCEPTION ({data.Length}B, {sw.ElapsedMilliseconds}ms): {ex}");
+                _projectStatus = "デシリアライズ例外";
+                Repaint();
+                return;
+            }
             sw.Stop();
+            UnityEngine.Debug.Log($"[RemoteClient] Deserialize: {(_project != null ? "OK models=" + _project.ModelCount : "FAILED")} ({sw.ElapsedMilliseconds}ms)");
 
             if (_project != null)
             {
-                _projectStatus = $"受信完了 ({FormatBytes(data.Length)}, {sw.ElapsedMilliseconds}ms)";
+                // UnityMesh を構築（描画に必要）
+                BuildUnityMeshes(_project);
+
+                _projectStatus = $"OK ({FormatBytes(data.Length)}, {sw.ElapsedMilliseconds}ms)";
+
                 _expandedModels.Clear();
                 for (int i = 0; i < _project.ModelCount; i++)
                     _expandedModels.Add(i);
@@ -530,23 +551,44 @@ namespace Poly_Ling.Remote
 
                 int totalV = 0, totalF = 0;
                 foreach (var m in _project.Models)
-                    foreach (var mc in m.MeshContextList)
-                    {
-                        totalV += mc.VertexCount;
-                        totalF += mc.FaceCount;
-                    }
+                    foreach (var mc in m.MeshContextList) { totalV += mc.VertexCount; totalF += mc.FaceCount; }
 
-                Log($"プロジェクト受信: \"{_project.Name}\" " +
-                    $"{_project.ModelCount}モデル V={totalV:N0} F={totalF:N0} " +
-                    $"({FormatBytes(data.Length)}, {sw.ElapsedMilliseconds}ms)");
+                Log($"受信: \"{_project.Name}\" {_project.ModelCount}モデル " +
+                    $"V={totalV:N0} F={totalF:N0} ({FormatBytes(data.Length)}, {sw.ElapsedMilliseconds}ms)");
             }
             else
             {
                 _projectStatus = "デシリアライズ失敗";
-                Log("プロジェクトのデシリアライズ失敗");
+                Log("デシリアライズ失敗");
             }
 
             Repaint();
+        }
+
+        /// <summary>
+        /// 受信した ProjectContext 内の全 MeshContext に UnityMesh を構築する
+        /// </summary>
+        private static void BuildUnityMeshes(ProjectContext project)
+        {
+            foreach (var model in project.Models)
+            {
+                int built = 0, skipped = 0;
+                foreach (var mc in model.MeshContextList)
+                {
+                    if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
+                    {
+                        mc.UnityMesh = mc.MeshObject.ToUnityMesh();
+                        built++;
+                        if (mc.UnityMesh == null)
+                            UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMesh failed: {mc.Name}");
+                    }
+                    else
+                    {
+                        skipped++;
+                    }
+                }
+                UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMeshes model={model.Name}: built={built} skipped={skipped}");
+            }
         }
 
         // ================================================================
@@ -558,31 +600,31 @@ namespace Poly_Ling.Remote
         private void SendBinaryQuery(string json, Action<string, byte[]> onResponse)
         {
             string id = ExtractJsonString(json, "id");
-            if (id != null)
-                _binaryCallbacks[id] = onResponse;
+            if (id != null) _binaryCallbacks[id] = onResponse;
             _ = _ws.SendTextAsync(json);
         }
 
         // ================================================================
-        // 簡易JSONヘルパー
+        // ログ
         // ================================================================
 
-        private static string ExtractJsonString(string json, string key)
+        private void DrawLog()
         {
-            string search = $"\"{key}\"";
-            int idx = json.IndexOf(search, StringComparison.Ordinal);
-            if (idx < 0) return null;
+            _logScroll = EditorGUILayout.BeginScrollView(_logScroll, GUILayout.Height(80));
+            foreach (var msg in _logMessages)
+                EditorGUILayout.LabelField(msg, EditorStyles.miniLabel);
+            EditorGUILayout.EndScrollView();
 
-            int colon = json.IndexOf(':', idx + search.Length);
-            if (colon < 0) return null;
+            if (GUILayout.Button("Clear Log", GUILayout.Width(72)))
+                _logMessages.Clear();
+        }
 
-            int valStart = colon + 1;
-            while (valStart < json.Length && json[valStart] == ' ') valStart++;
-            if (valStart >= json.Length || json[valStart] != '"') return null;
-
-            int valEnd = json.IndexOf('"', valStart + 1);
-            if (valEnd < 0) return null;
-            return json.Substring(valStart + 1, valEnd - valStart - 1);
+        private void Log(string message)
+        {
+            string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            _logMessages.Add(line);
+            while (_logMessages.Count > MaxLogLines)
+                _logMessages.RemoveAt(0);
         }
 
         // ================================================================
@@ -596,28 +638,19 @@ namespace Poly_Ling.Remote
             return $"{bytes / (1024.0 * 1024.0):F1}MB";
         }
 
-        private void Log(string message)
+        private static string ExtractJsonString(string json, string key)
         {
-            string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
-            _logMessages.Add(line);
-            while (_logMessages.Count > MaxLogLines)
-                _logMessages.RemoveAt(0);
-        }
-
-        // ================================================================
-        // ログ
-        // ================================================================
-
-        private void DrawLog()
-        {
-            EditorGUILayout.LabelField("Log", EditorStyles.miniBoldLabel);
-            _logScroll = EditorGUILayout.BeginScrollView(_logScroll, GUILayout.Height(80));
-            foreach (var msg in _logMessages)
-                EditorGUILayout.LabelField(msg, EditorStyles.miniLabel);
-            EditorGUILayout.EndScrollView();
-
-            if (GUILayout.Button("Clear Log", GUILayout.Width(80)))
-                _logMessages.Clear();
+            string search = $"\"{key}\"";
+            int idx = json.IndexOf(search, StringComparison.Ordinal);
+            if (idx < 0) return null;
+            int colon = json.IndexOf(':', idx + search.Length);
+            if (colon < 0) return null;
+            int valStart = colon + 1;
+            while (valStart < json.Length && json[valStart] == ' ') valStart++;
+            if (valStart >= json.Length || json[valStart] != '"') return null;
+            int valEnd = json.IndexOf('"', valStart + 1);
+            if (valEnd < 0) return null;
+            return json.Substring(valStart + 1, valEnd - valStart - 1);
         }
     }
 }

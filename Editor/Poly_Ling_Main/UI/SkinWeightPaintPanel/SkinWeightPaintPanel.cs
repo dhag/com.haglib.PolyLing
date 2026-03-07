@@ -19,29 +19,10 @@ using Poly_Ling.Commands;
 namespace Poly_Ling.UI
 {
     // ================================================================
-    // ペイントモード列挙
-    // ================================================================
-
-    public enum SkinWeightPaintMode
-    {
-        Replace,
-        Add,
-        Scale,
-        Smooth,
-    }
-
-    public enum BrushFalloff
-    {
-        Constant,
-        Linear,
-        Smooth,
-    }
-
-    // ================================================================
     // パネル本体
     // ================================================================
 
-    public class SkinWeightPaintPanel : IToolPanelBaseUXML
+    public class SkinWeightPaintPanel : IToolPanelBaseUXML, ISkinWeightPaintPanel
     {
         // ================================================================
         // アセットパス

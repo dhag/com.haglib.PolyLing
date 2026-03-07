@@ -141,7 +141,6 @@ public partial class PolyLing
             Poly_Ling.UI.UVZPanel.Open(_toolManager?.toolContext);
         }
 
-        EditorGUILayout.Space(5);
 
 
         EditorGUILayout.Space(5);
@@ -150,7 +149,10 @@ public partial class PolyLing
             if (_panelContext != null)
                 Poly_Ling.UI.VertexToolsPanelV2.Open(_panelContext, _toolManager?.toolContext);
         }
-
+        if (GUILayout.Button("移行済み　選択頂点の編集"))
+        {
+            Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
+        }
 
         if (GUILayout.Button("パーツ選択辞書 V2"))
         {
@@ -164,7 +166,20 @@ public partial class PolyLing
                 Poly_Ling.UI.ModelListPanelV2.Open(_panelContext);
         }
         EditorGUILayout.Space(5);
+        if (GUILayout.Button(L.Get("移行済み　PartsSelectionDicPanel")))
+        {
+            Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
+        }
+        if (GUILayout.Button("移行済み　メッシュ選択辞書→ メッシュリストV2"))
+        {
+            Poly_Ling.UI.MeshSelectionSetPanel.Open(_toolManager?.toolContext);
+        }
 
+        if (GUILayout.Button("移行済み　モデル選択"))
+        {
+            Poly_Ling.UI.ModelListPanel.Open(_toolManager?.toolContext);
+        }
+        EditorGUILayout.Space(5);
                 // 簡易ブレンド
         if (GUILayout.Button("簡易ブレンド V2"))
         {
@@ -236,24 +251,6 @@ public partial class PolyLing
         }
         
                 
-        if (GUILayout.Button("移行済み　選択頂点の編集"))
-        {
-            Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button(L.Get("移行済み　PartsSelectionDicPanel")))
-        {
-            Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　メッシュ選択辞書→ メッシュリストV2"))
-        {
-            Poly_Ling.UI.MeshSelectionSetPanel.Open(_toolManager?.toolContext);
-        }
-
-        if (GUILayout.Button("移行済み　モデル選択"))
-        {
-            Poly_Ling.UI.ModelListPanel.Open(_toolManager?.toolContext);
-        }
-        
         if (GUILayout.Button("移行済み　モーフ確認"))
         {
             Poly_Ling.Tools.Panels.MorphPanel.Open(_toolManager?.toolContext);
