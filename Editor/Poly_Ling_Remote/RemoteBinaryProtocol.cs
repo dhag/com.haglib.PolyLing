@@ -53,6 +53,8 @@ namespace Poly_Ling.Remote
         public const uint Model   = 0x44524C50;
         /// <summary>プロジェクトデータ "PLRP" （将来用）</summary>
         public const uint Project = 0x50524C50;
+        /// <summary>メッシュスロット "PLRS"</summary>
+        public const uint MeshSlot = 0x53524C50;
 
         /// <summary>先頭4バイトからマジックを読み取り</summary>
         public static uint Read(byte[] data)

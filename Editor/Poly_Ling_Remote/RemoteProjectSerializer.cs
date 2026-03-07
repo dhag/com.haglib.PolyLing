@@ -67,6 +67,82 @@ namespace Poly_Ling.Remote
     public static class RemoteProjectSerializer
     {
         // ================================================================
+        // SerializeModelSlot: 単一モデル (PLRD)
+        // [4B] Magic=PLRD  [1B] Version=1  [2B] modelIndex  [1B] padding
+        // + WriteModel content
+        // ================================================================
+
+        public static byte[] SerializeModelSlot(ModelContext model, int modelIndex)
+        {
+            if (model == null) return null;
+            using (var ms = new MemoryStream())
+            using (var w = new BinaryWriter(ms))
+            {
+                w.Write(RemoteMagic.Model);
+                w.Write((byte)1);
+                w.Write((short)modelIndex);
+                w.Write((byte)0);
+                WriteModel(w, model);
+                return ms.ToArray();
+            }
+        }
+
+        public static (int modelIndex, ModelContext model) DeserializeModelSlot(byte[] data)
+        {
+            if (data == null || data.Length < 8) return (-1, null);
+            using (var ms = new MemoryStream(data))
+            using (var r = new BinaryReader(ms))
+            {
+                uint magic = r.ReadUInt32();
+                if (magic != RemoteMagic.Model) return (-1, null);
+                r.ReadByte();                       // version
+                short modelIndex = r.ReadInt16();
+                r.ReadByte();                       // padding
+                var model = ReadModel(r);
+                return (modelIndex, model);
+            }
+        }
+
+        // ================================================================
+        // SerializeMeshSlot: 単一メッシュ (PLRS)
+        // [4B] Magic=PLRS  [1B] Version=1  [2B] modelIndex  [2B] meshIndex  [1B] padding
+        // + WriteMeshContext content
+        // ================================================================
+
+        public static byte[] SerializeMeshSlot(MeshContext mc, int modelIndex, int meshIndex)
+        {
+            if (mc == null) return null;
+            using (var ms = new MemoryStream())
+            using (var w = new BinaryWriter(ms))
+            {
+                w.Write(RemoteMagic.MeshSlot);
+                w.Write((byte)1);
+                w.Write((short)modelIndex);
+                w.Write((short)meshIndex);
+                w.Write((byte)0);
+                WriteMeshContext(w, mc);
+                return ms.ToArray();
+            }
+        }
+
+        public static (int modelIndex, int meshIndex, MeshContext mc) DeserializeMeshSlot(byte[] data)
+        {
+            if (data == null || data.Length < 10) return (-1, -1, null);
+            using (var ms = new MemoryStream(data))
+            using (var r = new BinaryReader(ms))
+            {
+                uint magic = r.ReadUInt32();
+                if (magic != RemoteMagic.MeshSlot) return (-1, -1, null);
+                r.ReadByte();                       // version
+                short modelIndex = r.ReadInt16();
+                short meshIndex  = r.ReadInt16();
+                r.ReadByte();                       // padding
+                var mc = ReadMeshContext(r);
+                return (modelIndex, meshIndex, mc);
+            }
+        }
+
+        // ================================================================
         // Serialize: ProjectContext → byte[]
         // ================================================================
 

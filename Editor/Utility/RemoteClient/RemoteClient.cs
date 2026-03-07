@@ -258,6 +258,22 @@ namespace Poly_Ling.Remote
                     FetchProject();
             }
             EditorGUILayout.EndHorizontal();
+
+            // モデル/メッシュ単体取得ボタン
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(!_isConnected || _project == null))
+            {
+                if (GUILayout.Button("Fetch Model", GUILayout.Width(90)))
+                    FetchModel(_selectedModelIndex >= 0 ? _selectedModelIndex : 0);
+                if (GUILayout.Button("Fetch Mesh", GUILayout.Width(90)))
+                {
+                    if (_selectedModelIndex >= 0 && _selectedMeshIndex >= 0)
+                        FetchMesh(_selectedModelIndex, _selectedMeshIndex);
+                    else
+                        Log("Fetch Mesh: モデルとメッシュを選択してください");
+                }
+            }
+            EditorGUILayout.EndHorizontal();
         }
 
         // ================================================================
@@ -484,6 +500,10 @@ namespace Poly_Ling.Remote
             uint magic = RemoteMagic.Read(data);
             if (magic == RemoteMagic.Project)
                 ProcessProjectBinary(data);
+            else if (magic == RemoteMagic.Model)
+                ProcessModelSlotBinary(data);
+            else if (magic == RemoteMagic.MeshSlot)
+                ProcessMeshSlotBinary(data);
             else
                 Log($"バイナリ受信: {data.Length}B magic=0x{magic:X8}");
         }
@@ -491,6 +511,66 @@ namespace Poly_Ling.Remote
         // ================================================================
         // プロジェクト受信
         // ================================================================
+
+        private void FetchModel(int modelIndex)
+        {
+            if (_project == null) { Log("FetchModel: プロジェクト未受信"); return; }
+            string id = NextId();
+            string json = "{" +
+                $"\"id\":\"{id}\"," +
+                "\"type\":\"query\"," +
+                "\"target\":\"model\"," +
+                $"\"params\":{{\"modelIndex\":\"{modelIndex}\"}}" +
+            "}";
+            SendBinaryQuery(json, (_, binaryData) => ProcessModelSlotBinary(binaryData));
+            Log($"model クエリ送信 [{modelIndex}]");
+        }
+
+        private void FetchMesh(int modelIndex, int meshIndex)
+        {
+            if (_project == null) { Log("FetchMesh: プロジェクト未受信"); return; }
+            string id = NextId();
+            string json = "{" +
+                $"\"id\":\"{id}\"," +
+                "\"type\":\"query\"," +
+                "\"target\":\"mesh\"," +
+                $"\"params\":{{\"modelIndex\":\"{modelIndex}\",\"meshIndex\":\"{meshIndex}\"}}" +
+            "}";
+            SendBinaryQuery(json, (_, binaryData) => ProcessMeshSlotBinary(binaryData));
+            Log($"mesh クエリ送信 [{modelIndex}][{meshIndex}]");
+        }
+
+        private void ProcessModelSlotBinary(byte[] data)
+        {
+            if (data == null || data.Length < 8) { Log("model slot: データなし"); return; }
+            var (modelIndex, model) = RemoteProjectSerializer.DeserializeModelSlot(data);
+            if (model == null || modelIndex < 0) { Log("model slot: デシリアライズ失敗"); return; }
+            if (_project == null) { Log("model slot: プロジェクト未受信"); return; }
+            while (_project.Models.Count <= modelIndex)
+                _project.Models.Add(new ModelContext($"Model{_project.Models.Count}"));
+            _project.Models[modelIndex] = model;
+            BuildUnityMeshes(model);
+            Log($"model受信: [{modelIndex}] {model.Name} meshes={model.Count}");
+            Repaint();
+        }
+
+        private void ProcessMeshSlotBinary(byte[] data)
+        {
+            if (data == null || data.Length < 10) { Log("mesh slot: データなし"); return; }
+            var (modelIndex, meshIndex, mc) = RemoteProjectSerializer.DeserializeMeshSlot(data);
+            if (mc == null || modelIndex < 0 || meshIndex < 0) { Log("mesh slot: デシリアライズ失敗"); return; }
+            if (_project == null) { Log("mesh slot: プロジェクト未受信"); return; }
+            if (modelIndex >= _project.ModelCount) { Log($"mesh slot: modelIndex={modelIndex} out of range"); return; }
+            var model = _project.Models[modelIndex];
+            if (meshIndex >= model.Count) { Log($"mesh slot: meshIndex={meshIndex} out of range"); return; }
+            var old = model.MeshContextList[meshIndex];
+            if (old.UnityMesh != null) UnityEngine.Object.DestroyImmediate(old.UnityMesh);
+            model.MeshContextList[meshIndex] = mc;
+            if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
+                mc.UnityMesh = mc.MeshObject.ToUnityMesh();
+            Log($"mesh受信: [{modelIndex}][{meshIndex}] {mc.Name} V={mc.VertexCount}");
+            Repaint();
+        }
 
         private void FetchProject()
         {
@@ -571,24 +651,27 @@ namespace Poly_Ling.Remote
         private static void BuildUnityMeshes(ProjectContext project)
         {
             foreach (var model in project.Models)
+                BuildUnityMeshes(model);
+        }
+
+        private static void BuildUnityMeshes(ModelContext model)
+        {
+            int built = 0, skipped = 0;
+            foreach (var mc in model.MeshContextList)
             {
-                int built = 0, skipped = 0;
-                foreach (var mc in model.MeshContextList)
+                if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
                 {
-                    if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
-                    {
-                        mc.UnityMesh = mc.MeshObject.ToUnityMesh();
-                        built++;
-                        if (mc.UnityMesh == null)
-                            UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMesh failed: {mc.Name}");
-                    }
-                    else
-                    {
-                        skipped++;
-                    }
+                    mc.UnityMesh = mc.MeshObject.ToUnityMesh();
+                    built++;
+                    if (mc.UnityMesh == null)
+                        UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMesh failed: {mc.Name}");
                 }
-                UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMeshes model={model.Name}: built={built} skipped={skipped}");
+                else
+                {
+                    skipped++;
+                }
             }
+            UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMeshes model={model.Name}: built={built} skipped={skipped}");
         }
 
         // ================================================================

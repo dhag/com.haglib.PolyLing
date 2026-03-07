@@ -33,6 +33,8 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         private int _port = 8765;
+        private int _testModelIndex = 0;
+        private int _testMeshIndex  = 0;
         private bool _isRunning;
 
         // ================================================================
@@ -163,6 +165,21 @@ namespace Poly_Ling.Remote
 
                 if (GUILayout.Button("Send Project"))
                     SendProject();
+
+                EditorGUILayout.Space(3);
+                EditorGUILayout.LabelField("単体送信テスト", EditorStyles.miniBoldLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Model#", GUILayout.Width(50));
+                _testModelIndex = EditorGUILayout.IntField(_testModelIndex, GUILayout.Width(40));
+                if (GUILayout.Button("Send Model", GUILayout.Width(90)))
+                    SendModel(_testModelIndex);
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Mesh#", GUILayout.Width(50));
+                _testMeshIndex = EditorGUILayout.IntField(_testMeshIndex, GUILayout.Width(40));
+                if (GUILayout.Button("Send Mesh", GUILayout.Width(90)))
+                    SendMesh(_testModelIndex, _testMeshIndex);
+                EditorGUILayout.EndHorizontal();
 
                 // ================================================================
                 // キャプチャ画像リスト
@@ -784,6 +801,12 @@ namespace Poly_Ling.Remote
                     // プロジェクト全体をバイナリで返す
                     return ProcessProjectQuery(msg);
 
+                case "model":
+                    return ProcessModelSlotQuery(msg);
+
+                case "mesh":
+                    return ProcessMeshSlotQuery(msg);
+
                 default:
                     return BuildErrorResponse(msg.Id, $"Unknown target: {msg.Target}");
             }
@@ -829,6 +852,110 @@ namespace Poly_Ling.Remote
             jb.EndObject();
 
             return BuildSuccessResponse(msg.Id, jb.ToString());
+        }
+
+        /// <summary>
+        /// modelクエリ: 指定モデル1つをPLRDバイナリフレームで送信
+        /// params: modelIndex (省略時はCurrentModelIndex)
+        /// </summary>
+        private string ProcessModelSlotQuery(RemoteMessage msg)
+        {
+            var project = GetProjectContext();
+            if (project == null)
+                return BuildErrorResponse(msg.Id, "No project");
+
+            int modelIndex = GetParamInt(msg, "modelIndex", project.CurrentModelIndex);
+            if (modelIndex < 0 || modelIndex >= project.ModelCount)
+                return BuildErrorResponse(msg.Id, $"Invalid modelIndex: {modelIndex}");
+
+            var model = project.Models[modelIndex];
+            byte[] binaryData = RemoteProjectSerializer.SerializeModelSlot(model, modelIndex);
+            if (binaryData == null)
+                return BuildErrorResponse(msg.Id, "Serialize failed");
+
+            _pendingBinaryResponse = binaryData;
+            Log($"model: [{modelIndex}] {model.Name} ({binaryData.Length}B)");
+
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("binarySize", binaryData.Length);
+            jb.KeyValue("modelIndex", modelIndex);
+            jb.KeyValue("modelName", model.Name);
+            jb.KeyValue("meshCount", model.Count);
+            jb.EndObject();
+            return BuildSuccessResponse(msg.Id, jb.ToString());
+        }
+
+        /// <summary>
+        /// meshクエリ: 指定メッシュ1つをPLRSバイナリフレームで送信
+        /// params: modelIndex, meshIndex
+        /// </summary>
+        private string ProcessMeshSlotQuery(RemoteMessage msg)
+        {
+            var project = GetProjectContext();
+            if (project == null)
+                return BuildErrorResponse(msg.Id, "No project");
+
+            int modelIndex = GetParamInt(msg, "modelIndex", project.CurrentModelIndex);
+            int meshIndex  = GetParamInt(msg, "meshIndex", -1);
+
+            if (modelIndex < 0 || modelIndex >= project.ModelCount)
+                return BuildErrorResponse(msg.Id, $"Invalid modelIndex: {modelIndex}");
+
+            var model = project.Models[modelIndex];
+            if (meshIndex < 0 || meshIndex >= model.Count)
+                return BuildErrorResponse(msg.Id, $"Invalid meshIndex: {meshIndex}");
+
+            var mc = model.MeshContextList[meshIndex];
+            byte[] binaryData = RemoteProjectSerializer.SerializeMeshSlot(mc, modelIndex, meshIndex);
+            if (binaryData == null)
+                return BuildErrorResponse(msg.Id, "Serialize failed");
+
+            _pendingBinaryResponse = binaryData;
+            Log($"mesh: [{modelIndex}][{meshIndex}] {mc.Name} V={mc.VertexCount} ({binaryData.Length}B)");
+
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("binarySize", binaryData.Length);
+            jb.KeyValue("modelIndex", modelIndex);
+            jb.KeyValue("meshIndex", meshIndex);
+            jb.KeyValue("meshName", mc.Name);
+            jb.EndObject();
+            return BuildSuccessResponse(msg.Id, jb.ToString());
+        }
+
+        /// <summary>指定モデルをPLRDバイナリで全クライアントにプッシュ</summary>
+        private void SendModel(int modelIndex)
+        {
+            var project = GetProjectContext();
+            if (project == null || modelIndex < 0 || modelIndex >= project.ModelCount)
+            { Log($"SendModel: 無効 modelIndex={modelIndex}"); return; }
+            var model = project.Models[modelIndex];
+            byte[] data = RemoteProjectSerializer.SerializeModelSlot(model, modelIndex);
+            if (data != null)
+            {
+                BroadcastBinaryAsync(data);
+                Log($"モデル送信: [{modelIndex}] {model.Name} ({data.Length}B)");
+            }
+        }
+
+        /// <summary>指定メッシュをPLRSバイナリで全クライアントにプッシュ</summary>
+        private void SendMesh(int modelIndex, int meshIndex)
+        {
+            var project = GetProjectContext();
+            if (project == null) { Log("SendMesh: プロジェクトなし"); return; }
+            if (modelIndex < 0 || modelIndex >= project.ModelCount)
+            { Log($"SendMesh: 無効 modelIndex={modelIndex}"); return; }
+            var model = project.Models[modelIndex];
+            if (meshIndex < 0 || meshIndex >= model.Count)
+            { Log($"SendMesh: 無効 meshIndex={meshIndex}"); return; }
+            var mc = model.MeshContextList[meshIndex];
+            byte[] data = RemoteProjectSerializer.SerializeMeshSlot(mc, modelIndex, meshIndex);
+            if (data != null)
+            {
+                BroadcastBinaryAsync(data);
+                Log($"メッシュ送信: [{modelIndex}][{meshIndex}] {mc.Name} ({data.Length}B)");
+            }
         }
 
         /// <summary>テキスト応答の直後に送るバイナリデータ（1回使い切り）</summary>
