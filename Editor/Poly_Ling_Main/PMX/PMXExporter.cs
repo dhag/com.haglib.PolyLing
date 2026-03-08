@@ -691,15 +691,9 @@ namespace Poly_Ling.PMX
             bool isMirror)
         {
             var meshObject = ctx.MeshObject;
-            int meshVertexStart = document.Vertices.Count;
 
-            // 頂点を変換（順序保持）
-            foreach (var vertex in meshObject.Vertices)
-            {
-                var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
-                pmxVertex.Index = document.Vertices.Count;
-                document.Vertices.Add(pmxVertex);
-            }
+            // UV展開しながら頂点をdocumentに追加
+            var vertexMapping = AppendExpandedVertices(meshObject, document, boneNameToIndex, settings);
 
             // 面を材質ごとにグループ化（同一材質内の面順序は保持）
             var facesByMaterial = new Dictionary<int, List<Face>>();
@@ -722,19 +716,26 @@ namespace Poly_Ling.PMX
                 {
                     if (face.VertexIndices.Count < 3) continue;
 
-                    // 三角形に分割
+                    // 三角形に分割（fan triangulation）
                     for (int i = 0; i < face.VertexIndices.Count - 2; i++)
                     {
-                        int v0 = face.VertexIndices[0] + meshVertexStart;
-                        int v1 = face.VertexIndices[i + 1] + meshVertexStart;
-                        int v2 = face.VertexIndices[i + 2] + meshVertexStart;
+                        int vi0 = face.VertexIndices[0];
+                        int vi1 = face.VertexIndices[i + 1];
+                        int vi2 = face.VertexIndices[i + 2];
+                        int uv0 = face.UVIndices.Count > 0 ? face.UVIndices[0] : 0;
+                        int uv1 = face.UVIndices.Count > i + 1 ? face.UVIndices[i + 1] : 0;
+                        int uv2 = face.UVIndices.Count > i + 2 ? face.UVIndices[i + 2] : 0;
+
+                        if (!vertexMapping.TryGetValue((vi0, uv0), out int v0)) continue;
+                        if (!vertexMapping.TryGetValue((vi1, uv1), out int v1)) continue;
+                        if (!vertexMapping.TryGetValue((vi2, uv2), out int v2)) continue;
 
                         var pmxFace = new PMXFace
                         {
                             MaterialName = materialName,
                             MaterialIndex = matIndex,
                             FaceIndex = document.Faces.Count,
-                            VertexIndex1 = settings.FlipZ ? v0 : v0,
+                            VertexIndex1 = v0,
                             VertexIndex2 = settings.FlipZ ? v2 : v1,
                             VertexIndex3 = settings.FlipZ ? v1 : v2
                         };
@@ -759,7 +760,54 @@ namespace Poly_Ling.PMX
             }
 
             // PolyLingメタUVモーフを生成（頂点ID・UVサブインデックス保存用）
-            BuildPolyLingMetaMorph(ctx, document, meshVertexStart, objectName);
+            BuildPolyLingMetaMorph(ctx, document, vertexMapping, objectName);
+        }
+
+        /// <summary>
+        /// MeshObject を (vIdx, uvIdx) で UV展開しながら PMX 頂点を document に追加する。
+        /// 戻り値: (vIdx, uvIdx) → document上のPMX頂点インデックス
+        /// </summary>
+        private static Dictionary<(int vIdx, int uvIdx), int> AppendExpandedVertices(
+            MeshObject meshObject,
+            PMXDocument document,
+            Dictionary<string, int> boneNameToIndex,
+            PMXExportSettings settings)
+        {
+            int meshVertexStart = document.Vertices.Count;
+            var localMap = meshObject.BuildExpansionMap();
+
+            // ローカルインデックスをdocumentグローバルインデックスにオフセット
+            var vertexMapping = new Dictionary<(int vIdx, int uvIdx), int>(localMap.Count);
+            foreach (var kv in localMap)
+                vertexMapping[kv.Key] = kv.Value + meshVertexStart;
+
+            // 孤立頂点除外
+            var nonIsolated = new HashSet<int>();
+            foreach (var face in meshObject.Faces)
+            {
+                if (face.VertexCount < 3) continue;
+                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
+            }
+
+            // 展開順（vIdx→uvIdx）に頂点を追加（孤立頂点はスキップ）
+            for (int vIdx = 0; vIdx < meshObject.Vertices.Count; vIdx++)
+            {
+                if (!nonIsolated.Contains(vIdx)) continue;
+                var vertex = meshObject.Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                {
+                    var pmxVertex = ConvertVertex(vertex, boneNameToIndex, settings);
+                    Vector2 uv = uvIdx < vertex.UVs.Count ? vertex.UVs[uvIdx] : Vector2.zero;
+                    if (settings.FlipUV_V) uv.y = 1f - uv.y;
+                    pmxVertex.UV = uv;
+                    pmxVertex.Index = document.Vertices.Count;
+                    document.Vertices.Add(pmxVertex);
+                }
+            }
+
+            return vertexMapping;
         }
 
         /// <summary>
@@ -776,7 +824,7 @@ namespace Poly_Ling.PMX
         private static void BuildPolyLingMetaMorph(
             MeshContext ctx,
             PMXDocument document,
-            int meshVertexStart,
+            Dictionary<(int vIdx, int uvIdx), int> vertexMapping,
             string objectName)
         {
             var meshObject = ctx.MeshObject;
@@ -807,9 +855,11 @@ namespace Poly_Ling.PMX
                 var vertex = meshObject.Vertices[localIndex];
                 int uvSubIndex = vertexUVSubIndex.TryGetValue(localIndex, out int s) ? s : 0;
 
+                if (!vertexMapping.TryGetValue((localIndex, uvSubIndex), out int pmxIdx)) continue;
+
                 morph.Offsets.Add(new PMXUVMorphOffset
                 {
-                    VertexIndex = meshVertexStart + localIndex,
+                    VertexIndex = pmxIdx,
                     Offset = new Vector4(-1f, uvSubIndex, localIndex, vertex.Id)
                 });
             }

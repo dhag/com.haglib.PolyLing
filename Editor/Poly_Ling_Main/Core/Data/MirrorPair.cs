@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Poly_Ling.Symmetry;
 
@@ -53,7 +54,7 @@ namespace Poly_Ling.Data
         public bool IsValid =>
             Real != null && Mirror != null &&
             VertexMap != null && VertexMap.Length > 0 &&
-            BonePairMap != null && BonePairMap.Count > 0;
+            BonePairMap != null;
 
         /// <summary>ペアリング構築時のログ</summary>
         public string BuildLog { get; private set; } = "";
@@ -262,7 +263,9 @@ namespace Poly_Ling.Data
 
             BuildLog += $"BonePairMap: {BonePairMap.Count} pairs from {votes.Count} vote entries\n";
 
-            return BonePairMap.Count > 0;
+            // ボーンウェイトを持つ頂点が存在しない場合（MQO由来等）はボーンなしとして許可
+            bool hasBoneWeights = realMesh.Vertices.Any(v => v.HasBoneWeight);
+            return BonePairMap.Count > 0 || !hasBoneWeights;
         }
 
         /// <summary>

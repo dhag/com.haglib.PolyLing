@@ -1048,9 +1048,18 @@ namespace Poly_Ling.Data
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = IsSkinned;
 
-            // パス1: 頂点順 → UV順 で頂点データを作成
+            // 孤立頂点除外: 面に参照されている頂点インデックスのみ展開対象
+            var nonIsolatedVerts = new HashSet<int>();
+            foreach (var face in Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden) continue;
+                foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
+            }
+
+            // パス1: 頂点順 → UV順 で頂点データを作成（孤立頂点はスキップ）
             for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
             {
+                if (!nonIsolatedVerts.Contains(vIdx)) continue;
                 var vertex = Vertices[vIdx];
                 int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
@@ -1317,9 +1326,18 @@ namespace Poly_Ling.Data
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = IsSkinned;
 
-            // パス1: 頂点順 → UV順 で頂点データを作成
+            // 孤立頂点除外: 面に参照されている頂点インデックスのみ展開対象
+            var nonIsolatedVerts = new HashSet<int>();
+            foreach (var face in Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden) continue;
+                foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
+            }
+
+            // パス1: 頂点順 → UV順 で頂点データを作成（孤立頂点はスキップ）
             for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
             {
+                if (!nonIsolatedVerts.Contains(vIdx)) continue;
                 var vertex = Vertices[vIdx];
                 int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
@@ -2035,6 +2053,68 @@ namespace Poly_Ling.Data
 
             return $"[{Name}] Vertices: {VertexCount}, Faces: {FaceCount} " +
                    $"(Tri: {triCount}, Quad: {quadCount}, NGon: {nGonCount}), SubMeshes: {subMeshCount}";
+        }
+
+        /// <summary>
+        /// UV展開前後の頂点インデックス対応辞書を構築する。
+        /// ToUnityMesh / AppendExpandedVertices と同じ展開順序。
+        /// key: (rawVertexIndex, uvSubIndex) → value: 展開後インデックス
+        /// </summary>
+        public Dictionary<(int vIdx, int uvIdx), int> BuildExpansionMap()
+        {
+            var nonIsolated = new HashSet<int>();
+            foreach (var face in Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden) continue;
+                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
+            }
+
+            var map = new Dictionary<(int vIdx, int uvIdx), int>();
+            int expandedIdx = 0;
+
+            for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
+            {
+                if (!nonIsolated.Contains(vIdx)) continue;
+                var vertex = Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                {
+                    map[(vIdx, uvIdx)] = expandedIdx++;
+                }
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// UV展開後インデックス → (rawVertexIndex, uvSubIndex) の逆引き辞書を構築する。
+        /// </summary>
+        public Dictionary<int, (int vIdx, int uvIdx)> BuildInverseExpansionMap()
+        {
+            var nonIsolated = new HashSet<int>();
+            foreach (var face in Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden) continue;
+                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
+            }
+
+            var map = new Dictionary<int, (int vIdx, int uvIdx)>();
+            int expandedIdx = 0;
+
+            for (int vIdx = 0; vIdx < Vertices.Count; vIdx++)
+            {
+                if (!nonIsolated.Contains(vIdx)) continue;
+                var vertex = Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                {
+                    map[expandedIdx++] = (vIdx, uvIdx);
+                }
+            }
+
+            return map;
         }
     }
 

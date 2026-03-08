@@ -2,6 +2,8 @@
 // モデルブレンドハンドラ
 // DispatchPanelCommand から呼ばれる private メソッド群
 
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
@@ -58,42 +60,229 @@ public partial class PolyLing
             for (int i = 0; i < weights.Length; i++) nw[i] = eq;
         }
 
+        // Step 1: ターゲット（clone）のフィルタ済みメッシュリスト
+        // MirrorSide 除外・VertexCount==0 除外
+        // drawableIdx = DrawableMeshes 上の元インデックス（meshEnabled の添字）を保持
         var cloneDrawables = cloneModel.DrawableMeshes;
-        int drawableCount  = cloneDrawables.Count;
-
-        for (int drawIdx = 0; drawIdx < drawableCount; drawIdx++)
+        var targetEntries = new List<(int drawableIdx, TypedMeshEntry entry)>();
+        for (int di = 0; di < cloneDrawables.Count; di++)
         {
-            if (drawIdx < meshEnabled.Length && !meshEnabled[drawIdx]) continue;
+            var e = cloneDrawables[di];
+            if (e.Type == MeshType.MirrorSide) continue;
+            if (e.Type == MeshType.BakedMirror) continue;
+            if ((e.MeshObject?.VertexCount ?? 0) == 0) continue;
+            targetEntries.Add((di, e));
+        }
 
-            var targetMesh = cloneDrawables[drawIdx].Context?.MeshObject;
-            if (targetMesh == null) continue;
+        // ターゲット各メッシュの展開前頂点数（MeshObject.VertexCount）と
+        // 展開後頂点数（UnityMesh.vertexCount）を記録
+        // ※展開後頂点数は UnityMesh が null の場合は展開前と同じとみなす
+        var targetVertCountRaw      = targetEntries.Select(t => t.entry.MeshObject.VertexCount).ToArray();
+        var targetVertCountExpanded = targetEntries.Select(t =>
+            t.entry.Context.UnityMesh != null ? t.entry.Context.UnityMesh.vertexCount : t.entry.MeshObject.VertexCount
+        ).ToArray();
 
-            var blended = new Vector3[targetMesh.VertexCount];
-
-            for (int modelIdx = 0; modelIdx < _project.ModelCount; modelIdx++)
+        // Step 2: 各ソースモデルのフィルタ済みメッシュリスト（同条件）
+        // モデルインデックス → フィルタ済みエントリリスト + 展開後頂点数リスト
+        var srcFilteredMap  = new Dictionary<int, List<TypedMeshEntry>>();
+        var srcExpCountsMap = new Dictionary<int, List<int>>();
+        for (int modelIdx = 0; modelIdx < _project.ModelCount; modelIdx++)
+        {
+            if (modelIdx >= nw.Length || nw[modelIdx] <= 0f) continue;
+            var m = _project.GetModel(modelIdx);
+            if (m == null) continue;
+            var srcDrawables = m.DrawableMeshes;
+            var filtered  = new List<TypedMeshEntry>();
+            var expCounts = new List<int>();
+            for (int di = 0; di < srcDrawables.Count; di++)
             {
-                if (modelIdx >= nw.Length) continue;
-                float w = nw[modelIdx];
-                if (w <= 0f) continue;
+                var e = srcDrawables[di];
+                if (e.Type == MeshType.MirrorSide) continue;
+                if (e.Type == MeshType.BakedMirror) continue;
+                if ((e.MeshObject?.VertexCount ?? 0) == 0) continue;
+                filtered.Add(e);
+                int ec = e.Context.UnityMesh != null ? e.Context.UnityMesh.vertexCount : e.MeshObject.VertexCount;
+                expCounts.Add(ec);
+            }
+            srcFilteredMap[modelIdx]  = filtered;
+            srcExpCountsMap[modelIdx] = expCounts;
+        }
+        // ソースモデルごとのマッチングカーソル（先頭から順に頂点数一致で対応付け）
+        var srcCursors = new Dictionary<int, int>();
+        foreach (var key in srcFilteredMap.Keys) srcCursors[key] = 0;
 
-                var srcModel     = _project.GetModel(modelIdx);
-                var srcDrawables = srcModel?.DrawableMeshes;
-                if (srcDrawables == null || drawIdx >= srcDrawables.Count) continue;
+        // Step 3 & 4: メッシュ対応表でブレンド計算
+        for (int k = 0; k < targetEntries.Count; k++)
+        {
+            // meshEnabled は DrawableMeshes 上のインデックス基準
+            int drawableIdx = targetEntries[k].drawableIdx;
+            if (drawableIdx < meshEnabled.Length && !meshEnabled[drawableIdx]) continue;
 
-                var srcMesh = srcDrawables[drawIdx].Context?.MeshObject;
-                if (srcMesh == null) continue;
+            var targetEntry = targetEntries[k].entry;
 
-                int vCount = Mathf.Min(blended.Length, srcMesh.VertexCount);
-                for (int vi = 0; vi < vCount; vi++)
-                    blended[vi] += srcMesh.Vertices[vi].Position * w;
+            var targetMesh = targetEntry.MeshObject;
+            int rawCount   = targetVertCountRaw[k];
+            int expCount   = targetVertCountExpanded[k];
+
+            // 孤立頂点を除外するセット（target の Vertices インデックス基準）
+            var nonIsolated = BuildBlendNonIsolatedSet(targetMesh);
+
+            Debug.Log($"[Blend] k={k} name={targetEntry.Context.Name} rawCount={rawCount} expCount={expCount} nonIsolated={nonIsolated.Count}");
+            foreach (var kv2 in srcFilteredMap)
+            {
+                var sc = srcExpCountsMap[kv2.Key];
+                string kVal = k < sc.Count ? sc[k].ToString() : "OOB";
+                Debug.Log($"[Blend]   srcModel[{kv2.Key}] srcList.Count={kv2.Value.Count} sc[k]={kVal}");
             }
 
-            for (int vi = 0; vi < blended.Length; vi++)
+            var blended = new Vector3[rawCount];
+
+            bool targetIsExpanded = targetMesh.IsExpanded;
+            if (targetIsExpanded)
+            {
+                foreach (var kv in srcFilteredMap)
+                {
+                    float w = nw[kv.Key];
+                    var srcList = kv.Value;
+                    var srcExpCounts = srcExpCountsMap[kv.Key];
+                    int cursor = srcCursors[kv.Key];
+                    int matchSi = -1;
+                    for (int si = cursor; si < srcExpCounts.Count; si++)
+                    {
+                        if (srcExpCounts[si] == expCount) { matchSi = si; break; }
+                    }
+                    if (matchSi < 0) continue;
+                    srcCursors[kv.Key] = matchSi + 1;
+                    var srcMesh = srcList[matchSi].MeshObject;
+                    bool srcIsExpanded = srcMesh.IsExpanded;
+                    var srcInvMap = srcIsExpanded ? null : srcMesh.BuildInverseExpansionMap();
+
+                    for (int vi = 0; vi < rawCount; vi++)
+                    {
+                        if (!nonIsolated.Contains(vi)) continue;
+                        Vector3 srcPos;
+                        if (srcIsExpanded)
+                        {
+                            if (vi >= srcMesh.Vertices.Count) continue;
+                            srcPos = srcMesh.Vertices[vi].Position;
+                        }
+                        else
+                        {
+                            if (!srcInvMap.TryGetValue(vi, out var r)) continue;
+                            srcPos = srcMesh.Vertices[r.vIdx].Position;
+                        }
+                        blended[vi] += srcPos * w;
+                    }
+                }
+            }
+            else
+            {
+                foreach (var kv in srcFilteredMap)
+                {
+                    float w = nw[kv.Key];
+                    var srcList = kv.Value;
+                    var srcExpCounts2 = srcExpCountsMap[kv.Key];
+                    int cursor2 = srcCursors[kv.Key];
+                    int matchSi2 = -1;
+                    for (int si = cursor2; si < srcExpCounts2.Count; si++)
+                    {
+                        if (srcExpCounts2[si] == expCount) { matchSi2 = si; break; }
+                    }
+                    if (matchSi2 < 0) continue;
+                    srcCursors[kv.Key] = matchSi2 + 1;
+                    var srcMesh = srcList[matchSi2].MeshObject;
+                    bool srcIsExpanded = srcMesh.IsExpanded;
+                    var srcExpMap = srcIsExpanded ? targetMesh.BuildExpansionMap() : null;
+
+                    for (int vi = 0; vi < rawCount; vi++)
+                    {
+                        if (!nonIsolated.Contains(vi)) continue;
+                        Vector3 srcPos;
+                        if (srcIsExpanded)
+                        {
+                            if (!srcExpMap.TryGetValue((vi, 0), out int srcEi)) continue;
+                            if (srcEi >= srcMesh.Vertices.Count) continue;
+                            srcPos = srcMesh.Vertices[srcEi].Position;
+                        }
+                        else
+                        {
+                            if (vi >= srcMesh.Vertices.Count) continue;
+                            srcPos = srcMesh.Vertices[vi].Position;
+                        }
+                        blended[vi] += srcPos * w;
+                    }
+                }
+            }
+
+            // 書き戻し（孤立頂点は blended[vi]==Vector3.zero のまま → 元位置を維持するため書き戻さない）
+            for (int vi = 0; vi < rawCount; vi++)
+            {
+                if (!nonIsolated.Contains(vi)) continue;
                 targetMesh.Vertices[vi].Position = blended[vi];
+            }
 
             if (recalcNormals)
                 targetMesh.RecalculateSmoothNormals();
+
+            _toolContext?.SyncMeshContextPositionsOnly?.Invoke(targetEntry.Context);
         }
+
+        // Step 5: ミラー同期（Real ブレンド後にミラー側へ反映）
+        // MirrorPairs経由（PMX・再インポート済みMQO）
+        var syncedRealContexts = new HashSet<MeshContext>();
+        foreach (var pair in cloneModel.MirrorPairs)
+        {
+            if (!pair.IsValid) continue;
+            pair.SyncPositions();
+            if (recalcNormals) pair.SyncNormals();
+            _toolContext?.SyncMeshContextPositionsOnly?.Invoke(pair.Real);
+            _toolContext?.SyncMeshContextPositionsOnly?.Invoke(pair.Mirror);
+            syncedRealContexts.Add(pair.Real);
+        }
+
+        // フォールバック: MirrorPairsに含まれないMirrorSideをName+"+"で直接同期（MQO既存インポート対応）
+        foreach (var (_, targetEntry) in targetEntries)
+        {
+            var realCtx = targetEntry.Context;
+            if (syncedRealContexts.Contains(realCtx)) continue;
+            string mirrorName = realCtx.Name + "+";
+            var axis = realCtx.GetMirrorSymmetryAxis();
+            var realMo = realCtx.MeshObject;
+
+            for (int i = 0; i < cloneModel.MeshContextCount; i++)
+            {
+                var mc = cloneModel.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.MirrorSide) continue;
+                if (mc.Name != mirrorName) continue;
+                if (mc.MeshObject == null || mc.MeshObject.VertexCount != realMo.VertexCount) continue;
+
+                for (int vi = 0; vi < realMo.VertexCount; vi++)
+                {
+                    var p = realMo.Vertices[vi].Position;
+                    mc.MeshObject.Vertices[vi].Position = axis switch
+                    {
+                        Poly_Ling.Symmetry.SymmetryAxis.X => new Vector3(-p.x, p.y, p.z),
+                        Poly_Ling.Symmetry.SymmetryAxis.Y => new Vector3(p.x, -p.y, p.z),
+                        Poly_Ling.Symmetry.SymmetryAxis.Z => new Vector3(p.x, p.y, -p.z),
+                        _ => new Vector3(-p.x, p.y, p.z),
+                    };
+                }
+                _toolContext?.SyncMeshContextPositionsOnly?.Invoke(mc);
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// いずれかの Face に参照されている頂点インデックスのセットを返す（孤立頂点除外用）
+    /// </summary>
+    private static HashSet<int> BuildBlendNonIsolatedSet(MeshObject mo)
+    {
+        var set = new HashSet<int>();
+        foreach (var face in mo.Faces)
+            foreach (int vi in face.VertexIndices)
+                set.Add(vi);
+        return set;
     }
 
     // ================================================================

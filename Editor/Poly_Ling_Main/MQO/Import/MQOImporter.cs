@@ -480,11 +480,13 @@ namespace Poly_Ling.MQO
                 for (int i = result.MeshContexts.Count - 1; i >= 0; i--)
                 {
                     var ctx = result.MeshContexts[i];
+                    Debug.Log($"[MQOImporter] mesh={ctx.Name} IsMirrored={ctx.IsMirrored} MirrorType={ctx.MirrorType} Type={ctx.Type}");
                     if (ctx.IsMirrored && ctx.Type == MeshType.Mesh)
                     {
                         var mirrorMesh = CreateBakedMirrorMesh(ctx, i, settings);
                         if (mirrorMesh == null) continue;
 
+                        Debug.Log($"[MQOImporter] BakeMirror={settings.BakeMirror} ctx={ctx.Name}");
                         if (settings.BakeMirror)
                         {
                             // ベイクドミラー: 独立メッシュ
@@ -2012,6 +2014,9 @@ namespace Poly_Ling.MQO
                 return null;
 
             var srcMeshObj = source.MeshObject;
+
+            if (srcMeshObj.Vertices.Count == 0)
+                return null;
             var axis = source.GetMirrorSymmetryAxis();
 
             // 新しいMeshObjectを作成
