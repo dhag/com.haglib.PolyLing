@@ -327,15 +327,17 @@ namespace Poly_Ling.Data
         public float[] Weights     { get; }
         public bool[]  MeshEnabled { get; }
         public bool    RecalcNormals { get; }
+        public bool    BlendBones  { get; }
         public ApplyModelBlendCommand(
             int sourceModelIndex, int cloneModelIndex,
-            float[] weights, bool[] meshEnabled, bool recalcNormals)
+            float[] weights, bool[] meshEnabled, bool recalcNormals, bool blendBones)
             : base(sourceModelIndex)
         {
             CloneModelIndex = cloneModelIndex;
             Weights      = weights;
             MeshEnabled  = meshEnabled;
             RecalcNormals = recalcNormals;
+            BlendBones   = blendBones;
         }
     }
 
@@ -345,14 +347,16 @@ namespace Poly_Ling.Data
         public int CloneModelIndex { get; }
         public float[] Weights     { get; }
         public bool[]  MeshEnabled { get; }
+        public bool    BlendBones  { get; }
         public PreviewModelBlendCommand(
             int sourceModelIndex, int cloneModelIndex,
-            float[] weights, bool[] meshEnabled)
+            float[] weights, bool[] meshEnabled, bool blendBones)
             : base(sourceModelIndex)
         {
             CloneModelIndex = cloneModelIndex;
             Weights      = weights;
             MeshEnabled  = meshEnabled;
+            BlendBones   = blendBones;
         }
     }
 

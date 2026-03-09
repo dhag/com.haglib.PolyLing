@@ -35,8 +35,11 @@ namespace Poly_Ling.UI
         // プロジェクトインデックス → ウェイト（クローンは常に0）
         private readonly Dictionary<int, float> _srcWeightMap = new Dictionary<int, float>();
         private List<bool>  _meshEnabled  = new List<bool>();
-        private bool _recalcNormals   = true;
-        private bool _realtimePreview = true;
+        private bool _recalcNormals    = true;
+        private bool _realtimePreview  = true;
+        private bool _blendBones       = false;
+        private bool _selectedMeshOnly = false;
+        private bool _visibleOnly      = true;
 
         // スライダー参照: プロジェクトインデックス → Slider
         private readonly Dictionary<int, Slider> _sliderMap = new Dictionary<int, Slider>();
@@ -53,9 +56,13 @@ namespace Poly_Ling.UI
         private VisualElement _sliderContainer;
         private Toggle        _toggleRecalc;
         private Toggle        _toggleRealtime;
+        private Toggle        _toggleBlendBones;
+        private Toggle        _toggleSelectedOnly;
+        private Toggle        _toggleVisibleOnly;
         private Label         _totalWeightLabel;
         private Button        _btnEqual, _btnNormalize, _btnResetFirst;
         private Button        _btnApply;
+        private Button        _btnCancel;
         private Label         _statusLabel;
 
         // ================================================================
@@ -212,6 +219,36 @@ namespace Poly_Ling.UI
             optRow.Add(_toggleRecalc); optRow.Add(_toggleRealtime);
             root.Add(optRow);
 
+            var optRow2 = new VisualElement();
+            optRow2.style.flexDirection = FlexDirection.Row;
+            optRow2.style.marginBottom = 4; optRow2.style.height = 22;
+            _toggleBlendBones = new Toggle("ボーンもブレンド") { value = _blendBones };
+            _toggleBlendBones.style.flexGrow = 1;
+            _toggleBlendBones.RegisterValueChangedCallback(e =>
+            {
+                _blendBones = e.newValue;
+                CheckBoneWarning(CurrentView);
+                if (_realtimePreview) SendPreview();
+            });
+            _toggleSelectedOnly = new Toggle("選択メッシュのみ") { value = _selectedMeshOnly };
+            _toggleSelectedOnly.style.flexGrow = 1;
+            _toggleSelectedOnly.RegisterValueChangedCallback(e =>
+            {
+                _selectedMeshOnly = e.newValue;
+                if (_realtimePreview) SendPreview();
+            });
+            _toggleVisibleOnly = new Toggle("可視のみ") { value = _visibleOnly };
+            _toggleVisibleOnly.style.flexGrow = 1;
+            _toggleVisibleOnly.RegisterValueChangedCallback(e =>
+            {
+                _visibleOnly = e.newValue;
+                if (_realtimePreview) SendPreview();
+            });
+            optRow2.Add(_toggleBlendBones);
+            optRow2.Add(_toggleSelectedOnly);
+            optRow2.Add(_toggleVisibleOnly);
+            root.Add(optRow2);
+
             _sliderContainer = new VisualElement();
             _sliderContainer.style.marginBottom = 4;
             root.Add(_sliderContainer);
@@ -233,6 +270,12 @@ namespace Poly_Ling.UI
             _btnApply.style.height = 28;
             _btnApply.style.unityFontStyleAndWeight = FontStyle.Bold;
             root.Add(_btnApply);
+
+            _btnCancel = new Button(OnCancel) { text = "クローンを削除して閉じる" };
+            _btnCancel.style.height = 24;
+            _btnCancel.style.marginTop = 4;
+            _btnCancel.style.color = new Color(1f, 0.55f, 0.55f);
+            root.Add(_btnCancel);
 
             _statusLabel = new Label("");
             _statusLabel.style.marginTop = 4; _statusLabel.style.fontSize = 10;
@@ -275,6 +318,7 @@ namespace Poly_Ling.UI
             RebuildSliders(view);
             UpdateTotalWeightLabel();
             _btnApply.SetEnabled(_cloneModelIndex >= 0);
+            _btnCancel?.SetEnabled(_cloneModelIndex >= 0);
         }
 
         private void ShowWarning(string msg)
@@ -422,7 +466,8 @@ namespace Poly_Ling.UI
                 _sourceModelIndex,
                 _cloneModelIndex,
                 BuildWeightArray(),
-                _meshEnabled.ToArray()));
+                BuildMeshEnabledArray(CurrentView),
+                _blendBones));
         }
 
 
@@ -433,14 +478,117 @@ namespace Poly_Ling.UI
                 _sourceModelIndex,
                 _cloneModelIndex,
                 BuildWeightArray(),
-                _meshEnabled.ToArray(),
-                _recalcNormals));
+                BuildMeshEnabledArray(CurrentView),
+                _recalcNormals,
+                _blendBones));
             SetStatus("適用しました");
         }
 
         // ================================================================
         // ヘルパー
         // ================================================================
+
+        private void OnCancel()
+        {
+            if (_cloneModelIndex >= 0)
+            {
+                SendCmd(new DeleteModelCommand(_cloneModelIndex));
+                SendCmd(new SwitchModelCommand(_sourceModelIndex));
+            }
+            Close();
+        }
+
+        /// <summary>
+        /// _meshEnabled を基に _visibleOnly / _selectedMeshOnly フィルタを適用した bool[] を返す。
+        /// </summary>
+        private bool[] BuildMeshEnabledArray(IProjectView view)
+        {
+            var result = _meshEnabled.ToArray();
+            if (result.Length == 0) return result;
+
+            var srcModel = (_sourceModelIndex >= 0 && view != null)
+                ? view.GetModelView(_sourceModelIndex) : null;
+            if (srcModel == null) return result;
+
+            // 選択メッシュのみフィルタ
+            if (_selectedMeshOnly)
+            {
+                var selectedSet = new HashSet<int>(srcModel.SelectedDrawableIndices ?? System.Array.Empty<int>());
+
+                // ミラーペア補完: RealSide が選択されていたら隣接 MirrorSide も、逆も然り
+                var drawables = srcModel.DrawableList;
+                if (drawables != null)
+                {
+                    // Real → Mirror インデックスマップ（Name+"+" 照合）
+                    var nameToIdx = new Dictionary<string, int>();
+                    for (int i = 0; i < drawables.Count; i++)
+                    {
+                        var mv = drawables[i];
+                        if (mv != null && !string.IsNullOrEmpty(mv.Name))
+                            nameToIdx[mv.Name] = i;
+                    }
+                    var extraIndices = new HashSet<int>();
+                    for (int i = 0; i < drawables.Count; i++)
+                    {
+                        if (!selectedSet.Contains(i)) continue;
+                        var mv = drawables[i];
+                        if (mv == null) continue;
+                        if (mv.IsRealSide && nameToIdx.TryGetValue(mv.Name + "+", out int mirrorIdx))
+                            extraIndices.Add(mirrorIdx);
+                        if (mv.IsMirrorSide)
+                        {
+                            string realName = mv.Name.EndsWith("+")
+                                ? mv.Name.Substring(0, mv.Name.Length - 1) : null;
+                            if (realName != null && nameToIdx.TryGetValue(realName, out int realIdx))
+                                extraIndices.Add(realIdx);
+                        }
+                    }
+                    foreach (int idx in extraIndices) selectedSet.Add(idx);
+                }
+
+                for (int i = 0; i < result.Length; i++)
+                    result[i] = result[i] && selectedSet.Contains(i);
+            }
+
+            // 可視のみフィルタ
+            if (_visibleOnly)
+            {
+                var drawables = srcModel.DrawableList;
+                for (int i = 0; i < result.Length; i++)
+                {
+                    if (!result[i]) continue;
+                    var mv = drawables?[i];
+                    if (mv != null && !mv.IsVisible)
+                        result[i] = false;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// _blendBones==true かつウェイト>0 かつ BoneCount==0 のソースモデルがあれば警告表示。
+        /// </summary>
+        private void CheckBoneWarning(IProjectView view)
+        {
+            if (!_blendBones || view == null)
+            {
+                SetStatus("");
+                return;
+            }
+            for (int i = 0; i < view.ModelCount; i++)
+            {
+                if (i == _cloneModelIndex) continue;
+                if (!_srcWeightMap.TryGetValue(i, out float w) || w <= 0f) continue;
+                var mv = view.GetModelView(i);
+                if (mv != null && mv.BoneCount == 0)
+                {
+                    SetStatus($"警告: {mv.Name} はボーンがありません");
+                    return;
+                }
+            }
+            SetStatus("");
+        }
 
         private float[] BuildWeightArray()
         {

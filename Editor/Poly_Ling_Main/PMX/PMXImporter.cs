@@ -538,7 +538,7 @@ namespace Poly_Ling.PMX
                     mirrorCtx.BakedMirrorSourceIndex = sourceIndex;
                     realCtx.HasBakedMirrorChild = true;
                     bakedCount++;
-                    Debug.Log($"[PMXImporter] BakedMirror: '{sourceName}' → '{ctx.Name}'");
+                    //Debug.Log($"[PMXImporter] BakedMirror: '{sourceName}' → '{ctx.Name}'");
                 }
                 else
                 {
@@ -563,7 +563,7 @@ namespace Poly_Ling.PMX
 
                         result.MirrorPairs.Add(pair);
                         pairCount++;
-                        Debug.Log($"[PMXImporter] MirrorPair built: '{sourceName}' ↔ '{ctx.Name}'\n{pair.BuildLog}");
+                        //Debug.Log($"[PMXImporter] MirrorPair built: '{sourceName}' ↔ '{ctx.Name}'\n{pair.BuildLog}");
                     }
                     else
                     {
@@ -573,9 +573,13 @@ namespace Poly_Ling.PMX
             }
 
             if (pairCount > 0)
-                Debug.Log($"[PMXImporter] Built {pairCount} mirror pairs");
+            {
+                //Debug.Log($"[PMXImporter] Built {pairCount} mirror pairs");
+            }
             if (bakedCount > 0)
-                Debug.Log($"[PMXImporter] Created {bakedCount} baked mirrors");
+            {
+                //Debug.Log($"[PMXImporter] Created {bakedCount} baked mirrors");
+            }
         }
 
         /// <summary>
@@ -1212,7 +1216,7 @@ namespace Poly_Ling.PMX
             // Union-Findで共有頂点を持つ材質をグループ化
             var mergedMaterialGroups = GroupMaterialsBySharedVertices(fallbackMatToVerts);
 
-            Debug.Log($"[PMXImporter] Union-Find result: {mergedMaterialGroups.Count} groups");
+            //Debug.Log($"[PMXImporter] Union-Find result: {mergedMaterialGroups.Count} groups");
             foreach (var mg in mergedMaterialGroups)
             {
                 //Debug.Log($"  Merged group: [{string.Join(", ", mg)}]");

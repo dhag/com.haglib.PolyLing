@@ -33,16 +33,16 @@ public partial class PolyLing
 
     private void HandleApplyModelBlend(ApplyModelBlendCommand cmd)
     {
-        ExecuteBlend(cmd.ModelIndex, cmd.CloneModelIndex, cmd.Weights, cmd.MeshEnabled, cmd.RecalcNormals);
+        ExecuteBlend(cmd.ModelIndex, cmd.CloneModelIndex, cmd.Weights, cmd.MeshEnabled, cmd.RecalcNormals, cmd.BlendBones);
     }
 
     private void HandlePreviewModelBlend(PreviewModelBlendCommand cmd)
     {
-        ExecuteBlend(cmd.ModelIndex, cmd.CloneModelIndex, cmd.Weights, cmd.MeshEnabled, recalcNormals: false);
+        ExecuteBlend(cmd.ModelIndex, cmd.CloneModelIndex, cmd.Weights, cmd.MeshEnabled, recalcNormals: false, blendBones: cmd.BlendBones);
     }
 
     private void ExecuteBlend(int sourceModelIndex, int cloneModelIndex,
-        float[] weights, bool[] meshEnabled, bool recalcNormals)
+        float[] weights, bool[] meshEnabled, bool recalcNormals, bool blendBones)
     {
         if (_project == null) return;
         var cloneModel = _project.GetModel(cloneModelIndex);
@@ -270,6 +270,64 @@ public partial class PolyLing
                 _toolContext?.SyncMeshContextPositionsOnly?.Invoke(mc);
                 break;
             }
+        }
+
+        // Step 6: ボーンブレンド（名前照合・位置補間 → WorldMatrix/BindPose 再計算）
+        if (blendBones && cloneModel.BoneCount > 0)
+        {
+            // クローンのボーンコンテキストを 名前 → インデックス でマップ
+            var cloneBoneByName = new Dictionary<string, MeshContext>();
+            for (int i = 0; i < cloneModel.MeshContextCount; i++)
+            {
+                var mc = cloneModel.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.Bone) continue;
+                if (!string.IsNullOrEmpty(mc.Name))
+                    cloneBoneByName[mc.Name] = mc;
+            }
+
+            // ソースモデルのボーン名 → Position マップ（ウェイト > 0 かつボーンありのみ）
+            var srcBoneMaps = new Dictionary<int, Dictionary<string, Vector3>>();
+            for (int modelIdx = 0; modelIdx < _project.ModelCount; modelIdx++)
+            {
+                if (modelIdx >= nw.Length || nw[modelIdx] <= 0f) continue;
+                var srcM = _project.GetModel(modelIdx);
+                if (srcM == null || srcM.BoneCount == 0) continue;
+                var bmap = new Dictionary<string, Vector3>();
+                for (int i = 0; i < srcM.MeshContextCount; i++)
+                {
+                    var mc = srcM.GetMeshContext(i);
+                    if (mc == null || mc.Type != MeshType.Bone) continue;
+                    if (!string.IsNullOrEmpty(mc.Name) && mc.BoneTransform != null)
+                        bmap[mc.Name] = mc.BoneTransform.Position;
+                }
+                if (bmap.Count > 0)
+                    srcBoneMaps[modelIdx] = bmap;
+            }
+
+            // 各クローンボーンの位置を加重平均でブレンド
+            foreach (var kv in cloneBoneByName)
+            {
+                var cloneBoneCtx = kv.Value;
+                if (cloneBoneCtx.BoneTransform == null) continue;
+
+                Vector3 blendedPos = Vector3.zero;
+                float totalW = 0f;
+                foreach (var srcKv in srcBoneMaps)
+                {
+                    if (!srcKv.Value.TryGetValue(kv.Key, out Vector3 srcPos)) continue;
+                    float w = nw[srcKv.Key];
+                    blendedPos += srcPos * w;
+                    totalW += w;
+                }
+                if (totalW > 0f)
+                    cloneBoneCtx.BoneTransform.Position = blendedPos / totalW;
+            }
+
+            // WorldMatrix と BindPose を再計算
+            cloneModel.ComputeWorldAndBindPoses();
+
+            // GPU バッファに通知（トポロジ変更扱いでフルリビルド）
+            _toolContext?.NotifyTopologyChanged?.Invoke();
         }
     }
 

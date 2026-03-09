@@ -96,8 +96,8 @@ namespace Poly_Ling.Data
         // ================================================================
 
         /// <summary>
-        /// 実体側の各頂点をミラー反転した位置で、ミラー側の最近傍頂点を検索しペアリングする。
-        /// 空間ハッシュで高速化。
+        /// Real と Mirror は PMX 上で頂点インデックスが 1:1 対応する。
+        /// VertexMap[i] = i で直接対応付け。頂点数が異なる場合は失敗。
         /// </summary>
         private bool BuildVertexMap()
         {
@@ -107,100 +107,24 @@ namespace Poly_Ling.Data
             int realCount = realMesh.VertexCount;
             int mirrorCount = mirrorMesh.VertexCount;
 
-            VertexMap = new int[realCount];
-            for (int i = 0; i < realCount; i++)
-                VertexMap[i] = -1;
+            if (realCount != mirrorCount)
+            {
+                BuildLog += $"Vertex count mismatch: real={realCount}, mirror={mirrorCount}\n";
+                return false;
+            }
 
             if (mirrorCount == 0)
             {
-                BuildLog += $"Mirror mesh has 0 vertices\n";
+                BuildLog += "Mirror mesh has 0 vertices\n";
                 return false;
             }
 
-            // ミラー側頂点を空間ハッシュに登録
-            float cellSize = EstimateCellSize(mirrorMesh);
-            var spatialHash = new Dictionary<long, List<int>>();
-
-            for (int i = 0; i < mirrorCount; i++)
-            {
-                Vector3 pos = mirrorMesh.Vertices[i].Position;
-                long key = HashPosition(pos, cellSize);
-                if (!spatialHash.TryGetValue(key, out var list))
-                {
-                    list = new List<int>();
-                    spatialHash[key] = list;
-                }
-                list.Add(i);
-            }
-
-            // 実体側頂点をミラー反転して最近傍検索
-            float threshold = cellSize * 0.5f;
-            float thresholdSq = threshold * threshold;
-            int matchedCount = 0;
-            int unmatchedCount = 0;
-
+            VertexMap = new int[realCount];
             for (int i = 0; i < realCount; i++)
-            {
-                Vector3 realPos = realMesh.Vertices[i].Position;
-                Vector3 mirroredPos = MirrorPosition(realPos);
+                VertexMap[i] = i;
 
-                int bestIdx = FindNearest(mirroredPos, spatialHash, mirrorMesh, cellSize, thresholdSq);
-                VertexMap[i] = bestIdx;
-
-                if (bestIdx >= 0)
-                    matchedCount++;
-                else
-                    unmatchedCount++;
-            }
-
-            BuildLog += $"VertexMap: matched={matchedCount}, unmatched={unmatchedCount}, " +
-                         $"real={realCount}, mirror={mirrorCount}, threshold={threshold:F6}\n";
-
-            // 8割以上マッチしていれば成功とする
-            if (matchedCount < realCount * 0.8f)
-            {
-                BuildLog += $"Too few matches ({matchedCount}/{realCount}), aborting\n";
-                return false;
-            }
-
+            BuildLog += $"VertexMap: direct index mapping, count={realCount}\n";
             return true;
-        }
-
-        /// <summary>
-        /// 空間ハッシュから最近傍頂点を検索
-        /// </summary>
-        private int FindNearest(Vector3 pos, Dictionary<long, List<int>> spatialHash,
-            MeshObject mirrorMesh, float cellSize, float thresholdSq)
-        {
-            int bestIdx = -1;
-            float bestDistSq = thresholdSq;
-
-            // 近傍27セルを検索
-            int cx = Mathf.FloorToInt(pos.x / cellSize);
-            int cy = Mathf.FloorToInt(pos.y / cellSize);
-            int cz = Mathf.FloorToInt(pos.z / cellSize);
-
-            for (int dx = -1; dx <= 1; dx++)
-            for (int dy = -1; dy <= 1; dy++)
-            for (int dz = -1; dz <= 1; dz++)
-            {
-                long key = PackHash(cx + dx, cy + dy, cz + dz);
-                if (!spatialHash.TryGetValue(key, out var list))
-                    continue;
-
-                for (int j = 0; j < list.Count; j++)
-                {
-                    int idx = list[j];
-                    float distSq = (mirrorMesh.Vertices[idx].Position - pos).sqrMagnitude;
-                    if (distSq < bestDistSq)
-                    {
-                        bestDistSq = distSq;
-                        bestIdx = idx;
-                    }
-                }
-            }
-
-            return bestIdx;
         }
 
         // ================================================================
@@ -476,53 +400,6 @@ namespace Poly_Ling.Data
                 case SymmetryAxis.Z: return new Vector3(dir.x, dir.y, -dir.z);
                 default: return new Vector3(-dir.x, dir.y, dir.z);
             }
-        }
-
-        // ================================================================
-        // 空間ハッシュユーティリティ
-        // ================================================================
-
-        /// <summary>
-        /// メッシュのバウンディングボックスからセルサイズを推定
-        /// </summary>
-        private static float EstimateCellSize(MeshObject mesh)
-        {
-            if (mesh.VertexCount < 2) return 0.01f;
-
-            Vector3 min = mesh.Vertices[0].Position;
-            Vector3 max = min;
-
-            for (int i = 1; i < mesh.VertexCount; i++)
-            {
-                Vector3 p = mesh.Vertices[i].Position;
-                min = Vector3.Min(min, p);
-                max = Vector3.Max(max, p);
-            }
-
-            Vector3 size = max - min;
-            float maxDim = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
-
-            // 頂点数に応じた解像度。一般的にPMXモデルは1万〜10万頂点
-            // セルサイズが小さすぎるとメモリ過多、大きすぎると検索効率低下
-            float resolution = Mathf.Max(maxDim / 100f, 0.001f);
-            return resolution;
-        }
-
-        private static long HashPosition(Vector3 pos, float cellSize)
-        {
-            int x = Mathf.FloorToInt(pos.x / cellSize);
-            int y = Mathf.FloorToInt(pos.y / cellSize);
-            int z = Mathf.FloorToInt(pos.z / cellSize);
-            return PackHash(x, y, z);
-        }
-
-        private static long PackHash(int x, int y, int z)
-        {
-            // 21ビットずつ使用（-1048576 ~ 1048575）
-            long lx = (long)(x & 0x1FFFFF);
-            long ly = (long)(y & 0x1FFFFF);
-            long lz = (long)(z & 0x1FFFFF);
-            return (lx << 42) | (ly << 21) | lz;
         }
 
         // ================================================================
