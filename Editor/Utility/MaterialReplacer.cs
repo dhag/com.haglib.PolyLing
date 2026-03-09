@@ -23,7 +23,7 @@ public class MaterialReplacer : EditorWindow
         public string currentPath;
         public string newPath;
     }
-
+    //単体コマンド
     [MenuItem("Tools/Poly_Ling/Utility/Material Replacer")]
     public static void ShowWindow()
     {

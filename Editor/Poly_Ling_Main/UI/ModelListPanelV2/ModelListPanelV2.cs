@@ -42,7 +42,7 @@ namespace Poly_Ling.UI
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Model List V2")]
+        //[MenuItem("Tools/Poly_Ling/Model List V2")]
         public static void ShowWindow()
         {
             var w = GetWindow<ModelListPanelV2>();

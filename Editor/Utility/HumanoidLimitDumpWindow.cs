@@ -53,8 +53,8 @@ public class HumanoidLimitDumpWindow : EditorWindow
     private bool _probeIncludeWorld = false;        // dump world euler too (optional)
     private bool _probeApplyPose = true;            // actually SetHumanPose
     private bool _probeRestoreAfter = true;         // attempt to restore after probing
-
-    [MenuItem("Tools/Humanoid/Dump Defaults & Avatar Limits")]
+    //単体コマンド
+    [MenuItem("Tools/Utility/Humanoid/Dump Defaults & Avatar Limits")]
     public static void Open()
     {
         GetWindow<HumanoidLimitDumpWindow>("Humanoid Limits Dump");

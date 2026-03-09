@@ -98,7 +98,7 @@ namespace Poly_Ling.UI
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Mesh Selection Dictionary V2")]
+        //[MenuItem("Tools/Poly_Ling/Utility/Mesh Selection Dictionary V2")]
         public static void ShowWindow()
         {
             var w = GetWindow<MeshSelectionSetPanelV2>();

@@ -17,8 +17,8 @@ public class MaterialGarbageCollectorWindow : EditorWindow
         public string assetPath;
         public bool selected;
     }
-
-    [MenuItem("Tools/Material Garbage Collector")]
+    //単体コマンド
+    [MenuItem("Tools/Utility/Material Garbage Collector")]
     public static void ShowWindow()
     {
         GetWindow<MaterialGarbageCollectorWindow>("Material GC");

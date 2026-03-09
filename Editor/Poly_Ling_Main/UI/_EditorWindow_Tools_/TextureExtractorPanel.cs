@@ -63,7 +63,7 @@ namespace Poly_Ling.Tools
         // ================================================================
         // メニュー
         // ================================================================
-
+        //単体コマンド
         [MenuItem("Tools/Poly_Ling/Utility/Texture Extractor")]
         public static void ShowWindow()
         {

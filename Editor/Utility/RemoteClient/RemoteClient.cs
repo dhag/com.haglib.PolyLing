@@ -76,7 +76,7 @@ namespace Poly_Ling.Remote
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("Window/PolyLing Remote Client")]
+        [MenuItem("Tools/Poly_Ling/PolyLing Remote Client")]
         public static void Open()
         {
             GetWindow<RemoteClient>("Remote Client");

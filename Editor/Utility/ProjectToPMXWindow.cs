@@ -47,7 +47,7 @@ public class ProjectToPMXWindow : EditorWindow
     // メニュー
     // ================================================================
 
-    [MenuItem("Tools/Poly_Ling/Utility/Export/PMX")]
+    //[MenuItem("Tools/Poly_Ling/Utility/Export/PMX")]
     public static void ShowWindow()
     {
         GetWindow<ProjectToPMXWindow>("Project → PMX");

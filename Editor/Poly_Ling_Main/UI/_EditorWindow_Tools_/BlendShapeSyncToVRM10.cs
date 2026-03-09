@@ -45,7 +45,7 @@ namespace Poly_Ling.Tools.Panels
         // メニュー
         // ================================================================
 
-        [MenuItem("PolyLing/BlendShapeSync → VRM10 Expression")]
+        [MenuItem("Tools/Utility/PolyLing/BlendShapeSync → VRM10 Expression")]
         public static void Open()
         {
             var window = GetWindow<BlendShapeSyncToVRM10>();

@@ -8,6 +8,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Selection;
 using Poly_Ling.Tools;
+using Poly_Ling.Remote;
 using UnityEngine;
 
 public partial class PolyLing
@@ -25,6 +26,13 @@ public partial class PolyLing
         _meshListOps = new MeshListOps(_model, _undoController);
         _liveProjectView = new LiveProjectView(_project);
         SetupMeshListOpsCallbacks();
+
+        // RemoteServerが開いていなければ開いてサーバー開始
+        var remote = RemoteServer.FindInstance()
+            ?? UnityEditor.EditorWindow.GetWindow<RemoteServer>("Remote Server");
+        remote.Show();
+        if (!remote.IsRunning)
+            remote.StartServer();
     }
 
     /// <summary>

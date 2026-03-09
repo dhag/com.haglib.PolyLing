@@ -76,7 +76,7 @@ namespace Poly_Ling.MISC
         // ================================================================
         // Open
         // ================================================================
-
+        //単体コマンド
         [MenuItem("Tools/Poly_Ling/Utility/Avatar Creator...")]
         public static void ShowWindow()
         {

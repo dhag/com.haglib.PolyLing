@@ -81,7 +81,7 @@ public class ProjectToPMXPartialWindow : EditorWindow
     // メニュー
     // ================================================================
 
-    [MenuItem("Tools/Poly_Ling/Utility/Export/PMX Partial")]
+    //[MenuItem("Tools/Poly_Ling/Utility/Export/PMX Partial")]
     public static void ShowWindow()
     {
         var w = GetWindow<ProjectToPMXPartialWindow>();

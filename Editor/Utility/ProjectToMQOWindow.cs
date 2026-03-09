@@ -47,7 +47,7 @@ public class ProjectToMQOWindow : EditorWindow
     // メニュー
     // ================================================================
 
-    [MenuItem("Tools/Poly_Ling/Utility/Export/MQO")]
+    //[MenuItem("Tools/Poly_Ling/Utility/Export/MQO")]
     public static void ShowWindow()
     {
         GetWindow<ProjectToMQOWindow>("Project → MQO");

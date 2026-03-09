@@ -90,10 +90,7 @@ public partial class PolyLing
         }
         EditorGUILayout.Space(5);
 
-        if (GUILayout.Button("移行済み　メッシュリストTypedMeshListPanelUXML"))
-        {
-            Poly_Ling.UI.TypedMeshListPanel.Open(_toolManager?.toolContext);
-        }
+
         if (GUILayout.Button("メッシュリストV2 (Summary)"))
         {
             if (_panelContext != null)
@@ -104,7 +101,7 @@ public partial class PolyLing
             if (_liveProjectView != null)
                 Poly_Ling.MeshListV2.LiveViewTestPanel.Open(_liveProjectView);
         }
-        if (GUILayout.Button("Viewport テスト"))
+        if (GUILayout.Button("Viewport (メッシュのみ)"))
         {
             if (_liveProjectView != null)
                 Poly_Ling.MeshListV2.ViewportTestPanel.Open(_liveProjectView);
@@ -228,74 +225,6 @@ public partial class PolyLing
         {
             Poly_Ling.UI.QuadDecimatorPanel.Open(_toolManager?.toolContext);
         }
-
-        // Simple Morph
-        if (GUILayout.Button("__old_SimpleMorph"))
-        {
-            Poly_Ling.UI.SimpleMorphPanel.Open(_toolManager?.toolContext);
-        }
-        
-                
-        if (GUILayout.Button("移行済み　選択頂点の編集"))
-        {
-            Poly_Ling.Tools.Panels.VertexToolsPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button(L.Get("移行済み　PartsSelectionDicPanel")))
-        {
-            Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　メッシュ選択辞書→ メッシュリストV2"))
-        {
-            Poly_Ling.UI.MeshSelectionSetPanel.Open(_toolManager?.toolContext);
-        }
-
-        if (GUILayout.Button("移行済み　モデル選択"))
-        {
-            Poly_Ling.UI.ModelListPanel.Open(_toolManager?.toolContext);
-        }
-        
-        if (GUILayout.Button("移行済み　モーフ確認"))
-        {
-            Poly_Ling.Tools.Panels.MorphPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　ボーンエディタ"))
-        {
-            Poly_Ling.UI.BoneEditorPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　スキンウェイトペイント"))
-        {
-            Poly_Ling.UI.SkinWeightPaintPanel.Open(_toolManager?.toolContext, _toolManager);
-        }
-
-
-
-        if (GUILayout.Button("移行済み　簡易ブレンド"))
-        {
-            Poly_Ling.UI.SimpleBlendPanel.Open(_toolManager?.toolContext);
-        }
-
-        if (GUILayout.Button("移行済み　MeshFilter → Skinned"))
-        {
-            Poly_Ling.Tools.Panels.MeshFilterToSkinnedPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　アバターマッピング辞書インポート"))
-        {
-            Poly_Ling.UI.HumanoidMappingPanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　Tpose"))
-        {
-            Poly_Ling.UI.TPosePanel.Open(_toolManager?.toolContext);
-        }
-        if (GUILayout.Button("移行済み　モデルブレンド"))
-        {
-            Poly_Ling.UI.MultiModelBlendPanel.Open(_toolManager?.toolContext);
-        }        
-        if (GUILayout.Button("移行済み　モデルブレンド"))
-        {
-            Poly_Ling.UI.MultiModelBlendPanel.Open(_toolManager?.toolContext);
-        }
-
-
 
         if (GUILayout.Button("__old_PMX Bone Weight Export..."))
         {

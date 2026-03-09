@@ -52,12 +52,14 @@ public class BakePivotTool : EditorWindow
     private Bounds cachedBounds;
 
     // ===== メニュー：通常起動 =====
-    [MenuItem("Tools/Pivot Tool/Bake Pivot (Mesh)")]
+    //単体コマンド
+    [MenuItem("Tools/Utility/Pivot Tool/Bake Pivot (Mesh)")]
     public static void OpenFromTools()
     {
         OpenForSelection();
     }
 
+    //単体コマンド
     // ===== メニュー：Hierarchy右クリック（GameObjectメニュー） =====
     // Hierarchy右クリックは実質このGameObjectメニューが出る
     [MenuItem("GameObject/Pivot Tool/Bake Pivot (Mesh)...", false, 49)]
@@ -66,6 +68,7 @@ public class BakePivotTool : EditorWindow
         OpenForSelection();
     }
 
+    //単体コマンド
     [MenuItem("GameObject/Pivot Tool/Bake Pivot (Mesh)...", true)]
     public static bool ValidateOpenFromGameObjectMenu()
     {

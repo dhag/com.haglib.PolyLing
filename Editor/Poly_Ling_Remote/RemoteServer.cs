@@ -35,7 +35,12 @@ namespace Poly_Ling.Remote
         private int _port = 8765;
         private int _testModelIndex = 0;
         private int _testMeshIndex  = 0;
-        private bool _isRunning;
+        private bool _isRunningBacking;
+        public bool IsRunning => _isRunningBacking;
+        private bool _autoStart;
+
+        private const string AutoStartPrefKey = "PolyLing.RemoteServer.AutoStart";
+        private const string AutoStartPortKey  = "PolyLing.RemoteServer.Port";
 
         // ================================================================
         // サーバー
@@ -138,12 +143,24 @@ namespace Poly_Ling.Remote
 
             EditorGUILayout.Space(5);
 
-            using (new EditorGUI.DisabledScope(_isRunning))
+            using (new EditorGUI.DisabledScope(_isRunningBacking))
             {
-                _port = EditorGUILayout.IntField("Port", _port);
+                int newPort = EditorGUILayout.IntField("Port", _port);
+                if (newPort != _port)
+                {
+                    _port = newPort;
+                    EditorPrefs.SetInt(AutoStartPortKey, _port);
+                }
             }
 
-            if (!_isRunning)
+            bool newAutoStart = EditorGUILayout.Toggle("エディタ起動時に自動開始", _autoStart);
+            if (newAutoStart != _autoStart)
+            {
+                _autoStart = newAutoStart;
+                EditorPrefs.SetBool(AutoStartPrefKey, _autoStart);
+            }
+
+            if (!_isRunningBacking)
             {
                 if (GUILayout.Button("Start Server"))
                     StartServer();
@@ -230,16 +247,16 @@ namespace Poly_Ling.Remote
         // サーバーライフサイクル
         // ================================================================
 
-        private void StartServer()
+        public void StartServer()
         {
-            if (_isRunning) return;
+            if (_isRunningBacking) return;
 
             try
             {
                 _cts = new CancellationTokenSource();
                 _tcpListener = new TcpListener(IPAddress.Loopback, _port);
                 _tcpListener.Start();
-                _isRunning = true;
+                _isRunningBacking = true;
 
                 SubscribeModel();
                 _ = AcceptClientsAsync(_cts.Token);
@@ -249,13 +266,13 @@ namespace Poly_Ling.Remote
             catch (Exception ex)
             {
                 Log($"起動失敗: {ex.Message}");
-                _isRunning = false;
+                _isRunningBacking = false;
             }
         }
 
         private void StopServer()
         {
-            if (!_isRunning) return;
+            if (!_isRunningBacking) return;
 
             UnsubscribeModel();
             _cts?.Cancel();
@@ -269,7 +286,7 @@ namespace Poly_Ling.Remote
 
             try { _tcpListener?.Stop(); } catch { }
             _tcpListener = null;
-            _isRunning = false;
+            _isRunningBacking = false;
             _cts?.Dispose();
             _cts = null;
 
@@ -282,6 +299,8 @@ namespace Poly_Ling.Remote
 
         private void OnEnable()
         {
+            _autoStart = EditorPrefs.GetBool(AutoStartPrefKey, false);
+            _port      = EditorPrefs.GetInt(AutoStartPortKey, _port);
             EditorApplication.update += ProcessMainThreadQueue;
         }
 

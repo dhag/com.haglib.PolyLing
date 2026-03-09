@@ -75,7 +75,7 @@ namespace Poly_Ling.UI
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Model Blend V2")]
+        //[MenuItem("Tools/Poly_Ling/Model Blend V2")]
         public static void ShowWindow()
         {
             var w = GetWindow<MultiModelBlendPanelV2>();

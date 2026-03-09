@@ -49,7 +49,7 @@ public partial class PolyLing
 
             if (GUILayout.Button(L.Get("PartsSelectionDicPanel")))
             {
-                Poly_Ling.UI.PartsSelectionSetPanel.Open(_toolManager?.toolContext);
+                Poly_Ling.UI.PartsSelectionSetPanelV2.Open(_panelContext);
             }
 
             // ================================================================

@@ -89,7 +89,7 @@ public class ProjectToMQOPartialWindow : EditorWindow
     // メニュー
     // ================================================================
 
-    [MenuItem("Tools/Poly_Ling/Utility/Export/MQO Partial")]
+    //[MenuItem("Tools/Poly_Ling/Utility/Export/MQO Partial")]
     public static void ShowWindow()
     {
         var w = GetWindow<ProjectToMQOPartialWindow>();

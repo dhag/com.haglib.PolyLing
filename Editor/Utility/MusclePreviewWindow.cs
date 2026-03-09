@@ -17,7 +17,7 @@ public class MusclePreviewWindow : EditorWindow
     private float _value = 0f;
     private bool _preview = false;
 
-    [MenuItem("Tools/Muscle Preview")]
+    [MenuItem("Tools/Utility/Muscle Preview")]
     static void Open() => GetWindow<MusclePreviewWindow>("Muscle Preview");
 
     private void OnEnable()
