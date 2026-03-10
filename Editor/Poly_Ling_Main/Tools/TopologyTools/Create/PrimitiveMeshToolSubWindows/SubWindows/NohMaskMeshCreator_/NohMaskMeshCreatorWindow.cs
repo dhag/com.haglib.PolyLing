@@ -71,6 +71,7 @@ public partial class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMes
     // ================================================================
     // パラメータ構造体
     // ================================================================
+    [System.Serializable]
     public struct FaceMeshParams : IEquatable<FaceMeshParams>
     {
         public string MeshName;
@@ -152,7 +153,7 @@ public partial class NohMaskMeshCreatorWindow : MeshCreatorWindowBase<NohMaskMes
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static NohMaskMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static NohMaskMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<NohMaskMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(420, 700);

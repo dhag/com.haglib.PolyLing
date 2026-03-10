@@ -38,11 +38,11 @@ namespace Poly_Ling.Tools
         private class CreatorInfo
         {
             public string LabelKey { get; set; }
-            public Action<Action<MeshObject, string>> OpenAction { get; set; }
+            public Action<Action<MeshObject, string, bool>> OpenAction { get; set; }
             public string Category { get; set; }
             public int Order { get; set; }
 
-            public CreatorInfo(string labelKey, Action<Action<MeshObject, string>> openAction, string category = null, int order = 0)
+            public CreatorInfo(string labelKey, Action<Action<MeshObject, string, bool>> openAction, string category = null, int order = 0)
             {
                 LabelKey = labelKey;
                 OpenAction = openAction;
@@ -194,7 +194,7 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// メッシュ生成完了時のコールバック
         /// </summary>
-        private void OnMeshObjectCreated(MeshObject meshObject, string name)
+        private void OnMeshObjectCreated(MeshObject meshObject, string name, bool addToCurrentMesh)
         {
             if (_context == null)
             {
@@ -202,8 +202,8 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            // ToolContext経由でメッシュを追加
-            if (_settings.AddToCurrentMesh)
+            // Window側のaddToCurrentMeshフラグで分岐
+            if (addToCurrentMesh)
             {
                 _context.AddMeshObjectToCurrentMesh?.Invoke(meshObject, name);
             }
@@ -220,7 +220,7 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// Creatorを追加（拡張用）
         /// </summary>
-        public static void RegisterCreator(string labelKey, Action<Action<MeshObject, string>> openAction, string category = null, int order = 0)
+        public static void RegisterCreator(string labelKey, Action<Action<MeshObject, string, bool>> openAction, string category = null, int order = 0)
         {
             var entry = new CreatorInfo(labelKey, openAction, category, order);
             if (!_creators.Exists(c => c.LabelKey == labelKey))

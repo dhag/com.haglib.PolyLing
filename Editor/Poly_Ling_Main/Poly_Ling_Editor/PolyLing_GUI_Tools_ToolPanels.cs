@@ -125,7 +125,8 @@ public partial class PolyLing
         }
         if (GUILayout.Button("UV展開"))
         {
-            Poly_Ling.UI.UVUnwrapPanel.Open(_toolManager?.toolContext);
+            if (_panelContext != null)
+                Poly_Ling.UI.UVUnwrapPanel.Open(_panelContext);
         }
 
         if (GUILayout.Button("UV編集"))
@@ -135,7 +136,8 @@ public partial class PolyLing
 
         if (GUILayout.Button("UVZ"))
         {
-            Poly_Ling.UI.UVZPanel.Open(_toolManager?.toolContext);
+            if (_panelContext != null)
+                Poly_Ling.UI.UVZPanel.Open(_panelContext);
         }
 
         EditorGUILayout.Space(5);

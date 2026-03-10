@@ -111,6 +111,7 @@ public partial class PolyLing
         // 統合システムにトポロジー変更を通知
         _unifiedAdapter?.NotifyTopologyChanged();
 
+        _model?.OnListChanged?.Invoke();
         Repaint();
     }
 

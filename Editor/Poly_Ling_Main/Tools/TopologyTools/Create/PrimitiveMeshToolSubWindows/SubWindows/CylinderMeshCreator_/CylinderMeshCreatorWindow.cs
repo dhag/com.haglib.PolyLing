@@ -18,6 +18,7 @@ public partial class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderM
     // ================================================================
     // パラメータ構造体
     // ================================================================
+    [System.Serializable]
     public struct CylinderParams : IEquatable<CylinderParams>
     {
         public string MeshName;
@@ -70,6 +71,7 @@ public partial class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderM
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "CylinderCreator";
+    protected override string PresetKey => "Cylinder";
     protected override string UndoDescription => "Cylinder Parameters";
     protected override float PreviewCameraDistance => Mathf.Max(_params.Height, Mathf.Max(_params.RadiusTop, _params.RadiusBottom) * 2f) * 2f;
 
@@ -81,7 +83,7 @@ public partial class CylinderMeshCreatorWindow : MeshCreatorWindowBase<CylinderM
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static CylinderMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static CylinderMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<CylinderMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(400, 650);

@@ -794,7 +794,24 @@ public partial class PolyLing
     /// </summary>
     private void DrawOriginMarker(Rect previewRect, Vector3 camPos, Vector3 lookAt)
     {
+        // メッシュフィルター（非スキンド）選択時はそのWorldMatrix原点をピボットとする。
+        // スキンドメッシュはボーン群で変形されるため単一ピボットが存在せずVector3.zeroを使用。
         Vector3 origin = Vector3.zero;
+        if (_model != null && _model.SelectedMeshIndices.Count > 0)
+        {
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+            foreach (int idx in _model.SelectedMeshIndices)
+            {
+                var ctx = _model.GetMeshContext(idx);
+                if (ctx == null) continue;
+                if (ctx.MeshObject?.IsSkinned ?? false) continue; // スキンドはスキップ
+                sum += (Vector3)ctx.WorldMatrix.GetColumn(3);
+                count++;
+            }
+            if (count > 0) origin = sum / count;
+        }
+
         Vector2 originScreen = WorldToPreviewPos(origin, previewRect, camPos, lookAt);
 
         if (!previewRect.Contains(originScreen))

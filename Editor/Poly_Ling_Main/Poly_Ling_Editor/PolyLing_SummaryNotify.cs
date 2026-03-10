@@ -295,6 +295,33 @@ public partial class PolyLing
                 NotifyPanels(ChangeKind.Attributes);
                 return;
 
+            // --- UV操作 ---
+            case ApplyUvUnwrapCommand c:
+                HandleApplyUvUnwrap(c);
+                NotifyPanels(ChangeKind.Attributes);
+                return;
+            case UvToXyzCommand c:
+                HandleUvToXyz(c);
+                NotifyPanels(ChangeKind.ListStructure);
+                return;
+            case XyzToUvCommand c:
+                HandleXyzToUv(c);
+                NotifyPanels(ChangeKind.Attributes);
+                return;
+
+            // --- BoneTransform ---
+            case SetBoneTransformValueCommand c:
+                _meshListOps.SetBoneTransformValue(c.MasterIndices, c.TargetField, c.Value);
+                Repaint();
+                NotifyPanels(ChangeKind.Attributes);
+                return;
+            case BeginBoneTransformSliderDragCommand c:
+                _meshListOps.BeginBoneTransformSliderDrag(c.MasterIndices);
+                return; // NotifyPanels不要
+            case EndBoneTransformSliderDragCommand c:
+                _meshListOps.EndBoneTransformSliderDrag(c.Description);
+                return; // NotifyPanels不要（Undo記録のみ）
+
             default:
                 Debug.LogWarning($"[PolyLing] Unknown PanelCommand: {cmd.GetType().Name}");
                 return;

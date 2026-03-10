@@ -7,6 +7,9 @@
     
     <ui:VisualElement name="typed-list-root" class="typed-list-root">
         
+        <!-- 詳細モードトグル（最上部） -->
+        <ui:Toggle name="detail-mode-toggle" label="詳細モード" value="false" class="detail-mode-toggle" />
+        
         <!-- タブヘッダー -->
         <ui:VisualElement name="tab-header" class="tab-header">
             <ui:Button name="tab-drawable" text="メッシュ" tooltip="Mesh + BakedMirror" class="tab-button tab-active" />
@@ -165,6 +168,56 @@
                 </ui:Foldout>
                 
             </ui:VisualElement>
+            
+            <!-- ================================================================
+                 BoneTransform セクション（簡易モード用：全選択アイテム対象）
+                 ================================================================ -->
+            <ui:Foldout name="transform-foldout" text="BoneTransform" value="true" class="pose-foldout">
+                <ui:VisualElement class="pose-panel">
+                    
+                    <!-- Position -->
+                    <ui:Label text="Position" class="pose-section-label" />
+                    <ui:VisualElement class="pose-row">
+                        <ui:Label text="Pos" class="pose-field-label" />
+                        <ui:FloatField name="local-pos-x" label="X" class="pose-float-field" />
+                        <ui:FloatField name="local-pos-y" label="Y" class="pose-float-field" />
+                        <ui:FloatField name="local-pos-z" label="Z" class="pose-float-field" />
+                    </ui:VisualElement>
+                    
+                    <!-- Rotation -->
+                    <ui:Label text="Rotation" class="pose-section-label" />
+                    <ui:VisualElement class="pose-row">
+                        <ui:Label text="Rot" class="pose-field-label" />
+                        <ui:FloatField name="local-rot-x" label="X" class="pose-float-field" />
+                        <ui:FloatField name="local-rot-y" label="Y" class="pose-float-field" />
+                        <ui:FloatField name="local-rot-z" label="Z" class="pose-float-field" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="pose-rot-sliders">
+                        <ui:VisualElement class="pose-slider-row">
+                            <ui:Label text="X" class="pose-slider-label" />
+                            <ui:Slider name="local-rot-slider-x" low-value="-180" high-value="180" value="0" class="pose-rot-slider" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-slider-row">
+                            <ui:Label text="Y" class="pose-slider-label" />
+                            <ui:Slider name="local-rot-slider-y" low-value="-180" high-value="180" value="0" class="pose-rot-slider" />
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pose-slider-row">
+                            <ui:Label text="Z" class="pose-slider-label" />
+                            <ui:Slider name="local-rot-slider-z" low-value="-180" high-value="180" value="0" class="pose-rot-slider" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    
+                    <!-- Scale -->
+                    <ui:Label text="Scale" class="pose-section-label" />
+                    <ui:VisualElement class="pose-row">
+                        <ui:Label text="Scl" class="pose-field-label" />
+                        <ui:FloatField name="local-scl-x" label="X" class="pose-float-field" />
+                        <ui:FloatField name="local-scl-y" label="Y" class="pose-float-field" />
+                        <ui:FloatField name="local-scl-z" label="Z" class="pose-float-field" />
+                    </ui:VisualElement>
+                    
+                </ui:VisualElement>
+            </ui:Foldout>
             
         </ui:VisualElement>
         

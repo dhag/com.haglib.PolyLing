@@ -20,9 +20,10 @@ public class Profile2DExtrudeWindow : EditorWindow
     // ================================================================
     // フィールド
     // ================================================================
-    private Action<MeshObject, string> _onMeshObjectCreated;
+    private Action<MeshObject, string, bool> _onMeshObjectCreated;
 
     // パラメータ
+    [SerializeField] private bool _addToCurrentMesh = false;
     [SerializeField] private string _meshName = "Profile2DExtrude";
     [SerializeField] private string _csvPath = "";
     [SerializeField] private float _scale = 1.0f;
@@ -68,7 +69,7 @@ public class Profile2DExtrudeWindow : EditorWindow
     // ================================================================
     // エントリポイント
     // ================================================================
-    public static Profile2DExtrudeWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static Profile2DExtrudeWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<Profile2DExtrudeWindow>(
             utility: true,
@@ -693,6 +694,14 @@ public class Profile2DExtrudeWindow : EditorWindow
     // ================================================================
     private void DrawButtons()
     {
+        // コールバック未設定時の警告
+        if (_onMeshObjectCreated == null)
+        {
+            EditorGUILayout.HelpBox("メインパネルで図形生成ツールを選択してください", MessageType.Warning);
+        }
+
+        _addToCurrentMesh = EditorGUILayout.ToggleLeft("既存のメッシュに追加", _addToCurrentMesh);
+
         EditorGUILayout.BeginHorizontal();
 
         GUI.enabled = !string.IsNullOrEmpty(_csvPath);
@@ -716,7 +725,8 @@ public class Profile2DExtrudeWindow : EditorWindow
             UpdatePreviewMesh();
         }
 
-        GUI.enabled = _loops != null && _loops.Any(l => l.Points.Count >= 3 && !l.IsHole);
+        GUI.enabled = _loops != null && _loops.Any(l => l.Points.Count >= 3 && !l.IsHole)
+                   && _onMeshObjectCreated != null;
         if (GUILayout.Button(T("Create"), GUILayout.Height(30)))
         {
             CreateMeshAndClose();
@@ -792,7 +802,7 @@ public class Profile2DExtrudeWindow : EditorWindow
             return;
         }
 
-        _onMeshObjectCreated?.Invoke(meshObject, _meshName);
+        _onMeshObjectCreated?.Invoke(meshObject, _meshName, _addToCurrentMesh);
         Close();
     }
 }

@@ -480,7 +480,7 @@ namespace Poly_Ling.MQO
                 for (int i = result.MeshContexts.Count - 1; i >= 0; i--)
                 {
                     var ctx = result.MeshContexts[i];
-                    Debug.Log($"[MQOImporter] mesh={ctx.Name} IsMirrored={ctx.IsMirrored} MirrorType={ctx.MirrorType} Type={ctx.Type}");
+                    //Debug.Log($"[MQOImporter] mesh={ctx.Name} IsMirrored={ctx.IsMirrored} MirrorType={ctx.MirrorType} Type={ctx.Type}");
                     if (ctx.IsMirrored && ctx.Type == MeshType.Mesh)
                     {
                         var mirrorMesh = CreateBakedMirrorMesh(ctx, i, settings);
@@ -494,7 +494,7 @@ namespace Poly_Ling.MQO
                             result.MeshContexts.Insert(i + 1, mirrorMesh);
                             ctx.HasBakedMirrorChild = true;
                             insertedCount++;
-                            Debug.Log($"[MQOImporter] Created baked mirror: {mirrorMesh.Name} (source: {ctx.Name})");
+                            //Debug.Log($"[MQOImporter] Created baked mirror: {mirrorMesh.Name} (source: {ctx.Name})");
                         }
                         else
                         {
@@ -516,7 +516,7 @@ namespace Poly_Ling.MQO
                             if (success)
                             {
                                 result.MirrorPairs.Add(pair);
-                                Debug.Log($"[MQOImporter] MirrorPair built: '{ctx.Name}' ↔ '{mirrorMesh.Name}'\n{pair.BuildLog}");
+                                //Debug.Log($"[MQOImporter] MirrorPair built: '{ctx.Name}' ↔ '{mirrorMesh.Name}'\n{pair.BuildLog}");
                             }
                             else
                             {

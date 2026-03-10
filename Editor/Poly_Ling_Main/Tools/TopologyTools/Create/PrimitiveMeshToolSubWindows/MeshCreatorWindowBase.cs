@@ -10,6 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Utilities;
+using Poly_Ling.UI;
 using static Poly_Ling.Tools.Creators.MeshCreatorTexts;
 
 namespace Poly_Ling.Tools.Creators
@@ -37,8 +38,8 @@ namespace Poly_Ling.Tools.Creators
         /// <summary>プレビュー用マテリアル</summary>
         protected Material _previewMaterial;
 
-        /// <summary>メッシュ生成完了時のコールバック</summary>
-        protected Action<MeshObject, string> _onMeshObjectCreated;
+        /// <summary>メッシュ生成完了時のコールバック（第3引数: addToCurrentMesh）</summary>
+        protected Action<MeshObject, string, bool> _onMeshObjectCreated;
 
         /// <summary>スクロール位置</summary>
         protected Vector2 _scrollPos;
@@ -55,6 +56,10 @@ namespace Poly_Ling.Tools.Creators
 
         /// <summary>自動頂点結合のしきい値</summary>
         protected float _autoMergeThreshold = 0.001f;
+
+        // === 追加モード ===
+        /// <summary>既存のメッシュに追加するか（新規作成か）</summary>
+        protected bool _addToCurrentMesh = false;
 
         // ================================================================
         // 抽象メソッド（派生クラスで実装）
@@ -93,6 +98,12 @@ namespace Poly_Ling.Tools.Creators
 
         /// <summary>プレビューのFOV</summary>
         protected virtual float PreviewFieldOfView => 30f;
+
+        /// <summary>
+        /// プリセットの識別キー。nullの場合プリセットUIを表示しない。
+        /// 派生クラスで "Sphere", "Cylinder" 等を返す。
+        /// </summary>
+        protected virtual string PresetKey => null;
 
         /// <summary>追加の初期化処理</summary>
         protected virtual void OnInitialize() { }
@@ -181,6 +192,19 @@ namespace Poly_Ling.Tools.Creators
             _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
             EditorGUILayout.Space(10);
 
+            // プリセットUI
+            if (PresetKey != null)
+            {
+                string loadedJson = PresetUI.Draw(PresetKey, ParamsToJson());
+                if (loadedJson != null)
+                {
+                    ParamsFromJson(loadedJson);
+                    OnParamsChanged();
+                    UpdatePreviewMesh();
+                }
+                EditorGUILayout.Space(6);
+            }
+
             // パラメータUI（派生クラスで実装）
             DrawParametersUI();
 
@@ -207,6 +231,9 @@ namespace Poly_Ling.Tools.Creators
         protected virtual void DrawAutoMergeUI()
         {
             EditorGUILayout.LabelField(T("Options"), EditorStyles.miniBoldLabel);
+
+            // 既存のメッシュに追加
+            _addToCurrentMesh = EditorGUILayout.ToggleLeft("既存のメッシュに追加", _addToCurrentMesh);
 
             EditorGUILayout.BeginHorizontal();
             _autoMergeOnCreate = EditorGUILayout.ToggleLeft(T("AutoMergeVertices"), _autoMergeOnCreate, GUILayout.Width(140));
@@ -297,13 +324,21 @@ namespace Poly_Ling.Tools.Creators
         /// </summary>
         protected virtual void DrawButtons()
         {
+            // コールバック未設定時の警告
+            if (_onMeshObjectCreated == null)
+            {
+                EditorGUILayout.HelpBox("メインパネルで図形生成ツールを選択してください", MessageType.Warning);
+            }
+
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
+            EditorGUI.BeginDisabledGroup(_onMeshObjectCreated == null);
             if (GUILayout.Button(T("Create"), GUILayout.Width(100), GUILayout.Height(30)))
             {
                 CreateMesh();
             }
+            EditorGUI.EndDisabledGroup();
 
             if (GUILayout.Button(T("Cancel"), GUILayout.Width(80), GUILayout.Height(30)))
             {
@@ -359,7 +394,7 @@ namespace Poly_Ling.Tools.Creators
             }
 
             // コールバック呼び出し
-            _onMeshObjectCreated?.Invoke(meshObject, meshName);
+            _onMeshObjectCreated?.Invoke(meshObject, meshName, _addToCurrentMesh);
 
             Debug.Log($"[{WindowName}] {T("CreatedMesh", meshName, meshObject.VertexCount, meshObject.FaceCount)}");
         }
@@ -374,6 +409,33 @@ namespace Poly_Ling.Tools.Creators
         protected void DrawUndoRedoButtons()
         {
             _undoHelper?.DrawUndoRedoButtons();
+        }
+
+        // ================================================================
+        // プリセットJSON変換（Wrapperクラス経由でstruct対応）
+        // ================================================================
+
+        [System.Serializable]
+        private class ParamsWrapper { public TParams value; }
+
+        /// <summary>現在のパラメータをJSON文字列に変換する</summary>
+        protected string ParamsToJson()
+        {
+            return JsonUtility.ToJson(new ParamsWrapper { value = _params });
+        }
+
+        /// <summary>JSON文字列からパラメータを復元する</summary>
+        protected void ParamsFromJson(string json)
+        {
+            try
+            {
+                var wrapper = JsonUtility.FromJson<ParamsWrapper>(json);
+                if (wrapper != null) _params = wrapper.value;
+            }
+            catch (System.Exception e)
+            {
+                UnityEngine.Debug.LogWarning($"[MeshCreatorWindowBase] PresetLoad failed: {e.Message}");
+            }
         }
 
         /// <summary>

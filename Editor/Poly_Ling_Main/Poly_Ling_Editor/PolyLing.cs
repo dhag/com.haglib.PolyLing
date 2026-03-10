@@ -460,7 +460,7 @@ public partial class PolyLing : EditorWindow
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    [MenuItem("Tools/PolyLingEditor(main)")]
+    [MenuItem("Tools/PolyLingEditor(メイン)")]
     private static void Open()
     {
         var window = GetWindow<PolyLing>("PolyLing");

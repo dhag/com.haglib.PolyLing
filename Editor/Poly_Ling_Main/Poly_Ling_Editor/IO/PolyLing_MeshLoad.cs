@@ -550,6 +550,11 @@ public partial class PolyLing
                     // BindPoseがない場合はワールド位置の逆行列を使用
                     boneCtx.BindPose = boneTransform.worldToLocalMatrix;
                 }
+
+                // ★BonePoseDataを生成（IsActive=trueのみ。RestPoseはゼロのまま）
+                // BonePoseDataはBoneTransformへのデルタとして設計されているため、
+                // RestPoseに値を入れるとBoneTransformと二重適用になる。
+                boneCtx.BonePoseData = new BonePoseData { IsActive = true };
                 // WorldMatrixはComputeWorldMatrices()で計算される
             }
             boneStartIndex = boneTransforms.Count;

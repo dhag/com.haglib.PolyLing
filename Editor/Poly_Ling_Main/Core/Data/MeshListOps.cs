@@ -27,8 +27,11 @@ namespace Poly_Ling.Data
         private Dictionary<int, Vector3[]> _morphPreviewBackups = new Dictionary<int, Vector3[]>();
         private List<(int morphIndex, int baseIndex)> _morphPreviewTargets = new List<(int, int)>();
 
-        // スライダードラッグ用スナップショット
+        // スライダードラッグ用スナップショット（BonePose）
         private Dictionary<int, BonePoseDataSnapshot> _sliderDragBeforeSnapshots = new Dictionary<int, BonePoseDataSnapshot>();
+
+        // スライダードラッグ用スナップショット（BoneTransform）
+        private Dictionary<int, BoneTransformSnapshot> _boneTransformSliderSnapshots = new Dictionary<int, BoneTransformSnapshot>();
 
         public bool IsMorphPreviewActive => _isMorphPreviewActive;
 
@@ -42,6 +45,7 @@ namespace Poly_Ling.Data
         {
             EndMorphPreview();
             _sliderDragBeforeSnapshots.Clear();
+            _boneTransformSliderSnapshots.Clear();
             _model = model;
             _undo = undo;
         }
@@ -482,7 +486,110 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
-        // モーフ変換
+        // BoneTransform値変更（簡易モード用）
+        // ================================================================
+        public bool SetBoneTransformValue(int[] masterIndices, SetBoneTransformValueCommand.Field field, float value)
+        {
+            if (_model == null || masterIndices == null || masterIndices.Length == 0) return false;
+
+            bool isSliderDrag = _boneTransformSliderSnapshots.Count > 0;
+            var before = isSliderDrag ? null : CaptureTransformSnapshots(masterIndices);
+
+            foreach (int idx in masterIndices)
+            {
+                var ctx = GetMeshContext(idx);
+                if (ctx?.BoneTransform == null) continue;
+                ctx.BoneTransform.UseLocalTransform = true;
+                ApplyTransformField(ctx.BoneTransform, field, value);
+            }
+
+            if (!isSliderDrag)
+            {
+                var after = CaptureTransformSnapshots(masterIndices);
+                RecordBoneTransformUndo(before, after, "トランスフォーム変更");
+            }
+            MarkDirty();
+            return true;
+        }
+
+        private void ApplyTransformField(BoneTransform bt, SetBoneTransformValueCommand.Field field, float value)
+        {
+            switch (field)
+            {
+                case SetBoneTransformValueCommand.Field.PositionX: bt.Position = new Vector3(value, bt.Position.y, bt.Position.z); break;
+                case SetBoneTransformValueCommand.Field.PositionY: bt.Position = new Vector3(bt.Position.x, value, bt.Position.z); break;
+                case SetBoneTransformValueCommand.Field.PositionZ: bt.Position = new Vector3(bt.Position.x, bt.Position.y, value); break;
+                case SetBoneTransformValueCommand.Field.RotationX: bt.Rotation = new Vector3(value, bt.Rotation.y, bt.Rotation.z); break;
+                case SetBoneTransformValueCommand.Field.RotationY: bt.Rotation = new Vector3(bt.Rotation.x, value, bt.Rotation.z); break;
+                case SetBoneTransformValueCommand.Field.RotationZ: bt.Rotation = new Vector3(bt.Rotation.x, bt.Rotation.y, value); break;
+                case SetBoneTransformValueCommand.Field.ScaleX: bt.Scale = new Vector3(value, bt.Scale.y, bt.Scale.z); break;
+                case SetBoneTransformValueCommand.Field.ScaleY: bt.Scale = new Vector3(bt.Scale.x, value, bt.Scale.z); break;
+                case SetBoneTransformValueCommand.Field.ScaleZ: bt.Scale = new Vector3(bt.Scale.x, bt.Scale.y, value); break;
+            }
+        }
+        public void BeginBoneTransformSliderDrag(int[] masterIndices)
+        {
+            if (_boneTransformSliderSnapshots.Count > 0) return;
+            if (_model == null || masterIndices == null) return;
+            foreach (int idx in masterIndices)
+            {
+                var ctx = GetMeshContext(idx);
+                if (ctx?.BoneTransform != null)
+                    _boneTransformSliderSnapshots[idx] = ctx.BoneTransform.CreateSnapshot();
+            }
+        }
+
+        public void EndBoneTransformSliderDrag(string description)
+        {
+            if (_boneTransformSliderSnapshots.Count == 0) return;
+            if (_undo != null && _model != null)
+            {
+                var record = new MultiBoneTransformChangeRecord();
+                foreach (var kvp in _boneTransformSliderSnapshots)
+                {
+                    var ctx = GetMeshContext(kvp.Key);
+                    if (ctx?.BoneTransform != null)
+                        record.Entries.Add(new MultiBoneTransformChangeRecord.Entry
+                        {
+                            MasterIndex = kvp.Key,
+                            OldSnapshot = kvp.Value,
+                            NewSnapshot = ctx.BoneTransform.CreateSnapshot()
+                        });
+                }
+                _undo.MeshListStack.Record(record, description);
+                _undo.FocusMeshList();
+            }
+            _boneTransformSliderSnapshots.Clear();
+        }
+
+        private Dictionary<int, BoneTransformSnapshot> CaptureTransformSnapshots(IEnumerable<int> masterIndices)
+        {
+            var dict = new Dictionary<int, BoneTransformSnapshot>();
+            foreach (int idx in masterIndices)
+            {
+                var ctx = GetMeshContext(idx);
+                if (ctx?.BoneTransform != null)
+                    dict[idx] = ctx.BoneTransform.CreateSnapshot();
+            }
+            return dict;
+        }
+
+        private void RecordBoneTransformUndo(
+            Dictionary<int, BoneTransformSnapshot> before,
+            Dictionary<int, BoneTransformSnapshot> after,
+            string description)
+        {
+            if (_undo == null || before == null) return;
+            var record = new MultiBoneTransformChangeRecord();
+            foreach (var kvp in before)
+            {
+                after.TryGetValue(kvp.Key, out var afterVal);
+                record.Entries.Add(new MultiBoneTransformChangeRecord.Entry
+                    { MasterIndex = kvp.Key, OldSnapshot = kvp.Value, NewSnapshot = afterVal });
+            }
+            _undo.MeshListStack.Record(record, description);
+            _undo.FocusMeshList();
+        }
         // ================================================================
 
         public bool ConvertMeshToMorph(int sourceIndex, int parentIndex, string morphName, int panel)

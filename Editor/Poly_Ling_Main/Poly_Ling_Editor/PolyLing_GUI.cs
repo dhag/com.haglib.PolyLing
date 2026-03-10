@@ -323,9 +323,50 @@ public partial class PolyLing
                 }
 
                 // ================================================================
-                // 図形生成ボタンは削除（PrimitiveMeshToolに移動）
-                // Toolsセクションで「Primitive」ツールを選択すると表示される
+                // 図形生成ボタン
                 // ================================================================
+                EditorGUILayout.Space(3);
+                EditorGUILayout.LabelField("図形生成", EditorStyles.miniBoldLabel);
+
+                void OpenWithContext(System.Action<System.Action<Poly_Ling.Data.MeshObject, string, bool>> openAction)
+                {
+                    openAction((mesh, name, addToCurrent) =>
+                    {
+                        if (addToCurrent)
+                            _toolContext?.AddMeshObjectToCurrentMesh?.Invoke(mesh, name);
+                        else
+                            _toolContext?.CreateNewMeshContext?.Invoke(mesh, name);
+                    });
+                }
+
+                int btnPerRow = 3;
+                int col = 0;
+                System.Action[] creators = new System.Action[]
+                {
+                    () => OpenWithContext(cb => CubeMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => SphereMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => CylinderMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => CapsuleMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => PlaneMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => PyramidMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => RevolutionMeshCreatorWindow.Open(cb)),
+                    () => OpenWithContext(cb => Profile2DExtrudeWindow.Open(cb)),
+                    () => OpenWithContext(cb => NohMaskMeshCreatorWindow.Open(cb)),
+                };
+                string[] creatorLabels = new string[]
+                {
+                    "Cube", "Sphere", "Cylinder", "Capsule", "Plane",
+                    "Pyramid", "Revolution", "Profile2D", "NohMask",
+                };
+
+                EditorGUILayout.BeginHorizontal();
+                for (int i = 0; i < creators.Length; i++)
+                {
+                    if (col == btnPerRow) { EditorGUILayout.EndHorizontal(); EditorGUILayout.BeginHorizontal(); col = 0; }
+                    if (GUILayout.Button(creatorLabels[i])) creators[i]();
+                    col++;
+                }
+                if (col > 0) EditorGUILayout.EndHorizontal();
 
                 EditorGUI.indentLevel--;
             }

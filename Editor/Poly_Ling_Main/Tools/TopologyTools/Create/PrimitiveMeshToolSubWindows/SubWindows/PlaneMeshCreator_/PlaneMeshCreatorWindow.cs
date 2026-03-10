@@ -21,6 +21,7 @@ public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCre
     // ================================================================
     // パラメータ構造体
     // ================================================================
+    [System.Serializable]
     public struct PlaneParams : IEquatable<PlaneParams>
     {
         public string MeshName;
@@ -65,6 +66,7 @@ public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCre
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "PlaneCreator";
+    protected override string PresetKey => "Plane";
     protected override string UndoDescription => "Plane Parameters";
     protected override float PreviewCameraDistance => Mathf.Max(_params.Width, _params.Height) * 2.5f;
 
@@ -76,7 +78,7 @@ public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCre
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static PlaneMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static PlaneMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<PlaneMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(400, 580);

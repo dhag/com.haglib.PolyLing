@@ -189,19 +189,20 @@ namespace Poly_Ling.Tools
             if (_draggingAxis == AxisType.None || _draggingAxis == AxisType.Center)
                 return;
 
-            Vector3 axisDirection = GetAxisDirection(_draggingAxis);
-
-            // 原点を基準に軸方向を計算
-            Vector2 originScreen = ctx.WorldToScreenPos(Vector3.zero, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Vector3 axisEnd = axisDirection * 0.1f;
+            // 選択メッシュのワールド位置をピボットとして使用
+            var worldMatrix = ctx.FirstSelectedMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+            Vector3 axisWorldDir = GetLocalAxisDirection(_draggingAxis, worldMatrix); // スクリーン投影用（ワールド空間）
+            Vector3 pivotWorld = worldMatrix.GetColumn(3);
+            Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector3 axisEnd = pivotWorld + axisWorldDir * 0.1f;
             Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
             Vector2 axisScreenDir = (axisEndScreen - originScreen).normalized;
             if (axisScreenDir.sqrMagnitude < 0.001f)
             {
                 // 軸がカメラを向いている場合のフォールバック
-                if (axisDirection == Vector3.right) axisScreenDir = new Vector2(1, 0);
-                else if (axisDirection == Vector3.up) axisScreenDir = new Vector2(0, -1);
+                if (_draggingAxis == AxisType.X) axisScreenDir = new Vector2(1, 0);
+                else if (_draggingAxis == AxisType.Y) axisScreenDir = new Vector2(0, -1);
                 else axisScreenDir = new Vector2(-0.7f, 0.7f);
             }
 
@@ -209,9 +210,10 @@ namespace Poly_Ling.Tools
             float screenMovement = Vector2.Dot(mouseDelta, axisScreenDir);
             float worldMovement = screenMovement * ctx.CameraDistance * 0.002f;
 
+            // 頂点はローカル空間に格納されているのでローカル軸で移動する
             // ハンドルの移動方向 = 頂点の逆方向
-            // なのでworldMovementを反転
-            Vector3 vertexDelta = axisDirection * (-worldMovement);
+            Vector3 localAxisDir = GetAxisDirection(_draggingAxis); // ローカル空間軸（Vector3.up等）
+            Vector3 vertexDelta = localAxisDir * (-worldMovement);
             _totalOffset += vertexDelta;
 
             ApplyOffset(vertexDelta, ctx);
@@ -300,14 +302,16 @@ namespace Poly_Ling.Tools
 
         private void DrawAxisGizmo(ToolContext ctx)
         {
-            // 原点をスクリーン座標に変換
-            Vector2 originScreen = ctx.WorldToScreenPos(Vector3.zero, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            // 選択メッシュのワールド行列からピボット位置とローカル軸方向を取得
+            var worldMatrix = ctx.FirstSelectedMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+            Vector3 pivotWorld = worldMatrix.GetColumn(3);
+            Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
             if (!ctx.PreviewRect.Contains(originScreen))
                 return;
 
             // X軸
-            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
+            Vector2 xEnd = GetAxisScreenEnd(ctx, GetLocalAxisDirection(AxisType.X, worldMatrix), originScreen, pivotWorld, AxisType.X);
             bool xHovered = _hoveredAxis == AxisType.X || _draggingAxis == AxisType.X;
             Color xColor = xHovered ? Color.yellow : Color.red;
             float xWidth = xHovered ? 3f : 2f;
@@ -315,7 +319,7 @@ namespace Poly_Ling.Tools
             DrawAxisHandle(xEnd, xColor, xHovered, "X");
 
             // Y軸
-            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
+            Vector2 yEnd = GetAxisScreenEnd(ctx, GetLocalAxisDirection(AxisType.Y, worldMatrix), originScreen, pivotWorld, AxisType.Y);
             bool yHovered = _hoveredAxis == AxisType.Y || _draggingAxis == AxisType.Y;
             Color yColor = yHovered ? Color.yellow : Color.green;
             float yWidth = yHovered ? 3f : 2f;
@@ -323,7 +327,7 @@ namespace Poly_Ling.Tools
             DrawAxisHandle(yEnd, yColor, yHovered, "Y");
 
             // Z軸
-            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
+            Vector2 zEnd = GetAxisScreenEnd(ctx, GetLocalAxisDirection(AxisType.Z, worldMatrix), originScreen, pivotWorld, AxisType.Z);
             bool zHovered = _hoveredAxis == AxisType.Z || _draggingAxis == AxisType.Z;
             Color zColor = zHovered ? Color.yellow : Color.blue;
             float zWidth = zHovered ? 3f : 2f;
@@ -357,17 +361,18 @@ namespace Poly_Ling.Tools
         }
     
 
-        private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 axisDirection, Vector2 originScreen)
+        private Vector2 GetAxisScreenEnd(ToolContext ctx, Vector3 axisDirection, Vector2 originScreen, Vector3 pivotWorld, AxisType axisType = AxisType.None)
         {
-            Vector3 axisEnd = axisDirection * 0.1f;
+            Vector3 axisEnd = pivotWorld + axisDirection * 0.1f;
             Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
             Vector2 dir = (axisEndScreen - originScreen).normalized;
 
             if (dir.sqrMagnitude < 0.001f)
             {
-                if (axisDirection == Vector3.right) dir = new Vector2(1, 0);
-                else if (axisDirection == Vector3.up) dir = new Vector2(0, -1);
+                // 軸がカメラを向いている場合のフォールバック
+                if (axisType == AxisType.X) dir = new Vector2(1, 0);
+                else if (axisType == AxisType.Y) dir = new Vector2(0, -1);
                 else dir = new Vector2(-0.7f, 0.7f);
             }
 
@@ -404,7 +409,9 @@ namespace Poly_Ling.Tools
 
         private AxisType FindAxisHandleAtScreenPos(Vector2 screenPos, ToolContext ctx)
         {
-            Vector2 originScreen = ctx.WorldToScreenPos(Vector3.zero, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            var worldMatrix = ctx.FirstSelectedMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+            Vector3 pivotWorld = worldMatrix.GetColumn(3);
+            Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
             // 中央四角のヒットテスト（優先）
             float halfCenter = _centerSize / 2 + 2;
@@ -415,23 +422,35 @@ namespace Poly_Ling.Tools
             }
 
             // X軸先端
-            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
+            Vector2 xEnd = GetAxisScreenEnd(ctx, GetLocalAxisDirection(AxisType.X, worldMatrix), originScreen, pivotWorld, AxisType.X);
             if (Vector2.Distance(screenPos, xEnd) < _handleHitRadius)
                 return AxisType.X;
 
             // Y軸先端
-            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
+            Vector2 yEnd = GetAxisScreenEnd(ctx, GetLocalAxisDirection(AxisType.Y, worldMatrix), originScreen, pivotWorld, AxisType.Y);
             if (Vector2.Distance(screenPos, yEnd) < _handleHitRadius)
                 return AxisType.Y;
 
             // Z軸先端
-            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
+            Vector2 zEnd = GetAxisScreenEnd(ctx, GetLocalAxisDirection(AxisType.Z, worldMatrix), originScreen, pivotWorld, AxisType.Z);
             if (Vector2.Distance(screenPos, zEnd) < _handleHitRadius)
                 return AxisType.Z;
 
             return AxisType.None;
         }
 
+        private Vector3 GetLocalAxisDirection(AxisType axis, Matrix4x4 worldMatrix)
+        {
+            switch (axis)
+            {
+                case AxisType.X: return ((Vector3)worldMatrix.GetColumn(0)).normalized;
+                case AxisType.Y: return ((Vector3)worldMatrix.GetColumn(1)).normalized;
+                case AxisType.Z: return ((Vector3)worldMatrix.GetColumn(2)).normalized;
+                default: return Vector3.zero;
+            }
+        }
+
+        // ローカル空間軸（頂点移動用）
         private Vector3 GetAxisDirection(AxisType axis)
         {
             switch (axis)

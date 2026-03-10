@@ -17,6 +17,7 @@ public partial class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMes
     // ================================================================
     // パラメータ構造体
     // ================================================================
+    [System.Serializable]
     public struct PyramidParams : IEquatable<PyramidParams>
     {
         public string MeshName;
@@ -60,6 +61,7 @@ public partial class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMes
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "PyramidCreator";
+    protected override string PresetKey => "Pyramid";
     protected override string UndoDescription => "Pyramid Parameters";
     protected override float PreviewCameraDistance => Mathf.Max(_params.Height, _params.BaseRadius * 2f) * 2.5f;
 
@@ -71,7 +73,7 @@ public partial class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMes
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static PyramidMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static PyramidMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<PyramidMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(400, 580);

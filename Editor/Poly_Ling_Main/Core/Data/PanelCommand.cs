@@ -7,6 +7,19 @@ using UnityEngine;
 
 namespace Poly_Ling.Data
 {
+    // ================================================================
+    // UV投影方式
+    // ================================================================
+
+    public enum ProjectionType
+    {
+        PlanarXY,
+        PlanarXZ,
+        PlanarYZ,
+        Box,
+        Cylindrical,
+        Spherical
+    }
     public abstract class PanelCommand
     {
         public int ModelIndex { get; }
@@ -442,5 +455,98 @@ namespace Poly_Ling.Data
     public class NotifyDictionaryChangedCommand : PanelCommand
     {
         public NotifyDictionaryChangedCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    // ================================================================
+    // UV操作
+    // ================================================================
+
+    /// <summary>選択メッシュに投影UV展開を適用する</summary>
+    public class ApplyUvUnwrapCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public ProjectionType Projection { get; }
+        public float Scale { get; }
+        public float OffsetU { get; }
+        public float OffsetV { get; }
+
+        public ApplyUvUnwrapCommand(int modelIndex, int[] masterIndices,
+            ProjectionType projection, float scale, float offsetU, float offsetV)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices;
+            Projection = projection;
+            Scale = scale;
+            OffsetU = offsetU;
+            OffsetV = offsetV;
+        }
+    }
+
+    /// <summary>UV→XYZ展開メッシュを新規生成してリストに追加する</summary>
+    public class UvToXyzCommand : PanelCommand
+    {
+        public int MasterIndex { get; }
+        public float UvScale { get; }
+        public float DepthScale { get; }
+        public Vector3 CameraPosition { get; }
+        public Vector3 CameraForward { get; }
+
+        public UvToXyzCommand(int modelIndex, int masterIndex,
+            float uvScale, float depthScale, Vector3 cameraPosition, Vector3 cameraForward)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            UvScale = uvScale;
+            DepthScale = depthScale;
+            CameraPosition = cameraPosition;
+            CameraForward = cameraForward;
+        }
+    }
+
+    /// <summary>ソースメッシュのXYZ座標をターゲットメッシュのUVに書き戻す</summary>
+    public class XyzToUvCommand : PanelCommand
+    {
+        public int SourceMasterIndex { get; }
+        public int TargetMasterIndex { get; }
+        public float UvScale { get; }
+
+        public XyzToUvCommand(int modelIndex, int sourceMasterIndex, int targetMasterIndex, float uvScale)
+            : base(modelIndex)
+        {
+            SourceMasterIndex = sourceMasterIndex;
+            TargetMasterIndex = targetMasterIndex;
+            UvScale = uvScale;
+        }
+    }
+
+    // ================================================================
+    // BoneTransform（簡易モード用）
+    // ================================================================
+
+    /// <summary>BoneTransform の Position/Rotation/Scale 単一軸値変更</summary>
+    public class SetBoneTransformValueCommand : PanelCommand
+    {
+        public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
+        public int[] MasterIndices { get; }
+        public Field TargetField { get; }
+        public float Value { get; }
+        public SetBoneTransformValueCommand(int modelIndex, int[] masterIndices, Field field, float value)
+            : base(modelIndex) { MasterIndices = masterIndices; TargetField = field; Value = value; }
+    }
+
+    /// <summary>BoneTransform スライダードラッグ開始（Undo スナップショット取得）</summary>
+    public class BeginBoneTransformSliderDragCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public BeginBoneTransformSliderDragCommand(int modelIndex, int[] masterIndices)
+            : base(modelIndex) { MasterIndices = masterIndices; }
+    }
+
+    /// <summary>BoneTransform スライダードラッグ終了（Undo 記録コミット）</summary>
+    public class EndBoneTransformSliderDragCommand : PanelCommand
+    {
+        public string Description { get; }
+        public EndBoneTransformSliderDragCommand(int modelIndex, string description)
+            : base(modelIndex) { Description = description; }
     }
 }

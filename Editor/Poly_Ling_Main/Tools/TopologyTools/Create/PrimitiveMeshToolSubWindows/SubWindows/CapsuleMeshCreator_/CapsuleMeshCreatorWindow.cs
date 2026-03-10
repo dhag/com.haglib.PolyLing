@@ -18,6 +18,7 @@ public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMes
     // ================================================================
     // パラメータ構造体
     // ================================================================
+    [System.Serializable]
     public struct CapsuleParams : IEquatable<CapsuleParams>
     {
         public string MeshName;
@@ -61,6 +62,7 @@ public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMes
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "CapsuleCreator";
+    protected override string PresetKey => "Capsule";
     protected override string UndoDescription => "Capsule Parameters";
     protected override float PreviewCameraDistance => _params.Height * 2f;
 
@@ -72,7 +74,7 @@ public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMes
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static CapsuleMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static CapsuleMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<CapsuleMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(400, 580);

@@ -8,6 +8,18 @@ using System;
 namespace Poly_Ling.Tools
 {
     /// <summary>
+    /// プリセット保存・復元に対応することを示すインターフェース
+    /// </summary>
+    public interface IPresetSerializable
+    {
+        /// <summary>現在の状態をJSON文字列に変換する</summary>
+        string ToPresetJson();
+
+        /// <summary>JSON文字列から状態を復元する</summary>
+        void ApplyPresetJson(string json);
+    }
+
+    /// <summary>
     /// ツール設定の共通インターフェース
     /// 各ツールはこれを実装した設定クラスを持つ
     /// </summary>

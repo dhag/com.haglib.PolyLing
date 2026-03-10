@@ -45,7 +45,13 @@ namespace Poly_Ling.Data
         // 属性
         bool IsVisible { get; }
         bool IsLocked { get; }
+        bool IsSkinned { get; }
         bool IsFolding { get; }
+
+        // ローカルトランスフォーム（簡易モード用）
+        Vector3 LocalPosition { get; }
+        Vector3 LocalRotationEuler { get; }
+        Vector3 LocalScale { get; }
 
         // 階層
         int Depth { get; }

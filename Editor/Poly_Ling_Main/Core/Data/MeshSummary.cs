@@ -61,7 +61,11 @@ namespace Poly_Ling.Data
         // 属性フラグ
         public bool IsVisible { get; }
         public bool IsLocked { get; }
+        public bool IsSkinned { get; }
         public bool IsFolding { get; }
+        public Vector3 LocalPosition { get; }
+        public Vector3 LocalRotationEuler { get; }
+        public Vector3 LocalScale { get; }
 
         // 階層情報
         public int Depth { get; }
@@ -113,7 +117,8 @@ namespace Poly_Ling.Data
         {
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = 0; FaceCount = 0; TriCount = 0; QuadCount = 0; NgonCount = 0;
-            IsVisible = true; IsLocked = false; IsFolding = false;
+            IsVisible = true; IsLocked = false; IsSkinned = false; IsFolding = false;
+            LocalPosition = Vector3.zero; LocalRotationEuler = Vector3.zero; LocalScale = Vector3.one;
             Depth = 0; HierarchyParentIndex = -1;
             MirrorType = 0; IsBakedMirror = false; IsMirrorSide = false; IsRealSide = false; HasBakedMirrorChild = false;
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
@@ -124,7 +129,8 @@ namespace Poly_Ling.Data
         public MeshSummary(
             int masterIndex, string name, MeshType type,
             int vertexCount, int faceCount, int triCount, int quadCount, int ngonCount,
-            bool isVisible, bool isLocked, bool isFolding,
+            bool isVisible, bool isLocked, bool isSkinned, bool isFolding,
+            Vector3 localPosition, Vector3 localRotationEuler, Vector3 localScale,
             int depth, int hierarchyParentIndex,
             int mirrorType, bool isBakedMirror, bool isMirrorSide, bool isRealSide, bool hasBakedMirrorChild,
             int boneIndex, BonePoseSummary bonePose,
@@ -133,7 +139,8 @@ namespace Poly_Ling.Data
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = vertexCount; FaceCount = faceCount;
             TriCount = triCount; QuadCount = quadCount; NgonCount = ngonCount;
-            IsVisible = isVisible; IsLocked = isLocked; IsFolding = isFolding;
+            IsVisible = isVisible; IsLocked = isLocked; IsSkinned = isSkinned; IsFolding = isFolding;
+            LocalPosition = localPosition; LocalRotationEuler = localRotationEuler; LocalScale = localScale;
             Depth = depth; HierarchyParentIndex = hierarchyParentIndex;
             MirrorType = mirrorType; IsBakedMirror = isBakedMirror;
             IsMirrorSide = isMirrorSide; IsRealSide = isRealSide; HasBakedMirrorChild = hasBakedMirrorChild;
@@ -184,7 +191,10 @@ namespace Poly_Ling.Data
             return new MeshSummary(
                 masterIndex, ctx.Name ?? "Untitled", ctx.Type,
                 vertexCount, faceCount, tri, quad, ngon,
-                ctx.IsVisible, ctx.IsLocked, ctx.IsFolding,
+                ctx.IsVisible, ctx.IsLocked, ctx.MeshObject?.IsSkinned ?? false, ctx.IsFolding,
+                ctx.BoneTransform?.Position ?? Vector3.zero,
+                ctx.BoneTransform?.Rotation ?? Vector3.zero,
+                ctx.BoneTransform?.Scale ?? Vector3.one,
                 ctx.Depth, ctx.HierarchyParentIndex,
                 ctx.MirrorType, ctx.IsBakedMirror, isMirrorSide, isRealSide, ctx.HasBakedMirrorChild,
                 boneIndex, bonePose,

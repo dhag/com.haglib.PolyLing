@@ -81,6 +81,8 @@ namespace Poly_Ling.VMD
 
         protected override void OnContextSet()
         {
+            if (_applier == null) _applier = new VMDApplier();
+
             // コンテキスト設定時にマッピングを再構築
             if (Model != null)
             {

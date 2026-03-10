@@ -143,7 +143,11 @@ namespace Poly_Ling.Data
         // 属性
         public bool IsVisible => _ctx.IsVisible;
         public bool IsLocked => _ctx.IsLocked;
+        public bool IsSkinned => _ctx.MeshObject?.IsSkinned ?? false;
         public bool IsFolding => _ctx.IsFolding;
+        public Vector3 LocalPosition => _ctx.BoneTransform?.Position ?? Vector3.zero;
+        public Vector3 LocalRotationEuler => _ctx.BoneTransform?.Rotation ?? Vector3.zero;
+        public Vector3 LocalScale => _ctx.BoneTransform?.Scale ?? Vector3.one;
 
         // 階層
         public int Depth => _ctx.Depth;

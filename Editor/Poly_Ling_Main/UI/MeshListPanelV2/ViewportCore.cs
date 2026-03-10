@@ -807,16 +807,36 @@ namespace Poly_Ling.MeshListV2
         private void DrawOriginMarker(Rect rect, Camera cam)
         {
             float axisLen = 0.2f;
-            Vector2 o = WorldToGUI(Vector3.zero, cam, rect);
+
+            // メッシュフィルター（非スキンド）選択時はそのWorldMatrix原点をピボットとする。
+            // スキンドメッシュはボーン群で変形されるため単一ピボットが存在せずVector3.zeroを使用。
+            Vector3 pivot = Vector3.zero;
+            var model = _currentModel;
+            if (model != null && model.SelectedMeshIndices.Count > 0)
+            {
+                Vector3 sum = Vector3.zero;
+                int count = 0;
+                foreach (int idx in model.SelectedMeshIndices)
+                {
+                    var ctx = model.GetMeshContext(idx);
+                    if (ctx == null) continue;
+                    if (ctx.MeshObject?.IsSkinned ?? false) continue; // スキンドはスキップ
+                    sum += (Vector3)ctx.WorldMatrix.GetColumn(3);
+                    count++;
+                }
+                if (count > 0) pivot = sum / count;
+            }
+
+            Vector2 o = WorldToGUI(pivot, cam, rect);
             if (!rect.Contains(o)) return;
 
             Handles.BeginGUI();
             Handles.color = new Color(1f, 0.2f, 0.2f, 0.8f);
-            Handles.DrawAAPolyLine(2f, o, WorldToGUI(Vector3.right * axisLen, cam, rect));
+            Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.right * axisLen, cam, rect));
             Handles.color = new Color(0.2f, 1f, 0.2f, 0.8f);
-            Handles.DrawAAPolyLine(2f, o, WorldToGUI(Vector3.up * axisLen, cam, rect));
+            Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.up * axisLen, cam, rect));
             Handles.color = new Color(0.3f, 0.3f, 1f, 0.8f);
-            Handles.DrawAAPolyLine(2f, o, WorldToGUI(Vector3.forward * axisLen, cam, rect));
+            Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.forward * axisLen, cam, rect));
             EditorGUI.DrawRect(new Rect(o.x - 3, o.y - 3, 6, 6), new Color(1, 1, 1, 0.7f));
             Handles.EndGUI();
         }

@@ -670,7 +670,46 @@ namespace Poly_Ling.UndoSystem
     // ============================================================
 
     /// <summary>
-    /// モーフ変換（Mesh↔Morph）のUndo記録
+    /// 複数MeshContextのBoneTransform一括変更Undo記録（簡易モード用）
+    /// </summary>
+    public class MultiBoneTransformChangeRecord : MeshListUndoRecord
+    {
+        public struct Entry
+        {
+            public int MasterIndex;
+            public BoneTransformSnapshot OldSnapshot;
+            public BoneTransformSnapshot NewSnapshot;
+        }
+
+        public List<Entry> Entries = new List<Entry>();
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            foreach (var e in Entries) ApplyEntry(ctx, e.MasterIndex, e.OldSnapshot);
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            foreach (var e in Entries) ApplyEntry(ctx, e.MasterIndex, e.NewSnapshot);
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        private static void ApplyEntry(ModelContext ctx, int masterIndex, BoneTransformSnapshot snapshot)
+        {
+            if (masterIndex < 0 || masterIndex >= ctx.MeshContextCount) return;
+            var mc = ctx.GetMeshContext(masterIndex);
+            if (mc?.BoneTransform == null) return;
+            mc.BoneTransform.ApplySnapshot(snapshot);
+        }
+
+        public override string ToString() => $"MultiBoneTransformChange: {Entries.Count} entries";
+    }
+
     /// Type, MorphBaseData, MorphParentIndex, ExcludeFromExport を保存/復元
     /// </summary>
     public class MorphConversionRecord : MeshListUndoRecord

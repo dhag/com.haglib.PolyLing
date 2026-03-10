@@ -108,6 +108,11 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>SkinnedMeshRendererとしてエクスポートするか</summary>
+        /// <remarks>
+        /// TODO: 将来的に廃止予定。IMeshView.IsSkinned（MeshObject.IsSkinned = ボーンウェイトの有無）に統合する。
+        /// ExportAsSkinned はエクスポート設定であり、IsSkinned はジオメトリのプロパティ（頂点にボーンウェイトがあるか）。
+        /// 両者は本来同一の概念を二重定義しているため、IsSkinned に一本化する。
+        /// </remarks>
         public bool ExportAsSkinned
         {
             get => _exportAsSkinned;

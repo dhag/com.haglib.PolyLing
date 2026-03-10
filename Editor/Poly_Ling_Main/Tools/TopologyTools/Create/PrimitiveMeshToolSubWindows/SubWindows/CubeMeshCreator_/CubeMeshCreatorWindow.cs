@@ -18,6 +18,7 @@ public partial class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreat
     // ================================================================
     // パラメータ構造体
     // ================================================================
+    [System.Serializable]
     public struct CubeParams : IEquatable<CubeParams>
     {
         public string MeshName;
@@ -81,6 +82,7 @@ public partial class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreat
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "CubeCreator";
+    protected override string PresetKey => "Cube";
     protected override string UndoDescription => "Cube Parameters";
     protected override float PreviewCameraDistance =>
         Mathf.Max(_params.WidthTop, _params.WidthBottom, _params.DepthTop, _params.DepthBottom, _params.Height) * 2.5f;
@@ -110,7 +112,7 @@ public partial class CubeMeshCreatorWindow : MeshCreatorWindowBase<CubeMeshCreat
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static CubeMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static CubeMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<CubeMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(400, 750);

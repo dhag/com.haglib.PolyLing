@@ -19,6 +19,7 @@ public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshC
     // ================================================================
     // パラメータ構造体（IEquatable実装）
     // ================================================================
+    [System.Serializable]
     public struct SphereParams : IEquatable<SphereParams>
     {
         public string MeshName;
@@ -62,6 +63,7 @@ public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshC
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "SphereCreator";
+    protected override string PresetKey => "Sphere";
     protected override string UndoDescription => "Sphere Parameters";
     protected override float PreviewCameraDistance => _params.Radius * 5f;
 
@@ -73,7 +75,7 @@ public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshC
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static SphereMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static SphereMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<SphereMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(400, 550);

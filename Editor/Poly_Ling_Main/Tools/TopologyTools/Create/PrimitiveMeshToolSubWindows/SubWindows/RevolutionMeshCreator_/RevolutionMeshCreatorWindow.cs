@@ -28,6 +28,7 @@ public class RevolutionMeshCreatorWindow : MeshCreatorWindowBase<RevolutionParam
     // 基底クラス実装
     // ================================================================
     protected override string WindowName => "RevolutionCreator";
+    protected override string PresetKey => "Revolution";
     protected override string UndoDescription => "Revolution Parameters";
     protected override float PreviewCameraDistance => 3f; // 動的に計算するので使わない
 
@@ -39,7 +40,7 @@ public class RevolutionMeshCreatorWindow : MeshCreatorWindowBase<RevolutionParam
     // ================================================================
     // ウインドウ初期化
     // ================================================================
-    public static RevolutionMeshCreatorWindow Open(Action<MeshObject, string> onMeshObjectCreated)
+    public static RevolutionMeshCreatorWindow Open(Action<MeshObject, string, bool> onMeshObjectCreated)
     {
         var window = GetWindow<RevolutionMeshCreatorWindow>(true, T("WindowTitle"), true);
         window.minSize = new Vector2(750, 650);
