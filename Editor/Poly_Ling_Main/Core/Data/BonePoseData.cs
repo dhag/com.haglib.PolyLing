@@ -1,20 +1,15 @@
 // Assets/Editor/Poly_Ling/Data/BonePoseData.cs
 // ボーンポーズデータ
-// RestPose（初期姿勢）+ InputLayers（差分入力）→ 合成 → LocalMatrix
-// BindPoseとの相互変換をサポート
+// InputLayers（差分入力）→ 合成 → LocalMatrix
+// ベースはVector3.zero / Quaternion.identity（BoneTransformが初期姿勢を保持）
 //
 // MeshContext上での位置:
 //   MeshContext
-//   ├── BoneTransform    エクスポート設定（既存）
+//   ├── BoneTransform    エクスポート設定・初期姿勢（既存）
 //   ├── BindPose         スキニング基準（既存）
-//   ├── BonePoseData     作業中のポーズ（本クラス）
-//   ├── LocalMatrix      BonePoseData優先 → BoneTransformフォールバック
+//   ├── BonePoseData     作業中の差分ポーズ（本クラス）
+//   ├── LocalMatrix      BoneTransform × BonePoseData.LocalMatrix
 //   └── WorldMatrix      ComputeWorldMatricesで計算
-//
-// BonePoseDataとBindPoseは相互変換可能:
-//   BonePoseData → BindPoseに焼く（BakeToBindPose）
-//   BindPose → BonePoseDataに展開（LoadFromWorldMatrix）
-//   RestPoseに回転追加（MultiplyRestRotation: A-Pose→T-Pose変換等）
 
 using System;
 using System.Collections.Generic;
@@ -37,10 +32,10 @@ namespace Poly_Ling.Data
         /// <summary>レイヤー名（"VMD", "IK", "Physics", "Manual"等）</summary>
         public string Name;
 
-        /// <summary>位置差分（RestPoseからの加算）</summary>
+        /// <summary>位置差分（PreBindPoseからの加算）</summary>
         public Vector3 DeltaPosition = Vector3.zero;
 
-        /// <summary>回転差分（RestPoseへの乗算、Quaternion）</summary>
+        /// <summary>回転差分（PreBindPoseへの乗算、Quaternion）</summary>
         public Quaternion DeltaRotation = Quaternion.identity;
 
         /// <summary>ブレンドウェイト（0.0〜1.0）</summary>
@@ -84,41 +79,13 @@ namespace Poly_Ling.Data
     /// ボーンのポーズデータ
     /// 
     /// 構造:
-    ///   RestPose (不変の初期姿勢)
-    ///   + InputLayers (差分入力、複数ソース)
-    ///   → 合成結果 (Position/Rotation/Scale/LocalMatrix)
+    ///   InputLayers (差分入力、複数ソース、ベース=zero/identity)
+    ///   → 合成結果 (Position/Rotation/LocalMatrix)
+    /// 初期姿勢はBoneTransformが保持する。
     /// </summary>
     [Serializable]
     public class BonePoseData
     {
-        // ================================================================
-        // RestPose（初期姿勢、インポート時に設定）
-        // ================================================================
-
-        /// <summary>初期位置（ローカル）</summary>
-        private Vector3 _restPosition = Vector3.zero;
-        public Vector3 RestPosition
-        {
-            get => _restPosition;
-            set { _restPosition = value; _dirty = true; }
-        }
-
-        /// <summary>初期回転（ローカル、Quaternion）</summary>
-        private Quaternion _restRotation = Quaternion.identity;
-        public Quaternion RestRotation
-        {
-            get => _restRotation;
-            set { _restRotation = value; _dirty = true; }
-        }
-
-        /// <summary>初期スケール（ローカル）</summary>
-        private Vector3 _restScale = Vector3.one;
-        public Vector3 RestScale
-        {
-            get => _restScale;
-            set { _restScale = value; _dirty = true; }
-        }
-
         // ================================================================
         // InputLayers（差分入力）
         // ================================================================
@@ -164,9 +131,6 @@ namespace Poly_Ling.Data
             get { EnsureRecalculated(); return _blendedRotation; }
         }
 
-        /// <summary>スケール（現在はRestScaleそのまま）</summary>
-        public Vector3 Scale => RestScale;
-
         /// <summary>合成後のローカル変換行列</summary>
         public Matrix4x4 LocalMatrix
         {
@@ -198,19 +162,6 @@ namespace Poly_Ling.Data
         // ================================================================
 
         public BonePoseData() { }
-
-        /// <summary>
-        /// BoneTransformからRestPoseを初期化
-        /// </summary>
-        public BonePoseData(Tools.BoneTransform boneTransform)
-        {
-            if (boneTransform != null)
-            {
-                RestPosition = boneTransform.Position;
-                RestRotation = boneTransform.RotationQuaternion;
-                RestScale = boneTransform.Scale;
-            }
-        }
 
         // ================================================================
         // レイヤー操作
@@ -313,7 +264,7 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 全レイヤーをクリア（RestPoseに戻る）
+        /// 全レイヤーをクリア（ゼロポーズに戻る）
         /// </summary>
         public void ClearAllLayers()
         {
@@ -343,8 +294,8 @@ namespace Poly_Ling.Data
         /// </summary>
         public void Recalculate()
         {
-            _blendedPosition = RestPosition;
-            _blendedRotation = RestRotation;
+            _blendedPosition = Vector3.zero;
+            _blendedRotation = Quaternion.identity;
 
             for (int i = 0; i < _layers.Count; i++)
             {
@@ -357,13 +308,13 @@ namespace Poly_Ling.Data
                 // 位置: 加算
                 _blendedPosition += layer.DeltaPosition * w;
 
-                // 回転: 差分をWeightでSlerpしてからRestに乗算
+                // 回転: 差分をWeightでSlerpしてから乗算
                 Quaternion weightedDelta = Quaternion.Slerp(
                     Quaternion.identity, layer.DeltaRotation, w);
                 _blendedRotation = weightedDelta * _blendedRotation;
             }
 
-            _localMatrix = Matrix4x4.TRS(_blendedPosition, _blendedRotation, RestScale);
+            _localMatrix = Matrix4x4.TRS(_blendedPosition, _blendedRotation, Vector3.one);
             _dirty = false;
         }
 
@@ -381,83 +332,6 @@ namespace Poly_Ling.Data
         }
 
         // ================================================================
-        // BindPose相互変換
-        // ================================================================
-
-        /// <summary>
-        /// 現在のポーズからBindPose行列を計算
-        /// </summary>
-        /// <param name="worldMatrix">このボーンの現在のWorldMatrix</param>
-        /// <returns>新しいBindPose行列（= WorldMatrix.inverse）</returns>
-        public Matrix4x4 BakeToBindPose(Matrix4x4 worldMatrix)
-        {
-            return worldMatrix.inverse;
-        }
-
-        /// <summary>
-        /// 現在のポーズをRestPoseに焼き込み、レイヤーをクリア
-        /// 合成結果が新しいRestPoseになる
-        /// </summary>
-        public void BakeAndReset()
-        {
-            EnsureRecalculated();
-            RestPosition = _blendedPosition;
-            RestRotation = _blendedRotation;
-            _layers.Clear();
-            _dirty = true;
-        }
-
-        /// <summary>
-        /// WorldMatrixからRestPoseを展開
-        /// BindPoseから逆算してRestPose（ローカルTRS）を設定する
-        /// </summary>
-        /// <param name="worldMatrix">ボーンのWorldMatrix</param>
-        /// <param name="parentWorldMatrix">親ボーンのWorldMatrix（ルートならidentity）</param>
-        public void LoadFromWorldMatrix(Matrix4x4 worldMatrix, Matrix4x4 parentWorldMatrix)
-        {
-            // ローカル行列 = 親の逆 × ワールド
-            Matrix4x4 localMatrix = parentWorldMatrix.inverse * worldMatrix;
-
-            // TRS分解
-            RestPosition = new Vector3(localMatrix.m03, localMatrix.m13, localMatrix.m23);
-
-            RestScale = new Vector3(
-                localMatrix.GetColumn(0).magnitude,
-                localMatrix.GetColumn(1).magnitude,
-                localMatrix.GetColumn(2).magnitude
-            );
-
-            // 回転（スケール除去）
-            Matrix4x4 rotMatrix = Matrix4x4.identity;
-            if (RestScale.x > 0.0001f) rotMatrix.SetColumn(0, localMatrix.GetColumn(0) / RestScale.x);
-            if (RestScale.y > 0.0001f) rotMatrix.SetColumn(1, localMatrix.GetColumn(1) / RestScale.y);
-            if (RestScale.z > 0.0001f) rotMatrix.SetColumn(2, localMatrix.GetColumn(2) / RestScale.z);
-            RestRotation = rotMatrix.rotation;
-
-            _layers.Clear();
-            _dirty = true;
-        }
-
-        /// <summary>
-        /// RestPoseに回転を追加適用
-        /// 例: A-Pose → T-Pose変換時に腕のRestRotationを変更
-        /// </summary>
-        public void MultiplyRestRotation(Quaternion additionalRotation)
-        {
-            RestRotation = additionalRotation * RestRotation;
-            _dirty = true;
-        }
-
-        /// <summary>
-        /// RestPoseに位置オフセットを追加
-        /// </summary>
-        public void OffsetRestPosition(Vector3 offset)
-        {
-            RestPosition += offset;
-            _dirty = true;
-        }
-
-        // ================================================================
         // Snapshot（Undo用）
         // ================================================================
 
@@ -468,9 +342,6 @@ namespace Poly_Ling.Data
         {
             var snapshot = new BonePoseDataSnapshot
             {
-                RestPosition = RestPosition,
-                RestRotation = RestRotation,
-                RestScale = RestScale,
                 IsActive = IsActive,
                 Layers = new List<PoseLayer>(_layers.Count)
             };
@@ -489,9 +360,6 @@ namespace Poly_Ling.Data
             if (!snapshot.HasValue) return;
 
             var s = snapshot.Value;
-            RestPosition = s.RestPosition;
-            RestRotation = s.RestRotation;
-            RestScale = s.RestScale;
             IsActive = s.IsActive;
 
             _layers.Clear();
@@ -510,15 +378,12 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// DTOに変換（保存用）
-        /// RestPose + Manualレイヤーのみ保存
+        /// PreBindPose + Manualレイヤーのみ保存
         /// VMD/IK/Physicsはトランジェント
         /// </summary>
         public BonePoseDataDTO ToDTO()
         {
             var dto = new BonePoseDataDTO();
-            dto.SetRestPosition(RestPosition);
-            dto.SetRestRotation(RestRotation);
-            dto.SetRestScale(RestScale);
             dto.isActive = IsActive;
 
             // Manualレイヤーのみ保存
@@ -545,9 +410,6 @@ namespace Poly_Ling.Data
 
             var data = new BonePoseData
             {
-                RestPosition = dto.GetRestPosition(),
-                RestRotation = dto.GetRestRotation(),
-                RestScale = dto.GetRestScale(),
                 IsActive = dto.isActive
             };
 
@@ -583,9 +445,6 @@ namespace Poly_Ling.Data
         {
             var clone = new BonePoseData
             {
-                RestPosition = RestPosition,
-                RestRotation = RestRotation,
-                RestScale = RestScale,
                 IsActive = IsActive
             };
 
@@ -603,8 +462,7 @@ namespace Poly_Ling.Data
         public override string ToString()
         {
             EnsureRecalculated();
-            return $"BonePoseData(Rest:P={RestPosition} R={RestRotation.eulerAngles}, " +
-                   $"Layers:{_layers.Count}, Final:P={_blendedPosition} R={_blendedRotation.eulerAngles})";
+            return $"BonePoseData(Layers:{_layers.Count}, Final:P={_blendedPosition} R={_blendedRotation.eulerAngles})";
         }
     }
 
@@ -614,23 +472,17 @@ namespace Poly_Ling.Data
 
     /// <summary>
     /// BonePoseDataの状態スナップショット
-    /// RestPose + 全レイヤーの完全コピー
+    /// IsActive + 全レイヤーの完全コピー
     /// </summary>
     [Serializable]
     public struct BonePoseDataSnapshot
     {
-        public Vector3 RestPosition;
-        public Quaternion RestRotation;
-        public Vector3 RestScale;
         public bool IsActive;
         public List<PoseLayer> Layers;
 
         public bool IsDifferentFrom(BonePoseDataSnapshot other)
         {
             if (IsActive != other.IsActive) return true;
-            if (Vector3.Distance(RestPosition, other.RestPosition) > 0.0001f) return true;
-            if (Quaternion.Angle(RestRotation, other.RestRotation) > 0.01f) return true;
-            if (Vector3.Distance(RestScale, other.RestScale) > 0.0001f) return true;
 
             int countA = Layers?.Count ?? 0;
             int countB = other.Layers?.Count ?? 0;

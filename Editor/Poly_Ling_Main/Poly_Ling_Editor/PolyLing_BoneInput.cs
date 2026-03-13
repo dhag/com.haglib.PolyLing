@@ -37,9 +37,9 @@ public partial class PolyLing
     private Vector2 _boneMouseDownPos;
     private Vector2 _boneLastDragScreenPos;
 
-    // Undo用スナップショット（ドラッグ開始時のRestPosition保存）
-    private Dictionary<int, BonePoseDataSnapshot> _boneDragBeforeSnapshots
-        = new Dictionary<int, BonePoseDataSnapshot>();
+    // Undo用スナップショット（ドラッグ開始時のBoneTransform保存）
+    private Dictionary<int, BoneTransformSnapshot> _boneDragBeforeSnapshots
+        = new Dictionary<int, BoneTransformSnapshot>();
 
     // ================================================================
     // ボーン入力ハンドラ（HandleInputから呼び出し）
@@ -314,7 +314,7 @@ public partial class PolyLing
         ApplyBoneWorldDelta(worldDelta);
     }
 
-    /// <summary>ワールドデルタを選択ボーンのRestPositionに加算</summary>
+    /// <summary>ワールドデルタを選択ボーンのBoneTransform.Positionに加算</summary>
     private void ApplyBoneWorldDelta(Vector3 worldDelta)
     {
         if (worldDelta.sqrMagnitude < 1e-10f) return;
@@ -325,10 +325,9 @@ public partial class PolyLing
             var meshCtx = _model.GetMeshContext(idx);
             if (meshCtx == null) continue;
 
-            EnsureBonePoseData(meshCtx);
-
-            meshCtx.BonePoseData.RestPosition += worldDelta;
-            meshCtx.BonePoseData.SetDirty();
+            if (meshCtx.BoneTransform == null) continue;
+            meshCtx.BoneTransform.UseLocalTransform = true;
+            meshCtx.BoneTransform.Position += worldDelta;
         }
 
         _model.ComputeWorldMatrices();
@@ -347,23 +346,9 @@ public partial class PolyLing
         foreach (int idx in _model.SelectedBoneIndices)
         {
             var meshCtx = _model.GetMeshContext(idx);
-            if (meshCtx == null) continue;
-
-            EnsureBonePoseData(meshCtx);
-            _boneDragBeforeSnapshots[idx] = meshCtx.BonePoseData.CreateSnapshot();
+            if (meshCtx?.BoneTransform == null) continue;
+            _boneDragBeforeSnapshots[idx] = meshCtx.BoneTransform.CreateSnapshot();
         }
-    }
-
-    /// <summary>
-    /// BonePoseDataがnullの場合に初期化する。
-    /// BoneTransformの位置はbaseMatrixとして乗算されるため、
-    /// BonePoseData.RestPositionは(0,0,0)で初期化して差分管理する。
-    /// </summary>
-    private static void EnsureBonePoseData(Poly_Ling.Data.MeshContext meshCtx)
-    {
-        if (meshCtx.BonePoseData != null) return;
-        meshCtx.BonePoseData = new Poly_Ling.Data.BonePoseData();
-        meshCtx.BonePoseData.IsActive = true;
     }
 
     private void CommitBoneDragUndo()
@@ -373,22 +358,26 @@ public partial class PolyLing
         var undoCtrl = _undoController;
         if (undoCtrl == null) return;
 
-        var record = new MultiBonePoseChangeRecord();
+        var record = new MultiBoneTransformChangeRecord();
         foreach (var kvp in _boneDragBeforeSnapshots)
         {
             int idx = kvp.Key;
             var meshCtx = _model?.GetMeshContext(idx);
+            if (meshCtx?.BoneTransform == null) continue;
 
-            record.Entries.Add(new MultiBonePoseChangeRecord.Entry
+            record.Entries.Add(new MultiBoneTransformChangeRecord.Entry
             {
                 MasterIndex = idx,
                 OldSnapshot = kvp.Value,
-                NewSnapshot = meshCtx?.BonePoseData?.CreateSnapshot(),
+                NewSnapshot = meshCtx.BoneTransform.CreateSnapshot(),
             });
         }
 
-        undoCtrl.MeshListStack.Record(record, "ボーン移動");
-        undoCtrl.FocusMeshList();
+        if (record.Entries.Count > 0)
+        {
+            undoCtrl.MeshListStack.Record(record, "ボーン移動");
+            undoCtrl.FocusMeshList();
+        }
 
         _model?.OnListChanged?.Invoke();
         _boneDragBeforeSnapshots.Clear();

@@ -1,0 +1,83 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+<!-- VMDTestPanel.uxml -->
+
+<ui:ScrollView name="root-scroll" class="io-panel-scroll">
+
+    <!-- コンテキスト警告 -->
+    <ui:HelpBox name="no-ctx-box"
+        text="ToolContext が未設定です。PolyLing ウィンドウから開いてください。"
+        message-type="Warning" class="io-help-box"/>
+
+    <!-- モデル情報 -->
+    <ui:VisualElement class="io-section">
+        <ui:Label text="Model" class="io-section-header"/>
+        <ui:Label name="model-label" text="(No model loaded)" class="io-mini-label"/>
+    </ui:VisualElement>
+
+    <!-- VMDファイル -->
+    <ui:VisualElement class="io-section">
+        <ui:Label text="VMD File" class="io-section-header"/>
+        <ui:VisualElement class="io-row" style="margin-bottom:4px;">
+            <ui:Label name="file-label" text="(None)" class="io-mini-label" style="flex-grow:1;"/>
+            <ui:Button name="btn-open"   text="Open"   class="io-btn-small" style="width:50px;"/>
+            <ui:Button name="btn-clear"  text="Clear"  class="io-btn-small" style="width:50px;"/>
+            <ui:Button name="btn-reload" text="Reload" class="io-btn-small" style="width:60px;"/>
+        </ui:VisualElement>
+    </ui:VisualElement>
+
+    <!-- VMD情報＋フレームコントロール -->
+    <ui:VisualElement name="vmd-section">
+
+        <!-- VMD情報 -->
+        <ui:Foldout text="VMD Info" value="true" class="io-foldout">
+            <ui:Label name="vmd-model-name"  class="io-mini-label"/>
+            <ui:Label name="vmd-frames"      class="io-mini-label"/>
+            <ui:Label name="vmd-duration"    class="io-mini-label"/>
+            <ui:Label name="vmd-bone-tracks" class="io-mini-label"/>
+            <ui:Label name="vmd-morph-tracks" class="io-mini-label"/>
+            <ui:Label name="vmd-matched"     class="io-mini-label"/>
+        </ui:Foldout>
+
+        <!-- フレームコントロール -->
+        <ui:Foldout text="Frame Control" value="true" class="io-foldout">
+            <ui:Label name="frame-label" text="Frame: 0 / 0" class="io-mini-label"/>
+            <ui:Slider name="frame-slider" low-value="0" high-value="1" style="margin:4px 0;"/>
+            <!-- ステップ＋クイックジャンプ -->
+            <ui:VisualElement class="io-row" style="flex-wrap:wrap;">
+                <ui:Button name="btn-first" text="|◀" class="io-btn-small" style="width:40px;"/>
+                <ui:Button name="btn-prev1" text="◀"  class="io-btn-small" style="width:32px;"/>
+                <ui:Button name="btn-next1" text="▶"  class="io-btn-small" style="width:32px;"/>
+                <ui:Button name="btn-last"  text="▶|" class="io-btn-small" style="width:40px;"/>
+                <ui:Button name="btn-reset" text="Reset Pose" class="io-btn-small" style="width:80px;margin-left:8px;"/>
+            </ui:VisualElement>
+            <ui:VisualElement class="io-row" style="margin-top:4px;">
+                <ui:Label text="Go to:" style="width:45px;font-size:11px;"/>
+                <ui:IntegerField name="frame-input" style="width:60px;"/>
+                <ui:Button name="btn-0"   text="0%"   class="io-btn-small" style="width:36px;margin-left:8px;"/>
+                <ui:Button name="btn-25"  text="25%"  class="io-btn-small" style="width:40px;"/>
+                <ui:Button name="btn-50"  text="50%"  class="io-btn-small" style="width:40px;"/>
+                <ui:Button name="btn-75"  text="75%"  class="io-btn-small" style="width:40px;"/>
+                <ui:Button name="btn-100" text="100%" class="io-btn-small" style="width:44px;"/>
+            </ui:VisualElement>
+        </ui:Foldout>
+
+        <!-- オプション -->
+        <ui:Foldout text="Options" value="true" class="io-foldout">
+            <ui:Toggle name="coord-toggle" label="Coordinate Conversion (Z flip)" class="io-toggle"/>
+            <ui:FloatField name="scale-field" label="Position Scale" class="io-field"/>
+        </ui:Foldout>
+
+        <!-- ボーンリスト -->
+        <ui:Foldout name="bone-list-foldout" text="Bone Tracks" value="false" class="io-foldout">
+            <ui:VisualElement name="bone-list" class="io-list"/>
+        </ui:Foldout>
+
+        <!-- モーフリスト -->
+        <ui:Foldout name="morph-list-foldout" text="Morph Tracks" value="false" class="io-foldout">
+            <ui:VisualElement name="morph-list" class="io-list"/>
+        </ui:Foldout>
+
+    </ui:VisualElement>
+
+</ui:ScrollView>
+</ui:UXML>

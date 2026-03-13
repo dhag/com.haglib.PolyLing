@@ -36,9 +36,6 @@ namespace Poly_Ling.UI
         private Label         _masterIndexLabel;
         private Label         _boneIndexLabel;
         private Label         _parentBoneLabel;
-        private Label         _restPosLabel;
-        private Label         _restRotLabel;
-        private Label         _restSclLabel;
         private Label         _worldPosLabel;
         private Label         _statusLabel;
 
@@ -182,13 +179,6 @@ namespace Poly_Ling.UI
 
             _boneDetail.Add(MakeSep());
 
-            _boneDetail.Add(MakeSectionLabel("RestPose"));
-            AddRow(_boneDetail, "位置",   out _restPosLabel);
-            AddRow(_boneDetail, "回転",   out _restRotLabel);
-            AddRow(_boneDetail, "スケール", out _restSclLabel);
-
-            _boneDetail.Add(MakeSep());
-
             _boneDetail.Add(MakeSectionLabel("ワールド"));
             AddRow(_boneDetail, "位置", out _worldPosLabel);
 
@@ -293,26 +283,6 @@ namespace Poly_Ling.UI
             else
             {
                 _parentBoneLabel.text = "(なし)";
-            }
-
-            var pose = ctx.BonePoseData;
-            if (pose != null)
-            {
-                _restPosLabel.text = FormatVec3(pose.RestPosition);
-                _restRotLabel.text = FormatVec3(pose.RestRotation.eulerAngles);
-                _restSclLabel.text = FormatVec3(pose.RestScale);
-            }
-            else if (ctx.BoneTransform != null)
-            {
-                _restPosLabel.text = FormatVec3(ctx.BoneTransform.Position) + " (BoneTransform)";
-                _restRotLabel.text = FormatVec3(ctx.BoneTransform.Rotation) + " (BoneTransform)";
-                _restSclLabel.text = FormatVec3(ctx.BoneTransform.Scale)    + " (BoneTransform)";
-            }
-            else
-            {
-                _restPosLabel.text = "(未初期化)";
-                _restRotLabel.text = "-";
-                _restSclLabel.text = "-";
             }
 
             var worldMatrix = ctx.WorldMatrix;

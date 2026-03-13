@@ -14,7 +14,7 @@ using UIList.UIToolkitExtensions;
 
 namespace Poly_Ling.MeshListV2
 {
-    public class MeshListPanelV2 : EditorWindow
+    public class MeshListPanelV2 : EditorWindow, Poly_Ling.Tools.IPanelContextReceiver
     {
         // ================================================================
         // UXML/USSパス（MeshListV2フォルダ、UIフォルダの外）
@@ -160,8 +160,7 @@ namespace Poly_Ling.MeshListV2
             return window;
         }
 
-        private void SetContext(PanelContext ctx)
-        {
+        public void SetContext(PanelContext ctx)        {
             if (_ctx != null) _ctx.OnViewChanged -= OnViewChanged;
             _ctx = ctx;
             if (_ctx != null)
@@ -804,6 +803,22 @@ namespace Poly_Ling.MeshListV2
             _restRotSliderX = root.Q<Slider>("rest-rot-slider-x"); _restRotSliderY = root.Q<Slider>("rest-rot-slider-y"); _restRotSliderZ = root.Q<Slider>("rest-rot-slider-z");
             _restSclX = root.Q<FloatField>("rest-scl-x"); _restSclY = root.Q<FloatField>("rest-scl-y"); _restSclZ = root.Q<FloatField>("rest-scl-z");
             _poseLayersContainer = root.Q<VisualElement>("pose-layers-container");
+
+            // rest系フィールドはBoneTransformへの直接編集として配線
+            RegRestTF(_restPosX, SetBoneTransformValueCommand.Field.PositionX);
+            RegRestTF(_restPosY, SetBoneTransformValueCommand.Field.PositionY);
+            RegRestTF(_restPosZ, SetBoneTransformValueCommand.Field.PositionZ);
+            RegRestTF(_restSclX, SetBoneTransformValueCommand.Field.ScaleX);
+            RegRestTF(_restSclY, SetBoneTransformValueCommand.Field.ScaleY);
+            RegRestTF(_restSclZ, SetBoneTransformValueCommand.Field.ScaleZ);
+
+            RegRestRotField(_restRotX, _restRotSliderX, SetBoneTransformValueCommand.Field.RotationX);
+            RegRestRotField(_restRotY, _restRotSliderY, SetBoneTransformValueCommand.Field.RotationY);
+            RegRestRotField(_restRotZ, _restRotSliderZ, SetBoneTransformValueCommand.Field.RotationZ);
+
+            RegRestRotSlider(_restRotSliderX, _restRotX, SetBoneTransformValueCommand.Field.RotationX);
+            RegRestRotSlider(_restRotSliderY, _restRotY, SetBoneTransformValueCommand.Field.RotationY);
+            RegRestRotSlider(_restRotSliderZ, _restRotZ, SetBoneTransformValueCommand.Field.RotationZ);
             _poseNoLayersLabel = root.Q<Label>("pose-no-layers-label");
             _poseResultPos = root.Q<Label>("pose-result-pos"); _poseResultRot = root.Q<Label>("pose-result-rot");
             _btnInitPose = root.Q<Button>("btn-init-pose"); _btnResetLayers = root.Q<Button>("btn-reset-layers");
@@ -816,61 +831,46 @@ namespace Poly_Ling.MeshListV2
                 SendCmd(new SetBonePoseActiveCommand(ModelIndex, SelIndices(), e.newValue));
             });
 
-            RegRest(_restPosX, SetBonePoseRestValueCommand.Field.PositionX);
-            RegRest(_restPosY, SetBonePoseRestValueCommand.Field.PositionY);
-            RegRest(_restPosZ, SetBonePoseRestValueCommand.Field.PositionZ);
-            RegRest(_restSclX, SetBonePoseRestValueCommand.Field.ScaleX);
-            RegRest(_restSclY, SetBonePoseRestValueCommand.Field.ScaleY);
-            RegRest(_restSclZ, SetBonePoseRestValueCommand.Field.ScaleZ);
-
-            RegRotField(_restRotX, _restRotSliderX, SetBonePoseRestValueCommand.Field.RotationX);
-            RegRotField(_restRotY, _restRotSliderY, SetBonePoseRestValueCommand.Field.RotationY);
-            RegRotField(_restRotZ, _restRotSliderZ, SetBonePoseRestValueCommand.Field.RotationZ);
-
-            RegRotSlider(_restRotSliderX, _restRotX, SetBonePoseRestValueCommand.Field.RotationX);
-            RegRotSlider(_restRotSliderY, _restRotY, SetBonePoseRestValueCommand.Field.RotationY);
-            RegRotSlider(_restRotSliderZ, _restRotZ, SetBonePoseRestValueCommand.Field.RotationZ);
-
             _btnInitPose?.RegisterCallback<ClickEvent>(_ => { var i = SelIndices(); if (i.Length > 0) SendCmd(new InitBonePoseCommand(ModelIndex, i)); });
             _btnResetLayers?.RegisterCallback<ClickEvent>(_ => { var i = SelIndices(); if (i.Length > 0) SendCmd(new ResetBonePoseLayersCommand(ModelIndex, i)); });
             _btnBakePose?.RegisterCallback<ClickEvent>(_ => { var i = SelIndices(); if (i.Length > 0) SendCmd(new BakePoseToBindPoseCommand(ModelIndex, i)); });
         }
 
-        private void RegRest(FloatField f, SetBonePoseRestValueCommand.Field tf)
+        private void RegRestTF(FloatField f, SetBoneTransformValueCommand.Field tf)
         {
             f?.RegisterValueChangedCallback(e =>
             {
                 if (_isSyncingPoseUI || _ctx == null) return;
                 var i = SelIndices(); if (i.Length == 0) return;
-                SendCmd(new SetBonePoseRestValueCommand(ModelIndex, i, tf, e.newValue));
+                SendCmd(new SetBoneTransformValueCommand(ModelIndex, i, tf, e.newValue));
             });
         }
 
-        private void RegRotField(FloatField f, Slider s, SetBonePoseRestValueCommand.Field tf)
+        private void RegRestRotField(FloatField f, Slider s, SetBoneTransformValueCommand.Field tf)
         {
             f?.RegisterValueChangedCallback(e =>
             {
                 if (_isSyncingPoseUI || _ctx == null) return;
                 var i = SelIndices(); if (i.Length == 0) return;
-                SendCmd(new SetBonePoseRestValueCommand(ModelIndex, i, tf, e.newValue));
+                SendCmd(new SetBoneTransformValueCommand(ModelIndex, i, tf, e.newValue));
                 _isSyncingPoseUI = true;
                 try { s?.SetValueWithoutNotify(NormAngle(e.newValue)); } finally { _isSyncingPoseUI = false; }
             });
         }
 
-        private void RegRotSlider(Slider s, FloatField f, SetBonePoseRestValueCommand.Field tf)
+        private void RegRestRotSlider(Slider s, FloatField f, SetBoneTransformValueCommand.Field tf)
         {
             s?.RegisterValueChangedCallback(e =>
             {
                 if (_isSyncingPoseUI || _ctx == null) return;
                 var i = SelIndices(); if (i.Length == 0) return;
-                SendCmd(new BeginBonePoseSliderDragCommand(ModelIndex, i));
-                SendCmd(new SetBonePoseRestValueCommand(ModelIndex, i, tf, e.newValue));
+                SendCmd(new BeginBoneTransformSliderDragCommand(ModelIndex, i));
+                SendCmd(new SetBoneTransformValueCommand(ModelIndex, i, tf, e.newValue));
                 _isSyncingPoseUI = true;
                 try { f?.SetValueWithoutNotify((float)System.Math.Round(e.newValue, 4)); } finally { _isSyncingPoseUI = false; }
             });
             s?.RegisterCallback<PointerCaptureOutEvent>(_ =>
-                SendCmd(new EndBonePoseSliderDragCommand(ModelIndex, "ボーン回転変更")));
+                SendCmd(new EndBoneTransformSliderDragCommand(ModelIndex, "ボーン回転変更")));
         }
 
         private void UpdateBonePosePanel()
@@ -900,9 +900,11 @@ namespace Poly_Ling.MeshListV2
 
                 if (all && poses.Count > 0)
                 {
-                    MixF(_restPosX, poses, p => p.RestPosition.x); MixF(_restPosY, poses, p => p.RestPosition.y); MixF(_restPosZ, poses, p => p.RestPosition.z);
-                    MixR(_restRotX, _restRotSliderX, poses, p => p.RestRotationEuler.x); MixR(_restRotY, _restRotSliderY, poses, p => p.RestRotationEuler.y); MixR(_restRotZ, _restRotSliderZ, poses, p => p.RestRotationEuler.z);
-                    MixF(_restSclX, poses, p => p.RestScale.x); MixF(_restSclY, poses, p => p.RestScale.y); MixF(_restSclZ, poses, p => p.RestScale.z);
+                    // rest系フィールドはBoneTransformの値を表示
+                    var views = _selectedAdapters.Select(a => a.MeshView).ToList();
+                    MixFT(_restPosX, views, v => v.LocalPosition.x); MixFT(_restPosY, views, v => v.LocalPosition.y); MixFT(_restPosZ, views, v => v.LocalPosition.z);
+                    MixRTF(_restRotX, _restRotSliderX, views, v => v.LocalRotationEuler.x); MixRTF(_restRotY, _restRotSliderY, views, v => v.LocalRotationEuler.y); MixRTF(_restRotZ, _restRotSliderZ, views, v => v.LocalRotationEuler.z);
+                    MixFT(_restSclX, views, v => v.LocalScale.x); MixFT(_restSclY, views, v => v.LocalScale.y); MixFT(_restSclZ, views, v => v.LocalScale.z);
                 }
                 else
                 {

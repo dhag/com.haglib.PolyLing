@@ -13,9 +13,6 @@ namespace Poly_Ling.Data
     {
         public bool HasPose { get; }
         public bool IsActive { get; }
-        public Vector3 RestPosition { get; }
-        public Vector3 RestRotationEuler { get; }
-        public Vector3 RestScale { get; }
         public int LayerCount { get; }
         public Vector3 ResultPosition { get; }
         public Vector3 ResultRotationEuler { get; }
@@ -26,15 +23,12 @@ namespace Poly_Ling.Data
         public static readonly BonePoseSummary Empty = new BonePoseSummary();
 
         public BonePoseSummary(
-            bool isActive, Vector3 restPos, Vector3 restRotEuler, Vector3 restScale,
+            bool isActive,
             int layerCount, Vector3 resultPos, Vector3 resultRotEuler,
             Vector3 bindPosePos, Vector3 bindPoseRotEuler, Vector3 bindPoseScale)
         {
             HasPose = true;
             IsActive = isActive;
-            RestPosition = restPos;
-            RestRotationEuler = restRotEuler;
-            RestScale = restScale;
             LayerCount = layerCount;
             ResultPosition = resultPos;
             ResultRotationEuler = resultRotEuler;
@@ -180,10 +174,9 @@ namespace Poly_Ling.Data
                 var bindQuat = ctx.BindPose.rotation;
                 var bindRot = IsQuatValid(bindQuat) ? bindQuat.eulerAngles : Vector3.zero;
                 var bindScl = ctx.BindPose.lossyScale;
-                var restRotEuler = IsQuatValid(bp.RestRotation) ? bp.RestRotation.eulerAngles : Vector3.zero;
                 var resultRotEuler = IsQuatValid(bp.Rotation) ? bp.Rotation.eulerAngles : Vector3.zero;
                 bonePose = new BonePoseSummary(
-                    bp.IsActive, bp.RestPosition, restRotEuler, bp.RestScale,
+                    bp.IsActive,
                     bp.LayerCount, bp.Position, resultRotEuler,
                     bindPos, bindRot, bindScl);
             }

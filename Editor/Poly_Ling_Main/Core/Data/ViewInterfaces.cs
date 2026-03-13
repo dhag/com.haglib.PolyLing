@@ -17,9 +17,6 @@ namespace Poly_Ling.Data
     {
         bool HasPose { get; }
         bool IsActive { get; }
-        Vector3 RestPosition { get; }
-        Vector3 RestRotationEuler { get; }
-        Vector3 RestScale { get; }
         int LayerCount { get; }
         Vector3 ResultPosition { get; }
         Vector3 ResultRotationEuler { get; }

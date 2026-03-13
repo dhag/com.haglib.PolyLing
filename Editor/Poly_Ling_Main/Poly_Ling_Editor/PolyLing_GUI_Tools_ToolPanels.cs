@@ -39,52 +39,42 @@ public partial class PolyLing
         //EditorGUILayout.Space(5);
         //EditorGUILayout.LabelField("Import / Export", EditorStyles.miniLabel);
 
-        if (GUILayout.Button("MQO Import..."))
+        if (GUILayout.Button("MQO Import...V2"))
         {
             Poly_Ling.MQO.MQOImportPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("PMX Import..."))
+        if (GUILayout.Button("PMX Import...V2"))
         {
             Poly_Ling.PMX.PMXImportPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("VMD簡易テスト"))
-        {
-            Poly_Ling.VMD.VMDTestPanel.Open(_toolManager?.toolContext);
-        }
 
-        if (GUILayout.Button("Avatar Creator..."))
-        {
-            Poly_Ling.MISC.AvatarCreatorPanel.ShowWindow();
-        }
-
-
-        if (GUILayout.Button("mesh <part>→ PMX"))
+        if (GUILayout.Button("mesh <part>→ PMX V2"))
         {
         Poly_Ling.PMX.PMXPartialExportPanel.Open(_toolManager?.toolContext);
         }
-        if (GUILayout.Button("mesh <part>→ MQO"))
+        if (GUILayout.Button("mesh <part>→ MQO V2"))
         {
         Poly_Ling.MQO.MQOPartialExportPanel.Open(_toolManager?.toolContext);
         }
-        if (GUILayout.Button("MQO <part>→ mesh"))
+        if (GUILayout.Button("MQO <part>→ mesh V2"))
         {
         Poly_Ling.MQO.MQOPartialImportPanel.Open(_toolManager?.toolContext);
         }
-        if (GUILayout.Button("PMX <part>→ mesh"))
+        if (GUILayout.Button("PMX <part>→ mesh V2"))
         {
         Poly_Ling.PMX.PMXPartialImportPanel.Open(_toolManager?.toolContext);
         }
 
         //EditorGUI.BeginDisabledGroup(!_model.HasValidMeshContextSelection);
-        if (GUILayout.Button("MQO Export"))
+        if (GUILayout.Button("MQO Export V2"))
         {
             Poly_Ling.MQO.MQOExportPanel.Open(_toolManager?.toolContext);
         }
         //EditorGUI.EndDisabledGroup();
 
-        if (GUILayout.Button("PMX Export"))
+        if (GUILayout.Button("PMX Export V2"))
         {
             Poly_Ling.PMX.PMXExportPanel.Open(_toolManager?.toolContext);
         }
@@ -96,7 +86,9 @@ public partial class PolyLing
             if (_panelContext != null)
                 Poly_Ling.MeshListV2.MeshListPanelV2.Open(_panelContext);
         }
-        if (GUILayout.Button("LiveView テスト"))
+
+        // LiveViewとViewport
+        if (GUILayout.Button("LiveView List テスト"))
         {
             if (_liveProjectView != null)
                 Poly_Ling.MeshListV2.LiveViewTestPanel.Open(_liveProjectView);
@@ -106,7 +98,7 @@ public partial class PolyLing
             if (_liveProjectView != null)
                 Poly_Ling.MeshListV2.ViewportTestPanel.Open(_liveProjectView);
         }
-        if (GUILayout.Button("Viewport"))
+        if (GUILayout.Button("Viewport (フル)"))
         {
             if (_liveProjectView != null)
             {
@@ -123,13 +115,13 @@ public partial class PolyLing
         {
             Poly_Ling.UI.MaterialListPanel.Open(_toolManager?.toolContext);
         }
-        if (GUILayout.Button("UV展開"))
+        if (GUILayout.Button("UV展開 V2"))
         {
             if (_panelContext != null)
                 Poly_Ling.UI.UVUnwrapPanel.Open(_panelContext);
         }
 
-        if (GUILayout.Button("UV編集"))
+        if (GUILayout.Button("UV編集 V2"))
         {
             Poly_Ling.UI.UVEditPanel.Open(_toolManager?.toolContext);
         }
@@ -213,6 +205,20 @@ public partial class PolyLing
             if (_panelContext != null)
                 Poly_Ling.UI.TPosePanelV2.Open(_panelContext, _toolManager?.toolContext);
         }
+
+
+        EditorGUILayout.Space(5);
+
+        if (GUILayout.Button("VMD簡易テストV2"))
+        {
+            Poly_Ling.VMD.VMDTestPanel.Open(_panelContext, _toolManager?.toolContext);
+        }
+
+        if (GUILayout.Button("Avatar Creator... 独立"))
+        {
+            Poly_Ling.MISC.AvatarCreatorPanel.ShowWindow();
+        }
+
 
 
         if (GUILayout.Button("リモートサーバ"))

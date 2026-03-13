@@ -255,11 +255,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (mc.BonePoseData != null)
             {
                 var bp = mc.BonePoseData;
-                var rp = bp.RestPosition;
-                var rr = bp.RestRotation;
-                var rs = bp.RestScale;
 
-                sb.Append($"bonePose,{F(rp.x)},{F(rp.y)},{F(rp.z)},{F(rr.x)},{F(rr.y)},{F(rr.z)},{F(rr.w)},{F(rs.x)},{F(rs.y)},{F(rs.z)},{bp.IsActive}");
+                sb.Append($"bonePose,{bp.IsActive}");
 
                 // Manual layer
                 var manual = bp.GetLayer("Manual");
@@ -787,23 +784,20 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
         private static BonePoseData ReadBonePoseData(string[] cols)
         {
-            // bonePose,rpx,rpy,rpz,rrx,rry,rrz,rrw,rsx,rsy,rsz,isActive[,mdpx,mdpy,mdpz,mdrx,mdry,mdrz,mdrw,mw,me]
+            // bonePose,isActive[,mdpx,mdpy,mdpz,mdrx,mdry,mdrz,mdrw,mw,me]
             var data = new BonePoseData
             {
-                RestPosition = new Vector3(ParseFloat(cols, 1), ParseFloat(cols, 2), ParseFloat(cols, 3)),
-                RestRotation = new Quaternion(ParseFloat(cols, 4), ParseFloat(cols, 5), ParseFloat(cols, 6), ParseFloat(cols, 7, 1f)),
-                RestScale = new Vector3(ParseFloat(cols, 8, 1f), ParseFloat(cols, 9, 1f), ParseFloat(cols, 10, 1f)),
-                IsActive = ParseBool(cols, 11, true)
+                IsActive = ParseBool(cols, 1, true)
             };
 
             // Manual layer (optional)
-            if (cols.Length > 12)
+            if (cols.Length > 2)
             {
                 var layer = data.GetOrCreateLayer("Manual");
-                layer.DeltaPosition = new Vector3(ParseFloat(cols, 12), ParseFloat(cols, 13), ParseFloat(cols, 14));
-                layer.DeltaRotation = new Quaternion(ParseFloat(cols, 15), ParseFloat(cols, 16), ParseFloat(cols, 17), ParseFloat(cols, 18, 1f));
-                layer.Weight = ParseFloat(cols, 19, 1f);
-                layer.Enabled = ParseBool(cols, 20, true);
+                layer.DeltaPosition = new Vector3(ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4));
+                layer.DeltaRotation = new Quaternion(ParseFloat(cols, 5), ParseFloat(cols, 6), ParseFloat(cols, 7), ParseFloat(cols, 8, 1f));
+                layer.Weight = ParseFloat(cols, 9, 1f);
+                layer.Enabled = ParseBool(cols, 10, true);
             }
 
             return data;

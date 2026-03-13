@@ -1000,9 +1000,9 @@ namespace Poly_Ling.PMX
             // ★MeshContextにもHierarchyParentIndexを設定（重要！）
             meshContext.HierarchyParentIndex = parentIndex;
 
-            // ★BonePoseDataを生成（IsActive=trueのみ。RestPoseはゼロのまま）
+            // ★BonePoseDataを生成（IsActive=trueのみ。PreBindPoseはゼロのまま）
             // BonePoseDataはBoneTransformへのデルタとして設計されているため、
-            // RestPoseに値を入れるとBoneTransformと二重適用になる。
+            // PreBindPoseに値を入れるとBoneTransformと二重適用になる。
             meshContext.BonePoseData = new Data.BonePoseData { IsActive = true };
 
             // IKデータを設定

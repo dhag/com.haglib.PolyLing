@@ -8,10 +8,11 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
+using Poly_Ling.Tools;
 
 namespace Poly_Ling.UI
 {
-    public class UVZPanel : EditorWindow
+    public class UVZPanel : EditorWindow, IPanelContextReceiver
     {
         // ================================================================
         // アセットパス

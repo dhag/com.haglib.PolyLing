@@ -86,13 +86,8 @@
                 <ui:Foldout name="pose-foldout" text="Pose (BonePoseData)" value="true" class="pose-foldout">
                     <ui:VisualElement class="pose-panel">
                         
-                        <!-- Active トグル -->
-                        <ui:VisualElement class="pose-row">
-                            <ui:Toggle name="pose-active-toggle" label="Active" class="pose-toggle" />
-                        </ui:VisualElement>
-                        
-                        <!-- RestPose -->
-                        <ui:Label text="RestPose" class="pose-section-label" />
+                        <!-- ローカルTRS -->
+                        <ui:Label text="ローカルTRS" class="pose-section-label" />
                         <ui:VisualElement class="pose-row">
                             <ui:Label text="Pos" class="pose-field-label" />
                             <ui:FloatField name="rest-pos-x" label="X" class="pose-float-field" />
@@ -124,6 +119,11 @@
                             <ui:FloatField name="rest-scl-x" label="X" class="pose-float-field" />
                             <ui:FloatField name="rest-scl-y" label="Y" class="pose-float-field" />
                             <ui:FloatField name="rest-scl-z" label="Z" class="pose-float-field" />
+                        </ui:VisualElement>
+                        
+                        <!-- レイヤー有効トグル -->
+                        <ui:VisualElement class="pose-row">
+                            <ui:Toggle name="pose-active-toggle" label="レイヤー有効" class="pose-toggle" />
                         </ui:VisualElement>
                         
                         <!-- レイヤー一覧 -->

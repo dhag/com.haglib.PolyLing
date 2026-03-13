@@ -270,9 +270,9 @@ namespace Poly_Ling.VMD
                         Debug.Log($"[VMD DEBUG] BoneTransform.TransformMatrix:\n{bt.TransformMatrix}");
                     }
 
-                    // BonePoseDataのRestPose
+                    // BonePoseDataのデバッグ情報
                     var bpd = ctx.BonePoseData;
-                    Debug.Log($"[VMD DEBUG] BonePoseData.RestPos={bpd.RestPosition}, RestRot={bpd.RestRotation.eulerAngles}");
+                    Debug.Log($"[VMD DEBUG] BonePoseData: IsActive={bpd.IsActive}, LayerCount={bpd.LayerCount}");
                 }
 
                 // BonePoseDataの"VMD"レイヤーにデルタを設定

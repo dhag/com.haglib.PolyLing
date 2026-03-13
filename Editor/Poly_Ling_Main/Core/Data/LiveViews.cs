@@ -24,19 +24,6 @@ namespace Poly_Ling.Data
 
         public bool HasPose => _ctx?.BonePoseData != null;
         public bool IsActive => _ctx?.BonePoseData?.IsActive ?? false;
-        public Vector3 RestPosition => _ctx?.BonePoseData?.RestPosition ?? Vector3.zero;
-
-        public Vector3 RestRotationEuler
-        {
-            get
-            {
-                var bp = _ctx?.BonePoseData;
-                if (bp == null) return Vector3.zero;
-                return IsQuatValid(bp.RestRotation) ? bp.RestRotation.eulerAngles : Vector3.zero;
-            }
-        }
-
-        public Vector3 RestScale => _ctx?.BonePoseData?.RestScale ?? Vector3.one;
         public int LayerCount => _ctx?.BonePoseData?.LayerCount ?? 0;
         public Vector3 ResultPosition => _ctx?.BonePoseData?.Position ?? Vector3.zero;
 
@@ -94,9 +81,6 @@ namespace Poly_Ling.Data
         public static readonly NullBonePoseView Instance = new NullBonePoseView();
         public bool HasPose => false;
         public bool IsActive => false;
-        public Vector3 RestPosition => Vector3.zero;
-        public Vector3 RestRotationEuler => Vector3.zero;
-        public Vector3 RestScale => Vector3.one;
         public int LayerCount => 0;
         public Vector3 ResultPosition => Vector3.zero;
         public Vector3 ResultRotationEuler => Vector3.zero;

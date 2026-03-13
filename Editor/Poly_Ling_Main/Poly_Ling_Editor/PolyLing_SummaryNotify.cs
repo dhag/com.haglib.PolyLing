@@ -27,6 +27,9 @@ public partial class PolyLing
         _liveProjectView = new LiveProjectView(_project);
         SetupMeshListOpsCallbacks();
 
+        // 開いているパネルへPanelContextを再配布
+        ToolContextReconnector.ReconnectAllPanelContexts(_panelContext);
+
         // RemoteServerが開いていなければ開いてサーバー開始
         var remote = RemoteServer.FindInstance()
             ?? UnityEditor.EditorWindow.GetWindow<RemoteServer>("Remote Server");
@@ -148,10 +151,6 @@ public partial class PolyLing
                 return;
             case BakePoseToBindPoseCommand c:
                 _meshListOps.BakePoseToBindPose(c.MasterIndices);
-                NotifyPanels(ChangeKind.Attributes);
-                return;
-            case SetBonePoseRestValueCommand c:
-                _meshListOps.SetBonePoseRestValue(c.MasterIndices, c.TargetField, c.Value);
                 NotifyPanels(ChangeKind.Attributes);
                 return;
             case BeginBonePoseSliderDragCommand c:

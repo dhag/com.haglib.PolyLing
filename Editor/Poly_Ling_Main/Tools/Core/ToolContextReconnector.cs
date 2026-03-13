@@ -4,6 +4,7 @@
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Tools
 {
@@ -43,6 +44,30 @@ namespace Poly_Ling.Tools
 
             if (count > 0)
                 Debug.Log($"[ToolContextReconnector] Reconnected {count} panel(s)");
+
+            return count;
+        }
+
+        /// <summary>
+        /// IPanelContextReceiverを実装している全EditorWindowを探し、PanelContextを再配布する。
+        /// メインパネル再起動時にInitPanelContextから呼ぶ。
+        /// </summary>
+        /// <returns>再接続したウィンドウ数</returns>
+        public static int ReconnectAllPanelContexts(PanelContext ctx)
+        {
+            int count = 0;
+            var windows = Resources.FindObjectsOfTypeAll<EditorWindow>();
+            foreach (var window in windows)
+            {
+                if (window is IPanelContextReceiver receiver)
+                {
+                    receiver.SetContext(ctx);
+                    count++;
+                }
+            }
+
+            if (count > 0)
+                Debug.Log($"[ToolContextReconnector] Reconnected {count} panel(s) with PanelContext");
 
             return count;
         }

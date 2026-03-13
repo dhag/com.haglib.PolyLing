@@ -8,6 +8,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Utilities;
 using Poly_Ling.UI;
@@ -19,12 +20,15 @@ namespace Poly_Ling.Tools.Creators
     /// メッシュ生成ウィンドウの基底クラス
     /// </summary>
     /// <typeparam name="TParams">パラメータ構造体の型</typeparam>
-    public abstract class MeshCreatorWindowBase<TParams> : EditorWindow
+    public abstract class MeshCreatorWindowBase<TParams> : EditorWindow, IToolContextReceiver
         where TParams : struct, IEquatable<TParams>
     {
         // ================================================================
         // フィールド
         // ================================================================
+
+        /// <summary>再接続用ToolContext参照</summary>
+        private ToolContext _toolContext;
 
         /// <summary>プレビュー用ユーティリティ</summary>
         protected PreviewRenderUtility _preview;
@@ -113,6 +117,26 @@ namespace Poly_Ling.Tools.Creators
 
         /// <summary>パラメータ変更時の追加処理</summary>
         protected virtual void OnParamsChanged() { }
+
+        // ================================================================
+        // IToolContextReceiver
+        // ================================================================
+
+        /// <summary>
+        /// メインパネル再起動時にToolContextReconnectorから呼ばれる。
+        /// _onMeshObjectCreatedを新しいコンテキストで再構築する。
+        /// </summary>
+        public void SetContext(ToolContext ctx)
+        {
+            _toolContext = ctx;
+            _onMeshObjectCreated = (mesh, name, addToCurrent) =>
+            {
+                if (addToCurrent)
+                    _toolContext?.AddMeshObjectToCurrentMesh?.Invoke(mesh, name);
+                else
+                    _toolContext?.CreateNewMeshContext?.Invoke(mesh, name);
+            };
+        }
 
         // ================================================================
         // ウィンドウ管理

@@ -154,17 +154,6 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
 
-    /// <summary>BonePose RestPose値変更（FloatField/Slider操作）</summary>
-    public class SetBonePoseRestValueCommand : PanelCommand
-    {
-        public enum Field { PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX, ScaleY, ScaleZ }
-        public int[] MasterIndices { get; }
-        public Field TargetField { get; }
-        public float Value { get; }
-        public SetBonePoseRestValueCommand(int modelIndex, int[] masterIndices, Field field, float value)
-            : base(modelIndex) { MasterIndices = masterIndices; TargetField = field; Value = value; }
-    }
-
     /// <summary>スライダードラッグ開始: Undoスナップショット取得</summary>
     public class BeginBonePoseSliderDragCommand : PanelCommand
     {

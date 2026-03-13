@@ -22,13 +22,13 @@ public partial class PolyLing
     {
         using (new EditorGUILayout.VerticalScope(GUILayout.Width(_leftPaneWidth)))
         {
-              // ★Phase 2: モデル選択UI
-              DrawModelSelector();
-        
-        // ================================================================
-        // Undo/Redo ボタン（上部固定）
-        // ================================================================
-        EditorGUILayout.BeginHorizontal();
+            // ★Phase 2: モデル選択UI
+            DrawModelSelector();
+
+            // ================================================================
+            // Undo/Redo ボタン（上部固定）
+            // ================================================================
+            EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(_undoController == null || !_undoController.CanUndo))
             {
                 if (GUILayout.Button(L.Get("Undo")))
@@ -72,7 +72,7 @@ public partial class PolyLing
                 EditorGUI.indentLevel++;
 
                 EditorGUI.BeginChangeCheck();
-                
+
                 // メッシュ表示
                 bool newShowMesh = EditorGUILayout.Toggle(L.Get("ShowMesh"), _showMesh);
                 EditorGUI.indentLevel++;
@@ -80,7 +80,7 @@ public partial class PolyLing
                 bool newShowSelectedMeshOnly = !EditorGUILayout.Toggle(L.Get("ShowUnselected"), !_showSelectedMeshOnly);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
-                
+
                 // ワイヤフレーム表示
                 bool newShowWireframe = EditorGUILayout.Toggle(L.Get("Wireframe"), _showWireframe);
                 EditorGUI.indentLevel++;
@@ -88,7 +88,7 @@ public partial class PolyLing
                 bool newShowUnselectedWireframe = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedWireframe);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
-                
+
                 // 頂点表示
                 bool newShowVertices = EditorGUILayout.Toggle(L.Get("ShowVertices"), _showVertices);
                 EditorGUI.indentLevel++;
@@ -96,7 +96,7 @@ public partial class PolyLing
                 bool newShowUnselectedVertices = EditorGUILayout.Toggle(L.Get("ShowUnselected"), _showUnselectedVertices);
                 EditorGUI.EndDisabledGroup();
                 EditorGUI.indentLevel--;
-                
+
                 // 頂点インデックス（選択メッシュのみ）
                 bool newShowVertexIndices = EditorGUILayout.Toggle(L.Get("ShowVertexIndices"), _showVertexIndices);
 
@@ -168,15 +168,15 @@ public partial class PolyLing
                 // === トランスフォーム表示設定 ===
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField(L.Get("TransformDisplay"), EditorStyles.miniLabel);
-                
-                
+
+
                 EditorGUI.BeginChangeCheck();
                 bool currentShowLocal = _undoController?.EditorState.ShowLocalTransform ?? false;
                 bool currentShowWorld = _undoController?.EditorState.ShowWorldTransform ?? false;
-                
+
                 bool newShowLocal = EditorGUILayout.Toggle(L.Get("ShowLocalTransform"), currentShowLocal);
                 bool newShowWorld = EditorGUILayout.Toggle(L.Get("ShowWorldTransform"), currentShowWorld);
-                
+
                 if (EditorGUI.EndChangeCheck())
                 {
                     if (_undoController != null)
@@ -192,7 +192,7 @@ public partial class PolyLing
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField(L.Get("Zoom"), EditorStyles.miniLabel);
                 EditorGUI.BeginChangeCheck();
-                float newDist = EditorGUILayout.Slider(_cameraDistance,_cameraDistanceMin,_cameraDistanceMax);// 0.1f, 80f);//スライダーの上限下限（マウスズームは別）：ズーム
+                float newDist = EditorGUILayout.Slider(_cameraDistance, _cameraDistanceMin, _cameraDistanceMax);// 0.1f, 80f);//スライダーの上限下限（マウスズームは別）：ズーム
                 if (EditorGUI.EndChangeCheck() && !Mathf.Approximately(newDist, _cameraDistance))
                 {
                     if (!_isCameraDragging) BeginCameraDrag();
@@ -322,11 +322,7 @@ public partial class PolyLing
                     LoadMeshFromHierarchy();
                 }
 
-                // ================================================================
-                // 図形生成ボタン
-                // ================================================================
                 EditorGUILayout.Space(3);
-                EditorGUILayout.LabelField("図形生成", EditorStyles.miniBoldLabel);
 
                 void OpenWithContext(System.Action<System.Action<Poly_Ling.Data.MeshObject, string, bool>> openAction)
                 {

@@ -1,5 +1,6 @@
-// ヒエラルキー上のGameObjectからUnity Humanoid Avatarを作成するパネル
-// HumanoidBoneMapping.csvで対応付け
+// AvatarCreatorPanel.cs
+// Humanoid Avatar 作成パネル V2 — UIElements版
+// EditorWindow 直接継承のまま（ToolContext/PanelContext 不使用）
 
 using System;
 using System.Collections.Generic;
@@ -8,38 +9,49 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UIElements;
+using UnityEditor.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Localization;
 
 namespace Poly_Ling.MISC
 {
-    /// <summary>
-    /// PMX Avatar作成パネル
-    /// </summary>
     public class AvatarCreatorPanel : EditorWindow
     {
         // ================================================================
-        // ローカライズ辞書
+        // UXML/USS パス
+        // ================================================================
+
+        private const string UxmlPackagePath =
+            "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uxml";
+        private const string UxmlAssetsPath =
+            "Assets/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uxml";
+        private const string UssPackagePath =
+            "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uss";
+        private const string UssAssetsPath =
+            "Assets/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uss";
+
+        // ================================================================
+        // ローカライズ
         // ================================================================
 
         private static readonly Dictionary<string, Dictionary<string, string>> _localize = new()
         {
-            ["WindowTitle"] = new() { ["en"] = "Avatar Creator", ["ja"] = "アバター作成" },
-            ["RootObject"] = new() { ["en"] = "Root Object", ["ja"] = "ルートオブジェクト" },
-            ["SelectFromHierarchy"] = new() { ["en"] = "Select root GameObject from Hierarchy", ["ja"] = "ヒエラルキーからルートGameObjectを選択" },
-            ["MappingFile"] = new() { ["en"] = "Bone Mapping CSV", ["ja"] = "ボーン対応表CSV" },
-            ["DragDropMapping"] = new() { ["en"] = "Drag & Drop Mapping CSV here", ["ja"] = "対応表CSVをここにドロップ" },
-            ["Preview"] = new() { ["en"] = "Bone Mapping Preview", ["ja"] = "ボーンマッピング確認" },
-            ["MappedBones"] = new() { ["en"] = "Mapped", ["ja"] = "マッピング済" },
-            ["UnmappedRequired"] = new() { ["en"] = "Missing Required", ["ja"] = "必須が未設定" },
-            ["Create"] = new() { ["en"] = "Create Avatar", ["ja"] = "アバター作成" },
-            ["CreateSuccess"] = new() { ["en"] = "Avatar Created!", ["ja"] = "アバター作成完了！" },
-            ["CreateFailed"] = new() { ["en"] = "Creation Failed: {0}", ["ja"] = "作成失敗: {0}" },
-            ["FuzzyMatch"] = new() { ["en"] = "Fuzzy Match", ["ja"] = "あいまい検索" },
+            ["WindowTitle"]          = new() { ["en"] = "Avatar Creator",             ["ja"] = "アバター作成" },
+            ["RootObject"]           = new() { ["en"] = "Root Object",                ["ja"] = "ルートオブジェクト" },
+            ["SelectFromHierarchy"]  = new() { ["en"] = "Select root from Hierarchy", ["ja"] = "ヒエラルキーからルートを選択" },
+            ["MappingFile"]          = new() { ["en"] = "Bone Mapping CSV",           ["ja"] = "ボーン対応表CSV" },
+            ["FuzzyMatch"]           = new() { ["en"] = "Fuzzy Match",                ["ja"] = "あいまい検索" },
+            ["Preview"]              = new() { ["en"] = "Bone Mapping Preview",       ["ja"] = "ボーンマッピング確認" },
+            ["MappedBones"]          = new() { ["en"] = "Mapped",                     ["ja"] = "マッピング済" },
+            ["UnmappedRequired"]     = new() { ["en"] = "Missing Required Bones:",    ["ja"] = "必須ボーンが未設定:" },
+            ["Create"]               = new() { ["en"] = "Create Avatar",              ["ja"] = "アバター作成" },
+            ["CreateSuccess"]        = new() { ["en"] = "Avatar Created!",            ["ja"] = "アバター作成完了！" },
+            ["CreateFailed"]         = new() { ["en"] = "Creation Failed: {0}",       ["ja"] = "作成失敗: {0}" },
             ["MissingRequiredWarning"] = new()
             {
-                ["en"] = "The following required bones are missing:\n{0}\n\nContinue anyway?",
-                ["ja"] = "以下の必須ボーンが見つかりません:\n{0}\n\nこのまま続行しますか？"
+                ["en"] = "Required bones missing:\n{0}\n\nContinue anyway?",
+                ["ja"] = "必須ボーンが見つかりません:\n{0}\n\nこのまま続行しますか？"
             },
         };
 
@@ -65,256 +77,264 @@ namespace Poly_Ling.MISC
 
         private GameObject _rootObject;
         private string _mappingFilePath = "";
-        private Dictionary<string, List<string>> _boneMapping; // Unity名 → aliasリスト（優先度順、1列目=Unity名を含む）
+        private Dictionary<string, List<string>> _boneMapping;
         private bool _fuzzyMatch = true;
-        private Vector2 _scrollPosition;
-        private bool _foldPreview = true;
-
-        // 結果
         private Avatar _lastCreatedAvatar;
+
+        // UIElements 参照
+        private ObjectField _rootField;
+        private TextField _csvField;
+        private Toggle _fuzzyToggle;
+        private Foldout _previewFoldout;
+        private Label _previewMapped;
+        private Label _previewMissingHeader;
+        private VisualElement _previewMissingList;
+        private Label _previewOkLabel;
+        private Button _createBtn;
+        private HelpBox _resultBox;
+        private ObjectField _avatarField;
 
         // ================================================================
         // Open
         // ================================================================
-        //単体コマンド
+
         [MenuItem("Tools/Poly_Ling/Utility/Avatar Creator...")]
         public static void ShowWindow()
         {
-            var window = GetWindow<AvatarCreatorPanel>();
-            window.titleContent = new GUIContent(T("WindowTitle"));
-            window.minSize = new Vector2(400, 500);
-            window.Show();
+            var w = GetWindow<AvatarCreatorPanel>();
+            w.titleContent = new GUIContent(T("WindowTitle"));
+            w.minSize = new Vector2(400, 500);
+            w.Show();
         }
 
         // ================================================================
-        // GUI
+        // CreateGUI
         // ================================================================
 
-        private void OnGUI()
+        private void CreateGUI()
         {
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+            var root = rootVisualElement;
 
-            EditorGUILayout.Space(5);
+            var visualTree = TryLoad<VisualTreeAsset>(UxmlPackagePath, UxmlAssetsPath);
+            if (visualTree == null) { root.Add(new Label("UXML not found")); return; }
+            visualTree.CloneTree(root);
 
-            // ルートオブジェクト選択
-            EditorGUILayout.LabelField(T("RootObject"), EditorStyles.boldLabel);
-            _rootObject = (GameObject)EditorGUILayout.ObjectField(_rootObject, typeof(GameObject), true);
+            var styleSheet = TryLoad<StyleSheet>(UssPackagePath, UssAssetsPath);
+            if (styleSheet != null) root.styleSheets.Add(styleSheet);
 
-            if (_rootObject == null)
+            _rootField        = root.Q<ObjectField>("root-field");
+            _csvField         = root.Q<TextField>("csv-field");
+            _fuzzyToggle      = root.Q<Toggle>("fuzzy-toggle");
+            _previewFoldout   = root.Q<Foldout>("preview-foldout");
+            _previewMapped    = root.Q<Label>("preview-mapped");
+            _previewMissingHeader = root.Q<Label>("preview-missing-header");
+            _previewMissingList   = root.Q<VisualElement>("preview-missing-list");
+            _previewOkLabel   = root.Q<Label>("preview-ok");
+            _createBtn        = root.Q<Button>("create-btn");
+            _resultBox        = root.Q<HelpBox>("result-box");
+            _avatarField      = root.Q<ObjectField>("avatar-field");
+
+            // ラベルテキスト
+            SetLabel(root, "label-root",    T("RootObject"));
+            SetLabel(root, "label-mapping", T("MappingFile"));
+            SetLabel(root, "label-preview", T("Preview"));
+            if (_fuzzyToggle  != null) _fuzzyToggle.label  = T("FuzzyMatch");
+            if (_createBtn    != null) _createBtn.text      = T("Create");
+
+            // ルートオブジェクト
+            if (_rootField != null)
             {
-                EditorGUILayout.HelpBox(T("SelectFromHierarchy"), MessageType.Info);
-            }
-
-            EditorGUILayout.Space(10);
-
-            // マッピングCSV
-            EditorGUILayout.LabelField(T("MappingFile"), EditorStyles.boldLabel);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                var csvRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
-                _mappingFilePath = EditorGUI.TextField(csvRect, _mappingFilePath);
-                HandleDropOnRect(csvRect, path =>
+                _rootField.objectType = typeof(GameObject);
+                _rootField.allowSceneObjects = true;
+                _rootField.RegisterValueChangedCallback(evt =>
                 {
-                    _mappingFilePath = path;
-                    LoadMapping();
+                    _rootObject = evt.newValue as GameObject;
+                    RefreshPreview();
+                    RefreshCreateBtn();
                 });
-
-                if (GUILayout.Button("...", GUILayout.Width(30)))
-                {
-                    string dir = string.IsNullOrEmpty(_mappingFilePath)
-                        ? Application.dataPath
-                        : Path.GetDirectoryName(_mappingFilePath);
-
-                    string path = EditorUtility.OpenFilePanel("Select Bone Mapping CSV", dir, "csv");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        _mappingFilePath = path;
-                        LoadMapping();
-                    }
-                }
             }
 
-            EditorGUILayout.Space(10);
+            // CSVフィールド
+            if (_csvField != null)
+            {
+                _csvField.RegisterValueChangedCallback(evt =>
+                {
+                    _mappingFilePath = evt.newValue;
+                });
+                // D&D
+                _csvField.RegisterCallback<DragUpdatedEvent>(OnCsvDragUpdated);
+                _csvField.RegisterCallback<DragPerformEvent>(OnCsvDragPerform);
+            }
 
-            // あいまい検索トグル
-            _fuzzyMatch = EditorGUILayout.Toggle(T("FuzzyMatch"), _fuzzyMatch);
+            root.Q<Button>("btn-browse-csv")?.RegisterCallback<ClickEvent>(_ => BrowseCSV());
+            root.Q<Button>("btn-load-csv")?.RegisterCallback<ClickEvent>(_ =>
+            {
+                LoadMapping(_mappingFilePath);
+                RefreshPreview();
+                RefreshCreateBtn();
+            });
 
-            EditorGUILayout.Space(10);
-
-            // プレビュー
-            DrawPreviewSection();
-
-            EditorGUILayout.Space(10);
+            // あいまい検索
+            _fuzzyToggle?.RegisterValueChangedCallback(evt =>
+            {
+                _fuzzyMatch = evt.newValue;
+                RefreshPreview();
+            });
 
             // 作成ボタン
-            DrawCreateButton();
+            _createBtn?.RegisterCallback<ClickEvent>(_ => ExecuteCreate());
 
-            EditorGUILayout.EndScrollView();
-        }
-
-        /// <summary>
-        /// 指定矩形へのドロップを処理（CSV専用）
-        /// </summary>
-        private void HandleDropOnRect(Rect rect, Action<string> onDrop)
-        {
-            var evt = Event.current;
-            if (!rect.Contains(evt.mousePosition)) return;
-
-            switch (evt.type)
+            // アバターフィールド
+            if (_avatarField != null)
             {
-                case EventType.DragUpdated:
-                    if (DragAndDrop.paths.Length > 0 && DragAndDrop.paths[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-                    {
-                        DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-                        evt.Use();
-                    }
-                    break;
-
-                case EventType.DragPerform:
-                    if (DragAndDrop.paths.Length > 0)
-                    {
-                        string path = DragAndDrop.paths[0];
-                        if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-                        {
-                            DragAndDrop.AcceptDrag();
-                            onDrop(path);
-                            evt.Use();
-                        }
-                    }
-                    break;
+                _avatarField.objectType = typeof(Avatar);
+                _avatarField.allowSceneObjects = false;
             }
+
+            RefreshAll();
+        }
+
+        private static T TryLoad<T>(string pkg, string assets) where T : UnityEngine.Object
+        {
+            T v = AssetDatabase.LoadAssetAtPath<T>(pkg);
+            return v != null ? v : AssetDatabase.LoadAssetAtPath<T>(assets);
+        }
+
+        private static void SetLabel(VisualElement root, string name, string text)
+        {
+            var l = root.Q<Label>(name);
+            if (l != null) l.text = text;
         }
 
         // ================================================================
-        // プレビュー
+        // D&D
         // ================================================================
 
-        private void DrawPreviewSection()
+        private void OnCsvDragUpdated(DragUpdatedEvent evt)
         {
-            if (_rootObject == null || _boneMapping == null) return;
+            if (DragAndDrop.paths.Length > 0 &&
+                DragAndDrop.paths[0].EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+        }
 
-            _foldPreview = EditorGUILayout.Foldout(_foldPreview, T("Preview"), true);
-            if (!_foldPreview) return;
+        private void OnCsvDragPerform(DragPerformEvent evt)
+        {
+            if (DragAndDrop.paths.Length == 0) return;
+            string path = DragAndDrop.paths[0];
+            if (!path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)) return;
+            DragAndDrop.AcceptDrag();
+            _mappingFilePath = path;
+            if (_csvField != null) _csvField.SetValueWithoutNotify(path);
+            LoadMapping(path);
+            RefreshPreview();
+            RefreshCreateBtn();
+        }
 
-            EditorGUI.indentLevel++;
+        private void BrowseCSV()
+        {
+            string dir = string.IsNullOrEmpty(_mappingFilePath)
+                ? Application.dataPath : Path.GetDirectoryName(_mappingFilePath);
+            string path = EditorUtility.OpenFilePanel("Select Bone Mapping CSV", dir, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            _mappingFilePath = path;
+            if (_csvField != null) _csvField.SetValueWithoutNotify(path);
+            LoadMapping(path);
+            RefreshPreview();
+            RefreshCreateBtn();
+        }
 
-            var foundBones = FindBones();
+        // ================================================================
+        // RefreshAll
+        // ================================================================
+
+        private void RefreshAll()
+        {
+            if (_fuzzyToggle != null) _fuzzyToggle.SetValueWithoutNotify(_fuzzyMatch);
+            RefreshPreview();
+            RefreshCreateBtn();
+            RefreshResult();
+        }
+
+        private void RefreshPreview()
+        {
+            if (_previewFoldout == null) return;
+            bool canPreview = _rootObject != null && _boneMapping != null;
+            _previewFoldout.style.display = canPreview ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!canPreview) return;
+
+            var found = FindBones();
             int mappedCount = 0;
-            var missingRequired = new List<string>();
+            var missing = new List<string>();
 
-            foreach (var kvp in _boneMapping)
+            foreach (var kv in _boneMapping)
             {
-                string unityName = kvp.Key;
-                List<string> aliases = kvp.Value;
-
-                bool found = foundBones.ContainsKey(unityName);
-                if (found) mappedCount++;
-
-                if (!found && RequiredBones.Contains(unityName))
-                {
-                    missingRequired.Add($"{unityName} ({string.Join(", ", aliases)})");
-                }
+                if (found.ContainsKey(kv.Key)) mappedCount++;
+                else if (RequiredBones.Contains(kv.Key))
+                    missing.Add($"{kv.Key} ({string.Join(", ", kv.Value)})");
             }
 
-            EditorGUILayout.LabelField(T("MappedBones"), $"{mappedCount} / {_boneMapping.Count}");
+            if (_previewMapped != null)
+                _previewMapped.text = $"{T("MappedBones")}: {mappedCount} / {_boneMapping.Count}";
 
-            if (missingRequired.Count > 0)
+            bool hasMissing = missing.Count > 0;
+            if (_previewMissingHeader != null)
+                _previewMissingHeader.style.display = hasMissing ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_previewMissingList != null)
             {
-                EditorGUILayout.Space(3);
-                GUI.color = new Color(1f, 0.7f, 0.5f);
-                EditorGUILayout.LabelField(T("UnmappedRequired"), EditorStyles.boldLabel);
-                foreach (var bone in missingRequired)
-                {
-                    EditorGUILayout.LabelField($"  ✗ {bone}", EditorStyles.miniLabel);
-                }
-                GUI.color = Color.white;
+                _previewMissingList.style.display = hasMissing ? DisplayStyle.Flex : DisplayStyle.None;
+                _previewMissingList.Clear();
+                foreach (var b in missing)
+                    _previewMissingList.Add(new Label($"✗ {b}") { style = { fontSize = 10 } });
             }
-            else
-            {
-                GUI.color = Color.green;
-                EditorGUILayout.LabelField("✓ All required bones found!", EditorStyles.boldLabel);
-                GUI.color = Color.white;
-            }
-
-            EditorGUI.indentLevel--;
+            if (_previewOkLabel != null)
+                _previewOkLabel.style.display = hasMissing ? DisplayStyle.None : DisplayStyle.Flex;
         }
 
-        // ================================================================
-        // 作成ボタン
-        // ================================================================
-
-        private void DrawCreateButton()
+        private void RefreshCreateBtn()
         {
-            bool canCreate = _rootObject != null && _boneMapping != null;
+            if (_createBtn == null) return;
+            _createBtn.SetEnabled(_rootObject != null && _boneMapping != null);
+        }
 
-            EditorGUI.BeginDisabledGroup(!canCreate);
-
-            var buttonStyle = new GUIStyle(GUI.skin.button)
+        private void RefreshResult()
+        {
+            bool hasResult = _lastCreatedAvatar != null;
+            if (_resultBox  != null) _resultBox.style.display  = hasResult ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_avatarField != null)
             {
-                fontSize = 14,
-                fontStyle = FontStyle.Bold,
-                fixedHeight = 32
-            };
-
-            if (GUILayout.Button(T("Create"), buttonStyle))
-            {
-                ExecuteCreate();
-            }
-
-            EditorGUI.EndDisabledGroup();
-
-            // 結果表示
-            if (_lastCreatedAvatar != null)
-            {
-                EditorGUILayout.Space(5);
-                EditorGUILayout.HelpBox(T("CreateSuccess"), MessageType.Info);
-                EditorGUILayout.ObjectField("Avatar", _lastCreatedAvatar, typeof(Avatar), false);
+                _avatarField.style.display = hasResult ? DisplayStyle.Flex : DisplayStyle.None;
+                if (hasResult) _avatarField.SetValueWithoutNotify(_lastCreatedAvatar);
             }
         }
 
         // ================================================================
-        // ファイル読み込み
+        // マッピング読み込み
         // ================================================================
 
-        private void LoadMapping()
+        private void LoadMapping(string path)
         {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
             try
             {
                 _boneMapping = new Dictionary<string, List<string>>();
-                var lines = File.ReadAllLines(_mappingFilePath, Encoding.UTF8);
-
+                var lines = File.ReadAllLines(path, Encoding.UTF8);
                 bool isHeader = true;
                 foreach (var line in lines)
                 {
-                    if (isHeader)
-                    {
-                        isHeader = false;
-                        continue;
-                    }
-
-                    // コメント行をスキップ
+                    if (isHeader) { isHeader = false; continue; }
                     if (line.StartsWith("//")) continue;
-
                     var parts = line.Split(',');
                     if (parts.Length < 1) continue;
-
                     string unityName = parts[0].Trim();
                     if (string.IsNullOrEmpty(unityName)) continue;
-
-                    // 1列目（Unity名）を最優先aliasとし、2列目以降を追加alias
                     var aliases = new List<string> { unityName };
                     for (int i = 1; i < parts.Length; i++)
                     {
                         string alias = parts[i].Trim();
-                        if (!string.IsNullOrEmpty(alias))
-                        {
-                            aliases.Add(alias);
-                        }
+                        if (!string.IsNullOrEmpty(alias)) aliases.Add(alias);
                     }
-
                     _boneMapping[unityName] = aliases;
                 }
-
                 Debug.Log($"[AvatarCreator] Loaded mapping: {_boneMapping.Count} entries");
             }
             catch (Exception ex)
@@ -322,7 +342,6 @@ namespace Poly_Ling.MISC
                 Debug.LogError($"[AvatarCreator] Failed to load mapping: {ex.Message}");
                 _boneMapping = null;
             }
-            Repaint();
         }
 
         // ================================================================
@@ -333,33 +352,20 @@ namespace Poly_Ling.MISC
         {
             var result = new Dictionary<string, Transform>();
             if (_rootObject == null || _boneMapping == null) return result;
-
             var allTransforms = _rootObject.GetComponentsInChildren<Transform>(true);
-
-            foreach (var kvp in _boneMapping)
+            foreach (var kv in _boneMapping)
             {
-                string unityName = kvp.Key;
-                List<string> aliases = kvp.Value;
-
-                Transform found = FindBoneByAliases(allTransforms, aliases);
-                if (found != null)
-                {
-                    result[unityName] = found;
-                }
+                var t = FindBoneByAliases(allTransforms, kv.Value);
+                if (t != null) result[kv.Key] = t;
             }
-
             return result;
         }
 
-        /// <summary>
-        /// alias優先度順にTransformを検索
-        /// HumanoidBoneMapping.FindBoneByAliases を使用（共通ロジック）
-        /// </summary>
-        private Transform FindBoneByAliases(Transform[] allTransforms, List<string> aliases)
+        private Transform FindBoneByAliases(Transform[] all, List<string> aliases)
         {
-            var names = allTransforms.Select(t => t.name).ToList();
+            var names = all.Select(t => t.name).ToList();
             int idx = HumanoidBoneMapping.FindBoneByAliases(names, aliases, _fuzzyMatch);
-            return idx >= 0 ? allTransforms[idx] : null;
+            return idx >= 0 ? all[idx] : null;
         }
 
         // ================================================================
@@ -368,137 +374,45 @@ namespace Poly_Ling.MISC
 
         private void ExecuteCreate()
         {
-            // 保存先選択
             string defaultName = _rootObject.name + "_Avatar.asset";
-            string savePath = EditorUtility.SaveFilePanelInProject("Save Avatar", defaultName, "asset", "Save Avatar Asset");
-
-            if (string.IsNullOrEmpty(savePath))
-                return;
+            string savePath = EditorUtility.SaveFilePanelInProject(
+                "Save Avatar", defaultName, "asset", "Save Avatar Asset");
+            if (string.IsNullOrEmpty(savePath)) return;
 
             try
             {
-                var foundBones = FindBones();
+                var found = FindBones();
 
-                // デバッグ: 見つかったボーンを出力
-                Debug.Log($"[AvatarCreator] Found {foundBones.Count} bones:");
-                foreach (var kvp in foundBones)
+                // 必須ボーンチェック
+                var missing = RequiredBones.Where(b => !found.ContainsKey(b)).ToList();
+                if (missing.Count > 0)
                 {
-                    Debug.Log($"  {kvp.Key} → {kvp.Value.name} (path: {GetTransformPath(kvp.Value)})");
+                    string msg = T("MissingRequiredWarning", string.Join("\n", missing));
+                    if (!EditorUtility.DisplayDialog(T("WindowTitle"), msg, "OK", "Cancel")) return;
                 }
 
-                // 必須ボーンのチェック
-                var missingRequired = new List<string>();
-                foreach (var required in RequiredBones)
+                _lastCreatedAvatar = BuildAndSaveAvatar(_rootObject, found, savePath);
+
+                if (_lastCreatedAvatar != null)
                 {
-                    if (!foundBones.ContainsKey(required))
+                    UnityEditor.Selection.activeObject = _lastCreatedAvatar;
+                    EditorGUIUtility.PingObject(_lastCreatedAvatar);
+                    if (_resultBox != null)
                     {
-                        missingRequired.Add(required);
+                        _resultBox.text = T("CreateSuccess");
+                        _resultBox.messageType = HelpBoxMessageType.Info;
+                    }
+                }
+                else
+                {
+                    if (_resultBox != null)
+                    {
+                        _resultBox.text = T("CreateFailed", "BuildAndSaveAvatar returned null");
+                        _resultBox.messageType = HelpBoxMessageType.Error;
                     }
                 }
 
-                if (missingRequired.Count > 0)
-                {
-                    Debug.LogError($"[AvatarCreator] Missing required bones: {string.Join(", ", missingRequired)}");
-
-                    string message = T("MissingRequiredWarning", string.Join("\n", missingRequired));
-                    if (!EditorUtility.DisplayDialog(T("WindowTitle"), message, "OK", "Cancel"))
-                    {
-                        return;
-                    }
-                }
-
-                // HumanBone配列を作成
-                var humanBones = new List<HumanBone>();
-
-                foreach (var kvp in foundBones)
-                {
-                    string unityName = kvp.Key;
-                    Transform boneTransform = kvp.Value;
-
-                    var humanBone = new HumanBone
-                    {
-                        humanName = unityName,
-                        boneName = boneTransform.name,
-                        limit = new HumanLimit { useDefaultValues = true }
-                    };
-
-                    humanBones.Add(humanBone);
-                    Debug.Log($"[AvatarCreator] HumanBone: {unityName} = {boneTransform.name}");
-                }
-
-                // SkeletonBone配列を作成（全Transform）
-                var allTransforms = _rootObject.GetComponentsInChildren<Transform>(true);
-                var skeletonBones = new List<SkeletonBone>();
-
-                Debug.Log($"[AvatarCreator] Building skeleton from {allTransforms.Length} transforms");
-
-                foreach (var t in allTransforms)
-                {
-                    var skeletonBone = new SkeletonBone
-                    {
-                        name = t.name,
-                        position = t.localPosition,
-                        rotation = t.localRotation,
-                        scale = t.localScale
-                    };
-                    skeletonBones.Add(skeletonBone);
-                }
-
-                // HumanDescription作成
-                var humanDescription = new HumanDescription
-                {
-                    human = humanBones.ToArray(),
-                    skeleton = skeletonBones.ToArray(),
-                    upperArmTwist = 0.5f,
-                    lowerArmTwist = 0.5f,
-                    upperLegTwist = 0.5f,
-                    lowerLegTwist = 0.5f,
-                    armStretch = 0.05f,
-                    legStretch = 0.05f,
-                    feetSpacing = 0f,
-                    hasTranslationDoF = false
-                };
-
-                Debug.Log($"[AvatarCreator] HumanDescription: {humanBones.Count} humanBones, {skeletonBones.Count} skeletonBones");
-
-                // Avatar作成
-                Avatar avatar = AvatarBuilder.BuildHumanAvatar(_rootObject, humanDescription);
-
-                Debug.Log($"[AvatarCreator] Avatar built: isNull={avatar == null}, isHuman={avatar?.isHuman}, isValid={avatar?.isValid}");
-
-                if (avatar == null)
-                {
-                    throw new Exception("AvatarBuilder.BuildHumanAvatar returned null");
-                }
-
-                if (!avatar.isValid)
-                {
-                    // 無効なAvatarでも一応保存して確認できるようにする
-                    Debug.LogWarning("[AvatarCreator] Avatar is not valid, but will save anyway for inspection");
-                }
-
-                if (!avatar.isHuman)
-                {
-                    Debug.LogWarning("[AvatarCreator] Avatar is not humanoid");
-                }
-
-                avatar.name = Path.GetFileNameWithoutExtension(savePath);
-
-                // アセット保存
-                AssetDatabase.CreateAsset(avatar, savePath);
-                AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh();
-
-                _lastCreatedAvatar = avatar;
-
-                Debug.Log($"[AvatarCreator] Avatar saved: {savePath}");
-                Debug.Log($"[AvatarCreator] isHuman: {avatar.isHuman}, isValid: {avatar.isValid}");
-
-                // 作成したアセットを選択
-                UnityEditor.Selection.activeObject = avatar;
-                EditorGUIUtility.PingObject(avatar);
-
-                Repaint();
+                RefreshResult();
             }
             catch (Exception ex)
             {
@@ -507,188 +421,78 @@ namespace Poly_Ling.MISC
             }
         }
 
-        private string GetTransformPath(Transform t)
-        {
-            if (t.parent == null) return t.name;
-            return GetTransformPath(t.parent) + "/" + t.name;
-        }
-
         // ================================================================
-        // 静的メソッド: 外部からAvatar生成を呼び出すためのAPI
+        // 静的 API（外部から Avatar 生成）
         // ================================================================
 
-        /// <summary>
-        /// Humanoid Avatarを生成して保存
-        /// </summary>
-        /// <param name="rootObject">ルートGameObject（Armatureの親）</param>
-        /// <param name="boneMapping">Unity Humanoid名 → Transform のマッピング</param>
-        /// <param name="savePath">保存先パス（Assets/.../*.asset）</param>
-        /// <returns>生成されたAvatar（失敗時はnull）</returns>
         public static Avatar BuildAndSaveAvatar(
             GameObject rootObject,
             Dictionary<string, Transform> boneMapping,
             string savePath)
         {
-            if (rootObject == null || boneMapping == null || boneMapping.Count == 0)
-            {
-                Debug.LogError("[AvatarCreator] Invalid parameters for BuildAndSaveAvatar");
-                return null;
-            }
+            if (rootObject == null || boneMapping == null || boneMapping.Count == 0) return null;
 
             try
             {
-                // SkeletonBone配列を作成（全Transform）
                 var allTransforms = rootObject.GetComponentsInChildren<Transform>(true);
-                var skeletonBones = new List<SkeletonBone>();
-                var skeletonNames = new HashSet<string>();
-
-                Debug.Log($"[AvatarCreator] Building skeleton from {allTransforms.Length} transforms, root: {rootObject.name}");
-
-                foreach (var t in allTransforms)
+                var skeletonBones = allTransforms.Select(t => new SkeletonBone
                 {
-                    var skeletonBone = new SkeletonBone
-                    {
-                        name = t.name,
-                        position = t.localPosition,
-                        rotation = t.localRotation,
-                        scale = t.localScale
-                    };
-                    skeletonBones.Add(skeletonBone);
-                    skeletonNames.Add(t.name);
+                    name = t.name,
+                    position = t.localPosition,
+                    rotation = t.localRotation,
+                    scale = t.localScale
+                }).ToList();
+
+                var skeletonNames = new HashSet<string>(allTransforms.Select(t => t.name));
+                var valid = new Dictionary<string, Transform>();
+                var skipped = new List<string>();
+
+                foreach (var kv in boneMapping)
+                {
+                    var tf = kv.Value;
+                    if (tf == null) { skipped.Add($"{kv.Key} (null)"); continue; }
+                    if (!skeletonNames.Contains(tf.name)) { skipped.Add($"{kv.Key} → {tf.name} (not in hierarchy)"); continue; }
+                    if (!tf.IsChildOf(rootObject.transform)) { skipped.Add($"{kv.Key} → {tf.name} (not child of root)"); continue; }
+                    valid[kv.Key] = tf;
                 }
 
-                // 有効なボーンマッピングをフィルタリング
-                var validBoneMapping = new Dictionary<string, Transform>();
-                var skippedBones = new List<string>();
+                ValidateHumanoidHierarchy(valid, skipped);
 
-                foreach (var kvp in boneMapping)
+                if (skipped.Count > 0)
+                    Debug.Log($"[AvatarCreator] Skipped {skipped.Count} bones:\n{string.Join("\n", skipped.Select(s => "  - " + s))}");
+
+                var humanBones = valid.Select(kv => new HumanBone
                 {
-                    string unityName = kvp.Key;
-                    Transform boneTransform = kvp.Value;
+                    humanName = kv.Key,
+                    boneName  = kv.Value.name,
+                    limit     = new HumanLimit { useDefaultValues = true }
+                }).ToList();
 
-                    // 無効なTransformをスキップ
-                    if (boneTransform == null)
-                    {
-                        skippedBones.Add($"{unityName} (null transform)");
-                        continue;
-                    }
+                if (humanBones.Count == 0) { Debug.LogError("[AvatarCreator] No valid human bones"); return null; }
 
-                    // Skeleton配列に存在しないボーンをスキップ（階層外のボーン）
-                    if (!skeletonNames.Contains(boneTransform.name))
-                    {
-                        skippedBones.Add($"{unityName} -> {boneTransform.name} (not in skeleton hierarchy)");
-                        continue;
-                    }
-
-                    // rootObjectの子孫かどうか確認
-                    if (!boneTransform.IsChildOf(rootObject.transform))
-                    {
-                        skippedBones.Add($"{unityName} -> {boneTransform.name} (not a child of root)");
-                        continue;
-                    }
-
-                    validBoneMapping[unityName] = boneTransform;
-                }
-
-                // Humanoid階層要件をチェックし、違反するボーンを除外
-                ValidateHumanoidHierarchy(validBoneMapping, skippedBones);
-
-                // HumanBone配列を作成（有効なボーンのみ）
-                var humanBones = new List<HumanBone>();
-                foreach (var kvp in validBoneMapping)
+                var desc = new HumanDescription
                 {
-                    var humanBone = new HumanBone
-                    {
-                        humanName = kvp.Key,
-                        boneName = kvp.Value.name,
-                        limit = new HumanLimit { useDefaultValues = true }
-                    };
-                    humanBones.Add(humanBone);
-                }
-
-                // スキップされたボーンをログ出力
-                if (skippedBones.Count > 0)
-                {
-                    Debug.Log($"[AvatarCreator] Skipped {skippedBones.Count} invalid bones:");
-                    foreach (var skipped in skippedBones)
-                    {
-                        Debug.Log($"  - {skipped}");
-                    }
-                }
-
-                // 必須ボーンのチェック
-                var mappedHumanNames = new HashSet<string>(humanBones.Select(hb => hb.humanName));
-                var missingRequired = new List<string>();
-                foreach (var required in RequiredBones)
-                {
-                    if (!mappedHumanNames.Contains(required))
-                    {
-                        missingRequired.Add(required);
-                    }
-                }
-
-                if (missingRequired.Count > 0)
-                {
-                    Debug.LogWarning($"[AvatarCreator] Missing required bones: {string.Join(", ", missingRequired)}");
-                }
-
-                if (humanBones.Count == 0)
-                {
-                    Debug.LogError("[AvatarCreator] No valid human bones after filtering");
-                    return null;
-                }
-
-                // HumanDescription作成
-                var humanDescription = new HumanDescription
-                {
-                    human = humanBones.ToArray(),
+                    human    = humanBones.ToArray(),
                     skeleton = skeletonBones.ToArray(),
-                    upperArmTwist = 0.5f,
-                    lowerArmTwist = 0.5f,
-                    upperLegTwist = 0.5f,
-                    lowerLegTwist = 0.5f,
-                    armStretch = 0.05f,
-                    legStretch = 0.05f,
-                    feetSpacing = 0f,
-                    hasTranslationDoF = false
+                    upperArmTwist = 0.5f, lowerArmTwist = 0.5f,
+                    upperLegTwist = 0.5f, lowerLegTwist = 0.5f,
+                    armStretch = 0.05f, legStretch = 0.05f,
+                    feetSpacing = 0f, hasTranslationDoF = false
                 };
 
-                Debug.Log($"[AvatarCreator] Building avatar: {humanBones.Count} humanBones, {skeletonBones.Count} skeletonBones");
-
-                // Avatar作成
-                Avatar avatar = AvatarBuilder.BuildHumanAvatar(rootObject, humanDescription);
-
-                if (avatar == null)
-                {
-                    Debug.LogError("[AvatarCreator] AvatarBuilder.BuildHumanAvatar returned null");
-                    return null;
-                }
-
-                if (!avatar.isValid)
-                {
-                    Debug.LogWarning("[AvatarCreator] Avatar is not valid, but will save anyway");
-                }
-
-                if (!avatar.isHuman)
-                {
-                    Debug.LogWarning("[AvatarCreator] Avatar is not humanoid");
-                }
+                var avatar = AvatarBuilder.BuildHumanAvatar(rootObject, desc);
+                if (avatar == null) { Debug.LogError("[AvatarCreator] BuildHumanAvatar returned null"); return null; }
 
                 avatar.name = Path.GetFileNameWithoutExtension(savePath);
 
-                // ディレクトリ確認・作成
-                string directory = Path.GetDirectoryName(savePath);
-                if (!string.IsNullOrEmpty(directory) && !AssetDatabase.IsValidFolder(directory))
-                {
-                    CreateFolderRecursive(directory);
-                }
+                string dir = Path.GetDirectoryName(savePath);
+                if (!string.IsNullOrEmpty(dir) && !AssetDatabase.IsValidFolder(dir))
+                    CreateFolderRecursive(dir);
 
-                // アセット保存
                 AssetDatabase.CreateAsset(avatar, savePath);
                 AssetDatabase.SaveAssets();
 
-                Debug.Log($"[AvatarCreator] Avatar saved: {savePath} (isHuman: {avatar.isHuman}, isValid: {avatar.isValid})");
-
+                Debug.Log($"[AvatarCreator] Saved: {savePath} (isHuman:{avatar.isHuman} isValid:{avatar.isValid})");
                 return avatar;
             }
             catch (Exception ex)
@@ -698,85 +502,36 @@ namespace Poly_Ling.MISC
             }
         }
 
-        /// <summary>
-        /// Humanoid階層要件をチェックし、違反するボーンを除外
-        /// Unity Humanoidは特定の親子関係を要求する
-        /// </summary>
-        private static void ValidateHumanoidHierarchy(Dictionary<string, Transform> boneMapping, List<string> skippedBones)
+        private static void ValidateHumanoidHierarchy(
+            Dictionary<string, Transform> mapping,
+            List<string> skipped)
         {
-            // Humanoidの階層要件: child は parent の子孫である必要がある
-            var hierarchyRequirements = new (string child, string parent)[]
+            var requirements = new (string child, string parent)[]
             {
-                // 体幹
-                ("Spine", "Hips"),
-                ("Chest", "Spine"),
-                ("UpperChest", "Chest"),
-                ("Neck", "Spine"),      // Neck は少なくとも Spine の子孫
-                ("Head", "Neck"),
-                
-                // 左腕
-                ("LeftShoulder", "Spine"),
-                ("LeftUpperArm", "Spine"),
-                ("LeftLowerArm", "LeftUpperArm"),
-                ("LeftHand", "LeftLowerArm"),
-                
-                // 右腕
-                ("RightShoulder", "Spine"),
-                ("RightUpperArm", "Spine"),
-                ("RightLowerArm", "RightUpperArm"),
-                ("RightHand", "RightLowerArm"),
-                
-                // 左脚
-                ("LeftUpperLeg", "Hips"),
-                ("LeftLowerLeg", "LeftUpperLeg"),
-                ("LeftFoot", "LeftLowerLeg"),
-                ("LeftToes", "LeftFoot"),
-                
-                // 右脚
-                ("RightUpperLeg", "Hips"),
-                ("RightLowerLeg", "RightUpperLeg"),
-                ("RightFoot", "RightLowerLeg"),
-                ("RightToes", "RightFoot"),
+                ("Spine","Hips"),("Chest","Spine"),("UpperChest","Chest"),
+                ("Neck","Spine"),("Head","Neck"),
+                ("LeftShoulder","Spine"),("LeftUpperArm","Spine"),("LeftLowerArm","LeftUpperArm"),("LeftHand","LeftLowerArm"),
+                ("RightShoulder","Spine"),("RightUpperArm","Spine"),("RightLowerArm","RightUpperArm"),("RightHand","RightLowerArm"),
+                ("LeftUpperLeg","Hips"),("LeftLowerLeg","LeftUpperLeg"),("LeftFoot","LeftLowerLeg"),("LeftToes","LeftFoot"),
+                ("RightUpperLeg","Hips"),("RightLowerLeg","RightUpperLeg"),("RightFoot","RightLowerLeg"),("RightToes","RightFoot"),
             };
-
-            var bonesToRemove = new List<string>();
-
-            foreach (var (child, parent) in hierarchyRequirements)
+            var toRemove = new List<string>();
+            foreach (var (child, parent) in requirements)
             {
-                // 両方のボーンがマッピングに存在する場合のみチェック
-                if (!boneMapping.TryGetValue(child, out var childTransform)) continue;
-                if (!boneMapping.TryGetValue(parent, out var parentTransform)) continue;
-
-                // child が parent の子孫かどうかチェック
-                if (!childTransform.IsChildOf(parentTransform))
-                {
-                    skippedBones.Add($"{child} -> {childTransform.name} (not a descendant of {parent} '{parentTransform.name}')");
-                    bonesToRemove.Add(child);
-                }
+                if (!mapping.TryGetValue(child, out var ct)) continue;
+                if (!mapping.TryGetValue(parent, out var pt)) continue;
+                if (!ct.IsChildOf(pt)) { skipped.Add($"{child} not descendant of {parent}"); toRemove.Add(child); }
             }
-
-            // 違反するボーンを削除
-            foreach (var bone in bonesToRemove)
-            {
-                boneMapping.Remove(bone);
-            }
+            foreach (var b in toRemove) mapping.Remove(b);
         }
 
-        /// <summary>
-        /// フォルダを再帰的に作成
-        /// </summary>
         private static void CreateFolderRecursive(string path)
         {
             if (AssetDatabase.IsValidFolder(path)) return;
-
             string parent = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
-            {
                 CreateFolderRecursive(parent);
-            }
-
-            string folderName = Path.GetFileName(path);
-            AssetDatabase.CreateFolder(parent, folderName);
+            AssetDatabase.CreateFolder(parent, Path.GetFileName(path));
         }
     }
 }

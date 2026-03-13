@@ -542,7 +542,7 @@ namespace Poly_Ling.UndoSystem
 
     /// <summary>
     /// BonePose変更記録
-    /// ボーンのRestPose/Layer/Active/BindPose変更をUndo/Redo
+    /// ボーンのPreBindPose/Layer/Active/BindPose変更をUndo/Redo
     /// </summary>
     public class BonePoseChangeRecord : MeshListUndoRecord
     {

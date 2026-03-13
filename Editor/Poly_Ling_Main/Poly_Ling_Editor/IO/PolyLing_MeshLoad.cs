@@ -551,9 +551,9 @@ public partial class PolyLing
                     boneCtx.BindPose = boneTransform.worldToLocalMatrix;
                 }
 
-                // ★BonePoseDataを生成（IsActive=trueのみ。RestPoseはゼロのまま）
+                // ★BonePoseDataを生成（IsActive=trueのみ。PreBindPoseはゼロのまま）
                 // BonePoseDataはBoneTransformへのデルタとして設計されているため、
-                // RestPoseに値を入れるとBoneTransformと二重適用になる。
+                // PreBindPoseに値を入れるとBoneTransformと二重適用になる。
                 boneCtx.BonePoseData = new BonePoseData { IsActive = true };
                 // WorldMatrixはComputeWorldMatrices()で計算される
             }

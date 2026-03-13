@@ -49,8 +49,6 @@ namespace Poly_Ling.Tools
 
             () => new PivotOffsetTool(),
 
-            // Primitive (Phase 4追加)
-            () => new PrimitiveMeshTool(),
             () => new MirrorEditTool(),
 
             () => new SkinWeightPaintTool(),

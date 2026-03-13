@@ -250,7 +250,7 @@ namespace Poly_Ling.Serialization
         public int morphParentIndex = -1;
 
         /// <summary>
-        /// ボーンポーズデータ（RestPose + Manualレイヤー）
+        /// ボーンポーズデータ（PreBindPose + Manualレイヤー）
         /// null = BonePoseData未使用
         /// </summary>
         public BonePoseDataDTO bonePoseData;

@@ -357,7 +357,6 @@ namespace Poly_Ling.Data
                 if (ctx?.BonePoseData == null) continue;
                 var beforePose = ctx.BonePoseData.CreateSnapshot();
                 Matrix4x4 oldBindPose = ctx.BindPose;
-                ctx.BonePoseData.BakeToBindPose(ctx.WorldMatrix);
                 ctx.BindPose = ctx.WorldMatrix.inverse;
                 record.Entries.Add(new MultiBonePoseChangeRecord.Entry
                 {
@@ -375,77 +374,6 @@ namespace Poly_Ling.Data
             }
             MarkDirty();
             return true;
-        }
-
-        // ================================================================
-        // BonePose RestPose値変更
-        // ================================================================
-
-        public bool SetBonePoseRestValue(int[] masterIndices, SetBonePoseRestValueCommand.Field field, float value)
-        {
-            if (_model == null || masterIndices == null || masterIndices.Length == 0) return false;
-
-            // スライダードラッグ中でなければスナップショット取得＆即記録
-            bool isSliderDrag = _sliderDragBeforeSnapshots.Count > 0;
-            Dictionary<int, BonePoseDataSnapshot?> before = null;
-            if (!isSliderDrag)
-                before = CaptureBonePoseSnapshots(masterIndices);
-
-            foreach (int idx in masterIndices)
-            {
-                var ctx = GetMeshContext(idx);
-                if (ctx?.BonePoseData == null) continue;
-                var pose = ctx.BonePoseData;
-                ApplyRestField(pose, field, value);
-                pose.SetDirty();
-            }
-
-            if (!isSliderDrag)
-            {
-                var after = CaptureBonePoseSnapshots(masterIndices);
-                RecordBonePoseUndo(before, after, "ボーンポーズ変更");
-            }
-            MarkDirty();
-            return true;
-        }
-
-        private void ApplyRestField(BonePoseData pose, SetBonePoseRestValueCommand.Field field, float value)
-        {
-            switch (field)
-            {
-                case SetBonePoseRestValueCommand.Field.PositionX:
-                    pose.RestPosition = new Vector3(value, pose.RestPosition.y, pose.RestPosition.z); break;
-                case SetBonePoseRestValueCommand.Field.PositionY:
-                    pose.RestPosition = new Vector3(pose.RestPosition.x, value, pose.RestPosition.z); break;
-                case SetBonePoseRestValueCommand.Field.PositionZ:
-                    pose.RestPosition = new Vector3(pose.RestPosition.x, pose.RestPosition.y, value); break;
-                case SetBonePoseRestValueCommand.Field.RotationX:
-                case SetBonePoseRestValueCommand.Field.RotationY:
-                case SetBonePoseRestValueCommand.Field.RotationZ:
-                    ApplyRestRotField(pose, field, value); break;
-                case SetBonePoseRestValueCommand.Field.ScaleX:
-                    pose.RestScale = new Vector3(value, pose.RestScale.y, pose.RestScale.z); break;
-                case SetBonePoseRestValueCommand.Field.ScaleY:
-                    pose.RestScale = new Vector3(pose.RestScale.x, value, pose.RestScale.z); break;
-                case SetBonePoseRestValueCommand.Field.ScaleZ:
-                    pose.RestScale = new Vector3(pose.RestScale.x, pose.RestScale.y, value); break;
-            }
-        }
-
-        private void ApplyRestRotField(BonePoseData pose, SetBonePoseRestValueCommand.Field field, float value)
-        {
-            var q = pose.RestRotation;
-            bool valid = !float.IsNaN(q.x) && !float.IsNaN(q.y) && !float.IsNaN(q.z) && !float.IsNaN(q.w)
-                && (q.x != 0 || q.y != 0 || q.z != 0 || q.w != 0);
-            Vector3 euler = valid ? q.eulerAngles : Vector3.zero;
-
-            switch (field)
-            {
-                case SetBonePoseRestValueCommand.Field.RotationX: euler.x = value; break;
-                case SetBonePoseRestValueCommand.Field.RotationY: euler.y = value; break;
-                case SetBonePoseRestValueCommand.Field.RotationZ: euler.z = value; break;
-            }
-            pose.RestRotation = Quaternion.Euler(euler);
         }
 
         /// <summary>スライダードラッグ開始: 現在のスナップショットを保持</summary>
