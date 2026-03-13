@@ -63,21 +63,14 @@ namespace Poly_Ling.MeshListV2
             return w;
         }
 
-        public static bool IsOpen
-        {
-            get
-            {
-                var windows = Resources.FindObjectsOfTypeAll<ViewportPanel>();
-                return windows != null && windows.Length > 0;
-            }
-        }
+        public static bool IsOpen => HasOpenInstances<ViewportPanel>();
 
         public static ViewportPanel Current
         {
             get
             {
-                var windows = Resources.FindObjectsOfTypeAll<ViewportPanel>();
-                return (windows != null && windows.Length > 0) ? windows[0] : null;
+                if (!HasOpenInstances<ViewportPanel>()) return null;
+                return GetWindow<ViewportPanel>(false, null, false);
             }
         }
 

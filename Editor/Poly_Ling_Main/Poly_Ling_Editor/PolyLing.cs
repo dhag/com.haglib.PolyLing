@@ -123,17 +123,19 @@ public partial class PolyLing : EditorWindow
     }
     */
     // ================================================================
-    // プレビュー
+    // プレビュー（ViewportCore に統合）
     // ================================================================
-    private PreviewRenderUtility _preview;
-    private UnifiedSystemAdapter _unifiedAdapter;
+    private Poly_Ling.MeshListV2.ViewportCore _viewportCore;
+
+    // _unifiedAdapter は _viewportCore.Adapter へのプロパティ委譲
+    private UnifiedSystemAdapter _unifiedAdapter => _viewportCore?.Adapter;
 
     // ================================================================
     // ViewportPanel用公開アクセサ
     // ================================================================
 
     /// <summary>ViewportPanelが描画に使用するUnifiedSystemAdapter</summary>
-    public UnifiedSystemAdapter SharedUnifiedAdapter => _unifiedAdapter;
+    public UnifiedSystemAdapter SharedUnifiedAdapter => _viewportCore?.Adapter;
 
     /// <summary>カメラ回転X（deg）</summary>
     public float CameraRotationX { get => _rotationX; set => _rotationX = value; }
@@ -146,7 +148,7 @@ public partial class PolyLing : EditorWindow
     /// <summary>カメラ注目点</summary>
     public Vector3 CameraTargetValue { get => _cameraTarget; set => _cameraTarget = value; }
     /// <summary>カメラFOV</summary>
-    public float CameraFOV => _preview?.cameraFieldOfView ?? 30f;
+    public float CameraFOV => _viewportCore?.FOV ?? 30f;
 
     /// <summary>
     /// ViewportPanelから呼び出す入力処理。
@@ -478,7 +480,6 @@ public partial class PolyLing : EditorWindow
 
         InitPreview();
         wantsMouseMove = true;
-
         // ★Phase2追加: 対称キャッシュ初期化
         InitializeSymmetryCache();
 
@@ -584,13 +585,13 @@ public partial class PolyLing : EditorWindow
 
         _drawCache = new MeshDrawCache();
 
-        // 統合システム初期化（失敗時はウィンドウを閉じる）
-        _unifiedAdapter = new UnifiedSystemAdapter();
-        if (!_unifiedAdapter.Initialize())
+        // ViewportCore 初期化（PreviewRenderUtility + UnifiedSystemAdapter を統合管理）
+        _viewportCore = new Poly_Ling.MeshListV2.ViewportCore();
+        if (!_viewportCore.Init(_model))
         {
-            Debug.LogError("[PolyLing] Failed to initialize unified system");
-            _unifiedAdapter?.Dispose();
-            _unifiedAdapter = null;
+            Debug.LogError("[PolyLing] Failed to initialize ViewportCore");
+            _viewportCore.Dispose();
+            _viewportCore = null;
             EditorUtility.DisplayDialog(
                 "Initialization Error",
                 "Failed to initialize unified rendering system.\nThe editor window will be closed.",
@@ -598,15 +599,15 @@ public partial class PolyLing : EditorWindow
             Close();
             return;
         }
-        _unifiedAdapter.SetModelContext(_model);
-        _unifiedAdapter.SetSelectionState(_selectionState);
-        _unifiedAdapter.SetSymmetrySettings(_model?.SymmetrySettings);
+        _viewportCore.Adapter.SetSelectionState(_selectionState);
         if (_selectedIndex >= 0)
-            _unifiedAdapter.SetActiveMesh(0, _selectedIndex);
-        _unifiedAdapter.UseUnifiedRendering = true;
+            _viewportCore.Adapter.SetActiveMesh(0, _selectedIndex);
 
         // パネルコンテキスト初期化（LiveProjectView生成）
         InitPanelContext();
+
+        // ViewportCore コールバック設定
+        SetupViewportCoreCallbacks();
 
         // VisibilityProviderを設定（背面カリング対応）
         if (_unifiedAdapter != null && _selectionOps != null)
@@ -701,7 +702,6 @@ public partial class PolyLing : EditorWindow
 
     private void OnDisable()
     {
-        CleanupPreview();
         CleanupMeshes();
 
         if (_previewMaterial != null)
@@ -757,8 +757,8 @@ public partial class PolyLing : EditorWindow
             _model.OnListChanged -= OnMeshListChanged;
         }
         // OnDisable() に追加
-        _unifiedAdapter?.Dispose();
-        _unifiedAdapter = null;
+        _viewportCore?.Dispose();
+        _viewportCore = null;
 
     }
 
@@ -1160,19 +1160,14 @@ public partial class PolyLing : EditorWindow
 
     private void InitPreview()
     {
-        _preview = new PreviewRenderUtility();
-        _preview.cameraFieldOfView = 30f;
-        _preview.camera.nearClipPlane = 0.01f;
-        _preview.camera.farClipPlane = 100f;
+        // ViewportCore が Init() 内で PreviewRenderUtility を管理する
+        // OnEnable での ViewportCore.Init() 呼び出しより前に実行されるため、ここでは何もしない
     }
 
     private void CleanupPreview()
     {
-        if (_preview != null)
-        {
-            _preview.Cleanup();
-            _preview = null;
-        }
+        // ViewportCore.Dispose() が PreviewRenderUtility を破棄する
+        // OnDisable での ViewportCore.Dispose() 呼び出し時に処理される
     }
 
     private void CleanupMeshes()
@@ -1289,11 +1284,11 @@ public partial class PolyLing : EditorWindow
             float multiplier = _mouseSettings.GetModifierMultiplier(e);
 
             // デバッグ出力
-            float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
+            float fovRad = CameraFOV * Mathf.Deg2Rad;
             float worldHeightAtDist = 2f * _cameraDistance * Mathf.Tan(fovRad / 2f);
             float pixelToWorld = worldHeightAtDist / _lastPreviewRect.height;
             //Debug.Log($"[CameraPan] delta={e.delta}, worldDelta={worldDelta}, multiplier={multiplier}, " +
-            //          $"FOV={_preview.cameraFieldOfView}, camDist={_cameraDistance}, " +
+            //          $"FOV={CameraFOV}, camDist={_cameraDistance}, " +
              //         $"rectHeight={_lastPreviewRect.height}, pixelToWorld={pixelToWorld}");
 
             _cameraTarget -= worldDelta * multiplier;
@@ -1452,6 +1447,56 @@ public partial class PolyLing : EditorWindow
     // ================================================================
 
     // スプリッター用のコントロールID
+    // ================================================================
+    // ViewportCore コールバック設定
+    // ================================================================
+
+    private void SetupViewportCoreCallbacks()
+    {
+        if (_viewportCore == null) return;
+
+        // カメラ状態同期: ViewportCore ← PolyLing（描画直前に毎回同期）
+        _viewportCore.OnHandleInput = evt =>
+        {
+            _viewportCore.RotX = _rotationX;
+            _viewportCore.RotY = _rotationY;
+            _viewportCore.RotZ = _rotationZ;
+            _viewportCore.Distance = _cameraDistance;
+            _viewportCore.Target = _cameraTarget;
+        };
+
+        // 表示用行列デリゲート
+        _viewportCore.GetDisplayMatrixDelegate = meshIndex => GetDisplayMatrix(meshIndex);
+
+        // SkinWeightPaint カスタム描画
+        _viewportCore.CustomDrawMesh = (preview, ctx, mesh, meshIndex, displayMatrix) =>
+        {
+            if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return false;
+            if (_model == null || !_model.SelectedMeshIndices.Contains(meshIndex)) return false;
+
+            Material visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
+            if (visMat == null) return false;
+
+            int targetBone = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
+            Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(mesh, ctx.MeshObject, targetBone);
+            for (int i = 0; i < mesh.subMeshCount; i++)
+                preview.DrawMesh(mesh, displayMatrix, visMat, i);
+            return true;
+        };
+
+        // キャプチャフック
+        _viewportCore.OnCapture = result =>
+        {
+            if (_captureRequested)
+            {
+                _captureRequested = false;
+                CapturePreviewToRemote(result);
+            }
+        };
+
+        _viewportCore.RequestRepaint = () => Repaint();
+    }
+
     // ================================================================
     // ViewportPanel連携（入力処理+オーバーレイ描画）
     // ================================================================

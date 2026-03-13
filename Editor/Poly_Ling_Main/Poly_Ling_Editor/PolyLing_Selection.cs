@@ -330,7 +330,7 @@ public partial class PolyLing
         Vector3 right = camRot * Vector3.right;
         Vector3 up = camRot * Vector3.up;
 
-        float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
+        float fovRad = CameraFOV * Mathf.Deg2Rad;
         float worldHeightAtDist = 2f * camDist * Mathf.Tan(fovRad / 2f);
         float pixelToWorld = worldHeightAtDist / previewRect.height;
 

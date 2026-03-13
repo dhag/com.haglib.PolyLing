@@ -69,7 +69,6 @@ public partial class PolyLing
         }
 
         // ViewportPanelが開いている場合: プレースホルダー表示のみ
-        // HandleInputはViewportPanel側のProcessInputFromViewportで実行される
         if (Poly_Ling.MeshListV2.ViewportPanel.IsOpen)
         {
             Rect placeholder = GUILayoutUtility.GetRect(
@@ -88,37 +87,21 @@ public partial class PolyLing
         // ================================================================
         // 通常フロー（ViewportPanel閉時）
         // ================================================================
+        if (_viewportCore == null) return;
 
-        Rect rect = GUILayoutUtility.GetRect(
-            200, 10000,
-            200, 10000,
-            GUILayout.ExpandWidth(true),
-            GUILayout.ExpandHeight(true));
-
-        // 注目点移動XYで使用するためにプレビュー領域を保存
-        // Repaintイベント時のみ保存（Layoutイベント時は最大値が返るため）
-        if (Event.current.type == EventType.Repaint)
-        {
-            _lastPreviewRect = rect;
-        }
-
-        // ================================================================
-        // ★★★ 重要: この meshContext 取得は全ツール共通のプレビュー入口 ★★★
-        // 通常は FirstSelectedMeshContext（ActiveCategory準拠）を使用する。
-        // ただし SkinWeightPaintTool 有効時は、ボーンをクリックすると
-        // ActiveCategory=Bone になり FirstSelectedMeshContext がボーンの
-        // MeshContext を返してしまう。その場合は描画メッシュ専用の
-        // FirstSelectedDrawableMeshContext にフォールバックして
-        // 描画メッシュ参照を維持する。
-        // 他のツールに影響しないよう、条件は厳密に限定すること。
-        // このフォールバックを削除するとウェイトペイント中に
-        // ボーンを選択した瞬間プレビューが消える。
-        // ================================================================
+        // メッシュが未選択の場合: 背景のみ表示
         var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
             meshContext = _model.FirstSelectedDrawableMeshContext;
 
-        if (meshContext == null || _preview == null)
+        Rect rect = GUILayoutUtility.GetRect(
+            200, 10000, 200, 10000,
+            GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+
+        if (Event.current.type == EventType.Repaint)
+            _lastPreviewRect = rect;
+
+        if (meshContext == null)
         {
             UnityEditor_Handles.BeginGUI();
             UnityEditor_Handles.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
@@ -127,277 +110,86 @@ public partial class PolyLing
             return;
         }
 
-        var mesh = meshContext.UnityMesh;
-
-        float dist = _cameraDistance;
-        Quaternion rot = Quaternion.Euler(_rotationX, _rotationY, _rotationZ);
-        Vector3 camPos = _cameraTarget + rot * new Vector3(0, 0, -dist);
-
-        HandleInput(rect, meshContext, camPos, _cameraTarget, dist);
-
-        if (Event.current.type != EventType.Repaint)
-            return;
-
-        // ============================================================
-        // クリップ領域を設定
-        // これにより描画が中央ペイン内に制限される
-        // また、座標系が (0,0) 起点のローカル座標になる
-        // ============================================================
-        GUI.BeginClip(rect);
-
-        // ローカル座標系での領域（0,0起点）
-        Rect localRect = new Rect(0, 0, rect.width, rect.height);
-
-        _preview.BeginPreview(localRect, GUIStyle.none);
-
-        // ShaderColorSettingsから背景色を取得
-        var bgColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
-        _preview.camera.clearFlags = CameraClearFlags.SolidColor;
-        _preview.camera.backgroundColor = bgColors.Background;
-
-        _preview.camera.transform.position = camPos;
-        Quaternion lookRot = Quaternion.LookRotation(_cameraTarget - camPos, Vector3.up);
-        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
-        _preview.camera.transform.rotation = lookRot * rollRot;
-
-
-
-
-
-        // カメラセットアップ後
-        _preview.camera.transform.position = camPos;
-        _preview.camera.transform.rotation = lookRot * rollRot;
-
-        // ★新システム毎フレーム更新（ローカル座標系を使用）
-        Vector2 mousePos = Event.current.mousePosition;
-        _unifiedAdapter?.UpdateFrame(
-            camPos, _cameraTarget,
-            _preview?.cameraFieldOfView ?? 30f,
-            localRect, mousePos, _rotationZ);
-
-
-
-
-
-
-        // メッシュ描画
-        if (_showMesh)
-        {
-            if (_showSelectedMeshOnly)
-            {
-                // 選択メッシュのみ表示モード - 複数選択対応
-                if (_model != null && _model.SelectedMeshIndices.Count > 0)
-                {
-                    foreach (int idx in _model.SelectedMeshIndices)
-                    {
-                        if (idx < 0 || idx >= _meshContextList.Count) continue;
-                        var ctx = _meshContextList[idx];
-                        if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
-                        
-                        bool isLeadSelection = (idx == _selectedIndex);
-                        DrawMeshWithMaterials(ctx, ctx.UnityMesh, isLeadSelection ? 1f : 0.8f, idx);
-                    }
-                }
-                else if (meshContext != null && meshContext.IsVisible)
-                {
-                    // フォールバック: 単一選択
-                    DrawMeshWithMaterials(meshContext, mesh, 1f, _selectedIndex);
-                }
-            }
-            else
-            {
-                for (int i = 0; i < _meshContextList.Count; i++)
-                {
-                    var ctx = _meshContextList[i];
-                    if (ctx?.UnityMesh == null) continue;
-                    if (!ctx.IsVisible) continue;  // 非表示メッシュをスキップ
-
-                    // 複数選択対応: 選択メッシュは明るく表示
-                    bool isSelected = (_model?.SelectedMeshIndices.Contains(i) ?? false) || (i == _selectedIndex);
-
-                    // ウェイト可視化中: 非選択メッシュは描画しない（ヒートマップを見やすく）
-                    if (Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive && !isSelected)
-                        continue;
-
-                    DrawMeshWithMaterials(ctx, ctx.UnityMesh, isSelected ? 1f : 0.5f, i);
-                }
-            }
-        }
-
         // ================================================================
-        // ワイヤフレーム・頂点描画（UnifiedSystem使用）
+        // ViewportCore の表示設定を EditorState から同期
         // ================================================================
-        var pointSize =ShaderColorSettings.Default.VertexPointScale;
+        _viewportCore.ShowMesh = _showMesh;
+        _viewportCore.ShowWireframe = _showWireframe;
+        _viewportCore.ShowVertices = _showVertices;
+        _viewportCore.ShowUnselectedWireframe = _showUnselectedWireframe;
+        _viewportCore.ShowUnselectedVertices = _showUnselectedVertices;
+        _viewportCore.ShowSelectedMeshOnly = _showSelectedMeshOnly;
+        _viewportCore.BackfaceCulling = _undoController?.EditorState.BackfaceCullingEnabled ?? true;
+        _viewportCore.ShowVertexIndices = _showVertexIndices;
+        _viewportCore.ShowBones = _showBones;
+        _viewportCore.ShowFocusPoint = _showFocusPoint;
 
-        if (_unifiedAdapter != null)
+        // カメラ状態を ViewportCore に同期
+        _viewportCore.RotX = _rotationX;
+        _viewportCore.RotY = _rotationY;
+        _viewportCore.RotZ = _rotationZ;
+        _viewportCore.Distance = _cameraDistance;
+        _viewportCore.Target = _cameraTarget;
+
+        // 入力処理コールバック（HandleInput を注入）
+        _viewportCore.OnHandleInput = evt =>
         {
-            // 背面カリング設定を反映
-            _unifiedAdapter.BackfaceCullingEnabled = _undoController?.EditorState.BackfaceCullingEnabled ?? true;
+            // HandleInput が実行される前にカメラ状態を同期
+            _viewportCore.RotX = _rotationX;
+            _viewportCore.RotY = _rotationY;
+            _viewportCore.RotZ = _rotationZ;
+            _viewportCore.Distance = _cameraDistance;
+            _viewportCore.Target = _cameraTarget;
 
-            var profile = _unifiedAdapter.CurrentProfile;
+            var mc = _model.FirstSelectedMeshContext;
+            if (mc == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
+                mc = _model.FirstSelectedDrawableMeshContext;
+            if (mc == null) return;
 
-            // ContextIndex → UnifiedMeshIndex に変換
-            int unifiedMeshIndex = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
+            HandleInput(evt.Rect, mc, evt.CameraPos, evt.CameraTarget, evt.CameraDistance);
 
-            // 選択状態の同期・フラグ更新
-            if (profile.AllowSelectionSync)
+            // HandleInput がカメラを変更した場合は ViewportCore に反映
+            _viewportCore.RotX = _rotationX;
+            _viewportCore.RotY = _rotationY;
+            _viewportCore.RotZ = _rotationZ;
+            _viewportCore.Distance = _cameraDistance;
+            _viewportCore.Target = _cameraTarget;
+        };
+
+        // オーバーレイコールバック（PolyLing 固有ギズモ）
+        // ※ absRect をキャプチャ: DrawBoxSelectOverlay/DrawLassoSelectOverlay は
+        //   ウィンドウ座標をローカル座標に変換するため absolute rect が必要
+        Rect absRect = rect;
+        _viewportCore.OnDrawOverlay = evt =>
+        {
+            var mc = _model.FirstSelectedMeshContext;
+            if (mc == null) return;
+
+            UpdateToolContext(mc, evt.Rect, evt.CameraPos, evt.CameraDistance);
+            _currentTool?.DrawGizmo(_toolContext);
+
+            if (_showBones) DrawBoneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
+            if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
+                DrawWorkPlaneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
+
+            // 対称平面
+            if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
             {
-                var bufMgr = _unifiedAdapter.BufferManager;
-                if (bufMgr != null)
-                {
-                    bufMgr.SyncSelectionFromModel(_model);
-                    bufMgr.SetActiveMesh(0, unifiedMeshIndex);
-                    bufMgr.UpdateAllSelectionFlags();
-                }
+                Bounds meshBounds = mc.MeshObject != null
+                    ? mc.MeshObject.CalculateBounds()
+                    : new Bounds(Vector3.zero, Vector3.one);
+                DrawSymmetryPlane(evt.Rect, evt.CameraPos, evt.CameraTarget, meshBounds);
             }
 
-            // 面・線分の可視性計算（Culledフラグ設定）
-            if (profile.AllowGpuVisibility)
-            {
-                var bufMgr = _unifiedAdapter.BufferManager;
-                if (bufMgr != null)
-                {
-                    var viewport = new Rect(0, 0, _preview.camera.pixelWidth, _preview.camera.pixelHeight);
-                    bufMgr.DispatchClearBuffersGPU();
-                    bufMgr.ComputeScreenPositionsGPU(_preview.camera.projectionMatrix * _preview.camera.worldToCameraMatrix, viewport);
-                    bufMgr.DispatchFaceVisibilityGPU();
-                    bufMgr.DispatchLineVisibilityGPU();
-                }
-            }
+            if (_inp.EditState == VertexEditState.BoxSelecting)
+                DrawBoxSelectOverlay(absRect);
+            if (_inp.EditState == VertexEditState.LassoSelecting)
+                DrawLassoSelectOverlay(absRect);
+        };
 
-            int meshIndexForDrawing = (_model != null && _model.SelectedMeshIndices.Count > 1) ? -1 : unifiedMeshIndex;
-
-            _unifiedAdapter.PrepareDrawing(
-                _preview.camera,
-                _showWireframe,
-                _showVertices,
-                _showUnselectedWireframe && profile.AllowUnselectedOverlay,
-                _showUnselectedVertices && profile.AllowUnselectedOverlay,
-                meshIndexForDrawing,
-                pointSize);
-
-            _unifiedAdapter.ConsumeNormalMode();
-
-            _unifiedAdapter.DrawQueued(_preview);
-        }
-
-        _preview.camera.Render();
-
-        _unifiedAdapter?.CleanupQueued();
-
-        Texture result = _preview.EndPreview();
-        GUI.DrawTexture(localRect, result, ScaleMode.StretchToFill, false);
-
-        // キャプチャ処理
-        if (_captureRequested)
-        {
-            _captureRequested = false;
-            CapturePreviewToRemote(result);
-        }
-
-        // 選択メッシュ用の表示行列を取得
-        Matrix4x4 selectedDisplayMatrix = GetDisplayMatrix(_selectedIndex);
-
-        // ================================================================
-        // 面ホバー・選択面描画（2Dオーバーレイ）
-        // ワイヤーフレーム非表示時は面・線分のオーバーレイも非表示
-        // ================================================================
-        if (_showWireframe)
-        {
-            DrawHoveredFace(localRect, meshContext, selectedDisplayMatrix);
-
-            // 選択面ハイライト描画（複数メッシュ対応）
-            if (_model != null && _model.SelectedMeshIndices.Count > 0)
-            {
-                foreach (int meshIdx in _model.SelectedMeshIndices)
-                {
-                    var mc = _model.GetMeshContext(meshIdx);
-                    if (mc == null || mc.SelectedFaces.Count == 0) continue;
-                    Matrix4x4 dm = GetDisplayMatrix(meshIdx);
-                    DrawSelectedFaces(localRect, mc, dm);
-                }
-            }
-        }
-
-        // ================================================================
-        // 頂点インデックス表示（2Dオーバーレイ）- v2.1: 複数選択対応
-        // ================================================================
-        if (_showVertexIndices)
-        {
-            _unifiedAdapter?.ReadBackVertexFlags();
-            
-            // 選択されているメッシュすべてに対して頂点インデックスを表示
-            if (_model != null && _model.SelectedMeshIndices.Count > 0)
-            {
-                foreach (int meshIdx in _model.SelectedMeshIndices)
-                {
-                    if (meshIdx < 0 || meshIdx >= _model.MeshContextCount)
-                        continue;
-                        
-                    var ctx = _model.GetMeshContext(meshIdx);
-                    if (ctx == null || !ctx.IsVisible || ctx.MeshObject == null)
-                        continue;
-                    
-                    // 表示用行列を取得
-                    var displayMatrix = GetDisplayMatrix(meshIdx);
-                    bool isLeadSelection = (meshIdx == _selectedIndex);
-                    DrawVertexIndicesForMesh(localRect, ctx.MeshObject, meshIdx, isLeadSelection, camPos, _cameraTarget, displayMatrix);
-                }
-            }
-            else if (meshContext != null && meshContext.IsVisible)
-            {
-                // フォールバック: 単一選択
-                DrawVertexIndices(localRect, meshContext.MeshObject, camPos, _cameraTarget, selectedDisplayMatrix);
-            }
-        }
-
-        // ローカル原点マーカー
-        DrawOriginMarker(localRect, camPos, _cameraTarget);
-
-        // カメラ注目点マーカー
-        if (_showFocusPoint)
-            DrawFocusPointMarker(localRect, camPos, _cameraTarget);
-
-        // ツールのギズモ描画
-        UpdateToolContext(meshContext, localRect, camPos, dist);
-        _currentTool?.DrawGizmo(_toolContext);
-
-        // ボーンのワイヤフレーム描画
-        if (_showBones)
-            DrawBones(localRect, camPos, _cameraTarget);
-
-        // ボーン移動ギズモ描画
-        if (_showBones)
-            DrawBoneGizmo(localRect, camPos, _cameraTarget);
-
-        // WorkPlaneギズモ描画
-        if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
-        {
-            DrawWorkPlaneGizmo(localRect, camPos, _cameraTarget);
-        }
-
-        // 対称平面ギズモ描画
-        if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
-        {
-            Bounds meshBounds = meshContext.MeshObject != null ? meshContext.MeshObject.CalculateBounds() : new Bounds(Vector3.zero, Vector3.one);
-            DrawSymmetryPlane(localRect, camPos, _cameraTarget, meshBounds);
-        }
-
-        // 矩形選択オーバーレイ描画
-        if (_inp.EditState == VertexEditState.BoxSelecting)
-        {
-            DrawBoxSelectOverlay(rect);
-        }
-
-        // 投げ縄選択オーバーレイ描画
-        if (_inp.EditState == VertexEditState.LassoSelecting)
-        {
-            DrawLassoSelectOverlay(rect);
-        }
-
-        // クリップ領域を終了
-        GUI.EndClip();
+        _viewportCore.Draw(rect);
     }
+
 
     // ================================================================
     // プレビューキャプチャ → Remote送信キュー
@@ -438,447 +230,8 @@ public partial class PolyLing
     }
 
     // ================================================================
-    // 3D描画ヘルパーメソッド
+    // 選択オーバーレイ（矩形選択・投げ縄選択）
     // ================================================================
-
-    /// <summary>
-    /// ホバー中の面をハイライト描画
-    /// </summary>
-    private void DrawHoveredFace(Rect previewRect, MeshContext meshContext, Matrix4x4 displayMatrix)
-    {
-        if (_unifiedAdapter == null || meshContext?.MeshObject == null)
-            return;
-
-        var unifiedSys = _unifiedAdapter.UnifiedSystem;
-        if (unifiedSys == null)
-            return;
-
-        // ローカル面インデックスを取得
-        if (!unifiedSys.GetHoveredFaceLocal(out int hoveredMeshIndex, out int localFaceIndex))
-            return;
-
-        // 選択メッシュのみ描画
-        if (hoveredMeshIndex != _selectedIndex)
-            return;
-
-        var meshObject = meshContext.MeshObject;
-        if (localFaceIndex < 0 || localFaceIndex >= meshObject.FaceCount)
-            return;
-
-        var face = meshObject.Faces[localFaceIndex];
-        if (face.VertexCount < 3)
-            return;
-
-        // カメラ情報を取得
-        Vector3 camPos = _preview.camera.transform.position;
-        Vector3 lookAt = _cameraTarget;
-
-        // 面の頂点をスクリーン座標に変換
-        var screenPoints = new Vector2[face.VertexCount];
-        for (int i = 0; i < face.VertexCount; i++)
-        {
-            int vi = face.VertexIndices[i];
-            if (vi < 0 || vi >= meshObject.VertexCount)
-                return;
-
-            Vector3 worldPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[vi].Position);
-            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
-            screenPoints[i] = screenPos;
-        }
-
-        // ShaderColorSettingsから色を取得
-        var colors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
-        Color fillColor = colors.FaceHoveredFill;
-        DrawFilledPolygon(screenPoints, fillColor);
-
-        // 輪郭線
-        Color edgeColor = colors.FaceHoveredEdge;
-        UnityEditor_Handles.BeginGUI();
-        UnityEditor_Handles.color = edgeColor;
-        for (int i = 0; i < face.VertexCount; i++)
-        {
-            int next = (i + 1) % face.VertexCount;
-            UnityEditor_Handles.DrawAAPolyLine(2f, screenPoints[i], screenPoints[next]);
-        }
-        UnityEditor_Handles.EndGUI();
-    }
-
-    /// <summary>
-    /// 選択中の面をハイライト描画
-    /// </summary>
-    private void DrawSelectedFaces(Rect previewRect, MeshContext meshContext, Matrix4x4 displayMatrix)
-    {
-        if (meshContext?.MeshObject == null)
-            return;
-
-        if (meshContext.SelectedFaces.Count == 0)
-            return;
-
-        var meshObject = meshContext.MeshObject;
-        Vector3 camPos = _preview.camera.transform.position;
-        Vector3 lookAt = _cameraTarget;
-
-        // ShaderColorSettingsから色を取得
-        var colors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
-        Color fillColor = colors.FaceSelectedFill;
-        Color edgeColor = colors.FaceSelectedEdge;
-
-        foreach (int faceIndex in meshContext.SelectedFaces)
-        {
-            if (faceIndex < 0 || faceIndex >= meshObject.FaceCount)
-                continue;
-
-            var face = meshObject.Faces[faceIndex];
-            if (face.VertexCount < 3)
-                continue;
-
-            // 面の頂点をスクリーン座標に変換
-            var screenPoints = new Vector2[face.VertexCount];
-            bool valid = true;
-            for (int i = 0; i < face.VertexCount; i++)
-            {
-                int vi = face.VertexIndices[i];
-                if (vi < 0 || vi >= meshObject.VertexCount)
-                {
-                    valid = false;
-                    break;
-                }
-
-                Vector3 worldPos = displayMatrix.MultiplyPoint3x4(meshObject.Vertices[vi].Position);
-                Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
-                screenPoints[i] = screenPos;
-            }
-
-            if (!valid)
-                continue;
-
-            // 半透明で塗りつぶし
-            DrawFilledPolygon(screenPoints, fillColor);
-
-            // 輪郭線
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = edgeColor;
-            for (int i = 0; i < face.VertexCount; i++)
-            {
-                int next = (i + 1) % face.VertexCount;
-                UnityEditor_Handles.DrawAAPolyLine(2f, screenPoints[i], screenPoints[next]);
-            }
-            UnityEditor_Handles.EndGUI();
-        }
-    }
-
-    /// <summary>
-    /// カメラ距離に基づいて頂点の3Dサイズを計算
-    /// ホバー判定（10ピクセル）と一致するサイズを返す
-    /// </summary>
-    private float CalculatePointSize3D(Vector3 camPos, MeshObject meshObject, float targetPixelSize = 2f)
-    {
-        if (meshObject == null || meshObject.VertexCount == 0 || _preview == null)
-            return 0.01f;
-
-        // メッシュの中心までの距離
-        Bounds bounds = meshObject.CalculateBounds();
-        float distance = Vector3.Distance(camPos, bounds.center);
-
-        // 画面上でtargetPixelSizeピクセルのサイズになるように計算
-        float screenHeight = _preview.camera.pixelHeight;
-        if (screenHeight <= 0) screenHeight = 500f;  // フォールバック
-
-        float fovRad = _preview.cameraFieldOfView * Mathf.Deg2Rad;
-        float tanHalfFov = Mathf.Tan(fovRad * 0.5f);
-
-        float worldSize = targetPixelSize * distance * 2f * tanHalfFov / screenHeight;
-
-        return Mathf.Clamp(worldSize, 0.001f, 0.1f);
-    }
-
-    /// <summary>
-    /// 頂点インデックスを2Dオーバーレイで描画（選択メッシュのみ）
-    /// 可視性をチェックして表示
-    /// </summary>
-    private void DrawVertexIndices(Rect previewRect, MeshObject meshObject, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
-    {
-        if (meshObject == null)
-            return;
-
-        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
-        bool useBackfaceCulling = _unifiedAdapter != null && _unifiedAdapter.BackfaceCullingEnabled;
-
-        // ワールド変換済み座標を取得（ボーンベンディング対応）
-        Vector3[] displayPositions = null;
-        int vertexOffset = 0;
-        if (_unifiedAdapter != null)
-        {
-            var bufferManager = _unifiedAdapter.BufferManager;
-            if (bufferManager != null)
-            {
-                displayPositions = bufferManager.GetDisplayPositions();
-                // 選択メッシュの頂点オフセットを取得
-                int unifiedIdx = _unifiedAdapter.ContextToUnifiedMeshIndex(_selectedIndex);
-                if (unifiedIdx >= 0 && bufferManager.MeshInfos != null)
-                {
-                    vertexOffset = (int)bufferManager.MeshInfos[unifiedIdx].VertexStart;
-                }
-            }
-        }
-
-        for (int i = 0; i < meshObject.VertexCount; i++)
-        {
-            if (useBackfaceCulling && _unifiedAdapter.IsVertexCulled(_selectedIndex, i))
-                continue;
-
-            // ワールド変換済み座標を使用（利用可能な場合）
-            Vector3 worldPos;
-            if (displayPositions != null && (vertexOffset + i) < displayPositions.Length)
-            {
-                worldPos = displayPositions[vertexOffset + i];
-            }
-            else
-            {
-                worldPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
-            }
-
-            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
-
-            if (!previewRect.Contains(screenPos))
-                continue;
-
-            GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 40, 16), i.ToString(), EditorStyles.miniLabel);
-        }
-    }
-
-    /// <summary>
-    /// v2.1: 指定メッシュの頂点インデックスを表示（複数選択対応）
-    /// </summary>
-    /// <param name="meshIndex">表示対象のメッシュインデックス</param>
-    /// <param name="isLeadSelection">選択先頭かどうか</param>
-    private void DrawVertexIndicesForMesh(Rect previewRect, MeshObject meshObject, int meshIndex, bool isLeadSelection, Vector3 camPos, Vector3 lookAt, Matrix4x4? displayMatrix = null)
-    {
-        if (meshObject == null)
-            return;
-
-        Matrix4x4 matrix = displayMatrix ?? Matrix4x4.identity;
-        bool useBackfaceCulling = _unifiedAdapter != null && _unifiedAdapter.BackfaceCullingEnabled;
-
-        // ワールド変換済み座標を取得（ボーンベンディング対応）
-        Vector3[] displayPositions = null;
-        int vertexOffset = 0;
-        if (_unifiedAdapter != null)
-        {
-            var bufferManager = _unifiedAdapter.BufferManager;
-            if (bufferManager != null)
-            {
-                displayPositions = bufferManager.GetDisplayPositions();
-                // 指定メッシュの頂点オフセットを取得
-                int unifiedIdx = _unifiedAdapter.ContextToUnifiedMeshIndex(meshIndex);
-                if (unifiedIdx >= 0 && bufferManager.MeshInfos != null)
-                {
-                    vertexOffset = (int)bufferManager.MeshInfos[unifiedIdx].VertexStart;
-                }
-            }
-        }
-
-        // プライマリ選択は通常表示、追加選択は薄い表示
-        var labelStyle = isLeadSelection ? EditorStyles.miniLabel : EditorStyles.whiteMiniLabel;
-
-        for (int i = 0; i < meshObject.VertexCount; i++)
-        {
-            if (useBackfaceCulling && _unifiedAdapter.IsVertexCulled(meshIndex, i))
-                continue;
-
-            // ワールド変換済み座標を使用（利用可能な場合）
-            Vector3 worldPos;
-            if (displayPositions != null && (vertexOffset + i) < displayPositions.Length)
-            {
-                worldPos = displayPositions[vertexOffset + i];
-            }
-            else
-            {
-                worldPos = matrix.MultiplyPoint3x4(meshObject.Vertices[i].Position);
-            }
-
-            Vector2 screenPos = WorldToPreviewPos(worldPos, previewRect, camPos, lookAt);
-
-            if (!previewRect.Contains(screenPos))
-                continue;
-
-            // ローカルインデックスのみ表示
-            GUI.Label(new Rect(screenPos.x + 6, screenPos.y - 8, 40, 16), i.ToString(), labelStyle);
-        }
-    }
-
-    /// <summary>
-    /// MVP行列を計算
-    /// </summary>
-    private Matrix4x4 CalculateMVPMatrix(Rect rect, Vector3 camPos)
-    {
-        Vector3 forward = (_cameraTarget - camPos).normalized;
-        Quaternion lookRot = Quaternion.LookRotation(forward, Vector3.up);
-        Quaternion rollRot = Quaternion.AngleAxis(_rotationZ, Vector3.forward);
-        Quaternion camRot = lookRot * rollRot;
-
-        Matrix4x4 camMatrix = Matrix4x4.TRS(camPos, camRot, Vector3.one);
-        Matrix4x4 view = camMatrix.inverse;
-        view.m20 *= -1; view.m21 *= -1; view.m22 *= -1; view.m23 *= -1;
-
-        float aspect = rect.width / rect.height;
-        Matrix4x4 proj = Matrix4x4.Perspective(_preview.cameraFieldOfView, aspect, 0.01f, 100f);
-
-        return proj * view;
-    }
-
-    // ================================================================
-    // メッシュ描画
-    // ================================================================
-
-    /// <summary>
-    /// マルチマテリアル対応でメッシュを描画
-    /// </summary>
-    private void DrawMeshWithMaterials(MeshContext meshContext, Mesh mesh, float alpha = 1f, int meshIndex = -1)
-    {
-        if (mesh == null)
-            return;
-
-        // 表示用行列を取得（meshIndex が -1 の場合は meshContext から検索）
-        Matrix4x4 displayMatrix;
-        if (meshIndex >= 0)
-        {
-            displayMatrix = GetDisplayMatrix(meshIndex);
-        }
-        else
-        {
-            displayMatrix = GetDisplayMatrix(meshContext);
-        }
-
-        int subMeshCount = mesh.subMeshCount;
-
-        // ウェイト可視化モード: 描画直前に頂点カラーを計算・設定
-        if (Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive &&
-            meshContext != null && _model != null &&
-            _model.SelectedMeshIndices.Contains(meshIndex >= 0 ? meshIndex : 0))
-        {
-            Material visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
-            if (visMat != null)
-            {
-                // 毎フレーム頂点カラーを再計算（SyncMeshのmesh.Clear()に影響されない）
-                int targetBone = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
-                Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(
-                    mesh, meshContext.MeshObject, targetBone);
-
-                for (int i = 0; i < subMeshCount; i++)
-                    _preview.DrawMesh(mesh, displayMatrix, visMat, i);
-                return;
-            }
-        }
-
-        Material defaultMat = GetPreviewMaterial();
-
-        for (int i = 0; i < subMeshCount; i++)
-        {
-            Material mat = null;
-            if (meshContext != null && i < _model.MaterialCount)
-            {
-                mat = _model.GetMaterial(i);
-            }
-
-            if (mat == null)
-            {
-                mat = defaultMat;
-            }
-            _preview.DrawMesh(mesh, displayMatrix, mat, i);
-        }
-    }
-
-    /// <summary>
-    /// ローカル原点マーカーを点線で描画
-    /// </summary>
-    private void DrawOriginMarker(Rect previewRect, Vector3 camPos, Vector3 lookAt)
-    {
-        // メッシュフィルター（非スキンド）選択時はそのWorldMatrix原点をピボットとする。
-        // スキンドメッシュはボーン群で変形されるため単一ピボットが存在せずVector3.zeroを使用。
-        Vector3 origin = Vector3.zero;
-        if (_model != null && _model.SelectedMeshIndices.Count > 0)
-        {
-            Vector3 sum = Vector3.zero;
-            int count = 0;
-            foreach (int idx in _model.SelectedMeshIndices)
-            {
-                var ctx = _model.GetMeshContext(idx);
-                if (ctx == null) continue;
-                if (ctx.MeshObject?.IsSkinned ?? false) continue; // スキンドはスキップ
-                sum += (Vector3)ctx.WorldMatrix.GetColumn(3);
-                count++;
-            }
-            if (count > 0) origin = sum / count;
-        }
-
-        Vector2 originScreen = WorldToPreviewPos(origin, previewRect, camPos, lookAt);
-
-        if (!previewRect.Contains(originScreen))
-            return;
-
-        // ShaderColorSettingsから軸色を取得
-        var axisColors = _unifiedAdapter?.ColorSettings ?? ShaderColorSettings.Default;
-        float axisLength = 0.2f;
-
-        Vector3 xEnd = origin + Vector3.right * axisLength;
-        Vector2 xScreen = WorldToPreviewPos(xEnd, previewRect, camPos, lookAt);
-        DrawDottedLine(originScreen, xScreen, axisColors.AxisX);
-
-        Vector3 yEnd = origin + Vector3.up * axisLength;
-        Vector2 yScreen = WorldToPreviewPos(yEnd, previewRect, camPos, lookAt);
-        DrawDottedLine(originScreen, yScreen, axisColors.AxisY);
-
-        Vector3 zEnd = origin + Vector3.forward * axisLength;
-        Vector2 zScreen = WorldToPreviewPos(zEnd, previewRect, camPos, lookAt);
-        DrawDottedLine(originScreen, zScreen, axisColors.AxisZ);
-
-        UnityEditor_Handles.BeginGUI();
-        float centerSize = 4f;
-        UnityEditor_Handles.DrawRect(new Rect(
-            originScreen.x - centerSize / 2,
-            originScreen.y - centerSize / 2,
-            centerSize,
-            centerSize), new Color(1f, 1f, 1f, 0.7f));
-        UnityEditor_Handles.EndGUI();
-    }
-
-
-    /// <summary>
-    /// カメラ注目点を目立つ十字＋ダイヤモンドで描画
-    /// </summary>
-    private void DrawFocusPointMarker(Rect previewRect, Vector3 camPos, Vector3 focusPoint)
-    {
-        Vector2 screenPos = WorldToPreviewPos(focusPoint, previewRect, camPos, focusPoint);
-
-        if (!previewRect.Contains(screenPos))
-            return;
-
-        UnityEditor_Handles.BeginGUI();
-
-        Color markerColor = new Color(1f, 0.8f, 0f, 0.9f);   // 黄橙
-        Color outlineColor = new Color(0f, 0f, 0f, 0.6f);
-
-        float size = 12f;
-
-        // 外枠付き十字線（太め）
-        // 水平線
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - size - 1, screenPos.y - 2, size * 2 + 2, 5), outlineColor);
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - size, screenPos.y - 1, size * 2, 3), markerColor);
-        // 垂直線
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 2, screenPos.y - size - 1, 5, size * 2 + 2), outlineColor);
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 1, screenPos.y - size, 3, size * 2), markerColor);
-
-        // 中央ダイヤモンド（4つの三角形で近似）
-        float d = 4f;
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - d, screenPos.y - 1, d * 2, 3), markerColor);
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 1, screenPos.y - d, 3, d * 2), markerColor);
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 3, screenPos.y - 3, 7, 7), outlineColor);
-        UnityEditor_Handles.DrawRect(new Rect(screenPos.x - 2, screenPos.y - 2, 5, 5), markerColor);
-
-        UnityEditor_Handles.EndGUI();
-    }
-
 
     private void DrawBoxSelectOverlay(Rect clipRect)
     {
@@ -938,14 +291,7 @@ public partial class PolyLing
         UnityEditor_Handles.EndGUI();
     }
 
-    // ================================================================
-    // トランスフォーム表示用行列計算
-    // ================================================================
 
-    /// <summary>
-    /// メッシュのローカルトランスフォーム行列を取得
-    /// MeshContext.LocalMatrix を使用（BoneTransform.UseLocalTransformを考慮済み）
-    /// </summary>
     private Matrix4x4 GetLocalTransformMatrix(MeshContext ctx)
     {
         if (ctx == null)
@@ -954,21 +300,6 @@ public partial class PolyLing
         return ctx.LocalMatrix;
     }
 
-    /// <summary>
-    /// メッシュのワールドトランスフォーム行列を取得
-    /// MeshContext.WorldMatrix を使用（ComputeWorldMatrices()で事前計算済み）
-    /// </summary>
-    private Matrix4x4 GetWorldTransformMatrix(int meshIndex)
-    {
-        if (meshIndex < 0 || meshIndex >= _meshContextList.Count)
-            return Matrix4x4.identity;
-
-        var ctx = _meshContextList[meshIndex];
-        if (ctx == null)
-            return Matrix4x4.identity;
-
-        return ctx.WorldMatrix;
-    }
 
     /// <summary>
     /// 現在の表示モードに応じた表示用行列を取得
@@ -998,13 +329,5 @@ public partial class PolyLing
         return Matrix4x4.identity;
     }
 
-    /// <summary>
-    /// MeshContext から直接表示用行列を取得（選択メッシュ用）
-    /// </summary>
-    private Matrix4x4 GetDisplayMatrix(MeshContext ctx)
-    {
-        int index = _meshContextList.IndexOf(ctx);
-        return GetDisplayMatrix(index);
-    }
 
 }

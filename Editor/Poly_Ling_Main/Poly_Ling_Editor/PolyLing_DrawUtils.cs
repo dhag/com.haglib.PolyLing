@@ -32,7 +32,7 @@ public partial class PolyLing
         view.m20 *= -1; view.m21 *= -1; view.m22 *= -1; view.m23 *= -1;
 
         float aspect = previewRect.width / previewRect.height;
-        Matrix4x4 proj = Matrix4x4.Perspective(_preview.cameraFieldOfView, aspect, 0.01f, 100f);
+        Matrix4x4 proj = Matrix4x4.Perspective(CameraFOV, aspect, 0.01f, 100f);
 
         Vector4 clipPos = proj * view * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);
 
@@ -73,7 +73,7 @@ public partial class PolyLing
         Vector3 up = camRot * Vector3.up;
 
         // FOVからレイ方向を計算
-        float fov = _preview != null ? _preview.cameraFieldOfView : 60f;
+        float fov = CameraFOV;
         float halfFovRad = fov * 0.5f * Mathf.Deg2Rad;
         float aspect = previewRect.width / previewRect.height;
 

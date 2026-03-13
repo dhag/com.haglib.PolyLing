@@ -481,6 +481,7 @@ public partial class PolyLing
         
         // バッファを再構築
         _unifiedAdapter?.SetModelContext(currentModel);
+        _viewportCore?.SetModel(currentModel);
         
         // 新しいモデルの最初のメッシュを選択 (v2.0)
         if (_meshContextList.Count > 0 && _selectedIndex < 0)
@@ -560,6 +561,7 @@ public partial class PolyLing
 
         // バッファを再構築
         _unifiedAdapter?.SetModelContext(_project.CurrentModel);
+        _viewportCore?.SetModel(_project.CurrentModel);
 
         // トポロジ更新
         UpdateTopology();

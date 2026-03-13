@@ -84,6 +84,7 @@ namespace Poly_Ling.MeshListV2
         public bool ShowVertexIndices { get; set; } = false;
         public bool ShowBones { get; set; } = true;
         public bool ShowFocusPoint { get; set; } = true;
+        public bool ShowUnselectedBones { get; set; } = false;
 
         // ================================================================
         // コールバック（用途依存の処理を外部から注入）
@@ -98,6 +99,15 @@ namespace Poly_Ling.MeshListV2
         /// <summary>再描画要求（所有者のRepaintを呼ぶ）</summary>
         public Action RequestRepaint;
 
+        /// <summary>表示用行列取得（LocalTransform/WorldTransform対応）。nullならIdentity返却</summary>
+        public Func<int, Matrix4x4> GetDisplayMatrixDelegate;
+
+        /// <summary>カスタムメッシュ描画。trueを返すと通常描画をスキップ</summary>
+        public Func<PreviewRenderUtility, MeshContext, Mesh, int, Matrix4x4, bool> CustomDrawMesh;
+
+        /// <summary>プレビューキャプチャフック（RemoteServer等）</summary>
+        public Action<Texture> OnCapture;
+
         // ================================================================
         // 公開プロパティ
         // ================================================================
@@ -105,6 +115,7 @@ namespace Poly_Ling.MeshListV2
         public ModelContext CurrentModel => _currentModel;
         public UnifiedSystemAdapter Adapter => _adapter;
         public Camera Camera => _preview?.camera;
+        public float FOV => _preview?.cameraFieldOfView ?? 30f;
 
         // ================================================================
         // 初期化・クリーンアップ
@@ -238,9 +249,10 @@ namespace Poly_Ling.MeshListV2
             model.ComputeWorldMatrices();
 
             // カメラセットアップ
-            Quaternion rot = Quaternion.Euler(RotX, RotY, 0);
+            Quaternion rot = Quaternion.Euler(RotX, RotY, RotZ);
             Vector3 camPos = Target + rot * new Vector3(0, 0, -Distance);
             Quaternion lookRot = Quaternion.LookRotation(Target - camPos, Vector3.up);
+            Quaternion rollRot = Quaternion.AngleAxis(RotZ, Vector3.forward);
 
             _preview.BeginPreview(rect, GUIStyle.none);
 
@@ -248,7 +260,7 @@ namespace Poly_Ling.MeshListV2
             _preview.camera.clearFlags = CameraClearFlags.SolidColor;
             _preview.camera.backgroundColor = bgColors.Background;
             _preview.camera.transform.position = camPos;
-            _preview.camera.transform.rotation = lookRot;
+            _preview.camera.transform.rotation = lookRot * rollRot;
             _preview.camera.orthographic = IsOrtho;
 
             // UnifiedSystem フレーム更新
@@ -271,6 +283,7 @@ namespace Poly_Ling.MeshListV2
 
             Texture result = _preview.EndPreview();
             GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
+            OnCapture?.Invoke(result);
 
             // ================================================================
             // 2Dオーバーレイ
@@ -468,7 +481,7 @@ namespace Poly_Ling.MeshListV2
                         if (idx < 0 || idx >= model.MeshContextCount) continue;
                         var ctx = model.GetMeshContext(idx);
                         if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
-                        DrawSingleMesh(ctx, model, defMat);
+                        DrawSingleMesh(ctx, model, defMat, idx);
                     }
                 }
             }
@@ -480,21 +493,24 @@ namespace Poly_Ling.MeshListV2
                     if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
 
                     int masterIdx = drawables[i].MasterIndex;
-                    bool isSelected = model.SelectedMeshIndices.Contains(masterIdx);
-                    // alpha差は将来的にDrawSingleMeshに渡す
-                    DrawSingleMesh(ctx, model, defMat);
+                    DrawSingleMesh(ctx, model, defMat, masterIdx);
                 }
             }
         }
 
-        private void DrawSingleMesh(MeshContext ctx, ModelContext model, Material defMat)
+        private void DrawSingleMesh(MeshContext ctx, ModelContext model, Material defMat, int masterIdx)
         {
             var mesh = ctx.UnityMesh;
+            Matrix4x4 displayMatrix = GetDisplayMatrixDelegate?.Invoke(masterIdx) ?? Matrix4x4.identity;
+
+            if (CustomDrawMesh != null && CustomDrawMesh(_preview, ctx, mesh, masterIdx, displayMatrix))
+                return;
+
             for (int sub = 0; sub < mesh.subMeshCount; sub++)
             {
                 Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
                 if (mat == null) mat = defMat;
-                _preview.DrawMesh(mesh, Matrix4x4.identity, mat, sub);
+                _preview.DrawMesh(mesh, displayMatrix, mat, sub);
             }
         }
 
@@ -573,12 +589,17 @@ namespace Poly_Ling.MeshListV2
             var face = meshObj.Faces[localFace];
             if (face.VertexCount < 3) return;
 
+            Matrix4x4 dm = GetDisplayMatrixDelegate?.Invoke(selectedMaster) ?? Matrix4x4.identity;
+            bool useIdentity = (dm == Matrix4x4.identity);
+
             var pts = new Vector2[face.VertexCount];
             for (int i = 0; i < face.VertexCount; i++)
             {
                 int vi = face.VertexIndices[i];
                 if (vi < 0 || vi >= meshObj.VertexCount) return;
-                pts[i] = WorldToGUI(meshObj.Vertices[vi].Position, cam, rect);
+                Vector3 pos = meshObj.Vertices[vi].Position;
+                if (!useIdentity) pos = dm.MultiplyPoint3x4(pos);
+                pts[i] = WorldToGUI(pos, cam, rect);
             }
 
             var colors = _adapter.ColorSettings ?? ShaderColorSettings.Default;
@@ -601,6 +622,11 @@ namespace Poly_Ling.MeshListV2
             var meshObj = meshCtx.MeshObject;
             var colors = _adapter?.ColorSettings ?? ShaderColorSettings.Default;
 
+            int masterIdx = _currentModel.SelectedMeshIndices.Count > 0
+                ? _currentModel.SelectedMeshIndices[0] : -1;
+            Matrix4x4 dm = GetDisplayMatrixDelegate?.Invoke(masterIdx) ?? Matrix4x4.identity;
+            bool useIdentity = (dm == Matrix4x4.identity);
+
             foreach (int fi in meshCtx.SelectedFaces)
             {
                 if (fi < 0 || fi >= meshObj.FaceCount) continue;
@@ -613,7 +639,9 @@ namespace Poly_Ling.MeshListV2
                 {
                     int vi = face.VertexIndices[i];
                     if (vi < 0 || vi >= meshObj.VertexCount) { valid = false; break; }
-                    pts[i] = WorldToGUI(meshObj.Vertices[vi].Position, cam, rect);
+                    Vector3 pos = meshObj.Vertices[vi].Position;
+                    if (!useIdentity) pos = dm.MultiplyPoint3x4(pos);
+                    pts[i] = WorldToGUI(pos, cam, rect);
                 }
                 if (!valid) continue;
 
@@ -660,9 +688,18 @@ namespace Poly_Ling.MeshListV2
                 {
                     if (BackfaceCulling && _adapter.IsVertexCulled(meshIdx, i)) continue;
 
-                    Vector3 worldPos = (displayPos != null && (vertOffset + i) < displayPos.Length)
-                        ? displayPos[vertOffset + i]
-                        : meshObj.Vertices[i].Position;
+                    Vector3 worldPos;
+                    if (displayPos != null && (vertOffset + i) < displayPos.Length)
+                    {
+                        worldPos = displayPos[vertOffset + i];
+                    }
+                    else
+                    {
+                        Matrix4x4 dm = GetDisplayMatrixDelegate?.Invoke(meshIdx) ?? Matrix4x4.identity;
+                        worldPos = (dm == Matrix4x4.identity)
+                            ? meshObj.Vertices[i].Position
+                            : dm.MultiplyPoint3x4(meshObj.Vertices[i].Position);
+                    }
 
                     Vector2 sp = WorldToGUI(worldPos, cam, rect);
                     if (!rect.Contains(sp)) continue;
@@ -940,7 +977,7 @@ namespace Poly_Ling.MeshListV2
 
         private ViewportEvent MakeEvent(Rect rect, ModelContext model)
         {
-            Quaternion rot = Quaternion.Euler(RotX, RotY, 0);
+            Quaternion rot = Quaternion.Euler(RotX, RotY, RotZ);
             Vector3 camPos = Target + rot * new Vector3(0, 0, -Distance);
             return new ViewportEvent
             {
