@@ -384,6 +384,7 @@ namespace Poly_Ling.Remote
                     await stream.WriteAsync(responseBytes, 0, responseBytes.Length, ct);
 
                     // WebSocketクライアントとして管理
+                    tcpClient.SendTimeout = 120_000; // 120秒
                     var wsClient = new WsClient(tcpClient, stream);
                     lock (_clientLock) { _clients.Add(wsClient); }
 
@@ -603,8 +604,8 @@ namespace Poly_Ling.Remote
                 if (!await ReadExactAsync(stream, maskKey, 0, 4, ct)) return null;
             }
 
-            // ペイロード（バイナリメッシュ用に上限を拡大: 50MB）
-            if (payloadLen > 50_000_000) return null;
+            // ペイロード（バイナリメッシュ用に上限を拡大: 512MB）
+            if (payloadLen > 512_000_000) return null;
             byte[] payload = new byte[payloadLen];
             if (payloadLen > 0)
             {

@@ -22,6 +22,7 @@ using Poly_Ling.Rendering;
 using Poly_Ling.Symmetry;
 using Poly_Ling.Commands;
 using MeshEditor;
+using UnityEngine.UIElements;
 
 
 
@@ -382,12 +383,9 @@ public partial class PolyLing : EditorWindow
     private float _leftPaneWidth = 320f;
     private float _rightPaneWidth = 220f;
 
-    // スプリッター
-    //private bool _isDraggingLeftSplitter = false;
-    //private bool _isDraggingRightSplitter = false;
-    private Rect _leftSplitterRect;
-    private Rect _rightSplitterRect;
-    private const float SplitterWidth = 6f;
+    // スプリッター（TwoPaneSplitView参照）
+    private TwoPaneSplitView _leftSplitView;
+    private TwoPaneSplitView _rightSplitView;
     private const float MinPaneWidth = 150f;
     private const float MaxLeftPaneWidth = 500f;
     private const float MaxRightPaneWidth = 400f;
@@ -1192,70 +1190,68 @@ public partial class PolyLing : EditorWindow
     // ================================================================
     // メインGUI
     // ================================================================
-    private void OnGUI()
+    private void CreateGUI()
     {
-        // Undoショートカット処理
-        if (_undoController != null)
+        var root = rootVisualElement;
+        root.style.flexDirection = FlexDirection.Row;
+
+        // 左ペイン IMGUIContainer
+        var leftContainer = new IMGUIContainer(() =>
         {
-            Event e_ = Event.current;
-            if (e_.type == EventType.KeyDown)
+            if (_undoController != null)
             {
-                // Debug.Log($"[PolyLing.OnGUI] KeyDown before HandleKeyboardShortcuts: keyCode={e_.keyCode}, ctrl={e_.control || e_.command}, shift={e_.shift}, used={e_.type == EventType.Used}");
+                if (_undoController.HandleKeyboardShortcuts(Event.current))
+                    Repaint();
             }
-            
-            if (_undoController.HandleKeyboardShortcuts(Event.current))
-            {
-                // Undo/Redo後にUIを再描画
-                var parentModel = _undoController?.MeshUndoContext?.ParentModelContext;
-                //Debug.Log($"[PolyLing.OnGUI] After Undo/Redo: _model.MaterialCount={_model?.Materials?.Count ?? 0}, MeshUndoContext.Materials.Count={_undoController?.MeshUndoContext?.Materials?.Count ?? 0}");
-                //Debug.Log($"[PolyLing.OnGUI] _model==MaterialOwner? {ReferenceEquals(_model, parentModel)}, _model.Hash={_model?.GetHashCode()}, MaterialOwner.Hash={parentModel?.GetHashCode()}");
-                Repaint();
-            }
-        }
 
-        // グローバルなドラッグ終了検出
-        Event e = Event.current;
-        if (e.type == EventType.MouseUp)
+            Event e = Event.current;
+            if (e.type == EventType.MouseUp)
+            {
+                if (_isSliderDragging) EndSliderDrag();
+                if (_isCameraDragging) EndCameraDrag();
+            }
+
+            DrawMeshList();
+        });
+        leftContainer.style.width = _leftPaneWidth;
+        leftContainer.style.minWidth = MinPaneWidth;
+        leftContainer.style.maxWidth = MaxLeftPaneWidth;
+
+        // 中央ペイン IMGUIContainer
+        var centerContainer = new IMGUIContainer(() =>
         {
-            if (_isSliderDragging)
+            Event e = Event.current;
+            if (e.type == EventType.MouseUp)
             {
-                EndSliderDrag();
+                if (_isCameraDragging) EndCameraDrag();
             }
-            if (_isCameraDragging)
-            {
-                EndCameraDrag();
-            }
-            // スプリッタードラッグ終了
-            //_isDraggingLeftSplitter = false;
-            //_isDraggingRightSplitter = false;
-        }
+            HandleScrollWheel();
+            DrawPreview();
+        });
+        centerContainer.style.flexGrow = 1;
 
-        HandleScrollWheel();
+        // 右ペイン IMGUIContainer
+        var rightContainer = new IMGUIContainer(() =>
+        {
+            DrawRightPane();
+        });
+        rightContainer.style.width = _rightPaneWidth;
+        rightContainer.style.minWidth = MinPaneWidth;
+        rightContainer.style.maxWidth = MaxRightPaneWidth;
 
-        // スプリッターのドラッグ処理
-        HandleSplitterDrag(e);
+        // 右側 TwoPaneSplitView（中央|右）
+        _rightSplitView = new TwoPaneSplitView(1, _rightPaneWidth, TwoPaneSplitViewOrientation.Horizontal);
+        _rightSplitView.style.flexGrow = 1;
+        _rightSplitView.Add(centerContainer);
+        _rightSplitView.Add(rightContainer);
 
-        EditorGUILayout.BeginHorizontal();
+        // 左側 TwoPaneSplitView（左|残り）
+        _leftSplitView = new TwoPaneSplitView(0, _leftPaneWidth, TwoPaneSplitViewOrientation.Horizontal);
+        _leftSplitView.style.flexGrow = 1;
+        _leftSplitView.Add(leftContainer);
+        _leftSplitView.Add(_rightSplitView);
 
-        // 左ペイン：メッシュリスト
-        DrawMeshList();
-
-        // 左スプリッター
-        DrawSplitter(ref _leftSplitterRect, true);
-
-        // 中央ペイン：プレビュー
-        DrawPreview();
-
-        // 右スプリッター
-        DrawSplitter(ref _rightSplitterRect, false);
-
-        // 右ペイン
-        DrawRightPane();
-
-        EditorGUILayout.EndHorizontal();
-
-        // カーソル変更
-        UpdateSplitterCursor();
+        root.Add(_leftSplitView);
     }
 
     private void HandleScrollWheel()
@@ -1456,132 +1452,6 @@ public partial class PolyLing : EditorWindow
     // ================================================================
 
     // スプリッター用のコントロールID
-    private int _leftSplitterControlId;
-    private int _rightSplitterControlId;
-
-    /// <summary>
-    /// スプリッターを描画（イベント処理込み）
-    /// </summary>
-    private void DrawSplitter(ref Rect splitterRect, bool isLeftSplitter)
-    {
-        // コントロールIDを取得
-        int controlId = GUIUtility.GetControlID(FocusType.Passive);
-        if (isLeftSplitter)
-            _leftSplitterControlId = controlId;
-        else
-            _rightSplitterControlId = controlId;
-
-        // スプリッター領域を確保
-        splitterRect = GUILayoutUtility.GetRect(
-            SplitterWidth, SplitterWidth,
-            GUILayout.ExpandHeight(true));
-
-        // イベント処理
-        Event e = Event.current;
-
-        switch (e.GetTypeForControl(controlId))
-        {
-            case EventType.MouseDown:
-                if (e.button == 0 && splitterRect.Contains(e.mousePosition))
-                {
-                    GUIUtility.hotControl = controlId;
-                    //if (isLeftSplitter)
-                    //    _isDraggingLeftSplitter = true;
-                    //else
-                    //    _isDraggingRightSplitter = true;
-                    e.Use();
-                }
-                break;
-
-            case EventType.MouseDrag:
-                if (GUIUtility.hotControl == controlId)
-                {
-                    if (isLeftSplitter)
-                    {
-                        _leftPaneWidth += e.delta.x;
-                        _leftPaneWidth = Mathf.Clamp(_leftPaneWidth, MinPaneWidth, MaxLeftPaneWidth);
-                    }
-                    else
-                    {
-                        _rightPaneWidth -= e.delta.x;
-                        _rightPaneWidth = Mathf.Clamp(_rightPaneWidth, MinPaneWidth, MaxRightPaneWidth);
-                    }
-                    e.Use();
-                    Repaint();
-                }
-                break;
-
-            case EventType.MouseUp:
-                if (GUIUtility.hotControl == controlId)
-                {
-                    GUIUtility.hotControl = 0;
-                    //if (isLeftSplitter)
-                    //    _isDraggingLeftSplitter = false;
-                    //else
-                    //    _isDraggingRightSplitter = false;
-                    e.Use();
-                }
-                break;
-
-            case EventType.Repaint:
-                UnityEditor_Handles.BeginGUI();
-                // 背景色
-                bool isDragging = GUIUtility.hotControl == controlId;
-                bool isHovering = splitterRect.Contains(e.mousePosition);
-
-                Color splitterColor;
-                if (isDragging)
-                {
-                    splitterColor = new Color(0.4f, 0.6f, 1f, 0.8f);  // ドラッグ中：青
-                }
-                else if (isHovering)
-                {
-                    splitterColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);  // ホバー：グレー
-                }
-                else
-                {
-                    splitterColor = new Color(0.3f, 0.3f, 0.3f, 0.3f);  // 通常：薄いグレー
-                }
-                UnityEditor_Handles.DrawRect(splitterRect, splitterColor);//?
-
-                // 中央にグリップを描画
-                float centerX = splitterRect.x + splitterRect.width / 2;
-                float gripHeight = Mathf.Min(splitterRect.height * 0.3f, 60f);
-                float gripTop = splitterRect.y + (splitterRect.height - gripHeight) / 2;
-
-                Color gripColor = isDragging || isHovering
-                    ? new Color(0.7f, 0.7f, 0.7f, 0.8f)
-                    : new Color(0.5f, 0.5f, 0.5f, 0.5f);
-
-                for (int i = 0; i < 3; i++)
-                {
-                    float y = gripTop + i * (gripHeight / 2);
-                    UnityEditor_Handles.DrawRect(new Rect(centerX - 1, y, 2, 2), gripColor);//?
-                }
-                UnityEditor_Handles.EndGUI();
-                break;
-        }
-
-        // カーソル変更
-        EditorGUIUtility.AddCursorRect(splitterRect, MouseCursor.ResizeHorizontal);
-    }
-
-    /// <summary>
-    /// スプリッターのドラッグを処理（未使用、DrawSplitter内で処理）
-    /// </summary>
-    private void HandleSplitterDrag(Event e)
-    {
-        // DrawSplitter内で処理するため、ここでは何もしない
-    }
-
-    /// <summary>
-    /// スプリッター上でのカーソル変更（未使用、DrawSplitter内で処理）
-    /// </summary>
-    private void UpdateSplitterCursor()
-    {
-        // DrawSplitter内で処理するため、ここでは何もしない
-    }
-
     // ================================================================
     // ViewportPanel連携（入力処理+オーバーレイ描画）
     // ================================================================

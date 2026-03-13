@@ -90,6 +90,7 @@ namespace PolyLingRemoteClient
                 }
 
                 // Accept-Keyの検証（簡易: 101が返ればOKとする）
+                _stream.ReadTimeout = 300_000; // 300秒
                 return true;
             }
             catch
@@ -174,7 +175,7 @@ namespace PolyLingRemoteClient
                 }
 
                 // ペイロード（50MB上限）
-                if (payloadLen > 50_000_000) return null;
+                if (payloadLen > 512_000_000) return null;
                 byte[] payload = new byte[payloadLen];
                 if (payloadLen > 0)
                 {
