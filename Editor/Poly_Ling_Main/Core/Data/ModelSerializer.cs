@@ -1170,5 +1170,181 @@ namespace Poly_Ling.Serialization
                 meshContext.BonePoseData = null;
             }
         }
+
+        // ================================================================
+        // MeshMetaDTO 変換（Phase 1）
+        // MeshContext ↔ MeshMetaDTO（ジオメトリなし）
+        // ================================================================
+
+        /// <summary>
+        /// MeshContext → MeshMetaDTO（メタデータのみ抽出）
+        /// ジオメトリ（頂点・面）は含まない
+        /// </summary>
+        public static MeshMetaDTO ToMeshMetaDTO(MeshContext mc)
+        {
+            if (mc == null) return null;
+
+            var meta = new MeshMetaDTO
+            {
+                name                    = mc.Name,
+                type                    = mc.Type.ToString(),
+                isVisible               = mc.IsVisible,
+                isLocked                = mc.IsLocked,
+                isFolding               = mc.IsFolding,
+                depth                   = mc.Depth,
+                parentIndex             = mc.ParentIndex,
+                hierarchyParentIndex    = mc.HierarchyParentIndex,
+                mirrorType              = mc.MirrorType,
+                mirrorAxis              = mc.MirrorAxis,
+                mirrorDistance          = mc.MirrorDistance,
+                mirrorMaterialOffset    = mc.MirrorMaterialOffset,
+                bakedMirrorSourceIndex  = mc.BakedMirrorSourceIndex,
+                hasBakedMirrorChild     = mc.HasBakedMirrorChild,
+                morphParentIndex        = mc.MorphParentIndex,
+                excludeFromExport       = mc.ExcludeFromExport,
+                exportSettingsDTO       = ToBoneTransformDTO(mc.BoneTransform),
+            };
+
+            // モーフ基準データ
+            if (mc.IsMorph)
+                meta.morphBaseData = ToMorphBaseDataDTO(mc.MorphBaseData);
+
+            // BonePoseData
+            if (mc.BonePoseData != null)
+                meta.bonePoseData = mc.BonePoseData.ToDTO();
+
+            // 選択セット
+            meta.selectionSets = new System.Collections.Generic.List<SelectionSetDTO>();
+            if (mc.PartsSelectionSetList != null)
+            {
+                foreach (var set in mc.PartsSelectionSetList)
+                {
+                    var dto = SelectionSetDTO.FromSelectionSet(set);
+                    if (dto != null) meta.selectionSets.Add(dto);
+                }
+            }
+
+            return meta;
+        }
+
+        /// <summary>
+        /// MeshMetaDTO → MeshContext（MeshObject は空、呼び出し元で設定すること）
+        /// </summary>
+        public static MeshContext ToMeshContextFromMeta(MeshMetaDTO meta)
+        {
+            if (meta == null) return null;
+
+            MeshType meshType = MeshType.Mesh;
+            if (!string.IsNullOrEmpty(meta.type))
+                Enum.TryParse(meta.type, out meshType);
+
+            var mc = new MeshContext
+            {
+                Name                   = meta.name ?? "Untitled",
+                Type                   = meshType,
+                IsVisible              = meta.isVisible,
+                IsLocked               = meta.isLocked,
+                IsFolding              = meta.isFolding,
+                Depth                  = meta.depth,
+                ParentIndex            = meta.parentIndex,
+                HierarchyParentIndex   = meta.hierarchyParentIndex,
+                MirrorType             = meta.mirrorType,
+                MirrorAxis             = meta.mirrorAxis,
+                MirrorDistance         = meta.mirrorDistance,
+                MirrorMaterialOffset   = meta.mirrorMaterialOffset,
+                BakedMirrorSourceIndex = meta.bakedMirrorSourceIndex,
+                HasBakedMirrorChild    = meta.hasBakedMirrorChild,
+                MorphParentIndex       = meta.morphParentIndex,
+                ExcludeFromExport      = meta.excludeFromExport,
+                BoneTransform          = meta.exportSettingsDTO != null
+                                         ? ToBoneTransform(meta.exportSettingsDTO)
+                                         : null,
+            };
+
+            // モーフ基準データ
+            if (meta.morphBaseData != null)
+                mc.MorphBaseData = ToMorphBaseData(meta.morphBaseData);
+
+            // BonePoseData
+            if (meta.bonePoseData != null)
+                mc.BonePoseData = BonePoseData.FromDTO(meta.bonePoseData);
+
+            // 選択セット
+            mc.PartsSelectionSetList = new System.Collections.Generic.List<Selection.PartsSelectionSet>();
+            if (meta.selectionSets != null)
+            {
+                foreach (var dto in meta.selectionSets)
+                {
+                    var set = dto?.ToSelectionSet();
+                    if (set != null) mc.PartsSelectionSetList.Add(set);
+                }
+            }
+
+            return mc;
+        }
+
+        // ================================================================
+        // MeshGeoDTO 変換（Phase 1）
+        // MeshObject ↔ MeshGeoDTO
+        // ================================================================
+
+        /// <summary>
+        /// MeshObject → MeshGeoDTO
+        /// </summary>
+        public static MeshGeoDTO ToMeshGeoDTO(MeshObject meshObject, int meshIndex)
+        {
+            if (meshObject == null) return null;
+
+            var geo = new MeshGeoDTO
+            {
+                meshIndex  = meshIndex,
+                isExpanded = meshObject.IsExpanded,
+            };
+
+            foreach (var vertex in meshObject.Vertices)
+            {
+                var vd = new VertexDTO();
+                vd.id = vertex.Id;
+                vd.SetPosition(vertex.Position);
+                vd.SetUVs(vertex.UVs);
+                vd.SetNormals(vertex.Normals);
+                vd.SetBoneWeight(vertex.BoneWeight);
+                vd.SetMirrorBoneWeight(vertex.MirrorBoneWeight);
+                vd.f = (byte)vertex.Flags;
+                geo.vertices.Add(vd);
+            }
+
+            foreach (var face in meshObject.Faces)
+            {
+                geo.faces.Add(new FaceDTO
+                {
+                    id  = face.Id,
+                    v   = new System.Collections.Generic.List<int>(face.VertexIndices),
+                    uvi = new System.Collections.Generic.List<int>(face.UVIndices),
+                    ni  = new System.Collections.Generic.List<int>(face.NormalIndices),
+                    mi  = face.MaterialIndex != 0 ? face.MaterialIndex : (int?)null,
+                    f   = (byte)face.Flags,
+                });
+            }
+
+            return geo;
+        }
+
+        /// <summary>
+        /// MeshGeoDTO → MeshObject
+        /// </summary>
+        public static MeshObject ToMeshObjectFromGeo(MeshGeoDTO geo)
+        {
+            if (geo == null) return null;
+
+            // ToMeshObject はMeshDTOを受け取るため、最小限のMeshDTOに詰め替えて委譲
+            var tmp = new MeshDTO
+            {
+                isExpanded = geo.isExpanded,
+                vertices   = geo.vertices ?? new System.Collections.Generic.List<VertexDTO>(),
+                faces      = geo.faces    ?? new System.Collections.Generic.List<FaceDTO>(),
+            };
+            return ToMeshObject(tmp);
+        }
     }
 }

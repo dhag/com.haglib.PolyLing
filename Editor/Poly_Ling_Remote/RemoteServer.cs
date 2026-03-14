@@ -20,6 +20,7 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Model;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Remote
 {
@@ -33,8 +34,6 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         private int _port = 8765;
-        private int _testModelIndex = 0;
-        private int _testMeshIndex  = 0;
         private bool _isRunningBacking;
         public bool IsRunning => _isRunningBacking;
         private bool _autoStart;
@@ -180,23 +179,8 @@ namespace Poly_Ling.Remote
                 if (GUILayout.Button("Send Test Image"))
                     SendTestImages();
 
-                if (GUILayout.Button("Send Project"))
-                    SendProject();
-
-                EditorGUILayout.Space(3);
-                EditorGUILayout.LabelField("単体送信テスト", EditorStyles.miniBoldLabel);
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("Model#", GUILayout.Width(50));
-                _testModelIndex = EditorGUILayout.IntField(_testModelIndex, GUILayout.Width(40));
-                if (GUILayout.Button("Send Model", GUILayout.Width(90)))
-                    SendModel(_testModelIndex);
-                EditorGUILayout.EndHorizontal();
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("Mesh#", GUILayout.Width(50));
-                _testMeshIndex = EditorGUILayout.IntField(_testMeshIndex, GUILayout.Width(40));
-                if (GUILayout.Button("Send Mesh", GUILayout.Width(90)))
-                    SendMesh(_testModelIndex, _testMeshIndex);
-                EditorGUILayout.EndHorizontal();
+                if (GUILayout.Button("Send Project Header"))
+                    SendProjectHeader();
 
                 // ================================================================
                 // キャプチャ画像リスト
@@ -384,7 +368,6 @@ namespace Poly_Ling.Remote
                     await stream.WriteAsync(responseBytes, 0, responseBytes.Length, ct);
 
                     // WebSocketクライアントとして管理
-                    tcpClient.SendTimeout = 120_000; // 120秒
                     var wsClient = new WsClient(tcpClient, stream);
                     lock (_clientLock) { _clients.Add(wsClient); }
 
@@ -455,21 +438,22 @@ namespace Poly_Ling.Remote
                     {
                         if (string.IsNullOrEmpty(f.Text)) continue;
 
-                        _mainThreadQueue.Enqueue(() =>
+                        _mainThreadQueue.Enqueue(async () =>
                         {
-                            _pendingBinaryResponse = null;
+                            _pendingBinaryResponses = null;
                             string response = ProcessMessage(f.Text);
-                            byte[] pendingBinary = _pendingBinaryResponse;
-                            _pendingBinaryResponse = null;
+                            var pendingBinaries = _pendingBinaryResponses;
+                            _pendingBinaryResponses = null;
 
                             if (response != null && client.IsConnected)
                             {
-                                _ = SendWsTextAsync(client.Stream, response).ContinueWith(t =>
+                                try
                                 {
-                                    // テキスト応答の直後にバイナリフレームを送信
-                                    if (pendingBinary != null && client.IsConnected)
-                                        _ = SendWsBinaryAsync(client.Stream, pendingBinary);
-                                });
+                                    await SendWsTextAsync(client.Stream, response);
+                                    if (pendingBinaries != null && client.IsConnected)
+                                        await SendWsBinaryAsync(client.Stream, BuildBatch(pendingBinaries));
+                                }
+                                catch { }
                             }
                         });
                     }
@@ -604,8 +588,8 @@ namespace Poly_Ling.Remote
                 if (!await ReadExactAsync(stream, maskKey, 0, 4, ct)) return null;
             }
 
-            // ペイロード（バイナリメッシュ用に上限を拡大: 512MB）
-            if (payloadLen > 512_000_000) return null;
+            // ペイロード（バイナリメッシュ用に上限を拡大: 50MB）
+            if (payloadLen > 50_000_000) return null;
             byte[] payload = new byte[payloadLen];
             if (payloadLen > 0)
             {
@@ -792,93 +776,152 @@ namespace Poly_Ling.Remote
 
         private string ProcessQuery(RemoteMessage msg)
         {
-            string data;
-
             switch (msg.Target)
             {
                 case "meshList":
-                    data = RemoteDataProvider.QueryMeshList(Context, msg.Fields);
-                    break;
+                {
+                    string data = RemoteDataProvider.QueryMeshList(Context, msg.Fields);
+                    return BuildSuccessResponse(msg.Id, data);
+                }
 
                 case "meshData":
+                {
                     int index = GetParamInt(msg, "index", 0);
-                    data = RemoteDataProvider.QueryMeshData(Context, index, msg.Fields);
-                    break;
+                    string data = RemoteDataProvider.QueryMeshData(Context, index, msg.Fields);
+                    return BuildSuccessResponse(msg.Id, data);
+                }
 
                 case "modelInfo":
-                    data = RemoteDataProvider.QueryModelInfo(Context);
-                    break;
+                {
+                    string data = RemoteDataProvider.QueryModelInfo(Context);
+                    return BuildSuccessResponse(msg.Id, data);
+                }
 
                 case "availableFields":
-                    data = RemoteDataProvider.QueryAvailableFields();
-                    break;
+                {
+                    string data = RemoteDataProvider.QueryAvailableFields();
+                    return BuildSuccessResponse(msg.Id, data);
+                }
 
-                case "meshBinary":
-                    // バイナリ形式でメッシュデータを返す（応答はJSON+後続バイナリフレーム）
-                    return ProcessMeshBinaryQuery(msg);
+                // ---- プログレッシブプロトコル ----
 
-                case "project":
-                    // プロジェクト全体をバイナリで返す
-                    return ProcessProjectQuery(msg);
+                case "project_header":
+                    return ProcessProjectHeaderQuery(msg);
 
-                case "model":
-                    return ProcessModelSlotQuery(msg);
+                case "model_meta":
+                    return ProcessModelMetaQuery(msg);
 
-                case "mesh":
-                    return ProcessMeshSlotQuery(msg);
+                case "mesh_data":
+                    return ProcessMeshDataQuery(msg);
+
+                case "mesh_data_batch":
+                    return ProcessMeshDataBatchQuery(msg);
 
                 default:
                     return BuildErrorResponse(msg.Id, $"Unknown target: {msg.Target}");
             }
-
-            return BuildSuccessResponse(msg.Id, data);
         }
 
         /// <summary>
-        /// meshBinaryクエリ: 指定メッシュのバイナリデータをバイナリフレームで送信
-        /// params: index=メッシュインデックス, flags=MeshFieldFlagsの数値
+        /// 複数バイナリフレームを PLRB バッチに結合
+        /// [4B Magic] [1B Version] [3B padding] [4B FrameCount] { [4B FrameLen][FrameData] } × N
         /// </summary>
-        private string ProcessMeshBinaryQuery(RemoteMessage msg)
+        private static byte[] BuildBatch(List<byte[]> frames)
         {
-            if (Context?.Model == null)
-                return BuildErrorResponse(msg.Id, "No model");
+            if (frames == null || frames.Count == 0)
+            {
+                // 空PLRBヘッダのみ（frameCount=0）：クライアントコールバック発火用
+                using (var ms = new System.IO.MemoryStream(12))
+                using (var w = new System.IO.BinaryWriter(ms))
+                {
+                    w.Write(RemoteMagic.Batch);
+                    w.Write((byte)1);
+                    w.Write((byte)0); w.Write((byte)0); w.Write((byte)0);
+                    w.Write((uint)0); // frameCount = 0
+                    return ms.ToArray();
+                }
+            }
+            if (frames.Count == 1) return frames[0]; // 1件はそのまま
 
-            int index = GetParamInt(msg, "index", -1);
-            if (index < 0 || index >= Context.Model.Count)
-                return BuildErrorResponse(msg.Id, "Invalid index");
+            int totalBody = 0;
+            foreach (var f in frames) totalBody += 4 + f.Length;
 
-            uint flagsValue = (uint)GetParamInt(msg, "flags", (int)MeshFieldFlags.VertexBasic);
-            var flags = (MeshFieldFlags)flagsValue;
+            using (var ms = new System.IO.MemoryStream(12 + totalBody))
+            using (var w = new System.IO.BinaryWriter(ms))
+            {
+                w.Write(RemoteMagic.Batch);        // 4B
+                w.Write((byte)1);                   // 1B version
+                w.Write((byte)0); w.Write((byte)0); w.Write((byte)0); // 3B padding
+                w.Write((uint)frames.Count);        // 4B frame count
+                foreach (var f in frames)
+                {
+                    w.Write((uint)f.Length);        // 4B frame length
+                    w.Write(f);                     // frame data
+                }
+                return ms.ToArray();
+            }
+        }
 
-            var mc = Context.Model.MeshContextList[index];
-            byte[] binaryData = RemoteBinarySerializer.Serialize(mc, flags);
-            if (binaryData == null)
+        /// <summary>テキスト応答の直後に順番に送るバイナリデータリスト（1回使い切り）</summary>
+        private List<byte[]> _pendingBinaryResponses;
+
+        /// <summary>
+        /// project_header クエリ:
+        /// PLRH を返し、全モデルの PLRM + 各メッシュの PLRS を連続プッシュ
+        /// </summary>
+        private string ProcessProjectHeaderQuery(RemoteMessage msg)
+        {
+            var project = GetProjectContext();
+            if (project == null)
+                return BuildErrorResponse(msg.Id, "No project");
+
+            var binaries = new List<byte[]>();
+
+            // PLRH
+            byte[] header = RemoteProgressiveSerializer.SerializeProjectHeader(project);
+            if (header == null)
                 return BuildErrorResponse(msg.Id, "Serialize failed");
+            binaries.Add(header);
 
-            // 送信元クライアントにバイナリフレームで送信
-            // Broadcastではなくリクエスト元に返すため、ここではキューに入れる
-            // （ProcessMessageの呼び出し元がメインスレッドなので直接送信は不可）
-            // 代わりにJSON応答でサイズを返し、直後にバイナリフレームを送る
-            _pendingBinaryResponse = binaryData;
+            // 全モデル: PLRM + 各メッシュ PLRS
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.Models[mi];
+                byte[] modelMeta = RemoteProgressiveSerializer.SerializeModelMeta(model, mi);
+                if (modelMeta != null) binaries.Add(modelMeta);
 
-            Log($"meshBinary: [{index}] flags={flags} size={binaryData.Length}B");
+                for (int si = 0; si < model.Count; si++)
+                {
+                    byte[] meshSummary = RemoteProgressiveSerializer.SerializeMeshSummary(
+                        model.MeshContextList[si], mi, si);
+                    if (meshSummary != null) binaries.Add(meshSummary);
+                }
+            }
+
+            _pendingBinaryResponses = binaries;
+
+            int totalMeshes = 0;
+            for (int mi = 0; mi < project.ModelCount; mi++)
+                totalMeshes += project.Models[mi].Count;
+
+            Log($"project_header: {project.ModelCount}モデル {totalMeshes}メッシュ ({binaries.Count}フレーム)");
 
             var jb = new JsonBuilder();
             jb.BeginObject();
-            jb.KeyValue("binarySize", binaryData.Length);
-            jb.KeyValue("vertexCount", (int)mc.VertexCount);
-            jb.KeyValue("faceCount", (int)mc.FaceCount);
-            jb.KeyValue("flags", (int)flagsValue);
+            jb.KeyValue("projectName", project.Name);
+            jb.KeyValue("modelCount", project.ModelCount);
+            jb.KeyValue("meshCount", totalMeshes);
+            jb.KeyValue("frameCount", binaries.Count);
             jb.EndObject();
-
             return BuildSuccessResponse(msg.Id, jb.ToString());
         }
 
         /// <summary>
-        /// modelクエリ: 指定モデル1つをPLRDバイナリフレームで送信
-        /// params: modelIndex (省略時はCurrentModelIndex)
+        /// model_meta クエリ:
+        /// 指定モデルの PLRM + 全メッシュ PLRS を返す
+        /// params: modelIndex
         /// </summary>
-        private string ProcessModelSlotQuery(RemoteMessage msg)
+        private string ProcessModelMetaQuery(RemoteMessage msg)
         {
             var project = GetProjectContext();
             if (project == null)
@@ -889,16 +932,26 @@ namespace Poly_Ling.Remote
                 return BuildErrorResponse(msg.Id, $"Invalid modelIndex: {modelIndex}");
 
             var model = project.Models[modelIndex];
-            byte[] binaryData = RemoteProjectSerializer.SerializeModelSlot(model, modelIndex);
-            if (binaryData == null)
-                return BuildErrorResponse(msg.Id, "Serialize failed");
+            var binaries = new List<byte[]>();
 
-            _pendingBinaryResponse = binaryData;
-            Log($"model: [{modelIndex}] {model.Name} ({binaryData.Length}B)");
+            byte[] modelMeta = RemoteProgressiveSerializer.SerializeModelMeta(model, modelIndex);
+            if (modelMeta == null)
+                return BuildErrorResponse(msg.Id, "Serialize failed");
+            binaries.Add(modelMeta);
+
+            for (int si = 0; si < model.Count; si++)
+            {
+                byte[] meshSummary = RemoteProgressiveSerializer.SerializeMeshSummary(
+                    model.MeshContextList[si], modelIndex, si);
+                if (meshSummary != null) binaries.Add(meshSummary);
+            }
+
+            _pendingBinaryResponses = binaries;
+
+            Log($"model_meta: [{modelIndex}] {model.Name} meshes={model.Count}");
 
             var jb = new JsonBuilder();
             jb.BeginObject();
-            jb.KeyValue("binarySize", binaryData.Length);
             jb.KeyValue("modelIndex", modelIndex);
             jb.KeyValue("modelName", model.Name);
             jb.KeyValue("meshCount", model.Count);
@@ -907,10 +960,11 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
-        /// meshクエリ: 指定メッシュ1つをPLRSバイナリフレームで送信
-        /// params: modelIndex, meshIndex
+        /// mesh_data クエリ:
+        /// 指定メッシュのジオメトリ本体を PLRD で返す
+        /// params: modelIndex, meshIndex, flags (MeshFieldFlags、省略時 All)
         /// </summary>
-        private string ProcessMeshSlotQuery(RemoteMessage msg)
+        private string ProcessMeshDataQuery(RemoteMessage msg)
         {
             var project = GetProjectContext();
             if (project == null)
@@ -927,86 +981,97 @@ namespace Poly_Ling.Remote
                 return BuildErrorResponse(msg.Id, $"Invalid meshIndex: {meshIndex}");
 
             var mc = model.MeshContextList[meshIndex];
-            byte[] binaryData = RemoteProjectSerializer.SerializeMeshSlot(mc, modelIndex, meshIndex);
+            uint flagsValue = (uint)GetParamInt(msg, "flags", (int)MeshFieldFlags.All);
+            var flags = (MeshFieldFlags)flagsValue;
+
+            byte[] binaryData = RemoteProgressiveSerializer.SerializeMeshData(mc, modelIndex, meshIndex, flags);
             if (binaryData == null)
                 return BuildErrorResponse(msg.Id, "Serialize failed");
 
-            _pendingBinaryResponse = binaryData;
-            Log($"mesh: [{modelIndex}][{meshIndex}] {mc.Name} V={mc.VertexCount} ({binaryData.Length}B)");
+            _pendingBinaryResponses = new List<byte[]> { binaryData };
+
+            Log($"mesh_data: [{modelIndex}][{meshIndex}] {mc.Name} V={mc.VertexCount} ({binaryData.Length}B)");
 
             var jb = new JsonBuilder();
             jb.BeginObject();
-            jb.KeyValue("binarySize", binaryData.Length);
             jb.KeyValue("modelIndex", modelIndex);
             jb.KeyValue("meshIndex", meshIndex);
             jb.KeyValue("meshName", mc.Name);
+            jb.KeyValue("vertexCount", mc.VertexCount);
+            jb.KeyValue("faceCount", mc.FaceCount);
+            jb.KeyValue("binarySize", binaryData.Length);
             jb.EndObject();
             return BuildSuccessResponse(msg.Id, jb.ToString());
         }
 
-        /// <summary>指定モデルをPLRDバイナリで全クライアントにプッシュ</summary>
-        private void SendModel(int modelIndex)
-        {
-            var project = GetProjectContext();
-            if (project == null || modelIndex < 0 || modelIndex >= project.ModelCount)
-            { Log($"SendModel: 無効 modelIndex={modelIndex}"); return; }
-            var model = project.Models[modelIndex];
-            byte[] data = RemoteProjectSerializer.SerializeModelSlot(model, modelIndex);
-            if (data != null)
-            {
-                BroadcastBinaryAsync(data);
-                Log($"モデル送信: [{modelIndex}] {model.Name} ({data.Length}B)");
-            }
-        }
-
-        /// <summary>指定メッシュをPLRSバイナリで全クライアントにプッシュ</summary>
-        private void SendMesh(int modelIndex, int meshIndex)
-        {
-            var project = GetProjectContext();
-            if (project == null) { Log("SendMesh: プロジェクトなし"); return; }
-            if (modelIndex < 0 || modelIndex >= project.ModelCount)
-            { Log($"SendMesh: 無効 modelIndex={modelIndex}"); return; }
-            var model = project.Models[modelIndex];
-            if (meshIndex < 0 || meshIndex >= model.Count)
-            { Log($"SendMesh: 無効 meshIndex={meshIndex}"); return; }
-            var mc = model.MeshContextList[meshIndex];
-            byte[] data = RemoteProjectSerializer.SerializeMeshSlot(mc, modelIndex, meshIndex);
-            if (data != null)
-            {
-                BroadcastBinaryAsync(data);
-                Log($"メッシュ送信: [{modelIndex}][{meshIndex}] {mc.Name} ({data.Length}B)");
-            }
-        }
-
-        /// <summary>テキスト応答の直後に送るバイナリデータ（1回使い切り）</summary>
-        private byte[] _pendingBinaryResponse;
-
         /// <summary>
-        /// projectクエリ: プロジェクト全体をPLRPバイナリフレームで送信
+        /// mesh_data_batch クエリ:
+        /// カテゴリ内の全メッシュ PLRD を BuildBatch で1フレームにまとめて返す
+        /// params: modelIndex, category ("bone"|"drawable"|"morph"|"all")
         /// </summary>
-        private string ProcessProjectQuery(RemoteMessage msg)
+        private string ProcessMeshDataBatchQuery(RemoteMessage msg)
         {
             var project = GetProjectContext();
             if (project == null)
-                return BuildErrorResponse(msg.Id, "No project and no model");
+                return BuildErrorResponse(msg.Id, "No project");
 
-            byte[] binaryData = RemoteProjectSerializer.Serialize(project);
-            if (binaryData == null)
-                return BuildErrorResponse(msg.Id, "Serialize failed");
+            int modelIndex = GetParamInt(msg, "modelIndex", project.CurrentModelIndex);
+            if (modelIndex < 0 || modelIndex >= project.ModelCount)
+                return BuildErrorResponse(msg.Id, $"Invalid modelIndex: {modelIndex}");
 
-            _pendingBinaryResponse = binaryData;
+            var model = project.Models[modelIndex];
+            string category = GetParamString(msg, "category", "drawable");
 
-            Log($"project: {project.ModelCount} models, {binaryData.Length}B");
+            // カテゴリに対応する MeshContextList インデックスを収集
+            System.Collections.Generic.IReadOnlyList<TypedMeshEntry> entries;
+            switch (category)
+            {
+                case "bone":     entries = model.Bones;          break;
+                case "morph":    entries = model.Morphs;         break;
+                case "all":      entries = model.TypedIndices.GetEntries(MeshCategory.All); break;
+                default:         entries = model.DrawableMeshes; break; // "drawable"
+            }
+
+            var frames = new List<byte[]>();
+            foreach (var entry in entries)
+            {
+                var mc = entry.Context;
+                if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0) continue;
+                var data = RemoteProgressiveSerializer.SerializeMeshData(
+                    mc, modelIndex, entry.MasterIndex, MeshFieldFlags.All);
+                if (data != null) frames.Add(data);
+            }
+
+            if (frames.Count == 0)
+            {
+                // 0件でも空PLRBを送ってコールバックを確実に発火させる
+                _pendingBinaryResponses = new List<byte[]> { BuildBatch(new List<byte[]>()) };
+                Log($"mesh_data_batch: [{modelIndex}] {category} → 0件");
+                var jbEmpty = new JsonBuilder();
+                jbEmpty.BeginObject();
+                jbEmpty.KeyValue("modelIndex", modelIndex);
+                jbEmpty.KeyValue("category", category);
+                jbEmpty.KeyValue("meshCount", 0);
+                jbEmpty.KeyValue("binarySize", 0);
+                jbEmpty.EndObject();
+                return BuildSuccessResponse(msg.Id, jbEmpty.ToString());
+            }
+
+            _pendingBinaryResponses = new List<byte[]> { BuildBatch(frames) };
+
+            int totalBytes = frames.Sum(f => f.Length);
+            Log($"mesh_data_batch: [{modelIndex}] {category} {frames.Count}件 ({totalBytes}B)");
 
             var jb = new JsonBuilder();
             jb.BeginObject();
-            jb.KeyValue("binarySize", binaryData.Length);
-            jb.KeyValue("projectName", project.Name);
-            jb.KeyValue("modelCount", project.ModelCount);
+            jb.KeyValue("modelIndex", modelIndex);
+            jb.KeyValue("category", category);
+            jb.KeyValue("meshCount", frames.Count);
+            jb.KeyValue("binarySize", totalBytes);
             jb.EndObject();
-
             return BuildSuccessResponse(msg.Id, jb.ToString());
         }
+
 
         private string ProcessCommand(RemoteMessage msg)
         {
@@ -1066,23 +1131,31 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
-        /// プロジェクト全体をPLRPバイナリで全クライアントに送信
+        /// プロジェクトヘッダ＋全モデルメタ＋全メッシュサマリを全クライアントにプッシュ
         /// </summary>
-        private void SendProject()
+        private void SendProjectHeader()
         {
             var project = GetProjectContext();
-            if (project == null)
+            if (project == null) { Log("プロジェクトなし"); return; }
+
+            var frames = new List<byte[]>();
+            var header = RemoteProgressiveSerializer.SerializeProjectHeader(project);
+            if (header != null) frames.Add(header);
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
             {
-                Log("プロジェクト/モデルなし");
-                return;
+                var model = project.Models[mi];
+                var mm = RemoteProgressiveSerializer.SerializeModelMeta(model, mi);
+                if (mm != null) frames.Add(mm);
+                for (int si = 0; si < model.Count; si++)
+                {
+                    var ms2 = RemoteProgressiveSerializer.SerializeMeshSummary(model.MeshContextList[si], mi, si);
+                    if (ms2 != null) frames.Add(ms2);
+                }
             }
 
-            byte[] data = RemoteProjectSerializer.Serialize(project);
-            if (data != null)
-            {
-                BroadcastBinaryAsync(data);
-                Log($"プロジェクト送信: {project.ModelCount}モデル ({data.Length}B)");
-            }
+            foreach (var f in frames) BroadcastBinaryAsync(f);
+            Log($"プロジェクトヘッダ送信: {frames.Count}フレーム");
         }
 
         /// <summary>
@@ -1208,6 +1281,37 @@ namespace Poly_Ling.Remote
             }
         }
 
+        /// <summary>
+        /// 複数バイナリフレームを PLRB 形式に結合して1つの byte[] にする
+        /// [4B Magic=PLRB] [1B Version] [3B padding] [4B FrameCount]
+        /// { [4B FrameLen] [FrameData] } × N
+        /// </summary>
+        private static byte[] BuildBatchFrame(List<byte[]> frames)
+        {
+            if (frames == null || frames.Count == 0) return null;
+            if (frames.Count == 1) return frames[0];
+
+            int totalBody = 0;
+            foreach (var f in frames) totalBody += 4 + f.Length;
+
+            using (var ms = new System.IO.MemoryStream(12 + totalBody))
+            using (var w = new System.IO.BinaryWriter(ms))
+            {
+                w.Write(RemoteMagic.Batch);      // 4B
+                w.Write((byte)1);                // 1B version
+                w.Write((byte)0);                // 3B padding
+                w.Write((byte)0);
+                w.Write((byte)0);
+                w.Write((uint)frames.Count);     // 4B frame count
+                foreach (var f in frames)
+                {
+                    w.Write((uint)f.Length);
+                    w.Write(f);
+                }
+                return ms.ToArray();
+            }
+        }
+
         // ================================================================
         // レスポンスビルダー
         // ================================================================
@@ -1259,6 +1363,13 @@ namespace Poly_Ling.Remote
                 if (int.TryParse(val, out int result))
                     return result;
             }
+            return defaultValue;
+        }
+
+        private static string GetParamString(RemoteMessage msg, string key, string defaultValue)
+        {
+            if (msg.Params != null && msg.Params.TryGetValue(key, out var val) && val != null)
+                return val;
             return defaultValue;
         }
 

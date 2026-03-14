@@ -941,4 +941,58 @@ namespace Poly_Ling.Serialization
         /// <summary>ミラー軸（0=X, 1=Y, 2=Z）</summary>
         public int axis = 0;
     }
+
+    // ================================================================
+    // MeshMetaDTO（Phase 1: メタデータのみ、ジオメトリなし）
+    // Remote分割送信のヘッダフェーズで使用。
+    // MeshDTOからvertices/facesを除いた全フィールドを保持する。
+    // ================================================================
+
+    /// <summary>
+    /// メッシュメタデータのみのDTO（ジオメトリを含まない）
+    /// Remote通信のヘッダフェーズで使用
+    /// </summary>
+    [Serializable]
+    public class MeshMetaDTO
+    {
+        public string name;
+        public string type = "Mesh";
+        public bool   isVisible  = true;
+        public bool   isLocked   = false;
+        public bool   isFolding  = false;
+        public int    depth      = 0;
+        public int    parentIndex = -1;
+        public int    hierarchyParentIndex = -1;
+        public int    mirrorType = 0;
+        public int    mirrorAxis = 1;
+        public float  mirrorDistance = 0f;
+        public int    mirrorMaterialOffset = 0;
+        public int    bakedMirrorSourceIndex = -1;
+        public bool   hasBakedMirrorChild = false;
+        public int    morphParentIndex = -1;
+        public bool   excludeFromExport = false;
+        public MorphBaseDataDTO  morphBaseData;
+        public BoneTransformDTO  exportSettingsDTO;
+        public BonePoseDataDTO   bonePoseData;
+        public List<SelectionSetDTO> selectionSets = new List<SelectionSetDTO>();
+    }
+
+    // ================================================================
+    // MeshGeoDTO（Phase 1: ジオメトリのみ）
+    // Remote分割送信のメッシュフェーズで使用。
+    // ================================================================
+
+    /// <summary>
+    /// メッシュジオメトリのみのDTO（メタデータを含まない）
+    /// Remote通信のメッシュフェーズで使用
+    /// </summary>
+    [Serializable]
+    public class MeshGeoDTO
+    {
+        /// <summary>対応するメッシュのインデックス（ModelContext.MeshContextList内）</summary>
+        public int meshIndex;
+        public bool isExpanded = false;
+        public List<VertexDTO> vertices = new List<VertexDTO>();
+        public List<FaceDTO>   faces    = new List<FaceDTO>();
+    }
 }

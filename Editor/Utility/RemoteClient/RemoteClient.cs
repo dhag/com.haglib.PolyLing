@@ -107,6 +107,7 @@ namespace Poly_Ling.Remote
                 catch (Exception ex) { Log($"エラー: {ex.Message}"); }
                 processed++;
             }
+            if (processed > 0) Repaint();
         }
 
         // ================================================================
@@ -255,22 +256,22 @@ namespace Poly_Ling.Remote
             using (new EditorGUI.DisabledScope(!_isConnected))
             {
                 if (GUILayout.Button("Fetch Project"))
-                    FetchProject();
+                    FetchProjectHeader();
             }
             EditorGUILayout.EndHorizontal();
 
-            // モデル/メッシュ単体取得ボタン
+            // メッシュ単体取得ボタン
             EditorGUILayout.BeginHorizontal();
             using (new EditorGUI.DisabledScope(!_isConnected || _project == null))
             {
-                if (GUILayout.Button("Fetch Model", GUILayout.Width(90)))
-                    FetchModel(_selectedModelIndex >= 0 ? _selectedModelIndex : 0);
-                if (GUILayout.Button("Fetch Mesh", GUILayout.Width(90)))
+                if (GUILayout.Button("Fetch Model Meta", GUILayout.Width(120)))
+                    FetchModelMeta(_selectedModelIndex >= 0 ? _selectedModelIndex : 0);
+                if (GUILayout.Button("Fetch Mesh Data", GUILayout.Width(120)))
                 {
                     if (_selectedModelIndex >= 0 && _selectedMeshIndex >= 0)
-                        FetchMesh(_selectedModelIndex, _selectedMeshIndex);
+                        FetchMeshData(_selectedModelIndex, _selectedMeshIndex);
                     else
-                        Log("Fetch Mesh: モデルとメッシュを選択してください");
+                        Log("Fetch Mesh Data: モデルとメッシュを選択してください");
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -340,8 +341,8 @@ namespace Poly_Ling.Remote
                 if (isExpanded)
                 {
                     EditorGUI.indentLevel++;
-                    for (int si = 0; si < model.Count; si++)
-                        DrawMeshRow(mi, si, model.MeshContextList[si]);
+                    foreach (var entry in model.DrawableMeshes)
+                        DrawMeshRow(mi, entry.MasterIndex, entry.Context);
                     EditorGUI.indentLevel--;
                 }
             }
@@ -497,181 +498,226 @@ namespace Poly_Ling.Remote
                 return;
             }
 
-            uint magic = RemoteMagic.Read(data);
-            if (magic == RemoteMagic.Project)
-                ProcessProjectBinary(data);
-            else if (magic == RemoteMagic.Model)
-                ProcessModelSlotBinary(data);
-            else if (magic == RemoteMagic.MeshSlot)
-                ProcessMeshSlotBinary(data);
-            else
-                Log($"バイナリ受信: {data.Length}B magic=0x{magic:X8}");
+            uint magic = Poly_Ling.Remote.RemoteMagic.Read(data);
+            if (magic == Poly_Ling.Remote.RemoteMagic.Batch)
+            {
+                DispatchBatch(data);
+                return;
+            }
+            DispatchFrame(magic, data);
+        }
+
+        private void DispatchBatch(byte[] data)
+        {
+            // [4B Magic][1B Version][3B padding][4B FrameCount]{ [4B FrameLen][FrameData] }×N
+            if (data.Length < 12) { Log($"PLRB: データ短すぎ {data.Length}B"); return; }
+            int frameCount = (int)System.BitConverter.ToUInt32(data, 8);
+            Log($"PLRB: 展開開始 frameCount={frameCount} totalSize={data.Length}B");
+            int offset = 12;
+            int dispatched = 0;
+            for (int i = 0; i < frameCount; i++)
+            {
+                if (offset + 4 > data.Length) { Log($"PLRB: フレーム長読み取り失敗 i={i} offset={offset}"); break; }
+                int frameLen = (int)System.BitConverter.ToUInt32(data, offset);
+                offset += 4;
+                if (offset + frameLen > data.Length) { Log($"PLRB: フレームデータ不足 i={i} frameLen={frameLen} remain={data.Length - offset}"); break; }
+                byte[] frame = new byte[frameLen];
+                System.Array.Copy(data, offset, frame, 0, frameLen);
+                offset += frameLen;
+                DispatchFrame(Poly_Ling.Remote.RemoteMagic.Read(frame), frame);
+                dispatched++;
+            }
+            Log($"PLRB: 展開完了 dispatched={dispatched}/{frameCount}");
+        }
+
+        private void DispatchFrame(uint magic, byte[] data)
+        {
+            if      (magic == Poly_Ling.Remote.RemoteMagic.ProjectHeader) ReceiveProjectHeader(data);
+            else if (magic == Poly_Ling.Remote.RemoteMagic.ModelMeta)     ReceiveModelMeta(data);
+            else if (magic == Poly_Ling.Remote.RemoteMagic.MeshSummary)   ReceiveMeshSummary(data);
+            else if (magic == Poly_Ling.Remote.RemoteMagic.MeshData)      ReceiveMeshData(data);
+            else if (magic == Poly_Ling.Remote.RemoteMagic.Image)         Log($"画像受信: {data.Length}B");
+            else Log($"未知バイナリ: magic=0x{magic:X8} {data.Length}B");
         }
 
         // ================================================================
-        // プロジェクト受信
+        // プログレッシブプロトコル 受信ハンドラ
         // ================================================================
 
-        private void FetchModel(int modelIndex)
+        private void ReceiveProjectHeader(byte[] data)
         {
-            if (_project == null) { Log("FetchModel: プロジェクト未受信"); return; }
-            string id = NextId();
-            string json = "{" +
-                $"\"id\":\"{id}\"," +
-                "\"type\":\"query\"," +
-                "\"target\":\"model\"," +
-                $"\"params\":{{\"modelIndex\":\"{modelIndex}\"}}" +
-            "}";
-            SendBinaryQuery(json, (_, binaryData) => ProcessModelSlotBinary(binaryData));
-            Log($"model クエリ送信 [{modelIndex}]");
+            var result = RemoteProgressiveSerializer.DeserializeProjectHeader(data);
+            if (result == null) { Log("PLRH: デシリアライズ失敗"); return; }
+            var (name, modelCount, currentModelIndex) = result.Value;
+
+            // ProjectContext を初期化（モデルスロットを空で確保）
+            _project = new ProjectContext { Name = name };
+            for (int i = 0; i < modelCount; i++)
+                _project.Models.Add(new ModelContext($"Model{i}"));
+            _project.CurrentModelIndex = currentModelIndex;
+
+            _selectedModelIndex = currentModelIndex;
+            _selectedMeshIndex = -1;
+            _expandedModels.Clear();
+            for (int i = 0; i < modelCount; i++) _expandedModels.Add(i);
+
+            _projectStatus = $"受信中... ({name} {modelCount}モデル)";
+            Log($"PLRH受信: \"{name}\" {modelCount}モデル");
         }
 
-        private void FetchMesh(int modelIndex, int meshIndex)
+        private void ReceiveModelMeta(byte[] data)
         {
-            if (_project == null) { Log("FetchMesh: プロジェクト未受信"); return; }
-            string id = NextId();
-            string json = "{" +
-                $"\"id\":\"{id}\"," +
-                "\"type\":\"query\"," +
-                "\"target\":\"mesh\"," +
-                $"\"params\":{{\"modelIndex\":\"{modelIndex}\",\"meshIndex\":\"{meshIndex}\"}}" +
-            "}";
-            SendBinaryQuery(json, (_, binaryData) => ProcessMeshSlotBinary(binaryData));
-            Log($"mesh クエリ送信 [{modelIndex}][{meshIndex}]");
-        }
+            var result = RemoteProgressiveSerializer.DeserializeModelMeta(data);
+            if (result == null) { Log("PLRM: デシリアライズ失敗"); return; }
+            var (modelIndex, model) = result.Value;
 
-        private void ProcessModelSlotBinary(byte[] data)
-        {
-            if (data == null || data.Length < 8) { Log("model slot: データなし"); return; }
-            var (modelIndex, model) = RemoteProjectSerializer.DeserializeModelSlot(data);
-            if (model == null || modelIndex < 0) { Log("model slot: デシリアライズ失敗"); return; }
-            if (_project == null) { Log("model slot: プロジェクト未受信"); return; }
+            if (_project == null) { Log($"PLRM: プロジェクト未受信 [{modelIndex}]"); return; }
             while (_project.Models.Count <= modelIndex)
                 _project.Models.Add(new ModelContext($"Model{_project.Models.Count}"));
+
             _project.Models[modelIndex] = model;
-            BuildUnityMeshes(model);
-            Log($"model受信: [{modelIndex}] {model.Name} meshes={model.Count}");
-            Repaint();
+            Log($"PLRM受信: [{modelIndex}] \"{model.Name}\" meshes={model.Count}");
         }
 
-        private void ProcessMeshSlotBinary(byte[] data)
+        private void ReceiveMeshSummary(byte[] data)
         {
-            if (data == null || data.Length < 10) { Log("mesh slot: データなし"); return; }
-            var (modelIndex, meshIndex, mc) = RemoteProjectSerializer.DeserializeMeshSlot(data);
-            if (mc == null || modelIndex < 0 || meshIndex < 0) { Log("mesh slot: デシリアライズ失敗"); return; }
-            if (_project == null) { Log("mesh slot: プロジェクト未受信"); return; }
-            if (modelIndex >= _project.ModelCount) { Log($"mesh slot: modelIndex={modelIndex} out of range"); return; }
+            var result = RemoteProgressiveSerializer.DeserializeMeshSummary(data);
+            if (result == null) { Log("PLRS: デシリアライズ失敗"); return; }
+            var (modelIndex, meshIndex, mc, vertexCount, faceCount) = result.Value;
+
+            if (_project == null) { Log($"PLRS: プロジェクト未受信 [{modelIndex}][{meshIndex}]"); return; }
+            if (modelIndex >= _project.ModelCount) { Log($"PLRS: modelIndex={modelIndex} out of range"); return; }
+
             var model = _project.Models[modelIndex];
-            if (meshIndex >= model.Count) { Log($"mesh slot: meshIndex={meshIndex} out of range"); return; }
-            var old = model.MeshContextList[meshIndex];
-            if (old.UnityMesh != null) UnityEngine.Object.DestroyImmediate(old.UnityMesh);
+            while (model.MeshContextList.Count <= meshIndex)
+                model.MeshContextList.Add(new MeshContext { Name = $"Mesh{model.MeshContextList.Count}" });
+
             model.MeshContextList[meshIndex] = mc;
-            if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
-                mc.UnityMesh = mc.MeshObject.ToUnityMesh();
-            Log($"mesh受信: [{modelIndex}][{meshIndex}] {mc.Name} V={mc.VertexCount}");
+            model.InvalidateTypedIndices();
+
+            // 最初の3件と最後の1件だけログ
+            if (meshIndex < 3 || meshIndex == model.Count - 1)
+                Log($"PLRS[{modelIndex}][{meshIndex}] name={mc.Name} type={mc.Type}");
+
+            // 全メッシュサマリ受信完了（最後のスロットで1回だけ判定）
+            if (meshIndex == model.Count - 1)
+            {
+                int drawCount = model.DrawableMeshes.Count;
+                Log($"PLRS完了: total={model.Count} drawable={drawCount} サンプル名=[0]{model.MeshContextList[0].Name} [1]{(model.Count>1?model.MeshContextList[1].Name:"-")}");
+                _projectStatus = $"OK ({_project.Name})";
+            }
+
             Repaint();
         }
 
-        private void FetchProject()
+        private void ReceiveMeshData(byte[] data)
+        {
+            var result = RemoteProgressiveSerializer.DeserializeMeshData(data);
+            if (result == null) { Log("PLRD: デシリアライズ失敗"); return; }
+            var (modelIndex, meshIndex, mesh) = result.Value;
+
+            if (_project == null) { Log($"PLRD: プロジェクト未受信"); return; }
+            if (modelIndex >= _project.ModelCount) { Log($"PLRD: modelIndex={modelIndex} out of range"); return; }
+
+            var model = _project.Models[modelIndex];
+            if (meshIndex >= model.Count) { Log($"PLRD: meshIndex={meshIndex} out of range"); return; }
+
+            var mc = model.MeshContextList[meshIndex];
+            if (mc.UnityMesh != null) UnityEngine.Object.DestroyImmediate(mc.UnityMesh);
+
+            // PLRSで設定したName/Typeを退避し、PLRDのMeshObjectで上書き後に復元
+            string savedName = mc.Name;
+            MeshType savedType = mc.Type;
+            mc.MeshObject = mesh;
+            if (mesh != null)
+            {
+                mesh.Name = savedName;
+                mesh.Type = savedType;
+            }
+            if (mesh != null && mesh.VertexCount > 0)
+                mc.UnityMesh = mesh.ToUnityMesh();
+
+            Log($"PLRD受信: [{modelIndex}][{meshIndex}] \"{mc.Name}\" V={mesh?.VertexCount ?? 0}");
+            Repaint();
+        }
+
+        // ================================================================
+        // クエリ送信
+        // ================================================================
+
+        private void FetchProjectHeader()
         {
             string id = NextId();
-            string json = "{" +
-                $"\"id\":\"{id}\"," +
-                "\"type\":\"query\"," +
-                "\"target\":\"project\"" +
-            "}";
-
+            string json = $"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"project_header\"}}";
             _projectStatus = "受信中...";
             Repaint();
-
-            SendBinaryQuery(json, (textResp, binaryData) => ProcessProjectBinary(binaryData));
-            Log("project クエリ送信");
-        }
-
-        private void ProcessProjectBinary(byte[] data)
-        {
-            UnityEngine.Debug.Log($"[RemoteClient] ProcessProjectBinary called: {data?.Length ?? 0}B");
-            if (data == null || data.Length < 8)
+            SendBinaryQuery(json, (_, binaryData) =>
             {
-                _projectStatus = "受信エラー: データなし";
-                Repaint();
-                return;
-            }
-
-            UnityEngine.Debug.Log($"[RemoteClient] Deserialize start: {data.Length}B");
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            try
-            {
-                _project = RemoteProjectSerializer.Deserialize(data);
-            }
-            catch (Exception ex)
-            {
-                sw.Stop();
-                UnityEngine.Debug.LogError($"[RemoteClient] Deserialize EXCEPTION ({data.Length}B, {sw.ElapsedMilliseconds}ms): {ex}");
-                _projectStatus = "デシリアライズ例外";
-                Repaint();
-                return;
-            }
-            sw.Stop();
-            UnityEngine.Debug.Log($"[RemoteClient] Deserialize: {(_project != null ? "OK models=" + _project.ModelCount : "FAILED")} ({sw.ElapsedMilliseconds}ms)");
-
-            if (_project != null)
-            {
-                // UnityMesh を構築（描画に必要）
-                BuildUnityMeshes(_project);
-
-                _projectStatus = $"OK ({FormatBytes(data.Length)}, {sw.ElapsedMilliseconds}ms)";
-
-                _expandedModels.Clear();
-                for (int i = 0; i < _project.ModelCount; i++)
-                    _expandedModels.Add(i);
-
-                _selectedModelIndex = _project.CurrentModelIndex;
-                _selectedMeshIndex = -1;
-
-                int totalV = 0, totalF = 0;
-                foreach (var m in _project.Models)
-                    foreach (var mc in m.MeshContextList) { totalV += mc.VertexCount; totalF += mc.FaceCount; }
-
-                Log($"受信: \"{_project.Name}\" {_project.ModelCount}モデル " +
-                    $"V={totalV:N0} F={totalF:N0} ({FormatBytes(data.Length)}, {sw.ElapsedMilliseconds}ms)");
-            }
-            else
-            {
-                _projectStatus = "デシリアライズ失敗";
-                Log("デシリアライズ失敗");
-            }
-
-            Repaint();
+                HandleBinaryMessage(binaryData);
+                // 全モデルに対してボーン→Drawable→モーフの順でバッチフェッチ
+                if (_project != null)
+                    FetchAllModelsBatch(0);
+            });
+            Log("project_header クエリ送信");
         }
 
         /// <summary>
-        /// 受信した ProjectContext 内の全 MeshContext に UnityMesh を構築する
+        /// 全モデルをボーン→Drawable→モーフの順で再帰的にフェッチ
         /// </summary>
-        private static void BuildUnityMeshes(ProjectContext project)
+        private void FetchAllModelsBatch(int modelIndex)
         {
-            foreach (var model in project.Models)
-                BuildUnityMeshes(model);
+            if (_project == null || modelIndex >= _project.ModelCount) return;
+
+            FetchMeshDataBatch(modelIndex, "bone", () =>
+                FetchMeshDataBatch(modelIndex, "drawable", () =>
+                {
+                    if (modelIndex == _project.CurrentModelIndex)
+                    {
+                        _projectStatus = $"OK ({_project?.Name})";
+                        Repaint();
+                    }
+                    FetchMeshDataBatch(modelIndex, "morph", () =>
+                    {
+                        // このモデル完了→次のモデルへ
+                        int next = modelIndex + 1;
+                        if (next < (_project?.ModelCount ?? 0))
+                            FetchAllModelsBatch(next);
+                        else
+                            Repaint(); // 全モデル完了
+                    });
+                }));
         }
 
-        private static void BuildUnityMeshes(ModelContext model)
+        private void FetchMeshDataBatch(int modelIndex, string category, System.Action onComplete = null)
         {
-            int built = 0, skipped = 0;
-            foreach (var mc in model.MeshContextList)
+            string id = NextId();
+            string json = $"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"mesh_data_batch\"," +
+                          $"\"params\":{{\"modelIndex\":\"{modelIndex}\",\"category\":\"{category}\"}}}}";
+            SendBinaryQuery(json, (_, binaryData) =>
             {
-                if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0)
-                {
-                    mc.UnityMesh = mc.MeshObject.ToUnityMesh();
-                    built++;
-                    if (mc.UnityMesh == null)
-                        UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMesh failed: {mc.Name}");
-                }
-                else
-                {
-                    skipped++;
-                }
-            }
-            UnityEngine.Debug.Log($"[RemoteClient] BuildUnityMeshes model={model.Name}: built={built} skipped={skipped}");
+                if (binaryData != null && binaryData.Length >= 4)
+                    HandleBinaryMessage(binaryData);
+                onComplete?.Invoke();
+            });
+            Log($"mesh_data_batch クエリ送信 [{modelIndex}] {category}");
+        }
+
+        private void FetchModelMeta(int modelIndex)
+        {
+            string id = NextId();
+            string json = $"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"model_meta\"," +
+                          $"\"params\":{{\"modelIndex\":\"{modelIndex}\"}}}}";
+            SendBinaryQuery(json, (_, binaryData) => HandleBinaryMessage(binaryData));
+            Log($"model_meta クエリ送信 [{modelIndex}]");
+        }
+
+        private void FetchMeshData(int modelIndex, int meshIndex)
+        {
+            string id = NextId();
+            string json = $"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"mesh_data\"," +
+                          $"\"params\":{{\"modelIndex\":\"{modelIndex}\",\"meshIndex\":\"{meshIndex}\"}}}}";
+            SendBinaryQuery(json, (_, binaryData) => HandleBinaryMessage(binaryData));
+            Log($"mesh_data クエリ送信 [{modelIndex}][{meshIndex}]");
         }
 
         // ================================================================

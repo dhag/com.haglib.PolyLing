@@ -13,10 +13,17 @@ namespace PolyLingRemoteClient
 
     public static class RemoteMagic
     {
-        public const uint Mesh    = 0x4D524C50; // "PLRM"
-        public const uint Image   = 0x49524C50; // "PLRI"
-        public const uint Model   = 0x44524C50; // "PLRD"
-        public const uint Project = 0x50524C50; // "PLRP"
+        // S→C プログレッシブプロトコル
+        public const uint ProjectHeader = 0x48524C50; // "PLRH"
+        public const uint ModelMeta     = 0x4D524C50; // "PLRM"
+        public const uint MeshSummary   = 0x53524C50; // "PLRS"
+        public const uint MeshData      = 0x44524C50; // "PLRD"
+        public const uint Image         = 0x49524C50; // "PLRI"
+
+        public const uint Batch         = 0x42524C50; // "PLRB"
+
+        // C→S クライアントアップロード（ModelMetaと同値、方向で区別）
+        public const uint Mesh          = 0x4D524C50; // "PLRM"
 
         public static uint Read(byte[] data)
         {

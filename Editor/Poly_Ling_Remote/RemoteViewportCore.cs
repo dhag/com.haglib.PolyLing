@@ -95,30 +95,21 @@ namespace Poly_Ling.Remote
         private void DrawModel(ModelContext model)
         {
             var drawables = model.DrawableMeshes;
-            if (drawables == null) { Debug.Log("[RemoteVP] DrawableMeshes == null"); return; }
+            if (drawables == null) return;
 
             Material defMat = GetDefaultMaterial();
-            var _dbgSb = new System.Text.StringBuilder();
-            _dbgSb.Append($"[RemoteVP] DrawModel: {drawables.Count} drawables, meshListCount={model.MeshContextList?.Count ?? -1}, matCount={model.MaterialCount} | ");
-            for (int _d = 0; _d < System.Math.Min(model.MeshContextList?.Count ?? 0, 5); _d++) {
-                var _mc2 = model.MeshContextList[_d];
-                _dbgSb.Append($"[{_d}]{_mc2.Name}:cType={_mc2.Type},mType={(_mc2.MeshObject != null ? _mc2.MeshObject.Type.ToString() : "null")},V={_mc2.VertexCount} ");
-            }
-            Debug.Log(_dbgSb.ToString());
 
             for (int i = 0; i < drawables.Count; i++)
             {
                 var ctx = drawables[i].Context;
-                if (ctx == null) { Debug.Log($"[RemoteVP] [{i}] ctx==null"); continue; }
-                if (ctx.UnityMesh == null) { Debug.Log($"[RemoteVP] [{i}] {ctx.Name}: UnityMesh==null"); continue; }
-                if (!ctx.IsVisible) continue;
+                if (ctx == null || ctx.UnityMesh == null || !ctx.IsVisible) continue;
 
                 var mesh = ctx.UnityMesh;
                 for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {
                     Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
                     if (mat == null) mat = defMat;
-                    if (mat == null) { Debug.Log($"[RemoteVP] [{i}] sub={sub} mat==null (defMat also null)"); continue; }
+                    if (mat == null) continue;
                     _preview.DrawMesh(mesh, Matrix4x4.identity, mat, sub);
                 }
             }

@@ -2,59 +2,104 @@
 // バイナリ転送プロトコル定義
 //
 // ■ データタイプ（先頭4バイトのマジックで識別）
-//   PLRM = メッシュデータ
-//   PLRI = 画像リスト
-//   PLRD = モデルデータ（将来用）
-//   PLRP = プロジェクトデータ（将来用）
 //
-// ■ メッシュデータ (PLRM) フォーマット
-// [Header 20B]
-//   Magic       : 4B "PLRM"
-//   Version     : 1B (現在 1)
-//   MessageType : 1B (0=MeshData, 1=PositionsOnly, 2=File)
-//   FieldFlags  : 4B (ビットマスク)
-//   VertexCount : 4B (uint)
-//   FaceCount   : 4B (uint)
+//   [S→C プログレッシブプロトコル]
+//   PLRH = ProjectHeader   プロジェクト名・モデル数
+//   PLRM = ModelMeta       モデルメタデータ（ジオメトリなし）
+//   PLRS = MeshSummary     メッシュサマリ（ジオメトリなし）
+//   PLRD = MeshData        メッシュジオメトリ本体
+//   PLRI = ImageList       画像リスト（変更なし）
+//
+//   [C→S クライアントアップロード]
+//   PLRM = Mesh            クライアントがアップロードする単体メッシュ
+//          (S→Cの ModelMeta と同じマジック値だが方向で区別)
+//
+// ■ PLRH フォーマット
+// [Header 8B+]
+//   Magic             : 4B "PLRH"
+//   Version           : 1B (現在 1)
+//   CurrentModelIndex : 1B
+//   ModelCount        : 2B (uint16)
+//   ProjectName       : string (length-prefixed UTF8)
+//
+// ■ PLRM フォーマット（S→C ModelMeta）
+// [Header 8B+]
+//   Magic      : 4B "PLRM"
+//   Version    : 1B
+//   Padding    : 1B
+//   ModelIndex : 2B (int16)
+//   ModelName  : string
+//   MeshCount  : 2B (uint16)
+//   ... (詳細はRemoteProgressiveSerializer参照)
+//
+// ■ PLRS フォーマット（S→C MeshSummary）
+// [Header 10B+]
+//   Magic      : 4B "PLRS"
+//   Version    : 1B
+//   Padding    : 1B
+//   ModelIndex : 2B (int16)
+//   MeshIndex  : 2B (int16)
+//   ... (詳細はRemoteProgressiveSerializer参照)
+//
+// ■ PLRD フォーマット（S→C MeshData）
+// [Header 24B]
+//   Magic       : 4B "PLRD"
+//   Version     : 1B
+//   Padding     : 1B
+//   ModelIndex  : 2B (int16)
+//   MeshIndex   : 2B (int16)
+//   FieldFlags  : 4B (uint32)
+//   VertexCount : 4B (uint32)
+//   FaceCount   : 4B (uint32)
 //   Reserved    : 2B
-// [Body] フラグ順にフィールドバイト列が連結
+// [Body] PLRM ボディと同一フォーマット
 //
-// ■ 画像リスト (PLRI) フォーマット
+// ■ PLRI フォーマット（画像リスト）
 // [Header 8B]
 //   Magic      : 4B "PLRI"
 //   Version    : 1B
 //   ImageCount : 2B (uint16)
 //   Reserved   : 1B
-// [Entry × ImageCount]
-//   ImageId    : 2B (uint16)
-//   Format     : 1B (0=PNG, 1=JPEG)
-//   Width      : 4B (uint32)
-//   Height     : 4B (uint32)
-//   DataLength : 4B (uint32)
-//   ImageData  : [DataLength bytes]
+// [Entry × ImageCount] ...
+//
+// ■ PLRM フォーマット（C→S Mesh、RemoteBinarySerializer使用）
+// [Header 20B]
+//   Magic       : 4B "PLRM"
+//   Version     : 1B
+//   MessageType : 1B (0=MeshData, 1=PositionsOnly, 2=File)
+//   FieldFlags  : 4B
+//   VertexCount : 4B
+//   FaceCount   : 4B
+//   Reserved    : 2B
+// [Body] フラグ順にフィールドバイト列
 
 using System;
 
 namespace Poly_Ling.Remote
 {
     // ================================================================
-    // 共通マジック定数
+    // マジック定数
     // ================================================================
 
-    /// <summary>
-    /// バイナリフレームのデータタイプ識別（先頭4バイト）
-    /// </summary>
     public static class RemoteMagic
     {
-        /// <summary>メッシュデータ "PLRM"</summary>
-        public const uint Mesh    = 0x4D524C50;
-        /// <summary>画像リスト "PLRI"</summary>
-        public const uint Image   = 0x49524C50;
-        /// <summary>モデルデータ "PLRD" （将来用）</summary>
-        public const uint Model   = 0x44524C50;
-        /// <summary>プロジェクトデータ "PLRP" （将来用）</summary>
-        public const uint Project = 0x50524C50;
-        /// <summary>メッシュスロット "PLRS"</summary>
-        public const uint MeshSlot = 0x53524C50;
+        // S→C プログレッシブプロトコル
+        /// <summary>ProjectHeader "PLRH"</summary>
+        public const uint ProjectHeader = 0x48524C50;
+        /// <summary>ModelMeta "PLRM"</summary>
+        public const uint ModelMeta     = 0x4D524C50;
+        /// <summary>MeshSummary "PLRS"</summary>
+        public const uint MeshSummary   = 0x53524C50;
+        /// <summary>MeshData "PLRD"</summary>
+        public const uint MeshData      = 0x44524C50;
+        /// <summary>BatchFrame "PLRB" 複数フレームの一括送信</summary>
+        public const uint Batch         = 0x42524C50;
+        /// <summary>ImageList "PLRI"</summary>
+        public const uint Image         = 0x49524C50;
+
+        // C→S クライアントアップロード（ModelMetaと同値、方向で区別）
+        /// <summary>クライアントアップロードメッシュ "PLRM"</summary>
+        public const uint Mesh          = 0x4D524C50;
 
         /// <summary>先頭4バイトからマジックを読み取り</summary>
         public static uint Read(byte[] data)
@@ -65,56 +110,48 @@ namespace Poly_Ling.Remote
     }
 
     // ================================================================
-    // メッシュデータ (PLRM)
+    // C→S メッシュアップロード (PLRM) 関連定義
+    // RemoteBinarySerializer が使用
     // ================================================================
 
-    /// <summary>
-    /// メッシュバイナリメッセージタイプ
-    /// </summary>
+    /// <summary>C→S メッシュバイナリメッセージタイプ</summary>
     public enum BinaryMessageType : byte
     {
-        /// <summary>メッシュデータ（フィールドフラグで内容選択）</summary>
-        MeshData = 0,
-        /// <summary>位置のみ更新（軽量）</summary>
+        MeshData      = 0,
         PositionsOnly = 1,
-        /// <summary>ファイル丸ごと転送（PMX等）</summary>
-        RawFile = 2,
+        RawFile       = 2,
     }
 
-    /// <summary>
-    /// メッシュフィールドフラグ（ビットマスク）
-    /// </summary>
+    /// <summary>メッシュフィールドフラグ（ビットマスク）</summary>
     [Flags]
     public enum MeshFieldFlags : uint
     {
-        None           = 0,
+        None              = 0,
 
-        // === 頂点系（0x00FF） ===
-        Positions      = 0x0001,
-        Normals        = 0x0002,
-        UVs            = 0x0004,
-        BoneWeights    = 0x0008,
-        VertexFlags    = 0x0010,
-        VertexIds      = 0x0020,
+        // 頂点系
+        Positions         = 0x0001,
+        Normals           = 0x0002,
+        UVs               = 0x0004,
+        BoneWeights       = 0x0008,
+        VertexFlags       = 0x0010,
+        VertexIds         = 0x0020,
 
-        // === 面系（0xFF00） ===
-        FaceIndices    = 0x0100,
-        FaceMaterials  = 0x0200,
-        FaceFlags      = 0x0400,
-        FaceIds        = 0x0800,
-        FaceUVIndices  = 0x1000,
+        // 面系
+        FaceIndices       = 0x0100,
+        FaceMaterials     = 0x0200,
+        FaceFlags         = 0x0400,
+        FaceIds           = 0x0800,
+        FaceUVIndices     = 0x1000,
         FaceNormalIndices = 0x2000,
 
-        // === 複合ショートカット ===
+        // 複合
         VertexBasic    = Positions | Normals | UVs,
         AllVertex      = Positions | Normals | UVs | BoneWeights | VertexFlags | VertexIds,
         AllFace        = FaceIndices | FaceMaterials | FaceFlags | FaceIds | FaceUVIndices | FaceNormalIndices,
         All            = AllVertex | AllFace,
     }
 
-    /// <summary>
-    /// メッシュバイナリヘッダ (PLRM)
-    /// </summary>
+    /// <summary>C→S メッシュバイナリヘッダ (PLRM, 20B)</summary>
     public struct BinaryHeader
     {
         public const int Size = 20;
@@ -127,77 +164,25 @@ namespace Poly_Ling.Remote
     }
 
     // ================================================================
-    // 画像リスト (PLRI)
+    // 画像リスト (PLRI) — 変更なし
     // ================================================================
 
-    /// <summary>
-    /// 画像フォーマット
-    /// </summary>
-    public enum ImageFormat : byte
-    {
-        PNG = 0,
-        JPEG = 1,
-    }
+    public enum ImageFormat : byte { PNG = 0, JPEG = 1 }
 
-    /// <summary>
-    /// 画像リストヘッダ (PLRI)
-    /// </summary>
     public struct ImageListHeader
     {
         public const int Size = 8;
-
         public byte Version;
         public ushort ImageCount;
     }
 
-    /// <summary>
-    /// 画像エントリヘッダ（各画像の先頭）
-    /// </summary>
     public struct ImageEntryHeader
     {
         public const int Size = 15;
-
         public ushort ImageId;
         public ImageFormat Format;
         public uint Width;
         public uint Height;
         public uint DataLength;
-    }
-
-    // ================================================================
-    // モデルデータ (PLRD) — 将来用
-    // ================================================================
-
-    /// <summary>
-    /// モデルデータヘッダ (PLRD) — 将来用
-    /// </summary>
-    public struct ModelDataHeader
-    {
-        public const int Size = 8;
-
-        public byte Version;
-        public byte Flags;        // 将来用
-        public ushort MeshCount;   // 含まれるメッシュ数
-        public ushort BoneCount;   // 含まれるボーン数
-        public ushort MorphCount;  // 含まれるモーフ数
-        // Body: MeshHeader × MeshCount + ... (将来定義)
-    }
-
-    // ================================================================
-    // プロジェクトデータ (PLRP) — 将来用
-    // ================================================================
-
-    /// <summary>
-    /// プロジェクトデータヘッダ (PLRP) — 将来用
-    /// </summary>
-    public struct ProjectDataHeader
-    {
-        public const int Size = 8;
-
-        public byte Version;
-        public byte Flags;         // 将来用
-        public ushort ModelCount;   // 含まれるモデル数
-        public uint Reserved;
-        // Body: ModelHeader × ModelCount + ... (将来定義)
     }
 }
