@@ -332,6 +332,10 @@ public partial class PolyLing : EditorWindow
                     SyncMeshFromData(mc);
             }
         };
+        ctx.SyncBoneTransforms = () => {
+            _model?.ComputeWorldMatrices();
+            _unifiedAdapter?.RequestNormal();
+        };
         // v2.1: 複数メッシュ対応 - 選択中の全メッシュの位置を同期
         ctx.SyncMeshPositionsOnly = () => SyncAllSelectedMeshPositions();
         // モーフプレビュー用: 任意のMeshContextの頂点位置を同期

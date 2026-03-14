@@ -316,6 +316,7 @@ namespace Poly_Ling.Localization
             ["Tool_Select"] = new() { ["en"] = "Select", ["ja"] = "選択", ["hi"] = "えらぶ" },
             ["Tool_SelectAdvanced"] = new() { ["en"] = "Adv.Select", ["ja"] = "詳細選択", ["hi"] = "くわしくえらぶ" },
             ["Tool_Move"] = new() { ["en"] = "Move", ["ja"] = "移動", ["hi"] = "うごかす" },
+            ["Tool_ObjectMove"] = new() { ["en"] = "Obj.Move", ["ja"] = "オブジェクト移動", ["hi"] = "おぶじぇくとうごかす" },
             ["Tool_Rotate"] = new() { ["en"] = "Rotate", ["ja"] = "回転", ["hi"] = "かいてん" },
             ["Tool_Scale"] = new() { ["en"] = "Scale", ["ja"] = "拡大縮小", ["hi"] = "おおきさ" },
             ["Tool_Sculpt"] = new() { ["en"] = "Sculpt", ["ja"] = "スカルプト", ["hi"] = "こねる" },

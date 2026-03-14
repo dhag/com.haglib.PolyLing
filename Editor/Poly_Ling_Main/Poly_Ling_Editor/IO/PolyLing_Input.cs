@@ -90,14 +90,16 @@ public partial class PolyLing
         HandleCameraRotation(e);
 
         // ボーン操作（選択・ギズモ・ドラッグ移動）
-        if (HandleBoneInput(e, mousePos, rect, camPos, lookAt))
+        // ObjectMoveTool がアクティブな場合はボーン操作を抑止（ObjectMoveTool が統合処理）
+        if (!(_currentTool is Poly_Ling.Tools.ObjectMoveTool) &&
+            HandleBoneInput(e, mousePos, rect, camPos, lookAt))
         {
             e.Use();
             return;
         }
 
         // 頂点編集モードでなければ終了（ブラシ系ツールは例外）
-        if (!_vertexEditMode && !(_currentTool is Poly_Ling.Tools.SkinWeightPaintTool))
+        if (!_vertexEditMode && !(_currentTool is Poly_Ling.Tools.SkinWeightPaintTool) && !(_currentTool is Poly_Ling.Tools.ObjectMoveTool))
             return;
 
         var meshObject = meshContext.MeshObject;

@@ -294,6 +294,12 @@ namespace Poly_Ling.Tools
         /// <summary>MeshObjectからUnity Meshを更新</summary>
         public Action SyncMesh { get; set; }
 
+        /// <summary>
+        /// ボーン位置変更後に WorldMatrix 再計算と GPU バッファ更新を要求
+        /// ObjectMoveTool および BoneInput が使用する
+        /// </summary>
+        public Action SyncBoneTransforms { get; set; }
+
         /// <summary>MeshObjectからUnity Meshの位置のみ更新（軽量版）</summary>
         public Action SyncMeshPositionsOnly { get; set; }
 

@@ -27,6 +27,7 @@ namespace Poly_Ling.Tools
         {
 
             () => new MoveTool(),
+            () => new ObjectMoveTool(),
             () => new RotateTool(),
             () => new ScaleTool(),
 
