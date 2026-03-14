@@ -11,7 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Materials;
@@ -389,7 +389,7 @@ namespace Poly_Ling.Remote
             byte[] pngData = null;
             if (!string.IsNullOrEmpty(d.BaseMapPath))
             {
-                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(d.BaseMapPath);
+                var tex = PLEditorBridge.I.LoadAssetAtPath<Texture2D>(d.BaseMapPath);
                 if (tex != null) pngData = EncodeTextureAsPNG(tex);
             }
             if (pngData == null && !string.IsNullOrEmpty(d.SourceTexturePath) && File.Exists(d.SourceTexturePath))

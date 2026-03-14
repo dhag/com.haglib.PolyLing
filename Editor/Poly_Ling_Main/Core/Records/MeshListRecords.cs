@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Model;
@@ -160,9 +161,9 @@ namespace Poly_Ling.UndoSystem
                         snapshot.MaterialPaths.Add(null);
                         snapshot.RuntimeMaterials.Add(null);
                     }
-                    else if (UnityEditor.AssetDatabase.Contains(mat))
+                    else if (PLEditorBridge.I.ContainsAsset(mat))
                     {
-                        string path = UnityEditor.AssetDatabase.GetAssetPath(mat);
+                        string path = PLEditorBridge.I.GetAssetPath(mat);
                         snapshot.MaterialPaths.Add(path);
                         snapshot.RuntimeMaterials.Add(null);
                     }

@@ -7,7 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Symmetry;
@@ -784,7 +784,7 @@ namespace Poly_Ling.Model
             if (!System.IO.Directory.Exists(saveDir))
             {
                 System.IO.Directory.CreateDirectory(saveDir);
-                AssetDatabase.Refresh();
+                PLEditorBridge.I.Refresh();
             }
             
             int savedCount = 0;
@@ -806,7 +806,7 @@ namespace Poly_Ling.Model
                 
                 // 重複チェック
                 int counter = 1;
-                while (AssetDatabase.LoadAssetAtPath<Material>(savePath) != null)
+                while (PLEditorBridge.I.LoadAssetAtPath<Material>(savePath) != null)
                 {
                     savePath = $"{saveDir}/{matName}_{counter}.mat";
                     counter++;

@@ -4,7 +4,7 @@
 
 using System;
 using UnityEngine;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.Materials
 {
@@ -90,7 +90,7 @@ namespace Poly_Ling.Materials
             // アセットからデータを抽出
             if (HasAssetPath)
             {
-                var mat = AssetDatabase.LoadAssetAtPath<Material>(AssetPath);
+                var mat = PLEditorBridge.I.LoadAssetAtPath<Material>(AssetPath);
                 if (mat != null)
                 {
                     Data = MaterialDataConverter.FromMaterial(mat);
@@ -116,7 +116,7 @@ namespace Poly_Ling.Materials
             // アセットパスがあればロード
             if (HasAssetPath)
             {
-                _cachedMaterial = AssetDatabase.LoadAssetAtPath<Material>(AssetPath);
+                _cachedMaterial = PLEditorBridge.I.LoadAssetAtPath<Material>(AssetPath);
                 if (_cachedMaterial != null)
                 {
                     _cacheValid = true;
@@ -153,7 +153,7 @@ namespace Poly_Ling.Materials
             }
             
             // アセットパスを取得
-            string path = AssetDatabase.GetAssetPath(material);
+            string path = PLEditorBridge.I.GetAssetPath(material);
             if (!string.IsNullOrEmpty(path))
             {
                 AssetPath = path;
@@ -229,20 +229,20 @@ namespace Poly_Ling.Materials
                 }
                 
                 // 新規オンメモリの場合はそのまま保存
-                string existingPath = AssetDatabase.GetAssetPath(mat);
+                string existingPath = PLEditorBridge.I.GetAssetPath(mat);
                 if (string.IsNullOrEmpty(existingPath))
                 {
-                    AssetDatabase.CreateAsset(mat, savePath);
+                    PLEditorBridge.I.CreateAsset(mat, savePath);
                 }
                 else if (existingPath != savePath)
                 {
                     // 別パスにコピー
                     var newMat = new Material(mat);
-                    AssetDatabase.CreateAsset(newMat, savePath);
+                    PLEditorBridge.I.CreateAsset(newMat, savePath);
                     mat = newMat;
                 }
                 
-                AssetDatabase.SaveAssets();
+                PLEditorBridge.I.SaveAssets();
                 
                 // パスを更新
                 AssetPath = savePath;

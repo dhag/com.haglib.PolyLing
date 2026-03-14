@@ -93,6 +93,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.VMD
 {
@@ -665,8 +666,8 @@ namespace Poly_Ling.VMD
             if (clip == null || string.IsNullOrEmpty(path))
                 return;
 
-            AssetDatabase.CreateAsset(clip, path);
-            AssetDatabase.SaveAssets();
+            PLEditorBridge.I.CreateAsset(clip, path);
+            PLEditorBridge.I.SaveAssets();
             Debug.Log($"[VMDToHumanoidClip] Saved: {path}");
         }
 

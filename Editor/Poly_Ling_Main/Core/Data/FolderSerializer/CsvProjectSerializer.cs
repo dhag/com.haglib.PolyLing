@@ -13,7 +13,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
@@ -43,7 +43,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string folderPath = EditorUtility.SaveFolderPanel(
+            string folderPath = PLEditorBridge.I.SaveFolderPanel(
                 "Export Project Folder",
                 Application.dataPath,
                 defaultName
@@ -65,7 +65,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string folderPath = EditorUtility.SaveFolderPanel(
+            string folderPath = PLEditorBridge.I.SaveFolderPanel(
                 "Export Project Folder",
                 Application.dataPath,
                 defaultName
@@ -96,7 +96,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             out List<EditorStateDTO> editorStates,
             out List<WorkPlaneContext> workPlanes)
         {
-            string folderPath = EditorUtility.OpenFolderPanel(
+            string folderPath = PLEditorBridge.I.OpenFolderPanel(
                 "Import Project Folder",
                 Application.dataPath,
                 ""
@@ -123,7 +123,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             workPlane = null;
             additionalEntries = new List<CsvMeshEntry>();
 
-            string folderPath = EditorUtility.OpenFolderPanel(
+            string folderPath = PLEditorBridge.I.OpenFolderPanel(
                 "Import Project Folder",
                 Application.dataPath,
                 ""

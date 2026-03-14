@@ -34,6 +34,8 @@ public partial class PolyLing
         var remote = RemoteServer.FindInstance()
             ?? UnityEditor.EditorWindow.GetWindow<RemoteServer>("Remote Server");
         remote.Show();
+        // PanelCommand経由のコマンドを全処理できるよう DispatchPanelCommand を注入
+        remote.SetDispatchCommand(DispatchPanelCommand);
         if (!remote.IsRunning)
             remote.StartServer();
     }

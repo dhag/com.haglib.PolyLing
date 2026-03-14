@@ -4,7 +4,7 @@
 
 using System;
 using UnityEngine;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.Materials
 {
@@ -461,7 +461,7 @@ namespace Poly_Ling.Materials
             if (tex == null)
                 return null;
             
-            return AssetDatabase.GetAssetPath(tex);
+            return PLEditorBridge.I.GetAssetPath(tex);
         }
         
         private static void SetTexture(Material mat, string propertyName, string path)
@@ -475,7 +475,7 @@ namespace Poly_Ling.Materials
                 return;
             }
             
-            var tex = AssetDatabase.LoadAssetAtPath<Texture>(path);
+            var tex = PLEditorBridge.I.LoadAssetAtPath<Texture>(path);
             mat.SetTexture(propertyName, tex);
         }
     }

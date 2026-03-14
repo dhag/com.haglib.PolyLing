@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 using Unity.Plastic.Newtonsoft.Json;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
@@ -71,12 +71,7 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static bool ExportWithDialog(ProjectDTO projectDTO, string defaultName = "Project")
         {
-            string path = EditorUtility.SaveFilePanel(
-                "Export Project",
-                Application.dataPath,
-                defaultName,
-                FileExtension
-            );
+            string path = PLEditorBridge.I.SaveFilePanel("Export Project", Application.dataPath, defaultName, FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return false;
@@ -125,11 +120,7 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static ProjectDTO ImportWithDialog()
         {
-            string path = EditorUtility.OpenFilePanel(
-                "Import Project",
-                Application.dataPath,
-                FileExtension
-            );
+            string path = PLEditorBridge.I.OpenFilePanel("Import Project", Application.dataPath, FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return null;

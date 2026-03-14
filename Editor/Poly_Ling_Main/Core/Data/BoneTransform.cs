@@ -1,12 +1,11 @@
 // Assets/Editor/MeshCreators/BoneTransform.cs
 // エクスポート時のローカルトランスフォーム設定
-// ヒエラルキー/プレファブへのエクスポート時に適用されるPosition, Rotation, Scale
-// 全操作がUndo対応
+// BoneTransformUI は BoneTransformUI.cs に分離済み
 
 using Poly_Ling.Serialization;
 using Poly_Ling.Localization;
+using Poly_Ling.EditorBridge;
 using System;
-using UnityEditor;
 using UnityEngine;
 
 namespace Poly_Ling.Tools
@@ -15,9 +14,6 @@ namespace Poly_Ling.Tools
     // スナップショット（Undo用）
     // ================================================================
 
-    /// <summary>
-    /// BoneTransformの状態スナップショット（Undo用）
-    /// </summary>
     [Serializable]
     public struct BoneTransformSnapshot
     {
@@ -27,9 +23,6 @@ namespace Poly_Ling.Tools
         public bool UseLocalTransform;
         public bool ExportAsSkinned;
 
-        /// <summary>
-        /// 他のスナップショットと異なるかどうか
-        /// </summary>
         public bool IsDifferentFrom(BoneTransformSnapshot other)
         {
             return Vector3.Distance(Position, other.Position) > 0.0001f ||
@@ -39,9 +32,6 @@ namespace Poly_Ling.Tools
                    ExportAsSkinned != other.ExportAsSkinned;
         }
 
-        /// <summary>
-        /// 変更内容の説明を取得
-        /// </summary>
         public string GetChangeDescription(BoneTransformSnapshot before)
         {
             if (UseLocalTransform != before.UseLocalTransform)
@@ -62,56 +52,30 @@ namespace Poly_Ling.Tools
     // エクスポート設定
     // ================================================================
 
-    /// <summary>
-    /// エクスポート設定
-    /// ヒエラルキー/プレファブへのエクスポート時のローカルトランスフォームを定義
-    /// </summary>
     [Serializable]
     public class BoneTransform
     {
-        // === フィールド ===
         [SerializeField] private Vector3 _position = Vector3.zero;
-        [SerializeField] private Vector3 _rotation = Vector3.zero;  // Euler angles
+        [SerializeField] private Vector3 _rotation = Vector3.zero;
         [SerializeField] private Vector3 _scale = Vector3.one;
         [SerializeField] private bool _useLocalTransform = false;
         [SerializeField] private bool _exportAsSkinned = false;
 
-        // UI状態（シリアライズ不要）
         private bool _isExpanded = true;
-        private int _selectedRotationAxis = 0;  // 0=X, 1=Y, 2=Z
+        private int _selectedRotationAxis = 0;
 
-        // === プロパティ ===
+        public Vector3 Position  { get => _position; set => _position = value; }
+        public Vector3 Rotation  { get => _rotation; set => _rotation = value; }
+        public Vector3 Scale     { get => _scale;    set => _scale    = value; }
 
-        public Vector3 Position
-        {
-            get => _position;
-            set => _position = value;
-        }
-
-        public Vector3 Rotation
-        {
-            get => _rotation;
-            set => _rotation = value;
-        }
-
-        public Vector3 Scale
-        {
-            get => _scale;
-            set => _scale = value;
-        }
-
-        /// <summary>ローカルトランスフォームを使用するか</summary>
         public bool UseLocalTransform
         {
             get => _useLocalTransform;
             set => _useLocalTransform = value;
         }
 
-        /// <summary>SkinnedMeshRendererとしてエクスポートするか</summary>
         /// <remarks>
-        /// TODO: 将来的に廃止予定。IMeshView.IsSkinned（MeshObject.IsSkinned = ボーンウェイトの有無）に統合する。
-        /// ExportAsSkinned はエクスポート設定であり、IsSkinned はジオメトリのプロパティ（頂点にボーンウェイトがあるか）。
-        /// 両者は本来同一の概念を二重定義しているため、IsSkinned に一本化する。
+        /// TODO: 将来的に廃止予定。IMeshView.IsSkinned に統合する。
         /// </remarks>
         public bool ExportAsSkinned
         {
@@ -119,11 +83,8 @@ namespace Poly_Ling.Tools
             set => _exportAsSkinned = value;
         }
 
-        /// <summary>回転をQuaternionで取得</summary>
         public Quaternion RotationQuaternion => Quaternion.Euler(_rotation);
-
-        /// <summary>変換行列を取得</summary>
-        public Matrix4x4 TransformMatrix => Matrix4x4.TRS(_position, RotationQuaternion, _scale);
+        public Matrix4x4  TransformMatrix    => Matrix4x4.TRS(_position, RotationQuaternion, _scale);
 
         public bool IsExpanded
         {
@@ -131,108 +92,73 @@ namespace Poly_Ling.Tools
             set => _isExpanded = value;
         }
 
-        /// <summary>選択中の回転軸（UI用、0=X, 1=Y, 2=Z）</summary>
         public int SelectedRotationAxis
         {
             get => _selectedRotationAxis;
             set => _selectedRotationAxis = Mathf.Clamp(value, 0, 2);
         }
 
-        // === コンストラクタ ===
+        public BoneTransform()             { ResetInternal(); }
+        public BoneTransform(BoneTransform other) { CopyFrom(other); }
 
-        public BoneTransform()
-        {
-            ResetInternal();
-        }
-
-        public BoneTransform(BoneTransform other)
-        {
-            CopyFrom(other);
-        }
-
-        // === メソッド ===
-
-        /// <summary>
-        /// デフォルト状態にリセット（内部用、Undo記録なし）
-        /// </summary>
         private void ResetInternal()
         {
-            _position = Vector3.zero;
-            _rotation = Vector3.zero;
-            _scale = Vector3.one;
+            _position         = Vector3.zero;
+            _rotation         = Vector3.zero;
+            _scale            = Vector3.one;
             _useLocalTransform = false;
-            _exportAsSkinned = false;
+            _exportAsSkinned  = false;
         }
 
-        /// <summary>
-        /// デフォルト状態にリセット（公開用）
-        /// 注：Undo記録は呼び出し側で行う
-        /// </summary>
-        public void Reset()
-        {
-            ResetInternal();
-        }
+        public void Reset() { ResetInternal(); }
 
-        /// <summary>
-        /// 他のBoneTransformからコピー
-        /// </summary>
         public void CopyFrom(BoneTransform other)
         {
             if (other == null) return;
-            _position = other._position;
-            _rotation = other._rotation;
-            _scale = other._scale;
+            _position          = other._position;
+            _rotation          = other._rotation;
+            _scale             = other._scale;
             _useLocalTransform = other._useLocalTransform;
-            _exportAsSkinned = other._exportAsSkinned;
+            _exportAsSkinned   = other._exportAsSkinned;
         }
 
-        /// <summary>
-        /// スナップショットを作成
-        /// </summary>
         public BoneTransformSnapshot CreateSnapshot()
         {
             return new BoneTransformSnapshot
             {
-                Position = _position,
-                Rotation = _rotation,
-                Scale = _scale,
+                Position          = _position,
+                Rotation          = _rotation,
+                Scale             = _scale,
                 UseLocalTransform = _useLocalTransform,
-                ExportAsSkinned = _exportAsSkinned
+                ExportAsSkinned   = _exportAsSkinned
             };
         }
 
-        /// <summary>
-        /// スナップショットから復元
-        /// </summary>
         public void ApplySnapshot(BoneTransformSnapshot snapshot)
         {
-            _position = snapshot.Position;
-            _rotation = snapshot.Rotation;
-            _scale = snapshot.Scale;
+            _position          = snapshot.Position;
+            _rotation          = snapshot.Rotation;
+            _scale             = snapshot.Scale;
             _useLocalTransform = snapshot.UseLocalTransform;
-            _exportAsSkinned = snapshot.ExportAsSkinned;
+            _exportAsSkinned   = snapshot.ExportAsSkinned;
         }
 
-        /// <summary>
-        /// GameObjectにトランスフォームを適用
-        /// </summary>
         public void ApplyToGameObject(GameObject go, bool asLocal = true)
         {
             if (go == null) return;
 
             if (!_useLocalTransform)
             {
-                // デフォルト値を適用
                 if (asLocal)
                 {
                     go.transform.localPosition = Vector3.zero;
                     go.transform.localRotation = Quaternion.identity;
-                    go.transform.localScale = Vector3.one;
+                    go.transform.localScale    = Vector3.one;
                 }
                 else
                 {
-                    go.transform.position = Vector3.zero;
-                    go.transform.rotation = Quaternion.identity;
+                    go.transform.position   = Vector3.zero;
+                    go.transform.rotation   = Quaternion.identity;
                     go.transform.localScale = Vector3.one;
                 }
                 return;
@@ -242,45 +168,34 @@ namespace Poly_Ling.Tools
             {
                 go.transform.localPosition = _position;
                 go.transform.localRotation = RotationQuaternion;
-                go.transform.localScale = _scale;
+                go.transform.localScale    = _scale;
             }
             else
             {
-                go.transform.position = _position;
-                go.transform.rotation = RotationQuaternion;
+                go.transform.position   = _position;
+                go.transform.rotation   = RotationQuaternion;
                 go.transform.localScale = _scale;
             }
         }
 
-        // ================================================================
-        // シリアライズ変換
-        // ================================================================
-
-        /// <summary>
-        /// BoneTransformDTO から変換
-        /// </summary>
         public static BoneTransform FromSerializable(BoneTransformDTO data)
         {
             if (data == null) return new BoneTransform();
-
-            var settings = new BoneTransform();
-            settings._useLocalTransform = data.useLocalTransform;
-            settings._exportAsSkinned = data.exportAsSkinned;
-            settings._position = data.GetPosition();
-            settings._rotation = data.GetRotation();
-            settings._scale = data.GetScale();
-            return settings;
+            var s = new BoneTransform();
+            s._useLocalTransform = data.useLocalTransform;
+            s._exportAsSkinned   = data.exportAsSkinned;
+            s._position          = data.GetPosition();
+            s._rotation          = data.GetRotation();
+            s._scale             = data.GetScale();
+            return s;
         }
 
-        /// <summary>
-        /// BoneTransformDTO に変換
-        /// </summary>
         public BoneTransformDTO ToSerializable()
         {
             var data = new BoneTransformDTO
             {
                 useLocalTransform = _useLocalTransform,
-                exportAsSkinned = _exportAsSkinned
+                exportAsSkinned   = _exportAsSkinned
             };
             data.SetPosition(_position);
             data.SetRotation(_rotation);
@@ -288,301 +203,20 @@ namespace Poly_Ling.Tools
             return data;
         }
 
-        /// <summary>
-        /// 現在の選択からトランスフォームを取得
-        /// </summary>
+        /// <summary>現在の選択からトランスフォームを取得</summary>
         public void CopyFromSelection()
         {
-            if (UnityEditor.Selection.activeTransform != null)
+            var t = PLEditorBridge.I.GetActiveTransform();
+            if (t != null)
             {
-                _position = UnityEditor.Selection.activeTransform.localPosition;
-                _rotation = UnityEditor.Selection.activeTransform.localEulerAngles;
-                _scale = UnityEditor.Selection.activeTransform.localScale;
+                _position = t.localPosition;
+                _rotation = t.localEulerAngles;
+                _scale    = t.localScale;
             }
         }
-
-        // === デバッグ ===
 
         public override string ToString()
-        {
-            return $"BoneTransform(Use:{_useLocalTransform}, P:{_position}, R:{_rotation}, S:{_scale})";
-        }
-    }
-
-    // ================================================================
-    // UI描画クラス（ローカライズ対応）
-    // ================================================================
-
-    /// <summary>
-    /// BoneTransform用UI描画
-    /// WorkPlaneUIと同様の設計
-    /// </summary>
-    public static partial class BoneTransformUI
-    {
-        // === イベント ===
-
-        /// <summary>設定変更時（Undo記録用）</summary>
-        public static event Action<BoneTransformSnapshot, BoneTransformSnapshot, string> OnChanged;
-
-        /// <summary>リセットボタンクリック時</summary>
-        public static event Action OnResetClicked;
-
-        /// <summary>「From Selection」ボタンクリック時</summary>
-        public static event Action OnFromSelectionClicked;
-
-        // === スタイル ===
-        private static GUIStyle _headerStyle;
-        private static GUIStyle _compactLabelStyle;
-
-        /// <summary>
-        /// UIを描画
-        /// </summary>
-        /// <returns>変更があったか</returns>
-        public static bool DrawUI(BoneTransform settings)
-        {
-            if (settings == null) return false;
-
-            InitStyles();
-
-            bool changed = false;
-            string changeDescription = null;
-            BoneTransformSnapshot before = settings.CreateSnapshot();
-
-            // === ヘッダー + 折りたたみ ===
-            EditorGUILayout.BeginHorizontal();
-            {
-                settings.IsExpanded = EditorGUILayout.Foldout(
-                    settings.IsExpanded,
-                    T("Title"),
-                    true
-                );
-
-                // 有効/無効トグル（ヘッダー右側）
-                bool newUse = EditorGUILayout.Toggle(settings.UseLocalTransform, GUILayout.Width(20));
-                if (newUse != settings.UseLocalTransform)
-                {
-                    settings.UseLocalTransform = newUse;
-                    changed = true;
-                    changeDescription = newUse ? T("EnableLocalTransform") : T("DisableLocalTransform");
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-
-            // === 展開時のコンテンツ ===
-            if (settings.IsExpanded)
-            {
-                EditorGUI.BeginDisabledGroup(!settings.UseLocalTransform);
-                {
-                    EditorGUI.indentLevel++;
-
-                    // Position
-                    EditorGUILayout.LabelField(T("Position"), EditorStyles.miniLabel);
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        EditorGUIUtility.labelWidth = 14;
-                        float px = EditorGUILayout.FloatField("X", settings.Position.x);
-                        float py = EditorGUILayout.FloatField("Y", settings.Position.y);
-                        float pz = EditorGUILayout.FloatField("Z", settings.Position.z);
-                        EditorGUIUtility.labelWidth = 0;
-
-                        Vector3 newPos = new Vector3(px, py, pz);
-                        if (newPos != settings.Position)
-                        {
-                            settings.Position = newPos;
-                            changed = true;
-                            changeDescription = T("ChangePosition");
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
-
-                    // Rotation
-                    EditorGUILayout.LabelField(T("Rotation"), EditorStyles.miniLabel);
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        EditorGUIUtility.labelWidth = 14;
-                        float rx = EditorGUILayout.FloatField("X", settings.Rotation.x);
-                        float ry = EditorGUILayout.FloatField("Y", settings.Rotation.y);
-                        float rz = EditorGUILayout.FloatField("Z", settings.Rotation.z);
-                        EditorGUIUtility.labelWidth = 0;
-
-                        Vector3 newRot = new Vector3(rx, ry, rz);
-                        if (newRot != settings.Rotation)
-                        {
-                            settings.Rotation = newRot;
-                            changed = true;
-                            changeDescription = T("ChangeRotation");
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
-
-                    // 回転軸選択 + スライダー
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        GUILayout.Label("Axis:", GUILayout.Width(35));
-                        
-                        // ラジオボタン風のトグル
-                        bool selX = (settings.SelectedRotationAxis == 0);
-                        bool selY = (settings.SelectedRotationAxis == 1);
-                        bool selZ = (settings.SelectedRotationAxis == 2);
-                        
-                        bool newSelX = GUILayout.Toggle(selX, "X", EditorStyles.miniButton, GUILayout.Width(28));
-                        bool newSelY = GUILayout.Toggle(selY, "Y", EditorStyles.miniButton, GUILayout.Width(28));
-                        bool newSelZ = GUILayout.Toggle(selZ, "Z", EditorStyles.miniButton, GUILayout.Width(28));
-                        
-                        if (newSelX && !selX) settings.SelectedRotationAxis = 0;
-                        else if (newSelY && !selY) settings.SelectedRotationAxis = 1;
-                        else if (newSelZ && !selZ) settings.SelectedRotationAxis = 2;
-                        
-                        GUILayout.FlexibleSpace();
-                    }
-                    EditorGUILayout.EndHorizontal();
-                    
-                    // 回転スライダー
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        string axisLabel = settings.SelectedRotationAxis == 0 ? "X" : 
-                                          (settings.SelectedRotationAxis == 1 ? "Y" : "Z");
-                        float currentValue = settings.SelectedRotationAxis == 0 ? settings.Rotation.x :
-                                            (settings.SelectedRotationAxis == 1 ? settings.Rotation.y : settings.Rotation.z);
-                        
-                        GUILayout.Label(axisLabel + ":", GUILayout.Width(20));
-                        float newValue = GUILayout.HorizontalSlider(currentValue, -180f, 180f);
-                        GUILayout.Label(newValue.ToString("F1") + "°", GUILayout.Width(50));
-                        
-                        if (Mathf.Abs(newValue - currentValue) > 0.01f)
-                        {
-                            Vector3 rot = settings.Rotation;
-                            if (settings.SelectedRotationAxis == 0) rot.x = newValue;
-                            else if (settings.SelectedRotationAxis == 1) rot.y = newValue;
-                            else rot.z = newValue;
-                            settings.Rotation = rot;
-                            changed = true;
-                            changeDescription = T("ChangeRotation");
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
-
-                    // Scale
-                    EditorGUILayout.LabelField(T("Scale"), EditorStyles.miniLabel);
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        EditorGUIUtility.labelWidth = 14;
-                        float sx = EditorGUILayout.FloatField("X", settings.Scale.x);
-                        float sy = EditorGUILayout.FloatField("Y", settings.Scale.y);
-                        float sz = EditorGUILayout.FloatField("Z", settings.Scale.z);
-                        EditorGUIUtility.labelWidth = 0;
-
-                        Vector3 newScale = new Vector3(sx, sy, sz);
-                        if (newScale != settings.Scale)
-                        {
-                            settings.Scale = newScale;
-                            changed = true;
-                            changeDescription = T("ChangeScale");
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
-
-                    EditorGUI.indentLevel--;
-                }
-                EditorGUI.EndDisabledGroup();
-
-                EditorGUILayout.Space(4);
-
-                // ボタン群
-                EditorGUILayout.BeginHorizontal();
-                {
-                    if (GUILayout.Button(T("FromSelection"), GUILayout.Height(18)))
-                    {
-                        OnFromSelectionClicked?.Invoke();
-                    }
-                    if (GUILayout.Button(T("Reset"), GUILayout.Height(18)))
-                    {
-                        OnResetClicked?.Invoke();
-                    }
-                }
-                EditorGUILayout.EndHorizontal();
-            }
-
-            // 変更があればコールバック
-            if (changed)
-            {
-                BoneTransformSnapshot after = settings.CreateSnapshot();
-                if (before.IsDifferentFrom(after))
-                {
-                    OnChanged?.Invoke(before, after, changeDescription);
-                }
-            }
-
-            return changed;
-        }
-
-        /// <summary>
-        /// コンパクトUI（折りたたみなし、1行版）
-        /// </summary>
-        public static bool DrawCompactUI(BoneTransform settings)
-        {
-            if (settings == null) return false;
-
-            bool changed = false;
-            BoneTransformSnapshot before = settings.CreateSnapshot();
-
-            EditorGUILayout.BeginHorizontal();
-            {
-                EditorGUILayout.LabelField($"{T("Title")}:", GUILayout.Width(100));
-
-                bool newUse = EditorGUILayout.Toggle(settings.UseLocalTransform, GUILayout.Width(20));
-                if (newUse != settings.UseLocalTransform)
-                {
-                    settings.UseLocalTransform = newUse;
-                    changed = true;
-                }
-
-                if (settings.UseLocalTransform)
-                {
-                    EditorGUILayout.LabelField(
-                        $"P:{settings.Position:F1} R:{settings.Rotation:F1} S:{settings.Scale:F1}",
-                        EditorStyles.miniLabel
-                    );
-                }
-                else
-                {
-                    EditorGUILayout.LabelField(T("Default"), EditorStyles.miniLabel);
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-
-            if (changed)
-            {
-                BoneTransformSnapshot after = settings.CreateSnapshot();
-                if (before.IsDifferentFrom(after))
-                {
-                    OnChanged?.Invoke(before, after, T("ChangeSettings"));
-                }
-            }
-
-            return changed;
-        }
-
-        private static void InitStyles()
-        {
-            if (_compactLabelStyle == null)
-            {
-                _compactLabelStyle = new GUIStyle(EditorStyles.miniLabel)
-                {
-                    alignment = TextAnchor.MiddleRight
-                };
-            }
-        }
-        /// <summary>
-        /// 変更を通知（外部からイベント発火用）
-        /// </summary>
-        public static void NotifyChanged(BoneTransformSnapshot before, BoneTransformSnapshot after, string description)
-        {
-            if (before.IsDifferentFrom(after))
-            {
-                OnChanged?.Invoke(before, after, description);
-            }
-        }
+            => $"BoneTransform(Use:{_useLocalTransform}, P:{_position}, R:{_rotation}, S:{_scale})";
     }
 }
 
@@ -594,9 +228,6 @@ namespace Poly_Ling.UndoSystem
 {
     using Poly_Ling.Tools;
 
-    /// <summary>
-    /// BoneTransform変更記録
-    /// </summary>
     public class BoneTransformChangeRecord : IUndoRecord<BoneTransform>
     {
         public UndoOperationInfo Info { get; set; }
@@ -610,19 +241,12 @@ namespace Poly_Ling.UndoSystem
             BoneTransformSnapshot after,
             string description = null)
         {
-            Before = before;
-            After = after;
+            Before      = before;
+            After       = after;
             Description = description ?? after.GetChangeDescription(before);
         }
 
-        public void Undo(BoneTransform context)
-        {
-            context?.ApplySnapshot(Before);
-        }
-
-        public void Redo(BoneTransform context)
-        {
-            context?.ApplySnapshot(After);
-        }
+        public void Undo(BoneTransform context) { context?.ApplySnapshot(Before); }
+        public void Redo(BoneTransform context) { context?.ApplySnapshot(After);  }
     }
 }

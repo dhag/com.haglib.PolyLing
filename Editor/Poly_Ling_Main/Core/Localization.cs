@@ -3,7 +3,7 @@
 // 対応言語: English / 日本語 / ひらがな
 
 using System.Collections.Generic;
-using UnityEditor;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Tools;
 
 namespace Poly_Ling.Localization
@@ -40,7 +40,7 @@ namespace Poly_Ling.Localization
                 {
                     _currentLanguage = value;
                     // EditorPrefsに保存
-                    EditorPrefs.SetInt("MeshFactory_Language", (int)value);
+                    PLEditorBridge.I.SetPrefInt("MeshFactory_Language", (int)value);
                 }
             }
         }
@@ -48,7 +48,7 @@ namespace Poly_Ling.Localization
         /// <summary>言語設定を読み込み</summary>
         public static void LoadSettings()
         {
-            _currentLanguage = (Language)EditorPrefs.GetInt("MeshFactory_Language", (int)Language.Japanese);
+            _currentLanguage = (Language)PLEditorBridge.I.GetPrefInt("MeshFactory_Language", (int)Language.Japanese);
         }
         
         // ================================================================
