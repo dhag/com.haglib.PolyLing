@@ -13,7 +13,7 @@ namespace Poly_Ling.Editor.Utility
 {
     public class MQOVertexRestoreWindow : EditorWindow
     {
-        [MenuItem("Tools/Poly_Ling/Utility/MQO Vertex Restore")]
+        [MenuItem("Tools/Utility/DependTool/MQO Vertex Restore")]
         public static void ShowWindow()
         {
             GetWindow<MQOVertexRestoreWindow>("MQO Vertex Restore");

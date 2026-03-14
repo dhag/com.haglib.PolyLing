@@ -53,7 +53,7 @@ public class BakePivotTool : EditorWindow
 
     // ===== メニュー：通常起動 =====
     //単体コマンド
-    [MenuItem("Tools/Utility/Pivot Tool/Bake Pivot (Mesh)")]
+    [MenuItem("Tools/Utility/Misc/Bake Pivot (Mesh)")]
     public static void OpenFromTools()
     {
         OpenForSelection();

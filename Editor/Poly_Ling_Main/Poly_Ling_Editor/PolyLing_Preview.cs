@@ -45,7 +45,7 @@ public partial class PolyLing
             DestroyImmediate(_polygonMaterial);
             _polygonMaterial = null;
         }
-        CleanupHitTestValidation();
+        //CleanupHitTestValidation();
     }
 
     // ================================================================

@@ -16,7 +16,7 @@ namespace Poly_Ling.Tools
     /// <summary>
     /// テクスチャ抽出パネル
     /// </summary>
-    public class TextureExtractorPanel : EditorWindow
+    public class PMXMQOTextureExtractorPanel : EditorWindow
     {
         // ================================================================
         // 定数
@@ -64,10 +64,10 @@ namespace Poly_Ling.Tools
         // メニュー
         // ================================================================
         //単体コマンド
-        [MenuItem("Tools/Poly_Ling/Utility/Texture Extractor")]
+        [MenuItem("Tools/Utility/DependTool/PMX or MQO Texture Extractor")]
         public static void ShowWindow()
         {
-            var window = GetWindow<TextureExtractorPanel>("Texture Extractor");
+            var window = GetWindow<PMXMQOTextureExtractorPanel>("Texture Extractor");
             window.minSize = new Vector2(500, 400);
         }
 

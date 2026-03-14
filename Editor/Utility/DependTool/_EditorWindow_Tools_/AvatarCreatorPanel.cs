@@ -23,13 +23,13 @@ namespace Poly_Ling.MISC
         // ================================================================
 
         private const string UxmlPackagePath =
-            "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uxml";
+            "Packages/com.haglib.polyling/Editor/Utility/DependTool/_EditorWindow_Tools_/AvatarCreatorPanel.uxml";
         private const string UxmlAssetsPath =
-            "Assets/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uxml";
+            "Assets/Editor/Utility/DependTool/_EditorWindow_Tools_/AvatarCreatorPanel.uxml";
         private const string UssPackagePath =
-            "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uss";
+            "Packages/com.haglib.polyling/Editor/Utility/DependTool/_EditorWindow_Tools_/AvatarCreatorPanel.uss";
         private const string UssAssetsPath =
-            "Assets/Editor/Poly_Ling_Main/UI/_EditorWindow_Tools_/AvatarCreatorPanel.uss";
+            "Assets/Editor/Utility/DependTool/_EditorWindow_Tools_/AvatarCreatorPanel.uss";
 
         // ================================================================
         // ローカライズ
@@ -98,7 +98,7 @@ namespace Poly_Ling.MISC
         // Open
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/Utility/Avatar Creator...")]
+        [MenuItem("Tools/Utility/DependTool/Avatar Creator...")]
         public static void ShowWindow()
         {
             var w = GetWindow<AvatarCreatorPanel>();

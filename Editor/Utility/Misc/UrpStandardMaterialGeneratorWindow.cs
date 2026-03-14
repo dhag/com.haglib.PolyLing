@@ -1,7 +1,7 @@
 using System.IO;
 using UnityEditor;
 using UnityEngine;
-using static Poly_Ling.Gizmo.GLGizmoDrawer;
+//using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 /// <summary>
 /// URP向け標準色マテリアルを一括生成するエディタウインドウである。
@@ -58,7 +58,7 @@ public class UrpStandardMaterialGeneratorWindow : EditorWindow
         "White",
     };
 
-    [MenuItem("Tools/Poly_Ling/Utility/URP Standard Material Generator")]
+    [MenuItem("Tools/Utility/Misc/Material Generator for URP Standard Material")]
     public static void ShowWindow()
     {
         GetWindow<UrpStandardMaterialGeneratorWindow>(
@@ -76,8 +76,8 @@ public class UrpStandardMaterialGeneratorWindow : EditorWindow
         DrawShaderSelection();
         EditorGUILayout.Space(8);
 
-        DrawColorPreview();
-        EditorGUILayout.Space(8);
+        //DrawColorPreview();
+        //EditorGUILayout.Space(8);
 
         DrawGenerateButton();
     }
@@ -173,9 +173,9 @@ public class UrpStandardMaterialGeneratorWindow : EditorWindow
                 Color c = StandardColors[index];
 
                 Rect r = GUILayoutUtility.GetRect(size, size, GUILayout.ExpandWidth(false));
-                UnityEditor_Handles.BeginGUI();
-                UnityEditor_Handles.DrawRect(r, c);//?
-                UnityEditor_Handles.EndGUI();
+                //UnityEditor_Handles.BeginGUI();
+                //UnityEditor_Handles.DrawRect(r, c);//?
+                //UnityEditor_Handles.EndGUI();
                 // ツールチップ用ラベル（見た目は小さく）
                 GUI.Label(r, new GUIContent("", $"{index + 1:00} {StandardColorNames[index]}"));
             }

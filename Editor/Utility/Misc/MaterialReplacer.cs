@@ -24,7 +24,7 @@ public class MaterialReplacer : EditorWindow
         public string newPath;
     }
     //単体コマンド
-    [MenuItem("Tools/Poly_Ling/Utility/Material Replacer")]
+    [MenuItem("Tools/Utility/Misc/Material Replacer")]
     public static void ShowWindow()
     {
         var window = GetWindow<MaterialReplacer>("Material Replacer");

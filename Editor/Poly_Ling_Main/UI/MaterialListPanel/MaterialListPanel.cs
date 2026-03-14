@@ -65,7 +65,7 @@ namespace Poly_Ling.UI
         // ウィンドウ
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/debug/Material List")]
+        //[MenuItem("Tools/Poly_Ling/debug/Material List")]
         public static void ShowWindow()
         {
             var window = GetWindow<MaterialListPanel>();

@@ -11,6 +11,7 @@ public class MaterialGarbageCollectorWindow : EditorWindow
     private Vector2 scrollPos;
     private bool hasScanned = false;
 
+
     private class MaterialEntry
     {
         public Material material;
@@ -18,7 +19,7 @@ public class MaterialGarbageCollectorWindow : EditorWindow
         public bool selected;
     }
     //単体コマンド
-    [MenuItem("Tools/Utility/Material Garbage Collector")]
+    [MenuItem("Tools/Utility/Misc/Material Garbage Collector")]
     public static void ShowWindow()
     {
         GetWindow<MaterialGarbageCollectorWindow>("Material GC");

@@ -30,16 +30,16 @@ namespace Poly_Ling.MQO.Utility
     /// <summary>
     /// 頂点ID診断・割り振りツール
     /// </summary>
-    public class VertexIdTool : EditorWindow
+    public class MQOVertexIdTool : EditorWindow
     {
         // ================================================================
         // メニュー
         // ================================================================
 
-        [MenuItem("Tools/Poly_Ling/debug/Vertex ID Tool")]
+        [MenuItem("Tools/Utility/DependTool/Vertex ID Tool")]
         public static void ShowWindow()
         {
-            var window = GetWindow<VertexIdTool>();
+            var window = GetWindow<MQOVertexIdTool>();
             window.titleContent = new GUIContent("頂点ID診断");
             window.minSize = new Vector2(400, 500);
             window.Show();

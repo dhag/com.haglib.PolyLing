@@ -1,0 +1,32 @@
+基本版 (MuscleValueCopier)
+使い方：
+
+コピー先のHumanoidモデルにアタッチ
+Source Animatorにコピー元のAnimatorをドラッグ
+再生するだけで自動的にポーズがコピーされる
+
+主な機能：
+
+ルート位置・回転のコピーON/OFF
+補間（Lerp）による滑らかな追従
+動的なソース変更（SetSource()）
+
+
+自分自身にはAnimatorコンポーネントとアバターが必要だが、Animator Controller（アニメーション）は不要（空でよい）。
+非表示の方法
+Renderer.enabled = false動き続ける。 正常にコピーされる
+
+正しいやり方
+SkinnedMeshRendererだけを無効にする：
+csharp// モデルAのメッシュを非表示（Animatorは動く）
+sourceAnimator.GetComponentInChildren<SkinnedMeshRenderer>().enabled = false;
+または、インスペクタでモデルAのSkinnedMeshRendererのチェックを外すだけでOK。
+
+
+
+高度版 (AdvancedMuscleValueCopier)
+追加機能：
+
+ボディパーツ別のON/OFF（頭、腕、脚、指など）
+パーツごとのウェイト設定（0〜1でブレンド）
+上半身のみ/下半身のみのプリセット

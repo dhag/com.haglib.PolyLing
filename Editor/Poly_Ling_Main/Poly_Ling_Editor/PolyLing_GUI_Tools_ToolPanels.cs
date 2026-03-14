@@ -234,10 +234,7 @@ public partial class PolyLing
             Poly_Ling.UI.QuadDecimatorPanel.Open(_toolManager?.toolContext);
         }
 
-        if (GUILayout.Button("__old_PMX Bone Weight Export..."))
-        {
-            Poly_Ling.PMX.PMXBoneWeightExportPanel.ShowWindow();
-        }
+
         if (GUILayout.Button("__old_PMX ←→ MQO"))
         {
             Poly_Ling.PMX.PMXMQOTransferPanel.ShowWindow();

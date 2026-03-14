@@ -14,7 +14,7 @@ namespace Poly_Ling.Editor.Utility
     public class MQOBoneWeightStripWindow : EditorWindow
     {
         /// 単体コマンド
-        [MenuItem("Tools/Poly_Ling/Utility/MQO BoneWeight Strip")]
+        [MenuItem("Tools/Utility/DependTool/MQO BoneWeight Strip")]
         public static void ShowWindow()
         {
             GetWindow<MQOBoneWeightStripWindow>("MQO BoneWeight Strip");

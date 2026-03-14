@@ -147,6 +147,7 @@ namespace Poly_Ling.PMX
         // Open
         // ================================================================
 
+        [MenuItem("Tools/Utility/DependTool/PMXBoneWeightExportPanel")]
         public static void ShowWindow()
         {
             var window = GetWindow<PMXBoneWeightExportPanel>();

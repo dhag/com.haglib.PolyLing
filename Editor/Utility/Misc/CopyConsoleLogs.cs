@@ -28,7 +28,7 @@ public class ConsoleCopyWindow : EditorWindow
     private const string PrefIncludeFileAndLine = "ConsoleCopyWindow.IncludeFileAndLine";
     private const string PrefIncludeMode = "ConsoleCopyWindow.IncludeMode";
     //単体コマンド
-    [MenuItem("Tools/Utility/Console Copy Window")]
+    [MenuItem("Tools/Utility/Misc/Console Copy Window")]
     public static void Open()
     {
         var window = GetWindow<ConsoleCopyWindow>("Console Copy");
@@ -104,13 +104,15 @@ public class ConsoleCopyWindow : EditorWindow
         );
     }
     //単体コマンド
-    [MenuItem("Tools/Utility/Copy Console Logs/Message Only")]
+    [MenuItem("Tools/Utility/Misc/Copy Console Logs/Message Only")]
     public static void CopyMessageOnlyMenu()
     {
         CopyLogs("", true, false, false, false);
     }
+
+
     //単体コマンド
-    [MenuItem("Tools/Utility/Copy Console Logs/Message + StackTrace")]
+    [MenuItem("Tools/Utility/Misc/Copy Console Logs/Message + StackTrace")]
     public static void CopyMessageAndStackMenu()
     {
         CopyLogs("", true, true, false, false);

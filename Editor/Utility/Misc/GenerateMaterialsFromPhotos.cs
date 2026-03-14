@@ -8,7 +8,7 @@ using UnityEditor;
 public static class GenerateMaterialsFromPhotos
 {
     //単体コマンド
-    [MenuItem("Tools/Poly_Ling/Utility/Generate Materials From Texture Assets")]
+    [MenuItem("Tools/Utility/Misc/Generate Materials From Texture Assets")]
     public static void GenerateMaterials()
     {
         string sourceFolder = "Assets/Resources/photos";
