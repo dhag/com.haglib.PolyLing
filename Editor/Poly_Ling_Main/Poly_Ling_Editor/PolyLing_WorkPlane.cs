@@ -1,8 +1,8 @@
 // Assets/Editor/PolyLing.WorkPlaneContext.cs
 // WorkPlane関連（UI、イベントハンドラ、ギズモ描画）
 
-using UnityEditor;
 using UnityEngine;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Tools;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
@@ -91,7 +91,7 @@ public partial class PolyLing
         if (meshContext?.BoneTransform == null) return;
 
         // 選択がなければ何もしない
-        if (UnityEditor.Selection.activeTransform == null) return;
+        if (PLEditorBridge.I.GetActiveTransform() == null) return;
 
         BoneTransformSnapshot before = meshContext.BoneTransform.CreateSnapshot();
 

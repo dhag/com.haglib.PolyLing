@@ -5,7 +5,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEditor;
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Selection;
@@ -732,13 +731,16 @@ namespace Poly_Ling.Core
         /// <summary>
         /// キューに入っているメッシュを描画
         /// </summary>
-        public void DrawQueued(PreviewRenderUtility preview)
+#if UNITY_EDITOR
+        public void DrawQueued(UnityEditor.PreviewRenderUtility preview)
         {
             if (!_isInitialized)
                 return;
 
             _renderer.DrawQueued(preview);
         }
+#endif
+
 
         /// <summary>
         /// 描画後のクリーンアップ

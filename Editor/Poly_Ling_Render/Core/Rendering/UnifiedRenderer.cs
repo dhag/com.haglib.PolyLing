@@ -14,7 +14,6 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEditor;
 using Poly_Ling.Core;
 
 namespace Poly_Ling.Core.Rendering
@@ -742,10 +741,11 @@ namespace Poly_Ling.Core.Rendering
             mat.SetColor("_BorderColorDefault", _colorSettings.VertexBorderDefault);
         }
 
+#if UNITY_EDITOR
         /// <summary>
         /// キューに入っているメッシュをPreviewRenderUtilityで描画
         /// </summary>
-        public void DrawQueued(PreviewRenderUtility preview)
+        public void DrawQueued(UnityEditor.PreviewRenderUtility preview)
         {
             if (preview == null) return;
 
@@ -759,6 +759,8 @@ namespace Poly_Ling.Core.Rendering
                 }
             }
         }
+#endif
+
 
         /// <summary>
         /// 描画後のクリーンアップ

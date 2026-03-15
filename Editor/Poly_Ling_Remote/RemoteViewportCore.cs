@@ -3,9 +3,11 @@
 // ViewportTestPanel と RemoteClient で共用
 
 using System;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Model;
+
+#if UNITY_EDITOR
+using UnityEditor;
 
 namespace Poly_Ling.Remote
 {
@@ -198,3 +200,4 @@ namespace Poly_Ling.Remote
         }
     }
 }
+#endif

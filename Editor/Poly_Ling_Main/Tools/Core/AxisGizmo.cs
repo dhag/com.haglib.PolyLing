@@ -4,7 +4,9 @@
 // 描画、ヒットテスト、移動量計算を提供
 
 using UnityEngine;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.Tools
@@ -244,10 +246,12 @@ namespace Poly_Ling.Tools
             UnityEditor_Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
             UnityEditor_Handles.EndGUI();
 
+#if UNITY_EDITOR
             GUIStyle style = new GUIStyle(EditorStyles.miniLabel);
             style.normal.textColor = color;
             style.fontStyle = hovered ? FontStyle.Bold : FontStyle.Normal;
             GUI.Label(new Rect(pos.x + size / 2 + 2, pos.y - 8, 20, 16), label, style);
+#endif
         }
     }
 }

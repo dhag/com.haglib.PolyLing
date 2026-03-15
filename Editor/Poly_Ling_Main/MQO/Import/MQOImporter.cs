@@ -1570,6 +1570,7 @@ namespace Poly_Ling.MQO
                 isInsideAssets = true;
             }
 
+#if UNITY_EDITOR
             // 1. まずAssetDatabaseから読み込みを試す
             Texture2D texture = null;
             if (isInsideAssets)
@@ -1611,6 +1612,7 @@ namespace Poly_Ling.MQO
                 }
             }
 
+#endif
             // 3. それでも失敗した場合、File.ReadAllBytesで直接読み込み
             if (texture == null && File.Exists(fullPath))
             {

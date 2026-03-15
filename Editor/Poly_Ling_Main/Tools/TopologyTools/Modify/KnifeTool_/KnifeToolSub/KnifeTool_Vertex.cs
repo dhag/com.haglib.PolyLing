@@ -2,7 +2,6 @@
 // ナイフツール - Vertexモード
 
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;

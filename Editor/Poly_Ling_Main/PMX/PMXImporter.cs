@@ -8,7 +8,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
@@ -1860,6 +1862,7 @@ namespace Poly_Ling.PMX
                 isInsideAssets = true;
             }
 
+#if UNITY_EDITOR
             // 1. まずAssetDatabaseから読み込みを試す
             Texture2D texture = null;
             if (isInsideAssets)
@@ -1901,6 +1904,7 @@ namespace Poly_Ling.PMX
                 }
             }
 
+#endif
             // 3. それでも失敗した場合、File.ReadAllBytesで直接読み込み
             if (texture == null && File.Exists(fullPath))
             {
