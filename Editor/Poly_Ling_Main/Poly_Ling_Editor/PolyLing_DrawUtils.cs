@@ -3,7 +3,6 @@
 // これらは SimpleMeshFactory_Preview.cs から分離
 
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;

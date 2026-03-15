@@ -576,7 +576,9 @@ namespace Poly_Ling.PMX
 
                 if (mainTex != null)
                 {
+                    #if UNITY_EDITOR
                     string assetPath = UnityEditor.AssetDatabase.GetAssetPath(mainTex);
+                    #endif
                     if (!string.IsNullOrEmpty(assetPath))
                     {
                         texturePath = settings.UseRelativeTexturePath

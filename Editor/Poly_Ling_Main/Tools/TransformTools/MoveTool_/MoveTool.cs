@@ -486,26 +486,19 @@ namespace Poly_Ling.Tools
             var oldSelection = new HashSet<int>(ctx.SelectedVertices);
             bool selectionChanged = false;
 
-            // Ctrl: 除外選択して移動キャンセル
+            // Ctrl: ヒット頂点が既選択の場合は例外 → そのまま全選択頂点を移動
+            //       ヒット頂点が未選択の場合 → 移動キャンセル（Ctrl+クリック除外はHandleClickが処理）
             if (_ctrlHeld)
             {
-                if (_hitVertexOnMouseDown >= 0 && ctx.SelectedVertices.Contains(_hitVertexOnMouseDown))
-                {
-                    ctx.SelectedVertices.Remove(_hitVertexOnMouseDown);
-                    if (ctx.SelectionState != null)
-                    {
-                        ctx.SelectionState.DeselectVertex(_hitVertexOnMouseDown);
-                    }
-                    selectionChanged = true;
-                }
+                bool hitIsSelected = _hitVertexOnMouseDown >= 0
+                    && ctx.SelectedVertices.Contains(_hitVertexOnMouseDown);
 
-                if (selectionChanged)
+                if (!hitIsSelected)
                 {
-                    ctx.RecordSelectionChange?.Invoke(oldSelection, ctx.SelectedVertices);
+                    _state = MoveState.Idle;
+                    return;  // 移動しない
                 }
-
-                _state = MoveState.Idle;
-                return;  // 移動しない
+                // hitIsSelected == true: 除外せずそのまま移動に進む
             }
 
             // 未選択頂点からドラッグ開始した場合

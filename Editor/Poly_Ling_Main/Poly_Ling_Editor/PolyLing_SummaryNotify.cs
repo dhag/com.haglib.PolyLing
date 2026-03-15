@@ -30,6 +30,7 @@ public partial class PolyLing
         // 開いているパネルへPanelContextを再配布
         ToolContextReconnector.ReconnectAllPanelContexts(_panelContext);
 
+#if UNITY_EDITOR
         // RemoteServerが開いていなければ開いてサーバー開始
         var remote = RemoteServer.FindInstance()
             ?? UnityEditor.EditorWindow.GetWindow<RemoteServer>("Remote Server");
@@ -38,6 +39,7 @@ public partial class PolyLing
         remote.SetDispatchCommand(DispatchPanelCommand);
         if (!remote.IsRunning)
             remote.StartServer();
+#endif
     }
 
     /// <summary>

@@ -1,0 +1,300 @@
+/* RemoteClientV3.uss
+   RemoteClientV2 UIToolkit 化スタイル
+*/
+
+/* ================================================================
+   ルート
+   ================================================================ */
+
+.rc3-root {
+    flex-grow: 1;
+}
+
+/* ================================================================
+   左ペイン
+   ================================================================ */
+
+.rc3-left-pane {
+    flex-direction: column;
+    padding: 4px;
+    min-width: 180px;
+}
+
+.rc3-title {
+    -unity-font-style: bold;
+    font-size: 12px;
+    margin-bottom: 4px;
+    padding: 2px 0;
+}
+
+/* ================================================================
+   セクション共通
+   ================================================================ */
+
+.rc3-section {
+    margin-bottom: 4px;
+    padding: 3px 4px;
+    background-color: rgba(0, 0, 0, 0.08);
+    border-radius: 3px;
+}
+
+.rc3-section-label {
+    width: 34px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+    flex-shrink: 0;
+}
+
+.rc3-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.rc3-row:last-child {
+    margin-bottom: 0;
+}
+
+/* ================================================================
+   接続UI
+   ================================================================ */
+
+.rc3-host-field {
+    flex-grow: 1;
+    height: 20px;
+    font-size: 11px;
+}
+
+.rc3-host-field Label {
+    display: none;
+}
+
+.rc3-port-field {
+    width: 55px;
+    height: 20px;
+    margin-left: 2px;
+    font-size: 11px;
+}
+
+.rc3-port-field Label {
+    display: none;
+}
+
+.rc3-btn {
+    height: 20px;
+    margin: 0 1px;
+    padding: 0 6px;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.rc3-btn-small {
+    height: 20px;
+    width: 36px;
+    margin: 0 1px;
+    padding: 0;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.rc3-connected-label {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(100, 220, 100, 1.0);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   ツールボタン
+   ================================================================ */
+
+.rc3-tool-btn {
+    height: 20px;
+    margin: 0 1px;
+    padding: 0 8px;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.rc3-tool-btn-active {
+    background-color: rgba(66, 165, 245, 0.45);
+    -unity-font-style: bold;
+    border-color: rgba(66, 165, 245, 0.8);
+}
+
+.rc3-tool-btn-active:hover {
+    background-color: rgba(66, 165, 245, 0.55);
+}
+
+.rc3-mini-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 0 2px;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   表示設定トグル
+   ================================================================ */
+
+.rc3-view-toggle {
+    margin: 0 1px;
+    flex-shrink: 0;
+}
+
+.rc3-view-toggle Label {
+    font-size: 11px;
+    min-width: 0;
+    padding-right: 2px;
+}
+
+/* ================================================================
+   プロジェクトサマリー
+   ================================================================ */
+
+.rc3-summary-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+    padding: 2px 4px;
+    margin-bottom: 2px;
+}
+
+/* ================================================================
+   ツリー
+   ================================================================ */
+
+.rc3-tree-scroll {
+    flex-grow: 1;
+    min-height: 80px;
+    margin-bottom: 2px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.rc3-tree-container {
+    flex-direction: column;
+}
+
+/* モデル行 */
+.rc3-model-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 1px;
+}
+
+.rc3-model-foldout-btn {
+    flex-grow: 1;
+    height: 20px;
+    margin: 0;
+    padding: 0 4px;
+    -unity-text-align: middle-left;
+    font-size: 11px;
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 2px;
+}
+
+.rc3-model-foldout-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.rc3-model-select-btn {
+    width: 22px;
+    height: 20px;
+    margin: 0 0 0 2px;
+    padding: 0;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+/* メッシュ行 */
+.rc3-mesh-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 1px;
+}
+
+.rc3-mesh-btn {
+    flex-grow: 1;
+    height: 18px;
+    margin: 0;
+    padding: 0 4px;
+    -unity-text-align: middle-left;
+    font-size: 11px;
+    background-color: transparent;
+    border-radius: 2px;
+}
+
+.rc3-mesh-btn:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.rc3-mesh-vcount {
+    width: 50px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    -unity-text-align: middle-right;
+    flex-shrink: 0;
+    padding-right: 4px;
+}
+
+/* 選択状態 */
+.rc3-selected .rc3-model-foldout-btn,
+.rc3-selected .rc3-mesh-btn {
+    background-color: rgba(53, 101, 255, 0.35);
+}
+
+.rc3-selected .rc3-model-foldout-btn:hover,
+.rc3-selected .rc3-mesh-btn:hover {
+    background-color: rgba(53, 101, 255, 0.45);
+}
+
+/* ================================================================
+   ログ
+   ================================================================ */
+
+.rc3-log-scroll {
+    height: 80px;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.rc3-log-container {
+    flex-direction: column;
+    padding: 2px;
+}
+
+.rc3-log-line {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: normal;
+    margin-bottom: 1px;
+}
+
+.rc3-btn-clear-log {
+    height: 18px;
+    font-size: 10px;
+    width: 72px;
+    margin: 0;
+    padding: 0;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+/* ================================================================
+   右ペイン（ビューポート）
+   ================================================================ */
+
+.rc3-right-pane {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.rc3-viewport {
+    flex-grow: 1;
+}

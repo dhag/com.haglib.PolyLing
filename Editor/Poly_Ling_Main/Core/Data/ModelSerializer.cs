@@ -10,7 +10,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using UnityEditor;
 using Unity.Plastic.Newtonsoft.Json;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;

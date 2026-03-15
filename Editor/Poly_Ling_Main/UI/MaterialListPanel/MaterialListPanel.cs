@@ -5,10 +5,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using UnityEngine;
 using UnityEngine.UIElements;
+#if UNITY_EDITOR
 using UnityEditor.UIElements;
+#endif
 using Poly_Ling.Data;
 using Poly_Ling.Model;
 using Poly_Ling.Tools;
@@ -117,8 +121,10 @@ namespace Poly_Ling.UI
                     _dropArea.AddToClassList("drop-area-highlight"));
                 _dropArea.RegisterCallback<DragLeaveEvent>(_ =>
                     _dropArea.RemoveFromClassList("drop-area-highlight"));
+#if UNITY_EDITOR
                 _dropArea.RegisterCallback<DragUpdatedEvent>(OnDragUpdated);
                 _dropArea.RegisterCallback<DragPerformEvent>(OnDragPerform);
+#endif
             }
         }
 
@@ -164,6 +170,7 @@ namespace Poly_Ling.UI
             }
         }
 
+#if UNITY_EDITOR
         private VisualElement CreateMaterialRow(int index)
         {
             var row = new VisualElement();
@@ -201,6 +208,8 @@ namespace Poly_Ling.UI
 
             return row;
         }
+#endif
+
 
         private void RefreshCurrentLabel()
         {
@@ -425,6 +434,7 @@ namespace Poly_Ling.UI
         // ドラッグ＆ドロップ
         // ================================================================
 
+#if UNITY_EDITOR
         private void OnDragUpdated(DragUpdatedEvent evt)
         {
             bool hasMaterials = DragAndDrop.objectReferences.Any(o => o is Material);
@@ -458,6 +468,7 @@ namespace Poly_Ling.UI
 
             evt.StopPropagation();
         }
+#endif
 
         // ================================================================
         // ヘルパー
