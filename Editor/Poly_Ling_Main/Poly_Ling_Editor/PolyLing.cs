@@ -702,6 +702,11 @@ public partial class PolyLing : EditorWindow
 
     private void OnDisable()
     {
+        // PreviewRenderUtility を最初に解放する。
+        // 後続処理で例外が発生しても Cleanup() が確実に呼ばれるようにするため先頭に置く。
+        _viewportCore?.Dispose();
+        _viewportCore = null;
+
         CleanupMeshes();
 
         if (_previewMaterial != null)
@@ -756,10 +761,6 @@ public partial class PolyLing : EditorWindow
         {
             _model.OnListChanged -= OnMeshListChanged;
         }
-        // OnDisable() に追加
-        _viewportCore?.Dispose();
-        _viewportCore = null;
-
     }
 
     /// <summary>

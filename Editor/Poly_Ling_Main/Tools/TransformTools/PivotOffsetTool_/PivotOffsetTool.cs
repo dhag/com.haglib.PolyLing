@@ -45,6 +45,7 @@ namespace Poly_Ling.Tools
 
         // ドラッグ開始時の位置
         private Vector3[] _dragStartPositions;
+        private BoneTransformSnapshot _dragStartBoneSnapshot;   // ← 追加
         private Vector3 _totalOffset = Vector3.zero;  // 累積オフセット
 
         // ギズモ設定
@@ -167,6 +168,7 @@ namespace Poly_Ling.Tools
             _draggingAxis = AxisType.None;
             _hoveredAxis = AxisType.None;
             _dragStartPositions = null;
+            _dragStartBoneSnapshot = default;
             _totalOffset = Vector3.zero;
         }
 
@@ -180,6 +182,11 @@ namespace Poly_Ling.Tools
 
             // 全頂点の開始位置を記録
             _dragStartPositions = (Vector3[])ctx.FirstSelectedMeshObject.Positions.Clone();
+
+            // BoneTransform の開始状態を記録
+            var mc = ctx.FirstSelectedMeshContext;
+            if (mc?.BoneTransform != null)
+                _dragStartBoneSnapshot = mc.BoneTransform.CreateSnapshot();
 
             _state = (axis == AxisType.Center) ? ToolState.CenterDragging : ToolState.AxisDragging;
         }
@@ -216,7 +223,9 @@ namespace Poly_Ling.Tools
             Vector3 vertexDelta = localAxisDir * (-worldMovement);
             _totalOffset += vertexDelta;
 
-            ApplyOffset(vertexDelta, ctx);
+            // BoneTransform のデルタはワールド空間で +worldMovement（ハンドル方向）
+            Vector3 boneWorldDelta = GetLocalAxisDirection(_draggingAxis, worldMatrix) * worldMovement;
+            ApplyOffset(vertexDelta, boneWorldDelta, ctx);
         }
 
         private void MoveFreely(Vector2 screenDelta, ToolContext ctx)
@@ -229,16 +238,16 @@ namespace Poly_Ling.Tools
             Vector3 vertexDelta = -worldDelta;
             _totalOffset += vertexDelta;
 
-            ApplyOffset(vertexDelta, ctx);
+            ApplyOffset(vertexDelta, worldDelta, ctx);
         }
 
-        private void ApplyOffset(Vector3 delta, ToolContext ctx)
+        private void ApplyOffset(Vector3 vertexDelta, Vector3 boneWorldDelta, ToolContext ctx)
         {
-            // 全頂点を移動
+            // 全頂点を逆方向に移動
             for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
                 var v = ctx.FirstSelectedMeshObject.Vertices[i];
-                v.Position += delta;
+                v.Position += vertexDelta;
                 ctx.FirstSelectedMeshObject.Vertices[i] = v;
 
                 // オフセット更新
@@ -249,9 +258,16 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            ctx.SyncMesh?.Invoke();
+            // BoneTransform をハンドルと同方向に移動してピボットを追従させる
+            var mc = ctx.FirstSelectedMeshContext;
+            if (mc?.BoneTransform != null)
+            {
+                mc.BoneTransform.UseLocalTransform = true;
+                mc.BoneTransform.Position += boneWorldDelta;
+            }
 
-            // MeshObject/TargetMesh/OriginalPositions は MeshContextIndex 経由で自動解決
+            ctx.SyncMesh?.Invoke();
+            ctx.SyncBoneTransforms?.Invoke();
         }
 
         private void EndDrag(ToolContext ctx)
@@ -263,16 +279,23 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            // Undo記録（全頂点）
-            var movedIndices = new List<int>();
-            var oldPositions = new List<Vector3>();
-            var newPositions = new List<Vector3>();
+            var mc = ctx.FirstSelectedMeshContext;
+            if (mc == null)
+            {
+                _dragStartPositions = null;
+                _draggingAxis = AxisType.None;
+                return;
+            }
+
+            // 移動した頂点インデックスと新旧位置を収集
+            var movedIndices  = new List<int>();
+            var oldPositions  = new List<Vector3>();
+            var newPositions  = new List<Vector3>();
 
             for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
             {
                 Vector3 oldPos = _dragStartPositions[i];
                 Vector3 newPos = ctx.FirstSelectedMeshObject.Vertices[i].Position;
-
                 if (Vector3.Distance(oldPos, newPos) > 0.0001f)
                 {
                     movedIndices.Add(i);
@@ -281,17 +304,25 @@ namespace Poly_Ling.Tools
                 }
             }
 
+            // OriginalPositions を現在の頂点位置に更新（VertexOffsets の基準をリセット）
+            mc.OriginalPositions = (Vector3[])ctx.FirstSelectedMeshObject.Positions.Clone();
+
             if (movedIndices.Count > 0 && ctx.UndoController != null)
             {
                 string axisName = _draggingAxis == AxisType.Center ? "Free" : _draggingAxis.ToString();
-                string actionName = $"Pivot Offset ({axisName})";
 
-                var record = new VertexMoveRecord(
-                    movedIndices.ToArray(),
-                    oldPositions.ToArray(),
-                    newPositions.ToArray());
-                ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, actionName);
+                var record = new Poly_Ling.UndoSystem.PivotMoveRecord
+                {
+                    MasterIndex        = ctx.Model.IndexOf(mc),
+                    VertexIndices      = movedIndices.ToArray(),
+                    OldVertexPositions = oldPositions.ToArray(),
+                    NewVertexPositions = newPositions.ToArray(),
+                    OldBoneTransform   = _dragStartBoneSnapshot,
+                    NewBoneTransform   = mc.BoneTransform.CreateSnapshot(),
+                };
+
+                ctx.UndoController.MeshListStack.Record(record, $"Pivot Move ({axisName})");
+                ctx.UndoController.FocusMeshList();
             }
 
             _dragStartPositions = null;

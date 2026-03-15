@@ -538,4 +538,32 @@ namespace Poly_Ling.Data
         public EndBoneTransformSliderDragCommand(int modelIndex, string description)
             : base(modelIndex) { Description = description; }
     }
+
+    // ================================================================
+    // メッシュマージ
+    // ================================================================
+
+    /// <summary>
+    /// 選択メッシュオブジェクト群をひとつにマージする。
+    /// BaseMasterIndex のオブジェクトを基準トランスフォームとして使用する。
+    /// CreateNewMesh が true の場合は新規メッシュオブジェクトを作成して結果を格納する。
+    /// false の場合は BaseMasterIndex のメッシュオブジェクトに直接結合する。
+    /// </summary>
+    public class MergeMeshesCommand : PanelCommand
+    {
+        /// <summary>マージ対象の MasterIndex 配列（基準オブジェクトを含む）</summary>
+        public int[] MasterIndices { get; }
+        /// <summary>基準オブジェクトの MasterIndex</summary>
+        public int BaseMasterIndex { get; }
+        /// <summary>true: 新規メッシュオブジェクトに結果を格納する</summary>
+        public bool CreateNewMesh { get; }
+
+        public MergeMeshesCommand(int modelIndex, int[] masterIndices, int baseMasterIndex, bool createNewMesh)
+            : base(modelIndex)
+        {
+            MasterIndices    = masterIndices;
+            BaseMasterIndex  = baseMasterIndex;
+            CreateNewMesh    = createNewMesh;
+        }
+    }
 }

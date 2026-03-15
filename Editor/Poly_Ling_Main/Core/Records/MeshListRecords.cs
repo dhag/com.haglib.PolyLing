@@ -711,6 +711,64 @@ namespace Poly_Ling.UndoSystem
         public override string ToString() => $"MultiBoneTransformChange: {Entries.Count} entries";
     }
 
+    /// <summary>
+    /// ピボット移動の複合 Undo レコード。
+    /// 頂点位置（VertexMove）と BoneTransform（BoneTransformSnapshot）を同時に記録する。
+    /// Undo/Redo 時は両方を一緒に復元するため、見た目上ピボットだけが動いたように扱える。
+    /// </summary>
+    public class PivotMoveRecord : MeshListUndoRecord
+    {
+        public int MasterIndex;
+
+        // 頂点位置
+        public int[]      VertexIndices;
+        public Vector3[]  OldVertexPositions;
+        public Vector3[]  NewVertexPositions;
+
+        // BoneTransform
+        public BoneTransformSnapshot OldBoneTransform;
+        public BoneTransformSnapshot NewBoneTransform;
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            Apply(ctx, OldVertexPositions, OldBoneTransform);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            Apply(ctx, NewVertexPositions, NewBoneTransform);
+        }
+
+        private void Apply(ModelContext ctx, Vector3[] positions, BoneTransformSnapshot boneSnap)
+        {
+            if (MasterIndex < 0 || MasterIndex >= ctx.MeshContextCount) return;
+            var mc = ctx.GetMeshContext(MasterIndex);
+            if (mc?.MeshObject == null) return;
+
+            // 頂点位置を復元
+            for (int i = 0; i < VertexIndices.Length; i++)
+            {
+                int vi = VertexIndices[i];
+                if (vi >= 0 && vi < mc.MeshObject.VertexCount)
+                    mc.MeshObject.Vertices[vi].Position = positions[i];
+            }
+            mc.MeshObject.InvalidatePositionCache();
+            mc.OriginalPositions = (Vector3[])mc.MeshObject.Positions.Clone();
+
+            // BoneTransform を復元
+            if (mc.BoneTransform != null)
+                mc.BoneTransform.ApplySnapshot(boneSnap);
+
+            ctx.ComputeWorldMatrices();
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString() => $"PivotMove: MasterIndex={MasterIndex}";
+    }
+
     /// Type, MorphBaseData, MorphParentIndex, ExcludeFromExport を保存/復元
     /// </summary>
     public class MorphConversionRecord : MeshListUndoRecord

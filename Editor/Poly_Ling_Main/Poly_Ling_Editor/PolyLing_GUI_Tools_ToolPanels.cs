@@ -154,6 +154,12 @@ public partial class PolyLing
             if (_panelContext != null)
                 Poly_Ling.UI.ModelListPanelV2.Open(_panelContext);
         }
+
+        if (GUILayout.Button("メッシュマージ V2"))
+        {
+            if (_panelContext != null)
+                Poly_Ling.UI.MergeMeshesPanel.Open(_panelContext);
+        }
         EditorGUILayout.Space(5);
 
                 // 簡易ブレンド

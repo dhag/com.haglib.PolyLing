@@ -310,6 +310,12 @@ public partial class PolyLing
                 NotifyPanels(ChangeKind.Attributes);
                 return;
 
+            // --- メッシュマージ ---
+            case MergeMeshesCommand c:
+                HandleMergeMeshesCommand(c);
+                NotifyPanels(ChangeKind.ListStructure);
+                return;
+
             // --- BoneTransform ---
             case SetBoneTransformValueCommand c:
                 _meshListOps.SetBoneTransformValue(c.MasterIndices, c.TargetField, c.Value);
