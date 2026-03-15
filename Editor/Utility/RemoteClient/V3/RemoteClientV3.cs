@@ -88,6 +88,10 @@ namespace Poly_Ling.Remote
         private CommandQueue       _commandQueue;
 
         // ================================================================
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
         // 選択システム
         // ================================================================
 
@@ -96,6 +100,11 @@ namespace Poly_Ling.Remote
         private SelectionOperations _selectionOps;
 
         // ================================================================
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
         // GUI 状態
         // ================================================================
 
@@ -489,23 +498,46 @@ namespace Poly_Ling.Remote
             _toolContext.WorldToScreenPos = (worldPos, rect, _, _2) =>
             {
                 if (cam == null) return Vector2.zero;
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 // DisplayMatrix が identity 以外の場合は頂点位置を変換して投影
                 Vector3 transformed = _toolContext.DisplayMatrix != Matrix4x4.identity
                     ? _toolContext.DisplayMatrix.MultiplyPoint3x4(worldPos)
                     : worldPos;
                 Vector3 sp = cam.WorldToScreenPoint(transformed);
+<<<<<<< HEAD
+=======
+=======
+                Vector3 sp = cam.WorldToScreenPoint(worldPos);
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 if (sp.z <= 0) return new Vector2(-9999, -9999);
                 return new Vector2(sp.x, rect.height - sp.y);
             };
 
             _toolContext.ScreenDeltaToWorldDelta = (screenDelta, camPos, lookAt, camDist, rect) =>
             {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 Vector3    forward  = (lookAt - camPos).normalized;
                 Quaternion lookRot  = Quaternion.LookRotation(forward, Vector3.up);
                 Quaternion rollRot  = Quaternion.AngleAxis(_viewport != null ? _viewport.RotZ : 0f, Vector3.forward);
                 Quaternion camRot   = lookRot * rollRot;
                 Vector3    right    = camRot * Vector3.right;
                 Vector3    up       = camRot * Vector3.up;
+<<<<<<< HEAD
+=======
+=======
+                Vector3    forward = (lookAt - camPos).normalized;
+                Quaternion camRot  = Quaternion.LookRotation(forward, Vector3.up);
+                Vector3    right   = camRot * Vector3.right;
+                Vector3    up      = camRot * Vector3.up;
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 float fovRad = (_viewport != null ? _viewport.FOV : 30f) * Mathf.Deg2Rad;
                 float worldH = 2f * camDist * Mathf.Tan(fovRad / 2f);
                 float px2w   = worldH / rect.height;
@@ -517,12 +549,24 @@ namespace Poly_Ling.Remote
                 if (meshObj == null || cam == null) return -1;
                 int   best     = -1;
                 float bestDist = radius;
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 bool  hasMatrix = _toolContext.DisplayMatrix != Matrix4x4.identity;
                 for (int i = 0; i < meshObj.VertexCount; i++)
                 {
                     Vector3 pos = meshObj.Vertices[i].Position;
                     if (hasMatrix) pos = _toolContext.DisplayMatrix.MultiplyPoint3x4(pos);
                     Vector2 sp = _toolContext.WorldToScreenPos(pos, rect, camPos, lookAt);
+<<<<<<< HEAD
+=======
+=======
+                for (int i = 0; i < meshObj.VertexCount; i++)
+                {
+                    Vector2 sp = _toolContext.WorldToScreenPos(meshObj.Vertices[i].Position, rect, camPos, lookAt);
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                     float   d  = Vector2.Distance(screenPos, sp);
                     if (d < bestDist) { bestDist = d; best = i; }
                 }
@@ -643,6 +687,10 @@ namespace Poly_Ling.Remote
             _toolContext.RecordSelectionChange = (oldSel, newSel) =>
                 _undoController.RecordSelectionChange(oldSel, newSel);
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             // ──────────────────────────────────────────────────────
             // 選択システム初期化（メインパネルの InitializeSelectionSystem 相当）
             // ──────────────────────────────────────────────────────
@@ -733,6 +781,11 @@ namespace Poly_Ling.Remote
             // ── Repaint ──
             _toolContext.Repaint = Repaint;
 
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             _currentTool?.OnActivate(_toolContext);
         }
 
@@ -1239,7 +1292,14 @@ namespace Poly_Ling.Remote
                 ctx.CameraTarget   = evt.CameraTarget;
                 ctx.CameraDistance = evt.CameraDistance;
                 ctx.PreviewRect    = rect;
+<<<<<<< HEAD
                 ctx.CameraFOV      = evt.CameraFOV;
+=======
+<<<<<<< HEAD
+                ctx.CameraFOV      = evt.CameraFOV;
+=======
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
 
                 _shiftHeld = e.shift;
                 _ctrlHeld  = e.control;
@@ -1259,6 +1319,10 @@ namespace Poly_Ling.Remote
                 {
                     if (_isDraggingCamera)
                     {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                         // RotZ分だけマウスデルタを逆回転（メインパネルと同一仕様）
                         float rotZ  = _owner._viewport.RotZ;
                         float zRad  = -rotZ * Mathf.Deg2Rad;
@@ -1268,6 +1332,13 @@ namespace Poly_Ling.Remote
                         float adjY  = e.delta.x * sin + e.delta.y * cos;
                         _owner._viewport.RotY += adjX * 0.5f;
                         _owner._viewport.RotX += adjY * 0.5f;
+<<<<<<< HEAD
+=======
+=======
+                        _owner._viewport.RotY += e.delta.x * 0.5f;
+                        _owner._viewport.RotX += e.delta.y * 0.5f;
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                         _owner._viewport.RotX  = Mathf.Clamp(_owner._viewport.RotX, -89f, 89f);
                         _owner._viewport.RequestNormal();
                         e.Use();
@@ -1283,6 +1354,10 @@ namespace Poly_Ling.Remote
                     return;
                 }
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 // 中ボタンドラッグ: パン（メインパネルと同一仕様）
                 if (e.type == EventType.MouseDown && e.button == 2 && rect.Contains(mousePos))
                 {
@@ -1332,6 +1407,16 @@ namespace Poly_Ling.Remote
                         _owner._viewport.Distance *= 1f + sv * sensitivity;
                         _owner._viewport.Distance  = Mathf.Clamp(_owner._viewport.Distance, 0.05f, 100f);
                     }
+<<<<<<< HEAD
+=======
+=======
+                if (e.type == EventType.ScrollWheel && rect.Contains(mousePos))
+                {
+                    float delta = Mathf.Abs(e.delta.y) > Mathf.Abs(e.delta.x) ? e.delta.y : e.delta.x;
+                    _owner._viewport.Distance *= 1f + delta * 0.05f;
+                    _owner._viewport.Distance  = Mathf.Clamp(_owner._viewport.Distance, 0.05f, 100f);
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                     _owner._viewport.RequestNormal();
                     e.Use();
                     _owner.Repaint();
@@ -1369,6 +1454,10 @@ namespace Poly_Ling.Remote
                         _inp.HitResultOnMouseDown = vi >= 0
                             ? new HitResult { HitType = MeshSelectMode.Vertex, VertexIndex = vi }
                             : HitResult.None;
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
 
                         // 【仕様】メインパネルの hitIsAlreadySelected + ApplySelectionOnMouseDown 相当
                         // 未選択頂点のドラッグ移動が機能するよう、MouseDown時点で選択を更新する。
@@ -1393,6 +1482,16 @@ namespace Poly_Ling.Remote
                     tool?.OnMouseDown(ctx, mousePos);
                 }
             }
+<<<<<<< HEAD
+=======
+=======
+                    }
+                    tool?.OnMouseDown(ctx, mousePos);
+                }
+            }
+
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             private void OnMouseDrag(Vector2 mousePos, Vector2 delta, ToolContext ctx, IEditTool tool, Rect rect, ViewportEvent evt)
             {
                 bool toolHandled = tool?.OnMouseDrag(ctx, mousePos, delta) ?? false;
@@ -1458,6 +1557,10 @@ namespace Poly_Ling.Remote
 
                 if (hit.HitType == MeshSelectMode.Vertex && hit.VertexIndex >= 0)
                 {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                     bool hitIsSelected = mc.SelectedVertices.Contains(hit.VertexIndex);
                     if (ctrl)
                     {
@@ -1475,12 +1578,31 @@ namespace Poly_Ling.Remote
                         mc.SelectedVertices.Add(hit.VertexIndex);
                     }
                     // else: 既選択頂点クリック（修飾なし） → 変更しない（メインパネルと同一仕様）
+<<<<<<< HEAD
+=======
+=======
+                    if (ctrl)       mc.SelectedVertices.Remove(hit.VertexIndex);
+                    else if (shift) mc.SelectedVertices.Add(hit.VertexIndex);
+                    else
+                    {
+                        mc.SelectedVertices.Clear();
+                        mc.SelectedVertices.Add(hit.VertexIndex);
+                    }
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 }
                 else if (!shift && !ctrl)
                     mc.ClearSelection();
 
                 ctx?.RecordSelectionChange?.Invoke(oldSel, new HashSet<int>(mc.SelectedVertices));
             }
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             private void FinishBoxSelect(MeshContext mc, Rect rect, ViewportEvent evt)
             {
                 bool shift    = _shiftHeld, ctrl = _ctrlHeld;
@@ -1515,6 +1637,13 @@ namespace Poly_Ling.Remote
 
                 ctx?.RecordSelectionChange?.Invoke(oldSel, new HashSet<int>(mc.SelectedVertices));
             }
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             private void FinishLassoSelect(MeshContext mc, Rect rect, ViewportEvent evt)
             {
                 if (_inp.LassoPoints.Count < 3) return;
@@ -1544,6 +1673,13 @@ namespace Poly_Ling.Remote
 
                 ctx?.RecordSelectionChange?.Invoke(oldSel, new HashSet<int>(mc.SelectedVertices));
             }
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             private static bool IsPointInLasso(Vector2 point, List<Vector2> polygon)
             {
                 if (polygon == null || polygon.Count < 3) return false;
@@ -1560,6 +1696,10 @@ namespace Poly_Ling.Remote
                 return inside;
             }
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             /// <summary>
             /// GPU計算済みホバー結果を ToolContext.LastHoverHitResult に反映（メインパネルと同一ロジック）
             /// </summary>
@@ -1620,6 +1760,11 @@ namespace Poly_Ling.Remote
                 };
             }
 
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
             private void ResetInputState()
             {
                 _inp.EditState = VertexEditState.Idle;
@@ -1629,9 +1774,18 @@ namespace Poly_Ling.Remote
 
             public void DrawOverlay(ViewportEvent evt)
             {
+<<<<<<< HEAD
                 // GPU計算済みホバー結果を ToolContext に毎フレーム同期（メインパネルの UpdateLastHoverHitResultFromUnified 相当）
                 UpdateLastHoverHitResultFromUnified();
 
+=======
+<<<<<<< HEAD
+                // GPU計算済みホバー結果を ToolContext に毎フレーム同期（メインパネルの UpdateLastHoverHitResultFromUnified 相当）
+                UpdateLastHoverHitResultFromUnified();
+
+=======
+>>>>>>> 4ef244a67ace8e020e9b09cddf285e26df7490eb
+>>>>>>> 6a56ae87868701494cf751dfbc0b890f66d90470
                 if (Event.current.type != EventType.Repaint) return;
 
                 if (_inp.EditState == VertexEditState.BoxSelecting)
