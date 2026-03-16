@@ -6,11 +6,11 @@ using System;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using UnityEditor;
 using UnityEngine.UIElements;
 using Poly_Ling.Model;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.VMD
 {
@@ -337,7 +337,7 @@ namespace Poly_Ling.VMD
 
         private void OpenVMDFile()
         {
-            string path = EditorUtility.OpenFilePanel("Open VMD", "", "vmd");
+            string path = PLEditorBridge.I.OpenFilePanel("Open VMD", "", "vmd");
             if (string.IsNullOrEmpty(path)) return;
 
             try
@@ -357,7 +357,7 @@ namespace Poly_Ling.VMD
             }
             catch (Exception ex)
             {
-                EditorUtility.DisplayDialog("Error", $"VMD読み込み失敗:\n{ex.Message}", "OK");
+                PLEditorBridge.I.DisplayDialog("Error", $"VMD読み込み失敗:\n{ex.Message}", "OK");
                 Debug.LogError($"[VMDTest] Load failed: {ex}");
             }
         }
@@ -400,7 +400,9 @@ namespace Poly_Ling.VMD
             if (_vmd == null || Model == null || _applier == null) return;
             _applier.ApplyFrame(Model, _vmd, _currentFrame);
             _toolCtx?.Repaint?.Invoke();
-            SceneView.RepaintAll();
+#if UNITY_EDITOR
+            UnityEditor.SceneView.RepaintAll();
+#endif
         }
 
         private void ResetPose()
@@ -408,7 +410,9 @@ namespace Poly_Ling.VMD
             if (Model == null || _applier == null) return;
             _applier.ResetAllBones(Model);
             _toolCtx?.Repaint?.Invoke();
-            SceneView.RepaintAll();
+#if UNITY_EDITOR
+            UnityEditor.SceneView.RepaintAll();
+#endif
         }
     }
 }

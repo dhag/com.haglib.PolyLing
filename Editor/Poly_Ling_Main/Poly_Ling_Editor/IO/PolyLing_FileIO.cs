@@ -6,12 +6,12 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Serialization;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Materials;
+using Poly_Ling.EditorBridge;
 
 public partial class PolyLing
 {
@@ -26,7 +26,7 @@ public partial class PolyLing
     {
         if (_meshContextList.Count == 0)
         {
-            EditorUtility.DisplayDialog("Export Project", "エクスポートするメッシュがありません。", "OK");
+            PLEditorBridge.I.DisplayDialog("Export Project", "エクスポートするメッシュがありません。", "OK");
             return;
         }
 
@@ -95,7 +95,7 @@ public partial class PolyLing
         // 確認ダイアログ
         if (_meshContextList.Count > 0)
         {
-            bool result = EditorUtility.DisplayDialog(
+            bool result = PLEditorBridge.I.DisplayDialogYesNo(
                 "Import Project",
                 "現在のデータを破棄して読み込みますか？\n（Ctrl+Zで元に戻せます）",
                 "はい", "キャンセル"
@@ -300,7 +300,7 @@ public partial class PolyLing
             {
                 System.IO.Directory.CreateDirectory(textureDir);
             }
-            AssetDatabase.Refresh();
+            PLEditorBridge.I.Refresh();
         }
         
         for (int i = 0; i < matRefs.Count; i++)
@@ -336,14 +336,14 @@ public partial class PolyLing
                 string savePath = $"{saveDir}/{matName}.mat";
                 
                 // 既存アセットの処理
-                var existingMat = AssetDatabase.LoadAssetAtPath<Material>(savePath);
+                var existingMat = PLEditorBridge.I.LoadAssetAtPath<Material>(savePath);
                 if (existingMat != null)
                 {
                     if (_overwriteExistingAssets)
                     {
                         // 上書き: 既存アセットのプロパティを更新
-                        EditorUtility.CopySerialized(copiedMat, existingMat);
-                        AssetDatabase.SaveAssets();
+                        PLEditorBridge.I.CopySerialized(copiedMat, existingMat);
+                        PLEditorBridge.I.SaveAssets();
                         copiedMat = existingMat;
                         Debug.Log($"[GetMaterialsForSave] Overwritten: {savePath}");
                     }
@@ -351,23 +351,23 @@ public partial class PolyLing
                     {
                         // 重複チェック（連番サフィックス）
                         int counter = 1;
-                        while (AssetDatabase.LoadAssetAtPath<Material>(savePath) != null)
+                        while (PLEditorBridge.I.LoadAssetAtPath<Material>(savePath) != null)
                         {
                             savePath = $"{saveDir}/{matName}_{counter}.mat";
                             counter++;
                         }
                         
                         // 新規アセットとして保存
-                        AssetDatabase.CreateAsset(copiedMat, savePath);
-                        AssetDatabase.SaveAssets();
+                        PLEditorBridge.I.CreateAsset(copiedMat, savePath);
+                        PLEditorBridge.I.SaveAssets();
                         Debug.Log($"[GetMaterialsForSave] Saved: {savePath}");
                     }
                 }
                 else
                 {
                     // 新規アセットとして保存
-                    AssetDatabase.CreateAsset(copiedMat, savePath);
-                    AssetDatabase.SaveAssets();
+                    PLEditorBridge.I.CreateAsset(copiedMat, savePath);
+                    PLEditorBridge.I.SaveAssets();
                     Debug.Log($"[GetMaterialsForSave] Saved: {savePath}");
                 }
             }
@@ -413,7 +413,7 @@ public partial class PolyLing
             if (texture == null) continue;
             
             // アセットパスがあればスキップ（既にAssets内にある）
-            string existingPath = AssetDatabase.GetAssetPath(texture);
+            string existingPath = PLEditorBridge.I.GetAssetPath(texture);
             if (!string.IsNullOrEmpty(existingPath)) continue;
             
             // テクスチャを保存
@@ -436,10 +436,10 @@ public partial class PolyLing
                 if (pngData != null)
                 {
                     System.IO.File.WriteAllBytes(savePath, pngData);
-                    AssetDatabase.ImportAsset(savePath);
+                    PLEditorBridge.I.ImportAsset(savePath);
                     
                     // インポートしたテクスチャをマテリアルに設定
-                    var savedTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(savePath);
+                    var savedTexture = PLEditorBridge.I.LoadAssetAtPath<Texture2D>(savePath);
                     if (savedTexture != null)
                     {
                         material.SetTexture(propName, savedTexture);
@@ -471,11 +471,11 @@ public partial class PolyLing
         string baseDir = $"Assets/SavedMaterials/{modelName}";
         
         // 既存フォルダがあれば別名を使用
-        if (AssetDatabase.IsValidFolder(baseDir))
+        if (PLEditorBridge.I.IsValidFolder(baseDir))
         {
             int counter = 1;
             string newDir = $"{baseDir}_{counter}";
-            while (AssetDatabase.IsValidFolder(newDir))
+            while (PLEditorBridge.I.IsValidFolder(newDir))
             {
                 counter++;
                 newDir = $"{baseDir}_{counter}";

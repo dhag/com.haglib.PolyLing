@@ -13,6 +13,7 @@ using Poly_Ling.Core;
 using Poly_Ling.Core.Rendering;
 using Poly_Ling.Selection;
 using Poly_Ling.Symmetry;
+using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.MeshListV2
 {
@@ -605,11 +606,11 @@ namespace Poly_Ling.MeshListV2
             var colors = _adapter.ColorSettings ?? ShaderColorSettings.Default;
             DrawFilledPolygon(pts, colors.FaceHoveredFill);
 
-            Handles.BeginGUI();
-            Handles.color = colors.FaceHoveredEdge;
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.color = colors.FaceHoveredEdge;
             for (int i = 0; i < face.VertexCount; i++)
-                Handles.DrawAAPolyLine(2f, pts[i], pts[(i + 1) % face.VertexCount]);
-            Handles.EndGUI();
+                UnityEditor_Handles.DrawAAPolyLine(2f, pts[i], pts[(i + 1) % face.VertexCount]);
+            UnityEditor_Handles.EndGUI();
         }
 
         // ================================================================
@@ -646,11 +647,11 @@ namespace Poly_Ling.MeshListV2
                 if (!valid) continue;
 
                 DrawFilledPolygon(pts, colors.FaceSelectedFill);
-                Handles.BeginGUI();
-                Handles.color = colors.FaceSelectedEdge;
+                UnityEditor_Handles.BeginGUI();
+                UnityEditor_Handles.color = colors.FaceSelectedEdge;
                 for (int i = 0; i < face.VertexCount; i++)
-                    Handles.DrawAAPolyLine(2f, pts[i], pts[(i + 1) % face.VertexCount]);
-                Handles.EndGUI();
+                    UnityEditor_Handles.DrawAAPolyLine(2f, pts[i], pts[(i + 1) % face.VertexCount]);
+                UnityEditor_Handles.EndGUI();
             }
         }
 
@@ -741,24 +742,24 @@ namespace Poly_Ling.MeshListV2
                 for (int v = 0; v < _boneShape.Length; v++)
                     sv[v] = WorldToGUI(pos + boneRot * (_boneShape[v] * _boneScale), cam, rect);
 
-                Handles.BeginGUI();
-                Handles.color = col;
+                UnityEditor_Handles.BeginGUI();
+                UnityEditor_Handles.color = col;
                 int ec = _boneEdges.GetLength(0);
                 for (int e = 0; e < ec; e++)
-                    Handles.DrawAAPolyLine(1.5f, sv[_boneEdges[e, 0]], sv[_boneEdges[e, 1]]);
-                Handles.EndGUI();
+                    UnityEditor_Handles.DrawAAPolyLine(1.5f, sv[_boneEdges[e, 0]], sv[_boneEdges[e, 1]]);
+                UnityEditor_Handles.EndGUI();
 
                 // デバッグ軸
                 float al = 0.05f;
                 Vector2 so = WorldToGUI(pos, cam, rect);
-                Handles.BeginGUI();
-                Handles.color = new Color(1f, 0.2f, 0.2f, 0.9f);
-                Handles.DrawAAPolyLine(2f, so, WorldToGUI(pos + boneRot * Vector3.right * al, cam, rect));
-                Handles.color = new Color(0.2f, 1f, 0.2f, 0.9f);
-                Handles.DrawAAPolyLine(2f, so, WorldToGUI(pos + boneRot * Vector3.up * al, cam, rect));
-                Handles.color = new Color(0.2f, 0.2f, 1f, 0.9f);
-                Handles.DrawAAPolyLine(2f, so, WorldToGUI(pos + boneRot * Vector3.forward * al, cam, rect));
-                Handles.EndGUI();
+                UnityEditor_Handles.BeginGUI();
+                UnityEditor_Handles.color = new Color(1f, 0.2f, 0.2f, 0.9f);
+                UnityEditor_Handles.DrawAAPolyLine(2f, so, WorldToGUI(pos + boneRot * Vector3.right * al, cam, rect));
+                UnityEditor_Handles.color = new Color(0.2f, 1f, 0.2f, 0.9f);
+                UnityEditor_Handles.DrawAAPolyLine(2f, so, WorldToGUI(pos + boneRot * Vector3.up * al, cam, rect));
+                UnityEditor_Handles.color = new Color(0.2f, 0.2f, 1f, 0.9f);
+                UnityEditor_Handles.DrawAAPolyLine(2f, so, WorldToGUI(pos + boneRot * Vector3.forward * al, cam, rect));
+                UnityEditor_Handles.EndGUI();
             }
         }
 
@@ -794,10 +795,10 @@ namespace Poly_Ling.MeshListV2
 
             DrawFilledPolygon(sc, new Color(planeColor.r, planeColor.g, planeColor.b, 0.15f));
 
-            Handles.BeginGUI();
-            Handles.color = new Color(planeColor.r, planeColor.g, planeColor.b, 0.6f);
-            for (int i = 0; i < 4; i++) Handles.DrawAAPolyLine(2f, sc[i], sc[(i + 1) % 4]);
-            Handles.EndGUI();
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.color = new Color(planeColor.r, planeColor.g, planeColor.b, 0.6f);
+            for (int i = 0; i < 4; i++) UnityEditor_Handles.DrawAAPolyLine(2f, sc[i], sc[(i + 1) % 4]);
+            UnityEditor_Handles.EndGUI();
 
             Color lc = new Color(planeColor.r, planeColor.g, planeColor.b, 0.5f);
             DrawDottedLine(WorldToGUI(planePoint - a1 * planeSize * 0.4f, cam, rect),
@@ -808,9 +809,9 @@ namespace Poly_Ling.MeshListV2
             Vector2 center = WorldToGUI(planePoint, cam, rect);
             if (rect.Contains(center))
             {
-                Handles.BeginGUI();
+                UnityEditor_Handles.BeginGUI();
                 EditorGUI.DrawRect(new Rect(center.x - 3, center.y - 3, 6, 6), planeColor);
-                Handles.EndGUI();
+                UnityEditor_Handles.EndGUI();
             }
         }
 
@@ -827,14 +828,14 @@ namespace Poly_Ling.MeshListV2
             Color outline = new Color(0f, 0f, 0f, 0.6f);
             float sz = 12f;
 
-            Handles.BeginGUI();
+            UnityEditor_Handles.BeginGUI();
             EditorGUI.DrawRect(new Rect(sp.x - sz - 1, sp.y - 2, sz * 2 + 2, 5), outline);
             EditorGUI.DrawRect(new Rect(sp.x - sz, sp.y - 1, sz * 2, 3), marker);
             EditorGUI.DrawRect(new Rect(sp.x - 2, sp.y - sz - 1, 5, sz * 2 + 2), outline);
             EditorGUI.DrawRect(new Rect(sp.x - 1, sp.y - sz, 3, sz * 2), marker);
             EditorGUI.DrawRect(new Rect(sp.x - 3, sp.y - 3, 7, 7), outline);
             EditorGUI.DrawRect(new Rect(sp.x - 2, sp.y - 2, 5, 5), marker);
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         // ================================================================
@@ -867,15 +868,15 @@ namespace Poly_Ling.MeshListV2
             Vector2 o = WorldToGUI(pivot, cam, rect);
             if (!rect.Contains(o)) return;
 
-            Handles.BeginGUI();
-            Handles.color = new Color(1f, 0.2f, 0.2f, 0.8f);
-            Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.right * axisLen, cam, rect));
-            Handles.color = new Color(0.2f, 1f, 0.2f, 0.8f);
-            Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.up * axisLen, cam, rect));
-            Handles.color = new Color(0.3f, 0.3f, 1f, 0.8f);
-            Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.forward * axisLen, cam, rect));
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.color = new Color(1f, 0.2f, 0.2f, 0.8f);
+            UnityEditor_Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.right * axisLen, cam, rect));
+            UnityEditor_Handles.color = new Color(0.2f, 1f, 0.2f, 0.8f);
+            UnityEditor_Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.up * axisLen, cam, rect));
+            UnityEditor_Handles.color = new Color(0.3f, 0.3f, 1f, 0.8f);
+            UnityEditor_Handles.DrawAAPolyLine(2f, o, WorldToGUI(pivot + Vector3.forward * axisLen, cam, rect));
             EditorGUI.DrawRect(new Rect(o.x - 3, o.y - 3, 6, 6), new Color(1, 1, 1, 0.7f));
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         // ================================================================
@@ -922,20 +923,20 @@ namespace Poly_Ling.MeshListV2
 
         private static void DrawDottedLine(Vector2 from, Vector2 to, Color color)
         {
-            Handles.BeginGUI();
-            Handles.color = color;
+            UnityEditor_Handles.BeginGUI();
+            UnityEditor_Handles.color = color;
             Vector2 dir = to - from;
             float len = dir.magnitude;
-            if (len < 1f) { Handles.EndGUI(); return; }
+            if (len < 1f) { UnityEditor_Handles.EndGUI(); return; }
             dir /= len;
             float pos = 0f;
             while (pos < len)
             {
                 float end = Mathf.Min(pos + 4f, len);
-                Handles.DrawAAPolyLine(2f, from + dir * pos, from + dir * end);
+                UnityEditor_Handles.DrawAAPolyLine(2f, from + dir * pos, from + dir * end);
                 pos += 7f;
             }
-            Handles.EndGUI();
+            UnityEditor_Handles.EndGUI();
         }
 
         private static Vector2 WorldToGUI(Vector3 world, Camera cam, Rect rect)

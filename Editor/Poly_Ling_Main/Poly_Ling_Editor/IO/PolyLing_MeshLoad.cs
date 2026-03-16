@@ -7,12 +7,12 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling;
 using Poly_Ling.Tools;
+using Poly_Ling.EditorBridge;
 
 public partial class PolyLing
 {
@@ -25,7 +25,7 @@ public partial class PolyLing
     /// </summary>
     private void LoadMeshFromAsset()
     {
-        string path = EditorUtility.OpenFilePanel("Select UnityMesh Asset", "Assets", "asset,fbx,obj");
+        string path = PLEditorBridge.I.OpenFilePanel("Select UnityMesh Asset", "Assets", "asset,fbx,obj");
         if (string.IsNullOrEmpty(path))
             return;
 
@@ -35,11 +35,11 @@ public partial class PolyLing
             path = "Assets" + path.Substring(Application.dataPath.Length);
         }
 
-        Mesh loadedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        Mesh loadedMesh = PLEditorBridge.I.LoadAssetAtPath<Mesh>(path);
         if (loadedMesh == null)
         {
             // FBX/OBJの場合、サブアセットからメッシュを探す
-            var allAssets = AssetDatabase.LoadAllAssetsAtPath(path);
+            var allAssets = PLEditorBridge.I.LoadAllAssetsAtPath(path);
             foreach (var asset in allAssets)
             {
                 if (asset is Mesh m)
@@ -56,7 +56,7 @@ public partial class PolyLing
         }
         else
         {
-            EditorUtility.DisplayDialog("Error", "メッシュを読み込めませんでした", "OK");
+            PLEditorBridge.I.DisplayDialog("Error", "メッシュを読み込めませんでした", "OK");
         }
     }
 
@@ -65,7 +65,7 @@ public partial class PolyLing
     /// </summary>
     private void LoadMeshFromPrefab()
     {
-        string path = EditorUtility.OpenFilePanel("Select Prefab", "Assets", "prefab");
+        string path = PLEditorBridge.I.OpenFilePanel("Select Prefab", "Assets", "prefab");
         if (string.IsNullOrEmpty(path))
             return;
 
@@ -74,10 +74,10 @@ public partial class PolyLing
             path = "Assets" + path.Substring(Application.dataPath.Length);
         }
 
-        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        GameObject prefab = PLEditorBridge.I.LoadAssetAtPath<GameObject>(path);
         if (prefab == null)
         {
-            EditorUtility.DisplayDialog("Error", "プレファブを読み込めませんでした", "OK");
+            PLEditorBridge.I.DisplayDialog("Error", "プレファブを読み込めませんでした", "OK");
             return;
         }
 
@@ -87,7 +87,7 @@ public partial class PolyLing
 
         if (meshFilters.Length == 0 && skinnedMeshRenderers.Length == 0)
         {
-            EditorUtility.DisplayDialog("Error", "プレファブにMeshFilterまたはSkinnedMeshRendererが見つかりませんでした", "OK");
+            PLEditorBridge.I.DisplayDialog("Error", "プレファブにMeshFilterまたはSkinnedMeshRendererが見つかりませんでした", "OK");
             return;
         }
 
@@ -135,11 +135,11 @@ public partial class PolyLing
     /// </summary>
     private void LoadMeshFromHierarchy()
     {
-        var selected = Selection.activeGameObject;
+        var selected = PLEditorBridge.I.GetActiveGameObject();
         if (selected == null)
         {
             // メッシュアセットが選択されている場合（Transformなし）
-            var selectedMesh = Selection.activeObject as Mesh;
+            var selectedMesh = PLEditorBridge.I.GetActiveObject() as Mesh;
             if (selectedMesh != null)
             {
                 AddLoadedMesh(selectedMesh, selectedMesh.name);
@@ -155,7 +155,7 @@ public partial class PolyLing
             }
             else
             {
-                EditorUtility.DisplayDialog("Info", "GameObjectまたはMeshを選択してください\nヒエラルキー内にメッシュが見つかりませんでした", "OK");
+                PLEditorBridge.I.DisplayDialog("Info", "GameObjectまたはMeshを選択してください\nヒエラルキー内にメッシュが見つかりませんでした", "OK");
                 return;
             }
         }
@@ -455,7 +455,7 @@ public partial class PolyLing
 
         if (gameObjects.Count == 0)
         {
-            EditorUtility.DisplayDialog("Error", "インポート対象のGameObjectがありません", "OK");
+            PLEditorBridge.I.DisplayDialog("Error", "インポート対象のGameObjectがありません", "OK");
             return;
         }
 

@@ -251,6 +251,7 @@ namespace Poly_Ling.UndoSystem
             }
         }
 
+#if UNITY_EDITOR
         /// <summary>
         /// Undo/Redoボタンを描画
         /// </summary>
@@ -290,5 +291,6 @@ namespace Poly_Ling.UndoSystem
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }
+#endif
     }
 }

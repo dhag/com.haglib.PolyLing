@@ -9,25 +9,49 @@ namespace Poly_Ling.EditorBridge
     public interface IEditorBridge
     {
         // ================================================================
-        // AssetDatabase
+        // AssetDatabase 読み取り
         // ================================================================
 
-        T      LoadAssetAtPath<T>(string path) where T : Object;
-        string GetAssetPath(Object asset);
-        void   CreateAsset(Object asset, string path);
-        void   SaveAssets();
-        void   Refresh();
-        bool   ContainsAsset(Object asset);
-        bool   IsValidFolder(string path);
+        T        LoadAssetAtPath<T>(string path) where T : Object;
+        Object[] LoadAllAssetsAtPath(string path);
+        string   GetAssetPath(Object asset);
+        bool     ContainsAsset(Object asset);
+        bool     IsValidFolder(string path);
+
+        // ================================================================
+        // AssetDatabase 書き込み
+        // ================================================================
+
+        void CreateAsset(Object asset, string path);
+        void DeleteAsset(string path);
+        void CopySerialized(Object source, Object dest);
+        void ImportAsset(string path);
+        void SaveAssets();
+        void Refresh();
+
+        // ================================================================
+        // PrefabUtility
+        // ================================================================
+
+        GameObject SaveAsPrefabAsset(GameObject go, string path);
 
         // ================================================================
         // EditorUtility ダイアログ
         // ================================================================
 
         string SaveFilePanel(string title, string directory, string defaultName, string extension);
+        string SaveFilePanelInProject(string title, string defaultName, string extension, string message);
         string OpenFilePanel(string title, string directory, string extension);
         string SaveFolderPanel(string title, string directory, string defaultName);
         string OpenFolderPanel(string title, string directory, string defaultName);
+        bool   DisplayDialog(string title, string message, string ok);
+        bool   DisplayDialogYesNo(string title, string message, string yes, string no);
+
+        // ================================================================
+        // EditorGUIUtility
+        // ================================================================
+
+        void PingObject(Object obj);
 
         // ================================================================
         // EditorPrefs
@@ -42,7 +66,19 @@ namespace Poly_Ling.EditorBridge
         // Selection
         // ================================================================
 
-        Transform GetActiveTransform();
-        Object    GetActiveObject();
+        Transform   GetActiveTransform();
+        Object      GetActiveObject();
+        GameObject  GetActiveGameObject();
+        GameObject[] GetSelectedGameObjects();
+        void        SetActiveObject(Object obj);
+        void        SetActiveGameObject(GameObject go);
+
+        // ================================================================
+        // Undo
+        // ================================================================
+
+        void RecordObject(Object obj, string name);
+        void RegisterCreatedObjectUndo(Object obj, string name);
+        T    AddComponent<T>(GameObject go) where T : Component;
     }
 }
