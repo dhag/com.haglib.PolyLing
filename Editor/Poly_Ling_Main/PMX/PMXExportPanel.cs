@@ -7,8 +7,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.Localization;
 
 namespace Poly_Ling.PMX

@@ -1,8 +1,9 @@
-﻿// Tools/AddFaceTool.Texts.cs
+// Tools/AddFaceTool.Texts.cs
 // 面追加ツール - ローカライズ辞書
 
 using System.Collections.Generic;
 using Poly_Ling.Localization;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Tools
 {

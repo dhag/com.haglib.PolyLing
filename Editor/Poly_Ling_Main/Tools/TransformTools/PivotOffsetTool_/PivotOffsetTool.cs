@@ -140,18 +140,6 @@ namespace Poly_Ling.Tools
 
             DrawAxisGizmo(ctx);
         }
-
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("Title"), EditorStyles.miniBoldLabel);  // ← 変更
-            EditorGUILayout.HelpBox(T("Help"), MessageType.Info);  // ← 変更
-
-            if (_state != ToolState.Idle)
-            {
-                EditorGUILayout.LabelField(T("Moving", _totalOffset.ToString("F3")));  // ← 変更
-            }
-        }
         public void OnActivate(ToolContext ctx)
         {
             _lastContext = ctx;

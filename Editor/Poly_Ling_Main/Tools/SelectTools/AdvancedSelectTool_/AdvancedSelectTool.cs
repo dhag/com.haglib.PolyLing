@@ -225,46 +225,6 @@ namespace Poly_Ling.Tools
             UnityEditor_Handles.EndGUI();
         }
 
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
-
-            // モード選択
-            int currentIndex = Array.IndexOf(ModeValues, Mode);
-            EditorGUI.BeginChangeCheck();
-            int newIndex = GUILayout.Toolbar(currentIndex, GetLocalizedModeNames());
-            if (EditorGUI.EndChangeCheck() && newIndex != currentIndex)
-            {
-                Mode = ModeValues[newIndex];
-                ResetAllModes();
-            }
-
-            EditorGUILayout.Space(5);
-
-            // モード別設定
-            if (_modes.TryGetValue(Mode, out var mode))
-            {
-                mode.DrawModeSettingsUI();
-            }
-
-            // EdgeLoopモードの追加設定
-            if (Mode == AdvancedSelectMode.EdgeLoop)
-            {
-                EdgeLoopThreshold = EditorGUILayout.Slider(T("DirectionThreshold"), EdgeLoopThreshold, 0f, 1f); //スライダーの上限下限
-            }
-
-            EditorGUILayout.Space(5);
-
-            // 追加/削除モード
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(T("Action"), GUILayout.Width(50));
-            if (GUILayout.Toggle(AddToSelection, T("Add"), EditorStyles.miniButtonLeft))
-                AddToSelection = true;
-            if (GUILayout.Toggle(!AddToSelection, T("Remove"), EditorStyles.miniButtonRight))
-                AddToSelection = false;
-            EditorGUILayout.EndHorizontal();
-        }
-
         public void OnActivate(ToolContext ctx)
         {
             Reset();

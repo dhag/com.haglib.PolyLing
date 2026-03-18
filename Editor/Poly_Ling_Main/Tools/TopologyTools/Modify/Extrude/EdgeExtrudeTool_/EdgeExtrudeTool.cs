@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
@@ -240,21 +240,6 @@ namespace Poly_Ling.Tools
 
             UnityEditor_Handles.color = Color.white;
             UnityEditor_Handles.EndGUI();
-        }
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
-
-            EditorGUILayout.HelpBox(T("Help"), MessageType.Info);
-
-            EditorGUILayout.Space(5);
-
-            Mode = (EdgeExtrudeSettings.ExtrudeMode)EditorGUILayout.EnumPopup("Mode", Mode);
-            SnapToAxis = EditorGUILayout.Toggle("Snap to Axis", SnapToAxis);
-
-            EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Selected edges will be extruded", EditorStyles.miniLabel);
         }
 
         public void OnActivate(ToolContext ctx)

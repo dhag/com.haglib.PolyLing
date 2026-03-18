@@ -7,7 +7,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.Localization;
 
 ////using MeshContext = MeshContext;
@@ -430,7 +430,7 @@ namespace Poly_Ling.MQO
             if (_context?.Model?.MeshContextList == null) return false;
             foreach (var mc in _context.Model.MeshContextList)
             {
-                if (mc?.MeshObject != null && mc.Type == MeshType.Mesh && mc.MeshObject.IsSkinned)
+                if (mc?.MeshObject != null && mc.Type == MeshType.Mesh && mc.MeshObject.HasBoneWeight)
                     return true;
             }
             return false;

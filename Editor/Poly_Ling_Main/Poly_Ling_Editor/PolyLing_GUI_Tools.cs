@@ -141,7 +141,7 @@ public partial class PolyLing
             IToolSettings before = settings.Clone();
 
             // UI描画（ツール側で自由に実装）
-            currentTool.DrawSettingsUI();
+            (currentTool as IEditorToolUI)?.DrawSettingsUI();
 
             // After: 変更検出 & Undo記録
             if (settings.IsDifferentFrom(before))
@@ -152,7 +152,7 @@ public partial class PolyLing
         else
         {
             // 設定を持たないツール（SelectToolなど）
-            currentTool.DrawSettingsUI();
+            (currentTool as IEditorToolUI)?.DrawSettingsUI();
         }
     }
 

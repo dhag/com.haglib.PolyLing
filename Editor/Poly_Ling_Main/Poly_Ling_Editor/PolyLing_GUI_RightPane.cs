@@ -336,19 +336,19 @@ public partial class PolyLing
                 L.Get("CreateArmatureMeshesFolder"),
                 _createArmatureMeshesFolder);
 
-            // スキンメッシュで出力（BoneTransform.ExportAsSkinnedを使用）
-            bool currentExportAsSkinned = _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.ExportAsSkinned);
+            // スキンメッシュで出力（BoneTransform.HasBoneTransformを使用）
+            bool currentExportAsSkinned = _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.HasBoneTransform);
             bool newExportAsSkinned = EditorGUILayout.Toggle(
                 L.Get("ExportAsSkinned"),
                 currentExportAsSkinned);
             if (newExportAsSkinned != currentExportAsSkinned)
             {
-                // 全MeshContextのBoneTransform.ExportAsSkinnedを更新
+                // 全MeshContextのBoneTransform.HasBoneTransformを更新
                 foreach (var ctx in _meshContextList)
                 {
                     if (ctx?.BoneTransform != null)
                     {
-                        ctx.BoneTransform.ExportAsSkinned = newExportAsSkinned;
+                        ctx.BoneTransform.HasBoneTransform = newExportAsSkinned;
                     }
                 }
             }

@@ -11,24 +11,28 @@ using UnityEngine;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Core;
 using Poly_Ling.Data;
-using Poly_Ling.Transforms;
 using Poly_Ling.Tools;
 using Poly_Ling.Serialization;
 using Poly_Ling.Selection;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.Localization;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 using Poly_Ling.Rendering;
 using Poly_Ling.Symmetry;
 using Poly_Ling.Commands;
-using MeshEditor;
 using UnityEngine.UIElements;
 
 
 
 
 public partial class PolyLing : EditorWindow
-{   // ================================================================
+{
+    // ================================================================
+    // PolyLingCore（中核ロジック）
+    // ================================================================
+    private Poly_Ling.Core.PolyLingCore _core;
+
+    // ================================================================
     // プロジェクトコンテキスト（Phase 0.5: ProjectContext導入）
     // ================================================================
     private ProjectContext _project = new ProjectContext();
@@ -367,8 +371,8 @@ public partial class PolyLing : EditorWindow
     // エクスポート設定（EditorStateContext への委譲）
     private bool _exportAsSkinned
     {
-        get => _undoController?.EditorState?.ExportAsSkinned ?? false;
-        set { if (_undoController?.EditorState != null) _undoController.EditorState.ExportAsSkinned = value; }
+        get => _undoController?.EditorState?.HasBoneTransform ?? false;
+        set { if (_undoController?.EditorState != null) _undoController.EditorState.HasBoneTransform = value; }
     }
     private bool _createArmatureMeshesFolder = true; // Armature/Meshesフォルダを作成（EditorStateに含めない）
     private bool _addAnimatorComponent = true; // エクスポート時にAnimatorコンポーネントを追加（デフォルトON）
@@ -565,8 +569,7 @@ public partial class PolyLing : EditorWindow
         // Selection System 初期化（ツールより先に初期化）
         InitializeSelectionSystem();
 
-        // ツール初期化
-        InitializeTools();
+        // ツール初期化はPolyLingCore.Initialize()内で処理済み
 
         // 初期ツール名をEditorStateに設定
         if (_undoController != null && _currentTool != null)
@@ -603,11 +606,45 @@ public partial class PolyLing : EditorWindow
         if (_selectedIndex >= 0)
             _viewportCore.Adapter.SetActiveMesh(0, _selectedIndex);
 
-        // パネルコンテキスト初期化（LiveProjectView生成）
-        InitPanelContext();
+        // パネルコンテキスト初期化はCore.Initialize()内で処理済み
 
         // ViewportCore コールバック設定
         SetupViewportCoreCallbacks();
+
+        // PolyLingCore初期化
+        // ViewportCore確立後にConfigを組み立ててCoreに渡す
+        _core = new Poly_Ling.Core.PolyLingCore();
+        var coreConfig = new Poly_Ling.Core.PolyLingCoreConfig
+        {
+            WorldToScreenPos             = WorldToPreviewPos,
+            ScreenDeltaToWorldDelta     = ScreenDeltaToWorldDelta,
+            FindVertexAtScreenPos       = FindVertexAtScreenPos,
+            ScreenPosToRay              = ScreenPosToRay,
+            Repaint                     = Repaint,
+            SyncMesh                    = () => _toolContext?.SyncMesh?.Invoke(),
+            SyncMeshPositionsOnly       = () => _toolContext?.SyncMeshPositionsOnly?.Invoke(),
+            SyncMeshContextPositionsOnly = ctx => _toolContext?.SyncMeshContextPositionsOnly?.Invoke(ctx),
+            SyncBoneTransforms          = () => _toolContext?.SyncBoneTransforms?.Invoke(),
+        };
+        _core.Initialize(coreConfig, _project);
+
+        _core.OnRepaintRequired    += Repaint;
+        _core.OnMeshListChanged    += () => { _unifiedAdapter?.NotifyTopologyChanged(); Repaint(); };
+        _core.OnCurrentModelChanged += () => { _unifiedAdapter?.SetModelContext(_model); Repaint(); };
+        _core.OnFocusCameraRequested += pos => { _cameraTarget = pos; _unifiedAdapter?.RequestNormal(); Repaint(); };
+        _core.OnUndoRedoPerformed_Ext += () => { _unifiedAdapter?.RequestNormal(); Repaint(); };
+        _core.OnSelectionStateChanged += ss => { _unifiedAdapter?.SetSelectionState(ss); _unifiedAdapter?.RequestNormal(); };
+        _core.OnVertexOffsetsUpdateRequired += updateCamera => InitVertexOffsets(updateCamera);
+
+        _project = _core.Project;
+
+        // RemoteClientV3が開いていれば直結モードで接続する
+        if (UnityEditor.EditorWindow.HasOpenInstances<Poly_Ling.Remote.RemoteClientV3>())
+        {
+            var remoteClientV3 = UnityEditor.EditorWindow.GetWindow<Poly_Ling.Remote.RemoteClientV3>(false);
+            if (remoteClientV3 != null)
+                remoteClientV3.ConnectDirect(_core);
+        }
 
         // VisibilityProviderを設定（背面カリング対応）
         if (_unifiedAdapter != null && _selectionOps != null)
@@ -706,6 +743,10 @@ public partial class PolyLing : EditorWindow
         // 後続処理で例外が発生しても Cleanup() が確実に呼ばれるようにするため先頭に置く。
         _viewportCore?.Dispose();
         _viewportCore = null;
+
+        // Core破棄（イベント購読解除 + 内部リソース解放）
+        _core?.Dispose();
+        _core = null;
 
         CleanupMeshes();
 
@@ -922,7 +963,10 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void ProcessUndoQueues()
     {
-        // コマンドキューの処理（Undo/Redo含む全操作）
+        // Core.Tick(): CoreのCommandQueue + UndoManager処理
+        _core?.Tick();
+
+        // PolyLing側のCommandQueueも処理（スキャフォールド段階の暫定処理）
         if (_commandQueue != null && _commandQueue.Count > 0)
         {
             _commandQueue.ProcessAll();
@@ -930,14 +974,15 @@ public partial class PolyLing : EditorWindow
             Repaint();
         }
 
-        // UndoManagerのキュー処理（従来の処理）
-        int processed = UndoManager.Instance.ProcessAllQueues();
-
-        if (processed > 0)
+        // Core未使用時のUndoManager処理
+        if (_core == null)
         {
-            // キューが処理されたらUIを更新
-            _unifiedAdapter?.RequestNormal();
-            Repaint();
+            int processed = UndoManager.Instance.ProcessAllQueues();
+            if (processed > 0)
+            {
+                _unifiedAdapter?.RequestNormal();
+                Repaint();
+            }
         }
     }
 
@@ -985,7 +1030,7 @@ public partial class PolyLing : EditorWindow
         _unifiedAdapter?.NotifyTopologyChanged();
 
         // パネル通知（リスト構造変更）
-        NotifyPanels(ChangeKind.ListStructure);
+        _core?.NotifyPanels(ChangeKind.ListStructure);
 
         // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
         // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
@@ -1566,7 +1611,7 @@ public partial class PolyLing : EditorWindow
         if (meshContext == null) return;
 
         // ToolContext更新
-        UpdateToolContext(meshContext, evt.Rect, evt.CameraPos, evt.CameraDistance);
+        SyncFrameStateToToolContext(meshContext, evt.Rect, evt.CameraPos, evt.CameraDistance);
 
         // ツールギズモ描画
         _currentTool?.DrawGizmo(_toolContext);
@@ -1574,11 +1619,9 @@ public partial class PolyLing : EditorWindow
         // ボーン移動ギズモ描画
         if (_showBones)
             DrawBoneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
-
         // WorkPlaneギズモ描画
         if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
             DrawWorkPlaneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
-
         // 矩形選択オーバーレイ
         if (_inp.EditState == VertexEditState.BoxSelecting)
             DrawBoxSelectOverlay(evt.Rect);

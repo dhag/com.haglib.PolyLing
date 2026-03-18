@@ -2,7 +2,6 @@
 // 選択専用ツール
 // IToolSettings対応版（設定なし）
 
-using UnityEditor;
 using UnityEngine;
 
 namespace Poly_Ling.Tools
@@ -41,13 +40,6 @@ namespace Poly_Ling.Tools
         public void DrawGizmo(ToolContext ctx)
         {
             // 選択ツールはギズモなし
-        }
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("ClickToSelect"), EditorStyles.miniLabel);
-            EditorGUILayout.LabelField(T("ShiftClick"), EditorStyles.miniLabel);
-            EditorGUILayout.LabelField(T("DragSelect"), EditorStyles.miniLabel);
         }
 
         public void OnActivate(ToolContext ctx) { }

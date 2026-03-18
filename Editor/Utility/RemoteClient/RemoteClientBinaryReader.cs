@@ -4,6 +4,8 @@
 
 using System;
 using System.IO;
+using Poly_Ling.Data;
+using Poly_Ling.View;
 
 namespace PolyLingRemoteClient
 {

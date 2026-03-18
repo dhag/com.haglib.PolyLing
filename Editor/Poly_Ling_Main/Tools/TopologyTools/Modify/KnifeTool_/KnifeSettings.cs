@@ -1,3 +1,4 @@
+using Poly_Ling.Data;
 // Assets/Editor/Poly_Ling/Tools/Settings/KnifeSettings.cs
 // KnifeTool用設定クラス（IToolSettings対応）
 

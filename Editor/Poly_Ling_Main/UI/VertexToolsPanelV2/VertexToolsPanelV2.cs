@@ -10,6 +10,8 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
+using Poly_Ling.Context;
+using Poly_Ling.View;
 using Poly_Ling.Tools;
 
 namespace Poly_Ling.UI
@@ -193,7 +195,7 @@ namespace Poly_Ling.UI
                     if (entry.NeedsUpdate && tool is MergeVerticesTool mt)
                         mt.Update(_toolCtx);
 
-                    tool.DrawSettingsUI();
+                    (tool as IEditorToolUI)?.DrawSettingsUI();
                 });
                 foldout.Add(container);
                 scroll.Add(foldout);

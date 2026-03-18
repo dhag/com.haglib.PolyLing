@@ -3,7 +3,7 @@
 // IToolSettingsを実装し、Undo対応のための機能を提供
 
 using UnityEngine;
-using Poly_Ling.Transforms;
+using Poly_Ling.Tools;
 
 namespace Poly_Ling.Tools
 {

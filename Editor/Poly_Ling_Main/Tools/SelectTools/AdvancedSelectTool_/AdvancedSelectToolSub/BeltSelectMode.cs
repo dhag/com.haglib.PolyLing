@@ -4,7 +4,6 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
@@ -15,7 +14,7 @@ namespace Poly_Ling.Tools
     /// <summary>
     /// ベルト選択モード
     /// </summary>
-    public class BeltSelectMode : IAdvancedSelectMode
+    public partial class BeltSelectMode : IAdvancedSelectMode
     {
         private struct BeltData
         {
@@ -75,11 +74,6 @@ namespace Poly_Ling.Tools
         }
 
         public void Reset() { }
-
-        public void DrawModeSettingsUI()
-        {
-            EditorGUILayout.HelpBox(T("BeltHelp"), MessageType.Info);
-        }
 
         // ================================================================
         // アルゴリズム

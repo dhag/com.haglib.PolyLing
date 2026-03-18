@@ -26,11 +26,6 @@ namespace Poly_Ling.Tools
         /// モードがリセットされるとき呼ばれる
         /// </summary>
         void Reset();
-
-        /// <summary>
-        /// 設定UIを描画（モード固有の設定がある場合）
-        /// </summary>
-        void DrawModeSettingsUI();
     }
 
     /// <summary>

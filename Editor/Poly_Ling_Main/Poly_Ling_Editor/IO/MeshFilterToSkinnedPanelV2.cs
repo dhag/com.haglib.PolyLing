@@ -7,8 +7,9 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.View;
 using Poly_Ling.Tools;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.Localization;
 
 namespace Poly_Ling.Tools.Panels
@@ -427,11 +428,11 @@ namespace Poly_Ling.Tools.Panels
             model.ComputeWorldMatrices();
             _toolCtx?.OnTopologyChanged();
 
-            // Phase 6: ExportAsSkinned フラグ
+            // Phase 6: HasBoneTransform フラグ
             foreach (var ctx in model.MeshContextList)
             {
                 if (ctx?.BoneTransform != null)
-                    ctx.BoneTransform.ExportAsSkinned = true;
+                    ctx.BoneTransform.HasBoneTransform = true;
             }
 
             Debug.Log($"[MeshFilterToSkinnedV2] Created {boneCount} bones from {meshEntries.Count} meshes");

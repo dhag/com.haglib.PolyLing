@@ -5,9 +5,9 @@
 // - ヒエラルキー追加
 
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.EditorBridge;
 
 public partial class PolyLing
 {
@@ -24,7 +24,7 @@ public partial class PolyLing
             return;
 
         string defaultName = string.IsNullOrEmpty(meshContext.Name) ? "UnityMesh" : meshContext.Name;
-        string path = EditorUtility.SaveFilePanelInProject(
+        string path = PLEditorBridge.I.SaveFilePanelInProject(
             "Save UnityMesh",
             defaultName,
             "asset",
@@ -45,16 +45,16 @@ public partial class PolyLing
         }
         meshToSave.name = System.IO.Path.GetFileNameWithoutExtension(path);
 
-        AssetDatabase.DeleteAsset(path);
-        AssetDatabase.CreateAsset(meshToSave, path);
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
+        PLEditorBridge.I.DeleteAsset(path);
+        PLEditorBridge.I.CreateAsset(meshToSave, path);
+        PLEditorBridge.I.SaveAssets();
+        PLEditorBridge.I.Refresh();
 
-        var savedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        var savedMesh = PLEditorBridge.I.LoadAssetAtPath<Mesh>(path);
         if (savedMesh != null)
         {
-            EditorGUIUtility.PingObject(savedMesh);
-            Selection.activeObject = savedMesh;
+            PLEditorBridge.I.PingObject(savedMesh);
+            PLEditorBridge.I.SetActiveObject(savedMesh);
         }
 
         Debug.Log($"UnityMesh saved: {path}");
@@ -69,7 +69,7 @@ public partial class PolyLing
             return;
 
         string defaultName = string.IsNullOrEmpty(meshContext.Name) ? "MeshObject" : meshContext.Name;
-        string path = EditorUtility.SaveFilePanelInProject(
+        string path = PLEditorBridge.I.SaveFilePanelInProject(
             "Save as Prefab",
             defaultName,
             "prefab",
@@ -98,10 +98,10 @@ public partial class PolyLing
 
         // メッシュを同じディレクトリに保存
         string meshPath = System.IO.Path.ChangeExtension(path, null) + "_Mesh.asset";
-        AssetDatabase.DeleteAsset(meshPath);
-        AssetDatabase.CreateAsset(meshCopy, meshPath);
+        PLEditorBridge.I.DeleteAsset(meshPath);
+        PLEditorBridge.I.CreateAsset(meshCopy, meshPath);
 
-        mf.sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+        mf.sharedMesh = PLEditorBridge.I.LoadAssetAtPath<Mesh>(meshPath);
 
         // マテリアル設定（マルチマテリアル対応）
         Material[] baseMaterials = GetMaterialsForSave(meshContext);
@@ -118,20 +118,20 @@ public partial class PolyLing
         meshContext.BoneTransform?.ApplyToGameObject(go, asLocal: false);
 
         // プレファブとして保存
-        AssetDatabase.DeleteAsset(path);
-        PrefabUtility.SaveAsPrefabAsset(go, path);
+        PLEditorBridge.I.DeleteAsset(path);
+        PLEditorBridge.I.SaveAsPrefabAsset(go, path);
 
         // 一時オブジェクト削除
         DestroyImmediate(go);
 
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
+        PLEditorBridge.I.SaveAssets();
+        PLEditorBridge.I.Refresh();
 
-        var savedPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        var savedPrefab = PLEditorBridge.I.LoadAssetAtPath<GameObject>(path);
         if (savedPrefab != null)
         {
-            EditorGUIUtility.PingObject(savedPrefab);
-            Selection.activeObject = savedPrefab;
+            PLEditorBridge.I.PingObject(savedPrefab);
+            PLEditorBridge.I.SetActiveObject(savedPrefab);
         }
 
         Debug.Log($"Prefab saved: {path}");
@@ -173,9 +173,9 @@ public partial class PolyLing
         // Hierarchy選択があれば、子孫から同名のGameObjectを検索
         GameObject existingGO = null;
         Transform searchRoot = null;
-        if (Selection.gameObjects.Length > 0)
+        if (PLEditorBridge.I.GetSelectedGameObjects().Length > 0)
         {
-            searchRoot = Selection.gameObjects[0].transform;
+            searchRoot = PLEditorBridge.I.GetSelectedGameObjects()[0].transform;
             existingGO = FindDescendantByName(searchRoot, meshContext.Name);
         }
 
@@ -185,8 +185,8 @@ public partial class PolyLing
             ReplaceMeshOnGameObject(existingGO, meshCopy, materialsToApply, meshContext);
             
             // 選択
-            Selection.activeGameObject = existingGO;
-            EditorGUIUtility.PingObject(existingGO);
+            PLEditorBridge.I.SetActiveGameObject(existingGO);
+            PLEditorBridge.I.PingObject(existingGO);
             
             Debug.Log($"Replaced mesh on existing GameObject: {existingGO.name}");
         }
@@ -226,13 +226,13 @@ public partial class PolyLing
     private void ReplaceMeshOnGameObject(GameObject go, Mesh mesh, Material[] materials, MeshContext meshContext)
     {
         // Undo登録
-        Undo.RecordObject(go, $"Replace Mesh {go.name}");
+        PLEditorBridge.I.RecordObject(go, $"Replace Mesh {go.name}");
 
         // SkinnedMeshRendererがあればそちらを優先
         var smr = go.GetComponent<SkinnedMeshRenderer>();
         if (smr != null)
         {
-            Undo.RecordObject(smr, $"Replace Mesh {go.name}");
+            PLEditorBridge.I.RecordObject(smr, $"Replace Mesh {go.name}");
             smr.sharedMesh = mesh;
             smr.sharedMaterials = materials;
             Debug.Log($"[ReplaceMeshOnGameObject] Replaced SkinnedMeshRenderer mesh on '{go.name}'");
@@ -243,11 +243,11 @@ public partial class PolyLing
         var mf = go.GetComponent<MeshFilter>();
         if (mf == null)
         {
-            mf = Undo.AddComponent<MeshFilter>(go);
+            mf = PLEditorBridge.I.AddComponent<MeshFilter>(go);
         }
         else
         {
-            Undo.RecordObject(mf, $"Replace Mesh {go.name}");
+            PLEditorBridge.I.RecordObject(mf, $"Replace Mesh {go.name}");
         }
         mf.sharedMesh = mesh;
 
@@ -255,11 +255,11 @@ public partial class PolyLing
         var mr = go.GetComponent<MeshRenderer>();
         if (mr == null)
         {
-            mr = Undo.AddComponent<MeshRenderer>(go);
+            mr = PLEditorBridge.I.AddComponent<MeshRenderer>(go);
         }
         else
         {
-            Undo.RecordObject(mr, $"Replace Mesh {go.name}");
+            PLEditorBridge.I.RecordObject(mr, $"Replace Mesh {go.name}");
         }
         mr.sharedMaterials = materials;
 
@@ -297,11 +297,11 @@ public partial class PolyLing
         }
 
         // Undo登録（Unity標準のUndo）
-        Undo.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
+        PLEditorBridge.I.RegisterCreatedObjectUndo(go, $"Create {meshContext.Name}");
 
         // 選択
-        Selection.activeGameObject = go;
-        EditorGUIUtility.PingObject(go);
+        PLEditorBridge.I.SetActiveGameObject(go);
+        PLEditorBridge.I.PingObject(go);
 
         Debug.Log($"Added to hierarchy: {go.name}" + (parent != null ? $" (parent: {parent.name})" : ""));
     }

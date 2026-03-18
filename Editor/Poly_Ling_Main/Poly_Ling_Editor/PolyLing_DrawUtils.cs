@@ -4,7 +4,6 @@
 
 using System.Collections.Generic;
 using UnityEngine;
-using Poly_Ling.Data;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 public partial class PolyLing

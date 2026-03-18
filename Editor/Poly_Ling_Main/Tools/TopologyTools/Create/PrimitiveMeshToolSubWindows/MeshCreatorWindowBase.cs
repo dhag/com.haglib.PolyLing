@@ -10,8 +10,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
-using Poly_Ling.Utilities;
-using Poly_Ling.UI;
+using Poly_Ling.Ops;
 using static Poly_Ling.Tools.Creators.MeshCreatorTexts;
 
 namespace Poly_Ling.Tools.Creators

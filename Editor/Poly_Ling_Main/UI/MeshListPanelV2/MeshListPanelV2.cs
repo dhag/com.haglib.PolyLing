@@ -10,6 +10,8 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using Poly_Ling.Data;
+using Poly_Ling.Context;
+using Poly_Ling.View;
 using UIList.UIToolkitExtensions;
 
 namespace Poly_Ling.MeshListV2
@@ -339,7 +341,7 @@ namespace Poly_Ling.MeshListV2
             {
                 // 簡易モード: メッシュフィルター（非スキンド）のみ表示
                 var filtered = model.DrawableList?
-                    .Where(v => !v.IsSkinned)
+                    .Where(v => !v.HasBoneWeight)
                     .ToList() ?? new List<IMeshView>();
                 sourceList = filtered;
                 category = MeshCategory.Drawable;

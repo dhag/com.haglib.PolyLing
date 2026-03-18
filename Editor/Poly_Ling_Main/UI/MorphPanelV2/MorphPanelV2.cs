@@ -10,9 +10,11 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.CSV;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.View;
+using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.MQO;
 
 namespace Poly_Ling.UI
 {
@@ -918,7 +920,7 @@ namespace Poly_Ling.UI
 
             try
             {
-                var writer = new CSVWriter(2);
+                var writer = new CSVWriter(MQOExportSettings.DefaultDecimalPrecision);
                 writer.AddComment(" ExpressionName,MeshName,BlendShapeName,Weight,...");
 
                 foreach (var set in model.MorphExpressions)
@@ -947,6 +949,7 @@ namespace Poly_Ling.UI
                 StatusLog($"CSV保存完了: {model.MorphExpressionCount}セット → {System.IO.Path.GetFileName(path)}");
             }
             catch (Exception ex) { StatusLog($"CSV保存失敗: {ex.Message}"); }
+
         }
 
         // ================================================================

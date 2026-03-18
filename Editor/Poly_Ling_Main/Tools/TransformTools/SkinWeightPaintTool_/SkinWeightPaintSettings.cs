@@ -2,6 +2,7 @@
 // SkinWeightPaintTool用設定クラス（IToolSettings対応）
 
 using UnityEngine;
+using Poly_Ling.Tools;
 using Poly_Ling.UI;
 
 namespace Poly_Ling.Tools

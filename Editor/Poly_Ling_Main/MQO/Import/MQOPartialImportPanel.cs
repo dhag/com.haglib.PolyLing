@@ -10,12 +10,14 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.Ops;
+using Poly_Ling.Context;
 using Poly_Ling.Localization;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Materials;
 using Poly_Ling.PMX;
+using Poly_Ling.Symmetry;
 
 namespace Poly_Ling.MQO
 {
@@ -213,7 +215,7 @@ namespace Poly_Ling.MQO
                 var rect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
                 _mqoFilePath = EditorGUI.TextField(rect, _mqoFilePath);
 
-                MQOPartialMatchHelper.HandleDropOnRect(rect, ".mqo", path =>
+                MQOPartialMatchHelperEditorExt.HandleDropOnRect(rect, ".mqo", path =>
                 {
                     _mqoFilePath = path;
                     LoadMQOAndMatch();

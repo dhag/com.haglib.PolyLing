@@ -11,7 +11,8 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Commands;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.View;
+using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 
@@ -169,7 +170,7 @@ namespace Poly_Ling.UI
 
         private void OnDisable()
         {
-            if (SkinWeightPaintTool.ActivePanel == this)
+            if ((object)SkinWeightPaintTool.ActivePanel == this)
                 SkinWeightPaintTool.ActivePanel = null;
             UnregisterUndoCallback();
             if (_panelCtx != null) _panelCtx.OnViewChanged -= OnViewChanged;
@@ -177,7 +178,7 @@ namespace Poly_Ling.UI
 
         private void OnDestroy()
         {
-            if (SkinWeightPaintTool.ActivePanel == this)
+            if ((object)SkinWeightPaintTool.ActivePanel == this)
                 SkinWeightPaintTool.ActivePanel = null;
             UnregisterUndoCallback();
             if (_panelCtx != null) _panelCtx.OnViewChanged -= OnViewChanged;
