@@ -86,6 +86,35 @@ namespace Poly_Ling.EditorBridge
             => PrefabUtility.SaveAsPrefabAsset(go, path);
 
         // ================================================================
+        // AssetDatabase 書き込み
+        // ================================================================
+
+        public void CreateAsset(Object asset, string path)
+            => AssetDatabase.CreateAsset(asset, path);
+
+        public void DeleteAsset(string path)
+            => AssetDatabase.DeleteAsset(path);
+
+        public void CopySerialized(Object source, Object dest)
+            => EditorUtility.CopySerialized(source, dest);
+
+        public void ImportAsset(string path)
+            => AssetDatabase.ImportAsset(path);
+
+        public void SaveAssets()
+            => AssetDatabase.SaveAssets();
+
+        public void Refresh()
+            => AssetDatabase.Refresh();
+
+        // ================================================================
+        // PrefabUtility
+        // ================================================================
+
+        public GameObject SaveAsPrefabAsset(GameObject go, string path)
+            => PrefabUtility.SaveAsPrefabAsset(go, path);
+
+        // ================================================================
         // EditorUtility ダイアログ
         // ================================================================
 
