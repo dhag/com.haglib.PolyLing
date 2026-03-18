@@ -22,10 +22,6 @@ namespace Poly_Ling.EditorBridge
 
 
 
-
-
-
-
         static EditorBridgeImpl()
         {
             PLEditorBridge.Register(new EditorBridgeImpl());
