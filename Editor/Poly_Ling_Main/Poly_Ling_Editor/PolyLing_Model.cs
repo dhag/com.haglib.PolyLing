@@ -10,10 +10,9 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Localization;
-using MeshEditor;
 
 public partial class PolyLing
 {
@@ -500,7 +499,7 @@ public partial class PolyLing
         UpdateTopology();
 
         // パネルシステム更新（モデル切り替え）
-        UpdateMeshListOpsContext();
+        _core?.NotifyPanels(ChangeKind.ModelSwitch);
 
         Repaint();
     }
@@ -511,7 +510,7 @@ public partial class PolyLing
     private void OnModelsChanged()
     {
         //Debug.Log($"[OnModelsChanged] Models count: {_project?.ModelCount ?? 0}");
-        NotifyPanels(ChangeKind.ListStructure);
+        _core?.NotifyPanels(ChangeKind.ListStructure);
         Repaint();
     }
 

@@ -10,6 +10,7 @@ using Poly_Ling.Selection;
 using Poly_Ling.Localization;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Data;
+using Poly_Ling.Context;
 using Poly_Ling.Commands;
 using Poly_Ling.Core;
 
@@ -49,7 +50,7 @@ public partial class PolyLing
 
             if (GUILayout.Button(L.Get("PartsSelectionDicPanel")))
             {
-                Poly_Ling.UI.PartsSelectionSetPanelV2.Open(_panelContext);
+                Poly_Ling.UI.PartsSelectionSetPanelV2.Open(_core?.PanelContext);
             }
 
             // ================================================================

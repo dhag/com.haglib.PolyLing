@@ -4,7 +4,6 @@
 
 using System.Collections.Generic;
 using UnityEngine;
-using Poly_Ling.Data;
 using Poly_Ling.Selection;
 
 public partial class PolyLing

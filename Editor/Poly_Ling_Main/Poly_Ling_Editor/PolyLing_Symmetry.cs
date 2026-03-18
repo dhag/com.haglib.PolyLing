@@ -4,7 +4,6 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
-using Poly_Ling.Data;
 using Poly_Ling.Symmetry;
 using Poly_Ling.Localization;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.UI.QuadDecimator;
 
 namespace Poly_Ling.Tools.Panels.QuadDecimator

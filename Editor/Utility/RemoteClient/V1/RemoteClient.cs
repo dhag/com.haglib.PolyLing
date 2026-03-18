@@ -11,7 +11,8 @@ using UnityEditor;
 using UnityEngine;
 using PolyLingRemoteClient;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.View;
+using Poly_Ling.Context;
 using Poly_Ling.Remote;
 
 namespace Poly_Ling.Remote

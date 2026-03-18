@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
@@ -204,40 +204,6 @@ namespace Poly_Ling.Tools
 
             UnityEditor_Handles.color = Color.white;
             UnityEditor_Handles.EndGUI();
-        }
-
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
-
-            EditorGUILayout.HelpBox(T("Help"), MessageType.Info);
-
-            EditorGUILayout.Space(5);
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(T("Amount"), GUILayout.Width(60));
-            Amount = EditorGUILayout.FloatField(Amount, GUILayout.Width(60));
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("0.05", EditorStyles.miniButtonLeft)) Amount = 0.05f;
-            if (GUILayout.Button("0.1", EditorStyles.miniButtonMid)) Amount = 0.1f;
-            if (GUILayout.Button("0.2", EditorStyles.miniButtonRight)) Amount = 0.2f;
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.Space(5);
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Segments", GUILayout.Width(70));
-            Segments = EditorGUILayout.IntSlider(Segments, 1, 10);
-            EditorGUILayout.EndHorizontal();
-
-            if (Segments >= 2)
-            {
-                EditorGUILayout.Space(3);
-                Fillet = EditorGUILayout.Toggle("Fillet (Round)", Fillet);
-            }
         }
 
         public void OnActivate(ToolContext ctx)

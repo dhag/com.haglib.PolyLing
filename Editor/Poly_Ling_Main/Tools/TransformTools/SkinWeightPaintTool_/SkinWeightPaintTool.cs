@@ -3,20 +3,22 @@
 // ブラシでドラッグしてスキンウェイトをペイントする
 
 using System;
-using System.Collections.Generic;
 using UnityEditor;
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
-using Poly_Ling.UI;
+using Poly_Ling.Tools;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
+using Poly_Ling.Commands;
+using Poly_Ling.UI;
 
 namespace Poly_Ling.Tools
 {
     /// <summary>
     /// スキンウェイトペイントツール
     /// </summary>
-    public class SkinWeightPaintTool : IEditTool
+    public partial class SkinWeightPaintTool : IEditTool
     {
         public string Name => "SkinWeightPaint";
         public string DisplayName => "Skin Weight Paint";
@@ -313,27 +315,6 @@ namespace Poly_Ling.Tools
             GUI.color = Color.white;
 
             UnityEditor_Handles.EndGUI();
-        }
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField("Skin Weight Paint", EditorStyles.boldLabel);
-
-            if (ActivePanel != null)
-            {
-                EditorGUILayout.HelpBox("設定はSkin Weight Paintパネルで変更してください。", MessageType.Info);
-            }
-            else
-            {
-                EditorGUILayout.HelpBox("Skin Weight Paintパネルを開くと詳細設定が使えます。", MessageType.Info);
-
-                // 最低限の設定UI
-                _settings.BrushRadius = EditorGUILayout.Slider("Radius", _settings.BrushRadius,
-                    SkinWeightPaintSettings.MIN_BRUSH_RADIUS, SkinWeightPaintSettings.MAX_BRUSH_RADIUS);
-                _settings.Strength = EditorGUILayout.Slider("Strength", _settings.Strength,
-                    SkinWeightPaintSettings.MIN_STRENGTH, SkinWeightPaintSettings.MAX_STRENGTH);
-                _settings.WeightValue = EditorGUILayout.Slider("Value", _settings.WeightValue, 0f, 1f);
-            }
         }
 
         public void OnActivate(ToolContext ctx)

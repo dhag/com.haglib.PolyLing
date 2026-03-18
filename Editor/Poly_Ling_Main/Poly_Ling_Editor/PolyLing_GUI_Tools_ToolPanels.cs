@@ -12,6 +12,7 @@ using Poly_Ling.Tools.Panels;
 using Poly_Ling.Selection;
 using Poly_Ling.Localization;
 using Poly_Ling.Remote;
+using Poly_Ling.View;
 
 
 public partial class PolyLing
@@ -83,26 +84,26 @@ public partial class PolyLing
 
         if (GUILayout.Button("メッシュリストV2 (Summary)"))
         {
-            if (_panelContext != null)
-                Poly_Ling.MeshListV2.MeshListPanelV2.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.MeshListV2.MeshListPanelV2.Open(_core?.PanelContext);
         }
 
         // LiveViewとViewport
         if (GUILayout.Button("LiveView List テスト"))
         {
-            if (_liveProjectView != null)
-                Poly_Ling.MeshListV2.LiveViewTestPanel.Open(_liveProjectView);
+            if (_core?.LiveProjectView != null)
+                Poly_Ling.MeshListV2.LiveViewTestPanel.Open(_core?.LiveProjectView);
         }
         if (GUILayout.Button("Viewport (メッシュのみ)"))
         {
-            if (_liveProjectView != null)
-                Poly_Ling.MeshListV2.ViewportTestPanel.Open(_liveProjectView);
+            if (_core?.LiveProjectView != null)
+                Poly_Ling.MeshListV2.ViewportTestPanel.Open(_core?.LiveProjectView);
         }
         if (GUILayout.Button("Viewport (フル)"))
         {
-            if (_liveProjectView != null)
+            if (_core?.LiveProjectView != null)
             {
-                var vp = Poly_Ling.MeshListV2.ViewportPanel.Open(_liveProjectView, _panelContext);
+                var vp = Poly_Ling.MeshListV2.ViewportPanel.Open(_core?.LiveProjectView, _core?.PanelContext);
                 if (vp?.Core != null)
                 {
                     vp.Core.OnHandleInput = evt => ProcessInputFromViewport(evt, vp.Core);
@@ -117,8 +118,8 @@ public partial class PolyLing
         }
         if (GUILayout.Button("UV展開 V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.UVUnwrapPanel.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.UVUnwrapPanel.Open(_core?.PanelContext);
         }
 
         if (GUILayout.Button("UV編集 V2"))
@@ -128,8 +129,8 @@ public partial class PolyLing
 
         if (GUILayout.Button("UVZ"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.UVZPanel.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.UVZPanel.Open(_core?.PanelContext);
         }
 
         EditorGUILayout.Space(5);
@@ -138,78 +139,78 @@ public partial class PolyLing
         EditorGUILayout.Space(5);
         if (GUILayout.Button("選択頂点の編集 V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.VertexToolsPanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.VertexToolsPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
 
 
         if (GUILayout.Button("パーツ選択辞書 V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.PartsSelectionSetPanelV2.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.PartsSelectionSetPanelV2.Open(_core?.PanelContext);
         }
 
         if (GUILayout.Button("モデル選択 V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.ModelListPanelV2.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.ModelListPanelV2.Open(_core?.PanelContext);
         }
 
         if (GUILayout.Button("メッシュマージ V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.MergeMeshesPanel.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.MergeMeshesPanel.Open(_core?.PanelContext);
         }
         EditorGUILayout.Space(5);
 
                 // 簡易ブレンド
         if (GUILayout.Button("簡易ブレンド V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.SimpleBlendPanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.SimpleBlendPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
         if (GUILayout.Button("モーフ確認 V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.MorphPanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.MorphPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
         if (GUILayout.Button("モデルブレンド V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.MultiModelBlendPanelV2.Open(_panelContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.MultiModelBlendPanelV2.Open(_core?.PanelContext);
         }
         
         
 
         if (GUILayout.Button("ボーンエディタ V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.BoneEditorPanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.BoneEditorPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
 
         if (GUILayout.Button("スキンウェイトペイント V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.SkinWeightPaintPanelV2.Open(_panelContext, _toolManager?.toolContext, _toolManager);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.SkinWeightPaintPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext, _toolManager);
         }
         if (GUILayout.Button("MeshFilter → Skinned V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.Tools.Panels.MeshFilterToSkinnedPanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.Tools.Panels.MeshFilterToSkinnedPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
 
         if (GUILayout.Button("アバターマッピング辞書インポート V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.HumanoidMappingPanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.HumanoidMappingPanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
         
         
         
         if (GUILayout.Button("Tpose V2"))
         {
-            if (_panelContext != null)
-                Poly_Ling.UI.TPosePanelV2.Open(_panelContext, _toolManager?.toolContext);
+            if (_core?.PanelContext != null)
+                Poly_Ling.UI.TPosePanelV2.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
 
 
@@ -217,7 +218,7 @@ public partial class PolyLing
 
         if (GUILayout.Button("VMD簡易テストV2"))
         {
-            Poly_Ling.VMD.VMDTestPanel.Open(_panelContext, _toolManager?.toolContext);
+            Poly_Ling.VMD.VMDTestPanel.Open(_core?.PanelContext, _toolManager?.toolContext);
         }
 
         if (GUILayout.Button("Avatar Creator... 独立"))

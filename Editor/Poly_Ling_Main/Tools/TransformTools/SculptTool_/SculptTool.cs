@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.UndoSystem;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
@@ -230,33 +230,6 @@ namespace Poly_Ling.Tools
                 GUI.Label(new Rect(centerScreen.x + screenRadius + 5, centerScreen.y - 10, 150, 20), modeText);
 
                 UnityEditor_Handles.EndGUI();
-            }
-
-            public void DrawSettingsUI()
-            {
-                EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
-
-                // モード選択
-                int currentIndex = Array.IndexOf(ModeValues, Mode);
-                int newIndex = GUILayout.SelectionGrid(currentIndex, ModeNames, 2);
-                if (newIndex != currentIndex && newIndex >= 0 && newIndex < ModeValues.Length)
-                {
-                    Mode = ModeValues[newIndex];
-                }
-
-                EditorGUILayout.Space(5);
-
-                BrushRadius = EditorGUILayout.Slider(T("BrushSize"), BrushRadius,
-                    SculptSettings.MIN_BRUSH_RADIUS, SculptSettings.MAX_BRUSH_RADIUS);
-
-                Strength = EditorGUILayout.Slider(T("Strength"), Strength,
-                    SculptSettings.MIN_STRENGTH, SculptSettings.MAX_STRENGTH);
-
-                Invert = EditorGUILayout.Toggle(T("Invert"), Invert);
-
-                EditorGUILayout.Space(3);
-
-                EditorGUILayout.HelpBox(GetModeHelp(Mode), MessageType.Info);
             }
 
             public void OnActivate(ToolContext ctx) => Reset();

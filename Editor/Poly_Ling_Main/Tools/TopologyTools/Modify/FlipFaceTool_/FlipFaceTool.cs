@@ -3,12 +3,11 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
-using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Selection;
 using Poly_Ling.Commands;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Tools
 {
@@ -54,34 +53,6 @@ namespace Poly_Ling.Tools
         public void DrawGizmo(ToolContext ctx)
         {
             // 選択された面をハイライト表示は不要（既存の選択表示で十分）
-        }
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(T("Help"), MessageType.Info);
-
-            EditorGUILayout.Space(5);
-
-            // 反転ボタン
-            if (GUILayout.Button(T("FlipSelected"), GUILayout.Height(30)))
-            {
-                FlipSelectedFaces();
-            }
-
-            // 全面反転ボタン
-            EditorGUILayout.Space(3);
-            if (GUILayout.Button(T("FlipAll")))
-            {
-                FlipAllFaces();
-            }
-
-            // 結果メッセージ
-            if (!string.IsNullOrEmpty(_lastMessage))
-            {
-                EditorGUILayout.Space(5);
-                EditorGUILayout.HelpBox(_lastMessage, MessageType.None);
-            }
         }
 
         public void OnActivate(ToolContext ctx)

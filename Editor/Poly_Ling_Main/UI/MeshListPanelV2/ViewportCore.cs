@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.Core;
 using Poly_Ling.Core.Rendering;
 using Poly_Ling.Selection;
@@ -857,7 +857,7 @@ namespace Poly_Ling.MeshListV2
                 {
                     var ctx = model.GetMeshContext(idx);
                     if (ctx == null) continue;
-                    if (ctx.MeshObject?.IsSkinned ?? false) continue; // スキンドはスキップ
+                    if (ctx.MeshObject?.HasBoneWeight ?? false) continue; // スキンドはスキップ
                     sum += (Vector3)ctx.WorldMatrix.GetColumn(3);
                     count++;
                 }

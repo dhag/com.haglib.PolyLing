@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using Poly_Ling.Localization;
+using Poly_Ling.Data;
 
 public partial class NohMaskMeshCreatorWindow
 {

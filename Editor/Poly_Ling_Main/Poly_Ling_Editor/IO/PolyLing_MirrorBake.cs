@@ -38,7 +38,7 @@ public partial class PolyLing
             return mesh;
 
         SymmetryAxis axis = meshContext.GetMirrorSymmetryAxis();
-        bool hasBoneWeights = meshObject.IsSkinned;
+        bool hasBoneWeights = meshObject.HasBoneWeight;
 
         // 頂点データ
         var unityVerts = new List<Vector3>();
@@ -318,7 +318,7 @@ public partial class PolyLing
             return mesh;
 
         SymmetryAxis axis = meshContext.GetMirrorSymmetryAxis();
-        bool hasBoneWeights = meshObject.IsSkinned;
+        bool hasBoneWeights = meshObject.HasBoneWeight;
 
         // 頂点データ
         var unityVerts = new List<Vector3>();

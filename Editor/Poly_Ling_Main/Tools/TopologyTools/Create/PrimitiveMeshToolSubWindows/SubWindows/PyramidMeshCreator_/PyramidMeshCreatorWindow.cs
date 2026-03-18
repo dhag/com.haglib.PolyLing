@@ -10,6 +10,7 @@ using System;
 using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Tools.Creators;
 
 public partial class PyramidMeshCreatorWindow : MeshCreatorWindowBase<PyramidMeshCreatorWindow.PyramidParams>

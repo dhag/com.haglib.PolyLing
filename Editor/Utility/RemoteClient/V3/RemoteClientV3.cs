@@ -13,7 +13,8 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using PolyLingRemoteClient;
 using Poly_Ling.Data;
-using Poly_Ling.Model;
+using Poly_Ling.View;
+using Poly_Ling.Context;
 using Poly_Ling.Remote;
 using Poly_Ling.MeshListV2;
 using Poly_Ling.Tools;
@@ -138,6 +139,70 @@ namespace Poly_Ling.Remote
         private IMGUIContainer _viewportImgui;
 
         // ================================================================
+        // 直結モード（IPolyLingCore）
+        // ================================================================
+        // WebSocketモード: サーバーのPolyLingCoreからバイナリフレームを受信して表示
+        // 直結モード:      同一プロセス内のPolyLingCoreを直接参照して表示（WebSocket不要）
+        //
+        // ConnectDirect() で直結モードに入る。
+        // DisconnectDirect() または OnDisable で解除される。
+        // どちらのモードも GetActiveProject() / GetActiveModel() を通じてデータを取得する。
+        // ================================================================
+
+        private Poly_Ling.Core.IPolyLingCore _directCore;
+
+        /// <summary>
+        /// 直結モードで接続する。
+        /// 同一Editorプロセス内のPolyLingCoreを直接参照し、
+        /// WebSocket受信なしにビューポート/ツール操作を行う。
+        /// </summary>
+        public void ConnectDirect(Poly_Ling.Core.IPolyLingCore core)
+        {
+            if (core == null) return;
+
+            // 既存のWebSocket接続があれば切断
+            if (_isConnected) Disconnect();
+
+            _directCore = core;
+            _project = core.Project;
+
+            // Coreのイベントを購読してUI更新
+            _directCore.OnCurrentModelChanged += OnDirectCoreModelChanged;
+            _directCore.OnMeshListChanged      += OnDirectCoreMeshListChanged;
+
+            Log("[直結] PolyLingCore に直接接続しました");
+            UpdateConnectionUI();
+            RebuildTree();
+            Repaint();
+        }
+
+        /// <summary>
+        /// 直結モードを解除する。
+        /// </summary>
+        public void DisconnectDirect()
+        {
+            if (_directCore == null) return;
+            _directCore.OnCurrentModelChanged -= OnDirectCoreModelChanged;
+            _directCore.OnMeshListChanged      -= OnDirectCoreMeshListChanged;
+            _directCore = null;
+            Log("[直結] 接続を解除しました");
+            UpdateConnectionUI();
+        }
+
+        // 直結モード時のイベントハンドラ
+        private void OnDirectCoreModelChanged()  => _mainThreadQueue.Enqueue(() => { RebuildTree(); Repaint(); });
+        private void OnDirectCoreMeshListChanged() => _mainThreadQueue.Enqueue(() => { RebuildTree(); Repaint(); });
+
+        /// <summary>
+        /// 現在有効なProjectContextを返す。
+        /// 直結モードではCoreから、WebSocketモードでは受信データから取得する。
+        /// </summary>
+        private ProjectContext GetActiveProject() => _directCore?.Project ?? _project;
+
+        /// <summary>直結モードで動作中かどうか</summary>
+        private bool IsDirectMode => _directCore != null;
+
+        // ================================================================
         // ウィンドウ
         // ================================================================
 
@@ -155,6 +220,8 @@ namespace Poly_Ling.Remote
         private void OnDisable()
         {
             EditorApplication.update -= Tick;
+            // 直結モードを先に解除（イベント購読解除）
+            DisconnectDirect();
             Disconnect();
             _viewport?.Dispose();
             _viewport = null;
@@ -290,8 +357,14 @@ namespace Poly_Ling.Remote
 
         private void Tick()
         {
-            _commandQueue?.ProcessAll();
-            UndoManager.Instance.ProcessAllQueues();
+            // 直結モード時: PolyLingCore.Tick() はPolyLing側のEditorApplication.updateで
+            // 処理されるため、ここでは重複呼び出しをしない。
+            // WebSocketモード時: クライアント独自のCommandQueue/UndoManagerを処理する。
+            if (!IsDirectMode)
+            {
+                _commandQueue?.ProcessAll();
+                UndoManager.Instance.ProcessAllQueues();
+            }
 
             int processed = 0;
             while (_mainThreadQueue.TryDequeue(out var action) && processed < 10)
@@ -322,17 +395,22 @@ namespace Poly_Ling.Remote
         {
             if (_btnConnect == null) return;
 
-            _btnConnect.style.display = _isConnected ? DisplayStyle.None : DisplayStyle.Flex;
-            _lblConnected.style.display = _isConnected ? DisplayStyle.Flex : DisplayStyle.None;
-            _btnDisconnect.style.display = _isConnected ? DisplayStyle.Flex : DisplayStyle.None;
+            // 直結モード時はWebSocket接続UIを非表示にし、直結中であることを表示する
+            bool webSocketVisible = !IsDirectMode;
+            _btnConnect.style.display    = (!IsDirectMode && !_isConnected) ? DisplayStyle.Flex : DisplayStyle.None;
+            _lblConnected.style.display  = (_isConnected || IsDirectMode)   ? DisplayStyle.Flex : DisplayStyle.None;
+            _btnDisconnect.style.display = _isConnected                     ? DisplayStyle.Flex : DisplayStyle.None;
+            _hostField.SetEnabled(!_isConnected && !IsDirectMode);
+            _portField.SetEnabled(!_isConnected && !IsDirectMode);
 
-            _hostField.SetEnabled(!_isConnected);
-            _portField.SetEnabled(!_isConnected);
-
-            _btnFetchProject.SetEnabled(_isConnected);
-            _btnFetchModel.SetEnabled(_isConnected && _project != null);
-            _btnFetchMesh.SetEnabled(_isConnected && _project != null &&
+            // 直結モードではFetchボタンは不要（データは直接参照するため）
+            _btnFetchProject.SetEnabled(_isConnected && !IsDirectMode);
+            _btnFetchModel.SetEnabled(_isConnected && !IsDirectMode && GetActiveProject() != null);
+            _btnFetchMesh.SetEnabled(_isConnected && !IsDirectMode && GetActiveProject() != null &&
                                       _selectedModelIndex >= 0 && _selectedMeshIndex >= 0);
+
+            if (IsDirectMode && _lblConnected != null)
+                _lblConnected.text = "[直結モード] PolyLingCore 接続中";
         }
 
         private void UpdateToolUI()
@@ -354,25 +432,25 @@ namespace Poly_Ling.Remote
         private void RefreshProjectSummary()
         {
             if (_lblProjectSummary == null) return;
-            if (_project == null) { _lblProjectSummary.text = _projectStatus; return; }
+            if (GetActiveProject() == null) { _lblProjectSummary.text = _projectStatus; return; }
             int tv = 0, tf = 0;
-            foreach (var m in _project.Models)
+            foreach (var m in GetActiveProject().Models)
                 foreach (var mc in m.MeshContextList)
                 { tv += mc.VertexCount; tf += mc.FaceCount; }
             _lblProjectSummary.text =
-                $"{_project.Name}  {_project.ModelCount}M  V:{tv:N0} F:{tf:N0}";
+                $"{GetActiveProject().Name}  {GetActiveProject().ModelCount}M  V:{tv:N0} F:{tf:N0}";
         }
 
         private void RebuildTree()
         {
             if (_treeContainer == null) return;
             _treeContainer.Clear();
-            if (_project == null) return;
+            if (GetActiveProject() == null) return;
 
-            for (int mi = 0; mi < _project.ModelCount; mi++)
+            for (int mi = 0; mi < GetActiveProject().ModelCount; mi++)
             {
-                var model = _project.Models[mi];
-                bool isCur = mi == _project.CurrentModelIndex;
+                var model = GetActiveProject().Models[mi];
+                bool isCur = mi == GetActiveProject().CurrentModelIndex;
                 bool isExp = _expandedModels.Contains(mi);
                 int miCopy = mi;
 
@@ -473,7 +551,7 @@ namespace Poly_Ling.Remote
             if (_toolContext == null)
                 _toolContext = new ToolContext();
 
-            _toolContext.Project = _project;
+            _toolContext.Project = GetActiveProject();
             _toolContext.Model = model;
 
             if (_viewport != null)
@@ -821,7 +899,7 @@ namespace Poly_Ling.Remote
                     normal = { textColor = new Color(0.5f, 0.5f, 0.5f) },
                     alignment = TextAnchor.MiddleCenter
                 };
-                GUI.Label(rect, _project == null ? "プロジェクト未受信" : "モデルを選択してください", s);
+                GUI.Label(rect, GetActiveProject() == null ? "プロジェクト未受信" : "モデルを選択してください", s);
                 return;
             }
 
@@ -860,8 +938,8 @@ namespace Poly_Ling.Remote
         private ModelContext GetSelectedModel()
         {
             if (_project == null || _selectedModelIndex < 0 ||
-                _selectedModelIndex >= _project.ModelCount) return null;
-            return _project.Models[_selectedModelIndex];
+                _selectedModelIndex >= GetActiveProject().ModelCount) return null;
+            return GetActiveProject().Models[_selectedModelIndex];
         }
 
         // ================================================================

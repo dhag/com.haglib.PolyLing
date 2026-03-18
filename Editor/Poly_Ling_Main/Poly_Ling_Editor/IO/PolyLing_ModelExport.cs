@@ -261,7 +261,7 @@ public partial class PolyLing
     /// <summary>
     /// モデル全体をヒエラルキーに追加
     /// HierarchyParentIndexに基づいて親子関係を再現
-    /// BoneTransform.ExportAsSkinned が有効な場合は SkinnedMeshRenderer を使用
+    /// BoneTransform.HasBoneTransform が有効な場合は SkinnedMeshRenderer を使用
     /// </summary>
     private void AddModelToHierarchy()
     {
@@ -269,9 +269,9 @@ public partial class PolyLing
             return;
 
         // スキンメッシュとして出力するかチェック
-        // いずれかのMeshContextのBoneTransform.ExportAsSkinnedがtrueならSkinnedMeshRendererで出力
+        // いずれかのMeshContextのBoneTransform.HasBoneTransformがtrueならSkinnedMeshRendererで出力
         bool shouldExportAsSkinned = 
-            _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.ExportAsSkinned);
+            _meshContextList.Any(ctx => ctx?.BoneTransform != null && ctx.BoneTransform.HasBoneTransform);
         
         if (shouldExportAsSkinned)
         {

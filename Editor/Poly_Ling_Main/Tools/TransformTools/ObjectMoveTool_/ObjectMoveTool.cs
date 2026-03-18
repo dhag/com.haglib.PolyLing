@@ -8,11 +8,10 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Localization;
-using Poly_Ling.Model;
+using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Tools
@@ -206,20 +205,6 @@ namespace Poly_Ling.Tools
             }
 
             _axisGizmo.Draw(ctx);
-        }
-
-        public void DrawSettingsUI()
-        {
-            EditorGUILayout.LabelField(T("Title"), EditorStyles.miniBoldLabel);
-            _settings.MoveWithChildren = EditorGUILayout.Toggle(T("MoveWithChildren"), _settings.MoveWithChildren);
-
-            EditorGUILayout.Space(4);
-            if (_lastCtx != null)
-            {
-                int count = GetSelectedCount(_lastCtx);
-                if (count > 0)
-                    EditorGUILayout.HelpBox(T("TargetObjects", count), MessageType.None);
-            }
         }
 
         public void OnActivate(ToolContext ctx)

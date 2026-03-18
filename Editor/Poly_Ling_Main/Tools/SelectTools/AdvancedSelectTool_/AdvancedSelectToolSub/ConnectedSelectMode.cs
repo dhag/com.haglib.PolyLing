@@ -4,7 +4,6 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
@@ -15,7 +14,7 @@ namespace Poly_Ling.Tools
     /// <summary>
     /// 接続領域選択モード
     /// </summary>
-    public class ConnectedSelectMode : IAdvancedSelectMode
+    public partial class ConnectedSelectMode : IAdvancedSelectMode
     {
         public bool HandleClick(AdvancedSelectContext ctx, Vector2 mousePos, MeshSelectMode selectMode)
         {
@@ -153,11 +152,6 @@ namespace Poly_Ling.Tools
         }
 
         public void Reset() { }
-
-        public void DrawModeSettingsUI()
-        {
-            EditorGUILayout.HelpBox(T("ConnectedHelp"), MessageType.Info);
-        }
 
         // ================================================================
         // 適用

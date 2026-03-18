@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
 using Poly_Ling.Commands;
@@ -40,7 +41,7 @@ public partial class PolyLing
         UpdateLastHoverHitResultFromUnified();
 
         // ツールコンテキストを更新
-        UpdateToolContext(meshContext, rect, camPos, camDist);
+        SyncFrameStateToToolContext(meshContext, rect, camPos, camDist);
 
         // プレビュー領域内でのホイール操作
         if (e.type == EventType.ScrollWheel && rect.Contains(mousePos))

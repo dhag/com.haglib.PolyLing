@@ -165,13 +165,13 @@ public partial class PolyLing
             var mc = _model.FirstSelectedMeshContext;
             if (mc == null) return;
 
-            UpdateToolContext(mc, evt.Rect, evt.CameraPos, evt.CameraDistance);
+            SyncFrameStateToToolContext(mc, evt.Rect, evt.CameraPos, evt.CameraDistance);
             _currentTool?.DrawGizmo(_toolContext);
-
             if (_showBones) DrawBoneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
             if (_showWorkPlaneGizmo && _vertexEditMode && _currentTool == _addFaceTool)
+            {
                 DrawWorkPlaneGizmo(evt.Rect, evt.CameraPos, evt.CameraTarget);
-
+            }
             // 対称平面
             if (_symmetrySettings != null && _symmetrySettings.IsEnabled && _symmetrySettings.ShowSymmetryPlane)
             {

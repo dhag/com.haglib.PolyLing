@@ -4,7 +4,6 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
@@ -15,7 +14,7 @@ namespace Poly_Ling.Tools
     /// <summary>
     /// 最短ルート選択モード
     /// </summary>
-    public class ShortestPathSelectMode : IAdvancedSelectMode
+    public partial class ShortestPathSelectMode : IAdvancedSelectMode
     {
         private int _firstVertex = -1;
 
@@ -87,20 +86,6 @@ namespace Poly_Ling.Tools
         public void ClearFirstPoint()
         {
             _firstVertex = -1;
-        }
-
-        public void DrawModeSettingsUI()
-        {
-            EditorGUILayout.HelpBox(T("ShortestPathHelp"), MessageType.Info);
-
-            if (_firstVertex >= 0)
-            {
-                EditorGUILayout.LabelField(T("FirstVertex", _firstVertex));
-                if (GUILayout.Button(T("ClearFirstPoint")))
-                {
-                    _firstVertex = -1;
-                }
-            }
         }
 
         // ================================================================
