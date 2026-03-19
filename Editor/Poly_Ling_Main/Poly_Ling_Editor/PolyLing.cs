@@ -140,6 +140,13 @@ public partial class PolyLing : EditorWindow
 
     /// <summary>ViewportPanelが描画に使用するUnifiedSystemAdapter</summary>
     public UnifiedSystemAdapter SharedUnifiedAdapter => _viewportCore?.Adapter;
+    /// <summary>MeshCreatorWindowBase等からViewportCoreのSetModelを呼ぶためのアクセサ</summary>
+    public void SetViewportModel(ModelContext model)
+    {
+        _viewportCore?.SetModel(model);
+        _unifiedAdapter?.SetModelContext(model);
+        _unifiedAdapter?.RequestNormal();
+    }
 
     /// <summary>カメラ回転X（deg）</summary>
     public float CameraRotationX { get => _rotationX; set => _rotationX = value; }
@@ -409,21 +416,14 @@ public partial class PolyLing : EditorWindow
     }
 
     // ================================================================
-    // Undoシステム統合
+    // Undoシステム統合 / コマンドキュー / Selection System
+    // PolyLingCoreが所有。プロパティ経由で委譲する。
     // ================================================================
-    private MeshUndoController _undoController;
-    
-    // ================================================================
-    // コマンドキュー（全操作の順序保証）
-    // ================================================================
-    private CommandQueue _commandQueue;
-    
-    // ================================================================
-    // Selection System
-    // ================================================================
-    private SelectionState _selectionState = new SelectionState();
-    private TopologyCache _meshTopology;
-    private SelectionOperations _selectionOps;
+    private MeshUndoController  _undoController => _core?.UndoController;
+    private CommandQueue         _commandQueue   => _core?.CommandQueue;
+    private SelectionState       _selectionState => _core?.SelectionState;
+    private TopologyCache        _meshTopology   => _core?.MeshTopology;
+    private SelectionOperations  _selectionOps   => _core?.SelectionOps;
     private UnifiedAdapterVisibilityProvider _visibilityProvider;
 
 
@@ -490,93 +490,6 @@ public partial class PolyLing : EditorWindow
         // ローカライゼーション設定を読み込み
         L.LoadSettings();
 
-        // コマンドキュー初期化（全操作の順序保証）
-        _commandQueue = new CommandQueue();
-        // _commandQueue.EnableDebugLog = true; // デバッグ時に有効化
-
-        // Undoコントローラー初期化
-        _undoController = new MeshUndoController("PolyLing");
-        _undoController.SetCommandQueue(_commandQueue); // キューを設定
-        _undoController.OnUndoRedoPerformed += OnUndoRedoPerformed;
-        _undoController.OnProjectUndoRedoPerformed += OnProjectUndoRedoPerformed;  // Project-level Undo/Redo
-
-
-        // ProjectContext のコールバック設定
-        if (_project != null)
-        {
-            _project.OnCurrentModelChanged += OnCurrentModelChanged;
-            _project.OnModelsChanged += OnModelsChanged;
-        }
-
-        // ★追加: Undoキュー処理を登録（ConcurrentQueue対応）
-        EditorApplication.update += ProcessUndoQueues;
-
-        // A1統合: _modelをUndoコントローラーに直接共有
-        _undoController.SetModelContext(_model);
-        _model.OnListChanged += OnMeshListChanged;
-
-        // カメラ復元コールバックを設定（_model に直接設定）
-        if (_model != null)
-        {
-            _model.OnCameraRestoreRequested = OnCameraRestoreRequested;
-            _model.OnFocusMeshListRequested = () => _undoController.FocusMeshList();
-            _model.OnReorderCompleted = () => {
-                // ========================================================
-                // メッシュ順序変更後の完全再構築処理
-                // ========================================================
-
-                // グローバルバッファを完全再構築
-                _unifiedAdapter?.SetModelContext(_model);
-
-                // アクティブメッシュをワンショットパイプライン経由で同期
-                _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
-                _unifiedAdapter?.RequestNormal();
-
-                // トポロジー更新
-                UpdateTopology();
-            };
-            _model.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
-        }
-
-        // ModelContextにWorkPlaneを設定
-        if (_model != null)
-            _model.WorkPlane = _undoController.WorkPlane;
-
-        // ★Phase 1: MeshUndoContext.MaterialOwner を設定（Materials Undo用）
-        if (_undoController.MeshUndoContext != null && _model != null)
-        {
-            _undoController.MeshUndoContext.ParentModelContext = _model;
-        }
-
-        // ★Phase 1: 既存 MeshContext にも MaterialOwner を設定
-        if (_meshContextList != null && _model != null)
-        {
-            foreach (var meshContext in _meshContextList)
-            {
-                if (meshContext != null)
-                {
-                    meshContext.ParentModelContext = _model;
-                }
-            }
-        }
-
-        // Show Verticesと編集モードを同期
-        //_vertexEditMode = _showVertices;
-
-        // Single Source of Truth: EditorStateContext が唯一のデータソースのため、
-        // ローカル変数への初期化コピーは不要（プロパティ経由で直接参照）
-
-        // Selection System 初期化（ツールより先に初期化）
-        InitializeSelectionSystem();
-
-        // ツール初期化はPolyLingCore.Initialize()内で処理済み
-
-        // 初期ツール名をEditorStateに設定
-        if (_undoController != null && _currentTool != null)
-        {
-            _undoController.EditorState.CurrentToolName = _currentTool.Name;
-        }
-
         // WorkPlaneContext UIイベントハンドラ設定
         SetupWorkPlaneEventHandlers();
 
@@ -602,9 +515,6 @@ public partial class PolyLing : EditorWindow
             Close();
             return;
         }
-        _viewportCore.Adapter.SetSelectionState(_selectionState);
-        if (_selectedIndex >= 0)
-            _viewportCore.Adapter.SetActiveMesh(0, _selectedIndex);
 
         // パネルコンテキスト初期化はCore.Initialize()内で処理済み
 
@@ -614,6 +524,11 @@ public partial class PolyLing : EditorWindow
         // PolyLingCore初期化
         // ViewportCore確立後にConfigを組み立ててCoreに渡す
         _core = new Poly_Ling.Core.PolyLingCore();
+
+        // InitVertexOffsetsはCore.Initialize()内から発火するため、Initialize前に登録する
+        _core.OnVertexOffsetsUpdateRequired += updateCamera => InitVertexOffsets(updateCamera);
+        _core.OnSyncMeshRequired += SyncMeshFromData;
+
         var coreConfig = new Poly_Ling.Core.PolyLingCoreConfig
         {
             WorldToScreenPos             = WorldToPreviewPos,
@@ -630,13 +545,53 @@ public partial class PolyLing : EditorWindow
 
         _core.OnRepaintRequired    += Repaint;
         _core.OnMeshListChanged    += () => { _unifiedAdapter?.NotifyTopologyChanged(); Repaint(); };
-        _core.OnCurrentModelChanged += () => { _unifiedAdapter?.SetModelContext(_model); Repaint(); };
+        _core.OnCurrentModelChanged += () => { _viewportCore?.SetModel(_model); _unifiedAdapter?.SetModelContext(_model); Repaint(); };
         _core.OnFocusCameraRequested += pos => { _cameraTarget = pos; _unifiedAdapter?.RequestNormal(); Repaint(); };
         _core.OnUndoRedoPerformed_Ext += () => { _unifiedAdapter?.RequestNormal(); Repaint(); };
-        _core.OnSelectionStateChanged += ss => { _unifiedAdapter?.SetSelectionState(ss); _unifiedAdapter?.RequestNormal(); };
-        _core.OnVertexOffsetsUpdateRequired += updateCamera => InitVertexOffsets(updateCamera);
+        _core.OnSelectionStateChanged += ss =>
+        {
+            // 旧 SelectionState の OnSelectionChanged を解除（重複登録防止）
+            var prev = _core.SelectionState;
+            if (prev != null) prev.OnSelectionChanged -= OnSelectionChanged;
+            ss.OnSelectionChanged += OnSelectionChanged;
+            _unifiedAdapter?.SetSelectionState(ss);
+            _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
+            _unifiedAdapter?.RequestNormal();
+        };
 
         _project = _core.Project;
+
+        // Editor固有コールバック：CoreがUndoController等を初期化した後に接続する
+        EditorApplication.update    += ProcessUndoQueues;
+        _model.OnCameraRestoreRequested = OnCameraRestoreRequested;
+        _model.OnListChanged            += OnMeshListChanged;
+        _core.UndoController.OnUndoRedoPerformed        += OnUndoRedoPerformed;
+        _core.UndoController.OnProjectUndoRedoPerformed += OnProjectUndoRedoPerformed;
+
+        // Core.Initialize後にOnReorderCompletedにEditor側GPU更新を追加する
+        // （Core側はUpdateTopology+NotifyPanelsのみ担当するため）
+        var prevReorder = _model.OnReorderCompleted;
+        _model.OnReorderCompleted = () =>
+        {
+            prevReorder?.Invoke();
+            _unifiedAdapter?.SetModelContext(_model);
+            _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
+            _unifiedAdapter?.RequestNormal();
+        };
+
+        // Core初期化後に SelectionState が確定するため、ここで Viewport に渡す
+        _viewportCore.Adapter.SetSelectionState(_core.SelectionState);
+        if (_selectedIndex >= 0)
+            _viewportCore.Adapter.SetActiveMesh(0, _selectedIndex);
+
+        // Selection：初期StateへのEditorコールバック登録
+        _core.SelectionState.OnSelectionChanged += OnSelectionChanged;
+        _lastSelectionSnapshot = _core.SelectionState.CreateSnapshot();
+        UpdateTopology();
+
+        // 初期ツール名をEditorStateに設定
+        if (_currentTool != null)
+            _core.UndoController.EditorState.CurrentToolName = _currentTool.Name;
 
         // RemoteClientV3が開いていれば直結モードで接続する
         if (UnityEditor.EditorWindow.HasOpenInstances<Poly_Ling.Remote.RemoteClientV3>())
@@ -647,10 +602,11 @@ public partial class PolyLing : EditorWindow
         }
 
         // VisibilityProviderを設定（背面カリング対応）
-        if (_unifiedAdapter != null && _selectionOps != null)
+        // Core初期化後に _selectionOps が確定するため、ここで構築する
+        if (_unifiedAdapter != null && _core.SelectionOps != null)
         {
             _visibilityProvider = new UnifiedAdapterVisibilityProvider(_unifiedAdapter, _selectedIndex);
-            
+
             // 線分と面の頂点取得用デリゲートを設定
             _visibilityProvider.SetGeometryAccessors(
                 // 線分インデックス → (v1, v2)
@@ -674,35 +630,14 @@ public partial class PolyLing : EditorWindow
                     return null;
                 }
             );
-            
-            _selectionOps.SetVisibilityProvider(_visibilityProvider);
+
+            _core.SelectionOps.SetVisibilityProvider(_visibilityProvider);
         }
 
     }
 
     /// <summary>
-    /// Selection System 初期化
-    /// </summary>
-    private void InitializeSelectionSystem()
-    {
-        // MeshContext.Selection を正規のデータソースとして使用
-        var meshContext = _model?.FirstSelectedMeshContext;
-        _selectionState = meshContext?.Selection ?? new SelectionState();
-        _meshTopology = new TopologyCache();
-        _selectionOps = new SelectionOperations(_selectionState, _meshTopology);
-        
-        // GPU/CPUヒットテストの閾値を統一（HOVER_LINE_DISTANCE = 18f と同じ）
-        _selectionOps.EdgeHitDistance = 18f;
-
-        _selectionState.OnSelectionChanged += OnSelectionChanged;
-
-        _lastSelectionSnapshot = _selectionState.CreateSnapshot();
-        UpdateTopology();
-    }
-
-
-    /// <summary>
-    /// 選択変更時のコールバック（レンダリング更新）
+    /// 選択変更時のコールバック（レンダリング更新のみ）
     /// </summary>
     private void OnSelectionChanged()
     {
@@ -711,24 +646,12 @@ public partial class PolyLing : EditorWindow
     }
 
     /// <summary>
-    /// MeshObject変更時にトポロジを更新
+    /// MeshObject変更時にトポロジを更新（Editor側：GPUバッファ通知のみ）
     /// </summary>
     private void UpdateTopology()
     {
-        if (_meshTopology == null)
-            return;
-
-        var meshContext = _model.FirstSelectedMeshContext;
-        if (meshContext != null)
-        {
-            _meshTopology.SetMeshObject(meshContext.MeshObject);
-        }
-        else
-        {
-            _meshTopology.SetMeshObject(null);
-        }
-
-        // 統合システムにもトポロジー変更を通知
+        // Core内のTopologyCacheはCoreが更新する。
+        // Editor側はGPUバッファへの通知のみ担当する。
         _unifiedAdapter?.NotifyTopologyChanged();
     }
 
@@ -740,11 +663,28 @@ public partial class PolyLing : EditorWindow
     private void OnDisable()
     {
         // PreviewRenderUtility を最初に解放する。
-        // 後続処理で例外が発生しても Cleanup() が確実に呼ばれるようにするため先頭に置く。
         _viewportCore?.Dispose();
         _viewportCore = null;
 
-        // Core破棄（イベント購読解除 + 内部リソース解放）
+        // Editor固有コールバック解除（Core破棄より先に行う）
+        EditorApplication.update -= ProcessUndoQueues;
+
+        var undo = _core?.UndoController;
+        if (undo != null)
+        {
+            undo.OnUndoRedoPerformed        -= OnUndoRedoPerformed;
+            undo.OnProjectUndoRedoPerformed -= OnProjectUndoRedoPerformed;
+        }
+        var sel = _core?.SelectionState;
+        if (sel != null) sel.OnSelectionChanged -= OnSelectionChanged;
+        var model = _model;
+        if (model != null)
+        {
+            model.OnListChanged             -= OnMeshListChanged;
+            model.OnCameraRestoreRequested   = null;
+        }
+
+        // Core破棄（CommandQueue・UndoController・SelectionSystem 等を一括解放）
         _core?.Dispose();
         _core = null;
 
@@ -756,52 +696,11 @@ public partial class PolyLing : EditorWindow
             _previewMaterial = null;
         }
 
-        // ★ミラーリソースのクリーンアップ
         CleanupMirrorResources();
-
-        // ★GPU描画クリーンアップ
         CleanupDrawCache();
-
-        // WorkPlaneContext UIイベントハンドラ解除
-        CleanupWorkPlaneEventHandlers();
-
-        // BoneTransform UIイベントハンドラ解除
-        CleanupBoneTransformEventHandlers();
-
-        // Selection System クリーンアップ
-        if (_selectionState != null)
-        {
-            _selectionState.OnSelectionChanged -= OnSelectionChanged;
-        }
-
-        // ★追加: Undoキュー処理を解除
-        EditorApplication.update -= ProcessUndoQueues;
-
-        // コマンドキュークリア
-        _commandQueue?.Clear();
-        _commandQueue = null;
-
-        // Undoコントローラー破棄
-        if (_undoController != null)
-        {
-            _undoController.OnUndoRedoPerformed -= OnUndoRedoPerformed;
-            _undoController.OnProjectUndoRedoPerformed -= OnProjectUndoRedoPerformed;  // Project-level Undo/Redo
-            _undoController.Dispose();
-            _undoController = null;
-        }
-        // ★追加
         _drawCache?.Clear();
-        // ProjectContext のコールバック解除
-        if (_project != null)
-        {
-            _project.OnCurrentModelChanged -= OnCurrentModelChanged;
-            _project.OnModelsChanged -= OnModelsChanged;
-        }
-        // A1統合: OnListChangedハンドラ解除
-        if (_model != null)
-        {
-            _model.OnListChanged -= OnMeshListChanged;
-        }
+        CleanupWorkPlaneEventHandlers();
+        CleanupBoneTransformEventHandlers();
     }
 
     /// <summary>
@@ -963,27 +862,8 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void ProcessUndoQueues()
     {
-        // Core.Tick(): CoreのCommandQueue + UndoManager処理
+        // Core.Tick(): CommandQueue処理 + UndoManager処理を一括委譲
         _core?.Tick();
-
-        // PolyLing側のCommandQueueも処理（スキャフォールド段階の暫定処理）
-        if (_commandQueue != null && _commandQueue.Count > 0)
-        {
-            _commandQueue.ProcessAll();
-            _unifiedAdapter?.RequestNormal();
-            Repaint();
-        }
-
-        // Core未使用時のUndoManager処理
-        if (_core == null)
-        {
-            int processed = UndoManager.Instance.ProcessAllQueues();
-            if (processed > 0)
-            {
-                _unifiedAdapter?.RequestNormal();
-                Repaint();
-            }
-        }
     }
 
     /// <summary>
@@ -991,49 +871,9 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void OnMeshListChanged()
     {
-        // WithUndoメソッドが_meshContextListを直接操作するため、
-        // TypedIndicesキャッシュを明示的に無効化する
-        _model?.InvalidateTypedIndices();
-        // Debug.Log($"[OnMeshListChanged] Before: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        // Debug.Log($"[OnMeshListChanged] Before: _selectedIndex={_selectedIndex}, MeshListContext.FirstSelectedIndex={_undoController?.MeshListContext?.FirstSelectedIndex}");
-
-        // v2.0: _selectedIndex getterがModelContextを直接参照するため、同期不要
-        // MeshListContext（= ModelContext）の選択状態はUndo/Redoで自動復元される
-
-        // Debug.Log($"[OnMeshListChanged] After sync: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
-
-        // 選択中のメッシュコンテキストをMeshContextに設定
-        // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
-        var meshContext = _model.FirstSelectedMeshContext;
-        if (meshContext != null)
-        {
-            // Debug.Log($"[OnMeshListChanged] Before InitVertexOffsets: _cameraTarget={_cameraTarget}");
-            InitVertexOffsets(updateCamera: false);
-            // Debug.Log($"[OnMeshListChanged] After InitVertexOffsets: _cameraTarget={_cameraTarget}");
-        }
-        else
-        {
-            SetSelectedIndex(_meshContextList.Count > 0 ? 0 : -1);
-            var fallbackMeshContext = _model.FirstSelectedMeshContext;
-            if (fallbackMeshContext != null)
-            {
-                InitVertexOffsets(updateCamera: false);
-            }
-        }
-
-        // _selectionState参照を新メッシュのSelectionに差し替え
-        // （イベント解除→新参照設定→イベント登録→レンダラ通知→UndoContext同期）
-        SaveSelectionToCurrentMesh();
-        LoadSelectionFromCurrentMesh();
-
-        // GPUバッファ再構築（メッシュリスト構成変更のため）
+        // Core の OnMeshListChangedInternal が選択・オフセット・パネル通知を処理済み。
+        // Editor 側は GPU バッファ再構築と Repaint のみ担当する。
         _unifiedAdapter?.NotifyTopologyChanged();
-
-        // パネル通知（リスト構造変更）
-        _core?.NotifyPanels(ChangeKind.ListStructure);
-
-        // Debug.Log($"[OnMeshListChanged] After: _cameraTarget={_cameraTarget}, _cameraDistance={_cameraDistance}");
-        // Debug.Log($"[OnMeshListChanged] Final: _selectedIndex={_selectedIndex}, CurrentMesh={_model.FirstSelectedMeshContext?.Name}");
         Repaint();
     }
     /*

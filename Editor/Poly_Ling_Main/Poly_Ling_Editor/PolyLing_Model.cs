@@ -82,342 +82,44 @@ public partial class PolyLing
     }
 
     // ================================================================
-    // モデル切り替え（選択保存/復元付き）
+    // モデル操作（Core委譲）
     // ================================================================
+    // ロジック（Undo記録・スナップショット・選択保存）はPolyLingCoreが担う。
+    // Editor側はViewportのリフレッシュをOnCurrentModelChangedイベント経由で受け取る。
 
-    /// <summary>
-    /// モデルを切り替え（Undo対応）
-    /// </summary>
     private void SwitchModelWithUndo(int newIndex)
     {
-        if (_project == null) return;
-        if (newIndex < 0 || newIndex >= _project.ModelCount) return;
-        if (newIndex == _project.CurrentModelIndex) return;
-
-        int oldIndex = _project.CurrentModelIndex;
-
-        // ★ 操作前のスナップショットを取得（ProjectSnapshot）
-        var beforeSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
-
-        // ★Phase 1: 現在のメッシュの選択を保存
-        SaveSelectionToCurrentMesh();
-
-        // モデル切り替え
-        _project.CurrentModelIndex = newIndex;
-
-        // UndoControllerの参照を更新
-        RefreshUndoControllerReferences();
-
-        // 選択インデックスをリセット
-        if (_model != null && _model.MeshContextCount > 0)
-        {
-            // v2.0: カテゴリ別選択使用
-            if (_selectedIndex < 0 || _selectedIndex >= _model.MeshContextCount)
-            {
-                _model.ClearAllCategorySelection();
-                _model.AddToSelectionByType(0);
-            }
-        }
-
-        // ★Phase 1: 新しいメッシュの選択を復元
-        LoadSelectionFromCurrentMesh();
-
-        // 頂点オフセット初期化
-        InitVertexOffsets();
-
-        // MeshContextをUndoControllerにロード
-        if (_model?.FirstSelectedMeshContext != null)
-        {
-            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
-        }
-
-        // ★ 操作後のスナップショットを取得
-        var afterSnapshot = ProjectSnapshot.CaptureFromProjectContext(_project);
-
-        // ★ ProjectSnapshotベースのUndo記録
-        if (_undoController != null && beforeSnapshot != null && afterSnapshot != null)
-        {
-            var record = ProjectRecord.CreateSelectModel(beforeSnapshot, afterSnapshot);
-            _undoController.RecordProjectOperation(record);
-            Debug.Log($"[SwitchModelWithUndo] Recorded: {oldIndex} -> {newIndex}, {_undoController.GetProjectStackDebugInfo()}");
-        }
-
-        _unifiedAdapter?.RequestNormal();
-        Repaint();
+        _core?.DispatchPanelCommand(new SwitchModelCommand(newIndex));
     }
 
-    /// <summary>
-    /// UndoControllerの参照を現在のモデルに更新
-    /// </summary>
-    private void RefreshUndoControllerReferences()
-    {
-        if (_undoController == null || _model == null) return;
-
-        // ModelContextの参照を更新（SetModelContextを使用）
-        _undoController.SetModelContext(_model, OnMeshListChanged);
-
-        // MeshUndoContextのMaterialOwnerを更新
-        if (_undoController.MeshUndoContext != null)
-        {
-            _undoController.MeshUndoContext.ParentModelContext = _model;
-        }
-
-        // 各MeshContextのMaterialOwnerを更新
-        if (_meshContextList != null)
-        {
-            foreach (var meshContext in _meshContextList)
-            {
-                meshContext.ParentModelContext = _model;
-            }
-        }
-    }
-
-    // ================================================================
-    // モデル追加
-    // ================================================================
-
-    /// <summary>
-    /// 新規モデルを追加（Undo対応）
-    /// </summary>
     private void AddNewModelWithUndo()
     {
-        if (_project == null) return;
-
-        // ユニークな名前を生成
-        string newName = _project.GenerateUniqueModelName("Model");
-
-        // 新規モデル作成
-        var newModel = new ModelContext(newName);
-
-        // デフォルトマテリアルを設定
-        if (_model != null && _model.DefaultMaterials != null)
-        {
-            newModel.DefaultMaterials = new List<Material>(_model.DefaultMaterials);
-            newModel.AutoSetDefaultMaterials = _model.AutoSetDefaultMaterials;
-        }
-
-        // Undo記録前の状態
-        int oldModelIndex = _project.CurrentModelIndex;
-        CameraSnapshot oldCamera = CaptureCameraSnapshot();
-
-        // 現在の選択を保存
-        SaveSelectionToCurrentMesh();
-
-        // モデル追加
-        int newIndex = _project.AddModel(newModel);
-
-        // 新モデルに切り替え
-        _project.CurrentModelIndex = newIndex;
-
-        // UndoController更新
-        RefreshUndoControllerReferences();
-
-        // 選択リセット
-        SetSelectedIndex(-1);
-        _selectionState?.ClearAll();
-
-        InitVertexOffsets();
-
-        CameraSnapshot newCamera = CaptureCameraSnapshot();
-
-        // ★Phase 3: Undo記録
-        RecordModelAddUndo(newIndex, newModel, oldModelIndex, oldCamera, newCamera);
-
-        Repaint();
+        string newName = _project?.GenerateUniqueModelName("Model") ?? "Model";
+        _core?.CommandQueue?.Enqueue(
+            new Poly_Ling.Commands.AddModelCommand(newName, n => _core?.CreateNewModel(n)));
     }
 
-    // ================================================================
-    // モデル削除
-    // ================================================================
-
-    /// <summary>
-    /// 現在のモデルを削除（Undo対応）
-    /// </summary>
     private void RemoveCurrentModelWithUndo()
     {
         if (_project == null || _project.ModelCount <= 1) return;
-
-        int removeIndex = _project.CurrentModelIndex;
-        var removedModel = _project.CurrentModel;
-        string removedName = removedModel?.Name ?? "Untitled";
-
-        // ★Phase 3: 削除前にスナップショットを作成
-        ModelContextSnapshot removedSnapshot = ModelContextSnapshot.Capture(removedModel);
-
-        CameraSnapshot oldCamera = CaptureCameraSnapshot();
-
-        // モデル削除（リソース破棄は行わない - Undo復元用）
-        _project.Models.RemoveAt(removeIndex);
-        _project.IsDirty = true;
-
-        // カレントインデックス調整
-        int newModelIndex = removeIndex >= _project.ModelCount 
-            ? _project.ModelCount - 1 
-            : removeIndex;
-        
-        if (newModelIndex >= 0)
-        {
-            _project.CurrentModelIndex = newModelIndex;
-        }
-
-        // UndoController更新
-        RefreshUndoControllerReferences();
-
-        // 選択リセット (v2.0)
-        if (_model != null && _model.MeshContextCount > 0)
-        {
-            _model.ClearAllCategorySelection();
-            _model.AddToSelectionByType(0);
-        }
-        _selectionState?.ClearAll();
-
-        LoadSelectionFromCurrentMesh();
-        InitVertexOffsets();
-
-        if (_model?.FirstSelectedMeshContext != null)
-        {
-            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
-        }
-
-        CameraSnapshot newCamera = CaptureCameraSnapshot();
-
-        // ★Phase 3: Undo記録
-        RecordModelRemoveUndo(removeIndex, removedSnapshot, newModelIndex, oldCamera, newCamera);
-
-        Repaint();
+        _core?.DispatchPanelCommand(new DeleteModelCommand(_project.CurrentModelIndex));
     }
 
-    // ================================================================
-    // モデル名変更
-    // ================================================================
-
-    /// <summary>
-    /// モデル名を変更（Undo対応）
-    /// </summary>
     private void RenameModelWithUndo(string newName)
     {
         if (_model == null || string.IsNullOrEmpty(newName)) return;
-
-        string oldName = _model.Name;
-        if (oldName == newName) return;
-
-        _model.Name = newName;
-
-        // ★Phase 3: Undo記録
-        RecordModelRenameUndo(_project.CurrentModelIndex, oldName, newName);
+        if (_model.Name == newName) return;
+        _core?.DispatchPanelCommand(new RenameModelCommand(_project.CurrentModelIndex, newName));
     }
 
     // ================================================================
     // Phase 3: Undo記録メソッド
     // ================================================================
 
-    /// <summary>
-    /// モデル切り替えのUndo記録
-    /// </summary>
-    private void RecordModelSwitchUndo(
-        int oldIndex, 
-        int newIndex, 
-        CameraSnapshot oldCamera, 
-        CameraSnapshot newCamera,
-        MeshSelectionSnapshot oldSelection,
-        MeshSelectionSnapshot newSelection)
-    {
-        if (_undoController == null) return;
-
-        var record = ModelOperationRecord.CreateSwitch(
-            oldIndex, newIndex, oldCamera, newCamera, oldSelection, newSelection);
-
-        // MeshListStackに記録（ProjectStackが未実装の場合のフォールバック）
-        _undoController.MeshListStack?.Record(
-            new ModelOperationRecordWrapper(record, _project), 
-            $"Switch Model: {oldIndex} -> {newIndex}");
-
-        _undoController.FocusMeshList();
-
-        Debug.Log($"[RecordModelSwitchUndo] Recorded: {oldIndex} -> {newIndex}");
-    }
-
-    /// <summary>
-    /// モデル追加のUndo記録
-    /// </summary>
-    private void RecordModelAddUndo(
-        int addedIndex, 
-        ModelContext addedModel, 
-        int oldModelIndex, 
-        CameraSnapshot oldCamera, 
-        CameraSnapshot newCamera)
-    {
-        if (_undoController == null) return;
-
-        var record = ModelOperationRecord.CreateAdd(
-            addedIndex, addedModel, oldModelIndex, oldCamera, newCamera);
-
-        _undoController.MeshListStack?.Record(
-            new ModelOperationRecordWrapper(record, _project),
-            $"Add Model: {addedModel?.Name}");
-
-        _undoController.FocusMeshList();
-
-        Debug.Log($"[RecordModelAddUndo] Recorded: {addedModel?.Name} at {addedIndex}");
-    }
-
-    /// <summary>
-    /// モデル削除のUndo記録
-    /// </summary>
-    private void RecordModelRemoveUndo(
-        int removedIndex, 
-        ModelContextSnapshot removedSnapshot, 
-        int newModelIndex, 
-        CameraSnapshot oldCamera, 
-        CameraSnapshot newCamera)
-    {
-        if (_undoController == null) return;
-
-        // 直接スナップショットを使用するレコードを作成
-        var record = new ModelOperationRecord
-        {
-            Operation = ModelOperationType.Remove,
-            OldModelIndex = removedIndex,
-            NewModelIndex = newModelIndex,
-            ModelSnapshot = removedSnapshot,
-            OldCameraState = oldCamera,
-            NewCameraState = newCamera
-        };
-
-        _undoController.MeshListStack?.Record(
-            new ModelOperationRecordWrapper(record, _project),
-            $"Remove Model at {removedIndex}");
-
-        _undoController.FocusMeshList();
-
-        Debug.Log($"[RecordModelRemoveUndo] Recorded: index {removedIndex}");
-    }
-
-    /// <summary>
-    /// モデル名変更のUndo記録
-    /// </summary>
-    private void RecordModelRenameUndo(int modelIndex, string oldName, string newName)
-    {
-        if (_undoController == null) return;
-
-        var record = ModelOperationRecord.CreateRename(modelIndex, oldName, newName);
-
-        _undoController.MeshListStack?.Record(
-            new ModelOperationRecordWrapper(record, _project),
-            $"Rename Model: {oldName} -> {newName}");
-
-        _undoController.FocusMeshList();
-
-        Debug.Log($"[RecordModelRenameUndo] Recorded: {oldName} -> {newName}");
-    }
-
     // ================================================================
     // カメラ状態ヘルパー
     // ================================================================
 
-    /// <summary>
-    /// カメラ状態をキャプチャ
-    /// </summary>
     private CameraSnapshot CaptureCameraSnapshot()
     {
         return new CameraSnapshot
@@ -449,57 +151,18 @@ public partial class PolyLing
     /// </summary>
     private void OnCurrentModelChanged(int newIndex)
     {
-        //Debug.Log($"[OnCurrentModelChanged] Model index changed to {newIndex}");
-        
-        // _model は _project.CurrentModel を参照するプロパティなので自動的に更新される
-        // _meshContextList も _model.MeshContextList を参照するので自動的に更新される
+        // Core側でUndoController更新・コールバック再登録・PanelContext通知は完了済み。
+        // Editor側はビューポートの再構築とRepaintのみ担当する。
+
         var currentModel = _model;
-        
-        if (currentModel == null)
-        {
-            //Debug.LogWarning("[OnCurrentModelChanged] CurrentModel is null");
-            return;
-        }
-        
-        // v2.0: 選択インデックスは_selectedIndexプロパティ経由でActiveCategoryに応じて取得
-        
-        // ToolContextのModel参照を更新
-        if (_toolManager?.toolContext != null)
-        {
-            _toolManager.toolContext.Model = currentModel;
-        }
-        
-        // UndoControllerのMeshListを更新
-        if (_undoController != null)
-        {
-            _undoController.SetModelContext(currentModel, OnMeshListChanged);
-        }
-        
-        // 選択をクリア
-        _selectionState?.ClearAll();
-        
+        if (currentModel == null) return;
+
         // バッファを再構築
         _unifiedAdapter?.SetModelContext(currentModel);
         _viewportCore?.SetModel(currentModel);
-        
-        // 新しいモデルの最初のメッシュを選択 (v2.0)
-        if (_meshContextList.Count > 0 && _selectedIndex < 0)
-        {
-            currentModel.ClearAllCategorySelection();
-            currentModel.AddToSelectionByType(0);
-        }
-        
-        // UndoControllerに現在のMeshContextをロード
-        if (_selectedIndex >= 0 && _selectedIndex < _meshContextList.Count)
-        {
-            LoadMeshContextToUndoController(_meshContextList[_selectedIndex]);
-        }
-        
-        // トポロジ更新
-        UpdateTopology();
 
-        // パネルシステム更新（モデル切り替え）
-        _core?.NotifyPanels(ChangeKind.ModelSwitch);
+        // トポロジ更新（GPU通知）
+        UpdateTopology();
 
         Repaint();
     }
@@ -523,50 +186,13 @@ public partial class PolyLing
     {
         if (record == null || _project == null) return;
 
-        //Debug.Log($"[OnProjectUndoRedoPerformed] {(isRedo ? "Redo" : "Undo")} operation: {record.Operation}");
-
-        // 復元するスナップショットを決定
-        ProjectSnapshot snapshot = isRedo ? record.AfterSnapshot : record.BeforeSnapshot;
-        if (snapshot == null)
-        {
-            //Debug.LogWarning("[OnProjectUndoRedoPerformed] Snapshot is null");
-            return;
-        }
-
-        // スナップショットからProjectContextを復元
-        snapshot.RestoreToProjectContext(_project, model =>
-        {
-            // 各モデルのMeshContextにMaterialOwnerを設定
-            foreach (var meshContext in model.MeshContextList)
-            {
-                meshContext.ParentModelContext = model;
-            }
-        });
-
-        // ToolContextのModel参照を更新
-        if (_toolManager?.toolContext != null)
-        {
-            _toolManager.toolContext.Model = _project.CurrentModel;
-        }
-
-        // UndoControllerのMeshListを更新
-        if (_undoController != null && _project.CurrentModel != null)
-        {
-            _undoController.SetModelContext(_project.CurrentModel, OnMeshListChanged);
-        }
-
-        // 選択をクリア
-        _selectionState?.ClearAll();
-
-        // バッファを再構築
+        // スナップショット復元はCore側のOnUndoRedoPerformed_Extで処理済み。
+        // Editor側はビューポートの再構築とRepaintのみ担当する。
         _unifiedAdapter?.SetModelContext(_project.CurrentModel);
         _viewportCore?.SetModel(_project.CurrentModel);
 
-        // トポロジ更新
         UpdateTopology();
         Repaint();
-
-        Debug.Log($"[OnProjectUndoRedoPerformed] Restored to {_project.ModelCount} models, current: {_project.CurrentModelIndex}");
     }
 
     /// <summary>
@@ -575,54 +201,6 @@ public partial class PolyLing
     private void OnCameraRestoreRequested(CameraSnapshot snapshot)
     {
         RestoreCameraSnapshot(snapshot);
-        Repaint();
-    }
-
-    /// <summary>
-    /// 選択状態復元要求（Undo/Redo時）
-    /// </summary>
-    private void OnSelectionRestoreRequested(MeshSelectionSnapshot snapshot)
-    {
-        if (snapshot == null) return;
-
-        var meshContext = _model?.FirstSelectedMeshContext;
-        if (meshContext != null)
-        {
-            meshContext.RestoreSelection(snapshot);
-            LoadSelectionFromCurrentMesh();
-        }
-        _unifiedAdapter?.RequestNormal();
-        Repaint();
-    }
-
-    /// <summary>
-    /// UndoController参照更新要求（Undo/Redo時）
-    /// </summary>
-    private void OnRefreshUndoControllerRequested()
-    {
-        RefreshUndoControllerReferences();
-
-        // 選択インデックスを同期 (v2.0)
-        if (_model != null)
-        {
-            if (_selectedIndex < 0 && _model.MeshContextCount > 0)
-            {
-                _model.ClearAllCategorySelection();
-                _model.AddToSelectionByType(0);
-            }
-        }
-
-        // MeshContextをUndoControllerにロード
-        if (_model?.FirstSelectedMeshContext != null)
-        {
-            LoadMeshContextToUndoController(_model.FirstSelectedMeshContext);
-        }
-
-        // 選択状態を復元
-        LoadSelectionFromCurrentMesh();
-
-        InitVertexOffsets();
-        _unifiedAdapter?.RequestNormal();
         Repaint();
     }
 
@@ -635,222 +213,15 @@ public partial class PolyLing
     /// </summary>
     private void SetupProjectContextCallbacks()
     {
+        // ProjectContext コールバックは OnEnable 時に Core 経由で設定される。
+        // Editor 固有のコールバック（カメラ復元）のみここで設定する。
         if (_project == null) return;
-
-        _project.OnCurrentModelChanged += OnCurrentModelChanged;
-        _project.OnModelsChanged += OnModelsChanged;
         _project.OnCameraRestoreRequested += OnCameraRestoreRequested;
-        _project.OnSelectionRestoreRequested += OnSelectionRestoreRequested;
-        _project.OnRefreshUndoControllerRequested += OnRefreshUndoControllerRequested;
     }
 
-    /// <summary>
-    /// ProjectContextのコールバックを解除
-    /// </summary>
     private void ClearProjectContextCallbacks()
     {
         if (_project == null) return;
-
-        _project.OnCurrentModelChanged -= OnCurrentModelChanged;
-        _project.OnModelsChanged -= OnModelsChanged;
         _project.OnCameraRestoreRequested -= OnCameraRestoreRequested;
-        _project.OnSelectionRestoreRequested -= OnSelectionRestoreRequested;
-        _project.OnRefreshUndoControllerRequested -= OnRefreshUndoControllerRequested;
-    }
-}
-
-// ================================================================
-// ModelOperationRecordのラッパー（MeshListStack用）
-// ================================================================
-
-namespace Poly_Ling.UndoSystem
-{
-    /// <summary>
-    /// ModelOperationRecordをModelContext用UndoStackで使用するためのラッパー
-    /// </summary>
-    public class ModelOperationRecordWrapper : IUndoRecord<ModelContext>
-    {
-        public UndoOperationInfo Info { get; set; }
-
-        private readonly ModelOperationRecord _innerRecord;
-        private readonly ProjectContext _project;
-
-        public ModelOperationRecordWrapper(ModelOperationRecord record, ProjectContext project)
-        {
-            _innerRecord = record;
-            _project = project;
-        }
-
-        public void Undo(ModelContext ctx)
-        {
-            if (_project == null || _innerRecord == null) return;
-
-            switch (_innerRecord.Operation)
-            {
-                case ModelOperationType.Add:
-                    UndoModelAdd();
-                    break;
-
-                case ModelOperationType.Remove:
-                    UndoModelRemove();
-                    break;
-
-                case ModelOperationType.Switch:
-                    UndoModelSwitch();
-                    break;
-
-                case ModelOperationType.Rename:
-                    UndoModelRename();
-                    break;
-            }
-        }
-
-        public void Redo(ModelContext ctx)
-        {
-            if (_project == null || _innerRecord == null) return;
-
-            switch (_innerRecord.Operation)
-            {
-                case ModelOperationType.Add:
-                    RedoModelAdd();
-                    break;
-
-                case ModelOperationType.Remove:
-                    RedoModelRemove();
-                    break;
-
-                case ModelOperationType.Switch:
-                    RedoModelSwitch();
-                    break;
-
-                case ModelOperationType.Rename:
-                    RedoModelRename();
-                    break;
-            }
-        }
-
-        // ---- Add ----
-        private void UndoModelAdd()
-        {
-            int addedIndex = _innerRecord.NewModelIndex;
-            if (addedIndex >= 0 && addedIndex < _project.ModelCount)
-            {
-                _project.Models.RemoveAt(addedIndex);
-            }
-
-            int oldIndex = _innerRecord.OldModelIndex;
-            if (oldIndex >= 0 && oldIndex < _project.ModelCount)
-            {
-                _project.CurrentModelIndex = oldIndex;
-            }
-
-            _project.OnCameraRestoreRequested?.Invoke(_innerRecord.OldCameraState);
-            _project.OnRefreshUndoControllerRequested?.Invoke();
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        private void RedoModelAdd()
-        {
-            if (_innerRecord.ModelSnapshot != null)
-            {
-                var restoredModel = _innerRecord.ModelSnapshot.ToModelContext();
-                int insertIndex = Math.Min(_innerRecord.NewModelIndex, _project.ModelCount);
-                _project.Models.Insert(insertIndex, restoredModel);
-                _project.CurrentModelIndex = insertIndex;
-            }
-
-            _project.OnCameraRestoreRequested?.Invoke(_innerRecord.NewCameraState);
-            _project.OnRefreshUndoControllerRequested?.Invoke();
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        // ---- Remove ----
-        private void UndoModelRemove()
-        {
-            if (_innerRecord.ModelSnapshot != null)
-            {
-                var restoredModel = _innerRecord.ModelSnapshot.ToModelContext();
-                int insertIndex = Math.Min(_innerRecord.OldModelIndex, _project.ModelCount);
-                _project.Models.Insert(insertIndex, restoredModel);
-                _project.CurrentModelIndex = insertIndex;
-            }
-
-            _project.OnCameraRestoreRequested?.Invoke(_innerRecord.OldCameraState);
-            _project.OnRefreshUndoControllerRequested?.Invoke();
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        private void RedoModelRemove()
-        {
-            int removeIndex = _innerRecord.OldModelIndex;
-            if (removeIndex >= 0 && removeIndex < _project.ModelCount)
-            {
-                _project.Models.RemoveAt(removeIndex);
-            }
-
-            int newIndex = _innerRecord.NewModelIndex;
-            if (newIndex >= 0 && newIndex < _project.ModelCount)
-            {
-                _project.CurrentModelIndex = newIndex;
-            }
-            else if (_project.ModelCount > 0)
-            {
-                _project.CurrentModelIndex = _project.ModelCount - 1;
-            }
-
-            _project.OnCameraRestoreRequested?.Invoke(_innerRecord.NewCameraState);
-            _project.OnRefreshUndoControllerRequested?.Invoke();
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        // ---- Switch ----
-        private void UndoModelSwitch()
-        {
-            int oldIndex = _innerRecord.OldModelIndex;
-            if (oldIndex >= 0 && oldIndex < _project.ModelCount)
-            {
-                _project.CurrentModelIndex = oldIndex;
-            }
-
-            _project.OnCameraRestoreRequested?.Invoke(_innerRecord.OldCameraState);
-            _project.OnSelectionRestoreRequested?.Invoke(_innerRecord.OldMeshSelection);
-            _project.OnRefreshUndoControllerRequested?.Invoke();
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        private void RedoModelSwitch()
-        {
-            int newIndex = _innerRecord.NewModelIndex;
-            if (newIndex >= 0 && newIndex < _project.ModelCount)
-            {
-                _project.CurrentModelIndex = newIndex;
-            }
-
-            _project.OnCameraRestoreRequested?.Invoke(_innerRecord.NewCameraState);
-            _project.OnSelectionRestoreRequested?.Invoke(_innerRecord.NewMeshSelection);
-            _project.OnRefreshUndoControllerRequested?.Invoke();
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        // ---- Rename ----
-        private void UndoModelRename()
-        {
-            var model = _project.GetModel(_innerRecord.OldModelIndex);
-            if (model != null)
-            {
-                model.Name = _innerRecord.OldName;
-            }
-            _project.OnModelsChanged?.Invoke();
-        }
-
-        private void RedoModelRename()
-        {
-            var model = _project.GetModel(_innerRecord.NewModelIndex);
-            if (model != null)
-            {
-                model.Name = _innerRecord.NewName;
-            }
-            _project.OnModelsChanged?.Invoke();
-        }
     }
 }

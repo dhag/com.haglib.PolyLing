@@ -17,6 +17,7 @@ using Poly_Ling.Selection;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Core;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.Core
 {
@@ -51,14 +52,13 @@ namespace Poly_Ling.Core
         public SelectionState  SelectionState    => _selectionState;
         public LiveProjectView LiveProjectView   => _liveProjectView;
 
-        // 内部アクセス用（partial移行ファイルから参照）
-        internal MeshUndoController UndoController  => _undoController;
-        internal CommandQueue       CommandQueue     => _commandQueue;
-        public ToolManager          ToolManager      => _toolManager;
-        internal SelectionOperations SelectionOps    => _selectionOps;
-        internal TopologyCache       MeshTopology    => _meshTopology;
-        internal MeshListOps         MeshListOps     => _meshListOps;
-        internal PolyLingCoreConfig  Config          => _config;
+        // IPolyLingCore 公開（EditorレイヤーがEditor固有コールバックを接続するために必要）
+        public MeshUndoController  UndoController => _undoController;
+        public CommandQueue         CommandQueue   => _commandQueue;
+        public SelectionOperations  SelectionOps   => _selectionOps;
+        public TopologyCache        MeshTopology   => _meshTopology;
+
+        public ToolManager ToolManager => _toolManager;
 
         private ModelContext       _model             => Model;
         private List<MeshContext>  _meshContextList   => _model?.MeshContextList;
@@ -165,13 +165,8 @@ namespace Poly_Ling.Core
             SetupMeshListOpsCallbacks();
             ToolContextReconnector.ReconnectAllPanelContexts(_panelContext);
 
-#if UNITY_EDITOR
-            var remote = Poly_Ling.Remote.RemoteServer.FindInstance()
-                ?? UnityEditor.EditorWindow.GetWindow<Poly_Ling.Remote.RemoteServer>("Remote Server");
-            remote.Show();
-            remote.SetDispatchCommand(DispatchPanelCommand);
-            if (!remote.IsRunning) remote.StartServer();
-#endif
+            // RemoteServerの接続はEditorBridge経由でEditor依存を排除する
+            PLEditorBridge.I.SetupRemoteServer(DispatchPanelCommand);
         }
 
         // ================================================================
@@ -212,7 +207,7 @@ namespace Poly_Ling.Core
             ctx.Project = _project;
 
             // プロジェクト操作
-            ctx.CreateNewModel = CreateNewModelWithUndo;
+            ctx.CreateNewModel = CreateNewModel;
             ctx.SelectModel    = index =>
                 _commandQueue?.Enqueue(new SelectModelCommand(index, SelectModelWithUndo));
 
@@ -253,7 +248,6 @@ namespace Poly_Ling.Core
             // カメラフォーカス
             ctx.FocusCameraOn = pos =>
             {
-                // Editorのカメラはポリリングが管理するため、イベント経由で通知
                 OnFocusCameraRequested?.Invoke(pos);
                 OnRepaintRequired?.Invoke();
             };
@@ -268,6 +262,12 @@ namespace Poly_Ling.Core
 
         public void DispatchPanelCommand(PanelCommand cmd)
             => DispatchPanelCommandInternal(cmd);
+
+        public ModelContext CreateNewModel(string name)
+        {
+            CreateNewModelWithUndo_void(name);
+            return _project?.CurrentModel;
+        }
 
         public void NotifyPanels(ChangeKind kind = ChangeKind.ListStructure)
         {
@@ -298,6 +298,14 @@ namespace Poly_Ling.Core
 
         /// <summary>UndoRedoが実行された（EditorがViewportを更新する）</summary>
         public event Action OnUndoRedoPerformed_Ext;
+        /// <summary>DeleteSelectedVertices/MergeSelectedVertices後のSyncMesh要求</summary>
+        public event Action<MeshContext> OnSyncMeshRequired;
+
+        /// <summary>
+        /// メッシュ切り替え時に新しいSelectionStateを通知する。
+        /// Editorはこれを受けて _unifiedAdapter.SetSelectionState() を呼ぶ。
+        /// </summary>
+        public event Action<SelectionState> OnSelectionStateChanged;
 
         // ================================================================
         // 内部コールバック
@@ -362,8 +370,6 @@ namespace Poly_Ling.Core
 
         private void OnModelReorderCompleted()
         {
-            // GPU再構築はEditorが行う（ViewportCore依存）
-            // ここではトポロジー更新とパネル通知のみ
             UpdateTopology();
             NotifyPanels(ChangeKind.ListStructure);
         }
@@ -391,11 +397,8 @@ namespace Poly_Ling.Core
         }
 
         // ================================================================
-        // SelectionのSave/Load（PolyLing_Selection.csから移植予定のスタブ）
+        // partial メソッド宣言
         // ================================================================
-
-        // 注意: 以下はPolyLing_Selection.csから段階的に移植する
-        // 現時点ではスタブとして空実装、後のリファクタリングフェーズで充填する
 
         partial void InitVertexOffsets(bool updateCamera = true);
         partial void SetSelectedIndex(int index);
@@ -407,7 +410,6 @@ namespace Poly_Ling.Core
             => OnCurrentModelChangedInternal();
         partial void DispatchPanelCommandInternal(PanelCommand cmd);
 
-        // MeshContext操作（CommandHandlersから移植予定）
         partial void AddMeshContextWithUndo(MeshContext mc);
         partial void AddMeshContextsWithUndo(IList<MeshContext> mcs);
         partial void RemoveMeshContextWithUndo(int index);
@@ -417,13 +419,8 @@ namespace Poly_Ling.Core
         partial void UpdateMeshAttributesWithUndo(IList<MeshAttributeChange> changes);
         partial void ClearAllMeshContextsWithUndo();
         partial void ReplaceAllMeshContextsWithUndo(IList<MeshContext> mcs);
-        partial void CreateNewModelWithUndo_void(string name);
-        private ModelContext CreateNewModelWithUndo(string name)
-        {
-            CreateNewModelWithUndo_void(name);
-            return _project?.CurrentModel;
-        }
         partial void SelectModelWithUndo(int index);
+        partial void CreateNewModelWithUndo_void(string name);
         partial void OnMeshContextCreatedAsNew(MeshObject obj, string name);
         partial void OnMeshObjectCreatedAddToCurrent(MeshObject obj, string name);
         partial void AddMaterialsToModel(IList<Material> mats);

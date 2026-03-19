@@ -91,10 +91,8 @@ public partial class PolyLing
         meshContext.ParentModelContext = _model;
         _model.Add(meshContext);
         int newIndex = _meshContextList.Count - 1;
-        SetSelectedIndex(newIndex);
+        _model.Select(newIndex);
         _model.SelectDrawable(newIndex);       // SelectedMeshIndicesに追加（描画・ホバーフィルタに必要）
-        SaveSelectionToCurrentMesh();           // 旧メッシュのイベント解除
-        LoadSelectionFromCurrentMesh();         // 新メッシュのSelectionに_selectionStateを同期
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
@@ -275,7 +273,7 @@ public partial class PolyLing
 
         meshContext.ParentModelContext = _model;
         _model.Add(meshContext);
-        SetSelectedIndex(_meshContextList.Count - 1);
+        _model.Select(_meshContextList.Count - 1);
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）
@@ -330,7 +328,7 @@ public partial class PolyLing
         // 選択調整（RemoveAtが全カテゴリ調整済みだが、Mesh選択が空になった場合のフォールバック）
         if (_selectedIndex < 0 && _meshContextList.Count > 0)
         {
-            SetSelectedIndex(Mathf.Min(index, _meshContextList.Count - 1));
+            _model.Select(Mathf.Min(index, _meshContextList.Count - 1));
         }
 
         if (_selectedIndex >= 0)

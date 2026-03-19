@@ -2,6 +2,7 @@
 // Editor外で使用した場合の警告スタブ実装。
 // 操作は何も行わず、Debug.LogErrorでメッセージを出力する。
 
+using Poly_Ling.Data;
 using UnityEngine;
 
 namespace Poly_Ling.EditorBridge
@@ -9,8 +10,6 @@ namespace Poly_Ling.EditorBridge
     public class EditorBridgeNull : IEditorBridge
     {
         private const string Prefix = "[PolyLing] Editor外では使用できません";
-
-        //Tools.ToolContext IEditorBridge._ToolContext => null;
 
         // ================================================================
         // AssetDatabase
@@ -45,6 +44,7 @@ namespace Poly_Ling.EditorBridge
             Debug.LogError($"{Prefix}: フォルダ確認はできません");
             return false;
         }
+
         public string[] FindAssets(string filter, string[] searchInFolders)
         {
             Debug.LogWarning($"{Prefix}: FindAssetsは使用できません");
@@ -237,6 +237,15 @@ namespace Poly_Ling.EditorBridge
         public T AddComponent<T>(GameObject go) where T : Component
         {
             return go.AddComponent<T>();
+        }
+
+        // ================================================================
+        // RemoteServer
+        // ================================================================
+
+        public void SetupRemoteServer(System.Action<PanelCommand> dispatch)
+        {
+            // Runtime環境では無操作
         }
     }
 }

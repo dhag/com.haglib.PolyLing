@@ -6,22 +6,13 @@
 
 using UnityEngine;
 using UnityEditor;
-using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.EditorBridge
 {
     [InitializeOnLoad]
     public class EditorBridgeImpl : IEditorBridge
     {
-
-
-
-
-        //ToolContext _ToolContext
-
-
-
-
         static EditorBridgeImpl()
         {
             PLEditorBridge.Register(new EditorBridgeImpl());
@@ -163,6 +154,19 @@ namespace Poly_Ling.EditorBridge
 
         public T AddComponent<T>(GameObject go) where T : Component
             => UnityEditor.Undo.AddComponent<T>(go);
+
+        // ================================================================
+        // RemoteServer
+        // ================================================================
+
+        public void SetupRemoteServer(System.Action<PanelCommand> dispatch)
+        {
+            var remote = Poly_Ling.Remote.RemoteServer.FindInstance()
+                ?? EditorWindow.GetWindow<Poly_Ling.Remote.RemoteServer>("Remote Server");
+            remote.Show();
+            remote.SetDispatchCommand(dispatch);
+            if (!remote.IsRunning) remote.StartServer();
+        }
     }
 }
 

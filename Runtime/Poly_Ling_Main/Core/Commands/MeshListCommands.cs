@@ -218,4 +218,28 @@ namespace Poly_Ling.Commands
             _handler?.Invoke(_index);
         }
     }
+
+    /// <summary>
+    /// モデル追加コマンド（Undo付き）
+    /// CreateNewModelWithUndo_void を直接呼び出すためのCommandQueueラッパー
+    /// </summary>
+    public class AddModelCommand : ICommand
+    {
+        private readonly string _name;
+        private readonly Action<string> _handler;
+
+        public string Description => $"Add Model: {_name}";
+        public MeshUpdateLevel UpdateLevel => MeshUpdateLevel.Topology;
+
+        public AddModelCommand(string name, Action<string> handler)
+        {
+            _name = name;
+            _handler = handler;
+        }
+
+        public void Execute()
+        {
+            _handler?.Invoke(_name);
+        }
+    }
 }

@@ -260,6 +260,10 @@ public partial class PolyLing
         }
 
         Debug.Log($"[PolyLing] Imported project: {projectDTO.name} ({_meshContextList.Count} meshes, {_model.Materials?.Count ?? 0} materialPathList)");
+
+        // Core の OnMeshListChangedInternal を発火（SelectionState差し替え・パネル通知）
+        _model?.OnListChanged?.Invoke();
+
         Repaint();
     }
 

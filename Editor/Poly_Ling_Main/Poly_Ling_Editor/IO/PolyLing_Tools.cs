@@ -62,13 +62,8 @@ private KnifeTool _knifeTool => _toolManager?.GetTool<KnifeTool>();
     {
         if (_model == null) return;
 
-        // 旧メッシュの選択イベント解除
-        SaveSelectionToCurrentMesh();
-
-        // 新メッシュの_selectionState参照差替え
-        LoadSelectionFromCurrentMesh();
-
-        // 頂点編集対象の初期化
+        // 選択変更はCore側のOnMeshSelectionChangedInternalが処理済み。
+        // Editor側は頂点オフセット初期化とViewport更新のみ担当する。
         if (_model.HasValidMeshContextSelection)
         {
             InitVertexOffsets();
@@ -76,7 +71,6 @@ private KnifeTool _knifeTool => _toolManager?.GetTool<KnifeTool>();
             UpdateTopology();
         }
 
-        // 選択変更をワンショットパイプラインに通知
         _unifiedAdapter?.RequestNormal();
 
         // パネル通知（選択変更）

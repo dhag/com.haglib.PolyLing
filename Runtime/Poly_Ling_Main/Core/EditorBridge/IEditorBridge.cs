@@ -2,7 +2,7 @@
 // UnityEditor依存APIをRuntimeから隔離するブリッジインターフェース
 // Editor外から呼び出した場合はEditorBridgeNullが警告を出す
 
-using Poly_Ling.Tools;
+using Poly_Ling.Data;
 using UnityEngine;
 
 namespace Poly_Ling.EditorBridge
@@ -50,11 +50,6 @@ namespace Poly_Ling.EditorBridge
         bool   DisplayDialog(string title, string message, string ok);
         bool   DisplayDialogYesNo(string title, string message, string yes, string no);
 
-
-        
-        
-        //ToolContext _ToolContext { get;  }
-
         // ================================================================
         // EditorGUIUtility
         // ================================================================
@@ -74,12 +69,12 @@ namespace Poly_Ling.EditorBridge
         // Selection
         // ================================================================
 
-        Transform   GetActiveTransform();
-        Object      GetActiveObject();
-        GameObject  GetActiveGameObject();
+        Transform    GetActiveTransform();
+        Object       GetActiveObject();
+        GameObject   GetActiveGameObject();
         GameObject[] GetSelectedGameObjects();
-        void        SetActiveObject(Object obj);
-        void        SetActiveGameObject(GameObject go);
+        void         SetActiveObject(Object obj);
+        void         SetActiveGameObject(GameObject go);
 
         // ================================================================
         // Undo
@@ -88,5 +83,15 @@ namespace Poly_Ling.EditorBridge
         void RecordObject(Object obj, string name);
         void RegisterCreatedObjectUndo(Object obj, string name);
         T    AddComponent<T>(GameObject go) where T : Component;
+
+        // ================================================================
+        // RemoteServer
+        // ================================================================
+
+        /// <summary>
+        /// RemoteServerを取得または生成し、DispatchCommandを接続する。
+        /// Runtime環境（EditorBridgeNull）では無操作。
+        /// </summary>
+        void SetupRemoteServer(System.Action<PanelCommand> dispatch);
     }
 }

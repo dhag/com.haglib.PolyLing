@@ -661,6 +661,9 @@ public partial class PolyLing
             Poly_Ling.PMX.PMXImporter.DetectNamedMirrors(_meshContextList, boneStartIndex);
         }
         
+        // Core の OnMeshListChangedInternal を発火（SelectionState差し替え・パネル通知）
+        _model?.OnListChanged?.Invoke();
+
         // 統合システムにトポロジー変更を通知
         _unifiedAdapter?.NotifyTopologyChanged();
         
