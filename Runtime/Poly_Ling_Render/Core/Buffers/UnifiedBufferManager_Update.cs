@@ -1290,6 +1290,19 @@ namespace Poly_Ling.Core
             }
         }
 
+        /// <summary>
+        /// 背面カリング無効時: CPU配列（FLAG_CULLED未設定）をそのままGPUに転送し
+        /// 全頂点・全線分の FLAG_CULLED をクリアする。
+        /// DispatchClearBuffersGPU の後に呼ぶこと（スクリーン座標クリアの後）。
+        /// </summary>
+        public void ClearCulledFlagsGPU()
+        {
+            if (_totalVertexCount > 0 && _vertexFlagsBuffer != null)
+                _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
+            if (_totalLineCount > 0 && _lineFlagsBuffer != null)
+                _lineFlagsBuffer.SetData(_lineFlags, 0, 0, _totalLineCount);
+        }
+
         // ============================================================
         // Level 4: Transform Matrix 更新
         // ============================================================

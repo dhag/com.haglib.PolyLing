@@ -83,6 +83,12 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// 独立したUndoManagerインスタンスを生成する。
+        /// プレイヤービルド等、staticインスタンスと分離したい場合に使用。
+        /// </summary>
+        public static UndoManager CreateNew() => new UndoManager();
+
+        /// <summary>
         /// インスタンスをリセット（テスト用）
         /// </summary>
         public static void ResetInstance()

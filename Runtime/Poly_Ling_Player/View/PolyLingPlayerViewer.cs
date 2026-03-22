@@ -1,19 +1,18 @@
 // PolyLingPlayerViewer.cs
-// プレイヤービルド用メッシュビューア
-// PolyLingPlayerClient からデータを受信し、シーン上にメッシュを生成して表示する
+// プレイヤービルド用メッシュビューア（全体統括MonoBehaviour）
+// 役割:
+//   - ライフサイクル管理 (Awake/Start/Update/LateUpdate/OnDestroy)
+//   - カメラオービット操作
+//   - OnGUI（ステータス・ボタン表示）
+//   - RemoteProjectReceiver / MeshSceneRenderer / PlayerEditOps の配線
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using Poly_Ling.Remote;
 using Poly_Ling.Context;
-using Poly_Ling.Data;
 using Poly_Ling.Core;
-using Poly_Ling.Selection;
-using Poly_Ling.Symmetry;
-using Poly_Ling.Core.Rendering;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
@@ -32,28 +31,29 @@ namespace Poly_Ling.Player
         [SerializeField] private Camera _camera;
 
         // ================================================================
-        // デバッグ表示フラグ（Inspector）
+        // 描画フラグ（Inspector）
         // ================================================================
 
         [Header("Display Flags")]
-        [SerializeField] private bool _showSelectedMesh            = true;   // A
-        [SerializeField] private bool _showUnselectedMesh          = true;   // B
-        [SerializeField] private bool _showSelectedVertices        = true;   // C
-        [SerializeField] private bool _showUnselectedVertices      = true;   // D
-        [SerializeField] private bool _showSelectedWireframe       = true;   // E
-        [SerializeField] private bool _showUnselectedWireframe     = true;   // F
-        [SerializeField] private bool _showSelectedBone            = false;  // E(bone)
-        [SerializeField] private bool _showUnselectedBone          = false;  // F(bone)
-        [SerializeField] private bool _showSelectedVertexIndex     = false;  // G
-        [SerializeField] private bool _showSelectedTransform       = false;  // H/I
+        [SerializeField] private bool _showSelectedMesh            = true;
+        [SerializeField] private bool _showUnselectedMesh          = true;
+        [SerializeField] private bool _showSelectedVertices        = true;
+        [SerializeField] private bool _showUnselectedVertices      = true;
+        [SerializeField] private bool _showSelectedWireframe       = true;
+        [SerializeField] private bool _showUnselectedWireframe     = true;
+        [SerializeField] private bool _showSelectedBone            = true;
+        [SerializeField] private bool _showUnselectedBone          = false;
+
+        [Header("Rendering")]
+        [SerializeField] private bool _backfaceCullingEnabled      = true;
 
         // ================================================================
         // カメラオービット
         // ================================================================
 
-        private float _orbitRotX    =  20f;
-        private float _orbitRotY    =   0f;
-        private float _orbitDist    =   3f;
+        private float   _orbitRotX   =  20f;
+        private float   _orbitRotY   =   0f;
+        private float   _orbitDist   =   3f;
         private Vector3 _orbitTarget = Vector3.zero;
 
         private const float OrbitSensitivity = 0.5f;
@@ -68,34 +68,21 @@ namespace Poly_Ling.Player
         private bool    _isPanning;
 
         // ================================================================
-        // データ
+        // サブクラス
         // ================================================================
 
-        private ProjectContext _project;
-        private int            _fetchingModelIndex = -1;
-        private int            _modelCount;
-
-        // ================================================================
-        // デフォルトマテリアル（フォールバック用）
-        // ================================================================
-
-        private Material _defaultMaterial;
-
-        // ================================================================
-        // レンダラー（モデル単位）
-        // ================================================================
-
-        /// <summary>モデル単位の UnifiedSystemAdapter。インデックスはモデルインデックスと一致</summary>
-        private readonly List<UnifiedSystemAdapter> _adapters = new List<UnifiedSystemAdapter>();
-
-        /// <summary>モデル単位の選択中MeshContextListインデックス（-1=なし）</summary>
-        private readonly List<int> _selectedContextIndices = new List<int>();
+        private RemoteProjectReceiver _receiver;
+        private MeshSceneRenderer     _renderer;
+        private readonly UndoManager  _undoManager = UndoManager.CreateNew();
+        private PlayerEditOps         _editOps;
 
         // ================================================================
         // ステータス
         // ================================================================
 
         private string _status = "未接続";
+        private int    _fetchingModelIndex = -1;
+        private int    _modelCount;
 
         // ================================================================
         // ライフサイクル
@@ -118,6 +105,19 @@ namespace Poly_Ling.Player
                 }
             }
 
+            _receiver = new RemoteProjectReceiver();
+            _renderer = new MeshSceneRenderer();
+            _editOps  = new PlayerEditOps(_undoManager);
+
+            // レンダラーにフラグを反映
+            SyncRendererFlags();
+
+            // 受信イベント配線
+            _receiver.OnProjectHeaderReceived += OnProjectHeaderReceived;
+            _receiver.OnModelMetaReceived     += OnModelMetaReceived;
+            _receiver.OnMeshSummaryReceived   += OnMeshSummaryReceived;
+            _receiver.OnMeshDataReceived      += OnMeshDataReceived;
+
             _client.OnConnected    += OnConnected;
             _client.OnDisconnected += OnDisconnected;
             _client.OnPushReceived += OnPushReceived;
@@ -131,35 +131,50 @@ namespace Poly_Ling.Player
                 _client.OnDisconnected -= OnDisconnected;
                 _client.OnPushReceived -= OnPushReceived;
             }
-            ClearScene();
+
+            if (_receiver != null)
+            {
+                _receiver.OnProjectHeaderReceived -= OnProjectHeaderReceived;
+                _receiver.OnModelMetaReceived     -= OnModelMetaReceived;
+                _receiver.OnMeshSummaryReceived   -= OnMeshSummaryReceived;
+                _receiver.OnMeshDataReceived      -= OnMeshDataReceived;
+            }
+
+            _editOps?.Dispose();
+            _editOps = null;
+            _renderer?.Dispose();
+            _renderer = null;
         }
 
         private void Update()
         {
+            _editOps?.Tick();
             UpdateOrbitCamera();
+            SyncRendererFlags();
         }
 
         private void LateUpdate()
         {
-            DrawMeshes();
-            DrawWireframeAndVertices();
+            var project = _receiver?.Project;
+            var cam = ActiveCamera;
+            _renderer?.DrawMeshes(project, cam);
+            _renderer?.DrawWireframeAndVertices(cam);
+            _renderer?.DrawBones(project, cam);
         }
 
         // ================================================================
-        // カメラオービット
+        // カメラ
         // ================================================================
+
+        private Camera ActiveCamera => _camera != null ? _camera : Camera.main;
 
         private void UpdateOrbitCamera()
         {
-            var cam = _camera != null ? _camera : Camera.main;
+            var cam = ActiveCamera;
             if (cam == null) return;
 
-            // 左/右ドラッグ: 回転
             if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
-            {
-                _isDragging  = true;
-                _prevOrbitPos = Input.mousePosition;
-            }
+            { _isDragging = true; _prevOrbitPos = Input.mousePosition; }
             if (Input.GetMouseButtonUp(0) || Input.GetMouseButtonUp(1))
                 _isDragging = false;
 
@@ -172,12 +187,8 @@ namespace Poly_Ling.Player
                 _prevOrbitPos = Input.mousePosition;
             }
 
-            // 中ドラッグ: パン
             if (Input.GetMouseButtonDown(2))
-            {
-                _isPanning   = true;
-                _prevPanPos  = Input.mousePosition;
-            }
+            { _isPanning = true; _prevPanPos = Input.mousePosition; }
             if (Input.GetMouseButtonUp(2))
                 _isPanning = false;
 
@@ -185,15 +196,12 @@ namespace Poly_Ling.Player
             {
                 Vector2 delta = (Vector2)Input.mousePosition - _prevPanPos;
                 Quaternion rot = Quaternion.Euler(_orbitRotX, _orbitRotY, 0f);
-                Vector3 right = rot * Vector3.right;
-                Vector3 up    = rot * Vector3.up;
                 float panScale = _orbitDist * PanSensitivity;
-                _orbitTarget  -= right * delta.x * panScale;
-                _orbitTarget  -= up    * delta.y * panScale;
+                _orbitTarget  -= rot * Vector3.right * delta.x * panScale;
+                _orbitTarget  -= rot * Vector3.up    * delta.y * panScale;
                 _prevPanPos    = Input.mousePosition;
             }
 
-            // スクロール: ズーム
             float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) > 0.001f)
             {
@@ -204,99 +212,6 @@ namespace Poly_Ling.Player
             Quaternion camRot = Quaternion.Euler(_orbitRotX, _orbitRotY, 0f);
             cam.transform.position = _orbitTarget + camRot * (Vector3.back * _orbitDist);
             cam.transform.LookAt(_orbitTarget);
-        }
-
-        // ================================================================
-        // メッシュ描画（ViewportCore.DrawMeshes と同ロジック）
-        // ================================================================
-
-        private void DrawMeshes()
-        {
-            if (_project == null) return;
-            var cam = _camera != null ? _camera : Camera.main;
-            if (cam == null) return;
-
-            for (int mi = 0; mi < _project.ModelCount; mi++)
-            {
-                var model = _project.Models[mi];
-                var drawables = model.DrawableMeshes;
-                if (drawables == null) continue;
-
-                int selectedCtx = (mi < _selectedContextIndices.Count) ? _selectedContextIndices[mi] : -1;
-
-                for (int i = 0; i < drawables.Count; i++)
-                {
-                    bool isSelected = (drawables[i].MasterIndex == selectedCtx);
-
-                    if (isSelected && !_showSelectedMesh)   continue;
-                    if (!isSelected && !_showUnselectedMesh) continue;
-
-                    var ctx = drawables[i].Context;
-                    if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
-
-                    var mesh = ctx.UnityMesh;
-                    for (int sub = 0; sub < mesh.subMeshCount; sub++)
-                    {
-                        Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
-                        if (mat == null) mat = GetDefaultMaterial();
-                        if (mat == null) continue;
-                        Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam, sub);
-                    }
-                }
-            }
-        }
-
-        private Material GetDefaultMaterial()
-        {
-            if (_defaultMaterial != null) return _defaultMaterial;
-            var shader = Shader.Find("Universal Render Pipeline/Lit")
-                      ?? Shader.Find("Universal Render Pipeline/Simple Lit")
-                      ?? Shader.Find("Standard")
-                      ?? Shader.Find("Unlit/Color");
-            if (shader == null) return null;
-            _defaultMaterial = new Material(shader);
-            _defaultMaterial.SetColor("_BaseColor", new Color(0.7f, 0.7f, 0.7f));
-            _defaultMaterial.SetColor("_Color",     new Color(0.7f, 0.7f, 0.7f));
-            return _defaultMaterial;
-        }
-
-        // ================================================================
-        // ワイヤーフレーム・頂点描画
-        // ================================================================
-
-        private void DrawWireframeAndVertices()
-        {
-            var cam = _camera != null ? _camera : Camera.main;
-            if (cam == null) return;
-
-            cam.cullingMask = -1;
-
-            float pointSize = ShaderColorSettings.Default.VertexPointScale;
-
-            for (int mi = 0; mi < _adapters.Count; mi++)
-            {
-                var adapter = _adapters[mi];
-                if (adapter == null || !adapter.IsInitialized) continue;
-
-                adapter.CleanupQueued();
-
-                bool showWire    = _showSelectedWireframe;
-                bool showVerts   = _showSelectedVertices;
-                bool showUnsWire = _showUnselectedWireframe;
-                bool showUnsVert = _showUnselectedVertices;
-
-                adapter.PrepareDrawing(
-                    cam,
-                    showWireframe:            showWire,
-                    showVertices:             showVerts,
-                    showUnselectedWireframe:  showUnsWire,
-                    showUnselectedVertices:   showUnsVert,
-                    selectedMeshIndex:        -1,
-                    pointSize:                pointSize);
-                adapter.ConsumeNormalMode();
-
-                adapter.DrawQueued(cam);
-            }
         }
 
         // ================================================================
@@ -325,17 +240,29 @@ namespace Poly_Ling.Player
                 y += h + pad;
                 if (GUI.Button(new Rect(x, y, w, h), "Fetch Project"))
                     FetchProject();
+
+                y += h + pad;
+                bool prevEnabled = GUI.enabled;
+                GUI.enabled = _editOps != null && _editOps.CanUndo;
+                if (GUI.Button(new Rect(x, y, w * 0.5f - 2f, h), "Undo"))
+                    _editOps?.PerformUndo();
+                GUI.enabled = _editOps != null && _editOps.CanRedo;
+                if (GUI.Button(new Rect(x + w * 0.5f + 2f, y, w * 0.5f - 2f, h), "Redo"))
+                    _editOps?.PerformRedo();
+                GUI.enabled = prevEnabled;
             }
 
-            if (_project != null)
+            var project = _receiver?.Project;
+            if (project != null)
             {
                 y += h + pad;
-                GUI.Label(new Rect(x, y, w * 2f, h), $"Project: {_project.Name}  Models: {_project.ModelCount}");
+                GUI.Label(new Rect(x, y, w * 2f, h),
+                    $"Project: {project.Name}  Models: {project.ModelCount}");
 
-                for (int mi = 0; mi < _project.ModelCount; mi++)
+                for (int mi = 0; mi < project.ModelCount; mi++)
                 {
                     y += h + pad * 0.5f;
-                    var model = _project.Models[mi];
+                    var model = project.Models[mi];
                     GUI.Label(new Rect(x + 10f, y, w * 2f, h),
                         $"[{mi}] {model.Name}  Meshes: {model.Count}");
                 }
@@ -373,6 +300,34 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 受信イベント
+        // ================================================================
+
+        private void OnProjectHeaderReceived(ProjectContext project)
+        {
+            _modelCount = project.ModelCount;
+            _fetchingModelIndex = -1;
+            _renderer?.ClearScene();
+        }
+
+        private void OnModelMetaReceived(int mi, ModelContext model) { }
+
+        private void OnMeshSummaryReceived(int mi, int si, Data.MeshContext mc) { }
+
+        private void OnMeshDataReceived(int mi, int si, Data.MeshContext mc)
+        {
+            var project = _receiver?.Project;
+            if (project == null) return;
+
+            // 初回メッシュでカメラ位置を初期化
+            if (mi == 0 && si == 0 && mc.UnityMesh != null)
+            {
+                _orbitTarget = mc.UnityMesh.bounds.center;
+                _orbitDist   = Mathf.Clamp(mc.UnityMesh.bounds.size.magnitude * 1.5f, ZoomMin, ZoomMax);
+            }
+        }
+
+        // ================================================================
         // フェッチフロー
         // ================================================================
 
@@ -380,19 +335,15 @@ namespace Poly_Ling.Player
         {
             if (!_client.IsConnected) return;
             _status = "project_header フェッチ中...";
-            _project = null;
+            _receiver?.Reset();
             _modelCount = 0;
             _fetchingModelIndex = -1;
-            ClearScene();
+            _renderer?.ClearScene();
 
             _client.FetchProjectHeader((json, bin) =>
             {
-                if (bin == null || bin.Length < 4)
-                {
-                    _status = "project_header 失敗";
-                    return;
-                }
-                ProcessBatch(bin);
+                if (bin == null || bin.Length < 4) { _status = "project_header 失敗"; return; }
+                _receiver?.ProcessBatch(bin);
                 if (_modelCount > 0)
                     FetchAllModelsBatch(0);
             });
@@ -408,15 +359,15 @@ namespace Poly_Ling.Player
             FetchMeshDataBatch(mi, "drawable", () =>
             FetchMeshDataBatch(mi, "morph", () =>
             {
-                // モデル単位で全batch完了後に1回だけAdapter構築
-                if (_project != null && mi < _project.ModelCount)
-                    RebuildAdapter(mi, _project.Models[mi]);
+                var project = _receiver?.Project;
+                if (project != null && mi < project.ModelCount)
+                    _renderer?.RebuildAdapter(mi, project.Models[mi]);
 
                 int next = mi + 1;
                 if (next < _modelCount)
                     FetchAllModelsBatch(next);
                 else
-                    _status = $"完了 ({_project?.Name})";
+                    _status = $"完了 ({project?.Name})";
             })));
         }
 
@@ -425,242 +376,27 @@ namespace Poly_Ling.Player
             _client.FetchMeshDataBatch(mi, cat, (json, bin) =>
             {
                 if (bin != null && bin.Length >= 4)
-                    ProcessBatch(bin);
+                    _receiver?.ProcessBatch(bin);
                 done?.Invoke();
             });
-        }
-
-        // ================================================================
-        // バッチ分解 → フレームディスパッチ
-        // ================================================================
-
-        private void ProcessBatch(byte[] data)
-        {
-            if (data == null || data.Length < 4) return;
-
-            uint magic = RemoteMagic.Read(data);
-            if (magic != RemoteMagic.Batch)
-            {
-                DispatchFrame(magic, data);
-                return;
-            }
-
-            if (data.Length < 12) return;
-            int frameCount = (int)BitConverter.ToUInt32(data, 8);
-            int offset = 12;
-            for (int i = 0; i < frameCount; i++)
-            {
-                if (offset + 4 > data.Length) break;
-                int len = (int)BitConverter.ToUInt32(data, offset); offset += 4;
-                if (offset + len > data.Length) break;
-                byte[] frame = new byte[len];
-                Array.Copy(data, offset, frame, 0, len);
-                DispatchFrame(RemoteMagic.Read(frame), frame);
-                offset += len;
-            }
-        }
-
-        private void DispatchFrame(uint magic, byte[] data)
-        {
-            if      (magic == RemoteMagic.ProjectHeader) ReceiveProjectHeader(data);
-            else if (magic == RemoteMagic.ModelMeta)     ReceiveModelMeta(data);
-            else if (magic == RemoteMagic.MeshSummary)   ReceiveMeshSummary(data);
-            else if (magic == RemoteMagic.MeshData)      ReceiveMeshData(data);
-        }
-
-        // ================================================================
-        // 受信ハンドラ
-        // ================================================================
-
-        private void ReceiveProjectHeader(byte[] data)
-        {
-            var r = RemoteProgressiveSerializer.DeserializeProjectHeader(data);
-            if (r == null) { Debug.LogWarning("[PolyLingPlayerViewer] PLRH失敗"); return; }
-
-            var (name, mc, ci) = r.Value;
-            _project = new ProjectContext { Name = name };
-            for (int i = 0; i < mc; i++)
-                _project.Models.Add(new ModelContext($"Model{i}"));
-            _project.CurrentModelIndex = ci;
-            _modelCount = mc;
-
-            Debug.Log($"[PolyLingPlayerViewer] PLRH: \"{name}\" {mc}モデル");
-        }
-
-        private void ReceiveModelMeta(byte[] data)
-        {
-            var r = RemoteProgressiveSerializer.DeserializeModelMeta(data);
-            if (r == null || _project == null) return;
-
-            var (mi, model) = r.Value;
-            EnsureModelSlot(mi);
-            _project.Models[mi] = model;
-            Debug.Log($"[PolyLingPlayerViewer] PLRM: [{mi}] \"{model.Name}\"");
-        }
-
-        private void ReceiveMeshSummary(byte[] data)
-        {
-            var r = RemoteProgressiveSerializer.DeserializeMeshSummary(data);
-            if (r == null || _project == null) return;
-
-            var (mi, si, mc, vc, fc) = r.Value;
-            EnsureModelSlot(mi);
-            var model = _project.Models[mi];
-            while (model.MeshContextList.Count <= si)
-                model.MeshContextList.Add(new MeshContext { Name = $"Mesh{model.MeshContextList.Count}" });
-            model.MeshContextList[si] = mc;
-            model.InvalidateTypedIndices();
-        }
-
-        private void ReceiveMeshData(byte[] data)
-        {
-            var r = RemoteProgressiveSerializer.DeserializeMeshData(data);
-            if (r == null || _project == null) return;
-
-            var (mi, si, mesh) = r.Value;
-            EnsureModelSlot(mi);
-            var model = _project.Models[mi];
-
-            while (model.MeshContextList.Count <= si)
-                model.MeshContextList.Add(new MeshContext { Name = $"Mesh{model.MeshContextList.Count}" });
-
-            var mc = model.MeshContextList[si];
-            string savedName = mc.Name;
-            MeshType savedType = mc.Type;
-
-            if (mc.UnityMesh != null)
-            {
-                Destroy(mc.UnityMesh);
-                mc.UnityMesh = null;
-            }
-
-            mc.MeshObject = mesh;
-            if (mesh != null)
-            {
-                mesh.Name = savedName;
-                mesh.Type = savedType;
-                if (mesh.VertexCount > 0)
-                    mc.UnityMesh = mesh.ToUnityMesh();
-            }
-
-            Debug.Log($"[PolyLingPlayerViewer] PLRD: [{mi}][{si}] \"{savedName}\" V={mesh?.VertexCount ?? 0}");
-
-            ApplyMeshContextToScene(mi, si, mc);
-        }
-
-        // ================================================================
-        // シーン生成
-        // ================================================================
-
-        private void ApplyMeshContextToScene(int mi, int si, MeshContext mc)
-        {
-            // mc.UnityMesh は ReceiveMeshData で生成済み。
-            // 描画は LateUpdate の DrawMeshes() で Graphics.DrawMesh を使って行う。
-            // ここではオービットターゲットの初期化のみ行う。
-            if (mc.UnityMesh == null) return;
-            if (mc.Type != MeshType.Mesh && mc.Type != MeshType.BakedMirror) return;
-
-            if (mi == 0 && si == 0)
-            {
-                _orbitTarget = mc.UnityMesh.bounds.center;
-                _orbitDist   = Mathf.Clamp(mc.UnityMesh.bounds.size.magnitude * 1.5f, ZoomMin, ZoomMax);
-            }
-        }
-
-        // ================================================================
-        // Adapter管理
-        // ================================================================
-
-        /// <summary>モデルのメッシュ受信完了後にAdapterを再構築する</summary>
-        private void RebuildAdapter(int mi, ModelContext model)
-        {
-            // 既存Adapterを破棄
-            while (_adapters.Count <= mi) _adapters.Add(null);
-            _adapters[mi]?.Dispose();
-            _adapters[mi] = null;
-
-            // MeshObjectが1つも揃っていなければスキップ
-            bool hasAnyMesh = false;
-            foreach (var mc in model.MeshContextList)
-                if (mc.MeshObject != null && mc.MeshObject.VertexCount > 0) { hasAnyMesh = true; break; }
-            if (!hasAnyMesh) return;
-
-            var adapter = new UnifiedSystemAdapter();
-            if (!adapter.Initialize())
-            {
-                Debug.LogWarning($"[PolyLingPlayerViewer] Adapter初期化失敗 [{mi}]");
-                adapter.Dispose();
-                return;
-            }
-
-            adapter.SetSelectionState(new SelectionState());
-            adapter.SetSymmetrySettings(new SymmetrySettings());
-            adapter.SetModelContext(model);
-
-            // SetModelContext → ProcessTopologyUpdate → SetActiveMesh(0,0) により
-            // SelectedMeshIndex=0 が設定され全ラインに MeshSelected フラグが立つ。
-            // 先頭 Drawable の unified インデックス(=0)を選択メッシュとして確定し
-            // _selectedContextIndices に記録する。
-            while (_selectedContextIndices.Count <= mi) _selectedContextIndices.Add(-1);
-
-            var drawables = model.DrawableMeshes;
-            int firstContextIdx = -1;
-            if (drawables != null)
-            {
-                foreach (var entry in drawables)
-                {
-                    var ctx = entry.Context;
-                    if (ctx?.MeshObject != null && ctx.MeshObject.VertexCount > 0 && ctx.IsVisible)
-                    {
-                        firstContextIdx = entry.MasterIndex;
-                        break;
-                    }
-                }
-            }
-            _selectedContextIndices[mi] = firstContextIdx;
-
-            // firstContextIdx を unified インデックスに変換して SetActiveMesh
-            int firstUnified = (firstContextIdx >= 0)
-                ? (adapter.BufferManager?.ContextToUnifiedMeshIndex(firstContextIdx) ?? 0)
-                : 0;
-            adapter.BufferManager?.SetActiveMesh(0, firstUnified);
-            adapter.BufferManager?.UpdateAllSelectionFlags();
-
-            _adapters[mi] = adapter;
-        }
-
-        // ================================================================
-        // クリア
-        // ================================================================
-
-        private void ClearScene()
-        {
-            foreach (var adapter in _adapters)
-            {
-                adapter?.CleanupQueued();
-                adapter?.Dispose();
-            }
-            _adapters.Clear();
-            _selectedContextIndices.Clear();
-
-            _project = null;
-
-            if (_defaultMaterial != null)
-            {
-                DestroyImmediate(_defaultMaterial);
-                _defaultMaterial = null;
-            }
         }
 
         // ================================================================
         // ヘルパー
         // ================================================================
 
-        private void EnsureModelSlot(int mi)
+        private void SyncRendererFlags()
         {
-            if (_project == null) return;
-            while (_project.Models.Count <= mi)
-                _project.Models.Add(new ModelContext($"Model{_project.Models.Count}"));
+            if (_renderer == null) return;
+            _renderer.ShowSelectedMesh        = _showSelectedMesh;
+            _renderer.ShowUnselectedMesh      = _showUnselectedMesh;
+            _renderer.ShowSelectedVertices    = _showSelectedVertices;
+            _renderer.ShowUnselectedVertices  = _showUnselectedVertices;
+            _renderer.ShowSelectedWireframe   = _showSelectedWireframe;
+            _renderer.ShowUnselectedWireframe = _showUnselectedWireframe;
+            _renderer.ShowSelectedBone        = _showSelectedBone;
+            _renderer.ShowUnselectedBone      = _showUnselectedBone;
+            _renderer.BackfaceCullingEnabled  = _backfaceCullingEnabled;
         }
     }
 }

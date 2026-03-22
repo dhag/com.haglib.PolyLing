@@ -2,8 +2,10 @@
 // UnityEditor APIの実装（Editor/に配置）。
 // [InitializeOnLoad]によりEditor起動時に自動登録される。
 
+using System;
 using UnityEngine;
 using UnityEditor;
+using Object = UnityEngine.Object;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 
@@ -158,7 +160,7 @@ namespace Poly_Ling.EditorBridge
         // RemoteServer
         // ================================================================
 
-        public void SetupRemoteServer(System.Action<PanelCommand> dispatch)
+        public void SetupRemoteServer(Action<PanelCommand> dispatch)
         {
             var remote = Poly_Ling.Remote.RemoteServer.FindInstance()
                 ?? EditorWindow.GetWindow<Poly_Ling.Remote.RemoteServer>("Remote Server");
@@ -193,5 +195,26 @@ namespace Poly_Ling.EditorBridge
 
         public double GetTimeSinceStartup()
             => UnityEditor.EditorApplication.timeSinceStartup;
+
+        // ================================================================
+        // GUI - Undo/Redoボタン描画（Editor実装）
+        // ================================================================
+
+        public void DrawUndoRedoButtons(bool canUndo, bool canRedo, Action onUndo, Action onRedo)
+        {
+            GUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(!canUndo))
+            {
+                if (GUILayout.Button("Undo", GUILayout.Width(60)))
+                    onUndo?.Invoke();
+            }
+            using (new EditorGUI.DisabledScope(!canRedo))
+            {
+                if (GUILayout.Button("Redo", GUILayout.Width(60)))
+                    onRedo?.Invoke();
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
     }
 }

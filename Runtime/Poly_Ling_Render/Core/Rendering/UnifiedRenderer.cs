@@ -660,8 +660,7 @@ namespace Poly_Ling.Core.Rendering
                     _wireframeMaterial.SetInt("_EnableBackfaceCulling", 0);
                 }
 
-                var meshCopy = UnityEngine.Object.Instantiate(_wireframeMeshUnselected);
-                meshCopy.hideFlags = HideFlags.HideAndDontSave;
+                var meshCopy = _wireframeMeshUnselected;
                 _pendingMeshes.Add(meshCopy);
                 _pendingMaterials.Add(_wireframeMaterial);
             }
@@ -677,8 +676,7 @@ namespace Poly_Ling.Core.Rendering
                     _wireframeOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
                 }
 
-                var overlayMeshCopy = UnityEngine.Object.Instantiate(_wireframeMeshSelected);
-                overlayMeshCopy.hideFlags = HideFlags.HideAndDontSave;
+                var overlayMeshCopy = _wireframeMeshSelected;
                 _pendingMeshes.Add(overlayMeshCopy);
                 _pendingMaterials.Add(_wireframeOverlayMaterial);
             }
@@ -714,8 +712,7 @@ namespace Poly_Ling.Core.Rendering
                     _pointMaterial.SetInt("_EnableBackfaceCulling", 0);
                 }
 
-                var meshCopy = UnityEngine.Object.Instantiate(_pointMeshUnselected);
-                meshCopy.hideFlags = HideFlags.HideAndDontSave;
+                var meshCopy = _pointMeshUnselected;
                 _pendingMeshes.Add(meshCopy);
                 _pendingMaterials.Add(_pointMaterial);
             }
@@ -731,8 +728,7 @@ namespace Poly_Ling.Core.Rendering
                     _pointOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
                 }
 
-                var overlayMeshCopy = UnityEngine.Object.Instantiate(_pointMeshSelected);
-                overlayMeshCopy.hideFlags = HideFlags.HideAndDontSave;
+                var overlayMeshCopy = _pointMeshSelected;
                 _pendingMeshes.Add(overlayMeshCopy);
                 _pendingMaterials.Add(_pointOverlayMaterial);
             }
@@ -805,6 +801,30 @@ namespace Poly_Ling.Core.Rendering
                 }
             }
 
+            // ── 頂点 ──────────────────────────────────────────────
+            if (showVertices && _pointSRPMaterial != null)
+            {
+                int vertexCount = _bufferManager.TotalVertexCount;
+                if (vertexCount > 0)
+                {
+                    var colors = _colorSettings;
+                    _pointSRPMaterial.SetBuffer("_PositionBuffer",     _bufferManager.PositionBuffer);
+                    _pointSRPMaterial.SetBuffer("_VertexFlagsBuffer",  _bufferManager.VertexFlagsBuffer);
+                    _pointSRPMaterial.SetColor("_ColorDefault",        colors.VertexDefault);
+                    _pointSRPMaterial.SetColor("_BorderColorDefault",  colors.VertexBorderDefault);
+                    _pointSRPMaterial.SetFloat("_ScreenSpaceSize",     screenSpacePointSize);
+
+                    var rp = new RenderParams(_pointSRPMaterial)
+                    {
+                        worldBounds       = new Bounds(Vector3.zero, Vector3.one * 100000f),
+                        shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off,
+                        receiveShadows    = false,
+                        camera            = camera,
+                    };
+                    Graphics.RenderPrimitives(rp, MeshTopology.Triangles, vertexCount * 6);
+                }
+            }
+
         }
 
         /// <summary>
@@ -812,13 +832,6 @@ namespace Poly_Ling.Core.Rendering
         /// </summary>
         public void CleanupQueued()
         {
-            foreach (var mesh in _pendingMeshes)
-            {
-                if (mesh != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(mesh);
-                }
-            }
             _pendingMeshes.Clear();
             _pendingMaterials.Clear();
         }

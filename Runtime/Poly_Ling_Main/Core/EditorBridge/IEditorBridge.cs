@@ -2,9 +2,11 @@
 // UnityEditor依存APIをRuntimeから隔離するブリッジインターフェース
 // Editor外から呼び出した場合はEditorBridgeNullが警告を出す
 
+using System;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Poly_Ling.EditorBridge
 {
@@ -93,7 +95,7 @@ namespace Poly_Ling.EditorBridge
         /// RemoteServerを取得または生成し、DispatchCommandを接続する。
         /// Runtime環境（EditorBridgeNull）では無操作。
         /// </summary>
-        void SetupRemoteServer(System.Action<PanelCommand> dispatch);
+        void SetupRemoteServer(Action<PanelCommand> dispatch);
 
         // ================================================================
         // ウィンドウ再接続
@@ -107,5 +109,16 @@ namespace Poly_Ling.EditorBridge
         // ================================================================
 
         double GetTimeSinceStartup();
+
+        // ================================================================
+        // GUI - Undo/Redoボタン描画
+        // ================================================================
+
+        /// <summary>
+        /// Undo/Redoボタンを描画し、押下時にコールバックを呼ぶ。
+        /// Editor: EditorGUI.DisabledScope使用。
+        /// Runtime: GUI.enabled使用。
+        /// </summary>
+        void DrawUndoRedoButtons(bool canUndo, bool canRedo, Action onUndo, Action onRedo);
     }
 }

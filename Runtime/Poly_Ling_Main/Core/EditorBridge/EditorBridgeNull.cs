@@ -2,9 +2,11 @@
 // Editor外で使用した場合の警告スタブ実装。
 // 操作は何も行わず、Debug.LogErrorでメッセージを出力する。
 
+using System;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Poly_Ling.EditorBridge
 {
@@ -244,7 +246,7 @@ namespace Poly_Ling.EditorBridge
         // RemoteServer
         // ================================================================
 
-        public void SetupRemoteServer(System.Action<PanelCommand> dispatch)
+        public void SetupRemoteServer(Action<PanelCommand> dispatch)
         {
             // Runtime環境では無操作
         }
@@ -265,5 +267,29 @@ namespace Poly_Ling.EditorBridge
 
         public double GetTimeSinceStartup()
             => UnityEngine.Time.realtimeSinceStartupAsDouble;
+
+        // ================================================================
+        // GUI - Undo/Redoボタン描画（Runtime実装）
+        // ================================================================
+
+        public void DrawUndoRedoButtons(bool canUndo, bool canRedo, Action onUndo, Action onRedo)
+        {
+            GUILayout.BeginHorizontal();
+
+            bool prevUndo = GUI.enabled;
+            GUI.enabled = canUndo;
+            if (GUILayout.Button("Undo", GUILayout.Width(60)))
+                onUndo?.Invoke();
+            GUI.enabled = prevUndo;
+
+            bool prevRedo = GUI.enabled;
+            GUI.enabled = canRedo;
+            if (GUILayout.Button("Redo", GUILayout.Width(60)))
+                onRedo?.Invoke();
+            GUI.enabled = prevRedo;
+
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
     }
 }

@@ -27,6 +27,7 @@ namespace Poly_Ling.Core
         // フィールド
         // ================================================================
 
+        private readonly UndoManager _undoManager = UndoManager.CreateNew();
         private ProjectContext     _project;
         private MeshUndoController _undoController;
         private CommandQueue       _commandQueue;
@@ -53,6 +54,7 @@ namespace Poly_Ling.Core
         public LiveProjectView LiveProjectView   => _liveProjectView;
 
         // IPolyLingCore 公開（EditorレイヤーがEditor固有コールバックを接続するために必要）
+        public UndoManager         LocalUndoManager => _undoManager;
         public MeshUndoController  UndoController => _undoController;
         public CommandQueue         CommandQueue   => _commandQueue;
         public SelectionOperations  SelectionOps   => _selectionOps;
@@ -91,7 +93,7 @@ namespace Poly_Ling.Core
 
             // CommandQueue / UndoController
             _commandQueue   = new CommandQueue();
-            _undoController = new MeshUndoController("PolyLing");
+            _undoController = new MeshUndoController("PolyLing", _undoManager);
             _undoController.SetCommandQueue(_commandQueue);
             _undoController.OnUndoRedoPerformed += () =>
             {
@@ -284,7 +286,7 @@ namespace Poly_Ling.Core
                 _commandQueue.ProcessAll();
                 OnRepaintRequired?.Invoke();
             }
-            int processed = UndoManager.Instance.ProcessAllQueues();
+            int processed = _undoManager.ProcessAllQueues();
             if (processed > 0)
                 OnRepaintRequired?.Invoke();
         }

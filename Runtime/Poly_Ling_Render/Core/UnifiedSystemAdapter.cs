@@ -752,6 +752,33 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// プレイヤービルド用: カメラ情報からGPUカリングを実行して FLAG_CULLED を更新する。
+        /// DrawSRP の前に呼ぶこと。
+        /// </summary>
+        public void DispatchCullingForDisplay(Camera camera, bool backfaceCulling = true)
+        {
+            if (!_isInitialized || camera == null) return;
+            var bm = _unifiedSystem?.BufferManager;
+            if (bm == null || !bm.GpuComputeAvailable) return;
+
+            Matrix4x4 vp = camera.projectionMatrix * camera.worldToCameraMatrix;
+            var viewport = new Rect(0f, 0f, camera.pixelWidth, camera.pixelHeight);
+
+            bm.DispatchClearBuffersGPU();
+            bm.ComputeScreenPositionsGPU(vp, viewport);
+
+            if (backfaceCulling)
+            {
+                bm.DispatchFaceVisibilityGPU();
+                bm.DispatchLineVisibilityGPU();
+            }
+            else
+            {
+                bm.ClearCulledFlagsGPU();
+            }
+        }
+
+        /// <summary>
         /// SRP (URP) 用描画。Graphics.RenderPrimitives で GPU バッファを直接参照。
         /// </summary>
         public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f)

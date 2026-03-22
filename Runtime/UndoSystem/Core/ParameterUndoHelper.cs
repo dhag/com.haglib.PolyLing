@@ -1,7 +1,8 @@
-// Assets/Editor/UndoSystem/Core/ParameterUndoHelper.cs
+// ParameterUndoHelper.cs
 // パラメータ編集のUndo/Redoを簡単に実装するためのヘルパークラス
 
 using System;
+using Poly_Ling.EditorBridge;
 using UnityEngine;
 
 namespace Poly_Ling.UndoSystem
@@ -124,7 +125,6 @@ namespace Poly_Ling.UndoSystem
                 _undoStack.OnRedoPerformed -= _redoHandler;
 
                 // Contextは残す（次回Open時に復元するため）
-                // _undoStack.toolContext = default;  ← しない
                 _undoStack = null;
             }
             _undoHandler = null;
@@ -251,46 +251,13 @@ namespace Poly_Ling.UndoSystem
             }
         }
 
-#if UNITY_EDITOR
         /// <summary>
-        /// Undo/Redoボタンを描画
+        /// Undo/Redoボタンを描画。
+        /// Editor: EditorGUI.DisabledScope使用。Runtime: GUI.enabled使用。
         /// </summary>
         public void DrawUndoRedoButtons()
         {
-            GUILayout.BeginHorizontal();
-            using (new UnityEditor.EditorGUI.DisabledScope(!CanUndo))
-            {
-                if (GUILayout.Button("Undo", GUILayout.Width(60)))
-                    PerformUndo();
-            }
-            using (new UnityEditor.EditorGUI.DisabledScope(!CanRedo))
-            {
-                if (GUILayout.Button("Redo", GUILayout.Width(60)))
-                    PerformRedo();
-            }
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
+            PLEditorBridge.I.DrawUndoRedoButtons(CanUndo, CanRedo, PerformUndo, PerformRedo);
         }
-
-        /// <summary>
-        /// 履歴情報付きUndo/Redoボタンを描画
-        /// </summary>
-        public void DrawUndoRedoButtonsWithInfo()
-        {
-            GUILayout.BeginHorizontal();
-            using (new UnityEditor.EditorGUI.DisabledScope(!CanUndo))
-            {
-                if (GUILayout.Button($"Undo ({UndoCount})", GUILayout.Width(80)))
-                    PerformUndo();
-            }
-            using (new UnityEditor.EditorGUI.DisabledScope(!CanRedo))
-            {
-                if (GUILayout.Button($"Redo ({RedoCount})", GUILayout.Width(80)))
-                    PerformRedo();
-            }
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-        }
-#endif
     }
 }

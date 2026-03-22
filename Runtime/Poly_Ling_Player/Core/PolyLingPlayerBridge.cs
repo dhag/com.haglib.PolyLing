@@ -3,7 +3,9 @@
 // ファイルダイアログ等はUnityEngine側の代替で実装
 // Runtime/Poly_Ling_Player/Core/ に配置
 
+using System;
 using UnityEngine;
+using Object = UnityEngine.Object;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 
@@ -95,5 +97,28 @@ namespace Poly_Ling.EditorBridge
         // 時間
         // ================================================================
         public double GetTimeSinceStartup() => Time.realtimeSinceStartupAsDouble;
+
+        // ================================================================
+        // GUI - Undo/Redoボタン描画（Runtime実装）
+        // ================================================================
+        public void DrawUndoRedoButtons(bool canUndo, bool canRedo, Action onUndo, Action onRedo)
+        {
+            GUILayout.BeginHorizontal();
+
+            bool prevUndo = GUI.enabled;
+            GUI.enabled = canUndo;
+            if (GUILayout.Button("Undo", GUILayout.Width(60)))
+                onUndo?.Invoke();
+            GUI.enabled = prevUndo;
+
+            bool prevRedo = GUI.enabled;
+            GUI.enabled = canRedo;
+            if (GUILayout.Button("Redo", GUILayout.Width(60)))
+                onRedo?.Invoke();
+            GUI.enabled = prevRedo;
+
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
     }
 }

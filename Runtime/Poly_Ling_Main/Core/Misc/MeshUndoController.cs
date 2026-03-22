@@ -25,6 +25,7 @@ namespace Poly_Ling.UndoSystem
     public partial class  MeshUndoController : IDisposable
     {
         // === Undoノード構造 ===
+        private readonly UndoManager _undoManager;
         private UndoGroup _mainGroup;
         private UndoStack<MeshUndoContext> _vertexEditStack;
         private UndoStack<EditorStateContext> _editorStateStack;
@@ -111,8 +112,10 @@ namespace Poly_Ling.UndoSystem
         public event Action<Poly_Ling.UndoSystem.ProjectRecord, bool> OnProjectUndoRedoPerformed;
 
         // === コンストラクタ ===
-        public MeshUndoController(string windowId = "MainEditor")
+        public MeshUndoController(string windowId = "MainEditor", UndoManager undoManager = null)
         {
+            _undoManager = undoManager ?? UndoManager.Instance;
+
             // メイングループ作成
             // ★★★ 禁忌: TimestampOnly / FocusThenTimestamp は使用禁止 ★★★
             // DateTime.Now.Ticks は同一フレーム内で同値になり得るため順序不定。
@@ -177,12 +180,12 @@ namespace Poly_Ling.UndoSystem
             _meshListStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList; OnUndoRedoPerformed?.Invoke(); };
 
             // グローバルマネージャーに登録（既存があれば削除してから追加）
-            var existingChild = UndoManager.Instance.FindById(windowId);
+            var existingChild = _undoManager.FindById(windowId);
             if (existingChild != null)
             {
-                UndoManager.Instance.RemoveChild(existingChild);
+                _undoManager.RemoveChild(existingChild);
             }
-            UndoManager.Instance.AddChild(_mainGroup);
+            _undoManager.AddChild(_mainGroup);
         }
 
         // === 初期化・クリーンアップ ===
@@ -244,7 +247,7 @@ namespace Poly_Ling.UndoSystem
 
         public void Dispose()
         {
-            UndoManager.Instance.RemoveChild(_mainGroup);
+            _undoManager.RemoveChild(_mainGroup);
         }
 
         // === フォーカス管理 ===
@@ -255,7 +258,7 @@ namespace Poly_Ling.UndoSystem
         public void FocusVertexEdit()
         {
             _mainGroup.FocusedChildId = _vertexEditStack.Id;
-            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+            _undoManager.FocusedChildId = _mainGroup.Id;
         }
 
         /// <summary>
@@ -264,7 +267,7 @@ namespace Poly_Ling.UndoSystem
         public void FocusEditorState()
         {
             _mainGroup.FocusedChildId = _editorStateStack.Id;
-            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+            _undoManager.FocusedChildId = _mainGroup.Id;
         }
 
         /// <summary>
@@ -343,7 +346,7 @@ namespace Poly_Ling.UndoSystem
         public void FocusWorkPlane()
         {
             _mainGroup.FocusedChildId = _workPlaneStack.Id;
-            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+            _undoManager.FocusedChildId = _mainGroup.Id;
         }
 
         /// <summary>
@@ -993,7 +996,7 @@ namespace Poly_Ling.UndoSystem
         {
             _mainGroup.FocusedChildId = _subWindowGroup.Id;
             _subWindowGroup.FocusedChildId = id;
-            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+            _undoManager.FocusedChildId = _mainGroup.Id;
         }
 
         // === Undo/Redo実行 ===
@@ -1144,7 +1147,7 @@ namespace Poly_Ling.UndoSystem
         public void FocusMeshList()
         {
             _mainGroup.FocusedChildId = _meshListStack.Id;
-            UndoManager.Instance.FocusedChildId = _mainGroup.Id;
+            _undoManager.FocusedChildId = _mainGroup.Id;
         }
 
         /// <summary>

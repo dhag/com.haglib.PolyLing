@@ -75,7 +75,7 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// 既存のUndoManagerに直接追加する場合
         /// </summary>
-        public BoneTransformUndoHelper(string stackId, ModelContext modelContext = null, Action onUndoRedo = null)
+        public BoneTransformUndoHelper(string stackId, UndoManager undoManager = null, ModelContext modelContext = null, Action onUndoRedo = null)
         {
             _onUndoRedo = onUndoRedo;
             _settings = new BoneTransform();
@@ -86,13 +86,15 @@ namespace Poly_Ling.UndoSystem
                 "Export Settings",
                 _settings
             );
-            UndoManager.Instance.AddChild(_stack);
+            (undoManager ?? UndoManager.Instance).AddChild(_stack);
+            _ownerUndoManager = undoManager ?? UndoManager.Instance;
 
             // イベントハンドラ登録
             SetupEventHandlers(modelContext);
         }
 
         private ModelContext _modelContext;
+        private UndoManager _ownerUndoManager;
 
         private void SetupEventHandlers(ModelContext modelContext)
         {
@@ -185,8 +187,8 @@ namespace Poly_Ling.UndoSystem
                 if (_redoHandler != null)
                     _stack.OnRedoPerformed -= _redoHandler;
 
-                // 親から削除
-                UndoManager.Instance.RemoveChild(_stack);
+                // 親から削除（第2コンストラクタ経由の場合のみ）
+                _ownerUndoManager?.RemoveChild(_stack);
             }
         }
     }
