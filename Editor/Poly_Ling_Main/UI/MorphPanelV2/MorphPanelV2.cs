@@ -42,10 +42,7 @@ namespace Poly_Ling.UI
         // プレビュー状態
         // ================================================================
 
-        private bool                                               _isPreviewActive            = false;
-        private readonly Dictionary<int, Vector3[]>               _previewBackups             = new();
-        private readonly List<(int morphIndex, int baseIndex, float entryWeight)> _previewPairs = new();
-        private int                                                _previewMorphExpressionIndex = -1;
+        private readonly MorphPreviewState _previewState = new();
 
         // ================================================================
         // UI 要素
@@ -595,7 +592,7 @@ namespace Poly_Ling.UI
                 _entryData[entryIdx] = (d.entryIdx, d.meshIndex, d.meshName, newWeight);
             }
 
-            if (_isPreviewActive)
+            if (_previewState.IsActive)
                 ApplyBatchPreview(model, _previewWeight?.value ?? 0f);
         }
 
@@ -661,7 +658,7 @@ namespace Poly_Ling.UI
             _previewSection.style.display = DisplayStyle.Flex;
             if (_previewInfo != null) _previewInfo.text = $"対象: {pairs.Count}ペア";
 
-            if (!_isPreviewActive || _previewMorphExpressionIndex != setIndex)
+            if (!_previewState.IsActive || _previewState.ActiveSetIndex != setIndex)
                 StartBatchPreview(model, pairs, setIndex);
         }
 
@@ -694,92 +691,17 @@ namespace Poly_Ling.UI
             List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)> pairs,
             int setIndex)
         {
-            EndPreview();
-            _previewBackups.Clear();
-            _previewPairs.Clear();
-
-            foreach (var (morphIndex, baseIndex, morphCtx, baseCtx, weight) in pairs)
-            {
-                if (baseCtx?.MeshObject == null) continue;
-                if (!_previewBackups.ContainsKey(baseIndex))
-                {
-                    var baseMesh = baseCtx.MeshObject;
-                    var backup   = new Vector3[baseMesh.VertexCount];
-                    for (int i = 0; i < baseMesh.VertexCount; i++)
-                        backup[i] = baseMesh.Vertices[i].Position;
-                    _previewBackups[baseIndex] = backup;
-                }
-                _previewPairs.Add((morphIndex, baseIndex, weight));
-            }
-
-            _previewMorphExpressionIndex = setIndex;
-            _isPreviewActive             = true;
+            _previewState.Start(model, pairs, setIndex);
         }
 
         private void ApplyBatchPreview(ModelContext model, float weight)
         {
-            if (!_isPreviewActive || _previewBackups.Count == 0) return;
-
-            foreach (var (baseIndex, backup) in _previewBackups)
-            {
-                var baseCtx = model.GetMeshContext(baseIndex);
-                if (baseCtx?.MeshObject == null) continue;
-                var baseMesh = baseCtx.MeshObject;
-                int count    = Mathf.Min(backup.Length, baseMesh.VertexCount);
-                for (int i = 0; i < count; i++)
-                    baseMesh.Vertices[i].Position = backup[i];
-            }
-
-            foreach (var (morphIndex, baseIndex, entryWeight) in _previewPairs)
-            {
-                var morphCtx = model.GetMeshContext(morphIndex);
-                var baseCtx  = model.GetMeshContext(baseIndex);
-                if (morphCtx?.MeshObject == null || baseCtx?.MeshObject == null) continue;
-
-                var baseMesh = baseCtx.MeshObject;
-                foreach (var (vertexIndex, offset) in morphCtx.GetMorphOffsets())
-                    if (vertexIndex < baseMesh.VertexCount)
-                        baseMesh.Vertices[vertexIndex].Position += offset * (entryWeight * weight);
-            }
-
-            foreach (var baseIndex in _previewBackups.Keys)
-            {
-                var baseCtx = model.GetMeshContext(baseIndex);
-                if (baseCtx != null) _toolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
-            }
-            _toolCtx?.Repaint?.Invoke();
+            _previewState.Apply(model, weight, _toolCtx);
         }
 
         private void EndPreview()
         {
-            if (!_isPreviewActive)
-            {
-                _previewBackups.Clear();
-                _previewPairs.Clear();
-                _previewMorphExpressionIndex = -1;
-                return;
-            }
-
-            var model = Model;
-            if (model != null)
-            {
-                foreach (var (baseIndex, backup) in _previewBackups)
-                {
-                    var baseCtx = model.GetMeshContext(baseIndex);
-                    if (baseCtx?.MeshObject == null) continue;
-                    var baseMesh = baseCtx.MeshObject;
-                    int count    = Mathf.Min(backup.Length, baseMesh.VertexCount);
-                    for (int i = 0; i < count; i++)
-                        baseMesh.Vertices[i].Position = backup[i];
-                    _toolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
-                }
-            }
-
-            _previewBackups.Clear();
-            _previewPairs.Clear();
-            _previewMorphExpressionIndex = -1;
-            _isPreviewActive             = false;
-            _toolCtx?.Repaint?.Invoke();
+            _previewState.End(Model, _toolCtx);
         }
 
         // ================================================================
@@ -788,43 +710,8 @@ namespace Poly_Ling.UI
 
         private List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)>
             BuildMorphBasePairs(ModelContext model, MorphExpression set)
-        {
-            var pairs = new List<(int, int, MeshContext, MeshContext, float)>();
-            for (int i = 0; i < set.MeshEntries.Count; i++)
-            {
-                var entry    = set.MeshEntries[i];
-                var morphCtx = model.GetMeshContext(entry.MeshIndex);
-                if (morphCtx == null || !morphCtx.IsMorph) continue;
+            => MorphPreviewState.BuildMorphBasePairs(model, set);
 
-                int baseIndex = FindBaseMeshIndex(model, morphCtx);
-                var baseCtx   = baseIndex >= 0 ? model.GetMeshContext(baseIndex) : null;
-                if (baseCtx?.MeshObject != null)
-                    pairs.Add((entry.MeshIndex, baseIndex, morphCtx, baseCtx, entry.Weight));
-            }
-            return pairs;
-        }
-
-        private static int FindBaseMeshIndex(ModelContext model, MeshContext morphCtx)
-        {
-            if (morphCtx == null) return -1;
-            if (morphCtx.MorphParentIndex >= 0) return morphCtx.MorphParentIndex;
-
-            string morphName = morphCtx.MorphName;
-            string meshName  = morphCtx.Name;
-            if (!string.IsNullOrEmpty(morphName) && meshName.EndsWith($"_{morphName}"))
-            {
-                string baseName = meshName.Substring(0, meshName.Length - morphName.Length - 1);
-                for (int i = 0; i < model.MeshContextCount; i++)
-                {
-                    var ctx = model.GetMeshContext(i);
-                    if (ctx != null &&
-                        (ctx.Type == MeshType.Mesh || ctx.Type == MeshType.BakedMirror || ctx.Type == MeshType.MirrorSide) &&
-                        ctx.Name == baseName)
-                        return i;
-                }
-            }
-            return -1;
-        }
 
         // ================================================================
         // CSV
@@ -834,122 +721,18 @@ namespace Poly_Ling.UI
         {
             var model = Model;
             if (model == null) return;
-
-            string path = EditorUtility.OpenFilePanel("BlendShapeSync CSV読込", "", "csv");
-            if (string.IsNullOrEmpty(path)) return;
-
-            var rows = CSVHelper.ParseFile(path);
-            if (rows.Count == 0) { StatusLog("CSVが空です"); return; }
-
-            var meshNameToIndex = new Dictionary<string, int>();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc != null && !string.IsNullOrEmpty(mc.Name))
-                    meshNameToIndex[mc.Name] = i;
-            }
-
-            var importedSets  = new Dictionary<string, MorphExpression>();
-            int unmatchedCount = 0;
-
-            foreach (var row in rows)
-            {
-                if (CSVHelper.IsCommentLine(row.OriginalLine)) continue;
-                if (row.FieldCount < 4) continue;
-
-                string expressionName = row[0];
-                if (string.IsNullOrEmpty(expressionName)) continue;
-
-                var set = new MorphExpression { Name = expressionName, NameEnglish = "", Panel = 3, Type = MorphType.Vertex };
-
-                for (int i = 1; i + 2 < row.FieldCount; i += 3)
-                {
-                    string meshName  = row[i];
-                    string shapeName = row[i + 1];
-                    string weightStr = row[i + 2];
-                    if (string.IsNullOrEmpty(meshName) || string.IsNullOrEmpty(shapeName)) continue;
-                    if (!float.TryParse(weightStr,
-                        System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out float w)) continue;
-
-                    string morphMeshName = $"{meshName}_{shapeName}";
-                    if (meshNameToIndex.TryGetValue(morphMeshName, out int meshIndex))
-                        set.AddMesh(meshIndex, w);
-                    else
-                        unmatchedCount++;
-                }
-
-                if (set.MeshCount > 0) importedSets[expressionName] = set;
-            }
-
-            if (importedSets.Count == 0)
-            { StatusLog($"マッチするモーフメッシュが見つかりません (未マッチ: {unmatchedCount})"); return; }
-
-            var overwriteNames = importedSets.Keys.Where(n => model.FindMorphExpressionByName(n) != null).ToList();
-            if (overwriteNames.Count > 0)
-            {
-                string msg = $"以下のセットは既に存在します。上書きしますか？\n{string.Join(", ", overwriteNames)}";
-                if (!EditorUtility.DisplayDialog("上書き確認", msg, "上書き", "キャンセル")) return;
-            }
-
             var oldSets = model.MorphExpressions.Select(s => s.Clone()).ToList();
-            foreach (var imported in importedSets.Values)
-            {
-                int existIdx = model.MorphExpressions.FindIndex(s => s.Name == imported.Name);
-                if (existIdx >= 0) model.MorphExpressions[existIdx] = imported;
-                else               model.MorphExpressions.Add(imported);
-            }
-
+            var (imported, overwritten, unmatched) = MorphCsvIO.Import(model, StatusLog);
+            if (imported == 0) return;
             var newSets = model.MorphExpressions.Select(s => s.Clone()).ToList();
             RecordUndo(new MorphExpressionListReplaceRecord { OldSets = oldSets, NewSets = newSets },
-                $"CSVインポート: {importedSets.Count}セット");
-
-            string unmatchMsg = unmatchedCount > 0 ? $" (未マッチ: {unmatchedCount})" : "";
-            StatusLog($"CSV読込完了: {importedSets.Count}セット ({overwriteNames.Count}件上書き){unmatchMsg}");
+                $"CSVインポート: {imported}セット");
             RefreshAll();
         }
 
         private void OnCsvExport()
         {
-            var model = Model;
-            if (model == null || model.MorphExpressionCount == 0)
-            { StatusLog("保存するモーフエクスプレッションがありません"); return; }
-
-            string path = EditorUtility.SaveFilePanel("BlendShapeSync CSV保存", "", "blendshape_sync.csv", "csv");
-            if (string.IsNullOrEmpty(path)) return;
-
-            try
-            {
-                var writer = new CSVWriter(MQOExportSettings.DefaultDecimalPrecision);
-                writer.AddComment(" ExpressionName,MeshName,BlendShapeName,Weight,...");
-
-                foreach (var set in model.MorphExpressions)
-                {
-                    if (set.Type != MorphType.Vertex || !set.IsValid) continue;
-                    var parts = new List<object> { set.Name };
-
-                    foreach (var entry in set.MeshEntries)
-                    {
-                        if (entry.MeshIndex < 0 || entry.MeshIndex >= model.MeshContextCount) continue;
-                        var morphCtx = model.GetMeshContext(entry.MeshIndex);
-                        if (morphCtx == null || !morphCtx.IsMorph) continue;
-
-                        int lastUnderscore = morphCtx.Name.LastIndexOf('_');
-                        if (lastUnderscore <= 0) continue;
-
-                        parts.Add(morphCtx.Name.Substring(0, lastUnderscore));
-                        parts.Add(set.Name);
-                        parts.Add(entry.Weight);
-                    }
-
-                    if (parts.Count > 1) writer.AddRow(parts.ToArray());
-                }
-
-                writer.WriteToFile(path);
-                StatusLog($"CSV保存完了: {model.MorphExpressionCount}セット → {System.IO.Path.GetFileName(path)}");
-            }
-            catch (Exception ex) { StatusLog($"CSV保存失敗: {ex.Message}"); }
-
+            MorphCsvIO.Export(Model, StatusLog);
         }
 
         // ================================================================

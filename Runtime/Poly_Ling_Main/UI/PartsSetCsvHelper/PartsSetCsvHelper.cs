@@ -5,8 +5,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using UnityEditor;
 using UnityEngine;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
 
@@ -24,7 +24,7 @@ namespace Poly_Ling.UI
         {
             if (meshContext == null || meshContext.PartsSelectionSetList.Count == 0) return;
 
-            string folderPath = EditorUtility.SaveFolderPanel(
+            string folderPath = PLEditorBridge.I.SaveFolderPanel(
                 "Select Folder for CSV Export",
                 Application.dataPath,
                 $"SelectionSets_{meshContext.Name}");
@@ -75,13 +75,13 @@ namespace Poly_Ling.UI
                     File.WriteAllLines(filePath, lines);
                     count++;
                 }
-                EditorUtility.DisplayDialog("Export Complete",
+                PLEditorBridge.I.DisplayDialog("Export Complete",
                     $"Exported {count} selection sets to:\n{folderPath}", "OK");
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[PartsSetCsvHelper] Export failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Error", $"Failed to export:\n{ex.Message}", "OK");
+                PLEditorBridge.I.DisplayDialog("Error", $"Failed to export:\n{ex.Message}", "OK");
             }
             GUIUtility.ExitGUI();
         }
@@ -93,7 +93,7 @@ namespace Poly_Ling.UI
         public static void ImportSet(MeshContext meshContext)
         {
             if (meshContext == null) return;
-            string filePath = EditorUtility.OpenFilePanel(
+            string filePath = PLEditorBridge.I.OpenFilePanel(
                 "Import Selection Set CSV", Application.dataPath, "csv");
             if (string.IsNullOrEmpty(filePath)) { GUIUtility.ExitGUI(); return; }
 
@@ -157,7 +157,7 @@ namespace Poly_Ling.UI
             catch (Exception ex)
             {
                 Debug.LogError($"[PartsSetCsvHelper] Import failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Error", $"Failed to import:\n{ex.Message}", "OK");
+                PLEditorBridge.I.DisplayDialog("Error", $"Failed to import:\n{ex.Message}", "OK");
             }
             GUIUtility.ExitGUI();
         }

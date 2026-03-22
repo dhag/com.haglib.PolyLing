@@ -3,6 +3,7 @@
 // 操作は何も行わず、Debug.LogErrorでメッセージを出力する。
 
 using Poly_Ling.Data;
+using Poly_Ling.Tools;
 using UnityEngine;
 
 namespace Poly_Ling.EditorBridge
@@ -247,5 +248,22 @@ namespace Poly_Ling.EditorBridge
         {
             // Runtime環境では無操作
         }
+
+        // ================================================================
+        // ウィンドウ再接続
+        // ================================================================
+
+        public IToolContextReceiver[] FindAllToolContextReceivers()
+            => new IToolContextReceiver[0];
+
+        public IPanelContextReceiver[] FindAllPanelContextReceivers()
+            => new IPanelContextReceiver[0];
+
+        // ================================================================
+        // 時間
+        // ================================================================
+
+        public double GetTimeSinceStartup()
+            => UnityEngine.Time.realtimeSinceStartupAsDouble;
     }
 }

@@ -13,6 +13,7 @@ using Poly_Ling.Ops;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.Materials;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.PMX;
 using Poly_Ling.Symmetry;
 
@@ -1570,12 +1571,11 @@ namespace Poly_Ling.MQO
                 isInsideAssets = true;
             }
 
-#if UNITY_EDITOR
             // 1. まずAssetDatabaseから読み込みを試す
             Texture2D texture = null;
             if (isInsideAssets)
             {
-                texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                texture = PLEditorBridge.I.LoadAssetAtPath<Texture2D>(assetPath);
             }
 
             // 2. Assets内の場合のみ、同じbaseDir内でファイル名検索
@@ -1595,14 +1595,14 @@ namespace Poly_Ling.MQO
                     }
                 }
 
-                string[] guids = UnityEditor.AssetDatabase.FindAssets($"t:Texture2D {fileNameWithoutExt}",
+                string[] guids = PLEditorBridge.I.FindAssets($"t:Texture2D {fileNameWithoutExt}",
                     new[] { searchFolder });
                 foreach (var guid in guids)
                 {
-                    string foundPath = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    string foundPath = PLEditorBridge.I.GUIDToAssetPath(guid);
                     if (Path.GetFileName(foundPath).Equals(fileName, StringComparison.OrdinalIgnoreCase))
                     {
-                        texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(foundPath);
+                        texture = PLEditorBridge.I.LoadAssetAtPath<Texture2D>(foundPath);
                         if (texture != null)
                         {
                             Debug.Log($"[MQOImporter] Texture found in baseDir: {foundPath}");
@@ -1611,8 +1611,6 @@ namespace Poly_Ling.MQO
                     }
                 }
             }
-
-#endif
             // 3. それでも失敗した場合、File.ReadAllBytesで直接読み込み
             if (texture == null && File.Exists(fullPath))
             {

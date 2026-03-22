@@ -5,6 +5,7 @@
 using System;
 using UnityEngine;
 using Poly_Ling.Context;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.VMD
 {
@@ -286,13 +287,7 @@ namespace Poly_Ling.VMD
         /// 現在時刻を取得（Unity Editor対応）
         /// </summary>
         private double GetCurrentTime()
-        {
-#if UNITY_EDITOR
-            return UnityEditor.EditorApplication.timeSinceStartup;
-#else
-            return Time.realtimeSinceStartupAsDouble;
-#endif
-        }
+            => PLEditorBridge.I.GetTimeSinceStartup();
 
         // ================================================================
         // 情報取得

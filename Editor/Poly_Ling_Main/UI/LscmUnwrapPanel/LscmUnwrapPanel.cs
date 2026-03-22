@@ -259,57 +259,19 @@ namespace Poly_Ling.UI
         private void ExecuteUnwrap()
         {
             if (_context == null || Model == null) return;
-
-            var mc = FirstSelectedMeshContext;
+            var mc      = FirstSelectedMeshContext;
             var meshObj = mc?.MeshObject;
-            if (meshObj == null)
-            {
-                SetStatus("メッシュデータがありません");
-                return;
-            }
+            if (meshObj == null) { SetStatus("メッシュデータがありません"); return; }
 
-            if (meshObj.FaceCount == 0 || meshObj.VertexCount < 3)
-            {
-                SetStatus("メッシュが空または不十分です");
-                return;
-            }
-
-            // Seam = 選択中のエッジ
             var seamEdges = mc.SelectedEdges ?? new HashSet<VertexPair>();
+            int maxIter   = Mathf.Clamp(_settings.MaxIterations, 100, 50000);
 
-            bool includeBoundary = _settings.IncludeBoundaryAsSeam;
-            int maxIter = Mathf.Clamp(_settings.MaxIterations, 100, 50000);
-
-            var sw = Stopwatch.StartNew();
-
-            // Undo対応：トポロジ変更として記録
+            var opResult = default(LscmUnwrapOperation.Result);
             RecordTopologyChange("LSCM UV展開", (obj) =>
             {
-                // Step1: SeamSplit
-                var split = SeamSplitter.Build(obj, seamEdges, includeBoundary);
-
-                if (split.VertexCount == 0 || split.TriangleCount == 0)
-                {
-                    SetStatus("分割結果が空です");
-                    return;
-                }
-
-                // Step2: LSCM Solve
-                var lscmResult = LscmSolver.Solve(split, maxIter);
-
-                if (!lscmResult.Success)
-                {
-                    SetStatus($"LSCM失敗: {lscmResult.Error}");
-                    return;
-                }
-
-                // Step3: UV書き戻し
-                LscmUvWriter.Apply(obj, split, lscmResult);
-
-                sw.Stop();
-                SetStatus($"完了 ({sw.ElapsedMilliseconds}ms)  " +
-                          $"UV頂点:{split.VertexCount} Tri:{split.TriangleCount} " +
-                          $"島:{lscmResult.IslandCount}");
+                opResult = LscmUnwrapOperation.Execute(obj, seamEdges,
+                    _settings.IncludeBoundaryAsSeam, maxIter);
+                SetStatus(opResult.StatusMessage);
             });
 
             RefreshAll();

@@ -3,6 +3,7 @@
 // Editor外から呼び出した場合はEditorBridgeNullが警告を出す
 
 using Poly_Ling.Data;
+using Poly_Ling.Tools;
 using UnityEngine;
 
 namespace Poly_Ling.EditorBridge
@@ -93,5 +94,18 @@ namespace Poly_Ling.EditorBridge
         /// Runtime環境（EditorBridgeNull）では無操作。
         /// </summary>
         void SetupRemoteServer(System.Action<PanelCommand> dispatch);
+
+        // ================================================================
+        // ウィンドウ再接続
+        // ================================================================
+
+        IToolContextReceiver[]  FindAllToolContextReceivers();
+        IPanelContextReceiver[] FindAllPanelContextReceivers();
+
+        // ================================================================
+        // 時間
+        // ================================================================
+
+        double GetTimeSinceStartup();
     }
 }

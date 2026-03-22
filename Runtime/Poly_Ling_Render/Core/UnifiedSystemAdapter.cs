@@ -729,17 +729,15 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
-        /// キューに入っているメッシュを描画
+        /// キューに入っているメッシュを指定カメラに描画
         /// </summary>
-#if UNITY_EDITOR
-        public void DrawQueued(UnityEditor.PreviewRenderUtility preview)
+        public void DrawQueued(Camera camera)
         {
             if (!_isInitialized)
                 return;
 
-            _renderer.DrawQueued(preview);
+            _renderer.DrawQueued(camera);
         }
-#endif
 
 
         /// <summary>
@@ -751,6 +749,15 @@ namespace Poly_Ling.Core
                 return;
 
             _renderer.CleanupQueued();
+        }
+
+        /// <summary>
+        /// SRP (URP) 用描画。Graphics.RenderPrimitives で GPU バッファを直接参照。
+        /// </summary>
+        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f)
+        {
+            if (!_isInitialized) return;
+            _renderer.DrawSRP(camera, showWireframe, showVertices, screenSpacePointSize);
         }
 
         /// <summary>

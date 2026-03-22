@@ -343,6 +343,7 @@ namespace Poly_Ling.Remote
                     if (f.Type == WsFrameType.Text)
                     {
                         if (string.IsNullOrEmpty(f.Text)) continue;
+                        Debug.Log($"[SRV←CLI] TEXT ({f.Text.Length}B): {f.Text.Substring(0, System.Math.Min(200, f.Text.Length))}");
 
                         _mainThreadQueue.Enqueue(async () =>
                         {
@@ -355,9 +356,14 @@ namespace Poly_Ling.Remote
                             {
                                 try
                                 {
+                                    Debug.Log($"[SRV→CLI] TEXT ({response.Length}B): {response.Substring(0, System.Math.Min(200, response.Length))}");
                                     await SendWsTextAsync(client.Stream, response);
                                     if (pending != null && client.IsConnected)
-                                        await SendWsBinaryAsync(client.Stream, BuildBatch(pending));
+                                    {
+                                        var batch = BuildBatch(pending);
+                                        Debug.Log($"[SRV→CLI] BINARY batch ({batch.Length}B, {pending.Count}フレーム)");
+                                        await SendWsBinaryAsync(client.Stream, batch);
+                                    }
                                 }
                                 catch { }
                             }
@@ -365,11 +371,15 @@ namespace Poly_Ling.Remote
                     }
                     else if (f.Type == WsFrameType.Binary)
                     {
+                        Debug.Log($"[SRV←CLI] BINARY ({f.Binary.Length}B)");
                         _mainThreadQueue.Enqueue(() =>
                         {
                             byte[] response = ProcessBinaryMessage(f.Binary);
                             if (response != null && client.IsConnected)
+                            {
+                                Debug.Log($"[SRV→CLI] BINARY response ({response.Length}B)");
                                 _ = SendWsBinaryAsync(client.Stream, response);
+                            }
                         });
                     }
                 }
@@ -619,6 +629,7 @@ namespace Poly_Ling.Remote
             }
 
             Log($"受信: type={msg.Type} target={msg.Target} action={msg.Action}");
+            Debug.Log($"受信: type={msg.Type} target={msg.Target} action={msg.Action}");
 
             if (msg.Type == "query")   return ProcessQuery(msg);
             if (msg.Type == "command") return ProcessCommand(msg);

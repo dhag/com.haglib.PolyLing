@@ -282,12 +282,8 @@ namespace Poly_Ling.MeshListV2
             _preview.camera.Render();
             _adapter?.CleanupQueued();
 
-            Texture result = _preview.EndPreview();
-            GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
-            OnCapture?.Invoke(result);
-
             // ================================================================
-            // 2Dオーバーレイ
+            // 2Dオーバーレイ（EndPreview前 = PreviewRenderUtilityコンテキスト内）
             // ================================================================
             var cam = _preview.camera;
 
@@ -314,12 +310,16 @@ namespace Poly_Ling.MeshListV2
 
             DrawOriginMarker(rect, cam);
 
-            // 外部追加オーバーレイ
+            // 外部追加オーバーレイ（GL描画を含むためEndPreview前に呼ぶ）
             if (OnDrawOverlay != null)
             {
                 var evt = MakeEvent(rect, model);
                 OnDrawOverlay(evt);
             }
+
+            Texture result = _preview.EndPreview();
+            GUI.DrawTexture(rect, result, ScaleMode.StretchToFill, false);
+            OnCapture?.Invoke(result);
         }
 
         // ================================================================
@@ -567,7 +567,7 @@ namespace Poly_Ling.MeshListV2
                 meshIdxForDraw, pointSize);
 
             _adapter.ConsumeNormalMode();
-            _adapter.DrawQueued(_preview);
+            _adapter.DrawQueued(_preview.camera);
         }
 
         // ================================================================

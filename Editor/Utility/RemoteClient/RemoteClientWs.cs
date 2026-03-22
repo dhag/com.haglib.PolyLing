@@ -161,6 +161,7 @@ namespace PolyLingRemoteClient
                         payloadLen = (payloadLen << 8) | ext[i];
                 }
                 //Debug.Log($"WebSocket frame received: opcode={opcode}, masked={masked}, payloadLen={payloadLen}");
+                Debug.Log($"WebSocket frame received: opcode={opcode}, masked={masked}, payloadLen={payloadLen}");
 
                 // マスクキー（サーバーからは通常なし）
                 byte[] maskKey = null;

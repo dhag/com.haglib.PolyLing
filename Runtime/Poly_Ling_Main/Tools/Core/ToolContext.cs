@@ -371,6 +371,22 @@ namespace Poly_Ling.Tools
         /// </summary>
         public float HandleRadius { get; set; } = 10f;
 
+        // ================================================================
+        // 入力状態（Event.current抽象化）
+        // ================================================================
+
+        /// <summary>
+        /// ビューポート入力状態。Editor環境ではHandleInputの冒頭でEvent.currentから更新される。
+        /// プレイヤービルドでは独自入力系から更新する。
+        /// </summary>
+        public ViewportInputState InputState { get; set; }
+
+        public bool    IsShiftHeld         => InputState?.IsShiftHeld        ?? false;
+        public bool    IsControlHeld       => InputState?.IsControlHeld      ?? false;
+        public int     CurrentButton       => InputState?.CurrentButton      ?? 0;
+        public KeyCode CurrentKeyCode      => InputState?.CurrentKeyCode     ?? KeyCode.None;
+        public Vector2 CurrentMousePosition => InputState?.CurrentMousePosition ?? Vector2.zero;
+
         // === 便利メソッド ===
 
         /// <summary>

@@ -69,20 +69,8 @@ public partial class PolyLing
     /// <summary>
     /// BoneTransform UIイベントハンドラ設定
     /// </summary>
-    private void SetupBoneTransformEventHandlers()
-    {
-        BoneTransformUI.OnFromSelectionClicked += OnBoneTransformFromSelectionClicked;
-        BoneTransformUI.OnResetClicked += OnBoneTransformResetClicked;
-    }
-
-    /// <summary>
-    /// BoneTransform UIイベントハンドラ解除
-    /// </summary>
-    private void CleanupBoneTransformEventHandlers()
-    {
-        BoneTransformUI.OnFromSelectionClicked -= OnBoneTransformFromSelectionClicked;
-        BoneTransformUI.OnResetClicked -= OnBoneTransformResetClicked;
-    }
+    private void SetupBoneTransformEventHandlers() { }
+    private void CleanupBoneTransformEventHandlers() { }
 
     /// <summary>
     /// BoneTransform "From Selection"ボタンクリック
@@ -103,7 +91,7 @@ public partial class PolyLing
         BoneTransformSnapshot after = meshContext.BoneTransform.CreateSnapshot();
 
         // Undo記録
-        BoneTransformUI.NotifyChanged(before, after, "Copy Transform From Selection");
+        _model?.OnBoneTransformChanged?.Invoke(before, after, "Copy Transform From Selection");
 
         Repaint();
     }
@@ -123,7 +111,7 @@ public partial class PolyLing
         var after = meshContext.BoneTransform.CreateSnapshot();
 
         // Undo記録
-        BoneTransformUI.NotifyChanged(before, after, "Reset Export Settings");
+        _model?.OnBoneTransformChanged?.Invoke(before, after, "Reset Export Settings");
 
         Repaint();
     }

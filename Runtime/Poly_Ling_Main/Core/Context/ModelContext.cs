@@ -502,6 +502,9 @@ namespace Poly_Ling.Context
         /// <summary>VertexEditStackクリアリクエスト（メッシュ順序変更で古い記録が無効になるため）</summary>
         public Action OnVertexEditStackClearRequested;
 
+        /// <summary>選択ボーンのTransform変更通知（UI→UndoHelperへの橋渡し）</summary>
+        public Action<BoneTransformSnapshot, BoneTransformSnapshot, string> OnBoneTransformChanged;
+
         // ================================================================
         // WorkPlaneContext
         // ================================================================

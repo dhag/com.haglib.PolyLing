@@ -42,9 +42,7 @@ namespace Poly_Ling.UI
         // プレビュー状態
         // ================================================================
 
-        private readonly Dictionary<int, Vector3[]> _previewBackups  = new();
-        private readonly Dictionary<int, bool>      _savedVisibility = new();
-        private bool _isPreviewActive = false;
+        private readonly BlendPreviewState _blendPreview = new();
         private bool _isDragging      = false;
 
         // 候補リスト
@@ -144,7 +142,7 @@ namespace Poly_Ling.UI
         {
             if (kind == ChangeKind.Selection || kind == ChangeKind.ModelSwitch)
             {
-                if (_isPreviewActive) EndPreview();
+                if (_blendPreview.IsActive) EndPreview();
                 _sourceIndex = -1;
                 _selectedCandidateListIndex = -1;
                 _candidates.Clear();
@@ -421,7 +419,7 @@ namespace Poly_Ling.UI
                 }
             }
 
-            _previewingLabel.style.display = _isPreviewActive ? DisplayStyle.Flex : DisplayStyle.None;
+            _previewingLabel.style.display = _blendPreview.IsActive ? DisplayStyle.Flex : DisplayStyle.None;
 
             if (_sourceIndex < 0)
             {
@@ -431,7 +429,7 @@ namespace Poly_Ling.UI
 
             _blendSection.style.display = DisplayStyle.Flex;
             _sliderBlend.SetValueWithoutNotify(_blendWeight);
-            _btnApply.SetEnabled(_isPreviewActive);
+            _btnApply.SetEnabled(_blendPreview.IsActive);
         }
 
         // ================================================================
@@ -440,7 +438,7 @@ namespace Poly_Ling.UI
 
         private void OnSourceChanged()
         {
-            if (!_isPreviewActive) return;
+            if (!_blendPreview.IsActive) return;
             var model = Model;
             if (model != null) ApplyPreview(model, model.SelectedMeshIndices);
         }
@@ -464,8 +462,8 @@ namespace Poly_Ling.UI
 
             _blendWeight = newValue;
             ApplyPreview(model, targetIndices);
-            _btnApply?.SetEnabled(_isPreviewActive);
-            _previewingLabel.style.display = _isPreviewActive ? DisplayStyle.Flex : DisplayStyle.None;
+            _btnApply?.SetEnabled(_blendPreview.IsActive);
+            _previewingLabel.style.display = _blendPreview.IsActive ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void OnSliderDragEnd()
@@ -498,37 +496,7 @@ namespace Poly_Ling.UI
 
         private void StartPreview(ModelContext model, List<int> targetIndices)
         {
-            if (_isPreviewActive) return;
-
-            _previewBackups.Clear();
-            _savedVisibility.Clear();
-
-            foreach (int idx in targetIndices)
-            {
-                var ctx = model.GetMeshContext(idx);
-                if (ctx?.MeshObject == null) continue;
-
-                var mo     = ctx.MeshObject;
-                var backup = new Vector3[mo.VertexCount];
-                for (int i = 0; i < mo.VertexCount; i++)
-                    backup[i] = mo.Vertices[i].Position;
-                _previewBackups[idx] = backup;
-
-                _savedVisibility[idx] = ctx.IsVisible;
-                ctx.IsVisible = true;
-            }
-
-            if (_sourceIndex >= 0)
-            {
-                var srcCtx = model.GetMeshContext(_sourceIndex);
-                if (srcCtx != null)
-                {
-                    _savedVisibility[_sourceIndex] = srcCtx.IsVisible;
-                    srcCtx.IsVisible = false;
-                }
-            }
-
-            _isPreviewActive = true;
+            _blendPreview.Start(model, targetIndices, _sourceIndex);
         }
 
         // ================================================================
@@ -537,33 +505,9 @@ namespace Poly_Ling.UI
 
         private void ApplyPreview(ModelContext model, List<int> targetIndices)
         {
-            if (!_isPreviewActive) return;
-
-            var srcCtx = model.GetMeshContext(_sourceIndex);
-            if (srcCtx?.MeshObject == null) return;
-            var srcMo = srcCtx.MeshObject;
-
-            float w = _blendWeight;
-            var selectedVerts = _selectedVerticesOnly ? _toolCtx?.SelectedVertices : null;
-
-            Dictionary<int, int> srcIdMap = null;
-            if (_matchByVertexId) srcIdMap = BuildVertexIdMap(srcMo);
-
-            foreach (int idx in targetIndices)
-            {
-                if (!_previewBackups.TryGetValue(idx, out var backup)) continue;
-                var ctx = model.GetMeshContext(idx);
-                if (ctx?.MeshObject == null) continue;
-                var mo = ctx.MeshObject;
-
-                var nonIsolated = BuildNonIsolatedSet(mo);
-                BlendVertices(mo, backup, srcMo, w, nonIsolated, selectedVerts, srcIdMap);
-
-                _toolCtx?.SyncMeshContextPositionsOnly?.Invoke(ctx);
-                SyncMirrorSide(model, ctx);
-            }
-
-            _toolCtx?.Repaint?.Invoke();
+            _blendPreview.Apply(model, _sourceIndex, _blendWeight,
+                _selectedVerticesOnly, _toolCtx?.SelectedVertices,
+                _matchByVertexId, _toolCtx);
         }
 
         // ================================================================
@@ -572,36 +516,7 @@ namespace Poly_Ling.UI
 
         private void EndPreview()
         {
-            if (!_isPreviewActive) return;
-
-            var model = Model;
-            if (model != null)
-            {
-                foreach (var (idx, backup) in _previewBackups)
-                {
-                    var ctx = model.GetMeshContext(idx);
-                    if (ctx?.MeshObject == null) continue;
-                    var mo    = ctx.MeshObject;
-                    int count = Mathf.Min(backup.Length, mo.VertexCount);
-                    for (int i = 0; i < count; i++)
-                        mo.Vertices[i].Position = backup[i];
-
-                    _toolCtx?.SyncMeshContextPositionsOnly?.Invoke(ctx);
-                    SyncMirrorSide(model, ctx);
-                }
-
-                foreach (var (idx, visible) in _savedVisibility)
-                {
-                    var ctx = model.GetMeshContext(idx);
-                    if (ctx != null) ctx.IsVisible = visible;
-                }
-            }
-
-            _previewBackups.Clear();
-            _savedVisibility.Clear();
-            _isPreviewActive = false;
-
-            _toolCtx?.Repaint?.Invoke();
+            _blendPreview.End(Model, _toolCtx);
         }
 
         // ================================================================
@@ -610,210 +525,24 @@ namespace Poly_Ling.UI
 
         private void ApplyAndCreateBackups(ModelContext model, List<int> targetIndices)
         {
-            if (!_isPreviewActive) return;
-
-            var srcCtx = model.GetMeshContext(_sourceIndex);
-            if (srcCtx?.MeshObject == null) return;
-            var srcMo = srcCtx.MeshObject;
-
-            float w           = _blendWeight;
-            int   backupCount = 0;
-            var   selectedVerts = _selectedVerticesOnly ? _toolCtx?.SelectedVertices : null;
-
-            var existingNames = new HashSet<string>();
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc != null) existingNames.Add(mc.Name);
-            }
-
-            Dictionary<int, int> srcIdMap = null;
-            if (_matchByVertexId) srcIdMap = BuildVertexIdMap(srcMo);
-
-            var undo   = _toolCtx?.UndoController;
-            var before = undo?.CaptureMeshObjectSnapshot();
-
-            foreach (int idx in targetIndices)
-            {
-                if (!_previewBackups.TryGetValue(idx, out var backup)) continue;
-
-                var ctx = model.GetMeshContext(idx);
-                if (ctx?.MeshObject == null) continue;
-                var mo = ctx.MeshObject;
-
-                // バックアップメッシュ作成（元位置で）
-                var backupMo = mo.Clone();
-                for (int i = 0; i < backup.Length && i < backupMo.VertexCount; i++)
-                    backupMo.Vertices[i].Position = backup[i];
-
-                string backupName = GenerateUniqueName(ctx.Name + "_backup", existingNames);
-                backupMo.Name = backupName;
-
-                var backupCtx = new MeshContext
-                {
-                    MeshObject = backupMo,
-                    Name       = backupName,
-                    Type       = ctx.Type,
-                    IsVisible  = false,
-                };
-                backupCtx.UnityMesh = backupMo.ToUnityMeshShared();
-                if (backupCtx.UnityMesh != null)
-                    backupCtx.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-
-                model.Add(backupCtx);
-                existingNames.Add(backupName);
-                backupCount++;
-
-                // ブレンド結果確定
-                var nonIsolated = BuildNonIsolatedSet(mo);
-                BlendVertices(mo, backup, srcMo, w, nonIsolated, selectedVerts, srcIdMap);
-
-                if (_recalculateNormals)
-                    mo.RecalculateSmoothNormals();
-
-                _toolCtx?.SyncMeshContextPositionsOnly?.Invoke(ctx);
-                SyncMirrorSide(model, ctx);
-            }
-
-            // 可視状態復元（ソースのみ）
-            foreach (var (idx, visible) in _savedVisibility)
-            {
-                if (targetIndices.Contains(idx)) continue;
-                var ctx = model.GetMeshContext(idx);
-                if (ctx != null) ctx.IsVisible = visible;
-            }
-
-            _previewBackups.Clear();
-            _savedVisibility.Clear();
-            _isPreviewActive = false;
-
-            // Undo 記録
-            if (undo != null && before != null)
-            {
-                var after = undo.CaptureMeshObjectSnapshot();
-                _toolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
-                    undo, before, after, "Simple Blend"));
-            }
-
-            _toolCtx?.NotifyTopologyChanged?.Invoke();
-            model.OnListChanged?.Invoke();
-            _toolCtx?.Repaint?.Invoke();
+            int backupCount = BlendOperation.ApplyAndCreateBackups(
+                model, _blendPreview, targetIndices, _sourceIndex,
+                _blendWeight, _recalculateNormals,
+                _selectedVerticesOnly, _toolCtx?.SelectedVertices,
+                _matchByVertexId, _toolCtx);
 
             _blendWeight                = 0f;
             _sourceIndex                = -1;
             _selectedCandidateListIndex = -1;
 
-            Debug.Log($"[PolyLing] ブレンド適用。バックアップ {backupCount} 個作成。");
+            UnityEngine.Debug.Log($"[PolyLing] ブレンド適用。バックアップ {backupCount} 個作成。");
             Refresh();
         }
 
-        // ================================================================
-        // 頂点ブレンド共通処理
-        // ================================================================
 
-        private static void BlendVertices(
-            MeshObject mo, Vector3[] backup, MeshObject srcMo,
-            float w, HashSet<int> nonIsolated,
-            HashSet<int> selectedVerts, Dictionary<int, int> srcIdMap)
-        {
-            if (srcIdMap != null)
-            {
-                for (int i = 0; i < mo.VertexCount; i++)
-                {
-                    if (!nonIsolated.Contains(i)) continue;
-                    if (selectedVerts != null && !selectedVerts.Contains(i)) continue;
 
-                    int vertId = mo.Vertices[i].Id;
-                    if (srcIdMap.TryGetValue(vertId, out int si))
-                        mo.Vertices[i].Position = Vector3.Lerp(backup[i], srcMo.Vertices[si].Position, w);
-                    else
-                        mo.Vertices[i].Position = backup[i];
-                }
-            }
-            else
-            {
-                int count = Mathf.Min(mo.VertexCount, srcMo.VertexCount);
-                for (int i = 0; i < mo.VertexCount; i++)
-                {
-                    if (!nonIsolated.Contains(i)) continue;
-                    if (selectedVerts != null && !selectedVerts.Contains(i)) continue;
 
-                    if (i < count)
-                        mo.Vertices[i].Position = Vector3.Lerp(backup[i], srcMo.Vertices[i].Position, w);
-                    else
-                        mo.Vertices[i].Position = backup[i];
-                }
-            }
-        }
 
-        // ================================================================
-        // ミラー側同期
-        // ================================================================
 
-        private void SyncMirrorSide(ModelContext model, MeshContext ctx)
-        {
-            if (ctx?.MeshObject == null) return;
-
-            string mirrorName = ctx.Name + "+";
-            var    axis       = ctx.GetMirrorSymmetryAxis();
-            var    mo         = ctx.MeshObject;
-
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var mc = model.GetMeshContext(i);
-                if (mc == null || mc.Type != MeshType.MirrorSide) continue;
-                if (mc.Name != mirrorName) continue;
-                if (mc.MeshObject == null || mc.MeshObject.VertexCount != mo.VertexCount) continue;
-
-                var mirrorMo = mc.MeshObject;
-                for (int v = 0; v < mo.VertexCount; v++)
-                {
-                    var pos = mo.Vertices[v].Position;
-                    mirrorMo.Vertices[v].Position = axis switch
-                    {
-                        SymmetryAxis.Y => new Vector3( pos.x, -pos.y,  pos.z),
-                        SymmetryAxis.Z => new Vector3( pos.x,  pos.y, -pos.z),
-                        _              => new Vector3(-pos.x,  pos.y,  pos.z),
-                    };
-                }
-                _toolCtx?.SyncMeshContextPositionsOnly?.Invoke(mc);
-                break;
-            }
-        }
-
-        // ================================================================
-        // ヘルパー
-        // ================================================================
-
-        private static Dictionary<int, int> BuildVertexIdMap(MeshObject mo)
-        {
-            var map = new Dictionary<int, int>();
-            for (int i = 0; i < mo.VertexCount; i++)
-            {
-                int id = mo.Vertices[i].Id;
-                if (!map.ContainsKey(id)) map[id] = i;
-            }
-            return map;
-        }
-
-        private static HashSet<int> BuildNonIsolatedSet(MeshObject mo)
-        {
-            var set = new HashSet<int>();
-            foreach (var face in mo.Faces)
-                foreach (int vi in face.VertexIndices)
-                    set.Add(vi);
-            return set;
-        }
-
-        private static string GenerateUniqueName(string baseName, HashSet<string> existingNames)
-        {
-            if (!existingNames.Contains(baseName)) return baseName;
-            for (int n = 1; n < 10000; n++)
-            {
-                string name = $"{baseName}_{n}";
-                if (!existingNames.Contains(name)) return name;
-            }
-            return baseName + "_" + Guid.NewGuid().ToString("N").Substring(0, 6);
-        }
     }
 }

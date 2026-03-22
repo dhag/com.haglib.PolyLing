@@ -536,10 +536,20 @@ public partial class PolyLing : EditorWindow
             FindVertexAtScreenPos       = FindVertexAtScreenPos,
             ScreenPosToRay              = ScreenPosToRay,
             Repaint                     = Repaint,
-            SyncMesh                    = () => _toolContext?.SyncMesh?.Invoke(),
-            SyncMeshPositionsOnly       = () => _toolContext?.SyncMeshPositionsOnly?.Invoke(),
-            SyncMeshContextPositionsOnly = ctx => _toolContext?.SyncMeshContextPositionsOnly?.Invoke(ctx),
-            SyncBoneTransforms          = () => _toolContext?.SyncBoneTransforms?.Invoke(),
+            SyncMesh                    = () => SyncMeshFromData(_model?.FirstSelectedMeshContext),
+            SyncMeshPositionsOnly       = SyncAllSelectedMeshPositions,
+            SyncMeshContextPositionsOnly = mc =>
+            {
+                SyncMeshPositionsOnly(mc);
+                if (_model?.MirrorPairs == null) return;
+                foreach (var pair in _model.MirrorPairs)
+                {
+                    if (pair.Real != mc) continue;
+                    pair.SyncPositions();
+                    SyncMeshPositionsOnly(pair.Mirror);
+                }
+            },
+            SyncBoneTransforms          = () => SyncMeshFromData(_model?.FirstSelectedMeshContext),
         };
         _core.Initialize(coreConfig, _project);
 

@@ -220,7 +220,7 @@ namespace Poly_Ling.Tools
 
                 // GUI.BeginClip後のローカル座標系でのマウス位置を使用
                 // _currentScreenPosはBeginClip前のグローバル座標のため、左ペイン幅分ずれる
-                Vector2 centerScreen = Event.current.mousePosition;
+                Vector2 centerScreen = ctx.CurrentMousePosition;
                 float screenRadius = EstimateBrushScreenRadius(ctx);
 
                 DrawCircle(centerScreen, screenRadius, 32);

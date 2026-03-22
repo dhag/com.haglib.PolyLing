@@ -94,8 +94,8 @@ namespace Poly_Ling.Tools
 
             // 2. ピッキング
             bool picked = TryPickObject(ctx, mousePos,
-                Event.current?.shift   ?? false,
-                Event.current?.control ?? false);
+                ctx.IsShiftHeld,
+                ctx.IsControlHeld);
             if (picked)
             {
                 _state = DragState.PendingDrag;

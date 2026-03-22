@@ -25,15 +25,16 @@ namespace Poly_Ling.Tools
         /// </summary>
         public static readonly Func<IEditTool>[] ToolFactories = new Func<IEditTool>[]
         {
-#if FALSE
-//ツールの初期化
+            // Transform
             () => new MoveTool(),
             () => new ObjectMoveTool(),
             () => new RotateTool(),
             () => new ScaleTool(),
 
+            // Select
             () => new AdvancedSelectTool(),
 
+            // Sculpt
             () => new SculptTool(),
 
             // Topology
@@ -48,13 +49,11 @@ namespace Poly_Ling.Tools
             () => new EdgeBevelTool(),
             () => new FlipFaceTool(),
 
-
             () => new PivotOffsetTool(),
 
-            () => new MirrorEditTool(),
-
-            () => new SkinWeightPaintTool(),
-#endif
+            // 後回し
+            //() => new MirrorEditTool(),
+            //() => new SkinWeightPaintTool(),
         };
 
         // ================================================================

@@ -159,6 +159,9 @@ private KnifeTool _knifeTool => _toolManager?.GetTool<KnifeTool>();
         // ================================================================
         ctx.LastHoverHitResult = _inp.LastHoverHitResult;
         ctx.HoverVertexRadius = HOVER_VERTEX_RADIUS;
+
+        // InputState接続（ツールがEvent.currentを直接参照しないようにするため）
+        ctx.InputState = _inp;
         ctx.HoverLineDistance = HOVER_LINE_DISTANCE;
 
         // DisplayMatrix対応のWorldToScreenPos

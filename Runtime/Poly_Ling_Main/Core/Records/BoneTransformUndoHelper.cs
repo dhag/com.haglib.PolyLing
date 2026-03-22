@@ -6,6 +6,7 @@ using System;
 using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Data;
+using Poly_Ling.Context;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -53,6 +54,7 @@ namespace Poly_Ling.UndoSystem
         public BoneTransformUndoHelper(
             UndoGroup parentGroup,
             string windowId,
+            ModelContext modelContext = null,
             Action onUndoRedo = null)
         {
             _onUndoRedo = onUndoRedo;
@@ -67,13 +69,13 @@ namespace Poly_Ling.UndoSystem
             parentGroup.AddChild(_stack);
 
             // イベントハンドラ登録
-            SetupEventHandlers();
+            SetupEventHandlers(modelContext);
         }
 
         /// <summary>
         /// 既存のUndoManagerに直接追加する場合
         /// </summary>
-        public BoneTransformUndoHelper(string stackId, Action onUndoRedo = null)
+        public BoneTransformUndoHelper(string stackId, ModelContext modelContext = null, Action onUndoRedo = null)
         {
             _onUndoRedo = onUndoRedo;
             _settings = new BoneTransform();
@@ -87,14 +89,21 @@ namespace Poly_Ling.UndoSystem
             UndoManager.Instance.AddChild(_stack);
 
             // イベントハンドラ登録
-            SetupEventHandlers();
+            SetupEventHandlers(modelContext);
         }
 
-        private void SetupEventHandlers()
+        private ModelContext _modelContext;
+
+        private void SetupEventHandlers(ModelContext modelContext)
         {
-            // UI変更時（OnChangedのみ自動処理、Reset/FromSelectionは呼び出し側で処理）
-            _changeHandler = OnSettingsChanged;
-            BoneTransformUI.OnChanged += _changeHandler;
+            _modelContext = modelContext;
+
+            // ModelContext経由でBoneTransform変更を購読
+            if (_modelContext != null)
+            {
+                _changeHandler = OnSettingsChanged;
+                _modelContext.OnBoneTransformChanged += _changeHandler;
+            }
 
             // Undo/Redo実行時
             _undoHandler = _ => OnUndoRedoPerformed();
@@ -166,8 +175,8 @@ namespace Poly_Ling.UndoSystem
         public void Dispose()
         {
             // イベントハンドラ解除
-            if (_changeHandler != null)
-                BoneTransformUI.OnChanged -= _changeHandler;
+            if (_changeHandler != null && _modelContext != null)
+                _modelContext.OnBoneTransformChanged -= _changeHandler;
 
             if (_stack != null)
             {

@@ -109,7 +109,7 @@ namespace Poly_Ling.Tools
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
             // 右クリックは点を1つ戻す
-            if (Event.current.button == 1)
+            if (ctx.CurrentButton == 1)
             {
                 if (_points.Count > 0)
                 {
@@ -126,7 +126,7 @@ namespace Poly_Ling.Tools
             }
 
             // 左クリックのみ処理
-            if (Event.current.button != 0)
+            if (ctx.CurrentButton != 0)
                 return false;
 
             // 点を追加

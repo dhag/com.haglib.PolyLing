@@ -62,5 +62,12 @@ namespace Poly_Ling.Data
 
         // --- 定数 ---
         public const float DragThreshold = 0f;
+
+        // --- 修飾キー・ボタン状態（Event.current抽象化） ---
+        public bool    IsShiftHeld;
+        public bool    IsControlHeld;
+        public int     CurrentButton;       // 0=左, 1=右, 2=中
+        public KeyCode CurrentKeyCode;
+        public Vector2 CurrentMousePosition;
     }
 }

@@ -81,7 +81,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (Event.current.button != 0)
+            if (ctx.CurrentButton != 0)
                 return false;
 
             if (_state != BevelState.Idle)
@@ -157,7 +157,7 @@ namespace Poly_Ling.Tools
 
             if (_state == BevelState.Idle || _state == BevelState.PendingAction)
             {
-                Vector2 mousePos = Event.current.mousePosition;
+                Vector2 mousePos = ctx.CurrentMousePosition;
                 _hoverEdge = FindEdgeAtPosition(ctx, mousePos);
             }
             else

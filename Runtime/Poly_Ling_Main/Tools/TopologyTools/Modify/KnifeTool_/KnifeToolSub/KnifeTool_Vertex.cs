@@ -44,7 +44,7 @@ namespace Poly_Ling.Tools
             if (!_isDragging || !_firstVertexWorldPos.HasValue) return false;
 
             _currentScreenPos = mousePos;
-            _isShiftHeld = Event.current.shift;
+            _isShiftHeld = ctx.IsShiftHeld;
             if (_isShiftHeld) _currentScreenPos = SnapToAxis(_startScreenPos, mousePos);
 
             _targetEdgeWorldPos = FindNearestNonAdjacentEdge(ctx, _currentScreenPos, _firstVertexWorldPos.Value, EDGE_CLICK_THRESHOLD * 2)?.edgeWorldPos;
@@ -139,7 +139,7 @@ namespace Poly_Ling.Tools
             }
             else
             {
-                var hoveredVertex = FindNearestVertexWorldPos(ctx, Event.current.mousePosition, VERTEX_CLICK_THRESHOLD);
+                var hoveredVertex = FindNearestVertexWorldPos(ctx, ctx.CurrentMousePosition, VERTEX_CLICK_THRESHOLD);
                 if (hoveredVertex.HasValue)
                 {
                     var sp = ctx.WorldToScreenPos(hoveredVertex.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
@@ -157,7 +157,7 @@ namespace Poly_Ling.Tools
 
         private bool HandleVertexEdgeSelectMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (Event.current.keyCode == KeyCode.Escape)
+            if (ctx.CurrentKeyCode == KeyCode.Escape)
             {
                 Reset();
                 ctx.Repaint?.Invoke();
@@ -245,7 +245,7 @@ namespace Poly_Ling.Tools
                     {
                         UnityEditor_Handles.color = Color.cyan;
                         DrawEdgeByWorldPos(ctx, edgePos);
-                        float cutRatio = GetVertexCutRatio(ctx, Event.current.mousePosition, edgePos);
+                        float cutRatio = GetVertexCutRatio(ctx, ctx.CurrentMousePosition, edgePos);
                         var midPoint = Vector3.Lerp(edgePos.Item1, edgePos.Item2, cutRatio);
                         var midSp = ctx.WorldToScreenPos(midPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                         UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
@@ -260,7 +260,7 @@ namespace Poly_Ling.Tools
             }
             else
             {
-                var hoveredVertex = FindNearestVertexWorldPos(ctx, Event.current.mousePosition, VERTEX_CLICK_THRESHOLD);
+                var hoveredVertex = FindNearestVertexWorldPos(ctx, ctx.CurrentMousePosition, VERTEX_CLICK_THRESHOLD);
                 if (hoveredVertex.HasValue)
                 {
                     var sp = ctx.WorldToScreenPos(hoveredVertex.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);

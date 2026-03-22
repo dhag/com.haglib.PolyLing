@@ -1035,8 +1035,16 @@ namespace Poly_Ling.Remote
                     if (frame == null || frame.Value.Type == WsFrameType.Close) break;
                     if (frame.Value.Type == WsFrameType.Ping) continue;
                     var f = frame.Value;
-                    if (f.Type == WsFrameType.Text) _mainThreadQueue.Enqueue(() => HandleTextMessage(f.Text));
-                    else if (f.Type == WsFrameType.Binary) _mainThreadQueue.Enqueue(() => HandleBinaryMessage(f.Binary));
+                    if (f.Type == WsFrameType.Text)
+                    {
+                        Debug.Log($"[CLI←SRV] TEXT ({f.Text.Length}B): {f.Text.Substring(0, System.Math.Min(200, f.Text.Length))}");
+                        _mainThreadQueue.Enqueue(() => HandleTextMessage(f.Text));
+                    }
+                    else if (f.Type == WsFrameType.Binary)
+                    {
+                        Debug.Log($"[CLI←SRV] BINARY ({f.Binary.Length}B)");
+                        _mainThreadQueue.Enqueue(() => HandleBinaryMessage(f.Binary));
+                    }
                 }
             }
             catch (OperationCanceledException) { }
@@ -1255,6 +1263,7 @@ namespace Poly_Ling.Remote
         {
             string id = ExtractJsonString(json, "id");
             if (id != null) _binaryCallbacks[id] = onResponse;
+            Debug.Log($"[CLI→SRV] TEXT ({json.Length}B): {json.Substring(0, System.Math.Min(200, json.Length))}");
             _ = _ws.SendTextAsync(json);
         }
 

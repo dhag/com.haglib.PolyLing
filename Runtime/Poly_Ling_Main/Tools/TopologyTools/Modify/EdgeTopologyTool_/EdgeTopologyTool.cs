@@ -239,7 +239,7 @@ namespace Poly_Ling.Tools
         {
             if (ctx.FirstSelectedMeshObject == null) return;
 
-            var mousePos = Event.current.mousePosition;
+            var mousePos = ctx.CurrentMousePosition;
 
             switch (Mode)
             {

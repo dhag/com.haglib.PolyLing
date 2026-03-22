@@ -21,7 +21,7 @@ namespace Poly_Ling.Tools
             _isDragging = true;
             _startScreenPos = mousePos;
             _currentScreenPos = mousePos;
-            _isShiftHeld = Event.current.shift;
+            _isShiftHeld = ctx.IsShiftHeld;
             _targetFaceIndex = -1;
             _intersections.Clear();
             _targetFaceIndex = FindFrontmostFaceAtPosition(ctx, mousePos);
@@ -33,7 +33,7 @@ namespace Poly_Ling.Tools
         {
             if (!_isDragging) return false;
             _currentScreenPos = mousePos;
-            _isShiftHeld = Event.current.shift;
+            _isShiftHeld = ctx.IsShiftHeld;
             if (_isShiftHeld) _currentScreenPos = SnapToAxis(_startScreenPos, mousePos);
             UpdateIntersections(ctx);
             ctx.Repaint?.Invoke();
@@ -123,7 +123,7 @@ namespace Poly_Ling.Tools
 
         private bool HandleEdgeSelectMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (Event.current.keyCode == KeyCode.Escape)
+            if (ctx.CurrentKeyCode == KeyCode.Escape)
             {
                 Reset();
                 ctx.Repaint?.Invoke();
@@ -203,7 +203,7 @@ namespace Poly_Ling.Tools
                 DrawEdgeByWorldPos(ctx, _hoveredEdgeWorldPos.Value);
                 
                 // ホバー中の辺上の切断位置に赤丸
-                float hoverRatio = GetEdgeCutRatio(ctx, Event.current.mousePosition, _hoveredEdgeWorldPos.Value);
+                float hoverRatio = GetEdgeCutRatio(ctx, ctx.CurrentMousePosition, _hoveredEdgeWorldPos.Value);
                 var hoverCutPoint = Vector3.Lerp(_hoveredEdgeWorldPos.Value.Item1, _hoveredEdgeWorldPos.Value.Item2, hoverRatio);
                 var hoverSp = ctx.WorldToScreenPos(hoverCutPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                 UnityEditor_Handles.color = Color.red;

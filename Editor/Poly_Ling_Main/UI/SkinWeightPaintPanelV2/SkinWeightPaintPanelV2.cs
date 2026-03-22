@@ -785,34 +785,10 @@ namespace Poly_Ling.UI
 
         private void ExecuteFlood()
         {
-            if (Model == null || _targetBoneMasterIndex < 0) return;
-            var meshCtx = Model.FirstSelectedDrawableMeshContext;
-            if (meshCtx?.MeshObject == null) return;
-
-            var selectedVerts = meshCtx.SelectedVertices;
-            if (selectedVerts == null || selectedVerts.Count == 0)
-            { EditorUtility.DisplayDialog("Flood", "頂点が選択されていません。", "OK"); return; }
-
-            var undo   = UndoController;
-            var before = undo?.CaptureMeshObjectSnapshot();
-            var mo     = meshCtx.MeshObject;
-
-            foreach (int vi in selectedVerts)
-            {
-                if (vi < 0 || vi >= mo.VertexCount) continue;
-                var vertex = mo.Vertices[vi];
-                BoneWeight bw = vertex.BoneWeight ?? default;
-                switch (_paintMode)
-                {
-                    case SkinWeightPaintMode.Replace: bw = SetBoneWeight(bw, _targetBoneMasterIndex, _weightValue); break;
-                    case SkinWeightPaintMode.Add:     bw = AddBoneWeight(bw, _targetBoneMasterIndex, _weightValue * _brushStrength); break;
-                    case SkinWeightPaintMode.Scale:   bw = ScaleBoneWeight(bw, _targetBoneMasterIndex, _weightValue); break;
-                    case SkinWeightPaintMode.Smooth:  continue;
-                }
-                vertex.BoneWeight = NormalizeBoneWeight(bw);
-            }
-
-            RecordAndSync(undo, before, "Flood Skin Weight");
+            SkinWeightOperations.ExecuteFlood(Model, _toolCtx,
+                _targetBoneMasterIndex, _paintMode, _weightValue, _brushStrength,
+                msg => EditorUtility.DisplayDialog("Flood", msg, "OK"));
+            RefreshAll();
         }
 
         // ================================================================
@@ -821,27 +797,9 @@ namespace Poly_Ling.UI
 
         private void ExecuteNormalize()
         {
-            if (Model == null) return;
-            var meshCtx = Model.FirstSelectedDrawableMeshContext;
-            if (meshCtx?.MeshObject == null) return;
-
-            var selectedVerts = meshCtx.SelectedVertices;
-            if (selectedVerts == null || selectedVerts.Count == 0)
-            { EditorUtility.DisplayDialog("Normalize", "頂点が選択されていません。", "OK"); return; }
-
-            var undo   = UndoController;
-            var before = undo?.CaptureMeshObjectSnapshot();
-            var mo     = meshCtx.MeshObject;
-
-            foreach (int vi in selectedVerts)
-            {
-                if (vi < 0 || vi >= mo.VertexCount) continue;
-                var vertex = mo.Vertices[vi];
-                if (!vertex.HasBoneWeight) continue;
-                vertex.BoneWeight = NormalizeBoneWeight(vertex.BoneWeight.Value);
-            }
-
-            RecordAndSync(undo, before, "Normalize Skin Weights");
+            SkinWeightOperations.ExecuteNormalize(Model, _toolCtx,
+                msg => EditorUtility.DisplayDialog("Normalize", msg, "OK"));
+            RefreshAll();
         }
 
         // ================================================================
@@ -850,136 +808,15 @@ namespace Poly_Ling.UI
 
         private void ExecutePrune()
         {
-            if (Model == null) return;
-            var meshCtx = Model.FirstSelectedDrawableMeshContext;
-            if (meshCtx?.MeshObject == null) return;
-
-            var selectedVerts = meshCtx.SelectedVertices;
-            if (selectedVerts == null || selectedVerts.Count == 0)
-            { EditorUtility.DisplayDialog("Prune", "頂点が選択されていません。", "OK"); return; }
-
-            var undo   = UndoController;
-            var before = undo?.CaptureMeshObjectSnapshot();
-            var mo     = meshCtx.MeshObject;
-            float threshold = _pruneThreshold;
-            int prunedCount = 0;
-
-            foreach (int vi in selectedVerts)
-            {
-                if (vi < 0 || vi >= mo.VertexCount) continue;
-                var vertex = mo.Vertices[vi];
-                if (!vertex.HasBoneWeight) continue;
-                var bw = vertex.BoneWeight.Value;
-                bool changed = false;
-                if (bw.weight0 > 0f && bw.weight0 < threshold) { bw.weight0 = 0f; bw.boneIndex0 = 0; changed = true; }
-                if (bw.weight1 > 0f && bw.weight1 < threshold) { bw.weight1 = 0f; bw.boneIndex1 = 0; changed = true; }
-                if (bw.weight2 > 0f && bw.weight2 < threshold) { bw.weight2 = 0f; bw.boneIndex2 = 0; changed = true; }
-                if (bw.weight3 > 0f && bw.weight3 < threshold) { bw.weight3 = 0f; bw.boneIndex3 = 0; changed = true; }
-                if (changed)
-                {
-                    bw = NormalizeBoneWeight(bw);
-                    bw = SortBoneWeight(bw);
-                    vertex.BoneWeight = bw;
-                    prunedCount++;
-                }
-            }
-
-            RecordAndSync(undo, before, "Prune Skin Weights");
+            int prunedCount = SkinWeightOperations.ExecutePrune(Model, _toolCtx, _pruneThreshold,
+                msg => EditorUtility.DisplayDialog("Prune", msg, "OK"));
             if (_statusLabel != null)
-                _statusLabel.text = $"Prune完了: {prunedCount} 頂点 (threshold={threshold:F4})";
-        }
-
-        // ================================================================
-        // Undo 記録 + 同期
-        // ================================================================
-
-        private void RecordAndSync(MeshUndoController undo, MeshObjectSnapshot before, string description)
-        {
-            if (undo != null && before != null)
-            {
-                var after = undo.CaptureMeshObjectSnapshot();
-                _toolCtx?.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
-                    undo, before, after, description));
-            }
-            _toolCtx?.SyncMesh?.Invoke();
-            _toolCtx?.Repaint?.Invoke();
+                _statusLabel.text = $"Prune完了: {prunedCount} 頂点 (threshold={_pruneThreshold:F4})";
             RefreshAll();
         }
 
-        // ================================================================
-        // BoneWeight ユーティリティ（V1 と同一ロジック）
-        // ================================================================
 
-        private static BoneWeight SetBoneWeight(BoneWeight bw, int boneIndex, float weight)
-        {
-            weight = Mathf.Clamp01(weight);
-            var slots = Extract(bw);
-            int t = -1;
-            for (int i = 0; i < 4; i++) if (slots[i].idx == boneIndex && slots[i].w > 0f) { t = i; break; }
-            if (t < 0) t = FindSlot(slots);
-            float otherTotal = 0f;
-            for (int i = 0; i < 4; i++) if (i != t) otherTotal += slots[i].w;
-            slots[t] = (boneIndex, weight);
-            float remaining = 1f - weight;
-            if (otherTotal > 0.0001f)
-                for (int i = 0; i < 4; i++)
-                    if (i != t) slots[i].w *= remaining / otherTotal;
-            return Pack(slots);
-        }
 
-        private static BoneWeight AddBoneWeight(BoneWeight bw, int boneIndex, float amount)
-        {
-            var slots = Extract(bw);
-            int t = -1;
-            for (int i = 0; i < 4; i++) if (slots[i].idx == boneIndex && slots[i].w > 0f) { t = i; break; }
-            if (t < 0) t = FindSlot(slots);
-            slots[t] = (boneIndex, Mathf.Clamp01(slots[t].w + amount));
-            return Pack(slots);
-        }
 
-        private static BoneWeight ScaleBoneWeight(BoneWeight bw, int boneIndex, float scale)
-        {
-            var slots = Extract(bw);
-            for (int i = 0; i < 4; i++) if (slots[i].idx == boneIndex) { slots[i].w = Mathf.Clamp01(slots[i].w * scale); break; }
-            return Pack(slots);
-        }
-
-        private static BoneWeight NormalizeBoneWeight(BoneWeight bw)
-        {
-            float total = bw.weight0 + bw.weight1 + bw.weight2 + bw.weight3;
-            if (total < 0.0001f) return bw;
-            float inv = 1f / total;
-            bw.weight0 *= inv; bw.weight1 *= inv; bw.weight2 *= inv; bw.weight3 *= inv;
-            return bw;
-        }
-
-        private static BoneWeight SortBoneWeight(BoneWeight bw)
-        {
-            var slots = Extract(bw);
-            Array.Sort(slots, (a, b) => b.w.CompareTo(a.w));
-            return Pack(slots);
-        }
-
-        private static (int idx, float w)[] Extract(BoneWeight bw) => new[]
-        {
-            (bw.boneIndex0, bw.weight0), (bw.boneIndex1, bw.weight1),
-            (bw.boneIndex2, bw.weight2), (bw.boneIndex3, bw.weight3),
-        };
-
-        private static BoneWeight Pack((int idx, float w)[] s) => new BoneWeight
-        {
-            boneIndex0 = s[0].idx, weight0 = s[0].w,
-            boneIndex1 = s[1].idx, weight1 = s[1].w,
-            boneIndex2 = s[2].idx, weight2 = s[2].w,
-            boneIndex3 = s[3].idx, weight3 = s[3].w,
-        };
-
-        private static int FindSlot((int idx, float w)[] slots)
-        {
-            for (int i = 0; i < 4; i++) if (slots[i].w <= 0f) return i;
-            int minSlot = 0;
-            for (int i = 1; i < 4; i++) if (slots[i].w < slots[minSlot].w) minSlot = i;
-            return minSlot;
-        }
     }
 }

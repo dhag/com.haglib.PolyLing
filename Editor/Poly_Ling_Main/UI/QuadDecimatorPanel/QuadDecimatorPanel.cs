@@ -421,38 +421,19 @@ namespace Poly_Ling.UI
 
         private void OnExecute()
         {
-            var sourceMeshObj = FirstSelectedMeshObject;
-            if (sourceMeshObj == null) return;
-
             var sourceMeshContext = FirstSelectedMeshContext;
+            if (sourceMeshContext?.MeshObject == null) return;
 
             var prms = new Poly_Ling.UI.QuadDecimator.DecimatorParams
             {
-                TargetRatio = _settings.TargetRatio,
-                MaxPasses = _settings.MaxPasses,
-                NormalAngleDeg = _settings.NormalAngleDeg,
-                HardAngleDeg = _settings.HardAngleDeg,
-                UvSeamThreshold = _settings.UvSeamThreshold,
+                TargetRatio       = _settings.TargetRatio,
+                MaxPasses         = _settings.MaxPasses,
+                NormalAngleDeg    = _settings.NormalAngleDeg,
+                HardAngleDeg      = _settings.HardAngleDeg,
+                UvSeamThreshold   = _settings.UvSeamThreshold,
             };
 
-            _lastResult = QuadPreservingDecimator.Decimate(sourceMeshObj, prms, out MeshObject resultMesh);
-            resultMesh.Name = sourceMeshObj.Name + "_decimated";
-
-            // 新しいMeshContextとして追加
-            var newMeshContext = new MeshContext
-            {
-                Name = resultMesh.Name,
-                MeshObject = resultMesh,
-                Materials = new List<Material>(sourceMeshContext.Materials ?? new List<Material>()),
-            };
-
-            newMeshContext.UnityMesh = resultMesh.ToUnityMesh();
-            newMeshContext.UnityMesh.name = resultMesh.Name;
-            newMeshContext.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-
-            _toolContext.AddMeshContext?.Invoke(newMeshContext);
-            _toolContext.Repaint?.Invoke();
-
+            _lastResult = QuadDecimatorOperation.Execute(sourceMeshContext, prms, _toolContext);
             RefreshResult();
         }
 

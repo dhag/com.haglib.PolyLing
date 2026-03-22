@@ -173,7 +173,6 @@ namespace Poly_Ling.Localization
             ["MeshList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュリスト", ["hi"] = "めっしゅりすと" },
             
             // ============================================================
-            // ウィンドウタイトル（キーは "Window_" + IToolPanel.Name）
             // ============================================================
             ["Window_MeshContextList"] = new() { ["en"] = "Mesh List", ["ja"] = "メッシュオブジェクトリスト", ["hi"] = "ずけいりすと" },
             ["Window_QuadDecimator"] = new() { ["en"] = "Quad Decimator", ["ja"] = "Quad保持 減数化" },
@@ -397,29 +396,6 @@ namespace Poly_Ling.Localization
             
             // 3. フォールバック: DisplayName
             return tool.DisplayName;
-        }
-        
-        /// <summary>
-        /// ウィンドウのタイトルを取得（フォールバック付き）
-        /// 優先度: ウィンドウ自身のローカライズ → 共通辞書 → Title
-        /// </summary>
-        public static string GetWindowTitle(IToolPanel toolPanel)
-        {
-            if (toolPanel == null) return "";
-            
-            // 1. ウィンドウ自身のローカライズ
-            var localized = toolPanel.GetLocalizedTitle();
-            if (!string.IsNullOrEmpty(localized))
-                return localized;
-            
-            // 2. 共通辞書（Window_XXX形式）
-            string key = "Window_" + toolPanel.Name;
-            string fromDict = Get(key);
-            if (fromDict != key)  // キーと異なる = 辞書に存在
-                return fromDict;
-            
-            // 3. フォールバック: Title
-            return toolPanel.Title;
         }
         
         // ================================================================

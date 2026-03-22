@@ -40,6 +40,13 @@ public partial class PolyLing
         // そのまま使用でき、左ペイン表示値との一致が保証される。
         UpdateLastHoverHitResultFromUnified();
 
+        // InputStateをEvent.currentから更新（ToolContext経由でツールに渡す）
+        _inp.IsShiftHeld          = e.shift;
+        _inp.IsControlHeld        = e.control;
+        _inp.CurrentButton        = e.button;
+        _inp.CurrentKeyCode       = e.keyCode;
+        _inp.CurrentMousePosition = mousePos;
+
         // ツールコンテキストを更新
         SyncFrameStateToToolContext(meshContext, rect, camPos, camDist);
 

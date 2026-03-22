@@ -288,7 +288,7 @@ namespace Poly_Ling.Tools
                 brushColor = GetBrushColor();
             UnityEditor_Handles.color = brushColor;
 
-            Vector2 centerScreen = Event.current.mousePosition;
+            Vector2 centerScreen = ctx.CurrentMousePosition;
             float screenRadius = EstimateBrushScreenRadius(ctx);
 
             // ブラシ円

@@ -37,6 +37,10 @@ namespace Poly_Ling.Core.Rendering
 
         private Material _wireframeMaterial;
         private Material _pointMaterial;
+
+        // SRP用マテリアル（Graphics.RenderPrimitives 経由で描画）
+        private Material _wireframeSRPMaterial;
+        private Material _pointSRPMaterial;
         private Material _wireframeOverlayMaterial;
         private Material _pointOverlayMaterial;
 
@@ -180,6 +184,14 @@ namespace Poly_Ling.Core.Rendering
                 _kernelFaceHit = _computeShader.FindKernel("ComputeFaceHitTest");
                 _kernelUpdateHover = _computeShader.FindKernel("UpdateHoverFlags");
             }
+
+            // SRP 用マテリアル作成
+            var wireframeSRPShader = Shader.Find("Poly_Ling/Wireframe3D_SRP");
+            var pointSRPShader     = Shader.Find("Poly_Ling/Point3D_SRP");
+            if (wireframeSRPShader != null)
+                _wireframeSRPMaterial = new Material(wireframeSRPShader) { hideFlags = HideFlags.HideAndDontSave };
+            if (pointSRPShader != null)
+                _pointSRPMaterial = new Material(pointSRPShader) { hideFlags = HideFlags.HideAndDontSave };
 
             _isInitialized = true;
             return true;
@@ -742,13 +754,12 @@ namespace Poly_Ling.Core.Rendering
             mat.SetColor("_BorderColorDefault", _colorSettings.VertexBorderDefault);
         }
 
-#if UNITY_EDITOR
         /// <summary>
-        /// キューに入っているメッシュをPreviewRenderUtilityで描画
+        /// キューに入っているメッシュを指定カメラに描画
         /// </summary>
-        public void DrawQueued(UnityEditor.PreviewRenderUtility preview)
+        public void DrawQueued(Camera camera)
         {
-            if (preview == null) return;
+            if (camera == null) return;
 
             for (int i = 0; i < _pendingMeshes.Count; i++)
             {
@@ -756,12 +767,45 @@ namespace Poly_Ling.Core.Rendering
                 var material = _pendingMaterials[i];
                 if (mesh != null && material != null)
                 {
-                    preview.DrawMesh(mesh, Matrix4x4.identity, material, 0);
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, material, 0, camera);
                 }
             }
         }
-#endif
 
+
+        /// <summary>
+        /// SRP (URP) 用: Graphics.RenderPrimitives でワイヤーフレーム・頂点を直接描画。
+        /// CPU 側 Mesh を生成せず GPU バッファを直接参照するため低コスト。
+        /// </summary>
+        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f)
+        {
+            if (_bufferManager == null) return;
+
+            // ── ワイヤーフレーム ──────────────────────────────────
+            if (showWireframe && _wireframeSRPMaterial != null)
+            {
+                int lineCount = _bufferManager.TotalLineCount;
+                if (lineCount > 0)
+                {
+                    var colors = _colorSettings;
+                    _wireframeSRPMaterial.SetBuffer("_PositionBuffer",  _bufferManager.PositionBuffer);
+                    _wireframeSRPMaterial.SetBuffer("_LineBuffer",      _bufferManager.LineBuffer);
+                    _wireframeSRPMaterial.SetBuffer("_LineFlagsBuffer", _bufferManager.LineFlagsBuffer);
+                    _wireframeSRPMaterial.SetColor("_ColorUnselectedMesh",    colors.LineUnselectedMesh);
+                    _wireframeSRPMaterial.SetColor("_ColorAuxLineUnselected", colors.AuxLineUnselectedMesh);
+
+                    var rp = new RenderParams(_wireframeSRPMaterial)
+                    {
+                        worldBounds       = new Bounds(Vector3.zero, Vector3.one * 100000f),
+                        shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off,
+                        receiveShadows    = false,
+                        camera            = camera,
+                    };
+                    Graphics.RenderPrimitives(rp, MeshTopology.Lines, lineCount * 2);
+                }
+            }
+
+        }
 
         /// <summary>
         /// 描画後のクリーンアップ
@@ -803,6 +847,10 @@ namespace Poly_Ling.Core.Rendering
                         UnityEngine.Object.DestroyImmediate(_wireframeOverlayMaterial);
                     if (_pointOverlayMaterial != null)
                         UnityEngine.Object.DestroyImmediate(_pointOverlayMaterial);
+                    if (_wireframeSRPMaterial != null)
+                        UnityEngine.Object.DestroyImmediate(_wireframeSRPMaterial);
+                    if (_pointSRPMaterial != null)
+                        UnityEngine.Object.DestroyImmediate(_pointSRPMaterial);
                     if (_wireframeMeshSelected != null)
                         UnityEngine.Object.DestroyImmediate(_wireframeMeshSelected);
                     if (_wireframeMeshUnselected != null)

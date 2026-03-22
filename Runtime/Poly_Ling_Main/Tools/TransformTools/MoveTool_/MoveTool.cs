@@ -177,8 +177,8 @@ namespace Poly_Ling.Tools
             _lastContext = ctx;
 
             // 修飾キー状態を保存
-            _shiftHeld = Event.current != null && Event.current.shift;
-            _ctrlHeld = Event.current != null && Event.current.control;
+            _shiftHeld = ctx.IsShiftHeld;
+            _ctrlHeld = ctx.IsControlHeld;
 
             // ================================================================
             // ★ ホバー結果から「マウス直下の要素」を保存
@@ -830,6 +830,17 @@ namespace Poly_Ling.Tools
                 var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
                 ctx.UndoController.FocusVertexEdit();
                 ctx.UndoController.VertexEditStack.Record(record, actionName);
+            }
+
+            // Mirror波及: 移動した各MeshContextのMirror側を同期
+            if (allEntries.Count > 0 && ctx.Model != null)
+            {
+                foreach (var entry in allEntries)
+                {
+                    var meshContext = ctx.Model.GetMeshContext(entry.MeshContextIndex);
+                    if (meshContext != null)
+                        ctx.SyncMeshContextPositionsOnly?.Invoke(meshContext);
+                }
             }
 
             _meshTransforms.Clear();
