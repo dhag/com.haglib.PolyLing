@@ -3,12 +3,13 @@
 // 役割:
 //   - ライフサイクル管理 (Awake/Start/Update/LateUpdate/OnDestroy)
 //   - カメラオービット操作
-//   - OnGUI（ステータス・ボタン表示）
+//   - UI（UIToolkit によるステータス・ボタン表示）
 //   - RemoteProjectReceiver / MeshSceneRenderer / PlayerEditOps の配線
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
 using UnityEngine;
+using UnityEngine.UIElements;
 using Poly_Ling.Remote;
 using Poly_Ling.Context;
 using Poly_Ling.Core;
@@ -23,6 +24,9 @@ namespace Poly_Ling.Player
         // ================================================================
 
         [SerializeField] private PolyLingPlayerClient _client;
+
+        /// <summary>UIDocument。未アサインの場合は Awake で自動生成する。</summary>
+        [SerializeField] private UIDocument _uiDocument;
 
         /// <summary>メッシュ生成の親Transform。nullの場合はthis.transform</summary>
         [SerializeField] private Transform _sceneRoot;
@@ -48,33 +52,15 @@ namespace Poly_Ling.Player
         [SerializeField] private bool _backfaceCullingEnabled      = true;
 
         // ================================================================
-        // カメラオービット
-        // ================================================================
-
-        private float   _orbitRotX   =  20f;
-        private float   _orbitRotY   =   0f;
-        private float   _orbitDist   =   3f;
-        private Vector3 _orbitTarget = Vector3.zero;
-
-        private const float OrbitSensitivity = 0.5f;
-        private const float ZoomSensitivity  = 0.05f;
-        private const float PanSensitivity   = 0.002f;
-        private const float ZoomMin          = 0.05f;
-        private const float ZoomMax          = 100f;
-
-        private Vector2 _prevOrbitPos;
-        private Vector2 _prevPanPos;
-        private bool    _isDragging;
-        private bool    _isPanning;
-
-        // ================================================================
         // サブクラス
         // ================================================================
 
-        private RemoteProjectReceiver _receiver;
-        private MeshSceneRenderer     _renderer;
-        private readonly UndoManager  _undoManager = UndoManager.CreateNew();
-        private PlayerEditOps         _editOps;
+        private RemoteProjectReceiver      _receiver;
+        private MeshSceneRenderer          _renderer;
+        private readonly UndoManager       _undoManager  = UndoManager.CreateNew();
+        private PlayerEditOps              _editOps;
+        private readonly PlayerLocalLoader _localLoader  = new PlayerLocalLoader();
+        private readonly OrbitCameraController _orbit    = new OrbitCameraController();
 
         // ================================================================
         // ステータス
@@ -85,12 +71,35 @@ namespace Poly_Ling.Player
         private int    _modelCount;
 
         // ================================================================
+        // UI 要素参照
+        // ================================================================
+
+        private Label         _statusLabel;
+        private Button        _connectBtn;
+        private Button        _disconnectBtn;
+        private Button        _fetchBtn;
+        private Button        _undoBtn;
+        private Button        _redoBtn;
+        private VisualElement _remoteSection;
+        private VisualElement _modelListContainer;
+
+        // ================================================================
         // ライフサイクル
         // ================================================================
 
         private void Awake()
         {
             if (_sceneRoot == null) _sceneRoot = transform;
+
+            // UIDocument を確保
+            if (_uiDocument == null) _uiDocument = GetComponent<UIDocument>();
+            if (_uiDocument == null) _uiDocument = gameObject.AddComponent<UIDocument>();
+
+            if (_uiDocument.panelSettings == null)
+            {
+                Debug.LogError("[PolyLingPlayerViewer] UIDocument に PanelSettings がアサインされていません。" +
+                               " Inspector で UIDocument コンポーネントの PanelSettings を設定してください。");
+            }
         }
 
         private void Start()
@@ -99,15 +108,30 @@ namespace Poly_Ling.Player
             {
                 _client = GetComponent<PolyLingPlayerClient>();
                 if (_client == null)
-                {
-                    Debug.LogError("[PolyLingPlayerViewer] PolyLingPlayerClient が見つかりません");
-                    return;
-                }
+                    Debug.LogWarning("[PolyLingPlayerViewer] PolyLingPlayerClient が見つかりません。リモート機能は無効。");
             }
 
-            _receiver = new RemoteProjectReceiver();
-            _renderer = new MeshSceneRenderer();
+            _receiver = new RemoteProjectReceiver(); // WebSocket受信バイナリ → ProjectContext反映
+            _renderer = new MeshSceneRenderer();     // ProjectContext を Graphics.DrawMesh で描画
             _editOps  = new PlayerEditOps(_undoManager);
+
+            // ローカルローダーのコールバック配線
+            _localLoader.OnStatusChanged = s => _status = s;
+            _localLoader.OnLoaded = project =>
+            {
+                _renderer?.ClearScene();
+                var meshList = project.Models[0].MeshContextList;
+                for (int i = 0; i < meshList.Count; i++)
+                {
+                    var um = meshList[i].UnityMesh;
+                    if (um != null)
+                    {
+                        _orbit.ResetToMesh(um.bounds);
+                        break;
+                    }
+                }
+                RebuildModelList();
+            };
 
             // レンダラーにフラグを反映
             SyncRendererFlags();
@@ -118,9 +142,17 @@ namespace Poly_Ling.Player
             _receiver.OnMeshSummaryReceived   += OnMeshSummaryReceived;
             _receiver.OnMeshDataReceived      += OnMeshDataReceived;
 
-            _client.OnConnected    += OnConnected;
-            _client.OnDisconnected += OnDisconnected;
-            _client.OnPushReceived += OnPushReceived;
+            // _client が存在する場合のみ配線
+            if (_client != null)
+            {
+                _client.OnConnected    += OnConnected;
+                _client.OnDisconnected += OnDisconnected;
+                _client.OnPushReceived += OnPushReceived;
+            }
+
+            // UI 構築（PanelSettings が設定済みの場合のみ）
+            if (_uiDocument != null && _uiDocument.panelSettings != null)
+                BuildUI(_uiDocument.rootVisualElement);
         }
 
         private void OnDestroy()
@@ -149,13 +181,14 @@ namespace Poly_Ling.Player
         private void Update()
         {
             _editOps?.Tick();
-            UpdateOrbitCamera();
+            _orbit.Update(ActiveCamera, IsPointerOverUI());
             SyncRendererFlags();
+            SyncUI();
         }
 
         private void LateUpdate()
         {
-            var project = _receiver?.Project;
+            var project = ActiveProject;
             var cam = ActiveCamera;
             _renderer?.DrawMeshes(project, cam);
             _renderer?.DrawWireframeAndVertices(cam);
@@ -163,113 +196,147 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // カメラ
+        // カメラ / プロジェクト
         // ================================================================
 
         private Camera ActiveCamera => _camera != null ? _camera : Camera.main;
 
-        private void UpdateOrbitCamera()
+        /// <summary>表示対象プロジェクト。ローカルロード優先、なければリモート受信分。</summary>
+        private ProjectContext ActiveProject => _localLoader.Project ?? _receiver?.Project;
+
+        /// <summary>ポインタが UIDocument のパネル上にあるか判定する。</summary>
+        private bool IsPointerOverUI()
         {
-            var cam = ActiveCamera;
-            if (cam == null) return;
-
-            if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
-            { _isDragging = true; _prevOrbitPos = Input.mousePosition; }
-            if (Input.GetMouseButtonUp(0) || Input.GetMouseButtonUp(1))
-                _isDragging = false;
-
-            if (_isDragging && (Input.GetMouseButton(0) || Input.GetMouseButton(1)))
-            {
-                Vector2 delta = (Vector2)Input.mousePosition - _prevOrbitPos;
-                _orbitRotY   += delta.x * OrbitSensitivity;
-                _orbitRotX   -= delta.y * OrbitSensitivity;
-                _orbitRotX    = Mathf.Clamp(_orbitRotX, -89f, 89f);
-                _prevOrbitPos = Input.mousePosition;
-            }
-
-            if (Input.GetMouseButtonDown(2))
-            { _isPanning = true; _prevPanPos = Input.mousePosition; }
-            if (Input.GetMouseButtonUp(2))
-                _isPanning = false;
-
-            if (_isPanning && Input.GetMouseButton(2))
-            {
-                Vector2 delta = (Vector2)Input.mousePosition - _prevPanPos;
-                Quaternion rot = Quaternion.Euler(_orbitRotX, _orbitRotY, 0f);
-                float panScale = _orbitDist * PanSensitivity;
-                _orbitTarget  -= rot * Vector3.right * delta.x * panScale;
-                _orbitTarget  -= rot * Vector3.up    * delta.y * panScale;
-                _prevPanPos    = Input.mousePosition;
-            }
-
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (Mathf.Abs(scroll) > 0.001f)
-            {
-                _orbitDist *= 1f + scroll * ZoomSensitivity;
-                _orbitDist  = Mathf.Clamp(_orbitDist, ZoomMin, ZoomMax);
-            }
-
-            Quaternion camRot = Quaternion.Euler(_orbitRotX, _orbitRotY, 0f);
-            cam.transform.position = _orbitTarget + camRot * (Vector3.back * _orbitDist);
-            cam.transform.LookAt(_orbitTarget);
+            if (_uiDocument == null) return false;
+            var panel = _uiDocument.rootVisualElement?.panel;
+            if (panel == null) return false;
+            Vector2 screenPos = Input.mousePosition;
+            // UIToolkit のスクリーン座標は Y 軸反転
+            var uiPos = RuntimePanelUtils.ScreenToPanel(panel,
+                new Vector2(screenPos.x, Screen.height - screenPos.y));
+            var picked = panel.Pick(uiPos);
+            return picked != null;
         }
 
         // ================================================================
-        // OnGUI
+        // UI 構築（UIToolkit）
         // ================================================================
 
-        private void OnGUI()
+        private void BuildUI(VisualElement root)
         {
-            float x = 10f, y = 10f, w = 200f, h = 30f, pad = 6f;
+            // パネル全体（左上に固定）
+            var panel = new VisualElement();
+            panel.style.position        = Position.Absolute;
+            panel.style.top             = 10;
+            panel.style.left            = 10;
+            panel.style.width           = 260;
+            panel.style.backgroundColor = new StyleColor(new Color(0f, 0f, 0f, 0.55f));
+            panel.style.paddingTop      = 8;
+            panel.style.paddingBottom   = 8;
+            panel.style.paddingLeft     = 8;
+            panel.style.paddingRight    = 8;
+            root.Add(panel);
 
-            GUI.Label(new Rect(x, y, w * 2f, h), $"Status: {_status}");
-            y += h + pad;
+            // ステータス
+            _statusLabel = new Label($"Status: {_status}");
+            _statusLabel.style.marginBottom = 6;
+            panel.Add(_statusLabel);
 
-            if (_client == null) return;
+            // ローカルロードセクション
+            var loaderSection = new VisualElement();
+            loaderSection.style.marginBottom = 6;
+            _localLoader.BuildUI(loaderSection);
+            panel.Add(loaderSection);
 
-            if (!_client.IsConnected)
+            // リモートセクション（_client が null でも構築、SyncUI で表示制御）
+            _remoteSection = new VisualElement();
+
+            _connectBtn = new Button(() => _client?.Connect()) { text = "Connect" };
+            _connectBtn.style.marginBottom = 4;
+            _remoteSection.Add(_connectBtn);
+
+            _disconnectBtn = new Button(() => _client?.Disconnect()) { text = "Disconnect" };
+            _disconnectBtn.style.marginBottom = 4;
+            _remoteSection.Add(_disconnectBtn);
+
+            _fetchBtn = new Button(() => FetchProject()) { text = "Fetch Project" };
+            _fetchBtn.style.marginBottom = 4;
+            _remoteSection.Add(_fetchBtn);
+
+            var undoRedoRow = new VisualElement();
+            undoRedoRow.style.flexDirection = FlexDirection.Row;
+            undoRedoRow.style.marginBottom  = 4;
+
+            _undoBtn = new Button(() => _editOps?.PerformUndo()) { text = "Undo" };
+            _undoBtn.style.flexGrow    = 1;
+            _undoBtn.style.marginRight = 2;
+
+            _redoBtn = new Button(() => _editOps?.PerformRedo()) { text = "Redo" };
+            _redoBtn.style.flexGrow   = 1;
+            _redoBtn.style.marginLeft = 2;
+
+            undoRedoRow.Add(_undoBtn);
+            undoRedoRow.Add(_redoBtn);
+            _remoteSection.Add(undoRedoRow);
+
+            panel.Add(_remoteSection);
+
+            // モデルリスト
+            _modelListContainer = new VisualElement();
+            panel.Add(_modelListContainer);
+
+            // フッター（右下固定）
+            var footer = new Label("右ドラッグ: 回転 / 中ドラッグ: 移動 / スクロール: ズーム");
+            footer.style.position        = Position.Absolute;
+            footer.style.bottom          = 10;
+            footer.style.left            = 10;
+            footer.style.color           = new StyleColor(Color.white);
+            footer.style.backgroundColor = new StyleColor(new Color(0f, 0f, 0f, 0.45f));
+            footer.style.paddingLeft     = 4;
+            footer.style.paddingRight    = 4;
+            root.Add(footer);
+        }
+
+        /// <summary>毎フレーム UI の有効状態・表示を同期する。</summary>
+        private void SyncUI()
+        {
+            if (_statusLabel != null)
+                _statusLabel.text = $"Status: {_status}";
+
+            bool clientExists  = _client != null;
+            bool isConnected   = clientExists && _client.IsConnected;
+
+            if (_remoteSection != null)
+                _remoteSection.style.display = clientExists ? DisplayStyle.Flex : DisplayStyle.None;
+
+            if (_connectBtn    != null) _connectBtn.style.display    = isConnected ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_disconnectBtn != null) _disconnectBtn.style.display  = isConnected ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_fetchBtn      != null) _fetchBtn.SetEnabled(isConnected);
+
+            if (_undoBtn != null) _undoBtn.SetEnabled(_editOps != null && _editOps.CanUndo);
+            if (_redoBtn != null) _redoBtn.SetEnabled(_editOps != null && _editOps.CanRedo);
+        }
+
+        /// <summary>ActiveProject のモデル一覧を _modelListContainer に再構築する。</summary>
+        private void RebuildModelList()
+        {
+            if (_modelListContainer == null) return;
+            _modelListContainer.Clear();
+
+            var project = ActiveProject;
+            if (project == null) return;
+
+            var header = new Label($"Project: {project.Name}  Models: {project.ModelCount}");
+            header.style.marginTop    = 6;
+            header.style.marginBottom = 2;
+            _modelListContainer.Add(header);
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
             {
-                if (GUI.Button(new Rect(x, y, w, h), "Connect"))
-                    _client.Connect();
+                var model = project.Models[mi];
+                var entry = new Label($"  [{mi}] {model.Name}  Meshes: {model.Count}");
+                _modelListContainer.Add(entry);
             }
-            else
-            {
-                if (GUI.Button(new Rect(x, y, w, h), "Disconnect"))
-                    _client.Disconnect();
-
-                y += h + pad;
-                if (GUI.Button(new Rect(x, y, w, h), "Fetch Project"))
-                    FetchProject();
-
-                y += h + pad;
-                bool prevEnabled = GUI.enabled;
-                GUI.enabled = _editOps != null && _editOps.CanUndo;
-                if (GUI.Button(new Rect(x, y, w * 0.5f - 2f, h), "Undo"))
-                    _editOps?.PerformUndo();
-                GUI.enabled = _editOps != null && _editOps.CanRedo;
-                if (GUI.Button(new Rect(x + w * 0.5f + 2f, y, w * 0.5f - 2f, h), "Redo"))
-                    _editOps?.PerformRedo();
-                GUI.enabled = prevEnabled;
-            }
-
-            var project = _receiver?.Project;
-            if (project != null)
-            {
-                y += h + pad;
-                GUI.Label(new Rect(x, y, w * 2f, h),
-                    $"Project: {project.Name}  Models: {project.ModelCount}");
-
-                for (int mi = 0; mi < project.ModelCount; mi++)
-                {
-                    y += h + pad * 0.5f;
-                    var model = project.Models[mi];
-                    GUI.Label(new Rect(x + 10f, y, w * 2f, h),
-                        $"[{mi}] {model.Name}  Meshes: {model.Count}");
-                }
-            }
-
-            float hy = Screen.height - h - 10f;
-            GUI.Label(new Rect(x, hy, 400f, h), "右ドラッグ: 回転 / 中ドラッグ: 移動 / スクロール: ズーム");
         }
 
         // ================================================================
@@ -308,6 +375,7 @@ namespace Poly_Ling.Player
             _modelCount = project.ModelCount;
             _fetchingModelIndex = -1;
             _renderer?.ClearScene();
+            RebuildModelList();
         }
 
         private void OnModelMetaReceived(int mi, ModelContext model) { }
@@ -321,10 +389,9 @@ namespace Poly_Ling.Player
 
             // 初回メッシュでカメラ位置を初期化
             if (mi == 0 && si == 0 && mc.UnityMesh != null)
-            {
-                _orbitTarget = mc.UnityMesh.bounds.center;
-                _orbitDist   = Mathf.Clamp(mc.UnityMesh.bounds.size.magnitude * 1.5f, ZoomMin, ZoomMax);
-            }
+                _orbit.ResetToMesh(mc.UnityMesh.bounds);
+
+            RebuildModelList();
         }
 
         // ================================================================
@@ -334,6 +401,7 @@ namespace Poly_Ling.Player
         private void FetchProject()
         {
             if (!_client.IsConnected) return;
+            _localLoader.Clear();
             _status = "project_header フェッチ中...";
             _receiver?.Reset();
             _modelCount = 0;

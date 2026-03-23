@@ -6,13 +6,13 @@ using Poly_Ling.Localization;
 
 namespace Poly_Ling.Tools
 {
-    public partial class MoveTool
+    public partial class MoveToolDictionary
     {
         // ================================================================
         // ローカライズ辞書
         // ================================================================
 
-        private static readonly Dictionary<string, Dictionary<string, string>> Texts = new()
+        public static readonly Dictionary<string, Dictionary<string, string>> Texts = new()
         {
             // タイトル
             ["Title"] = new() { ["en"] = "Move Tool", ["ja"] = "移動ツール", ["hi"] = "うごかすどうぐ" },
@@ -31,15 +31,17 @@ namespace Poly_Ling.Tools
             // 情報表示
             ["TargetVertices"] = new() { ["en"] = "Target: {0} vertices", ["ja"] = "移動対象: {0} 頂点", ["hi"] = "うごかすてん: {0}こ" },
         };
+    }
+    public partial class MoveTool
+    {
+            // ================================================================
+            // ローカライズヘルパー
+            // ================================================================
 
-        // ================================================================
-        // ローカライズヘルパー
-        // ================================================================
-
-        /// <summary>テキスト取得</summary>
-        private static string T(string key) => L.GetFrom(Texts, key);
+            /// <summary>テキスト取得</summary>
+            private static string T(string key) => L.GetFrom(MoveToolDictionary.Texts, key);
 
         /// <summary>フォーマット付きテキスト取得</summary>
-        private static string T(string key, params object[] args) => L.GetFrom(Texts, key, args);
+        private static string T(string key, params object[] args) => L.GetFrom(MoveToolDictionary.Texts, key, args);
     }
 }

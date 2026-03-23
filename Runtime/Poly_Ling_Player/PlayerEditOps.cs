@@ -15,7 +15,7 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// プレイヤービルド用編集操作クラス。
+    /// 編集操作クラス。
     /// PolyLingCoreの代替として全編集操作を担う予定。
     /// UndoManager・MeshUndoController・CommandQueueを所有する。
     /// </summary>
