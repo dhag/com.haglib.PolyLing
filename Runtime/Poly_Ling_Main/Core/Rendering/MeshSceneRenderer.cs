@@ -179,7 +179,6 @@ namespace Poly_Ling.Core
         public void DrawWireframeAndVertices(Camera cam)
         {
             if (cam == null) return;
-            cam.cullingMask = -1;
             float pointSize = ShaderColorSettings.Default.VertexPointScale;
 
             for (int mi = 0; mi < _adapters.Count; mi++)

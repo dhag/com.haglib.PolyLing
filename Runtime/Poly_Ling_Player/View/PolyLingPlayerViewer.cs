@@ -2,9 +2,9 @@
 // プレイヤービルド用メッシュビューア（全体統括MonoBehaviour）
 // 役割:
 //   - ライフサイクル管理 (Awake/Start/Update/LateUpdate/OnDestroy)
-//   - カメラオービット操作
-//   - UI（UIToolkit によるステータス・ボタン表示）
+//   - PlayerViewportManager / PlayerLayoutRoot の構築と配線
 //   - RemoteProjectReceiver / MeshSceneRenderer / PlayerEditOps の配線
+//   - PlayerVertexInteractor（Perspectiveビューポートのみ）の配線
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
@@ -13,6 +13,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Remote;
 using Poly_Ling.Context;
 using Poly_Ling.Core;
+using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
@@ -20,47 +21,30 @@ namespace Poly_Ling.Player
     public class PolyLingPlayerViewer : MonoBehaviour
     {
         // ================================================================
-        // Inspector設定
+        // Inspector 設定
         // ================================================================
 
         [SerializeField] private PolyLingPlayerClient _client;
-
-        /// <summary>UIDocument。未アサインの場合は Awake で自動生成する。</summary>
-        [SerializeField] private UIDocument _uiDocument;
-
-        /// <summary>メッシュ生成の親Transform。nullの場合はthis.transform</summary>
-        [SerializeField] private Transform _sceneRoot;
-
-        /// <summary>カメラオービット対象カメラ。nullの場合はCamera.main</summary>
-        [SerializeField] private Camera _camera;
+        [SerializeField] private UIDocument            _uiDocument;
+        [SerializeField] private Transform             _sceneRoot;
 
         // ================================================================
-        // 描画フラグ（Inspector）
+        // サブシステム
         // ================================================================
 
-        [Header("Display Flags")]
-        [SerializeField] private bool _showSelectedMesh            = true;
-        [SerializeField] private bool _showUnselectedMesh          = true;
-        [SerializeField] private bool _showSelectedVertices        = true;
-        [SerializeField] private bool _showUnselectedVertices      = true;
-        [SerializeField] private bool _showSelectedWireframe       = true;
-        [SerializeField] private bool _showUnselectedWireframe     = true;
-        [SerializeField] private bool _showSelectedBone            = true;
-        [SerializeField] private bool _showUnselectedBone          = false;
+        private RemoteProjectReceiver         _receiver;
+        private MeshSceneRenderer             _renderer;
+        private readonly UndoManager          _undoManager  = UndoManager.CreateNew();
+        private PlayerEditOps                 _editOps;
+        private readonly PlayerLocalLoader    _localLoader  = new PlayerLocalLoader();
 
-        [Header("Rendering")]
-        [SerializeField] private bool _backfaceCullingEnabled      = true;
+        private readonly PlayerViewportManager _viewportManager = new PlayerViewportManager();
+        private PlayerLayoutRoot               _layoutRoot;
 
-        // ================================================================
-        // サブクラス
-        // ================================================================
-
-        private RemoteProjectReceiver      _receiver;
-        private MeshSceneRenderer          _renderer;
-        private readonly UndoManager       _undoManager  = UndoManager.CreateNew();
-        private PlayerEditOps              _editOps;
-        private readonly PlayerLocalLoader _localLoader  = new PlayerLocalLoader();
-        private readonly OrbitCameraController _orbit    = new OrbitCameraController();
+        // 頂点インタラクション（Perspective ビューポート専用）
+        private PlayerSelectionOps     _selectionOps;
+        private PlayerVertexInteractor _vertexInteractor;
+        private MoveToolHandler        _moveToolHandler;
 
         // ================================================================
         // ステータス
@@ -71,19 +55,6 @@ namespace Poly_Ling.Player
         private int    _modelCount;
 
         // ================================================================
-        // UI 要素参照
-        // ================================================================
-
-        private Label         _statusLabel;
-        private Button        _connectBtn;
-        private Button        _disconnectBtn;
-        private Button        _fetchBtn;
-        private Button        _undoBtn;
-        private Button        _redoBtn;
-        private VisualElement _remoteSection;
-        private VisualElement _modelListContainer;
-
-        // ================================================================
         // ライフサイクル
         // ================================================================
 
@@ -91,15 +62,11 @@ namespace Poly_Ling.Player
         {
             if (_sceneRoot == null) _sceneRoot = transform;
 
-            // UIDocument を確保
             if (_uiDocument == null) _uiDocument = GetComponent<UIDocument>();
             if (_uiDocument == null) _uiDocument = gameObject.AddComponent<UIDocument>();
 
             if (_uiDocument.panelSettings == null)
-            {
-                Debug.LogError("[PolyLingPlayerViewer] UIDocument に PanelSettings がアサインされていません。" +
-                               " Inspector で UIDocument コンポーネントの PanelSettings を設定してください。");
-            }
+                Debug.LogError("[PolyLingPlayerViewer] UIDocument に PanelSettings が未設定です。");
         }
 
         private void Start()
@@ -108,41 +75,46 @@ namespace Poly_Ling.Player
             {
                 _client = GetComponent<PolyLingPlayerClient>();
                 if (_client == null)
-                    Debug.LogWarning("[PolyLingPlayerViewer] PolyLingPlayerClient が見つかりません。リモート機能は無効。");
+                    Debug.LogWarning("[PolyLingPlayerViewer] PolyLingPlayerClient が見つかりません。");
             }
 
-            _receiver = new RemoteProjectReceiver(); // WebSocket受信バイナリ → ProjectContext反映
-            _renderer = new MeshSceneRenderer();     // ProjectContext を Graphics.DrawMesh で描画
+            _renderer = new MeshSceneRenderer();
             _editOps  = new PlayerEditOps(_undoManager);
+            _receiver = new RemoteProjectReceiver();
 
-            // ローカルローダーのコールバック配線
+            // ビューポート初期化
+            _viewportManager.Initialize(_sceneRoot, _renderer);
+
+            // UIレイアウト構築（先にビューポートを初期化しておく必要がある）
+            if (_uiDocument != null && _uiDocument.panelSettings != null)
+                BuildLayout(_uiDocument.rootVisualElement);
+
+            // 頂点インタラクター（BuildLayout 後に Panel 参照が使える）
+            SetupVertexInteraction();
+
+            // ローカルローダー配線
             _localLoader.OnStatusChanged = s => _status = s;
             _localLoader.OnLoaded = project =>
             {
-                _renderer?.ClearScene();
-                var meshList = project.Models[0].MeshContextList;
-                for (int i = 0; i < meshList.Count; i++)
+                _renderer.ClearScene();
+                var list = project.Models[0].MeshContextList;
+                for (int i = 0; i < list.Count; i++)
                 {
-                    var um = meshList[i].UnityMesh;
-                    if (um != null)
+                    if (list[i].UnityMesh != null)
                     {
-                        _orbit.ResetToMesh(um.bounds);
+                        _viewportManager.ResetToMesh(list[i].UnityMesh.bounds);
                         break;
                     }
                 }
+                _moveToolHandler?.SetProject(ActiveProject);
                 RebuildModelList();
             };
 
-            // レンダラーにフラグを反映
-            SyncRendererFlags();
-
-            // 受信イベント配線
             _receiver.OnProjectHeaderReceived += OnProjectHeaderReceived;
             _receiver.OnModelMetaReceived     += OnModelMetaReceived;
             _receiver.OnMeshSummaryReceived   += OnMeshSummaryReceived;
             _receiver.OnMeshDataReceived      += OnMeshDataReceived;
 
-            // _client が存在する場合のみ配線
             if (_client != null)
             {
                 _client.OnConnected    += OnConnected;
@@ -150,13 +122,16 @@ namespace Poly_Ling.Player
                 _client.OnPushReceived += OnPushReceived;
             }
 
-            // UI 構築（PanelSettings が設定済みの場合のみ）
-            if (_uiDocument != null && _uiDocument.panelSettings != null)
-                BuildUI(_uiDocument.rootVisualElement);
+            SyncRendererFlags();
         }
 
         private void OnDestroy()
         {
+            if (_layoutRoot?.PerspectivePanel != null)
+                _vertexInteractor?.Disconnect(_layoutRoot.PerspectivePanel);
+
+            _viewportManager.Dispose();
+
             if (_client != null)
             {
                 _client.OnConnected    -= OnConnected;
@@ -180,190 +155,210 @@ namespace Poly_Ling.Player
 
         private void Update()
         {
+            _viewportManager.Update();
             _editOps?.Tick();
-            _orbit.Update(ActiveCamera, IsPointerOverUI());
             SyncRendererFlags();
             SyncUI();
         }
 
         private void LateUpdate()
         {
-            var project = ActiveProject;
-            var cam = ActiveCamera;
-            _renderer?.DrawMeshes(project, cam);
-            _renderer?.DrawWireframeAndVertices(cam);
-            _renderer?.DrawBones(project, cam);
+            _viewportManager.LateUpdate(ActiveProject);
         }
 
         // ================================================================
-        // カメラ / プロジェクト
+        // UIレイアウト構築
         // ================================================================
 
-        private Camera ActiveCamera => _camera != null ? _camera : Camera.main;
+        private void BuildLayout(VisualElement root)
+        {
+            _layoutRoot = new PlayerLayoutRoot();
+            _layoutRoot.Build(root);
 
-        /// <summary>表示対象プロジェクト。ローカルロード優先、なければリモート受信分。</summary>
+            _localLoader.BuildUI(_layoutRoot.LocalLoaderSection);
+
+            _layoutRoot.ConnectBtn   .clicked += () => _client?.Connect();
+            _layoutRoot.DisconnectBtn.clicked += () => _client?.Disconnect();
+            _layoutRoot.FetchBtn     .clicked += FetchProject;
+            _layoutRoot.UndoBtn      .clicked += () => _editOps?.PerformUndo();
+            _layoutRoot.RedoBtn      .clicked += () => _editOps?.PerformRedo();
+
+            // ビューポートパネルを PlayerViewport に接続
+            _layoutRoot.PerspectivePanel.SetViewport(_viewportManager.PerspectiveViewport);
+            _layoutRoot.TopPanel        .SetViewport(_viewportManager.TopViewport);
+            _layoutRoot.FrontPanel      .SetViewport(_viewportManager.FrontViewport);
+
+            // 表示フラグ Toggle コールバック
+            void OnToggle(ChangeEvent<bool> _) => SyncRendererFlags();
+            _layoutRoot.ShowSelectedMeshToggle      .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowUnselectedMeshToggle    .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowSelectedVerticesToggle  .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowUnselectedVerticesToggle.RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowSelectedWireToggle      .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowUnselectedWireToggle    .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowSelectedBoneToggle      .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.ShowUnselectedBoneToggle    .RegisterValueChangedCallback(OnToggle);
+            _layoutRoot.BackfaceCullingToggle       .RegisterValueChangedCallback(OnToggle);
+        }
+
+        // ================================================================
+        // 頂点インタラクション（Perspective 専用）
+        // ================================================================
+
+        private void SetupVertexInteraction()
+        {
+            _selectionOps = new PlayerSelectionOps(new SelectionState());
+
+            _moveToolHandler = new MoveToolHandler(_selectionOps, ActiveProject)
+            {
+                WorldToScreen = pos =>
+                {
+                    var cam = _viewportManager.PerspectiveViewport?.Cam;
+                    return cam != null ? (Vector2)cam.WorldToScreenPoint(pos) : Vector2.zero;
+                },
+                ScreenDeltaToWorldDelta = (_, delta) => CalcWorldDelta(delta),
+                OnSyncMeshPositions     = _ => { },
+                OnRepaint               = () => { },
+            };
+
+            _vertexInteractor = new PlayerVertexInteractor(_selectionOps)
+            {
+                HitTest = FindVertex,
+            };
+            _vertexInteractor.SetToolHandler(_moveToolHandler);
+
+            if (_layoutRoot?.PerspectivePanel != null)
+                _vertexInteractor.Connect(_layoutRoot.PerspectivePanel);
+        }
+
+        // ================================================================
+        // ヒットテスト（Perspective カメラ）
+        // ================================================================
+
+        private PlayerHitResult FindVertex(Vector2 screenPos)
+        {
+            var cam   = _viewportManager.PerspectiveViewport?.Cam;
+            var model = ActiveProject?.CurrentModel;
+            if (cam == null || model == null) return PlayerHitResult.Miss;
+
+            const float hitRadiusPx = 8f;
+            float bestDistSq = hitRadiusPx * hitRadiusPx;
+            int   bestMesh   = -1;
+            int   bestVert   = -1;
+
+            for (int mi = 0; mi < model.MeshContextList.Count; mi++)
+            {
+                var mc = model.MeshContextList[mi];
+                if (mc?.MeshObject?.Vertices == null) continue;
+                var verts = mc.MeshObject.Vertices;
+
+                for (int vi = 0; vi < verts.Count; vi++)
+                {
+                    Vector3 sp3 = cam.WorldToScreenPoint(verts[vi].Position);
+                    if (sp3.z <= 0f) continue;
+
+                    float dx = sp3.x - screenPos.x;
+                    float dy = sp3.y - screenPos.y;
+                    float dSq = dx * dx + dy * dy;
+                    if (dSq < bestDistSq) { bestDistSq = dSq; bestMesh = mi; bestVert = vi; }
+                }
+            }
+
+            return bestVert < 0
+                ? PlayerHitResult.Miss
+                : new PlayerHitResult { HasHit = true, MeshIndex = bestMesh, VertexIndex = bestVert };
+        }
+
+        private Vector3 CalcWorldDelta(Vector2 screenDelta)
+        {
+            var vp = _viewportManager.PerspectiveViewport;
+            if (vp?.Cam == null) return Vector3.zero;
+            float dist  = vp.Orbit?.Distance ?? 1f;
+            float scale = dist / vp.Cam.pixelHeight
+                        * Mathf.Tan(vp.Cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 2f;
+            return vp.Cam.transform.right * screenDelta.x * scale
+                 + vp.Cam.transform.up    * screenDelta.y * scale;
+        }
+
+        // ================================================================
+        // プロジェクト
+        // ================================================================
+
         private ProjectContext ActiveProject => _localLoader.Project ?? _receiver?.Project;
 
-        /// <summary>ポインタが UIDocument のパネル上にあるか判定する。</summary>
-        private bool IsPointerOverUI()
-        {
-            if (_uiDocument == null) return false;
-            var panel = _uiDocument.rootVisualElement?.panel;
-            if (panel == null) return false;
-            Vector2 screenPos = Input.mousePosition;
-            // UIToolkit のスクリーン座標は Y 軸反転
-            var uiPos = RuntimePanelUtils.ScreenToPanel(panel,
-                new Vector2(screenPos.x, Screen.height - screenPos.y));
-            var picked = panel.Pick(uiPos);
-            return picked != null;
-        }
-
         // ================================================================
-        // UI 構築（UIToolkit）
+        // SyncUI
         // ================================================================
 
-        private void BuildUI(VisualElement root)
-        {
-            // パネル全体（左上に固定）
-            var panel = new VisualElement();
-            panel.style.position        = Position.Absolute;
-            panel.style.top             = 10;
-            panel.style.left            = 10;
-            panel.style.width           = 260;
-            panel.style.backgroundColor = new StyleColor(new Color(0f, 0f, 0f, 0.55f));
-            panel.style.paddingTop      = 8;
-            panel.style.paddingBottom   = 8;
-            panel.style.paddingLeft     = 8;
-            panel.style.paddingRight    = 8;
-            root.Add(panel);
-
-            // ステータス
-            _statusLabel = new Label($"Status: {_status}");
-            _statusLabel.style.marginBottom = 6;
-            panel.Add(_statusLabel);
-
-            // ローカルロードセクション
-            var loaderSection = new VisualElement();
-            loaderSection.style.marginBottom = 6;
-            _localLoader.BuildUI(loaderSection);
-            panel.Add(loaderSection);
-
-            // リモートセクション（_client が null でも構築、SyncUI で表示制御）
-            _remoteSection = new VisualElement();
-
-            _connectBtn = new Button(() => _client?.Connect()) { text = "Connect" };
-            _connectBtn.style.marginBottom = 4;
-            _remoteSection.Add(_connectBtn);
-
-            _disconnectBtn = new Button(() => _client?.Disconnect()) { text = "Disconnect" };
-            _disconnectBtn.style.marginBottom = 4;
-            _remoteSection.Add(_disconnectBtn);
-
-            _fetchBtn = new Button(() => FetchProject()) { text = "Fetch Project" };
-            _fetchBtn.style.marginBottom = 4;
-            _remoteSection.Add(_fetchBtn);
-
-            var undoRedoRow = new VisualElement();
-            undoRedoRow.style.flexDirection = FlexDirection.Row;
-            undoRedoRow.style.marginBottom  = 4;
-
-            _undoBtn = new Button(() => _editOps?.PerformUndo()) { text = "Undo" };
-            _undoBtn.style.flexGrow    = 1;
-            _undoBtn.style.marginRight = 2;
-
-            _redoBtn = new Button(() => _editOps?.PerformRedo()) { text = "Redo" };
-            _redoBtn.style.flexGrow   = 1;
-            _redoBtn.style.marginLeft = 2;
-
-            undoRedoRow.Add(_undoBtn);
-            undoRedoRow.Add(_redoBtn);
-            _remoteSection.Add(undoRedoRow);
-
-            panel.Add(_remoteSection);
-
-            // モデルリスト
-            _modelListContainer = new VisualElement();
-            panel.Add(_modelListContainer);
-
-            // フッター（右下固定）
-            var footer = new Label("右ドラッグ: 回転 / 中ドラッグ: 移動 / スクロール: ズーム");
-            footer.style.position        = Position.Absolute;
-            footer.style.bottom          = 10;
-            footer.style.left            = 10;
-            footer.style.color           = new StyleColor(Color.white);
-            footer.style.backgroundColor = new StyleColor(new Color(0f, 0f, 0f, 0.45f));
-            footer.style.paddingLeft     = 4;
-            footer.style.paddingRight    = 4;
-            root.Add(footer);
-        }
-
-        /// <summary>毎フレーム UI の有効状態・表示を同期する。</summary>
         private void SyncUI()
         {
-            if (_statusLabel != null)
-                _statusLabel.text = $"Status: {_status}";
+            if (_layoutRoot == null) return;
 
-            bool clientExists  = _client != null;
-            bool isConnected   = clientExists && _client.IsConnected;
+            _layoutRoot.StatusLabel.text = $"Status: {_status}";
 
-            if (_remoteSection != null)
-                _remoteSection.style.display = clientExists ? DisplayStyle.Flex : DisplayStyle.None;
+            bool clientExists = _client != null;
+            bool isConnected  = clientExists && _client.IsConnected;
 
-            if (_connectBtn    != null) _connectBtn.style.display    = isConnected ? DisplayStyle.None : DisplayStyle.Flex;
-            if (_disconnectBtn != null) _disconnectBtn.style.display  = isConnected ? DisplayStyle.Flex : DisplayStyle.None;
-            if (_fetchBtn      != null) _fetchBtn.SetEnabled(isConnected);
-
-            if (_undoBtn != null) _undoBtn.SetEnabled(_editOps != null && _editOps.CanUndo);
-            if (_redoBtn != null) _redoBtn.SetEnabled(_editOps != null && _editOps.CanRedo);
+            _layoutRoot.RemoteSection.style.display =
+                clientExists ? DisplayStyle.Flex : DisplayStyle.None;
+            _layoutRoot.ConnectBtn   .style.display = isConnected ? DisplayStyle.None : DisplayStyle.Flex;
+            _layoutRoot.DisconnectBtn.style.display = isConnected ? DisplayStyle.Flex : DisplayStyle.None;
+            _layoutRoot.FetchBtn.SetEnabled(isConnected);
+            _layoutRoot.UndoBtn.SetEnabled(_editOps != null && _editOps.CanUndo);
+            _layoutRoot.RedoBtn.SetEnabled(_editOps != null && _editOps.CanRedo);
         }
 
-        /// <summary>ActiveProject のモデル一覧を _modelListContainer に再構築する。</summary>
         private void RebuildModelList()
         {
-            if (_modelListContainer == null) return;
-            _modelListContainer.Clear();
+            if (_layoutRoot?.ModelListContainer == null) return;
+            _layoutRoot.ModelListContainer.Clear();
 
             var project = ActiveProject;
             if (project == null) return;
 
-            var header = new Label($"Project: {project.Name}  Models: {project.ModelCount}");
-            header.style.marginTop    = 6;
-            header.style.marginBottom = 2;
-            _modelListContainer.Add(header);
+            _layoutRoot.ModelListContainer.Add(
+                new Label($"Project: {project.Name}  ({project.ModelCount})"));
 
             for (int mi = 0; mi < project.ModelCount; mi++)
             {
-                var model = project.Models[mi];
-                var entry = new Label($"  [{mi}] {model.Name}  Meshes: {model.Count}");
-                _modelListContainer.Add(entry);
+                var m = project.Models[mi];
+                _layoutRoot.ModelListContainer.Add(
+                    new Label($"  [{mi}] {m.Name}  ({m.Count})")
+                    { style = { color = new StyleColor(new Color(0.75f, 0.75f, 0.75f)) } });
             }
+        }
+
+        // ================================================================
+        // 描画フラグ同期
+        // ================================================================
+
+        private void SyncRendererFlags()
+        {
+            if (_renderer == null || _layoutRoot == null) return;
+
+            _renderer.ShowSelectedMesh        = _layoutRoot.ShowSelectedMeshToggle.value;
+            _renderer.ShowUnselectedMesh      = _layoutRoot.ShowUnselectedMeshToggle.value;
+            _renderer.ShowSelectedVertices    = _layoutRoot.ShowSelectedVerticesToggle.value;
+            _renderer.ShowUnselectedVertices  = _layoutRoot.ShowUnselectedVerticesToggle.value;
+            _renderer.ShowSelectedWireframe   = _layoutRoot.ShowSelectedWireToggle.value;
+            _renderer.ShowUnselectedWireframe = _layoutRoot.ShowUnselectedWireToggle.value;
+            _renderer.ShowSelectedBone        = _layoutRoot.ShowSelectedBoneToggle.value;
+            _renderer.ShowUnselectedBone      = _layoutRoot.ShowUnselectedBoneToggle.value;
+            _renderer.BackfaceCullingEnabled  = _layoutRoot.BackfaceCullingToggle.value;
         }
 
         // ================================================================
         // クライアントイベント
         // ================================================================
 
-        private void OnConnected()
-        {
-            _status = "接続済み";
-            Debug.Log("[PolyLingPlayerViewer] 接続");
-        }
-
-        private void OnDisconnected()
-        {
-            _status = "切断";
-            _fetchingModelIndex = -1;
-            Debug.Log("[PolyLingPlayerViewer] 切断");
-        }
+        private void OnConnected()    { _status = "接続済み"; }
+        private void OnDisconnected() { _status = "切断"; _fetchingModelIndex = -1; }
 
         private void OnPushReceived(string json)
         {
             if (json.Contains("\"event\":\"mesh_changed\"") ||
                 json.Contains("\"event\":\"model_changed\""))
-            {
-                Debug.Log("[PolyLingPlayerViewer] Push受信 → 再フェッチ");
                 FetchProject();
-            }
         }
 
         // ================================================================
@@ -374,12 +369,11 @@ namespace Poly_Ling.Player
         {
             _modelCount = project.ModelCount;
             _fetchingModelIndex = -1;
-            _renderer?.ClearScene();
+            _viewportManager.ClearScene();
             RebuildModelList();
         }
 
-        private void OnModelMetaReceived(int mi, ModelContext model) { }
-
+        private void OnModelMetaReceived(int mi, ModelContext model)   { }
         private void OnMeshSummaryReceived(int mi, int si, Data.MeshContext mc) { }
 
         private void OnMeshDataReceived(int mi, int si, Data.MeshContext mc)
@@ -387,10 +381,10 @@ namespace Poly_Ling.Player
             var project = _receiver?.Project;
             if (project == null) return;
 
-            // 初回メッシュでカメラ位置を初期化
             if (mi == 0 && si == 0 && mc.UnityMesh != null)
-                _orbit.ResetToMesh(mc.UnityMesh.bounds);
+                _viewportManager.ResetToMesh(mc.UnityMesh.bounds);
 
+            _moveToolHandler?.SetProject(ActiveProject);
             RebuildModelList();
         }
 
@@ -400,20 +394,19 @@ namespace Poly_Ling.Player
 
         private void FetchProject()
         {
-            if (!_client.IsConnected) return;
+            if (_client == null || !_client.IsConnected) return;
             _localLoader.Clear();
             _status = "project_header フェッチ中...";
             _receiver?.Reset();
             _modelCount = 0;
             _fetchingModelIndex = -1;
-            _renderer?.ClearScene();
+            _viewportManager.ClearScene();
 
             _client.FetchProjectHeader((json, bin) =>
             {
                 if (bin == null || bin.Length < 4) { _status = "project_header 失敗"; return; }
                 _receiver?.ProcessBatch(bin);
-                if (_modelCount > 0)
-                    FetchAllModelsBatch(0);
+                if (_modelCount > 0) FetchAllModelsBatch(0);
             });
         }
 
@@ -423,19 +416,17 @@ namespace Poly_Ling.Player
             _fetchingModelIndex = mi;
             _status = $"メッシュフェッチ中... [{mi}/{_modelCount - 1}]";
 
-            FetchMeshDataBatch(mi, "bone", () =>
+            FetchMeshDataBatch(mi, "bone",     () =>
             FetchMeshDataBatch(mi, "drawable", () =>
-            FetchMeshDataBatch(mi, "morph", () =>
+            FetchMeshDataBatch(mi, "morph",    () =>
             {
                 var project = _receiver?.Project;
                 if (project != null && mi < project.ModelCount)
-                    _renderer?.RebuildAdapter(mi, project.Models[mi]);
+                    _viewportManager.RebuildAdapter(mi, project.Models[mi]);
 
                 int next = mi + 1;
-                if (next < _modelCount)
-                    FetchAllModelsBatch(next);
-                else
-                    _status = $"完了 ({project?.Name})";
+                if (next < _modelCount) FetchAllModelsBatch(next);
+                else _status = $"完了 ({project?.Name})";
             })));
         }
 
@@ -443,28 +434,9 @@ namespace Poly_Ling.Player
         {
             _client.FetchMeshDataBatch(mi, cat, (json, bin) =>
             {
-                if (bin != null && bin.Length >= 4)
-                    _receiver?.ProcessBatch(bin);
+                if (bin != null && bin.Length >= 4) _receiver?.ProcessBatch(bin);
                 done?.Invoke();
             });
-        }
-
-        // ================================================================
-        // ヘルパー
-        // ================================================================
-
-        private void SyncRendererFlags()
-        {
-            if (_renderer == null) return;
-            _renderer.ShowSelectedMesh        = _showSelectedMesh;
-            _renderer.ShowUnselectedMesh      = _showUnselectedMesh;
-            _renderer.ShowSelectedVertices    = _showSelectedVertices;
-            _renderer.ShowUnselectedVertices  = _showUnselectedVertices;
-            _renderer.ShowSelectedWireframe   = _showSelectedWireframe;
-            _renderer.ShowUnselectedWireframe = _showUnselectedWireframe;
-            _renderer.ShowSelectedBone        = _showSelectedBone;
-            _renderer.ShowUnselectedBone      = _showUnselectedBone;
-            _renderer.BackfaceCullingEnabled  = _backfaceCullingEnabled;
         }
     }
 }
