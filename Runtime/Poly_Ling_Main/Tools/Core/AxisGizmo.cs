@@ -43,6 +43,20 @@ namespace Poly_Ling.Tools
         // 描画（Repaintイベント中に呼び出す）
         // ================================================================
 
+        /// <summary>
+        /// 軸ギズモのスクリーン座標を返す。UIToolkit 等の独自描画に使う。
+        /// 座標系は ctx.WorldToScreenPos が返す系（PlayerToolContext の場合は Y=0 が上）。
+        /// </summary>
+        public void GetScreenPositions(ToolContext ctx,
+            out Vector2 origin,
+            out Vector2 xEnd, out Vector2 yEnd, out Vector2 zEnd)
+        {
+            origin = GetOriginScreen(ctx);
+            xEnd   = GetAxisScreenEnd(ctx, Vector3.right,   origin);
+            yEnd   = GetAxisScreenEnd(ctx, Vector3.up,      origin);
+            zEnd   = GetAxisScreenEnd(ctx, Vector3.forward, origin);
+        }
+
         public void Draw(ToolContext ctx)
         {
             Vector2 originScreen = GetOriginScreen(ctx);

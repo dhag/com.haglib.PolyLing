@@ -323,6 +323,23 @@ namespace Poly_Ling.Core
             }
             return _positions;
         }
+
+        /// <summary>
+        /// GPU が ComputeScreenPositions で計算したスクリーン座標配列を返す。
+        ///
+        /// 【用途】
+        ///   矩形選択（CommitBoxSelect）で頂点のスクリーン座標と矩形の交差判定に使う。
+        ///   ReadBackVertexFlags() の後に呼ぶことで背面カリング情報と組み合わせられる。
+        ///
+        /// 【配列インデックス】
+        ///   グローバル頂点インデックス。メッシュのローカルインデックスではない。
+        ///   GetVertexOffset(meshIndex) で得たオフセットを足して参照すること。
+        ///
+        /// 【座標系】
+        ///   ComputeScreenPositions / ComputeScreenPositionsGPU と同じ座標系。
+        ///   UpdateFrame に渡した viewport・カメラパラメータに対応する。
+        /// </summary>
+        public Vector2[] GetScreenPositions() => _screenPositions;
         
         /// <summary>
         /// ワールド座標を描画に使用するか

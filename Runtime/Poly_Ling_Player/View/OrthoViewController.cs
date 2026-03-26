@@ -87,9 +87,10 @@ namespace Poly_Ling.Player
                     break;
 
                 case OrthoViewDirection.Front:
-                    // PMXモデルは-Z向きのため、+Zから見る（回転 0,180,0 で -Z 方向を向く）
-                    cam.transform.position = Target + Vector3.forward * camDist;
-                    cam.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+                    // PMXモデルは-Z向き。正面(Front)ビューはモデルの正面を見るため
+                    // カメラを -Z 側に置き +Z 方向を向く
+                    cam.transform.position = Target + Vector3.back * camDist;
+                    cam.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
                     break;
             }
         }

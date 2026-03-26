@@ -24,6 +24,31 @@ namespace Poly_Ling.Player
     }
 
     /// <summary>
+    /// ホバー要素の種別。
+    /// </summary>
+    public enum PlayerHoverKind { None, Vertex, Edge, Line, Face }
+
+    /// <summary>
+    /// GPU ホバー結果から変換した要素情報。
+    /// MeshIndex は UnifiedMeshIndex（adapter 内部インデックス）ではなく
+    /// MeshContextList の contextIndex。
+    /// </summary>
+    public struct PlayerHoverElement
+    {
+        public PlayerHoverKind Kind;
+        public int  MeshIndex;   // MeshContextList インデックス
+        public int  VertexIndex; // 頂点（Kind=Vertex のみ）
+        public int  EdgeV1;      // 辺 V1 ローカル（Kind=Edge のみ）
+        public int  EdgeV2;      // 辺 V2 ローカル（Kind=Edge のみ）
+        public int  FaceIndex;   // 面インデックス（Kind=Face/Line のみ）
+        // Kind=Line のとき FaceIndex が MeshObject.Faces[] の添字（VertexCount==2 の面）
+
+        public bool HasHit => Kind != PlayerHoverKind.None;
+        public static readonly PlayerHoverElement None =
+            new PlayerHoverElement { Kind = PlayerHoverKind.None, MeshIndex = -1 };
+    }
+
+    /// <summary>
     /// クリック選択・矩形選択の共通 SelectionState 操作。
     /// モード特有の処理は各 <see cref="IPlayerToolHandler"/> で実装し、
     /// 移動モード互換の選択が必要な場合はこのクラスのメソッドを呼ぶ。
@@ -116,6 +141,63 @@ namespace Poly_Ling.Player
             OnSelectionChanged?.Invoke();
         }
 
+        /// <summary>
+        /// ホバー要素によるクリック選択。SelectionState.Mode を参照して
+        /// 頂点/辺/補助線分/面を選択する。
+        ///
+        /// 【挙動】
+        ///   ヒット無し → 全解除（Shift/Ctrl なし時）
+        ///   Shift → 追加、Ctrl → トグル、それ以外 → 単独選択
+        /// </summary>
+        public void ApplyElementClick(PlayerHoverElement elem, ModifierKeys mods)
+        {
+            if (!elem.HasHit)
+            {
+                if (!mods.Shift && !mods.Ctrl) ClearAll();
+                return;
+            }
+
+            bool additive = mods.Shift || mods.Ctrl;
+            if (!additive) _selectionState.ClearAll();
+
+            switch (elem.Kind)
+            {
+                case PlayerHoverKind.Vertex:
+                    if (mods.Ctrl && _selectionState.Vertices.Contains(elem.VertexIndex))
+                        _selectionState.Vertices.Remove(elem.VertexIndex);
+                    else
+                        _selectionState.SelectVertex(elem.VertexIndex, additive);
+                    break;
+
+                case PlayerHoverKind.Edge:
+                {
+                    var pair = new Poly_Ling.Selection.VertexPair(elem.EdgeV1, elem.EdgeV2);
+                    if (mods.Ctrl && _selectionState.Edges.Contains(pair))
+                        _selectionState.DeselectEdge(pair);
+                    else
+                        _selectionState.SelectEdge(pair, additive);
+                    break;
+                }
+
+                case PlayerHoverKind.Line:
+                    // 補助線分。FaceIndex が MeshObject.Faces[] の添字（VertexCount==2）
+                    if (mods.Ctrl && _selectionState.Lines.Contains(elem.FaceIndex))
+                        _selectionState.Lines.Remove(elem.FaceIndex);
+                    else
+                        _selectionState.SelectLine(elem.FaceIndex, additive);
+                    break;
+
+                case PlayerHoverKind.Face:
+                    if (mods.Ctrl && _selectionState.Faces.Contains(elem.FaceIndex))
+                        _selectionState.DeselectFace(elem.FaceIndex);
+                    else
+                        _selectionState.SelectFace(elem.FaceIndex, additive);
+                    break;
+            }
+
+            OnSelectionChanged?.Invoke();
+        }
+
         // ================================================================
         // 矩形選択
         // ================================================================
@@ -178,8 +260,12 @@ namespace Poly_Ling.Player
 
         public void ClearAll()
         {
-            if (_selectionState.Vertices.Count == 0) return;
-            _selectionState.Vertices.Clear();
+            bool any = _selectionState.Vertices.Count > 0
+                    || _selectionState.Edges.Count > 0
+                    || _selectionState.Faces.Count > 0
+                    || _selectionState.Lines.Count > 0;
+            if (!any) return;
+            _selectionState.ClearAll();
             OnSelectionChanged?.Invoke();
         }
 

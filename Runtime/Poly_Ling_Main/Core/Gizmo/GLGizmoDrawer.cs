@@ -229,6 +229,30 @@ namespace Poly_Ling.Gizmo
             }
         }
 
+        /// <summary>
+        /// 軸先端の矢印ヘッド（塗りつぶし三角形）を描画する。
+        /// tip: 矢印の先端（スクリーン座標）
+        /// dir: 軸の向き（正規化済み、スクリーン座標）
+        /// size: ヘッドの高さ（ピクセル）
+        /// </summary>
+        public void DrawSolidArrowHead(Vector2 tip, Vector2 dir, float size)
+        {
+            // 四角錐の2D投影 = dir方向に向いた塗りつぶし三角形
+            // tip = 頂点、base = tip - dir * size の左右に size*0.5f 広がる底辺
+            Vector2 perp = new Vector2(-dir.y, dir.x); // dir に直交
+            float halfBase = size * 0.5f;
+            Vector2 baseCenter = tip - dir * size;
+            Vector2 left  = baseCenter - perp * halfBase;
+            Vector2 right = baseCenter + perp * halfBase;
+
+            GL.Begin(GL.TRIANGLES);
+            GL.Color(_color);
+            GL.Vertex3(tip.x,   tip.y,   0);
+            GL.Vertex3(left.x,  left.y,  0);
+            GL.Vertex3(right.x, right.y, 0);
+            GL.End();
+        }
+
         public void DrawConvexPolygon(params Vector3[] points)
         {
             if (points == null || points.Length < 3) return;

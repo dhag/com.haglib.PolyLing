@@ -282,9 +282,10 @@ namespace Poly_Ling.Remote
                 {
                     mc.BoneTransform = new Poly_Ling.Data.BoneTransform
                     {
-                        Position = btPos,
-                        Rotation = btRot,
-                        Scale    = btScale,
+                        Position        = btPos,
+                        Rotation        = btRot,
+                        Scale           = btScale,
+                        UseLocalTransform = true,
                     };
                 }
 

@@ -12,10 +12,13 @@ namespace Poly_Ling.Player
 {
     /// <summary>
     /// 左ボタン操作（頂点選択・頂点移動など）を担うクラス。
-    /// <para>
     /// モード別の処理は <see cref="IPlayerToolHandler"/> に委譲する。
-    /// ヒットテストコールバック（<see cref="HitTest"/>）は Viewer が設定する。
-    /// </para>
+    ///
+    /// 【ヒットテストについて】
+    ///   CPU による最近傍探索は使わない。
+    ///   GPU ヒットテスト結果（UnifiedSystemAdapter.HoverVertexIndex 等）を
+    ///   マウスダウン時に読み取る。
+    ///   UpdateFrame がポインター移動のたびに呼ばれることで GPU が計算済み。
     /// </summary>
     public class PlayerVertexInteractor
     {
@@ -24,10 +27,12 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// スクリーン座標 → ヒットテスト結果。
-        /// Viewer が Camera を使って実装する。
+        /// GPU ホバー結果から PlayerHitResult を生成して返すコールバック。
+        /// Viewer が PlayerViewportManager 経由で UnifiedSystemAdapter の
+        /// HoverVertexIndex / GetLocalHoverVertexIndex を読んで実装する。
+        /// CPU による頂点探索は行わない。
         /// </summary>
-        public Func<Vector2, PlayerHitResult> HitTest;
+        public Func<PlayerHitResult> GetHoverHit;
 
         // ================================================================
         // 依存
@@ -96,14 +101,17 @@ namespace Poly_Ling.Player
         private void OnClick(int btn, Vector2 screenPos, ModifierKeys mods)
         {
             if (btn != 0 || _toolHandler == null) return;
-            var hit = HitTest?.Invoke(screenPos) ?? PlayerHitResult.Miss;
+            // GPU が UpdateFrame で計算済みのホバー結果を読み取る。
+            // マウスダウン時点の HoverVertexIndex が確定値。
+            var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
             _toolHandler.OnLeftClick(hit, screenPos, mods);
         }
 
         private void OnDragBegin(int btn, Vector2 screenPos, ModifierKeys mods)
         {
             if (btn != 0 || _toolHandler == null) return;
-            var hit = HitTest?.Invoke(screenPos) ?? PlayerHitResult.Miss;
+            // ドラッグ開始時も同様に GPU 計算済みのホバー結果を使う。
+            var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
             _toolHandler.OnLeftDragBegin(hit, screenPos, mods);
         }
 

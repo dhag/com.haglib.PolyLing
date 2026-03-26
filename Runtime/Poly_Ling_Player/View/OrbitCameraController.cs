@@ -49,6 +49,26 @@ namespace Poly_Ling.Player
         public Vector3 Target   { get; private set; } = Vector3.zero;
 
         // ================================================================
+        // コールバック
+        // ================================================================
+
+        /// <summary>
+        /// カメラパラメータが確定したときに呼ばれる。
+        ///
+        /// 【呼び出しタイミング】
+        ///   - 右/中ボタンドラッグ終了（オービット・パン操作が完了したとき）
+        ///   - ResetToMesh()（ファイルロードやリモートフェッチ後のカメラリセット）
+        ///
+        /// 【用途】
+        ///   PolyLingPlayerViewer はこのコールバックで
+        ///   UnifiedSystemAdapter.UpdateFrame() を1回だけ呼ぶ。
+        ///   UpdateFrame はカメラパラメータをGPUヒットテストシステムに設定する
+        ///   唯一の口であり、パラメータが変化したタイミングにのみ呼ぶ。
+        ///   毎フレーム呼ぶのは禁忌（1FPS以下になる）。
+        /// </summary>
+        public System.Action OnCameraChanged;
+
+        // ================================================================
         // 内部状態
         // ================================================================
 
@@ -69,6 +89,8 @@ namespace Poly_Ling.Player
         {
             Target   = bounds.center;
             Distance = UnityEngine.Mathf.Clamp(bounds.size.magnitude * 1.5f, ZoomMin, ZoomMax);
+            // カメラパラメータが確定したのでアダプターへの反映を要求
+            OnCameraChanged?.Invoke();
         }
 
         /// <summary>
@@ -136,8 +158,15 @@ namespace Poly_Ling.Player
 
         private void OnDragEnd(int btn, Vector2 screenPos, ModifierKeys mods)
         {
-            if      (btn == 1) _isOrbiting = false;
-            else if (btn == 2) _isPanning  = false;
+            bool wasCameraOp = false;
+            if      (btn == 1) { _isOrbiting = false; wasCameraOp = true; }
+            else if (btn == 2) { _isPanning  = false; wasCameraOp = true; }
+
+            if (!wasCameraOp) return;
+
+            // カメラドラッグ終了 → パラメータ確定 → アダプター更新を要求。
+            // UpdateFrame はこのコールバック経由で1回だけ呼ばれる。
+            OnCameraChanged?.Invoke();
         }
 
         private void OnScroll(float scroll, ModifierKeys mods)

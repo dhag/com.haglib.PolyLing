@@ -149,6 +149,62 @@ namespace Poly_Ling.Context
         /// <summary>選択中のメッシュインデックス（Mesh, BakedMirror タイプ）- 選択順序を保持</summary>
         public List<int> SelectedMeshIndices { get; set; } = new List<int>();
 
+        /// <summary>
+        /// 描画メッシュ（Drawable）の選択インデックスリスト（MeshContextList インデックス）。
+        ///
+        /// 【SelectedMeshIndices との違い】
+        ///   SelectedMeshIndices は編集ツール側の「選択中メッシュ」で、
+        ///   頂点編集・スキンウェイト等の操作対象を表す。
+        ///   SelectedDrawableMeshIndices は「どの描画メッシュを表示・描画するか」を表す。
+        ///   複数の描画メッシュを同時に選択（描画）できる。
+        ///
+        /// 【MeshSceneRenderer との対応】
+        ///   DrawMeshes / DrawWireframeAndVertices はこのリストを参照して
+        ///   選択描画メッシュ（selected）と非選択描画メッシュ（unselected）を区別する。
+        ///   空の場合は全描画メッシュが非選択扱いになる。
+        /// </summary>
+        public List<int> SelectedDrawableMeshIndices { get; set; } = new List<int>();
+
+        /// <summary>描画メッシュが選択されているか</summary>
+        public bool HasDrawableMeshSelection => SelectedDrawableMeshIndices.Count > 0;
+
+        /// <summary>先頭の選択描画メッシュインデックス（なければ -1）</summary>
+        public int FirstDrawableMeshIndex
+            => SelectedDrawableMeshIndices.Count > 0 ? SelectedDrawableMeshIndices[0] : -1;
+
+        /// <summary>先頭の選択描画 MeshContext（なければ null）</summary>
+        public MeshContext FirstSelectedDrawableMesh
+        {
+            get
+            {
+                int idx = FirstDrawableMeshIndex;
+                return (idx >= 0 && idx < Count) ? MeshContextList[idx] : null;
+            }
+        }
+
+        /// <summary>
+        /// 描画メッシュを選択する（単一選択）。
+        /// index は MeshContextList のインデックス。
+        /// </summary>
+        public void SelectDrawableMesh(int index)
+        {
+            SelectedDrawableMeshIndices.Clear();
+            if (index >= 0 && index < Count)
+                SelectedDrawableMeshIndices.Add(index);
+        }
+
+        /// <summary>
+        /// 描画メッシュを追加選択する。
+        /// </summary>
+        public void AddDrawableMeshSelection(int index)
+        {
+            if (index >= 0 && index < Count && !SelectedDrawableMeshIndices.Contains(index))
+                SelectedDrawableMeshIndices.Add(index);
+        }
+
+        /// <summary>描画メッシュ選択をクリア</summary>
+        public void ClearDrawableMeshSelection() => SelectedDrawableMeshIndices.Clear();
+
         /// <summary>選択中のボーンインデックス（Bone タイプ）- 選択順序を保持</summary>
         public List<int> SelectedBoneIndices { get; set; } = new List<int>();
 
@@ -481,6 +537,7 @@ namespace Poly_Ling.Context
             SelectedMeshIndices.Clear();
             SelectedBoneIndices.Clear();
             SelectedMorphIndices.Clear();
+            SelectedDrawableMeshIndices.Clear();
         }
 
         // ================================================================

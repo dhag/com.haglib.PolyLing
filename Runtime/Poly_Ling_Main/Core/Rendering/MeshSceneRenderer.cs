@@ -40,9 +40,15 @@ namespace Poly_Ling.Core
         // 内部状態
         // ================================================================
 
+        // 外部から注入する SelectionState（Player用）
+        private SelectionState _selectionState;
+
+        // DrawWireframeAndVertices で PrepareDrawing に渡す selectedMeshIndex（モデルごと）。
+        // model.FirstDrawableMeshIndex を adapter のコンテキストインデックスに変換した値。
+        // RebuildAdapter / UpdateSelectedDrawableMesh で更新する。
+        private readonly List<int>                  _selectedMeshIndexForDraw = new List<int>();
+
         private readonly List<UnifiedSystemAdapter> _adapters       = new List<UnifiedSystemAdapter>();
-        private readonly List<int>                  _selectedCtxIdx = new List<int>();
-        private readonly List<int>                  _selectedBoneIdx= new List<int>();
         private readonly Dictionary<(int, int), Mesh> _boneMeshCache= new Dictionary<(int, int), Mesh>();
 
         private Material _defaultMaterial;
@@ -79,6 +85,73 @@ namespace Poly_Ling.Core
         // ================================================================
 
         /// <summary>
+        /// 選択状態を設定する。RebuildAdapter より前に呼ぶこと。
+        /// </summary>
+        public void SetSelectionState(SelectionState selectionState)
+        {
+            _selectionState = selectionState;
+            // 既存アダプターにも反映。
+            // SetSelectionState の後に UpdateAllSelectionFlags を呼ばないと
+            // GPU の MeshSelected ビットが古いままになりワイヤー・頂点が描画されない。
+            foreach (var adapter in _adapters)
+            {
+                if (adapter == null) continue;
+                adapter.SetSelectionState(_selectionState ?? new SelectionState());
+                adapter.BufferManager?.UpdateAllSelectionFlags();
+                adapter.RequestNormal();
+            }
+        }
+
+        /// <summary>
+        /// 指定モデルインデックスの UnifiedSystemAdapter を取得する。
+        ///
+        /// 【用途】
+        ///   PlayerViewportManager がホバー更新・カメラ更新・矩形選択の
+        ///   ReadBackVertexFlags を呼ぶために使う。
+        ///   アダプターは RebuildAdapter() 後にのみ存在する。
+        ///   存在しない場合（未ロード・ClearScene後）は null を返す。
+        /// </summary>
+        public UnifiedSystemAdapter GetAdapter(int mi)
+        {
+            if (mi < 0 || mi >= _adapters.Count) return null;
+            return _adapters[mi];
+        }
+
+        /// <summary>
+        /// 全アダプター数（ビューポートマネージャーがループ走査する際に使う）。
+        /// </summary>
+        public int AdapterCount => _adapters.Count;
+
+        /// <summary>
+        /// 選択描画メッシュが変わったときに呼ぶ。
+        /// _selectedMeshIndexForDraw を更新し、PrepareDrawing に正しい index が渡るようにする。
+        /// Viewer が model.SelectedDrawableMeshIndices を変更した後に呼ぶこと。
+        /// </summary>
+        public void UpdateSelectedDrawableMesh(int mi, ModelContext model)
+        {
+            while (_selectedMeshIndexForDraw.Count <= mi)
+                _selectedMeshIndexForDraw.Add(-1);
+
+            // PrepareDrawing の selectedMeshIndex は adapter の unifiedMeshIndex を期待する。
+            // SelectedDrawableMeshIndices[0]（MeshContextList インデックス）を変換する。
+            int ctxIdx = model.FirstDrawableMeshIndex;
+            if (ctxIdx < 0 || mi >= _adapters.Count || _adapters[mi] == null)
+            {
+                _selectedMeshIndexForDraw[mi] = -1;
+                return;
+            }
+            int unifiedIdx = _adapters[mi].BufferManager?.ContextToUnifiedMeshIndex(ctxIdx) ?? -1;
+            _selectedMeshIndexForDraw[mi] = unifiedIdx;
+        }
+
+        /// <summary>選択変更をGPUバッファに通知する。</summary>
+        public void NotifySelectionChanged()
+        {
+            foreach (var adapter in _adapters)
+                adapter?.NotifySelectionChanged();
+        }
+
+        /// <summary>
         /// モデルのメッシュ受信完了後にAdapterを再構築する。
         /// </summary>
         public void RebuildAdapter(int mi, ModelContext model)
@@ -100,43 +173,38 @@ namespace Poly_Ling.Core
                 return;
             }
 
-            adapter.SetSelectionState(new SelectionState());
+            adapter.SetSelectionState(_selectionState ?? new SelectionState());
             adapter.SetSymmetrySettings(new SymmetrySettings());
             adapter.SetModelContext(model);
 
-            while (_selectedCtxIdx.Count <= mi)  _selectedCtxIdx.Add(-1);
-            while (_selectedBoneIdx.Count <= mi) _selectedBoneIdx.Add(-1);
-
-            // 先頭Drawableを初期選択
-            int firstCtxIdx = -1;
-            var drawables = model.DrawableMeshes;
-            if (drawables != null)
-                foreach (var entry in drawables)
-                {
-                    var ctx = entry.Context;
-                    if (ctx?.MeshObject != null && ctx.MeshObject.VertexCount > 0 && ctx.IsVisible)
-                    { firstCtxIdx = entry.MasterIndex; break; }
-                }
-            _selectedCtxIdx[mi] = firstCtxIdx;
-
-            // 首ボーンを初期選択
-            int neckIdx = -1, firstBoneIdx = -1;
-            for (int ci = 0; ci < model.MeshContextCount; ci++)
+            // SetActiveMesh 用に先頭 Drawable のコンテキストインデックスを求める。
+            // 選択状態の初期設定（SelectDrawableMesh / SelectBone）は
+            // Viewer（PolyLingPlayerViewer）がフェッチ完了後に行う。
+            // ここではレンダラー内部の GPU バッファ初期化のみ行う。
+            int firstCtxIdx = model.FirstDrawableMeshIndex;
+            if (firstCtxIdx < 0)
             {
-                var ctx = model.GetMeshContext(ci);
-                if (ctx == null || ctx.Type != MeshType.Bone) continue;
-                if (firstBoneIdx < 0) firstBoneIdx = ci;
-                string n = ctx.Name ?? "";
-                if (n == "首" || n.ToLower() == "neck") { neckIdx = ci; break; }
+                // SelectedDrawableMeshIndices が未設定の場合は
+                // DrawableMeshes から頂点数 > 0 の先頭を探す（フォールバック）
+                var drawables = model.DrawableMeshes;
+                if (drawables != null)
+                    foreach (var entry in drawables)
+                    {
+                        var ctx = entry.Context;
+                        if (ctx?.MeshObject != null && ctx.MeshObject.VertexCount > 0 && ctx.IsVisible)
+                        { firstCtxIdx = entry.MasterIndex; break; }
+                    }
             }
-            _selectedBoneIdx[mi] = neckIdx >= 0 ? neckIdx : firstBoneIdx;
 
             int firstUnified = (firstCtxIdx >= 0)
                 ? (adapter.BufferManager?.ContextToUnifiedMeshIndex(firstCtxIdx) ?? 0) : 0;
             adapter.BufferManager?.SetActiveMesh(0, firstUnified);
             adapter.BufferManager?.UpdateAllSelectionFlags();
 
+
             _adapters[mi] = adapter;
+
+            adapter.RequestNormal();
         }
 
         // ================================================================
@@ -153,11 +221,14 @@ namespace Poly_Ling.Core
                 var drawables = model.DrawableMeshes;
                 if (drawables == null) continue;
 
-                int selCtx = mi < _selectedCtxIdx.Count ? _selectedCtxIdx[mi] : -1;
+                // model.SelectedDrawableMeshIndices（MeshContextList インデックス）で
+                // 選択描画メッシュを判定する。
+                // 空の場合は全描画メッシュが非選択扱いになる。
+                var selDrawable = model.SelectedDrawableMeshIndices;
 
                 for (int i = 0; i < drawables.Count; i++)
                 {
-                    bool isSel = (drawables[i].MasterIndex == selCtx);
+                    bool isSel = selDrawable.Contains(drawables[i].MasterIndex);
                     if ( isSel && !ShowSelectedMesh)   continue;
                     if (!isSel && !ShowUnselectedMesh) continue;
 
@@ -176,7 +247,11 @@ namespace Poly_Ling.Core
             }
         }
 
-        public void DrawWireframeAndVertices(Camera cam)
+        /// <param name="project">
+        /// ProjectContext を渡すと選択状態（VertexSelected 等）を GPU に正しく反映する。
+        /// null の場合は選択フラグ更新をスキップする。
+        /// </param>
+        public void DrawWireframeAndVertices(Camera cam, ProjectContext project = null)
         {
             if (cam == null) return;
             float pointSize = ShaderColorSettings.Default.VertexPointScale;
@@ -187,16 +262,65 @@ namespace Poly_Ling.Core
                 if (adapter == null || !adapter.IsInitialized) continue;
 
                 adapter.CleanupQueued();
-                adapter.DispatchCullingForDisplay(cam, BackfaceCullingEnabled);
                 adapter.BackfaceCullingEnabled = BackfaceCullingEnabled;
+
+                var profile = adapter.CurrentProfile;
+
+                int selIdx = (mi < _selectedMeshIndexForDraw.Count)
+                    ? _selectedMeshIndexForDraw[mi] : -1;
+
+                // ---- AllowSelectionSync ----
+                // Editor の DrawUnified と同じ処理。
+                // _unifiedToContextMap を構築してから UpdateAllSelectionFlags を呼ぶことで
+                // VertexSelected / EdgeSelected 等のフラグが GPU バッファに反映される。
+                // これがないとホバー以外の選択表示が出ない。
+                if (profile.AllowSelectionSync && project != null && mi < project.ModelCount)
+                {
+                    var bufMgr = adapter.BufferManager;
+                    if (bufMgr != null)
+                    {
+                        var model = project.Models[mi];
+                        // SelectedMeshIndices が空のとき SelectedDrawableMeshIndices で代用する。
+                        // SyncSelectionFromModel は SelectedMeshIndices を参照して
+                        // _unifiedToContextMap を構築するため。
+                        bool needSwap = model.SelectedMeshIndices.Count == 0
+                                     && model.SelectedDrawableMeshIndices.Count > 0;
+                        if (needSwap)
+                            foreach (var idx in model.SelectedDrawableMeshIndices)
+                                model.SelectedMeshIndices.Add(idx);
+
+                        bufMgr.SyncSelectionFromModel(model);
+                        if (selIdx >= 0) bufMgr.SetActiveMesh(0, selIdx);
+                        bufMgr.UpdateAllSelectionFlags();
+
+                        if (needSwap) model.SelectedMeshIndices.Clear();
+                    }
+                }
+
+                // ---- AllowGpuVisibility ----
+                // Normal モード（ワンショット）のときのみ実行。
+                // Idle 時はスキップされるためホバーフラグを破壊しない。
+                if (profile.AllowGpuVisibility)
+                {
+                    var bufMgr = adapter.BufferManager;
+                    if (bufMgr != null)
+                    {
+                        var viewport = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
+                        bufMgr.DispatchClearBuffersGPU();
+                        bufMgr.ComputeScreenPositionsGPU(
+                            cam.projectionMatrix * cam.worldToCameraMatrix, viewport);
+                        bufMgr.DispatchFaceVisibilityGPU();
+                        bufMgr.DispatchLineVisibilityGPU();
+                    }
+                }
 
                 adapter.PrepareDrawing(
                     cam,
                     showWireframe:           ShowSelectedWireframe,
                     showVertices:            ShowSelectedVertices,
-                    showUnselectedWireframe: ShowUnselectedWireframe,
-                    showUnselectedVertices:  ShowUnselectedVertices,
-                    selectedMeshIndex:       -1,
+                    showUnselectedWireframe: ShowUnselectedWireframe && profile.AllowUnselectedOverlay,
+                    showUnselectedVertices:  ShowUnselectedVertices && profile.AllowUnselectedOverlay,
+                    selectedMeshIndex:       selIdx,
                     pointSize:               pointSize);
                 adapter.ConsumeNormalMode();
                 adapter.DrawQueued(cam);
@@ -214,14 +338,16 @@ namespace Poly_Ling.Core
             for (int mi = 0; mi < project.ModelCount; mi++)
             {
                 var model = project.Models[mi];
-                int selBone = mi < _selectedBoneIdx.Count ? _selectedBoneIdx[mi] : -1;
+                // model.SelectedBoneIndices（MeshContextList インデックス）で
+                // 選択ボーンを判定する。
+                var selBones = model.SelectedBoneIndices;
 
                 for (int ci = 0; ci < model.MeshContextCount; ci++)
                 {
                     var ctx = model.GetMeshContext(ci);
                     if (ctx == null || ctx.Type != MeshType.Bone) continue;
 
-                    bool isSel = (ci == selBone);
+                    bool isSel = selBones.Contains(ci);
                     if ( isSel && !ShowSelectedBone)   continue;
                     if (!isSel && !ShowUnselectedBone) continue;
 
@@ -257,8 +383,7 @@ namespace Poly_Ling.Core
                 adapter?.Dispose();
             }
             _adapters.Clear();
-            _selectedCtxIdx.Clear();
-            _selectedBoneIdx.Clear();
+            _selectedMeshIndexForDraw.Clear();
 
             foreach (var mesh in _boneMeshCache.Values)
                 if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);

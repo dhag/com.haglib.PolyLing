@@ -15,7 +15,7 @@ Shader "Poly_Ling/Point3D_Overlay"
     }
     SubShader
     {
-        Tags { "RenderType"="Transparent" "Queue"="Transparent+510" "RenderPipeline"="UniversalPipeline" }
+        Tags { "RenderType"="Transparent" "Queue"="Overlay+1" "RenderPipeline"="UniversalPipeline" }
         
         Pass
         {
