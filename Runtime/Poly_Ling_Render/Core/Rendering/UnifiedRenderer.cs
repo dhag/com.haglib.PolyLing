@@ -691,8 +691,8 @@ namespace Poly_Ling.Core.Rendering
         public void QueuePoints(bool showUnselected = true)
         {
             // ShaderColorSettingsをマテリアルに適用
-            ApplyPointColorSettings(_pointMaterial);
-            ApplyPointColorSettings(_pointOverlayMaterial);
+            ApplyPointColorSettings(_pointMaterial,        isOverlay: false);
+            ApplyPointColorSettings(_pointOverlayMaterial, isOverlay: true);
 
             bool hasBuffer = _bufferManager?.VertexFlagsBuffer != null;
 
@@ -738,7 +738,7 @@ namespace Poly_Ling.Core.Rendering
         /// <summary>
         /// ShaderColorSettingsを頂点マテリアルに適用
         /// </summary>
-        private void ApplyPointColorSettings(Material mat)
+        private void ApplyPointColorSettings(Material mat, bool isOverlay = false)
         {
             if (mat == null) return;
             
@@ -746,7 +746,9 @@ namespace Poly_Ling.Core.Rendering
             mat.SetColor("_BorderColorSelected", _colorSettings.VertexBorderSelected);
             mat.SetColor("_ColorHovered", _colorSettings.VertexHovered);
             mat.SetColor("_BorderColorHovered", _colorSettings.VertexBorderHovered);
-            mat.SetColor("_ColorDefault", _colorSettings.VertexDefault);
+            // オーバーレイ（選択メッシュ）の通常頂点には VertexMeshSelected を使う。
+            // 非選択メッシュマテリアルは VertexDefault をそのまま使う。
+            mat.SetColor("_ColorDefault",       isOverlay ? _colorSettings.VertexMeshSelected : _colorSettings.VertexDefault);
             mat.SetColor("_BorderColorDefault", _colorSettings.VertexBorderDefault);
         }
 

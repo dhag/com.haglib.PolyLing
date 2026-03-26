@@ -171,7 +171,7 @@ namespace Poly_Ling.Player
 
         private void OnScroll(float scroll, ModifierKeys mods)
         {
-            Distance *= 1f + scroll * ZoomSensitivity;
+            Distance *= 1f - scroll * ZoomSensitivity;
             Distance  = Mathf.Clamp(Distance, ZoomMin, ZoomMax);
         }
     }

@@ -29,7 +29,7 @@ namespace Poly_Ling.Core.Rendering
         public Color VertexActive = new Color(1f, 1f, 1f, 0.6f);
 
         [Tooltip("選択メッシュの頂点")]
-        public Color VertexMeshSelected = new Color(1f, 1f, 1f, 0.7f);
+        public Color VertexMeshSelected = new Color(0.82f, 0.48f, 0.60f, 0.80f);  // 明るめ小豆色
 
         [Header("Vertex - State")]
         [Tooltip("ホバー中")]

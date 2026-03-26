@@ -167,6 +167,7 @@ namespace Poly_Ling.Player
             RegisterCallback<PointerDownEvent>(OnPointerDown);
             RegisterCallback<PointerMoveEvent>(OnPointerMove);
             RegisterCallback<PointerUpEvent>(OnPointerUp);
+            RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureLost);
             RegisterCallback<WheelEvent>(OnWheel);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
 
@@ -258,7 +259,13 @@ namespace Poly_Ling.Player
             int btn = evt.button;
             if (btn < 0 || btn >= 3) return;
 
-            this.CapturePointer(evt.pointerId);
+            // 全ボタンがIdle（最初のボタン押下）のときのみキャプチャ取得。
+            // 既にキャプチャ済みの場合は取得不要。複数ボタン同時押しでも1回だけ呼ぶ。
+            bool anyActive = _state[0] != BtnState.Idle
+                          || _state[1] != BtnState.Idle
+                          || _state[2] != BtnState.Idle;
+            if (!anyActive)
+                this.CapturePointer(evt.pointerId);
 
             Vector2 pos  = ToViewportCoord(evt.localPosition);
             var     mods = GetMods(evt);
@@ -272,6 +279,8 @@ namespace Poly_Ling.Player
         {
             Vector2 pos  = ToViewportCoord(evt.localPosition);
             var     mods = GetMods(evt);
+
+            MousePosition = pos;  // CaptureLost時の座標保持
 
             // ホバー通知（ドラッグ中も含め常に発火）
             OnPointerMoved?.Invoke(pos, mods);
@@ -311,8 +320,6 @@ namespace Poly_Ling.Player
             int btn = evt.button;
             if (btn < 0 || btn >= 3) return;
 
-            this.ReleasePointer(evt.pointerId);
-
             Vector2 pos       = ToViewportCoord(evt.localPosition);
             var     mods      = GetMods(evt);
             var     prevState = _state[btn];
@@ -324,7 +331,34 @@ namespace Poly_Ling.Player
                 OnClick?.Invoke(btn, pos, mods);
             else if (prevState == BtnState.Dragging)
                 OnDragEnd?.Invoke(btn, pos, mods);
+
+            // 全ボタンがIdleになったときにキャプチャ解放。
+            bool anyActive = _state[0] != BtnState.Idle
+                          || _state[1] != BtnState.Idle
+                          || _state[2] != BtnState.Idle;
+            if (!anyActive && this.HasPointerCapture(evt.pointerId))
+                this.ReleasePointer(evt.pointerId);
         }
+
+        /// <summary>
+        /// PointerCapture が外部から強制解除された場合（フォーカス喪失等）に
+        /// 全ボタン状態をリセットしてDragEndを発火する。
+        /// </summary>
+        private void OnPointerCaptureLost(PointerCaptureOutEvent evt)
+        {
+            var mods = new ModifierKeys();
+            for (int btn = 0; btn < 3; btn++)
+            {
+                if (_state[btn] == BtnState.Idle) continue;
+                var prev = _state[btn];
+                _state[btn] = BtnState.Idle;
+                if (prev == BtnState.Dragging)
+                    OnDragEnd?.Invoke(btn, MousePosition, mods);
+            }
+        }
+
+        // キャプチャロスト時の座標用（最後のポインター座標を保持）
+        private Vector2 MousePosition;
 
         private void OnWheel(WheelEvent evt)
         {
