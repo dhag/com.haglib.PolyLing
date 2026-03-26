@@ -16,12 +16,27 @@ namespace Poly_Ling.Core
     public partial class PolyLingCore
     {
         // ================================================================
+        // EnsureCurrentModel
+        // ================================================================
+
+        /// <summary>
+        /// モデルが存在しない場合、デフォルトモデルを作成してカレントに設定する。
+        /// インポートやメッシュ生成など、モデルが必要な操作の冒頭で呼ぶ。
+        /// </summary>
+        private void EnsureCurrentModel()
+        {
+            if (_model != null) return;
+            CreateNewModelWithUndo_void("Model");
+        }
+
+        // ================================================================
         // AddMeshContextWithUndo
         // ================================================================
 
         partial void AddMeshContextWithUndo(MeshContext meshContext)
         {
             if (meshContext == null) return;
+            EnsureCurrentModel();
 
             meshContext.ParentModelContext = _model;
 
@@ -48,6 +63,7 @@ namespace Poly_Ling.Core
         partial void AddMeshContextsWithUndo(IList<MeshContext> meshContexts)
         {
             if (meshContexts == null || meshContexts.Count == 0) return;
+            EnsureCurrentModel();
 
             var oldSelected    = _model.CaptureAllSelectedIndices();
             var oldMaterials   = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
@@ -244,7 +260,7 @@ namespace Poly_Ling.Core
 
         partial void ClearAllMeshContextsWithUndo()
         {
-            if (_meshContextList.Count == 0) return;
+            if (_model == null || _meshContextList.Count == 0) return;
 
             var oldSelected  = _model.CaptureAllSelectedIndices();
             var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
@@ -296,6 +312,7 @@ namespace Poly_Ling.Core
                 ClearAllMeshContextsWithUndo();
                 return;
             }
+            EnsureCurrentModel();
 
             var oldSelected  = _model.CaptureAllSelectedIndices();
             var oldMaterials = _model?.Materials != null ? new List<Material>(_model.Materials) : null;
@@ -430,6 +447,7 @@ namespace Poly_Ling.Core
 
         partial void OnMeshContextCreatedAsNew(MeshObject obj, string name)
         {
+            EnsureCurrentModel();
             var mc = new MeshContext
             {
                 Name              = name,

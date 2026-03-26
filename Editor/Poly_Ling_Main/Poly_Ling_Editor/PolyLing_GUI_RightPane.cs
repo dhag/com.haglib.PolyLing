@@ -112,7 +112,7 @@ public partial class PolyLing
 
         EditorGUILayout.Space(3);
 
-        var meshContext = _model.FirstSelectedMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null)
         {
             EditorGUILayout.HelpBox(L.Get("SelectMesh"), MessageType.Info);
@@ -487,7 +487,7 @@ public partial class PolyLing
         _isSliderDragging = false;
 
         if (_sliderDragStartOffsets == null || _vertexOffsets == null) return;
-        var meshContext = _model.FirstSelectedMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null) return;
 
         // 変更された頂点を検出

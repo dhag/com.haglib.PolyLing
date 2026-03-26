@@ -90,9 +90,9 @@ public partial class PolyLing
         if (_viewportCore == null) return;
 
         // メッシュが未選択の場合: 背景のみ表示
-        var meshContext = _model.FirstSelectedMeshContext;
+        var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
-            meshContext = _model.FirstSelectedDrawableMeshContext;
+            meshContext = _model?.FirstSelectedDrawableMeshContext;
 
         Rect rect = GUILayoutUtility.GetRect(
             200, 10000, 200, 10000,
@@ -141,9 +141,9 @@ public partial class PolyLing
             _viewportCore.Distance = _cameraDistance;
             _viewportCore.Target = _cameraTarget;
 
-            var mc = _model.FirstSelectedMeshContext;
+            var mc = _model?.FirstSelectedMeshContext;
             if (mc == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
-                mc = _model.FirstSelectedDrawableMeshContext;
+                mc = _model?.FirstSelectedDrawableMeshContext;
             if (mc == null) return;
 
             HandleInput(evt.Rect, mc, evt.CameraPos, evt.CameraTarget, evt.CameraDistance);
@@ -162,7 +162,7 @@ public partial class PolyLing
         Rect absRect = rect;
         _viewportCore.OnDrawOverlay = evt =>
         {
-            var mc = _model.FirstSelectedMeshContext;
+            var mc = _model?.FirstSelectedMeshContext;
             if (mc == null) return;
 
             SyncFrameStateToToolContext(mc, evt.Rect, evt.CameraPos, evt.CameraDistance);

@@ -393,7 +393,7 @@ public partial class PolyLing
 
                 int totalVertices = 0;
 
-                var meshContext = _model.FirstSelectedMeshContext;
+                var meshContext = _model?.FirstSelectedMeshContext;
                 if (meshContext?.MeshObject != null)
                 {
                     totalVertices = meshContext.MeshObject.VertexCount;

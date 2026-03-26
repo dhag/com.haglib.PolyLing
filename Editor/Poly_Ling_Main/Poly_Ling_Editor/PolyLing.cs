@@ -473,14 +473,8 @@ public partial class PolyLing : EditorWindow
 
     private void OnEnable()
     {
-        // Phase 0.5: ProjectContext は常にデフォルト Model を持つ
-        // （ProjectContext コンストラクタで自動作成）
         if (_project == null)
             _project = new ProjectContext();
-
-        // シリアライズ復元時に Models が空の場合、デフォルトモデルを作成
-        if (_project.ModelCount == 0)
-            _project.AddModel(new ModelContext("Model"));
 
         InitPreview();
         wantsMouseMove = true;
@@ -555,7 +549,28 @@ public partial class PolyLing : EditorWindow
 
         _core.OnRepaintRequired    += Repaint;
         _core.OnMeshListChanged    += () => { _unifiedAdapter?.NotifyTopologyChanged(); Repaint(); };
-        _core.OnCurrentModelChanged += () => { _viewportCore?.SetModel(_model); _unifiedAdapter?.SetModelContext(_model); Repaint(); };
+        _core.OnCurrentModelChanged += () =>
+        {
+            _viewportCore?.SetModel(_model);
+            _unifiedAdapter?.SetModelContext(_model);
+            if (_model != null)
+            {
+                _model.OnCameraRestoreRequested = OnCameraRestoreRequested;
+                _model.OnListChanged            -= OnMeshListChanged;
+                _model.OnListChanged            += OnMeshListChanged;
+                // OnReorderCompletedにEditor側GPU更新を追加（新規モデル作成時も対応）
+                var prevReorder2 = _model.OnReorderCompleted;
+                // 既に設定済みでなければ追加
+                _model.OnReorderCompleted = () =>
+                {
+                    prevReorder2?.Invoke();
+                    _unifiedAdapter?.SetModelContext(_model);
+                    _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
+                    _unifiedAdapter?.RequestNormal();
+                };
+            }
+            Repaint();
+        };
         _core.OnFocusCameraRequested += pos => { _cameraTarget = pos; _unifiedAdapter?.RequestNormal(); Repaint(); };
         _core.OnUndoRedoPerformed_Ext += () => { _unifiedAdapter?.RequestNormal(); Repaint(); };
         _core.OnSelectionStateChanged += ss =>
@@ -571,28 +586,44 @@ public partial class PolyLing : EditorWindow
 
         _project = _core.Project;
 
+        // Core.Initialize後にモデルが存在する場合のみViewportCoreとAdapterを初期化
+        if (_model != null)
+        {
+            _viewportCore?.SetModel(_model);
+            _unifiedAdapter?.SetModelContext(_model);
+        }
+
         // Editor固有コールバック：CoreがUndoController等を初期化した後に接続する
         EditorApplication.update    += ProcessUndoQueues;
-        _model.OnCameraRestoreRequested = OnCameraRestoreRequested;
-        _model.OnListChanged            += OnMeshListChanged;
+        if (_model != null)
+        {
+            _model.OnCameraRestoreRequested = OnCameraRestoreRequested;
+            _model.OnListChanged            += OnMeshListChanged;
+        }
         _core.UndoController.OnUndoRedoPerformed        += OnUndoRedoPerformed;
         _core.UndoController.OnProjectUndoRedoPerformed += OnProjectUndoRedoPerformed;
 
         // Core.Initialize後にOnReorderCompletedにEditor側GPU更新を追加する
         // （Core側はUpdateTopology+NotifyPanelsのみ担当するため）
-        var prevReorder = _model.OnReorderCompleted;
-        _model.OnReorderCompleted = () =>
+        if (_model != null)
         {
-            prevReorder?.Invoke();
-            _unifiedAdapter?.SetModelContext(_model);
-            _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
-            _unifiedAdapter?.RequestNormal();
-        };
+            var prevReorder = _model.OnReorderCompleted;
+            _model.OnReorderCompleted = () =>
+            {
+                prevReorder?.Invoke();
+                _unifiedAdapter?.SetModelContext(_model);
+                _unifiedAdapter?.SetActiveMesh(0, _selectedIndex);
+                _unifiedAdapter?.RequestNormal();
+            };
+        }
 
         // Core初期化後に SelectionState が確定するため、ここで Viewport に渡す
-        _viewportCore.Adapter.SetSelectionState(_core.SelectionState);
-        if (_selectedIndex >= 0)
-            _viewportCore.Adapter.SetActiveMesh(0, _selectedIndex);
+        if (_viewportCore.Adapter != null)
+        {
+            _viewportCore.Adapter.SetSelectionState(_core.SelectionState);
+            if (_selectedIndex >= 0)
+                _viewportCore.Adapter.SetActiveMesh(0, _selectedIndex);
+        }
 
         // Selection：初期StateへのEditorコールバック登録
         _core.SelectionState.OnSelectionChanged += OnSelectionChanged;

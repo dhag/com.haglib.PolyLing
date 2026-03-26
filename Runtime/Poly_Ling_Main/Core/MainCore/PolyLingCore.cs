@@ -88,8 +88,6 @@ namespace Poly_Ling.Core
 
             // ProjectContext（既存がある場合は引き継ぐ）
             _project = existingProject ?? _project ?? new ProjectContext();
-            if (_project.ModelCount == 0)
-                _project.AddModel(new ModelContext("Model"));
 
             // CommandQueue / UndoController
             _commandQueue   = new CommandQueue();
@@ -111,12 +109,15 @@ namespace Poly_Ling.Core
 
             // ModelContext コールバック
             _undoController.SetModelContext(_model);
-            _model.OnListChanged += OnMeshListChangedInternal;
-            _model.OnCameraRestoreRequested    = null; // Editorが設定する
-            _model.OnFocusMeshListRequested    = () => _undoController.FocusMeshList();
-            _model.OnReorderCompleted          = OnModelReorderCompleted;
-            _model.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
-            _model.WorkPlane = _undoController.WorkPlane;
+            if (_model != null)
+            {
+                _model.OnListChanged += OnMeshListChangedInternal;
+                _model.OnCameraRestoreRequested    = null; // Editorが設定する
+                _model.OnFocusMeshListRequested    = () => _undoController.FocusMeshList();
+                _model.OnReorderCompleted          = OnModelReorderCompleted;
+                _model.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
+                _model.WorkPlane = _undoController.WorkPlane;
+            }
 
             // MeshUndoContext
             if (_undoController.MeshUndoContext != null && _model != null)
@@ -323,6 +324,10 @@ namespace Poly_Ling.Core
             {
                 _model.OnListChanged -= OnMeshListChangedInternal;
                 _model.OnListChanged += OnMeshListChangedInternal;
+                _model.OnCameraRestoreRequested        = null; // Editorが設定する
+                _model.OnFocusMeshListRequested        = () => _undoController?.FocusMeshList();
+                _model.OnReorderCompleted              = OnModelReorderCompleted;
+                _model.OnVertexEditStackClearRequested = () => _undoController?.VertexEditStack?.Clear();
                 _model.WorkPlane = _undoController?.WorkPlane;
             }
             UpdateMeshListOpsContext();
