@@ -91,7 +91,7 @@ namespace Poly_Ling.Player
             splitCenter.Add(perspPane);
 
             // ④ Top | Front 垂直分割
-            var splitTopFront = new TwoPaneSplitView(0, 0f, TwoPaneSplitViewOrientation.Vertical);
+            var splitTopFront = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Vertical);
             splitTopFront.style.flexGrow = 1;
             splitCenter.Add(splitTopFront);
 

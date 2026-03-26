@@ -274,13 +274,15 @@ namespace Poly_Ling.Player
         {
             origin = xEnd = yEnd = zEnd = Vector2.zero;
             hoveredAxis = AxisGizmo.AxisType.None;
-            if (ctx == null) return false;
+            if (ctx == null) { Debug.LogWarning("[Gizmo] ctx is null"); return false; }
             UpdateAffectedVertices();
-            if (!HasAnyAffected()) return false;
+            if (!HasAnyAffected()) { Debug.LogWarning("[Gizmo] HasAnyAffected=false"); return false; }
             UpdateGizmoState(ctx);
+            Debug.Log($"[Gizmo] Center={_axisGizmo.Center} CamPos={ctx.CameraPosition} CamDist={ctx.CameraDistance:F3} PreviewRect={ctx.PreviewRect}");
             _axisGizmo.HoveredAxis  = _hoveredAxis;
             _axisGizmo.DraggingAxis = _draggingAxis;
             _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
+            Debug.Log($"[Gizmo] origin={origin} xEnd={xEnd} yEnd={yEnd} zEnd={zEnd}");
             hoveredAxis = _hoveredAxis;
             return true;
         }

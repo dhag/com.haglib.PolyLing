@@ -413,13 +413,13 @@ namespace Poly_Ling.Player
             v[1]=new Vertex{position=new Vector3(from.x+p.x,from.y+p.y,Vertex.nearZ),tint=col};
             v[2]=new Vertex{position=new Vector3(to.x+p.x,to.y+p.y,Vertex.nearZ),tint=col};
             v[3]=new Vertex{position=new Vector3(to.x-p.x,to.y-p.y,Vertex.nearZ),tint=col};
-            m.SetAllVertices(v);m.SetAllIndices(new ushort[]{0,1,2,0,2,3});
+            m.SetAllVertices(v);m.SetAllIndices(new ushort[]{0,2,1,0,3,2});
             float hs=10f; Vector2 p2=new Vector2(-d.y,d.x)*hs*.5f,bc=to-d*hs;
             var m2=ctx.Allocate(3,3); var v2=new Vertex[3];
             v2[0]=new Vertex{position=new Vector3(to.x,to.y,Vertex.nearZ),tint=col};
             v2[1]=new Vertex{position=new Vector3(bc.x-p2.x,bc.y-p2.y,Vertex.nearZ),tint=col};
             v2[2]=new Vertex{position=new Vector3(bc.x+p2.x,bc.y+p2.y,Vertex.nearZ),tint=col};
-            m2.SetAllVertices(v2);m2.SetAllIndices(new ushort[]{0,1,2});
+            m2.SetAllVertices(v2);m2.SetAllIndices(new ushort[]{0,2,1});
         }
         private static void DrawGizmoCenterHandle(MeshGenerationContext ctx,Vector2 c,float h,Color col)
         {

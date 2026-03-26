@@ -50,11 +50,18 @@ namespace Poly_Ling.Player
                                         Vector3 camPos, Vector3 lookAt)
         {
             if (_cam == null) return Vector2.zero;
-            // Camera.WorldToScreenPoint は Y=0 が下
-            Vector3 sp = _cam.WorldToScreenPoint(worldPos);
-            if (sp.z < 0) return new Vector2(-10000, -10000);
+            // Camera.WorldToScreenPoint はメインスクリーン解像度を使うため
+            // RenderTexture カメラには使えない。行列で直接射影する。
+            Matrix4x4 vp = _cam.projectionMatrix * _cam.worldToCameraMatrix;
+            Vector4 clip = vp * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);
+            if (clip.w <= 0f) return new Vector2(-10000, -10000);
+            // NDC → ピクセル座標（Y=0 が下）
+            float ndcX = clip.x / clip.w;
+            float ndcY = clip.y / clip.w;
+            float px = (ndcX * 0.5f + 0.5f) * previewRect.width;
+            float py = (ndcY * 0.5f + 0.5f) * previewRect.height;
             // IMGUI 系（Y=0 が上）に変換
-            return new Vector2(sp.x, previewRect.height - sp.y);
+            return new Vector2(px, previewRect.height - py);
         }
 
         /// <summary>
