@@ -46,6 +46,10 @@ namespace Poly_Ling.Player
         private PlayerVertexInteractor _vertexInteractor;
         private MoveToolHandler        _moveToolHandler;
 
+        // 現在インタラクション対象のパネル / ビューポート（3視点切替用）
+        private PlayerViewportPanel    _activePanel;
+        private PlayerViewport         _activeViewport;
+
         // ================================================================
         // ステータス
         // ================================================================
@@ -165,12 +169,8 @@ namespace Poly_Ling.Player
 
         private void OnDestroy()
         {
-            if (_layoutRoot?.PerspectivePanel != null)
-            {
-                _vertexInteractor?.Disconnect(_layoutRoot.PerspectivePanel);
-                // OnPointerHover はラムダで登録したため明示的に -= できない。
-                // パネルごと破棄されるため実害はないが、念のためコメントで記録する。
-            }
+            if (_activePanel != null)
+                _vertexInteractor?.Disconnect(_activePanel);
 
             _viewportManager.Dispose();
 
@@ -246,110 +246,104 @@ namespace Poly_Ling.Player
                 GetHoverElement = mode => _viewportManager.GetHoverElement(
                     mode, ActiveProject?.CurrentModel),
 
-                GetToolContext  = () => _viewportManager.GetCurrentToolContext(),
+                GetToolContext  = () => _viewportManager.GetCurrentToolContext(_activeViewport),
 
                 // GPU スクリーン座標・可視性コールバック（矩形選択用）
                 GetScreenPositions = () => _viewportManager.GetScreenPositions(),
                 GetVertexOffset    = ctxIdx => _viewportManager.GetVertexOffset(ctxIdx),
                 IsVertexVisible    = gi  => _viewportManager.IsVertexVisible(gi),
-                GetViewportHeight  = () => _viewportManager.PerspectiveViewport?.Cam?.pixelHeight ?? 0f,
-                GetPanelHeight     = () => _viewportManager.PerspectiveViewport?.Cam?.pixelHeight ?? 0f,
+                GetViewportHeight  = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
+                GetPanelHeight     = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
 
                 // 矩形選択オーバーレイ表示
                 OnBoxSelectUpdate = (start, end) =>
-                    _layoutRoot?.PerspectivePanel?.ShowBoxSelect(start, end),
+                    _activePanel?.ShowBoxSelect(start, end),
                 OnBoxSelectEnd = () =>
-                    _layoutRoot?.PerspectivePanel?.HideBoxSelect(),
+                    _activePanel?.HideBoxSelect(),
 
-                // ──────────────────────────────────────────────────────
-                // アダプター操作コールバック
-                // PlayerViewportManager 経由で UnifiedSystemAdapter を操作する。
-                // MoveToolHandler は Manager を直接知らない（疎結合）。
-                // ──────────────────────────────────────────────────────
-
-                // 頂点ドラッグ開始 → TransformDragging モードへ
                 OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging(),
-
-                // 頂点ドラッグ終了 → Normal(1フレーム) → Idle
                 OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging(),
-
-                // 矩形選択ドラッグ開始 → CameraDragging モード（重い処理全スキップ）
-                OnEnterBoxSelecting = () => _viewportManager.EnterBoxSelecting(),
-
-                // 矩形確定前に GPU→CPU 頂点可視フラグ読み戻し（背面カリングチェック用）
-                OnReadBackVertexFlags = () => _viewportManager.ReadBackVertexFlags(),
-
-                // 矩形選択終了 → CameraDragging を解除して Normal モードへ
-                OnExitBoxSelecting = () => _viewportManager.ExitBoxSelecting(),
-
-                // 選択確定・操作確定後の GPU バッファ更新ワンショット要求
-                OnRequestNormal = () => _viewportManager.RequestNormal(),
+                OnEnterBoxSelecting      = () => _viewportManager.EnterBoxSelecting(),
+                OnReadBackVertexFlags    = () => _viewportManager.ReadBackVertexFlags(),
+                OnExitBoxSelecting       = () => _viewportManager.ExitBoxSelecting(),
+                OnRequestNormal          = () => _viewportManager.RequestNormal(),
             };
             _viewportManager.RegisterMoveToolHandler(_moveToolHandler);
 
             _vertexInteractor = new PlayerVertexInteractor(_selectionOps)
             {
-                // GPU ホバー結果を読み取るコールバック。
-                // UpdateFrame（OnPointerHover）が事前に GPU ヒットテストを完了済み。
                 GetHoverHit = () => _viewportManager.GetHoverHit(),
             };
             _vertexInteractor.SetToolHandler(_moveToolHandler);
 
-            if (_layoutRoot?.PerspectivePanel != null)
-                _vertexInteractor.Connect(_layoutRoot.PerspectivePanel);
+            // 初期アクティブは Perspective
+            _activePanel    = _layoutRoot?.PerspectivePanel;
+            _activeViewport = _viewportManager.PerspectiveViewport;
 
-            // ──────────────────────────────────────────────────────────
-            // カメラ変更通知の配線
-            //
-            // OrbitCameraController.OnCameraChanged は
-            //   - カメラドラッグ終了（右/中ボタン）
-            //   - ResetToMesh()
-            // のタイミングで発火する。
-            //
-            // これを受けて NotifyCameraChanged を呼び、
-            // UpdateFrame でアダプターにカメラパラメータを設定する（1回のみ）。
-            // ──────────────────────────────────────────────────────────
-            var perspOrbit = _viewportManager.PerspectiveViewport?.Orbit;
-            if (perspOrbit != null)
-                perspOrbit.OnCameraChanged = () =>
-                    _viewportManager.NotifyCameraChanged(
-                        _viewportManager.PerspectiveViewport);
+            if (_activePanel != null)
+                _vertexInteractor.Connect(_activePanel);
 
-            // ──────────────────────────────────────────────────────────
-            // ホバー更新の配線
-            //
-            // OnPointerHover は UIToolkit PointerMoveEvent から発火する。
-            // UIToolkit はそのパネル内にポインターがあるときだけ発火するため、
-            // 「Perspective RenderTexture 内限定」は自然に保証される。
-            // ボタン・ラベル等の別パネル上では発火しない。
-            //
-            // NotifyPointerHover は UpdateHoverOnly を呼ぶ。
-            // UpdateHoverOnly は UpdateFrame で設定済みのカメラパラメータを
-            // 使い回してヒットテストのみを軽量に実行する。
-            // ──────────────────────────────────────────────────────────
-            if (_layoutRoot?.PerspectivePanel != null)
-                _layoutRoot.PerspectivePanel.OnPointerHover += localPos =>
-                    _viewportManager.NotifyPointerHover(
-                        _viewportManager.PerspectiveViewport, localPos);
+            // ── 3パネル共通のアクティブ切替 + ホバー通知ヘルパー ──
+            void ConnectPanelHover(PlayerViewportPanel panel, PlayerViewport vp)
+            {
+                if (panel == null) return;
+
+                panel.OnPointerHover += localPos =>
+                {
+                    // アクティブ切替（別パネルからの移動時のみ）
+                    if (_activePanel != panel)
+                    {
+                        if (_activePanel != null)
+                        {
+                            _activePanel.HideBoxSelect();
+                            _activePanel.HideFaceHover();
+                            _activePanel.HideGizmo();
+                            _vertexInteractor.Disconnect(_activePanel);
+                        }
+                        _activePanel    = panel;
+                        _activeViewport = vp;
+                        _vertexInteractor.Connect(_activePanel);
+                    }
+                    _viewportManager.NotifyPointerHover(vp, localPos);
+                };
+            }
+
+            ConnectPanelHover(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport);
+            ConnectPanelHover(_layoutRoot?.TopPanel,         _viewportManager.TopViewport);
+            ConnectPanelHover(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport);
+            ConnectPanelHover(_layoutRoot?.SidePanel,        _viewportManager.SideViewport);
+
+            // ── カメラ変更通知（全3ビューポート）──
+            void ConnectCameraChanged(PlayerViewport vp)
+            {
+                if (vp == null) return;
+                if (vp.Orbit != null)
+                    vp.Orbit.OnCameraChanged = () =>
+                        _viewportManager.NotifyCameraChanged(vp);
+            }
+
+            ConnectCameraChanged(_viewportManager.PerspectiveViewport);
+            ConnectCameraChanged(_viewportManager.TopViewport);
+            ConnectCameraChanged(_viewportManager.FrontViewport);
+            ConnectCameraChanged(_viewportManager.SideViewport);
         }
 
         private void UpdateFaceHoverOverlay()
         {
-            var panel = _layoutRoot?.PerspectivePanel;
+            var panel = _activePanel;
             if (panel == null) return;
             var model = ActiveProject?.CurrentModel;
             if (model == null) { panel.HideFaceHover(); return; }
-            var pts = _viewportManager.GetHoverFaceScreenPts(
-                _viewportManager.PerspectiveViewport, model);
+            var pts = _viewportManager.GetHoverFaceScreenPts(_activeViewport, model);
             if (pts == null) panel.HideFaceHover();
             else             panel.ShowFaceHover(pts);
         }
 
         private void UpdateGizmoOverlay()
         {
-            var panel = _layoutRoot?.PerspectivePanel;
+            var panel = _activePanel;
             if (panel == null) return;
-            var ctx = _viewportManager.GetCurrentToolContext();
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx == null || _moveToolHandler == null) { panel.HideGizmo(); return; }
             if (_moveToolHandler.TryGetGizmoScreenPositions(
                     ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
@@ -398,6 +392,7 @@ namespace Poly_Ling.Player
             _layoutRoot.PerspectivePanel.SetViewport(_viewportManager.PerspectiveViewport);
             _layoutRoot.TopPanel        .SetViewport(_viewportManager.TopViewport);
             _layoutRoot.FrontPanel      .SetViewport(_viewportManager.FrontViewport);
+            _layoutRoot.SidePanel       .SetViewport(_viewportManager.SideViewport);
 
             void OnToggle(ChangeEvent<bool> _) => SyncRendererFlags();
             _layoutRoot.ShowSelectedMeshToggle      .RegisterValueChangedCallback(OnToggle);

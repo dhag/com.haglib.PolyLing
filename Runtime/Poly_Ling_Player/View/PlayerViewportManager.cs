@@ -24,6 +24,7 @@ namespace Poly_Ling.Player
         public PlayerViewport PerspectiveViewport { get; private set; }
         public PlayerViewport TopViewport         { get; private set; }
         public PlayerViewport FrontViewport       { get; private set; }
+        public PlayerViewport SideViewport        { get; private set; }
 
         // ================================================================
         // 内部
@@ -35,13 +36,9 @@ namespace Poly_Ling.Player
         private MoveToolHandler   _moveToolHandler;
         private PlayerToolContext _toolCtx = new PlayerToolContext();
 
-        // LateUpdate で UpdateFrame を呼ぶための最後のカメラ・マウスパラメータ。
+        // LateUpdate で UpdateFrame を呼ぶための最後のカメラ参照とマウス位置。
         // NotifyCameraChanged / NotifyPointerHover で更新される。
-        // Editor の ViewportCore.Draw() が毎 Repaint UpdateFrame を呼ぶのと同等にするため。
-        private Vector3 _lastCamPos;
-        private Vector3 _lastCamTarget;
-        private float   _lastFov;
-        private Rect    _lastRect;
+        private Camera  _lastCamera;
         private Vector2 _lastMousePos;
         private bool    _lastParamsValid;
 
@@ -56,10 +53,12 @@ namespace Poly_Ling.Player
             PerspectiveViewport = new PlayerViewport();
             TopViewport         = new PlayerViewport();
             FrontViewport       = new PlayerViewport();
+            SideViewport        = new PlayerViewport();
 
             PerspectiveViewport.Initialize(ViewportMode.Perspective, parent);
             TopViewport        .Initialize(ViewportMode.Top,         parent);
             FrontViewport      .Initialize(ViewportMode.Front,       parent);
+            SideViewport       .Initialize(ViewportMode.Side,        parent);
         }
 
         public void Dispose()
@@ -67,9 +66,11 @@ namespace Poly_Ling.Player
             PerspectiveViewport?.Dispose();
             TopViewport        ?.Dispose();
             FrontViewport      ?.Dispose();
+            SideViewport       ?.Dispose();
             PerspectiveViewport = null;
             TopViewport         = null;
             FrontViewport       = null;
+            SideViewport        = null;
         }
 
         public void RegisterMoveToolHandler(MoveToolHandler handler)
@@ -77,11 +78,12 @@ namespace Poly_Ling.Player
             _moveToolHandler = handler;
         }
 
-        public ToolContext GetCurrentToolContext()
+        public ToolContext GetCurrentToolContext(PlayerViewport vp = null)
         {
-            var cam = PerspectiveViewport?.Cam;
+            var target = vp ?? PerspectiveViewport;
+            var cam = target?.Cam;
             if (cam == null) return null;
-            _toolCtx.UpdateFromViewport(PerspectiveViewport);
+            _toolCtx.UpdateFromViewport(target);
             return _toolCtx.ToToolContext(cam);
         }
 
@@ -94,6 +96,7 @@ namespace Poly_Ling.Player
             PerspectiveViewport?.ApplyCameraTransform();
             TopViewport        ?.ApplyCameraTransform();
             FrontViewport      ?.ApplyCameraTransform();
+            SideViewport       ?.ApplyCameraTransform();
         }
 
         // ================================================================
@@ -108,24 +111,21 @@ namespace Poly_Ling.Player
             // Editor の ViewportCore.Draw() が毎 Repaint UpdateFrame を呼ぶのと同等。
             // dirty チェックにより変化がなければ ProcessUpdates は即返る。
             // TransformDragging / CameraDragging 中は RequestNormal が内部でブロックされる。
-            if (_lastParamsValid)
+            if (_lastParamsValid && _lastCamera != null)
             {
                 var adapter = _renderer.GetAdapter(0);
                 if (adapter != null && adapter.IsInitialized)
                 {
+                    var rect = new Rect(0, 0, _lastCamera.pixelWidth, _lastCamera.pixelHeight);
                     adapter.RequestNormal();
-                    adapter.UpdateFrame(
-                        _lastCamPos,
-                        _lastCamTarget,
-                        _lastFov,
-                        _lastRect,
-                        _lastMousePos);
+                    adapter.UpdateFrame(_lastCamera, rect, _lastMousePos);
                 }
             }
 
             DrawViewport(project, PerspectiveViewport);
             DrawViewport(project, TopViewport);
             DrawViewport(project, FrontViewport);
+            DrawViewport(project, SideViewport);
         }
 
         // ================================================================
@@ -160,27 +160,15 @@ namespace Poly_Ling.Player
             // ホバー位置はカメラ変更時には不明なのでパネル中央を渡す（影響小）
             var dummyMouse = new Vector2(rect.width * 0.5f, rect.height * 0.5f);
 
-            var target = vp.Orbit  != null ? vp.Orbit.Target  :
-                         vp.Ortho  != null ? vp.Ortho.Target  : Vector3.zero;
-            float fov  = cam.orthographic ? 0f : cam.fieldOfView;
-
             // パラメータを保存（LateUpdate の UpdateFrame で使い回す）
-            _lastCamPos      = cam.transform.position;
-            _lastCamTarget   = target;
-            _lastFov         = fov;
-            _lastRect        = rect;
+            _lastCamera  = cam;
             if (!_lastParamsValid) _lastMousePos = dummyMouse;
             _lastParamsValid = true;
 
             _toolCtx.UpdateFromViewport(vp);
 
             adapter.RequestNormal();
-            adapter.UpdateFrame(
-                cam.transform.position,
-                target,
-                fov,
-                rect,
-                _lastMousePos);
+            adapter.UpdateFrame(cam, rect, _lastMousePos);
         }
 
         /// <summary>
@@ -211,33 +199,20 @@ namespace Poly_Ling.Player
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;
 
-            var rect   = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
-            var target = vp.Orbit  != null ? vp.Orbit.Target  :
-                         vp.Ortho  != null ? vp.Ortho.Target  : Vector3.zero;
-            float fov  = cam.orthographic ? 0f : cam.fieldOfView;
+            var rect = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
 
             // パラメータを保存（LateUpdate の UpdateFrame で使い回す）
-            _lastCamPos      = cam.transform.position;
-            _lastCamTarget   = target;
-            _lastFov         = fov;
-            _lastRect        = rect;
+            _lastCamera      = cam;
             _lastMousePos    = panelLocalPos;
             _lastParamsValid = true;
 
             // ポインター移動時は RequestNormal → UpdateFrame でフルパイプライン実行。
-            // LateUpdate でも毎フレーム同じことをするが、
-            // ポインター移動時にも即座に呼ぶことでホバー応答を速くする。
             _toolCtx.UpdateFromViewport(vp);
             if (_moveToolHandler != null)
                 _moveToolHandler.UpdateHover(panelLocalPos, _toolCtx.ToToolContext(cam));
 
             adapter.RequestNormal();
-            adapter.UpdateFrame(
-                cam.transform.position,
-                target,
-                fov,
-                rect,
-                panelLocalPos);
+            adapter.UpdateFrame(cam, rect, panelLocalPos);
         }
 
         /// <summary>
@@ -599,6 +574,7 @@ namespace Poly_Ling.Player
             PerspectiveViewport?.ResetToMesh(bounds);
             TopViewport        ?.ResetToMesh(bounds);
             FrontViewport      ?.ResetToMesh(bounds);
+            SideViewport       ?.ResetToMesh(bounds);
         }
 
         // ================================================================

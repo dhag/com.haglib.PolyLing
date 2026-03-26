@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace Poly_Ling.Player
 {
-    public enum OrthoViewDirection { Top, Front }
+    public enum OrthoViewDirection { Top, Front, Side }
 
     /// <summary>
     /// 正投影カメラ用パン・ズームコントローラー。
@@ -92,6 +92,12 @@ namespace Poly_Ling.Player
                     cam.transform.position = Target + Vector3.back * camDist;
                     cam.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
                     break;
+
+                case OrthoViewDirection.Side:
+                    // Side: +X 側に置き -X 方向を向く（右側面ビュー）
+                    cam.transform.position = Target + Vector3.right * camDist;
+                    cam.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+                    break;
             }
         }
 
@@ -115,6 +121,10 @@ namespace Poly_Ling.Player
                 default:
                     // Front: X→X, Y（スクリーン上下）→ Y
                     panDelta = new Vector3(delta.x, -delta.y, 0f) * OrthoSize * PanSensitivity;
+                    break;
+                case OrthoViewDirection.Side:
+                    // Side: スクリーンX→Z, スクリーンY→Y
+                    panDelta = new Vector3(0f, -delta.y, delta.x) * OrthoSize * PanSensitivity;
                     break;
             }
             Target += panDelta;

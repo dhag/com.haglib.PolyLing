@@ -357,6 +357,42 @@ namespace Poly_Ling.Core
             _unifiedSystem.EndFrame();
         }
 
+        /// <summary>
+        /// フレーム更新（Camera オブジェクト直接版）。
+        /// 正射影カメラ（Top / Front ビューポート）に対応するため、
+        /// camera.worldToCameraMatrix / camera.projectionMatrix を使用する。
+        /// fov=0 で Perspective 行列を構築する旧パスは正射影で縮退するため使用しない。
+        /// </summary>
+        public void UpdateFrame(Camera camera, Rect viewport, Vector2 mousePosition)
+        {
+            if (!_isInitialized || camera == null)
+                return;
+
+            if (!_currentProfile.AllowHitTest)
+                return;
+
+            _lastKnownViewport = viewport;
+
+            _unifiedSystem.BeginFrame();
+
+            Vector3 camPos    = camera.transform.position;
+            Vector3 camTarget = camPos + camera.transform.forward;
+
+            _unifiedSystem.UpdateCameraFromMatrix(
+                camera.worldToCameraMatrix,
+                camera.projectionMatrix,
+                camPos,
+                camTarget,
+                viewport);
+
+            _unifiedSystem.UpdateMousePosition(mousePosition);
+
+            DirtyLevel level = _unifiedSystem.ProcessUpdates();
+            _unifiedSystem.ExecuteUpdates(level);
+
+            _unifiedSystem.EndFrame();
+        }
+
         // ============================================================
         // 軽量ホバー更新
         // ============================================================

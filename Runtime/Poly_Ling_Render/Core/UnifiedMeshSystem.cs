@@ -282,6 +282,34 @@ namespace Poly_Ling.Core
             _updateManager.MarkCameraDirty();
         }
 
+        /// <summary>
+        /// カメラ情報を行列から直接更新（正射影カメラ対応）。
+        /// Unity の camera.worldToCameraMatrix / camera.projectionMatrix を渡すこと。
+        /// </summary>
+        public void UpdateCameraFromMatrix(
+            Matrix4x4 viewMatrix,
+            Matrix4x4 projectionMatrix,
+            Vector3 cameraPosition,
+            Vector3 cameraTarget,
+            Rect viewport)
+        {
+            bool changed = _cameraPosition != cameraPosition
+                        || _cameraTarget   != cameraTarget
+                        || _viewport       != viewport
+                        || _viewMatrix     != viewMatrix
+                        || _projectionMatrix != projectionMatrix;
+
+            if (!changed) return;
+
+            _cameraPosition  = cameraPosition;
+            _cameraTarget    = cameraTarget;
+            _viewport        = viewport;
+            _viewMatrix      = viewMatrix;
+            _projectionMatrix = projectionMatrix;
+
+            _updateManager.MarkCameraDirty();
+        }
+
         // ============================================================
         // マウス更新
         // ============================================================

@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Poly_Ling.Player
 {
-    public enum ViewportMode { Perspective, Top, Front }
+    public enum ViewportMode { Perspective, Top, Front, Side }
 
     /// <summary>
     /// 1ビューポート分の Camera + RenderTexture + コントローラー。
@@ -64,9 +64,9 @@ namespace Poly_Ling.Player
             else
             {
                 Cam.orthographic = true;
-                var dir = mode == ViewportMode.Top
-                    ? OrthoViewDirection.Top
-                    : OrthoViewDirection.Front;
+                var dir = mode == ViewportMode.Top   ? OrthoViewDirection.Top
+                        : mode == ViewportMode.Side  ? OrthoViewDirection.Side
+                        :                              OrthoViewDirection.Front;
                 Ortho = new OrthoViewController(dir);
             }
 

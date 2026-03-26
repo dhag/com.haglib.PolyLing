@@ -34,7 +34,14 @@ namespace Poly_Ling.Player
             var cam = vp.Cam;
             CameraPosition = cam.transform.position;
             CameraTarget   = vp.Orbit?.Target ?? vp.Ortho?.Target ?? Vector3.zero;
-            CameraDistance = Vector3.Distance(CameraPosition, CameraTarget);
+            // 正射影カメラは CameraDistance を orthoSize から逆算する。
+            // AxisGizmo は worldScale = CameraDistance * 0.001f を使うため、
+            // worldScale = orthoSize * 2 / pixelHeight になるよう設定する。
+            // → CameraDistance = orthoSize * 2000 / pixelHeight
+            if (cam.orthographic && cam.pixelHeight > 0)
+                CameraDistance = cam.orthographicSize * 2000f / cam.pixelHeight;
+            else
+                CameraDistance = Vector3.Distance(CameraPosition, CameraTarget);
             PreviewRect    = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
         }
 
@@ -73,8 +80,12 @@ namespace Poly_Ling.Player
                                                float camDist, Rect previewRect)
         {
             if (_cam == null) return Vector3.zero;
-            float scale = camDist / previewRect.height
-                        * Mathf.Tan(_cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 2f;
+            float scale;
+            if (_cam.orthographic && previewRect.height > 0)
+                scale = _cam.orthographicSize * 2f / previewRect.height;
+            else
+                scale = camDist / previewRect.height
+                      * Mathf.Tan(_cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 2f;
             return  _cam.transform.right * screenDelta.x * scale
                   + _cam.transform.up    * screenDelta.y * scale;
         }

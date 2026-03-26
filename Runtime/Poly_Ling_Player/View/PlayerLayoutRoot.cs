@@ -38,6 +38,7 @@ namespace Poly_Ling.Player
         public PlayerViewportPanel PerspectivePanel { get; private set; }
         public PlayerViewportPanel TopPanel         { get; private set; }
         public PlayerViewportPanel FrontPanel       { get; private set; }
+        public PlayerViewportPanel SidePanel        { get; private set; }
 
         // ================================================================
         // Right ペイン公開要素（表示フラグ）
@@ -85,10 +86,19 @@ namespace Poly_Ling.Player
             splitCenter.style.flexGrow = 1;
             splitCR.Add(splitCenter);
 
-            PlayerViewportPanel perspPanel, topPanel, frontPanel;
+            PlayerViewportPanel perspPanel, topPanel, frontPanel, sidePanel;
+            // ⑤ Perspective | Side 垂直分割（左列）
+            var splitPerspSide = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
+            splitPerspSide.style.flexGrow = 1;
+            splitCenter.Add(splitPerspSide);
+
             var perspPane = BuildViewportPane("Perspective", out perspPanel);
             PerspectivePanel = perspPanel;
-            splitCenter.Add(perspPane);
+            splitPerspSide.Add(perspPane);
+
+            var sidePane = BuildViewportPane("Side", out sidePanel);
+            SidePanel = sidePanel;
+            splitPerspSide.Add(sidePane);
 
             // ④ Top | Front 垂直分割
             var splitTopFront = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Vertical);
