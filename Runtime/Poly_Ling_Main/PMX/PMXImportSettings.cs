@@ -85,9 +85,9 @@ namespace Poly_Ling.PMX
         // 座標変換設定
         // ================================================================
 
-        /// <summary>スケール（PMX→Unity）デフォルト1.0（等倍）</summary>
-        [Tooltip("PMX座標をUnity座標に変換するスケール（デフォルト: 1.0 = 等倍）")]
-        public float Scale = 1.0f;
+        /// <summary>スケール（PMX→Unity）デフォルト0.1（PmxUnityRatio）</summary>
+        [Tooltip("PMX座標をUnity座標に変換するスケール（デフォルト: 0.1 = PmxUnityRatio）")]
+        public float Scale = 0.1f;
 
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転する（PMXは右手系、Unityは左手系）")]

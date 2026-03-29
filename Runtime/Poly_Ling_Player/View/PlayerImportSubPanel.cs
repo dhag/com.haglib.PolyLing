@@ -55,13 +55,18 @@ namespace Poly_Ling.Player
         /// </summary>
         public Action<string, MQOImportSettings> OnImportMqo;
 
+        /// <summary>インポート後に3D表示をオートスケールするか</summary>
+        public bool AutoScale => _autoScale;
+
         // ================================================================
         // 内部 UI 参照
         // ================================================================
 
         private TextField    _pathField;
         private Label        _statusLabel;
+        private Label        _panelNameLabel;
         private VisualElement _settingsContainer;
+        private bool         _autoScale = false;
 
         // ================================================================
         // Build
@@ -74,6 +79,13 @@ namespace Poly_Ling.Player
         public void Build(VisualElement parent)
         {
             parent.Clear();
+
+            // ── パネル名ラベル ──
+            _panelNameLabel = new Label("") ;
+            _panelNameLabel.style.fontSize = 12;
+            _panelNameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            _panelNameLabel.style.marginBottom = 4;
+            parent.Add(_panelNameLabel);
 
             // ── ファイルパス行 ──
             var fileSection = new VisualElement();
@@ -94,6 +106,14 @@ namespace Poly_Ling.Player
             fileRow.Add(browseBtn);
             fileSection.Add(fileRow);
 
+            // ── Import ボタン（パスフィールド直下）──
+            var importBtn = new Button(OnImportClicked) { text = "Import" };
+            importBtn.style.marginTop    = 2;
+            importBtn.style.marginBottom = 4;
+            importBtn.style.height       = 28;
+            importBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
+            fileSection.Add(importBtn);
+
             _statusLabel = new Label("");
             _statusLabel.style.color      = new StyleColor(new Color(1f, 0.7f, 0.4f));
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
@@ -104,13 +124,6 @@ namespace Poly_Ling.Player
             // ── 設定コンテナ（SetMode で再構築） ──
             _settingsContainer = new VisualElement();
             parent.Add(_settingsContainer);
-
-            // ── Import ボタン ──
-            var importBtn = new Button(OnImportClicked) { text = "Import" };
-            importBtn.style.marginTop    = 6;
-            importBtn.style.height       = 28;
-            importBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
-            parent.Add(importBtn);
         }
 
         /// <summary>
@@ -120,6 +133,9 @@ namespace Poly_Ling.Player
         public void SetMode(Mode mode, string filePath = null)
         {
             _mode = mode;
+
+            if (_panelNameLabel != null)
+                _panelNameLabel.text = mode == Mode.PMX ? "PMXインポータ" : "MQOインポータ";
 
             if (_pathField != null && !string.IsNullOrEmpty(filePath))
                 _pathField.value = filePath;
@@ -237,6 +253,7 @@ namespace Poly_Ling.Player
             parent.Add(FloatRow(TP("Scale"),    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
             parent.Add(ToggleRow(TP("FlipZAxis"), () => _pmxSettings.FlipZ,  v => _pmxSettings.FlipZ    = v));
             parent.Add(ToggleRow(TP("FlipUV_V"),  () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
+            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
 
             parent.Add(Separator());
 
@@ -314,6 +331,7 @@ namespace Poly_Ling.Player
             parent.Add(FloatRow(TM("Scale"),    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
             parent.Add(ToggleRow(TM("FlipZAxis"), () => _mqoSettings.FlipZ,  v => _mqoSettings.FlipZ    = v));
             parent.Add(ToggleRow(TM("FlipUV_V"),  () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
+            parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
 
             parent.Add(Separator());
 

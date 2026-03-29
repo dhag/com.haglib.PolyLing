@@ -542,7 +542,7 @@ public partial class PolyLing : EditorWindow
         };
         _core.Initialize(coreConfig, _project);
 
-        _core.OnRepaintRequired    += Repaint;
+        _core.OnRepaintRequired    += () => { _unifiedAdapter?.RequestNormal(); Repaint(); };
         _core.OnMeshListChanged    += () => { _unifiedAdapter?.NotifyTopologyChanged(); Repaint(); };
         _core.OnCurrentModelChanged += () =>
         {

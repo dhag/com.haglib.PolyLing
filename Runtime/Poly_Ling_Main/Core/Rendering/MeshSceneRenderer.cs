@@ -215,51 +215,40 @@ namespace Poly_Ling.Core
         {
             if (project == null || cam == null) return;
 
-            for (int mi = 0; mi < project.ModelCount; mi++)
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            var drawables = model.DrawableMeshes;
+            if (drawables == null) return;
+
+            var selDrawable = model.SelectedDrawableMeshIndices;
+
+            for (int i = 0; i < drawables.Count; i++)
             {
-                var model = project.Models[mi];
-                var drawables = model.DrawableMeshes;
-                if (drawables == null) continue;
+                bool isSel = selDrawable.Contains(drawables[i].MasterIndex);
+                if ( isSel && !ShowSelectedMesh)   continue;
+                if (!isSel && !ShowUnselectedMesh) continue;
 
-                // model.SelectedDrawableMeshIndices（MeshContextList インデックス）で
-                // 選択描画メッシュを判定する。
-                // 空の場合は全描画メッシュが非選択扱いになる。
-                var selDrawable = model.SelectedDrawableMeshIndices;
+                var ctx = drawables[i].Context;
+                if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
 
-                for (int i = 0; i < drawables.Count; i++)
+                var mesh = ctx.UnityMesh;
+                for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {
-                    bool isSel = selDrawable.Contains(drawables[i].MasterIndex);
-                    if ( isSel && !ShowSelectedMesh)   continue;
-                    if (!isSel && !ShowUnselectedMesh) continue;
+                    Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
+                    if (mat == null) mat = GetDefaultMaterial();
+                    if (mat == null) continue;
 
-                    var ctx = drawables[i].Context;
-                    if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
-
-                    var mesh = ctx.UnityMesh;
-                    for (int sub = 0; sub < mesh.subMeshCount; sub++)
+                    if (mat.HasProperty("_Cull"))
                     {
-                        Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
-                        if (mat == null) mat = GetDefaultMaterial();
-                        if (mat == null) continue;
-
-                        // カリング設定を反映。
-                        // PMX の DrawFlags bit0（両面）が設定されている材質は常に Off のまま。
-                        // それ以外は BackfaceCullingEnabled トグルに従う。
-                        if (mat.HasProperty("_Cull"))
-                        {
-                            var matRef = (sub < model.MaterialCount) ? model.GetMaterialReference(sub) : null;
-                            bool isMaterialDoubleSide = matRef != null
-                                && matRef.Data.CullMode == Poly_Ling.Materials.CullModeType.Off;
-                            float cullValue = (!BackfaceCullingEnabled || isMaterialDoubleSide) ? 0f : 2f;
-                            mat.SetFloat("_Cull", cullValue);
-                        }
-
-                        // SkinningMatrix（= WorldMatrix × BindPose）をモデル行列として渡す。
-                        // MeshFilter（スキニングなし）の場合 BindPose=identity → SkinningMatrix=WorldMatrix。
-                        // スキンドメッシュの場合 SkinningMatrix がボーン変換を含む。
-                        // vertex.Position はローカル座標のまま維持される。
-                        Graphics.DrawMesh(mesh, ctx.SkinningMatrix, mat, 0, cam, sub);
+                        var matRef = (sub < model.MaterialCount) ? model.GetMaterialReference(sub) : null;
+                        bool isMaterialDoubleSide = matRef != null
+                            && matRef.Data.CullMode == Poly_Ling.Materials.CullModeType.Off;
+                        float cullValue = (!BackfaceCullingEnabled || isMaterialDoubleSide) ? 0f : 2f;
+                        mat.SetFloat("_Cull", cullValue);
                     }
+
+                    Graphics.DrawMesh(mesh, ctx.SkinningMatrix, mat, 0, cam, sub);
                 }
             }
         }

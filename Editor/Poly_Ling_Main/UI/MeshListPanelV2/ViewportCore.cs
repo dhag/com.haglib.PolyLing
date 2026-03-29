@@ -248,6 +248,8 @@ namespace Poly_Ling.MeshListV2
             if (model == null) return;
 
             model.ComputeWorldMatrices();
+            _adapter?.UpdateTransform(useWorldTransform: true);
+            _adapter?.WritebackTransformedVertices();
 
             // カメラセットアップ
             Quaternion rot = Quaternion.Euler(RotX, RotY, RotZ);

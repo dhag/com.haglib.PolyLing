@@ -22,6 +22,8 @@ namespace Poly_Ling.Player
         public Button        RedoBtn            { get; private set; }
         public VisualElement RemoteSection      { get; private set; }
         public VisualElement ModelListContainer { get; private set; }
+        public Button        ModelListBtn       { get; private set; }
+        public Button        MeshListBtn        { get; private set; }
 
         // ================================================================
         // ビューポートパネル公開
@@ -46,11 +48,17 @@ namespace Poly_Ling.Player
         public Toggle ShowUnselectedBoneToggle     { get; private set; }
         public Toggle BackfaceCullingToggle        { get; private set; }
 
-        /// <summary>
-        /// 右ペイン内の動的コンテンツ領域（ScrollView の contentContainer）。
-        /// PlayerImportSubPanel などをここに追加/切り替えする。
-        /// </summary>
+        /// <summary>右ペイン内の動的コンテンツ領域（ScrollView の contentContainer）。</summary>
         public VisualElement RightPaneContent { get; private set; }
+
+        /// <summary>右ペイン：モデルリストセクション（ModelListSubPanel を Build する対象）。</summary>
+        public VisualElement ModelListSection { get; private set; }
+
+        /// <summary>右ペイン：メッシュリストセクション（MeshListSubPanel を Build する対象）。</summary>
+        public VisualElement MeshListSection { get; private set; }
+
+        /// <summary>右ペイン：インポートセクション（PlayerImportSubPanel を Build する対象）。</summary>
+        public VisualElement ImportSection { get; private set; }
 
         // ================================================================
         // Build
@@ -146,6 +154,15 @@ namespace Poly_Ling.Player
             ModelListContainer = new VisualElement();
             pane.Add(ModelListContainer);
 
+            var listBtnRow = new VisualElement();
+            listBtnRow.style.flexDirection = FlexDirection.Row;
+            listBtnRow.style.marginTop     = 4;
+            ModelListBtn = MakeBtn("モデルリスト"); ModelListBtn.style.flexGrow = 1; ModelListBtn.style.marginRight = 2;
+            MeshListBtn  = MakeBtn("オブジェクトリスト"); MeshListBtn.style.flexGrow = 1;
+            listBtnRow.Add(ModelListBtn);
+            listBtnRow.Add(MeshListBtn);
+            pane.Add(listBtnRow);
+
             pane.Add(Separator());
             pane.Add(Header("Display"));
             ShowSelectedMeshToggle       = MakeToggle("Selected Mesh",        true);
@@ -220,6 +237,25 @@ namespace Poly_Ling.Player
             pane.Add(scroll);
 
             RightPaneContent = scroll.contentContainer;
+
+            // ── モデルリストセクション
+            ModelListSection = new VisualElement();
+            ModelListSection.style.marginBottom = 4;
+            RightPaneContent.Add(ModelListSection);
+
+            RightPaneContent.Add(Separator());
+
+            // ── メッシュリストセクション
+            MeshListSection = new VisualElement();
+            MeshListSection.style.marginBottom = 4;
+            RightPaneContent.Add(MeshListSection);
+
+            RightPaneContent.Add(Separator());
+
+            // ── インポートセクション
+            ImportSection = new VisualElement();
+            RightPaneContent.Add(ImportSection);
+
             return pane;
         }
 

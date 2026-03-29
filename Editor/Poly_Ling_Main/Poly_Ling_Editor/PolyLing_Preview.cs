@@ -61,8 +61,8 @@ public partial class PolyLing
         // WorldMatrix が確定した後、GPU の変換行列バッファを更新する。
         // useWorldTransform=true により SkinningMatrix（WorldMatrix × BindPose）が使われる。
         // MeshFilter（BindPose=identity）は SkinningMatrix=WorldMatrix となり正しいワールド座標になる。
-        // WritebackTransformedVertices は廃止。面描画は DrawMesh に SkinningMatrix を渡す方式に変更済み。
         _unifiedAdapter?.UpdateTransform(useWorldTransform: true);
+        _unifiedAdapter?.WritebackTransformedVertices();
 
         // ViewportPanelが開いている場合: プレースホルダー表示のみ
         if (Poly_Ling.MeshListV2.ViewportPanel.IsOpen)

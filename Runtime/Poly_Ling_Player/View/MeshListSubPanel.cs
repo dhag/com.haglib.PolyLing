@@ -1,14 +1,18 @@
-// MeshListPanelV2.cs
-// TypedMeshListPanelの全機能をPanelContext/PanelCommand経由で実現
-// MeshContext/ModelContext/ToolContextへの依存なし
+// MeshListSubPanel.cs
+// MeshListPanelV2 のランタイムポート。
+// エディタ依存APIを以下のように置換:
+//   EditorApplication.delayCall     → _root.schedule.Execute
+//   EditorUtility.DisplayDialog     → 確認なし即実行
+//   PopupField<int>                 → DropdownField + インデックス変換
+//   AssetDatabase / UXML / USS      → コードによる UI 構築
+//   EditorWindow / CreateGUI        → Build(VisualElement) + SetContext
+// Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEditor.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.View;
@@ -16,17 +20,8 @@ using UIList.UIToolkitExtensions;
 
 namespace Poly_Ling.MeshListV2
 {
-    public class MeshListPanelV2 : EditorWindow, Poly_Ling.Tools.IPanelContextReceiver
+    public class MeshListSubPanel
     {
-        // ================================================================
-        // UXML/USSパス（MeshListV2フォルダ、UIフォルダの外）
-        // ================================================================
-
-        private const string UxmlPackagePath = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanelV2/MeshListPanelV2.uxml";
-        private const string UxmlAssetsPath  = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanelV2/MeshListPanelV2.uxml";
-        private const string UssPackagePath  = "Packages/com.haglib.polyling/Editor/Poly_Ling_Main/UI/MeshListPanelV2/MeshListPanelV2.uss";
-        private const string UssAssetsPath   = "Assets/Editor/Poly_Ling_Main/UI/MeshListPanelV2/MeshListPanelV2.uss";
-
         private enum TabType { Drawable, Bone, Morph }
 
         // ================================================================
@@ -37,9 +32,10 @@ namespace Poly_Ling.MeshListV2
         private bool _isReceiving;
 
         // ================================================================
-        // UI要素
+        // UI要素（エディタ版と同名）
         // ================================================================
 
+        private VisualElement _root;
         private Button _tabDrawable, _tabBone, _tabMorph;
         private VisualElement _mainContent, _morphEditor;
         private TreeView _treeView;
@@ -47,32 +43,12 @@ namespace Poly_Ling.MeshListV2
         private Toggle _showInfoToggle, _showMirrorSideToggle;
         private TextField _filterField;
 
-        // モーフエディタ
-        private Label _morphCountLabel, _morphStatusLabel;
-        private ListView _morphListView;
-        private Slider _morphTestWeight;
-        private TextField _morphFilterField;
-
-        // 変換セクション
-        private VisualElement _morphSourceMeshPopupContainer, _morphParentPopupContainer, _morphPanelPopupContainer;
-        private TextField _morphNameField;
-        private Button _btnMeshToMorph, _btnMorphToMesh;
-        private PopupField<int> _morphSourceMeshPopup, _morphParentPopup, _morphPanelPopup;
-
-        // モーフセット
-        private TextField _morphSetNameField;
-        private VisualElement _morphSetTypePopupContainer;
-        private PopupField<int> _morphSetTypePopup;
-        private Button _btnCreateMorphSet;
-
-        // 詳細パネル
         private Foldout _detailFoldout;
         private TextField _meshNameField;
         private Label _vertexCountLabel, _faceCountLabel, _triCountLabel, _quadCountLabel, _ngonCountLabel;
         private VisualElement _indexInfo;
         private Label _boneIndexLabel, _masterIndexLabel;
 
-        // BonePose
         private VisualElement _bonePoseSection;
         private Foldout _poseFoldout, _bindposeFoldout;
         private Toggle _poseActiveToggle;
@@ -88,17 +64,33 @@ namespace Poly_Ling.MeshListV2
         private Button _btnBakePose;
         private bool _isSyncingPoseUI;
 
-        // モード切り替え
+        // 詳細モード切り替え（エディタ版「detail-mode-toggle」＝「スキンドメッシュ」に名称変更）
         private Toggle _detailModeToggle;
         private VisualElement _tabHeader;
 
-        // BoneTransform（簡易モード用）
         private Foldout _transformFoldout;
         private FloatField _localPosX, _localPosY, _localPosZ;
         private FloatField _localRotX, _localRotY, _localRotZ;
         private Slider _localRotSliderX, _localRotSliderY, _localRotSliderZ;
         private FloatField _localSclX, _localSclY, _localSclZ;
         private bool _isSyncingTransformUI;
+
+        // モーフエディタ
+        private Label _morphCountLabel, _morphStatusLabel;
+        private ListView _morphListView;
+        private Slider _morphTestWeight;
+        private TextField _morphFilterField;
+        private VisualElement _morphSourceMeshPopupContainer, _morphParentPopupContainer, _morphPanelPopupContainer;
+        private TextField _morphNameField;
+        private Button _btnMeshToMorph, _btnMorphToMesh;
+        // PopupField<int> の代替：DropdownField + マスターインデックスリスト
+        private DropdownField _morphSourceMeshDropdown, _morphParentDropdown, _morphPanelDropdown;
+        private List<int> _morphSourceMeshIds = new List<int>();
+        private List<int> _morphParentIds     = new List<int>();
+        private VisualElement _morphSetTypePopupContainer;
+        private TextField _morphSetNameField;
+        private DropdownField _morphSetTypeDropdown;
+        private Button _btnCreateMorphSet;
 
         // ================================================================
         // データ
@@ -110,13 +102,11 @@ namespace Poly_Ling.MeshListV2
         private List<SummaryTreeAdapter> _selectedAdapters = new List<SummaryTreeAdapter>();
         private bool _refreshScheduled;
 
-        // モーフリスト
-        private List<IMeshView> _morphListData = new List<IMeshView>();
+        private List<IMeshView> _morphListData     = new List<IMeshView>();
         private List<IMeshView> _morphFilteredData = new List<IMeshView>();
         private bool _isSyncingMorphSelection;
         private bool _isMorphPreviewStarted;
 
-        // TreeItemキャッシュ
         private class TreeItemCache
         {
             public Label NameLabel, InfoLabel;
@@ -124,45 +114,40 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // プロパティ
+        // プロパティ（エディタ版と同一）
         // ================================================================
 
         private MeshCategory CurrentCategory => _currentTab switch
         {
             TabType.Drawable => MeshCategory.Drawable,
-            TabType.Bone => MeshCategory.Bone,
-            TabType.Morph => MeshCategory.Morph,
-            _ => MeshCategory.All
+            TabType.Bone     => MeshCategory.Bone,
+            TabType.Morph    => MeshCategory.Morph,
+            _                => MeshCategory.All
         };
 
         private bool IsSimpleMode => !(_detailModeToggle?.value ?? false);
-
-        private int ModelIndex => _ctx?.CurrentView?.CurrentModelIndex ?? 0;
+        private int ModelIndex    => _ctx?.CurrentView?.CurrentModelIndex ?? 0;
         private IModelView CurrentModel => _ctx?.CurrentView?.CurrentModel;
 
         // ================================================================
-        // ウィンドウ
+        // Build / SetContext
         // ================================================================
 
-        //[MenuItem("Tools/Poly_Ling/debug/Mesh List V2")]
-        public static void ShowWindow()
+        public void Build(VisualElement parent)
         {
-            var window = GetWindow<MeshListPanelV2>();
-            window.titleContent = new GUIContent("Mesh List V2");
-            window.minSize = new Vector2(300, 400);
+            parent.Clear();
+            _root = parent;
+            BuildUI(parent);
+            SetupTreeView();
+            RegisterButtonEvents();
+            BindBonePoseUI(parent);
+            BindTransformUI(parent);
+            BindMorphEditorUI(parent);
+            SwitchTab(TabType.Drawable);
         }
 
-        public static MeshListPanelV2 Open(PanelContext ctx)
+        public void SetContext(PanelContext ctx)
         {
-            var window = GetWindow<MeshListPanelV2>();
-            window.titleContent = new GUIContent("Mesh List V2");
-            window.minSize = new Vector2(300, 400);
-            window.SetContext(ctx);
-            window.Show();
-            return window;
-        }
-
-        public void SetContext(PanelContext ctx)        {
             if (_ctx != null) _ctx.OnViewChanged -= OnViewChanged;
             _ctx = ctx;
             if (_ctx != null)
@@ -172,100 +157,221 @@ namespace Poly_Ling.MeshListV2
             }
         }
 
-        // ================================================================
-        // ライフサイクル
-        // ================================================================
-
-        private void OnEnable()
-        {
-            if (_ctx != null)
-            {
-                _ctx.OnViewChanged -= OnViewChanged;
-                _ctx.OnViewChanged += OnViewChanged;
-            }
-        }
-
-        private void OnDisable()
+        public void Detach()
         {
             if (_ctx != null) _ctx.OnViewChanged -= OnViewChanged;
             SendEndMorphPreview();
             CleanupDragDrop();
         }
 
-        private void CreateGUI()
+        // ================================================================
+        // UI構築（エディタ版はUXMLだが、ここではコードで同等構造を構築）
+        // ================================================================
+
+        private void BuildUI(VisualElement root)
         {
-            var root = rootVisualElement;
-            var vt = TryLoadAsset<VisualTreeAsset>(UxmlPackagePath, UxmlAssetsPath);
-            if (vt != null) vt.CloneTree(root);
-            else { root.Add(new Label($"UXML not found: {UxmlPackagePath}")); return; }
+            root.style.paddingLeft = 4; root.style.paddingRight  = 4;
+            root.style.paddingTop  = 4; root.style.paddingBottom = 4;
 
-            var ss = TryLoadAsset<StyleSheet>(UssPackagePath, UssAssetsPath);
-            if (ss != null) root.styleSheets.Add(ss);
+            // ── パネル名
+            var panelNameLabel = new Label("オブジェクトリスト");
+            panelNameLabel.style.fontSize = 12;
+            panelNameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            panelNameLabel.style.marginBottom = 3;
+            root.Add(panelNameLabel);
 
-            BindUIElements(root);
-            SetupTreeView();
-            RegisterButtonEvents();
-            BindBonePoseUI(root);
-            BindTransformUI(root);
-            BindMorphEditorUI(root);
-            SwitchTab(TabType.Drawable);
+            // ── スキンドメッシュ（= 詳細モード）トグル
+            _detailModeToggle = new Toggle("スキンドメッシュ") { value = false, name = "detail-mode-toggle" };
+            _detailModeToggle.style.color = Col(0.85f);
+            _detailModeToggle.style.marginBottom = 3;
+            root.Add(_detailModeToggle);
 
-            if (_ctx?.CurrentView != null) OnViewChanged(_ctx.CurrentView, ChangeKind.ModelSwitch);
+            // ── タブヘッダー（詳細モード時のみ表示）
+            _tabHeader = new VisualElement { name = "tab-header" };
+            _tabHeader.style.flexDirection = FlexDirection.Row;
+            _tabHeader.style.marginBottom  = 3;
+            _tabDrawable = MakeTabBtn("Mesh",  "tab-drawable");
+            _tabBone     = MakeTabBtn("Bone",  "tab-bone");
+            _tabMorph    = MakeTabBtn("Morph", "tab-morph");
+            _tabHeader.Add(_tabDrawable); _tabHeader.Add(_tabBone); _tabHeader.Add(_tabMorph);
+            root.Add(_tabHeader);
+
+            // ── カウント・フィルター行
+            var topRow = new VisualElement();
+            topRow.style.flexDirection = FlexDirection.Row;
+            topRow.style.alignItems    = Align.Center;
+            topRow.style.marginBottom  = 3;
+
+            _countLabel = new Label { name = "count-label" };
+            _countLabel.style.flexGrow = 1; _countLabel.style.fontSize = 10; _countLabel.style.color = Col(0.6f);
+            topRow.Add(_countLabel);
+
+            _showInfoToggle = new Toggle { name = "show-info-toggle", value = true };
+            _showInfoToggle.tooltip = "情報表示"; _showInfoToggle.style.marginLeft = 4;
+            topRow.Add(_showInfoToggle);
+
+            _showMirrorSideToggle = new Toggle { name = "show-mirror-toggle", value = false };
+            _showMirrorSideToggle.tooltip = "ミラー側表示"; _showMirrorSideToggle.style.marginLeft = 2;
+            topRow.Add(_showMirrorSideToggle);
+            root.Add(topRow);
+
+            _filterField = new TextField { name = "filter-field" };
+            _filterField.style.marginBottom = 3;
+            root.Add(_filterField);
+
+            // ── メインコンテンツ（ツリー + 詳細 + BonePose + Transform）
+            _mainContent = new VisualElement { name = "main-content" };
+            _mainContent.style.flexGrow = 1;
+
+            _treeView = new TreeView { name = "mesh-tree" };
+            _treeView.style.flexGrow  = 1;
+            _treeView.style.minHeight = 80;
+            _treeView.style.maxHeight = 200;
+            _mainContent.Add(_treeView);
+
+            // 操作ボタン行
+            var btnRow = new VisualElement();
+            btnRow.style.flexDirection = FlexDirection.Row;
+            btnRow.style.flexWrap     = Wrap.Wrap;
+            btnRow.style.marginTop    = 3;
+            btnRow.Add(MakeSmallBtn("+",   "btn-add"));
+            btnRow.Add(MakeSmallBtn("▲",  "btn-up"));
+            btnRow.Add(MakeSmallBtn("▼",  "btn-down"));
+            btnRow.Add(MakeSmallBtn("←",  "btn-outdent"));
+            btnRow.Add(MakeSmallBtn("→",  "btn-indent"));
+            btnRow.Add(MakeSmallBtn("Dup", "btn-duplicate"));
+            btnRow.Add(MakeSmallBtn("Del", "btn-delete"));
+            btnRow.Add(MakeSmallBtn("👁",  "btn-show"));
+            btnRow.Add(MakeSmallBtn("−",   "btn-hide"));
+            _mainContent.Add(btnRow);
+
+            // 詳細Foldout
+            _detailFoldout = new Foldout { text = "詳細", value = true, name = "detail-foldout" };
+            _detailFoldout.style.marginTop = 4;
+            BuildDetailFoldout(_detailFoldout.contentContainer);
+            _mainContent.Add(_detailFoldout);
+
+            // indexInfo（ボーンタブ用）
+            _indexInfo = new VisualElement { name = "index-info" };
+            _boneIndexLabel   = MakeInfoLabel("bone-index-label");
+            _masterIndexLabel = MakeInfoLabel("master-index-label");
+            _indexInfo.Add(_boneIndexLabel); _indexInfo.Add(_masterIndexLabel);
+            _mainContent.Add(_indexInfo);
+
+            root.Add(_mainContent);
+
+            // ── モーフエディタ（詳細モード+Morphタブ時のみ表示）
+            _morphEditor = new VisualElement { name = "morph-editor" };
+            _morphEditor.style.display = DisplayStyle.None;
+            BuildMorphEditor(_morphEditor);
+            root.Add(_morphEditor);
+
+            // ── ステータス
+            _statusLabel = new Label("") { name = "status-label" };
+            _statusLabel.style.fontSize = 10; _statusLabel.style.marginTop = 4; _statusLabel.style.color = Col(0.6f);
+            root.Add(_statusLabel);
         }
 
-        private static T TryLoadAsset<T>(string pkg, string assets) where T : UnityEngine.Object
+        private void BuildDetailFoldout(VisualElement c)
         {
-            T a = null;
-            if (!string.IsNullOrEmpty(pkg)) a = AssetDatabase.LoadAssetAtPath<T>(pkg);
-            if (a == null && !string.IsNullOrEmpty(assets)) a = AssetDatabase.LoadAssetAtPath<T>(assets);
-            return a;
+            _meshNameField = new TextField { name = "mesh-name-field" };
+            _meshNameField.style.marginBottom = 3;
+            c.Add(_meshNameField);
+            _vertexCountLabel = MakeInfoLabel("vertex-count-label"); c.Add(_vertexCountLabel);
+            _faceCountLabel   = MakeInfoLabel("face-count-label");   c.Add(_faceCountLabel);
+            _triCountLabel    = MakeInfoLabel("tri-count-label");     c.Add(_triCountLabel);
+            _quadCountLabel   = MakeInfoLabel("quad-count-label");    c.Add(_quadCountLabel);
+            _ngonCountLabel   = MakeInfoLabel("ngon-count-label");    c.Add(_ngonCountLabel);
+        }
+
+        private void BuildMorphEditor(VisualElement parent)
+        {
+            // カウント・フィルター
+            var topRow = new VisualElement(); topRow.style.flexDirection = FlexDirection.Row;
+            _morphCountLabel = new Label(); _morphCountLabel.style.flexGrow = 1; _morphCountLabel.style.fontSize = 10; _morphCountLabel.style.color = Col(0.6f);
+            topRow.Add(_morphCountLabel);
+            parent.Add(topRow);
+
+            _morphFilterField = new TextField(); _morphFilterField.style.marginBottom = 3;
+            parent.Add(_morphFilterField);
+
+            // リスト
+            _morphListView = new ListView(_morphFilteredData, 20, MorphMake, MorphBind);
+            _morphListView.style.flexGrow  = 1; _morphListView.style.minHeight = 60; _morphListView.style.maxHeight = 140;
+            _morphListView.selectionType   = SelectionType.Multiple;
+            _morphListView.selectionChanged += OnMorphSel;
+            parent.Add(_morphListView);
+
+            // テストウェイト
+            var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
+            var wLbl = new Label("テストウェイト"); wLbl.style.width = 90; wLbl.style.fontSize = 10; wLbl.style.color = Col(0.85f); wRow.Add(wLbl);
+            _morphTestWeight = new Slider(0f, 1f); _morphTestWeight.style.flexGrow = 1; wRow.Add(_morphTestWeight);
+            parent.Add(wRow);
+
+            // 選択操作ボタン
+            var selRow = new VisualElement(); selRow.style.flexDirection = FlexDirection.Row; selRow.style.marginTop = 3;
+            selRow.Add(MakeSmallBtn("全選択",   "btn-morph-test-select-all"));
+            selRow.Add(MakeSmallBtn("全解除",   "btn-morph-test-deselect-all"));
+            selRow.Add(MakeSmallBtn("リセット", "btn-morph-test-reset"));
+            parent.Add(selRow);
+
+            parent.Add(Separator());
+
+            // モーフ変換
+            parent.Add(SectionHeader("メッシュ→モーフ"));
+
+            _morphSourceMeshPopupContainer = new VisualElement { name = "morph-source-mesh-container" };
+            parent.Add(LabeledRow("元メッシュ", _morphSourceMeshPopupContainer));
+
+            _morphParentPopupContainer = new VisualElement { name = "morph-parent-container" };
+            parent.Add(LabeledRow("親", _morphParentPopupContainer));
+
+            _morphPanelPopupContainer = new VisualElement { name = "morph-panel-container" };
+            parent.Add(LabeledRow("パネル", _morphPanelPopupContainer));
+
+            _morphNameField = new TextField(); _morphNameField.name = "morph-name-field";
+            parent.Add(LabeledRow("名前", _morphNameField));
+
+            var convRow = new VisualElement(); convRow.style.flexDirection = FlexDirection.Row;
+            _btnMeshToMorph = MakeSmallBtn("Mesh→Morph", "btn-mesh-to-morph");
+            _btnMorphToMesh = MakeSmallBtn("Morph→Mesh", "btn-morph-to-mesh");
+            convRow.Add(_btnMeshToMorph); convRow.Add(_btnMorphToMesh);
+            parent.Add(convRow);
+
+            parent.Add(Separator());
+
+            // モーフセット作成
+            parent.Add(SectionHeader("モーフセット作成"));
+            _morphSetNameField = new TextField(); _morphSetNameField.name = "morph-set-name-field";
+            parent.Add(LabeledRow("セット名", _morphSetNameField));
+
+            _morphSetTypePopupContainer = new VisualElement { name = "morph-set-type-container" };
+            parent.Add(LabeledRow("種別", _morphSetTypePopupContainer));
+
+            _btnCreateMorphSet = MakeSmallBtn("セット作成", "btn-create-morph-set");
+            parent.Add(_btnCreateMorphSet);
+
+            _morphStatusLabel = new Label(""); _morphStatusLabel.style.fontSize = 10; _morphStatusLabel.style.color = new StyleColor(new Color(1f, 0.7f, 0.4f)); _morphStatusLabel.style.marginTop = 3;
+            parent.Add(_morphStatusLabel);
         }
 
         // ================================================================
-        // UI構築
+        // SetupTreeView（エディタ版と同一）
         // ================================================================
 
-        private void BindUIElements(VisualElement root)
+        private void SetupTreeView()
         {
-            _tabDrawable = root.Q<Button>("tab-drawable");
-            _tabBone = root.Q<Button>("tab-bone");
-            _tabMorph = root.Q<Button>("tab-morph");
-            _mainContent = root.Q<VisualElement>("main-content");
-            _morphEditor = root.Q<VisualElement>("morph-editor");
-            _treeView = root.Q<TreeView>("mesh-tree");
-            _countLabel = root.Q<Label>("count-label");
-            _showInfoToggle = root.Q<Toggle>("show-info-toggle");
-            _showMirrorSideToggle = root.Q<Toggle>("show-mirror-toggle");
-            _statusLabel = root.Q<Label>("status-label");
-            _filterField = root.Q<TextField>("filter-field");
-
-            _detailFoldout = root.Q<Foldout>("detail-foldout");
-            _meshNameField = root.Q<TextField>("mesh-name-field");
-            _vertexCountLabel = root.Q<Label>("vertex-count-label");
-            _faceCountLabel = root.Q<Label>("face-count-label");
-            _triCountLabel = root.Q<Label>("tri-count-label");
-            _quadCountLabel = root.Q<Label>("quad-count-label");
-            _ngonCountLabel = root.Q<Label>("ngon-count-label");
-            _indexInfo = root.Q<VisualElement>("index-info");
-            _boneIndexLabel = root.Q<Label>("bone-index-label");
-            _masterIndexLabel = root.Q<Label>("master-index-label");
-
-            _tabDrawable?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Drawable));
-            _tabBone?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Bone));
-            _tabMorph?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Morph));
-
-            _detailModeToggle = root.Q<Toggle>("detail-mode-toggle");
-            _tabHeader = root.Q<VisualElement>("tab-header");
-            _detailModeToggle?.RegisterValueChangedCallback(_ => OnDetailModeChanged());
-
-            _showInfoToggle?.RegisterValueChangedCallback(_ => RefreshTree());
-            _showMirrorSideToggle?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
-            _filterField?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
-            _meshNameField?.RegisterValueChangedCallback(OnNameFieldChanged);
+            if (_treeView == null) return;
+            _treeView.fixedItemHeight    = 20;
+            _treeView.makeItem           = MakeTreeItem;
+            _treeView.bindItem           = BindTreeItem;
+            _treeView.selectionType      = SelectionType.Multiple;
+            _treeView.selectionChanged   += OnSelectionChanged;
+            _treeView.itemExpandedChanged += OnItemExpandedChanged;
         }
 
         // ================================================================
-        // タブ切り替え
+        // タブ切り替え（エディタ版と同一）
         // ================================================================
 
         private void SwitchTab(TabType tab)
@@ -273,23 +379,25 @@ namespace Poly_Ling.MeshListV2
             if (_currentTab == TabType.Morph && tab != TabType.Morph) SendEndMorphPreview();
             _currentTab = tab;
             SetTabActive(_tabDrawable, tab == TabType.Drawable);
-            SetTabActive(_tabBone, tab == TabType.Bone);
-            SetTabActive(_tabMorph, tab == TabType.Morph);
+            SetTabActive(_tabBone,     tab == TabType.Bone);
+            SetTabActive(_tabMorph,    tab == TabType.Morph);
 
             bool simpleMode = IsSimpleMode;
             if (_tabHeader != null) _tabHeader.style.display = simpleMode ? DisplayStyle.None : DisplayStyle.Flex;
 
             if (simpleMode)
             {
-                if (_indexInfo != null) _indexInfo.style.display = DisplayStyle.None;
+                if (_indexInfo     != null) _indexInfo.style.display     = DisplayStyle.None;
                 if (_bonePoseSection != null) _bonePoseSection.style.display = DisplayStyle.Flex;
-                if (_mainContent != null) _mainContent.style.display = DisplayStyle.Flex;
-                if (_morphEditor != null) _morphEditor.style.display = DisplayStyle.None;
+                if (_mainContent   != null) _mainContent.style.display   = DisplayStyle.Flex;
+                if (_morphEditor   != null) _morphEditor.style.display   = DisplayStyle.None;
             }
             else
             {
-                if (_indexInfo != null) _indexInfo.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
-                if (_bonePoseSection != null) _bonePoseSection.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
+                if (_indexInfo != null)
+                    _indexInfo.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
+                if (_bonePoseSection != null)
+                    _bonePoseSection.style.display = tab == TabType.Bone ? DisplayStyle.Flex : DisplayStyle.None;
                 bool isMorph = tab == TabType.Morph;
                 if (_mainContent != null) _mainContent.style.display = isMorph ? DisplayStyle.None : DisplayStyle.Flex;
                 if (_morphEditor != null) _morphEditor.style.display = isMorph ? DisplayStyle.Flex : DisplayStyle.None;
@@ -315,19 +423,8 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // TreeView設定
+        // CreateTreeRoot（エディタ版と同一）
         // ================================================================
-
-        private void SetupTreeView()
-        {
-            if (_treeView == null) return;
-            _treeView.fixedItemHeight = 20;
-            _treeView.makeItem = MakeTreeItem;
-            _treeView.bindItem = BindTreeItem;
-            _treeView.selectionType = SelectionType.Multiple;
-            _treeView.selectionChanged += OnSelectionChanged;
-            _treeView.itemExpandedChanged += OnItemExpandedChanged;
-        }
 
         private void CreateTreeRoot()
         {
@@ -339,33 +436,30 @@ namespace Poly_Ling.MeshListV2
 
             if (IsSimpleMode)
             {
-                // 簡易モード: メッシュフィルター（非スキンド）のみ表示
-                var filtered = model.DrawableList?
-                    .Where(v => !v.HasBoneWeight)
-                    .ToList() ?? new List<IMeshView>();
+                var filtered = model.DrawableList?.Where(v => !v.HasBoneWeight).ToList() ?? new List<IMeshView>();
                 sourceList = filtered;
-                category = MeshCategory.Drawable;
+                category   = MeshCategory.Drawable;
             }
             else
             {
                 sourceList = _currentTab switch
                 {
                     TabType.Drawable => model.DrawableList,
-                    TabType.Bone => model.BoneList,
-                    _ => null
+                    TabType.Bone     => model.BoneList,
+                    _                => null
                 };
                 category = CurrentCategory;
             }
 
             if (sourceList == null) return;
 
-            bool excludeMirror = !(_showMirrorSideToggle?.value ?? false);
-            string filter = _filterField?.value;
+            bool   excludeMirror = !(_showMirrorSideToggle?.value ?? false);
+            string filter        = _filterField?.value;
 
             _treeRoot = new SummaryTreeRoot();
-            _treeRoot.ModelIndex = ModelIndex;
-            _treeRoot.SendCommand = cmd => _ctx?.SendCommand(cmd);
-            _treeRoot.OnChanged = () =>
+            _treeRoot.ModelIndex   = ModelIndex;
+            _treeRoot.SendCommand  = cmd => _ctx?.SendCommand(cmd);
+            _treeRoot.OnChanged    = () =>
             {
                 _isReceiving = true;
                 try { RefreshTreeImmediate(); SyncTreeViewSelection(); UpdateDetailPanel(); }
@@ -376,39 +470,34 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // TreeView MakeItem / BindItem
+        // MakeItem / BindItem（エディタ版と同一）
         // ================================================================
 
         private VisualElement MakeTreeItem()
         {
             var c = new VisualElement();
             c.style.flexDirection = FlexDirection.Row;
-            c.style.flexGrow = 1;
-            c.style.alignItems = Align.Center;
-            c.style.paddingLeft = 2;
-            c.style.paddingRight = 4;
+            c.style.flexGrow = 1; c.style.alignItems = Align.Center;
+            c.style.paddingLeft = 2; c.style.paddingRight = 4;
 
             var nameLabel = new Label { name = "name" };
             nameLabel.style.flexGrow = 1; nameLabel.style.flexShrink = 1;
-            nameLabel.style.overflow = Overflow.Hidden;
-            nameLabel.style.textOverflow = TextOverflow.Ellipsis;
-            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            nameLabel.style.marginRight = 4;
+            nameLabel.style.overflow = Overflow.Hidden; nameLabel.style.textOverflow = TextOverflow.Ellipsis;
+            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft; nameLabel.style.marginRight = 4;
+            nameLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             c.Add(nameLabel);
 
             var infoLabel = new Label { name = "info" };
             infoLabel.style.width = 80; infoLabel.style.flexShrink = 0;
             infoLabel.style.unityTextAlign = TextAnchor.MiddleRight;
-            infoLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            infoLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
             infoLabel.style.fontSize = 11; infoLabel.style.marginRight = 4;
             c.Add(infoLabel);
 
-            var attr = new VisualElement();
-            attr.style.flexDirection = FlexDirection.Row;
-            attr.style.flexShrink = 0;
-            var visBtn = MkAttrBtn("vis-btn", "\u0001F441", "可視性切り替え");
-            var lockBtn = MkAttrBtn("lock-btn", "\u0001F512", "ロック切り替え");
-            var symBtn = MkAttrBtn("sym-btn", "\u21C6", "対称切り替え");
+            var attr = new VisualElement(); attr.style.flexDirection = FlexDirection.Row; attr.style.flexShrink = 0;
+            var visBtn = MkAttrBtn("vis-btn", "👁", "可視性切り替え");
+            var lockBtn = MkAttrBtn("lock-btn", "🔒", "ロック切り替え");
+            var symBtn  = MkAttrBtn("sym-btn", "⇆", "対称切り替え");
             attr.Add(visBtn); attr.Add(lockBtn); attr.Add(symBtn);
             c.Add(attr);
 
@@ -421,12 +510,10 @@ namespace Poly_Ling.MeshListV2
             var b = new Button { name = name, text = icon, tooltip = tip };
             b.style.width = 24; b.style.height = 18;
             b.style.marginLeft = 1; b.style.marginRight = 1;
-            b.style.paddingLeft = 0; b.style.paddingRight = 0;
-            b.style.paddingTop = 0; b.style.paddingBottom = 0;
+            b.style.paddingLeft = 0; b.style.paddingRight = 0; b.style.paddingTop = 0; b.style.paddingBottom = 0;
             b.style.fontSize = 12;
-            b.style.borderTopWidth = 0; b.style.borderBottomWidth = 0;
-            b.style.borderLeftWidth = 0; b.style.borderRightWidth = 0;
-            b.style.backgroundColor = new Color(0, 0, 0, 0);
+            b.style.borderTopWidth = 0; b.style.borderBottomWidth = 0; b.style.borderLeftWidth = 0; b.style.borderRightWidth = 0;
+            b.style.backgroundColor = new StyleColor(new Color(0, 0, 0, 0));
             return b;
         }
 
@@ -437,7 +524,6 @@ namespace Poly_Ling.MeshListV2
             var cache = element.userData as TreeItemCache;
             if (cache == null) return;
 
-            // 名前（ミラー情報付き）
             if (cache.NameLabel != null)
             {
                 if (adapter.IsMirrorSide)
@@ -450,7 +536,6 @@ namespace Poly_Ling.MeshListV2
                 { cache.NameLabel.text = adapter.DisplayName; cache.NameLabel.style.opacity = 1f; }
             }
 
-            // Info
             if (cache.InfoLabel != null)
             {
                 bool showInfo = _showInfoToggle?.value ?? true;
@@ -460,7 +545,6 @@ namespace Poly_Ling.MeshListV2
                 cache.InfoLabel.style.display = showInfo ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
-            // 属性ボタン
             BindAttrBtn(cache.VisBtn, adapter.IsVisible, "👁", "−",
                 () => SendCmd(new ToggleVisibilityCommand(ModelIndex, adapter.MasterIndex)));
             BindAttrBtn(cache.LockBtn, adapter.IsLocked, "🔒", "🔓",
@@ -473,8 +557,8 @@ namespace Poly_Ling.MeshListV2
                 if (show)
                 {
                     string icon = adapter.GetMirrorTypeDisplay();
-                    if (adapter.IsMirrorSide) icon = "\U0001FA9E";
-                    else if (adapter.IsRealSide) icon = "\u21C6";
+                    if      (adapter.IsMirrorSide)        icon = "\U0001FA9E";
+                    else if (adapter.IsRealSide)          icon = "\u21C6";
                     else if (adapter.HasBakedMirrorChild) icon = "\u21C6B";
                     BindAttrBtn(cache.SymBtn, adapter.HasMirrorIcon, icon, "",
                         () => SendCmd(new CycleMirrorTypeCommand(ModelIndex, adapter.MasterIndex)));
@@ -491,7 +575,7 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // 選択
+        // 選択（エディタ版と同一）
         // ================================================================
 
         private void OnSelectionChanged(IEnumerable<object> selection)
@@ -509,6 +593,7 @@ namespace Poly_Ling.MeshListV2
                 SendCmd(new SelectMeshCommand(ModelIndex, CurrentCategory, indices));
             }
             finally { _isReceiving = false; }
+
             UpdateDetailPanel();
             UpdateBonePosePanel();
             UpdateTransformPanel();
@@ -526,24 +611,25 @@ namespace Poly_Ling.MeshListV2
             int[] sel = _currentTab switch
             {
                 TabType.Drawable => CurrentModel.SelectedDrawableIndices,
-                TabType.Bone => CurrentModel.SelectedBoneIndices,
-                _ => null
+                TabType.Bone     => CurrentModel.SelectedBoneIndices,
+                _                => null,
             };
             if (sel == null) { _treeView.ClearSelection(); return; }
-            var ids2 = new List<int>();
+
+            var ids = new List<int>();
             foreach (var idx in sel)
             {
                 var a = _treeRoot.GetAdapterByMasterIndex(idx);
-                if (a != null) ids2.Add(a.Id);
+                if (a != null) ids.Add(a.Id);
             }
             _isReceiving = true;
-            try { _treeView.SetSelectionWithoutNotify(ids2); }
+            try { _treeView.SetSelectionWithoutNotify(ids); }
             finally { _isReceiving = false; }
             RebuildSelectedAdaptersFromCurrentModel();
         }
 
         // ================================================================
-        // D&D
+        // D&D（エディタ版と同一）
         // ================================================================
 
         private void SetupDragDrop()
@@ -554,30 +640,33 @@ namespace Poly_Ling.MeshListV2
             _dragDropHelper.Setup();
         }
 
-        private void CleanupDragDrop()
-        {
-            _dragDropHelper?.Cleanup();
-            _dragDropHelper = null;
-        }
+        private void CleanupDragDrop() { _dragDropHelper?.Cleanup(); _dragDropHelper = null; }
 
         // ================================================================
-        // ボタンイベント
+        // ボタンイベント（エディタ版と同一ロジック、DisplayDialog除去）
         // ================================================================
 
         private void RegisterButtonEvents()
         {
-            var r = rootVisualElement;
-            r.Q<Button>("btn-add")?.RegisterCallback<ClickEvent>(_ => OnAdd());
-            r.Q<Button>("btn-up")?.RegisterCallback<ClickEvent>(_ => MoveSelected(-1));
-            r.Q<Button>("btn-down")?.RegisterCallback<ClickEvent>(_ => MoveSelected(1));
-            r.Q<Button>("btn-outdent")?.RegisterCallback<ClickEvent>(_ => OutdentSelected());
-            r.Q<Button>("btn-indent")?.RegisterCallback<ClickEvent>(_ => IndentSelected());
-            r.Q<Button>("btn-duplicate")?.RegisterCallback<ClickEvent>(_ => DuplicateSelected());
-            r.Q<Button>("btn-delete")?.RegisterCallback<ClickEvent>(_ => DeleteSelected());
-            r.Q<Button>("btn-show")?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(true));
-            r.Q<Button>("btn-hide")?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(false));
-            r.Q<Button>("btn-to-top")?.RegisterCallback<ClickEvent>(_ => MoveToEdge(true));
-            r.Q<Button>("btn-to-bottom")?.RegisterCallback<ClickEvent>(_ => MoveToEdge(false));
+            _tabDrawable?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Drawable));
+            _tabBone    ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Bone));
+            _tabMorph   ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Morph));
+
+            Q<Button>("btn-add")      ?.RegisterCallback<ClickEvent>(_ => OnAdd());
+            Q<Button>("btn-up")       ?.RegisterCallback<ClickEvent>(_ => MoveSelected(-1));
+            Q<Button>("btn-down")     ?.RegisterCallback<ClickEvent>(_ => MoveSelected(1));
+            Q<Button>("btn-outdent")  ?.RegisterCallback<ClickEvent>(_ => OutdentSelected());
+            Q<Button>("btn-indent")   ?.RegisterCallback<ClickEvent>(_ => IndentSelected());
+            Q<Button>("btn-duplicate")?.RegisterCallback<ClickEvent>(_ => DuplicateSelected());
+            Q<Button>("btn-delete")   ?.RegisterCallback<ClickEvent>(_ => DeleteSelected());
+            Q<Button>("btn-show")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(true));
+            Q<Button>("btn-hide")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(false));
+
+            _detailModeToggle?.RegisterValueChangedCallback(_ => OnDetailModeChanged());
+            _showInfoToggle?.RegisterValueChangedCallback(_ => RefreshTree());
+            _showMirrorSideToggle?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
+            _filterField?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
+            _meshNameField?.RegisterValueChangedCallback(OnNameFieldChanged);
         }
 
         private void OnNameFieldChanged(ChangeEvent<string> evt)
@@ -600,20 +689,14 @@ namespace Poly_Ling.MeshListV2
         {
             if (_selectedAdapters.Count != 1 || _treeRoot == null) return;
             if (TreeViewHelper.Outdent(_selectedAdapters[0], _treeRoot.RootItems))
-            {
-                TreeViewHelper.RebuildParentReferences(_treeRoot.RootItems);
-                _treeRoot.OnTreeChanged();
-            }
+            { TreeViewHelper.RebuildParentReferences(_treeRoot.RootItems); _treeRoot.OnTreeChanged(); }
         }
 
         private void IndentSelected()
         {
             if (_selectedAdapters.Count != 1 || _treeRoot == null) return;
             if (TreeViewHelper.Indent(_selectedAdapters[0], _treeRoot.RootItems))
-            {
-                TreeViewHelper.RebuildParentReferences(_treeRoot.RootItems);
-                _treeRoot.OnTreeChanged();
-            }
+            { TreeViewHelper.RebuildParentReferences(_treeRoot.RootItems); _treeRoot.OnTreeChanged(); }
         }
 
         private void DuplicateSelected()
@@ -624,12 +707,10 @@ namespace Poly_Ling.MeshListV2
 
         private void DeleteSelected()
         {
+            // Player: EditorUtility.DisplayDialog なし、即実行
             if (_selectedAdapters.Count == 0) return;
-            string msg = _selectedAdapters.Count == 1
-                ? $"'{_selectedAdapters[0].DisplayName}' を削除しますか？"
-                : $"{_selectedAdapters.Count}個を削除しますか？";
-            if (!EditorUtility.DisplayDialog("削除確認", msg, "削除", "キャンセル")) return;
-            SendCmd(new DeleteMeshesCommand(ModelIndex, _selectedAdapters.OrderByDescending(a => a.MasterIndex).Select(a => a.MasterIndex).ToArray()));
+            SendCmd(new DeleteMeshesCommand(ModelIndex,
+                _selectedAdapters.OrderByDescending(a => a.MasterIndex).Select(a => a.MasterIndex).ToArray()));
             _selectedAdapters.Clear();
         }
 
@@ -650,7 +731,7 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // Summary受信 → 全体更新
+        // OnViewChanged（エディタ版と同一、EditorApplication.delayCall を schedule.Execute に）
         // ================================================================
 
         private void OnViewChanged(IProjectView view, ChangeKind kind)
@@ -662,54 +743,36 @@ namespace Poly_Ling.MeshListV2
                 switch (kind)
                 {
                     case ChangeKind.Selection:
-                        // 選択変更のみ：ツリー再構築不要
-                        if (_currentTab != TabType.Morph)
-                            SyncTreeViewSelection();
-                        else
-                            SyncMorphSel();
-                        UpdateDetailPanel();
-                        UpdateBonePosePanel();
-                        UpdateTransformPanel();
+                        if (_currentTab != TabType.Morph) SyncTreeViewSelection(); else SyncMorphSel();
+                        UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
-
                     case ChangeKind.Attributes:
-                        // 属性変更：既存ツリーを再バインドのみ
-                        if (_currentTab != TabType.Morph)
-                        {
-                            _treeView?.RefreshItems();
-                            SyncTreeViewSelection();
-                        }
-                        else
-                        {
-                            RefreshMorphEditor();
-                        }
-                        UpdateDetailPanel();
-                        UpdateBonePosePanel();
-                        UpdateTransformPanel();
+                        if (_currentTab != TabType.Morph) { _treeView?.RefreshItems(); SyncTreeViewSelection(); }
+                        else RefreshMorphEditor();
+                        UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
-
                     case ChangeKind.ListStructure:
                     case ChangeKind.ModelSwitch:
                     default:
-                        // フルリビルド
-                        if (_currentTab != TabType.Morph)
+                        // スキンドメッシュの自動設定
+                        if (_detailModeToggle != null)
                         {
-                            CreateTreeRoot();
-                            RefreshAllImmediate();
-                            SyncTreeViewSelection();
+                            var model = view?.CurrentModel;
+                            bool hasSkinned = model?.DrawableList?.Any(v => v.HasBoneWeight) ?? false;
+                            _detailModeToggle.SetValueWithoutNotify(hasSkinned);
+                            OnDetailModeChanged();
                         }
+                        if (_currentTab != TabType.Morph) { CreateTreeRoot(); RefreshAllImmediate(); SyncTreeViewSelection(); }
                         if (_currentTab == TabType.Morph) RefreshMorphEditor();
-                        UpdateDetailPanel();
-                        UpdateBonePosePanel();
-                        UpdateTransformPanel();
+                        UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
                 }
             }
-            finally { EditorApplication.delayCall += () => _isReceiving = false; }
+            finally { _root?.schedule.Execute(() => _isReceiving = false); }
         }
 
         // ================================================================
-        // 更新
+        // 更新（RefreshTree の delayCall → schedule.Execute）
         // ================================================================
 
         private void RefreshAllImmediate() { RefreshTreeImmediate(); UpdateHeader(); UpdateDetailPanel(); }
@@ -718,7 +781,7 @@ namespace Poly_Ling.MeshListV2
         {
             if (_treeView == null || _treeRoot == null || _refreshScheduled) return;
             _refreshScheduled = true;
-            EditorApplication.delayCall += () => { _refreshScheduled = false; ApplyTreeToView(); };
+            _root?.schedule.Execute(() => { _refreshScheduled = false; ApplyTreeToView(); });
         }
 
         private void RefreshTreeImmediate()
@@ -748,17 +811,13 @@ namespace Poly_Ling.MeshListV2
         private void UpdateHeader()
         {
             if (_countLabel == null) return;
-            if (IsSimpleMode)
-            {
-                _countLabel.text = $"メッシュ+ボーン: {_treeRoot?.TotalCount ?? 0}";
-                return;
-            }
+            if (IsSimpleMode) { _countLabel.text = $"メッシュ+ボーン: {_treeRoot?.TotalCount ?? 0}"; return; }
             string label = _currentTab switch { TabType.Drawable => "メッシュ", TabType.Bone => "ボーン", _ => "モーフ" };
             _countLabel.text = $"{label}: {_treeRoot?.TotalCount ?? 0}";
         }
 
         // ================================================================
-        // 詳細パネル
+        // 詳細パネル（エディタ版と同一）
         // ================================================================
 
         private void UpdateDetailPanel()
@@ -786,56 +845,79 @@ namespace Poly_Ling.MeshListV2
             {
                 _meshNameField?.SetValueWithoutNotify($"({_selectedAdapters.Count}個選択)"); _meshNameField?.SetEnabled(false);
                 SL(_vertexCountLabel, $"頂点: {_selectedAdapters.Sum(a => a.VertexCount)} (合計)");
-                SL(_faceCountLabel, $"面: {_selectedAdapters.Sum(a => a.FaceCount)} (合計)");
+                SL(_faceCountLabel,   $"面: {_selectedAdapters.Sum(a => a.FaceCount)} (合計)");
             }
         }
 
         // ================================================================
-        // BonePose セクション
+        // BonePose（エディタ版と同一）
         // ================================================================
 
         private void BindBonePoseUI(VisualElement root)
         {
-            _bonePoseSection = root.Q<VisualElement>("bone-pose-section");
-            _poseFoldout = root.Q<Foldout>("pose-foldout");
-            _bindposeFoldout = root.Q<Foldout>("bindpose-foldout");
-            _poseActiveToggle = root.Q<Toggle>("pose-active-toggle");
-            _restPosX = root.Q<FloatField>("rest-pos-x"); _restPosY = root.Q<FloatField>("rest-pos-y"); _restPosZ = root.Q<FloatField>("rest-pos-z");
-            _restRotX = root.Q<FloatField>("rest-rot-x"); _restRotY = root.Q<FloatField>("rest-rot-y"); _restRotZ = root.Q<FloatField>("rest-rot-z");
-            _restRotSliderX = root.Q<Slider>("rest-rot-slider-x"); _restRotSliderY = root.Q<Slider>("rest-rot-slider-y"); _restRotSliderZ = root.Q<Slider>("rest-rot-slider-z");
-            _restSclX = root.Q<FloatField>("rest-scl-x"); _restSclY = root.Q<FloatField>("rest-scl-y"); _restSclZ = root.Q<FloatField>("rest-scl-z");
-            _poseLayersContainer = root.Q<VisualElement>("pose-layers-container");
+            _bonePoseSection = new VisualElement { name = "bone-pose-section" };
+            _bonePoseSection.style.marginTop = 4;
 
-            // rest系フィールドはBoneTransformへの直接編集として配線
-            RegRestTF(_restPosX, SetBoneTransformValueCommand.Field.PositionX);
-            RegRestTF(_restPosY, SetBoneTransformValueCommand.Field.PositionY);
-            RegRestTF(_restPosZ, SetBoneTransformValueCommand.Field.PositionZ);
-            RegRestTF(_restSclX, SetBoneTransformValueCommand.Field.ScaleX);
-            RegRestTF(_restSclY, SetBoneTransformValueCommand.Field.ScaleY);
-            RegRestTF(_restSclZ, SetBoneTransformValueCommand.Field.ScaleZ);
+            _poseFoldout = new Foldout { text = "ボーンポーズ", value = true, name = "pose-foldout" };
 
-            RegRestRotField(_restRotX, _restRotSliderX, SetBoneTransformValueCommand.Field.RotationX);
-            RegRestRotField(_restRotY, _restRotSliderY, SetBoneTransformValueCommand.Field.RotationY);
-            RegRestRotField(_restRotZ, _restRotSliderZ, SetBoneTransformValueCommand.Field.RotationZ);
-
-            RegRestRotSlider(_restRotSliderX, _restRotX, SetBoneTransformValueCommand.Field.RotationX);
-            RegRestRotSlider(_restRotSliderY, _restRotY, SetBoneTransformValueCommand.Field.RotationY);
-            RegRestRotSlider(_restRotSliderZ, _restRotZ, SetBoneTransformValueCommand.Field.RotationZ);
-            _poseNoLayersLabel = root.Q<Label>("pose-no-layers-label");
-            _poseResultPos = root.Q<Label>("pose-result-pos"); _poseResultRot = root.Q<Label>("pose-result-rot");
-            _btnInitPose = root.Q<Button>("btn-init-pose"); _btnResetLayers = root.Q<Button>("btn-reset-layers");
-            _bindposePos = root.Q<Label>("bindpose-pos"); _bindposeRot = root.Q<Label>("bindpose-rot"); _bindposeScl = root.Q<Label>("bindpose-scl");
-            _btnBakePose = root.Q<Button>("btn-bake-pose");
-
-            _poseActiveToggle?.RegisterValueChangedCallback(e =>
+            _poseActiveToggle = new Toggle("アクティブ") { name = "pose-active-toggle" };
+            _poseActiveToggle.style.marginBottom = 3; _poseActiveToggle.style.color = Col(0.85f);
+            _poseActiveToggle.RegisterValueChangedCallback(e =>
             {
                 if (_isSyncingPoseUI || _ctx == null) return;
                 SendCmd(new SetBonePoseActiveCommand(ModelIndex, SelIndices(), e.newValue));
             });
+            _poseFoldout.Add(_poseActiveToggle);
+
+            _poseFoldout.Add(SectionHeader("位置"));
+            AddXYZFields(_poseFoldout, out _restPosX, out _restPosY, out _restPosZ, "rest-pos");
+            RegRestTF(_restPosX, SetBoneTransformValueCommand.Field.PositionX);
+            RegRestTF(_restPosY, SetBoneTransformValueCommand.Field.PositionY);
+            RegRestTF(_restPosZ, SetBoneTransformValueCommand.Field.PositionZ);
+
+            _poseFoldout.Add(SectionHeader("回転"));
+            AddRotFields(_poseFoldout,
+                out _restRotX, out _restRotSliderX, SetBoneTransformValueCommand.Field.RotationX,
+                out _restRotY, out _restRotSliderY, SetBoneTransformValueCommand.Field.RotationY,
+                out _restRotZ, out _restRotSliderZ, SetBoneTransformValueCommand.Field.RotationZ, isPose: true);
+
+            _poseFoldout.Add(SectionHeader("スケール"));
+            AddXYZFields(_poseFoldout, out _restSclX, out _restSclY, out _restSclZ, "rest-scl");
+            RegRestTF(_restSclX, SetBoneTransformValueCommand.Field.ScaleX);
+            RegRestTF(_restSclY, SetBoneTransformValueCommand.Field.ScaleY);
+            RegRestTF(_restSclZ, SetBoneTransformValueCommand.Field.ScaleZ);
+
+            _poseResultPos = new Label { name = "pose-result-pos" }; _poseResultPos.style.fontSize = 10; _poseResultPos.style.color = Col(0.75f);
+            _poseResultRot = new Label { name = "pose-result-rot" }; _poseResultRot.style.fontSize = 10; _poseResultRot.style.color = Col(0.75f);
+            _poseFoldout.Add(_poseResultPos); _poseFoldout.Add(_poseResultRot);
+
+            _poseLayersContainer = new VisualElement { name = "pose-layers-container" };
+            _poseNoLayersLabel = new Label("(レイヤーなし)") { name = "pose-no-layers-label" };
+            _poseNoLayersLabel.style.fontSize = 10; _poseNoLayersLabel.style.color = Col(0.5f);
+            _poseLayersContainer.Add(_poseNoLayersLabel);
+            _poseFoldout.Add(_poseLayersContainer);
+
+            var poseRow = new VisualElement(); poseRow.style.flexDirection = FlexDirection.Row; poseRow.style.marginTop = 4;
+            _btnInitPose     = MakeSmallBtn("初期化", "btn-init-pose");
+            _btnResetLayers  = MakeSmallBtn("レイヤーリセット", "btn-reset-layers");
+            poseRow.Add(_btnInitPose); poseRow.Add(_btnResetLayers);
+            _poseFoldout.Add(poseRow);
+            _bonePoseSection.Add(_poseFoldout);
+
+            _bindposeFoldout = new Foldout { text = "バインドポーズ", value = false, name = "bindpose-foldout" };
+            _bindposePos = new Label { name = "bindpose-pos" }; _bindposePos.style.fontSize = 10; _bindposePos.style.color = Col(0.75f);
+            _bindposeRot = new Label { name = "bindpose-rot" }; _bindposeRot.style.fontSize = 10; _bindposeRot.style.color = Col(0.75f);
+            _bindposeScl = new Label { name = "bindpose-scl" }; _bindposeScl.style.fontSize = 10; _bindposeScl.style.color = Col(0.75f);
+            _bindposeFoldout.Add(_bindposePos); _bindposeFoldout.Add(_bindposeRot); _bindposeFoldout.Add(_bindposeScl);
+            _btnBakePose = MakeSmallBtn("ポーズベイク", "btn-bake-pose");
+            _bindposeFoldout.Add(_btnBakePose);
+            _bonePoseSection.Add(_bindposeFoldout);
 
             _btnInitPose?.RegisterCallback<ClickEvent>(_ => { var i = SelIndices(); if (i.Length > 0) SendCmd(new InitBonePoseCommand(ModelIndex, i)); });
             _btnResetLayers?.RegisterCallback<ClickEvent>(_ => { var i = SelIndices(); if (i.Length > 0) SendCmd(new ResetBonePoseLayersCommand(ModelIndex, i)); });
             _btnBakePose?.RegisterCallback<ClickEvent>(_ => { var i = SelIndices(); if (i.Length > 0) SendCmd(new BakePoseToBindPoseCommand(ModelIndex, i)); });
+
+            _mainContent?.Add(_bonePoseSection);
         }
 
         private void RegRestTF(FloatField f, SetBoneTransformValueCommand.Field tf)
@@ -871,15 +953,13 @@ namespace Poly_Ling.MeshListV2
                 _isSyncingPoseUI = true;
                 try { f?.SetValueWithoutNotify((float)System.Math.Round(e.newValue, 4)); } finally { _isSyncingPoseUI = false; }
             });
-            s?.RegisterCallback<PointerCaptureOutEvent>(_ =>
-                SendCmd(new EndBoneTransformSliderDragCommand(ModelIndex, "ボーン回転変更")));
+            s?.RegisterCallback<PointerCaptureOutEvent>(_ => SendCmd(new EndBoneTransformSliderDragCommand(ModelIndex, "ボーン回転変更")));
         }
 
         private void UpdateBonePosePanel()
         {
             if (_bonePoseSection == null) return;
 
-            // 簡易モード: HasPoseありが1つも選択されていなければパネルを隠す
             if (IsSimpleMode)
             {
                 bool show = _selectedAdapters.Any(a => a.MeshView.BonePose.HasPose);
@@ -893,16 +973,15 @@ namespace Poly_Ling.MeshListV2
             {
                 if (_selectedAdapters.Count == 0) { SetPoseEmpty(); return; }
                 var poses = _selectedAdapters.Select(a => a.MeshView.BonePose).Where(bp => bp.HasPose).ToList();
-                bool all = poses.Count == _selectedAdapters.Count, none = poses.Count == 0;
+                bool all  = poses.Count == _selectedAdapters.Count;
+                bool none = poses.Count == 0;
 
-                // Active
                 if (all) { bool f = poses[0].IsActive; bool same = poses.TrueForAll(p => p.IsActive == f); _poseActiveToggle?.SetValueWithoutNotify(same ? f : false); SMV(_poseActiveToggle, !same); }
                 else { _poseActiveToggle?.SetValueWithoutNotify(false); SMV(_poseActiveToggle, !none); }
                 _poseActiveToggle?.SetEnabled(true);
 
                 if (all && poses.Count > 0)
                 {
-                    // rest系フィールドはBoneTransformの値を表示
                     var views = _selectedAdapters.Select(a => a.MeshView).ToList();
                     MixFT(_restPosX, views, v => v.LocalPosition.x); MixFT(_restPosY, views, v => v.LocalPosition.y); MixFT(_restPosZ, views, v => v.LocalPosition.z);
                     MixRTF(_restRotX, _restRotSliderX, views, v => v.LocalRotationEuler.x); MixRTF(_restRotY, _restRotSliderY, views, v => v.LocalRotationEuler.y); MixRTF(_restRotZ, _restRotSliderZ, views, v => v.LocalRotationEuler.z);
@@ -910,20 +989,18 @@ namespace Poly_Ling.MeshListV2
                 }
                 else
                 {
-                    SF(_restPosX, 0, false); SF(_restPosY, 0, false); SF(_restPosZ, 0, false);
-                    SF(_restRotX, 0, false); SF(_restRotY, 0, false); SF(_restRotZ, 0, false);
-                    SS(_restRotSliderX, 0, false); SS(_restRotSliderY, 0, false); SS(_restRotSliderZ, 0, false);
-                    SF(_restSclX, 1, false); SF(_restSclY, 1, false); SF(_restSclZ, 1, false);
+                    SF(_restPosX,0,false); SF(_restPosY,0,false); SF(_restPosZ,0,false);
+                    SF(_restRotX,0,false); SF(_restRotY,0,false); SF(_restRotZ,0,false);
+                    SS(_restRotSliderX,0,false); SS(_restRotSliderY,0,false); SS(_restRotSliderZ,0,false);
+                    SF(_restSclX,1,false); SF(_restSclY,1,false); SF(_restSclZ,1,false);
                 }
 
-                // レイヤー・結果（単一選択のみ）
                 var single = (_selectedAdapters.Count == 1 && all) ? poses[0] : null;
                 UpdateLayers(single);
                 if (single != null)
                 {
-                    var bp = single;
-                    SL(_poseResultPos, $"Pos: ({bp.ResultPosition.x:F3}, {bp.ResultPosition.y:F3}, {bp.ResultPosition.z:F3})");
-                    SL(_poseResultRot, $"Rot: ({bp.ResultRotationEuler.x:F1}, {bp.ResultRotationEuler.y:F1}, {bp.ResultRotationEuler.z:F1})");
+                    SL(_poseResultPos, $"Pos: ({single.ResultPosition.x:F3}, {single.ResultPosition.y:F3}, {single.ResultPosition.z:F3})");
+                    SL(_poseResultRot, $"Rot: ({single.ResultRotationEuler.x:F1}, {single.ResultRotationEuler.y:F1}, {single.ResultRotationEuler.z:F1})");
                 }
                 else { string m = _selectedAdapters.Count > 1 ? "(複数選択)" : "-"; SL(_poseResultPos, $"Pos: {m}"); SL(_poseResultRot, $"Rot: {m}"); }
 
@@ -952,7 +1029,7 @@ namespace Poly_Ling.MeshListV2
             SF(_restSclX,1,false); SF(_restSclY,1,false); SF(_restSclZ,1,false);
             UpdateLayers(null);
             SL(_poseResultPos,"Pos: -"); SL(_poseResultRot,"Rot: -");
-            _btnInitPose?.SetEnabled(false); if(_btnInitPose!=null)_btnInitPose.style.display=DisplayStyle.None;
+            if (_btnInitPose != null) _btnInitPose.style.display = DisplayStyle.None;
             _btnResetLayers?.SetEnabled(false);
             SL(_bindposePos,"Pos: -"); SL(_bindposeRot,"Rot: -"); SL(_bindposeScl,"Scl: -");
             _btnBakePose?.SetEnabled(false);
@@ -974,42 +1051,28 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // モーフエディタ
+        // モーフエディタ（エディタ版と同一、PopupField<int>→DropdownField）
         // ================================================================
 
         private void BindMorphEditorUI(VisualElement root)
         {
-            _morphCountLabel = root.Q<Label>("morph-count-label");
-            _morphStatusLabel = root.Q<Label>("morph-status-label");
-            _morphNameField = root.Q<TextField>("morph-name-field");
-            _morphTestWeight = root.Q<Slider>("morph-test-weight");
-            _morphFilterField = root.Q<TextField>("morph-filter-field");
-            _morphListView = root.Q<ListView>("morph-listview");
             if (_morphListView != null)
             {
-                _morphListView.makeItem = MorphMake;
-                _morphListView.bindItem = MorphBind;
+                _morphListView.makeItem  = MorphMake;
+                _morphListView.bindItem  = MorphBind;
                 _morphListView.fixedItemHeight = 20;
-                _morphListView.itemsSource = _morphFilteredData;
-                _morphListView.selectionType = SelectionType.Multiple;
+                _morphListView.itemsSource     = _morphFilteredData;
+                _morphListView.selectionType   = SelectionType.Multiple;
                 _morphListView.selectionChanged += OnMorphSel;
             }
-            _morphSourceMeshPopupContainer = root.Q<VisualElement>("morph-source-mesh-container");
-            _morphParentPopupContainer = root.Q<VisualElement>("morph-parent-container");
-            _morphPanelPopupContainer = root.Q<VisualElement>("morph-panel-container");
-            _morphSetNameField = root.Q<TextField>("morph-set-name-field");
-            _morphSetTypePopupContainer = root.Q<VisualElement>("morph-set-type-container");
-            _btnMeshToMorph = root.Q<Button>("btn-mesh-to-morph");
-            _btnMorphToMesh = root.Q<Button>("btn-morph-to-mesh");
-            _btnCreateMorphSet = root.Q<Button>("btn-create-morph-set");
+            Q<Button>("btn-morph-test-reset")       ?.RegisterCallback<ClickEvent>(_ => OnMorphTestReset());
+            Q<Button>("btn-morph-test-select-all")  ?.RegisterCallback<ClickEvent>(_ => OnMorphSelAll(true));
+            Q<Button>("btn-morph-test-deselect-all")?.RegisterCallback<ClickEvent>(_ => OnMorphSelAll(false));
+            _morphTestWeight?.RegisterValueChangedCallback(OnMorphWeight);
+            _morphFilterField?.RegisterValueChangedCallback(_ => RefreshMorphListData());
             _btnMeshToMorph?.RegisterCallback<ClickEvent>(_ => OnMeshToMorph());
             _btnMorphToMesh?.RegisterCallback<ClickEvent>(_ => OnMorphToMesh());
             _btnCreateMorphSet?.RegisterCallback<ClickEvent>(_ => OnCreateMorphSet());
-            root.Q<Button>("btn-morph-test-reset")?.RegisterCallback<ClickEvent>(_ => OnMorphTestReset());
-            root.Q<Button>("btn-morph-test-select-all")?.RegisterCallback<ClickEvent>(_ => OnMorphSelAll(true));
-            root.Q<Button>("btn-morph-test-deselect-all")?.RegisterCallback<ClickEvent>(_ => OnMorphSelAll(false));
-            _morphTestWeight?.RegisterValueChangedCallback(OnMorphWeight);
-            _morphFilterField?.RegisterValueChangedCallback(_ => RefreshMorphListData());
         }
 
         private VisualElement MorphMake()
@@ -1023,7 +1086,7 @@ namespace Poly_Ling.MeshListV2
         private void MorphBind(VisualElement el, int idx)
         {
             if (idx < 0 || idx >= _morphFilteredData.Count) return;
-            var s = _morphFilteredData[idx];
+            var s  = _morphFilteredData[idx];
             var nl = el.Q<Label>("n"); if (nl != null) nl.text = s.Name;
             var il = el.Q<Label>("i");
             if (il != null)
@@ -1034,13 +1097,7 @@ namespace Poly_Ling.MeshListV2
             }
         }
 
-        private void RefreshMorphEditor()
-        {
-            if (CurrentModel == null) return;
-            RefreshMorphListData();
-            RefreshMorphConvert();
-            RefreshMorphSet();
-        }
+        private void RefreshMorphEditor() { if (CurrentModel == null) return; RefreshMorphListData(); RefreshMorphConvert(); RefreshMorphSet(); }
 
         private void RefreshMorphListData()
         {
@@ -1072,7 +1129,7 @@ namespace Poly_Ling.MeshListV2
             try
             {
                 var set = new HashSet<int>(CurrentModel.SelectedMorphIndices ?? Array.Empty<int>());
-                var li = new List<int>();
+                var li  = new List<int>();
                 for (int i = 0; i < _morphFilteredData.Count; i++)
                     if (set.Contains(_morphFilteredData[i].MasterIndex)) li.Add(i);
                 _morphListView.SetSelectionWithoutNotify(li);
@@ -1080,47 +1137,57 @@ namespace Poly_Ling.MeshListV2
             finally { _isSyncingMorphSelection = false; }
         }
 
+        // RefreshMorphConvert: PopupField<int> → DropdownField
         private void RefreshMorphConvert()
         {
             if (CurrentModel == null) return;
-            var dc = BuildDrawableChoices();
-            RebuildPopup(ref _morphSourceMeshPopup, _morphSourceMeshPopupContainer, dc, "morph-popup");
-            RebuildPopup(ref _morphParentPopup, _morphParentPopupContainer, dc, "morph-popup");
-            RebuildPopup(ref _morphPanelPopup, _morphPanelPopupContainer,
-                new List<(int,string)>{(0,"眉"),(1,"目"),(2,"口"),(3,"その他")}, "morph-popup", 3);
-        }
+            var labels = new List<string> { "(なし)" };
+            _morphSourceMeshIds = new List<int> { -1 };
+            _morphParentIds     = new List<int> { -1 };
+            foreach (var s in CurrentModel.DrawableList ?? (IReadOnlyList<IMeshView>)Array.Empty<IMeshView>())
+            {
+                labels.Add($"[{s.MasterIndex}] {s.Name}");
+                _morphSourceMeshIds.Add(s.MasterIndex);
+                _morphParentIds.Add(s.MasterIndex);
+            }
+            RebuildDropdown(ref _morphSourceMeshDropdown, _morphSourceMeshPopupContainer, labels);
+            RebuildDropdown(ref _morphParentDropdown,     _morphParentPopupContainer,     labels);
 
-        private List<(int,string)> BuildDrawableChoices()
-        {
-            var c = new List<(int,string)>();
-            if (CurrentModel?.DrawableList == null) return c;
-            foreach (var s in CurrentModel.DrawableList) c.Add((s.MasterIndex, $"[{s.MasterIndex}] {s.Name}"));
-            return c;
-        }
-
-        private void RebuildPopup(ref PopupField<int> popup, VisualElement container, List<(int,string)> opts, string css, int def = -1)
-        {
-            if (container == null) return; container.Clear();
-            var ids = new List<int>{-1}; var dm = new Dictionary<int,string>{{-1,"(なし)"}};
-            foreach (var (i,n) in opts) { ids.Add(i); dm[i] = n; }
-            int init = ids.Contains(def) ? def : -1;
-            popup = new PopupField<int>(ids, init, v => dm.TryGetValue(v, out var s) ? s : v.ToString(), v => dm.TryGetValue(v, out var s) ? s : v.ToString());
-            popup.AddToClassList(css); popup.style.flexGrow = 1; container.Add(popup);
+            var panelLabels = new List<string> { "眉", "目", "口", "その他" };
+            RebuildDropdown(ref _morphPanelDropdown, _morphPanelPopupContainer, panelLabels, 3);
         }
 
         private void RefreshMorphSet()
         {
             if (CurrentModel == null) return;
-            RebuildPopup(ref _morphSetTypePopup, _morphSetTypePopupContainer,
-                new List<(int,string)>{(1,"Vertex"),(3,"UV")}, "morph-popup", 1);
+            var stLabels = new List<string> { "Vertex", "UV" };
+            RebuildDropdown(ref _morphSetTypeDropdown, _morphSetTypePopupContainer, stLabels, 0);
+        }
+
+        private static void RebuildDropdown(ref DropdownField df, VisualElement container, List<string> choices, int initial = 0)
+        {
+            if (container == null) return;
+            if (df == null)
+            {
+                df = new DropdownField(choices, initial);
+                df.AddToClassList("morph-popup"); df.style.flexGrow = 1;
+                container.Add(df);
+            }
+            else
+            {
+                df.choices = choices;
+                df.SetValueWithoutNotify(choices.Count > 0 ? choices[Mathf.Clamp(initial, 0, choices.Count - 1)] : "");
+            }
         }
 
         private void OnMeshToMorph()
         {
-            int src = _morphSourceMeshPopup?.value ?? -1;
-            int par = _morphParentPopup?.value ?? -1;
+            int srcIdx = (_morphSourceMeshDropdown?.index ?? 0) - 1; // 0=(なし)
+            int src = (srcIdx >= 0 && srcIdx < _morphSourceMeshIds.Count - 1) ? _morphSourceMeshIds[srcIdx + 1] : -1;
+            int parIdx = (_morphParentDropdown?.index ?? 0) - 1;
+            int par = (parIdx >= 0 && parIdx < _morphParentIds.Count - 1) ? _morphParentIds[parIdx + 1] : -1;
+            int pan = _morphPanelDropdown?.index ?? 3;
             string nm = _morphNameField?.value?.Trim() ?? "";
-            int pan = _morphPanelPopup?.value ?? 3;
             if (src < 0) { ML("対象メッシュを選択してください"); return; }
             SendEndMorphPreview();
             SendCmd(new ConvertMeshToMorphCommand(ModelIndex, src, par, nm, pan));
@@ -1139,7 +1206,7 @@ namespace Poly_Ling.MeshListV2
         {
             if (CurrentModel == null) return;
             string nm = _morphSetNameField?.value?.Trim() ?? "";
-            int ty = _morphSetTypePopup?.value ?? 1;
+            int ty = (_morphSetTypeDropdown?.index == 1) ? 3 : 1;
             var mi = CurrentModel.SelectedMorphIndices;
             if (mi == null || mi.Length == 0) { ML("モーフが選択されていません"); return; }
             SendCmd(new CreateMorphSetCommand(ModelIndex, nm, ty, mi));
@@ -1161,7 +1228,7 @@ namespace Poly_Ling.MeshListV2
             if (CurrentModel == null) return;
             SendEndMorphPreview(); _morphTestWeight?.SetValueWithoutNotify(0f);
             if (sel) SendCmd(new SelectAllMorphsCommand(ModelIndex, _morphFilteredData.Select(s => s.MasterIndex).ToArray()));
-            else SendCmd(new DeselectAllMorphsCommand(ModelIndex));
+            else     SendCmd(new DeselectAllMorphsCommand(ModelIndex));
         }
 
         private void SendEndMorphPreview()
@@ -1171,33 +1238,34 @@ namespace Poly_Ling.MeshListV2
         }
 
         // ================================================================
-        // BoneTransform セクション（簡易モード用）
+        // BoneTransform（エディタ版と同一）
         // ================================================================
 
         private void BindTransformUI(VisualElement root)
         {
-            _transformFoldout = root.Q<Foldout>("transform-foldout");
-            _localPosX = root.Q<FloatField>("local-pos-x"); _localPosY = root.Q<FloatField>("local-pos-y"); _localPosZ = root.Q<FloatField>("local-pos-z");
-            _localRotX = root.Q<FloatField>("local-rot-x"); _localRotY = root.Q<FloatField>("local-rot-y"); _localRotZ = root.Q<FloatField>("local-rot-z");
-            _localRotSliderX = root.Q<Slider>("local-rot-slider-x"); _localRotSliderY = root.Q<Slider>("local-rot-slider-y"); _localRotSliderZ = root.Q<Slider>("local-rot-slider-z");
-            _localSclX = root.Q<FloatField>("local-scl-x"); _localSclY = root.Q<FloatField>("local-scl-y"); _localSclZ = root.Q<FloatField>("local-scl-z");
+            _transformFoldout = new Foldout { text = "トランスフォーム", value = false, name = "transform-foldout" };
+            _transformFoldout.style.marginTop  = 4;
+            _transformFoldout.style.display    = DisplayStyle.None;
 
-            if (_transformFoldout != null) _transformFoldout.style.display = DisplayStyle.None;
-
+            _transformFoldout.Add(SectionHeader("位置"));
+            AddXYZFields(_transformFoldout, out _localPosX, out _localPosY, out _localPosZ, "local-pos");
             RegTF(_localPosX, SetBoneTransformValueCommand.Field.PositionX);
             RegTF(_localPosY, SetBoneTransformValueCommand.Field.PositionY);
             RegTF(_localPosZ, SetBoneTransformValueCommand.Field.PositionZ);
+
+            _transformFoldout.Add(SectionHeader("回転"));
+            AddRotFields(_transformFoldout,
+                out _localRotX, out _localRotSliderX, SetBoneTransformValueCommand.Field.RotationX,
+                out _localRotY, out _localRotSliderY, SetBoneTransformValueCommand.Field.RotationY,
+                out _localRotZ, out _localRotSliderZ, SetBoneTransformValueCommand.Field.RotationZ, isPose: false);
+
+            _transformFoldout.Add(SectionHeader("スケール"));
+            AddXYZFields(_transformFoldout, out _localSclX, out _localSclY, out _localSclZ, "local-scl");
             RegTF(_localSclX, SetBoneTransformValueCommand.Field.ScaleX);
             RegTF(_localSclY, SetBoneTransformValueCommand.Field.ScaleY);
             RegTF(_localSclZ, SetBoneTransformValueCommand.Field.ScaleZ);
 
-            RegTRotField(_localRotX, _localRotSliderX, SetBoneTransformValueCommand.Field.RotationX);
-            RegTRotField(_localRotY, _localRotSliderY, SetBoneTransformValueCommand.Field.RotationY);
-            RegTRotField(_localRotZ, _localRotSliderZ, SetBoneTransformValueCommand.Field.RotationZ);
-
-            RegTRotSlider(_localRotSliderX, _localRotX, SetBoneTransformValueCommand.Field.RotationX);
-            RegTRotSlider(_localRotSliderY, _localRotY, SetBoneTransformValueCommand.Field.RotationY);
-            RegTRotSlider(_localRotSliderZ, _localRotZ, SetBoneTransformValueCommand.Field.RotationZ);
+            _mainContent?.Add(_transformFoldout);
         }
 
         private void RegTF(FloatField f, SetBoneTransformValueCommand.Field tf)
@@ -1233,54 +1301,35 @@ namespace Poly_Ling.MeshListV2
                 _isSyncingTransformUI = true;
                 try { f?.SetValueWithoutNotify((float)System.Math.Round(e.newValue, 4)); } finally { _isSyncingTransformUI = false; }
             });
-            s?.RegisterCallback<PointerCaptureOutEvent>(_ =>
-                SendCmd(new EndBoneTransformSliderDragCommand(ModelIndex, "トランスフォーム回転変更")));
+            s?.RegisterCallback<PointerCaptureOutEvent>(_ => SendCmd(new EndBoneTransformSliderDragCommand(ModelIndex, "トランスフォーム回転変更")));
         }
 
         private void UpdateTransformPanel()
         {
             if (_transformFoldout == null) return;
-
-            // 簡易モード以外は非表示
-            if (!IsSimpleMode)
-            {
-                _transformFoldout.style.display = DisplayStyle.None;
-                return;
-            }
-
+            if (!IsSimpleMode) { _transformFoldout.style.display = DisplayStyle.None; return; }
             bool show = _selectedAdapters.Any(a => !a.MeshView.BonePose.HasPose);
             _transformFoldout.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
             if (!show) return;
-
             _isSyncingTransformUI = true;
             try
             {
                 var views = _selectedAdapters.Where(a => !a.MeshView.BonePose.HasPose).Select(a => a.MeshView).ToList();
-
-                MixFT(_localPosX, views, v => v.LocalPosition.x);
-                MixFT(_localPosY, views, v => v.LocalPosition.y);
-                MixFT(_localPosZ, views, v => v.LocalPosition.z);
-
-                MixRTF(_localRotX, _localRotSliderX, views, v => v.LocalRotationEuler.x);
-                MixRTF(_localRotY, _localRotSliderY, views, v => v.LocalRotationEuler.y);
-                MixRTF(_localRotZ, _localRotSliderZ, views, v => v.LocalRotationEuler.z);
-
-                MixFT(_localSclX, views, v => v.LocalScale.x);
-                MixFT(_localSclY, views, v => v.LocalScale.y);
-                MixFT(_localSclZ, views, v => v.LocalScale.z);
+                MixFT(_localPosX, views, v => v.LocalPosition.x); MixFT(_localPosY, views, v => v.LocalPosition.y); MixFT(_localPosZ, views, v => v.LocalPosition.z);
+                MixRTF(_localRotX, _localRotSliderX, views, v => v.LocalRotationEuler.x); MixRTF(_localRotY, _localRotSliderY, views, v => v.LocalRotationEuler.y); MixRTF(_localRotZ, _localRotSliderZ, views, v => v.LocalRotationEuler.z);
+                MixFT(_localSclX, views, v => v.LocalScale.x); MixFT(_localSclY, views, v => v.LocalScale.y); MixFT(_localSclZ, views, v => v.LocalScale.z);
             }
             finally { _isSyncingTransformUI = false; }
         }
 
         // ================================================================
-        // ヘルパー
+        // ヘルパー（エディタ版と同一）
         // ================================================================
 
         private void SendCmd(PanelCommand c) => _ctx?.SendCommand(c);
         private int[] SelIndices() => _selectedAdapters.Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
         private int[] SelTransformIndices() => _selectedAdapters.Where(a => !a.MeshView.BonePose.HasPose).Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
 
-        /// <summary>SetSelectionWithoutNotify後に_selectedAdaptersをTreeViewの現在選択から再構築する</summary>
         private void RebuildSelectedAdaptersFromTreeView()
         {
             _selectedAdapters.Clear();
@@ -1290,7 +1339,6 @@ namespace Poly_Ling.MeshListV2
                     _selectedAdapters.Add(a);
         }
 
-        /// <summary>ModelのSelectedIndicesからアダプタを直接再構築する（TreeView.selectedItemsに依存しない）</summary>
         private void RebuildSelectedAdaptersFromCurrentModel()
         {
             _selectedAdapters.Clear();
@@ -1313,13 +1361,13 @@ namespace Poly_Ling.MeshListV2
         private string FindDrawableName(int mi)
         {
             if (CurrentModel?.DrawableList != null) foreach (var s in CurrentModel.DrawableList) if (s.MasterIndex == mi) return s.Name;
-            if (CurrentModel?.BoneList != null) foreach (var s in CurrentModel.BoneList) if (s.MasterIndex == mi) return s.Name;
+            if (CurrentModel?.BoneList     != null) foreach (var s in CurrentModel.BoneList)     if (s.MasterIndex == mi) return s.Name;
             return null;
         }
 
-        private void SL(Label l, string t) { if (l != null) l.text = t; }
-        private void Log(string m) { if (_statusLabel != null) _statusLabel.text = m; }
-        private void ML(string m) { if (_morphStatusLabel != null) _morphStatusLabel.text = m; Log(m); }
+        private void SL(Label l, string t)    { if (l != null) l.text = t; }
+        private void Log(string m)            { if (_statusLabel != null) _statusLabel.text = m; }
+        private void ML(string m)             { if (_morphStatusLabel != null) _morphStatusLabel.text = m; Log(m); }
 
         private static float NormAngle(float a) { a %= 360f; if (a > 180f) a -= 360f; if (a < -180f) a += 360f; return a; }
         private static void SMV(Toggle t, bool m) { if (t != null) t.showMixedValue = m; }
@@ -1341,30 +1389,101 @@ namespace Poly_Ling.MeshListV2
             if (s != null) { s.SetValueWithoutNotify(same ? NormAngle(val) : 0f); s.SetEnabled(same); }
         }
 
-        private void MixF(FloatField f, List<IBonePoseView> ps, Func<IBonePoseView,float> g)
+        private static void SF(FloatField f, float v, bool e) { if (f == null) return; f.SetValueWithoutNotify((float)System.Math.Round(v, 4)); f.showMixedValue = false; f.SetEnabled(e); }
+        private static void SS(Slider s, float v, bool e)     { if (s != null) { s.SetValueWithoutNotify(v); s.SetEnabled(e); } }
+
+        // ================================================================
+        // UIパーツ生成ヘルパー
+        // ================================================================
+
+        private T Q<T>(string name) where T : VisualElement => _root?.Q<T>(name);
+
+        private static Button MakeTabBtn(string label, string name)
         {
-            if (f == null) return;
-            float v0 = g(ps[0]); bool same = ps.TrueForAll(p => Mathf.Abs(g(p) - v0) < 0.0001f);
-            f.SetValueWithoutNotify(same ? (float)System.Math.Round(v0, 4) : 0f);
-            f.showMixedValue = !same; f.SetEnabled(true);
+            var b = new Button { text = label, name = name };
+            b.style.flexGrow = 1; b.style.height = 20; b.style.marginRight = 2; b.style.fontSize = 10;
+            return b;
         }
 
-        private void MixR(FloatField f, Slider s, List<IBonePoseView> ps, Func<IBonePoseView,float> g)
+        private static Button MakeSmallBtn(string label, string name)
         {
-            if (f == null) return;
-            float v0 = g(ps[0]); bool same = ps.TrueForAll(p => Mathf.Abs(g(p) - v0) < 0.01f);
-            float v = same ? v0 : 0f;
-            f.SetValueWithoutNotify((float)System.Math.Round(v, 4)); f.showMixedValue = !same; f.SetEnabled(true);
-            if (s != null) { s.SetValueWithoutNotify(same ? NormAngle(v) : 0f); s.SetEnabled(same); }
+            var b = new Button { text = label, name = name };
+            b.style.height = 18; b.style.marginRight = 2; b.style.marginBottom = 2; b.style.fontSize = 10;
+            b.style.paddingLeft = 4; b.style.paddingRight = 4; b.style.paddingTop = 0; b.style.paddingBottom = 0;
+            return b;
         }
 
-        private static void SF(FloatField f, float v, bool e)
+        private static Label MakeInfoLabel(string name = "")
         {
-            if (f == null) return;
-            f.SetValueWithoutNotify((float)System.Math.Round(v, 4)); f.showMixedValue = false; f.SetEnabled(e);
+            var l = new Label { name = name };
+            l.style.fontSize = 10; l.style.color = Col(0.75f); l.style.marginBottom = 1;
+            return l;
         }
 
-        private static void SS(Slider s, float v, bool e) { if (s != null) { s.SetValueWithoutNotify(v); s.SetEnabled(e); } }
+        private static Label SectionHeader(string text)
+        {
+            var l = new Label(text);
+            l.style.fontSize = 10; l.style.color = Col(0.6f); l.style.marginTop = 4; l.style.marginBottom = 1;
+            return l;
+        }
+
+        private static VisualElement Separator()
+        {
+            var v = new VisualElement();
+            v.style.height = 1; v.style.marginTop = 4; v.style.marginBottom = 4;
+            v.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.08f));
+            return v;
+        }
+
+        private static VisualElement LabeledRow(string label, VisualElement content)
+        {
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2; row.style.alignItems = Align.Center;
+            var lbl = new Label(label); lbl.style.width = 70; lbl.style.fontSize = 10; lbl.style.color = Col(0.85f);
+            row.Add(lbl); content.style.flexGrow = 1; row.Add(content);
+            return row;
+        }
+
+        private static StyleColor Col(float v) => new StyleColor(new Color(v, v, v));
+
+        private static void AddXYZFields(VisualElement parent, out FloatField fx, out FloatField fy, out FloatField fz, string prefix)
+        {
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
+            fx = new FloatField("X") { name = $"{prefix}-x" }; fx.style.flexGrow = 1;
+            fy = new FloatField("Y") { name = $"{prefix}-y" }; fy.style.flexGrow = 1;
+            fz = new FloatField("Z") { name = $"{prefix}-z" }; fz.style.flexGrow = 1;
+            row.Add(fx); row.Add(fy); row.Add(fz); parent.Add(row);
+        }
+
+        private void AddRotFields(
+            VisualElement parent,
+            out FloatField fx, out Slider sx, SetBoneTransformValueCommand.Field tfx,
+            out FloatField fy, out Slider sy, SetBoneTransformValueCommand.Field tfy,
+            out FloatField fz, out Slider sz, SetBoneTransformValueCommand.Field tfz,
+            bool isPose)
+        {
+            var frow = new VisualElement(); frow.style.flexDirection = FlexDirection.Row; frow.style.marginBottom = 1;
+            fx = new FloatField("X"); fx.style.flexGrow = 1;
+            fy = new FloatField("Y"); fy.style.flexGrow = 1;
+            fz = new FloatField("Z"); fz.style.flexGrow = 1;
+            frow.Add(fx); frow.Add(fy); frow.Add(fz); parent.Add(frow);
+
+            var srow = new VisualElement(); srow.style.flexDirection = FlexDirection.Row; srow.style.marginBottom = 2;
+            sx = new Slider(-180f, 180f); sx.style.flexGrow = 1;
+            sy = new Slider(-180f, 180f); sy.style.flexGrow = 1;
+            sz = new Slider(-180f, 180f); sz.style.flexGrow = 1;
+            srow.Add(sx); srow.Add(sy); srow.Add(sz); parent.Add(srow);
+
+            if (isPose)
+            {
+                RegRestRotField(fx, sx, tfx); RegRestRotField(fy, sy, tfy); RegRestRotField(fz, sz, tfz);
+                RegRestRotSlider(sx, fx, tfx); RegRestRotSlider(sy, fy, tfy); RegRestRotSlider(sz, fz, tfz);
+            }
+            else
+            {
+                RegTRotField(fx, sx, tfx); RegTRotField(fy, sy, tfy); RegTRotField(fz, sz, tfz);
+                RegTRotSlider(sx, fx, tfx); RegTRotSlider(sy, fy, tfy); RegTRotSlider(sz, fz, tfz);
+            }
+        }
     }
 
     public class SummaryDragValidator : IDragDropValidator<SummaryTreeAdapter>

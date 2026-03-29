@@ -581,6 +581,7 @@ namespace Poly_Ling.Player
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;
             adapter.UpdateTransform(useWorldTransform: true);
+            adapter.WritebackTransformedVertices();
         }
 
         // ================================================================
