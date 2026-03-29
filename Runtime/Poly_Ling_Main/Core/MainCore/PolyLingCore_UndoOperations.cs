@@ -470,7 +470,7 @@ namespace Poly_Ling.Core
 
             int baseVertexIndex = mc.MeshObject.VertexCount;
             foreach (var vertex in obj.Vertices)
-                mc.MeshObject.Vertices.Add(new Vertex(vertex.Position));
+                mc.MeshObject.Vertices.Add(vertex.Clone());
             foreach (var face in obj.Faces)
             {
                 var newFace = new Face();

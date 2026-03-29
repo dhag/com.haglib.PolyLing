@@ -126,6 +126,19 @@ namespace Poly_Ling.Player
             DrawViewport(project, TopViewport);
             DrawViewport(project, FrontViewport);
             DrawViewport(project, SideViewport);
+
+            // 全ビューポート描画後、_screenPositions をアクティブビューポート用に復元する。
+            // DrawViewport で各カメラの DispatchCullingForDisplay を呼ぶと _screenPositions が
+            // 最後のビューポートのカメラで上書きされる。
+            // 矩形選択の CommitBoxSelect は _screenPositions を参照するため、
+            // アクティブビューポート（_lastCamera）の座標に戻す必要がある。
+            if (_lastParamsValid && _lastCamera != null)
+            {
+                var adapterRestore = _renderer?.GetAdapter(0);
+                if (adapterRestore != null && adapterRestore.IsInitialized)
+                    adapterRestore.DispatchCullingForDisplay(
+                        _lastCamera, adapterRestore.BackfaceCullingEnabled);
+            }
         }
 
         // ================================================================
@@ -228,6 +241,11 @@ namespace Poly_Ling.Player
             adapter?.ReadBackVertexFlags();
         }
 
+        public void ClearMouseHover()
+        {
+            _renderer?.GetAdapter(0)?.ClearMouseHover();
+        }
+
         /// <summary>
         /// 選択確定・操作確定後にGPUバッファ更新を1回要求する。
         ///
@@ -269,6 +287,28 @@ namespace Poly_Ling.Player
         {
             var adapter = _renderer?.GetAdapter(0);
             adapter?.ExitTransformDragging();
+        }
+
+        /// <summary>
+        /// カメラ姿勢変更開始を通知する（オービット・パン）。
+        /// アダプターを CameraDragging モードに切り替える。
+        /// CameraDragging 中は AllowUnselectedOverlay=false になり、
+        /// 非選択メッシュの頂点・辺描画が抑止される。
+        /// </summary>
+        public void EnterCameraDragging()
+        {
+            var adapter = _renderer?.GetAdapter(0);
+            adapter?.EnterCameraDragging();
+        }
+
+        /// <summary>
+        /// カメラ姿勢変更終了を通知する。
+        /// アダプターを Normal モード（1フレーム）→ Idle に戻す。
+        /// </summary>
+        public void ExitCameraDragging()
+        {
+            var adapter = _renderer?.GetAdapter(0);
+            adapter?.ExitCameraDragging();
         }
 
         /// <summary>
@@ -547,6 +587,72 @@ namespace Poly_Ling.Player
         // MeshSceneRenderer 委譲
         // ================================================================
 
+        /// <summary>
+        /// 展開済み UnityMesh（UV分割で頂点数 > MeshObject.VertexCount）の
+        /// 頂点座標を MeshObject.Vertices から直接更新する。
+        ///
+        /// GPU バッファの _expandedToOriginal マッピングと同じロジックを CPU で再現し、
+        /// 展開後 Unity 頂点 → 元頂点インデックスを解決して position をコピーする。
+        /// </summary>
+        public void UpdateExpandedUnityMesh(
+            Poly_Ling.Data.MeshContext mc,
+            Poly_Ling.Context.ModelContext model)
+        {
+            if (mc?.MeshObject == null || mc.UnityMesh == null || model == null) return;
+
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return;
+
+            // contextIndex を解決
+            int ctxIdx = -1;
+            for (int i = 0; i < model.MeshContextCount; i++)
+                if (ReferenceEquals(model.GetMeshContext(i), mc)) { ctxIdx = i; break; }
+            if (ctxIdx < 0) return;
+
+            int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+            if (unifiedIdx < 0) return;
+
+            var bm = adapter.BufferManager;
+            if (bm == null) return;
+
+            var meshInfos = bm.MeshInfos;
+            if (meshInfos == null || unifiedIdx >= meshInfos.Length) return;
+
+            var positions = bm.Positions; // CPU側 _positions 配列
+            if (positions == null) return;
+
+            uint vertexStart = meshInfos[unifiedIdx].VertexStart;
+            int meshVertCount = mc.MeshObject.VertexCount;
+
+            // ToUnityMesh/ToUnityMeshShared と同じ展開順序でUnityMesh頂点を更新する。
+            // 孤立頂点を除外し、頂点順 → UV順 で展開。
+            var mo = mc.MeshObject;
+            var nonIsolated = new System.Collections.Generic.HashSet<int>();
+            foreach (var face in mo.Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden) continue;
+                foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
+            }
+
+            int unityIdx = 0;
+            int totalUnity = mc.UnityMesh.vertexCount;
+            var unityVerts = new UnityEngine.Vector3[totalUnity];
+
+            for (int vIdx = 0; vIdx < mo.Vertices.Count && unityIdx < totalUnity; vIdx++)
+            {
+                if (!nonIsolated.Contains(vIdx)) continue;
+                var vertex = mo.Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                UnityEngine.Vector3 pos = vertex.Position;
+                for (int uvIdx = 0; uvIdx < uvCount && unityIdx < totalUnity; uvIdx++, unityIdx++)
+                    unityVerts[unityIdx] = pos;
+            }
+
+            mc.UnityMesh.vertices = unityVerts;
+            mc.UnityMesh.RecalculateBounds();
+        }
+
         public void RebuildAdapter(int mi, ModelContext model)
             => _renderer?.RebuildAdapter(mi, model);
 
@@ -554,15 +660,52 @@ namespace Poly_Ling.Player
             => _renderer?.ClearScene();
 
         /// <summary>
-        /// 頂点移動後に呼ぶ。GPU バッファの位置を更新し UseWorldPositions を維持する。
+        /// CPU の MeshObject 位置を GPU バッファに同期する。
+        ///
+        /// 【呼び出しタイミング】
+        ///   MoveToolHandler.OnSyncMeshPositions（頂点ドラッグ中の毎フレーム位置更新）。
+        ///
+        /// 【処理順序】
+        ///   1. MeshObject.Positions → GPU _positionsBuffer（UpdatePositions）
+        ///   2. NotifyTransformChanged で次フレームのワイヤー/頂点メッシュ再構築を予約
+        /// </summary>
+        public void SyncMeshPositionsAndTransform(
+            Poly_Ling.Data.MeshContext mc,
+            Poly_Ling.Context.ModelContext model)
+        {
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return;
+            if (mc?.MeshObject == null || model == null) return;
+
+            var bm = adapter.BufferManager;
+            if (bm == null) return;
+
+            // MeshContext → contextIndex → unifiedMeshIndex
+            int ctxIdx = -1;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                if (ReferenceEquals(model.GetMeshContext(i), mc)) { ctxIdx = i; break; }
+            }
+            if (ctxIdx < 0) return;
+
+            int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+            if (unifiedIdx < 0) return;
+
+            // ① CPU MeshObject.Positions → GPU _positionsBuffer
+            bm.UpdatePositions(mc.MeshObject, unifiedIdx);
+
+            // ② 次フレームのワイヤー/頂点メッシュ再構築を予約
+            adapter.NotifyTransformChanged();
+        }
+
+        /// <summary>
+        /// 頂点移動後に呼ぶ。次フレームのGPUバッファ更新を予約する。
         /// </summary>
         public void NotifyTransformChanged()
         {
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null) return;
             adapter.NotifyTransformChanged();
-            // スキンド後ワールド座標を GPU に反映する
-            adapter.UpdateTransform(useWorldTransform: true);
         }
 
         // ================================================================
@@ -584,7 +727,17 @@ namespace Poly_Ling.Player
         private void DrawViewport(ProjectContext project, PlayerViewport vp)
         {
             if (vp == null || !vp.IsReady) return;
-            var cam = vp.Cam;
+            var cam     = vp.Cam;
+            var adapter = _renderer?.GetAdapter(0);
+
+            // 各ビューポートのカメラで背面カリングを再計算する。
+            // DrawWireframeAndVertices の AllowGpuVisibility パスは Normal モード時のみ実行され
+            // ConsumeNormalMode() で Idle に降格するため、2番目以降のビューポートでは
+            // AllowGpuVisibility が走らず最初のカメラのカリング結果が流用される。
+            // DispatchCullingForDisplay を常に呼ぶことで各カメラのカリングを保証する。
+            if (adapter != null && adapter.IsInitialized
+                && adapter.BackfaceCullingEnabled)
+                adapter.DispatchCullingForDisplay(cam, true);
 
             _renderer.DrawMeshes(project, cam);
             // project を渡すことで AllowSelectionSync 時に SyncSelectionFromModel が

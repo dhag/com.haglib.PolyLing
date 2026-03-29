@@ -1189,6 +1189,35 @@ namespace Poly_Ling.MQO
                 MirrorMaterialOffset = mirrorMaterialOffset
             };
 
+            // MQOオブジェクトのTRS（translation/rotation/scale）をBoneTransformに設定する。
+            // ComputeWorldMatrices() が LocalMatrix → WorldMatrix を計算するために必要。
+            // デフォルト値（位置ゼロ・回転ゼロ・スケール1）の場合は設定しない
+            // （UseLocalTransform=false のまま → LocalMatrix=identity → WorldMatrix=identity）。
+            // エディタ側 PolyLing_MeshLoad の MeshFilter 処理と同じ判定ロジック。
+            {
+                Vector3 translationScaled = new Vector3(
+                    mqoObj.Translation.x * settings.Scale,
+                    mqoObj.Translation.y * settings.Scale,
+                    settings.FlipZ ? -mqoObj.Translation.z * settings.Scale : mqoObj.Translation.z * settings.Scale
+                );
+                bool isDefaultTransform =
+                    translationScaled == Vector3.zero &&
+                    mqoObj.Rotation == Vector3.zero &&
+                    mqoObj.Scale == Vector3.one;
+
+                if (!isDefaultTransform)
+                {
+                    var meshBoneTransform = new BoneTransform
+                    {
+                        Position = translationScaled,
+                        Rotation = mqoObj.Rotation,
+                        Scale    = mqoObj.Scale,
+                        UseLocalTransform = true,
+                    };
+                    meshContext.BoneTransform = meshBoneTransform;
+                }
+            }
+
             // マテリアル設定
             // Phase 5: マテリアルはMQOImportResultにグローバルリストとして保存される
             // MeshContext.Materialsへの設定は不要（ModelContext.Materialsで管理）

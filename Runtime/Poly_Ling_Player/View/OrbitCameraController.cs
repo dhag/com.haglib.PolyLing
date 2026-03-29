@@ -68,6 +68,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public System.Action OnCameraChanged;
 
+        /// <summary>
+        /// カメラドラッグ（オービット・パン）開始時に呼ばれる。
+        /// UnifiedSystemAdapter.EnterCameraDragging() の呼び出しに使う。
+        /// OnCameraChanged より先に発火する。
+        /// </summary>
+        public System.Action OnCameraDragBegin;
+
         // ================================================================
         // 内部状態
         // ================================================================
@@ -135,8 +142,8 @@ namespace Poly_Ling.Player
 
         private void OnDragBegin(int btn, Vector2 screenPos, ModifierKeys mods)
         {
-            if      (btn == 1) _isOrbiting = true;
-            else if (btn == 2) _isPanning  = true;
+            if      (btn == 1) { _isOrbiting = true; OnCameraDragBegin?.Invoke(); }
+            else if (btn == 2) { _isPanning  = true; OnCameraDragBegin?.Invoke(); }
         }
 
         private void OnDrag(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)

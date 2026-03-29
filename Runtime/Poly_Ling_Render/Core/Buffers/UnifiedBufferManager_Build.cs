@@ -135,7 +135,7 @@ namespace Poly_Ling.Core
                 };
 
                 // 頂点データ構築
-                BuildVertexData(meshObject, meshContext, modelIndex, _meshCount, ref vertexOffset);
+                BuildVertexData(meshObject, meshContext, modelIndex, _meshCount, masterIndex, ref vertexOffset);
 
                 // ライン/エッジデータ構築
                 uint lineCount = BuildLineData(meshObject, meshContext, modelIndex, _meshCount, vertexOffset - (uint)meshObject.VertexCount, faceOffset, ref lineOffset);
@@ -268,7 +268,7 @@ namespace Poly_Ling.Core
                 };
 
                 // 頂点データ構築
-                BuildVertexData(meshObject, meshContext, modelIndex, meshIdx, ref vertexOffset);
+                BuildVertexData(meshObject, meshContext, modelIndex, meshIdx, meshIdx, ref vertexOffset);
 
                 // ライン/エッジデータ構築（faceOffsetをグローバルFaceIndexのベースとして渡す）
                 uint lineCount = BuildLineData(meshObject, meshContext, modelIndex, meshIdx, vertexOffset - (uint)meshObject.VertexCount, faceOffset, ref lineOffset);
@@ -309,11 +309,18 @@ namespace Poly_Ling.Core
         /// <summary>
         /// 頂点データを構築
         /// </summary>
+        /// <param name="contextIndex">
+        /// MeshContextList上のインデックス（masterIndex）。
+        /// 非スキンド頂点の boneIndex として使用する。
+        /// UpdateTransformMatrices は MeshContextList 順に行列をアップロードするため、
+        /// boneIndex は UnifiedMesh インデックスではなくコンテキストインデックスでなければならない。
+        /// </param>
         private void BuildVertexData(
             MeshObject meshObject,
             MeshContext meshContext,
             int modelIndex,
             int meshIndex,
+            int contextIndex,
             ref uint vertexOffset)
         {
             bool isVisible = meshContext?.IsVisible ?? true;
@@ -346,9 +353,11 @@ namespace Poly_Ling.Core
                 }
                 else
                 {
-                    // 通常メッシュ: メッシュ自身の変換行列のみ使用
+                    // 通常メッシュ: メッシュ自身の変換行列のみ使用。
+                    // UpdateTransformMatrices は MeshContextList 順に行列を _transformMatrices に格納するため、
+                    // boneIndex は contextIndex（MeshContextList インデックス）でなければならない。
                     _boneWeights[globalIdx] = new Vector4(1, 0, 0, 0);
-                    _boneIndices[globalIdx] = new UInt4((uint)meshIndex, 0, 0, 0);
+                    _boneIndices[globalIdx] = new UInt4((uint)contextIndex, 0, 0, 0);
                 }
 
                 // ミラー用ボーンウェイト/インデックス
@@ -367,7 +376,7 @@ namespace Poly_Ling.Core
                 {
                     // MirrorBoneWeightがない場合は実体側と同じ
                     _mirrorBoneWeights[globalIdx] = _boneWeights[globalIdx];
-                    _mirrorBoneIndices[globalIdx] = _boneIndices[globalIdx];
+                    _mirrorBoneIndices[globalIdx] = new UInt4((uint)contextIndex, 0, 0, 0);
                 }
 
                 // フラグ計算

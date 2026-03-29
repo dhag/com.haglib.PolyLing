@@ -241,7 +241,24 @@ namespace Poly_Ling.Core
                         Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
                         if (mat == null) mat = GetDefaultMaterial();
                         if (mat == null) continue;
-                        Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam, sub);
+
+                        // カリング設定を反映。
+                        // PMX の DrawFlags bit0（両面）が設定されている材質は常に Off のまま。
+                        // それ以外は BackfaceCullingEnabled トグルに従う。
+                        if (mat.HasProperty("_Cull"))
+                        {
+                            var matRef = (sub < model.MaterialCount) ? model.GetMaterialReference(sub) : null;
+                            bool isMaterialDoubleSide = matRef != null
+                                && matRef.Data.CullMode == Poly_Ling.Materials.CullModeType.Off;
+                            float cullValue = (!BackfaceCullingEnabled || isMaterialDoubleSide) ? 0f : 2f;
+                            mat.SetFloat("_Cull", cullValue);
+                        }
+
+                        // SkinningMatrix（= WorldMatrix × BindPose）をモデル行列として渡す。
+                        // MeshFilter（スキニングなし）の場合 BindPose=identity → SkinningMatrix=WorldMatrix。
+                        // スキンドメッシュの場合 SkinningMatrix がボーン変換を含む。
+                        // vertex.Position はローカル座標のまま維持される。
+                        Graphics.DrawMesh(mesh, ctx.SkinningMatrix, mat, 0, cam, sub);
                     }
                 }
             }

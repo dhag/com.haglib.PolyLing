@@ -1,7 +1,5 @@
 // PlayerLocalLoader.cs
 // ローカルファイル（PMX/MQO）ロード処理と UI 構築を集約するサブクラス。
-// PolyLingPlayerViewer から分離し、将来の拡張（ドラッグ＆ドロップ等）も
-// このクラスに閉じ込める。
 // Runtime/Poly_Ling_Player/IO/ に配置
 
 using System;
@@ -9,6 +7,8 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.PMX;
+using Poly_Ling.MQO;
 
 namespace Poly_Ling.Player
 {
@@ -23,7 +23,6 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private ProjectContext _project;
-        private TextField      _pathField;
 
         /// <summary>ロード済みプロジェクト。未ロード時は null。</summary>
         public ProjectContext Project => _project;
@@ -34,15 +33,25 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// ロード成功時に呼ばれる。引数は生成された ProjectContext。
-        /// カメラ初期化・レンダラークリア等を登録する。
         /// </summary>
         public Action<ProjectContext> OnLoaded;
 
         /// <summary>
         /// ステータス文字列が変化したときに呼ばれる。
-        /// 引数は新しいステータス文字列。
         /// </summary>
         public Action<string> OnStatusChanged;
+
+        /// <summary>
+        /// LOAD PMX ボタンが押されたときに呼ばれる。
+        /// 右ペインへの PMX サブパネル表示切替を Viewer から登録する。
+        /// </summary>
+        public Action OnPmxRequested;
+
+        /// <summary>
+        /// LOAD MQO ボタンが押されたときに呼ばれる。
+        /// 右ペインへの MQO サブパネル表示切替を Viewer から登録する。
+        /// </summary>
+        public Action OnMqoRequested;
 
         // ================================================================
         // 公開 API
@@ -55,9 +64,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 拡張子から PMX / MQO を判定してロードする。
-        /// 成功時は <see cref="OnLoaded"/> を呼ぶ。
-        /// 失敗時は <see cref="OnStatusChanged"/> にエラーを通知する。
+        /// 拡張子から PMX / MQO を判定してデフォルト設定でロードする。
         /// </summary>
         public void Load(string filePath)
         {
@@ -71,14 +78,43 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            var project = new ProjectContext(Path.GetFileNameWithoutExtension(filePath));
-            project.AddModel(model);
-            _project = project;
+            FinishLoad(filePath, model);
+        }
 
-            NotifyStatus($"読み込み完了: {model.Name}  Meshes: {model.Count}");
-            Debug.Log($"[PlayerLocalLoader] ロード完了: {filePath}");
+        /// <summary>
+        /// PMX ファイルを指定設定でロードする。
+        /// </summary>
+        public void Load(string filePath, PMXImportSettings settings)
+        {
+            NotifyStatus($"読み込み中: {Path.GetFileName(filePath)}");
 
-            OnLoaded?.Invoke(project);
+            var model = PolyLingPlayerIO.ImportPmx(filePath, settings, out string error);
+            if (model == null)
+            {
+                NotifyStatus($"読み込み失敗: {error}");
+                Debug.LogError($"[PlayerLocalLoader] {error}");
+                return;
+            }
+
+            FinishLoad(filePath, model);
+        }
+
+        /// <summary>
+        /// MQO ファイルを指定設定でロードする。
+        /// </summary>
+        public void Load(string filePath, MQOImportSettings settings)
+        {
+            NotifyStatus($"読み込み中: {Path.GetFileName(filePath)}");
+
+            var model = PolyLingPlayerIO.ImportMqo(filePath, settings, out string error);
+            if (model == null)
+            {
+                NotifyStatus($"読み込み失敗: {error}");
+                Debug.LogError($"[PlayerLocalLoader] {error}");
+                return;
+            }
+
+            FinishLoad(filePath, model);
         }
 
         // ================================================================
@@ -86,38 +122,20 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// パス入力フィールドと Load PMX / Load MQO ボタンを <paramref name="parent"/> に追加する。
-        /// 内部で <see cref="Load"/> へ配線済み。
+        /// LOAD PMX / LOAD MQO ボタンを parent に追加する。
+        /// ボタン押下は OnPmxRequested / OnMqoRequested に委譲する。
         /// </summary>
         public void BuildUI(VisualElement parent)
         {
-            // パス入力行
-            var pathRow = new VisualElement();
-            pathRow.style.flexDirection = FlexDirection.Row;
-            pathRow.style.marginBottom  = 4;
-
-            var pathLabel = new Label("Path:");
-            pathLabel.style.width          = 36;
-            pathLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            pathLabel.style.flexShrink     = 0;
-
-            _pathField = new TextField();
-            _pathField.style.flexGrow = 1;
-
-            pathRow.Add(pathLabel);
-            pathRow.Add(_pathField);
-            parent.Add(pathRow);
-
-            // ボタン行
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginBottom  = 4;
 
-            var btnPmx = new Button(() => Load(ResolveExtension(".pmx"))) { text = "Load PMX" };
+            var btnPmx = new Button(() => OnPmxRequested?.Invoke()) { text = "Load PMX" };
             btnPmx.style.flexGrow    = 1;
             btnPmx.style.marginRight = 2;
 
-            var btnMqo = new Button(() => Load(ResolveExtension(".mqo"))) { text = "Load MQO" };
+            var btnMqo = new Button(() => OnMqoRequested?.Invoke()) { text = "Load MQO" };
             btnMqo.style.flexGrow   = 1;
             btnMqo.style.marginLeft = 2;
 
@@ -126,14 +144,29 @@ namespace Poly_Ling.Player
             parent.Add(btnRow);
         }
 
+        /// <summary>
+        /// 既にインポート済みの ModelContext を受け取りプロジェクトとして保持する。
+        /// ImportPmxCommand / ImportMqoCommand の onResult から呼ぶ。
+        /// </summary>
+        public void LoadModel(string filePath, ModelContext model)
+        {
+            FinishLoad(filePath, model);
+        }
+
         // ================================================================
         // 内部
         // ================================================================
 
-        private string ResolveExtension(string ext)
+        private void FinishLoad(string filePath, ModelContext model)
         {
-            var path = _pathField?.value ?? "";
-            return Path.ChangeExtension(path, null) + ext;
+            var project = new ProjectContext(Path.GetFileNameWithoutExtension(filePath));
+            project.AddModel(model);
+            _project = project;
+
+            NotifyStatus($"読み込み完了: {model.Name}  Meshes: {model.Count}");
+            Debug.Log($"[PlayerLocalLoader] ロード完了: {filePath}");
+
+            OnLoaded?.Invoke(project);
         }
 
         private void NotifyStatus(string status) => OnStatusChanged?.Invoke(status);

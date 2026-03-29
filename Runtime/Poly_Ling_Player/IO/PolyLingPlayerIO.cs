@@ -28,6 +28,13 @@ namespace Poly_Ling.Player
         /// 失敗時は null を返し errorMessage にエラー内容を格納する。
         /// </summary>
         public static ModelContext ImportPmx(string filePath, out string errorMessage)
+            => ImportPmx(filePath, null, out errorMessage);
+
+        /// <summary>
+        /// PMX ファイルを指定設定でインポートし ModelContext を返す。
+        /// 失敗時は null を返し errorMessage にエラー内容を格納する。
+        /// </summary>
+        public static ModelContext ImportPmx(string filePath, PMXImportSettings settings, out string errorMessage)
         {
             errorMessage = null;
 
@@ -46,7 +53,7 @@ namespace Poly_Ling.Player
             PMXImportResult result;
             try
             {
-                result = PMXImporter.ImportFile(filePath);
+                result = PMXImporter.ImportFile(filePath, settings);
             }
             catch (Exception e)
             {
@@ -72,6 +79,13 @@ namespace Poly_Ling.Player
         /// 失敗時は null を返し errorMessage にエラー内容を格納する。
         /// </summary>
         public static ModelContext ImportMqo(string filePath, out string errorMessage)
+            => ImportMqo(filePath, null, out errorMessage);
+
+        /// <summary>
+        /// MQO ファイルを指定設定でインポートし ModelContext を返す。
+        /// 失敗時は null を返し errorMessage にエラー内容を格納する。
+        /// </summary>
+        public static ModelContext ImportMqo(string filePath, MQOImportSettings settings, out string errorMessage)
         {
             errorMessage = null;
 
@@ -90,8 +104,15 @@ namespace Poly_Ling.Player
             MQOImportResult result;
             try
             {
-                var settings = MQOImportSettings.CreateDefault();
-                settings.BaseDir = Path.GetDirectoryName(filePath);
+                if (settings == null)
+                {
+                    settings = MQOImportSettings.CreateDefault();
+                    settings.BaseDir = Path.GetDirectoryName(filePath);
+                }
+                else if (string.IsNullOrEmpty(settings.BaseDir))
+                {
+                    settings.BaseDir = Path.GetDirectoryName(filePath);
+                }
                 result = MQOImporter.ImportFile(filePath, settings);
             }
             catch (Exception e)
@@ -140,11 +161,15 @@ namespace Poly_Ling.Player
         {
             var model = new ModelContext
             {
-                Name             = Path.GetFileNameWithoutExtension(filePath),
-                FilePath         = filePath,
-                SourceDocument   = result.Document,
+                Name               = Path.GetFileNameWithoutExtension(filePath),
+                FilePath           = filePath,
+                SourceDocument     = result.Document,
                 BoneWorldPositions = result.BoneWorldPositions,
             };
+
+            // マテリアルを移送（テクスチャ含む）
+            if (result.MaterialReferences != null && result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
 
             foreach (var mc in result.MeshContexts)
                 model.Add(mc);
@@ -170,6 +195,10 @@ namespace Poly_Ling.Player
                 FilePath       = filePath,
                 SourceDocument = result.Document,
             };
+
+            // マテリアルを移送（テクスチャ・色含む）
+            if (result.MaterialReferences != null && result.MaterialReferences.Count > 0)
+                model.MaterialReferences = result.MaterialReferences;
 
             foreach (var mc in result.MeshContexts)
                 model.Add(mc);

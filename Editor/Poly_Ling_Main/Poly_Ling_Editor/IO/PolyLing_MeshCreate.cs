@@ -139,7 +139,7 @@ public partial class PolyLing
         // 頂点を追加
         foreach (var vertex in meshObject.Vertices)
         {
-            meshContext.MeshObject.Vertices.Add(new Vertex(vertex.Position));
+            meshContext.MeshObject.Vertices.Add(vertex.Clone());
         }
 
         // 面を追加（頂点インデックスをオフセット）

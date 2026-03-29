@@ -14,6 +14,9 @@ using Poly_Ling.Context;
 using Poly_Ling.Core;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
+using Poly_Ling.PMX;
+using Poly_Ling.MQO;
 
 namespace Poly_Ling.Player
 {
@@ -39,6 +42,7 @@ namespace Poly_Ling.Player
 
         private readonly PlayerViewportManager _viewportManager = new PlayerViewportManager();
         private PlayerLayoutRoot               _layoutRoot;
+        private PlayerImportSubPanel           _importSubPanel;
 
         // 頂点インタラクション（Perspective ビューポート専用）
         private SelectionState         _selectionState;
@@ -118,6 +122,10 @@ namespace Poly_Ling.Player
 
                 // ローカルロード完了後の初期選択設定（フェッチ時と同じロジック）
                 var loadedModel = project.Models[0];
+
+                // GPU バッファ構築（RebuildAdapter は SelectDrawableMesh より先に呼ぶこと）
+                _viewportManager.RebuildAdapter(0, loadedModel);
+
                 var loadedDrawables = loadedModel.DrawableMeshes;
                 if (loadedDrawables != null)
                     foreach (var entry in loadedDrawables)
@@ -203,7 +211,6 @@ namespace Poly_Ling.Player
             SyncUI();
             UpdateFaceHoverOverlay();
             UpdateGizmoOverlay();
-
         }
 
         private void LateUpdate()
@@ -229,16 +236,26 @@ namespace Poly_Ling.Player
             {
                 OnSyncMeshPositions     = mc =>
                 {
-                    if (mc?.MeshObject != null && mc.UnityMesh != null
-                        && mc.MeshObject.VertexCount == mc.UnityMesh.vertexCount)
+                    if (mc?.MeshObject != null && mc.UnityMesh != null)
                     {
-                        var verts = new UnityEngine.Vector3[mc.MeshObject.VertexCount];
-                        for (int i = 0; i < verts.Length; i++)
-                            verts[i] = mc.MeshObject.Vertices[i].Position;
-                        mc.UnityMesh.vertices = verts;
-                        mc.UnityMesh.RecalculateBounds();
+                        if (mc.MeshObject.VertexCount == mc.UnityMesh.vertexCount)
+                        {
+                            // 展開なし（頂点数一致）: 直接更新
+                            var verts = new UnityEngine.Vector3[mc.MeshObject.VertexCount];
+                            for (int i = 0; i < verts.Length; i++)
+                                verts[i] = mc.MeshObject.Vertices[i].Position;
+                            mc.UnityMesh.vertices = verts;
+                            mc.UnityMesh.RecalculateBounds();
+                        }
+                        else
+                        {
+                            // 展開済み（UV分割で頂点数増）:
+                            // _expandedToOriginal マッピングを使いCPUで直接更新する。
+                            _viewportManager.UpdateExpandedUnityMesh(
+                                mc, ActiveProject?.CurrentModel);
+                        }
                     }
-                    _viewportManager.NotifyTransformChanged();
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
                 },
                 OnRepaint               = () => { },
 
@@ -267,6 +284,7 @@ namespace Poly_Ling.Player
                 OnReadBackVertexFlags    = () => _viewportManager.ReadBackVertexFlags(),
                 OnExitBoxSelecting       = () => _viewportManager.ExitBoxSelecting(),
                 OnRequestNormal          = () => _viewportManager.RequestNormal(),
+                OnClearMouseHover        = () => _viewportManager.ClearMouseHover(),
             };
             _viewportManager.RegisterMoveToolHandler(_moveToolHandler);
 
@@ -318,8 +336,24 @@ namespace Poly_Ling.Player
             {
                 if (vp == null) return;
                 if (vp.Orbit != null)
+                {
+                    vp.Orbit.OnCameraDragBegin = () =>
+                        _viewportManager.EnterCameraDragging();
                     vp.Orbit.OnCameraChanged = () =>
+                    {
+                        _viewportManager.ExitCameraDragging();
                         _viewportManager.NotifyCameraChanged(vp);
+                    };
+                }
+                if (vp.Ortho != null)
+                {
+                    vp.Ortho.OnCameraDragBegin = () =>
+                        _viewportManager.EnterCameraDragging();
+                    vp.Ortho.OnCameraDragEnd = () =>
+                        _viewportManager.ExitCameraDragging();
+                    vp.Ortho.OnCameraChanged = () =>
+                        _viewportManager.NotifyCameraChanged(vp);
+                }
             }
 
             ConnectCameraChanged(_viewportManager.PerspectiveViewport);
@@ -381,7 +415,18 @@ namespace Poly_Ling.Player
             _layoutRoot = new PlayerLayoutRoot();
             _layoutRoot.Build(root);
 
+            // ローカルローダー UI（Load PMX / Load MQO ボタン）
             _localLoader.BuildUI(_layoutRoot.LocalLoaderSection);
+
+            // インポートサブパネル生成・配線
+            _importSubPanel = new PlayerImportSubPanel();
+            _importSubPanel.Build(_layoutRoot.RightPaneContent);
+            _importSubPanel.OnImportPmx = OnImportPmx;
+            _importSubPanel.OnImportMqo = OnImportMqo;
+
+            // Load PMX / Load MQO ボタン → 右ペインにサブパネルを切り替え表示
+            _localLoader.OnPmxRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.PMX);
+            _localLoader.OnMqoRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.MQO);
 
             _layoutRoot.ConnectBtn   .clicked += () => _client?.Connect();
             _layoutRoot.DisconnectBtn.clicked += () => _client?.Disconnect();
@@ -404,6 +449,37 @@ namespace Poly_Ling.Player
             _layoutRoot.ShowSelectedBoneToggle      .RegisterValueChangedCallback(OnToggle);
             _layoutRoot.ShowUnselectedBoneToggle    .RegisterValueChangedCallback(OnToggle);
             _layoutRoot.BackfaceCullingToggle       .RegisterValueChangedCallback(OnToggle);
+        }
+
+        /// <summary>右ペインにインポートサブパネルを表示し、モードを切り替える。</summary>
+        private void ShowImportPanel(PlayerImportSubPanel.Mode mode)
+        {
+            _importSubPanel?.SetMode(mode);
+        }
+
+        /// <summary>
+        /// PMX インポート要求。ImportPmxCommand をコマンドキューにエンキューする。
+        /// コマンドの onResult で _localLoader.LoadModel を呼び、OnLoaded を発火させる。
+        /// </summary>
+        private void OnImportPmx(string filePath, PMXImportSettings settings)
+        {
+            var cmd = new ImportPmxCommand(
+                filePath, settings,
+                onResult: (model, _) => _localLoader.LoadModel(filePath, model),
+                onError:  msg       => _status = $"PMX読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
+        }
+
+        /// <summary>
+        /// MQO インポート要求。ImportMqoCommand をコマンドキューにエンキューする。
+        /// </summary>
+        private void OnImportMqo(string filePath, MQOImportSettings settings)
+        {
+            var cmd = new ImportMqoCommand(
+                filePath, settings,
+                onResult: (model, _) => _localLoader.LoadModel(filePath, model),
+                onError:  msg       => _status = $"MQO読込失敗: {msg}");
+            _editOps?.CommandQueue.Enqueue(cmd);
         }
 
         // ================================================================

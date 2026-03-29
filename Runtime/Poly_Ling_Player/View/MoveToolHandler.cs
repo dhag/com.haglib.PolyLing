@@ -35,6 +35,7 @@ namespace Poly_Ling.Player
         public Action OnReadBackVertexFlags;
         public Action OnExitBoxSelecting;
         public Action OnRequestNormal;
+        public Action OnClearMouseHover;
         public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
         public Func<Vector2[]>  GetScreenPositions;
         public Func<int, int>   GetVertexOffset;
@@ -159,9 +160,9 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // 要素ヒット or 選択済み → PendingAction
+            // 要素ヒット → PendingAction
             UpdateAffectedVertices();
-            if (_elemOnMouseDown.HasHit || HasAnyAffected())
+            if (_elemOnMouseDown.HasHit)
             {
                 _state    = MoveState.PendingAction;
                 _dragMode = DragMode.Moving;
@@ -240,6 +241,7 @@ namespace Poly_Ling.Player
                 OnExitBoxSelecting?.Invoke();
                 _dragMode = DragMode.None;
                 _state    = MoveState.Idle;
+                OnClearMouseHover?.Invoke();
                 return;
             }
 
@@ -255,6 +257,7 @@ namespace Poly_Ling.Player
             _state        = MoveState.Idle;
             _dragMode     = DragMode.None;
             _draggingAxis = AxisGizmo.AxisType.None;
+            OnClearMouseHover?.Invoke();
         }
 
         // ================================================================

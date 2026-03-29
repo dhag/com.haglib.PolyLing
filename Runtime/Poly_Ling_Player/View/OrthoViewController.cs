@@ -27,6 +27,30 @@ namespace Poly_Ling.Player
         public float OrthoSizeMax    = 200f;
 
         // ================================================================
+        // コールバック
+        // ================================================================
+
+        /// <summary>
+        /// カメラドラッグ（パン）開始時に呼ばれる。
+        /// UnifiedSystemAdapter.EnterCameraDragging() の呼び出しに使う。
+        /// OnCameraChanged より先に発火する。
+        /// </summary>
+        public System.Action OnCameraDragBegin;
+
+        /// <summary>
+        /// カメラドラッグ（パン）終了時に呼ばれる。
+        /// UnifiedSystemAdapter.ExitCameraDragging() の呼び出しに使う。
+        /// OnCameraChanged より先に発火する。
+        /// </summary>
+        public System.Action OnCameraDragEnd;
+
+        /// <summary>
+        /// カメラパラメータ確定時（パン・ズーム終了後）に呼ばれる。
+        /// UnifiedSystemAdapter.UpdateFrame() の呼び出しに使う。
+        /// </summary>
+        public System.Action OnCameraChanged;
+
+        // ================================================================
         // 状態
         // ================================================================
 
@@ -34,6 +58,7 @@ namespace Poly_Ling.Player
         public float   OrthoSize { get; private set; } = 1f;
 
         private readonly OrthoViewDirection _direction;
+        private bool _isDragging;
 
         // ================================================================
         // 初期化
@@ -56,15 +81,19 @@ namespace Poly_Ling.Player
 
         public void Connect(IMouseEventSource source)
         {
-            source.OnDrag   += OnDrag;
-            source.OnScroll += OnScroll;
+            source.OnDragBegin += OnDragBegin;
+            source.OnDrag      += OnDrag;
+            source.OnDragEnd   += OnDragEnd;
+            source.OnScroll    += OnScroll;
         }
 
         public void Disconnect(IMouseEventSource source)
         {
             if (source == null) return;
-            source.OnDrag   -= OnDrag;
-            source.OnScroll -= OnScroll;
+            source.OnDragBegin -= OnDragBegin;
+            source.OnDrag      -= OnDrag;
+            source.OnDragEnd   -= OnDragEnd;
+            source.OnScroll    -= OnScroll;
         }
 
         // ================================================================
@@ -105,6 +134,13 @@ namespace Poly_Ling.Player
         // イベントハンドラー
         // ================================================================
 
+        private void OnDragBegin(int btn, Vector2 screenPos, ModifierKeys mods)
+        {
+            if (btn != 1 && btn != 2) return;
+            _isDragging = true;
+            OnCameraDragBegin?.Invoke();
+        }
+
         private void OnDrag(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
             // 右ボタン(1) または 中ボタン(2) → パン
@@ -119,15 +155,26 @@ namespace Poly_Ling.Player
                     break;
                 case OrthoViewDirection.Front:
                 default:
-                    // Front: X→X, Y（スクリーン上下）→ Y
-                    panDelta = new Vector3(delta.x, -delta.y, 0f) * OrthoSize * PanSensitivity;
+                    // Front: カメラ -Z 側、+Z 向き。
+                    // スクリーン右 → Target.x 減少（カメラが右に動く＝シーンが左に見える）
+                    panDelta = new Vector3(-delta.x, -delta.y, 0f) * OrthoSize * PanSensitivity;
                     break;
                 case OrthoViewDirection.Side:
-                    // Side: スクリーンX→Z, スクリーンY→Y
-                    panDelta = new Vector3(0f, -delta.y, delta.x) * OrthoSize * PanSensitivity;
+                    // Side: カメラ +X 側、-X 向き。
+                    // スクリーン右 → Target.z 減少
+                    panDelta = new Vector3(0f, -delta.y, -delta.x) * OrthoSize * PanSensitivity;
                     break;
             }
             Target += panDelta;
+        }
+
+        private void OnDragEnd(int btn, Vector2 screenPos, ModifierKeys mods)
+        {
+            if (btn != 1 && btn != 2) return;
+            if (!_isDragging) return;
+            _isDragging = false;
+            OnCameraDragEnd?.Invoke();
+            OnCameraChanged?.Invoke();
         }
 
         private void OnScroll(float scroll, ModifierKeys mods)

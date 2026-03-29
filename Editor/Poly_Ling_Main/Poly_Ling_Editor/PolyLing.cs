@@ -172,15 +172,10 @@ public partial class PolyLing : EditorWindow
         // 計算（ComputeWorldMatricesは冪等なので重複呼び出しOK）
         _model.ComputeWorldMatrices();
 
-        var editorState = _undoController?.EditorState;
-        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
-        bool useLocalTransform = editorState?.ShowLocalTransform ?? false;
-        if (useWorldTransform || useLocalTransform)
-        {
-            _unifiedAdapter?.UpdateTransform(useWorldTransform);
-            if (useWorldTransform)
-                _unifiedAdapter?.WritebackTransformedVertices();
-        }
+        // GPU の変換行列バッファを更新（SkinningMatrix = WorldMatrix × BindPose）。
+        // MeshFilter（BindPose=identity）は SkinningMatrix=WorldMatrix となり正しいワールド座標。
+        // WritebackTransformedVertices は廃止。面描画は DrawMesh に SkinningMatrix を渡す方式。
+        _unifiedAdapter?.UpdateTransform(useWorldTransform: true);
 
         // MeshContext取得
         var meshContext = _model.FirstSelectedMeshContext;

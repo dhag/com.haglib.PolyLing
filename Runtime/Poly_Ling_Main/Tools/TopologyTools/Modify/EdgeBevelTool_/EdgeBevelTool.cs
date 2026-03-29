@@ -362,9 +362,19 @@ namespace Poly_Ling.Tools
                         : Vector3.Lerp(offsetA * amount, offsetB * amount, t); // 線形補間
 
                     rowV0[s] = meshObject.VertexCount;
-                    meshObject.Vertices.Add(new Vertex { Position = p0 + offset });
+                    {
+                        var nv = new Vertex { Position = p0 + offset };
+                        var sv0 = meshObject.Vertices[edgeInfo.V0];
+                        if (sv0.UVs.Count > 0) nv.UVs.Add(sv0.UVs[0]);
+                        meshObject.Vertices.Add(nv);
+                    }
                     rowV1[s] = meshObject.VertexCount;
-                    meshObject.Vertices.Add(new Vertex { Position = p1 + offset });
+                    {
+                        var nv = new Vertex { Position = p1 + offset };
+                        var sv1 = meshObject.Vertices[edgeInfo.V1];
+                        if (sv1.UVs.Count > 0) nv.UVs.Add(sv1.UVs[0]);
+                        meshObject.Vertices.Add(nv);
+                    }
                 }
 
                 orphanCandidates.Add(edgeInfo.V0);
@@ -622,8 +632,8 @@ namespace Poly_Ling.Tools
 
                     var bevelFace = new Face { MaterialIndex = matIdx };
                     bevelFace.VertexIndices.AddRange(verts);
-                    bevelFace.UVIndices.AddRange(verts);
-                    bevelFace.NormalIndices.AddRange(verts);
+                    bevelFace.UVIndices.AddRange(new[] { 0, 0, 0, 0 });
+                    bevelFace.NormalIndices.AddRange(new[] { 0, 0, 0, 0 });
                     meshObject.Faces.Add(bevelFace);
                 }
             }

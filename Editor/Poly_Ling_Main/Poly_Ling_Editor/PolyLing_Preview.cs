@@ -58,15 +58,11 @@ public partial class PolyLing
         // ================================================================
         _model?.ComputeWorldMatrices();
 
-        var editorState = _undoController?.EditorState;
-        bool useWorldTransform = editorState?.ShowWorldTransform ?? false;
-        bool useLocalTransform = editorState?.ShowLocalTransform ?? false;
-        if (useWorldTransform || useLocalTransform)
-        {
-            _unifiedAdapter?.UpdateTransform(useWorldTransform);
-            if (useWorldTransform)
-                _unifiedAdapter?.WritebackTransformedVertices();
-        }
+        // WorldMatrix が確定した後、GPU の変換行列バッファを更新する。
+        // useWorldTransform=true により SkinningMatrix（WorldMatrix × BindPose）が使われる。
+        // MeshFilter（BindPose=identity）は SkinningMatrix=WorldMatrix となり正しいワールド座標になる。
+        // WritebackTransformedVertices は廃止。面描画は DrawMesh に SkinningMatrix を渡す方式に変更済み。
+        _unifiedAdapter?.UpdateTransform(useWorldTransform: true);
 
         // ViewportPanelが開いている場合: プレースホルダー表示のみ
         if (Poly_Ling.MeshListV2.ViewportPanel.IsOpen)
@@ -306,26 +302,20 @@ public partial class PolyLing
     /// </summary>
     /// <param name="meshIndex">メッシュインデックス</param>
     /// <returns>表示用変換行列（identity, local, または world）</returns>
+    /// <summary>
+    /// 現在の表示モードに応じた表示用行列を取得。
+    /// 常に ctx.SkinningMatrix（WorldMatrix × BindPose）を返す。
+    /// GPU の TransformVertices カーネルが _worldPositionBuffer に書き込む座標と
+    /// Graphics.DrawMesh の行列が一致するよう統一設計。
+    /// </summary>
     private Matrix4x4 GetDisplayMatrix(int meshIndex)
     {
-        var editorState = _undoController?.EditorState;
-        if (editorState == null)
-            return Matrix4x4.identity;
-
-        // WorldTransformモードでは頂点は既にGPUで変換済み（WritebackTransformedVertices）
-        // なのでIdentityを返す
-        if (editorState.ShowWorldTransform)
+        if (meshIndex >= 0 && meshIndex < _meshContextList.Count)
         {
-            return Matrix4x4.identity;
+            var ctx = _meshContextList[meshIndex];
+            if (ctx != null)
+                return ctx.SkinningMatrix;
         }
-        else if (editorState.ShowLocalTransform)
-        {
-            if (meshIndex >= 0 && meshIndex < _meshContextList.Count)
-            {
-                return GetLocalTransformMatrix(_meshContextList[meshIndex]);
-            }
-        }
-
         return Matrix4x4.identity;
     }
 

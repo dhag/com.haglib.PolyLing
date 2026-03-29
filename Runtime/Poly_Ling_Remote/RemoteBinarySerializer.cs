@@ -332,10 +332,13 @@ namespace Poly_Ling.Remote
             for (int i = 0; i < mesh.VertexCount; i++)
             {
                 var v = mesh.Vertices[i];
-                Vector2 uv = (v.UVs != null && v.UVs.Count > 0)
-                    ? v.UVs[0] : Vector2.zero;
-                w.Write(uv.x);
-                w.Write(uv.y);
+                int uvCount = (v.UVs != null) ? v.UVs.Count : 0;
+                w.Write(uvCount);
+                for (int j = 0; j < uvCount; j++)
+                {
+                    w.Write(v.UVs[j].x);
+                    w.Write(v.UVs[j].y);
+                }
             }
         }
 
@@ -467,10 +470,14 @@ namespace Poly_Ling.Remote
             for (int i = 0; i < count; i++)
             {
                 var v = mesh.Vertices[i];
-                var uv = new Vector2(r.ReadSingle(), r.ReadSingle());
                 if (v.UVs == null) v.UVs = new List<Vector2>();
-                if (v.UVs.Count == 0) v.UVs.Add(uv);
-                else v.UVs[0] = uv;
+                v.UVs.Clear();
+                int uvCount = r.ReadInt32();
+                for (int j = 0; j < uvCount; j++)
+                {
+                    var uv = new Vector2(r.ReadSingle(), r.ReadSingle());
+                    v.UVs.Add(uv);
+                }
             }
         }
 

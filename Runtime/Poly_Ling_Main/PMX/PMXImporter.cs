@@ -331,6 +331,10 @@ namespace Poly_Ling.PMX
                     if (!string.IsNullOrEmpty(pmxMat.TexturePath))
                         matRef.Data.SourceTexturePath = ResolveTextureFullPath(pmxMat.TexturePath, baseDir);
 
+                    // 両面描画フラグを CullMode に反映（DrawMeshes での動的カリング制御に使用）
+                    if ((pmxMat.DrawFlags & 0x01) != 0)
+                        matRef.Data.CullMode = Poly_Ling.Materials.CullModeType.Off;
+
                     result.MaterialReferences.Add(matRef);
                 }
                 //Debug.Log($"[PMXImporter] Imported {result.MaterialCount} materials");
@@ -1637,6 +1641,11 @@ namespace Poly_Ling.PMX
             Shader shader = FindBestShader();
             var material = new Material(shader);
             material.name = pmxMat.Name;
+
+            // 両面描画フラグ（DrawFlags bit0 = 1 → 両面）
+            bool doubleSide = (pmxMat.DrawFlags & 0x01) != 0;
+            if (doubleSide && material.HasProperty("_Cull"))
+                material.SetFloat("_Cull", 0f); // CullMode.Off
 
             // 拡散色を設定（アルファ値も含む）
             Color color = pmxMat.Diffuse;

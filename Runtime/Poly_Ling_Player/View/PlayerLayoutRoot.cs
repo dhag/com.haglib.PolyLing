@@ -1,9 +1,5 @@
 // PlayerLayoutRoot.cs
 // UIToolkit による3ペインレイアウト構築。
-// 水平分割①: Left | (Center + Right)
-// 水平分割②: Center | Right
-// 水平分割③: Center-Left(3D) | Center-Right(Top + Front)
-// 垂直分割④: Top | Front
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using UnityEngine;
@@ -11,10 +7,6 @@ using UnityEngine.UIElements;
 
 namespace Poly_Ling.Player
 {
-    /// <summary>
-    /// 3ペインレイアウトを UIToolkit で構築し、
-    /// Viewer が配線するための UI 要素参照を公開する。
-    /// </summary>
     public class PlayerLayoutRoot
     {
         // ================================================================
@@ -54,64 +46,51 @@ namespace Poly_Ling.Player
         public Toggle ShowUnselectedBoneToggle     { get; private set; }
         public Toggle BackfaceCullingToggle        { get; private set; }
 
+        /// <summary>
+        /// 右ペイン内の動的コンテンツ領域（ScrollView の contentContainer）。
+        /// PlayerImportSubPanel などをここに追加/切り替えする。
+        /// </summary>
+        public VisualElement RightPaneContent { get; private set; }
+
         // ================================================================
         // Build
         // ================================================================
 
-        /// <summary>
-        /// 全ペインを構築して root に追加する。
-        /// </summary>
         public void Build(VisualElement root)
         {
-            // ルートを画面全体に広げる
             root.style.flexDirection = FlexDirection.Row;
             root.style.width         = new StyleLength(new Length(100, LengthUnit.Percent));
             root.style.height        = new StyleLength(new Length(100, LengthUnit.Percent));
 
-            // ① Left | (Center + Right) 水平分割
             var splitLCR = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Horizontal);
             splitLCR.style.flexGrow = 1;
             root.Add(splitLCR);
 
-            var leftPane = BuildLeftPane();
-            splitLCR.Add(leftPane);
+            splitLCR.Add(BuildLeftPane());
 
-            // ② Center | Right 水平分割（固定幅は Right 側）
             var splitCR = new TwoPaneSplitView(1, 220f, TwoPaneSplitViewOrientation.Horizontal);
             splitCR.style.flexGrow = 1;
             splitLCR.Add(splitCR);
 
-            // ③ Center-Left(3D) | Center-Right(Top+Front) 水平分割
             var splitCenter = new TwoPaneSplitView(1, 240f, TwoPaneSplitViewOrientation.Horizontal);
             splitCenter.style.flexGrow = 1;
             splitCR.Add(splitCenter);
 
             PlayerViewportPanel perspPanel, topPanel, frontPanel, sidePanel;
-            // ⑤ Perspective | Side 垂直分割（左列）
+
             var splitPerspSide = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
             splitPerspSide.style.flexGrow = 1;
             splitCenter.Add(splitPerspSide);
+            splitPerspSide.Add(BuildViewportPane("Perspective", out perspPanel)); PerspectivePanel = perspPanel;
+            splitPerspSide.Add(BuildViewportPane("Side",        out sidePanel));  SidePanel        = sidePanel;
 
-            var perspPane = BuildViewportPane("Perspective", out perspPanel);
-            PerspectivePanel = perspPanel;
-            splitPerspSide.Add(perspPane);
-
-            var sidePane = BuildViewportPane("Side", out sidePanel);
-            SidePanel = sidePanel;
-            splitPerspSide.Add(sidePane);
-
-            // ④ Top | Front 垂直分割
             var splitTopFront = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Vertical);
             splitTopFront.style.flexGrow = 1;
             splitCenter.Add(splitTopFront);
+            splitTopFront.Add(BuildViewportPane("TOP",   out topPanel));   TopPanel   = topPanel;
+            splitTopFront.Add(BuildViewportPane("Front", out frontPanel)); FrontPanel = frontPanel;
 
-            var topPane   = BuildViewportPane("TOP",   out topPanel);   TopPanel   = topPanel;
-            var frontPane = BuildViewportPane("Front", out frontPanel); FrontPanel = frontPanel;
-            splitTopFront.Add(topPane);
-            splitTopFront.Add(frontPane);
-
-            var rightPane = BuildRightPane();
-            splitCR.Add(rightPane);
+            splitCR.Add(BuildRightPane());
         }
 
         // ================================================================
@@ -128,29 +107,25 @@ namespace Poly_Ling.Player
             pane.style.paddingRight    = 6;
             pane.style.overflow        = Overflow.Hidden;
 
-            // ステータス
             StatusLabel = new Label("Status: -");
-            StatusLabel.style.marginBottom   = 6;
-            StatusLabel.style.color          = Col(0.85f);
-            StatusLabel.style.whiteSpace     = WhiteSpace.Normal;
+            StatusLabel.style.marginBottom = 6;
+            StatusLabel.style.color        = Col(0.85f);
+            StatusLabel.style.whiteSpace   = WhiteSpace.Normal;
             pane.Add(StatusLabel);
 
             pane.Add(Separator());
 
-            // ローカルロードセクション（Viewer が _localLoader.BuildUI を追加する場所）
             LocalLoaderSection = new VisualElement();
             LocalLoaderSection.style.marginBottom = 6;
             pane.Add(LocalLoaderSection);
 
             pane.Add(Separator());
 
-            // リモートセクション
             RemoteSection = new VisualElement();
             RemoteSection.style.marginBottom = 4;
-
-            ConnectBtn = MakeBtn("Connect");
+            ConnectBtn    = MakeBtn("Connect");
             DisconnectBtn = MakeBtn("Disconnect");
-            FetchBtn = MakeBtn("Fetch Project");
+            FetchBtn      = MakeBtn("Fetch Project");
             RemoteSection.Add(ConnectBtn);
             RemoteSection.Add(DisconnectBtn);
             RemoteSection.Add(FetchBtn);
@@ -158,80 +133,27 @@ namespace Poly_Ling.Player
 
             pane.Add(Separator());
 
-            // Undo / Redo
             var undoRow = new VisualElement();
-            undoRow.style.flexDirection  = FlexDirection.Row;
-            undoRow.style.marginBottom   = 6;
-            UndoBtn = MakeBtn("Undo");
-            RedoBtn = MakeBtn("Redo");
-            UndoBtn.style.flexGrow    = 1;
-            UndoBtn.style.marginRight = 2;
-            RedoBtn.style.flexGrow    = 1;
-            RedoBtn.style.marginLeft  = 2;
-            undoRow.Add(UndoBtn);
-            undoRow.Add(RedoBtn);
+            undoRow.style.flexDirection = FlexDirection.Row;
+            undoRow.style.marginBottom  = 6;
+            UndoBtn = MakeBtn("Undo"); UndoBtn.style.flexGrow = 1; UndoBtn.style.marginRight = 2;
+            RedoBtn = MakeBtn("Redo"); RedoBtn.style.flexGrow = 1; RedoBtn.style.marginLeft  = 2;
+            undoRow.Add(UndoBtn); undoRow.Add(RedoBtn);
             pane.Add(undoRow);
 
             pane.Add(Separator());
-
-            // モデルリスト
             pane.Add(Header("Models"));
             ModelListContainer = new VisualElement();
             pane.Add(ModelListContainer);
 
-            return pane;
-        }
-
-        // ================================================================
-        // ビューポートペイン
-        // ================================================================
-
-        private VisualElement BuildViewportPane(string label, out PlayerViewportPanel panel)
-        {
-            var wrap = new VisualElement();
-            wrap.style.flexGrow        = 1;
-            wrap.style.flexDirection   = FlexDirection.Column;
-            wrap.style.backgroundColor = new StyleColor(Color.black);
-
-            // ラベル（左上）
-            var lbl = new Label(label);
-            lbl.style.position        = Position.Absolute;
-            lbl.style.top             = 4;
-            lbl.style.left            = 6;
-            lbl.style.color           = new StyleColor(new Color(0.7f, 0.9f, 1f, 0.8f));
-            lbl.style.fontSize        = 11;
-            lbl.pickingMode           = PickingMode.Ignore;
-
-            panel = new PlayerViewportPanel();
-            wrap.Add(panel);
-            wrap.Add(lbl);
-
-            return wrap;
-        }
-
-        // ================================================================
-        // Right ペイン
-        // ================================================================
-
-        private VisualElement BuildRightPane()
-        {
-            var pane = MakePane(220f);
-            pane.style.backgroundColor = PaneBg(0.15f);
-            pane.style.paddingTop      = 8;
-            pane.style.paddingBottom   = 8;
-            pane.style.paddingLeft     = 6;
-            pane.style.paddingRight    = 6;
-            pane.style.overflow        = Overflow.Hidden;
-
+            pane.Add(Separator());
             pane.Add(Header("Display"));
-
-            ShowSelectedMeshToggle       = MakeToggle("Selected Mesh",       true);
-            ShowUnselectedMeshToggle     = MakeToggle("Unselected Mesh",     true);
-            ShowSelectedVerticesToggle   = MakeToggle("Selected Vertices",   true);
-            ShowUnselectedVerticesToggle = MakeToggle("Unselected Vertices", true);
-            ShowSelectedWireToggle       = MakeToggle("Selected Wireframe",  true);
-            ShowUnselectedWireToggle     = MakeToggle("Unselected Wireframe",true);
-
+            ShowSelectedMeshToggle       = MakeToggle("Selected Mesh",        true);
+            ShowUnselectedMeshToggle     = MakeToggle("Unselected Mesh",      true);
+            ShowSelectedVerticesToggle   = MakeToggle("Selected Vertices",    true);
+            ShowUnselectedVerticesToggle = MakeToggle("Unselected Vertices",  true);
+            ShowSelectedWireToggle       = MakeToggle("Selected Wireframe",   true);
+            ShowUnselectedWireToggle     = MakeToggle("Unselected Wireframe", true);
             pane.Add(ShowSelectedMeshToggle);
             pane.Add(ShowUnselectedMeshToggle);
             pane.Add(ShowSelectedVerticesToggle);
@@ -255,14 +177,61 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // ビューポートペイン
+        // ================================================================
+
+        private VisualElement BuildViewportPane(string label, out PlayerViewportPanel panel)
+        {
+            var wrap = new VisualElement();
+            wrap.style.flexGrow        = 1;
+            wrap.style.flexDirection   = FlexDirection.Column;
+            wrap.style.backgroundColor = new StyleColor(Color.black);
+
+            var lbl = new Label(label);
+            lbl.style.position  = Position.Absolute;
+            lbl.style.top       = 4;
+            lbl.style.left      = 6;
+            lbl.style.color     = new StyleColor(new Color(0.7f, 0.9f, 1f, 0.8f));
+            lbl.style.fontSize  = 11;
+            lbl.pickingMode     = PickingMode.Ignore;
+
+            panel = new PlayerViewportPanel();
+            wrap.Add(panel);
+            wrap.Add(lbl);
+            return wrap;
+        }
+
+        // ================================================================
+        // Right ペイン
+        // ================================================================
+
+        private VisualElement BuildRightPane()
+        {
+            var pane = MakePane(220f);
+            pane.style.backgroundColor = PaneBg(0.15f);
+            pane.style.flexDirection   = FlexDirection.Column;
+            pane.style.overflow        = Overflow.Hidden;
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.flexGrow     = 1;
+            scroll.style.paddingTop   = 4;
+            scroll.style.paddingLeft  = 4;
+            scroll.style.paddingRight = 4;
+            pane.Add(scroll);
+
+            RightPaneContent = scroll.contentContainer;
+            return pane;
+        }
+
+        // ================================================================
         // UIヘルパー
         // ================================================================
 
         private static VisualElement MakePane(float initialWidth)
         {
             var v = new VisualElement();
-            v.style.width    = initialWidth;
-            v.style.minWidth = 80f;
+            v.style.width      = initialWidth;
+            v.style.minWidth   = 80f;
             v.style.flexShrink = 0;
             return v;
         }
@@ -278,7 +247,7 @@ namespace Poly_Ling.Player
         {
             var t = new Toggle(label) { value = initial };
             t.style.marginBottom = 2;
-            t.style.color = Col(0.85f);
+            t.style.color        = Col(0.85f);
             return t;
         }
 
