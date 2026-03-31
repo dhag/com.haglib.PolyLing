@@ -7,7 +7,6 @@
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Remote;
@@ -47,6 +46,8 @@ namespace Poly_Ling.Player
         private readonly PlayerViewportManager _viewportManager = new PlayerViewportManager();
         private PlayerLayoutRoot               _layoutRoot;
         private PlayerImportSubPanel           _importSubPanel;
+        private PlayerPrimitiveMeshSubPanel    _primitiveSubPanel;
+        private MeshFilterToSkinnedSubPanel    _mfToSkinnedSubPanel;
         private PanelContext                   _panelContext;
         private ModelListSubPanel              _modelListSubPanel;
         private MeshListSubPanel               _meshListSubPanel;
@@ -55,19 +56,27 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
+        private enum ToolMode { VertexMove, ObjectMove }
+        private ToolMode               _toolMode = ToolMode.VertexMove;
         private MoveToolHandler        _moveToolHandler;
+        private ObjectMoveToolHandler  _objectMoveHandler;
 
         // 現在インタラクション対象のパネル / ビューポート（3視点切替用）
         private PlayerViewportPanel    _activePanel;
         private PlayerViewport         _activeViewport;
 
         // ================================================================
+        // コマンド・フェッチ委譲
+        // ================================================================
+
+        private PlayerCommandDispatcher _commandDispatcher;
+        private PlayerRemoteFetchFlow   _fetchFlow;
+
+        // ================================================================
         // ステータス
         // ================================================================
 
         private string _status = "未接続";
-        private int    _fetchingModelIndex = -1;
-        private int    _modelCount;
 
         // ================================================================
         // ライフサイクル
@@ -111,6 +120,26 @@ namespace Poly_Ling.Player
             // 頂点インタラクター（BuildLayout 後に Panel が使える）
             SetupVertexInteraction();
 
+            // コマンドディスパッチャー（_selectionOps は SetupVertexInteraction 後に確定）
+            _commandDispatcher = new PlayerCommandDispatcher(
+                () => ActiveProject,
+                _renderer,
+                _viewportManager,
+                _selectionOps,
+                NotifyPanels,
+                RebuildModelList);
+
+            // リモートフェッチフロー
+            _fetchFlow = new PlayerRemoteFetchFlow(
+                _client,
+                _receiver,
+                _localLoader,
+                _viewportManager,
+                _renderer,
+                _selectionOps,
+                NotifyPanels,
+                s => _status = s);
+
             // ローカルローダー配線
             _localLoader.OnStatusChanged = s => _status = s;
             _localLoader.OnLoaded = project =>
@@ -131,6 +160,9 @@ namespace Poly_Ling.Player
                     }
                 }
                 _moveToolHandler?.SetProject(ActiveProject);
+                _objectMoveHandler?.SetProject(ActiveProject);
+
+                loadedModel.ComputeWorldMatrices();
 
                 // GPU バッファ構築（アダプタは常にインデックス0）
                 _viewportManager.RebuildAdapter(0, loadedModel);
@@ -192,6 +224,9 @@ namespace Poly_Ling.Player
 
             _viewportManager.Dispose();
 
+            _primitiveSubPanel?.Dispose();
+            _primitiveSubPanel = null;
+
             if (_client != null)
             {
                 _client.OnConnected    -= OnConnected;
@@ -217,9 +252,11 @@ namespace Poly_Ling.Player
         {
             _viewportManager.Update();
             _editOps?.Tick();
+            _primitiveSubPanel?.Tick();
             SyncRendererFlags();
             SyncUI();
             UpdateFaceHoverOverlay();
+            UpdateSelectedFacesOverlay();
             UpdateGizmoOverlay();
         }
 
@@ -251,9 +288,11 @@ namespace Poly_Ling.Player
                         if (mc.MeshObject.VertexCount == mc.UnityMesh.vertexCount)
                         {
                             // 展開なし（頂点数一致）: 直接更新
+                            // DrawMesh に identity を渡すため UnityMesh.vertices はワールド座標で保持する
+                            var wm = mc.WorldMatrix;
                             var verts = new UnityEngine.Vector3[mc.MeshObject.VertexCount];
                             for (int i = 0; i < verts.Length; i++)
-                                verts[i] = mc.MeshObject.Vertices[i].Position;
+                                verts[i] = wm.MultiplyPoint3x4(mc.MeshObject.Vertices[i].Position);
                             mc.UnityMesh.vertices = verts;
                             mc.UnityMesh.RecalculateBounds();
                         }
@@ -267,7 +306,7 @@ namespace Poly_Ling.Player
                     }
                     _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
                 },
-                OnRepaint               = () => { },
+                OnRepaint               = () => _activePanel?.MarkDirtyRepaint(),
 
                 // GetHoverElement: Mode に応じた GPU ホバー要素取得
                 GetHoverElement = mode => _viewportManager.GetHoverElement(
@@ -297,6 +336,26 @@ namespace Poly_Ling.Player
                 OnClearMouseHover        = () => _viewportManager.ClearMouseHover(),
             };
             _viewportManager.RegisterMoveToolHandler(_moveToolHandler);
+
+            // ObjectMoveToolHandler 生成・配線
+            _objectMoveHandler = new ObjectMoveToolHandler();
+            _objectMoveHandler.SetProject(ActiveProject);
+            _objectMoveHandler.SetUndoController(_editOps?.UndoController);
+            _objectMoveHandler.GetToolContext         = () => _viewportManager.GetCurrentToolContext(_activeViewport);
+            _objectMoveHandler.OnRepaint              = () => _activePanel?.MarkDirtyRepaint();
+            _objectMoveHandler.OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging();
+            _objectMoveHandler.OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging();
+            _objectMoveHandler.OnMeshSelectionChanged   = () => { };
+            _objectMoveHandler.OnSyncBoneTransforms     = () =>
+            {
+                var proj = ActiveProject;
+                if (proj?.CurrentModel != null)
+                {
+                    proj.CurrentModel.ComputeWorldMatrices();
+                    _viewportManager.UpdateTransform();
+                }
+                NotifyPanels(ChangeKind.Attributes);
+            };
 
             _vertexInteractor = new PlayerVertexInteractor(_selectionOps)
             {
@@ -383,23 +442,60 @@ namespace Poly_Ling.Player
             else             panel.ShowFaceHover(pts);
         }
 
+        private void UpdateSelectedFacesOverlay()
+        {
+            var panel = _activePanel;
+            if (panel == null) return;
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { panel.HideSelectedFaces(); return; }
+            var faces = _viewportManager.GetSelectedFacesScreenPts(_activeViewport, model);
+            if (faces == null) panel.HideSelectedFaces();
+            else               panel.ShowSelectedFaces(faces);
+        }
+
         private void UpdateGizmoOverlay()
         {
             var panel = _activePanel;
             if (panel == null) return;
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
-            if (ctx == null || _moveToolHandler == null) { panel.HideGizmo(); return; }
+            if (ctx == null) { panel.HideGizmo(); return; }
+
+            if (_toolMode == ToolMode.ObjectMove)
+            {
+                if (_objectMoveHandler == null) { panel.HideGizmo(); return; }
+                if (_objectMoveHandler.TryGetGizmoScreenPositions(
+                        ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
+                {
+                    _objectMoveHandler.GetPivotScreenPos(out var pivotScreen);
+                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
+                    {
+                        HasGizmo       = true,
+                        IsDiamondStyle = false,
+                        Origin         = origin,
+                        XEnd           = xEnd,
+                        YEnd           = yEnd,
+                        ZEnd           = zEnd,
+                        HoveredAxis    = hovAxis,
+                        HasPivotGizmo  = true,
+                        PivotOrigin    = pivotScreen,
+                    });
+                }
+                else panel.HideGizmo();
+                return;
+            }
+
+            if (_moveToolHandler == null) { panel.HideGizmo(); return; }
             if (_moveToolHandler.TryGetGizmoScreenPositions(
-                    ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
+                    ctx, out var o, out var xe, out var ye, out var ze, out var ha))
             {
                 panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
                 {
                     HasGizmo    = true,
-                    Origin      = origin,
-                    XEnd        = xEnd,
-                    YEnd        = yEnd,
-                    ZEnd        = zEnd,
-                    HoveredAxis = hovAxis,
+                    Origin      = o,
+                    XEnd        = xe,
+                    YEnd        = ye,
+                    ZEnd        = ze,
+                    HoveredAxis = ha,
                 });
             }
             else panel.HideGizmo();
@@ -447,6 +543,27 @@ namespace Poly_Ling.Player
             _importSubPanel.OnImportPmx = OnImportPmx;
             _importSubPanel.OnImportMqo = OnImportMqo;
 
+            // 図形生成サブパネル生成・配線
+            _primitiveSubPanel = new PlayerPrimitiveMeshSubPanel();
+            _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
+            _primitiveSubPanel.OnMeshCreated = OnPrimitiveMeshCreated;
+            _layoutRoot.PrimitiveSection.style.display = DisplayStyle.None;
+
+            // 左ペイン「図形生成」ボタン → 右ペインに図形生成パネルを切り替え表示
+            _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
+
+            // MeshFilter→Skinnedサブパネル生成・配線
+            _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
+            _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
+            _mfToSkinnedSubPanel.OnConversionComplete = OnMeshFilterToSkinnedComplete;
+            _layoutRoot.MeshFilterToSkinnedSection.style.display = DisplayStyle.None;
+
+            // 左ペイン「MF→Skinned」ボタン
+            _layoutRoot.MeshFilterToSkinnedBtn.clicked += ShowMeshFilterToSkinnedPanel;
+
+            _layoutRoot.ToolVertexMoveBtn.clicked += () => SwitchTool(ToolMode.VertexMove);
+            _layoutRoot.ToolObjectMoveBtn.clicked += () => SwitchTool(ToolMode.ObjectMove);
+
             // Load PMX / Load MQO ボタン → 右ペインにサブパネルを切り替え表示
             _localLoader.OnPmxRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.PMX);
             _localLoader.OnMqoRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.MQO);
@@ -472,12 +589,100 @@ namespace Poly_Ling.Player
             _layoutRoot.ShowSelectedBoneToggle      .RegisterValueChangedCallback(OnToggle);
             _layoutRoot.ShowUnselectedBoneToggle    .RegisterValueChangedCallback(OnToggle);
             _layoutRoot.BackfaceCullingToggle       .RegisterValueChangedCallback(OnToggle);
+
+            // 初期ツールボタンスタイル
+            UpdateToolButtonStyles();
         }
 
         /// <summary>右ペインにインポートサブパネルを表示し、モードを切り替える。</summary>
         private void ShowImportPanel(PlayerImportSubPanel.Mode mode)
         {
+            HideAllRightPanels();
+            if (_layoutRoot?.ImportSection != null)
+                _layoutRoot.ImportSection.style.display = DisplayStyle.Flex;
             _importSubPanel?.SetMode(mode);
+        }
+
+        /// <summary>右ペインに図形生成パネルを表示する。</summary>
+        private void ShowPrimitivePanel()
+        {
+            HideAllRightPanels();
+            if (_layoutRoot?.PrimitiveSection != null)
+                _layoutRoot.PrimitiveSection.style.display = DisplayStyle.Flex;
+        }
+
+        /// <summary>右ペインに MeshFilter→Skinned パネルを表示する。</summary>
+        private void ShowMeshFilterToSkinnedPanel()
+        {
+            HideAllRightPanels();
+            if (_layoutRoot?.MeshFilterToSkinnedSection != null)
+                _layoutRoot.MeshFilterToSkinnedSection.style.display = DisplayStyle.Flex;
+            // モデルを渡して階層表示を更新
+            _mfToSkinnedSubPanel?.SetModel(ActiveProject?.CurrentModel);
+        }
+
+        /// <summary>右ペインの全サブパネルを非表示にする。</summary>
+        private void HideAllRightPanels()
+        {
+            if (_layoutRoot?.ImportSection != null)
+                _layoutRoot.ImportSection.style.display = DisplayStyle.None;
+            if (_layoutRoot?.PrimitiveSection != null)
+                _layoutRoot.PrimitiveSection.style.display = DisplayStyle.None;
+            if (_layoutRoot?.MeshFilterToSkinnedSection != null)
+                _layoutRoot.MeshFilterToSkinnedSection.style.display = DisplayStyle.None;
+        }
+
+        /// <summary>
+        /// 図形生成パネルからのコールバック。
+        /// MeshObject をモデルに追加し、GPU バッファを再構築してパネルに通知する。
+        /// </summary>
+        private void OnPrimitiveMeshCreated(Data.MeshObject meshObject, string meshName)
+        {
+            // プロジェクト/モデルが未存在なら静かに生成（OnLoaded不要）
+            _localLoader.EnsureProject();
+            _moveToolHandler?.SetProject(ActiveProject);
+            _objectMoveHandler?.SetProject(ActiveProject);
+
+            var project = ActiveProject;
+            if (project == null) return;
+            if (project.CurrentModel == null && project.ModelCount > 0)
+                project.SelectModel(0);
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            // UnityMesh生成
+            var unityMesh = meshObject.ToUnityMesh();
+            unityMesh.name = meshName;
+            unityMesh.hideFlags = HideFlags.HideAndDontSave;
+
+            // MeshContextを生成してモデルに追加
+            var ctx = new Data.MeshContext
+            {
+                Name       = meshName,
+                MeshObject = meshObject,
+                UnityMesh  = unityMesh,
+                IsVisible  = true,
+            };
+            model.Add(ctx);
+            model.ComputeWorldMatrices();
+            int newIndex = model.MeshContextCount - 1;
+            model.SelectByTypeExclusive(newIndex);
+            model.SelectDrawableMesh(newIndex);
+
+            // GPU バッファ再構築
+            _viewportManager.RebuildAdapter(0, model);
+
+            var firstMc = model.FirstSelectedDrawableMesh;
+            if (firstMc != null)
+            {
+                _selectionOps?.SetSelectionState(firstMc.Selection);
+                _renderer?.SetSelectionState(firstMc.Selection);
+            }
+            _renderer?.UpdateSelectedDrawableMesh(0, model);
+            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+
+            RebuildModelList();
+            NotifyPanels(ChangeKind.ListStructure);
         }
 
         /// <summary>
@@ -505,11 +710,71 @@ namespace Poly_Ling.Player
             _editOps?.CommandQueue.Enqueue(cmd);
         }
 
+        /// <summary>
+        /// MeshFilter→Skinned 変換完了後のコールバック。
+        /// トポロジーが大きく変わるため ModelSwitch 相当の再構築を行う。
+        /// </summary>
+        private void OnMeshFilterToSkinnedComplete()
+        {
+            var project = ActiveProject;
+            if (project == null) return;
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            _renderer?.ClearScene();
+            _viewportManager.RebuildAdapter(0, model);
+
+            var firstMc = model.FirstSelectedDrawableMesh;
+            if (firstMc != null)
+            {
+                _selectionOps?.SetSelectionState(firstMc.Selection);
+                _renderer?.SetSelectionState(firstMc.Selection);
+            }
+            _renderer?.UpdateSelectedDrawableMesh(0, model);
+            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+
+            RebuildModelList();
+            NotifyPanels(ChangeKind.ModelSwitch);
+        }
+
         // ================================================================
         // プロジェクト
         // ================================================================
 
         private ProjectContext ActiveProject => _localLoader.Project ?? _receiver?.Project;
+
+        // ================================================================
+        // ツール切り替え
+        // ================================================================
+
+        private void SwitchTool(ToolMode mode)
+        {
+            _toolMode = mode;
+            switch (mode)
+            {
+                case ToolMode.VertexMove:
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    break;
+                case ToolMode.ObjectMove:
+                    _vertexInteractor?.SetToolHandler(_objectMoveHandler);
+                    break;
+            }
+            UpdateToolButtonStyles();
+        }
+
+        private void UpdateToolButtonStyles()
+        {
+            if (_layoutRoot == null) return;
+            var activeColor   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var inactiveColor = new StyleColor(StyleKeyword.Null);
+
+            if (_layoutRoot.ToolVertexMoveBtn != null)
+                _layoutRoot.ToolVertexMoveBtn.style.backgroundColor =
+                    _toolMode == ToolMode.VertexMove ? activeColor : inactiveColor;
+            if (_layoutRoot.ToolObjectMoveBtn != null)
+                _layoutRoot.ToolObjectMoveBtn.style.backgroundColor =
+                    _toolMode == ToolMode.ObjectMove ? activeColor : inactiveColor;
+        }
 
         // ================================================================
         // SyncUI
@@ -563,240 +828,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private void DispatchPanelCommand(PanelCommand cmd)
         {
-            var project = ActiveProject;
-            if (project == null) return;
-            var model   = project.CurrentModel;
-
-            switch (cmd)
-            {
-                // ── モデル選択
-                case SwitchModelCommand c:
-                    project.SelectModel(c.TargetModelIndex);
-                    {
-                        var switchedModel = project.CurrentModel;
-                        if (switchedModel != null)
-                        {
-                            _renderer?.ClearScene();
-                            _viewportManager.RebuildAdapter(0, switchedModel);
-                            var firstMc = switchedModel.FirstSelectedDrawableMesh;
-                            if (firstMc != null)
-                            {
-                                _selectionOps?.SetSelectionState(firstMc.Selection);
-                                _renderer?.SetSelectionState(firstMc.Selection);
-                            }
-                            _renderer?.UpdateSelectedDrawableMesh(0, switchedModel);
-                            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
-                        }
-                    }
-                    NotifyPanels(ChangeKind.ModelSwitch);
-                    return;
-
-                // ── モデル名前変更
-                case RenameModelCommand c:
-                    var renameTarget = project.GetModel(c.ModelIndex);
-                    if (renameTarget != null && !string.IsNullOrEmpty(c.NewName))
-                        renameTarget.Name = c.NewName;
-                    NotifyPanels(ChangeKind.ListStructure);
-                    return;
-
-                // ── モデル削除
-                case DeleteModelCommand c:
-                    project.RemoveModelAt(c.ModelIndex);
-                    RebuildModelList();
-                    return;
-
-                // ── メッシュ選択
-                case SelectMeshCommand sel:
-                    if (model == null) return;
-                    switch (sel.Category)
-                    {
-                        case MeshCategory.Drawable:
-                            model.ClearMeshSelection();
-                            foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
-                            if (sel.Indices.Length > 0)
-                                model.SelectDrawableMesh(sel.Indices[0]);
-                            var selMc = model.FirstSelectedDrawableMesh;
-                            if (selMc != null)
-                            {
-                                _selectionOps?.SetSelectionState(selMc.Selection);
-                                _renderer?.SetSelectionState(selMc.Selection);
-                            }
-                            _renderer?.UpdateSelectedDrawableMesh(0, model);
-                            break;
-                        case MeshCategory.Bone:
-                            model.ClearBoneSelection();
-                            foreach (int idx in sel.Indices) model.AddToBoneSelection(idx);
-                            break;
-                        case MeshCategory.Morph:
-                            model.ClearMorphSelection();
-                            foreach (int idx in sel.Indices) model.AddToMorphSelection(idx);
-                            break;
-                    }
-                    NotifyPanels(ChangeKind.Selection);
-                    return;
-
-                // ── 可視性トグル
-                case ToggleVisibilityCommand c:
-                    if (model == null) return;
-                    var visCtx = model.GetMeshContext(c.MasterIndex);
-                    if (visCtx != null) visCtx.IsVisible = !visCtx.IsVisible;
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── 一括可視性
-                case SetBatchVisibilityCommand c:
-                    if (model == null) return;
-                    foreach (int mi in c.MasterIndices)
-                    {
-                        var ctx = model.GetMeshContext(mi);
-                        if (ctx != null) ctx.IsVisible = c.Visible;
-                    }
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── ロックトグル
-                case ToggleLockCommand c:
-                    if (model == null) return;
-                    var lckCtx = model.GetMeshContext(c.MasterIndex);
-                    if (lckCtx != null) lckCtx.IsLocked = !lckCtx.IsLocked;
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── ミラータイプ
-                case CycleMirrorTypeCommand c:
-                    if (model == null) return;
-                    var mirCtx = model.GetMeshContext(c.MasterIndex);
-                    if (mirCtx != null)
-                        mirCtx.MirrorType = (mirCtx.MirrorType + 1) % 4;
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── メッシュ名前変更
-                case RenameMeshCommand c:
-                    if (model == null) return;
-                    var renCtx = model.GetMeshContext(c.MasterIndex);
-                    if (renCtx != null && !string.IsNullOrEmpty(c.NewName))
-                        renCtx.Name = c.NewName;
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── メッシュ削除
-                case DeleteMeshesCommand c:
-                    if (model == null) return;
-                    foreach (int idx in c.MasterIndices.OrderByDescending(i => i))
-                        model.RemoveAt(idx);
-                    NotifyPanels(ChangeKind.ListStructure);
-                    return;
-
-                // ── メッシュ複製
-                case DuplicateMeshesCommand c:
-                    if (model == null) return;
-                    foreach (int idx in c.MasterIndices)
-                    {
-                        var srcCtx = model.GetMeshContext(idx);
-                        if (srcCtx == null) continue;
-                        var dup = new Data.MeshContext
-                        {
-                            Name       = srcCtx.Name + "_copy",
-                            MeshObject = srcCtx.MeshObject?.Clone(),
-                            IsVisible  = srcCtx.IsVisible,
-                            IsLocked   = srcCtx.IsLocked,
-                            Depth      = srcCtx.Depth,
-                        };
-                        model.Add(dup);
-                    }
-                    NotifyPanels(ChangeKind.ListStructure);
-                    return;
-
-                // ── BonePose Active
-                case SetBonePoseActiveCommand c:
-                    if (model == null) return;
-                    foreach (int idx in c.MasterIndices)
-                    {
-                        var ctx = model.GetMeshContext(idx);
-                        if (ctx?.BonePoseData != null) ctx.BonePoseData.IsActive = c.Active;
-                    }
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── BonePose レイヤーリセット
-                case ResetBonePoseLayersCommand c:
-                    if (model == null) return;
-                    foreach (int idx in c.MasterIndices)
-                        model.GetMeshContext(idx)?.BonePoseData?.ClearAllLayers();
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── BonePose ベイク（Player では BindPose 更新のみ）
-                case BakePoseToBindPoseCommand c:
-                    if (model == null) return;
-                    foreach (int idx in c.MasterIndices)
-                    {
-                        var ctx = model.GetMeshContext(idx);
-                        if (ctx?.BonePoseData == null) continue;
-                        // Player では WorldMatrix/BindPose 再計算は省略し Notify のみ
-                    }
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── モーフ全選択 / 全解除
-                case SelectAllMorphsCommand c:
-                    if (model == null) return;
-                    model.ClearMorphSelection();
-                    foreach (int idx in c.AllMorphIndices) model.AddToMorphSelection(idx);
-                    NotifyPanels(ChangeKind.Selection);
-                    return;
-
-                case DeselectAllMorphsCommand _:
-                    model?.ClearMorphSelection();
-                    NotifyPanels(ChangeKind.Selection);
-                    return;
-
-                // ── モーフ変換・プレビュー・セット作成（PolyLingCore が必要、Player では未実装）
-                case ConvertMeshToMorphCommand _:
-                case ConvertMorphToMeshCommand _:
-                case CreateMorphSetCommand _:
-                case StartMorphPreviewCommand _:
-                case ApplyMorphPreviewCommand _:
-                case EndMorphPreviewCommand _:
-                    UnityEngine.Debug.LogWarning($"[PolyLingPlayerViewer] {cmd.GetType().Name} requires PolyLingCore (not implemented in Player).");
-                    return;
-
-                // ── BoneTransform 値設定
-                case SetBoneTransformValueCommand c:
-                    if (model == null) return;
-                    foreach (int idx in c.MasterIndices)
-                    {
-                        var ctx = model.GetMeshContext(idx);
-                        if (ctx?.BoneTransform == null) continue;
-                        ctx.BoneTransform.UseLocalTransform = true;
-                        switch (c.TargetField)
-                        {
-                            case SetBoneTransformValueCommand.Field.PositionX: ctx.BoneTransform.Position = new UnityEngine.Vector3(c.Value, ctx.BoneTransform.Position.y, ctx.BoneTransform.Position.z); break;
-                            case SetBoneTransformValueCommand.Field.PositionY: ctx.BoneTransform.Position = new UnityEngine.Vector3(ctx.BoneTransform.Position.x, c.Value, ctx.BoneTransform.Position.z); break;
-                            case SetBoneTransformValueCommand.Field.PositionZ: ctx.BoneTransform.Position = new UnityEngine.Vector3(ctx.BoneTransform.Position.x, ctx.BoneTransform.Position.y, c.Value); break;
-                            case SetBoneTransformValueCommand.Field.RotationX: ctx.BoneTransform.Rotation = new UnityEngine.Vector3(c.Value, ctx.BoneTransform.Rotation.y, ctx.BoneTransform.Rotation.z); break;
-                            case SetBoneTransformValueCommand.Field.RotationY: ctx.BoneTransform.Rotation = new UnityEngine.Vector3(ctx.BoneTransform.Rotation.x, c.Value, ctx.BoneTransform.Rotation.z); break;
-                            case SetBoneTransformValueCommand.Field.RotationZ: ctx.BoneTransform.Rotation = new UnityEngine.Vector3(ctx.BoneTransform.Rotation.x, ctx.BoneTransform.Rotation.y, c.Value); break;
-                            case SetBoneTransformValueCommand.Field.ScaleX:    ctx.BoneTransform.Scale    = new UnityEngine.Vector3(c.Value, ctx.BoneTransform.Scale.y, ctx.BoneTransform.Scale.z); break;
-                            case SetBoneTransformValueCommand.Field.ScaleY:    ctx.BoneTransform.Scale    = new UnityEngine.Vector3(ctx.BoneTransform.Scale.x, c.Value, ctx.BoneTransform.Scale.z); break;
-                            case SetBoneTransformValueCommand.Field.ScaleZ:    ctx.BoneTransform.Scale    = new UnityEngine.Vector3(ctx.BoneTransform.Scale.x, ctx.BoneTransform.Scale.y, c.Value); break;
-                        }
-                    }
-                    model.ComputeWorldMatrices();
-                    NotifyPanels(ChangeKind.Attributes);
-                    return;
-
-                // ── BoneTransform スライダー開始／終了（通知不要）
-                case BeginBoneTransformSliderDragCommand _:
-                case EndBoneTransformSliderDragCommand _:
-                    return;
-
-                // ── その他（モーフ変換・プレビュー等）は Player では未実装
-                default:
-                    UnityEngine.Debug.LogWarning($"[PolyLingPlayerViewer] Unhandled PanelCommand: {cmd.GetType().Name}");
-                    return;
-            }
+            _commandDispatcher?.Dispatch(cmd);
         }
 
         /// <summary>PanelContext 経由でサブパネルに変更通知を送る。</summary>
@@ -831,7 +863,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private void OnConnected()    { _status = "接続済み"; }
-        private void OnDisconnected() { _status = "切断"; _fetchingModelIndex = -1; }
+        private void OnDisconnected() { _status = "切断"; }
 
         private void OnPushReceived(string json)
         {
@@ -846,8 +878,7 @@ namespace Poly_Ling.Player
 
         private void OnProjectHeaderReceived(ProjectContext project)
         {
-            _modelCount         = project.ModelCount;
-            _fetchingModelIndex = -1;
+            if (_fetchFlow != null) _fetchFlow.ModelCount = project.ModelCount;
             _viewportManager.ClearScene();
             RebuildModelList();
         }
@@ -874,115 +905,7 @@ namespace Poly_Ling.Player
 
         private void FetchProject()
         {
-            if (_client == null || !_client.IsConnected) return;
-            _localLoader.Clear();
-            _status = "project_header フェッチ中...";
-            _receiver?.Reset();
-            _modelCount         = 0;
-            _fetchingModelIndex = -1;
-            _viewportManager.ClearScene();
-
-            _client.FetchProjectHeader((json, bin) =>
-            {
-                if (bin == null || bin.Length < 4) { _status = "project_header 失敗"; return; }
-                _receiver?.ProcessBatch(bin);
-                if (_modelCount > 0) FetchAllModelsBatch(0);
-            });
-        }
-
-        private void FetchAllModelsBatch(int mi)
-        {
-            if (mi >= _modelCount) return;
-            _fetchingModelIndex = mi;
-            _status = $"メッシュフェッチ中... [{mi}/{_modelCount - 1}]";
-
-            FetchMeshDataBatch(mi, "bone",     () =>
-            FetchMeshDataBatch(mi, "drawable", () =>
-            FetchMeshDataBatch(mi, "morph",    () =>
-            {
-                var project = _receiver?.Project;
-                if (project != null && mi < project.ModelCount)
-                {
-                    var model = project.Models[mi];
-                    _viewportManager.RebuildAdapter(mi, model);
-
-                    // ────────────────────────────────────────────────
-                    // RebuildAdapter 後の初期選択設定
-                    //
-                    // 【描画メッシュ選択】
-                    //   DrawableMeshes から頂点数・面数がゼロでない先頭を選択する。
-                    //   model.SelectedDrawableMeshIndices に設定し、
-                    //   DrawMeshes / DrawWireframeAndVertices が正しく描画できるようにする。
-                    //
-                    // 【ボーン選択】
-                    //   「首」ボーンを優先し、なければ先頭ボーンを選択する。
-                    //   model.SelectedBoneIndices に設定し、DrawBones が正しく描画できるようにする。
-                    // ────────────────────────────────────────────────
-
-                    // 先頭の非空 Drawable を選択
-                    var drawables = model.DrawableMeshes;
-                    if (drawables != null)
-                    {
-                        foreach (var entry in drawables)
-                        {
-                            var mc = entry.Context;
-                            if (mc?.MeshObject != null
-                                && mc.MeshObject.VertexCount > 0
-                                && mc.IsVisible)
-                            {
-                                model.SelectDrawableMesh(entry.MasterIndex);
-                                break;
-                            }
-                        }
-                    }
-
-                    // 首ボーン（または先頭ボーン）を選択
-                    int neckIdx = -1, firstBoneIdx = -1;
-                    for (int ci = 0; ci < model.MeshContextCount; ci++)
-                    {
-                        var bmc = model.GetMeshContext(ci);
-                        if (bmc == null || bmc.Type != Poly_Ling.Data.MeshType.Bone) continue;
-                        if (firstBoneIdx < 0) firstBoneIdx = ci;
-                        string n = bmc.Name ?? "";
-                        if (n == "首" || n.ToLower() == "neck") { neckIdx = ci; break; }
-                    }
-                    int selectedBone = neckIdx >= 0 ? neckIdx : firstBoneIdx;
-                    if (selectedBone >= 0)
-                        model.SelectBone(selectedBone);
-
-                    // SelectionState 同期（選択描画メッシュの Selection を使う）
-                    var firstMc = model.FirstSelectedDrawableMesh;
-                    if (firstMc != null)
-                    {
-                        _selectionOps?.SetSelectionState(firstMc.Selection);
-                        _renderer?.SetSelectionState(firstMc.Selection);
-                    }
-
-                    // DrawWireframeAndVertices 用の selectedMeshIndex を更新
-                    _renderer?.UpdateSelectedDrawableMesh(mi, model);
-
-                    // カメラパラメータをアダプターに設定（UpdateFrame 1回）
-                    _viewportManager.NotifyCameraChanged(
-                        _viewportManager.PerspectiveViewport);
-                }
-
-                int next = mi + 1;
-                if (next < _modelCount) FetchAllModelsBatch(next);
-                else
-                {
-                    _status = $"完了 ({project?.Name})";
-                    NotifyPanels(ChangeKind.ModelSwitch);
-                }
-            })));
-        }
-
-        private void FetchMeshDataBatch(int mi, string cat, Action done)
-        {
-            _client.FetchMeshDataBatch(mi, cat, (json, bin) =>
-            {
-                if (bin != null && bin.Length >= 4) _receiver?.ProcessBatch(bin);
-                done?.Invoke();
-            });
+            _fetchFlow?.FetchProject();
         }
     }
 }

@@ -1,26 +1,19 @@
 // OrbitCameraController.cs
-// カメラオービット・パン・ズーム操作を担うクラス。
-// Input.* は直接読まず、PlayerMouseDispatcher のイベントを購読する。
+// オービットカメラ操作コントローラー。
 // - 右ボタンドラッグ (btn=1) → オービット
 // - 中ボタンドラッグ (btn=2) → パン
-// - スクロール           → ズーム
+// - スクロール → ズーム
 // Runtime/Poly_Ling_Player/View/ に配置
 
+using System;
 using UnityEngine;
 
 namespace Poly_Ling.Player
 {
-    /// <summary>
-    /// カメラオービット・パン・ズーム操作を担うクラス。
-    /// MonoBehaviour に依存しない純粋クラス。
-    /// Viewer から <see cref="Connect"/> / <see cref="Disconnect"/> で
-    /// <see cref="PlayerMouseDispatcher"/> に接続する。
-    /// 毎フレーム <see cref="ApplyCameraTransform"/> を呼ぶこと。
-    /// </summary>
     public class OrbitCameraController
     {
         // ================================================================
-        // 定数
+        // 感度定数
         // ================================================================
 
         public const float DefaultOrbitSensitivity = 0.5f;
@@ -30,7 +23,7 @@ namespace Poly_Ling.Player
         public const float DefaultZoomMax          = 100f;
 
         // ================================================================
-        // パラメータ
+        // 公開パラメータ
         // ================================================================
 
         public float OrbitSensitivity = DefaultOrbitSensitivity;
@@ -40,7 +33,7 @@ namespace Poly_Ling.Player
         public float ZoomMax          = DefaultZoomMax;
 
         // ================================================================
-        // 状態（読み取り専用公開）
+        // カメラパラメータ
         // ================================================================
 
         public float   RotX     { get; private set; } =  20f;
@@ -53,25 +46,14 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// カメラパラメータが確定したときに呼ばれる。
-        ///
-        /// 【呼び出しタイミング】
-        ///   - 右/中ボタンドラッグ終了（オービット・パン操作が完了したとき）
-        ///   - ResetToMesh()（ファイルロードやリモートフェッチ後のカメラリセット）
-        ///
-        /// 【用途】
-        ///   PolyLingPlayerViewer はこのコールバックで
-        ///   UnifiedSystemAdapter.UpdateFrame() を1回だけ呼ぶ。
-        ///   UpdateFrame はカメラパラメータをGPUヒットテストシステムに設定する
-        ///   唯一の口であり、パラメータが変化したタイミングにのみ呼ぶ。
-        ///   毎フレーム呼ぶのは禁忌（1FPS以下になる）。
+        /// カメラドラッグ終了時に発火する。
+        /// アダプターへの1回のUpdateFrame要求に使う。
         /// </summary>
         public System.Action OnCameraChanged;
 
         /// <summary>
-        /// カメラドラッグ（オービット・パン）開始時に呼ばれる。
-        /// UnifiedSystemAdapter.EnterCameraDragging() の呼び出しに使う。
         /// OnCameraChanged より先に発火する。
+        /// カメラドラッグ開始時（UpdateFrame の停止に使う）。
         /// </summary>
         public System.Action OnCameraDragBegin;
 
@@ -100,10 +82,10 @@ namespace Poly_Ling.Player
             OnCameraChanged?.Invoke();
         }
 
-        /// <summary>
-        /// <see cref="PlayerMouseDispatcher"/> のイベントを購読する。
-        /// Viewer の Start / Awake から呼ぶ。
-        /// </summary>
+        // ================================================================
+        // IMouseEventSource 接続
+        // ================================================================
+
         public void Connect(IMouseEventSource dispatcher)
         {
             dispatcher.OnDragBegin += OnDragBegin;
@@ -118,12 +100,15 @@ namespace Poly_Ling.Player
         /// </summary>
         public void Disconnect(IMouseEventSource dispatcher)
         {
-            if (dispatcher == null) return;
             dispatcher.OnDragBegin -= OnDragBegin;
             dispatcher.OnDrag      -= OnDrag;
             dispatcher.OnDragEnd   -= OnDragEnd;
             dispatcher.OnScroll    -= OnScroll;
         }
+
+        // ================================================================
+        // カメラ transform 更新（毎フレーム呼ぶ）
+        // ================================================================
 
         /// <summary>
         /// 毎フレーム呼ぶ。Camera transform に RotX/RotY/Distance/Target を反映する。
@@ -131,13 +116,24 @@ namespace Poly_Ling.Player
         public void ApplyCameraTransform(Camera cam)
         {
             if (cam == null) return;
-            Quaternion camRot      = Quaternion.Euler(RotX, RotY, 0f);
+            Quaternion camRot = Quaternion.Euler(RotX, RotY, 0f);
             cam.transform.position = Target + camRot * (Vector3.back * Distance);
             cam.transform.LookAt(Target);
         }
 
         // ================================================================
-        // イベントハンドラー
+        // カメラ初期位置リセット
+        // ================================================================
+
+        public void ResetToMesh(Bounds bounds, float zoomMin, float zoomMax)
+        {
+            Target   = bounds.center;
+            Distance = Mathf.Clamp(bounds.size.magnitude * 1.5f, zoomMin, zoomMax);
+            OnCameraChanged?.Invoke();
+        }
+
+        // ================================================================
+        // IMouseEventSource 経由のイベントハンドラ
         // ================================================================
 
         private void OnDragBegin(int btn, Vector2 screenPos, ModifierKeys mods)
@@ -180,6 +176,34 @@ namespace Poly_Ling.Player
         {
             Distance *= 1f - scroll * ZoomSensitivity;
             Distance  = Mathf.Clamp(Distance, ZoomMin, ZoomMax);
+        }
+
+        // ================================================================
+        // Direct API（IMouseEventSource を経由しない直接操作）
+        // ================================================================
+
+        /// <summary>オービット（回転）を直接適用する。delta はスクリーンピクセル差分。</summary>
+        public void SimulateOrbit(float deltaX, float deltaY)
+        {
+            RotY += deltaX * OrbitSensitivity;
+            RotX -= deltaY * OrbitSensitivity;
+            RotX  = Mathf.Clamp(RotX, -89f, 89f);
+        }
+
+        /// <summary>ズームを直接適用する。scroll は -WheelEvent.delta.y * 0.1f 相当の値。</summary>
+        public void SimulateScroll(float scroll)
+        {
+            Distance *= 1f - scroll * ZoomSensitivity;
+            Distance  = Mathf.Clamp(Distance, ZoomMin, ZoomMax);
+        }
+
+        /// <summary>パンを直接適用する。delta はスクリーンピクセル差分。</summary>
+        public void SimulatePan(float deltaX, float deltaY)
+        {
+            Quaternion rot      = Quaternion.Euler(RotX, RotY, 0f);
+            float      panScale = Distance * PanSensitivity;
+            Target -= rot * Vector3.right * deltaX * panScale;
+            Target -= rot * Vector3.up    * deltaY * panScale;
         }
     }
 }

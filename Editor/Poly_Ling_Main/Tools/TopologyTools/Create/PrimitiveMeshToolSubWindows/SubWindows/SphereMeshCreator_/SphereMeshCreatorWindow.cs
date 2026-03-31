@@ -13,52 +13,10 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools.Creators;
+using Poly_Ling.PrimitiveMesh;
 
-public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshCreatorWindow.SphereParams>
+public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshGenerator.SphereParams>
 {
-    // ================================================================
-    // パラメータ構造体（IEquatable実装）
-    // ================================================================
-    [System.Serializable]
-    public struct SphereParams : IEquatable<SphereParams>
-    {
-        public string MeshName;
-        public float Radius;
-        public int LongitudeSegments;
-        public int LatitudeSegments;
-        public int CubeSubdivisions;
-        public bool CubeSphere;
-        public Vector3 Pivot;
-        public float RotationX, RotationY;
-
-        public static SphereParams Default => new SphereParams
-        {
-            MeshName = "Sphere",
-            Radius = 0.5f,
-            LongitudeSegments = 24,
-            LatitudeSegments = 16,
-            CubeSubdivisions = 8,
-            CubeSphere = false,
-            Pivot = Vector3.zero,
-            RotationX = 20f,
-            RotationY = 30f
-        };
-
-        public bool Equals(SphereParams o) =>
-            MeshName == o.MeshName &&
-            Mathf.Approximately(Radius, o.Radius) &&
-            LongitudeSegments == o.LongitudeSegments &&
-            LatitudeSegments == o.LatitudeSegments &&
-            CubeSubdivisions == o.CubeSubdivisions &&
-            CubeSphere == o.CubeSphere &&
-            Pivot == o.Pivot &&
-            Mathf.Approximately(RotationX, o.RotationX) &&
-            Mathf.Approximately(RotationY, o.RotationY);
-
-        public override bool Equals(object obj) => obj is SphereParams p && Equals(p);
-        public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
-    }
-
     // ================================================================
     // 基底クラス実装
     // ================================================================
@@ -67,7 +25,7 @@ public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshC
     protected override string UndoDescription => "Sphere Parameters";
     protected override float PreviewCameraDistance => _params.Radius * 5f;
 
-    protected override SphereParams GetDefaultParams() => SphereParams.Default;
+    protected override SphereMeshGenerator.SphereParams GetDefaultParams() => SphereMeshGenerator.SphereParams.Default;
     protected override string GetMeshName() => _params.MeshName;
     protected override float GetPreviewRotationX() => _params.RotationX;
     protected override float GetPreviewRotationY() => _params.RotationY;
@@ -194,135 +152,7 @@ public partial class SphereMeshCreatorWindow : MeshCreatorWindowBase<SphereMeshC
     }
 
     // ================================================================
-    //MeshObject生成
+    // MeshObject生成
     // ================================================================
-    protected override MeshObject GenerateMeshObject()
-    {
-        if (_params.CubeSphere)
-        {
-            return GenerateCubeSphereMeshObject(_params.Radius, _params.CubeSubdivisions, _params.Pivot);
-        }
-        else
-        {
-            return GenerateSphereMeshObject(_params.Radius, _params.LongitudeSegments, _params.LatitudeSegments, _params.Pivot);
-        }
-    }
-
-    private MeshObject GenerateSphereMeshObject(float radius, int lonSegments, int latSegments, Vector3 pivot)
-    {
-        var md = new MeshObject("Sphere");
-
-        Vector3 pivotOffset = pivot * radius * 2f;
-        int cols = lonSegments + 1;
-
-        // 頂点生成
-        for (int lat = 0; lat <= latSegments; lat++)
-        {
-            float theta = lat * Mathf.PI / latSegments;
-            float sinTheta = Mathf.Sin(theta);
-            float cosTheta = Mathf.Cos(theta);
-
-            for (int lon = 0; lon <= lonSegments; lon++)
-            {
-                float phi = lon * 2f * Mathf.PI / lonSegments;
-                float sinPhi = Mathf.Sin(phi);
-                float cosPhi = Mathf.Cos(phi);
-
-                Vector3 normal = new Vector3(
-                    cosPhi * sinTheta,
-                    cosTheta,
-                    sinPhi * sinTheta
-                );
-
-                Vector3 pos = normal * radius - pivotOffset;
-                Vector2 uv = new Vector2((float)lon / lonSegments, 1f - (float)lat / latSegments);
-                md.Vertices.Add(new Vertex(pos, uv, normal));
-            }
-        }
-
-        // 四角形面生成
-        for (int lat = 0; lat < latSegments; lat++)
-        {
-            for (int lon = 0; lon < lonSegments; lon++)
-            {
-                int i0 = lat * cols + lon;
-                int i1 = i0 + 1;
-                int i2 = i0 + cols + 1;
-                int i3 = i0 + cols;
-
-                md.AddQuad(i0, i1, i2, i3);
-            }
-        }
-
-        return md;
-    }
-
-    private MeshObject GenerateCubeSphereMeshObject(float radius, int subdivisions, Vector3 pivot)
-    {
-        var md = new MeshObject("CubeSphere");
-
-        Vector3 pivotOffset = pivot * radius * 2f;
-
-        Vector3[] faceNormals = new Vector3[]
-        {
-            Vector3.right, Vector3.left, Vector3.up,
-            Vector3.down, Vector3.forward, Vector3.back
-        };
-
-        Vector3[] faceTangentsU = new Vector3[]
-        {
-            Vector3.forward, Vector3.back, Vector3.right,
-            Vector3.right, Vector3.left, Vector3.right
-        };
-
-        Vector3[] faceTangentsV = new Vector3[]
-        {
-            Vector3.up, Vector3.up, Vector3.forward,
-            Vector3.back, Vector3.up, Vector3.up
-        };
-
-        int vertsPerRow = subdivisions + 1;
-
-        for (int face = 0; face < 6; face++)
-        {
-            Vector3 normal = faceNormals[face];
-            Vector3 tangentU = faceTangentsU[face];
-            Vector3 tangentV = faceTangentsV[face];
-
-            int faceStartIdx = md.VertexCount;
-
-            // 頂点生成
-            for (int v = 0; v <= subdivisions; v++)
-            {
-                for (int u = 0; u <= subdivisions; u++)
-                {
-                    float cu = (u / (float)subdivisions) * 2f - 1f;
-                    float cv = (v / (float)subdivisions) * 2f - 1f;
-
-                    Vector3 cubePoint = normal + tangentU * cu + tangentV * cv;
-                    Vector3 sphereNormal = cubePoint.normalized;
-                    Vector3 pos = sphereNormal * radius - pivotOffset;
-
-                    Vector2 uv = new Vector2((float)u / subdivisions, (float)v / subdivisions);
-                    md.Vertices.Add(new Vertex(pos, uv, sphereNormal));
-                }
-            }
-
-            // 四角形面生成
-            for (int v = 0; v < subdivisions; v++)
-            {
-                for (int u = 0; u < subdivisions; u++)
-                {
-                    int i0 = faceStartIdx + v * vertsPerRow + u;
-                    int i1 = i0 + 1;
-                    int i2 = i0 + vertsPerRow + 1;
-                    int i3 = i0 + vertsPerRow;
-
-                    md.AddQuad(i0, i1, i2, i3);
-                }
-            }
-        }
-
-        return md;
-    }
+    protected override MeshObject GenerateMeshObject() => SphereMeshGenerator.Generate(_params);
 }

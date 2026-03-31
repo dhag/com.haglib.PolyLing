@@ -4,6 +4,7 @@
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -66,6 +67,7 @@ namespace Poly_Ling.Player
         // 現在ホバー中の面の頂点スクリーン座標（Y=0が下）。
         // null のとき非表示。UpdateFaceHover() で更新する。
         private UnityEngine.Vector2[] _hoverFaceScreenPts;
+        private List<UnityEngine.Vector2[]> _selectedFacesScreenPts;
 
         private readonly VisualElement _faceOverlay;
         private readonly VisualElement _gizmoOverlay;
@@ -77,6 +79,11 @@ namespace Poly_Ling.Player
             public Vector2 Origin, XEnd, YEnd, ZEnd;
             public Poly_Ling.Tools.AxisGizmo.AxisType HoveredAxis;
             public Poly_Ling.Tools.AxisGizmo.AxisType DraggingAxis;
+            /// <summary>オブジェクト移動用ダイヤ型スタイル。true=ダイヤ、false=矢印（頂点移動）。</summary>
+            public bool IsDiamondStyle;
+            /// <summary>ピボット位置のダイヤ型ギズモ。</summary>
+            public bool HasPivotGizmo;
+            public Vector2 PivotOrigin, PivotXEnd, PivotYEnd, PivotZEnd;
         }
 
         public void UpdateGizmo(GizmoData d)
@@ -103,6 +110,20 @@ namespace Poly_Ling.Player
         public void HideFaceHover()
         {
             _hoverFaceScreenPts = null;
+            _faceOverlay.MarkDirtyRepaint();
+        }
+
+        /// <summary>選択面オーバーレイを表示/更新する。</summary>
+        public void ShowSelectedFaces(List<UnityEngine.Vector2[]> faces)
+        {
+            _selectedFacesScreenPts = faces;
+            _faceOverlay.MarkDirtyRepaint();
+        }
+
+        /// <summary>選択面オーバーレイを非表示にする。</summary>
+        public void HideSelectedFaces()
+        {
+            _selectedFacesScreenPts = null;
             _faceOverlay.MarkDirtyRepaint();
         }
 
@@ -393,17 +414,77 @@ namespace Poly_Ling.Player
         {
             if (!_gizmoData.HasGizmo) return;
             var at = _gizmoData.HoveredAxis; var dt = _gizmoData.DraggingAxis;
-            DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.XEnd,
-                (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
-                ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
-            DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.YEnd,
-                (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
-                ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
-            DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
-                (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
-                ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
-            bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
-            DrawGizmoCenterHandle(ctx,_gizmoData.Origin,8f,ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+
+            if (_gizmoData.IsDiamondStyle)
+            {
+                // オブジェクト移動: 軸線 + 先端ダイヤ + 中心ダイヤ
+                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.XEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
+                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
+                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.YEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
+                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
+                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
+                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
+                DrawGizmoDiamond(ctx, _gizmoData.XEnd, 7f,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
+                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
+                DrawGizmoDiamond(ctx, _gizmoData.YEnd, 7f,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
+                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
+                DrawGizmoDiamond(ctx, _gizmoData.ZEnd, 7f,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
+                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
+                bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
+                DrawGizmoDiamond(ctx, _gizmoData.Origin, 9f,
+                    ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+            }
+            else
+            {
+                // 頂点移動: 矢印
+                DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.XEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
+                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
+                DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.YEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
+                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
+                DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
+                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
+                bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
+                DrawGizmoCenterHandle(ctx,_gizmoData.Origin,8f,ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+            }
+
+            // ピボット位置のダイヤ型ギズモ
+            if (_gizmoData.HasPivotGizmo)
+            {
+                DrawGizmoDiamond(ctx, _gizmoData.PivotOrigin, 9f, new Color(1f, 1f, 0.2f, 0.9f));
+            }
+        }
+
+        /// <summary>軸線のみ描画（ダイヤスタイル用）。</summary>
+        private static void DrawGizmoAxisLine(MeshGenerationContext ctx, Vector2 from, Vector2 to, Color col)
+        {
+            Vector2 d = (to - from).normalized, p = new Vector2(-d.y, d.x) * 1.5f;
+            var m = ctx.Allocate(4, 6); var v = new Vertex[4];
+            v[0]=new Vertex{position=new Vector3(from.x-p.x,from.y-p.y,Vertex.nearZ),tint=col};
+            v[1]=new Vertex{position=new Vector3(from.x+p.x,from.y+p.y,Vertex.nearZ),tint=col};
+            v[2]=new Vertex{position=new Vector3(to.x+p.x,to.y+p.y,Vertex.nearZ),tint=col};
+            v[3]=new Vertex{position=new Vector3(to.x-p.x,to.y-p.y,Vertex.nearZ),tint=col};
+            m.SetAllVertices(v); m.SetAllIndices(new ushort[]{0,2,1,0,3,2});
+        }
+
+        /// <summary>塗りつぶしダイヤ（菱形）を描画する。</summary>
+        private static void DrawGizmoDiamond(MeshGenerationContext ctx, Vector2 c, float r, Color col)
+        {
+            // 上・右・下・左の4頂点
+            var m = ctx.Allocate(4, 6); var v = new Vertex[4];
+            v[0]=new Vertex{position=new Vector3(c.x,    c.y-r,   Vertex.nearZ),tint=col}; // 上
+            v[1]=new Vertex{position=new Vector3(c.x+r,  c.y,     Vertex.nearZ),tint=col}; // 右
+            v[2]=new Vertex{position=new Vector3(c.x,    c.y+r,   Vertex.nearZ),tint=col}; // 下
+            v[3]=new Vertex{position=new Vector3(c.x-r,  c.y,     Vertex.nearZ),tint=col}; // 左
+            m.SetAllVertices(v); m.SetAllIndices(new ushort[]{0,1,2,0,2,3});
         }
         private static void DrawGizmoAxis(MeshGenerationContext ctx,Vector2 from,Vector2 to,Color col)
         {
@@ -445,28 +526,37 @@ namespace Poly_Ling.Player
         /// </summary>
         private void OnGenerateFaceOverlay(MeshGenerationContext ctx)
         {
-            var pts = _hoverFaceScreenPts;
-            if (pts == null || pts.Length < 3) return;
-
             float panelH = resolvedStyle.height;
 
-            // スクリーン座標（Y=0が下）→ panel local（Y=0が上）に変換
+            // 選択面（青系）
+            var selFaces = _selectedFacesScreenPts;
+            if (selFaces != null)
+            {
+                var selColor = new UnityEngine.Color(0.2f, 0.5f, 1f, 0.3f);
+                foreach (var pts in selFaces)
+                    DrawFacePolygon(ctx, pts, panelH, selColor);
+            }
+
+            // ホバー面（オレンジ）
+            var hoverPts = _hoverFaceScreenPts;
+            if (hoverPts != null && hoverPts.Length >= 3)
+                DrawFacePolygon(ctx, hoverPts, panelH, new UnityEngine.Color(1f, 0.6f, 0.1f, 0.25f));
+        }
+
+        private static void DrawFacePolygon(MeshGenerationContext ctx,
+            UnityEngine.Vector2[] pts, float panelH, UnityEngine.Color color)
+        {
+            if (pts == null || pts.Length < 3) return;
+            int triCount = pts.Length - 2;
             var localPts = new Vertex[pts.Length];
-            var fillColor = new UnityEngine.Color(1f, 0.6f, 0.1f, 0.25f);
             for (int i = 0; i < pts.Length; i++)
                 localPts[i] = new Vertex
                 {
                     position = new UnityEngine.Vector3(pts[i].x, panelH - pts[i].y, Vertex.nearZ),
-                    tint     = fillColor,
+                    tint     = color,
                 };
-
-            // ファン三角形分割で塗りつぶし
-            int triCount = pts.Length - 2;
-            if (triCount < 1) return;
-
             var mesh = ctx.Allocate(localPts.Length, triCount * 3);
             mesh.SetAllVertices(localPts);
-
             var indices = new ushort[triCount * 3];
             for (int t = 0; t < triCount; t++)
             {

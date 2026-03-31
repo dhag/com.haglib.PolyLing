@@ -125,6 +125,7 @@ namespace Poly_Ling.Tools
                         ctx.EnterTransformDragging?.Invoke();
 
                         Vector2 totalDelta = mousePos - _mouseDownPos;
+                        totalDelta.y = -totalDelta.y;
                         ApplyFreeDelta(totalDelta, ctx);
                         _lastDragScreenPos = mousePos;
                     }
@@ -135,6 +136,7 @@ namespace Poly_Ling.Tools
                 case DragState.CenterDragging:
                 {
                     Vector2 frameDelta = mousePos - _lastDragScreenPos;
+                    frameDelta.y = -frameDelta.y;
                     ApplyFreeDelta(frameDelta, ctx);
                     _lastDragScreenPos = mousePos;
                     ctx.Repaint?.Invoke();
@@ -205,6 +207,61 @@ namespace Poly_Ling.Tools
             }
 
             _axisGizmo.Draw(ctx);
+        }
+
+        /// <summary>
+        /// AxisGizmo のスクリーン座標を返す。Player の UpdateGizmoOverlay から呼ぶ。
+        /// 選択がない場合は false を返す。
+        /// </summary>
+        public bool TryGetGizmoScreenPositions(
+            ToolContext ctx,
+            out Vector2 origin,
+            out Vector2 xEnd, out Vector2 yEnd, out Vector2 zEnd,
+            out AxisGizmo.AxisType hoveredAxis)
+        {
+            origin = xEnd = yEnd = zEnd = Vector2.zero;
+            hoveredAxis = AxisGizmo.AxisType.None;
+            if (ctx == null || !HasAnySelection(ctx)) return false;
+
+            UpdateGizmoCenter(ctx);
+            _axisGizmo.HoveredAxis  = _hoveredAxis;
+            _axisGizmo.DraggingAxis = _draggingAxis;
+            _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
+            hoveredAxis = _hoveredAxis;
+            return true;
+        }
+
+        /// <summary>ピボット位置のスクリーン座標（オフセットなし）を返す。</summary>
+        public bool GetPivotScreenPos(ToolContext ctx, out Vector2 pivotScreen)
+        {
+            pivotScreen = Vector2.zero;
+            if (ctx == null || !HasAnySelection(ctx)) return false;
+            UpdateGizmoCenter(ctx);
+            pivotScreen = ctx.WorldToScreenPos(
+                _axisGizmo.Center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            return true;
+        }
+
+        /// <summary>ピボット位置（ScreenOffset=0）のダイヤ型ギズモスクリーン座標を返す。</summary>
+        public bool TryGetGizmoPivotPositions(
+            ToolContext ctx,
+            out Vector2 origin,
+            out Vector2 xEnd, out Vector2 yEnd, out Vector2 zEnd,
+            out AxisGizmo.AxisType hoveredAxis)
+        {
+            origin = xEnd = yEnd = zEnd = Vector2.zero;
+            hoveredAxis = AxisGizmo.AxisType.None;
+            if (ctx == null || !HasAnySelection(ctx)) return false;
+
+            UpdateGizmoCenter(ctx);
+            var savedOffset = _axisGizmo.ScreenOffset;
+            _axisGizmo.ScreenOffset = Vector2.zero;
+            _axisGizmo.HoveredAxis  = _hoveredAxis;
+            _axisGizmo.DraggingAxis = _draggingAxis;
+            _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
+            _axisGizmo.ScreenOffset = savedOffset;
+            hoveredAxis = _hoveredAxis;
+            return true;
         }
 
         public void OnActivate(ToolContext ctx)

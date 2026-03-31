@@ -116,6 +116,8 @@ namespace Poly_Ling.Player
             else
                 _selectionOps.ApplyClick(hit, mods);
 
+            ExpandLinkedVertices();
+
             OnRequestNormal?.Invoke();
         }
 
@@ -412,6 +414,38 @@ namespace Poly_Ling.Player
             _affectedVertices.Clear();
         }
 
+        private void ExpandLinkedVertices()
+        {
+            var sel = _selectionOps.SelectionState;
+            if (sel == null) return;
+            var meshObject = _project?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            if (meshObject == null) return;
+
+            foreach (var edge in sel.Edges)
+            {
+                sel.Vertices.Add(edge.V1);
+                sel.Vertices.Add(edge.V2);
+            }
+            foreach (var faceIdx in sel.Faces)
+            {
+                if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
+                    foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                        sel.Vertices.Add(vIdx);
+            }
+            foreach (var lineIdx in sel.Lines)
+            {
+                if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
+                {
+                    var face = meshObject.Faces[lineIdx];
+                    if (face.VertexCount == 2)
+                    {
+                        sel.Vertices.Add(face.VertexIndices[0]);
+                        sel.Vertices.Add(face.VertexIndices[1]);
+                    }
+                }
+            }
+        }
+
         private bool IsElemSelected(PlayerHoverElement elem)
         {
             var sel = _selectionOps.SelectionState;
@@ -450,21 +484,91 @@ namespace Poly_Ling.Player
                               ? model.FirstDrawableMeshIndex : model.FirstMeshIndex;
             int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
             var rect         = _selectionOps.BoxRect;
-            var inBox        = new List<int>();
             var screenPos    = GetScreenPositions();
-            var verts        = mc.MeshObject.Vertices;
+            var mo           = mc.MeshObject;
             float vpH        = GetViewportHeight?.Invoke() ?? 0f;
 
-            for (int i = 0; i < verts.Count; i++)
+            // スクリーン座標取得ヘルパー
+            Func<int, Vector2> vertexScreen = (i) =>
             {
-                if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
-                if (screenPos == null || vertexOffset + i >= screenPos.Length) continue;
-                float sx = screenPos[vertexOffset + i].x;
-                float sy = vpH - screenPos[vertexOffset + i].y;
-                if (rect.Contains(new Vector2(sx, sy), true)) inBox.Add(i);
+                if (screenPos == null || vertexOffset + i >= screenPos.Length)
+                    return new Vector2(-10000, -10000);
+                return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
+            };
+
+            bool additive = mods.Shift || mods.Ctrl;
+            if (!additive)
+            {
+                mc.Selection.ClearAll();
+            }
+
+            var mode = _selectionOps.SelectionState?.Mode
+                    ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
+
+            // 頂点選択
+            var inBox = new List<int>();
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                for (int i = 0; i < mo.Vertices.Count; i++)
+                {
+                    if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
+                    if (rect.Contains(vertexScreen(i), true)) inBox.Add(i);
+                }
+            }
+
+            // 辺選択
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                for (int fi = 0; fi < mo.FaceCount; fi++)
+                {
+                    var face = mo.Faces[fi];
+                    if (face.VertexCount < 2) continue;
+                    for (int ei = 0; ei < face.VertexCount; ei++)
+                    {
+                        int v1 = face.VertexIndices[ei];
+                        int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                        if (rect.Contains(vertexScreen(v1), true) &&
+                            rect.Contains(vertexScreen(v2), true))
+                        {
+                            mc.Selection.SelectEdge(v1, v2, true);
+                        }
+                    }
+                }
+            }
+
+            // 面選択
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                for (int fi = 0; fi < mo.FaceCount; fi++)
+                {
+                    var face = mo.Faces[fi];
+                    if (face.VertexCount < 3) continue;
+                    bool allIn = true;
+                    foreach (int vi in face.VertexIndices)
+                    {
+                        if (!rect.Contains(vertexScreen(vi), true)) { allIn = false; break; }
+                    }
+                    if (allIn) mc.Selection.SelectFace(fi, true);
+                }
+            }
+
+            // 線分選択
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                for (int fi = 0; fi < mo.FaceCount; fi++)
+                {
+                    var face = mo.Faces[fi];
+                    if (face.VertexCount != 2) continue;
+                    if (rect.Contains(vertexScreen(face.VertexIndices[0]), true) &&
+                        rect.Contains(vertexScreen(face.VertexIndices[1]), true))
+                    {
+                        mc.Selection.SelectLine(fi, true);
+                    }
+                }
             }
 
             _selectionOps.EndBoxSelect(inBox, mods);
+            ExpandLinkedVertices();
             OnRepaint?.Invoke();
         }
     }

@@ -201,6 +201,11 @@ namespace Poly_Ling.Core
             adapter.BufferManager?.SetActiveMesh(0, firstUnified);
             adapter.BufferManager?.UpdateAllSelectionFlags();
 
+            // メッシュフィルタのBindPoseをWorldMatrix.inverseで確定させてから
+            // GPUバッファを初期化する。スキンドと共通のパスで扱えるようにする。
+            model.ComputeMeshFilterBindPoses();
+            adapter.UpdateTransform(useWorldTransform: true);
+            adapter.WritebackTransformedVertices();
 
             _adapters[mi] = adapter;
 
@@ -248,7 +253,7 @@ namespace Poly_Ling.Core
                         mat.SetFloat("_Cull", cullValue);
                     }
 
-                    Graphics.DrawMesh(mesh, ctx.SkinningMatrix, mat, 0, cam, sub);
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam, sub);
                 }
             }
         }

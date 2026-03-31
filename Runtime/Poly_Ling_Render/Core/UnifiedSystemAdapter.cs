@@ -730,7 +730,15 @@ namespace Poly_Ling.Core
                 // ① 選択メッシュのみ MeshObject.Positions → GPUバッファ同期
                 _unifiedSystem.ProcessTransformUpdateSelectedOnly();
 
-                // ② 選択メッシュのワイヤーフレーム・ポイントメッシュの頂点位置のみ更新
+                // ② _positionBuffer 更新後に _worldPositions（CPU配列）を再計算する。
+                //    RebuildAdapter 後に UseWorldPositions=true になるため
+                //    GetDisplayPositions() は _worldPositions を返す。
+                //    これを更新しないと UpdateWireframePositionsOnly 等が古い座標を使い
+                //    ドラッグ中に辺・頂点が動かなくなる。
+                var bm = BufferManager;
+                bm?.DispatchTransformVertices(useWorldTransform: true, transformNormals: false, readbackToCPU: true);
+
+                // ③ 選択メッシュのワイヤーフレーム・ポイントメッシュの頂点位置のみ更新
                 //    非選択メッシュは位置不変のため更新不要
                 if (showWireframe)
                 {

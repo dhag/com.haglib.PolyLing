@@ -12,51 +12,12 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools.Creators;
+using Poly_Ling.PrimitiveMesh;
 
-public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshCreatorWindow.CapsuleParams>
+public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMeshGenerator.CapsuleParams>
 {
     // ================================================================
     // パラメータ構造体
-    // ================================================================
-    [System.Serializable]
-    public struct CapsuleParams : IEquatable<CapsuleParams>
-    {
-        public string MeshName;
-        public float RadiusTop, RadiusBottom;
-        public float Height;
-        public int RadialSegments, HeightSegments, CapSegments;
-        public Vector3 Pivot;
-        public float RotationX, RotationY;
-
-        public static CapsuleParams Default => new CapsuleParams
-        {
-            MeshName = "Capsule",
-            RadiusTop = 0.5f,
-            RadiusBottom = 0.5f,
-            Height = 2f,
-            RadialSegments = 24,
-            HeightSegments = 4,
-            CapSegments = 8,
-            Pivot = Vector3.zero,
-            RotationX = 20f,
-            RotationY = 30f
-        };
-
-        public bool Equals(CapsuleParams o) =>
-            MeshName == o.MeshName &&
-            Mathf.Approximately(RadiusTop, o.RadiusTop) &&
-            Mathf.Approximately(RadiusBottom, o.RadiusBottom) &&
-            Mathf.Approximately(Height, o.Height) &&
-            RadialSegments == o.RadialSegments &&
-            HeightSegments == o.HeightSegments &&
-            CapSegments == o.CapSegments &&
-            Pivot == o.Pivot &&
-            Mathf.Approximately(RotationX, o.RotationX) &&
-            Mathf.Approximately(RotationY, o.RotationY);
-
-        public override bool Equals(object obj) => obj is CapsuleParams p && Equals(p);
-        public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
-    }
 
     // ================================================================
     // 基底クラス実装
@@ -66,7 +27,7 @@ public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMes
     protected override string UndoDescription => "Capsule Parameters";
     protected override float PreviewCameraDistance => _params.Height * 2f;
 
-    protected override CapsuleParams GetDefaultParams() => CapsuleParams.Default;
+    protected override CapsuleMeshGenerator.CapsuleParams GetDefaultParams() => CapsuleMeshGenerator.CapsuleParams.Default;
     protected override string GetMeshName() => _params.MeshName;
     protected override float GetPreviewRotationX() => _params.RotationX;
     protected override float GetPreviewRotationY() => _params.RotationY;
@@ -204,143 +165,9 @@ public partial class CapsuleMeshCreatorWindow : MeshCreatorWindowBase<CapsuleMes
 
     // ================================================================
     // MeshObject生成（四角形ベース）
+
     // ================================================================
-    protected override MeshObject GenerateMeshObject()
-    {
-        var md = new MeshObject(_params.MeshName);
-
-        float cylinderHeight = _params.Height - _params.RadiusTop - _params.RadiusBottom;
-        if (cylinderHeight < 0) cylinderHeight = 0;
-
-        float halfHeight = _params.Height * 0.5f;
-        Vector3 pivotOffset = new Vector3(0, _params.Pivot.y * _params.Height, 0);
-
-        float cylinderTop = halfHeight - _params.RadiusTop;
-        float cylinderBottom = -halfHeight + _params.RadiusBottom;
-
-        float topCapUVHeight = _params.RadiusTop / _params.Height;
-        float bottomCapUVHeight = _params.RadiusBottom / _params.Height;
-        float cylinderUVHeight = cylinderHeight / _params.Height;
-
-        int radialSegs = _params.RadialSegments;
-        int capSegs = _params.CapSegments;
-        int heightSegs = _params.HeightSegments;
-
-        // === 上半球の頂点 ===
-        int topCapStartIdx = md.VertexCount;
-        for (int lat = 0; lat <= capSegs; lat++)
-        {
-            float theta = lat * (Mathf.PI * 0.5f) / capSegs;
-            float sinTheta = Mathf.Sin(theta);
-            float cosTheta = Mathf.Cos(theta);
-
-            for (int lon = 0; lon <= radialSegs; lon++)
-            {
-                float phi = lon * 2f * Mathf.PI / radialSegs;
-                float sinPhi = Mathf.Sin(phi);
-                float cosPhi = Mathf.Cos(phi);
-
-                Vector3 normal = new Vector3(cosPhi * sinTheta, cosTheta, sinPhi * sinTheta);
-                Vector3 pos = normal * _params.RadiusTop + new Vector3(0, cylinderTop, 0) - pivotOffset;
-
-                float u = (float)lon / radialSegs;
-                float v = 1f - (float)lat / capSegs * topCapUVHeight;
-                md.Vertices.Add(new Vertex(pos, new Vector2(u, v), normal));
-            }
-        }
-
-        // === 円筒部分の頂点 ===
-        int cylinderStartIdx = md.VertexCount;
-        for (int h = 0; h <= heightSegs; h++)
-        {
-            float t = (float)h / heightSegs;
-            float y = cylinderTop - t * cylinderHeight;
-            float radius = Mathf.Lerp(_params.RadiusTop, _params.RadiusBottom, t);
-
-            for (int lon = 0; lon <= radialSegs; lon++)
-            {
-                float phi = lon * 2f * Mathf.PI / radialSegs;
-                float sinPhi = Mathf.Sin(phi);
-                float cosPhi = Mathf.Cos(phi);
-
-                float slope = (_params.RadiusBottom - _params.RadiusTop) / (cylinderHeight > 0 ? cylinderHeight : 1f);
-                Vector3 normal = new Vector3(cosPhi, slope, sinPhi).normalized;
-
-                Vector3 pos = new Vector3(cosPhi * radius, y, sinPhi * radius) - pivotOffset;
-
-                float u = (float)lon / radialSegs;
-                float v = 1f - topCapUVHeight - t * cylinderUVHeight;
-                md.Vertices.Add(new Vertex(pos, new Vector2(u, v), normal));
-            }
-        }
-
-        // === 下半球の頂点 ===
-        int bottomCapStartIdx = md.VertexCount;
-        for (int lat = 0; lat <= capSegs; lat++)
-        {
-            float theta = Mathf.PI * 0.5f + lat * (Mathf.PI * 0.5f) / capSegs;
-            float sinTheta = Mathf.Sin(theta);
-            float cosTheta = Mathf.Cos(theta);
-
-            for (int lon = 0; lon <= radialSegs; lon++)
-            {
-                float phi = lon * 2f * Mathf.PI / radialSegs;
-                float sinPhi = Mathf.Sin(phi);
-                float cosPhi = Mathf.Cos(phi);
-
-                Vector3 normal = new Vector3(cosPhi * sinTheta, cosTheta, sinPhi * sinTheta);
-                Vector3 pos = normal * _params.RadiusBottom + new Vector3(0, cylinderBottom, 0) - pivotOffset;
-
-                float u = (float)lon / radialSegs;
-                float v = bottomCapUVHeight - (float)lat / capSegs * bottomCapUVHeight;
-                md.Vertices.Add(new Vertex(pos, new Vector2(u, v), normal));
-            }
-        }
-
-        int cols = radialSegs + 1;
-
-        // === 上半球の四角形面 ===
-        for (int lat = 0; lat < capSegs; lat++)
-        {
-            for (int lon = 0; lon < radialSegs; lon++)
-            {
-                int i0 = topCapStartIdx + lat * cols + lon;
-                int i1 = i0 + 1;
-                int i2 = i0 + cols + 1;
-                int i3 = i0 + cols;
-
-                md.AddQuad(i0, i1, i2, i3);
-            }
-        }
-
-        // === 円筒部分の四角形面 ===
-        for (int h = 0; h < heightSegs; h++)
-        {
-            for (int lon = 0; lon < radialSegs; lon++)
-            {
-                int i0 = cylinderStartIdx + h * cols + lon;
-                int i1 = i0 + 1;
-                int i2 = i0 + cols + 1;
-                int i3 = i0 + cols;
-
-                md.AddQuad(i0, i1, i2, i3);
-            }
-        }
-
-        // === 下半球の四角形面 ===
-        for (int lat = 0; lat < capSegs; lat++)
-        {
-            for (int lon = 0; lon < radialSegs; lon++)
-            {
-                int i0 = bottomCapStartIdx + lat * cols + lon;
-                int i1 = i0 + 1;
-                int i2 = i0 + cols + 1;
-                int i3 = i0 + cols;
-
-                md.AddQuad(i0, i1, i2, i3);
-            }
-        }
-
-        return md;
-    }
+    // MeshObject生成
+    // ================================================================
+    protected override MeshObject GenerateMeshObject() => CapsuleMeshGenerator.Generate(_params);
 }

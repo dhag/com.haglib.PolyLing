@@ -3,6 +3,7 @@
 // MeshSceneRenderer の描画呼び出しを各カメラに対して行う。
 // Runtime/Poly_Ling_Player/View/ に配置
 
+using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Core;
@@ -527,11 +528,43 @@ namespace Poly_Ling.Player
             {
                 int vi = face.VertexIndices[i];
                 if (vi < 0 || vi >= mc.MeshObject.VertexCount) return null;
-                Vector3 sp = cam.WorldToScreenPoint(mc.MeshObject.Vertices[vi].Position);
+                Vector3 sp = cam.WorldToScreenPoint(mc.WorldMatrix.MultiplyPoint3x4(mc.MeshObject.Vertices[vi].Position));
                 if (sp.z < 0) return null;
                 pts[i] = new Vector2(sp.x, sp.y);
             }
             return pts;
+        }
+
+        /// <summary>選択面のスクリーン座標リストを返す。</summary>
+        public List<Vector2[]> GetSelectedFacesScreenPts(
+            PlayerViewport vp, Poly_Ling.Context.ModelContext model)
+        {
+            var cam = vp?.Cam;
+            if (cam == null || model == null) return null;
+            var mc = model.FirstSelectedDrawableMesh ?? model.FirstSelectedMeshContext;
+            if (mc?.MeshObject == null) return null;
+            var sel = mc.Selection;
+            if (sel.Faces.Count == 0) return null;
+            var result = new List<Vector2[]>();
+            var mo = mc.MeshObject;
+            foreach (int fi in sel.Faces)
+            {
+                if (fi < 0 || fi >= mo.FaceCount) continue;
+                var face = mo.Faces[fi];
+                if (face.VertexCount < 3) continue;
+                var pts = new Vector2[face.VertexCount];
+                bool valid = true;
+                for (int i = 0; i < face.VertexCount; i++)
+                {
+                    int vi = face.VertexIndices[i];
+                    if (vi < 0 || vi >= mo.VertexCount) { valid = false; break; }
+                    Vector3 sp = cam.WorldToScreenPoint(mc.WorldMatrix.MultiplyPoint3x4(mo.Vertices[vi].Position));
+                    if (sp.z < 0) { valid = false; break; }
+                    pts[i] = new Vector2(sp.x, sp.y);
+                }
+                if (valid) result.Add(pts);
+            }
+            return result.Count > 0 ? result : null;
         }
 
         /// <summary>
@@ -645,7 +678,7 @@ namespace Poly_Ling.Player
                 var vertex = mo.Vertices[vIdx];
                 int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
 
-                UnityEngine.Vector3 pos = vertex.Position;
+                UnityEngine.Vector3 pos = mc.WorldMatrix.MultiplyPoint3x4(vertex.Position);
                 for (int uvIdx = 0; uvIdx < uvCount && unityIdx < totalUnity; uvIdx++, unityIdx++)
                     unityVerts[unityIdx] = pos;
             }

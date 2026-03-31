@@ -13,54 +13,14 @@ using UnityEditor;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools.Creators;
+using Poly_Ling.PrimitiveMesh;
 
-public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCreatorWindow.PlaneParams>
+public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshGenerator.PlaneParams>
 {
-    public enum PlaneOrientation { XY, XZ, YZ }
+    
 
     // ================================================================
     // パラメータ構造体
-    // ================================================================
-    [System.Serializable]
-    public struct PlaneParams : IEquatable<PlaneParams>
-    {
-        public string MeshName;
-        public float Width, Height;
-        public int WidthSegments, HeightSegments;
-        public bool DoubleSided;
-        public PlaneOrientation Orientation;
-        public Vector3 Pivot;
-        public float RotationX, RotationY;
-
-        public static PlaneParams Default => new PlaneParams
-        {
-            MeshName = "Plane",
-            Width = 1f,
-            Height = 1f,
-            WidthSegments = 1,
-            HeightSegments = 1,
-            DoubleSided = false,
-            Orientation = PlaneOrientation.XZ,
-            Pivot = Vector3.zero,
-            RotationX = 45f,
-            RotationY = 30f
-        };
-
-        public bool Equals(PlaneParams o) =>
-            MeshName == o.MeshName &&
-            Mathf.Approximately(Width, o.Width) &&
-            Mathf.Approximately(Height, o.Height) &&
-            WidthSegments == o.WidthSegments &&
-            HeightSegments == o.HeightSegments &&
-            DoubleSided == o.DoubleSided &&
-            Orientation == o.Orientation &&
-            Pivot == o.Pivot &&
-            Mathf.Approximately(RotationX, o.RotationX) &&
-            Mathf.Approximately(RotationY, o.RotationY);
-
-        public override bool Equals(object obj) => obj is PlaneParams p && Equals(p);
-        public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
-    }
 
     // ================================================================
     // 基底クラス実装
@@ -70,7 +30,7 @@ public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCre
     protected override string UndoDescription => "Plane Parameters";
     protected override float PreviewCameraDistance => Mathf.Max(_params.Width, _params.Height) * 2.5f;
 
-    protected override PlaneParams GetDefaultParams() => PlaneParams.Default;
+    protected override PlaneMeshGenerator.PlaneParams GetDefaultParams() => PlaneMeshGenerator.PlaneParams.Default;
     protected override string GetMeshName() => _params.MeshName;
     protected override float GetPreviewRotationX() => _params.RotationX;
     protected override float GetPreviewRotationY() => _params.RotationY;
@@ -110,7 +70,7 @@ public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCre
 
         EditorGUILayout.Space(5);
 
-        _params.Orientation = (PlaneOrientation)EditorGUILayout.EnumPopup(T("Orientation"), _params.Orientation);
+        _params.Orientation = (Poly_Ling.PrimitiveMesh.PlaneOrientation)EditorGUILayout.EnumPopup(T("Orientation"), _params.Orientation);
         _params.DoubleSided = EditorGUILayout.Toggle(T("DoubleSided"), _params.DoubleSided);
 
         EditorGUILayout.Space(5);
@@ -194,91 +154,9 @@ public partial class PlaneMeshCreatorWindow : MeshCreatorWindowBase<PlaneMeshCre
 
     // ================================================================
     // MeshObject生成
+
     // ================================================================
-    protected override MeshObject GenerateMeshObject()
-    {
-        var md = new MeshObject(_params.MeshName);
-
-        Vector3 pivotOffset = new Vector3(_params.Pivot.x * _params.Width, _params.Pivot.y * _params.Height, 0);
-
-        AddPlaneFace(md, pivotOffset, false);
-
-        if (_params.DoubleSided)
-        {
-            AddPlaneFace(md, pivotOffset, true);
-        }
-
-        return md;
-    }
-
-    private void AddPlaneFace(MeshObject md, Vector3 pivotOffset, bool flip)
-    {
-        int startIdx = md.VertexCount;
-
-        Vector3 normal;
-        switch (_params.Orientation)
-        {
-            case PlaneOrientation.XY:
-                normal = flip ? Vector3.back : Vector3.forward;
-                break;
-            case PlaneOrientation.XZ:
-                normal = flip ? Vector3.down : Vector3.up;
-                break;
-            case PlaneOrientation.YZ:
-                normal = flip ? Vector3.left : Vector3.right;
-                break;
-            default:
-                normal = Vector3.up;
-                break;
-        }
-
-        for (int h = 0; h <= _params.HeightSegments; h++)
-        {
-            for (int w = 0; w <= _params.WidthSegments; w++)
-            {
-                float u = (float)w / _params.WidthSegments;
-                float v = (float)h / _params.HeightSegments;
-
-                float x = (u - 0.5f) * _params.Width;
-                float y = (v - 0.5f) * _params.Height;
-
-                Vector3 pos;
-                switch (_params.Orientation)
-                {
-                    case PlaneOrientation.XY:
-                        pos = new Vector3(x - pivotOffset.x, y - pivotOffset.y, 0);
-                        break;
-                    case PlaneOrientation.XZ:
-                        pos = new Vector3(x - pivotOffset.x, 0, -y + pivotOffset.y);
-                        break;
-                    case PlaneOrientation.YZ:
-                        pos = new Vector3(0, y - pivotOffset.y, -x + pivotOffset.x);
-                        break;
-                    default:
-                        pos = new Vector3(x, 0, -y);
-                        break;
-                }
-
-                Vector2 uv = new Vector2(flip ? (1f - u) : u, v);
-                md.Vertices.Add(new Vertex(pos, uv, normal));
-            }
-        }
-
-        int cols = _params.WidthSegments + 1;
-        for (int h = 0; h < _params.HeightSegments; h++)
-        {
-            for (int w = 0; w < _params.WidthSegments; w++)
-            {
-                int i0 = startIdx + h * cols + w;
-                int i1 = i0 + 1;
-                int i2 = i0 + cols + 1;
-                int i3 = i0 + cols;
-
-                if (flip)
-                    md.AddQuad(i0, i1, i2, i3);
-                else
-                    md.AddQuad(i0, i3, i2, i1);
-            }
-        }
-    }
+    // MeshObject生成
+    // ================================================================
+    protected override MeshObject GenerateMeshObject() => PlaneMeshGenerator.Generate(_params);
 }

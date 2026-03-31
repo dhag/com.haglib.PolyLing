@@ -60,6 +60,22 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：インポートセクション（PlayerImportSubPanel を Build する対象）。</summary>
         public VisualElement ImportSection { get; private set; }
 
+        /// <summary>右ペイン：図形生成セクション（PlayerPrimitiveMeshSubPanel を Build する対象）。</summary>
+        public VisualElement PrimitiveSection { get; private set; }
+
+        /// <summary>左ペイン：図形生成ボタン。</summary>
+        public Button PrimitiveBtn { get; private set; }
+
+        /// <summary>左ペイン：ツール切り替えボタン群。</summary>
+        public Button ToolVertexMoveBtn  { get; private set; }
+        public Button ToolObjectMoveBtn  { get; private set; }
+
+        /// <summary>左ペイン：MeshFilter→Skinnedボタン。</summary>
+        public Button MeshFilterToSkinnedBtn { get; private set; }
+
+        /// <summary>右ペイン：MeshFilter→Skinnedセクション（ScrollView外）。</summary>
+        public VisualElement MeshFilterToSkinnedSection { get; private set; }
+
         // ================================================================
         // Build
         // ================================================================
@@ -141,6 +157,17 @@ namespace Poly_Ling.Player
 
             pane.Add(Separator());
 
+            // ── ツール切り替えボタン（頂点移動 / オブジェクト移動）
+            var toolRow = new VisualElement();
+            toolRow.style.flexDirection = FlexDirection.Row;
+            toolRow.style.marginBottom  = 2;
+            ToolVertexMoveBtn = MakeBtn("頂点移動"); ToolVertexMoveBtn.style.flexGrow = 1; ToolVertexMoveBtn.style.marginRight = 2;
+            ToolObjectMoveBtn = MakeBtn("オブジェ移動"); ToolObjectMoveBtn.style.flexGrow = 1;
+            toolRow.Add(ToolVertexMoveBtn); toolRow.Add(ToolObjectMoveBtn);
+            pane.Add(toolRow);
+
+            pane.Add(Separator());
+
             var undoRow = new VisualElement();
             undoRow.style.flexDirection = FlexDirection.Row;
             undoRow.style.marginBottom  = 6;
@@ -148,6 +175,13 @@ namespace Poly_Ling.Player
             RedoBtn = MakeBtn("Redo"); RedoBtn.style.flexGrow = 1; RedoBtn.style.marginLeft  = 2;
             undoRow.Add(UndoBtn); undoRow.Add(RedoBtn);
             pane.Add(undoRow);
+
+            pane.Add(Separator());
+            PrimitiveBtn = MakeBtn("図形生成");
+            pane.Add(PrimitiveBtn);
+
+            MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
+            pane.Add(MeshFilterToSkinnedBtn);
 
             pane.Add(Separator());
             pane.Add(Header("Models"));
@@ -229,6 +263,7 @@ namespace Poly_Ling.Player
             pane.style.flexDirection   = FlexDirection.Column;
             pane.style.overflow        = Overflow.Hidden;
 
+            // ── ScrollView（メッシュリスト・モデルリスト・インポート）
             var scroll = new ScrollView(ScrollViewMode.Vertical);
             scroll.style.flexGrow     = 1;
             scroll.style.paddingTop   = 4;
@@ -255,6 +290,19 @@ namespace Poly_Ling.Player
             // ── インポートセクション
             ImportSection = new VisualElement();
             RightPaneContent.Add(ImportSection);
+
+            // ── 図形生成セクション（ScrollView外に配置してWheelEventを確保）
+            PrimitiveSection = new VisualElement();
+            PrimitiveSection.style.flexShrink = 0;
+            pane.Add(PrimitiveSection);
+
+            // ── MeshFilter→Skinnedセクション（ScrollView外）
+            MeshFilterToSkinnedSection = new VisualElement();
+            MeshFilterToSkinnedSection.style.flexShrink  = 0;
+            MeshFilterToSkinnedSection.style.paddingTop  = 4;
+            MeshFilterToSkinnedSection.style.paddingLeft = 4;
+            MeshFilterToSkinnedSection.style.paddingRight= 4;
+            pane.Add(MeshFilterToSkinnedSection);
 
             return pane;
         }

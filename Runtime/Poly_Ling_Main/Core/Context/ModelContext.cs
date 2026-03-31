@@ -1475,6 +1475,40 @@ namespace Poly_Ling.Context
         }
 
         /// <summary>
+        /// スキンドでない（BoneWeight を持たない）DrawableコンテキストのBindPoseを
+        /// 現在のWorldMatrix.inverseで更新する。
+        ///
+        /// RebuildAdapter直前（ComputeWorldMatrices()の後）に呼ぶこと。
+        /// これにより UpdateTransform(useWorldTransform:true) が
+        ///   worldPos = WorldMatrix * WorldMatrix.inverse * localPos = localPos（初期）
+        ///   worldPos = newWorldMatrix * rebuildInverse * localPos（移動後）
+        /// と計算され、スキンドメッシュと統一されたパスで扱える。
+        /// </summary>
+        public void ComputeMeshFilterBindPoses()
+        {
+            if (MeshContextList == null) return;
+
+            for (int i = 0; i < MeshContextList.Count; i++)
+            {
+                var ctx = MeshContextList[i];
+                if (ctx == null) continue;
+
+                // ボーン・モーフ・剛体・ジョイント・グループは対象外
+                var t = ctx.Type;
+                if (t == MeshType.Bone     || t == MeshType.Morph       ||
+                    t == MeshType.RigidBody || t == MeshType.RigidBodyJoint ||
+                    t == MeshType.Group)
+                    continue;
+
+                // スキンド頂点を持つ場合はインポート時BindPoseを維持する
+                if (ctx.MeshObject != null && ctx.MeshObject.HasBoneWeight)
+                    continue;
+
+                ctx.BindPose = ctx.WorldMatrix.inverse;
+            }
+        }
+
+        /// <summary>
         /// MeshContextリストからワールド行列を計算（静的メソッド・インポート時用）
         /// HierarchyParentIndexとBoneTransformに基づいて親→子の順で計算
         /// </summary>

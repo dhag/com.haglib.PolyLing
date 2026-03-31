@@ -107,6 +107,24 @@ namespace Poly_Ling.Player
             FinishLoad(filePath, model);
         }
 
+        /// <summary>
+        /// プロジェクトが存在しなければ空のプロジェクト+モデルを作成する。
+        /// OnLoaded は発火しない。図形生成など非インポート操作用。
+        /// </summary>
+        public ProjectContext EnsureProject()
+        {
+            if (_project == null)
+            {
+                _project = new ProjectContext("Untitled");
+                _project.AddModel(new ModelContext("Model"));
+            }
+            else if (_project.ModelCount == 0)
+            {
+                _project.AddModel(new ModelContext("Model"));
+            }
+            return _project;
+        }
+
         // ================================================================
         // 内部
         // ================================================================
