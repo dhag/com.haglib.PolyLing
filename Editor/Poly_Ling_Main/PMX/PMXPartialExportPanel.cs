@@ -1,7 +1,7 @@
-// Assets/Editor/Poly_Ling_/ToolPanels/PMXCSV/PMXPartialExportPanel.cs
+// Assets/Editor/Poly_Ling/PMX/PMXPartialExportPanel.cs
 // PMX部分エクスポートパネル
-// リファレンスPMXを指定し、選択したDrawableメッシュの頂点データを転送して出力
-// PMX←→MQO転送パネルと同様のイメージ
+// ロジックは PMXPartialExportOps に委譲。
+// UI描画・ファイルIO・PMX読み込み・コンテキスト同期のみをここで行う。
 
 using System;
 using System.Collections.Generic;
@@ -9,7 +9,6 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.Localization;
 using Poly_Ling.Tools;
@@ -35,48 +34,36 @@ namespace Poly_Ling.PMX
 
         private static readonly Dictionary<string, Dictionary<string, string>> _localize = new()
         {
-            ["WindowTitle"] = new() { ["en"] = "PMX Partial Export", ["ja"] = "PMX部分エクスポート" },
-
-            // セクション
-            ["ReferencePMX"] = new() { ["en"] = "Reference PMX", ["ja"] = "リファレンスPMX" },
-            ["MeshMapping"] = new() { ["en"] = "Mesh ↔ Material Mapping", ["ja"] = "メッシュ ↔ 材質対応" },
-            ["ExportOptions"] = new() { ["en"] = "Export Options", ["ja"] = "出力オプション" },
-
-            // ラベル
-            ["PMXFile"] = new() { ["en"] = "PMX File", ["ja"] = "PMXファイル" },
-            ["ModelMeshes"] = new() { ["en"] = "Model Meshes", ["ja"] = "モデルメッシュ" },
-            ["PMXMaterials"] = new() { ["en"] = "PMX Materials", ["ja"] = "PMX材質" },
-            ["Vertices"] = new() { ["en"] = "V", ["ja"] = "V" },
-            ["Faces"] = new() { ["en"] = "F", ["ja"] = "F" },
-            ["Match"] = new() { ["en"] = "✓", ["ja"] = "✓" },
-            ["Mismatch"] = new() { ["en"] = "✗", ["ja"] = "✗" },
-            ["Scale"] = new() { ["en"] = "Scale", ["ja"] = "スケール" },
-            ["FlipZ"] = new() { ["en"] = "Flip Z", ["ja"] = "Z軸反転" },
-            ["FlipUV_V"] = new() { ["en"] = "Flip UV V", ["ja"] = "UV V反転" },
-            ["ReplacePositions"] = new() { ["en"] = "Replace Positions", ["ja"] = "座標を出力" },
-            ["ReplaceNormals"] = new() { ["en"] = "Replace Normals", ["ja"] = "法線を出力" },
-            ["ReplaceUVs"] = new() { ["en"] = "Replace UVs", ["ja"] = "UVを出力" },
-            ["ReplaceBoneWeights"] = new() { ["en"] = "Replace Weights", ["ja"] = "ウェイトを出力" },
-            ["OutputCSV"] = new() { ["en"] = "Also output CSV", ["ja"] = "CSVも出力" },
-
-            // ボタン
-            ["SelectAll"] = new() { ["en"] = "Select All", ["ja"] = "全選択" },
-            ["SelectNone"] = new() { ["en"] = "Select None", ["ja"] = "全解除" },
-            ["SelectMatched"] = new() { ["en"] = "Select Matched", ["ja"] = "一致のみ選択" },
-            ["Export"] = new() { ["en"] = "Export PMX", ["ja"] = "PMXエクスポート" },
-
-            // メッセージ
-            ["NoContext"] = new() { ["en"] = "No context set. Open from Poly_Ling window.", ["ja"] = "コンテキスト未設定" },
-            ["NoModel"] = new() { ["en"] = "No model loaded", ["ja"] = "モデルがありません" },
-            ["NoDrawableMesh"] = new() { ["en"] = "No drawable meshes", ["ja"] = "Drawableメッシュがありません" },
-            ["SelectPMXFirst"] = new() { ["en"] = "Select reference PMX file", ["ja"] = "リファレンスPMXを選択してください" },
-            ["NoMeshSelected"] = new() { ["en"] = "Select meshes to export", ["ja"] = "エクスポートするメッシュを選択" },
-            ["VertexCountMismatch"] = new() { ["en"] = "Vertex count mismatch: Model={0}, PMX={1}", ["ja"] = "頂点数不一致: モデル={0}, PMX={1}" },
-            ["ExportSuccess"] = new() { ["en"] = "Export successful: {0}", ["ja"] = "エクスポート成功: {0}" },
-            ["ExportFailed"] = new() { ["en"] = "Export failed: {0}", ["ja"] = "エクスポート失敗: {0}" },
-
-            // ツールチップ
-            ["ScaleTooltip"] = new() { ["en"] = "Unity coordinates × Scale = PMX coordinates", ["ja"] = "Unity座標 × スケール = PMX座標" },
+            ["WindowTitle"]        = new() { ["en"] = "PMX Partial Export",              ["ja"] = "PMX部分エクスポート" },
+            ["ReferencePMX"]       = new() { ["en"] = "Reference PMX",                   ["ja"] = "リファレンスPMX" },
+            ["MeshMapping"]        = new() { ["en"] = "Mesh ↔ Material Mapping",          ["ja"] = "メッシュ ↔ 材質対応" },
+            ["ExportOptions"]      = new() { ["en"] = "Export Options",                   ["ja"] = "出力オプション" },
+            ["PMXFile"]            = new() { ["en"] = "PMX File",                         ["ja"] = "PMXファイル" },
+            ["ModelMeshes"]        = new() { ["en"] = "Model Meshes",                     ["ja"] = "モデルメッシュ" },
+            ["PMXMaterials"]       = new() { ["en"] = "PMX Materials",                    ["ja"] = "PMX材質" },
+            ["Vertices"]           = new() { ["en"] = "V",                                ["ja"] = "V" },
+            ["Match"]              = new() { ["en"] = "✓",                               ["ja"] = "✓" },
+            ["Mismatch"]           = new() { ["en"] = "✗",                               ["ja"] = "✗" },
+            ["Scale"]              = new() { ["en"] = "Scale",                            ["ja"] = "スケール" },
+            ["FlipZ"]              = new() { ["en"] = "Flip Z",                           ["ja"] = "Z軸反転" },
+            ["FlipUV_V"]           = new() { ["en"] = "Flip UV V",                        ["ja"] = "UV V反転" },
+            ["ReplacePositions"]   = new() { ["en"] = "Replace Positions",                ["ja"] = "座標を出力" },
+            ["ReplaceNormals"]     = new() { ["en"] = "Replace Normals",                  ["ja"] = "法線を出力" },
+            ["ReplaceUVs"]         = new() { ["en"] = "Replace UVs",                      ["ja"] = "UVを出力" },
+            ["ReplaceBoneWeights"] = new() { ["en"] = "Replace Weights",                  ["ja"] = "ウェイトを出力" },
+            ["OutputCSV"]          = new() { ["en"] = "Also output CSV",                  ["ja"] = "CSVも出力" },
+            ["SelectAll"]          = new() { ["en"] = "Select All",                       ["ja"] = "全選択" },
+            ["SelectNone"]         = new() { ["en"] = "Select None",                      ["ja"] = "全解除" },
+            ["SelectMatched"]      = new() { ["en"] = "Select Matched",                   ["ja"] = "一致のみ選択" },
+            ["Export"]             = new() { ["en"] = "Export PMX",                       ["ja"] = "PMXエクスポート" },
+            ["NoContext"]          = new() { ["en"] = "No context set.",                   ["ja"] = "コンテキスト未設定" },
+            ["NoModel"]            = new() { ["en"] = "No model loaded",                  ["ja"] = "モデルがありません" },
+            ["NoDrawableMesh"]     = new() { ["en"] = "No drawable meshes",               ["ja"] = "Drawableメッシュがありません" },
+            ["SelectPMXFirst"]     = new() { ["en"] = "Select reference PMX file",        ["ja"] = "リファレンスPMXを選択してください" },
+            ["NoMeshSelected"]     = new() { ["en"] = "Select meshes to export",          ["ja"] = "エクスポートするメッシュを選択" },
+            ["ExportSuccess"]      = new() { ["en"] = "Export successful: {0}",           ["ja"] = "エクスポート成功: {0}" },
+            ["ExportFailed"]       = new() { ["en"] = "Export failed: {0}",               ["ja"] = "エクスポート失敗: {0}" },
+            ["ScaleTooltip"]       = new() { ["en"] = "Unity coordinates × Scale = PMX coordinates", ["ja"] = "Unity座標 × スケール = PMX座標" },
         };
 
         private static string T(string key) => L.GetFrom(_localize, key);
@@ -86,70 +73,37 @@ namespace Poly_Ling.PMX
         // フィールド
         // ================================================================
 
-        private string _pmxFilePath = "";
+        private string      _pmxFilePath = "";
         private PMXDocument _pmxDocument;
 
-        // マッピングデータ
-        private List<MeshMaterialMapping> _mappings = new List<MeshMaterialMapping>();
+        private readonly PMXPartialExportOps      _ops      = new PMXPartialExportOps();
+        private          List<MeshMaterialMapping> _mappings = new List<MeshMaterialMapping>();
 
         // 出力オプション
-        private float _scale = 10f; // Unity→PMX: 1/PmxUnityRatio
-        private bool _flipZ = true;
-        private bool _flipUV_V = true;
-        private bool _replacePositions = true;
-        private bool _replaceNormals = true;
-        private bool _replaceUVs = true;
-        private bool _replaceBoneWeights = true;
-        private bool _outputCSV = false;
+        private float _scale              = 10f;
+        private bool  _flipZ              = true;
+        private bool  _flipUV_V           = true;
+        private bool  _replacePositions   = true;
+        private bool  _replaceNormals     = true;
+        private bool  _replaceUVs         = true;
+        private bool  _replaceBoneWeights = true;
+        private bool  _outputCSV          = false;
 
-        // UI状態
+        // UI 状態
         private Vector2 _scrollPosition;
-        private string _lastResult = "";
-
-        // ================================================================
-        // データクラス
-        // ================================================================
-
-        /// <summary>
-        /// モデルメッシュとPMX材質の対応
-        /// </summary>
-        private class MeshMaterialMapping
-        {
-            public bool Selected = false;
-
-            // モデル側（Drawableメッシュ）
-            public int DrawableIndex;           // DrawableMeshes内のインデックス
-            public int MasterIndex;             // MeshContextList内のインデックス
-            public string MeshName;
-            public int MeshVertexCount;         // 生頂点数
-            public int MeshExpandedVertexCount; // UV展開後頂点数
-            public MeshContext MeshContext;
-
-            // PMX側
-            public string PMXMaterialName;
-            public int PMXVertexStartIndex;
-            public int PMXVertexCount;
-            public List<int> PMXVertexIndices;  // 実際のPMX頂点インデックスリスト
-
-            // 照合結果
-            public bool IsMatched => MeshExpandedVertexCount == PMXVertexCount;
-        }
+        private string  _lastResult = "";
 
         // ================================================================
         // Open
         // ================================================================
 
-        //[MenuItem("Tools/Poly_Ling/debug/PMX Partial Export")]
-        public static void ShowWindow()
-        {
-            Open(null);
-        }
+        public static void ShowWindow() => Open(null);
 
         public static void Open(ToolContext ctx)
         {
             var panel = GetWindow<PMXPartialExportPanel>();
             panel.titleContent = new GUIContent(T("WindowTitle"));
-            panel.minSize = new Vector2(550, 450);
+            panel.minSize      = new Vector2(550, 450);
             if (ctx != null) panel.SetContext(ctx);
             panel.Show();
         }
@@ -187,34 +141,29 @@ namespace Poly_Ling.PMX
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.PrefixLabel(T("PMXFile"));
-                var pmxRect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
-                _pmxFilePath = EditorGUI.TextField(pmxRect, _pmxFilePath);
+                var rect = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.textField, GUILayout.ExpandWidth(true));
+                _pmxFilePath = EditorGUI.TextField(rect, _pmxFilePath);
 
-                // ドロップ対応
-                HandleDropOnRect(pmxRect, ".pmx", path =>
+                HandleDropOnRect(rect, ".pmx", path =>
                 {
                     _pmxFilePath = path;
                     LoadPMX();
-                    BuildMappings();
+                    RebuildMappings();
                 });
 
                 if (GUILayout.Button("...", GUILayout.Width(30)))
                 {
-                    string dir = string.IsNullOrEmpty(_pmxFilePath) ? Application.dataPath : Path.GetDirectoryName(_pmxFilePath);
+                    string dir  = string.IsNullOrEmpty(_pmxFilePath) ? Application.dataPath : Path.GetDirectoryName(_pmxFilePath);
                     string path = EditorUtility.OpenFilePanel("Select Reference PMX", dir, "pmx");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        _pmxFilePath = path;
-                        LoadPMX();
-                        BuildMappings();
-                    }
+                    if (!string.IsNullOrEmpty(path)) { _pmxFilePath = path; LoadPMX(); RebuildMappings(); }
                 }
             }
 
-            // PMX情報表示
             if (_pmxDocument != null)
             {
-                EditorGUILayout.LabelField($"Materials: {_pmxDocument.Materials.Count}, Vertices: {_pmxDocument.Vertices.Count}", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField(
+                    $"Materials: {_pmxDocument.Materials.Count}, Vertices: {_pmxDocument.Vertices.Count}",
+                    EditorStyles.miniLabel);
             }
         }
 
@@ -226,121 +175,58 @@ namespace Poly_Ling.PMX
         {
             EditorGUILayout.LabelField(T("MeshMapping"), EditorStyles.boldLabel);
 
-            if (_context == null)
-            {
-                EditorGUILayout.HelpBox(T("NoContext"), MessageType.Warning);
-                return;
-            }
-
-            var model = Model;
-            if (model == null)
-            {
-                EditorGUILayout.HelpBox(T("NoModel"), MessageType.Warning);
-                return;
-            }
-
-            var drawables = model.DrawableMeshes;
+            if (_context == null)          { EditorGUILayout.HelpBox(T("NoContext"),      MessageType.Warning); return; }
+            if (Model == null)             { EditorGUILayout.HelpBox(T("NoModel"),        MessageType.Warning); return; }
+            var drawables = Model.DrawableMeshes;
             if (drawables == null || drawables.Count == 0)
-            {
-                EditorGUILayout.HelpBox(T("NoDrawableMesh"), MessageType.Info);
-                return;
-            }
+                                           { EditorGUILayout.HelpBox(T("NoDrawableMesh"), MessageType.Info);    return; }
+            if (_pmxDocument == null)      { EditorGUILayout.HelpBox(T("SelectPMXFirst"), MessageType.Info);    return; }
 
-            if (_pmxDocument == null)
-            {
-                EditorGUILayout.HelpBox(T("SelectPMXFirst"), MessageType.Info);
-                return;
-            }
+            if (_mappings.Count == 0) RebuildMappings();
 
-            // マッピングが空の場合は構築
-            if (_mappings.Count == 0)
-            {
-                BuildMappings();
-            }
-
-            // 選択ボタン
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button(T("SelectAll"), GUILayout.Width(80)))
-                {
-                    foreach (var m in _mappings) m.Selected = true;
-                }
-                if (GUILayout.Button(T("SelectNone"), GUILayout.Width(80)))
-                {
-                    foreach (var m in _mappings) m.Selected = false;
-                }
-                if (GUILayout.Button(T("SelectMatched"), GUILayout.Width(100)))
-                {
-                    foreach (var m in _mappings) m.Selected = m.IsMatched;
-                }
+                if (GUILayout.Button(T("SelectAll"),     GUILayout.Width(80)))  foreach (var m in _mappings) m.Selected = true;
+                if (GUILayout.Button(T("SelectNone"),    GUILayout.Width(80)))  foreach (var m in _mappings) m.Selected = false;
+                if (GUILayout.Button(T("SelectMatched"), GUILayout.Width(100))) foreach (var m in _mappings) m.Selected = m.IsMatched;
             }
 
             EditorGUILayout.Space(5);
 
-            // ヘッダー
             using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.LabelField("", GUILayout.Width(20));
+                EditorGUILayout.LabelField("",              GUILayout.Width(20));
                 EditorGUILayout.LabelField(T("ModelMeshes"), EditorStyles.miniLabel, GUILayout.Width(150));
-                EditorGUILayout.LabelField(T("Vertices"), EditorStyles.miniLabel, GUILayout.Width(60));
-                EditorGUILayout.LabelField("→", EditorStyles.miniLabel, GUILayout.Width(20));
-                EditorGUILayout.LabelField(T("PMXMaterials"), EditorStyles.miniLabel, GUILayout.Width(150));
-                EditorGUILayout.LabelField(T("Vertices"), EditorStyles.miniLabel, GUILayout.Width(60));
-                EditorGUILayout.LabelField("", GUILayout.Width(30));
+                EditorGUILayout.LabelField(T("Vertices"),    EditorStyles.miniLabel, GUILayout.Width(60));
+                EditorGUILayout.LabelField("→",             EditorStyles.miniLabel, GUILayout.Width(20));
+                EditorGUILayout.LabelField(T("PMXMaterials"),EditorStyles.miniLabel, GUILayout.Width(150));
+                EditorGUILayout.LabelField(T("Vertices"),    EditorStyles.miniLabel, GUILayout.Width(60));
+                EditorGUILayout.LabelField("",              GUILayout.Width(30));
             }
 
-            // マッピングリスト
-            foreach (var mapping in _mappings)
-            {
-                DrawMappingRow(mapping);
-            }
+            foreach (var mapping in _mappings) DrawMappingRow(mapping);
         }
 
         private void DrawMappingRow(MeshMaterialMapping mapping)
         {
-            Color originalColor = GUI.backgroundColor;
-
-            // 不一致の場合は背景を変える
+            var originalBg = GUI.backgroundColor;
             if (!mapping.IsMatched && !string.IsNullOrEmpty(mapping.PMXMaterialName))
-            {
                 GUI.backgroundColor = new Color(1f, 0.7f, 0.7f);
-            }
 
             using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
             {
-                // チェックボックス
                 mapping.Selected = EditorGUILayout.Toggle(mapping.Selected, GUILayout.Width(20));
+                EditorGUILayout.LabelField(mapping.MeshName,                            GUILayout.Width(150));
+                EditorGUILayout.LabelField(mapping.MeshExpandedVertexCount.ToString(),  GUILayout.Width(60));
+                EditorGUILayout.LabelField("→",                                         GUILayout.Width(20));
+                EditorGUILayout.LabelField(mapping.PMXMaterialName ?? "(none)",         GUILayout.Width(150));
+                EditorGUILayout.LabelField(mapping.PMXVertexCount.ToString(),           GUILayout.Width(60));
 
-                // モデルメッシュ名
-                EditorGUILayout.LabelField(mapping.MeshName, GUILayout.Width(150));
-
-                // モデル頂点数（展開後）
-                EditorGUILayout.LabelField(mapping.MeshExpandedVertexCount.ToString(), GUILayout.Width(60));
-
-                // 矢印
-                EditorGUILayout.LabelField("→", GUILayout.Width(20));
-
-                // PMX材質名
-                EditorGUILayout.LabelField(mapping.PMXMaterialName ?? "(none)", GUILayout.Width(150));
-
-                // PMX頂点数
-                EditorGUILayout.LabelField(mapping.PMXVertexCount.ToString(), GUILayout.Width(60));
-
-                // 一致/不一致アイコン
                 if (!string.IsNullOrEmpty(mapping.PMXMaterialName))
                 {
-                    if (mapping.IsMatched)
-                    {
-                        GUI.contentColor = Color.green;
-                        EditorGUILayout.LabelField(T("Match"), GUILayout.Width(30));
-                        GUI.contentColor = Color.white;
-                    }
-                    else
-                    {
-                        GUI.contentColor = Color.red;
-                        EditorGUILayout.LabelField(T("Mismatch"), GUILayout.Width(30));
-                        GUI.contentColor = Color.white;
-                    }
+                    GUI.contentColor = mapping.IsMatched ? Color.green : Color.red;
+                    EditorGUILayout.LabelField(mapping.IsMatched ? T("Match") : T("Mismatch"), GUILayout.Width(30));
+                    GUI.contentColor = Color.white;
                 }
                 else
                 {
@@ -348,7 +234,7 @@ namespace Poly_Ling.PMX
                 }
             }
 
-            GUI.backgroundColor = originalColor;
+            GUI.backgroundColor = originalBg;
         }
 
         // ================================================================
@@ -358,23 +244,18 @@ namespace Poly_Ling.PMX
         private void DrawOptionsSection()
         {
             EditorGUILayout.LabelField(T("ExportOptions"), EditorStyles.boldLabel);
-
             EditorGUI.indentLevel++;
 
-            _scale = EditorGUILayout.FloatField(new GUIContent(T("Scale"), T("ScaleTooltip")), _scale);
-            _flipZ = EditorGUILayout.Toggle(T("FlipZ"), _flipZ);
-            _flipUV_V = EditorGUILayout.Toggle(T("FlipUV_V"), _flipUV_V);
-
+            _scale              = EditorGUILayout.FloatField(new GUIContent(T("Scale"), T("ScaleTooltip")), _scale);
+            _flipZ              = EditorGUILayout.Toggle(T("FlipZ"),              _flipZ);
+            _flipUV_V           = EditorGUILayout.Toggle(T("FlipUV_V"),           _flipUV_V);
             EditorGUILayout.Space(3);
-
-            _replacePositions = EditorGUILayout.Toggle(T("ReplacePositions"), _replacePositions);
-            _replaceNormals = EditorGUILayout.Toggle(T("ReplaceNormals"), _replaceNormals);
-            _replaceUVs = EditorGUILayout.Toggle(T("ReplaceUVs"), _replaceUVs);
+            _replacePositions   = EditorGUILayout.Toggle(T("ReplacePositions"),   _replacePositions);
+            _replaceNormals     = EditorGUILayout.Toggle(T("ReplaceNormals"),     _replaceNormals);
+            _replaceUVs         = EditorGUILayout.Toggle(T("ReplaceUVs"),         _replaceUVs);
             _replaceBoneWeights = EditorGUILayout.Toggle(T("ReplaceBoneWeights"), _replaceBoneWeights);
-
             EditorGUILayout.Space(3);
-
-            _outputCSV = EditorGUILayout.Toggle(T("OutputCSV"), _outputCSV);
+            _outputCSV          = EditorGUILayout.Toggle(T("OutputCSV"),          _outputCSV);
 
             EditorGUI.indentLevel--;
         }
@@ -385,29 +266,20 @@ namespace Poly_Ling.PMX
 
         private void DrawExportSection()
         {
-            // 選択数チェック
-            int selectedCount = _mappings.Count(m => m.Selected);
+            int selectedCount        = _mappings.Count(m => m.Selected);
             int matchedSelectedCount = _mappings.Count(m => m.Selected && m.IsMatched);
 
             if (selectedCount == 0)
-            {
                 EditorGUILayout.HelpBox(T("NoMeshSelected"), MessageType.Info);
-            }
             else if (matchedSelectedCount < selectedCount)
-            {
                 EditorGUILayout.HelpBox($"Selected: {selectedCount}, Matched: {matchedSelectedCount}", MessageType.Warning);
-            }
 
-            // エクスポートボタン
             using (new EditorGUI.DisabledScope(matchedSelectedCount == 0 || _pmxDocument == null))
             {
                 if (GUILayout.Button(T("Export"), GUILayout.Height(30)))
-                {
                     ExecuteExport();
-                }
             }
 
-            // 結果表示
             if (!string.IsNullOrEmpty(_lastResult))
             {
                 EditorGUILayout.Space(5);
@@ -421,108 +293,25 @@ namespace Poly_Ling.PMX
 
         private void LoadPMX()
         {
-            if (string.IsNullOrEmpty(_pmxFilePath) || !File.Exists(_pmxFilePath))
-            {
-                _pmxDocument = null;
-                return;
-            }
+            _pmxDocument = null;
+            if (string.IsNullOrEmpty(_pmxFilePath) || !File.Exists(_pmxFilePath)) return;
 
             try
             {
                 _pmxDocument = PMXReader.Load(_pmxFilePath);
-                Debug.Log($"[PMXPartialExport] Loaded PMX: {_pmxDocument.Materials.Count} materials, {_pmxDocument.Vertices.Count} vertices");
+                Debug.Log(
+                    $"[PMXPartialExport] Loaded PMX: " +
+                    $"{_pmxDocument.Materials.Count} materials, {_pmxDocument.Vertices.Count} vertices");
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[PMXPartialExport] Failed to load PMX: {ex.Message}");
-                _pmxDocument = null;
             }
         }
 
-        // ================================================================
-        // マッピング構築
-        // ================================================================
-
-        private void BuildMappings()
+        private void RebuildMappings()
         {
-            _mappings.Clear();
-
-            var model = Model;
-            if (model == null || _pmxDocument == null) return;
-
-            var drawables = model.DrawableMeshes;
-            if (drawables == null) return;
-
-            // PMXのObjectNameグループを取得（Memo欄ベース）
-            var pmxObjectGroups = PMXHelper.GetObjectNameGroups(_pmxDocument);
-
-            // Drawableメッシュごとにマッピングを作成
-            for (int i = 0; i < drawables.Count; i++)
-            {
-                var entry = drawables[i];
-                var ctx = entry.Context;
-                if (ctx?.MeshObject == null) continue;
-
-                var vertexInfo = PMXHelper.GetVertexInfo(ctx);
-                var mapping = new MeshMaterialMapping
-                {
-                    DrawableIndex = i,
-                    MasterIndex = entry.MasterIndex,
-                    MeshName = ctx.Name,
-                    MeshVertexCount = vertexInfo.VertexCount,
-                    MeshExpandedVertexCount = vertexInfo.ExpandedVertexCount,
-                    MeshContext = ctx
-                };
-
-                // PMXのObjectNameとの対応を探す（ObjectName = メッシュ名）
-                // メッシュ名と一致するObjectName、または "_L" / "_R" サフィックスを除いた名前で検索
-                string baseName = ctx.Name;
-                if (baseName.EndsWith("_L") || baseName.EndsWith("_R"))
-                {
-                    baseName = baseName.Substring(0, baseName.Length - 2);
-                }
-
-                ObjectGroup matchedGroup = null;
-                string matchedKey = null;
-
-                // 完全一致を優先（ObjectNameベース）
-                if (pmxObjectGroups.TryGetValue(ctx.Name, out var group))
-                {
-                    matchedGroup = group;
-                    matchedKey = ctx.Name;
-                }
-                // ベース名で検索
-                else if (pmxObjectGroups.TryGetValue(baseName, out group))
-                {
-                    matchedGroup = group;
-                    matchedKey = baseName;
-                }
-                // "+"サフィックス付き（ミラー）で検索
-                else if (pmxObjectGroups.TryGetValue(ctx.Name + "+", out group))
-                {
-                    matchedGroup = group;
-                    matchedKey = ctx.Name + "+";
-                }
-                else if (pmxObjectGroups.TryGetValue(baseName + "+", out group))
-                {
-                    matchedGroup = group;
-                    matchedKey = baseName + "+";
-                }
-
-                if (matchedGroup != null)
-                {
-                    mapping.PMXMaterialName = matchedKey;
-                    mapping.PMXVertexIndices = matchedGroup.VertexIndices;
-                    mapping.PMXVertexCount = matchedGroup.VertexCount;
-                    // StartIndexは表示用（実際の転送にはVertexIndicesを使用）
-                    mapping.PMXVertexStartIndex = matchedGroup.VertexIndices.Count > 0 
-                        ? matchedGroup.VertexIndices.Min() : 0;
-                }
-
-                _mappings.Add(mapping);
-            }
-
-            Debug.Log($"[PMXPartialExport] Built {_mappings.Count} mappings");
+            _mappings = _ops.BuildMappings(Model, _pmxDocument);
         }
 
         // ================================================================
@@ -533,30 +322,17 @@ namespace Poly_Ling.PMX
         {
             try
             {
-                // 出力パス選択
                 string defaultName = Path.GetFileNameWithoutExtension(_pmxFilePath) + "_modified.pmx";
-                string savePath = EditorUtility.SaveFilePanel("Save PMX", Path.GetDirectoryName(_pmxFilePath), defaultName, "pmx");
+                string savePath    = EditorUtility.SaveFilePanel(
+                    "Save PMX", Path.GetDirectoryName(_pmxFilePath), defaultName, "pmx");
 
-                if (string.IsNullOrEmpty(savePath))
-                    return;
+                if (string.IsNullOrEmpty(savePath)) return;
 
-                // PMXドキュメントをコピー（元を変更しない）
-                // 注: 実際には元のPMXDocumentを直接編集してしまう
-                // より安全にするにはクローンが必要だが、ここでは簡略化
+                int totalTransferred = _ops.ExecuteExport(
+                    _mappings, _pmxDocument,
+                    _scale, _flipZ, _flipUV_V,
+                    _replacePositions, _replaceNormals, _replaceUVs, _replaceBoneWeights);
 
-                int totalTransferred = 0;
-
-                // 選択されたマッピングを処理
-                foreach (var mapping in _mappings)
-                {
-                    if (!mapping.Selected || !mapping.IsMatched)
-                        continue;
-
-                    int transferred = TransferMeshToPMX(mapping);
-                    totalTransferred += transferred;
-                }
-
-                // ファイル出力
                 PMXWriter.Save(_pmxDocument, savePath);
 
                 if (_outputCSV)
@@ -565,112 +341,27 @@ namespace Poly_Ling.PMX
                     PMXCSVWriter.Save(_pmxDocument, csvPath);
                 }
 
-                _lastResult = T("ExportSuccess", $"{totalTransferred} vertices → {Path.GetFileName(savePath)}");
+                _lastResult = T("ExportSuccess",
+                    $"{totalTransferred} vertices → {Path.GetFileName(savePath)}");
                 Debug.Log($"[PMXPartialExport] Export completed: {totalTransferred} vertices");
 
-                // PMXを再読み込み（編集した内容をリセット）
+                // PMXを再ロードして編集内容をリセット
                 LoadPMX();
             }
             catch (Exception ex)
             {
                 _lastResult = T("ExportFailed", ex.Message);
-                Debug.LogError($"[PMXPartialExport] Export failed: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[PMXPartialExport] {ex.Message}\n{ex.StackTrace}");
             }
 
             Repaint();
-        }
-
-        /// <summary>
-        /// 1メッシュ分のデータをPMXに転送
-        /// PMXVertexIndicesに基づいて正確な位置に転送
-        /// </summary>
-        private int TransferMeshToPMX(MeshMaterialMapping mapping)
-        {
-            var mo = mapping.MeshContext?.MeshObject;
-            if (mo == null) return 0;
-            if (mapping.PMXVertexIndices == null || mapping.PMXVertexIndices.Count == 0) return 0;
-
-            int transferred = 0;
-            int localIndex = 0;
-
-            // MeshObjectの頂点をPMXVertexIndicesに基づいて転送
-            // MeshObjectの頂点順序 = PMXVertexIndices順序（昇順）
-            foreach (var vertex in mo.Vertices)
-            {
-                if (localIndex >= mapping.PMXVertexIndices.Count)
-                    break;
-
-                int pmxVertexIndex = mapping.PMXVertexIndices[localIndex];
-                if (pmxVertexIndex >= _pmxDocument.Vertices.Count)
-                {
-                    localIndex++;
-                    continue;
-                }
-
-                var pmxVertex = _pmxDocument.Vertices[pmxVertexIndex];
-
-                // 座標
-                if (_replacePositions)
-                {
-                    Vector3 pos = vertex.Position;
-                    if (_flipZ) pos.z = -pos.z;
-                    pos *= _scale;
-                    pmxVertex.Position = pos;
-                }
-
-                // 法線
-                if (_replaceNormals)
-                {
-                    Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
-                    if (_flipZ) normal.z = -normal.z;
-                    pmxVertex.Normal = normal;
-                }
-
-                // UV
-                if (_replaceUVs)
-                {
-                    Vector2 uv = vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero;
-                    if (_flipUV_V) uv.y = 1f - uv.y;
-                    pmxVertex.UV = uv;
-                }
-
-                // ボーンウェイト
-                if (_replaceBoneWeights && vertex.BoneWeight.HasValue)
-                {
-                    var bw = vertex.BoneWeight.Value;
-                    var boneWeights = new List<PMXBoneWeight>();
-
-                    if (bw.weight0 > 0)
-                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex0, Weight = bw.weight0 });
-                    if (bw.weight1 > 0)
-                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex1, Weight = bw.weight1 });
-                    if (bw.weight2 > 0)
-                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex2, Weight = bw.weight2 });
-                    if (bw.weight3 > 0)
-                        boneWeights.Add(new PMXBoneWeight { BoneIndex = bw.boneIndex3, Weight = bw.weight3 });
-
-                    pmxVertex.BoneWeights = boneWeights.ToArray();
-                    pmxVertex.WeightType = boneWeights.Count switch
-                    {
-                        1 => 0,  // BDEF1
-                        2 => 1,  // BDEF2
-                        _ => 2   // BDEF4
-                    };
-                }
-
-                transferred++;
-                localIndex++;
-            }
-
-            Debug.Log($"[PMXPartialExport] Transferred '{mapping.MeshName}' → '{mapping.PMXMaterialName}': {transferred} vertices");
-            return transferred;
         }
 
         // ================================================================
         // ドロップ処理
         // ================================================================
 
-        private void HandleDropOnRect(Rect rect, string extension, Action<string> onDrop)
+        private static void HandleDropOnRect(Rect rect, string extension, Action<string> onDrop)
         {
             var evt = Event.current;
             if (!rect.Contains(evt.mousePosition)) return;
@@ -707,7 +398,6 @@ namespace Poly_Ling.PMX
 
         protected override void OnContextSet()
         {
-            // EditorStateからスケール取得（Unity→PMX = 1/PmxUnityRatio）
             var es = _context?.UndoController?.EditorState;
             if (es != null)
             {
@@ -716,10 +406,7 @@ namespace Poly_Ling.PMX
             }
 
             _mappings.Clear();
-            if (_pmxDocument != null)
-            {
-                BuildMappings();
-            }
+            if (_pmxDocument != null) RebuildMappings();
         }
     }
 }

@@ -91,6 +91,29 @@ namespace Poly_Ling.Tools
             set => _settings.ContinuousLine = value;
         }
 
+        // ================================================================
+        // Player ビュー用公開 API
+        // ================================================================
+        public AddFaceMode ModePublic    { get => Mode; set { Mode = value; } }
+        public bool ContinuousLinePublic { get => ContinuousLine; set => ContinuousLine = value; }
+        public int  PlacedPointCount     => _points.Count;
+        public int  RequiredPointsPublic => RequiredPoints;
+        public void ClearPointsPublic()  { _points.Clear(); _lastLinePoint = null; }
+
+        /// <summary>配置済み点のラベルリストを返す（SubPanel 表示用）</summary>
+        public System.Collections.Generic.List<string> GetPointLabels()
+        {
+            var labels = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < _points.Count; i++)
+            {
+                var p = _points[i];
+                labels.Add(p.IsExistingVertex
+                    ? $"  [{i + 1}] 既存頂点 #{p.ExistingVertexIndex}"
+                    : $"  [{i + 1}] 新規点");
+            }
+            return labels;
+        }
+
         // === 状態 ===
         private List<PointInfo> _points = new List<PointInfo>();
         private PointInfo? _lastLinePoint = null;  // 連続線分の最後の点

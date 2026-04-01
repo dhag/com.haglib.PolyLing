@@ -88,7 +88,7 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// 選択された面を反転
         /// </summary>
-        private void FlipSelectedFaces()
+        public void FlipSelectedFaces()
         {
             if (_context == null || _context.FirstSelectedMeshObject == null)
             {
@@ -144,7 +144,7 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// 全ての面を反転
         /// </summary>
-        private void FlipAllFaces()
+        public void FlipAllFaces()
         {
             if (_context == null || _context.FirstSelectedMeshObject == null)
             {

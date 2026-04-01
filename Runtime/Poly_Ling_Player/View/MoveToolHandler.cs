@@ -58,6 +58,36 @@ namespace Poly_Ling.Player
         public FalloffType MagnetFalloff { get; set; } = FalloffType.Smooth;
 
         // ================================================================
+        // ギズモオフセット設定（エディタ版 MoveTool.DrawSettingsUI のギズモ設定に対応）
+        // ================================================================
+
+        /// <summary>ギズモのスクリーンオフセット X。</summary>
+        public float GizmoScreenOffsetX
+        {
+            get => _axisGizmo.ScreenOffset.x;
+            set => _axisGizmo.ScreenOffset = new Vector2(value, _axisGizmo.ScreenOffset.y);
+        }
+
+        /// <summary>ギズモのスクリーンオフセット Y。</summary>
+        public float GizmoScreenOffsetY
+        {
+            get => _axisGizmo.ScreenOffset.y;
+            set => _axisGizmo.ScreenOffset = new Vector2(_axisGizmo.ScreenOffset.x, value);
+        }
+
+        /// <summary>
+        /// 現在の選択状態で移動対象となる頂点の総数を返す。
+        /// エディタ版 MoveTool.GetTotalAffectedCount() に対応。
+        /// </summary>
+        public int GetTotalAffectedCount()
+        {
+            int total = 0;
+            foreach (var kv in _affectedVertices)
+                total += kv.Value.Count;
+            return total;
+        }
+
+        // ================================================================
         // 内部
         // ================================================================
         private readonly PlayerSelectionOps               _selectionOps;
@@ -279,15 +309,13 @@ namespace Poly_Ling.Player
         {
             origin = xEnd = yEnd = zEnd = Vector2.zero;
             hoveredAxis = AxisGizmo.AxisType.None;
-            if (ctx == null) { Debug.LogWarning("[Gizmo] ctx is null"); return false; }
+            if (ctx == null) return false;
             UpdateAffectedVertices();
-            if (!HasAnyAffected()) { Debug.LogWarning("[Gizmo] HasAnyAffected=false"); return false; }
+            if (!HasAnyAffected()) return false;
             UpdateGizmoState(ctx);
-            Debug.Log($"[Gizmo] Center={_axisGizmo.Center} CamPos={ctx.CameraPosition} CamDist={ctx.CameraDistance:F3} PreviewRect={ctx.PreviewRect}");
             _axisGizmo.HoveredAxis  = _hoveredAxis;
             _axisGizmo.DraggingAxis = _draggingAxis;
             _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
-            Debug.Log($"[Gizmo] origin={origin} xEnd={xEnd} yEnd={yEnd} zEnd={zEnd}");
             hoveredAxis = _hoveredAxis;
             return true;
         }

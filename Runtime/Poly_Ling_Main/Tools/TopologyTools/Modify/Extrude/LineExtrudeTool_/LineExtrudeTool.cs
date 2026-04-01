@@ -168,7 +168,36 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// 選択されたラインからループを解析
         /// </summary>
-        private void AnalyzeLoops()
+        // Player ビュー用公開 API
+        public int GetSelectedLineCount() => _selectedLineIndices.Count;
+        public int GetDetectedLoopCount()  => _detectedLoops.Count;
+
+        /// <summary>ループ情報サマリーリスト（SubPanel 表示用）</summary>
+        public System.Collections.Generic.List<LoopSummary> GetLoopSummaries()
+        {
+            var list = new System.Collections.Generic.List<LoopSummary>();
+            for (int i = 0; i < _detectedLoops.Count; i++)
+            {
+                var loop = _detectedLoops[i];
+                list.Add(new LoopSummary
+                {
+                    Index       = i,
+                    VertexCount = loop.VertexIndices.Count,
+                    IsHole      = loop.IsHole,
+                });
+            }
+            return list;
+        }
+
+        /// <summary>ループの概要（SubPanel 表示用に公開）</summary>
+        public struct LoopSummary
+        {
+            public int  Index;
+            public int  VertexCount;
+            public bool IsHole;
+        }
+
+        public void AnalyzeLoops()
         {
             _detectedLoops.Clear();
 
@@ -312,7 +341,7 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// CSVとして保存
         /// </summary>
-        private void SaveAsCSV()
+        public void SaveAsCSV()
         {
             if (_lastContext?.FirstSelectedMeshObject == null || _detectedLoops.Count == 0)
                 return;

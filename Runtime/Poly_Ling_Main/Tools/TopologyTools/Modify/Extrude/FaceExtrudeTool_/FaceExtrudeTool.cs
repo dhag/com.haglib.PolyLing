@@ -30,19 +30,19 @@ namespace Poly_Ling.Tools
         public IToolSettings Settings => _settings;
 
         // 設定へのショートカットプロパティ
-        private FaceExtrudeSettings.ExtrudeType Type
+        public FaceExtrudeSettings.ExtrudeType Type
         {
             get => _settings.Type;
             set => _settings.Type = value;
         }
 
-        private float BevelScale
+        public float BevelScale
         {
             get => _settings.BevelScale;
             set => _settings.BevelScale = value;
         }
 
-        private bool IndividualNormals
+        public bool IndividualNormals
         {
             get => _settings.IndividualNormals;
             set => _settings.IndividualNormals = value;

@@ -82,6 +82,13 @@ namespace Poly_Ling.Player
             OnCameraChanged?.Invoke();
         }
 
+        /// <summary>カメラターゲット位置を設定する（ボーンフォーカス等に使用）。</summary>
+        public void SetTarget(Vector3 target)
+        {
+            Target = target;
+            OnCameraChanged?.Invoke();
+        }
+
         // ================================================================
         // IMouseEventSource 接続
         // ================================================================

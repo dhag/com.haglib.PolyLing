@@ -36,17 +36,21 @@ namespace Poly_Ling.Tools
         public IToolSettings Settings => _settings;
 
         // 設定へのショートカットプロパティ
-        private float Threshold
+        public float Threshold
         {
             get => _settings.Threshold;
             set => _settings.Threshold = value;
         }
 
-        private bool ShowPreview
+        public bool ShowPreview
         {
             get => _settings.ShowPreview;
             set => _settings.ShowPreview = value;
         }
+
+        // Player ビュー用公開 API
+        public void TriggerMerge() => _pendingMerge = true;
+        public MergePreviewInfo PreviewInfo => _preview;
 
         // === プレビュー ===
         private MergePreviewInfo _preview = new MergePreviewInfo { Groups = new List<List<int>>() };

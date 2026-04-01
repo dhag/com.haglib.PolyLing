@@ -51,6 +51,12 @@ namespace Poly_Ling.Tools
         private readonly Dictionary<AdvancedSelectMode, IAdvancedSelectMode> _modes;
         private AdvancedSelectContext _ctx = new AdvancedSelectContext();
 
+        /// <summary>
+        /// 現在のプレビューコンテキストを返す。
+        /// Player のオーバーレイ描画用。
+        /// </summary>
+        public AdvancedSelectContext GetPreviewContext() => _ctx;
+
         // モード選択用
         private static readonly AdvancedSelectMode[] ModeValues = {
             AdvancedSelectMode.Connected,
@@ -239,6 +245,19 @@ namespace Poly_Ling.Tools
             _ctx.ClearPreview();
             _ctx.ClearHover();
             ResetAllModes();
+        }
+
+        /// <summary>
+        /// ShortestPath モードで登録されている始点頂点インデックスを返す。
+        /// 未登録の場合は -1。
+        /// エディタ版 ShortestPathSelectMode.DrawModeSettingsUI() の始点表示に対応。
+        /// </summary>
+        public int GetShortestPathFirstVertex()
+        {
+            if (_modes.TryGetValue(AdvancedSelectMode.ShortestPath, out var mode) &&
+                mode is ShortestPathSelectMode sp)
+                return sp.FirstVertex;
+            return -1;
         }
 
         // ================================================================

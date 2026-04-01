@@ -27,19 +27,19 @@ namespace Poly_Ling.Tools
         public IToolSettings Settings => _settings;
 
         // 設定へのショートカットプロパティ
-        private float Amount
+        public float Amount
         {
             get => _settings.Amount;
             set => _settings.Amount = value;
         }
 
-        private int Segments
+        public int Segments
         {
             get => _settings.Segments;
             set => _settings.Segments = value;
         }
 
-        private bool Fillet
+        public bool Fillet
         {
             get => _settings.Fillet;
             set => _settings.Fillet = value;

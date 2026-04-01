@@ -38,6 +38,45 @@ namespace Poly_Ling.Tools
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) { _ctx = ctx; return false; }
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) { _ctx = ctx; return false; }
 
+        // ================================================================
+        // Player ビュー用公開 API
+        // ----------------------------------------------------------------
+        // エディタ版 RotateTool.EditorUI が直接アクセスしていた private
+        // フィールドを Player サブパネルから操作できるよう公開する。
+        // ================================================================
+
+        public float RotX { get => _rotX; set { _rotX = value; if (_isDirty) UpdatePreview(); } }
+        public float RotY { get => _rotY; set { _rotY = value; if (_isDirty) UpdatePreview(); } }
+        public float RotZ { get => _rotZ; set { _rotZ = value; if (_isDirty) UpdatePreview(); } }
+        public bool  UseSnap      { get => _useSnap;      set => _useSnap      = value; }
+        public float SnapAngle    { get => _snapAngle;    set => _snapAngle    = Mathf.Max(0.1f, value); }
+        public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isDirty) UpdatePreview(); } }
+        public Vector3 PivotPublic  { get => _pivot; }
+        public int   GetTotalAffectedCountPublic() { UpdateAffected(); return GetTotalAffectedCount(); }
+
+        /// <summary>スライダー変更後に回転プレビューを更新する。ドラッグ開始を通知する。</summary>
+        public void BeginSliderDrag()
+        {
+            if (!_isSliderDragging)
+            {
+                _isSliderDragging = true;
+                _ctx?.EnterTransformDragging?.Invoke();
+            }
+        }
+
+        /// <summary>ドラッグ終了・Undo 記録。</summary>
+        public void EndSliderDrag()
+        {
+            if (_ctx != null) ApplyRotation(_ctx);
+            ExitSliderDragging();
+        }
+
+        /// <summary>回転をリセットして元の位置に戻す。</summary>
+        public void RevertPublic() { RevertToStart(); _rotX = _rotY = _rotZ = 0f; }
+
+        /// <summary>コンテキストを手動設定する（スライダーUI から使用）。</summary>
+        public void SetContextPublic(ToolContext ctx) { _ctx = ctx; UpdateAffected(); UpdatePivot(); }
+
         public void OnActivate(ToolContext ctx)
         {
             _ctx = ctx;

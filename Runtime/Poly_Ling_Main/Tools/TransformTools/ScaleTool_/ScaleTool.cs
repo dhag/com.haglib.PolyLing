@@ -36,6 +36,36 @@ namespace Poly_Ling.Tools
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) { _ctx = ctx; return false; }
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) { _ctx = ctx; return false; }
 
+        // ================================================================
+        // Player ビュー用公開 API（エディタ版 ScaleTool.EditorUI 相当）
+        // ================================================================
+
+        public float ScaleX { get => _scaleX; set { _scaleX = value; if (_isDirty) UpdatePreview(); } }
+        public float ScaleY { get => _scaleY; set { _scaleY = value; if (_isDirty) UpdatePreview(); } }
+        public float ScaleZ { get => _scaleZ; set { _scaleZ = value; if (_isDirty) UpdatePreview(); } }
+        public bool  UniformScale { get => _uniform; set { _uniform = value; if (_uniform) { _scaleY = _scaleZ = _scaleX; } UpdatePreview(); } }
+        public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isDirty) UpdatePreview(); } }
+        public int   GetTotalAffectedCountPublic() { UpdateAffected(); return GetTotalAffectedCount(); }
+
+        public void BeginSliderDrag()
+        {
+            if (!_isSliderDragging)
+            {
+                _isSliderDragging = true;
+                _ctx?.EnterTransformDragging?.Invoke();
+            }
+        }
+
+        public void EndSliderDrag()
+        {
+            if (_ctx != null) ApplyScale(_ctx);
+            ExitSliderDragging();
+            _scaleX = _scaleY = _scaleZ = 1f;
+        }
+
+        public void RevertPublic() { RevertToStart(); _scaleX = _scaleY = _scaleZ = 1f; }
+        public void SetContextPublic(ToolContext ctx) { _ctx = ctx; UpdateAffected(); UpdatePivot(); }
+
         public void OnActivate(ToolContext ctx) { _ctx = ctx; ResetState(); }
 
         public void OnDeactivate(ToolContext ctx)

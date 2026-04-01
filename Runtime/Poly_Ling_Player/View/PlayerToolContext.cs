@@ -110,7 +110,20 @@ namespace Poly_Ling.Player
                 WorldToScreenPos(wp, rect, cp, lt);
             ctx.ScreenDeltaToWorldDelta = (sd, cp, ct, cd, rect) =>
                 ScreenDeltaToWorldDelta(sd, cp, ct, cd, rect);
+            ctx.ScreenPosToRay = screenPos => ScreenPosToRay(screenPos);
             return ctx;
+        }
+
+        /// <summary>
+        /// スクリーン座標（Y=0 が上 IMGUI 系）から Ray を生成する。
+        /// SculptTool.ApplyBrush が使用する。
+        /// </summary>
+        public Ray ScreenPosToRay(Vector2 imgui)
+        {
+            if (_cam == null) return new Ray();
+            // IMGUI（Y=0 が上）→ Camera.ScreenPointToRay（Y=0 が下）に変換
+            float screenY = _cam.pixelHeight - imgui.y;
+            return _cam.ScreenPointToRay(new Vector3(imgui.x, screenY, 0f));
         }
     }
 }

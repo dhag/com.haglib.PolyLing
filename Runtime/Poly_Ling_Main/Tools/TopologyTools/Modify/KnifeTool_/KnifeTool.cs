@@ -38,29 +38,37 @@ namespace Poly_Ling.Tools
         public IToolSettings Settings => _settings;
 
         // 設定へのショートカットプロパティ
-        private KnifeMode Mode
+        public KnifeMode Mode
         {
             get => _settings.Mode;
-            set => _settings.Mode = value;
+            set { _settings.Mode = value; Reset(); }
         }
 
-        private bool EdgeSelect
+        public bool EdgeSelect
         {
             get => _settings.EdgeSelect;
             set => _settings.EdgeSelect = value;
         }
 
-        private bool ChainMode
+        public bool ChainMode
         {
             get => _settings.ChainMode;
             set => _settings.ChainMode = value;
         }
 
-        private bool AutoChain
+        public bool AutoChain
         {
             get => _settings.AutoChain;
             set => _settings.AutoChain = value;
         }
+
+        // Player ビュー用公開 API（Bisect系）
+        public bool  EdgeBisectMode   { get => _edgeBisectMode;   set => _edgeBisectMode   = value; }
+        public float CutRatio         { get => _cutRatio;         set => _cutRatio         = Mathf.Clamp(value, 0.1f, 0.9f); }
+        public bool  VertexBisectMode { get => _vertexBisectMode; set => _vertexBisectMode = value; }
+        public bool  HasFirstEdge     => _firstEdgeWorldPos.HasValue;
+        public int   BeltEdgeCount    => _beltEdgePositions.Count;
+        public bool  HasFirstVertex   => _firstVertexWorldPos.HasValue;
 
         // ================================================================
         // ドラッグ状態

@@ -1,6 +1,6 @@
 // PolyLingPlayerClient.cs
-// Runtime用 WebSocketクライアント MonoBehaviour
-// PolyLingEditor（RemoteServer）に接続してデータを送受信する
+// Runtime用 WebSocketクライアント（通常クラス版）
+// PolyLingPlayerViewer にサブシステムとして格納する。
 // Runtime/Poly_Ling_Player/Remote/ に配置
 
 using System;
@@ -16,15 +16,15 @@ using UnityEngine;
 
 namespace Poly_Ling.Player
 {
-    public class PolyLingPlayerClient : MonoBehaviour
+    public class PolyLingPlayerClient
     {
         // ================================================================
-        // Inspector設定
+        // 設定
         // ================================================================
 
-        [SerializeField] private string _host        = "127.0.0.1";
-        [SerializeField] private int    _port        = 8765;
-        [SerializeField] private bool   _autoConnect = true;
+        private string _host        = "127.0.0.1";
+        private int    _port        = 8765;
+        private bool   _autoConnect = true;
 
         // ================================================================
         // 状態
@@ -61,20 +61,33 @@ namespace Poly_Ling.Player
             = new Dictionary<string, Action<string>>();
 
         // ================================================================
-        // ライフサイクル
+        // 初期化 / 破棄
         // ================================================================
 
-        private void Start()
+        /// <summary>
+        /// PolyLingPlayerViewer.Start() から呼ぶ。
+        /// </summary>
+        public void Initialize(string host, int port, bool autoConnect)
         {
+            _host        = host;
+            _port        = port;
+            _autoConnect = autoConnect;
             if (_autoConnect) Connect();
         }
 
-        private void OnDestroy()
+        /// <summary>
+        /// PolyLingPlayerViewer.OnDestroy() から呼ぶ。
+        /// </summary>
+        public void Dispose()
         {
             Disconnect();
         }
 
-        private void Update()
+        /// <summary>
+        /// PolyLingPlayerViewer.Update() から毎フレーム呼ぶ。
+        /// メインスレッドへのディスパッチキューを処理する。
+        /// </summary>
+        public void Tick()
         {
             int processed = 0;
             while (_mainThreadQueue.TryDequeue(out var action) && processed < 20)
@@ -211,7 +224,6 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            // バイナリコールバック待ち → テキストレスポンスを保持してバイナリ待機
             if (id != null && _binaryCallbacks.ContainsKey(id))
             {
                 _lastTextResponseId   = id;
@@ -219,7 +231,6 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            // テキストのみのレスポンス
             if (id != null && _textCallbacks.TryGetValue(id, out var cb))
             {
                 _textCallbacks.Remove(id);
@@ -264,7 +275,6 @@ namespace Poly_Ling.Player
         // フェッチAPI
         // ================================================================
 
-        /// <summary>project_header を取得する。</summary>
         public void FetchProjectHeader(Action<string, byte[]> onResponse)
         {
             string id = NextId();
@@ -273,7 +283,6 @@ namespace Poly_Ling.Player
                 onResponse);
         }
 
-        /// <summary>model_meta を取得する。</summary>
         public void FetchModelMeta(int modelIndex, Action<string, byte[]> onResponse)
         {
             string id = NextId();
@@ -283,7 +292,6 @@ namespace Poly_Ling.Player
                 onResponse);
         }
 
-        /// <summary>mesh_data を取得する。</summary>
         public void FetchMeshData(int modelIndex, int meshIndex, Action<string, byte[]> onResponse)
         {
             string id = NextId();
@@ -293,7 +301,6 @@ namespace Poly_Ling.Player
                 onResponse);
         }
 
-        /// <summary>mesh_data_batch を取得する。category: "drawable" / "bone" / "morph" / "all"</summary>
         public void FetchMeshDataBatch(int modelIndex, string category, Action<string, byte[]> onResponse)
         {
             string id = NextId();
@@ -303,7 +310,6 @@ namespace Poly_Ling.Player
                 onResponse);
         }
 
-        /// <summary>コマンドを送信する（selectMesh等）。</summary>
         public void SendCommand(string action, int modelIndex,
             Dictionary<string, string> parameters = null, Action<string> onResponse = null)
         {
@@ -316,7 +322,6 @@ namespace Poly_Ling.Player
                     sb.Append($",\"{kv.Key}\":\"{kv.Value}\"");
             sb.Append("}}");
             string json = sb.ToString();
-
             if (onResponse != null) _textCallbacks[id] = onResponse;
             Debug.Log($"[CLI→SRV] TEXT ({json.Length}B): {json.Substring(0, Math.Min(200, json.Length))}");
             _ = SendFrameAsync(0x81, Encoding.UTF8.GetBytes(json));

@@ -61,6 +61,39 @@ namespace Poly_Ling.Player
         private readonly VisualElement _boxOverlay;
 
         // ================================================================
+        // ブラシ円オーバーレイ（スカルプトツール用）
+        // ================================================================
+
+        private readonly VisualElement _brushCircleOverlay;
+
+        // ================================================================
+        // 詳細選択プレビューオーバーレイ
+        // ================================================================
+
+        private readonly VisualElement _advSelOverlay;
+        // スクリーン座標（Y=0下）で渡し、描画時に変換する
+        private List<Vector2>         _advSelPreviewPts    = new List<Vector2>();
+        private List<(Vector2, Vector2)> _advSelPreviewLines = new List<(Vector2, Vector2)>();
+        private bool                  _advSelAddMode;
+
+        // ================================================================
+        // ボーンワイヤフレームオーバーレイ
+        // ================================================================
+
+        private readonly VisualElement _boneOverlay;
+
+        public struct BoneWireData
+        {
+            public Vector2[] ScreenPos;   // ボーン位置スクリーン座標（Y=0下）
+            public bool[]    IsSelected;
+        }
+        private BoneWireData _boneWireData;
+        private Vector2 _brushCircleCenter;
+        private float   _brushCircleRadius;
+        private Color   _brushCircleColor = new Color(0.5f, 0.8f, 1f, 0.7f);
+        private bool    _brushCircleVisible;
+
+        // ================================================================
         // 面ホバーオーバーレイ（generateVisualContent による多角形描画）
         // ================================================================
 
@@ -153,6 +186,83 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // ブラシ円オーバーレイ（スカルプトツール用）
+        // ================================================================
+
+        /// <summary>
+        /// ブラシ円を表示する。
+        /// center はスクリーン座標（Y=0 が下）、radius はピクセル。
+        /// </summary>
+        public void ShowBrushCircle(Vector2 center, float radius)
+            => ShowBrushCircle(center, radius, new Color(0.5f, 0.8f, 1f, 0.7f));
+
+        /// <summary>
+        /// ブラシ円を指定カラーで表示する。
+        /// center はスクリーン座標（Y=0 が下）、radius はピクセル。
+        /// </summary>
+        public void ShowBrushCircle(Vector2 center, float radius, Color color)
+        {
+            float panelH = resolvedStyle.height;
+            _brushCircleCenter  = new Vector2(center.x, panelH - center.y);
+            _brushCircleRadius  = radius;
+            _brushCircleColor   = color;
+            _brushCircleVisible = true;
+            _brushCircleOverlay?.MarkDirtyRepaint();
+        }
+
+        /// <summary>ブラシ円を非表示にする。</summary>
+        public void HideBrushCircle()
+        {
+            _brushCircleVisible = false;
+            _brushCircleOverlay?.MarkDirtyRepaint();
+        }
+
+        // ================================================================
+        // 詳細選択プレビューオーバーレイ（AdvancedSelectTool 用）
+        // ================================================================
+
+        /// <summary>
+        /// 詳細選択のプレビュー（頂点□・辺線）を更新する。
+        /// pts: 頂点スクリーン座標リスト（Y=0下）
+        /// lines: 辺スクリーン座標ペアリスト（Y=0下）
+        /// addMode: true=緑(追加)、false=赤(除外)
+        /// </summary>
+        public void UpdateAdvSelPreview(
+            List<Vector2> pts, List<(Vector2, Vector2)> lines, bool addMode)
+        {
+            _advSelPreviewPts   = pts   ?? new List<Vector2>();
+            _advSelPreviewLines = lines ?? new List<(Vector2, Vector2)>();
+            _advSelAddMode      = addMode;
+            _advSelOverlay?.MarkDirtyRepaint();
+        }
+
+        /// <summary>詳細選択プレビューを非表示にする。</summary>
+        public void HideAdvSelPreview()
+        {
+            _advSelPreviewPts.Clear();
+            _advSelPreviewLines.Clear();
+            _advSelOverlay?.MarkDirtyRepaint();
+        }
+
+        // ================================================================
+        // ボーンワイヤフレームオーバーレイ
+        // ================================================================
+
+        /// <summary>ボーンの位置をスクリーン座標（Y=0下）で更新して描画する。</summary>
+        public void UpdateBoneWire(Vector2[] screenPosYDown, bool[] isSelected)
+        {
+            _boneWireData = new BoneWireData { ScreenPos = screenPosYDown, IsSelected = isSelected };
+            _boneOverlay?.MarkDirtyRepaint();
+        }
+
+        /// <summary>ボーンワイヤフレームを非表示にする。</summary>
+        public void HideBoneWire()
+        {
+            _boneWireData = default;
+            _boneOverlay?.MarkDirtyRepaint();
+        }
+
+        // ================================================================
         // 設定
         // ================================================================
 
@@ -225,6 +335,33 @@ namespace Poly_Ling.Player
             _gizmoOverlay.pickingMode = PickingMode.Ignore;
             _gizmoOverlay.generateVisualContent += OnGenerateGizmoOverlay;
             Add(_gizmoOverlay);
+
+            // ブラシ円オーバーレイ（スカルプトツール用）
+            _brushCircleOverlay = new VisualElement();
+            _brushCircleOverlay.style.position = Position.Absolute;
+            _brushCircleOverlay.style.left = _brushCircleOverlay.style.top =
+            _brushCircleOverlay.style.right = _brushCircleOverlay.style.bottom = 0;
+            _brushCircleOverlay.pickingMode = PickingMode.Ignore;
+            _brushCircleOverlay.generateVisualContent += OnGenerateBrushCircle;
+            Add(_brushCircleOverlay);
+
+            // 詳細選択プレビューオーバーレイ
+            _advSelOverlay = new VisualElement();
+            _advSelOverlay.style.position = Position.Absolute;
+            _advSelOverlay.style.left = _advSelOverlay.style.top =
+            _advSelOverlay.style.right = _advSelOverlay.style.bottom = 0;
+            _advSelOverlay.pickingMode = PickingMode.Ignore;
+            _advSelOverlay.generateVisualContent += OnGenerateAdvSelOverlay;
+            Add(_advSelOverlay);
+
+            // ボーンワイヤフレームオーバーレイ
+            _boneOverlay = new VisualElement();
+            _boneOverlay.style.position = Position.Absolute;
+            _boneOverlay.style.left = _boneOverlay.style.top =
+            _boneOverlay.style.right = _boneOverlay.style.bottom = 0;
+            _boneOverlay.pickingMode = PickingMode.Ignore;
+            _boneOverlay.generateVisualContent += OnGenerateBoneOverlay;
+            Add(_boneOverlay);
         }
 
         // ================================================================
@@ -408,6 +545,110 @@ namespace Poly_Ling.Player
         {
             float h = resolvedStyle.height;
             return new Vector2(local.x, h - local.y);
+        }
+
+        private void OnGenerateBrushCircle(MeshGenerationContext ctx)
+        {
+            if (!_brushCircleVisible || _brushCircleRadius <= 0f) return;
+            var painter = ctx.painter2D;
+            painter.strokeColor = _brushCircleColor;
+            painter.lineWidth   = 1.5f;
+            painter.BeginPath();
+            const int segments = 48;
+            for (int i = 0; i <= segments; i++)
+            {
+                float angle = (float)i / segments * Mathf.PI * 2f;
+                var pt = _brushCircleCenter + new Vector2(
+                    Mathf.Cos(angle) * _brushCircleRadius,
+                    Mathf.Sin(angle) * _brushCircleRadius);
+                if (i == 0) painter.MoveTo(pt);
+                else        painter.LineTo(pt);
+            }
+            painter.ClosePath();
+            painter.Stroke();
+        }
+
+        private void OnGenerateBoneOverlay(MeshGenerationContext ctx)
+        {
+            var data = _boneWireData;
+            if (data.ScreenPos == null || data.ScreenPos.Length == 0) return;
+            float panelH = resolvedStyle.height;
+            var painter  = ctx.painter2D;
+            const float r = 5f;
+
+            for (int i = 0; i < data.ScreenPos.Length; i++)
+            {
+                bool sel = data.IsSelected != null && i < data.IsSelected.Length && data.IsSelected[i];
+                Color col = sel ? new Color(1f, 0.6f, 0.1f, 0.9f) : new Color(0.2f, 0.8f, 1f, 0.8f);
+                float px  = data.ScreenPos[i].x;
+                float py  = panelH - data.ScreenPos[i].y; // Y=0下→Y=0上変換
+
+                // 菱形（ボーン形状の簡易表示）
+                painter.strokeColor = col;
+                painter.lineWidth   = sel ? 2f : 1.5f;
+                painter.BeginPath();
+                painter.MoveTo(new Vector2(px,     py - r));
+                painter.LineTo(new Vector2(px + r, py));
+                painter.LineTo(new Vector2(px,     py + r));
+                painter.LineTo(new Vector2(px - r, py));
+                painter.ClosePath();
+                painter.Stroke();
+
+                if (sel)
+                {
+                    painter.fillColor = new Color(1f, 0.6f, 0.1f, 0.3f);
+                    painter.BeginPath();
+                    painter.MoveTo(new Vector2(px,     py - r));
+                    painter.LineTo(new Vector2(px + r, py));
+                    painter.LineTo(new Vector2(px,     py + r));
+                    painter.LineTo(new Vector2(px - r, py));
+                    painter.ClosePath();
+                    painter.Fill();
+                }
+            }
+        }
+
+        private void OnGenerateAdvSelOverlay(MeshGenerationContext ctx)
+        {
+            if (_advSelPreviewPts.Count == 0 && _advSelPreviewLines.Count == 0) return;
+            float panelH = resolvedStyle.height;
+            Color col = _advSelAddMode ? new Color(0.1f, 1f, 0.3f, 0.85f)
+                                       : new Color(1f, 0.3f, 0.2f, 0.85f);
+            var painter = ctx.painter2D;
+
+            // 辺（線）
+            if (_advSelPreviewLines.Count > 0)
+            {
+                painter.strokeColor = col;
+                painter.lineWidth   = 2.5f;
+                foreach (var (a, b) in _advSelPreviewLines)
+                {
+                    var pa = new Vector2(a.x, panelH - a.y);
+                    var pb = new Vector2(b.x, panelH - b.y);
+                    painter.BeginPath();
+                    painter.MoveTo(pa);
+                    painter.LineTo(pb);
+                    painter.Stroke();
+                }
+            }
+
+            // 頂点（小さい正方形）
+            if (_advSelPreviewPts.Count > 0)
+            {
+                painter.fillColor = col;
+                const float halfSz = 4f;
+                foreach (var pt in _advSelPreviewPts)
+                {
+                    var p = new Vector2(pt.x, panelH - pt.y);
+                    painter.BeginPath();
+                    painter.MoveTo(p + new Vector2(-halfSz, -halfSz));
+                    painter.LineTo(p + new Vector2( halfSz, -halfSz));
+                    painter.LineTo(p + new Vector2( halfSz,  halfSz));
+                    painter.LineTo(p + new Vector2(-halfSz,  halfSz));
+                    painter.ClosePath();
+                    painter.Fill();
+                }
+            }
         }
 
         private void OnGenerateGizmoOverlay(MeshGenerationContext ctx)

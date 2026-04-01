@@ -48,6 +48,9 @@ namespace Poly_Ling.Tools
             set => _settings.Mode = value;
         }
 
+        // Player ビュー用公開 API
+        public EdgeTopoMode ModePublic { get => Mode; set { Mode = value; Reset(); } }
+
         // === ドラッグ状態 ===
         private bool _isDragging;
         private Vector2 _startScreenPos;

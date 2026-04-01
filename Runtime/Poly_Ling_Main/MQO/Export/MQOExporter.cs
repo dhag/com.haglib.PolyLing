@@ -1,4 +1,4 @@
-// Assets/Editor/Poly_Ling/MQO/Export/MQOExporter.cs
+// Runtime/Poly_Ling_Main/MQO/Export/MQOExporter.cs
 // MQOエクスポーター
 // Phase 5: ModelContext対応
 
@@ -1385,7 +1385,7 @@ namespace Poly_Ling.MQO
         // テキスト生成
         // ================================================================
 
-        private static string GenerateMQOText(MQODocument document, MQOExportSettings settings)
+        internal static string GenerateMQOText(MQODocument document, MQOExportSettings settings)
         {
             var sb = new StringBuilder();
             string fmt = $"F{settings.DecimalPrecision}";

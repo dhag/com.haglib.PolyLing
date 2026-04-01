@@ -30,13 +30,13 @@ namespace Poly_Ling.Tools
         public IToolSettings Settings => _settings;
 
         // 設定へのショートカットプロパティ
-        private EdgeExtrudeSettings.ExtrudeMode Mode
+        public EdgeExtrudeSettings.ExtrudeMode Mode
         {
             get => _settings.Mode;
             set => _settings.Mode = value;
         }
 
-        private bool SnapToAxis
+        public bool SnapToAxis
         {
             get => _settings.SnapToAxis;
             set => _settings.SnapToAxis = value;

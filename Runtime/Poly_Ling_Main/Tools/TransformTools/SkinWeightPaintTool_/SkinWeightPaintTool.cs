@@ -55,6 +55,9 @@ namespace Poly_Ling.Tools
         /// <summary>ウェイト可視化が有効か（Preview描画で参照）</summary>
         public static bool IsVisualizationActive { get; private set; }
 
+        /// <summary>ウェイト可視化の有効/無効を設定する（Player ビルド用）。</summary>
+        public static void SetVisualizationActive(bool value) => IsVisualizationActive = value;
+
         /// <summary>現在の可視化ターゲットボーン（Preview描画で参照）</summary>
         public static int VisualizationTargetBone =>
             ActivePanel?.CurrentTargetBone ?? -1;

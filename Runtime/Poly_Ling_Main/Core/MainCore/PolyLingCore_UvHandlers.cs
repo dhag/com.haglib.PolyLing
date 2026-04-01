@@ -13,9 +13,9 @@ using Poly_Ling.Ops;
 
 namespace Poly_Ling.Core
 {
-    internal static class PolyLingCoreUvHandlers
+    public static class PolyLingCoreUvHandlers
     {
-        internal static void HandleApplyUvUnwrap(
+        public static void HandleApplyUvUnwrap(
             ModelContext model,
             MeshUndoController undoController,
             Poly_Ling.Tools.ToolContext toolContext,
@@ -54,7 +54,7 @@ namespace Poly_Ling.Core
             repaint?.Invoke();
         }
 
-        internal static void HandleUvToXyz(
+        public static void HandleUvToXyz(
             ModelContext model,
             MeshUndoController undoController,
             Poly_Ling.Tools.ToolContext toolContext,
@@ -83,7 +83,7 @@ namespace Poly_Ling.Core
             repaint?.Invoke();
         }
 
-        internal static void HandleXyzToUv(
+        public static void HandleXyzToUv(
             ModelContext model,
             MeshUndoController undoController,
             Poly_Ling.Tools.ToolContext toolContext,
