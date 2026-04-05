@@ -627,6 +627,41 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// WorkingPositions を優先して GPU バッファを更新するオーバーロード。
+        /// mc.WorkingPositions が非null の場合は Vertices[i].Position + WorkingPositions[i]（オフセット）を使用し、
+        /// null の場合は mc.MeshObject.Positions にフォールバックする。
+        /// </summary>
+        public void UpdatePositions(MeshContext mc, int meshIndex)
+        {
+            if (mc?.MeshObject == null) return;
+
+            if (mc.WorkingPositions != null)
+            {
+                if (meshIndex < 0 || meshIndex >= _meshCount) return;
+                var meshInfo    = _meshInfos[meshIndex];
+                uint baseOffset = meshInfo.VertexStart;
+                int count = System.Math.Min(mc.MeshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
+                if (count <= 0) return;
+
+                // Vertices[i].Position（頂点移動結果）＋ WorkingPositions[i]（モーフオフセット）
+                mc.MeshObject.InvalidatePositionCache();
+                var basePositions = mc.MeshObject.Positions;
+                int wCount = System.Math.Min(mc.WorkingPositions.Length, count);
+                for (int i = 0; i < wCount; i++)
+                    _positions[(int)baseOffset + i] = basePositions[i] + mc.WorkingPositions[i];
+                // WorkingPositions より多い頂点はベース座標のみ
+                for (int i = wCount; i < count; i++)
+                    _positions[(int)baseOffset + i] = basePositions[i];
+
+                _positionBuffer.SetData(_positions, (int)baseOffset, (int)baseOffset, (int)meshInfo.VertexCount);
+            }
+            else
+            {
+                UpdatePositions(mc.MeshObject, meshIndex);
+            }
+        }
+
+        /// <summary>
         /// 全メッシュの位置を更新
         /// </summary>
         public void UpdateAllPositions(List<MeshContext> meshContexts)
@@ -645,16 +680,30 @@ namespace Poly_Ling.Core
                 if (unifiedMeshIdx < 0 || unifiedMeshIdx >= _meshCount)
                     continue;
 
-                var meshInfo = _meshInfos[unifiedMeshIdx];
+                var meshInfo  = _meshInfos[unifiedMeshIdx];
                 uint baseOffset = meshInfo.VertexStart;
-                var meshObject = mc.MeshObject;
+                var meshObject  = mc.MeshObject;
                 int count = System.Math.Min(meshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
                 if (count <= 0) continue;
 
-                // ツールがVertices[i].Positionを直接変更するため、
-                // GPU転送前にキャッシュを必ず再構築して最新データを取得する
-                meshObject.InvalidatePositionCache();
-                Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
+                // WorkingPositions が存在する場合は Vertices[i].Position + オフセットを使用
+                if (mc.WorkingPositions != null)
+                {
+                    meshObject.InvalidatePositionCache();
+                    var basePositions = meshObject.Positions;
+                    int wCount = System.Math.Min(mc.WorkingPositions.Length, count);
+                    for (int i = 0; i < wCount; i++)
+                        _positions[(int)baseOffset + i] = basePositions[i] + mc.WorkingPositions[i];
+                    for (int i = wCount; i < count; i++)
+                        _positions[(int)baseOffset + i] = basePositions[i];
+                }
+                else
+                {
+                    // ツールがVertices[i].Positionを直接変更するため、
+                    // GPU転送前にキャッシュを必ず再構築して最新データを取得する
+                    meshObject.InvalidatePositionCache();
+                    Array.Copy(meshObject.Positions, 0, _positions, (int)baseOffset, count);
+                }
             }
 
             // 全頂点をアップロード

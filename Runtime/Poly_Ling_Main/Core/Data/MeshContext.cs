@@ -321,6 +321,14 @@ namespace Poly_Ling.Data
         public Matrix4x4 BindPose { get; set; } = Matrix4x4.identity;
 
         /// <summary>
+        /// モーフ等の一時的な位置オーバーライド用バッファ。
+        /// null = 無効（GPU へは MeshObject.Positions を使用）。
+        /// 非null = GPU _positionBuffer への書き込みにこちらを優先する。
+        /// Vertices[i].Position（頂点移動結果）は変更しないため競合しない。
+        /// </summary>
+        public Vector3[] WorkingPositions { get; set; } = null;
+
+        /// <summary>
         /// ★★★ PMXインポート時のモデル空間でのローカル軸回転（ワールド累積） ★★★
         /// VMDモーション適用時にローカル軸空間変換 (R⁻¹ * Q * R) で使用する。
         /// BoneTransform.RotationQuaternionは親からの相対回転であり、

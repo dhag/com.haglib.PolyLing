@@ -759,8 +759,8 @@ namespace Poly_Ling.Player
             int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
             if (unifiedIdx < 0) return;
 
-            // ① CPU MeshObject.Positions → GPU _positionsBuffer
-            bm.UpdatePositions(mc.MeshObject, unifiedIdx);
+            // ① CPU MeshObject.Positions（またはWorkingPositions）→ GPU _positionsBuffer
+            bm.UpdatePositions(mc, unifiedIdx);
 
             // ② ミラーバッファも同期（ミラー無効時は内部で早期リターン）
             bm.UpdateMirrorPositions(unifiedIdx);
@@ -770,7 +770,23 @@ namespace Poly_Ling.Player
             var mirrorPair = model.GetMirrorPair(mc);
             if (mirrorPair != null && mirrorPair.Real == mc && mirrorPair.Mirror?.MeshObject != null)
             {
-                mirrorPair.SyncPositions();
+                var mirrorMesh = mirrorPair.Mirror.MeshObject;
+                if (mc.WorkingPositions != null)
+                {
+                    // Vertices[i].Position（頂点移動）＋ WorkingPositions[i]（モーフオフセット）の合成値でミラー計算
+                    for (int i = 0; i < mirrorPair.VertexMap.Length && i < mc.MeshObject.VertexCount; i++)
+                    {
+                        int mi = mirrorPair.VertexMap[i];
+                        if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
+                        var offset = (i < mc.WorkingPositions.Length) ? mc.WorkingPositions[i] : UnityEngine.Vector3.zero;
+                        var worldPos = mc.MeshObject.Vertices[i].Position + offset;
+                        mirrorMesh.Vertices[mi].Position = mirrorPair.MirrorPosition(worldPos);
+                    }
+                }
+                else
+                {
+                    mirrorPair.SyncPositions();
+                }
                 int mirrorCtxIdx = model.MeshContextList.IndexOf(mirrorPair.Mirror);
                 if (mirrorCtxIdx >= 0)
                 {
@@ -792,10 +808,12 @@ namespace Poly_Ling.Player
                 if (mirrorUnifiedIdx < 0) continue;
 
                 int count = Mathf.Min(mc.MeshObject.VertexCount, mirrorCtx.MeshObject.VertexCount);
+                var srcPositions = mc.WorkingPositions;
                 for (int v = 0; v < count; v++)
                 {
-                    var p = mc.MeshObject.Vertices[v].Position;
-                    mirrorCtx.MeshObject.Vertices[v].Position = mirrorMatrix.MultiplyPoint3x4(p);
+                    var basePos = mc.MeshObject.Vertices[v].Position;
+                    var offset  = (srcPositions != null && v < srcPositions.Length) ? srcPositions[v] : UnityEngine.Vector3.zero;
+                    mirrorCtx.MeshObject.Vertices[v].Position = mirrorMatrix.MultiplyPoint3x4(basePos + offset);
                 }
                 bm.UpdatePositions(mirrorCtx.MeshObject, mirrorUnifiedIdx);
             }

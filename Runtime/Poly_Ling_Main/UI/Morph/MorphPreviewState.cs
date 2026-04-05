@@ -13,12 +13,12 @@ namespace Poly_Ling.UI
 {
     public class MorphPreviewState
     {
-        private bool                                    _isPreviewActive            = false;
-        private readonly Dictionary<int, Vector3[]>    _previewBackups             = new();
+        private bool                                                    _isPreviewActive             = false;
+        private readonly HashSet<int>                                   _previewBaseIndices          = new();
         private readonly List<(int morphIndex, int baseIndex, float entryWeight)> _previewPairs = new();
-        private int                                     _previewMorphExpressionIndex = -1;
+        private int                                                     _previewMorphExpressionIndex = -1;
 
-        public bool IsActive => _isPreviewActive;
+        public bool IsActive     => _isPreviewActive;
         public int  ActiveSetIndex => _previewMorphExpressionIndex;
 
         // ================================================================
@@ -30,20 +30,13 @@ namespace Poly_Ling.UI
             int setIndex)
         {
             End(model, null);
-            _previewBackups.Clear();
+            _previewBaseIndices.Clear();
             _previewPairs.Clear();
 
             foreach (var (morphIndex, baseIndex, morphCtx, baseCtx, weight) in pairs)
             {
                 if (baseCtx?.MeshObject == null) continue;
-                if (!_previewBackups.ContainsKey(baseIndex))
-                {
-                    var baseMesh = baseCtx.MeshObject;
-                    var backup   = new Vector3[baseMesh.VertexCount];
-                    for (int i = 0; i < baseMesh.VertexCount; i++)
-                        backup[i] = baseMesh.Vertices[i].Position;
-                    _previewBackups[baseIndex] = backup;
-                }
+                _previewBaseIndices.Add(baseIndex);
                 _previewPairs.Add((morphIndex, baseIndex, weight));
             }
 
@@ -57,31 +50,37 @@ namespace Poly_Ling.UI
 
         public void Apply(ModelContext model, float weight, ToolContext toolCtx)
         {
-            if (!_isPreviewActive || _previewBackups.Count == 0) return;
+            if (!_isPreviewActive || _previewBaseIndices.Count == 0) return;
 
-            foreach (var (baseIndex, backup) in _previewBackups)
+            // Step 1: WorkingPositions をゼロクリア（モーフオフセット用バッファとして初期化）
+            // Vertices[i].Position（頂点移動結果）は変更しない
+            foreach (int baseIndex in _previewBaseIndices)
             {
                 var baseCtx = model.GetMeshContext(baseIndex);
                 if (baseCtx?.MeshObject == null) continue;
-                var baseMesh = baseCtx.MeshObject;
-                int count    = Mathf.Min(backup.Length, baseMesh.VertexCount);
-                for (int i = 0; i < count; i++)
-                    baseMesh.Vertices[i].Position = backup[i];
+                var mo = baseCtx.MeshObject;
+
+                if (baseCtx.WorkingPositions == null || baseCtx.WorkingPositions.Length != mo.VertexCount)
+                    baseCtx.WorkingPositions = new Vector3[mo.VertexCount];
+                else
+                    System.Array.Clear(baseCtx.WorkingPositions, 0, baseCtx.WorkingPositions.Length);
             }
 
+            // Step 2: モーフオフセットのみを WorkingPositions に加算
+            // GPU書き込み時に Vertices[i].Position + WorkingPositions[i] として合成される
             foreach (var (morphIndex, baseIndex, entryWeight) in _previewPairs)
             {
                 var morphCtx = model.GetMeshContext(morphIndex);
                 var baseCtx  = model.GetMeshContext(baseIndex);
-                if (morphCtx?.MeshObject == null || baseCtx?.MeshObject == null) continue;
+                if (morphCtx?.MeshObject == null || baseCtx?.WorkingPositions == null) continue;
 
-                var baseMesh = baseCtx.MeshObject;
                 foreach (var (vertexIndex, offset) in morphCtx.GetMorphOffsets())
-                    if (vertexIndex < baseMesh.VertexCount)
-                        baseMesh.Vertices[vertexIndex].Position += offset * (entryWeight * weight);
+                    if (vertexIndex < baseCtx.WorkingPositions.Length)
+                        baseCtx.WorkingPositions[vertexIndex] += offset * (entryWeight * weight);
             }
 
-            foreach (var baseIndex in _previewBackups.Keys)
+            // Step 3: 視覚更新
+            foreach (int baseIndex in _previewBaseIndices)
             {
                 var baseCtx = model.GetMeshContext(baseIndex);
                 if (baseCtx != null) toolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
@@ -97,19 +96,17 @@ namespace Poly_Ling.UI
         {
             if (_isPreviewActive && model != null)
             {
-                foreach (var (baseIndex, backup) in _previewBackups)
+                foreach (int baseIndex in _previewBaseIndices)
                 {
                     var baseCtx = model.GetMeshContext(baseIndex);
-                    if (baseCtx?.MeshObject == null) continue;
-                    var baseMesh = baseCtx.MeshObject;
-                    int count    = Mathf.Min(backup.Length, baseMesh.VertexCount);
-                    for (int i = 0; i < count; i++)
-                        baseMesh.Vertices[i].Position = backup[i];
-                    toolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
+                    if (baseCtx == null) continue;
+                    baseCtx.WorkingPositions = null;
+                    if (baseCtx.MeshObject != null)
+                        toolCtx?.SyncMeshContextPositionsOnly?.Invoke(baseCtx);
                 }
             }
 
-            _previewBackups.Clear();
+            _previewBaseIndices.Clear();
             _previewPairs.Clear();
             _previewMorphExpressionIndex = -1;
             _isPreviewActive             = false;
