@@ -194,6 +194,7 @@ namespace Poly_Ling.Player
             }
             // 最下部にスクロール
             _logScroll?.ScrollTo(_logContainer.Children().LastOrDefault() as VisualElement ?? _logContainer);
+            PlayerLayoutRoot.ApplyDarkTheme(_logContainer);
         }
 
         // ================================================================

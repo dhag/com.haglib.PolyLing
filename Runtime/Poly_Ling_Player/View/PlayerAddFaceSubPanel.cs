@@ -35,6 +35,7 @@ namespace Poly_Ling.Player
             var modeChoices = new List<string> { "Line", "Triangle", "Quad" };
             var modeValues  = new[] { AddFaceMode.Line, AddFaceMode.Triangle, AddFaceMode.Quad };
             var modeDD = new DropdownField("Mode", modeChoices, 2);
+            modeDD.style.color = new StyleColor(Color.white);
             modeDD.RegisterValueChangedCallback(e =>
             {
                 int idx = modeChoices.IndexOf(e.newValue);
@@ -47,6 +48,7 @@ namespace Poly_Ling.Player
             // ContinuousLine（Line mode 時のみ表示）
             _continuousRow = new VisualElement();
             _continuousToggle = new Toggle("Continuous Line") { value = true };
+            _continuousToggle.style.color = new StyleColor(Color.white);
             _continuousToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.ContinuousLinePublic = e.newValue; });
             _continuousRow.Add(_continuousToggle);
             _root.Add(_continuousRow);
@@ -67,6 +69,8 @@ namespace Poly_Ling.Player
             _root.Add(clearBtn);
 
             var helpBox = new HelpBox("クリックで点を配置して面を作成します。", HelpBoxMessageType.Info);
+            helpBox.style.color = new StyleColor(Color.white);
+            helpBox.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             helpBox.style.marginTop = 4;
             _root.Add(helpBox);
 
@@ -94,6 +98,7 @@ namespace Poly_Ling.Player
                     foreach (var label in labels)
                     {
                         var lbl = new Label(label);
+                        lbl.style.color = new StyleColor(Color.white);
                         lbl.style.fontSize = 10;
                         _placedList.Add(lbl);
                     }
@@ -116,6 +121,7 @@ namespace Poly_Ling.Player
         private static Label Header(string t)
         {
             var l = new Label(t);
+            l.style.color = new StyleColor(Color.white);
             l.style.marginTop    = 4;
             l.style.marginBottom = 3;
             return l;
@@ -124,6 +130,7 @@ namespace Poly_Ling.Player
         private static Label InfoLabel()
         {
             var l = new Label();
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize     = 10;
             l.style.marginBottom = 2;
             return l;

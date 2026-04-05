@@ -165,6 +165,7 @@ namespace Poly_Ling.Player
             }
 
             EnableConvert(!hasBones);
+            PlayerLayoutRoot.ApplyDarkTheme(_hierarchyContainer);
         }
 
         // ================================================================

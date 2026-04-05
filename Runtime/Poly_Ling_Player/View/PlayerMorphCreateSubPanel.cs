@@ -70,15 +70,19 @@ namespace Poly_Ling.Player
             root.Add(SectionLabel("▼ モデル → モーフ 作成"));
 
             _baseModelDropdown  = new DropdownField("基準モデル",  new List<string>(), 0);
+            _baseModelDropdown.style.color = new StyleColor(Color.white);
             _morphModelDropdown = new DropdownField("モーフモデル", new List<string>(), 0);
+            _morphModelDropdown.style.color = new StyleColor(Color.white);
             root.Add(_baseModelDropdown);
             root.Add(_morphModelDropdown);
 
             _morphNameField = new TextField("モーフ名") { value = "NewMorph" };
+            _morphNameField.style.color = new StyleColor(Color.black);
             root.Add(_morphNameField);
 
             _panelDropdown = new DropdownField("パネル",
                 new List<string> { "眉 (0)", "目 (1)", "口 (2)", "その他 (3)" }, 3);
+            _panelDropdown.style.color = new StyleColor(Color.white);
             root.Add(_panelDropdown);
 
             var btnCreate = new Button(OnCreateMorph) { text = "モーフ作成" };
@@ -484,6 +488,7 @@ namespace Poly_Ling.Player
         private static VisualElement ExprMakeItem()
         {
             var lbl = new Label();
+            lbl.style.color = new StyleColor(Color.white);
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             lbl.style.paddingLeft    = 4;
             return lbl;

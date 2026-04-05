@@ -66,12 +66,14 @@ namespace Poly_Ling.Player
             parent.Add(_root);
 
             var title = new Label("詳細選択");
+            title.style.color = new StyleColor(Color.white);
             title.style.marginBottom = 4;
             _root.Add(title);
 
             // ── モード選択 ───────────────────────────────────────────
             _modeDropdown = new DropdownField("モード",
                 new List<string>(ModeLabels), 0);
+            _modeDropdown.style.color = new StyleColor(Color.white);
             _modeDropdown.style.marginBottom = 4;
             _modeDropdown.RegisterValueChangedCallback(e =>
             {
@@ -85,6 +87,8 @@ namespace Poly_Ling.Player
 
             // ── ヘルプ ───────────────────────────────────────────────
             _helpBox = new HelpBox("", HelpBoxMessageType.Info);
+            _helpBox.style.color = new StyleColor(Color.white);
+            _helpBox.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             _helpBox.style.marginBottom = 4;
             _root.Add(_helpBox);
 
@@ -93,6 +97,7 @@ namespace Poly_Ling.Player
             _root.Add(_edgeLoopGroup);
 
             _edgeLoopThresholdSlider = new Slider("方向しきい値", 0f, 1f) { value = 0.5f };
+            _edgeLoopThresholdSlider.style.color = new StyleColor(Color.white);
             _edgeLoopThresholdSlider.style.marginBottom = 3;
             _edgeLoopThresholdSlider.RegisterValueChangedCallback(e =>
             {
@@ -103,6 +108,7 @@ namespace Poly_Ling.Player
 
             // ── 追加/削除 ────────────────────────────────────────────
             var actionLabel = new Label("動作:");
+            actionLabel.style.color = new StyleColor(Color.white);
             actionLabel.style.marginTop    = 4;
             actionLabel.style.marginBottom = 2;
             actionLabel.style.fontSize     = 10;
@@ -139,6 +145,7 @@ namespace Poly_Ling.Player
             _root.Add(_shortestPathGroup);
 
             _firstVertexLabel = new Label();
+            _firstVertexLabel.style.color = new StyleColor(Color.white);
             _firstVertexLabel.style.fontSize     = 10;
             _firstVertexLabel.style.marginBottom = 2;
             _shortestPathGroup.Add(_firstVertexLabel);

@@ -35,8 +35,10 @@ namespace Poly_Ling.Player
             amountRow.style.flexDirection = FlexDirection.Row;
             amountRow.style.marginBottom  = 3;
             var amountLbl = new Label("Amount");
+            amountLbl.style.color = new StyleColor(Color.white);
             amountLbl.style.width = 60; amountLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             _amountField = new FloatField { value = 0.1f };
+            _amountField.style.color = new StyleColor(Color.black);
             _amountField.style.flexGrow = 1;
             _amountField.RegisterValueChangedCallback(e =>
             {
@@ -62,6 +64,7 @@ namespace Poly_Ling.Player
 
             // Segments
             _segmentsSlider = new SliderInt("Segments", 1, 10) { value = 1 };
+            _segmentsSlider.style.color = new StyleColor(Color.white);
             _segmentsSlider.style.marginBottom = 3;
             _segmentsSlider.RegisterValueChangedCallback(e =>
             {
@@ -73,6 +76,7 @@ namespace Poly_Ling.Player
             // Fillet（Segments >= 2 時のみ表示）
             _filletRow = new VisualElement();
             _filletToggle = new Toggle("Fillet (Round)") { value = true };
+            _filletToggle.style.color = new StyleColor(Color.white);
             _filletToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.Fillet = e.newValue; });
             _filletRow.Add(_filletToggle);
             _root.Add(_filletRow);

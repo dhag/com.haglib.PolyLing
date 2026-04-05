@@ -199,6 +199,7 @@ namespace Poly_Ling.Player
                     }
                 }
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_passLogsContainer);
         }
 
         private void ShowWarning(string msg)

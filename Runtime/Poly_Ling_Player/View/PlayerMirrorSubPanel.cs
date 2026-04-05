@@ -49,17 +49,21 @@ namespace Poly_Ling.Player
 
             var axisChoices = new List<string> { "X", "Y", "Z" };
             var axisDd = new DropdownField("ミラー軸", axisChoices, _mirrorAxis);
+            axisDd.style.color = new StyleColor(Color.white);
             axisDd.RegisterValueChangedCallback(e => _mirrorAxis = axisChoices.IndexOf(e.newValue));
             root.Add(axisDd);
 
             var threshRow = new VisualElement(); threshRow.style.flexDirection = FlexDirection.Row; threshRow.style.marginBottom = 3;
             var threshLbl = new Label("境界閾値"); threshLbl.style.width = 70; threshLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            threshLbl.style.color = new StyleColor(Color.white);
             var threshField = new FloatField { value = _threshold }; threshField.style.flexGrow = 1;
+            threshField.style.color = new StyleColor(Color.black);
             threshField.RegisterValueChangedCallback(e => _threshold = Mathf.Max(0.00001f, e.newValue));
             threshRow.Add(threshLbl); threshRow.Add(threshField);
             root.Add(threshRow);
 
             var flipUToggle = new Toggle("UV の U を反転") { value = _flipU };
+            flipUToggle.style.color = new StyleColor(Color.white);
             flipUToggle.RegisterValueChangedCallback(e => _flipU = e.newValue);
             root.Add(flipUToggle);
 
@@ -70,6 +74,8 @@ namespace Poly_Ling.Player
             // ── Step 2: Edit ───────────────────────────────────────────────
             root.Add(MakeSep("Step 2: Edit"));
             var editHelp = new HelpBox("Bake後のメッシュをメッシュリストで選択して編集してください。", HelpBoxMessageType.None);
+            editHelp.style.color = new StyleColor(Color.white);
+            editHelp.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             editHelp.style.marginBottom = 8;
             root.Add(editHelp);
 
@@ -79,6 +85,7 @@ namespace Poly_Ling.Player
             var wbChoices = new List<string> { "OriginalSideOnly", "MirroredSideOnly", "Average" };
             var wbValues  = new[] { WriteBackMode.OriginalSideOnly, WriteBackMode.MirroredSideOnly, WriteBackMode.Average };
             var wbDd = new DropdownField("書き戻しモード", wbChoices, 0);
+            wbDd.style.color = new StyleColor(Color.white);
             wbDd.RegisterValueChangedCallback(e => { int i = wbChoices.IndexOf(e.newValue); if (i >= 0) _writeBackMode = wbValues[i]; });
             root.Add(wbDd);
 
@@ -91,7 +98,9 @@ namespace Poly_Ling.Player
 
             var blendRow = new VisualElement(); blendRow.style.flexDirection = FlexDirection.Row; blendRow.style.marginBottom = 4;
             var blendLbl = new Label("Blend"); blendLbl.style.width = 50; blendLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            blendLbl.style.color = new StyleColor(Color.white);
             var blendSlider = new Slider(0f, 1f) { value = _blendWeight }; blendSlider.style.flexGrow = 1;
+            blendSlider.style.color = new StyleColor(Color.white);
             blendSlider.RegisterValueChangedCallback(e => _blendWeight = e.newValue);
             blendRow.Add(blendLbl); blendRow.Add(blendSlider);
             root.Add(blendRow);
@@ -234,6 +243,7 @@ namespace Poly_Ling.Player
             if (title != null)
             {
                 var l = new Label(title); l.style.fontSize = 10; l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.marginTop = 3;
+                l.style.color = new StyleColor(Color.white);
                 container.Add(l);
             }
             return container;
@@ -242,6 +252,7 @@ namespace Poly_Ling.Player
         private static Label SecLabel(string t)
         {
             var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f));
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize = 10; l.style.marginBottom = 3; return l;
         }
     }

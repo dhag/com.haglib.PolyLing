@@ -125,6 +125,7 @@ namespace Poly_Ling.Player
                 if (_selInfoLabel != null) _selInfoLabel.text = $"{sel.Faces.Count} 面選択中";
                 if (_btnApply != null) _btnApply.text = $"Apply [{model.CurrentMaterialIndex}] to Selection";
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_list);
         }
 
         // ── Row ───────────────────────────────────────────────────────────

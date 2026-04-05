@@ -1951,6 +1951,7 @@ namespace Poly_Ling.Player
             if (m != null)
             {
                 var lbl = new Label($"{m.Name}  ({m.Count})");
+                lbl.style.color = new StyleColor(Color.white);
                 _layoutRoot.ModelListContainer.Add(lbl);
             }
 

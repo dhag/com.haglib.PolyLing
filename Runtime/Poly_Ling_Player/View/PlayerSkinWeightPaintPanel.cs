@@ -76,6 +76,7 @@ namespace Poly_Ling.Player
             // ── ターゲットボーン
             AddSectionLabel("ターゲットボーン");
             _boneDropdown = new DropdownField(new List<string> { "（未選択）" }, 0);
+            _boneDropdown.style.color = new StyleColor(Color.white);
             _boneDropdown.style.marginBottom = 4;
             _boneDropdown.RegisterValueChangedCallback(e =>
             {
@@ -146,10 +147,12 @@ namespace Poly_Ling.Player
             pruneRow.style.flexDirection = FlexDirection.Row;
             pruneRow.style.marginBottom  = 3;
             var pruneLbl = new Label("Threshold");
+            pruneLbl.style.color = new StyleColor(Color.white);
             pruneLbl.style.width             = 70;
             pruneLbl.style.unityTextAlign    = TextAnchor.MiddleLeft;
             pruneLbl.style.fontSize          = 10;
             _pruneThreshField = new FloatField { value = _pruneThreshold };
+            _pruneThreshField.style.color = new StyleColor(Color.black);
             _pruneThreshField.style.flexGrow = 1;
             _pruneThreshField.RegisterValueChangedCallback(e =>
                 _pruneThreshold = Mathf.Clamp(e.newValue, 0.0001f, 0.5f));
@@ -158,6 +161,7 @@ namespace Poly_Ling.Player
             _root.Add(pruneRow);
 
             _statusLabel = new Label();
+            _statusLabel.style.color = new StyleColor(Color.white);
             _statusLabel.style.fontSize = 10;
             _root.Add(_statusLabel);
         }
@@ -334,14 +338,17 @@ namespace Poly_Ling.Player
             row.style.marginBottom  = 2;
 
             var lbl = new Label(label);
+            lbl.style.color = new StyleColor(Color.white);
             lbl.style.width          = 32;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             lbl.style.fontSize       = 10;
             row.Add(lbl);
 
             var sl = new Slider(min, max) { value = get() };
+            sl.style.color = new StyleColor(Color.white);
             sl.style.flexGrow = 1;
             var nf = new FloatField { value = get() };
+            nf.style.color = new StyleColor(Color.black);
             nf.style.width = 42;
 
             sl.RegisterValueChangedCallback(e =>

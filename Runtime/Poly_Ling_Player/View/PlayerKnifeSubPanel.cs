@@ -42,6 +42,7 @@ namespace Poly_Ling.Player
             _root.Add(Header("Knife"));
 
             _modeDD = new DropdownField("Mode", ModeChoices, 0);
+            _modeDD.style.color = new StyleColor(Color.white);
             _modeDD.RegisterValueChangedCallback(e =>
             {
                 int idx = ModeChoices.IndexOf(e.newValue);
@@ -52,20 +53,24 @@ namespace Poly_Ling.Player
             _root.Add(_modeDD);
 
             _edgeSelToggle = new Toggle("Edge Select") { value = false };
+            _edgeSelToggle.style.color = new StyleColor(Color.white);
             _edgeSelToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.EdgeSelect = e.newValue; UpdateConditionals(); });
             _root.Add(_edgeSelToggle);
 
             _chainToggle = new Toggle("Auto Chain") { value = true };
+            _chainToggle.style.color = new StyleColor(Color.white);
             _chainToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.AutoChain = e.newValue; });
             _root.Add(_chainToggle);
 
             // Bisect グループ（Cut + EdgeSelect 時）
             _bisectGroup = new VisualElement();
             _edgeBisectToggle = new Toggle("Bisect") { value = false };
+            _edgeBisectToggle.style.color = new StyleColor(Color.white);
             _edgeBisectToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.EdgeBisectMode = e.newValue; UpdateConditionals(); });
             _bisectGroup.Add(_edgeBisectToggle);
             _cutRatioRow = new VisualElement();
             _cutRatioSlider = new Slider("Cut Position", 0.1f, 0.9f) { value = 0.5f };
+            _cutRatioSlider.style.color = new StyleColor(Color.white);
             _cutRatioSlider.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.CutRatio = e.newValue; });
             _cutRatioRow.Add(_cutRatioSlider);
             _bisectGroup.Add(_cutRatioRow);
@@ -74,12 +79,14 @@ namespace Poly_Ling.Player
             // VertexBisect グループ（Vertex mode 時）
             _vertexBisectGroup = new VisualElement();
             _vertexBisectToggle = new Toggle("Bisect") { value = false };
+            _vertexBisectToggle.style.color = new StyleColor(Color.white);
             _vertexBisectToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.VertexBisectMode = e.newValue; });
             _vertexBisectGroup.Add(_vertexBisectToggle);
             _root.Add(_vertexBisectGroup);
 
             // 選択状態ラベル
             _statusLabel = new Label();
+            _statusLabel.style.color = new StyleColor(Color.white);
             _statusLabel.style.fontSize  = 10;
             _statusLabel.style.marginTop = 3;
             _root.Add(_statusLabel);

@@ -74,6 +74,7 @@ namespace Poly_Ling.Player
             _btnRestore.style.marginBottom = 4;
             _backupSection.Add(_btnRestore);
             _toggleBake = new Toggle("元の姿勢にベイク（バックアップを破棄）");
+            _toggleBake.style.color = new StyleColor(Color.white);
             _toggleBake.style.marginBottom = 2;
             _toggleBake.RegisterValueChangedCallback(e =>
                 { if (_btnBake != null) _btnBake.style.display = e.newValue ? DisplayStyle.Flex : DisplayStyle.None; });
@@ -224,6 +225,7 @@ namespace Poly_Ling.Player
         private static Label SecLabel(string t)
         {
             var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f));
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize = 10; l.style.marginBottom = 3; return l;
         }
     }

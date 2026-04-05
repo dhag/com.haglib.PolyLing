@@ -53,6 +53,7 @@ namespace Poly_Ling.Player
             parent.Clear();
 
             var title = new Label("プロジェクトファイル");
+            title.style.color = new StyleColor(Color.white);
             title.style.fontSize = 12;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.marginBottom = 6;

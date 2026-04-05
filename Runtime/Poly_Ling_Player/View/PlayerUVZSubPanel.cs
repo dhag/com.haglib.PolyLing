@@ -53,6 +53,7 @@ namespace Poly_Ling.Player
             root.Add(_warningLabel);
 
             _targetInfo = new Label();
+            _targetInfo.style.color = new StyleColor(Color.white);
             _targetInfo.style.fontSize    = 10;
             _targetInfo.style.marginBottom = 4;
             root.Add(_targetInfo);
@@ -74,6 +75,7 @@ namespace Poly_Ling.Player
             root.Add(new HelpBox("選択メッシュ(UVZ)のXY座標をターゲットのUVとして書き戻す", HelpBoxMessageType.None));
 
             _writebackTarget = new DropdownField("ターゲット", new List<string> { "(なし)" }, 0);
+            _writebackTarget.style.color = new StyleColor(Color.white);
             _writebackTarget.style.marginBottom = 4;
             root.Add(_writebackTarget);
 
@@ -180,8 +182,10 @@ namespace Poly_Ling.Player
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 3;
             var lbl = new Label(label); lbl.style.width = 80; lbl.style.fontSize = 10;
+            lbl.style.color = new StyleColor(Color.white);
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var f = new FloatField { value = initVal }; f.style.flexGrow = 1;
+            f.style.color = new StyleColor(Color.black);
             f.RegisterValueChangedCallback(e => onChange(e.newValue));
             row.Add(lbl); row.Add(f);
             return row;

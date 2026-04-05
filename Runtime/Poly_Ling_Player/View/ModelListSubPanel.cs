@@ -207,6 +207,7 @@ namespace Poly_Ling.Player
                 if (mv == null) continue;
                 _modelListContainer.Add(CreateModelRow(mv, i, i == view.CurrentModelIndex));
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_modelListContainer);
         }
 
         private VisualElement CreateModelRow(IModelView mv, int index, bool isCurrent)

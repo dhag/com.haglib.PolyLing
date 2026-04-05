@@ -248,6 +248,7 @@ namespace Poly_Ling.Player
                 var lbl = new Label($"  {kvp.Key}: [{kvp.Value}]");
                 _mappingDetailContainer?.Add(lbl);
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_mappingDetailContainer);
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }

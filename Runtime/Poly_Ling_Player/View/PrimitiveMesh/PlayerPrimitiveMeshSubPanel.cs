@@ -229,7 +229,7 @@ namespace Poly_Ling.Player
                 if (_shapeBtns[i] == null) continue;
                 _shapeBtns[i].style.backgroundColor = (int)k == i
                     ? new StyleColor(new Color(0.25f, 0.45f, 0.65f))
-                    : new StyleColor(StyleKeyword.Null);
+                    : new StyleColor(new Color(0.25f, 0.25f, 0.25f));
             }
             RebuildSettings();
             _dirty = true;
@@ -260,6 +260,7 @@ namespace Poly_Ling.Player
                     _settingsContainer?.Add(lbl);
                     break;
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
         }
 
         private void D() => _dirty = true;

@@ -47,14 +47,17 @@ namespace Poly_Ling.Player
             snapRow.style.flexDirection = FlexDirection.Row;
             snapRow.style.marginBottom  = 3;
             _snapToggle = new Toggle("Snap") { value = false };
+            _snapToggle.style.color = new StyleColor(Color.white);
             _snapToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseSnap = e.newValue; });
             _snapField = new FloatField { value = 15f };
+            _snapField.style.color = new StyleColor(Color.black);
             _snapField.style.width = 50; _snapField.style.marginLeft = 4;
             _snapField.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.SnapAngle = Mathf.Max(0.1f, e.newValue); });
             snapRow.Add(_snapToggle); snapRow.Add(_snapField);
             _root.Add(snapRow);
 
             _originToggle = new Toggle("Origin Pivot") { value = false };
+            _originToggle.style.color = new StyleColor(Color.white);
             _originToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseOriginPivot = e.newValue; });
             _root.Add(_originToggle);
 

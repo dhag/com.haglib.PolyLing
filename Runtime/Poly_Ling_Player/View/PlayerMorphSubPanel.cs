@@ -91,16 +91,19 @@ namespace Poly_Ling.Player
             parent.Add(MakeSep());
 
             _setName   = new TextField("名前 (JP)");
+            _setName.style.color = new StyleColor(Color.black);
             _setName.RegisterCallback<FocusOutEvent>(_ => OnSetDetailChanged());
             parent.Add(_setName);
 
             _setNameEn = new TextField("名前 (EN)");
+            _setNameEn.style.color = new StyleColor(Color.black);
             _setNameEn.RegisterCallback<FocusOutEvent>(_ => OnSetDetailChanged());
             parent.Add(_setNameEn);
 
             // Panel (眉/目/口/その他)
             _panelPopup = new DropdownField("パネル",
                 new System.Collections.Generic.List<string> { "眉 (0)", "目 (1)", "口 (2)", "その他 (3)" }, 3);
+            _panelPopup.style.color = new StyleColor(Color.white);
             _panelPopup.style.marginBottom = 3;
             _panelPopup.RegisterValueChangedCallback(_ => OnSetDetailChanged());
             parent.Add(_panelPopup);
@@ -108,6 +111,7 @@ namespace Poly_Ling.Player
             var typeRow = new VisualElement(); typeRow.style.flexDirection = FlexDirection.Row; typeRow.style.marginBottom = 2;
             typeRow.Add(new Label("タイプ: ") { style = { width = 60 } });
             _setTypeLabel = new Label(); _setTypeLabel.style.color = new StyleColor(Color.white);
+            _setTypeLabel.style.color = new StyleColor(Color.white);
             typeRow.Add(_setTypeLabel);
             parent.Add(typeRow);
 
@@ -133,8 +137,10 @@ namespace Poly_Ling.Player
         {
             parent.Add(SecLabel("プレビュー"));
             _previewInfo = new Label(); _previewInfo.style.fontSize = 10; _previewInfo.style.color = new StyleColor(Color.white); _previewInfo.style.marginBottom = 2;
+            _previewInfo.style.color = new StyleColor(Color.white);
             parent.Add(_previewInfo);
             _previewWeight = new Slider("ウェイト", 0f, 1f) { value = 0f };
+            _previewWeight.style.color = new StyleColor(Color.white);
             _previewWeight.style.marginBottom = 4;
             _previewWeight.RegisterValueChangedCallback(OnPreviewWeightChanged);
             parent.Add(_previewWeight);
@@ -147,6 +153,7 @@ namespace Poly_Ling.Player
         private VisualElement SetMakeItem()
         {
             var l = new Label(); l.style.paddingLeft = 4; l.style.unityTextAlign = TextAnchor.MiddleLeft;
+            l.style.color = new StyleColor(Color.white);
             return l;
         }
         private void SetBindItem(VisualElement e, int i)
@@ -158,7 +165,9 @@ namespace Poly_Ling.Player
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row;
             var lbl = new Label(); lbl.style.width = 120; lbl.name = "lbl";
+            lbl.style.color = new StyleColor(Color.white);
             var sl  = new Slider(0f, 1f) { name = "slider" }; sl.style.flexGrow = 1;
+            sl.style.color = new StyleColor(Color.white);
             row.Add(lbl); row.Add(sl);
             return row;
         }

@@ -847,14 +847,73 @@ namespace Poly_Ling.Player
         /// </summary>
         public void PostBuildButtonColors(UnityEngine.UIElements.VisualElement root)
         {
+            ApplyDarkTheme(root);
+        }
+
+        /// <summary>
+        /// VisualElement サブツリー全体にダークテーマを適用する。
+        /// Build 後に動的再構築するコンテナに対しても呼び出すこと。
+        /// </summary>
+        public static void ApplyDarkTheme(UnityEngine.UIElements.VisualElement root)
+        {
+            if (root == null) return;
             var white   = new StyleColor(Color.white);
             var btnBg   = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
             var fieldBg = new StyleColor(new Color(0.20f, 0.20f, 0.20f));
-            root.Query<Button>().ForEach(b => { b.style.color = white; b.style.backgroundColor = btnBg; });
-            root.Query<TextField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
-            root.Query<FloatField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
-            root.Query<IntegerField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
-            root.Query<DropdownField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
+            var hbBg    = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
+
+            root.Query<Button>().ForEach(b =>
+            {
+                b.style.color = white;
+                b.style.backgroundColor = btnBg;
+            });
+
+            root.Query<Label>().ForEach(l => l.style.color = white);
+
+            root.Query<HelpBox>().ForEach(h =>
+            {
+                h.style.color = white;
+                h.style.backgroundColor = hbBg;
+            });
+
+            root.Query<TextField>().ForEach(t =>
+            {
+                t.style.color = white;
+                t.style.backgroundColor = fieldBg;
+                var inp = t.Q(className: "unity-base-text-field__input");
+                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
+            });
+            root.Query<FloatField>().ForEach(t =>
+            {
+                t.style.color = white;
+                t.style.backgroundColor = fieldBg;
+                var inp = t.Q(className: "unity-base-text-field__input");
+                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
+            });
+            root.Query<IntegerField>().ForEach(t =>
+            {
+                t.style.color = white;
+                t.style.backgroundColor = fieldBg;
+                var inp = t.Q(className: "unity-base-text-field__input");
+                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
+            });
+            root.Query<DropdownField>().ForEach(t =>
+            {
+                t.style.color = white;
+                t.style.backgroundColor = fieldBg;
+                var inp = t.Q(className: "unity-base-popup-field__input");
+                if (inp != null) { inp.style.backgroundColor = fieldBg; inp.style.color = white; }
+            });
+
+            root.Query<Toggle>().ForEach(t =>
+            {
+                t.style.color = white;
+                var checkmark = t.Q(className: "unity-toggle__checkmark");
+                if (checkmark != null) checkmark.style.backgroundColor = fieldBg;
+            });
+
+            root.Query<VisualElement>(className: "unity-base-slider__tracker").ForEach(e =>
+                e.style.backgroundColor = fieldBg);
         }
 
         private static Button MakeBtn(string text)

@@ -218,6 +218,7 @@ namespace Poly_Ling.Player
                 BuildPmxSettings(_settingsContainer);
             else
                 BuildMqoSettings(_settingsContainer);
+            PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
         }
 
         private void RebuildList()

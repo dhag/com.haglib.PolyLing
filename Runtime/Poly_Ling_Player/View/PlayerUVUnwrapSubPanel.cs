@@ -59,6 +59,7 @@ namespace Poly_Ling.Player
             root.Add(_warningLabel);
 
             _targetInfo = new Label();
+            _targetInfo.style.color = new StyleColor(Color.white);
             _targetInfo.style.fontSize     = 10;
             _targetInfo.style.marginBottom = 4;
             root.Add(_targetInfo);
@@ -132,12 +133,14 @@ namespace Poly_Ling.Player
             root.Add(new HelpBox("選択エッジをSeamとしてLSCM展開します。\nエッジ未選択時はバウンダリのみ使用します。", HelpBoxMessageType.Info));
 
             _seamInfo = new Label();
+            _seamInfo.style.color = new StyleColor(Color.white);
             _seamInfo.style.fontSize     = 10;
             _seamInfo.style.marginTop    = 4;
             _seamInfo.style.marginBottom = 4;
             root.Add(_seamInfo);
 
             var boundaryToggle = new Toggle("バウンダリをSeamに含める") { value = _includeBoundaryAsSeam };
+            boundaryToggle.style.color = new StyleColor(Color.white);
             boundaryToggle.RegisterValueChangedCallback(e => _includeBoundaryAsSeam = e.newValue);
             root.Add(boundaryToggle);
 
@@ -146,9 +149,11 @@ namespace Poly_Ling.Player
             maxIterRow.style.marginTop     = 3;
             maxIterRow.style.marginBottom  = 4;
             var maxIterLbl = new Label("最大反復数");
+            maxIterLbl.style.color = new StyleColor(Color.white);
             maxIterLbl.style.width = 80; maxIterLbl.style.fontSize = 10;
             maxIterLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             var maxIterField = new IntegerField { value = _maxIterations };
+            maxIterField.style.color = new StyleColor(Color.black);
             maxIterField.style.flexGrow = 1;
             maxIterField.RegisterValueChangedCallback(e => _maxIterations = Mathf.Clamp(e.newValue, 100, 50000));
             maxIterRow.Add(maxIterLbl); maxIterRow.Add(maxIterField);
@@ -249,8 +254,11 @@ namespace Poly_Ling.Player
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lb = new Label(label); lb.style.width = 80; lb.style.fontSize = 10; lb.style.unityTextAlign = TextAnchor.MiddleLeft;
+            lb.style.color = new StyleColor(Color.white);
             var sl = new Slider(min, max) { value = val }; sl.style.flexGrow = 1;
+            sl.style.color = new StyleColor(Color.white);
             var nf = new FloatField { value = val }; nf.style.width = 50;
+            nf.style.color = new StyleColor(Color.black);
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); onChange(e.newValue); });
             nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); onChange(v); });
             row.Add(lb); row.Add(sl); row.Add(nf);

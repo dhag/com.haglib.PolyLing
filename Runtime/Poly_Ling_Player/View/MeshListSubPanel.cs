@@ -175,6 +175,7 @@ namespace Poly_Ling.MeshListV2
 
             // ── パネル名
             var panelNameLabel = new Label("オブジェクトリスト");
+            panelNameLabel.style.color = new StyleColor(Color.white);
             panelNameLabel.style.fontSize = 12;
             panelNameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             panelNameLabel.style.marginBottom = 3;
@@ -182,6 +183,7 @@ namespace Poly_Ling.MeshListV2
 
             // ── スキンドメッシュ（= 詳細モード）トグル
             _detailModeToggle = new Toggle("スキンドメッシュ") { value = false, name = "detail-mode-toggle" };
+            _detailModeToggle.style.color = new StyleColor(Color.white);
             _detailModeToggle.style.marginBottom = 3;
             root.Add(_detailModeToggle);
 
@@ -202,6 +204,7 @@ namespace Poly_Ling.MeshListV2
             topRow.style.marginBottom  = 3;
 
             _countLabel = new Label { name = "count-label" };
+            _countLabel.style.color = new StyleColor(Color.white);
             topRow.Add(_countLabel);
 
             _showInfoToggle = new Toggle { name = "show-info-toggle", value = true };
@@ -214,6 +217,7 @@ namespace Poly_Ling.MeshListV2
             root.Add(topRow);
 
             _filterField = new TextField { name = "filter-field" };
+            _filterField.style.color = new StyleColor(Color.black);
             _filterField.style.marginBottom = 3;
             root.Add(_filterField);
 
@@ -266,12 +270,14 @@ namespace Poly_Ling.MeshListV2
 
             // ── ステータス
             _statusLabel = new Label("") { name = "status-label" };
+            _statusLabel.style.color = new StyleColor(Color.white);
             root.Add(_statusLabel);
         }
 
         private void BuildDetailFoldout(VisualElement c)
         {
             _meshNameField = new TextField { name = "mesh-name-field" };
+            _meshNameField.style.color = new StyleColor(Color.black);
             _meshNameField.style.marginBottom = 3;
             c.Add(_meshNameField);
             _vertexCountLabel = MakeInfoLabel("vertex-count-label"); c.Add(_vertexCountLabel);
@@ -289,6 +295,7 @@ namespace Poly_Ling.MeshListV2
             parent.Add(topRow);
 
             _morphFilterField = new TextField(); _morphFilterField.style.marginBottom = 3;
+            _morphFilterField.style.color = new StyleColor(Color.black);
             parent.Add(_morphFilterField);
 
             // リスト
@@ -301,6 +308,7 @@ namespace Poly_Ling.MeshListV2
             // テストウェイト
             var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
             _morphTestWeight = new Slider(0f, 1f); _morphTestWeight.style.flexGrow = 1; wRow.Add(_morphTestWeight);
+            _morphTestWeight.style.color = new StyleColor(Color.white);
             parent.Add(wRow);
 
             // 選択操作ボタン
@@ -325,6 +333,7 @@ namespace Poly_Ling.MeshListV2
             parent.Add(LabeledRow("パネル", _morphPanelPopupContainer));
 
             _morphNameField = new TextField(); _morphNameField.name = "morph-name-field";
+            _morphNameField.style.color = new StyleColor(Color.black);
             parent.Add(LabeledRow("名前", _morphNameField));
 
             var convRow = new VisualElement(); convRow.style.flexDirection = FlexDirection.Row;
@@ -338,6 +347,7 @@ namespace Poly_Ling.MeshListV2
             // モーフセット作成
             parent.Add(SectionHeader("モーフセット作成"));
             _morphSetNameField = new TextField(); _morphSetNameField.name = "morph-set-name-field";
+            _morphSetNameField.style.color = new StyleColor(Color.black);
             parent.Add(LabeledRow("セット名", _morphSetNameField));
 
             _morphSetTypePopupContainer = new VisualElement { name = "morph-set-type-container" };
@@ -347,6 +357,7 @@ namespace Poly_Ling.MeshListV2
             parent.Add(_btnCreateMorphSet);
 
             _morphStatusLabel = new Label(""); _morphStatusLabel.style.fontSize = 10; _morphStatusLabel.style.color = new StyleColor(new Color(1f, 0.7f, 0.4f)); _morphStatusLabel.style.marginTop = 3;
+            _morphStatusLabel.style.color = new StyleColor(Color.white);
             parent.Add(_morphStatusLabel);
         }
 
@@ -476,6 +487,7 @@ namespace Poly_Ling.MeshListV2
             c.style.paddingLeft = 2; c.style.paddingRight = 4;
 
             var nameLabel = new Label { name = "name" };
+            nameLabel.style.color = new StyleColor(Color.white);
             nameLabel.style.flexGrow = 1; nameLabel.style.flexShrink = 1;
             nameLabel.style.overflow = Overflow.Hidden; nameLabel.style.textOverflow = TextOverflow.Ellipsis;
             nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft; nameLabel.style.marginRight = 4;
@@ -855,6 +867,7 @@ namespace Poly_Ling.MeshListV2
             _poseFoldout = new Foldout { text = "ボーンポーズ", value = true, name = "pose-foldout" };
 
             _poseActiveToggle = new Toggle("アクティブ") { name = "pose-active-toggle" };
+            _poseActiveToggle.style.color = new StyleColor(Color.white);
             _poseActiveToggle.RegisterValueChangedCallback(e =>
             {
                 if (_isSyncingPoseUI || _ctx == null) return;
@@ -884,6 +897,7 @@ namespace Poly_Ling.MeshListV2
 
             _poseLayersContainer = new VisualElement { name = "pose-layers-container" };
             _poseNoLayersLabel = new Label("(レイヤーなし)") { name = "pose-no-layers-label" };
+            _poseNoLayersLabel.style.color = new StyleColor(Color.white);
             _poseLayersContainer.Add(_poseNoLayersLabel);
             _poseFoldout.Add(_poseLayersContainer);
 
@@ -1067,6 +1081,7 @@ namespace Poly_Ling.MeshListV2
             var r = new VisualElement(); r.AddToClassList("morph-list-row");
             r.Add(new Label { name = "n" }); r.Q<Label>("n").AddToClassList("morph-list-name");
             var il = new Label { name = "i" }; il.AddToClassList("morph-list-info"); r.Add(il);
+            il.style.color = new StyleColor(Color.white);
             return r;
         }
 
@@ -1157,6 +1172,7 @@ namespace Poly_Ling.MeshListV2
             if (df == null)
             {
                 df = new DropdownField(choices, initial);
+                df.style.color = new StyleColor(Color.white);
                 df.AddToClassList("morph-popup"); df.style.flexGrow = 1;
                 container.Add(df);
             }
@@ -1403,6 +1419,7 @@ namespace Poly_Ling.MeshListV2
         private static Label MakeInfoLabel(string name = "")
         {
             var l = new Label { name = name };
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize = 10; l.style.marginBottom = 1;
             return l;
         }
@@ -1410,6 +1427,7 @@ namespace Poly_Ling.MeshListV2
         private static Label SectionHeader(string text)
         {
             var l = new Label(text);
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize = 10; l.style.marginTop = 4; l.style.marginBottom = 1;
             return l;
         }
@@ -1426,6 +1444,7 @@ namespace Poly_Ling.MeshListV2
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2; row.style.alignItems = Align.Center;
             var lbl = new Label(label); lbl.style.width = 70; lbl.style.fontSize = 10;
+            lbl.style.color = new StyleColor(Color.white);
             row.Add(lbl); content.style.flexGrow = 1; row.Add(content);
             return row;
         }
@@ -1436,8 +1455,11 @@ namespace Poly_Ling.MeshListV2
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             fx = new FloatField("X") { name = $"{prefix}-x" }; fx.style.flexGrow = 1;
+            fx.style.color = new StyleColor(Color.black);
             fy = new FloatField("Y") { name = $"{prefix}-y" }; fy.style.flexGrow = 1;
+            fy.style.color = new StyleColor(Color.black);
             fz = new FloatField("Z") { name = $"{prefix}-z" }; fz.style.flexGrow = 1;
+            fz.style.color = new StyleColor(Color.black);
             row.Add(fx); row.Add(fy); row.Add(fz); parent.Add(row);
         }
 
@@ -1450,14 +1472,20 @@ namespace Poly_Ling.MeshListV2
         {
             var frow = new VisualElement(); frow.style.flexDirection = FlexDirection.Row; frow.style.marginBottom = 1;
             fx = new FloatField("X"); fx.style.flexGrow = 1;
+            fx.style.color = new StyleColor(Color.black);
             fy = new FloatField("Y"); fy.style.flexGrow = 1;
+            fy.style.color = new StyleColor(Color.black);
             fz = new FloatField("Z"); fz.style.flexGrow = 1;
+            fz.style.color = new StyleColor(Color.black);
             frow.Add(fx); frow.Add(fy); frow.Add(fz); parent.Add(frow);
 
             var srow = new VisualElement(); srow.style.flexDirection = FlexDirection.Row; srow.style.marginBottom = 2;
             sx = new Slider(-180f, 180f); sx.style.flexGrow = 1;
+            sx.style.color = new StyleColor(Color.white);
             sy = new Slider(-180f, 180f); sy.style.flexGrow = 1;
+            sy.style.color = new StyleColor(Color.white);
             sz = new Slider(-180f, 180f); sz.style.flexGrow = 1;
+            sz.style.color = new StyleColor(Color.white);
             srow.Add(sx); srow.Add(sy); srow.Add(sz); parent.Add(srow);
 
             if (isPose)

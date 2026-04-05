@@ -276,6 +276,7 @@ namespace Poly_Ling.Player
             int rem = _vmd.MorphNames.Count() - 30;
             if (rem > 0) { var l = new Label($"  ...他 {rem} トラック"); l.style.fontSize = 9; _morphListContainer.Add(l); }
             if (_morphListFoldout != null) _morphListFoldout.text = $"Morph Tracks ({_vmd.MorphNames.Count()})";
+            PlayerLayoutRoot.ApplyDarkTheme(_morphListContainer);
         }
 
         // ================================================================

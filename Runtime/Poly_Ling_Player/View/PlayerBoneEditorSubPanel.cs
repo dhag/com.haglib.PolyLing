@@ -58,6 +58,7 @@ namespace Poly_Ling.Player
             root.Add(_warningLabel);
 
             _selectionCountLabel = new Label();
+            _selectionCountLabel.style.color = new StyleColor(Color.white);
             _selectionCountLabel.style.marginBottom = 4;
             _selectionCountLabel.style.fontSize     = 10;
             root.Add(_selectionCountLabel);
@@ -256,6 +257,7 @@ namespace Poly_Ling.Player
             key.style.color    = new StyleColor(Color.white);
             key.style.fontSize = 10;
             var val = new Label();
+            val.style.color = new StyleColor(Color.white);
             val.style.flexGrow = 1;
             val.style.fontSize = 10;
             row.Add(key); row.Add(val);

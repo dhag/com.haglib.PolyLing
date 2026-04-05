@@ -54,6 +54,7 @@ namespace Poly_Ling.Player
             AddHeader("Select Mode");
 
             _lassoToggle = new Toggle("Lasso Select") { value = false };
+            _lassoToggle.style.color = new StyleColor(Color.white);
             _lassoToggle.style.marginBottom = 3;
             _lassoToggle.RegisterValueChangedCallback(e =>
             {
@@ -69,6 +70,7 @@ namespace Poly_Ling.Player
             AddHeader("Magnet");
 
             _magnetToggle = new Toggle("Enable") { value = false };
+            _magnetToggle.style.color = new StyleColor(Color.white);
             _magnetToggle.style.marginBottom = 2;
             _magnetToggle.RegisterValueChangedCallback(e =>
             {
@@ -91,6 +93,7 @@ namespace Poly_Ling.Player
 
             _falloffDropdown = new DropdownField("Falloff",
                 new List<string> { "Linear", "Smooth", "Sharp" }, 1);
+            _falloffDropdown.style.color = new StyleColor(Color.white);
             _falloffDropdown.style.marginBottom = 3;
             _falloffDropdown.RegisterValueChangedCallback(e =>
             {
@@ -127,6 +130,7 @@ namespace Poly_Ling.Player
 
             // ── 移動対象頂点数 ───────────────────────────────────────
             _targetLabel = new Label();
+            _targetLabel.style.color = new StyleColor(Color.white);
             _targetLabel.style.fontSize     = 10;
             _targetLabel.style.marginTop    = 4;
             _targetLabel.style.marginBottom = 2;
@@ -205,6 +209,7 @@ namespace Poly_Ling.Player
                                   Action<float> onChange)
         {
             var s = new Slider(label, min, max) { value = init };
+            s.style.color = new StyleColor(Color.white);
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;

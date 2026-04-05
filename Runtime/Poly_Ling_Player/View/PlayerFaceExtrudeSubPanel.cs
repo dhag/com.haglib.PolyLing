@@ -26,6 +26,7 @@ namespace Poly_Ling.Player
             var typeChoices = new System.Collections.Generic.List<string> { "Normal", "Bevel" };
             var typeValues = new[] { FaceExtrudeSettings.ExtrudeType.Normal, FaceExtrudeSettings.ExtrudeType.Bevel };
             var typeDD = new DropdownField("Type", typeChoices, 0);
+            typeDD.style.color = new StyleColor(Color.white);
             typeDD.RegisterValueChangedCallback(e => {
                 int idx = typeChoices.IndexOf(e.newValue);
                 if (idx >= 0 && GetH() != null) GetH().Type = typeValues[idx];
@@ -36,6 +37,7 @@ namespace Poly_Ling.Player
             _bevelSlider = MakeSlider("Bevel Scale", 0.01f, 1f, 0.8f, v => { if (GetH() != null) GetH().BevelScale = v; });
             _bevelGroup.Add(_bevelSlider); _root.Add(_bevelGroup);
             var normalToggle = new Toggle("Individual Normals") { value = false };
+            normalToggle.style.color = new StyleColor(Color.white);
             normalToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().IndividualNormals = e.newValue; });
             _root.Add(normalToggle);
         }
@@ -47,6 +49,7 @@ namespace Poly_Ling.Player
         private static Label Header(string text)
         {
             var l = new Label(text);
+            l.style.color = new StyleColor(Color.white);
             l.style.marginTop = 4; l.style.marginBottom = 3;
             return l;
         }
@@ -54,6 +57,7 @@ namespace Poly_Ling.Player
         private static Label InfoLabel()
         {
             var l = new Label();
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize = 10; l.style.marginBottom = 2;
             return l;
         }
@@ -61,6 +65,7 @@ namespace Poly_Ling.Player
         private static Slider MakeSlider(string label, float min, float max, float init, Action<float> onChange)
         {
             var s = new Slider(label, min, max) { value = init };
+            s.style.color = new StyleColor(Color.white);
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;
@@ -69,6 +74,7 @@ namespace Poly_Ling.Player
         private static SliderInt MakeIntSlider(string label, int min, int max, int init, Action<int> onChange)
         {
             var s = new SliderInt(label, min, max) { value = init };
+            s.style.color = new StyleColor(Color.white);
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;

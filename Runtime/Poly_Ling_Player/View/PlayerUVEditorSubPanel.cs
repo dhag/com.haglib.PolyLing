@@ -128,6 +128,7 @@ namespace Poly_Ling.Player
 
             // 情報ラベル
             _infoLabel = new Label();
+            _infoLabel.style.color = new StyleColor(Color.white);
             _infoLabel.style.fontSize    = 10;
             _infoLabel.style.marginBottom = 2;
             _root.Add(_infoLabel);
@@ -775,11 +776,14 @@ namespace Poly_Ling.Player
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 2;
             var lb = new Label(l1.Split(' ')[0] + ":"); lb.style.width = 46; lb.style.fontSize = 10;
+            lb.style.color = new StyleColor(Color.white);
             lb.style.unityTextAlign = TextAnchor.MiddleLeft;
             row.Add(lb);
             f1 = new FloatField(l1.Split(' ').Length > 1 ? l1.Split(' ')[1] : "") { value = v1 };
+            f1.style.color = new StyleColor(Color.black);
             f1.style.flexGrow = 1;
             f2 = new FloatField(l2) { value = v2 };
+            f2.style.color = new StyleColor(Color.black);
             f2.style.flexGrow = 1;
             row.Add(f1); row.Add(f2);
             return row;
@@ -791,8 +795,10 @@ namespace Poly_Ling.Player
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 2;
             var lb = new Label(label); lb.style.width = 60; lb.style.fontSize = 10;
+            lb.style.color = new StyleColor(Color.white);
             lb.style.unityTextAlign = TextAnchor.MiddleLeft;
             field = new FloatField { value = val };
+            field.style.color = new StyleColor(Color.black);
             field.style.flexGrow = 1;
             row.Add(lb); row.Add(field);
             return row;

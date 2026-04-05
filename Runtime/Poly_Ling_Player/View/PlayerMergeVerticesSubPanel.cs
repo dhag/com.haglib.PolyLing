@@ -122,6 +122,7 @@ namespace Poly_Ling.Player
                 _vertsLabel.text  = "";
                 _detailList.Clear();
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_detailList);
         }
 
         private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; return l; }

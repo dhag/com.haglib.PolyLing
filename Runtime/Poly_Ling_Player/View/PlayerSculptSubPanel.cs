@@ -61,6 +61,7 @@ namespace Poly_Ling.Player
             parent.Add(_root);
 
             var title = new Label("Sculpt Tool");
+            title.style.color = new StyleColor(Color.white);
             title.style.marginBottom = 4;
             _root.Add(title);
 
@@ -104,6 +105,7 @@ namespace Poly_Ling.Player
 
             // ── 反転 ────────────────────────────────────────────────
             _invertToggle = new Toggle("Invert") { value = false };
+            _invertToggle.style.color = new StyleColor(Color.white);
             _invertToggle.style.marginBottom = 4;
             _invertToggle.RegisterValueChangedCallback(e =>
             {
@@ -114,6 +116,8 @@ namespace Poly_Ling.Player
 
             // ── ヘルプ ───────────────────────────────────────────────
             _helpBox = new HelpBox("", HelpBoxMessageType.Info);
+            _helpBox.style.color = new StyleColor(Color.white);
+            _helpBox.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             _root.Add(_helpBox);
 
             UpdateHelp(SculptMode.Draw);
@@ -157,6 +161,7 @@ namespace Poly_Ling.Player
                                   Action<float> onChange)
         {
             var s = new Slider(label, min, max) { value = init };
+            s.style.color = new StyleColor(Color.white);
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;

@@ -333,6 +333,7 @@ namespace Poly_Ling.Player
                 _sliderMap[i] = slider;
                 _sliderContainer.Add(row);
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_sliderContainer);
         }
 
         // ================================================================

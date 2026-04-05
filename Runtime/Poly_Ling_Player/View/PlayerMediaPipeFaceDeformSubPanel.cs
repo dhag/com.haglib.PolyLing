@@ -50,6 +50,7 @@ namespace Poly_Ling.Player
                 HelpBoxMessageType.None));
 
             _fileStatusLabel = new Label();
+            _fileStatusLabel.style.color = new StyleColor(Color.white);
             _fileStatusLabel.style.fontSize     = 10;
             _fileStatusLabel.style.marginBottom = 4;
             _fileStatusLabel.style.whiteSpace   = WhiteSpace.Normal;

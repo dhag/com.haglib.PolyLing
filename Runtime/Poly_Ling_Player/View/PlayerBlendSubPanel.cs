@@ -249,6 +249,7 @@ namespace Poly_Ling.Player
                 lbl.style.fontSize = 10;
                 _targetListContainer.Add(lbl);
             }
+            PlayerLayoutRoot.ApplyDarkTheme(_targetListContainer);
         }
 
         // ================================================================

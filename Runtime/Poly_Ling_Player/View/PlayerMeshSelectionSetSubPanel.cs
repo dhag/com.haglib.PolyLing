@@ -68,6 +68,7 @@ namespace Poly_Ling.Player
             // フィルタ行
             var filterRow = new VisualElement(); filterRow.style.flexDirection = FlexDirection.Row; filterRow.style.marginBottom = 4;
             _filterField = new TextField(); _filterField.style.flexGrow = 1;
+            _filterField.style.color = new StyleColor(Color.black);
             _filterField.tooltip = "メッシュ名でフィルタ";
             _filterField.RegisterValueChangedCallback(e =>
             {
@@ -87,6 +88,7 @@ namespace Poly_Ling.Player
             // 名前 + 辞書化
             var saveRow = new VisualElement(); saveRow.style.flexDirection = FlexDirection.Row; saveRow.style.marginBottom = 4;
             _setNameField = new TextField(); _setNameField.style.flexGrow = 1;
+            _setNameField.style.color = new StyleColor(Color.black);
             var btnSave = new Button(OnSaveSet) { text = "辞書化" }; btnSave.style.width = 52;
             saveRow.Add(_setNameField); saveRow.Add(btnSave);
             root.Add(saveRow);

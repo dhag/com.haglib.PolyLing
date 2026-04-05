@@ -23,6 +23,7 @@ namespace Poly_Ling.Player
             var modeChoices = new System.Collections.Generic.List<string> { "Flip", "Split", "Dissolve" };
             var modeValues = new[] { EdgeTopoMode.Flip, EdgeTopoMode.Split, EdgeTopoMode.Dissolve };
             var modeDD = new DropdownField("Mode", modeChoices, 0);
+            modeDD.style.color = new StyleColor(Color.white);
             modeDD.RegisterValueChangedCallback(e => {
                 int idx = modeChoices.IndexOf(e.newValue);
                 if (idx >= 0 && GetH() != null) GetH().ModePublic = modeValues[idx];
@@ -30,6 +31,8 @@ namespace Poly_Ling.Player
             });
             _root.Add(modeDD);
             var help = new HelpBox("エッジをクリックして操作", HelpBoxMessageType.Info);
+            help.style.color = new StyleColor(Color.white);
+            help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             _root.Add(help);
         }
 
@@ -45,6 +48,7 @@ namespace Poly_Ling.Player
         private static Label Header(string text)
         {
             var l = new Label(text);
+            l.style.color = new StyleColor(Color.white);
             l.style.marginTop = 4; l.style.marginBottom = 3;
             return l;
         }
@@ -52,6 +56,7 @@ namespace Poly_Ling.Player
         private static Label InfoLabel()
         {
             var l = new Label();
+            l.style.color = new StyleColor(Color.white);
             l.style.fontSize = 10; l.style.marginBottom = 2;
             return l;
         }
@@ -59,6 +64,7 @@ namespace Poly_Ling.Player
         private static Slider MakeSlider(string label, float min, float max, float init, Action<float> onChange)
         {
             var s = new Slider(label, min, max) { value = init };
+            s.style.color = new StyleColor(Color.white);
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;
@@ -67,6 +73,7 @@ namespace Poly_Ling.Player
         private static SliderInt MakeIntSlider(string label, int min, int max, int init, Action<int> onChange)
         {
             var s = new SliderInt(label, min, max) { value = init };
+            s.style.color = new StyleColor(Color.white);
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;

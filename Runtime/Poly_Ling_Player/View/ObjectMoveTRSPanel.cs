@@ -188,16 +188,19 @@ namespace Poly_Ling.Player
             row.style.marginBottom  = 2;
 
             var lbl = new Label(label);
+            lbl.style.color = new StyleColor(Color.white);
             lbl.style.width           = 16;
             lbl.style.unityTextAlign  = TextAnchor.MiddleLeft;
             lbl.style.fontSize        = 10;
             row.Add(lbl);
 
             var sl = new Slider(min, max) { value = 0f };
+            sl.style.color = new StyleColor(Color.white);
             sl.style.flexGrow = 1;
             row.Add(sl);
 
             var nf = new FloatField { value = 0f };
+            nf.style.color = new StyleColor(Color.black);
             nf.style.width = 48;
             row.Add(nf);
 
@@ -236,12 +239,14 @@ namespace Poly_Ling.Player
             row.style.marginBottom  = 2;
 
             var lbl = new Label(label);
+            lbl.style.color = new StyleColor(Color.white);
             lbl.style.width          = 16;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             lbl.style.fontSize       = 10;
             row.Add(lbl);
 
             var nf = new FloatField { value = 1f };
+            nf.style.color = new StyleColor(Color.black);
             nf.style.flexGrow = 1;
             row.Add(nf);
 
