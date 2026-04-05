@@ -37,6 +37,15 @@ namespace Poly_Ling.Player
         private MoveToolHandler   _moveToolHandler;
         private PlayerToolContext _toolCtx = new PlayerToolContext();
 
+        // カリングスロット（ビューポートごとに独立した per-slot カリングバッファを使用）
+        private const int SlotPerspective = 0;
+        private const int SlotTop         = 1;
+        private const int SlotFront       = 2;
+        private const int SlotSide        = 3;
+
+        // スロットごとのカメラ dirty フラグ（カメラが変化したスロットのみ再カリング）
+        private readonly bool[] _slotCameraDirty = new bool[4] { true, true, true, true };
+
         // LateUpdate で UpdateFrame を呼ぶための最後のカメラ参照とマウス位置。
         // NotifyCameraChanged / NotifyPointerHover で更新される。
         private Camera  _lastCamera;
@@ -79,6 +88,43 @@ namespace Poly_Ling.Player
             _moveToolHandler = handler;
         }
 
+        /// <summary>
+        /// ビューポートに対応するカリングスロット番号を返す。該当なしは -1。
+        /// </summary>
+        private int ViewportToSlot(PlayerViewport vp)
+        {
+            if (vp == PerspectiveViewport) return SlotPerspective;
+            if (vp == TopViewport)         return SlotTop;
+            if (vp == FrontViewport)       return SlotFront;
+            if (vp == SideViewport)        return SlotSide;
+            return -1;
+        }
+
+        /// <summary>
+        /// _lastCamera に対応するビューポートを返す（未確定時は PerspectiveViewport）。
+        /// </summary>
+        private PlayerViewport ActiveViewport
+        {
+            get
+            {
+                if (_lastCamera == null) return PerspectiveViewport;
+                if (TopViewport         != null && TopViewport.Cam         == _lastCamera) return TopViewport;
+                if (FrontViewport       != null && FrontViewport.Cam       == _lastCamera) return FrontViewport;
+                if (SideViewport        != null && SideViewport.Cam        == _lastCamera) return SideViewport;
+                return PerspectiveViewport;
+            }
+        }
+
+        /// <summary>
+        /// メッシュトポロジー変更・モデル切り替え時に呼ぶ。
+        /// 全スロットのカリングを次フレームで強制再計算させる。
+        /// </summary>
+        public void MarkAllSlotsDirty()
+        {
+            for (int i = 0; i < _slotCameraDirty.Length; i++)
+                _slotCameraDirty[i] = true;
+        }
+
         public ToolContext GetCurrentToolContext(PlayerViewport vp = null)
         {
             var target = vp ?? PerspectiveViewport;
@@ -109,9 +155,6 @@ namespace Poly_Ling.Player
             if (_renderer == null) return;
 
             // 毎フレーム RequestNormal + UpdateFrame を呼ぶ。
-            // Editor の ViewportCore.Draw() が毎 Repaint UpdateFrame を呼ぶのと同等。
-            // dirty チェックにより変化がなければ ProcessUpdates は即返る。
-            // TransformDragging / CameraDragging 中は RequestNormal が内部でブロックされる。
             if (_lastParamsValid && _lastCamera != null)
             {
                 var adapter = _renderer.GetAdapter(0);
@@ -123,22 +166,25 @@ namespace Poly_Ling.Player
                 }
             }
 
-            DrawViewport(project, PerspectiveViewport);
-            DrawViewport(project, TopViewport);
-            DrawViewport(project, FrontViewport);
-            DrawViewport(project, SideViewport);
+            // アクティブビューポートを最後に描画することで、
+            // ComputeScreenPositionsGPU の CPU 読み戻し結果が
+            // GetScreenPositions() から取得できる値になる。
+            DrawViewport(project, PerspectiveViewport, SlotPerspective);
+            DrawViewport(project, TopViewport,         SlotTop);
+            DrawViewport(project, FrontViewport,       SlotFront);
+            DrawViewport(project, SideViewport,        SlotSide);
 
-            // 全ビューポート描画後、_screenPositions をアクティブビューポート用に復元する。
-            // DrawViewport で各カメラの DispatchCullingForDisplay を呼ぶと _screenPositions が
-            // 最後のビューポートのカメラで上書きされる。
-            // 矩形選択の CommitBoxSelect は _screenPositions を参照するため、
-            // アクティブビューポート（_lastCamera）の座標に戻す必要がある。
+            // アクティブビューポートのスクリーン座標を最終確定させる。
+            // CommitBoxSelect 等の CPU 側処理が GetScreenPositions() を参照するため。
             if (_lastParamsValid && _lastCamera != null)
             {
-                var adapterRestore = _renderer?.GetAdapter(0);
-                if (adapterRestore != null && adapterRestore.IsInitialized)
-                    adapterRestore.DispatchCullingForDisplay(
-                        _lastCamera, adapterRestore.BackfaceCullingEnabled);
+                var adapter = _renderer?.GetAdapter(0);
+                if (adapter != null && adapter.IsInitialized)
+                {
+                    int activeSlot = ViewportToSlot(ActiveViewport);
+                    if (activeSlot >= 0)
+                        adapter.DispatchCullingForDisplay(_lastCamera, adapter.BackfaceCullingEnabled, activeSlot);
+                }
             }
         }
 
@@ -163,21 +209,19 @@ namespace Poly_Ling.Player
             if (vp == null || !vp.IsReady) return;
             var cam = vp.Cam;
 
-            // モデルインデックス0固定（現状シングルモデル）
-            // 将来マルチモデル対応する場合はループに変える。
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;
 
-            // ビューポートのピクセルサイズをRectで渡す（座標変換に使われる）
             var rect = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
-
-            // ホバー位置はカメラ変更時には不明なのでパネル中央を渡す（影響小）
             var dummyMouse = new Vector2(rect.width * 0.5f, rect.height * 0.5f);
 
-            // パラメータを保存（LateUpdate の UpdateFrame で使い回す）
             _lastCamera  = cam;
             if (!_lastParamsValid) _lastMousePos = dummyMouse;
             _lastParamsValid = true;
+
+            // カメラが変化したスロットを dirty にする（次フレームの DrawViewport で再カリング）
+            int slot = ViewportToSlot(vp);
+            if (slot >= 0) _slotCameraDirty[slot] = true;
 
             _toolCtx.UpdateFromViewport(vp);
 
@@ -848,25 +892,22 @@ namespace Poly_Ling.Player
         // 内部
         // ================================================================
 
-        private void DrawViewport(ProjectContext project, PlayerViewport vp)
+        private void DrawViewport(ProjectContext project, PlayerViewport vp, int slot)
         {
             if (vp == null || !vp.IsReady) return;
             var cam     = vp.Cam;
             var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return;
 
-            // 各ビューポートのカメラで背面カリングを再計算する。
-            // DrawWireframeAndVertices の AllowGpuVisibility パスは Normal モード時のみ実行され
-            // ConsumeNormalMode() で Idle に降格するため、2番目以降のビューポートでは
-            // AllowGpuVisibility が走らず最初のカメラのカリング結果が流用される。
-            // DispatchCullingForDisplay を常に呼ぶことで各カメラのカリングを保証する。
-            if (adapter != null && adapter.IsInitialized
-                && adapter.BackfaceCullingEnabled)
-                adapter.DispatchCullingForDisplay(cam, true);
+            // カメラが変化したスロットのみ per-slot カリングを再計算する。
+            if (_slotCameraDirty[slot])
+            {
+                adapter.DispatchCullingForDisplay(cam, adapter.BackfaceCullingEnabled, slot);
+                _slotCameraDirty[slot] = false;
+            }
 
             _renderer.DrawMeshes(project, cam);
-            // project を渡すことで AllowSelectionSync 時に SyncSelectionFromModel が
-            // 呼ばれ VertexSelected 等のフラグが正しく反映される。
-            _renderer.DrawWireframeAndVertices(cam, project);
+            _renderer.DrawWireframeAndVertices(cam, project, slot);
             _renderer.DrawBones(project, cam);
         }
     }

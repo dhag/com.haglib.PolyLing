@@ -51,7 +51,6 @@ namespace Poly_Ling.Player
 
             _fileStatusLabel = new Label();
             _fileStatusLabel.style.fontSize     = 10;
-            _fileStatusLabel.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _fileStatusLabel.style.marginBottom = 4;
             _fileStatusLabel.style.whiteSpace   = WhiteSpace.Normal;
             root.Add(_fileStatusLabel);

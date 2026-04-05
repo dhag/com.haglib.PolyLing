@@ -80,7 +80,6 @@ namespace Poly_Ling.Player
 
             // 選択状態ラベル
             _statusLabel = new Label();
-            _statusLabel.style.color     = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _statusLabel.style.fontSize  = 10;
             _statusLabel.style.marginTop = 3;
             _root.Add(_statusLabel);
@@ -147,6 +146,7 @@ namespace Poly_Ling.Player
             }
         }
 
-        private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; l.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f)); return l; }
+        private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; return l; }
+
     }
 }

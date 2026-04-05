@@ -246,7 +246,6 @@ namespace Poly_Ling.Player
             {
                 if (shown++ >= 15) { var more = new Label("  ...他"); more.style.fontSize = 9; more.style.color = new StyleColor(Color.white); _mappingDetailContainer?.Add(more); break; }
                 var lbl = new Label($"  {kvp.Key}: [{kvp.Value}]");
-                lbl.style.fontSize = 9; lbl.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
                 _mappingDetailContainer?.Add(lbl);
             }
         }

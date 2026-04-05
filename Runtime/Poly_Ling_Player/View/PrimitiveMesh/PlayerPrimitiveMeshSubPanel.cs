@@ -539,7 +539,6 @@ namespace Poly_Ling.Player
             // プロファイル点リスト（簡易：点数表示 + クリア + デフォルト）
             c.Add(SL(T("ProfileEditor")));
             var profileInfo = new Label($"Points: {_revProfile?.Count ?? 0}");
-            profileInfo.style.color  = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             profileInfo.style.fontSize = 10;
             c.Add(profileInfo);
 
@@ -588,7 +587,6 @@ namespace Poly_Ling.Player
             var csvLabel = new Label(string.IsNullOrEmpty(_p2dP.CsvPath)
                 ? T("NoFile")
                 : System.IO.Path.GetFileName(_p2dP.CsvPath));
-            csvLabel.style.color     = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             csvLabel.style.fontSize  = 10;
             csvLabel.style.marginBottom = 2;
             c.Add(csvLabel);
@@ -643,7 +641,6 @@ namespace Poly_Ling.Player
                 row.style.marginBottom  = 2;
                 var lbl = new Label($"Loop {i}  ({_p2dLoops[i].Points.Count}pt)");
                 lbl.style.flexGrow = 1;
-                lbl.style.color    = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
                 lbl.style.fontSize = 10;
                 var holeTog = new Toggle(T("IsHole")) { value = _p2dLoops[i].IsHole };
                 holeTog.RegisterValueChangedCallback(e => { _p2dLoops[idx].IsHole = e.newValue; D(); });
@@ -709,7 +706,6 @@ namespace Poly_Ling.Player
             c.Add(SL(T("Landmarks")));
             var lmLabel = new Label(string.IsNullOrEmpty(_nohP.LandmarksFilePath)
                 ? T("NotSelected") : System.IO.Path.GetFileName(_nohP.LandmarksFilePath));
-            lmLabel.style.color    = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             lmLabel.style.fontSize = 10;
             lmLabel.style.marginBottom = 2;
             c.Add(lmLabel);
@@ -730,7 +726,6 @@ namespace Poly_Ling.Player
             c.Add(SL(T("TrianglesJson")));
             var triLabel = new Label(string.IsNullOrEmpty(_nohP.TrianglesFilePath)
                 ? T("NotSelected") : System.IO.Path.GetFileName(_nohP.TrianglesFilePath));
-            triLabel.style.color    = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             triLabel.style.fontSize = 10;
             triLabel.style.marginBottom = 2;
             c.Add(triLabel);
@@ -924,7 +919,6 @@ namespace Poly_Ling.Player
         private static VisualElement TR(string label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() }; t.style.marginBottom = 2;
-            t.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             t.RegisterValueChangedCallback(e => set(e.newValue)); return t;
         }
 
@@ -940,7 +934,6 @@ namespace Poly_Ling.Player
             {
                 var sub = new VisualElement(); sub.style.flexDirection = FlexDirection.Row; sub.style.flexGrow = 1;
                 var l = new Label(lbl); l.style.width = 14; l.style.unityTextAlign = TextAnchor.MiddleLeft;
-                l.style.color = new StyleColor(new Color(0.75f, 0.75f, 0.75f)); l.style.fontSize = 10;
                 var f = new FloatField { value = g() }; f.style.flexGrow = 1;
                 f.RegisterValueChangedCallback(e => s(e.newValue));
                 sub.Add(l); sub.Add(f); row.Add(sub);
@@ -953,7 +946,6 @@ namespace Poly_Ling.Player
         {
             var l = new Label(t); l.style.width = 80;
             l.style.unityTextAlign = TextAnchor.MiddleLeft;
-            l.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             l.style.fontSize = 10; return l;
         }
 

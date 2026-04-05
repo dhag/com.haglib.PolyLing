@@ -133,7 +133,6 @@ namespace Poly_Ling.Player
 
             _seamInfo = new Label();
             _seamInfo.style.fontSize     = 10;
-            _seamInfo.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _seamInfo.style.marginTop    = 4;
             _seamInfo.style.marginBottom = 4;
             root.Add(_seamInfo);

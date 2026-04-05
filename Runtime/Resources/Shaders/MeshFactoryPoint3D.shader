@@ -67,6 +67,7 @@ Shader "Poly_Ling/Point3D"
             float4 _BorderColorDefault;
             
             StructuredBuffer<uint> _VertexFlagsBuffer;
+            StructuredBuffer<uint> _VertexCulledBuffer;
             int _UseVertexFlagsBuffer;    // バッファ使用フラグ
             int _EnableBackfaceCulling;   // 背面カリング有効フラグ
             
@@ -91,7 +92,7 @@ Shader "Poly_Ling/Point3D"
                     uint bufferIndex = (uint)v.uv2.x;
                     uint flags = _VertexFlagsBuffer[bufferIndex];
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
-                    bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isCulled = _VertexCulledBuffer[bufferIndex] != 0u;
                     bool isHover = selectState < 0.1;
                     
                     // 非表示メッシュをスキップ
@@ -227,6 +228,7 @@ Shader "Poly_Ling/Point3D"
             float4 _BorderColorDefault;
             
             StructuredBuffer<uint> _VertexFlagsBuffer;
+            StructuredBuffer<uint> _VertexCulledBuffer;
             int _UseVertexFlagsBuffer;    // バッファ使用フラグ
             int _EnableBackfaceCulling;   // 背面カリング有効フラグ
             
@@ -251,7 +253,7 @@ Shader "Poly_Ling/Point3D"
                     uint bufferIndex = (uint)v.uv2.x;
                     uint flags = _VertexFlagsBuffer[bufferIndex];
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
-                    bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isCulled = _VertexCulledBuffer[bufferIndex] != 0u;
                     bool isHover = selectState < 0.1;
                     
                     // 非表示メッシュをスキップ

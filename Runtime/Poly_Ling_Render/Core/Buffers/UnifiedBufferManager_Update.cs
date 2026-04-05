@@ -948,13 +948,15 @@ namespace Poly_Ling.Core
         /// <summary>
         /// GPUでスクリーン座標を計算
         /// </summary>
-        public void ComputeScreenPositionsGPU(Matrix4x4 viewProjection, Rect viewport)
+        public void ComputeScreenPositionsGPU(Matrix4x4 viewProjection, Rect viewport, int slot = 0)
         {
             if (!_gpuComputeAvailable || _computeShader == null || _totalVertexCount <= 0)
             {
                 ComputeScreenPositions(viewProjection, viewport);
                 return;
             }
+
+            var screenBuf = GetSlotScreenPosBuffer(slot) ?? _screenPosBuffer4;
 
             // パラメータ設定
             _computeShader.SetMatrix("_ViewProjectionMatrix", viewProjection);
@@ -964,25 +966,20 @@ namespace Poly_Ling.Core
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
             _computeShader.SetInt("_UseMirror", _mirrorEnabled ? 1 : 0);
 
-            // バッファバインド（ワールド変換が有効な場合はWorldPositionBufferを使用）
             var posBuffer = UseWorldPositions ? _worldPositionBuffer : _positionBuffer;
-            _computeShader.SetBuffer(_kernelScreenPos, "_PositionBuffer", posBuffer);
-            _computeShader.SetBuffer(_kernelScreenPos, "_ScreenPositionBuffer", _screenPosBuffer4);
-            _computeShader.SetBuffer(_kernelScreenPos, "_VertexFlagsBuffer", _vertexFlagsBuffer);
-            _computeShader.SetBuffer(_kernelScreenPos, "_MirrorPositionBuffer", _mirrorPositionBuffer);
-            _computeShader.SetBuffer(_kernelScreenPos, "_MirrorScreenPositionBuffer", _mirrorScreenPosBuffer4);
+            _computeShader.SetBuffer(_kernelScreenPos, "_PositionBuffer",            posBuffer);
+            _computeShader.SetBuffer(_kernelScreenPos, "_ScreenPositionBuffer",      screenBuf);
+            _computeShader.SetBuffer(_kernelScreenPos, "_VertexFlagsBuffer",         _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelScreenPos, "_MirrorPositionBuffer",      _mirrorPositionBuffer);
+            _computeShader.SetBuffer(_kernelScreenPos, "_MirrorScreenPositionBuffer",_mirrorScreenPosBuffer4);
 
-            // ディスパッチ
             int groups = ThreadGroups(_totalVertexCount);
             _computeShader.Dispatch(_kernelScreenPos, groups, 1, 1);
 
-            // 結果を読み戻してfloat2に変換
-            _screenPosBuffer4.GetData(_screenPositions4, 0, 0, _totalVertexCount);
-            
+            // CPU 読み戻し（ホバー・ヒットテスト・CommitBoxSelect 用）
+            screenBuf.GetData(_screenPositions4, 0, 0, _totalVertexCount);
             for (int i = 0; i < _totalVertexCount; i++)
-            {
                 _screenPositions[i] = new Vector2(_screenPositions4[i].x, _screenPositions4[i].y);
-            }
         }
 
         /// <summary>
@@ -998,8 +995,9 @@ namespace Poly_Ling.Core
             _computeShader.SetInt("_VertexCount", _totalVertexCount);
             _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
 
-            _computeShader.SetBuffer(_kernelVertexHit, "_ScreenPositionBuffer", _screenPosBuffer4);
-            _computeShader.SetBuffer(_kernelVertexHit, "_VertexFlagsBuffer", _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelVertexHit, "_ScreenPositionBuffer",   GetSlotScreenPosBuffer(0) ?? _screenPosBuffer4);
+            _computeShader.SetBuffer(_kernelVertexHit, "_VertexFlagsBuffer",       _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelVertexHit, "_VertexCulledBuffer",      GetVertexCulledBuffer(0) ?? _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelVertexHit, "_VertexHitDistanceBuffer", _hitVertexDistBuffer);
 
             _computeShader.Dispatch(_kernelVertexHit, ThreadGroups(_totalVertexCount), 1, 1);
@@ -1021,10 +1019,11 @@ namespace Poly_Ling.Core
             _computeShader.SetInt("_LineCount", _totalLineCount);
             _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
 
-            _computeShader.SetBuffer(_kernelLineHit, "_ScreenPositionBuffer", _screenPosBuffer4);
-            _computeShader.SetBuffer(_kernelLineHit, "_LineBuffer", _lineBuffer);
-            _computeShader.SetBuffer(_kernelLineHit, "_LineFlagsBuffer", _lineFlagsBuffer);
-            _computeShader.SetBuffer(_kernelLineHit, "_LineHitDistanceBuffer", _hitLineDistBuffer);
+            _computeShader.SetBuffer(_kernelLineHit, "_ScreenPositionBuffer", GetSlotScreenPosBuffer(0) ?? _screenPosBuffer4);
+            _computeShader.SetBuffer(_kernelLineHit, "_LineBuffer",           _lineBuffer);
+            _computeShader.SetBuffer(_kernelLineHit, "_LineFlagsBuffer",      _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineHit, "_LineCulledBuffer",     GetLineCulledBuffer(0) ?? _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineHit, "_LineHitDistanceBuffer",_hitLineDistBuffer);
 
             _computeShader.Dispatch(_kernelLineHit, ThreadGroups(_totalLineCount), 1, 1);
 
@@ -1036,19 +1035,27 @@ namespace Poly_Ling.Core
         /// GPUで面可視性を計算
         /// 注意: ClearBuffersの後、ComputeScreenPositionsGPUの後に実行すること
         /// </summary>
-        public void DispatchFaceVisibilityGPU()
+        /// <param name="slot">カリングスロット（0〜CullingSlotCount-1）</param>
+        public void DispatchFaceVisibilityGPU(int slot = 0)
         {
             if (!_gpuComputeAvailable || _computeShader == null || _totalFaceCount <= 0)
                 return;
 
-            _computeShader.SetInt("_FaceCount", _totalFaceCount);
-            _computeShader.SetInt("_VertexCount", _totalVertexCount);
+            var screenBuf  = GetSlotScreenPosBuffer(slot) ?? _screenPosBuffer4;
+            var vCulledBuf = GetVertexCulledBuffer(slot);
+            var fCulledBuf = GetFaceCulledBuffer(slot);
+            if (vCulledBuf == null || fCulledBuf == null) return;
 
-            _computeShader.SetBuffer(_kernelFaceVisibility, "_ScreenPositionBuffer", _screenPosBuffer4);
-            _computeShader.SetBuffer(_kernelFaceVisibility, "_FaceBuffer", _faceBuffer);
-            _computeShader.SetBuffer(_kernelFaceVisibility, "_FaceFlagsBuffer", _faceFlagsBuffer);
-            _computeShader.SetBuffer(_kernelFaceVisibility, "_IndexBuffer", _indexBuffer);
-            _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexFlagsBuffer", _vertexFlagsBuffer);
+            _computeShader.SetInt("_FaceCount",   _totalFaceCount);
+            _computeShader.SetInt("_VertexCount",  _totalVertexCount);
+
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_ScreenPositionBuffer", screenBuf);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_FaceBuffer",           _faceBuffer);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_FaceFlagsBuffer",      _faceFlagsBuffer);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_FaceCulledBuffer",     fCulledBuf);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_IndexBuffer",          _indexBuffer);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexFlagsBuffer",    _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelFaceVisibility, "_VertexCulledBuffer",   vCulledBuf);
 
             _computeShader.Dispatch(_kernelFaceVisibility, ThreadGroups(_totalFaceCount), 1, 1);
         }
@@ -1058,19 +1065,25 @@ namespace Poly_Ling.Core
         /// 注意: DispatchFaceVisibilityGPUの後に実行すること
         /// 入力：面、出力：線分フラグ
         /// </summary>
-        public void DispatchLineVisibilityGPU()
+        /// <param name="slot">カリングスロット（0〜CullingSlotCount-1）</param>
+        public void DispatchLineVisibilityGPU(int slot = 0)
         {
             if (!_gpuComputeAvailable || _computeShader == null || _totalFaceCount <= 0)
                 return;
 
+            var lCulledBuf = GetLineCulledBuffer(slot);
+            var fCulledBuf = GetFaceCulledBuffer(slot);
+            if (lCulledBuf == null || fCulledBuf == null) return;
+
             _computeShader.SetInt("_LineCount", _totalLineCount);
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
 
-            _computeShader.SetBuffer(_kernelLineVisibility, "_FaceBuffer", _faceBuffer);
-            _computeShader.SetBuffer(_kernelLineVisibility, "_FaceFlagsBuffer", _faceFlagsBuffer);
-            _computeShader.SetBuffer(_kernelLineVisibility, "_LineFlagsBuffer", _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_FaceBuffer",       _faceBuffer);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_FaceFlagsBuffer",  _faceFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_FaceCulledBuffer", fCulledBuf);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_LineFlagsBuffer",  _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelLineVisibility, "_LineCulledBuffer", lCulledBuf);
 
-            // 面数でディスパッチ（面ベースのアルゴリズム）
             _computeShader.Dispatch(_kernelLineVisibility, ThreadGroups(_totalFaceCount), 1, 1);
         }
 
@@ -1133,12 +1146,13 @@ namespace Poly_Ling.Core
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
             _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
 
-            _computeShader.SetBuffer(_kernelFaceHit, "_ScreenPositionBuffer", _screenPosBuffer4);
-            _computeShader.SetBuffer(_kernelFaceHit, "_FaceBuffer", _faceBuffer);
-            _computeShader.SetBuffer(_kernelFaceHit, "_FaceFlagsBuffer", _faceFlagsBuffer);
-            _computeShader.SetBuffer(_kernelFaceHit, "_IndexBuffer", _indexBuffer);
-            _computeShader.SetBuffer(_kernelFaceHit, "_FaceHitBuffer", _faceHitBuffer);
-            _computeShader.SetBuffer(_kernelFaceHit, "_FaceHitDepthBuffer", _faceHitDepthBuffer);
+            _computeShader.SetBuffer(_kernelFaceHit, "_ScreenPositionBuffer", GetSlotScreenPosBuffer(0) ?? _screenPosBuffer4);
+            _computeShader.SetBuffer(_kernelFaceHit, "_FaceBuffer",          _faceBuffer);
+            _computeShader.SetBuffer(_kernelFaceHit, "_FaceFlagsBuffer",     _faceFlagsBuffer);
+            _computeShader.SetBuffer(_kernelFaceHit, "_FaceCulledBuffer",    GetFaceCulledBuffer(0) ?? _faceFlagsBuffer);
+            _computeShader.SetBuffer(_kernelFaceHit, "_IndexBuffer",         _indexBuffer);
+            _computeShader.SetBuffer(_kernelFaceHit, "_FaceHitBuffer",       _faceHitBuffer);
+            _computeShader.SetBuffer(_kernelFaceHit, "_FaceHitDepthBuffer",  _faceHitDepthBuffer);
 
             _computeShader.Dispatch(_kernelFaceHit, ThreadGroups(_totalFaceCount), 1, 1);
 
@@ -1233,17 +1247,18 @@ namespace Poly_Ling.Core
             if (!_gpuComputeAvailable)
                 return;
 
-            // 1. バッファクリア（カリングフラグを初期化）
+            // 1. バッファクリア
             DispatchClearBuffersGPU();
+            DispatchClearCulledBuffersGPU(0);
 
-            // 2. スクリーン座標計算
-            ComputeScreenPositionsGPU(viewProjection, viewport);
+            // 2. スクリーン座標計算（slot 0）
+            ComputeScreenPositionsGPU(viewProjection, viewport, 0);
 
-            // 3. 面可視性計算（表面の頂点カリングもクリア）
-            DispatchFaceVisibilityGPU();
+            // 3. 面可視性計算（slot 0）
+            DispatchFaceVisibilityGPU(0);
 
-            // 4. 線分可視性計算（面のカリングから継承）
-            DispatchLineVisibilityGPU();
+            // 4. 線分可視性計算（slot 0）
+            DispatchLineVisibilityGPU(0);
 
             // 5. ヒットテスト
             DispatchVertexHitTestGPU(mousePosition, hitRadius);
@@ -1252,7 +1267,8 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
-        /// GPUでバッファをクリア（カリングフラグを初期化）
+        /// GPUでバッファをクリア（スクリーン座標・ヒット距離を初期化）
+        /// per-slot カリングバッファは DispatchClearCulledBuffersGPU で別途クリアする。
         /// D3D11.0のUAV制限(8個)のため、2つのカーネルに分割
         /// </summary>
         public void DispatchClearBuffersGPU()
@@ -1265,42 +1281,86 @@ namespace Poly_Ling.Core
             _computeShader.SetInt("_FaceCount", _totalFaceCount);
             _computeShader.SetInt("_UseMirror", _mirrorEnabled ? 1 : 0);
 
-            // カーネル1: 頂点・線分関連（UAV 6個）
-            _computeShader.SetBuffer(_kernelClear, "_ScreenPositionBuffer", _screenPosBuffer4);
+            // カーネル1: 頂点・線分関連（スクリーン座標・ヒット距離のみ）
+            _computeShader.SetBuffer(_kernelClear, "_ScreenPositionBuffer",    _screenPosBuffer4);
             _computeShader.SetBuffer(_kernelClear, "_VertexHitDistanceBuffer", _hitVertexDistBuffer);
-            _computeShader.SetBuffer(_kernelClear, "_VertexFlagsBuffer", _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelClear, "_VertexFlagsBuffer",       _vertexFlagsBuffer);
             _computeShader.SetBuffer(_kernelClear, "_MirrorScreenPositionBuffer", _mirrorScreenPosBuffer4);
-            _computeShader.SetBuffer(_kernelClear, "_LineHitDistanceBuffer", _hitLineDistBuffer);
-            _computeShader.SetBuffer(_kernelClear, "_LineFlagsBuffer", _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelClear, "_LineHitDistanceBuffer",   _hitLineDistBuffer);
+            _computeShader.SetBuffer(_kernelClear, "_LineFlagsBuffer",         _lineFlagsBuffer);
 
             int maxVertexLine = Mathf.Max(_totalVertexCount, _totalLineCount);
             if (maxVertexLine > 0)
-            {
                 _computeShader.Dispatch(_kernelClear, ThreadGroups(maxVertexLine), 1, 1);
-            }
 
-            // カーネル2: 面関連（UAV 3個）
-            _computeShader.SetBuffer(_kernelClearFace, "_FaceHitBuffer", _faceHitBuffer);
+            // カーネル2: 面関連（ヒット距離のみ）
+            _computeShader.SetBuffer(_kernelClearFace, "_FaceHitBuffer",      _faceHitBuffer);
             _computeShader.SetBuffer(_kernelClearFace, "_FaceHitDepthBuffer", _faceHitDepthBuffer);
-            _computeShader.SetBuffer(_kernelClearFace, "_FaceFlagsBuffer", _faceFlagsBuffer);
+            _computeShader.SetBuffer(_kernelClearFace, "_FaceFlagsBuffer",    _faceFlagsBuffer);
 
             if (_totalFaceCount > 0)
-            {
                 _computeShader.Dispatch(_kernelClearFace, ThreadGroups(_totalFaceCount), 1, 1);
+        }
+
+        /// <summary>
+        /// per-slot カリングバッファをクリア（全頂点・辺・面を「カリング済み」で初期化）。
+        /// ComputeScreenPositionsGPU の前に呼ぶこと。
+        /// </summary>
+        public void DispatchClearCulledBuffersGPU(int slot)
+        {
+            if (!_gpuComputeAvailable || _computeShader == null) return;
+            var vBuf = GetVertexCulledBuffer(slot);
+            var lBuf = GetLineCulledBuffer(slot);
+            var fBuf = GetFaceCulledBuffer(slot);
+            if (vBuf == null) return;
+
+            _computeShader.SetInt("_VertexCount", _totalVertexCount);
+            _computeShader.SetInt("_LineCount",   _totalLineCount);
+            _computeShader.SetInt("_FaceCount",   _totalFaceCount);
+
+            // 頂点・辺
+            _computeShader.SetBuffer(_kernelClearCulled, "_VertexFlagsBuffer",  _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelClearCulled, "_VertexCulledBuffer", vBuf);
+            _computeShader.SetBuffer(_kernelClearCulled, "_LineFlagsBuffer",    _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelClearCulled, "_LineCulledBuffer",   lBuf);
+            int maxVL = Mathf.Max(_totalVertexCount, _totalLineCount);
+            if (maxVL > 0)
+                _computeShader.Dispatch(_kernelClearCulled, ThreadGroups(maxVL), 1, 1);
+
+            // 面
+            if (fBuf != null)
+            {
+                _computeShader.SetBuffer(_kernelClearFaceCulled, "_FaceFlagsBuffer",  _faceFlagsBuffer);
+                _computeShader.SetBuffer(_kernelClearFaceCulled, "_FaceCulledBuffer", fBuf);
+                if (_totalFaceCount > 0)
+                    _computeShader.Dispatch(_kernelClearFaceCulled, ThreadGroups(_totalFaceCount), 1, 1);
             }
         }
 
         /// <summary>
-        /// 背面カリング無効時: CPU配列（FLAG_CULLED未設定）をそのままGPUに転送し
-        /// 全頂点・全線分の FLAG_CULLED をクリアする。
-        /// DispatchClearBuffersGPU の後に呼ぶこと（スクリーン座標クリアの後）。
+        /// 背面カリング無効時: 指定スロットの全カリングバッファをゼロ（可視）にクリアする。
+        /// DispatchClearCulledBuffersGPU の後に呼ぶこと。
         /// </summary>
-        public void ClearCulledFlagsGPU()
+        public void ClearCulledFlagsGPU(int slot = 0)
         {
-            if (_totalVertexCount > 0 && _vertexFlagsBuffer != null)
-                _vertexFlagsBuffer.SetData(_vertexFlags, 0, 0, _totalVertexCount);
-            if (_totalLineCount > 0 && _lineFlagsBuffer != null)
-                _lineFlagsBuffer.SetData(_lineFlags, 0, 0, _totalLineCount);
+            var vBuf = GetVertexCulledBuffer(slot);
+            var lBuf = GetLineCulledBuffer(slot);
+            var fBuf = GetFaceCulledBuffer(slot);
+
+            // zeros キャッシュが未確保の場合は確保する
+            if (_zeroVertexCache == null || _zeroVertexCache.Length < _totalVertexCount)
+                Array.Resize(ref _zeroVertexCache, Mathf.NextPowerOfTwo(Mathf.Max(1, _totalVertexCount)));
+            if (_zeroLineCache   == null || _zeroLineCache.Length   < _totalLineCount)
+                Array.Resize(ref _zeroLineCache,   Mathf.NextPowerOfTwo(Mathf.Max(1, _totalLineCount)));
+            if (_zeroFaceCache   == null || _zeroFaceCache.Length   < _totalFaceCount)
+                Array.Resize(ref _zeroFaceCache,   Mathf.NextPowerOfTwo(Mathf.Max(1, _totalFaceCount)));
+
+            if (vBuf != null && _totalVertexCount > 0)
+                vBuf.SetData(_zeroVertexCache, 0, 0, _totalVertexCount);
+            if (lBuf != null && _totalLineCount > 0)
+                lBuf.SetData(_zeroLineCache, 0, 0, _totalLineCount);
+            if (fBuf != null && _totalFaceCount > 0)
+                fBuf.SetData(_zeroFaceCache, 0, 0, _totalFaceCount);
         }
 
         // ============================================================

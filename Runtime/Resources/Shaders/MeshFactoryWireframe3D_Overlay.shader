@@ -39,6 +39,7 @@ Shader "Poly_Ling/Wireframe3D_Overlay"
             };
             
             StructuredBuffer<uint> _LineFlagsBuffer;
+            StructuredBuffer<uint> _LineCulledBuffer;
             int _UseLineFlagsBuffer;
             int _EnableBackfaceCulling;
             
@@ -51,7 +52,7 @@ Shader "Poly_Ling/Wireframe3D_Overlay"
                     uint idx = (uint)v.uv.x;
                     uint flags = _LineFlagsBuffer[idx];
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
-                    bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isCulled = _LineCulledBuffer[idx] != 0u;
                     bool isHovered = (flags & FLAG_HOVERED) != 0;
                     
                     // 非表示メッシュをスキップ

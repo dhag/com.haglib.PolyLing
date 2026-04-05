@@ -127,7 +127,6 @@ namespace Poly_Ling.Player
 
             // ── 移動対象頂点数 ───────────────────────────────────────
             _targetLabel = new Label();
-            _targetLabel.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _targetLabel.style.fontSize     = 10;
             _targetLabel.style.marginTop    = 4;
             _targetLabel.style.marginBottom = 2;

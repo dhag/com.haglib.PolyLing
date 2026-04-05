@@ -247,7 +247,6 @@ namespace Poly_Ling.Player
                 if (ctx?.MeshObject == null) continue;
                 var lbl = new Label($"  {ctx.Name}  [V:{ctx.MeshObject.VertexCount}]");
                 lbl.style.fontSize = 10;
-                lbl.style.color    = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
                 _targetListContainer.Add(lbl);
             }
         }
@@ -303,7 +302,6 @@ namespace Poly_Ling.Player
                 row.style.paddingBottom = 2;
                 row.style.paddingLeft   = 4;
                 row.style.fontSize      = 10;
-                row.style.color         = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
 
                 if (i == _selectedCandidateListIndex)
                     row.style.backgroundColor = new StyleColor(new Color(0.24f, 0.48f, 0.9f, 0.5f));
@@ -476,7 +474,6 @@ namespace Poly_Ling.Player
 
         private static void StyleToggle(Toggle t)
         {
-            t.style.color    = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             t.style.fontSize = 10;
         }
     }

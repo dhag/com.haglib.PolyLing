@@ -708,49 +708,33 @@ namespace Poly_Ling.Core
             bool showUnselectedVertices,
             int selectedMeshIndex,
             float pointSize,
-            float alpha = 1f)
+            float alpha = 1f,
+            int cullingSlot = 0)
         {
             if (!_isInitialized)
             {
                 return;
             }
 
-            // 更新モードに応じてメッシュ再構築をスキップ（キャッシュされたメッシュを使用）
             bool rebuildMesh = _currentProfile.AllowMeshRebuild;
 
-            // TransformDragging中の軽量位置更新パス
-            // フル再構築(AllowMeshRebuild)は走らせず、選択メッシュの頂点位置のみ差し替え
-            // 非選択メッシュはドラッグ中位置不変のため更新不要
             bool lightweightPositionUpdate = !rebuildMesh
                 && _currentMode == UpdateMode.TransformDragging
                 && RealtimeTransformUpdate;
 
             if (lightweightPositionUpdate)
             {
-                // ① 選択メッシュのみ MeshObject.Positions → GPUバッファ同期
                 _unifiedSystem.ProcessTransformUpdateSelectedOnly();
 
-                // ② _positionBuffer 更新後に _worldPositions（CPU配列）を再計算する。
-                //    RebuildAdapter 後に UseWorldPositions=true になるため
-                //    GetDisplayPositions() は _worldPositions を返す。
-                //    これを更新しないと UpdateWireframePositionsOnly 等が古い座標を使い
-                //    ドラッグ中に辺・頂点が動かなくなる。
                 var bm = BufferManager;
                 bm?.DispatchTransformVertices(useWorldTransform: true, transformNormals: false, readbackToCPU: true);
 
-                // ③ 選択メッシュのワイヤーフレーム・ポイントメッシュの頂点位置のみ更新
-                //    非選択メッシュは位置不変のため更新不要
                 if (showWireframe)
-                {
                     _renderer.UpdateWireframePositionsOnly();
-                }
                 if (showVertices)
-                {
                     _renderer.UpdatePointPositionsOnly(camera, pointSize);
-                }
             }
 
-            // メッシュ構築
             if (showWireframe)
             {
                 if (rebuildMesh)
@@ -758,7 +742,7 @@ namespace Poly_Ling.Core
                     _renderer.UpdateWireframeMeshSelected(alpha);
                     _renderer.UpdateWireframeMeshUnselected(0.4f);
                 }
-                _renderer.QueueWireframe(showUnselectedWireframe);
+                _renderer.QueueWireframe(showUnselectedWireframe, cullingSlot);
             }
 
             if (showVertices)
@@ -768,7 +752,7 @@ namespace Poly_Ling.Core
                     _renderer.UpdatePointMeshSelected(camera, pointSize, alpha);
                     _renderer.UpdatePointMeshUnselected(camera, pointSize, 0.4f);
                 }
-                _renderer.QueuePoints(showUnselectedVertices);
+                _renderer.QueuePoints(showUnselectedVertices, cullingSlot);
             }
         }
 
@@ -796,10 +780,10 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
-        /// プレイヤービルド用: カメラ情報からGPUカリングを実行して FLAG_CULLED を更新する。
-        /// DrawSRP の前に呼ぶこと。
+        /// プレイヤービルド用: カメラ情報からGPUカリングを実行して per-slot カリングバッファを更新する。
+        /// DrawSRP / DrawQueued の前に呼ぶこと。
         /// </summary>
-        public void DispatchCullingForDisplay(Camera camera, bool backfaceCulling = true)
+        public void DispatchCullingForDisplay(Camera camera, bool backfaceCulling = true, int slot = 0)
         {
             if (!_isInitialized || camera == null) return;
             var bm = _unifiedSystem?.BufferManager;
@@ -808,27 +792,30 @@ namespace Poly_Ling.Core
             Matrix4x4 vp = camera.projectionMatrix * camera.worldToCameraMatrix;
             var viewport = new Rect(0f, 0f, camera.pixelWidth, camera.pixelHeight);
 
-            bm.DispatchClearBuffersGPU();
-            bm.ComputeScreenPositionsGPU(vp, viewport);
+            // 対象スロットのカリングバッファのみクリアする。
+            // DispatchClearBuffersGPU は呼ばない（ヒットテストバッファのクリアは不要、
+            // かつ呼ぶと他スロットの slot 0 自動クリアが発生する可能性があるため）。
+            bm.DispatchClearCulledBuffersGPU(slot);
+            bm.ComputeScreenPositionsGPU(vp, viewport, slot);
 
             if (backfaceCulling)
             {
-                bm.DispatchFaceVisibilityGPU();
-                bm.DispatchLineVisibilityGPU();
+                bm.DispatchFaceVisibilityGPU(slot);
+                bm.DispatchLineVisibilityGPU(slot);
             }
             else
             {
-                bm.ClearCulledFlagsGPU();
+                bm.ClearCulledFlagsGPU(slot);
             }
         }
 
         /// <summary>
         /// SRP (URP) 用描画。Graphics.RenderPrimitives で GPU バッファを直接参照。
         /// </summary>
-        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f)
+        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f, int cullingSlot = 0)
         {
             if (!_isInitialized) return;
-            _renderer.DrawSRP(camera, showWireframe, showVertices, screenSpacePointSize);
+            _renderer.DrawSRP(camera, showWireframe, showVertices, screenSpacePointSize, cullingSlot);
         }
 
         /// <summary>

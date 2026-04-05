@@ -262,7 +262,7 @@ namespace Poly_Ling.Core
         /// ProjectContext を渡すと選択状態（VertexSelected 等）を GPU に正しく反映する。
         /// null の場合は選択フラグ更新をスキップする。
         /// </param>
-        public void DrawWireframeAndVertices(Camera cam, ProjectContext project = null)
+        public void DrawWireframeAndVertices(Camera cam, ProjectContext project = null, int cullingSlot = 0)
         {
             if (cam == null) return;
             float pointSize = ShaderColorSettings.Default.VertexPointScale;
@@ -281,19 +281,12 @@ namespace Poly_Ling.Core
                     ? _selectedMeshIndexForDraw[mi] : -1;
 
                 // ---- AllowSelectionSync ----
-                // Editor の DrawUnified と同じ処理。
-                // _unifiedToContextMap を構築してから UpdateAllSelectionFlags を呼ぶことで
-                // VertexSelected / EdgeSelected 等のフラグが GPU バッファに反映される。
-                // これがないとホバー以外の選択表示が出ない。
                 if (profile.AllowSelectionSync && project != null && mi < project.ModelCount)
                 {
                     var bufMgr = adapter.BufferManager;
                     if (bufMgr != null)
                     {
                         var model = project.Models[mi];
-                        // SelectedMeshIndices が空のとき SelectedDrawableMeshIndices で代用する。
-                        // SyncSelectionFromModel は SelectedMeshIndices を参照して
-                        // _unifiedToContextMap を構築するため。
                         bool needSwap = model.SelectedMeshIndices.Count == 0
                                      && model.SelectedDrawableMeshIndices.Count > 0;
                         if (needSwap)
@@ -310,7 +303,8 @@ namespace Poly_Ling.Core
 
                 // ---- AllowGpuVisibility ----
                 // Normal モード（ワンショット）のときのみ実行。
-                // Idle 時はスキップされるためホバーフラグを破壊しない。
+                // Player では DispatchCullingForDisplay が per-slot で呼ばれるため
+                // ここでは slot 0 固定（Editor 単一ビューポート用）。
                 if (profile.AllowGpuVisibility)
                 {
                     var bufMgr = adapter.BufferManager;
@@ -318,10 +312,11 @@ namespace Poly_Ling.Core
                     {
                         var viewport = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
                         bufMgr.DispatchClearBuffersGPU();
+                        bufMgr.DispatchClearCulledBuffersGPU(cullingSlot);
                         bufMgr.ComputeScreenPositionsGPU(
-                            cam.projectionMatrix * cam.worldToCameraMatrix, viewport);
-                        bufMgr.DispatchFaceVisibilityGPU();
-                        bufMgr.DispatchLineVisibilityGPU();
+                            cam.projectionMatrix * cam.worldToCameraMatrix, viewport, cullingSlot);
+                        bufMgr.DispatchFaceVisibilityGPU(cullingSlot);
+                        bufMgr.DispatchLineVisibilityGPU(cullingSlot);
                     }
                 }
 
@@ -332,7 +327,8 @@ namespace Poly_Ling.Core
                     showUnselectedWireframe: ShowUnselectedWireframe && profile.AllowUnselectedOverlay,
                     showUnselectedVertices:  ShowUnselectedVertices && profile.AllowUnselectedOverlay,
                     selectedMeshIndex:       selIdx,
-                    pointSize:               pointSize);
+                    pointSize:               pointSize,
+                    cullingSlot:             cullingSlot);
                 adapter.ConsumeNormalMode();
                 adapter.DrawQueued(cam);
             }

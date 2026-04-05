@@ -552,6 +552,7 @@ namespace Poly_Ling.MeshListV2
                     var cam = _preview.camera;
                     var viewport = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
                     bufMgr.DispatchClearBuffersGPU();
+                    bufMgr.DispatchClearCulledBuffersGPU(0);
                     bufMgr.ComputeScreenPositionsGPU(cam.projectionMatrix * cam.worldToCameraMatrix, viewport);
                     bufMgr.DispatchFaceVisibilityGPU();
                     bufMgr.DispatchLineVisibilityGPU();

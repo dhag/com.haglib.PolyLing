@@ -95,6 +95,7 @@ namespace Poly_Ling.Player
                 _filletRow.style.display = segs >= 2 ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
-        private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; l.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f)); return l; }
+        private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; return l; }
+
     }
 }

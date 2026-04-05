@@ -47,6 +47,7 @@ Shader "Poly_Ling/Wireframe3D"
             float4 _UnselectedColor;
             
             StructuredBuffer<uint> _LineFlagsBuffer;
+            StructuredBuffer<uint> _LineCulledBuffer;
             int _UseLineFlagsBuffer;
             int _EnableBackfaceCulling;
             
@@ -59,7 +60,7 @@ Shader "Poly_Ling/Wireframe3D"
                     uint bufferIndex = (uint)v.uv.x;
                     uint flags = _LineFlagsBuffer[bufferIndex];
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
-                    bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isCulled = _LineCulledBuffer[bufferIndex] != 0u;
                     
                     // 非表示メッシュをスキップ
                     if (isHidden)

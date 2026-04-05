@@ -187,6 +187,27 @@ namespace Poly_Ling.Player
         public VisualElement ObjectMoveTRSSection { get; private set; }
 
         // ================================================================
+        // 上下分割スプリッター・クロスハンドル（連動用）
+        // ================================================================
+
+        private TwoPaneSplitView _splitCenter;
+        private TwoPaneSplitView _splitPerspSide;
+        private TwoPaneSplitView _splitTopFront;
+        private VisualElement    _perspPane;
+        private VisualElement    _topPane;
+        private float            _lastSyncedHeight = -1f;
+
+        // クロスドラッグ領域
+        private VisualElement _crossDragRegion;
+        private VisualElement _centerDraglineAnchor;   // _splitCenter 専用 dragline（Build中にキャッシュ）
+        private VisualElement _rootRef;
+        private float         _dragStartVH;
+        private float         _dragStartHW;
+        private float         _currentRightW;
+        private Vector2       _dragStartPanelPos;
+        private bool          _crossDragging;
+
+        // ================================================================
         // Build
         // ================================================================
 
@@ -195,7 +216,6 @@ namespace Poly_Ling.Player
             root.style.flexDirection = FlexDirection.Row;
             root.style.width         = new StyleLength(new Length(100, LengthUnit.Percent));
             root.style.height        = new StyleLength(new Length(100, LengthUnit.Percent));
-
 
             var splitLCR = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Horizontal);
             splitLCR.style.flexGrow = 1;
@@ -207,25 +227,189 @@ namespace Poly_Ling.Player
             splitCR.style.flexGrow = 1;
             splitLCR.Add(splitCR);
 
-            var splitCenter = new TwoPaneSplitView(1, 240f, TwoPaneSplitViewOrientation.Horizontal);
-            splitCenter.style.flexGrow = 1;
-            splitCR.Add(splitCenter);
+            _splitCenter = new TwoPaneSplitView(1, 240f, TwoPaneSplitViewOrientation.Horizontal);
+            _splitCenter.style.flexGrow = 1;
+            splitCR.Add(_splitCenter);
+            // 子 TwoPaneSplitView を追加する前にキャッシュする。
+            // 後から Q() すると _splitPerspSide の dragline を誤って返す。
+            _centerDraglineAnchor = _splitCenter.Q(className: "unity-two-pane-split-view__dragline-anchor");
 
             PlayerViewportPanel perspPanel, topPanel, frontPanel, sidePanel;
 
-            var splitPerspSide = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
-            splitPerspSide.style.flexGrow = 1;
-            splitCenter.Add(splitPerspSide);
-            splitPerspSide.Add(BuildViewportPane("Perspective", out perspPanel)); PerspectivePanel = perspPanel;
-            splitPerspSide.Add(BuildViewportPane("Side",        out sidePanel));  SidePanel        = sidePanel;
+            _splitPerspSide = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
+            _splitPerspSide.style.flexGrow = 1;
+            _splitCenter.Add(_splitPerspSide);
+            var perspWrap = BuildViewportPane("Perspective", out perspPanel);
+            _splitPerspSide.Add(perspWrap); PerspectivePanel = perspPanel;
+            _perspPane = perspWrap;
+            _splitPerspSide.Add(BuildViewportPane("Side", out sidePanel)); SidePanel = sidePanel;
 
-            var splitTopFront = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Vertical);
-            splitTopFront.style.flexGrow = 1;
-            splitCenter.Add(splitTopFront);
-            splitTopFront.Add(BuildViewportPane("TOP",   out topPanel));   TopPanel   = topPanel;
-            splitTopFront.Add(BuildViewportPane("Front", out frontPanel)); FrontPanel = frontPanel;
+            _splitTopFront = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
+            _splitTopFront.style.flexGrow = 1;
+            _splitCenter.Add(_splitTopFront);
+            var topWrap = BuildViewportPane("TOP", out topPanel);
+            _splitTopFront.Add(topWrap); TopPanel = topPanel;
+            _topPane = topWrap;
+            _splitTopFront.Add(BuildViewportPane("Front", out frontPanel)); FrontPanel = frontPanel;
 
             splitCR.Add(BuildRightPane());
+
+            SetupVerticalSplitSync();
+
+            _rootRef = root;
+            SetupCrossDragRegion(root);
+        }
+
+        // ================================================================
+        // クロスドラッグ領域（4分割交差点の同時ドラッグ）
+        // ================================================================
+
+        private void SetupCrossDragRegion(VisualElement root)
+        {
+            _crossDragRegion = new VisualElement();
+            _crossDragRegion.style.position        = Position.Absolute;
+            _crossDragRegion.style.width           = 16f;
+            _crossDragRegion.style.height          = 16f;
+            _crossDragRegion.style.backgroundColor = new StyleColor(Color.clear);
+            _crossDragRegion.pickingMode           = PickingMode.Position;
+            root.Add(_crossDragRegion);
+
+            // _perspPane の右下が交差点座標。両分割の GeometryChanged で追従する。
+            _perspPane.RegisterCallback<GeometryChangedEvent>(_ => UpdateCrossRegionPosition());
+            _splitCenter.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                UpdateCrossRegionPosition();
+                if (_crossDragging) ReapplyHorizontalDragline();
+            });
+
+            _crossDragRegion.RegisterCallback<PointerDownEvent>(OnCrossPointerDown);
+            _crossDragRegion.RegisterCallback<PointerMoveEvent>(OnCrossPointerMove);
+            _crossDragRegion.RegisterCallback<PointerUpEvent>(OnCrossPointerUp);
+            _crossDragRegion.RegisterCallback<PointerCaptureOutEvent>(_ =>
+            {
+                _crossDragging = false;
+            });
+
+            // クロスドラッグ中に TwoPaneSplitView が内部で _topPane/_perspPane の
+            // style.height を初期値にリセットするのを上書きする。
+            // GeometryChangedEvent は TwoPaneSplitView の内部コールバック後に発火するため、
+            // ここで _lastSyncedHeight を再適用することで正しい位置に戻る。
+            _splitPerspSide.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                if (!_crossDragging || _lastSyncedHeight <= 0f) return;
+                _perspPane.style.height = _lastSyncedHeight;
+                var dl = _splitPerspSide.Q(className: "unity-two-pane-split-view__dragline-anchor");
+                if (dl != null) dl.style.top = _lastSyncedHeight;
+            });
+            _splitTopFront.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                if (!_crossDragging || _lastSyncedHeight <= 0f) return;
+                _topPane.style.height = _lastSyncedHeight;
+                var dl = _splitTopFront.Q(className: "unity-two-pane-split-view__dragline-anchor");
+                if (dl != null) dl.style.top = _lastSyncedHeight;
+            });
+        }
+
+        private void UpdateCrossRegionPosition()
+        {
+            if (_rootRef == null || _crossDragRegion == null) return;
+            var wb = _perspPane.worldBound;
+            if (float.IsNaN(wb.xMax) || float.IsNaN(wb.yMax) || wb.xMax <= 0f) return;
+            // worldBound（パネル座標）→ root ローカル座標
+            var localPos = _rootRef.WorldToLocal(new Vector2(wb.xMax, wb.yMax));
+            const float half = 8f;
+            _crossDragRegion.style.left = localPos.x - half;
+            _crossDragRegion.style.top  = localPos.y - half;
+        }
+
+        /// <summary>
+        /// 横分割（_splitCenter）の左右列幅を直接設定する。
+        /// _splitCenter は fixedPaneIndex=1（右列固定）Horizontal。
+        /// 右列（_splitTopFront）と左列（_splitPerspSide）の両方を同フレームで設定することで
+        /// 左横線の右端ズレを防ぐ。
+        /// </summary>
+        private void ApplyHorizontalSplitWidth(float rightW)
+        {
+            rightW = Mathf.Max(50f, rightW);
+            _currentRightW = rightW;
+            _splitTopFront.style.width = rightW;
+            ReapplyHorizontalDragline();
+        }
+
+        private void ReapplyHorizontalDragline()
+        {
+            if (_currentRightW <= 0f || _centerDraglineAnchor == null) return;
+            float containerW = _splitCenter.resolvedStyle.width;
+            if (float.IsNaN(containerW) || containerW <= 0f) return;
+            _centerDraglineAnchor.style.left = containerW - _currentRightW;
+        }
+
+        private void OnCrossPointerDown(PointerDownEvent evt)
+        {
+            if (evt.button != 0) return;
+            _crossDragging     = true;
+            _dragStartPanelPos = evt.position;
+            _dragStartVH       = _perspPane.resolvedStyle.height;
+            _dragStartHW       = _splitTopFront.resolvedStyle.width;
+            _crossDragRegion.CapturePointer(evt.pointerId);
+            evt.StopPropagation();
+        }
+
+        private void OnCrossPointerMove(PointerMoveEvent evt)
+        {
+            if (!_crossDragging) return;
+            Vector2 delta = (Vector2)evt.position - _dragStartPanelPos;
+            // 横を先に適用し、縦を後から上書きする。
+            // TwoPaneSplitView は横幅変更時に縦の固定ペイン高を内部リセットするため、
+            // 縦を後に適用することで上書きが有効になる。
+            ApplyHorizontalSplitWidth(Mathf.Max(50f, _dragStartHW - delta.x));
+            ApplyVerticalSplitHeight(Mathf.Max(30f, _dragStartVH + delta.y));
+            evt.StopPropagation();
+        }
+
+        private void OnCrossPointerUp(PointerUpEvent evt)
+        {
+            if (!_crossDragging) return;
+            _crossDragging = false;
+            if (_crossDragRegion.HasPointerCapture(evt.pointerId))
+                _crossDragRegion.ReleasePointer(evt.pointerId);
+            evt.StopPropagation();
+        }
+
+        // ================================================================
+        // 上下連動
+        // ================================================================
+
+        private void ApplyVerticalSplitHeight(float h)
+        {
+            _lastSyncedHeight = h;
+            _perspPane.style.height = h;
+            _topPane.style.height   = h;
+            var dlL = _splitPerspSide.Q(className: "unity-two-pane-split-view__dragline-anchor");
+            var dlR = _splitTopFront.Q(className:  "unity-two-pane-split-view__dragline-anchor");
+            if (dlL != null) dlL.style.top = h;
+            if (dlR != null) dlR.style.top = h;
+        }
+
+        private void SetupVerticalSplitSync()
+        {
+            _perspPane.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                if (_crossDragging) return;
+                float h = _perspPane.resolvedStyle.height;
+                if (float.IsNaN(h) || h <= 0f) return;
+                if (Mathf.Approximately(h, _lastSyncedHeight)) return;
+                ApplyVerticalSplitHeight(h);
+            });
+
+            _topPane.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                if (_crossDragging) return;
+                float h = _topPane.resolvedStyle.height;
+                if (float.IsNaN(h) || h <= 0f) return;
+                if (Mathf.Approximately(h, _lastSyncedHeight)) return;
+                ApplyVerticalSplitHeight(h);
+            });
         }
 
         // ================================================================
@@ -236,6 +420,7 @@ namespace Poly_Ling.Player
         {
             var pane = MakePane(200f);
             pane.style.backgroundColor = PaneBg(0.15f);
+            pane.style.color           = Col(1f);
             pane.style.flexDirection   = FlexDirection.Column;
             pane.style.overflow        = Overflow.Hidden;
 
@@ -248,7 +433,6 @@ namespace Poly_Ling.Player
 
             StatusLabel = new Label("Status: -");
             StatusLabel.style.marginBottom = 6;
-            StatusLabel.style.color        = Col(0.85f);
             StatusLabel.style.whiteSpace   = WhiteSpace.Normal;
             scroll.Add(StatusLabel);
 
@@ -659,17 +843,18 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 全Build()完了後に呼ぶ。
-        /// RightPaneContent の color=white 継承でボタン文字も白になるため、
-        /// レイアウト全体のButtonを明示的に暗色に戻す。
+        /// ボタン・入力フィールドに白文字・暗背景を一括設定する。
         /// </summary>
         public void PostBuildButtonColors(UnityEngine.UIElements.VisualElement root)
         {
-            var dark = new StyleColor(new Color(0.12f, 0.12f, 0.12f));
-            root.Query<Button>().ForEach(b => b.style.color = dark);
-            root.Query<TextField>().ForEach(t => t.style.color = dark);
-            root.Query<FloatField>().ForEach(t => t.style.color = dark);
-            root.Query<IntegerField>().ForEach(t => t.style.color = dark);
-            root.Query<DropdownField>().ForEach(t => t.style.color = dark);
+            var white   = new StyleColor(Color.white);
+            var btnBg   = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+            var fieldBg = new StyleColor(new Color(0.20f, 0.20f, 0.20f));
+            root.Query<Button>().ForEach(b => { b.style.color = white; b.style.backgroundColor = btnBg; });
+            root.Query<TextField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
+            root.Query<FloatField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
+            root.Query<IntegerField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
+            root.Query<DropdownField>().ForEach(t => { t.style.color = white; t.style.backgroundColor = fieldBg; });
         }
 
         private static Button MakeBtn(string text)
@@ -687,7 +872,6 @@ namespace Poly_Ling.Player
         {
             var t = new Toggle(label) { value = initial };
             t.style.marginBottom = 2;
-            t.style.color        = Col(0.85f);
             return t;
         }
 
@@ -696,7 +880,6 @@ namespace Poly_Ling.Player
             var l = new Label(text);
             l.style.marginTop    = 6;
             l.style.marginBottom = 3;
-            l.style.color        = Col(0.6f);
             l.style.fontSize     = 10;
             return l;
         }

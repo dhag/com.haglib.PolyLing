@@ -190,7 +190,6 @@ namespace Poly_Ling.Player
             var lbl = new Label(label);
             lbl.style.width           = 16;
             lbl.style.unityTextAlign  = TextAnchor.MiddleLeft;
-            lbl.style.color           = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             lbl.style.fontSize        = 10;
             row.Add(lbl);
 
@@ -239,7 +238,6 @@ namespace Poly_Ling.Player
             var lbl = new Label(label);
             lbl.style.width          = 16;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            lbl.style.color          = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             lbl.style.fontSize       = 10;
             row.Add(lbl);
 

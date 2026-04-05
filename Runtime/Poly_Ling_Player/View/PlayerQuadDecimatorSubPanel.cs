@@ -62,7 +62,6 @@ namespace Poly_Ling.Player
 
             _meshInfoLabel = new Label();
             _meshInfoLabel.style.fontSize     = 10;
-            _meshInfoLabel.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _meshInfoLabel.style.marginBottom = 4;
             _meshInfoLabel.style.display      = DisplayStyle.None;
             root.Add(_meshInfoLabel);

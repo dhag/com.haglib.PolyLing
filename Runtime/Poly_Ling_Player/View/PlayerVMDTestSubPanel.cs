@@ -64,7 +64,6 @@ namespace Poly_Ling.Player
             // モデル情報
             _modelLabel = new Label();
             _modelLabel.style.fontSize     = 10;
-            _modelLabel.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _modelLabel.style.marginBottom = 3;
             root.Add(_modelLabel);
 
@@ -101,7 +100,6 @@ namespace Poly_Ling.Player
             // VMD 情報ラベル
             _vmdInfoLabel = new Label();
             _vmdInfoLabel.style.fontSize   = 10;
-            _vmdInfoLabel.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _vmdInfoLabel.style.marginBottom = 3;
             _vmdInfoLabel.style.whiteSpace = WhiteSpace.Normal;
             root.Add(_vmdInfoLabel);

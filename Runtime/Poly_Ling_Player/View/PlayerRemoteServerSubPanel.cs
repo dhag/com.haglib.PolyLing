@@ -95,7 +95,6 @@ namespace Poly_Ling.Player
             root.Add(SecLabel("Captured Images"));
             _capturedInfo = new Label();
             _capturedInfo.style.fontSize     = 10;
-            _capturedInfo.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _capturedInfo.style.marginBottom = 3;
             root.Add(_capturedInfo);
 
@@ -190,7 +189,6 @@ namespace Poly_Ling.Player
             {
                 var lbl = new Label(msg);
                 lbl.style.fontSize = 9;
-                lbl.style.color    = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
                 lbl.style.whiteSpace = WhiteSpace.Normal;
                 _logContainer.Add(lbl);
             }

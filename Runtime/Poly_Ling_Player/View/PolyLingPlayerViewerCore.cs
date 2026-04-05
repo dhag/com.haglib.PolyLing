@@ -1581,8 +1581,8 @@ namespace Poly_Ling.Player
         // ボタンアクティブ色
         // ================================================================
 
-        private static readonly StyleColor ActiveBtnColor   = new StyleColor(Color.white);
-        private static readonly StyleColor InactiveBtnColor = new StyleColor(StyleKeyword.Null);
+        private static readonly StyleColor ActiveBtnColor   = new StyleColor(new Color(0.3f, 0.5f, 1f));
+        private static readonly StyleColor InactiveBtnColor = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
 
         private void SetActiveButton(Button btn)
         {
@@ -1951,7 +1951,6 @@ namespace Poly_Ling.Player
             if (m != null)
             {
                 var lbl = new Label($"{m.Name}  ({m.Count})");
-                lbl.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
                 _layoutRoot.ModelListContainer.Add(lbl);
             }
 

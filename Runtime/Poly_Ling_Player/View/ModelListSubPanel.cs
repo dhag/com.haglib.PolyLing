@@ -96,7 +96,6 @@ namespace Poly_Ling.Player
             _currentNameLabel.style.flexGrow     = 1;
             _currentNameLabel.style.overflow     = Overflow.Hidden;
             _currentNameLabel.style.textOverflow = TextOverflow.Ellipsis;
-            _currentNameLabel.style.color        = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             _renameDisplay.Add(_currentNameLabel);
 
             _btnStartRename = new Button(OnStartRename) { text = ModelListTexts.T("Rename") };
@@ -229,7 +228,6 @@ namespace Poly_Ling.Player
             nameLabel.style.overflow     = Overflow.Hidden;
             nameLabel.style.textOverflow = TextOverflow.Ellipsis;
             nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            nameLabel.style.color        = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             if (isCurrent) nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             int capturedIndex = index;
             nameLabel.RegisterCallback<ClickEvent>(_ => SendCmd(new SwitchModelCommand(capturedIndex)));

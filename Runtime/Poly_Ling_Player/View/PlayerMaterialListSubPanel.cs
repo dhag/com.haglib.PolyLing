@@ -82,7 +82,6 @@ namespace Poly_Ling.Player
             _applySection = new VisualElement();
             _applySection.style.display = DisplayStyle.None;
             _selInfoLabel = new Label(); _selInfoLabel.style.fontSize = 10;
-            _selInfoLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _applySection.Add(_selInfoLabel);
             _btnApply = new Button(OnApplyToSelection) { text = "Apply to Selection" };
             _applySection.Add(_btnApply);

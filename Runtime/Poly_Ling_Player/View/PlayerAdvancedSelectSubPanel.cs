@@ -67,7 +67,6 @@ namespace Poly_Ling.Player
 
             var title = new Label("詳細選択");
             title.style.marginBottom = 4;
-            title.style.color        = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             _root.Add(title);
 
             // ── モード選択 ───────────────────────────────────────────
@@ -106,7 +105,6 @@ namespace Poly_Ling.Player
             var actionLabel = new Label("動作:");
             actionLabel.style.marginTop    = 4;
             actionLabel.style.marginBottom = 2;
-            actionLabel.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             actionLabel.style.fontSize     = 10;
             _root.Add(actionLabel);
 
@@ -141,7 +139,6 @@ namespace Poly_Ling.Player
             _root.Add(_shortestPathGroup);
 
             _firstVertexLabel = new Label();
-            _firstVertexLabel.style.color        = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _firstVertexLabel.style.fontSize     = 10;
             _firstVertexLabel.style.marginBottom = 2;
             _shortestPathGroup.Add(_firstVertexLabel);

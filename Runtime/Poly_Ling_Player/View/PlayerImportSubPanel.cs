@@ -430,7 +430,6 @@ namespace Poly_Ling.Player
         {
             var t = new Toggle(label) { value = get() };
             t.style.marginBottom = 2;
-            t.style.color        = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             t.RegisterValueChangedCallback(e => set(e.newValue));
             return t;
         }
@@ -449,7 +448,6 @@ namespace Poly_Ling.Player
             var lbl = new Label(label);
             lbl.style.width          = 80;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            lbl.style.color          = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             lbl.style.fontSize       = 10;
 
             var field = new FloatField { value = get() };
@@ -471,7 +469,6 @@ namespace Poly_Ling.Player
             var lbl = new Label(label);
             lbl.style.width          = 80;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            lbl.style.color          = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             lbl.style.fontSize       = 10;
 
             var slider = new Slider(min, max) { value = get() };
@@ -493,7 +490,6 @@ namespace Poly_Ling.Player
             var lbl = new Label(label);
             lbl.style.width          = 80;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            lbl.style.color          = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             lbl.style.fontSize       = 10;
 
             var dropdown = new DropdownField(
@@ -514,7 +510,6 @@ namespace Poly_Ling.Player
             container.style.marginBottom = 3;
 
             var lbl = new Label(label);
-            lbl.style.color    = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
             lbl.style.fontSize = 9;
             container.Add(lbl);
 
@@ -523,7 +518,6 @@ namespace Poly_Ling.Player
 
             var pathLbl = new Label(string.IsNullOrEmpty(get()) ? TM("CSVNotSet") : Path.GetFileName(get()));
             pathLbl.style.flexGrow   = 1;
-            pathLbl.style.color      = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             pathLbl.style.fontSize   = 9;
             pathLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             pathLbl.style.overflow   = Overflow.Hidden;

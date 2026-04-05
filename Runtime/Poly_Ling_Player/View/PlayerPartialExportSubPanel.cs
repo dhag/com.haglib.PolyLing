@@ -502,7 +502,6 @@ namespace Poly_Ling.Player
         private static VisualElement ToggleRow(string label, Func<bool> get, Action<bool> set)
         {
             var t = new Toggle(label) { value = get() };
-            t.style.marginBottom = 2; t.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             t.RegisterValueChangedCallback(e => set(e.newValue));
             return t;
         }
@@ -519,7 +518,6 @@ namespace Poly_Ling.Player
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
             var lbl = new Label(label); lbl.style.width = 90; lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            lbl.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f)); lbl.style.fontSize = 10;
             var field = new FloatField { value = get() }; field.style.flexGrow = 1;
             field.RegisterValueChangedCallback(e => set(e.newValue));
             row.Add(lbl); row.Add(field);
@@ -533,7 +531,6 @@ namespace Poly_Ling.Player
             l.style.fontSize       = fontSize;
             l.style.overflow       = Overflow.Hidden;
             l.style.unityTextAlign = TextAnchor.MiddleLeft;
-            l.style.color          = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             return l;
         }
 

@@ -57,7 +57,6 @@ namespace Poly_Ling.Player
 
             _currentSelLabel = new Label();
             _currentSelLabel.style.fontSize    = 10;
-            _currentSelLabel.style.color       = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _currentSelLabel.style.marginBottom = 4;
             root.Add(_currentSelLabel);
 

@@ -194,6 +194,22 @@ namespace Poly_Ling.Core
         private ComputeBuffer _cullingBuffer;
         private uint[] _cullingResults;
 
+        // ================================================================
+        // per-slot カリングバッファ（CullingSlotCount 個）
+        // ================================================================
+
+        public const int CullingSlotCount = 4;
+
+        private ComputeBuffer[] _slotScreenPosBufs;     // float4 × vertexCount
+        private ComputeBuffer[] _slotVertexCulledBufs;  // uint   × vertexCount
+        private ComputeBuffer[] _slotLineCulledBufs;    // uint   × lineCount
+        private ComputeBuffer[] _slotFaceCulledBufs;    // uint   × faceCount
+
+        // ClearCulledFlagsGPU 用 zeros キャッシュ（GC allocation 回避）
+        private uint[] _zeroVertexCache;
+        private uint[] _zeroLineCache;
+        private uint[] _zeroFaceCache;
+
         // ============================================================
         // バッファ（Level 1: Mouse）
         // ============================================================
@@ -250,6 +266,8 @@ namespace Poly_Ling.Core
         private int _kernelLineVisibility;
         private int _kernelFaceHit;
         private int _kernelUpdateHover;
+        private int _kernelClearCulled;
+        private int _kernelClearFaceCulled;
         private bool _gpuComputeAvailable = false;
 
         // GPU出力バッファ（float4: xy=screen, z=depth, w=valid）
@@ -307,6 +325,26 @@ namespace Poly_Ling.Core
         public ComputeBuffer ScreenPosBuffer => _screenPosBuffer;
         public ComputeBuffer FaceHitBuffer => _faceHitBuffer;
         public ComputeBuffer FaceHitDepthBuffer => _faceHitDepthBuffer;
+
+        /// <summary>スロット指定スクリーン座標バッファ</summary>
+        public ComputeBuffer GetSlotScreenPosBuffer(int slot)
+            => (_slotScreenPosBufs != null && slot >= 0 && slot < CullingSlotCount)
+               ? _slotScreenPosBufs[slot] : null;
+
+        /// <summary>スロット指定頂点カリングバッファ</summary>
+        public ComputeBuffer GetVertexCulledBuffer(int slot)
+            => (_slotVertexCulledBufs != null && slot >= 0 && slot < CullingSlotCount)
+               ? _slotVertexCulledBufs[slot] : null;
+
+        /// <summary>スロット指定辺カリングバッファ</summary>
+        public ComputeBuffer GetLineCulledBuffer(int slot)
+            => (_slotLineCulledBufs != null && slot >= 0 && slot < CullingSlotCount)
+               ? _slotLineCulledBufs[slot] : null;
+
+        /// <summary>スロット指定面カリングバッファ</summary>
+        public ComputeBuffer GetFaceCulledBuffer(int slot)
+            => (_slotFaceCulledBufs != null && slot >= 0 && slot < CullingSlotCount)
+               ? _slotFaceCulledBufs[slot] : null;
 
         // CPU配列アクセス
         public Vector3[] Positions => _positions;
@@ -457,7 +495,9 @@ namespace Poly_Ling.Core
                 _kernelFaceVisibility = _computeShader.FindKernel("ComputeFaceVisibility");
                 _kernelLineVisibility = _computeShader.FindKernel("ComputeLineVisibility");
                 _kernelFaceHit = _computeShader.FindKernel("ComputeFaceHitTest");
-                _kernelUpdateHover = _computeShader.FindKernel("UpdateHoverFlags");
+                _kernelUpdateHover    = _computeShader.FindKernel("UpdateHoverFlags");
+                _kernelClearCulled    = _computeShader.FindKernel("ClearCulledBuffers");
+                _kernelClearFaceCulled= _computeShader.FindKernel("ClearFaceCulledBuffers");
                 _gpuComputeAvailable = true;
             }
             catch (System.Exception e)
@@ -512,6 +552,19 @@ namespace Poly_Ling.Core
             _hitLineDistBuffer = new ComputeBuffer(_lineCapacity, sizeof(float));
             _faceHitBuffer = new ComputeBuffer(_faceCapacity, sizeof(float));
             _faceHitDepthBuffer = new ComputeBuffer(_faceCapacity, sizeof(float));
+
+            // per-slot カリングバッファ
+            _slotScreenPosBufs    = new ComputeBuffer[CullingSlotCount];
+            _slotVertexCulledBufs = new ComputeBuffer[CullingSlotCount];
+            _slotLineCulledBufs   = new ComputeBuffer[CullingSlotCount];
+            _slotFaceCulledBufs   = new ComputeBuffer[CullingSlotCount];
+            for (int s = 0; s < CullingSlotCount; s++)
+            {
+                _slotScreenPosBufs[s]    = new ComputeBuffer(_vertexCapacity, sizeof(float) * 4);
+                _slotVertexCulledBufs[s] = new ComputeBuffer(_vertexCapacity, sizeof(uint));
+                _slotLineCulledBufs[s]   = new ComputeBuffer(_lineCapacity,   sizeof(uint));
+                _slotFaceCulledBufs[s]   = new ComputeBuffer(_faceCapacity,   sizeof(uint));
+            }
         }
 
         /// <summary>
@@ -626,6 +679,12 @@ namespace Poly_Ling.Core
 
             Array.Resize(ref _indices, _indexCapacity);
 
+            // zeros キャッシュ（ClearCulledFlagsGPU 用）を再確保
+            // Array.Resize は拡張時に新規要素をゼロ初期化するため追記分は常にゼロ
+            Array.Resize(ref _zeroVertexCache, _vertexCapacity);
+            Array.Resize(ref _zeroLineCache,   _lineCapacity);
+            Array.Resize(ref _zeroFaceCache,   _faceCapacity);
+
             // GPUバッファ再作成
             ReleaseAllBuffers();
             CreateAllBuffers();
@@ -674,6 +733,20 @@ namespace Poly_Ling.Core
             ReleaseBuffer(ref _hitLineDistBuffer);
             ReleaseBuffer(ref _faceHitBuffer);
             ReleaseBuffer(ref _faceHitDepthBuffer);
+
+            // per-slot カリングバッファ
+            if (_slotScreenPosBufs != null)
+                for (int s = 0; s < _slotScreenPosBufs.Length; s++)
+                    ReleaseBuffer(ref _slotScreenPosBufs[s]);
+            if (_slotVertexCulledBufs != null)
+                for (int s = 0; s < _slotVertexCulledBufs.Length; s++)
+                    ReleaseBuffer(ref _slotVertexCulledBufs[s]);
+            if (_slotLineCulledBufs != null)
+                for (int s = 0; s < _slotLineCulledBufs.Length; s++)
+                    ReleaseBuffer(ref _slotLineCulledBufs[s]);
+            if (_slotFaceCulledBufs != null)
+                for (int s = 0; s < _slotFaceCulledBufs.Length; s++)
+                    ReleaseBuffer(ref _slotFaceCulledBufs[s]);
         }
 
         private void ReleaseBuffer(ref ComputeBuffer buffer)

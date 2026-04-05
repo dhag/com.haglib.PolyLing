@@ -310,7 +310,6 @@ namespace Poly_Ling.Player
                 nameLbl.style.width        = 100;
                 nameLbl.style.overflow     = Overflow.Hidden;
                 nameLbl.style.fontSize     = 9;
-                nameLbl.style.color        = new StyleColor(isSrc ? Color.white : new Color(0.8f, 0.8f, 0.8f));
                 row.Add(nameLbl);
 
                 int ci = i;
@@ -492,7 +491,6 @@ namespace Poly_Ling.Player
         private static Toggle MkToggle(string label, bool val)
         {
             var t = new Toggle(label) { value = val };
-            t.style.color    = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             t.style.fontSize = 10;
             return t;
         }

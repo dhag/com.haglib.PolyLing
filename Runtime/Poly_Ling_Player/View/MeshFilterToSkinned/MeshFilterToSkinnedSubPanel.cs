@@ -51,9 +51,7 @@ namespace Poly_Ling.Player
             // タイトル
             var title = new Label(T("WindowTitle"));
             title.style.fontSize = 11;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color    = new StyleColor(new Color(0.9f, 0.9f, 0.9f));
-            title.style.marginBottom = 6;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;            title.style.marginBottom = 6;
             parent.Add(title);
 
             parent.Add(Sep());
@@ -75,15 +73,11 @@ namespace Poly_Ling.Player
             parent.Add(axisLabel);
 
             var swapToggle = new Toggle(T("SwapAxisRotated")) { value = _swapAxisForRotated };
-            swapToggle.style.marginBottom = 2;
-            swapToggle.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
-            swapToggle.RegisterValueChangedCallback(e => _swapAxisForRotated = e.newValue);
+            swapToggle.style.marginBottom = 2;            swapToggle.RegisterValueChangedCallback(e => _swapAxisForRotated = e.newValue);
             parent.Add(swapToggle);
 
             var identToggle = new Toggle(T("SetAxisIdentity")) { value = _setAxisForIdentity };
-            identToggle.style.marginBottom = 6;
-            identToggle.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
-            identToggle.RegisterValueChangedCallback(e => _setAxisForIdentity = e.newValue);
+            identToggle.style.marginBottom = 6;            identToggle.RegisterValueChangedCallback(e => _setAxisForIdentity = e.newValue);
             parent.Add(identToggle);
 
             parent.Add(Sep());
@@ -148,19 +142,13 @@ namespace Poly_Ling.Player
             var rootRow = new VisualElement();
             rootRow.style.flexDirection = FlexDirection.Row;
             rootRow.style.marginBottom  = 4;
-            var rootKey = new Label(T("RootBone") + ": ");
-            rootKey.style.color    = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
-            rootKey.style.fontSize = 10;
-            var rootVal = new Label(entries[0].Context.Name);
-            rootVal.style.color    = new StyleColor(new Color(0.9f, 0.9f, 0.9f));
-            rootVal.style.fontSize = 10;
+            var rootKey = new Label(T("RootBone") + ": ");            rootKey.style.fontSize = 10;
+            var rootVal = new Label(entries[0].Context.Name);            rootVal.style.fontSize = 10;
             rootRow.Add(rootKey); rootRow.Add(rootVal);
             _hierarchyContainer.Add(rootRow);
 
             // 階層リスト
-            var hierLabel = new Label(T("BoneHierarchy") + ":");
-            hierLabel.style.color    = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
-            hierLabel.style.fontSize = 10;
+            var hierLabel = new Label(T("BoneHierarchy") + ":");            hierLabel.style.fontSize = 10;
             hierLabel.style.marginBottom = 2;
             _hierarchyContainer.Add(hierLabel);
 
@@ -173,9 +161,7 @@ namespace Poly_Ling.Player
                     ? $" ({entry.Context.MeshObject.VertexCount}V)"
                     : " (empty)";
                 var row = new Label($"{indent}[{i}] {entry.Context.Name}{vertInfo}");
-                row.style.fontSize = 9;
-                row.style.color    = new StyleColor(new Color(0.8f, 0.8f, 0.8f));
-                _hierarchyContainer.Add(row);
+                row.style.fontSize = 9;                _hierarchyContainer.Add(row);
             }
 
             EnableConvert(!hasBones);

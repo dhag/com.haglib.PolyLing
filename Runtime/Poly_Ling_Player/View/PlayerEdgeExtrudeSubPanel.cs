@@ -45,14 +45,12 @@ namespace Poly_Ling.Player
         {
             var l = new Label(text);
             l.style.marginTop = 4; l.style.marginBottom = 3;
-            l.style.color = new StyleColor(new UnityEngine.Color(0.85f, 0.85f, 0.85f));
             return l;
         }
 
         private static Label InfoLabel()
         {
             var l = new Label();
-            l.style.color = new StyleColor(new UnityEngine.Color(0.7f, 0.7f, 0.7f));
             l.style.fontSize = 10; l.style.marginBottom = 2;
             return l;
         }

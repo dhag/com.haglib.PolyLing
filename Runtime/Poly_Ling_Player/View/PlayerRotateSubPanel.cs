@@ -91,8 +91,9 @@ namespace Poly_Ling.Player
 
         private float Snap(float v) { var h = GetH(); if (h == null || !h.UseSnap) return v; return Mathf.Round(v / h.SnapAngle) * h.SnapAngle; }
 
-        private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; l.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f)); return l; }
-        private static Label InfoLabel() { var l = new Label(); l.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f)); l.style.fontSize = 10; l.style.marginBottom = 2; return l; }
         private static Slider MakeSlider(string label, float min, float max, float init, Action<float> onChange) { var s = new Slider(label, min, max) { value = init }; s.style.marginBottom = 3; s.RegisterValueChangedCallback(e => onChange(e.newValue)); return s; }
+        private static Label Header(string t) { var l = new Label(t); l.style.marginTop = 4; l.style.marginBottom = 3; return l; }
+        private static Label InfoLabel() { var l = new Label(); l.style.fontSize = 10; l.style.marginBottom = 2; return l; }
+
     }
 }

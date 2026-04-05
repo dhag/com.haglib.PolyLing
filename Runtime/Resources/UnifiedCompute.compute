@@ -7,6 +7,8 @@
 
 #pragma kernel ClearBuffers
 #pragma kernel ClearFaceBuffers
+#pragma kernel ClearCulledBuffers
+#pragma kernel ClearFaceCulledBuffers
 #pragma kernel ComputeScreenPositions
 #pragma kernel ComputeCulling
 #pragma kernel ComputeVertexHitTest
@@ -130,6 +132,11 @@ RWStructuredBuffer<uint> _VertexFlagsBuffer;
 RWStructuredBuffer<uint> _LineFlagsBuffer;
 RWStructuredBuffer<uint> _FaceFlagsBuffer;
 
+// per-slot カリング結果バッファ（0=visible, 1=culled）
+RWStructuredBuffer<uint> _VertexCulledBuffer;
+RWStructuredBuffer<uint> _LineCulledBuffer;
+RWStructuredBuffer<uint> _FaceCulledBuffer;
+
 // 出力バッファ
 RWStructuredBuffer<float4> _ScreenPositionBuffer;      // xy=screen, z=depth, w=valid
 RWStructuredBuffer<float4> _MirrorScreenPositionBuffer;
@@ -174,13 +181,6 @@ void ClearBuffers(uint3 id : SV_DispatchThreadID)
         _ScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
         _VertexHitDistanceBuffer[index] = 1e10;
         
-        // カリングフラグを設定
-        uint vFlags = _VertexFlagsBuffer[index];
-        if (!HAS_FLAG(vFlags, FLAG_HIDDEN))
-        {
-            _VertexFlagsBuffer[index] = vFlags | FLAG_CULLED;
-        }
-        
         if (_UseMirror > 0)
         {
             _MirrorScreenPositionBuffer[index] = float4(-10000, -10000, 1, 0);
@@ -190,13 +190,6 @@ void ClearBuffers(uint3 id : SV_DispatchThreadID)
     if (index < _LineCount)
     {
         _LineHitDistanceBuffer[index] = 1e10;
-        
-        // 線分のカリングフラグを設定
-        uint lFlags = _LineFlagsBuffer[index];
-        if (!HAS_FLAG(lFlags, FLAG_HIDDEN))
-        {
-            _LineFlagsBuffer[index] = lFlags | FLAG_CULLED;
-        }
     }
 }
 
@@ -210,13 +203,43 @@ void ClearFaceBuffers(uint3 id : SV_DispatchThreadID)
     {
         _FaceHitBuffer[index] = 0.0;
         _FaceHitDepthBuffer[index] = 1e10;
-        
-        // 面のカリングフラグを設定
+    }
+}
+
+// ============================================================
+// per-slot カリングバッファクリア（デフォルト=全部カリング済み）
+// ClearBuffers / ClearFaceBuffers の後に呼ぶこと
+// ============================================================
+
+// ClearCulledBuffers: 頂点・線分（D3D UAV制限対策で面は別カーネル）
+[numthreads(64, 1, 1)]
+void ClearCulledBuffers(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+
+    if (index < _VertexCount)
+    {
+        uint vFlags = _VertexFlagsBuffer[index];
+        _VertexCulledBuffer[index] = HAS_FLAG(vFlags, FLAG_HIDDEN) ? 0u : 1u;
+    }
+
+    if (index < _LineCount)
+    {
+        uint lFlags = _LineFlagsBuffer[index];
+        _LineCulledBuffer[index] = HAS_FLAG(lFlags, FLAG_HIDDEN) ? 0u : 1u;
+    }
+}
+
+// ClearFaceCulledBuffers: 面
+[numthreads(64, 1, 1)]
+void ClearFaceCulledBuffers(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+
+    if (index < _FaceCount)
+    {
         uint fFlags = _FaceFlagsBuffer[index];
-        if (!HAS_FLAG(fFlags, FLAG_HIDDEN))
-        {
-            _FaceFlagsBuffer[index] = fFlags | FLAG_CULLED;
-        }
+        _FaceCulledBuffer[index] = HAS_FLAG(fFlags, FLAG_HIDDEN) ? 0u : 1u;
     }
 }
 
@@ -365,7 +388,7 @@ void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
     }
     
     // カリングチェック（バックフェースカリング有効時のみ）
-    if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
+    if (_EnableBackfaceCulling != 0 && _VertexCulledBuffer[index] != 0u)
     {
         _VertexHitDistanceBuffer[index] = 1e10;
         return;
@@ -435,7 +458,7 @@ void ComputeLineHitTest(uint3 id : SV_DispatchThreadID)
     }
     
     // カリングチェック（バックフェースカリング有効時のみ）
-    if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
+    if (_EnableBackfaceCulling != 0 && _LineCulledBuffer[index] != 0u)
     {
         _LineHitDistanceBuffer[index] = 1e10;
         return;
@@ -546,22 +569,21 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
     UnifiedFace face = _FaceBuffer[faceIndex];
     uint flags = _FaceFlagsBuffer[faceIndex];
     
-    // 既に非表示の場合はスキップ
+    // 既に非表示の場合はカリング済み扱い
     if (HAS_FLAG(flags, FLAG_HIDDEN))
     {
-        _FaceFlagsBuffer[faceIndex] = flags | FLAG_CULLED;
+        _FaceCulledBuffer[faceIndex] = 1u;
         return;
     }
     
     // 頂点数が3未満（補助線など）は常に可視
     if (face.vertexCount < 3)
     {
-        _FaceFlagsBuffer[faceIndex] = flags & ~FLAG_CULLED;
+        _FaceCulledBuffer[faceIndex] = 0u;
         return;
     }
     
     // ショエレース公式で表裏判定
-    // signedArea < 0 = 時計回り = 表面（GUI座標系）
     float signedArea = ComputeSignedArea(faceIndex, face);
     bool isFrontFacing = signedArea < 0;
     
@@ -571,36 +593,33 @@ void ComputeFaceVisibility(uint3 id : SV_DispatchThreadID)
     if (isFrontFacing)
     {
         // 表面: カリングフラグをクリア
-        _FaceFlagsBuffer[faceIndex] = flags & ~FLAG_CULLED;
+        _FaceCulledBuffer[faceIndex] = 0u;
         
         // 表面の頂点のカリングフラグもクリア
         uint triCount = face.vertexCount - 2;
         
         // 頂点0
         uint baseIdx = _IndexBuffer[face.indexStart];
-        uint vFlags = _VertexFlagsBuffer[baseIdx];
-        _VertexFlagsBuffer[baseIdx] = vFlags & ~FLAG_CULLED;
+        _VertexCulledBuffer[baseIdx] = 0u;
         
         // 頂点1～(N-2)
         for (uint i = 0; i < triCount; i++)
         {
             uint idx = _IndexBuffer[face.indexStart + i * 3 + 1];
-            vFlags = _VertexFlagsBuffer[idx];
-            _VertexFlagsBuffer[idx] = vFlags & ~FLAG_CULLED;
+            _VertexCulledBuffer[idx] = 0u;
         }
         
         // 最後の頂点
         if (triCount > 0)
         {
             uint lastIdx = _IndexBuffer[face.indexStart + (triCount - 1) * 3 + 2];
-            vFlags = _VertexFlagsBuffer[lastIdx];
-            _VertexFlagsBuffer[lastIdx] = vFlags & ~FLAG_CULLED;
+            _VertexCulledBuffer[lastIdx] = 0u;
         }
     }
     else
     {
         // 裏面: カリングフラグを設定
-        _FaceFlagsBuffer[faceIndex] = flags | FLAG_CULLED;
+        _FaceCulledBuffer[faceIndex] = 1u;
     }
 }
 
@@ -634,7 +653,7 @@ void ComputeFaceHitTest(uint3 id : SV_DispatchThreadID)
     }
     
     // カリングチェック（バックフェースカリング有効時のみ）
-    if (_EnableBackfaceCulling != 0 && HAS_FLAG(flags, FLAG_CULLED))
+    if (_EnableBackfaceCulling != 0 && _FaceCulledBuffer[faceIndex] != 0u)
     {
         _FaceHitBuffer[faceIndex] = 0.0;
         _FaceHitDepthBuffer[faceIndex] = 1e10;
@@ -745,11 +764,11 @@ void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
     if (faceIndex >= _FaceCount) return;
     
     UnifiedFace face = _FaceBuffer[faceIndex];
-    uint faceFlags = _FaceFlagsBuffer[faceIndex];
     
     // 面が非表示またはカリングされている場合は何もしない
-    // （線分はClearBuffersでデフォルトでカリング済み）
-    if (HAS_FLAG(faceFlags, FLAG_HIDDEN | FLAG_CULLED))
+    // （線分はClearCulledBuffersでデフォルトでカリング済み）
+    uint faceFlags = _FaceFlagsBuffer[faceIndex];
+    if (HAS_FLAG(faceFlags, FLAG_HIDDEN) || _FaceCulledBuffer[faceIndex] != 0u)
         return;
     
     // 面が表なら、その面の全線分のカリングフラグをクリア
@@ -763,7 +782,7 @@ void ComputeLineVisibility(uint3 id : SV_DispatchThreadID)
         // 非表示フラグは維持、カリングフラグのみクリア
         if (!HAS_FLAG(lineFlags, FLAG_HIDDEN))
         {
-            _LineFlagsBuffer[lineIdx] = lineFlags & ~FLAG_CULLED;
+            _LineCulledBuffer[lineIdx] = 0u;
         }
     }
 }

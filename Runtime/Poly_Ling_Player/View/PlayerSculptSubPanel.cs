@@ -62,7 +62,6 @@ namespace Poly_Ling.Player
 
             var title = new Label("Sculpt Tool");
             title.style.marginBottom = 4;
-            title.style.color        = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             _root.Add(title);
 
             // ── モード選択（RadioButtonGroup）────────────────────────

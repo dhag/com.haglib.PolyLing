@@ -40,6 +40,7 @@ Shader "Poly_Ling/Point3D_SRP"
             // ── GPU バッファ ──────────────────────────────────────────
             StructuredBuffer<float3> _PositionBuffer;
             StructuredBuffer<uint>   _VertexFlagsBuffer;
+            StructuredBuffer<uint>   _VertexCulledBuffer;
 
             // ── 色プロパティ ─────────────────────────────────────────
             float4 _ColorDefault;
@@ -70,7 +71,7 @@ Shader "Poly_Ling/Point3D_SRP"
 
                 uint flags = _VertexFlagsBuffer[ptIdx];
 
-                if ((flags & FLAG_HIDDEN) != 0u || (flags & FLAG_CULLED) != 0u)
+                if ((flags & FLAG_HIDDEN) != 0u || _VertexCulledBuffer[ptIdx] != 0u)
                 {
                     o.pos         = float4(99999.0, 99999.0, 99999.0, 1.0);
                     o.fillColor   = 0;

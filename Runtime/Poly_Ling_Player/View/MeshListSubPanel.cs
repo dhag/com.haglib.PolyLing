@@ -182,7 +182,6 @@ namespace Poly_Ling.MeshListV2
 
             // ── スキンドメッシュ（= 詳細モード）トグル
             _detailModeToggle = new Toggle("スキンドメッシュ") { value = false, name = "detail-mode-toggle" };
-            _detailModeToggle.style.color = Col(0.85f);
             _detailModeToggle.style.marginBottom = 3;
             root.Add(_detailModeToggle);
 
@@ -203,7 +202,6 @@ namespace Poly_Ling.MeshListV2
             topRow.style.marginBottom  = 3;
 
             _countLabel = new Label { name = "count-label" };
-            _countLabel.style.flexGrow = 1; _countLabel.style.fontSize = 10; _countLabel.style.color = Col(0.6f);
             topRow.Add(_countLabel);
 
             _showInfoToggle = new Toggle { name = "show-info-toggle", value = true };
@@ -268,7 +266,6 @@ namespace Poly_Ling.MeshListV2
 
             // ── ステータス
             _statusLabel = new Label("") { name = "status-label" };
-            _statusLabel.style.fontSize = 10; _statusLabel.style.marginTop = 4; _statusLabel.style.color = Col(0.6f);
             root.Add(_statusLabel);
         }
 
@@ -288,7 +285,6 @@ namespace Poly_Ling.MeshListV2
         {
             // カウント・フィルター
             var topRow = new VisualElement(); topRow.style.flexDirection = FlexDirection.Row;
-            _morphCountLabel = new Label(); _morphCountLabel.style.flexGrow = 1; _morphCountLabel.style.fontSize = 10; _morphCountLabel.style.color = Col(0.6f);
             topRow.Add(_morphCountLabel);
             parent.Add(topRow);
 
@@ -304,7 +300,6 @@ namespace Poly_Ling.MeshListV2
 
             // テストウェイト
             var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
-            var wLbl = new Label("テストウェイト"); wLbl.style.width = 90; wLbl.style.fontSize = 10; wLbl.style.color = Col(0.85f); wRow.Add(wLbl);
             _morphTestWeight = new Slider(0f, 1f); _morphTestWeight.style.flexGrow = 1; wRow.Add(_morphTestWeight);
             parent.Add(wRow);
 
@@ -484,7 +479,6 @@ namespace Poly_Ling.MeshListV2
             nameLabel.style.flexGrow = 1; nameLabel.style.flexShrink = 1;
             nameLabel.style.overflow = Overflow.Hidden; nameLabel.style.textOverflow = TextOverflow.Ellipsis;
             nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft; nameLabel.style.marginRight = 4;
-            nameLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             c.Add(nameLabel);
 
             var infoLabel = new Label { name = "info" };
@@ -861,7 +855,6 @@ namespace Poly_Ling.MeshListV2
             _poseFoldout = new Foldout { text = "ボーンポーズ", value = true, name = "pose-foldout" };
 
             _poseActiveToggle = new Toggle("アクティブ") { name = "pose-active-toggle" };
-            _poseActiveToggle.style.marginBottom = 3; _poseActiveToggle.style.color = Col(0.85f);
             _poseActiveToggle.RegisterValueChangedCallback(e =>
             {
                 if (_isSyncingPoseUI || _ctx == null) return;
@@ -887,13 +880,10 @@ namespace Poly_Ling.MeshListV2
             RegRestTF(_restSclY, SetBoneTransformValueCommand.Field.ScaleY);
             RegRestTF(_restSclZ, SetBoneTransformValueCommand.Field.ScaleZ);
 
-            _poseResultPos = new Label { name = "pose-result-pos" }; _poseResultPos.style.fontSize = 10; _poseResultPos.style.color = Col(0.75f);
-            _poseResultRot = new Label { name = "pose-result-rot" }; _poseResultRot.style.fontSize = 10; _poseResultRot.style.color = Col(0.75f);
             _poseFoldout.Add(_poseResultPos); _poseFoldout.Add(_poseResultRot);
 
             _poseLayersContainer = new VisualElement { name = "pose-layers-container" };
             _poseNoLayersLabel = new Label("(レイヤーなし)") { name = "pose-no-layers-label" };
-            _poseNoLayersLabel.style.fontSize = 10; _poseNoLayersLabel.style.color = Col(0.5f);
             _poseLayersContainer.Add(_poseNoLayersLabel);
             _poseFoldout.Add(_poseLayersContainer);
 
@@ -905,9 +895,6 @@ namespace Poly_Ling.MeshListV2
             _bonePoseSection.Add(_poseFoldout);
 
             _bindposeFoldout = new Foldout { text = "バインドポーズ", value = false, name = "bindpose-foldout" };
-            _bindposePos = new Label { name = "bindpose-pos" }; _bindposePos.style.fontSize = 10; _bindposePos.style.color = Col(0.75f);
-            _bindposeRot = new Label { name = "bindpose-rot" }; _bindposeRot.style.fontSize = 10; _bindposeRot.style.color = Col(0.75f);
-            _bindposeScl = new Label { name = "bindpose-scl" }; _bindposeScl.style.fontSize = 10; _bindposeScl.style.color = Col(0.75f);
             _bindposeFoldout.Add(_bindposePos); _bindposeFoldout.Add(_bindposeRot); _bindposeFoldout.Add(_bindposeScl);
             _btnBakePose = MakeSmallBtn("ポーズベイク", "btn-bake-pose");
             _bindposeFoldout.Add(_btnBakePose);
@@ -1416,14 +1403,14 @@ namespace Poly_Ling.MeshListV2
         private static Label MakeInfoLabel(string name = "")
         {
             var l = new Label { name = name };
-            l.style.fontSize = 10; l.style.color = Col(0.75f); l.style.marginBottom = 1;
+            l.style.fontSize = 10; l.style.marginBottom = 1;
             return l;
         }
 
         private static Label SectionHeader(string text)
         {
             var l = new Label(text);
-            l.style.fontSize = 10; l.style.color = Col(0.6f); l.style.marginTop = 4; l.style.marginBottom = 1;
+            l.style.fontSize = 10; l.style.marginTop = 4; l.style.marginBottom = 1;
             return l;
         }
 
@@ -1438,7 +1425,7 @@ namespace Poly_Ling.MeshListV2
         private static VisualElement LabeledRow(string label, VisualElement content)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2; row.style.alignItems = Align.Center;
-            var lbl = new Label(label); lbl.style.width = 70; lbl.style.fontSize = 10; lbl.style.color = Col(0.85f);
+            var lbl = new Label(label); lbl.style.width = 70; lbl.style.fontSize = 10;
             row.Add(lbl); content.style.flexGrow = 1; row.Add(content);
             return row;
         }

@@ -43,6 +43,7 @@ Shader "Poly_Ling/Wireframe3D_SRP"
             StructuredBuffer<float3>          _PositionBuffer;
             StructuredBuffer<UnifiedLineData> _LineBuffer;
             StructuredBuffer<uint>            _LineFlagsBuffer;
+            StructuredBuffer<uint>            _LineCulledBuffer;
 
             // ── 色プロパティ ─────────────────────────────────────────
             float4 _ColorUnselectedMesh;      // 非選択ライン
@@ -66,7 +67,7 @@ Shader "Poly_Ling/Wireframe3D_SRP"
                 uint flags = _LineFlagsBuffer[lineIdx];
 
                 // 非表示・カリング済み → クリップ外へ飛ばす
-                if ((flags & FLAG_HIDDEN) != 0u || (flags & FLAG_CULLED) != 0u)
+                if ((flags & FLAG_HIDDEN) != 0u || _LineCulledBuffer[lineIdx] != 0u)
                 {
                     o.pos   = float4(99999.0, 99999.0, 99999.0, 1.0);
                     o.color = float4(0, 0, 0, 0);

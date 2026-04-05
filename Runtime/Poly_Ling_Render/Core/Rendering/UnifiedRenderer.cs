@@ -56,6 +56,14 @@ namespace Poly_Ling.Core.Rendering
         // 描画キュー
         private List<Mesh> _pendingMeshes = new List<Mesh>();
         private List<Material> _pendingMaterials = new List<Material>();
+        private List<MaterialPropertyBlock> _pendingPropertyBlocks = new List<MaterialPropertyBlock>();
+
+        // per-slot MPB キャッシュ（Graphics.DrawMesh 呼び出し時にキャプチャされる）
+        private MaterialPropertyBlock[] _wireframeMPBs;
+        private MaterialPropertyBlock[] _wireframeOverlayMPBs;
+        private MaterialPropertyBlock[] _pointMPBs;
+        private MaterialPropertyBlock[] _pointOverlayMPBs;
+        private MaterialPropertyBlock   _srpMPB = new MaterialPropertyBlock();
 
         // =====================================================================
         // 【重要】メッシュ構築用キャッシュリスト - 毎フレームnewしないこと！
@@ -192,6 +200,20 @@ namespace Poly_Ling.Core.Rendering
                 _wireframeSRPMaterial = new Material(wireframeSRPShader) { hideFlags = HideFlags.HideAndDontSave };
             if (pointSRPShader != null)
                 _pointSRPMaterial = new Material(pointSRPShader) { hideFlags = HideFlags.HideAndDontSave };
+
+            // per-slot MaterialPropertyBlock 初期化
+            int N = UnifiedBufferManager.CullingSlotCount;
+            _wireframeMPBs        = new MaterialPropertyBlock[N];
+            _wireframeOverlayMPBs = new MaterialPropertyBlock[N];
+            _pointMPBs            = new MaterialPropertyBlock[N];
+            _pointOverlayMPBs     = new MaterialPropertyBlock[N];
+            for (int s = 0; s < N; s++)
+            {
+                _wireframeMPBs[s]        = new MaterialPropertyBlock();
+                _wireframeOverlayMPBs[s] = new MaterialPropertyBlock();
+                _pointMPBs[s]            = new MaterialPropertyBlock();
+                _pointOverlayMPBs[s]     = new MaterialPropertyBlock();
+            }
 
             _isInitialized = true;
             return true;
@@ -640,97 +662,110 @@ namespace Poly_Ling.Core.Rendering
         /// 非選択メッシュ → 通常描画（ZTest LEqual）
         /// </summary>
         /// <param name="showUnselected">非選択メッシュを表示するか</param>
-        public void QueueWireframe(bool showUnselected = true)
+        public void QueueWireframe(bool showUnselected = true, int cullingSlot = 0)
         {
             bool hasBuffer = _bufferManager?.LineFlagsBuffer != null;
+            var lineCulledBuf = _bufferManager?.GetLineCulledBuffer(cullingSlot);
+            int slot = (_wireframeMPBs != null && cullingSlot < _wireframeMPBs.Length) ? cullingSlot : 0;
 
             // 非選択メッシュ → 通常描画
             if (showUnselected && _wireframeMeshUnselected != null && _wireframeMaterial != null
                 && _wireframeMeshUnselected.vertexCount > 0)
             {
+                MaterialPropertyBlock mpb = null;
                 if (hasBuffer)
                 {
-                    _wireframeMaterial.SetBuffer("_LineFlagsBuffer", _bufferManager.LineFlagsBuffer);
-                    _wireframeMaterial.SetInt("_UseLineFlagsBuffer", 1);
+                    _wireframeMaterial.SetBuffer("_LineFlagsBuffer",   _bufferManager.LineFlagsBuffer);
+                    _wireframeMaterial.SetInt("_UseLineFlagsBuffer",    1);
                     _wireframeMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
+
+                    // _LineCulledBuffer は per-slot → MPB でキャプチャ
+                    mpb = _wireframeMPBs?[slot];
+                    mpb?.SetBuffer("_LineCulledBuffer", lineCulledBuf ?? _bufferManager.LineFlagsBuffer);
                 }
                 else
                 {
-                    _wireframeMaterial.SetInt("_UseLineFlagsBuffer", 0);
+                    _wireframeMaterial.SetInt("_UseLineFlagsBuffer",    0);
                     _wireframeMaterial.SetInt("_EnableBackfaceCulling", 0);
                 }
-
-                var meshCopy = _wireframeMeshUnselected;
-                _pendingMeshes.Add(meshCopy);
+                _pendingMeshes.Add(_wireframeMeshUnselected);
                 _pendingMaterials.Add(_wireframeMaterial);
+                _pendingPropertyBlocks.Add(mpb);
             }
 
             // 選択メッシュ → オーバーレイ描画
             if (_wireframeMeshSelected != null && _wireframeOverlayMaterial != null
                 && _wireframeMeshSelected.vertexCount > 0)
             {
+                MaterialPropertyBlock mpb = null;
                 if (hasBuffer)
                 {
-                    _wireframeOverlayMaterial.SetBuffer("_LineFlagsBuffer", _bufferManager.LineFlagsBuffer);
-                    _wireframeOverlayMaterial.SetInt("_UseLineFlagsBuffer", 1);
+                    _wireframeOverlayMaterial.SetBuffer("_LineFlagsBuffer",   _bufferManager.LineFlagsBuffer);
+                    _wireframeOverlayMaterial.SetInt("_UseLineFlagsBuffer",    1);
                     _wireframeOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
-                }
 
-                var overlayMeshCopy = _wireframeMeshSelected;
-                _pendingMeshes.Add(overlayMeshCopy);
+                    mpb = _wireframeOverlayMPBs?[slot];
+                    mpb?.SetBuffer("_LineCulledBuffer", lineCulledBuf ?? _bufferManager.LineFlagsBuffer);
+                }
+                _pendingMeshes.Add(_wireframeMeshSelected);
                 _pendingMaterials.Add(_wireframeOverlayMaterial);
+                _pendingPropertyBlocks.Add(mpb);
             }
         }
 
         /// <summary>
         /// 頂点を描画キューに追加
-        /// 選択メッシュ → オーバーレイ描画（ZTest Always）
-        /// 非選択メッシュ → 通常描画（ZTest LEqual）
         /// </summary>
-        /// <param name="showUnselected">非選択メッシュを表示するか</param>
-        public void QueuePoints(bool showUnselected = true)
+        public void QueuePoints(bool showUnselected = true, int cullingSlot = 0)
         {
-            // ShaderColorSettingsをマテリアルに適用
             ApplyPointColorSettings(_pointMaterial,        isOverlay: false);
             ApplyPointColorSettings(_pointOverlayMaterial, isOverlay: true);
 
-            bool hasBuffer = _bufferManager?.VertexFlagsBuffer != null;
+            bool hasBuffer   = _bufferManager?.VertexFlagsBuffer != null;
+            var vtxCulledBuf = _bufferManager?.GetVertexCulledBuffer(cullingSlot);
+            int slot = (_pointMPBs != null && cullingSlot < _pointMPBs.Length) ? cullingSlot : 0;
 
             // 非選択メッシュ → 通常描画
             if (showUnselected && _pointMeshUnselected != null && _pointMaterial != null
                 && _pointMeshUnselected.vertexCount > 0)
             {
+                MaterialPropertyBlock mpb = null;
                 if (hasBuffer)
                 {
-                    _pointMaterial.SetBuffer("_VertexFlagsBuffer", _bufferManager.VertexFlagsBuffer);
-                    _pointMaterial.SetInt("_UseVertexFlagsBuffer", 1);
-                    _pointMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
+                    _pointMaterial.SetBuffer("_VertexFlagsBuffer",  _bufferManager.VertexFlagsBuffer);
+                    _pointMaterial.SetInt("_UseVertexFlagsBuffer",   1);
+                    _pointMaterial.SetInt("_EnableBackfaceCulling",  BackfaceCullingEnabled ? 1 : 0);
+
+                    mpb = _pointMPBs?[slot];
+                    mpb?.SetBuffer("_VertexCulledBuffer", vtxCulledBuf ?? _bufferManager.VertexFlagsBuffer);
                 }
                 else
                 {
-                    _pointMaterial.SetInt("_UseVertexFlagsBuffer", 0);
+                    _pointMaterial.SetInt("_UseVertexFlagsBuffer",  0);
                     _pointMaterial.SetInt("_EnableBackfaceCulling", 0);
                 }
-
-                var meshCopy = _pointMeshUnselected;
-                _pendingMeshes.Add(meshCopy);
+                _pendingMeshes.Add(_pointMeshUnselected);
                 _pendingMaterials.Add(_pointMaterial);
+                _pendingPropertyBlocks.Add(mpb);
             }
 
             // 選択メッシュ → オーバーレイ描画
             if (_pointMeshSelected != null && _pointOverlayMaterial != null
                 && _pointMeshSelected.vertexCount > 0)
             {
+                MaterialPropertyBlock mpb = null;
                 if (hasBuffer)
                 {
-                    _pointOverlayMaterial.SetBuffer("_VertexFlagsBuffer", _bufferManager.VertexFlagsBuffer);
-                    _pointOverlayMaterial.SetInt("_UseVertexFlagsBuffer", 1);
-                    _pointOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
-                }
+                    _pointOverlayMaterial.SetBuffer("_VertexFlagsBuffer",  _bufferManager.VertexFlagsBuffer);
+                    _pointOverlayMaterial.SetInt("_UseVertexFlagsBuffer",   1);
+                    _pointOverlayMaterial.SetInt("_EnableBackfaceCulling",  BackfaceCullingEnabled ? 1 : 0);
 
-                var overlayMeshCopy = _pointMeshSelected;
-                _pendingMeshes.Add(overlayMeshCopy);
+                    mpb = _pointOverlayMPBs?[slot];
+                    mpb?.SetBuffer("_VertexCulledBuffer", vtxCulledBuf ?? _bufferManager.VertexFlagsBuffer);
+                }
+                _pendingMeshes.Add(_pointMeshSelected);
                 _pendingMaterials.Add(_pointOverlayMaterial);
+                _pendingPropertyBlocks.Add(mpb);
             }
         }
 
@@ -761,11 +796,14 @@ namespace Poly_Ling.Core.Rendering
 
             for (int i = 0; i < _pendingMeshes.Count; i++)
             {
-                var mesh = _pendingMeshes[i];
+                var mesh     = _pendingMeshes[i];
                 var material = _pendingMaterials[i];
+                var mpb      = i < _pendingPropertyBlocks.Count ? _pendingPropertyBlocks[i] : null;
                 if (mesh != null && material != null)
                 {
-                    Graphics.DrawMesh(mesh, Matrix4x4.identity, material, 0, camera);
+                    // MPB が設定されている場合は per-draw-call プロパティを適用
+                    // （MaterialPropertyBlock の値は DrawMesh 呼び出し時点でキャプチャされる）
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, material, 0, camera, 0, mpb);
                 }
             }
         }
@@ -775,9 +813,12 @@ namespace Poly_Ling.Core.Rendering
         /// SRP (URP) 用: Graphics.RenderPrimitives でワイヤーフレーム・頂点を直接描画。
         /// CPU 側 Mesh を生成せず GPU バッファを直接参照するため低コスト。
         /// </summary>
-        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f)
+        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f, int cullingSlot = 0)
         {
             if (_bufferManager == null) return;
+
+            var lineCulledBuf = _bufferManager.GetLineCulledBuffer(cullingSlot)   ?? _bufferManager.LineFlagsBuffer;
+            var vtxCulledBuf  = _bufferManager.GetVertexCulledBuffer(cullingSlot) ?? _bufferManager.VertexFlagsBuffer;
 
             // ── ワイヤーフレーム ──────────────────────────────────
             if (showWireframe && _wireframeSRPMaterial != null)
@@ -792,12 +833,16 @@ namespace Poly_Ling.Core.Rendering
                     _wireframeSRPMaterial.SetColor("_ColorUnselectedMesh",    colors.LineUnselectedMesh);
                     _wireframeSRPMaterial.SetColor("_ColorAuxLineUnselected", colors.AuxLineUnselectedMesh);
 
+                    _srpMPB.Clear();
+                    _srpMPB.SetBuffer("_LineCulledBuffer", lineCulledBuf);
+
                     var rp = new RenderParams(_wireframeSRPMaterial)
                     {
                         worldBounds       = new Bounds(Vector3.zero, Vector3.one * 100000f),
                         shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off,
                         receiveShadows    = false,
                         camera            = camera,
+                        matProps          = _srpMPB,
                     };
                     Graphics.RenderPrimitives(rp, MeshTopology.Lines, lineCount * 2);
                 }
@@ -810,11 +855,14 @@ namespace Poly_Ling.Core.Rendering
                 if (vertexCount > 0)
                 {
                     var colors = _colorSettings;
-                    _pointSRPMaterial.SetBuffer("_PositionBuffer",     _bufferManager.PositionBuffer);
-                    _pointSRPMaterial.SetBuffer("_VertexFlagsBuffer",  _bufferManager.VertexFlagsBuffer);
-                    _pointSRPMaterial.SetColor("_ColorDefault",        colors.VertexDefault);
-                    _pointSRPMaterial.SetColor("_BorderColorDefault",  colors.VertexBorderDefault);
-                    _pointSRPMaterial.SetFloat("_ScreenSpaceSize",     screenSpacePointSize);
+                    _pointSRPMaterial.SetBuffer("_PositionBuffer",    _bufferManager.PositionBuffer);
+                    _pointSRPMaterial.SetBuffer("_VertexFlagsBuffer", _bufferManager.VertexFlagsBuffer);
+                    _pointSRPMaterial.SetColor("_ColorDefault",       colors.VertexDefault);
+                    _pointSRPMaterial.SetColor("_BorderColorDefault", colors.VertexBorderDefault);
+                    _pointSRPMaterial.SetFloat("_ScreenSpaceSize",    screenSpacePointSize);
+
+                    _srpMPB.Clear();
+                    _srpMPB.SetBuffer("_VertexCulledBuffer", vtxCulledBuf);
 
                     var rp = new RenderParams(_pointSRPMaterial)
                     {
@@ -822,11 +870,11 @@ namespace Poly_Ling.Core.Rendering
                         shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off,
                         receiveShadows    = false,
                         camera            = camera,
+                        matProps          = _srpMPB,
                     };
                     Graphics.RenderPrimitives(rp, MeshTopology.Triangles, vertexCount * 6);
                 }
             }
-
         }
 
         /// <summary>
@@ -836,6 +884,7 @@ namespace Poly_Ling.Core.Rendering
         {
             _pendingMeshes.Clear();
             _pendingMaterials.Clear();
+            _pendingPropertyBlocks.Clear();
         }
 
         // ============================================================

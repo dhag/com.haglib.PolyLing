@@ -28,8 +28,7 @@ namespace Poly_Ling.Player
 
             var title = new Label("Pivot Offset Tool");
             title.style.marginBottom = 4;
-            title.style.color        = new UnityEngine.UIElements.StyleColor(
-                new UnityEngine.Color(0.85f, 0.85f, 0.85f));
+
             root.Add(title);
 
             var help = new HelpBox(

@@ -66,6 +66,7 @@ Shader "Poly_Ling/Point3D_Overlay"
             float4 _BorderColorDefault;
             
             StructuredBuffer<uint> _VertexFlagsBuffer;
+            StructuredBuffer<uint> _VertexCulledBuffer;
             int _UseVertexFlagsBuffer;
             int _EnableBackfaceCulling;
             
@@ -78,7 +79,7 @@ Shader "Poly_Ling/Point3D_Overlay"
                     uint idx = (uint)v.uv2.x;
                     uint flags = _VertexFlagsBuffer[idx];
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
-                    bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isCulled = _VertexCulledBuffer[idx] != 0u;
                     bool isHovered = (flags & FLAG_HOVERED) != 0;
                     
                     // 非表示メッシュをスキップ
@@ -212,6 +213,7 @@ Shader "Poly_Ling/Point3D_Overlay"
             float4 _BorderColorDefault;
             
             StructuredBuffer<uint> _VertexFlagsBuffer;
+            StructuredBuffer<uint> _VertexCulledBuffer;
             int _UseVertexFlagsBuffer;
             int _EnableBackfaceCulling;
             
@@ -224,7 +226,7 @@ Shader "Poly_Ling/Point3D_Overlay"
                     uint idx = (uint)v.uv2.x;
                     uint flags = _VertexFlagsBuffer[idx];
                     bool isHidden = (flags & FLAG_HIDDEN) != 0;
-                    bool isCulled = (flags & FLAG_CULLED) != 0;
+                    bool isCulled = _VertexCulledBuffer[idx] != 0u;
                     bool isHovered = (flags & FLAG_HOVERED) != 0;
                     
                     // 非表示メッシュをスキップ

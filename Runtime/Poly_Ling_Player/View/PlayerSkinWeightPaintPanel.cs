@@ -148,7 +148,6 @@ namespace Poly_Ling.Player
             var pruneLbl = new Label("Threshold");
             pruneLbl.style.width             = 70;
             pruneLbl.style.unityTextAlign    = TextAnchor.MiddleLeft;
-            pruneLbl.style.color             = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
             pruneLbl.style.fontSize          = 10;
             _pruneThreshField = new FloatField { value = _pruneThreshold };
             _pruneThreshField.style.flexGrow = 1;
@@ -159,7 +158,6 @@ namespace Poly_Ling.Player
             _root.Add(pruneRow);
 
             _statusLabel = new Label();
-            _statusLabel.style.color    = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
             _statusLabel.style.fontSize = 10;
             _root.Add(_statusLabel);
         }
@@ -338,7 +336,6 @@ namespace Poly_Ling.Player
             var lbl = new Label(label);
             lbl.style.width          = 32;
             lbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            lbl.style.color          = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             lbl.style.fontSize       = 10;
             row.Add(lbl);
 
