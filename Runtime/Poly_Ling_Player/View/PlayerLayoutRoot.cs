@@ -909,7 +909,7 @@ namespace Poly_Ling.Player
             {
                 t.style.color = white;
                 var checkmark = t.Q(className: "unity-toggle__checkmark");
-                if (checkmark != null) checkmark.style.backgroundColor = fieldBg;
+                if (checkmark != null) checkmark.style.backgroundColor = new StyleColor(Color.white);
             });
 
             root.Query<VisualElement>(className: "unity-base-slider__tracker").ForEach(e =>

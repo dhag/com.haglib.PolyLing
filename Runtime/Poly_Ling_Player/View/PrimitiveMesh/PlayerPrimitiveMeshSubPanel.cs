@@ -83,6 +83,7 @@ namespace Poly_Ling.Player
 
         public void Build(VisualElement parent, Transform sceneRoot)
         {
+            _cubeP.LinkTopBottom = true;
             parent.Clear();
 
             parent.Add(SL(T("PanelTitle"), bold: true));
@@ -271,8 +272,7 @@ namespace Poly_Ling.Player
             c.Add(NF(() => _cubeP.MeshName, v => _cubeP.MeshName = v));
 
             // 連動オプション
-            c.Add(TR(T("LinkWHD"),       () => _cubeP.LinkWHD,       v => { _cubeP.LinkWHD = v; if (v) { _cubeP.LinkTopBottom = true; } D(); }));
-            c.Add(TR(T("LinkTopBottom"), () => _cubeP.LinkTopBottom,  v => { if (!_cubeP.LinkWHD) _cubeP.LinkTopBottom = v; D(); }));
+            c.Add(TR(T("LinkWHD"), () => _cubeP.LinkWHD, v => { _cubeP.LinkWHD = v; D(); }));
 
             c.Add(SL(T("Size")));
             if (_cubeP.LinkWHD)
@@ -285,14 +285,9 @@ namespace Poly_Ling.Player
             }
             else
             {
-                c.Add(SR(T("WidthX"),  0.1f, 10f, () => _cubeP.WidthTop,  v => { _cubeP.WidthTop  = v; if (_cubeP.LinkTopBottom) _cubeP.WidthBottom  = v; D(); }));
+                c.Add(SR(T("WidthX"),  0.1f, 10f, () => _cubeP.WidthTop,  v => { _cubeP.WidthTop  = v; _cubeP.WidthBottom  = v; D(); }));
                 c.Add(SR(T("HeightY"), 0.1f, 10f, () => _cubeP.Height,    v => { _cubeP.Height = v; D(); }));
-                c.Add(SR(T("DepthZ"),  0.1f, 10f, () => _cubeP.DepthTop,  v => { _cubeP.DepthTop  = v; if (_cubeP.LinkTopBottom) _cubeP.DepthBottom  = v; D(); }));
-                if (!_cubeP.LinkTopBottom)
-                {
-                    c.Add(SR("W Bot", 0.1f, 10f, () => _cubeP.WidthBottom,  v => { _cubeP.WidthBottom = v; D(); }));
-                    c.Add(SR("D Bot", 0.1f, 10f, () => _cubeP.DepthBottom,  v => { _cubeP.DepthBottom = v; D(); }));
-                }
+                c.Add(SR(T("DepthZ"),  0.1f, 10f, () => _cubeP.DepthTop,  v => { _cubeP.DepthTop  = v; _cubeP.DepthBottom  = v; D(); }));
             }
 
             c.Add(SL(T("CornerRadius")));
