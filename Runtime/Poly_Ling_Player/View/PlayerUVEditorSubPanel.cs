@@ -136,7 +136,7 @@ namespace Poly_Ling.Player
             _canvas = new VisualElement();
             _canvas.style.flexGrow        = 1;
             _canvas.style.minHeight       = 240;
-            _canvas.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.12f));
+            _canvas.style.backgroundColor = new StyleColor(Color.white);
             _canvas.style.marginBottom    = 4;
             _canvas.generateVisualContent += OnGenerateVisualContent;
             _canvas.RegisterCallback<WheelEvent>(OnCanvasWheel);
@@ -178,7 +178,7 @@ namespace Poly_Ling.Player
             // ステータス
             _statusLabel = new Label();
             _statusLabel.style.fontSize  = 10;
-            _statusLabel.style.color     = new StyleColor(Color.gray);
+            _statusLabel.style.color     = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 4;
             _root.Add(_statusLabel);
         }

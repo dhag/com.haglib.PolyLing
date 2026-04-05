@@ -229,7 +229,7 @@ namespace Poly_Ling.Player
         private static VisualElement MakeSep(string title = null)
         {
             var container = new VisualElement(); container.style.marginTop = 4; container.style.marginBottom = 4;
-            var line = new VisualElement(); line.style.height = 1; line.style.backgroundColor = new StyleColor(new Color(0.35f, 0.35f, 0.35f));
+            var line = new VisualElement(); line.style.height = 1; line.style.backgroundColor = new StyleColor(Color.white);
             container.Add(line);
             if (title != null)
             {

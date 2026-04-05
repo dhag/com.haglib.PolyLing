@@ -271,7 +271,7 @@ namespace Poly_Ling.Player
 
         private void UpdateModeBtns()
         {
-            var active   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var active   = new StyleColor(Color.white);
             var inactive = new StyleColor(StyleKeyword.Null);
             for (int i = 0; i < _modeBtns.Length; i++)
                 if (_modeBtns[i] != null)
@@ -297,7 +297,7 @@ namespace Poly_Ling.Player
 
         private void UpdateFalloffBtns()
         {
-            var active   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var active   = new StyleColor(Color.white);
             var inactive = new StyleColor(StyleKeyword.Null);
             for (int i = 0; i < _falloffBtns.Length; i++)
                 if (_falloffBtns[i] != null)

@@ -727,7 +727,8 @@ namespace Poly_Ling.Player
             ctx.UndoController = _undoController;
             ctx.SyncMeshContextPositionsOnly = mc =>
             {
-                _renderer?.UpdateSelectedDrawableMesh(0, model);
+                _viewportManager.SyncMeshPositionsAndTransform(mc, model);
+                _viewportManager.UpdateTransform();
                 _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
             };
             ctx.NotifyTopologyChanged = () =>

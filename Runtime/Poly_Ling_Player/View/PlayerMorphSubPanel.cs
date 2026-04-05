@@ -40,6 +40,7 @@ namespace Poly_Ling.Player
         private TextField     _setName, _setNameEn;
         private DropdownField _panelPopup;
         private Label         _setTypeLabel;
+        private ListView      _entryListView;
         private VisualElement _previewSection;
         private Label         _previewInfo;
         private Slider        _previewWeight;
@@ -80,7 +81,7 @@ namespace Poly_Ling.Player
             root.Add(_setDetail);
 
             _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
         }
@@ -106,7 +107,7 @@ namespace Poly_Ling.Player
 
             var typeRow = new VisualElement(); typeRow.style.flexDirection = FlexDirection.Row; typeRow.style.marginBottom = 2;
             typeRow.Add(new Label("タイプ: ") { style = { width = 60 } });
-            _setTypeLabel = new Label(); _setTypeLabel.style.color = new StyleColor(Color.gray);
+            _setTypeLabel = new Label(); _setTypeLabel.style.color = new StyleColor(Color.white);
             typeRow.Add(_setTypeLabel);
             parent.Add(typeRow);
 
@@ -115,30 +116,31 @@ namespace Poly_Ling.Player
             parent.Add(btnDelete);
 
             parent.Add(SecLabel("エントリ (モーフメッシュ / ウェイト)"));
-            var entryList = new ListView(_entryData, 22, EntryMakeItem, EntryBindItem);
-            entryList.style.height       = 100;
-            entryList.style.marginBottom = 6;
-            parent.Add(entryList);
 
             _previewSection = new VisualElement();
             _previewSection.style.display = DisplayStyle.None;
             parent.Add(_previewSection);
             BuildPreviewSectionUI(_previewSection);
+
+            _entryListView = new ListView(_entryData, 22, EntryMakeItem, EntryBindItem);
+            _entryListView.style.height      = 140;
+            _entryListView.style.flexShrink  = 0;
+            _entryListView.style.marginBottom = 6;
+            parent.Add(_entryListView);
         }
 
         private void BuildPreviewSectionUI(VisualElement parent)
         {
             parent.Add(SecLabel("プレビュー"));
-            _previewInfo = new Label(); _previewInfo.style.fontSize = 10; _previewInfo.style.color = new StyleColor(Color.gray); _previewInfo.style.marginBottom = 2;
+            _previewInfo = new Label(); _previewInfo.style.fontSize = 10; _previewInfo.style.color = new StyleColor(Color.white); _previewInfo.style.marginBottom = 2;
             parent.Add(_previewInfo);
             _previewWeight = new Slider("ウェイト", 0f, 1f) { value = 0f };
             _previewWeight.style.marginBottom = 4;
             _previewWeight.RegisterValueChangedCallback(OnPreviewWeightChanged);
             parent.Add(_previewWeight);
-            var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row;
-            var btnReset = new Button(OnResetPreview)  { text = "リセット" };    btnReset.style.flexGrow = 1; btnReset.style.marginRight = 4;
-            var btnEnd   = new Button(OnEndPreview)    { text = "プレビュー終了" }; btnEnd.style.flexGrow   = 1;
-            btnRow.Add(btnReset); btnRow.Add(btnEnd); parent.Add(btnRow);
+            var btnEnd = new Button(OnEndPreview) { text = "プレビュー終了" };
+            btnEnd.style.marginBottom = 4;
+            parent.Add(btnEnd);
         }
 
         // ── ListView helpers ─────────────────────────────────────────────
@@ -225,6 +227,7 @@ namespace Poly_Ling.Player
                 { var mc = model.GetMeshContext(entry.MeshIndex); if (mc != null) mname = $"[{entry.MeshIndex}] {mc.Name}"; }
                 _entryData.Add((i, entry.MeshIndex, mname, entry.Weight));
             }
+            _entryListView?.RefreshItems();
             // プレビュー
             var pairs = BuildMorphBasePairs(model, set);
             if (_previewSection != null) _previewSection.style.display = pairs.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
@@ -296,22 +299,11 @@ namespace Poly_Ling.Player
         private void OnResetPreview() { _previewWeight?.SetValueWithoutNotify(0f); var model = Model; if (model != null) ApplyBatchPreview(model, 0f); }
         private void OnEndPreview()   { EndPreview(); _previewWeight?.SetValueWithoutNotify(0f); }
 
-        private void StartBatchPreview(ModelContext model, List<(MeshContext base_, MeshContext morph)> pairs, int setIndex)
+        private void StartBatchPreview(ModelContext model,
+            List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)> pairs,
+            int setIndex)
         {
-            var startPairs = pairs.Select(p =>
-            {
-                int morphIdx = model.IndexOf(p.morph);
-                int baseIdx  = model.IndexOf(p.base_);
-                float w = 0f;
-                if (_selectedSetIndex >= 0 && _selectedSetIndex < model.MorphExpressionCount)
-                {
-                    var set = model.MorphExpressions[_selectedSetIndex];
-                    int fIdx = set.MeshEntries.FindIndex(e => e.MeshIndex == morphIdx);
-                    w = fIdx >= 0 ? set.MeshEntries[fIdx].Weight : 0f;
-                }
-                return (morphIdx, baseIdx, p.morph, p.base_, w);
-            }).ToList();
-            _previewState.Start(model, startPairs.ToList(), setIndex);
+            _previewState.Start(model, pairs, setIndex);
         }
 
         private void ApplyBatchPreview(ModelContext model, float weight)
@@ -326,27 +318,9 @@ namespace Poly_Ling.Player
             if (model != null) _previewState.End(model, tc);
         }
 
-        private List<(MeshContext base_, MeshContext morph)> BuildMorphBasePairs(ModelContext model, MorphExpression set)
-        {
-            var pairs = new List<(MeshContext, MeshContext)>();
-            if (model == null || set == null) return pairs;
-            foreach (var entry in set.MeshEntries)
-            {
-                if (entry.MeshIndex < 0 || entry.MeshIndex >= model.MeshContextCount) continue;
-                var morphCtx = model.GetMeshContext(entry.MeshIndex);
-                if (!morphCtx.IsMorph) continue;
-                string baseName = morphCtx.MorphBaseData?.MorphName;
-                if (string.IsNullOrEmpty(baseName)) continue;
-                MeshContext baseCtx = null;
-                for (int bi = 0; bi < model.MeshContextCount; bi++)
-                {
-                    var mc = model.GetMeshContext(bi);
-                    if (mc != null && mc.Name == baseName) { baseCtx = mc; break; }
-                }
-                if (baseCtx != null) pairs.Add((baseCtx, morphCtx));
-            }
-            return pairs;
-        }
+        private List<(int morphIndex, int baseIndex, MeshContext morphCtx, MeshContext baseCtx, float weight)>
+            BuildMorphBasePairs(ModelContext model, MorphExpression set)
+            => MorphPreviewState.BuildMorphBasePairs(model, set);
 
         // ── Undo ─────────────────────────────────────────────────────────
         private void RecordUndo(MeshListUndoRecord record, string description)
@@ -359,7 +333,7 @@ namespace Poly_Ling.Player
 
         // ── Helpers ──────────────────────────────────────────────────────
         private void StatusLog(string msg) { if (_statusLabel != null) _statusLabel.text = msg; }
-        private static VisualElement MakeSep() { var s = new VisualElement(); s.style.height = 1; s.style.backgroundColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f)); s.style.marginTop = 2; s.style.marginBottom = 6; return s; }
+        private static VisualElement MakeSep() { var s = new VisualElement(); s.style.height = 1; s.style.backgroundColor = new StyleColor(Color.white); s.style.marginTop = 2; s.style.marginBottom = 6; return s; }
         private static Label SecLabel(string t) { var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.fontSize = 10; l.style.marginBottom = 3; return l; }
 
         private void OnEntryWeightStart()

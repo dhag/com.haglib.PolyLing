@@ -87,7 +87,7 @@ namespace Poly_Ling.Player
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(Color.gray);
+            _statusLabel.style.color    = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
 
@@ -227,7 +227,7 @@ namespace Poly_Ling.Player
 
         private void UpdateTabColors()
         {
-            var active   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var active   = new StyleColor(Color.white);
             var inactive = new StyleColor(StyleKeyword.Null);
             if (_tabProjBtn != null) _tabProjBtn.style.backgroundColor = _tab == Tab.Projection ? active : inactive;
             if (_tabLscmBtn != null) _tabLscmBtn.style.backgroundColor = _tab == Tab.Lscm       ? active : inactive;
@@ -235,7 +235,7 @@ namespace Poly_Ling.Player
 
         private void UpdateProjBtns()
         {
-            var active   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var active   = new StyleColor(Color.white);
             var inactive = new StyleColor(StyleKeyword.Null);
             var types    = new[] { ProjectionType.PlanarXY, ProjectionType.PlanarXZ, ProjectionType.PlanarYZ, ProjectionType.Box, ProjectionType.Cylindrical, ProjectionType.Spherical };
             for (int i = 0; i < _projBtns.Length; i++)

@@ -42,13 +42,120 @@ namespace Poly_Ling.EditorBridge
         public GameObject SaveAsPrefabAsset(GameObject go, string path) => null;
 
         // ================================================================
-        // ダイアログ — TODO: Player用UI実装に差し替え
+        // ダイアログ — Windows P/Invoke 実装
         // ================================================================
+
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private class OpenFileName
+        {
+            public int    lStructSize       = System.Runtime.InteropServices.Marshal.SizeOf(typeof(OpenFileName));
+            public IntPtr hwndOwner         = IntPtr.Zero;
+            public IntPtr hInstance         = IntPtr.Zero;
+            public string lpstrFilter       = null;
+            public string lpstrCustomFilter = null;
+            public int    nMaxCustFilter    = 0;
+            public int    nFilterIndex      = 0;
+            public string lpstrFile         = null;
+            public int    nMaxFile          = 0;
+            public string lpstrFileTitle    = null;
+            public int    nMaxFileTitle     = 0;
+            public string lpstrInitialDir   = null;
+            public string lpstrTitle        = null;
+            public int    Flags             = 0;
+            public short  nFileOffset       = 0;
+            public short  nFileExtension    = 0;
+            public string lpstrDefExt       = null;
+            public IntPtr lCustData         = IntPtr.Zero;
+            public IntPtr lpfnHook          = IntPtr.Zero;
+            public string lpTemplateName    = null;
+            public IntPtr pvReserved        = IntPtr.Zero;
+            public int    dwReserved        = 0;
+            public int    FlagsEx           = 0;
+        }
+
+        [System.Runtime.InteropServices.DllImport("comdlg32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+        private static extern bool GetOpenFileName([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] OpenFileName ofn);
+
+        [System.Runtime.InteropServices.DllImport("comdlg32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+        private static extern bool GetSaveFileName([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] OpenFileName ofn);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private struct BrowseInfo
+        {
+            public IntPtr hwndOwner;
+            public IntPtr pidlRoot;
+            public string pszDisplayName;
+            public string lpszTitle;
+            public uint   ulFlags;
+            public IntPtr lpfn;
+            public IntPtr lParam;
+            public int    iImage;
+        }
+
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern IntPtr SHBrowseForFolder([System.Runtime.InteropServices.In] ref BrowseInfo bi);
+
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern bool SHGetPathFromIDList(IntPtr pidl, System.Text.StringBuilder pszPath);
+
+        private static string BuildFilter(string extension)
+        {
+            if (string.IsNullOrEmpty(extension)) return "All Files\0*.*\0\0";
+            string ext = extension.TrimStart('.');
+            return $"{ext.ToUpper()} Files\0*.{ext}\0All Files\0*.*\0\0";
+        }
+
+        public string OpenFilePanel(string title, string directory, string extension)
+        {
+            var ofn = new OpenFileName();
+            ofn.lpstrTitle      = title;
+            ofn.lpstrFilter     = BuildFilter(extension);
+            ofn.lpstrFile       = new string('\0', 512);
+            ofn.nMaxFile        = ofn.lpstrFile.Length;
+            ofn.lpstrInitialDir = directory;
+            ofn.lpstrDefExt     = extension?.TrimStart('.');
+            ofn.Flags           = 0x00080000 | 0x00001000 | 0x00000800 | 0x00000008; // OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
+            return GetOpenFileName(ofn) ? ofn.lpstrFile.TrimEnd('\0') : string.Empty;
+        }
+
+        public string SaveFilePanel(string title, string directory, string defaultName, string extension)
+        {
+            var ofn = new OpenFileName();
+            ofn.lpstrTitle      = title;
+            ofn.lpstrFilter     = BuildFilter(extension);
+            ofn.lpstrFile       = (defaultName ?? "") + new string('\0', 512);
+            ofn.nMaxFile        = 512;
+            ofn.lpstrInitialDir = directory;
+            ofn.lpstrDefExt     = extension?.TrimStart('.');
+            ofn.Flags           = 0x00080000 | 0x00000002 | 0x00000008; // OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR
+            return GetSaveFileName(ofn) ? ofn.lpstrFile.TrimEnd('\0') : string.Empty;
+        }
+
+        public string SaveFilePanelInProject(string title, string defaultName, string extension, string message)
+            => SaveFilePanel(title, UnityEngine.Application.dataPath, defaultName, extension);
+
+        public string OpenFolderPanel(string title, string directory, string defaultName)
+        {
+            var bi = new BrowseInfo();
+            bi.lpszTitle = title;
+            bi.ulFlags   = 0x0001 | 0x0010; // BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+            var pidl = SHBrowseForFolder(ref bi);
+            if (pidl == IntPtr.Zero) return string.Empty;
+            var sb = new System.Text.StringBuilder(512);
+            return SHGetPathFromIDList(pidl, sb) ? sb.ToString() : string.Empty;
+        }
+
+        public string SaveFolderPanel(string title, string directory, string defaultName)
+            => OpenFolderPanel(title, directory, defaultName);
+
+#else
+        public string OpenFilePanel(string title, string directory, string extension) => string.Empty;
         public string SaveFilePanel(string title, string directory, string defaultName, string extension) => string.Empty;
         public string SaveFilePanelInProject(string title, string defaultName, string extension, string message) => string.Empty;
-        public string OpenFilePanel(string title, string directory, string extension) => string.Empty;
-        public string SaveFolderPanel(string title, string directory, string defaultName) => string.Empty;
         public string OpenFolderPanel(string title, string directory, string defaultName) => string.Empty;
+        public string SaveFolderPanel(string title, string directory, string defaultName) => string.Empty;
+#endif
         public bool DisplayDialog(string title, string message, string ok) { Debug.Log($"[Dialog] {title}: {message}"); return true; }
         public bool DisplayDialogYesNo(string title, string message, string yes, string no) { Debug.Log($"[Dialog] {title}: {message}"); return false; }
 

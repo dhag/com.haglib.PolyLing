@@ -90,12 +90,20 @@ namespace Poly_Ling.Player
             btnRow.style.marginBottom  = 4;
 
             var btnPmx = new Button(() => OnPmxRequested?.Invoke()) { text = "Load PMX" };
-            btnPmx.style.flexGrow    = 1;
-            btnPmx.style.marginRight = 2;
+            btnPmx.style.flexGrow     = 1;
+            btnPmx.style.marginRight  = 2;
+            btnPmx.style.fontSize     = 10;
+            btnPmx.style.height       = 20;
+            btnPmx.style.paddingTop   = 0;
+            btnPmx.style.paddingBottom = 0;
 
             var btnMqo = new Button(() => OnMqoRequested?.Invoke()) { text = "Load MQO" };
-            btnMqo.style.flexGrow   = 1;
-            btnMqo.style.marginLeft = 2;
+            btnMqo.style.flexGrow     = 1;
+            btnMqo.style.marginLeft   = 2;
+            btnMqo.style.fontSize     = 10;
+            btnMqo.style.height       = 20;
+            btnMqo.style.paddingTop   = 0;
+            btnMqo.style.paddingBottom = 0;
 
             btnRow.Add(btnPmx);
             btnRow.Add(btnMqo);

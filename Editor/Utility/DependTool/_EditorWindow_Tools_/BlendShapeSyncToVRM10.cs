@@ -10,6 +10,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UniVRM10;
+using Poly_Ling.EditorCore;
 
 namespace Poly_Ling.Tools.Panels
 {
@@ -136,147 +137,17 @@ namespace Poly_Ling.Tools.Panels
             _matchResults = null;
             _statusMessage = "";
 
-            // BlendShapeSync取得
-            var sync = _blendShapeSyncObject.GetComponent<Poly_Ling.Runtime.BlendShapeSync>();
-            if (sync == null)
-            {
-                _statusMessage = "BlendShapeSyncコンポーネントが見つかりません";
-                return;
-            }
+            if (_blendShapeSyncObject == null) { _statusMessage = "BlendShapeSyncオブジェクトが設定されていない"; return; }
+            if (_vrm10Root == null)            { _statusMessage = "VRM10 Rootが設定されていない"; return; }
 
-            if (string.IsNullOrEmpty(sync.MappingCSV))
-            {
-                _statusMessage = "MappingCSVが空です";
-                return;
-            }
-
-            // Vrm10Instance確認
+            var sync  = _blendShapeSyncObject.GetComponent<Poly_Ling.Runtime.BlendShapeSync>();
             var vrm10 = _vrm10Root.GetComponent<Vrm10Instance>();
-            if (vrm10 == null)
-            {
-                _statusMessage = "Vrm10Instanceコンポーネントが見つかりません";
-                return;
-            }
 
-            // CSV解析
-            _clipDefinitions = ParseCSV(sync.MappingCSV);
-            if (_clipDefinitions.Count == 0)
-            {
-                _statusMessage = "CSVにExpressionが見つかりません";
-                return;
-            }
+            if (sync  == null) { _statusMessage = "BlendShapeSyncコンポーネントが見つかりません"; return; }
+            if (vrm10 == null) { _statusMessage = "Vrm10Instanceコンポーネントが見つかりません"; return; }
 
-            // VRM10側のSMR → BlendShape辞書構築
-            // key: (smrName, blendShapeName) → (relativePath, index)
-            var blendShapeMap = BuildBlendShapeMap(_vrm10Root.transform);
-
-            // マッチング
-            _matchResults = new Dictionary<string, List<(string, string, float, string, int, bool)>>();
-
-            foreach (var kv in _clipDefinitions)
-            {
-                string expressionName = kv.Key;
-                var entries = new List<(string, string, float, string, int, bool)>();
-
-                foreach (var (meshName, shapeName, weight) in kv.Value)
-                {
-                    var key = (meshName, shapeName);
-                    if (blendShapeMap.TryGetValue(key, out var info))
-                    {
-                        entries.Add((meshName, shapeName, weight, info.relativePath, info.index, true));
-                    }
-                    else
-                    {
-                        entries.Add((meshName, shapeName, weight, "", -1, false));
-                    }
-                }
-
-                _matchResults[expressionName] = entries;
-            }
-
-            int totalEntries = _matchResults.Values.Sum(e => e.Count);
-            int matchedEntries = _matchResults.Values.Sum(e => e.Count(x => x.matched));
-            _statusMessage = $"解析完了: {_clipDefinitions.Count}Expression, {matchedEntries}/{totalEntries}エントリ マッチ";
-            _analyzed = true;
-        }
-
-        // ================================================================
-        // CSV解析
-        // ================================================================
-
-        private Dictionary<string, List<(string meshName, string shapeName, float weight)>> ParseCSV(string csv)
-        {
-            var result = new Dictionary<string, List<(string, string, float)>>();
-
-            var lines = csv.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
-            {
-                var trimmed = line.Trim();
-                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
-
-                var parts = trimmed.Split(',');
-                if (parts.Length < 4) continue;
-
-                string expressionName = parts[0].Trim();
-                var targets = new List<(string, string, float)>();
-
-                for (int i = 1; i + 2 < parts.Length; i += 3)
-                {
-                    string meshName = parts[i].Trim();
-                    string shapeName = parts[i + 1].Trim();
-                    if (float.TryParse(parts[i + 2].Trim(), out float weight))
-                        targets.Add((meshName, shapeName, weight));
-                }
-
-                if (targets.Count > 0)
-                    result[expressionName] = targets;
-            }
-
-            return result;
-        }
-
-        // ================================================================
-        // BlendShapeマップ構築
-        // ================================================================
-
-        private Dictionary<(string smrName, string shapeName), (string relativePath, int index)>
-            BuildBlendShapeMap(Transform root)
-        {
-            var map = new Dictionary<(string, string), (string, int)>();
-            var smrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-
-            foreach (var smr in smrs)
-            {
-                if (smr.sharedMesh == null) continue;
-
-                string relativePath = GetRelativePath(root, smr.transform);
-                int count = smr.sharedMesh.blendShapeCount;
-
-                for (int i = 0; i < count; i++)
-                {
-                    string shapeName = smr.sharedMesh.GetBlendShapeName(i);
-                    var key = (smr.name, shapeName);
-                    if (!map.ContainsKey(key))
-                        map[key] = (relativePath, i);
-                }
-            }
-
-            return map;
-        }
-
-        private string GetRelativePath(Transform root, Transform target)
-        {
-            var parts = new List<string>();
-            var current = target;
-
-            while (current != null && current != root)
-            {
-                parts.Add(current.name);
-                current = current.parent;
-            }
-
-            parts.Reverse();
-            return string.Join("/", parts);
+            _matchResults = EditorBlendShapeSyncToVRM10.Analyze(sync, vrm10, out _statusMessage);
+            _analyzed = _matchResults != null;
         }
 
         // ================================================================
@@ -328,58 +199,8 @@ namespace Poly_Ling.Tools.Panels
 
         private void GenerateExpressions()
         {
-            if (_matchResults == null || _matchResults.Count == 0) return;
-
-            // 出力フォルダ作成
-            if (!AssetDatabase.IsValidFolder(_outputFolder))
-            {
-                string parent = Path.GetDirectoryName(_outputFolder);
-                string folderName = Path.GetFileName(_outputFolder);
-                if (!AssetDatabase.IsValidFolder(parent))
-                    AssetDatabase.CreateFolder("Assets", parent.Replace("Assets/", ""));
-                AssetDatabase.CreateFolder(parent, folderName);
-            }
-
-            int created = 0;
-
-            foreach (var kv in _matchResults)
-            {
-                string expressionName = kv.Key;
-                var entries = kv.Value;
-
-                var matchedEntries = entries.Where(e => e.matched).ToList();
-                if (matchedEntries.Count == 0) continue;
-
-                // VRM10Expression ScriptableObject作成
-                var expression = ScriptableObject.CreateInstance<VRM10Expression>();
-                expression.name = expressionName;
-
-                // MorphTargetBindings設定
-                var bindings = new List<MorphTargetBinding>();
-                foreach (var entry in matchedEntries)
-                {
-                    bindings.Add(new MorphTargetBinding
-                    {
-                        RelativePath = entry.relativePath,
-                        Index = entry.blendShapeIndex,
-                        Weight = entry.weight, // CSV: 0-1, MorphTargetBinding: 0-1
-                    });
-                }
-                expression.MorphTargetBindings = bindings.ToArray();
-
-                // アセット保存
-                string assetPath = $"{_outputFolder}/{expressionName}.asset";
-                assetPath = AssetDatabase.GenerateUniqueAssetPath(assetPath);
-                AssetDatabase.CreateAsset(expression, assetPath);
-                created++;
-
-                Debug.Log($"[VRM10Expression] Created: {assetPath} ({bindings.Count} bindings)");
-            }
-
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-
-            _statusMessage = $"Expression生成完了: {created}アセット → {_outputFolder}";
+            if (_matchResults == null) return;
+            _statusMessage = EditorBlendShapeSyncToVRM10.GenerateExpressions(_matchResults, _outputFolder);
         }
     }
 }

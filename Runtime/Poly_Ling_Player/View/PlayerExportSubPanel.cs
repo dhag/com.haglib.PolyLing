@@ -69,7 +69,7 @@ namespace Poly_Ling.Player
             parent.Add(_panelNameLabel);
 
             // Export ボタン
-            var exportBtn = new Button(OnExportClicked) { text = "Export" };
+            var exportBtn = new Button(OnExportClicked) { text = "再エクスポート" };
             exportBtn.style.marginTop    = 2;
             exportBtn.style.marginBottom = 4;
             exportBtn.style.height       = 28;

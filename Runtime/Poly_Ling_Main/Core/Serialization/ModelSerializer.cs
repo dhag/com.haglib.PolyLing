@@ -872,7 +872,6 @@ namespace Poly_Ling.Serialization
             {
                 morphName = data.MorphName ?? "",
                 panel = data.Panel,
-                isSymmetric = data.IsSymmetric,
                 createdAt = data.CreatedAt.ToString("o")
             };
 
@@ -906,7 +905,6 @@ namespace Poly_Ling.Serialization
             {
                 MorphName = dto.morphName ?? "",
                 Panel = dto.panel,
-                IsSymmetric = dto.isSymmetric,
                 BasePositions = dto.GetBasePositions(),
                 BaseNormals = dto.GetBaseNormals(),
                 BaseUVs = dto.GetBaseUVs()

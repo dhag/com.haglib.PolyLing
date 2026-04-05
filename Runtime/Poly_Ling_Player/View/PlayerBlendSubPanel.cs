@@ -117,7 +117,7 @@ namespace Poly_Ling.Player
             _mainContent.Add(SecLabel("ソースメッシュ"));
 
             _noCandidateLabel = new Label("候補がありません");
-            _noCandidateLabel.style.color   = new StyleColor(Color.gray);
+            _noCandidateLabel.style.color   = new StyleColor(Color.white);
             _noCandidateLabel.style.fontSize = 10;
             _noCandidateLabel.style.marginBottom = 4;
             _mainContent.Add(_noCandidateLabel);
@@ -441,16 +441,6 @@ namespace Poly_Ling.Player
             // SyncMeshContextPositionsOnly: UnityMesh + GPU バッファを更新
             ctx.SyncMeshContextPositionsOnly = mc =>
             {
-                if (mc?.MeshObject == null || mc.UnityMesh == null) return;
-                var wm = mc.WorldMatrix;
-                if (mc.MeshObject.VertexCount == mc.UnityMesh.vertexCount)
-                {
-                    var verts = new Vector3[mc.MeshObject.VertexCount];
-                    for (int i = 0; i < verts.Length; i++)
-                        verts[i] = wm.MultiplyPoint3x4(mc.MeshObject.Vertices[i].Position);
-                    mc.UnityMesh.vertices = verts;
-                    mc.UnityMesh.RecalculateBounds();
-                }
                 OnSyncMeshPositions?.Invoke(mc);
             };
 

@@ -107,7 +107,7 @@ namespace Poly_Ling.Player
             fileSection.Add(fileRow);
 
             // ── Import ボタン（パスフィールド直下）──
-            var importBtn = new Button(OnImportClicked) { text = "Import" };
+            var importBtn = new Button(OnImportClicked) { text = "リロード" };
             importBtn.style.marginTop    = 2;
             importBtn.style.marginBottom = 4;
             importBtn.style.height       = 28;
@@ -157,7 +157,10 @@ namespace Poly_Ling.Player
 
             string path = PLEditorBridge.I.OpenFilePanel(title, dir, ext);
             if (!string.IsNullOrEmpty(path))
+            {
                 _pathField.value = path;
+                OnImportClicked();
+            }
         }
 
         // ================================================================
@@ -406,7 +409,7 @@ namespace Poly_Ling.Player
             l.style.marginTop    = small ? 3 : 6;
             l.style.marginBottom = 2;
             l.style.color        = small
-                ? new StyleColor(new Color(0.6f, 0.6f, 0.6f))
+                ? new StyleColor(Color.white)
                 : new StyleColor(new Color(0.7f, 0.85f, 1f));
             l.style.fontSize     = small ? 9 : 10;
             return l;

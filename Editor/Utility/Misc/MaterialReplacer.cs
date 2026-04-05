@@ -3,6 +3,7 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Poly_Ling.EditorCore;
 
 /// <summary>
 /// 選択したゲームオブジェクト配下のマテリアルを、指定フォルダ内の同名マテリアルに差し替えるエディタ拡張
@@ -11,18 +12,9 @@ public class MaterialReplacer : EditorWindow
 {
     private string targetFolderPath = "Assets/model";
     private Vector2 scrollPosition;
-    private List<ReplacementInfo> previewList = new List<ReplacementInfo>();
+    private List<EditorMaterialReplacer.ReplacementInfo> previewList = new List<EditorMaterialReplacer.ReplacementInfo>();
     private bool showPreview = false;
 
-    private class ReplacementInfo
-    {
-        public Renderer renderer;
-        public int materialIndex;
-        public Material currentMaterial;
-        public Material newMaterial;
-        public string currentPath;
-        public string newPath;
-    }
     //単体コマンド
     [MenuItem("Tools/Utility/Misc/Material Replacer")]
     public static void ShowWindow()
@@ -169,106 +161,12 @@ public class MaterialReplacer : EditorWindow
 
     private void GeneratePreview(GameObject root)
     {
-        previewList.Clear();
-
-        if (root == null) return;
-        if (!AssetDatabase.IsValidFolder(targetFolderPath))
-        {
-            EditorUtility.DisplayDialog("エラー", $"指定されたフォルダが見つかりません:\n{targetFolderPath}", "OK");
-            return;
-        }
-
-        // 指定フォルダ内のマテリアルを取得（サブフォルダも含む）
-        var materialGuids = AssetDatabase.FindAssets("t:Material", new[] { targetFolderPath });
-        var materialDict = new Dictionary<string, Material>();
-
-        foreach (var guid in materialGuids)
-        {
-            var path = AssetDatabase.GUIDToAssetPath(guid);
-            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (material != null)
-            {
-                // 同名マテリアルが複数ある場合は最初に見つかったものを使用
-                if (!materialDict.ContainsKey(material.name))
-                {
-                    materialDict[material.name] = material;
-                }
-            }
-        }
-
-        Debug.Log($"[MaterialReplacer] フォルダ '{targetFolderPath}' 内のマテリアル数: {materialDict.Count}");
-
-        // 全Rendererを取得（MeshRenderer, SkinnedMeshRenderer両方）
-        var renderers = root.GetComponentsInChildren<Renderer>(true);
-
-        foreach (var renderer in renderers)
-        {
-            var materials = renderer.sharedMaterials;
-            
-            for (int i = 0; i < materials.Length; i++)
-            {
-                var currentMat = materials[i];
-                if (currentMat == null) continue;
-
-                // 同名のマテリアルを検索
-                if (materialDict.TryGetValue(currentMat.name, out var newMaterial))
-                {
-                    // 同じマテリアルでなければ差し替え対象に追加
-                    if (currentMat != newMaterial)
-                    {
-                        previewList.Add(new ReplacementInfo
-                        {
-                            renderer = renderer,
-                            materialIndex = i,
-                            currentMaterial = currentMat,
-                            newMaterial = newMaterial,
-                            currentPath = AssetDatabase.GetAssetPath(currentMat),
-                            newPath = AssetDatabase.GetAssetPath(newMaterial)
-                        });
-                    }
-                }
-            }
-        }
-
-        Debug.Log($"[MaterialReplacer] 差し替え対象: {previewList.Count}件");
+        previewList = EditorMaterialReplacer.GeneratePreview(root, targetFolderPath);
     }
 
     private void ExecuteReplacement()
     {
-        if (previewList.Count == 0) return;
-
-        int replacedCount = 0;
-        
-        Undo.SetCurrentGroupName("Material Replacement");
-        int undoGroup = Undo.GetCurrentGroup();
-
-        // Rendererごとにグループ化して処理
-        var rendererGroups = previewList.GroupBy(x => x.renderer);
-
-        foreach (var group in rendererGroups)
-        {
-            var renderer = group.Key;
-            Undo.RecordObject(renderer, "Replace Materials");
-
-            var materials = renderer.sharedMaterials.ToArray();
-            
-            foreach (var info in group)
-            {
-                materials[info.materialIndex] = info.newMaterial;
-                replacedCount++;
-                
-                Debug.Log($"[MaterialReplacer] 差し替え: {renderer.gameObject.name} [{info.materialIndex}] " +
-                    $"'{info.currentMaterial.name}' → '{info.newMaterial.name}'");
-            }
-
-            renderer.sharedMaterials = materials;
-            EditorUtility.SetDirty(renderer);
-        }
-
-        Undo.CollapseUndoOperations(undoGroup);
-
-        EditorUtility.DisplayDialog("完了", $"{replacedCount}件のマテリアルを差し替えました。\n\nCtrl+Zで元に戻せます。", "OK");
-        
+        EditorMaterialReplacer.ExecuteReplacement(previewList);
         previewList.Clear();
         showPreview = false;
     }

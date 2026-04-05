@@ -764,9 +764,6 @@ namespace Poly_Ling.Serialization
         /// <summary>モーフパネル（PMX: 0=眉, 1=目, 2=口, 3=その他）</summary>
         public int panel = 3;
 
-        /// <summary>対称モーフか（デフォルトtrue）</summary>
-        public bool isSymmetric = true;
-
         /// <summary>作成日時（ISO 8601形式）</summary>
         public string createdAt;
 

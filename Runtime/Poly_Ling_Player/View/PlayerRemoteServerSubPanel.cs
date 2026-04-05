@@ -118,7 +118,7 @@ namespace Poly_Ling.Player
             _logScroll.style.borderLeftWidth = _logScroll.style.borderRightWidth = 1;
             _logScroll.style.borderTopColor = _logScroll.style.borderBottomColor =
             _logScroll.style.borderLeftColor = _logScroll.style.borderRightColor =
-                new StyleColor(new Color(0.3f, 0.3f, 0.3f));
+                new StyleColor(Color.white);
             _logContainer = new VisualElement();
             _logScroll.Add(_logContainer);
             root.Add(_logScroll);
@@ -251,7 +251,7 @@ namespace Poly_Ling.Player
         private static VisualElement MakeSep()
         {
             var s = new VisualElement();
-            s.style.height = 1; s.style.backgroundColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f));
+            s.style.height = 1; s.style.backgroundColor = new StyleColor(Color.white);
             s.style.marginTop = 4; s.style.marginBottom = 4;
             return s;
         }

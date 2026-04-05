@@ -437,22 +437,22 @@ public partial class PolyLing
             // ================================================================
             EditorGUILayout.Space(4);
 
-            if (HasLiveSyncTarget)
+            if (_liveSyncHandler.HasTarget)
             {
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField(L.Get("LiveSyncTarget"), _liveSyncTarget.name, EditorStyles.miniLabel);
+                EditorGUILayout.LabelField(L.Get("LiveSyncTarget"), _liveSyncHandler.TargetName, EditorStyles.miniLabel);
                 if (GUILayout.Button("×", GUILayout.Width(20)))
                 {
-                    ClearLiveSyncTarget();
+                    _liveSyncHandler.Clear();
                 }
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                _liveSyncAutoEnabled = EditorGUILayout.Toggle(_liveSyncAutoEnabled, GUILayout.Width(16));
+                _liveSyncHandler.AutoEnabled = EditorGUILayout.Toggle(_liveSyncHandler.AutoEnabled, GUILayout.Width(16));
                 EditorGUILayout.LabelField(L.Get("LiveSyncAuto"), GUILayout.MinWidth(60));
                 if (GUILayout.Button(L.Get("LiveSyncApply")))
                 {
-                    LiveSyncApply();
+                    _liveSyncHandler.Apply();
                 }
                 EditorGUILayout.EndHorizontal();
             }

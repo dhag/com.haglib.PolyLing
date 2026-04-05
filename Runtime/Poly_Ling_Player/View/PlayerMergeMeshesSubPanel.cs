@@ -63,7 +63,7 @@ namespace Poly_Ling.Player
             _baseObjectList.style.borderLeftWidth   = _baseObjectList.style.borderRightWidth  = 1;
             _baseObjectList.style.borderTopColor    = _baseObjectList.style.borderBottomColor =
             _baseObjectList.style.borderLeftColor   = _baseObjectList.style.borderRightColor  =
-                new StyleColor(new Color(0.3f, 0.3f, 0.3f));
+                new StyleColor(Color.white);
             _baseObjectList.selectionChanged += _ => _baseListIndex = _baseObjectList.selectedIndex >= 0 ? _baseObjectList.selectedIndex : 0;
             root.Add(_baseObjectList);
 
@@ -78,7 +78,7 @@ namespace Poly_Ling.Player
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color    = new StyleColor(Color.white);
             root.Add(_statusLabel);
         }
 

@@ -89,7 +89,7 @@ namespace Poly_Ling.Player
             // ステータス
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(Color.gray);
+            _statusLabel.style.color    = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
 

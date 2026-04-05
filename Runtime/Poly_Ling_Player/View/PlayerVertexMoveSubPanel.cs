@@ -36,6 +36,7 @@ namespace Poly_Ling.Player
         private Slider        _gizmoOffsetXSlider;
         private Slider        _gizmoOffsetYSlider;
         private Label         _targetLabel;
+        private Toggle        _lassoToggle;
 
         // ================================================================
         // Build
@@ -48,6 +49,21 @@ namespace Poly_Ling.Player
             _root.style.paddingLeft  = 4;
             _root.style.paddingRight = 4;
             parent.Add(_root);
+
+            // ── 選択ドラッグモード ────────────────────────────────────
+            AddHeader("Select Mode");
+
+            _lassoToggle = new Toggle("Lasso Select") { value = false };
+            _lassoToggle.style.marginBottom = 3;
+            _lassoToggle.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+                h.DragSelectMode = e.newValue
+                    ? MoveToolHandler.SelectionDragMode.Lasso
+                    : MoveToolHandler.SelectionDragMode.Box;
+            });
+            _root.Add(_lassoToggle);
 
             // ── マグネット ───────────────────────────────────────────
             AddHeader("Magnet");
@@ -131,6 +147,10 @@ namespace Poly_Ling.Player
             _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
             _magnetRadiusSlider?.SetValueWithoutNotify(h.MagnetRadius);
 
+            if (_lassoToggle != null)
+                _lassoToggle.SetValueWithoutNotify(
+                    h.DragSelectMode == MoveToolHandler.SelectionDragMode.Lasso);
+
             if (_falloffDropdown != null)
             {
                 _falloffDropdown.SetValueWithoutNotify(h.MagnetFalloff switch
@@ -177,7 +197,7 @@ namespace Poly_Ling.Player
             var l = new Label(text);
             l.style.marginTop    = 6;
             l.style.marginBottom = 2;
-            l.style.color        = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            l.style.color        = new StyleColor(Color.white);
             l.style.fontSize     = 10;
             _root.Add(l);
         }

@@ -37,7 +37,7 @@ namespace Poly_Ling.Player
         private readonly MQOPartialImportOps   _mqoOps     = new MQOPartialImportOps();
 
         // PMX ファイル読み込みオプション（PMXImporter に渡す）
-        private float _pmxScale  = 1.0f;
+        private float _pmxScale  = 0.1f;
         private bool  _pmxFlipZ  = false;
 
         // MQO ファイルオプション
@@ -113,6 +113,7 @@ namespace Poly_Ling.Player
             _panelNameLabel.style.fontSize = 12;
             _panelNameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             _panelNameLabel.style.marginBottom = 4;
+            _panelNameLabel.style.color = new StyleColor(Color.white);
             parent.Add(_panelNameLabel);
 
             // ── ファイル行
@@ -126,16 +127,18 @@ namespace Poly_Ling.Player
 
             var browseBtn = new Button(OnBrowse) { text = "..." };
             browseBtn.style.width = 28;
+            browseBtn.style.color = new StyleColor(Color.white);
 
             fileRow.Add(_filePathField);
             fileRow.Add(browseBtn);
             parent.Add(fileRow);
 
-            var importBtn = new Button(OnImportClicked) { text = "Import" };
+            var importBtn = new Button(OnImportClicked) { text = "リロード" };
             importBtn.style.marginTop    = 2;
             importBtn.style.marginBottom = 4;
             importBtn.style.height       = 28;
             importBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
+            importBtn.style.color = new StyleColor(Color.white);
             parent.Add(importBtn);
 
             _statusLabel = new Label("");
@@ -226,6 +229,10 @@ namespace Poly_Ling.Player
 
         private void OnImportClicked()
         {
+            string path = _filePathField?.value ?? "";
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                LoadFileAndMatch(path);
+
             if (_model == null) { SetStatus("モデルが未設定です"); return; }
 
             try
@@ -423,7 +430,7 @@ namespace Poly_Ling.Player
                 var tog = new Toggle { value = entry.Selected };
                 tog.style.marginRight = 2;
                 tog.RegisterValueChangedCallback(ev => { entry.Selected = ev.newValue; });
-                var lbl = new Label($"{entry.Name} ({entry.VertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9;
+                var lbl = new Label($"{entry.Name} ({entry.VertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9; lbl.style.color = new StyleColor(Color.white);
                 row.Add(tog); row.Add(lbl); left.Add(row);
             }
             cols.Add(left);
@@ -438,7 +445,7 @@ namespace Poly_Ling.Player
                 var tog = new Toggle { value = entry.Selected };
                 tog.style.marginRight = 2;
                 tog.RegisterValueChangedCallback(ev => { entry.Selected = ev.newValue; });
-                var lbl = new Label($"{entry.Name} ({entry.ExpandedVertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9;
+                var lbl = new Label($"{entry.Name} ({entry.ExpandedVertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9; lbl.style.color = new StyleColor(Color.white);
                 row.Add(tog); row.Add(lbl); right.Add(row);
             }
             cols.Add(right);
@@ -520,7 +527,7 @@ namespace Poly_Ling.Player
                 tog.style.marginRight = 2;
                 tog.RegisterValueChangedCallback(ev => { entry.Selected = ev.newValue; });
                 string mirrorMark = entry.IsMirrored ? "⟲" : "";
-                var lbl = new Label($"{entry.Name}{mirrorMark} ({entry.ExpandedVertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9;
+                var lbl = new Label($"{entry.Name}{mirrorMark} ({entry.ExpandedVertexCount})"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9; lbl.style.color = new StyleColor(Color.white);
                 row.Add(tog); row.Add(lbl); left.Add(row);
             }
             cols.Add(left);
@@ -536,7 +543,7 @@ namespace Poly_Ling.Player
                 tog.style.marginRight = 2;
                 tog.RegisterValueChangedCallback(ev => { entry.Selected = ev.newValue; });
                 string peerMark = entry.BakedMirrorPeer != null ? $"(+{entry.BakedMirrorPeer.Name})" : "";
-                var lbl = new Label($"{entry.Name}{peerMark} [{entry.TotalExpandedVertexCount}]"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9;
+                var lbl = new Label($"{entry.Name}{peerMark} [{entry.TotalExpandedVertexCount}]"); lbl.style.flexGrow = 1; lbl.style.fontSize = 9; lbl.style.color = new StyleColor(Color.white);
                 row.Add(tog); row.Add(lbl); right.Add(row);
             }
             cols.Add(right);
@@ -567,7 +574,7 @@ namespace Poly_Ling.Player
         {
             var l = new Label(text);
             l.style.fontSize = 9;
-            l.style.color    = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            l.style.color    = new StyleColor(Color.white);
             l.style.marginBottom = 2;
             return l;
         }
@@ -592,6 +599,7 @@ namespace Poly_Ling.Player
         {
             var t = new Toggle(label) { value = get() };
             t.style.marginRight = 4; t.style.fontSize = 9;
+            t.style.color = new StyleColor(Color.white);
             t.RegisterValueChangedCallback(e => set(e.newValue));
             return t;
         }
@@ -633,6 +641,7 @@ namespace Poly_Ling.Player
         {
             var b = new Button(onClick) { text = text };
             b.style.flexGrow = 1; b.style.marginRight = 2; b.style.height = 18; b.style.fontSize = 9;
+            b.style.color = new StyleColor(Color.white);
             parent.Add(b);
         }
     }

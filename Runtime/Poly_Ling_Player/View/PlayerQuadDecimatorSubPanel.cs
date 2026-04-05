@@ -57,7 +57,7 @@ namespace Poly_Ling.Player
             // メッシュ情報
             root.Add(SecLabel("メッシュ情報"));
             _noMeshLabel = new Label("メッシュが選択されていません");
-            _noMeshLabel.style.fontSize = 10; _noMeshLabel.style.color = new StyleColor(Color.gray);
+            _noMeshLabel.style.fontSize = 10; _noMeshLabel.style.color = new StyleColor(Color.white);
             root.Add(_noMeshLabel);
 
             _meshInfoLabel = new Label();
@@ -194,7 +194,7 @@ namespace Poly_Ling.Player
                     {
                         var lbl = new Label(log);
                         lbl.style.fontSize = 9;
-                        lbl.style.color    = new StyleColor(new Color(0.65f, 0.65f, 0.65f));
+                        lbl.style.color    = new StyleColor(Color.white);
                         lbl.style.whiteSpace = WhiteSpace.Normal;
                         _passLogsContainer.Add(lbl);
                     }

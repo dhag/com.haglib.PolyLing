@@ -597,6 +597,7 @@ public partial class PolyLing : EditorWindow
         }
         _core.UndoController.OnUndoRedoPerformed        += OnUndoRedoPerformed;
         _core.UndoController.OnProjectUndoRedoPerformed += OnProjectUndoRedoPerformed;
+        InitializeLiveSyncHandler();
 
         // Core.Initialize後にOnReorderCompletedにEditor側GPU更新を追加する
         // （Core側はUpdateTopology+NotifyPanelsのみ担当するため）
@@ -964,7 +965,7 @@ public partial class PolyLing : EditorWindow
         // 頂点数/面数が変わる可能性があるため、常にトポロジ変更として扱う
         _unifiedAdapter?.NotifyTopologyChanged();
         // ★LiveSync: ヒエラルキーへの自動同期（対象メッシュのみ）
-        LiveSyncAutoUpdate(meshContext);
+        _liveSyncHandler.AutoUpdate(meshContext);
     }
 
     /// <summary>
@@ -984,7 +985,7 @@ public partial class PolyLing : EditorWindow
         {
             SyncMeshFromData(meshContext);
             _unifiedAdapter?.NotifyTransformChanged();
-            LiveSyncAutoUpdate(meshContext);
+            _liveSyncHandler.AutoUpdate(meshContext);
             return;
         }
 
@@ -1002,7 +1003,7 @@ public partial class PolyLing : EditorWindow
         // GPUバッファの位置情報を更新
         _unifiedAdapter?.NotifyTransformChanged();
         // LiveSync: ヒエラルキーへの自動同期（対象メッシュのみ）
-        LiveSyncAutoUpdate(meshContext);
+        _liveSyncHandler.AutoUpdate(meshContext);
     }
 
     /// <summary>

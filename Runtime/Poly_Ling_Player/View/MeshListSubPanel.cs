@@ -490,7 +490,7 @@ namespace Poly_Ling.MeshListV2
             var infoLabel = new Label { name = "info" };
             infoLabel.style.width = 80; infoLabel.style.flexShrink = 0;
             infoLabel.style.unityTextAlign = TextAnchor.MiddleRight;
-            infoLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            infoLabel.style.color = new StyleColor(Color.white);
             infoLabel.style.fontSize = 11; infoLabel.style.marginRight = 4;
             c.Add(infoLabel);
 

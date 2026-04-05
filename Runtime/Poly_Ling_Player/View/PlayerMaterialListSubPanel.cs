@@ -90,7 +90,7 @@ namespace Poly_Ling.Player
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color    = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
         }
@@ -136,7 +136,7 @@ namespace Poly_Ling.Player
             row.style.flexDirection = FlexDirection.Row;
             row.style.marginBottom  = 2;
             if (isCurrent)
-                row.style.backgroundColor = new StyleColor(new Color(0.2f, 0.35f, 0.5f));
+                row.style.backgroundColor = new StyleColor(Color.white);
 
             int ci = index;
             var selBtn = new Button(() => { OnSelectSlot(ci); }) { text = isCurrent ? "●" : "○" };

@@ -236,7 +236,7 @@ namespace Poly_Ling.Player
             var h = GetHandler?.Invoke();
             bool adding = h?.AddToSelection ?? true;
 
-            var activeColor   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var activeColor   = new StyleColor(Color.white);
             var inactiveColor = new StyleColor(StyleKeyword.Null);
 
             if (_addBtn    != null) _addBtn.style.backgroundColor    = adding  ? activeColor : inactiveColor;

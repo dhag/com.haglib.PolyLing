@@ -59,6 +59,9 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly VisualElement _boxOverlay;
+        private readonly VisualElement _lassoOverlay;
+        private readonly List<Vector2> _lassoPoints = new List<Vector2>();
+        private bool _lassoVisible;
 
         // ================================================================
         // ブラシ円オーバーレイ（スカルプトツール用）
@@ -183,6 +186,27 @@ namespace Poly_Ling.Player
         public void HideBoxSelect()
         {
             _boxOverlay.style.display = DisplayStyle.None;
+        }
+
+        // ================================================================
+        // 投げ縄選択オーバーレイ
+        // ================================================================
+
+        /// <summary>投げ縄オーバーレイを更新する。</summary>
+        public void ShowLassoSelect(System.Collections.Generic.List<Vector2> points)
+        {
+            _lassoPoints.Clear();
+            if (points != null) _lassoPoints.AddRange(points);
+            _lassoVisible = true;
+            _lassoOverlay?.MarkDirtyRepaint();
+        }
+
+        /// <summary>投げ縄オーバーレイを非表示にする。</summary>
+        public void HideLassoSelect()
+        {
+            _lassoVisible = false;
+            _lassoPoints.Clear();
+            _lassoOverlay?.MarkDirtyRepaint();
         }
 
         // ================================================================
@@ -317,6 +341,15 @@ namespace Poly_Ling.Player
             _boxOverlay.style.backgroundColor = new StyleColor(new Color(1f, 1f, 0.3f, 0.08f));
             _boxOverlay.pickingMode           = PickingMode.Ignore;
             Add(_boxOverlay);
+
+            // 投げ縄選択オーバーレイ（generateVisualContent による折れ線描画）
+            _lassoOverlay = new VisualElement();
+            _lassoOverlay.style.position = Position.Absolute;
+            _lassoOverlay.style.left = _lassoOverlay.style.top =
+            _lassoOverlay.style.right = _lassoOverlay.style.bottom = 0;
+            _lassoOverlay.pickingMode = PickingMode.Ignore;
+            _lassoOverlay.generateVisualContent += OnGenerateLassoOverlay;
+            Add(_lassoOverlay);
 
             // 面ホバーオーバーレイ（generateVisualContent による多角形描画）
             _faceOverlay = new VisualElement();
@@ -545,6 +578,24 @@ namespace Poly_Ling.Player
         {
             float h = resolvedStyle.height;
             return new Vector2(local.x, h - local.y);
+        }
+
+        private void OnGenerateLassoOverlay(MeshGenerationContext ctx)
+        {
+            if (!_lassoVisible || _lassoPoints.Count < 2) return;
+
+            var painter = ctx.painter2D;
+            Color borderColor = new Color(1f, 1f, 0.3f, 0.9f);
+            float panelH = resolvedStyle.height;
+
+            // LassoPoints は GPU Y（Y=0下）。UIToolkit 描画は Y=0上なので反転する。
+            painter.strokeColor = borderColor;
+            painter.lineWidth   = 1.5f;
+            painter.BeginPath();
+            painter.MoveTo(new Vector2(_lassoPoints[0].x, panelH - _lassoPoints[0].y));
+            for (int i = 1; i < _lassoPoints.Count; i++)
+                painter.LineTo(new Vector2(_lassoPoints[i].x, panelH - _lassoPoints[i].y));
+            painter.Stroke();
         }
 
         private void OnGenerateBrushCircle(MeshGenerationContext ctx)

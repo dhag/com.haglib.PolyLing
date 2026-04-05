@@ -63,6 +63,9 @@ namespace Poly_Ling.Remote
         // [string] ModelName  [2B] MeshCount  [1B] ActiveCategory
         // [2B] SelectedCount  [int32 × SelectedCount]
         // [2B] MaterialCount  [MaterialData × MaterialCount]
+        // [2B] ExpressionCount  [MorphExpression × ExpressionCount]
+        //   MorphExpression: [string] Name  [string] NameEnglish  [1B] Panel  [1B] Type  [1B] IsSymmetric
+        //                    [2B] EntryCount  ([2B] MeshIndex  [4B] Weight) × EntryCount
         // ================================================================
 
         public static byte[] SerializeModelMeta(ModelContext model, int modelIndex)
@@ -89,6 +92,24 @@ namespace Poly_Ling.Remote
                 w.Write((ushort)matRefs.Count);
                 for (int i = 0; i < matRefs.Count; i++)
                     WriteMaterialData(w, matRefs[i]?.Data ?? new MaterialData());
+
+                var exprs = model.MorphExpressions;
+                w.Write((ushort)exprs.Count);
+                for (int i = 0; i < exprs.Count; i++)
+                {
+                    var expr = exprs[i];
+                    WriteString(w, expr.Name ?? "");
+                    WriteString(w, expr.NameEnglish ?? "");
+                    w.Write((byte)expr.Panel);
+                    w.Write((byte)expr.Type);
+                    w.Write(expr.IsSymmetric);
+                    w.Write((ushort)expr.MeshEntries.Count);
+                    for (int j = 0; j < expr.MeshEntries.Count; j++)
+                    {
+                        w.Write((short)expr.MeshEntries[j].MeshIndex);
+                        w.Write(expr.MeshEntries[j].Weight);
+                    }
+                }
 
                 return ms.ToArray();
             }
@@ -138,6 +159,27 @@ namespace Poly_Ling.Remote
                 if (matList.Count > 0)
                     model.Materials = matList;
 
+                ushort exprCount = r.ReadUInt16();
+                for (int i = 0; i < exprCount; i++)
+                {
+                    var expr = new MorphExpression
+                    {
+                        Name        = ReadString(r),
+                        NameEnglish = ReadString(r),
+                        Panel       = r.ReadByte(),
+                        Type        = (MorphType)r.ReadByte(),
+                        IsSymmetric = r.ReadBoolean()
+                    };
+                    ushort entryCount = r.ReadUInt16();
+                    for (int j = 0; j < entryCount; j++)
+                    {
+                        int   meshIndex = r.ReadInt16();
+                        float weight    = r.ReadSingle();
+                        expr.MeshEntries.Add(new MorphMeshEntry(meshIndex, weight));
+                    }
+                    model.MorphExpressions.Add(expr);
+                }
+
                 return (modelIndex, model);
             }
         }
@@ -151,6 +193,9 @@ namespace Poly_Ling.Remote
         // [4B] MirrorDistance  [1B] ExcludeFromExport
         // [2B] BakedMirrorSourceIndex  [1B] HasBakedMirrorChild
         // [1B] IsMorph  (if) [string] MorphName  [4B] MorphPanel  [2B] MorphParentIndex
+        //               (if) [4B] BasePositionCount  [12B × N] BasePositions
+        //                    [1B] HasNormals  (if) [12B × N] BaseNormals
+        //                    [1B] HasUVs      (if) [8B × N]  BaseUVs
         // [1B] HasBoneTransform  (if) Position[12B] Rotation[12B] Scale[12B]
         // [64B] WorldMatrix  [64B] BindPose  [16B] BoneModelRotation
         // [1B] IsIK  [2B] IKTargetIndex  [2B] IKLoopCount  [4B] IKLimitAngle
@@ -189,6 +234,24 @@ namespace Poly_Ling.Remote
                     WriteString(w, mc.MorphName);
                     w.Write(mc.MorphPanel);
                     w.Write((short)mc.MorphParentIndex);
+
+                    var mbd = mc.MorphBaseData;
+                    int bpCount = mbd?.BasePositions?.Length ?? 0;
+                    w.Write(bpCount);
+                    for (int i = 0; i < bpCount; i++)
+                        WriteVector3(w, mbd.BasePositions[i]);
+
+                    bool hasNormals = mbd?.HasNormals ?? false;
+                    w.Write(hasNormals);
+                    if (hasNormals)
+                        for (int i = 0; i < mbd.BaseNormals.Length; i++)
+                            WriteVector3(w, mbd.BaseNormals[i]);
+
+                    bool hasUVs = mbd?.HasUVs ?? false;
+                    w.Write(hasUVs);
+                    if (hasUVs)
+                        for (int i = 0; i < mbd.BaseUVs.Length; i++)
+                        { w.Write(mbd.BaseUVs[i].x); w.Write(mbd.BaseUVs[i].y); }
                 }
 
                 bool hasBone = mc.BoneTransform != null;
@@ -247,12 +310,45 @@ namespace Poly_Ling.Remote
                 bool isMorph = r.ReadBoolean();
                 if (isMorph)
                 {
-                    string morphName = ReadString(r);
-                    int morphPanel = r.ReadInt32();
-                    short morphParentIndex = r.ReadInt16();
+                    string morphName      = ReadString(r);
+                    int    morphPanel     = r.ReadInt32();
+                    short  morphParentIdx = r.ReadInt16();
                     mc.SetAsMorph(morphName);
-                    mc.MorphPanel = morphPanel;
-                    mc.MorphParentIndex = morphParentIndex;
+                    mc.MorphPanel       = morphPanel;
+                    mc.MorphParentIndex = morphParentIdx;
+
+                    int bpCount = r.ReadInt32();
+                    if (bpCount > 0)
+                    {
+                        var mbd = mc.MorphBaseData ?? new MorphBaseData(morphName);
+                        mbd.BasePositions = new Vector3[bpCount];
+                        for (int i = 0; i < bpCount; i++)
+                            mbd.BasePositions[i] = ReadVector3(r);
+
+                        bool hasNormals = r.ReadBoolean();
+                        if (hasNormals)
+                        {
+                            mbd.BaseNormals = new Vector3[bpCount];
+                            for (int i = 0; i < bpCount; i++)
+                                mbd.BaseNormals[i] = ReadVector3(r);
+                        }
+
+                        bool hasUVs = r.ReadBoolean();
+                        if (hasUVs)
+                        {
+                            mbd.BaseUVs = new Vector2[bpCount];
+                            for (int i = 0; i < bpCount; i++)
+                                mbd.BaseUVs[i] = new Vector2(r.ReadSingle(), r.ReadSingle());
+                        }
+
+                        mc.MorphBaseData = mbd;
+                    }
+                    else
+                    {
+                        // BasePositions なし: フラグだけ読み捨て
+                        r.ReadBoolean(); // hasNormals
+                        r.ReadBoolean(); // hasUVs
+                    }
                 }
 
                 bool hasBone = r.ReadBoolean();

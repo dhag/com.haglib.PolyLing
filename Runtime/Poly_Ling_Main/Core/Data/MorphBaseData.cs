@@ -40,13 +40,6 @@ namespace Poly_Ling.Data
         /// <summary>モーフパネル（PMX: 0=眉, 1=目, 2=口, 3=その他）</summary>
         public int Panel = 3;
 
-        /// <summary>
-        /// 対称モーフかどうか（デフォルトtrue）
-        /// true: ミラー側に自動同期（オフセットX反転）
-        /// false: ミラー側への自動同期なし（ウインク等の非対称モーフ）
-        /// </summary>
-        public bool IsSymmetric = true;
-
         /// <summary>作成日時</summary>
         public DateTime CreatedAt = DateTime.Now;
 
@@ -430,7 +423,6 @@ namespace Poly_Ling.Data
             {
                 MorphName = this.MorphName,
                 Panel = this.Panel,
-                IsSymmetric = this.IsSymmetric,
                 CreatedAt = this.CreatedAt
             };
 

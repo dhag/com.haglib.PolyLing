@@ -11,6 +11,7 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.EditorCore;
 
 public class BakePivotTool : EditorWindow
 {
@@ -271,26 +272,7 @@ public class BakePivotTool : EditorWindow
     }
 
     private bool CanBakeNow(out string reason)
-    {
-        reason = "";
-
-        if (targetGO == null) { reason = "Targetが無い。"; return false; }
-
-        if (targetGO.GetComponent<SkinnedMeshRenderer>() != null)
-        {
-            reason = "SkinnedMeshRendererは対象外である。MeshFilterの静的メッシュを選択すること。";
-            return false;
-        }
-
-        var mf = targetGO.GetComponent<MeshFilter>();
-        if (mf == null || mf.sharedMesh == null)
-        {
-            reason = "MeshFilter(sharedMesh) が無い。";
-            return false;
-        }
-
-        return true;
-    }
+        => EditorBakePivot.CanBake(targetGO, out reason);
 
     // ===== SceneViewギズモ =====
     private void OnSceneGUI(SceneView sv)
@@ -354,128 +336,18 @@ public class BakePivotTool : EditorWindow
             EditorUtility.DisplayDialog("Cannot Bake", reason, "OK");
             return;
         }
-
-        var go = targetGO;
-        var tr = go.transform;
-        var mf = go.GetComponent<MeshFilter>();
-
-        // 目標pivot（ワールド）はプレビュー値を使う
-        Vector3 targetPivotWorld = lastPivotWorld;
-
-        // 現在のTransform原点から目標pivotへ
-        Vector3 offsetWorld = targetPivotWorld - tr.position;
-        if (offsetWorld.sqrMagnitude < 1e-12f)
-        {
-            EditorUtility.DisplayDialog("No Change", "目標ピボットが現在の位置と同じである。", "OK");
-            return;
-        }
-
-        // 頂点を動かすローカルオフセット
-        Vector3 offsetLocal = tr.InverseTransformVector(offsetWorld);
-
-        Undo.RegisterFullObjectHierarchyUndo(go, "Bake Pivot (Mesh)");
-        Undo.RecordObject(mf, "Bake Pivot (Mesh)");
-        Undo.RecordObject(tr, "Bake Pivot (Mesh)");
-
-        Mesh src = mf.sharedMesh;
-        
-        // ★ Bake前のlocalBoundsを保存（重要）
-var r = go.GetComponent<Renderer>();
-Bounds originalLocalBounds = r != null ? r.localBounds : new Bounds();
-        
-        
-        
-        
-        Mesh dst = Instantiate(src);
-        dst.name = $"{src.name}_PivotBaked_{mode}";
-
-        // 頂点を -offsetLocal へ
-        var v = dst.vertices;
-        for (int i = 0; i < v.Length; i++) v[i] -= offsetLocal;
-        dst.vertices = v;
-
-        if (recalcBounds) dst.RecalculateBounds();
-        if (recalcNormals) dst.RecalculateNormals();
-        if (recalcTangents) dst.RecalculateTangents();
-
-        EnsureFolder(outputFolder);
-
-        string safeName = MakeSafeFileName(dst.name);
-        string path = AssetDatabase.GenerateUniqueAssetPath($"{outputFolder}/{safeName}.asset");
-        AssetDatabase.CreateAsset(dst, path);
-        AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
-
-        mf.sharedMesh = dst;
-
-// ★ RendererのBoundsをBake前に戻す（核心）
-if (r != null)
-{
-    r.localBounds = originalLocalBounds;
-}
-
-foreach (var col in go.GetComponents<Collider>())
-{
-    Undo.RecordObject(col, "Fix Collider");
-
-    if (col is BoxCollider bc)
-        bc.center -= offsetLocal;
-
-    else if (col is SphereCollider sc)
-        sc.center -= offsetLocal;
-
-    else if (col is CapsuleCollider cc)
-        cc.center -= offsetLocal;
-
-    else if (col is WheelCollider wc)
-        wc.center -= offsetLocal;
-}
-
-        if (alsoFixMeshCollider)
-        {
-            var mc = go.GetComponent<MeshCollider>();
-            if (mc != null)
-            {
-                Undo.RecordObject(mc, "Bake Pivot (Mesh)");
-                mc.sharedMesh = null;
-                mc.sharedMesh = dst;
-            }
-        }
-
-        // 見た目を維持するため transform を +offsetWorld
-        tr.position += offsetWorld;
-
-        // 確定後に再計算
+        EditorBakePivot.BakeOnce(
+            targetGO, lastPivotWorld, outputFolder,
+            alsoFixMeshCollider, recalcBounds, recalcNormals, recalcTangents);
         UpdateBoundsCache();
         UpdatePivotPreview();
         SceneView.RepaintAll();
-
-        EditorUtility.DisplayDialog("Done",
-            $"Pivotを焼き込んだ。\nNew Mesh: {path}\nOffsetWorld: {offsetWorld:F4}", "OK");
     }
 
     // ===== フォルダ作成 & ファイル名 =====
     private static void EnsureFolder(string folderPath)
-    {
-        if (AssetDatabase.IsValidFolder(folderPath)) return;
-
-        string[] parts = folderPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0 || parts[0] != "Assets")
-            throw new Exception("Output Folderは 'Assets/...' で指定する必要がある。");
-
-        string current = "Assets";
-        for (int i = 1; i < parts.Length; i++)
-        {
-            string next = $"{current}/{parts[i]}";
-            if (!AssetDatabase.IsValidFolder(next))
-                AssetDatabase.CreateFolder(current, parts[i]);
-            current = next;
-        }
-    }
+        => EditorBakePivot.EnsureFolder(folderPath);
 
     private static string MakeSafeFileName(string s)
-    {
-        foreach (var ch in Path.GetInvalidFileNameChars()) s = s.Replace(ch, '_');
-        return s;
-    }
+        => EditorBakePivot.MakeSafeFileName(s);
 }

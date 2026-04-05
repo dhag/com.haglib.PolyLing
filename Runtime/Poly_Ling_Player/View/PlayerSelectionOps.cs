@@ -78,6 +78,13 @@ namespace Poly_Ling.Player
         public Rect BoxRect => MakeRect(BoxStart, BoxEnd);
 
         // ================================================================
+        // 投げ縄選択内部状態
+        // ================================================================
+
+        public bool         IsLassoSelecting { get; private set; }
+        public List<Vector2> LassoPoints     { get; } = new List<Vector2>();
+
+        // ================================================================
         // 初期化
         // ================================================================
 
@@ -252,6 +259,64 @@ namespace Poly_Ling.Player
         public void CancelBoxSelect()
         {
             IsBoxSelecting = false;
+        }
+
+        // ================================================================
+        // 投げ縄選択
+        // ================================================================
+
+        /// <summary>投げ縄選択開始。</summary>
+        public void BeginLassoSelect(Vector2 start)
+        {
+            IsLassoSelecting = true;
+            LassoPoints.Clear();
+            LassoPoints.Add(start);
+        }
+
+        /// <summary>投げ縄点追加（ドラッグ中に一定距離移動したとき）。</summary>
+        public void UpdateLassoSelect(Vector2 current)
+        {
+            if (LassoPoints.Count == 0 ||
+                Vector2.Distance(current, LassoPoints[LassoPoints.Count - 1]) > 2f)
+            {
+                LassoPoints.Add(current);
+            }
+        }
+
+        /// <summary>
+        /// 投げ縄選択確定。lassoVertices は投げ縄内にある頂点インデックス列。
+        /// </summary>
+        public void EndLassoSelect(IEnumerable<int> lassoVertices, ModifierKeys mods)
+        {
+            IsLassoSelecting = false;
+            LassoPoints.Clear();
+
+            if (!mods.Shift && !mods.Ctrl)
+                _selectionState.Vertices.Clear();
+
+            foreach (int v in lassoVertices)
+            {
+                if (mods.Ctrl)
+                {
+                    if (_selectionState.Vertices.Contains(v))
+                        _selectionState.Vertices.Remove(v);
+                    else
+                        _selectionState.Vertices.Add(v);
+                }
+                else
+                {
+                    _selectionState.Vertices.Add(v);
+                }
+            }
+
+            OnSelectionChanged?.Invoke();
+        }
+
+        /// <summary>投げ縄選択をキャンセル。</summary>
+        public void CancelLassoSelect()
+        {
+            IsLassoSelecting = false;
+            LassoPoints.Clear();
         }
 
         // ================================================================

@@ -29,6 +29,8 @@ namespace Poly_Ling.Player
         public Action OnRepaint;
         public Action<Vector2, Vector2> OnBoxSelectUpdate;
         public Action OnBoxSelectEnd;
+        public Action<System.Collections.Generic.List<Vector2>> OnLassoSelectUpdate;
+        public Action OnLassoSelectEnd;
         public Action OnEnterTransformDragging;
         public Action OnExitTransformDragging;
         public Action OnEnterBoxSelecting;
@@ -113,7 +115,13 @@ namespace Poly_Ling.Player
         private const float GizmoCenterSize      = 16f;
         private const float GizmoAxisLength      = 55f;
 
-        private enum DragMode { None, Moving, BoxSelecting }
+        // ================================================================
+        // ドラッグ選択モード（Box / Lasso）
+        // ================================================================
+        public enum SelectionDragMode { Box, Lasso }
+        public SelectionDragMode DragSelectMode { get; set; } = SelectionDragMode.Box;
+
+        private enum DragMode { None, Moving, BoxSelecting, LassoSelecting }
         private DragMode _dragMode = DragMode.None;
 
         // ================================================================
@@ -201,11 +209,21 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            // 矩形選択開始
-            _dragMode = DragMode.BoxSelecting;
-            _state    = MoveState.Idle;
-            _selectionOps.BeginBoxSelect(screenPos);
-            OnEnterBoxSelecting?.Invoke();
+            // 矩形/投げ縄選択開始
+            if (DragSelectMode == SelectionDragMode.Lasso)
+            {
+                _dragMode = DragMode.LassoSelecting;
+                _state    = MoveState.Idle;
+                _selectionOps.BeginLassoSelect(screenPos);
+                OnEnterBoxSelecting?.Invoke();
+            }
+            else
+            {
+                _dragMode = DragMode.BoxSelecting;
+                _state    = MoveState.Idle;
+                _selectionOps.BeginBoxSelect(screenPos);
+                OnEnterBoxSelecting?.Invoke();
+            }
         }
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
@@ -214,6 +232,14 @@ namespace Poly_Ling.Player
             {
                 _selectionOps.UpdateBoxSelect(screenPos);
                 OnBoxSelectUpdate?.Invoke(_selectionOps.BoxStart, screenPos);
+                OnRepaint?.Invoke();
+                return;
+            }
+
+            if (_dragMode == DragMode.LassoSelecting)
+            {
+                _selectionOps.UpdateLassoSelect(screenPos);
+                OnLassoSelectUpdate?.Invoke(_selectionOps.LassoPoints);
                 OnRepaint?.Invoke();
                 return;
             }
@@ -270,6 +296,19 @@ namespace Poly_Ling.Player
                 OnReadBackVertexFlags?.Invoke();
                 CommitBoxSelect(mods);
                 OnBoxSelectEnd?.Invoke();
+                OnExitBoxSelecting?.Invoke();
+                _dragMode = DragMode.None;
+                _state    = MoveState.Idle;
+                OnClearMouseHover?.Invoke();
+                return;
+            }
+
+            if (_dragMode == DragMode.LassoSelecting)
+            {
+                _selectionOps.UpdateLassoSelect(screenPos);
+                OnReadBackVertexFlags?.Invoke();
+                CommitLassoSelect(mods);
+                OnLassoSelectEnd?.Invoke();
                 OnExitBoxSelecting?.Invoke();
                 _dragMode = DragMode.None;
                 _state    = MoveState.Idle;
@@ -598,6 +637,138 @@ namespace Poly_Ling.Player
             _selectionOps.EndBoxSelect(inBox, mods);
             ExpandLinkedVertices();
             OnRepaint?.Invoke();
+        }
+
+        private void CommitLassoSelect(ModifierKeys mods)
+        {
+            var lasso = _selectionOps.LassoPoints;
+            if (lasso.Count < 3)
+            { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
+
+            if (GetScreenPositions == null)
+            { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
+
+            var model = _project?.CurrentModel;
+            var mc    = model?.FirstSelectedDrawableMesh ?? model?.FirstSelectedMeshContext;
+            if (mc?.MeshObject == null)
+            { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
+
+            int ctxIdx       = model.FirstDrawableMeshIndex >= 0
+                               ? model.FirstDrawableMeshIndex : model.FirstMeshIndex;
+            int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
+            var screenPos    = GetScreenPositions();
+            var mo           = mc.MeshObject;
+            float vpH        = GetViewportHeight?.Invoke() ?? 0f;
+
+            Func<int, Vector2> vertexScreen = (i) =>
+            {
+                if (screenPos == null || vertexOffset + i >= screenPos.Length)
+                    return new Vector2(-10000, -10000);
+                return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
+            };
+
+            // 座標系の確認：
+            // GetScreenPositions() は NDC から screenY = (1 - ndcY) * height で計算 → UIToolkit Y（Y=0上）
+            // vertexScreen は vpH - UIToolkitY → GPU Y（Y=0下）
+            // LassoPoints は ToViewportCoord()（h - local.y）→ GPU Y（Y=0下）
+            // → vertexScreen と LassoPoints は同じ GPU Y。変換不要。
+            var lassoGPU = lasso;
+
+            bool additive = mods.Shift || mods.Ctrl;
+            if (!additive)
+                mc.Selection.ClearAll();
+
+            var mode = _selectionOps.SelectionState?.Mode
+                    ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
+
+            // 頂点選択
+            var inLasso = new List<int>();
+            if (mode.Has(MeshSelectMode.Vertex))
+            {
+                for (int i = 0; i < mo.Vertices.Count; i++)
+                {
+                    if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
+                    if (IsPointInLasso(vertexScreen(i), lassoGPU)) inLasso.Add(i);
+                }
+            }
+
+            // 辺選択
+            if (mode.Has(MeshSelectMode.Edge))
+            {
+                for (int fi = 0; fi < mo.FaceCount; fi++)
+                {
+                    var face = mo.Faces[fi];
+                    if (face.VertexCount < 2) continue;
+                    for (int ei = 0; ei < face.VertexCount; ei++)
+                    {
+                        int v1 = face.VertexIndices[ei];
+                        int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                        if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
+                            IsPointInLasso(vertexScreen(v2), lassoGPU))
+                        {
+                            mc.Selection.SelectEdge(v1, v2, true);
+                        }
+                    }
+                }
+            }
+
+            // 面選択
+            if (mode.Has(MeshSelectMode.Face))
+            {
+                for (int fi = 0; fi < mo.FaceCount; fi++)
+                {
+                    var face = mo.Faces[fi];
+                    if (face.VertexCount < 3) continue;
+                    bool allIn = true;
+                    foreach (int vi in face.VertexIndices)
+                    {
+                        if (!IsPointInLasso(vertexScreen(vi), lassoGPU)) { allIn = false; break; }
+                    }
+                    if (allIn) mc.Selection.SelectFace(fi, true);
+                }
+            }
+
+            // 線分選択
+            if (mode.Has(MeshSelectMode.Line))
+            {
+                for (int fi = 0; fi < mo.FaceCount; fi++)
+                {
+                    var face = mo.Faces[fi];
+                    if (face.VertexCount != 2) continue;
+                    if (IsPointInLasso(vertexScreen(face.VertexIndices[0]), lassoGPU) &&
+                        IsPointInLasso(vertexScreen(face.VertexIndices[1]), lassoGPU))
+                    {
+                        mc.Selection.SelectLine(fi, true);
+                    }
+                }
+            }
+
+            _selectionOps.EndLassoSelect(inLasso, mods);
+            ExpandLinkedVertices();
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// Ray Casting アルゴリズムによる投げ縄内外判定。
+        /// エディタ側 PolyLing_Input.IsPointInLasso と同一実装。
+        /// </summary>
+        private static bool IsPointInLasso(Vector2 point, System.Collections.Generic.List<Vector2> polygon)
+        {
+            if (polygon == null || polygon.Count < 3) return false;
+            bool inside = false;
+            int count = polygon.Count;
+            int j = count - 1;
+            for (int i = 0; i < count; i++)
+            {
+                if ((polygon[i].y > point.y) != (polygon[j].y > point.y) &&
+                    point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) /
+                              (polygon[j].y - polygon[i].y) + polygon[i].x)
+                {
+                    inside = !inside;
+                }
+                j = i;
+            }
+            return inside;
         }
     }
 }

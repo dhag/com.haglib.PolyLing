@@ -1,86 +1,42 @@
 // Assets/Editor/Poly_Ling/PolyLing/SimpleMeshFactory_ModelExport.cs
 // モデル全体エクスポート機能（複数メッシュ対応）
-// - ヒエラルキーに追加
-// - SkinnedMeshRendererとしてエクスポート
-// - プレファブ保存
-// - メッシュアセット保存
+// LiveSync関連は EditorCore/LiveSync/EditorLiveSyncHandler.cs に移動済み。
 
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.EditorCore;
 
 public partial class PolyLing
 {
     // ================================================================
-    // LiveSync: ヒエラルキーへのリアルタイム同期
+    // LiveSync: EditorLiveSyncHandler への委譲
     // ================================================================
 
-    /// <summary>同期先のルートGameObject</summary>
-    private GameObject _liveSyncTarget;
+    private EditorLiveSyncHandler _liveSyncHandler;
 
-    /// <summary>LiveSync自動同期（SyncMeshFromData連動）</summary>
-    private bool _liveSyncAutoEnabled;
-
-    /// <summary>
-    /// LiveSyncターゲットが有効かどうか（GO未削除チェック）
-    /// </summary>
-    private bool HasLiveSyncTarget => _liveSyncTarget != null;
-
-    /// <summary>
-    /// LiveSync自動同期: 単一メッシュ更新（SyncMeshFromDataから呼ばれる）
-    /// </summary>
-    private void LiveSyncAutoUpdate(MeshContext meshContext)
+    private void InitializeLiveSyncHandler()
     {
-        if (!_liveSyncAutoEnabled || !HasLiveSyncTarget || meshContext == null)
-            return;
-
-        if (!ShouldExportAsMesh(meshContext.Type))
-            return;
-
-        OverwriteSingleMeshToTarget(_liveSyncTarget, meshContext);
+        _liveSyncHandler = new EditorLiveSyncHandler();
+        _liveSyncHandler.Initialize(
+            overwriteSingle: (target, mc) => OverwriteSingleMeshToTarget(target, mc),
+            overwriteAll: (target, showDialog, meshOnly) => OverwriteToTarget(target, showDialog, meshOnly),
+            shouldExport: ShouldExportAsMesh,
+            getSelectedContexts: GetSelectedContextsForLiveSync);
     }
 
-    /// <summary>
-    /// LiveSync自動同期: 選択メッシュ全体（ExitTransformDraggingから呼ばれる）
-    /// </summary>
-    private void LiveSyncAutoUpdateSelected()
+    private System.Collections.Generic.IEnumerable<Poly_Ling.Data.MeshContext> GetSelectedContextsForLiveSync()
     {
-        if (!_liveSyncAutoEnabled || !HasLiveSyncTarget || _model == null)
-            return;
-
-        foreach (int meshIdx in _model.SelectedMeshIndices)
+        if (_model == null) yield break;
+        foreach (int idx in _model.SelectedMeshIndices)
         {
-            var mc = _model.GetMeshContext(meshIdx);
-            if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0)
-                continue;
-            if (!ShouldExportAsMesh(mc.Type))
-                continue;
-
-            OverwriteSingleMeshToTarget(_liveSyncTarget, mc);
+            var mc = _model.GetMeshContext(idx);
+            if (mc != null) yield return mc;
         }
     }
 
-    /// <summary>
-    /// LiveSync手動反映（Applyボタンから呼ばれる）
-    /// </summary>
-    private void LiveSyncApply()
-    {
-        if (!HasLiveSyncTarget)
-            return;
-
-        OverwriteToTarget(_liveSyncTarget, false, meshOnly: true);
-    }
-
-    /// <summary>
-    /// LiveSyncターゲットをクリア
-    /// </summary>
-    private void ClearLiveSyncTarget()
-    {
-        _liveSyncTarget = null;
-        _liveSyncAutoEnabled = false;
-    }
 
     // ================================================================
     // エクスポートフィルタリング
@@ -488,7 +444,7 @@ public partial class PolyLing
         }
 
         // LiveSync: エクスポート先を保持
-        _liveSyncTarget = objectToSelect;
+        _liveSyncHandler.SetTarget(objectToSelect);
 
         Debug.Log($"Added model to hierarchy: {_meshContextList.Count} objects (with hierarchy structure)");
     }
@@ -1029,7 +985,7 @@ public partial class PolyLing
         }
 
         // LiveSync: エクスポート先を保持
-        _liveSyncTarget = objectToSelect;
+        _liveSyncHandler.SetTarget(objectToSelect);
 
         Debug.Log($"Added model to hierarchy as SkinnedMesh: {boneCount} bones, {_meshContextList.Count} objects");
     }

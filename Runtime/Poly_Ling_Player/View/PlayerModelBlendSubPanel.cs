@@ -170,7 +170,7 @@ namespace Poly_Ling.Player
             _statusLabel = new Label("");
             _statusLabel.style.marginTop = 4;
             _statusLabel.style.fontSize  = 10;
-            _statusLabel.style.color     = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color     = new StyleColor(Color.white);
             _root.Add(_statusLabel);
         }
 

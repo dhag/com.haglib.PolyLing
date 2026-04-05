@@ -142,7 +142,7 @@ namespace Poly_Ling.Player
             _statusLabel = new Label("");
             _statusLabel.style.marginTop = 4;
             _statusLabel.style.fontSize  = 10;
-            _statusLabel.style.color     = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color     = new StyleColor(Color.white);
             root.Add(_statusLabel);
         }
 
@@ -219,9 +219,9 @@ namespace Poly_Ling.Player
             row.style.marginBottom   = 2;
             row.style.paddingLeft    = 4; row.style.paddingRight = 4;
             row.style.borderBottomWidth = 1;
-            row.style.borderBottomColor = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+            row.style.borderBottomColor = new StyleColor(Color.white);
             if (isCurrent)
-                row.style.backgroundColor = new StyleColor(new Color(0.24f, 0.37f, 0.58f, 0.6f));
+                row.style.backgroundColor = new StyleColor(Color.white);
 
             // 名前ラベル
             var nameLabel = new Label(mv.Name);
@@ -240,7 +240,7 @@ namespace Poly_Ling.Player
             countLabel.style.width         = 55;
             countLabel.style.fontSize      = 10;
             countLabel.style.unityTextAlign = TextAnchor.MiddleRight;
-            countLabel.style.color         = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            countLabel.style.color         = new StyleColor(Color.white);
             countLabel.style.marginRight   = 4;
             row.Add(countLabel);
 

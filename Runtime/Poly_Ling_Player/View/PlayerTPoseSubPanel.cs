@@ -52,7 +52,7 @@ namespace Poly_Ling.Player
             root.Add(_mainContent);
 
             _mappingInfoLabel = new Label();
-            _mappingInfoLabel.style.color       = new StyleColor(Color.gray);
+            _mappingInfoLabel.style.color       = new StyleColor(Color.white);
             _mappingInfoLabel.style.marginBottom = 8;
             _mainContent.Add(_mappingInfoLabel);
 
@@ -86,13 +86,13 @@ namespace Poly_Ling.Player
 
             // バックアップなし
             _noBackupLabel = new Label();
-            _noBackupLabel.style.color       = new StyleColor(Color.gray);
+            _noBackupLabel.style.color       = new StyleColor(Color.white);
             _noBackupLabel.style.marginBottom = 6;
             _mainContent.Add(_noBackupLabel);
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize   = 10;
-            _statusLabel.style.color      = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color      = new StyleColor(Color.white);
             _statusLabel.style.marginTop  = 4;
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
             _mainContent.Add(_statusLabel);
@@ -216,7 +216,7 @@ namespace Poly_Ling.Player
         {
             var sep = new VisualElement();
             sep.style.height          = 1;
-            sep.style.backgroundColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f));
+            sep.style.backgroundColor = new StyleColor(Color.white);
             sep.style.marginTop       = 4; sep.style.marginBottom = 6;
             return sep;
         }

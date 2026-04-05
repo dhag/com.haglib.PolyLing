@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
             _panelNameLabel.style.marginBottom = 4;
             parent.Add(_panelNameLabel);
 
-            var exportBtn = new Button(OnExportClicked) { text = "Export" };
+            var exportBtn = new Button(OnExportClicked) { text = "再エクスポート" };
             exportBtn.style.marginTop    = 2;
             exportBtn.style.marginBottom = 4;
             exportBtn.style.height       = 28;
@@ -289,7 +289,7 @@ namespace Poly_Ling.Player
                 row.style.marginBottom = 1;
 
                 if (!m.IsMatched && !string.IsNullOrEmpty(m.PMXMaterialName))
-                    row.style.backgroundColor = new StyleColor(new Color(0.4f, 0.1f, 0.1f, 0.4f));
+                    row.style.backgroundColor = new StyleColor(Color.white);
 
                 var tog = new Toggle { value = m.Selected };
                 tog.style.width = 20;
@@ -486,7 +486,7 @@ namespace Poly_Ling.Player
         private static Label ColHeader(string text)
         {
             var l = new Label(text);
-            l.style.fontSize = 9; l.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            l.style.fontSize = 9; l.style.color = new StyleColor(Color.white);
             l.style.marginBottom = 2;
             return l;
         }

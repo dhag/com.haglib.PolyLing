@@ -115,7 +115,7 @@ namespace Poly_Ling.Player
             root.Add(op2);
 
             _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color = new StyleColor(Color.white);
             root.Add(_statusLabel);
 
             UpdateButtonStates();
@@ -162,7 +162,7 @@ namespace Poly_Ling.Player
         }
         private void UpdateTabColors()
         {
-            var active   = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var active   = new StyleColor(Color.white);
             var inactive = new StyleColor(StyleKeyword.Null);
             if (_tabDrawable != null) _tabDrawable.style.backgroundColor = _currentTab == TabType.Drawable ? active : inactive;
             if (_tabBone     != null) _tabBone.style.backgroundColor     = _currentTab == TabType.Bone     ? active : inactive;

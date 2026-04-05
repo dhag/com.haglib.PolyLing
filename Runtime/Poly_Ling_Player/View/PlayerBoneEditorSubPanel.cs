@@ -94,7 +94,7 @@ namespace Poly_Ling.Player
             // ステータス
             _statusLabel = new Label();
             _statusLabel.style.fontSize  = 10;
-            _statusLabel.style.color     = new StyleColor(Color.gray);
+            _statusLabel.style.color     = new StyleColor(Color.white);
             _statusLabel.style.marginTop = 6;
             root.Add(_statusLabel);
         }
@@ -253,7 +253,7 @@ namespace Poly_Ling.Player
             row.style.marginBottom  = 2;
             var key = new Label(labelText + ": ");
             key.style.width    = 76;
-            key.style.color    = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            key.style.color    = new StyleColor(Color.white);
             key.style.fontSize = 10;
             var val = new Label();
             val.style.flexGrow = 1;

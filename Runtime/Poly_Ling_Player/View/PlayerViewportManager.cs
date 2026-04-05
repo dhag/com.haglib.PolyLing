@@ -545,8 +545,34 @@ namespace Poly_Ling.Player
             if (mc?.MeshObject == null) return null;
             var sel = mc.Selection;
             if (sel.Faces.Count == 0) return null;
+
+            // GPU計算済みのワールド座標（ボーン変形込み）を取得
+            var adapter = _renderer?.GetAdapter(0);
+            UnityEngine.Vector3[] worldPositions = null;
+            int vertexStart = 0;
+            if (adapter != null && adapter.IsInitialized)
+            {
+                int ctxIdx = model.MeshContextList.IndexOf(mc);
+                if (ctxIdx >= 0)
+                {
+                    int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+                    var bm = adapter.BufferManager;
+                    if (unifiedIdx >= 0 && bm != null)
+                    {
+                        var meshInfos = bm.MeshInfos;
+                        if (meshInfos != null && unifiedIdx < meshInfos.Length)
+                        {
+                            vertexStart = (int)meshInfos[unifiedIdx].VertexStart;
+                            worldPositions = bm.GetDisplayPositions();
+                        }
+                    }
+                }
+            }
+
             var result = new List<Vector2[]>();
             var mo = mc.MeshObject;
+            int totalVertexCount = worldPositions?.Length ?? 0;
+
             foreach (int fi in sel.Faces)
             {
                 if (fi < 0 || fi >= mo.FaceCount) continue;
@@ -558,9 +584,17 @@ namespace Poly_Ling.Player
                 {
                     int vi = face.VertexIndices[i];
                     if (vi < 0 || vi >= mo.VertexCount) { valid = false; break; }
-                    Vector3 sp = cam.WorldToScreenPoint(mc.WorldMatrix.MultiplyPoint3x4(mo.Vertices[vi].Position));
+
+                    UnityEngine.Vector3 worldPos;
+                    int globalIdx = vertexStart + vi;
+                    if (worldPositions != null && globalIdx < totalVertexCount)
+                        worldPos = worldPositions[globalIdx];
+                    else
+                        worldPos = mc.WorldMatrix.MultiplyPoint3x4(mo.Vertices[vi].Position);
+
+                    UnityEngine.Vector3 sp = cam.WorldToScreenPoint(worldPos);
                     if (sp.z < 0) { valid = false; break; }
-                    pts[i] = new Vector2(sp.x, sp.y);
+                    pts[i] = new UnityEngine.Vector2(sp.x, sp.y);
                 }
                 if (valid) result.Add(pts);
             }
@@ -728,7 +762,45 @@ namespace Poly_Ling.Player
             // ① CPU MeshObject.Positions → GPU _positionsBuffer
             bm.UpdatePositions(mc.MeshObject, unifiedIdx);
 
-            // ② 次フレームのワイヤー/頂点メッシュ再構築を予約
+            // ② ミラーバッファも同期（ミラー無効時は内部で早期リターン）
+            bm.UpdateMirrorPositions(unifiedIdx);
+
+            // ③ ミラーメッシュが存在する場合、座標をMeshObjectに反映してGPUバッファ同期
+            // MirrorPair方式（BakeMirror=false, MirrorSide型）
+            var mirrorPair = model.GetMirrorPair(mc);
+            if (mirrorPair != null && mirrorPair.Real == mc && mirrorPair.Mirror?.MeshObject != null)
+            {
+                mirrorPair.SyncPositions();
+                int mirrorCtxIdx = model.MeshContextList.IndexOf(mirrorPair.Mirror);
+                if (mirrorCtxIdx >= 0)
+                {
+                    int mirrorUnifiedIdx = adapter.ContextToUnifiedMeshIndex(mirrorCtxIdx);
+                    if (mirrorUnifiedIdx >= 0)
+                        bm.UpdatePositions(mirrorPair.Mirror.MeshObject, mirrorUnifiedIdx);
+                }
+            }
+
+            // BakedMirror方式（BakeMirror=true, BakedMirror型）
+            var mirrorMatrix = bm.GetMirrorMatrix();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mirrorCtx = model.GetMeshContext(i);
+                if (mirrorCtx?.BakedMirrorSourceIndex != ctxIdx) continue;
+                if (mirrorCtx.MeshObject == null) continue;
+
+                int mirrorUnifiedIdx = adapter.ContextToUnifiedMeshIndex(i);
+                if (mirrorUnifiedIdx < 0) continue;
+
+                int count = Mathf.Min(mc.MeshObject.VertexCount, mirrorCtx.MeshObject.VertexCount);
+                for (int v = 0; v < count; v++)
+                {
+                    var p = mc.MeshObject.Vertices[v].Position;
+                    mirrorCtx.MeshObject.Vertices[v].Position = mirrorMatrix.MultiplyPoint3x4(p);
+                }
+                bm.UpdatePositions(mirrorCtx.MeshObject, mirrorUnifiedIdx);
+            }
+
+            // ④ 次フレームのワイヤー/頂点メッシュ再構築を予約
             adapter.NotifyTransformChanged();
         }
 

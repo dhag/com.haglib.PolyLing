@@ -4,6 +4,7 @@
 
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.EditorCore;
 
 public class MusclePreviewWindow : EditorWindow
 {
@@ -122,75 +123,39 @@ public class MusclePreviewWindow : EditorWindow
     {
         if (_animator == null) return;
         if (_animator.avatar == null || !_animator.avatar.isHuman) return;
-
-        _handler = new HumanPoseHandler(_animator.avatar, _animator.transform);
-        _pose = new HumanPose();
-
-        _idxLeftLowerArmStretch = FindMuscleIndex("LeftLowerArmStretch");
-
-        // 現在値を読む
-        _handler.GetHumanPose(ref _pose);
-        if (_idxLeftLowerArmStretch >= 0)
-            _value = _pose.muscles[_idxLeftLowerArmStretch];
+        _handler = EditorMusclePreview.Init(_animator, out _pose, out _idxLeftLowerArmStretch, out _value);
     }
 
     private void StartPreview()
     {
         if (_animator == null) return;
-
-        if (!AnimationMode.InAnimationMode())
-            AnimationMode.StartAnimationMode();
-
+        EditorMusclePreview.StartPreview();
         _preview = true;
-
-        // 現在ポーズを読み直してスライダを同期する
         if (_handler != null)
         {
             _handler.GetHumanPose(ref _pose);
             if (_idxLeftLowerArmStretch >= 0)
                 _value = _pose.muscles[_idxLeftLowerArmStretch];
         }
-
-        RepaintScene();
+        EditorMusclePreview.RepaintScene();
     }
 
     private void StopPreview()
     {
         _preview = false;
-
-        if (AnimationMode.InAnimationMode())
-            AnimationMode.StopAnimationMode(); // これで基本的に元へ戻る
-
-        RepaintScene();
+        EditorMusclePreview.StopPreview();
+        EditorMusclePreview.RepaintScene();
     }
 
     private void Apply()
     {
         if (!_preview) return;
-        if (_handler == null) return;
-        if (_idxLeftLowerArmStretch < 0) return;
-
-        // 現在のHumanPoseを取得→変更→適用する
-        _handler.GetHumanPose(ref _pose);
-        _pose.muscles[_idxLeftLowerArmStretch] = _value;
-        _handler.SetHumanPose(ref _pose);
-
-        RepaintScene();
+        EditorMusclePreview.Apply(_handler, ref _pose, _idxLeftLowerArmStretch, _value);
     }
 
     private static int FindMuscleIndex(string muscleName)
-    {
-        for (int i = 0; i < HumanTrait.MuscleCount; i++)
-        {
-            if (HumanTrait.MuscleName[i] == muscleName)
-                return i;
-        }
-        return -1;
-    }
+        => EditorMusclePreview.FindMuscleIndex(muscleName);
 
     private static void RepaintScene()
-    {
-        EditorApplication.QueuePlayerLoopUpdate();
-        SceneView.RepaintAll();
-    }
+        => EditorMusclePreview.RepaintScene();
 }

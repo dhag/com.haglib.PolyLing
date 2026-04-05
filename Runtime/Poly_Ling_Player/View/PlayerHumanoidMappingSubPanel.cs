@@ -62,7 +62,7 @@ namespace Poly_Ling.Player
 
             _csvHintLabel = new Label("CSVを[...]で選択してください。");
             _csvHintLabel.style.fontSize    = 10;
-            _csvHintLabel.style.color       = new StyleColor(Color.gray);
+            _csvHintLabel.style.color       = new StyleColor(Color.white);
             _csvHintLabel.style.marginBottom = 4;
             root.Add(_csvHintLabel);
 
@@ -78,7 +78,7 @@ namespace Poly_Ling.Player
             // プレビュー
             root.Add(SecLabel("プレビュー"));
             _previewEmptyLabel = new Label("マッピング未読込み");
-            _previewEmptyLabel.style.color = new StyleColor(Color.gray);
+            _previewEmptyLabel.style.color = new StyleColor(Color.white);
             root.Add(_previewEmptyLabel);
 
             _previewContent = new VisualElement();
@@ -97,7 +97,7 @@ namespace Poly_Ling.Player
             root.Add(applyRow);
 
             _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            _statusLabel.style.color = new StyleColor(Color.white);
             root.Add(_statusLabel);
 
             UpdatePreviewUI();
@@ -244,7 +244,7 @@ namespace Poly_Ling.Player
             int shown = 0;
             foreach (var kvp in _previewMapping.BoneIndexMap)
             {
-                if (shown++ >= 15) { var more = new Label("  ...他"); more.style.fontSize = 9; more.style.color = new StyleColor(Color.gray); _mappingDetailContainer?.Add(more); break; }
+                if (shown++ >= 15) { var more = new Label("  ...他"); more.style.fontSize = 9; more.style.color = new StyleColor(Color.white); _mappingDetailContainer?.Add(more); break; }
                 var lbl = new Label($"  {kvp.Key}: [{kvp.Value}]");
                 lbl.style.fontSize = 9; lbl.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
                 _mappingDetailContainer?.Add(lbl);
@@ -252,7 +252,7 @@ namespace Poly_Ling.Player
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
-        private static VisualElement MakeSep() { var s = new VisualElement(); s.style.height = 1; s.style.backgroundColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f)); s.style.marginTop = 4; s.style.marginBottom = 6; return s; }
+        private static VisualElement MakeSep() { var s = new VisualElement(); s.style.height = 1; s.style.backgroundColor = new StyleColor(Color.white); s.style.marginTop = 4; s.style.marginBottom = 6; return s; }
         private static Label SecLabel(string t) { var l = new Label(t); l.style.color = new StyleColor(new Color(0.65f, 0.8f, 1f)); l.style.fontSize = 10; l.style.marginBottom = 3; return l; }
     }
 }

@@ -48,6 +48,9 @@ namespace Poly_Ling.Player
         public Toggle ShowUnselectedBoneToggle     { get; private set; }
         public Toggle BackfaceCullingToggle        { get; private set; }
 
+        /// <summary>左ペイン：ラッソ選択トグル。</summary>
+        public Toggle LassoToggle { get; private set; }
+
         /// <summary>右ペイン内の動的コンテンツ領域（ScrollView の contentContainer）。</summary>
         public VisualElement RightPaneContent { get; private set; }
 
@@ -126,6 +129,8 @@ namespace Poly_Ling.Player
         public Button        MergeMeshesBtn        { get; private set; }
         public VisualElement MorphSection          { get; private set; }
         public Button        MorphBtn              { get; private set; }
+        public VisualElement MorphCreateSection    { get; private set; }
+        public Button        MorphCreateBtn        { get; private set; }
         public VisualElement TPoseSection          { get; private set; }
         public Button        TPoseBtn              { get; private set; }
         public VisualElement HumanoidMappingSection { get; private set; }
@@ -191,6 +196,7 @@ namespace Poly_Ling.Player
             root.style.width         = new StyleLength(new Length(100, LengthUnit.Percent));
             root.style.height        = new StyleLength(new Length(100, LengthUnit.Percent));
 
+
             var splitLCR = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Horizontal);
             splitLCR.style.flexGrow = 1;
             root.Add(splitLCR);
@@ -230,23 +236,31 @@ namespace Poly_Ling.Player
         {
             var pane = MakePane(200f);
             pane.style.backgroundColor = PaneBg(0.15f);
-            pane.style.paddingTop      = 8;
-            pane.style.paddingBottom   = 8;
-            pane.style.paddingLeft     = 6;
-            pane.style.paddingRight    = 6;
+            pane.style.flexDirection   = FlexDirection.Column;
             pane.style.overflow        = Overflow.Hidden;
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.flexGrow     = 1;
+            scroll.style.paddingTop   = 6;
+            scroll.style.paddingLeft  = 6;
+            scroll.style.paddingRight = 6;
+            pane.Add(scroll);
 
             StatusLabel = new Label("Status: -");
             StatusLabel.style.marginBottom = 6;
             StatusLabel.style.color        = Col(0.85f);
             StatusLabel.style.whiteSpace   = WhiteSpace.Normal;
-            pane.Add(StatusLabel);
+            scroll.Add(StatusLabel);
 
-            pane.Add(Separator());
+            LassoToggle = new Toggle("Lasso Select") { value = false };
+            LassoToggle.style.marginBottom = 4;
+            scroll.Add(LassoToggle);
+
+            scroll.Add(Separator());
 
             LocalLoaderSection = new VisualElement();
             LocalLoaderSection.style.marginBottom = 6;
-            pane.Add(LocalLoaderSection);
+            scroll.Add(LocalLoaderSection);
 
             // ── 部分インポートボタン（2列）
             var pImportRow = new VisualElement();
@@ -255,7 +269,7 @@ namespace Poly_Ling.Player
             PartialImportPmxBtn = MakeBtn("PMX部分Import"); PartialImportPmxBtn.style.flexGrow = 1; PartialImportPmxBtn.style.marginRight = 2;
             PartialImportMqoBtn = MakeBtn("MQO部分Import"); PartialImportMqoBtn.style.flexGrow = 1;
             pImportRow.Add(PartialImportPmxBtn); pImportRow.Add(PartialImportMqoBtn);
-            pane.Add(pImportRow);
+            scroll.Add(pImportRow);
 
             // ── 部分エクスポートボタン（2列）
             var pExportRow = new VisualElement();
@@ -264,7 +278,7 @@ namespace Poly_Ling.Player
             PartialExportPmxBtn = MakeBtn("PMX部分Export"); PartialExportPmxBtn.style.flexGrow = 1; PartialExportPmxBtn.style.marginRight = 2;
             PartialExportMqoBtn = MakeBtn("MQO部分Export"); PartialExportMqoBtn.style.flexGrow = 1;
             pExportRow.Add(PartialExportPmxBtn); pExportRow.Add(PartialExportMqoBtn);
-            pane.Add(pExportRow);
+            scroll.Add(pExportRow);
 
             // ── フルエクスポート / プロジェクトファイル
             // ── フルエクスポートボタン（2列）
@@ -274,12 +288,12 @@ namespace Poly_Ling.Player
             FullExportPmxBtn = MakeBtn("PMXフルExport"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
             FullExportMqoBtn = MakeBtn("MQOフルExport"); FullExportMqoBtn.style.flexGrow = 1;
             fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
-            pane.Add(fullExportRow);
+            scroll.Add(fullExportRow);
 
             ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
-            pane.Add(ProjectFileBtn);
+            scroll.Add(ProjectFileBtn);
 
-            pane.Add(Separator());
+            scroll.Add(Separator());
 
             RemoteSection = new VisualElement();
             RemoteSection.style.marginBottom = 4;
@@ -289,9 +303,9 @@ namespace Poly_Ling.Player
             RemoteSection.Add(ConnectBtn);
             RemoteSection.Add(DisconnectBtn);
             RemoteSection.Add(FetchBtn);
-            pane.Add(RemoteSection);
+            scroll.Add(RemoteSection);
 
-            pane.Add(Separator());
+            scroll.Add(Separator());
 
             // ── ツール切り替えボタン（1行目：頂点移動 / オブジェ移動）
             var toolRow = new VisualElement();
@@ -300,7 +314,7 @@ namespace Poly_Ling.Player
             ToolVertexMoveBtn  = MakeBtn("頂点移動");     ToolVertexMoveBtn.style.flexGrow  = 1; ToolVertexMoveBtn.style.marginRight  = 2;
             ToolObjectMoveBtn  = MakeBtn("オブジェ移動"); ToolObjectMoveBtn.style.flexGrow  = 1;
             toolRow.Add(ToolVertexMoveBtn); toolRow.Add(ToolObjectMoveBtn);
-            pane.Add(toolRow);
+            scroll.Add(toolRow);
 
             // ── ツール切り替えボタン（2行目：ピボット / スカルプト / 詳細選択）
             var toolRow2 = new VisualElement();
@@ -310,13 +324,13 @@ namespace Poly_Ling.Player
             ToolSculptBtn      = MakeBtn("スカルプト");  ToolSculptBtn.style.flexGrow      = 1; ToolSculptBtn.style.marginRight      = 2;
             ToolAdvancedSelBtn = MakeBtn("詳細選択");    ToolAdvancedSelBtn.style.flexGrow = 1;
             toolRow2.Add(ToolPivotOffsetBtn); toolRow2.Add(ToolSculptBtn); toolRow2.Add(ToolAdvancedSelBtn);
-            pane.Add(toolRow2);
+            scroll.Add(toolRow2);
 
             // ── ツール切り替えボタン（3行目：スキンウェイトペイント）
             ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
-            pane.Add(ToolSkinWeightPaintBtn);
+            scroll.Add(ToolSkinWeightPaintBtn);
 
-            pane.Add(Separator());
+            scroll.Add(Separator());
 
             var undoRow = new VisualElement();
             undoRow.style.flexDirection = FlexDirection.Row;
@@ -324,66 +338,67 @@ namespace Poly_Ling.Player
             UndoBtn = MakeBtn("Undo"); UndoBtn.style.flexGrow = 1; UndoBtn.style.marginRight = 2;
             RedoBtn = MakeBtn("Redo"); RedoBtn.style.flexGrow = 1; RedoBtn.style.marginLeft  = 2;
             undoRow.Add(UndoBtn); undoRow.Add(RedoBtn);
-            pane.Add(undoRow);
+            scroll.Add(undoRow);
 
-            pane.Add(Separator());
+            scroll.Add(Separator());
             PrimitiveBtn = MakeBtn("図形生成");
-            pane.Add(PrimitiveBtn);
+            scroll.Add(PrimitiveBtn);
 
             MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
-            pane.Add(MeshFilterToSkinnedBtn);
+            scroll.Add(MeshFilterToSkinnedBtn);
 
             BlendBtn = MakeBtn("メッシュブレンド");
-            pane.Add(BlendBtn);
+            scroll.Add(BlendBtn);
 
             ModelBlendBtn = MakeBtn("モデルブレンド");
-            pane.Add(ModelBlendBtn);
+            scroll.Add(ModelBlendBtn);
 
             BoneEditorBtn = MakeBtn("ボーンエディタ");
-            pane.Add(BoneEditorBtn);
+            scroll.Add(BoneEditorBtn);
 
             UVEditorBtn = MakeBtn("UVエディタ");
-            pane.Add(UVEditorBtn);
+            scroll.Add(UVEditorBtn);
 
             UVUnwrapBtn = MakeBtn("UV展開");
-            pane.Add(UVUnwrapBtn);
+            scroll.Add(UVUnwrapBtn);
 
-            pane.Add(Separator());
+            scroll.Add(Separator());
 
             // ── 追加パネルボタン ──────────────────────────────────────────
-            MaterialListBtn = MakeBtn("マテリアルリスト"); pane.Add(MaterialListBtn);
-            UVZBtn          = MakeBtn("UVZ");              pane.Add(UVZBtn);
+            MaterialListBtn = MakeBtn("マテリアルリスト"); scroll.Add(MaterialListBtn);
+            UVZBtn          = MakeBtn("UVZ");              scroll.Add(UVZBtn);
 
             var row9a = new VisualElement(); row9a.style.flexDirection = FlexDirection.Row; row9a.style.marginBottom = 2;
             PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
             MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
-            row9a.Add(PartsSelectionSetBtn); row9a.Add(MeshSelectionSetBtn); pane.Add(row9a);
+            row9a.Add(PartsSelectionSetBtn); row9a.Add(MeshSelectionSetBtn); scroll.Add(row9a);
 
-            MergeMeshesBtn = MakeBtn("メッシュマージ"); pane.Add(MergeMeshesBtn);
-            MorphBtn       = MakeBtn("モーフ");          pane.Add(MorphBtn);
+            MergeMeshesBtn = MakeBtn("メッシュマージ"); scroll.Add(MergeMeshesBtn);
+            MorphBtn       = MakeBtn("モーフエクスプレッション編集"); scroll.Add(MorphBtn);
+            MorphCreateBtn = MakeBtn("差分からモーフ生成");         scroll.Add(MorphCreateBtn);
 
             var row9b = new VisualElement(); row9b.style.flexDirection = FlexDirection.Row; row9b.style.marginBottom = 2;
             TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1; TPoseBtn.style.marginRight          = 2;
             HumanoidMappingBtn = MakeBtn("ヒューマノイド"); HumanoidMappingBtn.style.flexGrow = 1;
-            row9b.Add(TPoseBtn); row9b.Add(HumanoidMappingBtn); pane.Add(row9b);
+            row9b.Add(TPoseBtn); row9b.Add(HumanoidMappingBtn); scroll.Add(row9b);
 
-            MirrorBtn = MakeBtn("ミラー編集"); pane.Add(MirrorBtn);
+            MirrorBtn = MakeBtn("ミラー編集"); scroll.Add(MirrorBtn);
 
             // ── 追加パネルボタン（最終残件）─────────────────────────────────
             var rowFinal = new VisualElement(); rowFinal.style.flexDirection = FlexDirection.Row; rowFinal.style.marginBottom = 2;
             QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1; QuadDecimatorBtn.style.marginRight = 2;
             MediaPipeBtn     = MakeBtn("MediaPipe"); MediaPipeBtn.style.flexGrow     = 1;
-            rowFinal.Add(QuadDecimatorBtn); rowFinal.Add(MediaPipeBtn); pane.Add(rowFinal);
+            rowFinal.Add(QuadDecimatorBtn); rowFinal.Add(MediaPipeBtn); scroll.Add(rowFinal);
 
             var rowFinal2 = new VisualElement(); rowFinal2.style.flexDirection = FlexDirection.Row; rowFinal2.style.marginBottom = 2;
             VMDTestBtn      = MakeBtn("VMDテスト");  VMDTestBtn.style.flexGrow      = 1; VMDTestBtn.style.marginRight      = 2;
             RemoteServerBtn = MakeBtn("リモートサーバ"); RemoteServerBtn.style.flexGrow = 1;
-            rowFinal2.Add(VMDTestBtn); rowFinal2.Add(RemoteServerBtn); pane.Add(rowFinal2);
+            rowFinal2.Add(VMDTestBtn); rowFinal2.Add(RemoteServerBtn); scroll.Add(rowFinal2);
 
-            pane.Add(Separator());
-            pane.Add(Header("Models"));
+            scroll.Add(Separator());
+            scroll.Add(Header("Models"));
             ModelListContainer = new VisualElement();
-            pane.Add(ModelListContainer);
+            scroll.Add(ModelListContainer);
 
             var listBtnRow = new VisualElement();
             listBtnRow.style.flexDirection = FlexDirection.Row;
@@ -392,34 +407,34 @@ namespace Poly_Ling.Player
             MeshListBtn  = MakeBtn("オブジェクトリスト"); MeshListBtn.style.flexGrow = 1;
             listBtnRow.Add(ModelListBtn);
             listBtnRow.Add(MeshListBtn);
-            pane.Add(listBtnRow);
+            scroll.Add(listBtnRow);
 
-            pane.Add(Separator());
-            pane.Add(Header("Display"));
+            scroll.Add(Separator());
+            scroll.Add(Header("Display"));
             ShowSelectedMeshToggle       = MakeToggle("Selected Mesh",        true);
             ShowUnselectedMeshToggle     = MakeToggle("Unselected Mesh",      true);
             ShowSelectedVerticesToggle   = MakeToggle("Selected Vertices",    true);
             ShowUnselectedVerticesToggle = MakeToggle("Unselected Vertices",  true);
             ShowSelectedWireToggle       = MakeToggle("Selected Wireframe",   true);
             ShowUnselectedWireToggle     = MakeToggle("Unselected Wireframe", true);
-            pane.Add(ShowSelectedMeshToggle);
-            pane.Add(ShowUnselectedMeshToggle);
-            pane.Add(ShowSelectedVerticesToggle);
-            pane.Add(ShowUnselectedVerticesToggle);
-            pane.Add(ShowSelectedWireToggle);
-            pane.Add(ShowUnselectedWireToggle);
+            scroll.Add(ShowSelectedMeshToggle);
+            scroll.Add(ShowUnselectedMeshToggle);
+            scroll.Add(ShowSelectedVerticesToggle);
+            scroll.Add(ShowUnselectedVerticesToggle);
+            scroll.Add(ShowSelectedWireToggle);
+            scroll.Add(ShowUnselectedWireToggle);
 
-            pane.Add(Separator());
-            pane.Add(Header("Bone"));
+            scroll.Add(Separator());
+            scroll.Add(Header("Bone"));
             ShowSelectedBoneToggle   = MakeToggle("Selected Bone",   true);
             ShowUnselectedBoneToggle = MakeToggle("Unselected Bone", false);
-            pane.Add(ShowSelectedBoneToggle);
-            pane.Add(ShowUnselectedBoneToggle);
+            scroll.Add(ShowSelectedBoneToggle);
+            scroll.Add(ShowUnselectedBoneToggle);
 
-            pane.Add(Separator());
-            pane.Add(Header("Rendering"));
+            scroll.Add(Separator());
+            scroll.Add(Header("Rendering"));
             BackfaceCullingToggle = MakeToggle("Backface Culling", true);
-            pane.Add(BackfaceCullingToggle);
+            scroll.Add(BackfaceCullingToggle);
 
             return pane;
         }
@@ -433,7 +448,7 @@ namespace Poly_Ling.Player
             var wrap = new VisualElement();
             wrap.style.flexGrow        = 1;
             wrap.style.flexDirection   = FlexDirection.Column;
-            wrap.style.backgroundColor = new StyleColor(Color.black);
+            wrap.style.backgroundColor = new StyleColor(Color.white);
 
             var lbl = new Label(label);
             lbl.style.position  = Position.Absolute;
@@ -469,6 +484,7 @@ namespace Poly_Ling.Player
             pane.Add(scroll);
 
             RightPaneContent = scroll.contentContainer;
+            RightPaneContent.style.color = new StyleColor(Color.white);
 
             // ── モデルリストセクション
             ModelListSection = new VisualElement();
@@ -567,6 +583,7 @@ namespace Poly_Ling.Player
             MeshSelectionSetSection  = MakeHiddenSection(); RightPaneContent.Add(MeshSelectionSetSection);  RightPaneContent.Add(Separator());
             MergeMeshesSection     = MakeHiddenSection(); RightPaneContent.Add(MergeMeshesSection);     RightPaneContent.Add(Separator());
             MorphSection           = MakeHiddenSection(); RightPaneContent.Add(MorphSection);           RightPaneContent.Add(Separator());
+            MorphCreateSection     = MakeHiddenSection(); RightPaneContent.Add(MorphCreateSection);     RightPaneContent.Add(Separator());
             TPoseSection           = MakeHiddenSection(); RightPaneContent.Add(TPoseSection);           RightPaneContent.Add(Separator());
             HumanoidMappingSection = MakeHiddenSection(); RightPaneContent.Add(HumanoidMappingSection); RightPaneContent.Add(Separator());
             MirrorSection          = MakeHiddenSection(); RightPaneContent.Add(MirrorSection);          RightPaneContent.Add(Separator());
@@ -635,16 +652,34 @@ namespace Poly_Ling.Player
         private static VisualElement MakePane(float initialWidth)
         {
             var v = new VisualElement();
-            v.style.width      = initialWidth;
-            v.style.minWidth   = 80f;
-            v.style.flexShrink = 0;
+            v.style.width    = initialWidth;
+            v.style.minWidth = 80f;
             return v;
+        }
+
+        /// <summary>
+        /// 全Build()完了後に呼ぶ。
+        /// RightPaneContent の color=white 継承でボタン文字も白になるため、
+        /// レイアウト全体のButtonを明示的に暗色に戻す。
+        /// </summary>
+        public void PostBuildButtonColors(UnityEngine.UIElements.VisualElement root)
+        {
+            var dark = new StyleColor(new Color(0.12f, 0.12f, 0.12f));
+            root.Query<Button>().ForEach(b => b.style.color = dark);
+            root.Query<TextField>().ForEach(t => t.style.color = dark);
+            root.Query<FloatField>().ForEach(t => t.style.color = dark);
+            root.Query<IntegerField>().ForEach(t => t.style.color = dark);
+            root.Query<DropdownField>().ForEach(t => t.style.color = dark);
         }
 
         private static Button MakeBtn(string text)
         {
             var b = new Button { text = text };
-            b.style.marginBottom = 3;
+            b.style.marginBottom  = 2;
+            b.style.fontSize      = 10;
+            b.style.height        = 20;
+            b.style.paddingTop    = 0;
+            b.style.paddingBottom = 0;
             return b;
         }
 

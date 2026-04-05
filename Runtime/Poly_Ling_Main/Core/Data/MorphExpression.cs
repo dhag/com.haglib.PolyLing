@@ -70,6 +70,13 @@ namespace Poly_Ling.Data
         /// <summary>モーフタイプ</summary>
         public MorphType Type = MorphType.Vertex;
 
+        /// <summary>
+        /// 対称モーフかどうか（デフォルトtrue）
+        /// true: MeshEntriesにはReal側のみ登録。Mirror側はシステムが自動管理。
+        /// false: MeshEntriesに影響させるメッシュを明示列挙（ウインク等の非対称モーフ）
+        /// </summary>
+        public bool IsSymmetric = true;
+
         /// <summary>所属するモーフメッシュのエントリリスト（インデックス＋ウェイト）</summary>
         public List<MorphMeshEntry> MeshEntries = new List<MorphMeshEntry>();
 
@@ -219,6 +226,7 @@ namespace Poly_Ling.Data
                 NameEnglish = this.NameEnglish,
                 Panel = this.Panel,
                 Type = this.Type,
+                IsSymmetric = this.IsSymmetric,
                 MeshEntries = this.MeshEntries.Select(e => new MorphMeshEntry(e.MeshIndex, e.Weight)).ToList(),
                 CreatedAt = this.CreatedAt
             };
@@ -230,7 +238,7 @@ namespace Poly_Ling.Data
 
         public override string ToString()
         {
-            return $"MorphExpression[{Name}]: {Type}, {MeshCount} meshes";
+            return $"MorphExpression[{Name}]: {Type}, {(IsSymmetric ? "Symmetric" : "Asymmetric")}, {MeshCount} meshes";
         }
     }
 }

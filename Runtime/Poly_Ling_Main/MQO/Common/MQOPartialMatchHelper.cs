@@ -234,7 +234,8 @@ namespace Poly_Ling.MQO
                     ImportMaterials = false,
                     SkipHiddenObjects = visibleOnly,
                     MergeObjects = false,
-                    FlipZ = flipZ,
+                    Scale = 1f,    // 座標変換はTransfer側で行うため生MQO座標のまま格納
+                    FlipZ = false, // 同上
                     FlipUV_V = false,
                     BakeMirror = false
                 };

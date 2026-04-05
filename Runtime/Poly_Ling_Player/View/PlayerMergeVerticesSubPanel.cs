@@ -105,14 +105,14 @@ namespace Poly_Ling.Player
                     string indices = string.Join(", ", take) + (group.Count > 8 ? "..." : "");
                     var lbl = new Label($"  [{i}] {group.Count} verts: {indices}");
                     lbl.style.fontSize = 9;
-                    lbl.style.color    = new StyleColor(new Color(0.65f, 0.65f, 0.65f));
+                    lbl.style.color    = new StyleColor(Color.white);
                     _detailList.Add(lbl);
                 }
                 if (info.Groups.Count > 5)
                 {
                     var more = new Label($"  ...他 {info.Groups.Count - 5} グループ");
                     more.style.fontSize = 9;
-                    more.style.color    = new StyleColor(new Color(0.65f, 0.65f, 0.65f));
+                    more.style.color    = new StyleColor(Color.white);
                     _detailList.Add(more);
                 }
             }
