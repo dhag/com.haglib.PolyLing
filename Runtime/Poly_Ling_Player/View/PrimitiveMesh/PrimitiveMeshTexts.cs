@@ -95,7 +95,16 @@ namespace Poly_Ling.Player
             ["InnerCorner"]      = new() { ["en"] = "Inner Corner",    ["ja"] = "内角",             ["hi"] = "うちのかど" },
             ["OuterCorner"]      = new() { ["en"] = "Outer Corner",    ["ja"] = "外角",             ["hi"] = "そとのかど" },
             ["ProfileEditor"]    = new() { ["en"] = "Profile Editor",  ["ja"] = "プロファイル編集", ["hi"] = "プロファイル" },
-            ["AddPoint"]         = new() { ["en"] = "Add Point",       ["ja"] = "点追加",           ["hi"] = "てんついか" },
+            ["AddPoint"]         = new() { ["en"] = "Add Point",    ["ja"] = "点追加",   ["hi"] = "てんついか" },
+            ["InsertPoint"]      = new() { ["en"] = "Insert Point", ["ja"] = "点の挿入", ["hi"] = "てんそうにゅう" },
+            ["P2dEditorHelp"]    = new() { ["en"] = "Click edge: insert point / Drag vertex: move", ["ja"] = "エッジクリック: 点挿入 / 頂点ドラッグ: 移動", ["hi"] = "せんクリック: てんついか / ドラッグ: いどう" },
+
+            // ── 下絵 ─────────────────────────────────────────────────────
+            ["BgImage"]    = new() { ["en"] = "Background Image",  ["ja"] = "下絵",         ["hi"] = "したえ" },
+            ["BgLoad"]     = new() { ["en"] = "Load",              ["ja"] = "読込",         ["hi"] = "よみこむ" },
+            ["BgClear"]    = new() { ["en"] = "Clear",             ["ja"] = "クリア",       ["hi"] = "クリア" },
+            ["BgAlpha"]    = new() { ["en"] = "Opacity",           ["ja"] = "不透明度",     ["hi"] = "ふとうめいど" },
+            ["BgMoveMode"] = new() { ["en"] = "Move/Scale Mode",   ["ja"] = "移動/拡縮モード", ["hi"] = "いどう/かくしゅくモード" },
             ["DeletePoint"]      = new() { ["en"] = "Delete Point",    ["ja"] = "点削除",           ["hi"] = "てんさくじょ" },
             ["ClearProfile"]     = new() { ["en"] = "Clear",           ["ja"] = "クリア",           ["hi"] = "クリア" },
 
@@ -115,6 +124,7 @@ namespace Poly_Ling.Player
             ["RemoveLoop"]       = new() { ["en"] = "Remove",          ["ja"] = "削除",             ["hi"] = "さくじょ" },
             ["IsHole"]           = new() { ["en"] = "Hole",            ["ja"] = "穴",               ["hi"] = "あな" },
             ["LoadCSV"]          = new() { ["en"] = "Load CSV",        ["ja"] = "CSV読込",          ["hi"] = "CSVよみこむ" },
+            ["SaveCSV"]          = new() { ["en"] = "Save CSV",        ["ja"] = "CSV保存",          ["hi"] = "CSVほぞん" },
             ["NoFile"]           = new() { ["en"] = "(no file)",       ["ja"] = "(未選択)",         ["hi"] = "(みせんたく)" },
             ["LoopSides"]        = new() { ["en"] = "Sides",           ["ja"] = "辺数",             ["hi"] = "へんすう" },
 

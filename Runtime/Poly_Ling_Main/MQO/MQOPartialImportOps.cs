@@ -171,6 +171,29 @@ namespace Poly_Ling.MQO
         //   フラグモード（bakeMirror=false）→ 実体のみ modelMo に書き込み、MirrorBoneWeight 退避
         // ================================================================
 
+        /// <summary>
+        /// int 戻り値版ラッパー（Editor 側との後方互換用）。
+        /// インデックスマップが不要な呼び出し元はこちらを使用する。
+        /// </summary>
+        public int ExecuteMeshStructureImportCount(
+            List<PartialMeshEntry> modelMeshes,
+            List<PartialMQOEntry>  mqoObjects,
+            bool  alsoImportPosition,
+            float importScale,
+            bool  flipZ,
+            bool  flipUV_V,
+            bool  bakeMirror,
+            bool  recalcNormals,
+            NormalMode normalMode,
+            float smoothingAngle)
+        {
+            return ExecuteMeshStructureImportWithMap(
+                modelMeshes, mqoObjects,
+                alsoImportPosition, importScale, flipZ, flipUV_V,
+                bakeMirror, recalcNormals, normalMode, smoothingAngle)
+                .Count(m => m != null);
+        }
+
         public int ExecuteMeshStructureImport(
             List<PartialMeshEntry> modelMeshes,
             List<PartialMQOEntry>  mqoObjects,
@@ -183,8 +206,28 @@ namespace Poly_Ling.MQO
             NormalMode normalMode,
             float smoothingAngle)
         {
-            int meshesUpdated = 0;
-            int pairCount     = Math.Min(modelMeshes.Count, mqoObjects.Count);
+            return ExecuteMeshStructureImportCount(
+                modelMeshes, mqoObjects,
+                alsoImportPosition, importScale, flipZ, flipUV_V,
+                bakeMirror, recalcNormals, normalMode, smoothingAngle);
+        }
+
+        public List<Dictionary<int,int>> ExecuteMeshStructureImportWithMap(
+            List<PartialMeshEntry> modelMeshes,
+            List<PartialMQOEntry>  mqoObjects,
+            bool  alsoImportPosition,
+            float importScale,
+            bool  flipZ,
+            bool  flipUV_V,
+            bool  bakeMirror,
+            bool  recalcNormals,
+            NormalMode normalMode,
+            float smoothingAngle)
+        {
+            // 戻り値: modelMeshes 順に対応する old→new インデックスマップのリスト
+            // BakedMirrorPeer がある場合は peerMo 分のマップも続けて格納
+            var allMaps   = new List<Dictionary<int,int>>();
+            int pairCount = Math.Min(modelMeshes.Count, mqoObjects.Count);
 
             for (int p = 0; p < pairCount; p++)
             {
@@ -192,21 +235,27 @@ namespace Poly_Ling.MQO
                 var mqoEntry   = mqoObjects[p];
 
                 var mqoMo = mqoEntry.MeshContext?.MeshObject;
-                if (modelEntry.Context?.MeshObject == null || mqoMo == null) continue;
+                if (modelEntry.Context?.MeshObject == null || mqoMo == null)
+                {
+                    allMaps.Add(null);
+                    continue;
+                }
 
-                TransferMeshStructure(
+                var maps = TransferMeshStructure(
                     modelEntry, mqoEntry,
                     alsoImportPosition,
                     importScale, flipZ, flipUV_V,
                     bakeMirror, recalcNormals, normalMode, smoothingAngle);
 
-                meshesUpdated++;
+                allMaps.Add(maps.realMap);
+                if (maps.mirrorMap != null)
+                    allMaps.Add(maps.mirrorMap);
             }
 
-            return meshesUpdated;
+            return allMaps;
         }
 
-        private void TransferMeshStructure(
+        private (Dictionary<int,int> realMap, Dictionary<int,int> mirrorMap) TransferMeshStructure(
             PartialMeshEntry modelEntry,
             PartialMQOEntry  mqoEntry,
             bool  alsoImportPosition,
@@ -356,6 +405,9 @@ namespace Poly_Ling.MQO
                     $"[MQOPartialImport] MeshStructure: " +
                     $"real={newRealVertices.Count}v/{newRealFaces.Count}f, " +
                     $"mirror={newMirrorVertices.Count}v/{newMirrorFaces.Count}f (peer split)");
+
+                return (BuildIndexMap(expandedStart, newRealStartMap, mqoMo),
+                        BuildIndexMap(expandedStart, newMirrorStartMap, mqoMo));
             }
             else
             {
@@ -381,7 +433,31 @@ namespace Poly_Ling.MQO
                     $"[MQOPartialImport] MeshStructure: " +
                     $"old={oldRealVertices.Count} → new={modelMo.VertexCount}v/{modelMo.FaceCount}f" +
                     (isMirrored ? $" (mirror={(bakeMirror ? "bake" : "flag")})" : ""));
+
+                return (BuildIndexMap(expandedStart, newRealStartMap, mqoMo), null);
             }
+        }
+
+        /// <summary>
+        /// MQO頂点ごとの旧展開インデックス(expandedStart)と新インデックス(newStartMap)から
+        /// oldIdx→newIdx の全展開頂点マッピングを構築する。
+        /// </summary>
+        private static Dictionary<int,int> BuildIndexMap(
+            Dictionary<int,int> expandedStart,
+            Dictionary<int,int> newStartMap,
+            MeshObject          mqoMo)
+        {
+            var map = new Dictionary<int,int>();
+            foreach (var kvp in expandedStart)
+            {
+                int vIdx    = kvp.Key;
+                int oldBase = kvp.Value;
+                if (!newStartMap.TryGetValue(vIdx, out int newBase)) continue;
+                int uvCount = Math.Max(1, mqoMo.Vertices[vIdx].UVs.Count);
+                for (int u = 0; u < uvCount; u++)
+                    map[oldBase + u] = newBase + u;
+            }
+            return map;
         }
 
         // ================================================================
