@@ -99,8 +99,10 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private VisualElement _root;
+        private Label         _meshMatLabel;
         private Label         _warningLabel;
         private Label         _infoLabel;
+        private Texture2D     _bgTexture;
         private Label         _statusLabel;
         private VisualElement _canvas;
         private VisualElement _transformSection;
@@ -117,6 +119,13 @@ namespace Poly_Ling.Player
             _root.style.paddingLeft = _root.style.paddingRight = 2;
             _root.style.paddingTop  = _root.style.paddingBottom = 2;
             parent.Add(_root);
+
+            // メッシュ名・マテリアル名ラベル
+            _meshMatLabel = new Label();
+            _meshMatLabel.style.fontSize    = 10;
+            _meshMatLabel.style.marginBottom = 2;
+            _meshMatLabel.style.whiteSpace  = WhiteSpace.Normal;
+            _root.Add(_meshMatLabel);
 
             // 警告
             _warningLabel = new Label();
@@ -137,7 +146,7 @@ namespace Poly_Ling.Player
             _canvas = new VisualElement();
             _canvas.style.flexGrow        = 1;
             _canvas.style.minHeight       = 240;
-            _canvas.style.backgroundColor = new StyleColor(Color.white);
+            _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
             _canvas.style.marginBottom    = 4;
             _canvas.generateVisualContent += OnGenerateVisualContent;
             _canvas.RegisterCallback<WheelEvent>(OnCanvasWheel);
@@ -147,6 +156,11 @@ namespace Poly_Ling.Player
             _canvas.RegisterCallback<MouseLeaveEvent>(_ =>
             {
                 if (_hovered.HasValue) { _hovered = null; _canvas.MarkDirtyRepaint(); }
+            });
+            _canvas.RegisterCallback<GeometryChangedEvent>(_ =>
+            {
+                UpdateCanvasBackground();
+                _canvas.MarkDirtyRepaint();
             });
             _root.Add(_canvas);
 
@@ -190,19 +204,81 @@ namespace Poly_Ling.Player
 
         public void Refresh()
         {
-            var mo = GetMeshObject();
+            var mc     = GetMeshContext();
+            var mo     = mc?.MeshObject;
             bool hasMesh = mo != null;
 
-            if (_warningLabel != null)
+            // メッシュ名・マテリアル名ラベル
+            if (_meshMatLabel != null)
             {
-                _warningLabel.text = hasMesh ? "" : "メッシュが未選択です";
-                _warningLabel.style.display =
-                    hasMesh ? DisplayStyle.None : DisplayStyle.Flex;
+                if (hasMesh)
+                {
+                    string meshName = mc.Name ?? "";
+                    var mat = mc.GetCurrentMaterial();
+                    string matName = mat != null ? mat.name : "";
+                    bool hasMat = !string.IsNullOrEmpty(matName);
+                    _meshMatLabel.text  = hasMat ? $"{meshName}  |  {matName}" : meshName;
+                    _meshMatLabel.style.color = new StyleColor(Color.white);
+                }
+                else
+                {
+                    _meshMatLabel.text  = "メッシュが未選択です";
+                    _meshMatLabel.style.color = new StyleColor(new Color(1f, 0.5f, 0.2f));
+                }
             }
+
+            // 警告ラベル（旧）は非表示に統一
+            if (_warningLabel != null)
+                _warningLabel.style.display = DisplayStyle.None;
+
             if (_transformSection != null)
                 _transformSection.style.display = hasMesh ? DisplayStyle.Flex : DisplayStyle.None;
 
+            // キャンバス背景
+            if (_canvas != null)
+            {
+                Texture2D tex = null;
+                if (hasMesh)
+                {
+                    var mat = mc.GetCurrentMaterial();
+                    tex = mat?.mainTexture as Texture2D;
+                }
+
+                if (tex != null)
+                {
+                    _bgTexture = tex;
+                    _canvas.style.backgroundImage = new StyleBackground(tex);
+                    _canvas.style.backgroundColor = new StyleColor(Color.clear);
+                }
+                else
+                {
+                    _bgTexture = null;
+                    _canvas.style.backgroundImage = StyleKeyword.None;
+
+                    if (hasMesh)
+                    {
+                        var mat = mc.GetCurrentMaterial();
+                        if (mat != null)
+                        {
+                            // メインテクスチャなし・色あり
+                            Color c = mat.color;
+                            c.a = 1f;
+                            _canvas.style.backgroundColor = new StyleColor(c);
+                        }
+                        else
+                        {
+                            _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+                        }
+                    }
+                    else
+                    {
+                        _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+                    }
+                }
+            }
+
             UpdateInfo(mo);
+            UpdateCanvasBackground();
             _canvas?.MarkDirtyRepaint();
         }
 
@@ -378,6 +454,7 @@ namespace Poly_Ling.Player
             float delta  = -evt.delta.y * ZoomSpeed;
             _zoom = Mathf.Clamp(_zoom * (1f + delta), MinZoom, MaxZoom);
             _panOffset += mp - UVToCanvas(uvBefore, rect);
+            UpdateCanvasBackground();
             _canvas.MarkDirtyRepaint();
             evt.StopPropagation();
         }
@@ -428,6 +505,7 @@ namespace Poly_Ling.Player
             {
                 case Interaction.Panning:
                     _panOffset = _panStartOffset + (mp - _mouseDownPos);
+                    UpdateCanvasBackground();
                     _canvas.MarkDirtyRepaint();
                     evt.StopPropagation();
                     return;
@@ -580,7 +658,7 @@ namespace Poly_Ling.Player
                     any   = true;
                 }
             }
-            if (!any) { _zoom = 1f; _panOffset = Vector2.zero; _canvas.MarkDirtyRepaint(); return; }
+            if (!any) { _zoom = 1f; _panOffset = Vector2.zero; UpdateCanvasBackground(); _canvas.MarkDirtyRepaint(); return; }
 
             var rect = _canvas.contentRect;
             if (rect.width < 1) return;
@@ -591,6 +669,7 @@ namespace Poly_Ling.Player
             _zoom        = Mathf.Clamp((csize * 0.9f) / (csize * ext), MinZoom, MaxZoom);
             float sz     = csize * _zoom;
             _panOffset   = new Vector2(-(ctr.x - 0.5f) * sz, (ctr.y - 0.5f) * sz);
+            UpdateCanvasBackground();
             _canvas.MarkDirtyRepaint();
         }
 
@@ -734,6 +813,33 @@ namespace Poly_Ling.Player
         // ================================================================
         // ヘルパー
         // ================================================================
+
+        private void UpdateCanvasBackground()
+        {
+            if (_canvas == null) return;
+            if (_bgTexture == null) return;
+            var rect = _canvas.contentRect;
+            if (rect.width < 1f) return;
+
+            float size = Mathf.Min(rect.width, rect.height) * _zoom;
+            float cx   = rect.width  * 0.5f + _panOffset.x;
+            float cy   = rect.height * 0.5f + _panOffset.y;
+
+            // UV(0,1) = テクスチャ左上 → キャンバス座標
+            float left = cx - size * 0.5f;
+            float top  = cy - size * 0.5f;
+
+            _canvas.style.backgroundSize =
+                new BackgroundSize(new Length(size, LengthUnit.Pixel),
+                                   new Length(size, LengthUnit.Pixel));
+            _canvas.style.backgroundPositionX =
+                new BackgroundPosition(BackgroundPositionKeyword.Left, new Length(left, LengthUnit.Pixel));
+            _canvas.style.backgroundPositionY =
+                new BackgroundPosition(BackgroundPositionKeyword.Top,  new Length(top,  LengthUnit.Pixel));
+        }
+
+        private MeshContext GetMeshContext() =>
+            GetModel?.Invoke()?.FirstSelectedMeshContext;
 
         private MeshObject GetMeshObject() =>
             GetModel?.Invoke()?.FirstSelectedMeshContext?.MeshObject;

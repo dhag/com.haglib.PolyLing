@@ -21,9 +21,10 @@ namespace Poly_Ling.Player
         public Button        UndoBtn            { get; private set; }
         public Button        RedoBtn            { get; private set; }
         public VisualElement RemoteSection      { get; private set; }
-        public VisualElement ModelListContainer { get; private set; }
-        public Button        ModelListBtn       { get; private set; }
-        public Button        MeshListBtn        { get; private set; }
+        public VisualElement ModelListContainer  { get; private set; }
+        public DropdownField ModelSelectDropdown { get; private set; }
+        public Button        ModelListBtn        { get; private set; }
+        public Button        MeshListBtn         { get; private set; }
 
         // ================================================================
         // ビューポートパネル公開
@@ -581,6 +582,11 @@ namespace Poly_Ling.Player
 
             scroll.Add(Separator());
             scroll.Add(Header("Models"));
+
+            ModelSelectDropdown = new DropdownField();
+            ModelSelectDropdown.style.marginBottom = 4;
+            scroll.Add(ModelSelectDropdown);
+
             ModelListContainer = new VisualElement();
             scroll.Add(ModelListContainer);
 

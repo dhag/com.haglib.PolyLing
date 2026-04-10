@@ -202,6 +202,22 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
 
+                // ── BonePose 初期化
+                case InitBonePoseCommand c:
+                    if (model == null) return;
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var ctx = model.GetMeshContext(idx);
+                        if (ctx == null) continue;
+                        if (ctx.BonePoseData == null)
+                        {
+                            ctx.BonePoseData          = new BonePoseData();
+                            ctx.BonePoseData.IsActive = true;
+                        }
+                    }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+
                 // ── BonePose Active
                 case SetBonePoseActiveCommand c:
                     if (model == null) return;
@@ -221,14 +237,14 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
-                // ── BonePose ベイク（Player では BindPose 更新のみ）
+                // ── BonePose → BindPose ベイク
                 case BakePoseToBindPoseCommand c:
                     if (model == null) return;
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
                         if (ctx?.BonePoseData == null) continue;
-                        // Player では WorldMatrix/BindPose 再計算は省略し Notify のみ
+                        ctx.BindPose = ctx.WorldMatrix.inverse;
                     }
                     _notifyPanels(ChangeKind.Attributes);
                     return;
@@ -348,26 +364,44 @@ namespace Poly_Ling.Player
 
                 // ── モデルブレンド: プレビュー（Undo なし）
                 case PreviewModelBlendCommand c:
+                {
+                    var cloneModelPrev = project.GetModel(c.CloneModelIndex);
+                    if (cloneModelPrev == null) return;
                     ExecuteBlend(project, c.ModelIndex, c.CloneModelIndex,
                         c.Weights, c.MeshEnabled, recalcNormals: false, blendBones: c.BlendBones,
-                        onSyncMesh: mc =>
-                        {
-                            _renderer?.UpdateSelectedDrawableMesh(0, project.CurrentModel);
-                            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
-                        });
+                        onSyncMesh: null);
+                    _viewportManager.RebuildAdapter(0, cloneModelPrev);
+                    var firstMcPrev = cloneModelPrev.FirstSelectedDrawableMesh;
+                    if (firstMcPrev != null)
+                    {
+                        _selectionOps?.SetSelectionState(firstMcPrev.Selection);
+                        _renderer?.SetSelectionState(firstMcPrev.Selection);
+                    }
+                    _renderer?.UpdateSelectedDrawableMesh(0, cloneModelPrev);
+                    _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
                     return;
+                }
 
                 // ── モデルブレンド: 適用
                 case ApplyModelBlendCommand c:
+                {
+                    var cloneModelApply = project.GetModel(c.CloneModelIndex);
+                    if (cloneModelApply == null) return;
                     ExecuteBlend(project, c.ModelIndex, c.CloneModelIndex,
                         c.Weights, c.MeshEnabled, c.RecalcNormals, c.BlendBones,
-                        onSyncMesh: mc =>
-                        {
-                            _renderer?.UpdateSelectedDrawableMesh(0, project.CurrentModel);
-                            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
-                        });
+                        onSyncMesh: null);
+                    _viewportManager.RebuildAdapter(0, cloneModelApply);
+                    var firstMcApply = cloneModelApply.FirstSelectedDrawableMesh;
+                    if (firstMcApply != null)
+                    {
+                        _selectionOps?.SetSelectionState(firstMcApply.Selection);
+                        _renderer?.SetSelectionState(firstMcApply.Selection);
+                    }
+                    _renderer?.UpdateSelectedDrawableMesh(0, cloneModelApply);
+                    _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
+                }
 
                 // ── その他（モーフ変換・プレビュー等）は Player では未実装
                 default:

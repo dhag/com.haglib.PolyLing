@@ -985,6 +985,8 @@ namespace Poly_Ling.Player
             _boneEditorSubPanel.GetModel          = () => ActiveProject?.CurrentModel;
             _boneEditorSubPanel.GetUndoController = () => _editOps?.UndoController;
             _boneEditorSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
+            _boneEditorSubPanel.SendCommand       = cmd => _commandDispatcher?.Dispatch(cmd);
+            _boneEditorSubPanel.GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0;
             _boneEditorSubPanel.OnFocusCamera     = pos =>
             {
                 var orbit = _activeViewport?.Orbit;
@@ -1224,6 +1226,16 @@ namespace Poly_Ling.Player
 
             _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
             _layoutRoot.MeshListBtn .clicked += ShowMeshListPanel;
+
+            _layoutRoot.ModelSelectDropdown.RegisterValueChangedCallback(e =>
+            {
+                var project = ActiveProject;
+                if (project == null) return;
+                var choices = _layoutRoot.ModelSelectDropdown.choices;
+                int idx = choices != null ? choices.IndexOf(e.newValue) : -1;
+                if (idx < 0 || idx == project.CurrentModelIndex) return;
+                SwitchActiveModel(idx);
+            });
 
             _localLoader.OnPmxRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.PMX);
             _localLoader.OnMqoRequested = () => ShowImportPanel(PlayerImportSubPanel.Mode.MQO);
@@ -1920,6 +1932,43 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // モデル切り替え
+        // ================================================================
+
+        private void SwitchActiveModel(int index)
+        {
+            var project = ActiveProject;
+            if (project == null) return;
+            if (!project.SelectModel(index)) return;
+
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            _moveToolHandler?.SetProject(project);
+            _objectMoveHandler?.SetProject(project);
+            _pivotOffsetHandler?.SetProject(project);
+            _sculptHandler?.SetProject(project);
+            _advancedSelectHandler?.SetProject(project);
+            _skinWeightPaintHandler?.SetProject(project);
+            _boneInputHandler?.SetProject(project);
+
+            _viewportManager.RebuildAdapter(0, model);
+
+            var firstMc = model.FirstSelectedDrawableMesh;
+            if (firstMc != null)
+            {
+                _selectionOps?.SetSelectionState(firstMc.Selection);
+                _renderer?.SetSelectionState(firstMc.Selection);
+            }
+            _renderer?.UpdateSelectedDrawableMesh(0, model);
+            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+
+            RebuildModelList();
+            _skinWeightPaintPanel?.RefreshBoneList(model);
+            NotifyPanels(ChangeKind.ModelSwitch);
+        }
+
+        // ================================================================
         // SyncUI / RebuildModelList
         // ================================================================
 
@@ -1947,12 +1996,28 @@ namespace Poly_Ling.Player
             if (_layoutRoot?.ModelListContainer == null) return;
             _layoutRoot.ModelListContainer.Clear();
 
-            var m = ActiveProject?.CurrentModel;
+            var project = ActiveProject;
+            var m = project?.CurrentModel;
             if (m != null)
             {
                 var lbl = new Label($"{m.Name}  ({m.Count})");
                 lbl.style.color = new StyleColor(Color.white);
                 _layoutRoot.ModelListContainer.Add(lbl);
+            }
+
+            // ドロップダウン更新
+            if (_layoutRoot.ModelSelectDropdown != null && project != null)
+            {
+                var choices = new List<string>();
+                for (int i = 0; i < project.ModelCount; i++)
+                {
+                    var mdl = project.GetModel(i);
+                    choices.Add(mdl?.Name ?? $"Model {i}");
+                }
+                _layoutRoot.ModelSelectDropdown.choices = choices;
+                int cur = project.CurrentModelIndex;
+                string curVal = (cur >= 0 && cur < choices.Count) ? choices[cur] : (choices.Count > 0 ? choices[0] : "");
+                _layoutRoot.ModelSelectDropdown.SetValueWithoutNotify(curVal);
             }
 
             NotifyPanels(ChangeKind.ListStructure);

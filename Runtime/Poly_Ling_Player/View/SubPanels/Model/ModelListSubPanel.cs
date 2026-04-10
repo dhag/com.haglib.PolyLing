@@ -96,6 +96,7 @@ namespace Poly_Ling.Player
             _currentNameLabel.style.flexGrow     = 1;
             _currentNameLabel.style.overflow     = Overflow.Hidden;
             _currentNameLabel.style.textOverflow = TextOverflow.Ellipsis;
+            _currentNameLabel.style.color        = new StyleColor(Color.white);
             _renameDisplay.Add(_currentNameLabel);
 
             _btnStartRename = new Button(OnStartRename) { text = ModelListTexts.T("Rename") };
@@ -219,9 +220,10 @@ namespace Poly_Ling.Player
             row.style.marginBottom   = 2;
             row.style.paddingLeft    = 4; row.style.paddingRight = 4;
             row.style.borderBottomWidth = 1;
-            row.style.borderBottomColor = new StyleColor(Color.white);
-            if (isCurrent)
-                row.style.backgroundColor = new StyleColor(Color.white);
+            row.style.borderBottomColor = new StyleColor(new Color(0.3f, 0.3f, 0.3f));
+            row.style.backgroundColor = isCurrent
+                ? new StyleColor(new Color(0.2f, 0.45f, 0.8f))
+                : new StyleColor(new Color(0.18f, 0.18f, 0.18f));
 
             // 名前ラベル
             var nameLabel = new Label(mv.Name);
@@ -229,6 +231,9 @@ namespace Poly_Ling.Player
             nameLabel.style.overflow     = Overflow.Hidden;
             nameLabel.style.textOverflow = TextOverflow.Ellipsis;
             nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            nameLabel.style.color = isCurrent
+                ? new StyleColor(Color.white)
+                : new StyleColor(new Color(0.85f, 0.85f, 0.85f));
             if (isCurrent) nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             int capturedIndex = index;
             nameLabel.RegisterCallback<ClickEvent>(_ => SendCmd(new SwitchModelCommand(capturedIndex)));

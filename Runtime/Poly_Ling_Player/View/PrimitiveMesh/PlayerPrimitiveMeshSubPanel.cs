@@ -1571,11 +1571,34 @@ namespace Poly_Ling.Player
         {
             c.Add(SL(sectionLabel));
 
-            // パス入力
+            // パス入力 + Browseボタン行
+            var pathRow = new VisualElement();
+            pathRow.style.flexDirection = FlexDirection.Row;
+            pathRow.style.marginBottom  = 2;
+
             var pathField = new TextField { value = getPath() };
-            pathField.style.marginBottom = 2;
+            pathField.style.flexGrow = 1;
+            pathField.style.marginRight = 2;
             pathField.RegisterValueChangedCallback(e => setPath(e.newValue));
-            c.Add(pathField);
+
+            var browseBtn = new Button(() =>
+            {
+                string dir  = string.IsNullOrEmpty(getPath())
+                    ? UnityEngine.Application.dataPath
+                    : System.IO.Path.GetDirectoryName(getPath());
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Select Image", dir, "png,jpg,jpeg");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    pathField.value = path;
+                    setPath(path);
+                    onLoad();
+                }
+            }) { text = "..." };
+            browseBtn.style.width = 28;
+
+            pathRow.Add(pathField);
+            pathRow.Add(browseBtn);
+            c.Add(pathRow);
 
             // Load / Clear ボタン行
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;

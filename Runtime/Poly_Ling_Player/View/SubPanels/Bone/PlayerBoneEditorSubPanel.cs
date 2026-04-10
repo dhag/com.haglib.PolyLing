@@ -10,6 +10,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 using Poly_Ling.View;
 
 namespace Poly_Ling.Player
@@ -20,14 +21,19 @@ namespace Poly_Ling.Player
         // コールバック
         // ================================================================
 
-        public Func<ModelContext>     GetModel;
-        public Func<MeshUndoController> GetUndoController;
-        public Action                 OnRepaint;
-        public Action<Vector3>        OnFocusCamera;
+        public Func<ModelContext>        GetModel;
+        public Func<MeshUndoController>  GetUndoController;
+        public Action                    OnRepaint;
+        public Action<Vector3>           OnFocusCamera;
+        public Action<PanelCommand>      SendCommand;
+        public Func<int>                 GetModelIndex;
 
         // ================================================================
         // UI 要素
         // ================================================================
+
+        private DropdownField _boneDropdown;
+        private bool          _suppressBoneDropdown;
 
         private Label         _warningLabel;
         private Label         _selectionCountLabel;
@@ -38,6 +44,12 @@ namespace Poly_Ling.Player
         private Label         _parentBoneLabel;
         private Label         _worldPosLabel;
         private Label         _statusLabel;
+
+        // ── ボーンポーズ UI
+        private Toggle        _bonePoseActiveToggle;
+        private Button        _btnInitPose;
+        private Button        _btnResetLayers;
+        private Button        _btnBakePose;
 
         // ================================================================
         // Build
@@ -50,6 +62,33 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
+            // ── ボーン選択ドロップダウン ─────────────────────────────
+            var dropLabel = new Label("ボーン選択:");
+            dropLabel.style.color        = new StyleColor(Color.white);
+            dropLabel.style.fontSize     = 10;
+            dropLabel.style.marginBottom = 2;
+            root.Add(dropLabel);
+
+            _boneDropdown = new DropdownField();
+            _boneDropdown.style.marginBottom = 6;
+            root.Add(_boneDropdown);
+
+            _boneDropdown.RegisterValueChangedCallback(_ =>
+            {
+                if (_suppressBoneDropdown) return;
+                var model = GetModel?.Invoke();
+                if (model == null) return;
+                int idx   = _boneDropdown.index;
+                var bones = model.Bones;
+                if (idx < 0 || bones == null || idx >= bones.Count) return;
+                int masterIdx = bones[idx].MasterIndex;
+                model.SelectBone(masterIdx);
+                OnRepaint?.Invoke();
+                Refresh();
+            });
+
+            root.Add(MakeSep());
+
             _warningLabel = new Label();
             _warningLabel.style.display      = DisplayStyle.None;
             _warningLabel.style.color        = new StyleColor(new Color(1f, 0.5f, 0.2f));
@@ -58,27 +97,88 @@ namespace Poly_Ling.Player
             root.Add(_warningLabel);
 
             _selectionCountLabel = new Label();
-            _selectionCountLabel.style.color = new StyleColor(Color.white);
+            _selectionCountLabel.style.color        = new StyleColor(Color.white);
             _selectionCountLabel.style.marginBottom = 4;
             _selectionCountLabel.style.fontSize     = 10;
             root.Add(_selectionCountLabel);
 
-            // ボタン行
+            // ── ボタン行（リセット / フォーカス）────────────────────
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
-            btnRow.style.marginBottom  = 6;
-            var btnReset = new Button(OnResetPose)  { text = "ポーズリセット" };
-            btnReset.style.flexGrow   = 1;
+            btnRow.style.marginBottom  = 4;
+            var btnReset = new Button(OnResetPose) { text = "ポーズリセット" };
+            btnReset.style.flexGrow    = 1;
             btnReset.style.marginRight = 4;
-            btnReset.style.height     = 24;
+            btnReset.style.height      = 22;
             var btnFocus = new Button(OnFocusBone) { text = "フォーカス" };
             btnFocus.style.flexGrow = 1;
-            btnFocus.style.height   = 24;
+            btnFocus.style.height   = 22;
             btnRow.Add(btnReset);
             btnRow.Add(btnFocus);
             root.Add(btnRow);
 
-            // 詳細エリア
+            // ── ボーンポーズセクション ───────────────────────────────
+            root.Add(MakeSep());
+            root.Add(MakeSecLabel("ボーンポーズ"));
+
+            _bonePoseActiveToggle = new Toggle("ポーズ有効") { value = false };
+            _bonePoseActiveToggle.style.marginBottom = 4;
+            _bonePoseActiveToggle.RegisterValueChangedCallback(e =>
+            {
+                var model = GetModel?.Invoke();
+                if (model == null || !model.HasBoneSelection) return;
+                int[] indices = model.SelectedBoneIndices.ToArray();
+                SendCommand?.Invoke(new SetBonePoseActiveCommand(
+                    GetModelIndex?.Invoke() ?? 0, indices, e.newValue));
+            });
+            root.Add(_bonePoseActiveToggle);
+
+            var poseRow = new VisualElement();
+            poseRow.style.flexDirection = FlexDirection.Row;
+            poseRow.style.marginBottom  = 4;
+
+            _btnInitPose    = MakeSmallBtn("初期化");
+            _btnResetLayers = MakeSmallBtn("レイヤークリア");
+            _btnBakePose    = MakeSmallBtn("BindPoseへベイク");
+            _btnInitPose.style.flexGrow     = 1;
+            _btnInitPose.style.marginRight  = 2;
+            _btnResetLayers.style.flexGrow  = 1;
+            _btnResetLayers.style.marginRight = 2;
+            _btnBakePose.style.flexGrow     = 1;
+
+            _btnInitPose.clicked += () =>
+            {
+                var model = GetModel?.Invoke();
+                if (model == null || !model.HasBoneSelection) return;
+                int[] indices = model.SelectedBoneIndices.ToArray();
+                SendCommand?.Invoke(new InitBonePoseCommand(
+                    GetModelIndex?.Invoke() ?? 0, indices));
+            };
+            _btnResetLayers.clicked += () =>
+            {
+                var model = GetModel?.Invoke();
+                if (model == null || !model.HasBoneSelection) return;
+                int[] indices = model.SelectedBoneIndices.ToArray();
+                SendCommand?.Invoke(new ResetBonePoseLayersCommand(
+                    GetModelIndex?.Invoke() ?? 0, indices));
+            };
+            _btnBakePose.clicked += () =>
+            {
+                var model = GetModel?.Invoke();
+                if (model == null || !model.HasBoneSelection) return;
+                int[] indices = model.SelectedBoneIndices.ToArray();
+                SendCommand?.Invoke(new BakePoseToBindPoseCommand(
+                    GetModelIndex?.Invoke() ?? 0, indices));
+            };
+
+            poseRow.Add(_btnInitPose);
+            poseRow.Add(_btnResetLayers);
+            poseRow.Add(_btnBakePose);
+            root.Add(poseRow);
+
+            // ── 詳細エリア ───────────────────────────────────────────
+            root.Add(MakeSep());
+
             _boneDetail = new VisualElement();
             _boneDetail.style.display = DisplayStyle.None;
             root.Add(_boneDetail);
@@ -109,32 +209,67 @@ namespace Poly_Ling.Player
             if (_warningLabel == null) return;
 
             var model = GetModel?.Invoke();
+
+            // ── ドロップダウン更新 ──────────────────────────────────
+            if (_boneDropdown != null)
+            {
+                _suppressBoneDropdown = true;
+                if (model != null)
+                {
+                    var bones = model.Bones;
+                    var choices = new List<string>();
+                    if (bones != null)
+                        foreach (var entry in bones)
+                            choices.Add(entry.Name);
+                    _boneDropdown.choices = choices;
+
+                    int dropIdx = -1;
+                    if (model.HasBoneSelection && bones != null)
+                    {
+                        int firstMaster = model.SelectedBoneIndices[0];
+                        for (int i = 0; i < bones.Count; i++)
+                            if (bones[i].MasterIndex == firstMaster) { dropIdx = i; break; }
+                    }
+                    _boneDropdown.index = dropIdx;
+                }
+                else
+                {
+                    _boneDropdown.choices = new List<string>();
+                    _boneDropdown.index   = -1;
+                }
+                _suppressBoneDropdown = false;
+            }
+
             if (model == null)
             {
                 SetWarning("モデルがありません");
-                _boneDetail.style.display = DisplayStyle.None;
+                if (_boneDetail != null) _boneDetail.style.display = DisplayStyle.None;
+                SetPoseUIEnabled(false);
                 return;
             }
 
-            var bones = model.Bones;
-            if (bones == null || bones.Count == 0)
+            var bonesAll = model.Bones;
+            if (bonesAll == null || bonesAll.Count == 0)
             {
                 SetWarning("モデルにボーンがありません");
-                _boneDetail.style.display = DisplayStyle.None;
+                if (_boneDetail != null) _boneDetail.style.display = DisplayStyle.None;
+                SetPoseUIEnabled(false);
                 return;
             }
+
+            SetPoseUIEnabled(model.HasBoneSelection);
 
             if (!model.HasBoneSelection)
             {
                 SetWarning("");
-                _selectionCountLabel.text     = "未選択 — ビューポートでクリックして選択";
-                _boneDetail.style.display     = DisplayStyle.None;
-                _statusLabel.text             = $"Bones: {bones.Count}";
+                _selectionCountLabel.text = "未選択 — ビューポートかドロップダウンで選択";
+                if (_boneDetail != null) _boneDetail.style.display = DisplayStyle.None;
+                _statusLabel.text         = $"Bones: {bonesAll.Count}";
                 return;
             }
 
             SetWarning("");
-            _boneDetail.style.display = DisplayStyle.Flex;
+            if (_boneDetail != null) _boneDetail.style.display = DisplayStyle.Flex;
 
             var indices = model.SelectedBoneIndices;
             int count   = indices.Count;
@@ -142,6 +277,15 @@ namespace Poly_Ling.Player
 
             _selectionCountLabel.text = count == 1 ? "1 ボーン選択中" : $"{count} ボーン選択中";
 
+            // ── ボーンポーズ Toggle 同期（SetValueWithoutNotify でループなし）──
+            if (_bonePoseActiveToggle != null)
+            {
+                var ctx0   = model.GetMeshContext(first);
+                bool active = ctx0?.BonePoseData?.IsActive ?? false;
+                _bonePoseActiveToggle.SetValueWithoutNotify(active);
+            }
+
+            // ── 詳細情報 ─────────────────────────────────────────────
             var ctx = model.GetMeshContext(first);
             if (ctx == null) return;
 
@@ -164,7 +308,7 @@ namespace Poly_Ling.Player
 
             var wm = ctx.WorldMatrix;
             _worldPosLabel.text = $"({wm.m03:F4}, {wm.m13:F4}, {wm.m23:F4})";
-            _statusLabel.text   = $"Bones: {bones.Count}  Selected: {count}";
+            _statusLabel.text   = $"Bones: {bonesAll.Count}  Selected: {count}";
         }
 
         // ================================================================
@@ -186,7 +330,7 @@ namespace Poly_Ling.Player
                 if (ctx == null) continue;
                 if (ctx.BonePoseData == null)
                 {
-                    ctx.BonePoseData = new BonePoseData();
+                    ctx.BonePoseData          = new BonePoseData();
                     ctx.BonePoseData.IsActive = true;
                 }
                 beforeSnapshots[idx] = ctx.BonePoseData.CreateSnapshot();
@@ -239,12 +383,31 @@ namespace Poly_Ling.Player
         // UIヘルパー
         // ================================================================
 
+        private void SetPoseUIEnabled(bool enabled)
+        {
+            _bonePoseActiveToggle?.SetEnabled(enabled);
+            _btnInitPose?.SetEnabled(enabled);
+            _btnResetLayers?.SetEnabled(enabled);
+            _btnBakePose?.SetEnabled(enabled);
+        }
+
         private void SetWarning(string text)
         {
             if (_warningLabel == null) return;
             _warningLabel.text          = text;
             _warningLabel.style.display =
                 string.IsNullOrEmpty(text) ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        private static Button MakeSmallBtn(string text)
+        {
+            var b = new Button { text = text };
+            b.style.fontSize      = 9;
+            b.style.height        = 20;
+            b.style.paddingTop    = 0;
+            b.style.paddingBottom = 0;
+            b.style.marginBottom  = 2;
+            return b;
         }
 
         private static void AddRow(VisualElement parent, string labelText, out Label valueLabel)
@@ -257,7 +420,7 @@ namespace Poly_Ling.Player
             key.style.color    = new StyleColor(Color.white);
             key.style.fontSize = 10;
             var val = new Label();
-            val.style.color = new StyleColor(Color.white);
+            val.style.color    = new StyleColor(Color.white);
             val.style.flexGrow = 1;
             val.style.fontSize = 10;
             row.Add(key); row.Add(val);
