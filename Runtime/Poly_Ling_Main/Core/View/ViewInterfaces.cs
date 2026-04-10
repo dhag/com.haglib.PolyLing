@@ -72,6 +72,7 @@ namespace Poly_Ling.View
         int MorphParentIndex { get; }
         string MorphName { get; }
         bool ExcludeFromExport { get; }
+        bool IgnorePoseInArmature { get; }
 
         // 表示用（計算プロパティ）
         string InfoString { get; }

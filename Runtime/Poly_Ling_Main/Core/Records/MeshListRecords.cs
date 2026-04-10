@@ -93,6 +93,9 @@ namespace Poly_Ling.UndoSystem
         /// <summary>エクスポートから除外するか</summary>
         public bool ExcludeFromExport;
 
+        /// <summary>アーマチャ生成時ボーン生成スキップ</summary>
+        public bool IgnorePoseInArmature;
+
         // ================================================================
         // BonePoseData（Phase BonePose追加）
         // ================================================================
@@ -145,6 +148,7 @@ namespace Poly_Ling.UndoSystem
                 MorphBaseData = meshContext.MorphBaseData?.Clone(),
                 MorphParentIndex = meshContext.MorphParentIndex,
                 ExcludeFromExport = meshContext.ExcludeFromExport,
+                IgnorePoseInArmature = meshContext.IgnorePoseInArmature,
                 // BonePoseData（Phase BonePose追加）
                 BonePoseData = meshContext.BonePoseData?.Clone(),
                 // BindPose（スキニング基準行列）
@@ -243,6 +247,7 @@ namespace Poly_Ling.UndoSystem
             meshContext.MorphBaseData = MorphBaseData?.Clone();
             meshContext.MorphParentIndex = MorphParentIndex;
             meshContext.ExcludeFromExport = ExcludeFromExport;
+            meshContext.IgnorePoseInArmature = IgnorePoseInArmature;
 
             // BonePoseData復元（Phase BonePose追加）
             meshContext.BonePoseData = BonePoseData?.Clone();
@@ -532,6 +537,7 @@ namespace Poly_Ling.UndoSystem
                 if (change.IsLocked.HasValue) meshContext.IsLocked = change.IsLocked.Value;
                 if (change.MirrorType.HasValue) meshContext.MirrorType = change.MirrorType.Value;
                 if (change.Name != null) meshContext.Name = change.Name;
+                if (change.IgnorePoseInArmature.HasValue) meshContext.IgnorePoseInArmature = change.IgnorePoseInArmature.Value;
             }
         }
 

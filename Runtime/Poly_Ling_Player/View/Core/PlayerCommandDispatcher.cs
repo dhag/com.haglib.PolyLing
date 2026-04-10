@@ -156,6 +156,20 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
+                // ── IgnorePoseInArmature 設定
+                case SetIgnorePoseCommand c:
+                    if (model == null) return;
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var ctx = model.GetMeshContext(idx);
+                        if (ctx == null) continue;
+                        ctx.IgnorePoseInArmature = c.Value;
+                        if (c.Value && ctx.BoneTransform != null)
+                            ctx.BoneTransform.Rotation = Vector3.zero;
+                    }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+
                 // ── ミラータイプ
                 case CycleMirrorTypeCommand c:
                     if (model == null) return;
@@ -174,7 +188,6 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
-                // ── メッシュ削除
                 case DeleteMeshesCommand c:
                     if (model == null) return;
                     foreach (int idx in c.MasterIndices.OrderByDescending(i => i))
@@ -224,7 +237,11 @@ namespace Poly_Ling.Player
                     foreach (int idx in c.MasterIndices)
                     {
                         var ctx = model.GetMeshContext(idx);
-                        if (ctx?.BonePoseData != null) ctx.BonePoseData.IsActive = c.Active;
+                        if (ctx == null) continue;
+                        // BonePoseData未初期化の場合、Active=trueで初期化する
+                        if (ctx.BonePoseData == null && c.Active)
+                            ctx.BonePoseData = new BonePoseData();
+                        if (ctx.BonePoseData != null) ctx.BonePoseData.IsActive = c.Active;
                     }
                     _notifyPanels(ChangeKind.Attributes);
                     return;

@@ -46,6 +46,7 @@ namespace Poly_Ling.MeshListV2
         private Foldout _detailFoldout;
         private TextField _meshNameField;
         private Label _vertexCountLabel, _faceCountLabel, _triCountLabel, _quadCountLabel, _ngonCountLabel;
+        private Toggle _ignorePoseToggle;
         private VisualElement _indexInfo;
         private Label _boneIndexLabel, _masterIndexLabel;
 
@@ -207,14 +208,22 @@ namespace Poly_Ling.MeshListV2
             _countLabel.style.color = new StyleColor(Color.white);
             topRow.Add(_countLabel);
 
-            _showInfoToggle = new Toggle { name = "show-info-toggle", value = true };
+            _showInfoToggle = new Toggle("情報を表示") { name = "show-info-toggle", value = true };
+            _showInfoToggle.style.color = new StyleColor(Color.white);
             _showInfoToggle.tooltip = "情報表示"; _showInfoToggle.style.marginLeft = 4;
             topRow.Add(_showInfoToggle);
 
-            _showMirrorSideToggle = new Toggle { name = "show-mirror-toggle", value = false };
+            _showMirrorSideToggle = new Toggle("ミラーも表示") { name = "show-mirror-toggle", value = false };
+            _showMirrorSideToggle.style.color = new StyleColor(Color.white);
             _showMirrorSideToggle.tooltip = "ミラー側表示"; _showMirrorSideToggle.style.marginLeft = 2;
             topRow.Add(_showMirrorSideToggle);
             root.Add(topRow);
+
+            var filterLabel = new Label("フィルタ:");
+            filterLabel.style.color    = new StyleColor(Color.white);
+            filterLabel.style.fontSize = 10;
+            filterLabel.style.marginTop = 2;
+            root.Add(filterLabel);
 
             _filterField = new TextField { name = "filter-field" };
             _filterField.style.color = new StyleColor(Color.black);
@@ -276,15 +285,49 @@ namespace Poly_Ling.MeshListV2
 
         private void BuildDetailFoldout(VisualElement c)
         {
+            var nameRow = new VisualElement();
+            nameRow.style.flexDirection = FlexDirection.Row;
+            nameRow.style.alignItems    = Align.Center;
+            nameRow.style.marginBottom  = 3;
+
+            var nameLabel = new Label("名前:");
+            nameLabel.style.color    = new StyleColor(Color.white);
+            nameLabel.style.fontSize = 10;
+            nameLabel.style.width    = 34;
+            nameRow.Add(nameLabel);
+
             _meshNameField = new TextField { name = "mesh-name-field" };
-            _meshNameField.style.color = new StyleColor(Color.black);
-            _meshNameField.style.marginBottom = 3;
-            c.Add(_meshNameField);
+            _meshNameField.style.color   = new StyleColor(Color.black);
+            _meshNameField.style.flexGrow = 1;
+            nameRow.Add(_meshNameField);
+
+            var applyBtn = new Button(() => ApplyMeshName()) { text = "変更" };
+            applyBtn.style.width       = 36;
+            applyBtn.style.height      = 18;
+            applyBtn.style.fontSize    = 9;
+            applyBtn.style.marginLeft  = 2;
+            applyBtn.style.paddingTop  = 0;
+            applyBtn.style.paddingBottom = 0;
+            nameRow.Add(applyBtn);
+
+            c.Add(nameRow);
             _vertexCountLabel = MakeInfoLabel("vertex-count-label"); c.Add(_vertexCountLabel);
             _faceCountLabel   = MakeInfoLabel("face-count-label");   c.Add(_faceCountLabel);
             _triCountLabel    = MakeInfoLabel("tri-count-label");     c.Add(_triCountLabel);
             _quadCountLabel   = MakeInfoLabel("quad-count-label");    c.Add(_quadCountLabel);
             _ngonCountLabel   = MakeInfoLabel("ngon-count-label");    c.Add(_ngonCountLabel);
+
+            _ignorePoseToggle = new Toggle("姿勢無視(アーマチャ)") { name = "ignore-pose-toggle" };
+            _ignorePoseToggle.style.color        = new StyleColor(Color.white);
+            _ignorePoseToggle.style.marginTop    = 4;
+            _ignorePoseToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isReceiving || _ctx == null) return;
+                var indices = SelIndices();
+                if (indices.Length > 0)
+                    SendCmd(new SetIgnorePoseCommand(ModelIndex, indices, e.newValue));
+            });
+            c.Add(_ignorePoseToggle);
         }
 
         private void BuildMorphEditor(VisualElement parent)
@@ -672,14 +715,23 @@ namespace Poly_Ling.MeshListV2
             _showInfoToggle?.RegisterValueChangedCallback(_ => RefreshTree());
             _showMirrorSideToggle?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
             _filterField?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
-            _meshNameField?.RegisterValueChangedCallback(OnNameFieldChanged);
+            _meshNameField?.RegisterCallback<KeyDownEvent>(e =>
+            {
+                if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+                    ApplyMeshName();
+            });
+            _meshNameField?.RegisterCallback<FocusOutEvent>(_ => ApplyMeshName());
         }
 
-        private void OnNameFieldChanged(ChangeEvent<string> evt)
+        private void ApplyMeshName()
         {
             if (_isReceiving || _ctx == null) return;
-            if (_selectedAdapters.Count == 1 && !string.IsNullOrEmpty(evt.newValue))
-                SendCmd(new RenameMeshCommand(ModelIndex, _selectedAdapters[0].MasterIndex, evt.newValue));
+            if (_selectedAdapters.Count == 1 && _meshNameField != null)
+            {
+                var newName = _meshNameField.value;
+                if (!string.IsNullOrEmpty(newName) && newName != _selectedAdapters[0].MeshView.Name)
+                    SendCmd(new RenameMeshCommand(ModelIndex, _selectedAdapters[0].MasterIndex, newName));
+            }
         }
 
         private void OnAdd() => SendCmd(new AddMeshCommand(ModelIndex));
@@ -755,6 +807,9 @@ namespace Poly_Ling.MeshListV2
                     case ChangeKind.Attributes:
                         if (_currentTab != TabType.Morph) { _treeView?.RefreshItems(); SyncTreeViewSelection(); }
                         else RefreshMorphEditor();
+                        // Bone タブは BonePoseData 等が変化した可能性があるため
+                        // _selectedAdapters のビューを最新スナップショットで更新する
+                        if (_currentTab == TabType.Bone) RefreshSelectedAdapterViews();
                         UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
                     case ChangeKind.ListStructure:
@@ -835,6 +890,7 @@ namespace Poly_Ling.MeshListV2
                 SL(_vertexCountLabel, "頂点: -"); SL(_faceCountLabel, "面: -");
                 SL(_triCountLabel, "三角形: -"); SL(_quadCountLabel, "四角形: -"); SL(_ngonCountLabel, "多角形: -");
                 SL(_boneIndexLabel, "ボーンIdx: -"); SL(_masterIndexLabel, "マスターIdx: -");
+                _ignorePoseToggle?.SetValueWithoutNotify(false);
                 _detailFoldout?.SetEnabled(false);
                 return;
             }
@@ -846,12 +902,18 @@ namespace Poly_Ling.MeshListV2
                 SL(_vertexCountLabel, $"頂点: {s.VertexCount}"); SL(_faceCountLabel, $"面: {s.FaceCount}");
                 SL(_triCountLabel, $"三角形: {s.TriCount}"); SL(_quadCountLabel, $"四角形: {s.QuadCount}"); SL(_ngonCountLabel, $"多角形: {s.NgonCount}");
                 SL(_boneIndexLabel, $"ボーンIdx: {s.BoneIndex}"); SL(_masterIndexLabel, $"マスターIdx: {s.MasterIndex}");
+                _ignorePoseToggle?.SetValueWithoutNotify(s.IgnorePoseInArmature);
+                _ignorePoseToggle?.SetEnabled(true);
             }
             else
             {
                 _meshNameField?.SetValueWithoutNotify($"({_selectedAdapters.Count}個選択)"); _meshNameField?.SetEnabled(false);
                 SL(_vertexCountLabel, $"頂点: {_selectedAdapters.Sum(a => a.VertexCount)} (合計)");
                 SL(_faceCountLabel,   $"面: {_selectedAdapters.Sum(a => a.FaceCount)} (合計)");
+                // 複数選択: 全て同値なら表示、異なればfalse表示
+                bool allSame = _selectedAdapters.All(a => a.MeshView.IgnorePoseInArmature == _selectedAdapters[0].MeshView.IgnorePoseInArmature);
+                _ignorePoseToggle?.SetValueWithoutNotify(allSame && _selectedAdapters[0].MeshView.IgnorePoseInArmature);
+                _ignorePoseToggle?.SetEnabled(true);
             }
         }
 
@@ -1359,6 +1421,24 @@ namespace Poly_Ling.MeshListV2
                 if (a != null && !a.IsBakedMirror && !a.IsMirrorSide)
                     _selectedAdapters.Add(a);
             }
+        }
+
+        /// <summary>
+        /// _selectedAdapters の IMeshView を CurrentModel から最新スナップショットで更新する。
+        /// BonePoseData 等が後から変化した場合に HasPose 等を正しく反映するため。
+        /// </summary>
+        private void RefreshSelectedAdapterViews()
+        {
+            if (CurrentModel == null || _selectedAdapters.Count == 0) return;
+            var freshList = _currentTab == TabType.Bone
+                ? CurrentModel.BoneList
+                : CurrentModel.DrawableList;
+            if (freshList == null) return;
+            var freshMap = new System.Collections.Generic.Dictionary<int, IMeshView>();
+            foreach (var v in freshList) freshMap[v.MasterIndex] = v;
+            foreach (var a in _selectedAdapters)
+                if (freshMap.TryGetValue(a.MasterIndex, out var fresh))
+                    a.UpdateView(fresh);
         }
 
         private string FindDrawableName(int mi)

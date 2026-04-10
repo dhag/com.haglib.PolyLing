@@ -868,6 +868,13 @@ namespace Poly_Ling.Data
         public int HierarchyParentIndex { get; set; } = -1;
 
         /// <summary>
+        /// アーマチャ生成時にボーンを生成しない。
+        /// 子ボーンのワールド位置計算にはこのメッシュの姿勢を考慮する。
+        /// このメッシュの頂点ウェイトは最寄りの親ボーンに割り当てられる。
+        /// </summary>
+        public bool IgnorePoseInArmature { get; set; } = false;
+
+        /// <summary>
         /// エクスポート時のローカルトランスフォーム
         /// </summary>
         public BoneTransform BoneTransform { get; set; } = new BoneTransform();
@@ -1879,6 +1886,7 @@ namespace Poly_Ling.Data
             copy.ParentIndex = this.ParentIndex;
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
+            copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
 
             if(this.BoneTransform != null)
             {
@@ -1903,6 +1911,7 @@ namespace Poly_Ling.Data
             copy.ParentIndex = this.ParentIndex;
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
+            copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
 
             if (this.BoneTransform != null)
             {

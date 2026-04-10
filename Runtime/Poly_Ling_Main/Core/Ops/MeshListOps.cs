@@ -821,11 +821,18 @@ namespace Poly_Ling.Ops
                 if (change.IsLocked.HasValue) old.IsLocked = ctx.IsLocked;
                 if (change.MirrorType.HasValue) old.MirrorType = ctx.MirrorType;
                 if (change.Name != null) old.Name = ctx.Name;
+                if (change.IgnorePoseInArmature.HasValue) old.IgnorePoseInArmature = ctx.IgnorePoseInArmature;
                 oldValues.Add(old);
                 if (change.IsVisible.HasValue) ctx.IsVisible = change.IsVisible.Value;
                 if (change.IsLocked.HasValue) ctx.IsLocked = change.IsLocked.Value;
                 if (change.MirrorType.HasValue) ctx.MirrorType = change.MirrorType.Value;
                 if (change.Name != null) ctx.Name = change.Name;
+                if (change.IgnorePoseInArmature.HasValue)
+                {
+                    ctx.IgnorePoseInArmature = change.IgnorePoseInArmature.Value;
+                    if (change.IgnorePoseInArmature.Value && ctx.BoneTransform != null)
+                        ctx.BoneTransform.Rotation = Vector3.zero;
+                }
             }
             if (_undo != null && oldValues.Count > 0)
             {

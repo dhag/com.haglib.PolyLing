@@ -21,8 +21,8 @@ namespace Poly_Ling.Player
         // コールバック
         // ================================================================
 
-        /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition)</summary>
-        public Action<MeshObject, string, Vector3> OnMeshCreated;
+        /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition, ignorePoseInArmature)</summary>
+        public Action<MeshObject, string, Vector3, bool> OnMeshCreated;
 
         // ================================================================
         // 図形種別
@@ -52,6 +52,7 @@ namespace Poly_Ling.Player
 
         // ワールド生成位置
         private Vector3 _worldPos = Vector3.zero;
+        private bool    _ignorePoseInArmature = false;
 
         // ================================================================
         // プレビュー
@@ -225,6 +226,11 @@ namespace Poly_Ling.Player
                 () => _worldPos.x, v => _worldPos.x = v,
                 () => _worldPos.y, v => _worldPos.y = v,
                 () => _worldPos.z, v => _worldPos.z = v));
+
+            var ignorePoseToggle = new Toggle(T("IgnorePose")) { value = _ignorePoseInArmature };
+            ignorePoseToggle.style.color = new StyleColor(Color.white);
+            ignorePoseToggle.RegisterValueChangedCallback(e => _ignorePoseInArmature = e.newValue);
+            parent.Add(ignorePoseToggle);
 
             parent.Add(Sep());
 
@@ -427,6 +433,26 @@ namespace Poly_Ling.Player
             BuildPivotY(c,
                 () => _capsP.Pivot.y, v => { _capsP.Pivot = new Vector3(0, v, 0); D(); },
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+
+            // 上球・下球の重心ピボット
+            var sphereRow = new VisualElement();
+            sphereRow.style.flexDirection = FlexDirection.Row;
+            sphereRow.style.marginBottom  = 4;
+            SB(sphereRow, T("UpperSphere"), () =>
+            {
+                float halfH     = _capsP.Height * 0.5f;
+                float cylTop    = halfH - _capsP.RadiusTop;
+                float normalized = _capsP.Height > 0f ? cylTop / _capsP.Height : 0f;
+                _capsP.Pivot = new Vector3(0, normalized, 0); D();
+            });
+            SB(sphereRow, T("LowerSphere"), () =>
+            {
+                float halfH      = _capsP.Height * 0.5f;
+                float cylBottom  = -halfH + _capsP.RadiusBottom;
+                float normalized = _capsP.Height > 0f ? cylBottom / _capsP.Height : 0f;
+                _capsP.Pivot = new Vector3(0, normalized, 0); D();
+            });
+            c.Add(sphereRow);
 
             c.Add(CB());
         }
@@ -1845,7 +1871,7 @@ namespace Poly_Ling.Player
                     var mo = Generate();
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
                     _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
-                    OnMeshCreated?.Invoke(mo, Name(), _worldPos);
+                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, _ignorePoseInArmature);
                 }
                 catch (Exception ex)
                 {

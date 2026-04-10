@@ -261,6 +261,15 @@ namespace Poly_Ling.Data
             set { if (MeshObject != null) MeshObject.HierarchyParentIndex = value; }
         }
 
+        /// <summary>
+        /// アーマチャ生成時にボーンを生成しない（MeshObject に委譲）
+        /// </summary>
+        public bool IgnorePoseInArmature
+        {
+            get => MeshObject?.IgnorePoseInArmature ?? false;
+            set { if (MeshObject != null) MeshObject.IgnorePoseInArmature = value; }
+        }
+
         /// <summary>エクスポート設定</summary>
         public BoneTransform BoneTransform
         {

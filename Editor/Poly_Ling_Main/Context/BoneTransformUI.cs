@@ -43,7 +43,7 @@ namespace Poly_Ling.Data
         private static GUIStyle _headerStyle;
         private static GUIStyle _compactLabelStyle;
 
-        public static bool DrawUI(BoneTransform settings, ModelContext modelContext = null, System.Action onFromSelectionClicked = null, System.Action onResetClicked = null)
+        public static bool DrawUI(BoneTransform settings, ModelContext modelContext = null, System.Action onFromSelectionClicked = null, System.Action onResetClicked = null, bool ignorePoseRotation = false)
         {
             if (settings == null) return false;
 
@@ -100,6 +100,8 @@ namespace Poly_Ling.Data
 
                     // Rotation
                     EditorGUILayout.LabelField(T("Rotation"), EditorStyles.miniLabel);
+                    bool prevEnabled = GUI.enabled;
+                    GUI.enabled = prevEnabled && !ignorePoseRotation;
                     EditorGUILayout.BeginHorizontal();
                     {
                         EditorGUIUtility.labelWidth = 14;
@@ -163,6 +165,7 @@ namespace Poly_Ling.Data
                         }
                     }
                     EditorGUILayout.EndHorizontal();
+                    GUI.enabled = prevEnabled;
 
                     // Scale
                     EditorGUILayout.LabelField(T("Scale"), EditorStyles.miniLabel);

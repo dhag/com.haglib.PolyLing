@@ -83,6 +83,7 @@ namespace Poly_Ling.View
         public int MorphParentIndex { get; }
         public string MorphName { get; }
         public bool ExcludeFromExport { get; }
+        public bool IgnorePoseInArmature { get; }
 
         // IMeshView.BonePose（IBonePoseViewとして返す）
         IBonePoseView IMeshView.BonePose => BonePoseData;
@@ -118,7 +119,7 @@ namespace Poly_Ling.View
             Depth = 0; HierarchyParentIndex = -1;
             MirrorType = 0; IsBakedMirror = false; IsMirrorSide = false; IsRealSide = false; HasBakedMirrorChild = false;
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
-            IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false;
+            IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false; IgnorePoseInArmature = false;
         }
 
         // フルコンストラクタ
@@ -130,7 +131,8 @@ namespace Poly_Ling.View
             int depth, int hierarchyParentIndex,
             int mirrorType, bool isBakedMirror, bool isMirrorSide, bool isRealSide, bool hasBakedMirrorChild,
             int boneIndex, BonePoseSummary bonePose,
-            bool isMorph, int morphParentIndex, string morphName, bool excludeFromExport)
+            bool isMorph, int morphParentIndex, string morphName, bool excludeFromExport,
+            bool ignorePoseInArmature = false)
         {
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = vertexCount; FaceCount = faceCount;
@@ -143,6 +145,7 @@ namespace Poly_Ling.View
             BoneIndex = boneIndex; BonePoseData = bonePose;
             IsMorph = isMorph; MorphParentIndex = morphParentIndex;
             MorphName = morphName ?? ""; ExcludeFromExport = excludeFromExport;
+            IgnorePoseInArmature = ignorePoseInArmature;
         }
 
         // 移行期互換用ファクトリ
@@ -193,7 +196,8 @@ namespace Poly_Ling.View
                 ctx.Depth, ctx.HierarchyParentIndex,
                 ctx.MirrorType, ctx.IsBakedMirror, isMirrorSide, isRealSide, ctx.HasBakedMirrorChild,
                 boneIndex, bonePose,
-                ctx.IsMorph, ctx.MorphParentIndex, ctx.MorphName, ctx.ExcludeFromExport);
+                ctx.IsMorph, ctx.MorphParentIndex, ctx.MorphName, ctx.ExcludeFromExport,
+                ctx.IgnorePoseInArmature);
         }
 
         public override string ToString() => $"[{MasterIndex}] {Name} ({Type}) V:{VertexCount} F:{FaceCount}";

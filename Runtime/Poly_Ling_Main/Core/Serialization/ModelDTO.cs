@@ -261,6 +261,11 @@ namespace Poly_Ling.Serialization
         /// true: モデルエクスポート時にこのメッシュを出力しない
         /// </summary>
         public bool excludeFromExport = false;
+
+        /// <summary>
+        /// アーマチャ生成時にボーンを生成しない
+        /// </summary>
+        public bool ignorePoseInArmature = false;
     }
 
     // ================================================================
@@ -969,6 +974,7 @@ namespace Poly_Ling.Serialization
         public bool   hasBakedMirrorChild = false;
         public int    morphParentIndex = -1;
         public bool   excludeFromExport = false;
+        public bool   ignorePoseInArmature = false;
         public MorphBaseDataDTO  morphBaseData;
         public BoneTransformDTO  exportSettingsDTO;
         public BonePoseDataDTO   bonePoseData;

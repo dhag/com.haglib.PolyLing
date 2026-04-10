@@ -201,9 +201,10 @@ namespace Poly_Ling.Core
             adapter.BufferManager?.SetActiveMesh(0, firstUnified);
             adapter.BufferManager?.UpdateAllSelectionFlags();
 
-            // メッシュフィルタのBindPoseをWorldMatrix.inverseで確定させてから
-            // GPUバッファを初期化する。スキンドと共通のパスで扱えるようにする。
-            model.ComputeMeshFilterBindPoses();
+            // WorldMatrix を使って初期表示位置を確定する。
+            // MeshFilter は WorldMatrix を直接使用、スキンドは SkinningMatrix を使用。
+            // （ComputeMeshFilterBindPoses は呼ばない: BindPose=WorldMatrix.inverse にすると
+            //   SkinningMatrix=identity になり全メッシュがローカル原点に表示されてしまうため）
             adapter.UpdateTransform(useWorldTransform: true);
             adapter.WritebackTransformedVertices();
 

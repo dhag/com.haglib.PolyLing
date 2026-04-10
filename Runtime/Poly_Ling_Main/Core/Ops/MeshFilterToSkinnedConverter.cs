@@ -98,40 +98,121 @@ namespace Poly_Ling.Ops
             bool swapAxisForRotated,
             bool setAxisForIdentity)
         {
-            int boneCount = meshEntries.Count;
+            // IgnorePoseInArmature で分割
+            var boneEntries    = meshEntries.Where(e => !e.Context.IgnorePoseInArmature).ToList();
+            var ignoredEntries = meshEntries.Where(e =>  e.Context.IgnorePoseInArmature).ToList();
+            int boneCount      = boneEntries.Count;
 
-            model.ComputeWorldMatrices();
+            // ワールド行列を全メッシュ分保存
+            // BoneTransform.Position はプリミティブ作成時の絶対ワールド座標。
+            // model.ComputeWorldMatrices() は HierarchyParentIndex を累積するため、
+            // 親子関係設定済みの場合に二重加算になる。
+            // MeshFilter メッシュは UseLocalTransform=true かつ Position=絶対座標なので
+            // BoneTransform から直接 TRS 行列を作成する。
             var savedWorldMatrices = new Dictionary<int, Matrix4x4>();
-            for (int i = 0; i < meshEntries.Count; i++)
+            foreach (var e in meshEntries)
             {
-                int idx = meshEntries[i].Index;
-                savedWorldMatrices[idx] = model.MeshContextList[idx].WorldMatrix;
+                var bt = e.Context.BoneTransform;
+                savedWorldMatrices[e.Index] = (bt != null && bt.UseLocalTransform)
+                    ? Matrix4x4.TRS(bt.Position, Quaternion.Euler(bt.Rotation), bt.Scale)
+                    : Matrix4x4.identity;
             }
 
+            // ボーン生成対象のみ old index → boneEntries 内インデックス にマップ
             var oldIndexToBoneNum = new Dictionary<int, int>();
-            for (int i = 0; i < meshEntries.Count; i++)
-                oldIndexToBoneNum[meshEntries[i].Index] = i;
+            for (int i = 0; i < boneEntries.Count; i++)
+                oldIndexToBoneNum[boneEntries[i].Index] = i;
 
-            // Phase 1: ボーン MeshContext 作成
-            var boneContexts = new List<MeshContext>(boneCount);
-            for (int i = 0; i < meshEntries.Count; i++)
+            // 元リストの親子関係を保存（Phase 2 前に参照するため）
+            var originalList = new List<MeshContext>(model.MeshContextList);
+
+            // HierarchyParentIndex を上に辿り、IgnorePose をスキップして
+            // 最初のボーン生成対象の祖先の boneEntries インデックスを返す。
+            // 見つからない場合は -1。
+            int FindEffectiveBoneNum(int startMeshIndex)
             {
-                var srcCtx = meshEntries[i].Context;
-                var boneMeshObject = new MeshObject(srcCtx.Name) { Type = MeshType.Bone };
-
-                int srcParent    = srcCtx.HierarchyParentIndex;
-                int parentBoneNum = -1;
-                if (srcParent >= 0 && oldIndexToBoneNum.TryGetValue(srcParent, out int pbn))
-                    parentBoneNum = pbn;
-
-                var boneBt = new BoneTransform
+                int cur = startMeshIndex;
+                int safety = 200;
+                while (cur >= 0 && cur < originalList.Count && safety-- > 0)
                 {
-                    Position          = srcCtx.BoneTransform.Position,
-                    Rotation          = srcCtx.BoneTransform.Rotation,
-                    Scale             = srcCtx.BoneTransform.Scale,
+                    if (oldIndexToBoneNum.TryGetValue(cur, out int bn)) return bn;
+                    cur = originalList[cur].HierarchyParentIndex;
+                }
+                return -1;
+            }
+
+            // 全 meshEntry の effective bone num を Phase 2 前に確定
+            var effectiveBoneNumForEntry = new Dictionary<int, int>();
+            int lastBoneNum = -1; // リスト順で直前のボーン番号
+            foreach (var e in meshEntries)
+            {
+                if (!e.Context.IgnorePoseInArmature)
+                {
+                    int bn = oldIndexToBoneNum[e.Index];
+                    effectiveBoneNumForEntry[e.Index] = bn;
+                    lastBoneNum = bn;
+                }
+                else
+                {
+                    // HierarchyParent を上に辿って最初の非IgnorePose祖先を探す
+                    int found = FindEffectiveBoneNum(originalList[e.Index].HierarchyParentIndex);
+                    // 親子関係がない場合はリスト順で直前のボーンを使う
+                    if (found < 0) found = lastBoneNum;
+                    effectiveBoneNumForEntry[e.Index] = found;
+                }
+            }
+
+            // Phase 1: ボーン MeshContext 作成（boneEntries のみ）
+            var boneContexts = new List<MeshContext>(boneCount);
+            for (int i = 0; i < boneEntries.Count; i++)
+            {
+                var srcCtx = boneEntries[i].Context;
+
+                // 有効な親ボーン番号を求める（直接親が IgnorePose ならスキップして辿る）
+                int parentBoneNum = FindEffectiveBoneNum(srcCtx.HierarchyParentIndex);
+
+                // local TRS を決定
+                // 直接の HierarchyParent がボーン対象かどうかで分岐
+                bool directParentIsBone = srcCtx.HierarchyParentIndex >= 0 &&
+                                          oldIndexToBoneNum.ContainsKey(srcCtx.HierarchyParentIndex);
+                Vector3 localPos;
+                Vector3 localRot;
+                Vector3 localScl;
+
+                if (directParentIsBone || srcCtx.HierarchyParentIndex < 0)
+                {
+                    // 直接親がボーン（または親なし）: BoneTransform をそのまま使う
+                    localPos = srcCtx.BoneTransform.Position;
+                    localRot = srcCtx.BoneTransform.Rotation;
+                    localScl = srcCtx.BoneTransform.Scale;
+                }
+                else
+                {
+                    // 直接親が IgnorePose: ワールド行列から effective 親相対で再計算
+                    Matrix4x4 childWorld = savedWorldMatrices[boneEntries[i].Index];
+                    Matrix4x4 parentWorld = parentBoneNum >= 0
+                        ? savedWorldMatrices[boneEntries[parentBoneNum].Index]
+                        : Matrix4x4.identity;
+                    Matrix4x4 localMat = parentWorld.inverse * childWorld;
+                    localPos = new Vector3(localMat.m03, localMat.m13, localMat.m23);
+                    Vector3 scaleX = new Vector3(localMat.m00, localMat.m10, localMat.m20);
+                    Vector3 scaleY = new Vector3(localMat.m01, localMat.m11, localMat.m21);
+                    Vector3 scaleZ = new Vector3(localMat.m02, localMat.m12, localMat.m22);
+                    localScl = new Vector3(scaleX.magnitude, scaleY.magnitude, scaleZ.magnitude);
+                    Quaternion localRotQ = Quaternion.LookRotation(
+                        new Vector3(localMat.m02, localMat.m12, localMat.m22).normalized,
+                        new Vector3(localMat.m01, localMat.m11, localMat.m21).normalized);
+                    localRot = localRotQ.eulerAngles;
+                }
+
+                var boneMeshObject = new MeshObject(srcCtx.Name) { Type = MeshType.Bone };
+                boneMeshObject.BoneTransform = new BoneTransform
+                {
+                    Position          = localPos,
+                    Rotation          = localRot,
+                    Scale             = localScl,
                     UseLocalTransform = true
                 };
-                boneMeshObject.BoneTransform = boneBt;
 
                 var boneCtx = new MeshContext
                 {
@@ -145,7 +226,7 @@ namespace Poly_Ling.Ops
                 boneContexts.Add(boneCtx);
             }
 
-            // Phase 1.5: ボーン軸調整
+            // Phase 1.5: ボーン軸調整（boneContexts のみ、変更なし）
             if (swapAxisForRotated || setAxisForIdentity)
             {
                 int n             = boneContexts.Count;
@@ -243,19 +324,23 @@ namespace Poly_Ling.Ops
             // Phase 3: ワールド行列 + BindPose
             model.ComputeWorldAndBindPoses();
 
-            // Phase 4: 頂点ワールド変換 + BoneWeight
-            for (int i = 0; i < meshEntries.Count; i++)
+            // Phase 4: 頂点ワールド変換 + BoneWeight（全 meshEntries）
+            foreach (var entry in meshEntries)
             {
-                int oldIndex      = meshEntries[i].Index;
-                int newMeshIndex  = oldIndex + boneCount;
-                int boneMasterIdx = i;
+                int oldIndex     = entry.Index;
+                int newMeshIndex = oldIndex + boneCount;
+                int boneMasterIdx = effectiveBoneNumForEntry[oldIndex]; // -1 の場合は親なし
 
                 var meshCtx = model.MeshContextList[newMeshIndex];
                 var meshObj = meshCtx.MeshObject;
                 if (meshObj == null) continue;
 
-                meshCtx.HierarchyParentIndex = boneMasterIdx;
-                meshCtx.ParentIndex          = boneMasterIdx;
+                // IgnorePose メッシュは有効親ボーン配下に付け替え（-1 ならルートのまま）
+                if (boneMasterIdx >= 0)
+                {
+                    meshCtx.HierarchyParentIndex = boneMasterIdx;
+                    meshCtx.ParentIndex          = boneMasterIdx;
+                }
 
                 Matrix4x4 originalWorld = savedWorldMatrices[oldIndex];
                 if (meshObj.VertexCount > 0)
@@ -267,9 +352,9 @@ namespace Poly_Ling.Ops
                 meshCtx.BoneTransform.Scale             = Vector3.one;
                 meshCtx.BoneTransform.UseLocalTransform = false;
 
+                int assignBone = boneMasterIdx >= 0 ? boneMasterIdx : 0;
                 foreach (var vertex in meshObj.Vertices)
-                    vertex.BoneWeight = new BoneWeight
-                        { boneIndex0 = boneMasterIdx, weight0 = 1f };
+                    vertex.BoneWeight = new BoneWeight { boneIndex0 = assignBone, weight0 = 1f };
 
                 meshCtx.UnityMesh      = meshObj.ToUnityMesh();
                 meshCtx.UnityMesh.name = meshCtx.Name;
@@ -284,7 +369,7 @@ namespace Poly_Ling.Ops
                 if (ctx?.BoneTransform != null)
                     ctx.BoneTransform.HasBoneTransform = true;
 
-            Debug.Log($"[MeshFilterToSkinnedConverter] Created {boneCount} bones");
+            Debug.Log($"[MeshFilterToSkinnedConverter] Created {boneCount} bones (ignored {ignoredEntries.Count})");
             return boneCount;
         }
     }

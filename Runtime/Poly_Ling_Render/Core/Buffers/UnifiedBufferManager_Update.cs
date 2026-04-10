@@ -1404,8 +1404,15 @@ namespace Poly_Ling.Core
 
                 if (useWorldTransform)
                 {
-                    // スキニング用: WorldMatrix × BindPose
-                    _transformMatrices[i] = ctx.SkinningMatrix;
+                    // MeshFilter（Type=Mesh かつ BoneWeight なし）: WorldMatrix を直接使用
+                    //   → ローカル座標に WorldMatrix を適用してワールド座標を得る
+                    // スキンドメッシュ（Type=Mesh かつ BoneWeight あり）: SkinningMatrix を使用
+                    // ボーン（Type=Bone）: SkinningMatrix を使用
+                    //   → スキンドメッシュ頂点の boneIndex がボーンを指すため、
+                    //     SkinningMatrix = BoneWorldMatrix × BoneBindPose が必要
+                    bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh &&
+                                                 !(ctx.MeshObject?.HasBoneWeight ?? false);
+                    _transformMatrices[i] = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
                 }
                 else
                 {

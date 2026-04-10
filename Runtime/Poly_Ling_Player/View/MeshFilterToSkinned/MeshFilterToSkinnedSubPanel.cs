@@ -154,14 +154,38 @@ namespace Poly_Ling.Player
 
             for (int i = 0; i < entries.Count; i++)
             {
-                var entry = entries[i];
-                int   depth      = MeshFilterToSkinnedConverter.CalculateDepth(entry.Index, _model);
-                string indent    = new string(' ', depth * 3);
-                string vertInfo  = entry.Context.MeshObject?.VertexCount > 0
+                var entry    = entries[i];
+                int   depth  = MeshFilterToSkinnedConverter.CalculateDepth(entry.Index, _model);
+                string indent = new string(' ', depth * 3);
+                string vertInfo = entry.Context.MeshObject?.VertexCount > 0
                     ? $" ({entry.Context.MeshObject.VertexCount}V)"
                     : " (empty)";
-                var row = new Label($"{indent}[{i}] {entry.Context.Name}{vertInfo}");
-                row.style.fontSize = 9;                _hierarchyContainer.Add(row);
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems    = Align.Center;
+                row.style.marginBottom  = 1;
+
+                var nameLabel = new Label($"{indent}[{i}] {entry.Context.Name}{vertInfo}");
+                nameLabel.style.fontSize = 9;
+                nameLabel.style.flexGrow = 1;
+                row.Add(nameLabel);
+
+                // IgnorePose トグル（ローカル変数にキャプチャ）
+                var ctx = entry.Context;
+                var toggle = new Toggle("姿勢無視") { value = ctx.IgnorePoseInArmature };
+                toggle.style.fontSize   = 8;
+                toggle.style.marginLeft = 4;
+                toggle.RegisterValueChangedCallback(e =>
+                {
+                    ctx.IgnorePoseInArmature = e.newValue;
+                    if (e.newValue && ctx.BoneTransform != null)
+                        ctx.BoneTransform.Rotation = Vector3.zero;
+                    RefreshHierarchy();
+                });
+                row.Add(toggle);
+
+                _hierarchyContainer.Add(row);
             }
 
             EnableConvert(!hasBones);

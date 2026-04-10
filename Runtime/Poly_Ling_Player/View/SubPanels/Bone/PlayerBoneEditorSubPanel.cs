@@ -51,6 +51,13 @@ namespace Poly_Ling.Player
         private Button        _btnResetLayers;
         private Button        _btnBakePose;
 
+        // ── TRS UI
+        private FloatField _posX, _posY, _posZ;
+        private FloatField _rotX, _rotY, _rotZ;
+        private Slider     _rotSliderX, _rotSliderY, _rotSliderZ;
+        private FloatField _sclX, _sclY, _sclZ;
+        private bool       _suppressTRS;
+
         // ================================================================
         // Build
         // ================================================================
@@ -175,6 +182,32 @@ namespace Poly_Ling.Player
             poseRow.Add(_btnResetLayers);
             poseRow.Add(_btnBakePose);
             root.Add(poseRow);
+
+            // ── REST POSE TRS ────────────────────────────────────────
+            root.Add(MakeSep());
+            root.Add(MakeSecLabel("位置"));
+            AddXYZFields(root, "pos", out _posX, out _posY, out _posZ);
+            RegTF(_posX, SetBoneTransformValueCommand.Field.PositionX);
+            RegTF(_posY, SetBoneTransformValueCommand.Field.PositionY);
+            RegTF(_posZ, SetBoneTransformValueCommand.Field.PositionZ);
+
+            root.Add(MakeSecLabel("回転"));
+            AddRotFields(root, "rot",
+                out _rotX, out _rotSliderX, SetBoneTransformValueCommand.Field.RotationX,
+                out _rotY, out _rotSliderY, SetBoneTransformValueCommand.Field.RotationY,
+                out _rotZ, out _rotSliderZ, SetBoneTransformValueCommand.Field.RotationZ);
+            RegTF(_rotX, SetBoneTransformValueCommand.Field.RotationX);
+            RegTF(_rotY, SetBoneTransformValueCommand.Field.RotationY);
+            RegTF(_rotZ, SetBoneTransformValueCommand.Field.RotationZ);
+            RegRotSlider(_rotSliderX, _rotX, SetBoneTransformValueCommand.Field.RotationX);
+            RegRotSlider(_rotSliderY, _rotY, SetBoneTransformValueCommand.Field.RotationY);
+            RegRotSlider(_rotSliderZ, _rotZ, SetBoneTransformValueCommand.Field.RotationZ);
+
+            root.Add(MakeSecLabel("スケール"));
+            AddXYZFields(root, "scl", out _sclX, out _sclY, out _sclZ);
+            RegTF(_sclX, SetBoneTransformValueCommand.Field.ScaleX);
+            RegTF(_sclY, SetBoneTransformValueCommand.Field.ScaleY);
+            RegTF(_sclZ, SetBoneTransformValueCommand.Field.ScaleZ);
 
             // ── 詳細エリア ───────────────────────────────────────────
             root.Add(MakeSep());
@@ -309,6 +342,25 @@ namespace Poly_Ling.Player
             var wm = ctx.WorldMatrix;
             _worldPosLabel.text = $"({wm.m03:F4}, {wm.m13:F4}, {wm.m23:F4})";
             _statusLabel.text   = $"Bones: {bonesAll.Count}  Selected: {count}";
+
+            // ── TRS 同期 ─────────────────────────────────────────────
+            _suppressTRS = true;
+            var bt = ctx.BoneTransform;
+            if (bt != null)
+            {
+                SF(_posX, bt.Position.x); SF(_posY, bt.Position.y); SF(_posZ, bt.Position.z);
+                SF(_rotX, bt.Rotation.x); SF(_rotY, bt.Rotation.y); SF(_rotZ, bt.Rotation.z);
+                SS(_rotSliderX, bt.Rotation.x); SS(_rotSliderY, bt.Rotation.y); SS(_rotSliderZ, bt.Rotation.z);
+                SF(_sclX, bt.Scale.x);    SF(_sclY, bt.Scale.y);    SF(_sclZ, bt.Scale.z);
+            }
+            else
+            {
+                SF(_posX,0); SF(_posY,0); SF(_posZ,0);
+                SF(_rotX,0); SF(_rotY,0); SF(_rotZ,0);
+                SS(_rotSliderX,0); SS(_rotSliderY,0); SS(_rotSliderZ,0);
+                SF(_sclX,1); SF(_sclY,1); SF(_sclZ,1);
+            }
+            _suppressTRS = false;
         }
 
         // ================================================================
@@ -380,6 +432,102 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // TRS ヘルパー
+        // ================================================================
+
+        private void RegTF(FloatField f, SetBoneTransformValueCommand.Field field)
+        {
+            f.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressTRS) return;
+                var model = GetModel?.Invoke();
+                if (model == null || !model.HasBoneSelection) return;
+                int[] idx = model.SelectedBoneIndices.ToArray();
+                SendCommand?.Invoke(new SetBoneTransformValueCommand(
+                    GetModelIndex?.Invoke() ?? 0, idx, field, e.newValue));
+                OnRepaint?.Invoke();
+            });
+        }
+
+        private void RegRotSlider(Slider s, FloatField f, SetBoneTransformValueCommand.Field field)
+        {
+            s.RegisterCallback<PointerDownEvent>(_ =>
+                SendCommand?.Invoke(new BeginBoneTransformSliderDragCommand(
+                    GetModelIndex?.Invoke() ?? 0,
+                    GetModel?.Invoke()?.SelectedBoneIndices?.ToArray() ?? System.Array.Empty<int>())));
+            s.RegisterCallback<PointerCaptureOutEvent>(_ =>
+                SendCommand?.Invoke(new EndBoneTransformSliderDragCommand(
+                    GetModelIndex?.Invoke() ?? 0, "ボーン回転変更")));
+            s.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressTRS) return;
+                var model = GetModel?.Invoke();
+                if (model == null || !model.HasBoneSelection) return;
+                int[] idx = model.SelectedBoneIndices.ToArray();
+                SendCommand?.Invoke(new SetBoneTransformValueCommand(
+                    GetModelIndex?.Invoke() ?? 0, idx, field, e.newValue));
+                if (f != null) { _suppressTRS = true; SF(f, e.newValue); _suppressTRS = false; }
+                OnRepaint?.Invoke();
+            });
+        }
+
+        private void AddXYZFields(VisualElement parent, string prefix,
+            out FloatField fx, out FloatField fy, out FloatField fz)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+            fx = MakeFloatField(prefix + "-x", "X"); row.Add(fx);
+            fy = MakeFloatField(prefix + "-y", "Y"); row.Add(fy);
+            fz = MakeFloatField(prefix + "-z", "Z"); row.Add(fz);
+            parent.Add(row);
+        }
+
+        private void AddRotFields(VisualElement parent, string prefix,
+            out FloatField fx, out Slider sx, SetBoneTransformValueCommand.Field fx_field,
+            out FloatField fy, out Slider sy, SetBoneTransformValueCommand.Field fy_field,
+            out FloatField fz, out Slider sz, SetBoneTransformValueCommand.Field fz_field)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+            fx = MakeFloatField(prefix + "-x", "X"); row.Add(fx);
+            fy = MakeFloatField(prefix + "-y", "Y"); row.Add(fy);
+            fz = MakeFloatField(prefix + "-z", "Z"); row.Add(fz);
+            parent.Add(row);
+
+            sx = MakeRotSlider(prefix + "-sx"); parent.Add(sx);
+            sy = MakeRotSlider(prefix + "-sy"); parent.Add(sy);
+            sz = MakeRotSlider(prefix + "-sz"); parent.Add(sz);
+        }
+
+        private static FloatField MakeFloatField(string name, string label)
+        {
+            var f = new FloatField(label) { name = name };
+            f.style.flexGrow  = 1;
+            f.style.marginRight = 2;
+            f.style.color     = new StyleColor(Color.black);
+            return f;
+        }
+
+        private static Slider MakeRotSlider(string name)
+        {
+            var s = new Slider(-180f, 180f) { name = name };
+            s.style.marginBottom = 2;
+            return s;
+        }
+
+        private static void SF(FloatField f, float v)
+        {
+            if (f != null) f.SetValueWithoutNotify((float)System.Math.Round(v, 4));
+        }
+
+        private static void SS(Slider s, float v)
+        {
+            if (s != null) s.SetValueWithoutNotify(Mathf.Clamp(v, -180f, 180f));
+        }
+
+        // ================================================================
         // UIヘルパー
         // ================================================================
 
@@ -389,6 +537,10 @@ namespace Poly_Ling.Player
             _btnInitPose?.SetEnabled(enabled);
             _btnResetLayers?.SetEnabled(enabled);
             _btnBakePose?.SetEnabled(enabled);
+            _posX?.SetEnabled(enabled); _posY?.SetEnabled(enabled); _posZ?.SetEnabled(enabled);
+            _rotX?.SetEnabled(enabled); _rotY?.SetEnabled(enabled); _rotZ?.SetEnabled(enabled);
+            _rotSliderX?.SetEnabled(enabled); _rotSliderY?.SetEnabled(enabled); _rotSliderZ?.SetEnabled(enabled);
+            _sclX?.SetEnabled(enabled); _sclY?.SetEnabled(enabled); _sclZ?.SetEnabled(enabled);
         }
 
         private void SetWarning(string text)

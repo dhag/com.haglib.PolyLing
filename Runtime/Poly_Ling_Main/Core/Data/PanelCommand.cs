@@ -65,6 +65,18 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndex = masterIndex; }
     }
 
+    /// <summary>
+    /// IgnorePoseInArmature フラグを設定するコマンド。
+    /// true の場合、BoneTransform.Rotation を 0 にリセットする。
+    /// </summary>
+    public class SetIgnorePoseCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public bool  Value         { get; }
+        public SetIgnorePoseCommand(int modelIndex, int[] masterIndices, bool value)
+            : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
+    }
+
     public class CycleMirrorTypeCommand : PanelCommand
     {
         public int MasterIndex { get; }

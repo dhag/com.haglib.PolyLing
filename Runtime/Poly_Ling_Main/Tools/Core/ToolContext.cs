@@ -489,6 +489,9 @@ namespace Poly_Ling.Tools
         /// <summary>名前（nullで変更なし）</summary>
         public string Name;
 
+        /// <summary>アーマチャ生成時ボーン生成スキップ（nullで変更なし）</summary>
+        public bool? IgnorePoseInArmature;
+
         public override string ToString()
         {
             var parts = new List<string> { $"[{Index}]" };
@@ -496,6 +499,7 @@ namespace Poly_Ling.Tools
             if (IsLocked.HasValue) parts.Add($"Locked={IsLocked.Value}");
             if (MirrorType.HasValue) parts.Add($"Mirror={MirrorType.Value}");
             if (Name != null) parts.Add($"Name={Name}");
+            if (IgnorePoseInArmature.HasValue) parts.Add($"IgnorePose={IgnorePoseInArmature.Value}");
             return string.Join(" ", parts);
         }
     }

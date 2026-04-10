@@ -168,6 +168,7 @@ namespace Poly_Ling.View
         public int MorphParentIndex => _ctx.MorphParentIndex;
         public string MorphName => _ctx.MorphName;
         public bool ExcludeFromExport => _ctx.ExcludeFromExport;
+        public bool IgnorePoseInArmature => _ctx.IgnorePoseInArmature;
 
         // 表示用計算プロパティ
         public string InfoString => $"V:{VertexCount} F:{FaceCount}";

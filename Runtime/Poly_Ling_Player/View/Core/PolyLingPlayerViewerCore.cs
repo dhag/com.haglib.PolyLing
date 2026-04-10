@@ -1609,7 +1609,7 @@ namespace Poly_Ling.Player
         // コールバック / イベントハンドラ
         // ================================================================
 
-        private void OnPrimitiveMeshCreated(MeshObject meshObject, string meshName, Vector3 worldPos)
+        private void OnPrimitiveMeshCreated(MeshObject meshObject, string meshName, Vector3 worldPos, bool ignorePoseInArmature)
         {
             _localLoader.EnsureProject();
             _moveToolHandler?.SetProject(ActiveProject);
@@ -1644,6 +1644,8 @@ namespace Poly_Ling.Player
                 ctx.BoneTransform.UseLocalTransform = true;
                 ctx.BoneTransform.Position = worldPos;
             }
+
+            ctx.IgnorePoseInArmature = ignorePoseInArmature;
 
             model.Add(ctx);
             model.ComputeWorldMatrices();

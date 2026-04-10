@@ -35,6 +35,7 @@ namespace Poly_Ling.Player
         // スケール
         private FloatField _sclXField, _sclYField, _sclZField;
 
+        private Toggle _ignorePoseToggle;
         private bool _isSyncing;
 
         // ================================================================
@@ -74,6 +75,18 @@ namespace Poly_Ling.Player
             AddScaleRow("X", out _sclXField, SetBoneTransformValueCommand.Field.ScaleX);
             AddScaleRow("Y", out _sclYField, SetBoneTransformValueCommand.Field.ScaleY);
             AddScaleRow("Z", out _sclZField, SetBoneTransformValueCommand.Field.ScaleZ);
+
+            AddSep();
+            _ignorePoseToggle = new Toggle("姿勢無視(アーマチャ)");
+            _ignorePoseToggle.style.color = new StyleColor(Color.white);
+            _ignorePoseToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isSyncing) return;
+                var indices = SelIndices();
+                if (indices.Length > 0)
+                    _ctx?.SendCommand(new SetIgnorePoseCommand(0, indices, e.newValue));
+            });
+            _root.Add(_ignorePoseToggle);
         }
 
         // ================================================================
@@ -128,6 +141,14 @@ namespace Poly_Ling.Player
                 SyncF(_sclXField, i => model.GetMeshContext(i)?.BoneTransform?.Scale.x ?? 1f);
                 SyncF(_sclYField, i => model.GetMeshContext(i)?.BoneTransform?.Scale.y ?? 1f);
                 SyncF(_sclZField, i => model.GetMeshContext(i)?.BoneTransform?.Scale.z ?? 1f);
+
+                // IgnorePoseInArmature 同期
+                if (_ignorePoseToggle != null)
+                {
+                    bool first = model.GetMeshContext(indices[0])?.IgnorePoseInArmature ?? false;
+                    bool same  = indices.All(i => (model.GetMeshContext(i)?.IgnorePoseInArmature ?? false) == first);
+                    _ignorePoseToggle.SetValueWithoutNotify(same && first);
+                }
             }
             finally { _isSyncing = false; }
         }
