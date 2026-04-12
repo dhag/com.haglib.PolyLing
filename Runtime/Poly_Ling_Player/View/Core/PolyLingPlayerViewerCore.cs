@@ -1861,6 +1861,19 @@ namespace Poly_Ling.Player
         private ProjectContext ActiveProject => _localLoader.Project ?? _receiver?.Project;
 
         // ================================================================
+        // 外部パネル向け公開API
+        // ================================================================
+
+        /// <summary>データ変化通知。Editor専用外部パネル等がサブスクライブする。</summary>
+        public Action<ChangeKind> OnChanged;
+
+        /// <summary>現在アクティブな ProjectContext を返す。null の場合あり。</summary>
+        public ProjectContext GetActiveProject() => ActiveProject;
+
+        /// <summary>外部からコマンドをディスパッチする。</summary>
+        public void Dispatch(PanelCommand cmd) => _commandDispatcher?.Dispatch(cmd);
+
+        // ================================================================
         // ツール切り替え
         // ================================================================
 
@@ -2067,6 +2080,8 @@ namespace Poly_Ling.Player
             if (_layoutRoot?.ModelBlendSection != null &&
                 _layoutRoot.ModelBlendSection.style.display == DisplayStyle.Flex)
                 _modelBlendSubPanel?.OnViewChanged(view, kind);
+
+            OnChanged?.Invoke(kind);
         }
 
         // ================================================================
