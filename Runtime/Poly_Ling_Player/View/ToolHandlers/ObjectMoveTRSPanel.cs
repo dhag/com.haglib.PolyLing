@@ -105,7 +105,7 @@ namespace Poly_Ling.Player
 
             // SelectedBoneIndices + SelectedMeshIndices の和集合
             var indices = model.SelectedBoneIndices
-                .Concat(model.SelectedMeshIndices.Where(i => !model.SelectedBoneIndices.Contains(i)))
+                .Concat(model.SelectedDrawableMeshIndices.Where(i => !model.SelectedBoneIndices.Contains(i)))
                 .Where(i => i >= 0 && i < model.MeshContextCount)
                 .ToList();
 
@@ -177,7 +177,7 @@ namespace Poly_Ling.Player
             var model = _getProject?.Invoke()?.CurrentModel;
             if (model == null) return Array.Empty<int>();
             return model.SelectedBoneIndices
-                .Concat(model.SelectedMeshIndices.Where(i => !model.SelectedBoneIndices.Contains(i)))
+                .Concat(model.SelectedDrawableMeshIndices.Where(i => !model.SelectedBoneIndices.Contains(i)))
                 .Where(i => i >= 0 && i < model.MeshContextCount)
                 .ToArray();
         }

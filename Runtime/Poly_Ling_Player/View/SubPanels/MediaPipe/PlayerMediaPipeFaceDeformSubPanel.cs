@@ -73,7 +73,7 @@ namespace Poly_Ling.Player
         {
             if (_warningLabel == null) return;
             var tc = GetToolContext?.Invoke();
-            if (tc?.FirstSelectedMeshContext?.MeshObject == null)
+            if (tc?.FirstDrawableMeshContext?.MeshObject == null)
             {
                 _warningLabel.text          = tc == null ? "ToolContext 未設定" : "メッシュが選択されていません";
                 _warningLabel.style.display = DisplayStyle.Flex;
@@ -95,7 +95,7 @@ namespace Poly_Ling.Player
         private void OnExecute()
         {
             var tc = GetToolContext?.Invoke();
-            var mc = tc?.FirstSelectedMeshContext;
+            var mc = tc?.FirstDrawableMeshContext;
             var sourceMesh = mc?.MeshObject;
             if (sourceMesh == null) { SetStatus("メッシュが選択されていません"); return; }
 

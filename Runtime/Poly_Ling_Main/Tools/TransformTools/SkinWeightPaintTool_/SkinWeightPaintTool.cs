@@ -218,7 +218,7 @@ namespace Poly_Ling.Tools
             // ターゲットボーンが未設定
             if (TargetBone < 0 && PaintMode != SkinWeightPaintMode.Smooth) return false;
 
-            var meshCtx = model.FirstSelectedDrawableMeshContext;
+            var meshCtx = model.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) return false;
 
             _isDragging = true;
@@ -277,7 +277,7 @@ namespace Poly_Ling.Tools
         {
             if (ctx.Model == null || !ctx.Model.HasMeshSelection) return;
 
-            var meshCtx = ctx.Model.FirstSelectedDrawableMeshContext;
+            var meshCtx = ctx.Model.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -337,7 +337,7 @@ namespace Poly_Ling.Tools
             // 頂点カラーをクリア
             if (ctx?.Model != null)
             {
-                var meshCtx = ctx.Model.FirstSelectedDrawableMeshContext;
+                var meshCtx = ctx.Model.FirstDrawableMeshContext;
                 if (meshCtx?.UnityMesh != null)
                     meshCtx.UnityMesh.colors = null;
             }
@@ -360,7 +360,7 @@ namespace Poly_Ling.Tools
             var model = ctx.Model;
             if (model == null) return;
 
-            var meshCtx = model.FirstSelectedDrawableMeshContext;
+            var meshCtx = model.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) return;
 
             // マウス位置からレイを取得

@@ -24,9 +24,16 @@ namespace Poly_Ling.Tools
             ["Mode_Flatten"] = new() { ["en"] = "Flatten", ["ja"] = "平ら", ["hi"] = "たいら" },
 
             // パラメータ
-            ["BrushSize"] = new() { ["en"] = "Brush Size", ["ja"] = "ブラシサイズ", ["hi"] = "ふでのおおきさ" },
+            ["BrushRadius"] = new() { ["en"] = "Brush Radius", ["ja"] = "ブラシ半径", ["hi"] = "ふでのはんけい" },
             ["Strength"] = new() { ["en"] = "Strength", ["ja"] = "強度", ["hi"] = "つよさ" },
             ["Invert"] = new() { ["en"] = "Invert", ["ja"] = "反転", ["hi"] = "ぎゃく" },
+
+            // フォールオフ
+            ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "フォールオフ", ["hi"] = "へりかた" },
+            ["Falloff_Linear"] = new() { ["en"] = "Linear", ["ja"] = "リニア", ["hi"] = "リニア" },
+            ["Falloff_Gaussian"] = new() { ["en"] = "Gaussian", ["ja"] = "ガウス", ["hi"] = "ガウス" },
+            ["Falloff_Sphere"] = new() { ["en"] = "Sphere", ["ja"] = "円", ["hi"] = "えん" },
+            ["Falloff_Sharp"] = new() { ["en"] = "Sharp", ["ja"] = "シャープ", ["hi"] = "シャープ" },
 
             // ヘルプ
             ["Help_Draw"] = new()

@@ -66,6 +66,12 @@ namespace Poly_Ling.Tools
                 set => _settings.Invert = value;
             }
 
+            private FalloffType Falloff
+            {
+                get => _settings.Falloff;
+                set => _settings.Falloff = value;
+            }
+
             // === ドラッグ状態 ===
             private bool _isDragging;
             private Vector2 _currentScreenPos;
@@ -92,7 +98,7 @@ namespace Poly_Ling.Tools
             public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
             {
                 var model = ctx.Model;
-                if (model == null || model.SelectedMeshIndices.Count == 0) return false;
+                if (model == null || model.SelectedDrawableMeshIndices.Count == 0) return false;
 
                 _isDragging = true;
                 _currentScreenPos = mousePos;
@@ -103,7 +109,7 @@ namespace Poly_Ling.Tools
                 _adjacencyCachePerMesh = new Dictionary<int, Dictionary<int, HashSet<int>>>();
                 _vertexNormalsCachePerMesh = new Dictionary<int, Dictionary<int, Vector3>>();
 
-                foreach (int meshIdx in model.SelectedMeshIndices)
+                foreach (int meshIdx in model.SelectedDrawableMeshIndices)
                 {
                     var meshContext = model.GetMeshContext(meshIdx);
                     if (meshContext?.MeshObject == null) continue;
@@ -211,7 +217,7 @@ namespace Poly_Ling.Tools
 
             public void DrawGizmo(ToolContext ctx)
             {
-                if (ctx.Model == null || ctx.Model.SelectedMeshIndices.Count == 0) return;
+                if (ctx.Model == null || ctx.Model.SelectedDrawableMeshIndices.Count == 0) return;
 
                 UnityEditor_Handles.BeginGUI();
 
@@ -260,7 +266,7 @@ namespace Poly_Ling.Tools
 
             // 全選択メッシュにブラシ適用
             bool anyAffected = false;
-            foreach (int meshIdx in model.SelectedMeshIndices)
+            foreach (int meshIdx in model.SelectedDrawableMeshIndices)
             {
                 var meshContext = model.GetMeshContext(meshIdx);
                 if (meshContext?.MeshObject == null) continue;
@@ -309,37 +315,30 @@ namespace Poly_Ling.Tools
         {
             var model = ctx.Model;
             float closestDist = float.MaxValue;
-            Vector3 closestPoint = ray.origin + ray.direction * 5f; // デフォルト
+            Vector3 closestPoint = ray.origin + ray.direction * 5f;
 
-            foreach (int meshIdx in model.SelectedMeshIndices)
+            foreach (int meshIdx in model.SelectedDrawableMeshIndices)
             {
                 var meshContext = model.GetMeshContext(meshIdx);
                 if (meshContext?.MeshObject == null) continue;
-
                 var meshObject = meshContext.MeshObject;
 
                 foreach (var face in meshObject.Faces)
                 {
                     if (face.VertexIndices.Count < 3) continue;
-
                     for (int i = 1; i < face.VertexIndices.Count - 1; i++)
                     {
                         Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
                         Vector3 v1 = meshObject.Vertices[face.VertexIndices[i]].Position;
                         Vector3 v2 = meshObject.Vertices[face.VertexIndices[i + 1]].Position;
-
-                        if (RayTriangleIntersection(ray, v0, v1, v2, out float t))
+                        if (RayTriangleIntersection(ray, v0, v1, v2, out float t) && t > 0 && t < closestDist)
                         {
-                            if (t > 0 && t < closestDist)
-                            {
-                                closestDist = t;
-                                closestPoint = ray.origin + ray.direction * t;
-                            }
+                            closestDist  = t;
+                            closestPoint = ray.origin + ray.direction * t;
                         }
                     }
                 }
             }
-
             return closestPoint;
         }
 
@@ -350,23 +349,18 @@ namespace Poly_Ling.Tools
             Vector3 edge2 = v2 - v0;
             Vector3 h = Vector3.Cross(ray.direction, edge2);
             float a = Vector3.Dot(edge1, h);
-
             if (Mathf.Abs(a) < 1e-6f) return false;
-
             float f = 1f / a;
             Vector3 s = ray.origin - v0;
             float u = f * Vector3.Dot(s, h);
-
             if (u < 0 || u > 1) return false;
-
             Vector3 q = Vector3.Cross(s, edge1);
             float v = f * Vector3.Dot(ray.direction, q);
-
             if (v < 0 || u + v > 1) return false;
-
             t = f * Vector3.Dot(edge2, q);
             return t > 1e-6f;
         }
+
 
         private List<(int index, float weight)> GetVerticesInBrushRadius(MeshObject meshObject, Vector3 brushCenter)
         {
@@ -377,9 +371,8 @@ namespace Poly_Ling.Tools
                 float dist = Vector3.Distance(meshObject.Vertices[i].Position, brushCenter);
                 if (dist <= BrushRadius)
                 {
-                    // フォールオフを計算（中心ほど強く、端ほど弱く）
-                    float weight = 1f - (dist / BrushRadius);
-                    weight = weight * weight; // 二次曲線で滑らかに
+                    float t = BrushRadius > 0f ? dist / BrushRadius : 0f;
+                    float weight = FalloffHelper.Calculate(t, Falloff);
                     result.Add((i, weight));
                 }
             }

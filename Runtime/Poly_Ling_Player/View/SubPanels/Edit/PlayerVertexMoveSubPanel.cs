@@ -1,6 +1,5 @@
 // PlayerVertexMoveSubPanel.cs
 // 頂点移動ツール用サブパネル（Player ビルド用）。
-// エディタ版 MoveTool.DrawSettingsUI() と同等の内容を UIToolkit で実装する。
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
@@ -11,15 +10,10 @@ using Poly_Ling.Tools;
 
 namespace Poly_Ling.Player
 {
-    /// <summary>
-    /// 頂点移動ツールのサブパネル。
-    /// エディタ版 MoveTool.DrawSettingsUI() と同等の内容を提供する：
-    /// マグネット設定・ギズモオフセット・移動対象頂点数。
-    /// </summary>
     public class PlayerVertexMoveSubPanel
     {
         // ================================================================
-        // 外部注入（Viewer から設定）
+        // 外部注入
         // ================================================================
 
         public Func<MoveToolHandler> GetHandler;
@@ -31,12 +25,24 @@ namespace Poly_Ling.Player
         private VisualElement _root;
         private Toggle        _magnetToggle;
         private Slider        _magnetRadiusSlider;
+        private FloatField    _magnetRadiusField;
         private DropdownField _falloffDropdown;
         private VisualElement _magnetParamsGroup;
         private Slider        _gizmoOffsetXSlider;
         private Slider        _gizmoOffsetYSlider;
         private Label         _targetLabel;
         private Toggle        _lassoToggle;
+        private Button        _radiusDragButton;
+
+        // 詳細設定
+        private FloatField _minRadiusField;
+        private FloatField _maxRadiusField;
+
+        private bool _suppressSync;
+
+        // フォールオフ選択肢（リニア/ガウス/円/シャープ に統一）
+        private static readonly string[]      FalloffLabels = { "リニア", "ガウス", "円", "シャープ" };
+        private static readonly FalloffType[] FalloffValues = { FalloffType.Linear, FalloffType.Gaussian, FalloffType.Sphere, FalloffType.Sharp };
 
         // ================================================================
         // Build
@@ -83,37 +89,135 @@ namespace Poly_Ling.Player
             _magnetParamsGroup = new VisualElement();
             _root.Add(_magnetParamsGroup);
 
-            // Radius: 0.01 〜 1.0（MoveSettings の MIN/MAX に対応）
-            _magnetRadiusSlider = MakeSlider("Radius", 0.01f, 1.0f, 0.5f, v =>
+            // ブラシ半径（スライダー + テキストボックス）
+            AddHeader("ブラシ半径 (Brush Radius)", _magnetParamsGroup);
+
+            var radiusRow = new VisualElement();
+            radiusRow.style.flexDirection = FlexDirection.Row;
+            radiusRow.style.marginBottom  = 3;
+            _magnetParamsGroup.Add(radiusRow);
+
+            _magnetRadiusSlider = new Slider(0.01f, 1.0f) { value = 0.5f };
+            _magnetRadiusSlider.style.flexGrow = 1;
+            _magnetRadiusSlider.style.color = new StyleColor(Color.white);
+            _magnetRadiusSlider.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressSync) return;
+                var h = GetHandler?.Invoke();
+                if (h != null) h.MagnetRadius = e.newValue;
+                _suppressSync = true;
+                _magnetRadiusField?.SetValueWithoutNotify(e.newValue);
+                _suppressSync = false;
+            });
+            radiusRow.Add(_magnetRadiusSlider);
+
+            _magnetRadiusField = new FloatField { value = 0.5f };
+            _magnetRadiusField.style.width = 52;
+            _magnetRadiusField.style.color = new StyleColor(Color.white);
+            _magnetRadiusField.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressSync) return;
+                var h = GetHandler?.Invoke();
+                float clamped = h != null ? Mathf.Clamp(e.newValue, h.MinMagnetRadius, h.MaxMagnetRadius) : e.newValue;
+                if (h != null) h.MagnetRadius = clamped;
+                _suppressSync = true;
+                _magnetRadiusSlider?.SetValueWithoutNotify(clamped);
+                _magnetRadiusField.SetValueWithoutNotify(clamped);
+                _suppressSync = false;
+            });
+            radiusRow.Add(_magnetRadiusField);
+
+            // ドラッグで範囲指定
+            _radiusDragButton = new Button(() =>
             {
                 var h = GetHandler?.Invoke();
-                if (h != null) h.MagnetRadius = v;
+                if (h == null) return;
+                h.IsRadiusDragMode = true;
+                h.OnRadiusChanged  = r =>
+                {
+                    _suppressSync = true;
+                    _magnetRadiusSlider?.SetValueWithoutNotify(r);
+                    _magnetRadiusField?.SetValueWithoutNotify(r);
+                    _suppressSync = false;
+                };
+                UpdateRadiusDragButtonStyle(true);
             });
-            _magnetParamsGroup.Add(_magnetRadiusSlider);
+            _radiusDragButton.text = "ドラッグで範囲指定";
+            _radiusDragButton.style.marginBottom = 3;
+            _radiusDragButton.style.fontSize     = 10;
+            _magnetParamsGroup.Add(_radiusDragButton);
 
-            _falloffDropdown = new DropdownField("Falloff",
-                new List<string> { "Linear", "Smooth", "Sharp" }, 1);
+            // フォールオフ
+            _falloffDropdown = new DropdownField("フォールオフ", new List<string>(FalloffLabels), 1);
             _falloffDropdown.style.color = new StyleColor(Color.white);
             _falloffDropdown.style.marginBottom = 3;
             _falloffDropdown.RegisterValueChangedCallback(e =>
             {
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                h.MagnetFalloff = e.newValue switch
-                {
-                    "Linear" => FalloffType.Linear,
-                    "Sharp"  => FalloffType.Sharp,
-                    _        => FalloffType.Smooth,
-                };
+                int idx = System.Array.IndexOf(FalloffLabels, e.newValue);
+                if (idx >= 0) h.MagnetFalloff = FalloffValues[idx];
             });
             _magnetParamsGroup.Add(_falloffDropdown);
+
+            // 詳細設定（半径範囲）
+            var foldout = new Foldout { text = "詳細設定", value = false };
+            foldout.style.color = new StyleColor(Color.white);
+            _magnetParamsGroup.Add(foldout);
+
+            AddHeader("半径範囲", foldout.contentContainer);
+
+            var minRow = new VisualElement();
+            minRow.style.flexDirection = FlexDirection.Row;
+            minRow.style.alignItems    = Align.Center;
+            minRow.style.marginBottom  = 2;
+            foldout.contentContainer.Add(minRow);
+            var minLabel = new Label("最小値");
+            minLabel.style.color = new StyleColor(Color.white);
+            minLabel.style.width = 50;
+            minRow.Add(minLabel);
+            _minRadiusField = new FloatField { value = 0.01f };
+            _minRadiusField.style.flexGrow = 1;
+            _minRadiusField.style.color = new StyleColor(Color.white);
+            _minRadiusField.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+                float v = Mathf.Max(0.001f, e.newValue);
+                h.MinMagnetRadius = v;
+                _magnetRadiusSlider.lowValue = v;
+                _minRadiusField.SetValueWithoutNotify(v);
+            });
+            minRow.Add(_minRadiusField);
+
+            var maxRow = new VisualElement();
+            maxRow.style.flexDirection = FlexDirection.Row;
+            maxRow.style.alignItems    = Align.Center;
+            maxRow.style.marginBottom  = 2;
+            foldout.contentContainer.Add(maxRow);
+            var maxLabel = new Label("最大値");
+            maxLabel.style.color = new StyleColor(Color.white);
+            maxLabel.style.width = 50;
+            maxRow.Add(maxLabel);
+            _maxRadiusField = new FloatField { value = 1.0f };
+            _maxRadiusField.style.flexGrow = 1;
+            _maxRadiusField.style.color = new StyleColor(Color.white);
+            _maxRadiusField.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+                float v = Mathf.Max(h.MinMagnetRadius + 0.001f, e.newValue);
+                h.MaxMagnetRadius = v;
+                _magnetRadiusSlider.highValue = v;
+                _maxRadiusField.SetValueWithoutNotify(v);
+            });
+            maxRow.Add(_maxRadiusField);
 
             SetMagnetParamsVisible(false);
 
             // ── ギズモ ───────────────────────────────────────────────
             AddHeader("Gizmo");
 
-            // Offset X/Y: -100 〜 100（MoveSettings の MIN/MAX_SCREEN_OFFSET_X/Y に対応）
             _gizmoOffsetXSlider = MakeSlider("Offset X", -100f, 100f, 60f, v =>
             {
                 var h = GetHandler?.Invoke();
@@ -139,7 +243,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 更新（選択変更時・毎フレームに呼ぶ）
+        // 更新
         // ================================================================
 
         public void Refresh()
@@ -148,7 +252,11 @@ namespace Poly_Ling.Player
             if (h == null) return;
 
             _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
+
+            _suppressSync = true;
             _magnetRadiusSlider?.SetValueWithoutNotify(h.MagnetRadius);
+            _magnetRadiusField?.SetValueWithoutNotify(h.MagnetRadius);
+            _suppressSync = false;
 
             if (_lassoToggle != null)
                 _lassoToggle.SetValueWithoutNotify(
@@ -156,12 +264,8 @@ namespace Poly_Ling.Player
 
             if (_falloffDropdown != null)
             {
-                _falloffDropdown.SetValueWithoutNotify(h.MagnetFalloff switch
-                {
-                    FalloffType.Linear => "Linear",
-                    FalloffType.Sharp  => "Sharp",
-                    _                  => "Smooth",
-                });
+                int fidx = System.Array.IndexOf(FalloffValues, h.MagnetFalloff);
+                _falloffDropdown.SetValueWithoutNotify(fidx >= 0 ? FalloffLabels[fidx] : FalloffLabels[1]);
             }
 
             SetMagnetParamsVisible(h.UseMagnet);
@@ -169,7 +273,17 @@ namespace Poly_Ling.Player
             _gizmoOffsetXSlider?.SetValueWithoutNotify(h.GizmoScreenOffsetX);
             _gizmoOffsetYSlider?.SetValueWithoutNotify(h.GizmoScreenOffsetY);
 
-            // 移動対象頂点数
+            _minRadiusField?.SetValueWithoutNotify(h.MinMagnetRadius);
+            _maxRadiusField?.SetValueWithoutNotify(h.MaxMagnetRadius);
+
+            if (_magnetRadiusSlider != null)
+            {
+                _magnetRadiusSlider.lowValue  = h.MinMagnetRadius;
+                _magnetRadiusSlider.highValue = h.MaxMagnetRadius;
+            }
+
+            UpdateRadiusDragButtonStyle(h.IsRadiusDragMode);
+
             if (_targetLabel != null)
             {
                 int count = h.GetTotalAffectedCount();
@@ -195,18 +309,25 @@ namespace Poly_Ling.Player
                 _magnetParamsGroup.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
-        private void AddHeader(string text)
+        private void UpdateRadiusDragButtonStyle(bool active)
+        {
+            if (_radiusDragButton == null) return;
+            _radiusDragButton.style.backgroundColor = active
+                ? new StyleColor(new Color(0.3f, 0.6f, 1.0f, 0.8f))
+                : new StyleColor(StyleKeyword.Null);
+        }
+
+        private void AddHeader(string text, VisualElement target = null)
         {
             var l = new Label(text);
             l.style.marginTop    = 6;
             l.style.marginBottom = 2;
             l.style.color        = new StyleColor(Color.white);
             l.style.fontSize     = 10;
-            _root.Add(l);
+            (target ?? _root).Add(l);
         }
 
-        private Slider MakeSlider(string label, float min, float max, float init,
-                                  Action<float> onChange)
+        private Slider MakeSlider(string label, float min, float max, float init, Action<float> onChange)
         {
             var s = new Slider(label, min, max) { value = init };
             s.style.color = new StyleColor(Color.white);

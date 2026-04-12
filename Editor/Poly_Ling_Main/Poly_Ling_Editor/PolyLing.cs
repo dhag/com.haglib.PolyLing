@@ -69,7 +69,7 @@ public partial class PolyLing : EditorWindow
             if (value >= 0 && value < _model.Count)
             {
                 // v2.0: 同一カテゴリのみクリア（他カテゴリの選択は維持）
-                _model.SelectByTypeExclusive(value);
+                _model.SelectMeshContextExclusive(value);
             }
             else if (value < 0)
             {
@@ -180,7 +180,7 @@ public partial class PolyLing : EditorWindow
         // MeshContext取得
         var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
-            meshContext = _model.FirstSelectedDrawableMeshContext;
+            meshContext = _model.FirstDrawableMeshContext;
         if (meshContext == null) return;
 
         // カメラ
@@ -1011,14 +1011,14 @@ public partial class PolyLing : EditorWindow
     /// </summary>
     private void SyncAllSelectedMeshPositions()
     {
-        if (_model == null || _model.SelectedMeshIndices.Count == 0)
+        if (_model == null || _model.SelectedDrawableMeshIndices.Count == 0)
         {
             // フォールバック: プライマリメッシュのみ
             SyncMeshPositionsOnly(_model?.FirstSelectedMeshContext);
             return;
         }
 
-        foreach (int meshIdx in _model.SelectedMeshIndices)
+        foreach (int meshIdx in _model.SelectedDrawableMeshIndices)
         {
             var meshContext = _model.GetMeshContext(meshIdx);
             if (meshContext?.MeshObject == null || meshContext.UnityMesh == null)
@@ -1395,7 +1395,7 @@ public partial class PolyLing : EditorWindow
         _viewportCore.CustomDrawMesh = (preview, ctx, mesh, meshIndex, displayMatrix) =>
         {
             if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return false;
-            if (_model == null || !_model.SelectedMeshIndices.Contains(meshIndex)) return false;
+            if (_model == null || !_model.SelectedDrawableMeshIndices.Contains(meshIndex)) return false;
 
             Material visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
             if (visMat == null) return false;
@@ -1435,7 +1435,7 @@ public partial class PolyLing : EditorWindow
         // meshContext取得（DrawPreviewと同じロジック）
         var meshContext = _model.FirstSelectedMeshContext;
         if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
-            meshContext = _model.FirstSelectedDrawableMeshContext;
+            meshContext = _model.FirstDrawableMeshContext;
         if (meshContext == null) return;
 
         // カメラ同期: ViewportCore → PolyLing

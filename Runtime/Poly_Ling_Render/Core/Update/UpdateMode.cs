@@ -83,7 +83,7 @@ namespace Poly_Ling.Core
         public readonly bool AllowMeshRebuild;
 
         /// <summary>選択状態の同期・フラグ更新を実行するか</summary>
-        public readonly bool AllowSelectionSync;
+        public readonly bool AllowSelectedDrawableMeshSync;
 
         // ============================================================
         // コンストラクタ
@@ -95,14 +95,14 @@ namespace Poly_Ling.Core
             bool allowGpuVisibility,
             bool allowUnselectedOverlay,
             bool allowMeshRebuild,
-            bool allowSelectionSync)
+            bool allowSelectedDrawableMeshSync)
         {
             AllowHitTest = allowHitTest;
             AllowVertexFlagsReadback = allowVertexFlagsReadback;
             AllowGpuVisibility = allowGpuVisibility;
             AllowUnselectedOverlay = allowUnselectedOverlay;
             AllowMeshRebuild = allowMeshRebuild;
-            AllowSelectionSync = allowSelectionSync;
+            AllowSelectedDrawableMeshSync = allowSelectedDrawableMeshSync;
         }
 
         // ============================================================
@@ -118,7 +118,7 @@ namespace Poly_Ling.Core
             allowGpuVisibility: true,
             allowUnselectedOverlay: true,
             allowMeshRebuild: true,
-            allowSelectionSync: true
+            allowSelectedDrawableMeshSync: true
         );
 
         /// <summary>
@@ -131,7 +131,7 @@ namespace Poly_Ling.Core
             allowGpuVisibility: false,
             allowUnselectedOverlay: true,
             allowMeshRebuild: false,
-            allowSelectionSync: false
+            allowSelectedDrawableMeshSync: false
         );
 
         /// <summary>
@@ -144,14 +144,14 @@ namespace Poly_Ling.Core
             allowGpuVisibility: false,
             allowUnselectedOverlay: false,
             allowMeshRebuild: false,
-            allowSelectionSync: false
+            allowSelectedDrawableMeshSync: false
         );
 
         /// <summary>
         /// 頂点ドラッグ中: 位置更新のみ、重い処理はスキップ
         /// 
         /// ★★★ 禁忌（絶対厳守） ★★★
-        /// AllowMeshRebuild, AllowHitTest, AllowGpuVisibility, AllowSelectionSync を
+        /// AllowMeshRebuild, AllowHitTest, AllowGpuVisibility, AllowSelectedDrawableMeshSync を
         /// true にしてはならない。ドラッグ中に毎フレーム走ると1FPS以下に落ちる。
         /// 
         /// ドラッグ中の表示更新が必要な場合:
@@ -171,7 +171,7 @@ namespace Poly_Ling.Core
             allowGpuVisibility: false,     // ★禁忌: trueにしてはならない
             allowUnselectedOverlay: false,
             allowMeshRebuild: false,       // ★禁忌: trueにしてはならない（1FPS障害の原因）
-            allowSelectionSync: false      // ★禁忌: trueにしてはならない
+            allowSelectedDrawableMeshSync: false      // ★禁忌: trueにしてはならない
         );
 
         /// <summary>
@@ -184,7 +184,7 @@ namespace Poly_Ling.Core
             allowGpuVisibility: false,
             allowUnselectedOverlay: true,
             allowMeshRebuild: true,
-            allowSelectionSync: true
+            allowSelectedDrawableMeshSync: true
         );
 
         /// <summary>
@@ -197,7 +197,7 @@ namespace Poly_Ling.Core
             allowGpuVisibility: true,
             allowUnselectedOverlay: true,
             allowMeshRebuild: true,
-            allowSelectionSync: true
+            allowSelectedDrawableMeshSync: true
         );
 
         // ============================================================

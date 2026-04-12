@@ -74,7 +74,7 @@ namespace Poly_Ling.UI
 
         [NonSerialized] private ToolContext _toolContext;
         private ModelContext Model => _toolContext?.Model;
-        private MeshContext FirstSelectedMeshContext => _toolContext?.FirstSelectedMeshContext;
+        private MeshContext FirstSelectedMeshContext => _toolContext?.FirstDrawableMeshContext;
         private MeshObject FirstSelectedMeshObject => FirstSelectedMeshContext?.MeshObject;
         private bool HasValidSelection => _toolContext?.HasValidMeshSelection ?? false;
 

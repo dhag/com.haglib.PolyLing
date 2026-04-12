@@ -47,6 +47,7 @@ namespace Poly_Ling.Tools
         public ToolContext Context                        => _context;
         protected ModelContext  Model                    => _context?.Model;
         protected MeshContext   FirstSelectedMeshContext => _context?.FirstSelectedMeshContext;
+        protected MeshContext   FirstDrawableMeshContext  => _context?.FirstDrawableMeshContext;
         protected MeshObject    FirstSelectedMeshObject  => FirstSelectedMeshContext?.MeshObject;
         protected bool          HasValidSelection        => _context?.HasValidMeshSelection ?? false;
 

@@ -16,11 +16,12 @@ namespace Poly_Ling.Tools
     public enum FalloffType
     {
         Linear,     // 1 - d/r（直線的）
-        Smooth,     // smoothstep（S字カーブ）
-        Sphere,     // sqrt(1 - (d/r)^2)（球面的）
+        Gaussian,   // exp(-4t²)（ガウス関数）
+        Sphere,     // sqrt(1 - (d/r)^2)（球面的・円形）
         Sharp,      // (1 - d/r)^2（急な減衰）
-        Root,       // sqrt(1 - d/r)（緩やかな減衰）
-        Constant    // 1（半径内は全て同じ）
+        Smooth,     // smoothstep（S字カーブ）[後方互換用]
+        Root,       // sqrt(1 - d/r)（緩やかな減衰）[後方互換用]
+        Constant    // 1（半径内は全て同じ）[後方互換用]
     }
 
     // ================================================================
@@ -509,21 +510,25 @@ namespace Poly_Ling.Tools
                 case FalloffType.Linear:
                     return 1f - t;
 
-                case FalloffType.Smooth:
-                    // Smoothstep: 3t^2 - 2t^3
-                    float s = 1f - t;
-                    return s * s * (3f - 2f * s);
+                case FalloffType.Gaussian:
+                    // ガウス関数: exp(-4t²)  t=0→1, t=1→≈0.018
+                    return Mathf.Exp(-4f * t * t);
 
                 case FalloffType.Sphere:
-                    // 球面的: sqrt(1 - t^2)
+                    // 球面的（円形）: sqrt(1 - t^2)
                     return Mathf.Sqrt(1f - t * t);
 
                 case FalloffType.Sharp:
                     // 急な減衰: (1 - t)^2
                     return (1f - t) * (1f - t);
 
+                case FalloffType.Smooth:
+                    // Smoothstep: 3t^2 - 2t^3（後方互換用）
+                    float s = 1f - t;
+                    return s * s * (3f - 2f * s);
+
                 case FalloffType.Root:
-                    // 緩やかな減衰: sqrt(1 - t)
+                    // 緩やかな減衰: sqrt(1 - t)（後方互換用）
                     return Mathf.Sqrt(1f - t);
 
                 case FalloffType.Constant:

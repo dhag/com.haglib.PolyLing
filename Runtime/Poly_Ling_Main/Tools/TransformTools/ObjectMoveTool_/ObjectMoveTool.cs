@@ -300,7 +300,7 @@ namespace Poly_Ling.Tools
         {
             var model = ctx?.Model;
             if (model == null) return 0;
-            return model.SelectedBoneIndices.Count + model.SelectedMeshIndices.Count;
+            return model.SelectedBoneIndices.Count + model.SelectedDrawableMeshIndices.Count;
         }
 
         /// <summary>選択中アイテム全インデックス（ボーン + メッシュ）</summary>
@@ -309,7 +309,7 @@ namespace Poly_Ling.Tools
             var model = ctx?.Model;
             if (model == null) yield break;
             foreach (int i in model.SelectedBoneIndices) yield return i;
-            foreach (int i in model.SelectedMeshIndices)
+            foreach (int i in model.SelectedDrawableMeshIndices)
             {
                 // ボーン選択に既に含まれていれば重複しない
                 if (!model.SelectedBoneIndices.Contains(i))
@@ -362,7 +362,7 @@ namespace Poly_Ling.Tools
 
             if (ctrl)
             {
-                model.ToggleSelection(bestIndex);
+                model.ToggleMeshContextSelection(bestIndex);
             }
             else if (shift)
             {
@@ -371,7 +371,7 @@ namespace Poly_Ling.Tools
             else
             {
                 // 単一選択：カテゴリに応じて既存選択をクリアして選択
-                model.SelectByTypeExclusive(bestIndex);
+                model.SelectMeshContextExclusive(bestIndex);
             }
 
             model.IsDirty = true;

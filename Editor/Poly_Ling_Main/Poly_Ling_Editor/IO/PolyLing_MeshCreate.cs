@@ -92,7 +92,7 @@ public partial class PolyLing
         _model.Add(meshContext);
         int newIndex = _meshContextList.Count - 1;
         _model.Select(newIndex);
-        _model.SelectDrawable(newIndex);       // SelectedMeshIndicesに追加（描画・ホバーフィルタに必要）
+        _model.SelectMesh(newIndex);       // SelectedMeshIndicesに追加（描画・ホバーフィルタに必要）
         InitVertexOffsets();
 
         // 注意: LoadMeshContextToUndoControllerは呼ばない（VertexEditStack.Clear()を避けるため）

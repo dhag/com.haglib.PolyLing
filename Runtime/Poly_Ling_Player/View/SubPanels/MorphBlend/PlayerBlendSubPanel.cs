@@ -213,7 +213,7 @@ namespace Poly_Ling.Player
             {
                 ShowWarning("モデルがありません"); return;
             }
-            if (model.SelectedMeshIndices.Count == 0)
+            if (model.SelectedDrawableMeshIndices.Count == 0)
             {
                 ShowWarning("メッシュが未選択です"); return;
             }
@@ -222,7 +222,7 @@ namespace Poly_Ling.Player
             _mainContent.style.display  = DisplayStyle.Flex;
 
             RefreshTargetList(model);
-            BuildCandidates(model, model.SelectedMeshIndices);
+            BuildCandidates(model, model.SelectedDrawableMeshIndices);
             RefreshCandidateList();
             RefreshBlendSection(model);
         }
@@ -241,7 +241,7 @@ namespace Poly_Ling.Player
         private void RefreshTargetList(ModelContext model)
         {
             _targetListContainer.Clear();
-            foreach (int idx in model.SelectedMeshIndices)
+            foreach (int idx in model.SelectedDrawableMeshIndices)
             {
                 var ctx = model.GetMeshContext(idx);
                 if (ctx?.MeshObject == null) continue;
@@ -332,7 +332,7 @@ namespace Poly_Ling.Player
             {
                 var srcCtx = model.GetMeshContext(_sourceIndex);
                 int srcVc  = srcCtx?.MeshObject?.VertexCount ?? 0;
-                foreach (int idx in model.SelectedMeshIndices)
+                foreach (int idx in model.SelectedDrawableMeshIndices)
                 {
                     var tctx = model.GetMeshContext(idx);
                     if (tctx?.MeshObject == null) continue;
@@ -370,7 +370,7 @@ namespace Poly_Ling.Player
             if (!_isDragging)
             {
                 _isDragging = true;
-                _blendPreview.Start(model, model.SelectedMeshIndices, _sourceIndex);
+                _blendPreview.Start(model, model.SelectedDrawableMeshIndices, _sourceIndex);
             }
 
             _blendWeight = newValue;
@@ -404,7 +404,7 @@ namespace Poly_Ling.Player
             var model = _model;
             if (model == null) return;
             BlendOperation.ApplyAndCreateBackups(
-                model, _blendPreview, model.SelectedMeshIndices, _sourceIndex,
+                model, _blendPreview, model.SelectedDrawableMeshIndices, _sourceIndex,
                 _blendWeight, _recalculateNormals,
                 _selectedVerticesOnly, null, _matchByVertexId, BuildToolCtx());
 

@@ -83,7 +83,7 @@ namespace Poly_Ling.Remote
                 w.Write((ushort)model.Count);
                 w.Write((byte)model.ActiveCategory);
 
-                var sel = model.SelectedMeshIndices;
+                var sel = model.SelectedDrawableMeshIndices;
                 w.Write((ushort)sel.Count);
                 for (int i = 0; i < sel.Count; i++)
                     w.Write(sel[i]);
@@ -141,7 +141,6 @@ namespace Poly_Ling.Remote
                 for (int i = 0; i < meshCount; i++)
                     model.MeshContextList.Add(new MeshContext { Name = $"Mesh{i}" });
 
-                model.SelectedMeshIndices = selectedIndices;
 
                 ushort matCount = r.ReadUInt16();
                 var matList = new List<UnityEngine.Material>(matCount);

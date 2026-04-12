@@ -105,7 +105,7 @@ namespace Poly_Ling.Remote
             if (ctx?.Model == null) return "[]";
 
             var meshList = ctx.Model.MeshContextList;
-            var selectedIndices = ctx.Model.SelectedMeshIndices;
+            var selectedIndices = ctx.Model.SelectedDrawableMeshIndices;
             string[] effectiveFields = fields ?? DefaultListFields;
 
             var jb = new JsonBuilder();
@@ -186,7 +186,7 @@ namespace Poly_Ling.Remote
             jb.KeyValue("hasMorphSelection", ctx.Model.HasMorphSelection);
 
             jb.Key("selectedMeshIndices").BeginArray();
-            foreach (int idx in ctx.Model.SelectedMeshIndices)
+            foreach (int idx in ctx.Model.SelectedDrawableMeshIndices)
                 jb.Value(idx);
             jb.EndArray();
 

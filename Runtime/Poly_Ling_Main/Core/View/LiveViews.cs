@@ -256,7 +256,7 @@ namespace Poly_Ling.View
         public int TotalMeshCount => _model.MeshContextCount;
 
         // 選択（毎回ライブで返す）
-        public int[] SelectedDrawableIndices => _model.SelectedMeshIndices.ToArray();
+        public int[] SelectedDrawableIndices => _model.SelectedDrawableMeshIndices.ToArray();
         public int[] SelectedBoneIndices => _model.SelectedBoneIndices.ToArray();
         public int[] SelectedMorphIndices => _model.SelectedMorphIndices.ToArray();
 

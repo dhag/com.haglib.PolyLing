@@ -73,7 +73,7 @@ namespace Poly_Ling.Player
             => _morphList    ??= BuildList(MeshCategory.Morph);
 
         public int[] SelectedDrawableIndices
-            => _selectedDrawableIndices ??= _model.SelectedMeshIndices.ToArray();
+            => _selectedDrawableIndices ??= _model.SelectedDrawableMeshIndices.ToArray();
         public int[] SelectedBoneIndices
             => _selectedBoneIndices     ??= _model.SelectedBoneIndices.ToArray();
         public int[] SelectedMorphIndices

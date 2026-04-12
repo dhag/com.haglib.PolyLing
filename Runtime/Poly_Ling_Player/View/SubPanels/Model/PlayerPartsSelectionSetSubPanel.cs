@@ -31,7 +31,7 @@ namespace Poly_Ling.Player
         private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
         private ProjectContext GetProject() => GetView?.Invoke();
         private MeshContext FirstSelectedMeshContext
-            => GetView?.Invoke()?.CurrentModel?.FirstSelectedDrawableMesh;
+            => GetView?.Invoke()?.CurrentModel?.FirstDrawableMeshContext;
 
         private void SendCmd(PanelCommand cmd) => SendCommand?.Invoke(cmd);
 

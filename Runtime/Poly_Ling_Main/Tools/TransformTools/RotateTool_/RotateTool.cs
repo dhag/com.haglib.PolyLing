@@ -119,7 +119,7 @@ namespace Poly_Ling.Tools
             var model = _ctx?.Model;
             if (model == null) return;
 
-            foreach (int meshIdx in model.SelectedMeshIndices)
+            foreach (int meshIdx in model.SelectedDrawableMeshIndices)
             {
                 var meshContext = model.GetMeshContext(meshIdx);
                 if (meshContext == null || !meshContext.HasSelection)

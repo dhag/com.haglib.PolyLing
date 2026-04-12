@@ -88,7 +88,7 @@ public partial class PolyLing
         // メッシュが未選択の場合: 背景のみ表示
         var meshContext = _model?.FirstSelectedMeshContext;
         if (meshContext == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
-            meshContext = _model?.FirstSelectedDrawableMeshContext;
+            meshContext = _model?.FirstDrawableMeshContext;
 
         Rect rect = GUILayoutUtility.GetRect(
             200, 10000, 200, 10000,
@@ -139,7 +139,7 @@ public partial class PolyLing
 
             var mc = _model?.FirstSelectedMeshContext;
             if (mc == null && Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive)
-                mc = _model?.FirstSelectedDrawableMeshContext;
+                mc = _model?.FirstDrawableMeshContext;
             if (mc == null) return;
 
             HandleInput(evt.Rect, mc, evt.CameraPos, evt.CameraTarget, evt.CameraDistance);

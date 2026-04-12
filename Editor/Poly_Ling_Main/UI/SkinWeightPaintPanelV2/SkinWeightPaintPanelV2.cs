@@ -558,7 +558,7 @@ namespace Poly_Ling.UI
                 return;
             }
 
-            var firstMesh = Model.FirstSelectedDrawableMeshContext;
+            var firstMesh = Model.FirstDrawableMeshContext;
             if (firstMesh?.MeshObject == null)
             {
                 SetWarning("選択メッシュが無効です。");
@@ -590,7 +590,7 @@ namespace Poly_Ling.UI
         private void UpdateWorkflowGuide()
         {
             bool hasMesh  = Model != null && Model.HasMeshSelection &&
-                            Model.FirstSelectedDrawableMeshContext?.MeshObject != null;
+                            Model.FirstDrawableMeshContext?.MeshObject != null;
             bool hasBone  = _targetBoneMasterIndex >= 0;
             bool canPaint = hasMesh && hasBone;
 
@@ -693,7 +693,7 @@ namespace Poly_Ling.UI
             if (_influenceListContainer == null || _vertexInfoLabel == null) return;
             _influenceListContainer.Clear();
 
-            var meshCtx = Model?.FirstSelectedDrawableMeshContext;
+            var meshCtx = Model?.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) { _vertexInfoLabel.text = "メッシュ未選択"; return; }
 
             var selectedVerts = meshCtx.SelectedVertices;
@@ -772,7 +772,7 @@ namespace Poly_Ling.UI
         private void UpdateStatus()
         {
             if (_statusLabel == null) return;
-            var meshCtx   = Model?.FirstSelectedDrawableMeshContext;
+            var meshCtx   = Model?.FirstDrawableMeshContext;
             int vertCount = meshCtx?.MeshObject?.VertexCount ?? 0;
             int boneCount = Model?.BoneCount ?? 0;
             int selVerts  = meshCtx?.SelectedVertices?.Count ?? 0;

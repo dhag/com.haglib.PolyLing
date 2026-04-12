@@ -25,11 +25,14 @@ namespace Poly_Ling.Tools
 
                 EditorGUILayout.Space(5);
 
-                BrushRadius = EditorGUILayout.Slider(T("BrushSize"), BrushRadius,
-                    SculptSettings.MIN_BRUSH_RADIUS, SculptSettings.MAX_BRUSH_RADIUS);
+                BrushRadius = EditorGUILayout.Slider(T("BrushRadius"), BrushRadius,
+                    _settings.MinBrushRadius, _settings.MaxBrushRadius);
+
+                // フォールオフ
+                Falloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), Falloff);
 
                 Strength = EditorGUILayout.Slider(T("Strength"), Strength,
-                    SculptSettings.MIN_STRENGTH, SculptSettings.MAX_STRENGTH);
+                    _settings.MinStrength, _settings.MaxStrength);
 
                 Invert = EditorGUILayout.Toggle(T("Invert"), Invert);
 

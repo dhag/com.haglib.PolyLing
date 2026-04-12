@@ -44,7 +44,7 @@ namespace Poly_Ling.Core
         private SelectionState _selectionState;
 
         // DrawWireframeAndVertices で PrepareDrawing に渡す selectedMeshIndex（モデルごと）。
-        // model.FirstDrawableMeshIndex を adapter のコンテキストインデックスに変換した値。
+        // model.FirstMeshIndex を adapter のコンテキストインデックスに変換した値。
         // RebuildAdapter / UpdateSelectedDrawableMesh で更新する。
         private readonly List<int>                  _selectedMeshIndexForDraw = new List<int>();
 
@@ -134,7 +134,7 @@ namespace Poly_Ling.Core
 
             // PrepareDrawing の selectedMeshIndex は adapter の unifiedMeshIndex を期待する。
             // SelectedDrawableMeshIndices[0]（MeshContextList インデックス）を変換する。
-            int ctxIdx = model.FirstDrawableMeshIndex;
+            int ctxIdx = model.FirstMeshIndex;
             if (ctxIdx < 0 || mi >= _adapters.Count || _adapters[mi] == null)
             {
                 _selectedMeshIndexForDraw[mi] = -1;
@@ -142,6 +142,16 @@ namespace Poly_Ling.Core
             }
             int unifiedIdx = _adapters[mi].BufferManager?.ContextToUnifiedMeshIndex(ctxIdx) ?? -1;
             _selectedMeshIndexForDraw[mi] = unifiedIdx;
+
+            // ActiveMeshIndex と選択フラグを即時更新する。
+            // RebuildAdapter は SelectMesh より先に呼ばれるため、ここで再設定が必要。
+            var bm = _adapters[mi].BufferManager;
+            if (bm != null && unifiedIdx >= 0)
+            {
+                bm.SyncSelectionFromModel(model);
+                bm.SetActiveMesh(0, unifiedIdx);
+                bm.UpdateAllSelectionFlags();
+            }
         }
 
         /// <summary>選択変更をGPUバッファに通知する。</summary>
@@ -181,7 +191,7 @@ namespace Poly_Ling.Core
             // 選択状態の初期設定（SelectDrawableMesh / SelectBone）は
             // Viewer（PolyLingPlayerViewer）がフェッチ完了後に行う。
             // ここではレンダラー内部の GPU バッファ初期化のみ行う。
-            int firstCtxIdx = model.FirstDrawableMeshIndex;
+            int firstCtxIdx = model.FirstMeshIndex;
             if (firstCtxIdx < 0)
             {
                 // SelectedDrawableMeshIndices が未設定の場合は
@@ -281,24 +291,16 @@ namespace Poly_Ling.Core
                 int selIdx = (mi < _selectedMeshIndexForDraw.Count)
                     ? _selectedMeshIndexForDraw[mi] : -1;
 
-                // ---- AllowSelectionSync ----
-                if (profile.AllowSelectionSync && project != null && mi < project.ModelCount)
+                // ---- AllowSelectedDrawableMeshSync ----
+                if (profile.AllowSelectedDrawableMeshSync && project != null && mi < project.ModelCount)
                 {
                     var bufMgr = adapter.BufferManager;
                     if (bufMgr != null)
                     {
                         var model = project.Models[mi];
-                        bool needSwap = model.SelectedMeshIndices.Count == 0
-                                     && model.SelectedDrawableMeshIndices.Count > 0;
-                        if (needSwap)
-                            foreach (var idx in model.SelectedDrawableMeshIndices)
-                                model.SelectedMeshIndices.Add(idx);
-
                         bufMgr.SyncSelectionFromModel(model);
                         if (selIdx >= 0) bufMgr.SetActiveMesh(0, selIdx);
                         bufMgr.UpdateAllSelectionFlags();
-
-                        if (needSwap) model.SelectedMeshIndices.Clear();
                     }
                 }
 

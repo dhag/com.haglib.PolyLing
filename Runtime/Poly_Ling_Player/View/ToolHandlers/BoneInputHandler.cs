@@ -43,6 +43,7 @@ namespace Poly_Ling.Player
         public Func<ToolContext>  GetToolContext;
         public Action             OnRepaint;
         public Action             OnSelectionChanged;
+        public Action             OnDrawableMeshSelectionChanged;
 
         // ================================================================
         // 依存
@@ -218,13 +219,15 @@ namespace Poly_Ling.Player
 
             if (bestIndex < 0) return false;
 
-            if (ctrl)       model.ToggleSelection(bestIndex);
+            if (ctrl)       model.ToggleMeshContextSelection(bestIndex);
             else if (shift) model.AddToBoneSelection(bestIndex);
             else            model.SelectBone(bestIndex);
 
             model.IsDirty = true;
             model.OnListChanged?.Invoke();
             OnSelectionChanged?.Invoke();
+            if (model.ActiveCategory == ModelContext.SelectionCategory.Mesh)
+                OnDrawableMeshSelectionChanged?.Invoke();
             return true;
         }
 

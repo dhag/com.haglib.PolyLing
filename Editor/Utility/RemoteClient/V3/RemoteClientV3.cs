@@ -622,7 +622,7 @@ namespace Poly_Ling.Remote
             _undoController.SetCommandQueue(_commandQueue);
 
             // MeshListStack.Context を model と同一インスタンスにする
-            // → MeshList Undo/Redo 時に model.SelectedMeshIndices が直接復元される
+            // → MeshList Undo/Redo 時に model.SelectedDrawableMeshIndices が直接復元される
             _undoController.SetModelContext(model);
 
             // ParentModelContext を設定：MeshUndoContext.ResolvedMeshContext が
@@ -696,11 +696,11 @@ namespace Poly_Ling.Remote
                 }
                 else if (stackType == MeshUndoController.UndoStackType.MeshList)
                 {
-                    // MeshSelectionChangeRecord が model.SelectedMeshIndices を直接復元済み
+                    // MeshSelectionChangeRecord が model.SelectedDrawableMeshIndices を直接復元済み
                     // (_meshListStack.Context == model のため)
                     // _selectedModelIndex / _selectedMeshIndex を同期してビューを更新
-                    _selectedMeshIndex = model.SelectedMeshIndices.Count > 0
-                        ? model.SelectedMeshIndices[0] : -1;
+                    _selectedMeshIndex = model.SelectedDrawableMeshIndices.Count > 0
+                        ? model.SelectedDrawableMeshIndices[0] : -1;
 
                     if (_viewport?.CurrentModel == model)
                     {
@@ -954,9 +954,9 @@ namespace Poly_Ling.Remote
             var model = GetSelectedModel();
             if (model != null && _viewport?.CurrentModel == model)
             {
-                var oldIndices = new List<int>(model.SelectedMeshIndices);
-                model.SelectDrawable(meshIndex);
-                var newIndices = new List<int>(model.SelectedMeshIndices);
+                var oldIndices = new List<int>(model.SelectedDrawableMeshIndices);
+                model.SelectMesh(meshIndex);
+                var newIndices = new List<int>(model.SelectedDrawableMeshIndices);
 
                 if (_undoController != null && !oldIndices.SequenceEqual(newIndices))
                     _undoController.RecordMeshSelectionChange(oldIndices, newIndices);

@@ -253,7 +253,7 @@ namespace Poly_Ling.UI
 
             if (!hasFaceSelection) return;
 
-            var meshContext = Model?.FirstSelectedMeshContext;
+            var meshContext = Model?.FirstDrawableMeshContext;
             if (meshContext?.MeshObject == null) return;
 
             // 選択面のマテリアル分布
@@ -334,7 +334,7 @@ namespace Poly_Ling.UI
             var before = UndoController?.CaptureMeshObjectSnapshot();
 
             // 該当マテリアルを使用している面をスロット0に移動
-            var meshContext = Model.FirstSelectedMeshContext;
+            var meshContext = Model.FirstDrawableMeshContext;
             if (meshContext?.MeshObject != null)
             {
                 foreach (var face in meshContext.MeshObject.Faces)
@@ -395,7 +395,7 @@ namespace Poly_Ling.UI
         {
             if (Model == null) return;
 
-            var meshContext = Model.FirstSelectedMeshContext;
+            var meshContext = Model.FirstDrawableMeshContext;
             var selState = SelectionState;
             if (meshContext?.MeshObject == null || selState == null || selState.Faces.Count == 0)
                 return;

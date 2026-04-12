@@ -404,7 +404,7 @@ namespace Poly_Ling.Tools
             if (model == null) return;
 
             // 全選択メッシュを対等にイテレート
-            foreach (int meshIdx in model.SelectedMeshIndices)
+            foreach (int meshIdx in model.SelectedDrawableMeshIndices)
             {
                 var meshContext = model.GetMeshContext(meshIdx);
                 if (meshContext == null || !meshContext.HasSelection)
@@ -669,7 +669,7 @@ namespace Poly_Ling.Tools
 
             // 影響セットに含まれていない → 選択済みメッシュから探して追加
             // まず、選択に含まれているメッシュを探す
-            foreach (int meshIdx in ctx.Model.SelectedMeshIndices)
+            foreach (int meshIdx in ctx.Model.SelectedDrawableMeshIndices)
             {
                 var mc = ctx.Model.GetMeshContext(meshIdx);
                 if (mc?.MeshObject == null) continue;
@@ -688,7 +688,7 @@ namespace Poly_Ling.Tools
             // 最終フォールバック: どのメッシュの選択にも含まれていない場合
             // （PolyLing_Inputの選択処理が間に合わなかったケース）
             // 頂点インデックスが有効な最初のメッシュに追加する
-            foreach (int meshIdx in ctx.Model.SelectedMeshIndices)
+            foreach (int meshIdx in ctx.Model.SelectedDrawableMeshIndices)
             {
                 var mc = ctx.Model.GetMeshContext(meshIdx);
                 if (mc?.MeshObject == null) continue;

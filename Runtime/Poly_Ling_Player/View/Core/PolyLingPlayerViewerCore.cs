@@ -231,6 +231,11 @@ namespace Poly_Ling.Player
                 _selectionOps,
                 NotifyPanels,
                 s => _status = s);
+            _fetchFlow.OnModelContextReady = model =>
+            {
+                if (_editOps?.UndoController?.MeshUndoContext != null)
+                    _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
+            };
 
             // RemoteMode.Server: BuildLayout 後に Initialize（_commandDispatcher 確定後）
             if (_remoteMode == RemoteMode.Server && _playerServer != null)
@@ -279,7 +284,7 @@ namespace Poly_Ling.Player
                     {
                         var mc = entry.Context;
                         if (mc?.MeshObject != null && mc.MeshObject.VertexCount > 0 && mc.IsVisible)
-                        { loadedModel.SelectDrawableMesh(entry.MasterIndex); break; }
+                        { loadedModel.SelectMesh(entry.MasterIndex); break; }
                     }
 
                 int lNeckIdx = -1, lFirstBone = -1;
@@ -294,12 +299,14 @@ namespace Poly_Ling.Player
                 int lSelBone = lNeckIdx >= 0 ? lNeckIdx : lFirstBone;
                 if (lSelBone >= 0) loadedModel.SelectBone(lSelBone);
 
-                var firstMcLocal = loadedModel.FirstSelectedDrawableMesh;
+                var firstMcLocal = loadedModel.FirstDrawableMeshContext;
                 if (firstMcLocal != null)
                 {
                     _selectionOps?.SetSelectionState(firstMcLocal.Selection);
                     _renderer?.SetSelectionState(firstMcLocal.Selection);
                 }
+                if (_editOps?.UndoController?.MeshUndoContext != null)
+                    _editOps.UndoController.MeshUndoContext.ParentModelContext = loadedModel;
                 _renderer?.UpdateSelectedDrawableMesh(0, loadedModel);
                 _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
 
@@ -487,6 +494,7 @@ namespace Poly_Ling.Player
                 _activePanel?.ShowBrushCircle(center, radius);
             _sculptHandler.OnHideBrushCircle = () =>
                 _activePanel?.HideBrushCircle();
+            _sculptHandler.GetBrushHit = (pos, r) => _viewportManager.GetBrushHit(pos, r);
 
             _advancedSelectHandler = new AdvancedSelectToolHandler();
             _advancedSelectHandler.SetProject(ActiveProject);
@@ -779,10 +787,12 @@ namespace Poly_Ling.Player
             if (model == null) return false;
 
             if (mods.Shift || mods.Ctrl)
-                model.ToggleSelection(idx);
+                model.ToggleMeshContextSelection(idx);
             else
                 model.Select(idx);
 
+            if (model.ActiveCategory == ModelContext.SelectionCategory.Mesh)
+                _renderer?.UpdateSelectedDrawableMesh(0, model);
             _renderer?.NotifySelectionChanged();
             NotifyPanels(ChangeKind.Selection);
             _objectMoveTRSPanel?.Refresh();
@@ -979,6 +989,10 @@ namespace Poly_Ling.Player
                 _viewportManager.RebuildAdapter(0, ActiveProject?.CurrentModel);
                 _boneEditorSubPanel?.Refresh();
                 NotifyPanels(ChangeKind.Selection);
+            };
+            _boneInputHandler.OnDrawableMeshSelectionChanged = () =>
+            {
+                _renderer?.UpdateSelectedDrawableMesh(0, ActiveProject?.CurrentModel);
             };
 
             _boneEditorSubPanel = new PlayerBoneEditorSubPanel();
@@ -1650,12 +1664,12 @@ namespace Poly_Ling.Player
             model.Add(ctx);
             model.ComputeWorldMatrices();
             int newIndex = model.MeshContextCount - 1;
-            model.SelectByTypeExclusive(newIndex);
-            model.SelectDrawableMesh(newIndex);
+            model.SelectMeshContextExclusive(newIndex);
+            model.SelectMesh(newIndex);
 
             _viewportManager.RebuildAdapter(0, model);
 
-            var firstMc = model.FirstSelectedDrawableMesh;
+            var firstMc = model.FirstDrawableMeshContext;
             if (firstMc != null)
             {
                 _selectionOps?.SetSelectionState(firstMc.Selection);
@@ -1814,7 +1828,7 @@ namespace Poly_Ling.Player
             if (model == null) return;
             _renderer?.ClearScene();
             _viewportManager.RebuildAdapter(0, model);
-            var firstMc = model.FirstSelectedDrawableMesh;
+            var firstMc = model.FirstDrawableMeshContext;
             if (firstMc != null)
             {
                 _selectionOps?.SetSelectionState(firstMc.Selection);
@@ -1828,7 +1842,7 @@ namespace Poly_Ling.Player
             if (model == null) return;
             _renderer?.ClearScene();
             _viewportManager.RebuildAdapter(0, model);
-            var firstMc = model.FirstSelectedDrawableMesh;
+            var firstMc = model.FirstDrawableMeshContext;
             if (firstMc != null)
             {
                 _selectionOps?.SetSelectionState(firstMc.Selection);
@@ -1956,7 +1970,7 @@ namespace Poly_Ling.Player
 
             _viewportManager.RebuildAdapter(0, model);
 
-            var firstMc = model.FirstSelectedDrawableMesh;
+            var firstMc = model.FirstDrawableMeshContext;
             if (firstMc != null)
             {
                 _selectionOps?.SetSelectionState(firstMc.Selection);

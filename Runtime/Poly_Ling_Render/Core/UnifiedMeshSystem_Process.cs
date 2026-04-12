@@ -90,7 +90,7 @@ namespace Poly_Ling.Core
             if (_currentModel == null)
                 return;
 
-            foreach (int contextIdx in _currentModel.SelectedMeshIndices)
+            foreach (int contextIdx in _currentModel.SelectedDrawableMeshIndices)
             {
                 ProcessTransformUpdate(contextIdx);
             }
@@ -144,7 +144,7 @@ namespace Poly_Ling.Core
         ///
         /// 【理由】GPU版はDispatchClearBuffersGPUで_VertexFlagsBuffer（選択フラグ含む）を
         /// ゼロクリアする。フルパイプライン内（Normal時）ではPrepareUnifiedDrawingの
-        /// AllowSelectionSync=trueで選択フラグが再設定されるが、Idle時は再設定されず
+        /// AllowSelectedDrawableMeshSync=trueで選択フラグが再設定されるが、Idle時は再設定されず
         /// 選択表示が消えてちらつく。CPU版はスクリーン座標配列を読むだけで
         /// GPUバッファを一切変更しないため安全。
         /// </param>
@@ -344,7 +344,7 @@ namespace Poly_Ling.Core
 
             if (level.Has(DirtyLevel.Selection))
             {
-                // Selection更新はPrepareUnifiedDrawingのAllowSelectionSyncブロックで実行。
+                // Selection更新はPrepareUnifiedDrawingのAllowSelectedDrawableMeshSyncブロックで実行。
                 // そちらはSyncSelectionFromModel + SetActiveMesh + UpdateAllSelectionFlagsの
                 // 完全なシーケンスを持つため、ここでの重複実行を排除。
             }
@@ -515,7 +515,7 @@ namespace Poly_Ling.Core
             _mousePosition = mousePosition;
             // ★ cpuOnly=true: GPUバッファ（選択フラグ等）を破壊しない。
             // GPU版はDispatchClearBuffersGPUで_VertexFlagsBufferをゼロクリアし、
-            // Idle時はAllowSelectionSync=falseのため再設定されずちらつく。
+            // Idle時はAllowSelectedDrawableMeshSync=falseのため再設定されずちらつく。
             ProcessMouseUpdate(cpuOnly: true);
         }
 

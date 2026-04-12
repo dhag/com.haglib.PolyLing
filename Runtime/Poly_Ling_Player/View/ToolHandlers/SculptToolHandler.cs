@@ -39,6 +39,16 @@ namespace Poly_Ling.Player
         /// <summary>ブラシ円を非表示にするコールバック。</summary>
         public Action OnHideBrushCircle;
 
+
+        /// <summary>ブラシ半径が変更されたときに呼ばれるコールバック（UIパネル更新用）。</summary>
+        public Action<float> OnRadiusChanged;
+
+        /// <summary>
+        /// スカルプトブラシ用ヒットテスト。PlayerViewportManager.GetBrushHit を設定する。
+        /// Normal モード時は HoverVertexIndex を、TransformDragging 時は _screenPositions から直接検索する。
+        /// </summary>
+        public Func<Vector2, float, PlayerHitResult> GetBrushHit;
+
         // ================================================================
         // ブラシ設定公開
         // ================================================================
@@ -52,13 +62,29 @@ namespace Poly_Ling.Player
         public float BrushRadius
         {
             get => ((SculptSettings)_tool.Settings)?.BrushRadius ?? 0.5f;
-            set { if (_tool.Settings is SculptSettings s) s.BrushRadius = Mathf.Clamp(value, SculptSettings.MIN_BRUSH_RADIUS, SculptSettings.MAX_BRUSH_RADIUS); }
+            set
+            {
+                if (_tool.Settings is SculptSettings s)
+                    s.BrushRadius = Mathf.Clamp(value, s.MinBrushRadius, s.MaxBrushRadius);
+            }
         }
 
         public float Strength
         {
             get => ((SculptSettings)_tool.Settings)?.Strength ?? 0.1f;
-            set { if (_tool.Settings is SculptSettings s) s.Strength = Mathf.Clamp(value, SculptSettings.MIN_STRENGTH, SculptSettings.MAX_STRENGTH); }
+            set { if (_tool.Settings is SculptSettings s) s.Strength = Mathf.Clamp(value, s.MinStrength, s.MaxStrength); }
+        }
+
+        public float MinStrength
+        {
+            get => ((SculptSettings)_tool.Settings)?.MinStrength ?? 0.01f;
+            set { if (_tool.Settings is SculptSettings s) s.MinStrength = Mathf.Max(0.001f, value); }
+        }
+
+        public float MaxStrength
+        {
+            get => ((SculptSettings)_tool.Settings)?.MaxStrength ?? 0.05f;
+            set { if (_tool.Settings is SculptSettings s) s.MaxStrength = Mathf.Max(MinStrength + 0.001f, value); }
         }
 
         public bool Invert
@@ -66,6 +92,37 @@ namespace Poly_Ling.Player
             get => ((SculptSettings)_tool.Settings)?.Invert ?? false;
             set { if (_tool.Settings is SculptSettings s) s.Invert = value; }
         }
+
+        public FalloffType Falloff
+        {
+            get => ((SculptSettings)_tool.Settings)?.Falloff ?? FalloffType.Gaussian;
+            set { if (_tool.Settings is SculptSettings s) s.Falloff = value; }
+        }
+
+        public float MinBrushRadius
+        {
+            get => ((SculptSettings)_tool.Settings)?.MinBrushRadius ?? 0.05f;
+            set { if (_tool.Settings is SculptSettings s) s.MinBrushRadius = Mathf.Max(0.001f, value); }
+        }
+
+        public float MaxBrushRadius
+        {
+            get => ((SculptSettings)_tool.Settings)?.MaxBrushRadius ?? 1.0f;
+            set { if (_tool.Settings is SculptSettings s) s.MaxBrushRadius = Mathf.Max(MinBrushRadius + 0.001f, value); }
+        }
+
+        // ================================================================
+        // ドラッグによる半径指定モード
+        // ================================================================
+
+        /// <summary>
+        /// true の間、次のドラッグ操作はスカルプトではなく
+        /// ブラシ半径の設定として扱われる。ドラッグ終了後に自動的に false に戻る。
+        /// </summary>
+        public bool IsRadiusDragMode { get; set; } = false;
+
+        private Vector2 _radiusDragStartPos;
+        private bool    _inRadiusDrag;
 
         // ================================================================
         // 初期化
@@ -80,6 +137,7 @@ namespace Poly_Ling.Player
 
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            if (IsRadiusDragMode) { IsRadiusDragMode = false; return; }
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
@@ -89,6 +147,12 @@ namespace Poly_Ling.Player
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            if (IsRadiusDragMode)
+            {
+                _radiusDragStartPos = screenPos;
+                _inRadiusDrag       = true;
+                return;
+            }
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
@@ -96,14 +160,40 @@ namespace Poly_Ling.Player
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
-            var ctx = BuildToolContext(mods, screenPos);
-            if (ctx == null) return;
-            _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
-            UpdateBrushCircleOverlay(ctx, screenPos);
+            if (_inRadiusDrag)
+            {
+                var ctx = BuildToolContext(mods, screenPos);
+                if (ctx != null)
+                {
+                    float screenDist = Vector2.Distance(screenPos, _radiusDragStartPos);
+                    float newRadius  = ScreenDistToWorldRadius(screenDist, ctx);
+                    if (_tool.Settings is SculptSettings s)
+                        newRadius = Mathf.Clamp(newRadius, s.MinBrushRadius, s.MaxBrushRadius);
+                    BrushRadius = newRadius;
+                    OnRadiusChanged?.Invoke(newRadius);
+                    // ドラッグ開始位置を中心にブラシ円をプレビュー
+                    float previewPx = ScreenRadiusFromWorldRadius(newRadius, ctx);
+                    OnUpdateBrushCircle?.Invoke(_radiusDragStartPos, previewPx);
+                }
+                return;
+            }
+
+            var ctx2 = BuildToolContext(mods, screenPos);
+            if (ctx2 == null) return;
+            _tool.OnMouseDrag(ctx2, ToImgui(screenPos, ctx2), delta);
+            UpdateBrushCircleOverlay(ctx2, screenPos);
         }
 
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
+            if (_inRadiusDrag)
+            {
+                _inRadiusDrag       = false;
+                IsRadiusDragMode    = false;
+                OnHideBrushCircle?.Invoke();
+                return;
+            }
+
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
@@ -129,21 +219,39 @@ namespace Poly_Ling.Player
 
         private float EstimateBrushScreenRadius(ToolContext ctx)
         {
+            return ScreenRadiusFromWorldRadius(BrushRadius, ctx);
+        }
+
+        private float ScreenRadiusFromWorldRadius(float worldRadius, ToolContext ctx)
+        {
             Vector3 testPoint = ctx.CameraTarget;
             Vector3 camRight  = Vector3.Cross(
                 (ctx.CameraTarget - ctx.CameraPosition).normalized, Vector3.up).normalized;
             if (camRight.sqrMagnitude < 0.001f) camRight = Vector3.right;
-            Vector3 offsetPoint = testPoint + camRight * BrushRadius;
+            Vector3 offsetPoint = testPoint + camRight * worldRadius;
 
             Vector2 sp1 = ctx.WorldToScreenPos(testPoint,    ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             Vector2 sp2 = ctx.WorldToScreenPos(offsetPoint,  ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
-            // WorldToScreenPos は Y=0 が上（IMGUI 系）→ Y=0 が下に変換して返す
-            float panelH   = ctx.PreviewRect.height;
+            float panelH = ctx.PreviewRect.height;
             sp1.y = panelH - sp1.y;
             sp2.y = panelH - sp2.y;
 
             return Mathf.Max(Vector2.Distance(sp1, sp2), 10f);
+        }
+
+        private float ScreenDistToWorldRadius(float screenDist, ToolContext ctx)
+        {
+            Vector3 target   = ctx.CameraTarget;
+            Vector3 camRight = Vector3.Cross(
+                (ctx.CameraTarget - ctx.CameraPosition).normalized, Vector3.up).normalized;
+            if (camRight.sqrMagnitude < 0.001f) camRight = Vector3.right;
+
+            Vector2 sp1 = ctx.WorldToScreenPos(target,          ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector2 sp2 = ctx.WorldToScreenPos(target + camRight, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            float pxPerUnit = Vector2.Distance(sp1, sp2);
+            if (pxPerUnit < 0.001f) return screenDist * 0.01f;
+            return screenDist / pxPerUnit;
         }
 
         // ================================================================
@@ -169,21 +277,34 @@ namespace Poly_Ling.Player
                 CurrentMousePosition = ToImgui(screenPosYDown, baseCtx),
             };
 
-            // 頂点位置変更後に UnityMesh + GPU バッファを同期
             baseCtx.SyncMesh = () =>
             {
-                // 全選択メッシュを同期（SculptToolは複数メッシュ対応）
-                foreach (int idx in model.SelectedMeshIndices)
+                foreach (int idx in model.SelectedDrawableMeshIndices)
                 {
                     var mc = model.GetMeshContext(idx);
                     if (mc != null) OnSyncMeshPositions?.Invoke(mc);
                 }
             };
 
+            // ブラシ中心算出用: Normal モード時は HoverVertexIndex、TransformDragging 時は直接検索
+            var capturedScreenPos = screenPosYDown;
+            baseCtx.GetHoverWorldPosition = () =>
+            {
+                if (GetBrushHit == null) return null;
+                var hit = GetBrushHit(capturedScreenPos, 12f);
+                if (!hit.HasHit) return null;
+                var mc = model.GetMeshContext(hit.MeshIndex);
+                if (mc?.MeshObject == null) return null;
+                if (hit.VertexIndex < 0 || hit.VertexIndex >= mc.MeshObject.VertexCount) return null;
+                return (Vector3?)mc.MeshObject.Vertices[hit.VertexIndex].Position;
+            };
+
+
             return baseCtx;
         }
 
         private MeshUndoController _undoController;
+
 
         private static Vector2 ToImgui(Vector2 screenPosYDown, ToolContext ctx)
         {

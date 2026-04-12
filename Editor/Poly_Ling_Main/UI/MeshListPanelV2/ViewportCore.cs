@@ -477,9 +477,9 @@ namespace Poly_Ling.MeshListV2
 
             if (ShowSelectedMeshOnly)
             {
-                if (model.SelectedMeshIndices.Count > 0)
+                if (model.SelectedDrawableMeshIndices.Count > 0)
                 {
-                    foreach (int idx in model.SelectedMeshIndices)
+                    foreach (int idx in model.SelectedDrawableMeshIndices)
                     {
                         if (idx < 0 || idx >= model.MeshContextCount) continue;
                         var ctx = model.GetMeshContext(idx);
@@ -530,10 +530,10 @@ namespace Poly_Ling.MeshListV2
             var profile = _adapter.CurrentProfile;
 
             int selectedIdx = -1;
-            if (model.SelectedMeshIndices.Count == 1)
-                selectedIdx = _adapter.ContextToUnifiedMeshIndex(model.SelectedMeshIndices[0]);
+            if (model.SelectedDrawableMeshIndices.Count == 1)
+                selectedIdx = _adapter.ContextToUnifiedMeshIndex(model.SelectedDrawableMeshIndices[0]);
 
-            if (profile.AllowSelectionSync)
+            if (profile.AllowSelectedDrawableMeshSync)
             {
                 var bufMgr = _adapter.BufferManager;
                 if (bufMgr != null)
@@ -559,7 +559,7 @@ namespace Poly_Ling.MeshListV2
                 }
             }
 
-            int meshIdxForDraw = (model.SelectedMeshIndices.Count > 1) ? -1 : selectedIdx;
+            int meshIdxForDraw = (model.SelectedDrawableMeshIndices.Count > 1) ? -1 : selectedIdx;
             var pointSize = ShaderColorSettings.Default.VertexPointScale;
 
             _adapter.PrepareDrawing(
@@ -583,8 +583,8 @@ namespace Poly_Ling.MeshListV2
             if (sys == null) return;
             if (!sys.GetHoveredFaceLocal(out int hovMeshIdx, out int localFace)) return;
 
-            int selectedMaster = _currentModel.SelectedMeshIndices.Count > 0
-                ? _currentModel.SelectedMeshIndices[0] : -1;
+            int selectedMaster = _currentModel.SelectedDrawableMeshIndices.Count > 0
+                ? _currentModel.SelectedDrawableMeshIndices[0] : -1;
             int selectedUnified = _adapter.ContextToUnifiedMeshIndex(selectedMaster);
             if (hovMeshIdx != selectedUnified) return;
 
@@ -626,8 +626,8 @@ namespace Poly_Ling.MeshListV2
             var meshObj = meshCtx.MeshObject;
             var colors = _adapter?.ColorSettings ?? ShaderColorSettings.Default;
 
-            int masterIdx = _currentModel.SelectedMeshIndices.Count > 0
-                ? _currentModel.SelectedMeshIndices[0] : -1;
+            int masterIdx = _currentModel.SelectedDrawableMeshIndices.Count > 0
+                ? _currentModel.SelectedDrawableMeshIndices[0] : -1;
             Matrix4x4 dm = GetDisplayMatrixDelegate?.Invoke(masterIdx) ?? Matrix4x4.identity;
             bool useIdentity = (dm == Matrix4x4.identity);
 
@@ -666,7 +666,7 @@ namespace Poly_Ling.MeshListV2
         {
             _adapter.ReadBackVertexFlags();
 
-            foreach (int meshIdx in model.SelectedMeshIndices)
+            foreach (int meshIdx in model.SelectedDrawableMeshIndices)
             {
                 if (meshIdx < 0 || meshIdx >= model.MeshContextCount) continue;
                 var ctx = model.GetMeshContext(meshIdx);
@@ -685,7 +685,7 @@ namespace Poly_Ling.MeshListV2
                         vertOffset = (int)bufMgr.MeshInfos[uIdx].VertexStart;
                 }
 
-                bool isLead = (model.SelectedMeshIndices.Count <= 1) || (model.SelectedMeshIndices[0] == meshIdx);
+                bool isLead = (model.SelectedDrawableMeshIndices.Count <= 1) || (model.SelectedDrawableMeshIndices[0] == meshIdx);
                 var style = isLead ? EditorStyles.miniLabel : EditorStyles.whiteMiniLabel;
 
                 for (int i = 0; i < meshObj.VertexCount; i++)
@@ -853,11 +853,11 @@ namespace Poly_Ling.MeshListV2
             // スキンドメッシュはボーン群で変形されるため単一ピボットが存在せずVector3.zeroを使用。
             Vector3 pivot = Vector3.zero;
             var model = _currentModel;
-            if (model != null && model.SelectedMeshIndices.Count > 0)
+            if (model != null && model.SelectedDrawableMeshIndices.Count > 0)
             {
                 Vector3 sum = Vector3.zero;
                 int count = 0;
-                foreach (int idx in model.SelectedMeshIndices)
+                foreach (int idx in model.SelectedDrawableMeshIndices)
                 {
                     var ctx = model.GetMeshContext(idx);
                     if (ctx == null) continue;

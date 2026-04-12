@@ -68,7 +68,7 @@ namespace Poly_Ling.Data
 
             List<int> indices = category switch
             {
-                ModelContext.SelectionCategory.Mesh => model.SelectedMeshIndices,
+                ModelContext.SelectionCategory.Mesh => model.SelectedDrawableMeshIndices,
                 ModelContext.SelectionCategory.Bone => model.SelectedBoneIndices,
                 ModelContext.SelectionCategory.Morph => model.SelectedMorphIndices,
                 _ => new List<int>()

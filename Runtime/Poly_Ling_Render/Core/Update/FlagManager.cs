@@ -45,7 +45,7 @@ namespace Poly_Ling.Core
 
         // v2.1: 複数メッシュ選択
         /// <summary>選択されているメッシュインデックスのリスト</summary>
-        public List<int> SelectedMeshIndices { get; set; } = new List<int>();
+        public List<int> SelectedUnifiedMeshIndices { get; set; } = new List<int>();
 
         /// <summary>
         /// 指定メッシュが選択されているかチェック（複数選択対応）
@@ -53,7 +53,7 @@ namespace Poly_Ling.Core
         public bool IsMeshSelected(int meshIndex)
         {
             // v2.1: 複数選択をチェック
-            if (SelectedMeshIndices != null && SelectedMeshIndices.Contains(meshIndex))
+            if (SelectedUnifiedMeshIndices != null && SelectedUnifiedMeshIndices.Contains(meshIndex))
                 return true;
             
             // 後方互換: 単一選択もチェック

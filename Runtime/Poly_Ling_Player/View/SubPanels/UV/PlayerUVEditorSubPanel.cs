@@ -100,6 +100,7 @@ namespace Poly_Ling.Player
 
         private VisualElement _root;
         private Label         _meshMatLabel;
+        private DropdownField _materialDropdown;
         private Label         _warningLabel;
         private Label         _infoLabel;
         private Texture2D     _bgTexture;
@@ -107,6 +108,10 @@ namespace Poly_Ling.Player
         private VisualElement _canvas;
         private VisualElement _transformSection;
         private FloatField    _moveU, _moveV, _scaleU, _scaleV, _rotateDeg;
+
+        // 頂点が存在するマテリアルのインデックスリスト（MeshContext.GetMaterial用）
+        private readonly List<int> _matsWithVerts = new List<int>();
+        private int _selectedMatListIndex = 0;
 
         // ================================================================
         // Build
@@ -126,6 +131,18 @@ namespace Poly_Ling.Player
             _meshMatLabel.style.marginBottom = 2;
             _meshMatLabel.style.whiteSpace  = WhiteSpace.Normal;
             _root.Add(_meshMatLabel);
+
+            // マテリアル選択ドロップダウン
+            _materialDropdown = new DropdownField("Material");
+            _materialDropdown.style.fontSize   = 10;
+            _materialDropdown.style.marginBottom = 2;
+            _materialDropdown.RegisterValueChangedCallback(_ =>
+            {
+                _selectedMatListIndex = _materialDropdown.index;
+                RefreshCanvasBackground(GetMeshContext());
+                _canvas?.MarkDirtyRepaint();
+            });
+            _root.Add(_materialDropdown);
 
             // 警告
             _warningLabel = new Label();
@@ -208,16 +225,12 @@ namespace Poly_Ling.Player
             var mo     = mc?.MeshObject;
             bool hasMesh = mo != null;
 
-            // メッシュ名・マテリアル名ラベル
+            // メッシュ名ラベル
             if (_meshMatLabel != null)
             {
                 if (hasMesh)
                 {
-                    string meshName = mc.Name ?? "";
-                    var mat = mc.GetCurrentMaterial();
-                    string matName = mat != null ? mat.name : "";
-                    bool hasMat = !string.IsNullOrEmpty(matName);
-                    _meshMatLabel.text  = hasMat ? $"{meshName}  |  {matName}" : meshName;
+                    _meshMatLabel.text  = mc.Name ?? "";
                     _meshMatLabel.style.color = new StyleColor(Color.white);
                 }
                 else
@@ -225,6 +238,24 @@ namespace Poly_Ling.Player
                     _meshMatLabel.text  = "メッシュが未選択です";
                     _meshMatLabel.style.color = new StyleColor(new Color(1f, 0.5f, 0.2f));
                 }
+            }
+
+            // 頂点が存在するマテリアルリストを構築してドロップダウン更新
+            _matsWithVerts.Clear();
+            if (hasMesh) BuildMatsWithVerts(mo, mc);
+            if (_materialDropdown != null)
+            {
+                var choices = new System.Collections.Generic.List<string>();
+                foreach (var mi in _matsWithVerts)
+                {
+                    var mat = mc.GetMaterial(mi);
+                    choices.Add(mat != null ? $"[{mi}] {mat.name}" : $"[{mi}]");
+                }
+                _materialDropdown.choices = choices;
+                _materialDropdown.style.display = (_matsWithVerts.Count > 0) ? DisplayStyle.Flex : DisplayStyle.None;
+                if (_selectedMatListIndex >= _matsWithVerts.Count) _selectedMatListIndex = 0;
+                if (choices.Count > 0)
+                    _materialDropdown.SetValueWithoutNotify(choices[_selectedMatListIndex]);
             }
 
             // 警告ラベル（旧）は非表示に統一
@@ -235,47 +266,7 @@ namespace Poly_Ling.Player
                 _transformSection.style.display = hasMesh ? DisplayStyle.Flex : DisplayStyle.None;
 
             // キャンバス背景
-            if (_canvas != null)
-            {
-                Texture2D tex = null;
-                if (hasMesh)
-                {
-                    var mat = mc.GetCurrentMaterial();
-                    tex = mat?.mainTexture as Texture2D;
-                }
-
-                if (tex != null)
-                {
-                    _bgTexture = tex;
-                    _canvas.style.backgroundImage = new StyleBackground(tex);
-                    _canvas.style.backgroundColor = new StyleColor(Color.clear);
-                }
-                else
-                {
-                    _bgTexture = null;
-                    _canvas.style.backgroundImage = StyleKeyword.None;
-
-                    if (hasMesh)
-                    {
-                        var mat = mc.GetCurrentMaterial();
-                        if (mat != null)
-                        {
-                            // メインテクスチャなし・色あり
-                            Color c = mat.color;
-                            c.a = 1f;
-                            _canvas.style.backgroundColor = new StyleColor(c);
-                        }
-                        else
-                        {
-                            _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
-                        }
-                    }
-                    else
-                    {
-                        _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
-                    }
-                }
-            }
+            RefreshCanvasBackground(mc);
 
             UpdateInfo(mo);
             UpdateCanvasBackground();
@@ -385,6 +376,8 @@ namespace Poly_Ling.Player
             {
                 var face = faces[fi];
                 if (face == null || face.VertexCount < 3) continue;
+                // 選択中マテリアルの面のみ描画
+                if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
 
                 bool hasSel = false;
                 for (int ci = 0; ci < face.VertexCount; ci++)
@@ -415,6 +408,7 @@ namespace Poly_Ling.Player
             {
                 var face = faces[fi];
                 if (face == null) continue;
+                if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
                 for (int ci = 0; ci < face.VertexCount; ci++)
                 {
                     int vi = face.VertexIndices[ci];
@@ -794,7 +788,7 @@ namespace Poly_Ling.Player
         private void RecordTopologyChange(string opName, Action<MeshObject> action)
         {
             var model = GetModel?.Invoke();
-            var mc    = model?.FirstSelectedMeshContext;
+            var mc    = model?.FirstDrawableMeshContext;
             if (mc?.MeshObject == null) return;
 
             var undo   = GetUndoController?.Invoke();
@@ -813,6 +807,56 @@ namespace Poly_Ling.Player
         // ================================================================
         // ヘルパー
         // ================================================================
+
+        /// <summary>頂点が存在する（面で参照されている）マテリアルのインデックスリストを構築する</summary>
+        private void BuildMatsWithVerts(MeshObject mo, MeshContext mc)
+        {
+            var seen = new HashSet<int>();
+            foreach (var face in mo.Faces)
+            {
+                if (face == null) continue;
+                seen.Add(face.MaterialIndex);
+            }
+            var sorted = new List<int>(seen);
+            sorted.Sort();
+            foreach (var mi in sorted)
+                _matsWithVerts.Add(mi);
+        }
+
+        /// <summary>現在選択中のマテリアルに基づいてキャンバス背景を更新する</summary>
+        private void RefreshCanvasBackground(MeshContext mc)
+        {
+            if (_canvas == null) return;
+            bool hasMesh = mc?.MeshObject != null;
+            Texture2D tex = null;
+            Material mat = null;
+            if (hasMesh && _matsWithVerts.Count > 0)
+            {
+                int matIdx = _matsWithVerts[_selectedMatListIndex];
+                mat = mc.GetMaterial(matIdx);
+                tex = mat?.mainTexture as Texture2D;
+            }
+            if (tex != null)
+            {
+                _bgTexture = tex;
+                _canvas.style.backgroundImage = new StyleBackground(tex);
+                _canvas.style.backgroundColor = new StyleColor(Color.clear);
+            }
+            else
+            {
+                _bgTexture = null;
+                _canvas.style.backgroundImage = StyleKeyword.None;
+                if (mat != null)
+                {
+                    Color col = mat.color; col.a = 1f;
+                    _canvas.style.backgroundColor = new StyleColor(col);
+                }
+                else
+                {
+                    _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+                }
+            }
+        }
 
         private void UpdateCanvasBackground()
         {
@@ -839,10 +883,10 @@ namespace Poly_Ling.Player
         }
 
         private MeshContext GetMeshContext() =>
-            GetModel?.Invoke()?.FirstSelectedMeshContext;
+            GetModel?.Invoke()?.FirstDrawableMeshContext;
 
         private MeshObject GetMeshObject() =>
-            GetModel?.Invoke()?.FirstSelectedMeshContext?.MeshObject;
+            GetModel?.Invoke()?.FirstDrawableMeshContext?.MeshObject;
 
         private void UpdateInfo(MeshObject mo)
         {

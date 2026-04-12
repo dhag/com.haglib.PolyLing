@@ -434,7 +434,7 @@ public partial class PolyLing
         //         if (bufferManager.GlobalToLocalVertexIndex(globalVertex, out int meshIdx, out int localVertex))
         //         {
         //             bool isSelectedMesh = meshIdx == _selectedIndex ||
-        //                 (_model?.SelectedMeshIndices?.Contains(meshIdx) ?? false);
+        //                 (_model?.SelectedDrawableMeshIndices?.Contains(meshIdx) ?? false);
         //             if (isSelectedMesh)
         //             {
         //                 _inp.HitMeshIndexOnMouseDown = meshIdx;
@@ -708,7 +708,7 @@ public partial class PolyLing
         // 非加算モードで全メッシュの全モード選択をクリア
         if (!additive && _model != null)
         {
-            foreach (int meshIdx in _model.SelectedMeshIndices)
+            foreach (int meshIdx in _model.SelectedDrawableMeshIndices)
             {
                 var meshContext = _model.GetMeshContext(meshIdx);
                 meshContext?.ClearSelection();
@@ -1296,7 +1296,7 @@ public partial class PolyLing
         var currentMode = _selectionState?.Mode ?? MeshSelectMode.Vertex;
 
         // v2.1: 複数メッシュ対応 - 選択中の全メッシュに対して矩形選択を実行
-        var selectedMeshIndices = _model?.SelectedMeshIndices;
+        var selectedMeshIndices = _model?.SelectedDrawableMeshIndices;
         // Debug.Log($"[FinishBoxSelect] _model={_model?.GetHashCode()}, toolCtx.Model={_toolContext?.Model?.GetHashCode()}, same={_model == _toolContext?.Model}");
 
         if (selectedMeshIndices != null && selectedMeshIndices.Count > 0)
@@ -1557,7 +1557,7 @@ public partial class PolyLing
         var lasso = _inp.LassoPoints;
 
         // 複数メッシュ対応
-        var selectedMeshIndices = _model?.SelectedMeshIndices;
+        var selectedMeshIndices = _model?.SelectedDrawableMeshIndices;
 
         if (selectedMeshIndices != null && selectedMeshIndices.Count > 0)
         {

@@ -48,7 +48,7 @@ namespace Poly_Ling.Core
             
             // unified→context逆引きマップを構築
             _unifiedToContextMap.Clear();
-            foreach (var ctxIdx in model.SelectedMeshIndices)
+            foreach (var ctxIdx in model.SelectedDrawableMeshIndices)
             {
                 int unifiedIdx = ContextToUnifiedMeshIndex(ctxIdx);
                 if (unifiedIdx >= 0)
@@ -58,10 +58,10 @@ namespace Poly_Ling.Core
             }
             
             // ContextインデックスをUnifiedインデックスに変換して同期
-            _flagManager.SelectedMeshIndices.Clear();
+            _flagManager.SelectedUnifiedMeshIndices.Clear();
             foreach (var kv in _unifiedToContextMap)
             {
-                _flagManager.SelectedMeshIndices.Add(kv.Key);
+                _flagManager.SelectedUnifiedMeshIndices.Add(kv.Key);
             }
             
             // 先頭メッシュも同期

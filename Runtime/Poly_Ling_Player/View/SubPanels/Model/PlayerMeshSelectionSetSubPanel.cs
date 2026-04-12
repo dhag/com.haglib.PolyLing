@@ -252,7 +252,7 @@ namespace Poly_Ling.Player
             {
                 TabType.Bone  => model.SelectedBoneIndices?.ToArray()    ?? Array.Empty<int>(),
                 TabType.Morph => model.SelectedMorphIndices?.ToArray()   ?? Array.Empty<int>(),
-                _             => model.SelectedMeshIndices?.ToArray()    ?? Array.Empty<int>(),
+                _             => model.SelectedDrawableMeshIndices?.ToArray()    ?? Array.Empty<int>(),
             };
         }
 

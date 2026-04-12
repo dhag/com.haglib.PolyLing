@@ -234,7 +234,7 @@ namespace Poly_Ling.Core
 
             if (bestIndex < 0) return false;
 
-            if (ctrl)         _model.ToggleSelection(bestIndex);
+            if (ctrl)         _model.ToggleMeshContextSelection(bestIndex);
             else if (shift)   _model.AddToBoneSelection(bestIndex);
             else              _model.SelectBone(bestIndex);
 

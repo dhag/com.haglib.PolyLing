@@ -169,7 +169,7 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (_warningLabel == null) return;
 
-            if (model == null || model.SelectedMeshIndices.Count == 0)
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0)
             {
                 _warningLabel.text          = model == null ? "モデルがありません" : "メッシュが未選択です";
                 _warningLabel.style.display = DisplayStyle.Flex;
@@ -179,7 +179,7 @@ namespace Poly_Ling.Player
             _warningLabel.style.display = DisplayStyle.None;
 
             var names = new List<string>();
-            foreach (int idx in model.SelectedMeshIndices)
+            foreach (int idx in model.SelectedDrawableMeshIndices)
             {
                 var mc = model.GetMeshContext(idx); if (mc != null) names.Add(mc.Name ?? $"[{idx}]");
             }
@@ -191,15 +191,15 @@ namespace Poly_Ling.Player
         private void RefreshSeamInfo(ModelContext model)
         {
             if (_seamInfo == null) return;
-            int cnt = model.FirstSelectedMeshContext?.SelectedEdges?.Count ?? 0;
+            int cnt = model.FirstDrawableMeshContext?.SelectedEdges?.Count ?? 0;
             _seamInfo.text = $"Seam（選択エッジ）: {cnt} 辺";
         }
 
         private void OnApplyProjection()
         {
             var model = GetModel?.Invoke();
-            if (model == null || model.SelectedMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
-            int[] indices = model.SelectedMeshIndices.ToArray();
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
+            int[] indices = model.SelectedDrawableMeshIndices.ToArray();
             SendCommand?.Invoke(new ApplyUvUnwrapCommand(indices[0], indices, _projection, _scale, _offsetU, _offsetV));
             SetStatus($"UV展開を実行しました ({_projection})");
         }
@@ -207,8 +207,8 @@ namespace Poly_Ling.Player
         private void OnApplyLscm()
         {
             var model = GetModel?.Invoke();
-            if (model == null || model.SelectedMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
-            var mc      = model.FirstSelectedMeshContext;
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
+            var mc      = model.FirstDrawableMeshContext;
             var meshObj = mc?.MeshObject;
             if (meshObj == null) { SetStatus("メッシュデータがありません"); return; }
 

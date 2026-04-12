@@ -72,7 +72,7 @@ namespace Poly_Ling.Player
                         {
                             _renderer?.ClearScene();
                             _viewportManager.RebuildAdapter(0, switchedModel);
-                            var firstMc = switchedModel.FirstSelectedDrawableMesh;
+                            var firstMc = switchedModel.FirstDrawableMeshContext;
                             if (firstMc != null)
                             {
                                 _selectionOps?.SetSelectionState(firstMc.Selection);
@@ -108,8 +108,8 @@ namespace Poly_Ling.Player
                             model.ClearMeshSelection();
                             foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
                             if (sel.Indices.Length > 0)
-                                model.SelectDrawableMesh(sel.Indices[0]);
-                            var selMc = model.FirstSelectedDrawableMesh;
+                                model.SelectMesh(sel.Indices[0]);
+                            var selMc = model.FirstDrawableMeshContext;
                             if (selMc != null)
                             {
                                 _selectionOps?.SetSelectionState(selMc.Selection);
@@ -388,7 +388,7 @@ namespace Poly_Ling.Player
                         c.Weights, c.MeshEnabled, recalcNormals: false, blendBones: c.BlendBones,
                         onSyncMesh: null);
                     _viewportManager.RebuildAdapter(0, cloneModelPrev);
-                    var firstMcPrev = cloneModelPrev.FirstSelectedDrawableMesh;
+                    var firstMcPrev = cloneModelPrev.FirstDrawableMeshContext;
                     if (firstMcPrev != null)
                     {
                         _selectionOps?.SetSelectionState(firstMcPrev.Selection);
@@ -408,7 +408,7 @@ namespace Poly_Ling.Player
                         c.Weights, c.MeshEnabled, c.RecalcNormals, c.BlendBones,
                         onSyncMesh: null);
                     _viewportManager.RebuildAdapter(0, cloneModelApply);
-                    var firstMcApply = cloneModelApply.FirstSelectedDrawableMesh;
+                    var firstMcApply = cloneModelApply.FirstDrawableMeshContext;
                     if (firstMcApply != null)
                     {
                         _selectionOps?.SetSelectionState(firstMcApply.Selection);

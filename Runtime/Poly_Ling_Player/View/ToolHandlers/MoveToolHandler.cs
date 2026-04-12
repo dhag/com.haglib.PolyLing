@@ -125,6 +125,24 @@ namespace Poly_Ling.Player
         private DragMode _dragMode = DragMode.None;
 
         // ================================================================
+        // マグネット半径範囲・ドラッグ指定モード
+        // ================================================================
+        public float MinMagnetRadius { get; set; } = 0.01f;
+        public float MaxMagnetRadius { get; set; } = 1.0f;
+
+        /// <summary>マグネット半径が変更されたときに呼ばれるコールバック（UIパネル更新用）。</summary>
+        public Action<float> OnRadiusChanged;
+
+        /// <summary>
+        /// true の間、次のドラッグ操作は移動ではなくマグネット半径の設定として扱われる。
+        /// ドラッグ終了後に自動的に false に戻る。
+        /// </summary>
+        public bool IsRadiusDragMode { get; set; } = false;
+
+        private Vector2 _radiusDragStartPos;
+        private bool    _inRadiusDrag;
+
+        // ================================================================
         // 初期化
         // ================================================================
         public MoveToolHandler(PlayerSelectionOps selectionOps, ProjectContext project)
@@ -161,6 +179,12 @@ namespace Poly_Ling.Player
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            if (IsRadiusDragMode)
+            {
+                _radiusDragStartPos = screenPos;
+                _inRadiusDrag       = true;
+                return;
+            }
             _mouseDownPos = screenPos;
             _shiftHeld    = mods.Shift;
             _ctrlHeld     = mods.Ctrl;
@@ -228,6 +252,19 @@ namespace Poly_Ling.Player
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
+            if (_inRadiusDrag)
+            {
+                var rdCtx = GetToolContext?.Invoke();
+                if (rdCtx != null)
+                {
+                    float screenDist = Vector2.Distance(screenPos, _radiusDragStartPos);
+                    float newRadius  = MoveScreenDistToWorldRadius(screenDist, rdCtx);
+                    newRadius = Mathf.Clamp(newRadius, MinMagnetRadius, MaxMagnetRadius);
+                    MagnetRadius = newRadius;
+                    OnRadiusChanged?.Invoke(newRadius);
+                }
+                return;
+            }
             if (_dragMode == DragMode.BoxSelecting)
             {
                 _selectionOps.UpdateBoxSelect(screenPos);
@@ -290,6 +327,12 @@ namespace Poly_Ling.Player
 
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
+            if (_inRadiusDrag)
+            {
+                _inRadiusDrag    = false;
+                IsRadiusDragMode = false;
+                return;
+            }
             if (_dragMode == DragMode.BoxSelecting)
             {
                 _selectionOps.UpdateBoxSelect(screenPos);
@@ -384,9 +427,9 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) return;
 
-            int ctxIdx = model.FirstDrawableMeshIndex >= 0
-                ? model.FirstDrawableMeshIndex
-                : (model.SelectedMeshIndices.Count > 0 ? model.SelectedMeshIndices[0] : -1);
+            int ctxIdx = model.FirstMeshIndex >= 0
+                ? model.FirstMeshIndex
+                : (model.SelectedDrawableMeshIndices.Count > 0 ? model.SelectedDrawableMeshIndices[0] : -1);
             if (ctxIdx < 0) return;
 
             var mc  = model.GetMeshContext(ctxIdx);
@@ -527,6 +570,19 @@ namespace Poly_Ling.Player
             };
         }
 
+        private float MoveScreenDistToWorldRadius(float screenDist, ToolContext ctx)
+        {
+            Vector3 target   = ctx.CameraTarget;
+            Vector3 camRight = Vector3.Cross(
+                (ctx.CameraTarget - ctx.CameraPosition).normalized, Vector3.up).normalized;
+            if (camRight.sqrMagnitude < 0.001f) camRight = Vector3.right;
+            Vector2 sp1 = ctx.WorldToScreenPos(target,           ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector2 sp2 = ctx.WorldToScreenPos(target + camRight, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            float pxPerUnit = Vector2.Distance(sp1, sp2);
+            if (pxPerUnit < 0.001f) return screenDist * 0.01f;
+            return screenDist / pxPerUnit;
+        }
+
         /// <summary>
         /// ToViewportCoord（Y=0が下）の座標を IMGUI 系（Y=0が上）に変換する。
         /// AxisGizmo は GL.LoadPixelMatrix（Y=0が上）を前提に描画・判定する。
@@ -543,12 +599,12 @@ namespace Poly_Ling.Player
             { _selectionOps.EndBoxSelect(Enumerable.Empty<int>(), mods); return; }
 
             var model = _project?.CurrentModel;
-            var mc    = model?.FirstSelectedDrawableMesh ?? model?.FirstSelectedMeshContext;
+            var mc    = model?.FirstDrawableMeshContext ?? model?.FirstSelectedMeshContext;
             if (mc?.MeshObject == null)
             { _selectionOps.EndBoxSelect(Enumerable.Empty<int>(), mods); return; }
 
-            int ctxIdx      = model.FirstDrawableMeshIndex >= 0
-                              ? model.FirstDrawableMeshIndex : model.FirstMeshIndex;
+            int ctxIdx      = model.FirstMeshIndex >= 0
+                              ? model.FirstMeshIndex : model.FirstMeshIndex;
             int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
             var rect         = _selectionOps.BoxRect;
             var screenPos    = GetScreenPositions();
@@ -649,12 +705,12 @@ namespace Poly_Ling.Player
             { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
 
             var model = _project?.CurrentModel;
-            var mc    = model?.FirstSelectedDrawableMesh ?? model?.FirstSelectedMeshContext;
+            var mc    = model?.FirstDrawableMeshContext ?? model?.FirstSelectedMeshContext;
             if (mc?.MeshObject == null)
             { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
 
-            int ctxIdx       = model.FirstDrawableMeshIndex >= 0
-                               ? model.FirstDrawableMeshIndex : model.FirstMeshIndex;
+            int ctxIdx       = model.FirstMeshIndex >= 0
+                               ? model.FirstMeshIndex : model.FirstMeshIndex;
             int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
             var screenPos    = GetScreenPositions();
             var mo           = mc.MeshObject;

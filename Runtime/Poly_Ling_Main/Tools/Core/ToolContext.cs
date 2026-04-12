@@ -188,6 +188,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>選択リストの先頭MeshContext（便宜アクセサ）</summary>
         public MeshContext FirstSelectedMeshContext => Model?.FirstSelectedMeshContext;
+        public MeshContext FirstDrawableMeshContext  => Model?.FirstDrawableMeshContext;
 
         /// <summary>選択リストの先頭インデックス（便宜アクセサ）</summary>
         public int FirstSelectedIndex => Model?.FirstSelectedIndex ?? -1;
@@ -196,7 +197,7 @@ namespace Poly_Ling.Tools
         public IReadOnlyList<MeshContext> MeshList => Model?.MeshContextList;
 
         /// <summary>選択中のメッシュインデックスリスト</summary>
-        public List<int> SelectedMeshIndices => Model?.SelectedMeshIndices ?? new List<int>();
+        public List<int> SelectedDrawableMeshIndices => Model?.SelectedDrawableMeshIndices ?? new List<int>();
 
         /// <summary>メッシュが選択されているか</summary>
         public bool HasMeshSelection => Model?.HasMeshSelection ?? false;
@@ -360,6 +361,13 @@ namespace Poly_Ling.Tools
         /// スクリーン座標からレイを生成
         /// </summary>
         public Func<Vector2, Ray> ScreenPosToRay { get; set; }
+
+        /// <summary>
+        /// 現在のホバー位置のワールド座標を返す（GPUホバー結果から算出）。
+        /// ヒットなしの場合は null を返す。SculptTool のブラシ中心算出に使用。
+        /// </summary>
+        public Func<Vector3?> GetHoverWorldPosition { get; set; }
+
 
         /// <summary>
         /// カメラのFOV（度）

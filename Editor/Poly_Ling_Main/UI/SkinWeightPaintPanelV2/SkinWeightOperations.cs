@@ -21,7 +21,7 @@ namespace Poly_Ling.UI
             System.Action<string> onError = null)
         {
             if (model == null || targetBoneMasterIndex < 0) return;
-            var meshCtx = model.FirstSelectedDrawableMeshContext;
+            var meshCtx = model.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) return;
 
             var selectedVerts = meshCtx.SelectedVertices;
@@ -55,7 +55,7 @@ namespace Poly_Ling.UI
             System.Action<string> onError = null)
         {
             if (model == null) return;
-            var meshCtx = model.FirstSelectedDrawableMeshContext;
+            var meshCtx = model.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) return;
 
             var selectedVerts = meshCtx.SelectedVertices;
@@ -83,7 +83,7 @@ namespace Poly_Ling.UI
             System.Action<string> onError = null)
         {
             if (model == null) return 0;
-            var meshCtx = model.FirstSelectedDrawableMeshContext;
+            var meshCtx = model.FirstDrawableMeshContext;
             if (meshCtx?.MeshObject == null) return 0;
 
             var selectedVerts = meshCtx.SelectedVertices;

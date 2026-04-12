@@ -298,7 +298,7 @@ namespace Poly_Ling.UI
 
             RefreshTargetList(model);
 
-            var targetIndices = model.SelectedMeshIndices;
+            var targetIndices = model.SelectedDrawableMeshIndices;
             BuildCandidates(model, targetIndices);
             RefreshCandidateList();
             RefreshBlendSection(model, targetIndices);
@@ -318,7 +318,7 @@ namespace Poly_Ling.UI
         private void RefreshTargetList(ModelContext model)
         {
             _targetListContainer.Clear();
-            foreach (int idx in model.SelectedMeshIndices)
+            foreach (int idx in model.SelectedDrawableMeshIndices)
             {
                 var ctx = model.GetMeshContext(idx);
                 if (ctx?.MeshObject == null) continue;
@@ -387,7 +387,7 @@ namespace Poly_Ling.UI
                     _sourceIndex = _candidates[idx].index;
                     OnSourceChanged();
                     RefreshCandidateList();
-                    RefreshBlendSection(Model, Model?.SelectedMeshIndices);
+                    RefreshBlendSection(Model, Model?.SelectedDrawableMeshIndices);
                 });
 
                 _candidateScroll.Add(row);
@@ -440,7 +440,7 @@ namespace Poly_Ling.UI
         {
             if (!_blendPreview.IsActive) return;
             var model = Model;
-            if (model != null) ApplyPreview(model, model.SelectedMeshIndices);
+            if (model != null) ApplyPreview(model, model.SelectedDrawableMeshIndices);
         }
 
         // ================================================================
@@ -452,7 +452,7 @@ namespace Poly_Ling.UI
             var model = Model;
             if (model == null) return;
 
-            var targetIndices = model.SelectedMeshIndices;
+            var targetIndices = model.SelectedDrawableMeshIndices;
 
             if (!_isDragging)
             {
@@ -479,7 +479,7 @@ namespace Poly_Ling.UI
         {
             var model = Model;
             if (model == null) return;
-            ApplyAndCreateBackups(model, model.SelectedMeshIndices);
+            ApplyAndCreateBackups(model, model.SelectedDrawableMeshIndices);
         }
 
         private void OnCancelClicked()

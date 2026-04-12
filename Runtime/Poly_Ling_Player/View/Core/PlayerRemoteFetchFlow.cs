@@ -26,6 +26,7 @@ namespace Poly_Ling.Player
         private readonly PlayerSelectionOps    _selectionOps;
         private readonly Action<ChangeKind>    _notifyPanels;
         private readonly Action<string>        _setStatus;
+        public Action<ModelContext>             OnModelContextReady;
 
         // ================================================================
         // 状態
@@ -120,7 +121,7 @@ namespace Poly_Ling.Player
                                 && mc.MeshObject.VertexCount > 0
                                 && mc.IsVisible)
                             {
-                                model.SelectDrawableMesh(entry.MasterIndex);
+                                model.SelectMesh(entry.MasterIndex);
                                 break;
                             }
                         }
@@ -141,7 +142,7 @@ namespace Poly_Ling.Player
                         model.SelectBone(selectedBone);
 
                     // SelectionState 同期（選択描画メッシュの Selection を使う）
-                    var firstMc = model.FirstSelectedDrawableMesh;
+                    var firstMc = model.FirstDrawableMeshContext;
                     if (firstMc != null)
                     {
                         _selectionOps?.SetSelectionState(firstMc.Selection);
@@ -149,6 +150,7 @@ namespace Poly_Ling.Player
                     }
 
                     // DrawWireframeAndVertices 用の selectedMeshIndex を更新
+                    OnModelContextReady?.Invoke(model);
                     _renderer?.UpdateSelectedDrawableMesh(mi, model);
 
                     // カメラパラメータをアダプターに設定（UpdateFrame 1回）

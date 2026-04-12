@@ -63,7 +63,7 @@ namespace Poly_Ling.Lite
                         case MeshCategory.Drawable:
                             model.ClearMeshSelection();
                             foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
-                            if (sel.Indices.Length > 0) model.SelectDrawableMesh(sel.Indices[0]);
+                            if (sel.Indices.Length > 0) model.SelectMesh(sel.Indices[0]);
                             break;
                         case MeshCategory.Bone:
                             model.ClearBoneSelection();

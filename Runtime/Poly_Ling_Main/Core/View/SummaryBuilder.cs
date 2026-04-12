@@ -71,7 +71,7 @@ namespace Poly_Ling.View
                 model.MeshContextCount,
                 model.MeshSelectionSetCount, model.ActiveCategory,
                 drawableList, boneList, morphList,
-                model.SelectedMeshIndices.ToArray(),
+                model.SelectedDrawableMeshIndices.ToArray(),
                 model.SelectedBoneIndices.ToArray(),
                 model.SelectedMorphIndices.ToArray());
         }

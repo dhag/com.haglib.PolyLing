@@ -217,7 +217,7 @@ namespace Poly_Ling.UI
         {
             if (_targetInfo == null) return;
 
-            var mc = FirstSelectedMeshContext;
+            var mc = FirstDrawableMeshContext;
             var meshObj = mc?.MeshObject;
             if (meshObj == null)
             {
@@ -241,7 +241,7 @@ namespace Poly_Ling.UI
         {
             if (_seamInfo == null) return;
 
-            var mc = FirstSelectedMeshContext;
+            var mc = FirstDrawableMeshContext;
             if (mc == null)
             {
                 _seamInfo.text = "Seam: -";
@@ -259,7 +259,7 @@ namespace Poly_Ling.UI
         private void ExecuteUnwrap()
         {
             if (_context == null || Model == null) return;
-            var mc      = FirstSelectedMeshContext;
+            var mc      = FirstDrawableMeshContext;
             var meshObj = mc?.MeshObject;
             if (meshObj == null) { SetStatus("メッシュデータがありません"); return; }
 
@@ -299,7 +299,7 @@ namespace Poly_Ling.UI
             if (_context == null) return;
 
             int currentMeshIndex = Model?.FirstSelectedIndex ?? -1;
-            int edgeCount = FirstSelectedMeshContext?.SelectedEdges?.Count ?? 0;
+            int edgeCount = FirstDrawableMeshContext?.SelectedEdges?.Count ?? 0;
 
             if (currentMeshIndex != _lastMeshIndex || edgeCount != _lastEdgeCount)
             {

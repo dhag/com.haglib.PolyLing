@@ -30,7 +30,7 @@ public partial class PolyLing
     private System.Collections.Generic.IEnumerable<Poly_Ling.Data.MeshContext> GetSelectedContextsForLiveSync()
     {
         if (_model == null) yield break;
-        foreach (int idx in _model.SelectedMeshIndices)
+        foreach (int idx in _model.SelectedDrawableMeshIndices)
         {
             var mc = _model.GetMeshContext(idx);
             if (mc != null) yield return mc;

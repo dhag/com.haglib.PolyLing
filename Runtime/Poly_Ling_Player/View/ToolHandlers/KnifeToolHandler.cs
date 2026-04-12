@@ -97,7 +97,7 @@ namespace Poly_Ling.Player
             ctx.Repaint        = OnRepaint;
             ctx.SyncMesh = () =>
             {
-                foreach (int idx in model.SelectedMeshIndices)
+                foreach (int idx in model.SelectedDrawableMeshIndices)
                 {
                     var mc = model.GetMeshContext(idx);
                     if (mc != null) OnSyncMeshPositions?.Invoke(mc);

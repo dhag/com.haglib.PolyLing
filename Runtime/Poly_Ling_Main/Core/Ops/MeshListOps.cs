@@ -243,10 +243,10 @@ namespace Poly_Ling.Ops
             // 選択されていたMeshContextを復元
             IEnumerable<int> selectedIndices = category switch
             {
-                MeshCategory.Drawable => _model.SelectedMeshIndices,
+                MeshCategory.Drawable => _model.SelectedDrawableMeshIndices,
                 MeshCategory.Bone => _model.SelectedBoneIndices,
                 MeshCategory.Morph => _model.SelectedMorphIndices,
-                _ => _model.SelectedMeshIndices
+                _ => _model.SelectedDrawableMeshIndices
             };
             var selectedContexts = selectedIndices
                 .Where(i => i >= 0 && i < preOrderedList.Count)
@@ -557,7 +557,7 @@ namespace Poly_Ling.Ops
             undoRecord.NewExcludeFromExport = ctx.ExcludeFromExport;
             RecordMorphUndo(undoRecord, "メッシュ→モーフ変換");
 
-            _model.RemoveFromSelectionByType(sourceIndex);
+            _model.RemoveFromSelectionByCategory(sourceIndex);
             _model.TypedIndices?.Invalidate();
             SelectFirstDrawableIfNeeded();
             MarkDirty();
@@ -598,7 +598,7 @@ namespace Poly_Ling.Ops
             }
 
             foreach (int idx in targets)
-                _model.RemoveFromSelectionByType(idx);
+                _model.RemoveFromSelectionByCategory(idx);
             _model.TypedIndices?.Invalidate();
             SelectFirstDrawableIfNeeded();
             MarkDirty();
@@ -802,7 +802,7 @@ namespace Poly_Ling.Ops
         {
             if (_model == null || _model.HasMeshSelection) return;
             var drawables = _model.TypedIndices.GetEntries(MeshCategory.Drawable);
-            if (drawables.Count > 0) _model.SelectDrawable(drawables[0].MasterIndex);
+            if (drawables.Count > 0) _model.SelectMesh(drawables[0].MasterIndex);
         }
 
         private bool ApplyAttributeChange(MeshAttributeChange change)

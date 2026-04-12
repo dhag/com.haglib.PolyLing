@@ -336,7 +336,7 @@ namespace Poly_Ling.UI
             foreach (var v in meshObj.Vertices)
                 uvCount += v.UVs.Count;
 
-            string meshName = FirstSelectedMeshContext?.Name ?? "?";
+            string meshName = FirstDrawableMeshContext?.Name ?? "?";
             string selInfo = _selectedUVVertices.Count > 0
                 ? $"  Sel:{_selectedUVVertices.Count}"
                 : "";

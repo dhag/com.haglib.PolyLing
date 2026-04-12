@@ -585,7 +585,7 @@ namespace Poly_Ling.Player
         {
             var cam = vp?.Cam;
             if (cam == null || model == null) return null;
-            var mc = model.FirstSelectedDrawableMesh ?? model.FirstSelectedMeshContext;
+            var mc = model.FirstDrawableMeshContext ?? model.FirstSelectedMeshContext;
             if (mc?.MeshObject == null) return null;
             var sel = mc.Selection;
             if (sel.Faces.Count == 0) return null;
@@ -664,6 +664,48 @@ namespace Poly_Ling.Player
                 return PlayerHitResult.Miss;
 
             // グローバル → メッシュコンテキストインデックス + ローカル頂点インデックス
+            if (adapter.BufferManager?.GlobalToLocalVertexIndex(
+                    globalVertex, out int meshIdx, out int localIdx) == true)
+            {
+                return new PlayerHitResult
+                {
+                    HasHit      = true,
+                    MeshIndex   = meshIdx,
+                    VertexIndex = localIdx,
+                };
+            }
+            return PlayerHitResult.Miss;
+        }
+
+        /// <summary>
+        /// スカルプトブラシ用ヒットテスト。
+        /// Normal モード（ドラッグなし）: UpdateFrame 算出済みの HoverVertexIndex を再利用（二重計算なし）。
+        /// TransformDragging 中: _screenPositions（DrawViewport で毎イベント更新済み）から直接検索し
+        ///   ブラシ中心をマウスに追従させる。
+        /// </summary>
+        public PlayerHitResult GetBrushHit(Vector2 screenPos, float hitRadius)
+        {
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized)
+                return PlayerHitResult.Miss;
+
+            int globalVertex;
+
+            // HoverVertexIndex が有効なら UpdateFrame の結果を再利用（二重計算なし）
+            int hoverIdx = adapter.HoverVertexIndex;
+            if (hoverIdx >= 0)
+            {
+                globalVertex = hoverIdx;
+            }
+            else
+            {
+                // TransformDragging 中: _screenPositions は DrawViewport で更新済み
+                var bm = adapter.BufferManager;
+                if (bm == null) return PlayerHitResult.Miss;
+                globalVertex = bm.FindNearestVertex(screenPos, hitRadius, adapter.BackfaceCullingEnabled);
+                if (globalVertex < 0) return PlayerHitResult.Miss;
+            }
+
             if (adapter.BufferManager?.GlobalToLocalVertexIndex(
                     globalVertex, out int meshIdx, out int localIdx) == true)
             {
