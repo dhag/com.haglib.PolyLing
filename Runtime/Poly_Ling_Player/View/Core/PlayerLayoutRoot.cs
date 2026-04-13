@@ -36,18 +36,30 @@ namespace Poly_Ling.Player
         public PlayerViewportPanel SidePanel        { get; private set; }
 
         // ================================================================
-        // Right ペイン公開要素（表示フラグ）
+        // ビューポート表示フラグ（面ごと）
         // ================================================================
 
-        public Toggle ShowSelectedMeshToggle       { get; private set; }
-        public Toggle ShowUnselectedMeshToggle     { get; private set; }
-        public Toggle ShowSelectedVerticesToggle   { get; private set; }
-        public Toggle ShowUnselectedVerticesToggle { get; private set; }
-        public Toggle ShowSelectedWireToggle       { get; private set; }
-        public Toggle ShowUnselectedWireToggle     { get; private set; }
-        public Toggle ShowSelectedBoneToggle       { get; private set; }
-        public Toggle ShowUnselectedBoneToggle     { get; private set; }
-        public Toggle BackfaceCullingToggle        { get; private set; }
+        /// <summary>
+        /// 面ごとの表示トグル配列。[viewportSlot, itemIndex]
+        ///
+        /// viewportSlot: 0=Perspective、1=Top、2=Front、3=Side
+        ///   （PlayerViewportManager の SlotPerspective 等と対応）
+        ///
+        /// itemIndex 定数は VD_* を参照。
+        /// </summary>
+        public Toggle[,] ViewportDisplayToggles { get; private set; }
+
+        // itemIndex 定数
+        public const int VD_CULLING    = 0;
+        public const int VD_SEL_MESH   = 1;
+        public const int VD_SEL_WIRE   = 2;
+        public const int VD_SEL_VERT   = 3;
+        public const int VD_SEL_BONE   = 4;
+        public const int VD_UNSEL_MESH = 5;
+        public const int VD_UNSEL_WIRE = 6;
+        public const int VD_UNSEL_VERT = 7;
+        public const int VD_UNSEL_BONE = 8;
+        public const int VD_COUNT      = 9;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -600,31 +612,90 @@ namespace Poly_Ling.Player
             scroll.Add(listBtnRow);
 
             scroll.Add(Separator());
-            scroll.Add(Header("Display"));
-            ShowSelectedMeshToggle       = MakeToggle("Selected Mesh",        true);
-            ShowUnselectedMeshToggle     = MakeToggle("Unselected Mesh",      true);
-            ShowSelectedVerticesToggle   = MakeToggle("Selected Vertices",    true);
-            ShowUnselectedVerticesToggle = MakeToggle("Unselected Vertices",  true);
-            ShowSelectedWireToggle       = MakeToggle("Selected Wireframe",   true);
-            ShowUnselectedWireToggle     = MakeToggle("Unselected Wireframe", true);
-            scroll.Add(ShowSelectedMeshToggle);
-            scroll.Add(ShowUnselectedMeshToggle);
-            scroll.Add(ShowSelectedVerticesToggle);
-            scroll.Add(ShowUnselectedVerticesToggle);
-            scroll.Add(ShowSelectedWireToggle);
-            scroll.Add(ShowUnselectedWireToggle);
+            scroll.Add(Header("Display (P/T/F/S)"));
 
-            scroll.Add(Separator());
-            scroll.Add(Header("Bone"));
-            ShowSelectedBoneToggle   = MakeToggle("Selected Bone",   true);
-            ShowUnselectedBoneToggle = MakeToggle("Unselected Bone", false);
-            scroll.Add(ShowSelectedBoneToggle);
-            scroll.Add(ShowUnselectedBoneToggle);
+            // 4ビューポート × 9項目のグリッド
+            // 列: P=Perspective(slot0), T=Top(slot1), F=Front(slot2), S=Side(slot3)
+            // 行: カリング / 選択Mesh / 選択辺 / 選択頂点 / 選択Bone
+            //      非選Mesh / 非選辺 / 非選頂点 / 非選Bone
+            var vpHeaders  = new string[] { "P", "T", "F", "S" };
+            var itemLabels = new string[]
+            {
+                "カリング", "選択Mesh", "選択辺", "選択頂点", "選択Bone",
+                "非選Mesh", "非選辺",  "非選頂点", "非選Bone",
+            };
+            // ViewportDisplaySettings.Default と一致させる
+            var itemDefaults = new bool[]
+            {
+                true,  // カリング
+                true,  // 選択Mesh
+                true,  // 選択辺
+                true,  // 選択頂点
+                true,  // 選択Bone
+                true,  // 非選Mesh
+                true,  // 非選辺
+                true,  // 非選頂点
+                false, // 非選Bone
+            };
 
-            scroll.Add(Separator());
-            scroll.Add(Header("Rendering"));
-            BackfaceCullingToggle = MakeToggle("Backface Culling", true);
-            scroll.Add(BackfaceCullingToggle);
+            // ヘッダ行
+            var vpHeaderRow = new VisualElement();
+            vpHeaderRow.style.flexDirection = FlexDirection.Row;
+            vpHeaderRow.style.marginBottom  = 1;
+            var vpHeaderSpacer = new VisualElement();
+            vpHeaderSpacer.style.width = 54;
+            vpHeaderRow.Add(vpHeaderSpacer);
+            foreach (var h in vpHeaders)
+            {
+                var lbl = new Label(h);
+                lbl.style.width             = 22;
+                lbl.style.fontSize          = 9;
+                lbl.style.unityTextAlign    = TextAnchor.MiddleCenter;
+                vpHeaderRow.Add(lbl);
+            }
+            scroll.Add(vpHeaderRow);
+
+            // トグル配列確保 [slot, item]
+            ViewportDisplayToggles = new Toggle[4, VD_COUNT];
+            for (int item = 0; item < VD_COUNT; item++)
+            {
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.height        = 18;
+                row.style.marginBottom  = 1;
+
+                var lbl = new Label(itemLabels[item]);
+                lbl.style.width            = 54;
+                lbl.style.fontSize         = 9;
+                lbl.style.unityTextAlign   = TextAnchor.MiddleLeft;
+                row.Add(lbl);
+
+                for (int vp = 0; vp < 4; vp++)
+                {
+                    var t = new Toggle { value = itemDefaults[item] };
+                    t.style.width      = 22;
+                    t.style.height     = 18;
+                    t.style.minWidth   = 0;
+                    t.style.flexShrink = 0;
+                    t.style.marginLeft = 0;
+                    t.style.marginRight= 0;
+                    // パネルアタッチ後に内部 Label を非表示にする
+                    // （コンストラクタ直後は内部子要素が未初期化のため Q<Label>() が null を返す）
+                    t.RegisterCallback<AttachToPanelEvent>(_ =>
+                    {
+                        var inner = t.Q<Label>();
+                        if (inner != null)
+                        {
+                            inner.style.display  = DisplayStyle.None;
+                            inner.style.minWidth = 0;
+                            inner.style.width    = 0;
+                        }
+                    });
+                    ViewportDisplayToggles[vp, item] = t;
+                    row.Add(t);
+                }
+                scroll.Add(row);
+            }
 
             return pane;
         }

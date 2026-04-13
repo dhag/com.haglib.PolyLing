@@ -443,7 +443,6 @@ namespace Poly_Ling.Player
                 _client.OnPushReceived += OnPushReceived;
             }
 
-            SyncRendererFlags();
         }
 
         /// <summary>毎フレーム Update 相当。</summary>
@@ -454,7 +453,6 @@ namespace Poly_Ling.Player
             _client?.Tick();
             _playerServer?.Tick();
             _primitiveSubPanel?.Tick();
-            SyncRendererFlags();
             SyncUI();
             UpdateFaceHoverOverlay();
             UpdateSelectedFacesOverlay();
@@ -1421,16 +1419,33 @@ namespace Poly_Ling.Player
             _layoutRoot.FrontPanel      .SetViewport(_viewportManager.FrontViewport);
             _layoutRoot.SidePanel       .SetViewport(_viewportManager.SideViewport);
 
-            void OnToggle(ChangeEvent<bool> _) => SyncRendererFlags();
-            _layoutRoot.ShowSelectedMeshToggle      .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowUnselectedMeshToggle    .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowSelectedVerticesToggle  .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowUnselectedVerticesToggle.RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowSelectedWireToggle      .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowUnselectedWireToggle    .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowSelectedBoneToggle      .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.ShowUnselectedBoneToggle    .RegisterValueChangedCallback(OnToggle);
-            _layoutRoot.BackfaceCullingToggle       .RegisterValueChangedCallback(OnToggle);
+            // 面ごとの表示設定トグルを接続する。
+            // ViewportDisplayToggles[slot, item] → _viewportManager の設定を更新。
+            for (int s = 0; s < 4; s++)
+            {
+                for (int i = 0; i < PlayerLayoutRoot.VD_COUNT; i++)
+                {
+                    int slot = s, item = i;
+                    _layoutRoot.ViewportDisplayToggles[slot, item]
+                        .RegisterValueChangedCallback(e =>
+                        {
+                            var ds = _viewportManager.GetDisplaySettings(slot);
+                            switch (item)
+                            {
+                                case PlayerLayoutRoot.VD_CULLING:    ds.BackfaceCulling         = e.newValue; break;
+                                case PlayerLayoutRoot.VD_SEL_MESH:   ds.ShowSelectedMesh        = e.newValue; break;
+                                case PlayerLayoutRoot.VD_SEL_WIRE:   ds.ShowSelectedWireframe   = e.newValue; break;
+                                case PlayerLayoutRoot.VD_SEL_VERT:   ds.ShowSelectedVertices    = e.newValue; break;
+                                case PlayerLayoutRoot.VD_SEL_BONE:   ds.ShowSelectedBone        = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MESH: ds.ShowUnselectedMesh      = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_WIRE: ds.ShowUnselectedWireframe = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_VERT: ds.ShowUnselectedVertices  = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_BONE: ds.ShowUnselectedBone      = e.newValue; break;
+                            }
+                            _viewportManager.SetDisplaySettings(slot, ds);
+                        });
+                }
+            }
 
             _layoutRoot.MorphBtn.clicked       += ShowMorphPanel;
             _layoutRoot.MorphCreateBtn.clicked += ShowMorphCreatePanel;
@@ -2315,24 +2330,6 @@ namespace Poly_Ling.Player
                 _modelBlendSubPanel?.OnViewChanged(view, kind);
 
             OnChanged?.Invoke(kind);
-        }
-
-        // ================================================================
-        // 描画フラグ同期
-        // ================================================================
-
-        private void SyncRendererFlags()
-        {
-            if (_renderer == null || _layoutRoot == null) return;
-            _renderer.ShowSelectedMesh        = _layoutRoot.ShowSelectedMeshToggle.value;
-            _renderer.ShowUnselectedMesh      = _layoutRoot.ShowUnselectedMeshToggle.value;
-            _renderer.ShowSelectedVertices    = _layoutRoot.ShowSelectedVerticesToggle.value;
-            _renderer.ShowUnselectedVertices  = _layoutRoot.ShowUnselectedVerticesToggle.value;
-            _renderer.ShowSelectedWireframe   = _layoutRoot.ShowSelectedWireToggle.value;
-            _renderer.ShowUnselectedWireframe = _layoutRoot.ShowUnselectedWireToggle.value;
-            _renderer.ShowSelectedBone        = _layoutRoot.ShowSelectedBoneToggle.value;
-            _renderer.ShowUnselectedBone      = _layoutRoot.ShowUnselectedBoneToggle.value;
-            _renderer.BackfaceCullingEnabled  = _layoutRoot.BackfaceCullingToggle.value;
         }
 
         // ================================================================

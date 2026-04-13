@@ -46,6 +46,24 @@ namespace Poly_Ling.Player
         // スロットごとのカメラ dirty フラグ（カメラが変化したスロットのみ再カリング）
         private readonly bool[] _slotCameraDirty = new bool[4] { true, true, true, true };
 
+        // ================================================================
+        // ビューポート表示設定（面ごと）
+        // ================================================================
+
+        private readonly ViewportDisplaySettings[] _displaySettings = new ViewportDisplaySettings[4]
+        {
+            ViewportDisplaySettings.Default,
+            ViewportDisplaySettings.Default,
+            ViewportDisplaySettings.Default,
+            ViewportDisplaySettings.Default,
+        };
+
+        /// <summary>指定スロットの表示設定を取得する。</summary>
+        public ViewportDisplaySettings GetDisplaySettings(int slot) => _displaySettings[slot];
+
+        /// <summary>指定スロットの表示設定を更新する。</summary>
+        public void SetDisplaySettings(int slot, ViewportDisplaySettings s) => _displaySettings[slot] = s;
+
         // LateUpdate で UpdateFrame を呼ぶための最後のカメラ参照とマウス位置。
         // NotifyCameraChanged / NotifyPointerHover で更新される。
         private Camera  _lastCamera;
@@ -947,6 +965,23 @@ namespace Poly_Ling.Player
             var cam     = vp.Cam;
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;
+
+            // 面ごとの表示設定をレンダラーに適用する。
+            // Draw*() 呼び出しはシーケンシャルなので面をまたいだ競合はない。
+            var ds = _displaySettings[slot];
+            _renderer.BackfaceCullingEnabled    = ds.BackfaceCulling;
+            _renderer.ShowSelectedMesh          = ds.ShowSelectedMesh;
+            _renderer.ShowSelectedWireframe     = ds.ShowSelectedWireframe;
+            _renderer.ShowSelectedVertices      = ds.ShowSelectedVertices;
+            _renderer.ShowSelectedBone          = ds.ShowSelectedBone;
+            _renderer.ShowUnselectedMesh        = ds.ShowUnselectedMesh;
+            _renderer.ShowUnselectedWireframe   = ds.ShowUnselectedWireframe;
+            _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
+            _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
+
+            // adapter の BackfaceCullingEnabled もここで同期する
+            // （DispatchCullingForDisplay の引数に使用するため）。
+            adapter.BackfaceCullingEnabled = ds.BackfaceCulling;
 
             // カメラが変化したスロットのみ per-slot カリングを再計算する。
             if (_slotCameraDirty[slot])
