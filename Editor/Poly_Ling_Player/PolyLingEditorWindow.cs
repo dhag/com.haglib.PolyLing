@@ -13,7 +13,20 @@ namespace Poly_Ling.Editor.Player
 {
     public class PolyLingEditorWindow : EditorWindow
     {
+        // ================================================================
+        // 静的インスタンス（PolyLingAssetEditorWindow からのデータ参照用）
+        // ================================================================
+
+        public static PolyLingEditorWindow Instance { get; private set; }
+
+        // ================================================================
+        // Core
+        // ================================================================
+
         private PolyLingPlayerViewerCore _core;
+
+        /// <summary>他ウィンドウからデータ参照用に公開。</summary>
+        public PolyLingPlayerViewerCore Core => _core;
 
         [MenuItem("Tools/PolyLing/PolyLingEditorWindow")]
         public static void Open()
@@ -23,6 +36,7 @@ namespace Poly_Ling.Editor.Player
 
         private void OnEnable()
         {
+            Instance = this;
             PLEditorBridge.Register(new PolyLingPlayerBridge());
             EditorApplication.update += OnEditorUpdate;
         }
@@ -34,6 +48,8 @@ namespace Poly_Ling.Editor.Player
                 rootVisualElement,
                 null,
                 PolyLingPlayerViewerCore.RemoteConfig.Default);
+
+            PolyLingAssetEditorWindow.Open();
         }
 
         private void OnEditorUpdate()
@@ -45,6 +61,7 @@ namespace Poly_Ling.Editor.Player
 
         private void OnDisable()
         {
+            if (Instance == this) Instance = null;
             EditorApplication.update -= OnEditorUpdate;
             _core?.Dispose();
             _core = null;
