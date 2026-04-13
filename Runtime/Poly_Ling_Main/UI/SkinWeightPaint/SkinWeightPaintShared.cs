@@ -31,6 +31,8 @@ namespace Poly_Ling.UI
         BrushFalloff        CurrentFalloff     { get; }
         float               CurrentWeightValue { get; }
         int                 CurrentTargetBone  { get; }
+        /// <summary>ペイント対象メッシュの MasterIndex。-1 = 自動（FirstDrawable）</summary>
+        int                 CurrentTargetMesh  { get; }
 
         void NotifyWeightChanged();
     }

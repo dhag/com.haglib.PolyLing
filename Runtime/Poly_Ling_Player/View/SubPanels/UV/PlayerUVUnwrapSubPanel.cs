@@ -22,6 +22,16 @@ namespace Poly_Ling.Player
         public Action<PanelCommand> SendCommand;
         public Action               OnRepaint;
 
+        // コマンド送信（PanelContext 経由）
+        private PanelContext _panelContext;
+        private Func<int>    _getModelIndex;
+
+        public void SetCommandContext(PanelContext ctx, Func<int> getModelIndex)
+        {
+            _panelContext  = ctx;
+            _getModelIndex = getModelIndex;
+        }
+
         private enum Tab { Projection, Lscm }
         private Tab _tab = Tab.Projection;
 
@@ -208,15 +218,28 @@ namespace Poly_Ling.Player
         {
             var model = GetModel?.Invoke();
             if (model == null || model.SelectedDrawableMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
-            var mc      = model.FirstDrawableMeshContext;
-            var meshObj = mc?.MeshObject;
-            if (meshObj == null) { SetStatus("メッシュデータがありません"); return; }
+            var mc = model.FirstDrawableMeshContext;
+            if (mc?.MeshObject == null) { SetStatus("メッシュデータがありません"); return; }
 
-            var seamEdges = mc.SelectedEdges ?? new HashSet<VertexPair>();
-            var result    = LscmUnwrapOperation.Execute(meshObj, seamEdges, _includeBoundaryAsSeam,
-                                                        Mathf.Clamp(_maxIterations, 100, 50000));
-            SetStatus(result.StatusMessage);
-            if (result.Success) { mc.UnityMesh = meshObj.ToUnityMesh(); OnRepaint?.Invoke(); }
+            int masterIdx = model.IndexOf(mc);
+            int modelIdx  = _getModelIndex?.Invoke() ?? 0;
+
+            if (_panelContext != null)
+            {
+                _panelContext.SendCommand(new ApplyLscmUnwrapCommand(
+                    modelIdx, masterIdx, _includeBoundaryAsSeam,
+                    Mathf.Clamp(_maxIterations, 100, 50000)));
+                SetStatus("LSCM展開を実行しました");
+            }
+            else
+            {
+                // フォールバック（PanelContext 未設定時）
+                var seamEdges = mc.SelectedEdges ?? new HashSet<VertexPair>();
+                var result = LscmUnwrapOperation.Execute(mc.MeshObject, seamEdges,
+                    _includeBoundaryAsSeam, Mathf.Clamp(_maxIterations, 100, 50000));
+                SetStatus(result.StatusMessage);
+                if (result.Success) { mc.UnityMesh = mc.MeshObject.ToUnityMesh(); OnRepaint?.Invoke(); }
+            }
             RefreshSeamInfo(model);
         }
 

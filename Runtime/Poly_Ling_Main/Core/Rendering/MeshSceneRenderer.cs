@@ -382,6 +382,47 @@ namespace Poly_Ling.Core
         }
 
         // ================================================================
+        // スキンウェイト可視化描画
+        // ================================================================
+
+        /// <summary>
+        /// スキンウェイトペイントモード時にウェイトをヒートマップカラーで描画する。
+        /// DrawMeshes の直後に呼ぶこと。
+        /// </summary>
+        public void DrawWeightVisualization(ProjectContext project, Camera cam)
+        {
+            if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return;
+            if (project == null || cam == null) return;
+
+            var visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
+            if (visMat == null) return;
+
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            int targetBone = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
+
+            // CurrentTargetMesh が指定されていればそれだけ描画、なければ選択中Drawable全て
+            int targetMeshIdx = Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel?.CurrentTargetMesh ?? -1;
+            var masterIndices = targetMeshIdx >= 0
+                ? new System.Collections.Generic.List<int> { targetMeshIdx }
+                : new System.Collections.Generic.List<int>(model.SelectedDrawableMeshIndices);
+
+            foreach (int masterIdx in masterIndices)
+            {
+                var ctx = model.GetMeshContext(masterIdx);
+                if (ctx?.UnityMesh == null || ctx.MeshObject == null || !ctx.IsVisible) continue;
+
+                var mesh = ctx.UnityMesh;
+                Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(mesh, ctx.MeshObject, targetBone);
+
+                var displayMatrix = ctx.WorldMatrix;
+                for (int sub = 0; sub < mesh.subMeshCount; sub++)
+                    Graphics.DrawMesh(mesh, displayMatrix, visMat, 0, cam, sub);
+            }
+        }
+
+        // ================================================================
         // シーンクリア
         // ================================================================
 

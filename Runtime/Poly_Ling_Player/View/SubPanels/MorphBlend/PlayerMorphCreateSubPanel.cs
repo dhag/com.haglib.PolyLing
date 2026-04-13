@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
@@ -28,6 +29,12 @@ namespace Poly_Ling.Player
 
         /// <summary>モデルリスト再構築要求（プロジェクトにモデルを追加した後に呼ぶ）。</summary>
         public Action OnRebuildModelList;
+
+        /// <summary>Undo 記録用 UndoController を返すデリゲート。</summary>
+        public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
+
+        /// <summary>PanelCommand を送信するコールバック。</summary>
+        public Action<PanelCommand> SendCommand;
 
         // ================================================================
         // 差分閾値
@@ -199,7 +206,6 @@ namespace Poly_Ling.Player
             var project = GetProject?.Invoke();
             if (project == null) { SetCreateStatus("プロジェクトがありません", true); return; }
 
-            // ── モデル取得 ────────────────────────────────────────────
             int baseIdx  = _baseModelDropdown.index;
             int morphIdx = _morphModelDropdown.index;
 
@@ -212,52 +218,50 @@ namespace Poly_Ling.Player
 
             var baseModel  = project.Models[baseIdx];
             var morphModel = project.Models[morphIdx];
-
             if (baseModel.Count != morphModel.Count)
             {
-                SetCreateStatus(
-                    $"メッシュ数が一致しません (基準:{baseModel.Count} / モーフ:{morphModel.Count})",
-                    true);
+                SetCreateStatus($"メッシュ数が一致しません (基準:{baseModel.Count} / モーフ:{morphModel.Count})", true);
                 return;
             }
 
             string morphName = _morphNameField.value.Trim();
             if (string.IsNullOrEmpty(morphName)) morphName = "NewMorph";
+            int panel = _panelDropdown.index;
 
-            int panel = _panelDropdown.index; // 0=眉 1=目 2=口 3=その他
+            if (SendCommand != null)
+            {
+                // コマンド経由（Dispatcher 側でUndo記録）
+                SendCommand.Invoke(new CreateMorphFromDiffCommand(baseIdx, morphIdx, morphName, panel));
+                SetCreateStatus("モーフ作成コマンドを送信しました", false);
+                RefreshExpressionList();
+                OnRepaint?.Invoke();
+                return;
+            }
 
-            // ── メッシュ走査 → 差分のあるメッシュのみモーフ生成 ───────
-            var expression    = new MorphExpression(morphName, MorphType.Vertex) { Panel = panel };
-            int morphCreated  = 0;
-            int meshSkipped   = 0;
+            // フォールバック（SendCommand 未設定時：直接実行 + Undo記録）
+            var undo       = GetUndoController?.Invoke();
+            var beforeList = Poly_Ling.UndoSystem.MeshFilterToSkinnedRecord.CaptureList(baseModel);
+            var beforeExpr = baseModel.MorphExpressions.Select(e => e.Clone()).ToList();
+
+            var expression   = new MorphExpression(morphName, MorphType.Vertex) { Panel = panel };
+            int morphCreated = 0;
+            int meshSkipped  = 0;
 
             for (int mi = 0; mi < baseModel.Count; mi++)
             {
                 var baseCtx  = baseModel.GetMeshContext(mi);
                 var morphCtx = morphModel.GetMeshContext(mi);
-
-                // Drawable メッシュのみ対象（ボーン・モーフ等はスキップ）
                 if (baseCtx == null || morphCtx == null) continue;
-                if (baseCtx.MeshObject  == null || morphCtx.MeshObject  == null) continue;
-                if (baseCtx.Type  != MeshType.Mesh && baseCtx.Type  != MeshType.BakedMirror) continue;
+                if (baseCtx.MeshObject == null || morphCtx.MeshObject == null) continue;
+                if (baseCtx.Type != MeshType.Mesh && baseCtx.Type != MeshType.BakedMirror) continue;
                 if (baseCtx.MeshObject.VertexCount != morphCtx.MeshObject.VertexCount) continue;
-
-                // 差分チェック
-                if (!HasDiff(baseCtx.MeshObject, morphCtx.MeshObject))
-                { meshSkipped++; continue; }
-
-                // ── MirrorPair.Mirror 側は Real 側から生成するためスキップ ──
+                if (!HasDiff(baseCtx.MeshObject, morphCtx.MeshObject)) { meshSkipped++; continue; }
                 if (baseModel.IsMirrorSide(baseCtx)) continue;
 
-                // Real 側モーフ生成
                 int newMorphIdx = CreateMorphMeshContext(
-                    baseModel, baseCtx, mi,
-                    morphCtx.MeshObject,
-                    morphName, panel,
-                    expression);
+                    baseModel, baseCtx, mi, morphCtx.MeshObject, morphName, panel, expression);
                 morphCreated++;
 
-                // Mirror 側モーフ生成
                 var pair = baseModel.GetMirrorPair(baseCtx);
                 if (pair != null && pair.Real == baseCtx && pair.Mirror != null)
                 {
@@ -266,23 +270,28 @@ namespace Poly_Ling.Player
                         CreateMirrorMorphMeshContext(
                             baseModel, pair, mirrorParentIdx,
                             baseCtx.MeshObject, morphCtx.MeshObject,
-                            morphName, panel,
-                            expression);
+                            morphName, panel, expression);
                 }
             }
 
             if (morphCreated == 0)
-            {
-                SetCreateStatus($"差分のあるメッシュがありませんでした（{meshSkipped}メッシュ確認済み）", true);
-                return;
-            }
+            { SetCreateStatus($"差分のあるメッシュがありませんでした（{meshSkipped}メッシュ確認済み）", true); return; }
 
             baseModel.MorphExpressions.Add(expression);
 
-            SetCreateStatus(
-                $"完了: {morphCreated}メッシュのモーフを作成しました（{meshSkipped}メッシュはスキップ）",
-                false);
+            if (undo != null)
+            {
+                var afterList = Poly_Ling.UndoSystem.MeshFilterToSkinnedRecord.CaptureList(baseModel);
+                var afterExpr = baseModel.MorphExpressions.Select(e => e.Clone()).ToList();
+                undo.MeshListStack.Record(new Poly_Ling.UndoSystem.MorphCreateRecord
+                {
+                    BeforeList = beforeList, AfterList = afterList,
+                    BeforeExpressions = beforeExpr, AfterExpressions = afterExpr,
+                }, $"モーフ作成: {morphName}");
+                undo.FocusMeshList();
+            }
 
+            SetCreateStatus($"完了: {morphCreated}メッシュのモーフを作成しました（{meshSkipped}メッシュはスキップ）", false);
             RefreshExpressionList();
             OnRepaint?.Invoke();
         }

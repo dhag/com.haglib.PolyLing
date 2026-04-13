@@ -16,7 +16,10 @@ namespace Poly_Ling.Player
 {
     public class PlayerMediaPipeFaceDeformSubPanel
     {
-        public Func<ToolContext> GetToolContext;
+        public Func<ToolContext>     GetToolContext;
+        public Action<PanelCommand> SendCommand;
+        public Func<ModelContext>   GetModel;
+        public Func<int>            GetModelIndex;
 
         private const string BasePath       = "Assets/MediaPipe";
         private const string BeforeFileName = "before.json";
@@ -94,52 +97,53 @@ namespace Poly_Ling.Player
 
         private void OnExecute()
         {
-            var tc = GetToolContext?.Invoke();
-            var mc = tc?.FirstDrawableMeshContext;
-            var sourceMesh = mc?.MeshObject;
-            if (sourceMesh == null) { SetStatus("メッシュが選択されていません"); return; }
+            string beforePath = Path.Combine(BasePath, BeforeFileName);
+            string afterPath  = Path.Combine(BasePath, AfterFileName);
+            string triPath    = Path.Combine(BasePath, TriFileName);
 
+            var model = GetModel?.Invoke();
+            var tc    = GetToolContext?.Invoke();
+            var mc    = tc?.FirstDrawableMeshContext ?? model?.FirstDrawableMeshContext;
+            if (mc?.MeshObject == null) { SetStatus("メッシュが選択されていません"); return; }
+
+            int masterIdx = model?.IndexOf(mc) ?? -1;
+            int modelIdx  = GetModelIndex?.Invoke() ?? 0;
+
+            if (SendCommand != null && masterIdx >= 0)
+            {
+                SendCommand.Invoke(new MediaPipeFaceDeformCommand(
+                    modelIdx, masterIdx, beforePath, afterPath, triPath));
+                SetStatus("MediaPipe変形コマンドを送信しました");
+                return;
+            }
+            // フォールバック
             try
             {
-                string beforePath = Path.Combine(BasePath, BeforeFileName);
-                string afterPath  = Path.Combine(BasePath, AfterFileName);
-                string triPath    = Path.Combine(BasePath, TriFileName);
-
-                Vector2[] beforeLandmarks = MediaPipeFaceDeformer.LoadLandmarks(beforePath);
-                Vector2[] afterLandmarks  = MediaPipeFaceDeformer.LoadLandmarks(afterPath);
-                int[][]   triangles       = MediaPipeFaceDeformer.ParseTrianglesJson(File.ReadAllText(triPath));
-
-                int vertexCount = sourceMesh.VertexCount;
-                var positions   = new Vector3[vertexCount];
+                var sourceMesh    = mc.MeshObject;
+                var beforeLM      = MediaPipeFaceDeformer.LoadLandmarks(beforePath);
+                var afterLM       = MediaPipeFaceDeformer.LoadLandmarks(afterPath);
+                var triangles     = MediaPipeFaceDeformer.ParseTrianglesJson(File.ReadAllText(triPath));
+                int vertexCount   = sourceMesh.VertexCount;
+                var positions     = new Vector3[vertexCount];
                 for (int i = 0; i < vertexCount; i++) positions[i] = sourceMesh.Vertices[i].Position;
-
                 var deformer = new MediaPipeFaceDeformer();
-                deformer.SetBaseMesh(beforeLandmarks, triangles);
+                deformer.SetBaseMesh(beforeLM, triangles);
                 int bindCount = deformer.Bind(positions);
-                deformer.Apply(afterLandmarks, positions);
-
+                deformer.Apply(afterLM, positions);
                 MeshObject cloned = sourceMesh.Clone();
                 cloned.Name = sourceMesh.Name + "_MP";
                 for (int i = 0; i < vertexCount; i++) cloned.Vertices[i].Position = positions[i];
-
                 var newMc = new MeshContext
                 {
                     MeshObject = cloned,
                     Materials  = new List<Material>(mc.Materials ?? new List<Material>()),
                 };
-                newMc.UnityMesh           = cloned.ToUnityMesh();
-                newMc.UnityMesh.name      = cloned.Name;
-                newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-
-                tc.AddMeshContext?.Invoke(newMc);
+                newMc.UnityMesh = cloned.ToUnityMesh(); newMc.UnityMesh.name = cloned.Name; newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+                tc?.AddMeshContext?.Invoke(newMc);
                 SetStatus($"変形メッシュを作成しました。バインド: {bindCount}/{vertexCount} 頂点");
-                tc.Repaint?.Invoke();
+                tc?.Repaint?.Invoke();
             }
-            catch (Exception ex)
-            {
-                SetStatus($"エラー: {ex.Message}");
-                UnityEngine.Debug.LogException(ex);
-            }
+            catch (Exception ex) { SetStatus($"エラー: {ex.Message}"); UnityEngine.Debug.LogException(ex); }
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }

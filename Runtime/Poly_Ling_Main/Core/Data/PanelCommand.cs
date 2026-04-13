@@ -5,6 +5,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Tools;
 
 namespace Poly_Ling.Data
 {
@@ -577,6 +578,615 @@ namespace Poly_Ling.Data
             MasterIndices    = masterIndices;
             BaseMasterIndex  = baseMasterIndex;
             CreateNewMesh    = createNewMesh;
+        }
+    }
+
+    // ================================================================
+    // 頂点・辺・面の選択
+    // ================================================================
+
+    /// <summary>
+    /// 頂点・辺・面をインデックス指定で選択する。
+    /// null のフィールドは対応する選択を変更しない。
+    /// Additive = false の場合、設定前に既存の選択全体をクリアする。
+    /// 辺は [v1a, v2a, v1b, v2b, ...] のフラット配列で指定する。
+    /// </summary>
+    public class SelectElementsCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int   MasterIndex   { get; }
+        /// <summary>選択する頂点インデックス配列。null = 変更しない</summary>
+        public int[] VertexIndices { get; }
+        /// <summary>選択する辺のフラット配列 [v1a, v2a, v1b, v2b, ...]。null = 変更しない</summary>
+        public int[] EdgePairs     { get; }
+        /// <summary>選択する面インデックス配列。null = 変更しない</summary>
+        public int[] FaceIndices   { get; }
+        /// <summary>false = 既存選択をクリアしてから設定、true = 既存選択に追加</summary>
+        public bool  Additive      { get; }
+
+        public SelectElementsCommand(
+            int modelIndex, int masterIndex,
+            int[] vertexIndices, int[] edgePairs, int[] faceIndices,
+            bool additive = false)
+            : base(modelIndex)
+        {
+            MasterIndex   = masterIndex;
+            VertexIndices = vertexIndices;
+            EdgePairs     = edgePairs;
+            FaceIndices   = faceIndices;
+            Additive      = additive;
+        }
+    }
+
+    // ================================================================
+    // 頂点移動
+    // ================================================================
+
+    /// <summary>
+    /// 現在の選択頂点をデルタ値で移動する。Undo記録付き。
+    /// CoordinateSpace.World の場合、Delta をモデルローカル空間に変換してから適用する。
+    /// </summary>
+    public class MoveSelectedVerticesCommand : PanelCommand
+    {
+        public enum CoordSpace { Local, World }
+
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int        MasterIndex      { get; }
+        /// <summary>移動量</summary>
+        public Vector3    Delta            { get; }
+        /// <summary>Delta の座標空間</summary>
+        public CoordSpace Space            { get; }
+        /// <summary>移動後に法線を再計算するか</summary>
+        public bool       RecalcNormals    { get; }
+
+        public MoveSelectedVerticesCommand(
+            int modelIndex, int masterIndex,
+            Vector3 delta, CoordSpace space,
+            bool recalcNormals = false)
+            : base(modelIndex)
+        {
+            MasterIndex   = masterIndex;
+            Delta         = delta;
+            Space         = space;
+            RecalcNormals = recalcNormals;
+        }
+    }
+
+    // ================================================================
+    // ピボット移動
+    // ================================================================
+
+    /// <summary>
+    /// ピボット（原点）をデルタ値で移動する。Undo記録付き。
+    /// 全頂点を -Delta 方向に移動し、BoneTransform.Position を +Delta 方向に移動する。
+    /// CoordinateSpace.World の場合、Delta をモデルローカル空間に変換してから頂点に適用する。
+    /// </summary>
+    public class MovePivotCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int        MasterIndex { get; }
+        /// <summary>ピボットの移動量</summary>
+        public Vector3    Delta       { get; }
+        /// <summary>Delta の座標空間</summary>
+        public MoveSelectedVerticesCommand.CoordSpace Space { get; }
+
+        public MovePivotCommand(
+            int modelIndex, int masterIndex,
+            Vector3 delta, MoveSelectedVerticesCommand.CoordSpace space)
+            : base(modelIndex)
+        {
+            MasterIndex = masterIndex;
+            Delta       = delta;
+            Space       = space;
+        }
+    }
+
+    // ================================================================
+    // スカルプトストローク
+    // ================================================================
+
+    /// <summary>
+    /// スカルプトブラシを一連のローカル空間座標に沿って適用する。Undo記録付き。
+    /// BrushCenters は対象メッシュのローカル座標系で指定すること。
+    /// </summary>
+    public class SculptStrokeCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int          MasterIndex   { get; }
+        /// <summary>ブラシ中心の列（ローカル空間）</summary>
+        public Vector3[]    BrushCenters  { get; }
+        /// <summary>スカルプトモード</summary>
+        public SculptMode   Mode          { get; }
+        /// <summary>ブラシ半径（ローカル空間単位）</summary>
+        public float        BrushRadius   { get; }
+        /// <summary>強度（0〜1）</summary>
+        public float        Strength      { get; }
+        /// <summary>反転フラグ</summary>
+        public bool         Invert        { get; }
+        /// <summary>フォールオフ種別</summary>
+        public FalloffType  Falloff       { get; }
+        /// <summary>ストローク終了後に法線を再計算するか</summary>
+        public bool         RecalcNormals { get; }
+
+        public SculptStrokeCommand(
+            int modelIndex, int masterIndex,
+            Vector3[] brushCenters,
+            SculptMode mode, float brushRadius, float strength,
+            bool invert = false,
+            FalloffType falloff = FalloffType.Gaussian,
+            bool recalcNormals = true)
+            : base(modelIndex)
+        {
+            MasterIndex   = masterIndex;
+            BrushCenters  = brushCenters;
+            Mode          = mode;
+            BrushRadius   = brushRadius;
+            Strength      = strength;
+            Invert        = invert;
+            Falloff       = falloff;
+            RecalcNormals = recalcNormals;
+        }
+    }
+
+    // ================================================================
+    // 詳細選択（Advanced Select）
+    // ================================================================
+
+    /// <summary>
+    /// トポロジーベースの詳細選択を実行する。
+    /// Mode に応じて使用する Seed フィールドが異なる。
+    ///   Connected   : SeedVertexIndex >= 0 → 頂点起点
+    ///                 SeedEdgeV1/V2  >= 0 → 辺起点
+    ///                 SeedFaceIndex  >= 0 → 面起点
+    ///   Belt        : SeedEdgeV1/V2（辺ペア必須）
+    ///   EdgeLoop    : SeedEdgeV1/V2（辺ペア必須）
+    ///   ShortestPath: SeedVertexIndex（始点）+ EndVertexIndex（終点）
+    /// </summary>
+    public class AdvancedSelectCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int                MasterIndex       { get; }
+        /// <summary>選択モード</summary>
+        public AdvancedSelectMode Mode              { get; }
+
+        // ── Seed ──────────────────────────────────────────────────
+        /// <summary>頂点起点インデックス（不使用時 -1）</summary>
+        public int                SeedVertexIndex   { get; }
+        /// <summary>辺起点 V1（不使用時 -1）</summary>
+        public int                SeedEdgeV1        { get; }
+        /// <summary>辺起点 V2（不使用時 -1）</summary>
+        public int                SeedEdgeV2        { get; }
+        /// <summary>面起点インデックス（不使用時 -1）</summary>
+        public int                SeedFaceIndex     { get; }
+        /// <summary>ShortestPath 終点インデックス（他モードでは無視）</summary>
+        public int                EndVertexIndex    { get; }
+
+        // ── 出力フラグ ──────────────────────────────────────────────
+        public bool               SelectVertices    { get; }
+        public bool               SelectEdges       { get; }
+        public bool               SelectFaces       { get; }
+
+        /// <summary>false = 既存選択をクリアしてから選択</summary>
+        public bool               Additive          { get; }
+
+        /// <summary>EdgeLoop モードの方向一致閾値（cos値、デフォルト 0.5）</summary>
+        public float              EdgeLoopThreshold { get; }
+
+        public AdvancedSelectCommand(
+            int modelIndex, int masterIndex,
+            AdvancedSelectMode mode,
+            int seedVertexIndex   = -1,
+            int seedEdgeV1        = -1,
+            int seedEdgeV2        = -1,
+            int seedFaceIndex     = -1,
+            int endVertexIndex    = -1,
+            bool selectVertices   = true,
+            bool selectEdges      = false,
+            bool selectFaces      = false,
+            bool additive         = false,
+            float edgeLoopThreshold = 0.5f)
+            : base(modelIndex)
+        {
+            MasterIndex       = masterIndex;
+            Mode              = mode;
+            SeedVertexIndex   = seedVertexIndex;
+            SeedEdgeV1        = seedEdgeV1;
+            SeedEdgeV2        = seedEdgeV2;
+            SeedFaceIndex     = seedFaceIndex;
+            EndVertexIndex    = endVertexIndex;
+            SelectVertices    = selectVertices;
+            SelectEdges       = selectEdges;
+            SelectFaces       = selectFaces;
+            Additive          = additive;
+            EdgeLoopThreshold = edgeLoopThreshold;
+        }
+    }
+
+    // ================================================================
+    // MeshFilter → Skinned 変換
+    // ================================================================
+
+    /// <summary>
+    /// MeshFilter オブジェクト群をボーン+スキンドメッシュ構造に変換する。
+    /// Undo 記録付き。変換後に GPU バッファを再構築する。
+    /// </summary>
+    public class ConvertMeshFilterToSkinnedCommand : PanelCommand
+    {
+        /// <summary>回転ありボーンの軸をPMX軸 (Y→X) に入替える</summary>
+        public bool SwapAxisForRotated  { get; }
+        /// <summary>回転なしボーンを X軸上向き・Y軸横向きに設定する</summary>
+        public bool SetAxisForIdentity  { get; }
+
+        public ConvertMeshFilterToSkinnedCommand(
+            int modelIndex,
+            bool swapAxisForRotated = false,
+            bool setAxisForIdentity = false)
+            : base(modelIndex)
+        {
+            SwapAxisForRotated = swapAxisForRotated;
+            SetAxisForIdentity = setAxisForIdentity;
+        }
+    }
+
+    // ================================================================
+    // スキンウェイト一括操作
+    // ================================================================
+
+    /// <summary>選択中の描画メッシュ全頂点に指定ウェイトを一括塗りつぶす（Flood）</summary>
+    public class FloodSkinWeightCommand : PanelCommand
+    {
+        public int                          TargetBoneMaster { get; }
+        public Poly_Ling.UI.SkinWeightPaintMode PaintMode    { get; }
+        public float                        WeightValue      { get; }
+        public float                        Strength         { get; }
+        public FloodSkinWeightCommand(int modelIndex, int targetBoneMaster,
+            Poly_Ling.UI.SkinWeightPaintMode paintMode, float weightValue, float strength)
+            : base(modelIndex)
+        {
+            TargetBoneMaster = targetBoneMaster;
+            PaintMode        = paintMode;
+            WeightValue      = weightValue;
+            Strength         = strength;
+        }
+    }
+
+    /// <summary>選択中の描画メッシュ全頂点のボーンウェイトを正規化する（Normalize）</summary>
+    public class NormalizeSkinWeightCommand : PanelCommand
+    {
+        public NormalizeSkinWeightCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    /// <summary>選択中の描画メッシュ全頂点の微小ウェイトを除去する（Prune）</summary>
+    public class PruneSkinWeightCommand : PanelCommand
+    {
+        public float Threshold { get; }
+        public PruneSkinWeightCommand(int modelIndex, float threshold)
+            : base(modelIndex) { Threshold = threshold; }
+    }
+
+    // ================================================================
+    // メッシュブレンド
+    // ================================================================
+
+    /// <summary>
+    /// 選択メッシュ（ターゲット）にソースメッシュをブレンドして適用する。
+    /// バックアップ作成 + Undo 記録付き。
+    /// </summary>
+    public class ApplyBlendCommand : PanelCommand
+    {
+        /// <summary>ターゲット MeshContext の MasterIndex 配列</summary>
+        public int[]  TargetMasterIndices  { get; }
+        /// <summary>ソース MeshContext の MasterIndex</summary>
+        public int    SourceMasterIndex    { get; }
+        /// <summary>ブレンドウェイト [0, 1]</summary>
+        public float  BlendWeight          { get; }
+        /// <summary>適用後に法線を再計算するか</summary>
+        public bool   RecalculateNormals   { get; }
+        /// <summary>選択頂点のみに適用するか</summary>
+        public bool   SelectedVerticesOnly { get; }
+        /// <summary>頂点IDで照合するか</summary>
+        public bool   MatchByVertexId      { get; }
+
+        public ApplyBlendCommand(
+            int modelIndex,
+            int[] targetMasterIndices, int sourceMasterIndex,
+            float blendWeight,
+            bool recalculateNormals   = true,
+            bool selectedVerticesOnly = false,
+            bool matchByVertexId      = false)
+            : base(modelIndex)
+        {
+            TargetMasterIndices  = targetMasterIndices;
+            SourceMasterIndex    = sourceMasterIndex;
+            BlendWeight          = blendWeight;
+            RecalculateNormals   = recalculateNormals;
+            SelectedVerticesOnly = selectedVerticesOnly;
+            MatchByVertexId      = matchByVertexId;
+        }
+    }
+
+    // ================================================================
+    // UV 編集
+    // ================================================================
+
+    /// <summary>
+    /// 指定 MeshContext の UV 座標変更をコマンドとして記録する。
+    /// ドラッグ移動・一括変換の両方に使用する。
+    /// </summary>
+    public class ApplyUVChangesCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int       MasterIndex   { get; }
+        /// <summary>変更対象の頂点インデックス配列</summary>
+        public int[]     VertexIndices { get; }
+        /// <summary>変更対象の UV サブインデックス配列（VertexIndices と同長）</summary>
+        public int[]     UVIndices     { get; }
+        /// <summary>変更前 UV 座標配列</summary>
+        public Vector2[] BeforeUVs     { get; }
+        /// <summary>変更後 UV 座標配列</summary>
+        public Vector2[] AfterUVs      { get; }
+        /// <summary>操作名（Undo スタックの説明文用）</summary>
+        public string    OperationName { get; }
+
+        public ApplyUVChangesCommand(
+            int modelIndex, int masterIndex,
+            int[] vertexIndices, int[] uvIndices,
+            Vector2[] beforeUVs, Vector2[] afterUVs,
+            string operationName = "UV Edit")
+            : base(modelIndex)
+        {
+            MasterIndex   = masterIndex;
+            VertexIndices = vertexIndices;
+            UVIndices     = uvIndices;
+            BeforeUVs     = beforeUVs;
+            AfterUVs      = afterUVs;
+            OperationName = operationName;
+        }
+    }
+
+    // ================================================================
+    // UV 展開
+    // ================================================================
+
+    /// <summary>
+    /// 選択メッシュに LSCM UV 展開を実行する。
+    /// Seam エッジはコマンド発行時点の mc.SelectedEdges から Dispatcher が読み取る。
+    /// </summary>
+    public class ApplyLscmUnwrapCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int  MasterIndex            { get; }
+        /// <summary>バウンダリをシームに含めるか</summary>
+        public bool IncludeBoundaryAsSeam  { get; }
+        /// <summary>最大反復数</summary>
+        public int  MaxIterations          { get; }
+
+        public ApplyLscmUnwrapCommand(int modelIndex, int masterIndex,
+            bool includeBoundaryAsSeam, int maxIterations)
+            : base(modelIndex)
+        {
+            MasterIndex           = masterIndex;
+            IncludeBoundaryAsSeam = includeBoundaryAsSeam;
+            MaxIterations         = maxIterations;
+        }
+    }
+
+    // ================================================================
+    // マテリアルリスト
+    // ================================================================
+
+    /// <summary>マテリアルスロットを末尾に追加する</summary>
+    public class AddMaterialSlotCommand : PanelCommand
+    {
+        public AddMaterialSlotCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    /// <summary>指定インデックスのマテリアルスロットを削除する</summary>
+    public class RemoveMaterialSlotCommand : PanelCommand
+    {
+        public int SlotIndex { get; }
+        public RemoveMaterialSlotCommand(int modelIndex, int slotIndex)
+            : base(modelIndex) { SlotIndex = slotIndex; }
+    }
+
+    /// <summary>選択面に指定マテリアルスロットを適用する</summary>
+    public class ApplyMaterialToFacesCommand : PanelCommand
+    {
+        /// <summary>対象 MeshContext の MasterIndex</summary>
+        public int   MasterIndex  { get; }
+        /// <summary>適用するマテリアルスロット番号</summary>
+        public int   MaterialSlot { get; }
+        /// <summary>適用対象の面インデックス配列</summary>
+        public int[] FaceIndices  { get; }
+
+        public ApplyMaterialToFacesCommand(int modelIndex, int masterIndex,
+            int materialSlot, int[] faceIndices)
+            : base(modelIndex)
+        {
+            MasterIndex  = masterIndex;
+            MaterialSlot = materialSlot;
+            FaceIndices  = faceIndices;
+        }
+    }
+
+    // ================================================================
+    // 差分からのモーフ生成
+    // ================================================================
+
+    /// <summary>
+    /// 基準モデルとモーフモデルの差分から頂点モーフを生成し、
+    /// 基準モデルに MorphExpression として登録する。
+    /// Undo 記録付き。
+    /// </summary>
+    public class CreateMorphFromDiffCommand : PanelCommand
+    {
+        /// <summary>基準モデルのインデックス（プロジェクト内）</summary>
+        public int    BaseModelIndex  { get; }
+        /// <summary>モーフモデルのインデックス（プロジェクト内）</summary>
+        public int    MorphModelIndex { get; }
+        /// <summary>生成するモーフの名前</summary>
+        public string MorphName       { get; }
+        /// <summary>パネル番号（0=眉 / 1=目 / 2=口 / 3=その他）</summary>
+        public int    Panel            { get; }
+
+        public CreateMorphFromDiffCommand(
+            int baseModelIndex, int morphModelIndex,
+            string morphName, int panel)
+            : base(baseModelIndex)
+        {
+            BaseModelIndex  = baseModelIndex;
+            MorphModelIndex = morphModelIndex;
+            MorphName       = morphName;
+            Panel           = panel;
+        }
+    }
+
+    // ================================================================
+    // Tポーズ変換
+    // ================================================================
+
+    /// <summary>Humanoidマッピングを使用してTポーズに変換する</summary>
+    public class ApplyTPoseCommand : PanelCommand
+    {
+        public ApplyTPoseCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    /// <summary>バックアップから元の姿勢に戻す</summary>
+    public class RestoreTPoseCommand : PanelCommand
+    {
+        public RestoreTPoseCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    /// <summary>現在の姿勢をベースとしてバックアップを破棄する（Undo不可）</summary>
+    public class BakeTPoseCommand : PanelCommand
+    {
+        public BakeTPoseCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    // ================================================================
+    // Quad減面
+    // ================================================================
+
+    /// <summary>Quad保持減数化を実行して結果メッシュをモデルに追加する</summary>
+    public class QuadDecimateCommand : PanelCommand
+    {
+        public int   SourceMasterIndex { get; }
+        public float TargetRatio       { get; }
+        public int   MaxPasses         { get; }
+        public float NormalAngleDeg    { get; }
+        public float HardAngleDeg      { get; }
+        public float UvSeamThreshold   { get; }
+
+        public QuadDecimateCommand(int modelIndex, int sourceMasterIndex,
+            float targetRatio, int maxPasses,
+            float normalAngleDeg, float hardAngleDeg, float uvSeamThreshold)
+            : base(modelIndex)
+        {
+            SourceMasterIndex = sourceMasterIndex;
+            TargetRatio       = targetRatio;
+            MaxPasses         = maxPasses;
+            NormalAngleDeg    = normalAngleDeg;
+            HardAngleDeg      = hardAngleDeg;
+            UvSeamThreshold   = uvSeamThreshold;
+        }
+    }
+
+    // ================================================================
+    // Mirror編集
+    // ================================================================
+
+    /// <summary>選択メッシュのミラーを実体化した新メッシュをモデルに追加する（Bake Mirror）</summary>
+    public class BakeMirrorCommand : PanelCommand
+    {
+        public int   SourceMasterIndex { get; }
+        public int   MirrorAxis        { get; }
+        public float Threshold         { get; }
+        public bool  FlipU             { get; }
+        public BakeMirrorCommand(int modelIndex, int sourceMasterIndex, int mirrorAxis, float threshold, bool flipU)
+            : base(modelIndex)
+        {
+            SourceMasterIndex = sourceMasterIndex;
+            MirrorAxis        = mirrorAxis;
+            Threshold         = threshold;
+            FlipU             = flipU;
+        }
+    }
+
+    /// <summary>Bake済みメッシュの編集結果を元メッシュに書き戻した新メッシュをモデルに追加する（Write Back）</summary>
+    public class WriteBackMirrorCommand : PanelCommand
+    {
+        public int           EditedMasterIndex   { get; }
+        public int           OriginalMasterIndex { get; }
+        public Poly_Ling.Tools.WriteBackMode    WriteBackMode { get; }
+        public Poly_Ling.Tools.MirrorBakeResult BakeResult    { get; }
+        public WriteBackMirrorCommand(int modelIndex, int editedMasterIndex, int originalMasterIndex,
+            Poly_Ling.Tools.WriteBackMode writeBackMode, Poly_Ling.Tools.MirrorBakeResult bakeResult)
+            : base(modelIndex)
+        {
+            EditedMasterIndex   = editedMasterIndex;
+            OriginalMasterIndex = originalMasterIndex;
+            WriteBackMode       = writeBackMode;
+            BakeResult          = bakeResult;
+        }
+    }
+
+    /// <summary>ソースとWriteBack結果をブレンドした新メッシュをモデルに追加する（Blend）</summary>
+    public class BlendMirrorCommand : PanelCommand
+    {
+        public int   SourceMasterIndex    { get; }
+        public int   WriteBackMasterIndex { get; }
+        public float BlendWeight          { get; }
+        public BlendMirrorCommand(int modelIndex, int sourceMasterIndex, int writeBackMasterIndex, float blendWeight)
+            : base(modelIndex)
+        {
+            SourceMasterIndex    = sourceMasterIndex;
+            WriteBackMasterIndex = writeBackMasterIndex;
+            BlendWeight          = blendWeight;
+        }
+    }
+
+    // ================================================================
+    // Humanoidボーンマッピング
+    // ================================================================
+
+    /// <summary>プレビューマッピングをモデルに適用する</summary>
+    public class ApplyHumanoidMappingCommand : PanelCommand
+    {
+        /// <summary>適用するマッピングのクローン</summary>
+        public Poly_Ling.Data.HumanoidBoneMapping Mapping { get; }
+        public ApplyHumanoidMappingCommand(int modelIndex, Poly_Ling.Data.HumanoidBoneMapping mapping)
+            : base(modelIndex) { Mapping = mapping; }
+    }
+
+    /// <summary>モデルのHumanoidマッピングをクリアする</summary>
+    public class ClearHumanoidMappingCommand : PanelCommand
+    {
+        public ClearHumanoidMappingCommand(int modelIndex) : base(modelIndex) { }
+    }
+
+    // ================================================================
+    // MediaPipe フェイス変形
+    // ================================================================
+
+    /// <summary>MediaPipe ランドマークJSONを使ってカレントメッシュを変形した新メッシュを追加する</summary>
+    public class MediaPipeFaceDeformCommand : PanelCommand
+    {
+        public int    SourceMasterIndex { get; }
+        /// <summary>before.json のフルパス</summary>
+        public string BeforePath        { get; }
+        /// <summary>after.json のフルパス</summary>
+        public string AfterPath         { get; }
+        /// <summary>triangles.json のフルパス</summary>
+        public string TrianglesPath     { get; }
+
+        public MediaPipeFaceDeformCommand(int modelIndex, int sourceMasterIndex,
+            string beforePath, string afterPath, string trianglesPath)
+            : base(modelIndex)
+        {
+            SourceMasterIndex = sourceMasterIndex;
+            BeforePath        = beforePath;
+            AfterPath         = afterPath;
+            TrianglesPath     = trianglesPath;
         }
     }
 }

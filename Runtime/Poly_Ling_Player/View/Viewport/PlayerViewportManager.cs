@@ -958,6 +958,7 @@ namespace Poly_Ling.Player
             _renderer.DrawMeshes(project, cam);
             _renderer.DrawWireframeAndVertices(cam, project, slot);
             _renderer.DrawBones(project, cam);
+            _renderer.DrawWeightVisualization(project, cam);
         }
     }
 }

@@ -999,4 +999,234 @@ namespace Poly_Ling.UndoSystem
             return $"MorphExpressionListReplace: {OldSets?.Count ?? 0} → {NewSets?.Count ?? 0} sets";
         }
     }
+
+    // ================================================================
+    // MeshFilter → Skinned 変換 Undo レコード
+    // ================================================================
+
+    /// <summary>
+    /// MeshFilter → Skinned 変換の Undo/Redo レコード。
+    /// 変換前後の MeshContextList 全体をディープコピーで保持する。
+    /// HierarchyParentIndex など MeshContextSnapshot に含まれないフィールドも
+    /// MeshContext.Clone() 経由で保存されるため、完全な復元が可能。
+    /// </summary>
+    public class MeshFilterToSkinnedRecord : MeshListUndoRecord
+    {
+        /// <summary>変換前の MeshContextList（ディープコピー）</summary>
+        public List<MeshContext> BeforeList;
+        /// <summary>変換後の MeshContextList（ディープコピー）</summary>
+        public List<MeshContext> AfterList;
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null || BeforeList == null) return;
+            RestoreList(ctx, BeforeList);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null || AfterList == null) return;
+            RestoreList(ctx, AfterList);
+        }
+
+        private static void RestoreList(ModelContext ctx, List<MeshContext> source)
+        {
+            ctx.MeshContextList.Clear();
+            foreach (var mc in source)
+            {
+                // Clone して追加（Undo/Redo を繰り返しても独立した状態を保つ）
+                var clone = CloneMeshContext(mc);
+                clone.ParentModelContext = ctx;
+                ctx.MeshContextList.Add(clone);
+            }
+            ctx.InvalidateTypedIndices();
+            ctx.ClearMeshSelection();
+            ctx.ClearBoneSelection();
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        /// <summary>
+        /// MeshContext を HierarchyParentIndex を含めてディープコピーする。
+        /// </summary>
+        public static MeshContext CloneMeshContext(MeshContext src)
+        {
+            if (src == null) return null;
+            var dst = new MeshContext
+            {
+                Name                   = src.Name,
+                MeshObject             = src.MeshObject?.Clone(),
+                BoneTransform          = src.BoneTransform != null ? new BoneTransform(src.BoneTransform) : null,
+                OriginalPositions      = src.OriginalPositions != null ? (Vector3[])src.OriginalPositions.Clone() : null,
+                ParentIndex            = src.ParentIndex,
+                HierarchyParentIndex   = src.HierarchyParentIndex,
+                Depth                  = src.Depth,
+                IsVisible              = src.IsVisible,
+                IsLocked               = src.IsLocked,
+                IsFolding              = src.IsFolding,
+                MirrorType             = src.MirrorType,
+                MirrorAxis             = src.MirrorAxis,
+                MirrorDistance         = src.MirrorDistance,
+                MirrorMaterialOffset   = src.MirrorMaterialOffset,
+                BakedMirrorSourceIndex = src.BakedMirrorSourceIndex,
+                HasBakedMirrorChild    = src.HasBakedMirrorChild,
+                MorphParentIndex       = src.MorphParentIndex,
+                ExcludeFromExport      = src.ExcludeFromExport,
+                IgnorePoseInArmature   = src.IgnorePoseInArmature,
+                BindPose               = src.BindPose,
+                BonePoseData           = src.BonePoseData?.Clone(),
+                MorphBaseData          = src.MorphBaseData?.Clone(),
+            };
+            // UnityMesh は MeshObject から再生成
+            if (dst.MeshObject != null && dst.MeshObject.VertexCount > 0)
+            {
+                dst.UnityMesh = dst.MeshObject.ToUnityMesh();
+                if (dst.UnityMesh != null) dst.UnityMesh.name = src.Name;
+            }
+            // マテリアル
+            if (src.Materials != null)
+                foreach (var m in src.Materials) dst.Materials.Add(m);
+            dst.CurrentMaterialIndex = src.CurrentMaterialIndex;
+            return dst;
+        }
+
+        /// <summary>
+        /// ModelContext の MeshContextList 全体をディープコピーしてリストを返す。
+        /// </summary>
+        public static List<MeshContext> CaptureList(ModelContext model)
+        {
+            var list = new List<MeshContext>(model.MeshContextCount);
+            for (int i = 0; i < model.MeshContextCount; i++)
+                list.Add(CloneMeshContext(model.GetMeshContext(i)));
+            return list;
+        }
+
+        public override string ToString() => "MeshFilter → Skinned 変換";
+    }
+
+    // ================================================================
+    // モデルブレンド Undo レコード
+    // ================================================================
+
+    /// <summary>
+    /// モデルブレンド適用の Undo/Redo レコード。
+    /// クローンモデルの描画メッシュ頂点位置（before/after）を保持する。
+    /// MeshListStack のコンテキストをクローン ModelContext に設定した状態で記録すること。
+    /// </summary>
+    public class ModelBlendRecord : MeshListUndoRecord
+    {
+        /// <summary>masterIndex → 適用前の頂点位置配列</summary>
+        public Dictionary<int, Vector3[]> BeforePositions;
+        /// <summary>masterIndex → 適用後の頂点位置配列</summary>
+        public Dictionary<int, Vector3[]> AfterPositions;
+
+        public override void Undo(ModelContext ctx) => Apply(ctx, BeforePositions);
+        public override void Redo(ModelContext ctx) => Apply(ctx, AfterPositions);
+
+        private static void Apply(ModelContext ctx, Dictionary<int, Vector3[]> positions)
+        {
+            if (ctx == null || positions == null) return;
+            foreach (var kv in positions)
+            {
+                var mc = ctx.GetMeshContext(kv.Key);
+                if (mc?.MeshObject == null) continue;
+                var verts = mc.MeshObject.Vertices;
+                var pos   = kv.Value;
+                int n     = System.Math.Min(pos.Length, verts.Count);
+                for (int i = 0; i < n; i++)
+                    verts[i].Position = pos[i];
+                mc.MeshObject.InvalidatePositionCache();
+                if (mc.UnityMesh != null)
+                {
+                    var up = mc.MeshObject.Positions;
+                    if (up != null && up.Length == mc.UnityMesh.vertexCount)
+                        mc.UnityMesh.vertices = up;
+                }
+            }
+            ctx.OnListChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// ModelContext の全描画メッシュ頂点位置をスナップショットする。
+        /// </summary>
+        public static Dictionary<int, Vector3[]> CapturePositions(ModelContext model)
+        {
+            var result = new Dictionary<int, Vector3[]>();
+            if (model == null) return result;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc?.MeshObject == null || mc.MeshObject.VertexCount == 0) continue;
+                if (mc.Type == MeshType.Bone || mc.Type == MeshType.Morph) continue;
+                var pos = new Vector3[mc.MeshObject.VertexCount];
+                for (int v = 0; v < pos.Length; v++)
+                    pos[v] = mc.MeshObject.Vertices[v].Position;
+                result[i] = pos;
+            }
+            return result;
+        }
+
+        public override string ToString() => "モデルブレンド適用";
+    }
+
+    // ================================================================
+    // モーフ作成 Undo レコード
+    // ================================================================
+
+    /// <summary>
+    /// モーフ作成操作の Undo/Redo レコード。
+    /// MeshContextList 全体 + MorphExpressions リストの両方を保持する。
+    /// </summary>
+    public class MorphCreateRecord : MeshListUndoRecord
+    {
+        public List<MeshContext>     BeforeList;
+        public List<MeshContext>     AfterList;
+        public List<MorphExpression> BeforeExpressions;
+        public List<MorphExpression> AfterExpressions;
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            RestoreState(ctx, BeforeList, BeforeExpressions);
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            RestoreState(ctx, AfterList, AfterExpressions);
+        }
+
+        private static void RestoreState(
+            ModelContext ctx,
+            List<MeshContext> meshList,
+            List<MorphExpression> expressions)
+        {
+            // MeshContextList を復元
+            if (meshList != null)
+            {
+                ctx.MeshContextList.Clear();
+                foreach (var mc in meshList)
+                {
+                    var clone = MeshFilterToSkinnedRecord.CloneMeshContext(mc);
+                    clone.ParentModelContext = ctx;
+                    ctx.MeshContextList.Add(clone);
+                }
+                ctx.InvalidateTypedIndices();
+            }
+
+            // MorphExpressions を復元
+            if (expressions != null)
+            {
+                ctx.MorphExpressions.Clear();
+                foreach (var e in expressions)
+                    ctx.MorphExpressions.Add(e.Clone());
+            }
+
+            ctx.ClearMeshSelection();
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override string ToString() => "モーフ作成";
+    }
 }

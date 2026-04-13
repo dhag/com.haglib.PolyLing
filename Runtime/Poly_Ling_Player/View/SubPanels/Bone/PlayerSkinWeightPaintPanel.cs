@@ -10,6 +10,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.UI;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
 {
@@ -25,10 +26,10 @@ namespace Poly_Ling.Player
         public BrushFalloff        CurrentFalloff     { get; private set; } = BrushFalloff.Smooth;
         public float               CurrentWeightValue { get; private set; } = 1f;
         public int                 CurrentTargetBone  { get; private set; } = -1;
+        public int                 CurrentTargetMesh  { get; private set; } = -1;
 
         public void NotifyWeightChanged()
         {
-            // ウェイト変更後にUIを更新する（将来的には選択頂点のウェイト表示など）
         }
 
         // ================================================================
@@ -38,14 +39,34 @@ namespace Poly_Ling.Player
         /// <summary>パネル操作でウェイト可視化の再描画が必要なとき呼ばれる。</summary>
         public Action OnRepaint;
 
+        /// <summary>メッシュドロップダウン変更時に呼ばれる。</summary>
+        public Action OnMeshSelectionChanged;
+
         /// <summary>Flood/Normalize/Prune 実行時に ToolContext を取得するコールバック。</summary>
         public Func<Poly_Ling.Tools.ToolContext> GetToolContext;
+
+        // コマンド送信
+        private PanelContext _panelContext;
+        private Func<int>    _getModelIndex;
+
+        public void SetCommandContext(PanelContext ctx, Func<int> getModelIndex)
+        {
+            _panelContext   = ctx;
+            _getModelIndex  = getModelIndex;
+        }
+
+        private void SendCmd(PanelCommand cmd) => _panelContext?.SendCommand(cmd);
 
         // ================================================================
         // 内部 UI
         // ================================================================
 
         private VisualElement _root;
+
+        // ターゲットメッシュ
+        private DropdownField  _meshDropdown;
+        private List<string>   _meshNames         = new List<string>();
+        private List<int>      _meshMasterIndices  = new List<int>();
 
         // ターゲットボーン
         private DropdownField  _boneDropdown;
@@ -72,6 +93,20 @@ namespace Poly_Ling.Player
 
             AddSectionLabel("スキンウェイトペイント");
             AddSep();
+
+            // ── ターゲットメッシュ
+            AddSectionLabel("ターゲットメッシュ");
+            _meshDropdown = new DropdownField(new List<string> { "（未選択）" }, 0);
+            _meshDropdown.style.color = new StyleColor(Color.white);
+            _meshDropdown.style.marginBottom = 4;
+            _meshDropdown.RegisterValueChangedCallback(e =>
+            {
+                int sel = _meshDropdown.index;
+                CurrentTargetMesh = (sel <= 0) ? -1 : _meshMasterIndices[sel - 1];
+                OnMeshSelectionChanged?.Invoke();
+                OnRepaint?.Invoke();
+            });
+            _root.Add(_meshDropdown);
 
             // ── ターゲットボーン
             AddSectionLabel("ターゲットボーン");
@@ -172,38 +207,110 @@ namespace Poly_Ling.Player
 
         private void OnFlood()
         {
-            var ctx = GetToolContext?.Invoke();
-            if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
-            SkinWeightOperations.ExecuteFlood(
-                ctx.Model, ctx,
-                CurrentTargetBone, CurrentPaintMode,
-                CurrentWeightValue, CurrentStrength,
-                msg => SetStatus(msg));
-            SetStatus("Flood 完了");
+            int modelIdx = _getModelIndex?.Invoke() ?? 0;
+            if (_panelContext != null)
+            {
+                SendCmd(new FloodSkinWeightCommand(modelIdx,
+                    CurrentTargetBone, CurrentPaintMode,
+                    CurrentWeightValue, CurrentStrength));
+                SetStatus("Flood 実行");
+            }
+            else
+            {
+                // フォールバック（PanelContext未設定時）
+                var ctx = GetToolContext?.Invoke();
+                if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
+                SkinWeightOperations.ExecuteFlood(ctx.Model, ctx,
+                    CurrentTargetBone, CurrentPaintMode,
+                    CurrentWeightValue, CurrentStrength,
+                    msg => SetStatus(msg));
+                SetStatus("Flood 完了");
+            }
         }
 
         private void OnNormalize()
         {
-            var ctx = GetToolContext?.Invoke();
-            if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
-            SkinWeightOperations.ExecuteNormalize(ctx.Model, ctx,
-                msg => SetStatus(msg));
-            SetStatus("Normalize 完了");
+            int modelIdx = _getModelIndex?.Invoke() ?? 0;
+            if (_panelContext != null)
+            {
+                SendCmd(new NormalizeSkinWeightCommand(modelIdx));
+                SetStatus("Normalize 実行");
+            }
+            else
+            {
+                var ctx = GetToolContext?.Invoke();
+                if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
+                SkinWeightOperations.ExecuteNormalize(ctx.Model, ctx,
+                    msg => SetStatus(msg));
+                SetStatus("Normalize 完了");
+            }
         }
 
         private void OnPrune()
         {
-            var ctx = GetToolContext?.Invoke();
-            if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
-            int count = SkinWeightOperations.ExecutePrune(
-                ctx.Model, ctx, _pruneThreshold,
-                msg => SetStatus(msg));
-            SetStatus($"Prune 完了: {count} 頂点");
+            int modelIdx = _getModelIndex?.Invoke() ?? 0;
+            if (_panelContext != null)
+            {
+                SendCmd(new PruneSkinWeightCommand(modelIdx, _pruneThreshold));
+                SetStatus("Prune 実行");
+            }
+            else
+            {
+                var ctx = GetToolContext?.Invoke();
+                if (ctx?.Model == null) { SetStatus("コンテキスト未設定"); return; }
+                int count = SkinWeightOperations.ExecutePrune(ctx.Model, ctx, _pruneThreshold,
+                    msg => SetStatus(msg));
+                SetStatus($"Prune 完了: {count} 頂点");
+            }
         }
 
         private void SetStatus(string msg)
         {
             if (_statusLabel != null) _statusLabel.text = msg;
+        }
+
+        // ================================================================
+        // モデル変更時にメッシュリストを更新する
+        // ================================================================
+
+        public void RefreshMeshList(ModelContext model)
+        {
+            _meshNames.Clear();
+            _meshMasterIndices.Clear();
+
+            if (model != null)
+            {
+                // DrawableMeshes（MirrorSide含む）を全て列挙
+                for (int i = 0; i < model.MeshContextCount; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null || mc.MeshObject == null) continue;
+                    var t = mc.Type;
+                    if (t == MeshType.Bone || t == MeshType.Morph ||
+                        t == MeshType.RigidBody || t == MeshType.RigidBodyJoint ||
+                        t == MeshType.Group) continue;
+                    string label = mc.Type == MeshType.MirrorSide
+                        ? $"{mc.Name} [Mirror]"
+                        : mc.Name ?? $"[{i}]";
+                    _meshNames.Add(label);
+                    _meshMasterIndices.Add(i);
+                }
+            }
+
+            if (_meshDropdown == null) return;
+
+            var choices = new List<string> { "（未選択）" };
+            choices.AddRange(_meshNames);
+            _meshDropdown.choices = choices;
+
+            int selIdx = 0;
+            if (CurrentTargetMesh >= 0)
+            {
+                int found = _meshMasterIndices.IndexOf(CurrentTargetMesh);
+                selIdx = found >= 0 ? found + 1 : 0;
+            }
+            _meshDropdown.SetValueWithoutNotify(choices[selIdx]);
+            if (selIdx == 0) CurrentTargetMesh = -1;
         }
 
         // ================================================================

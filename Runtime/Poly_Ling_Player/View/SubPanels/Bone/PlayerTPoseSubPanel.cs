@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.EditorBridge;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
@@ -18,6 +19,10 @@ namespace Poly_Ling.Player
     {
         public Func<ModelContext>    GetModel;
         public Func<ToolContext>     GetToolContext;
+        /// <summary>PanelCommand を送信するコールバック。</summary>
+        public Action<PanelCommand> SendCommand;
+        /// <summary>モデルインデックスを返すデリゲート。</summary>
+        public Func<int>             GetModelIndex;
 
         private Label         _warningLabel;
         private VisualElement _mainContent;
@@ -118,26 +123,32 @@ namespace Poly_Ling.Player
         private void OnApplyTPose()
         {
             var model = GetModel?.Invoke(); if (model == null) return;
-            var tc    = GetToolContext?.Invoke();
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new ApplyTPoseCommand(modelIdx));
+                SetStatus("Tポーズを適用しました。");
+                Refresh();
+                return;
+            }
+            // フォールバック
+            var tc      = GetToolContext?.Invoke();
             var mapping = model.HumanoidMapping;
             if (mapping == null || mapping.IsEmpty) return;
-
             var beforeState    = new TPoseBackup();
             TPoseConverter.CaptureBackup(model.MeshContextList, beforeState);
             var oldTPoseBackup = model.TPoseBackup;
-
             var backup = new TPoseBackup();
             TPoseConverter.ConvertToTPose(model.MeshContextList, mapping, backup);
             model.TPoseBackup = backup;
-
             var afterState = new TPoseBackup();
             TPoseConverter.CaptureBackup(model.MeshContextList, afterState);
-
             var undo = tc?.UndoController;
             if (undo != null)
             {
-                var record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose");
-                undo.MeshListStack.Record(record, "Apply T-Pose");
+                undo.MeshListStack.Record(
+                    new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose"),
+                    "Apply T-Pose");
             }
             model.IsDirty = true;
             tc?.NotifyTopologyChanged?.Invoke();
@@ -149,23 +160,29 @@ namespace Poly_Ling.Player
         private void OnRestoreOriginal()
         {
             var model = GetModel?.Invoke(); if (model?.TPoseBackup == null) return;
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new RestoreTPoseCommand(modelIdx));
+                SetStatus("元の姿勢に戻しました。");
+                Refresh();
+                return;
+            }
+            // フォールバック
             var tc = GetToolContext?.Invoke();
-
             var beforeState    = new TPoseBackup();
             TPoseConverter.CaptureBackup(model.MeshContextList, beforeState);
             var oldTPoseBackup = model.TPoseBackup;
-
             TPoseConverter.RestoreFromBackup(model.MeshContextList, model.TPoseBackup);
-
             var afterState = new TPoseBackup();
             TPoseConverter.CaptureBackup(model.MeshContextList, afterState);
             model.TPoseBackup = null;
-
             var undo = tc?.UndoController;
             if (undo != null)
             {
-                var record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose");
-                undo.MeshListStack.Record(record, "Restore Original Pose");
+                undo.MeshListStack.Record(
+                    new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose"),
+                    "Restore Original Pose");
             }
             model.IsDirty = true;
             tc?.NotifyTopologyChanged?.Invoke();
@@ -179,7 +196,11 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke(); if (model?.TPoseBackup == null) return;
             bool ok = PLEditorBridge.I.DisplayDialogYesNo("Tポーズ変換", "元の姿勢のバックアップを破棄しますか？\nこの操作は元に戻せません。", "OK", "Cancel");
             if (!ok) return;
-            model.TPoseBackup = null;
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            if (SendCommand != null)
+                SendCommand.Invoke(new BakeTPoseCommand(modelIdx));
+            else
+                model.TPoseBackup = null;
             SetStatus("バックアップを破棄しました。現在の姿勢がベース姿勢になります。");
             Refresh();
         }

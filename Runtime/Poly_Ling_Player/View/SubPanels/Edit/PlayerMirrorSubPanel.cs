@@ -15,7 +15,10 @@ namespace Poly_Ling.Player
 {
     public class PlayerMirrorSubPanel
     {
-        public Func<ToolContext> GetToolContext;
+        public Func<ToolContext>     GetToolContext;
+        public Action<PanelCommand> SendCommand;
+        public Func<ModelContext>   GetModel;
+        public Func<int>            GetModelIndex;
 
         // ── 設定値 ────────────────────────────────────────────────────────
         private int           _mirrorAxis    = 0;    // 0=X, 1=Y, 2=Z
@@ -122,103 +125,138 @@ namespace Poly_Ling.Player
         // ── Operations ───────────────────────────────────────────────────
         private void OnBakeMirror()
         {
+            var model = GetModel?.Invoke();
+            if (model == null) { SetStatus("モデルがありません"); return; }
             var tc = GetToolContext?.Invoke();
-            if (tc == null) { SetStatus("ToolContext 未設定"); return; }
-            var mc = tc.FirstSelectedMeshContext;
+            var mc = tc?.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
             if (mc?.MeshObject == null) { SetStatus("メッシュを選択してください"); return; }
 
+            int masterIdx = model.IndexOf(mc);
+            int modelIdx  = GetModelIndex?.Invoke() ?? 0;
+
+            // BakeResult は Dispatcher 側で生成されるため、パネルには保存しない
+            // _lastBakeResult / _bakedMeshName は WriteBack 用に Dispatcher から返せないため、
+            // 暫定的にパネル側でも BakeMirror を実行して結果を保持する
             _sourceMeshName = mc.Name;
             var (bakedMesh, bakeResult) = MirrorBaker.BakeMirror(mc.MeshObject, _mirrorAxis, 0f, _threshold, _flipU);
             if (bakedMesh == null || bakeResult == null) { SetStatus("Bake に失敗しました"); return; }
-
             _lastBakeResult = bakeResult;
             _bakedMeshName  = bakedMesh.Name;
 
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new BakeMirrorCommand(modelIdx, masterIdx, _mirrorAxis, _threshold, _flipU));
+                SetStatus($"Bake 完了: {mc.MeshObject.VertexCount} → {bakedMesh.VertexCount} 頂点");
+                return;
+            }
+            // フォールバック
+            if (tc == null) { SetStatus("ToolContext 未設定"); return; }
             var newMc = new MeshContext
             {
-                Name       = bakedMesh.Name,
-                MeshObject = bakedMesh,
-                Materials  = new List<Material>(mc.Materials ?? new List<Material>()),
+                Name = bakedMesh.Name, MeshObject = bakedMesh,
+                Materials = new List<Material>(mc.Materials ?? new List<Material>()),
             };
             newMc.UnityMesh           = bakedMesh.ToUnityMesh();
             newMc.UnityMesh.name      = bakedMesh.Name;
             newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             tc.AddMeshContext?.Invoke(newMc);
-
             SetStatus($"Bake 完了: {mc.MeshObject.VertexCount} → {bakedMesh.VertexCount} 頂点");
             tc.Repaint?.Invoke();
         }
 
         private void OnWriteBack()
         {
+            if (_lastBakeResult == null) { SetStatus("先に Bake を実行してください"); return; }
+            var model = GetModel?.Invoke();
+            if (model == null) { SetStatus("モデルがありません"); return; }
             var tc = GetToolContext?.Invoke();
-            if (tc == null || _lastBakeResult == null) { SetStatus("先に Bake を実行してください"); return; }
-            var editedMc = tc.FirstSelectedMeshContext;
+            var editedMc = tc?.FirstSelectedMeshContext ?? model.FirstSelectedMeshContext;
             if (editedMc == null || editedMc.Name != _bakedMeshName)
             { SetStatus($"Bake 済みメッシュ '{_bakedMeshName}' を選択してください"); return; }
 
-            var originalMc = FindMeshContextByName(tc, _sourceMeshName);
+            MeshContext originalMc = null;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var m = model.GetMeshContext(i);
+                if (m?.Name == _sourceMeshName) { originalMc = m; break; }
+            }
             if (originalMc?.MeshObject == null) { SetStatus($"元メッシュ '{_sourceMeshName}' が見つかりません"); return; }
 
+            int editedIdx   = model.IndexOf(editedMc);
+            int originalIdx = model.IndexOf(originalMc);
+            int modelIdx    = GetModelIndex?.Invoke() ?? 0;
+
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new WriteBackMirrorCommand(
+                    modelIdx, editedIdx, originalIdx, _writeBackMode, _lastBakeResult));
+                _writeBackMeshName = originalMc.Name + "_WriteBack";
+                SetStatus($"WriteBack 完了: '{_writeBackMeshName}'");
+                return;
+            }
+            // フォールバック
+            if (tc == null) { SetStatus("ToolContext 未設定"); return; }
             var resultMesh = MirrorBaker.WriteBack(editedMc.MeshObject, originalMc.MeshObject, _lastBakeResult, _writeBackMode);
             if (resultMesh == null) { SetStatus("WriteBack に失敗しました"); return; }
-
             string newName    = _sourceMeshName + "_WriteBack";
-            resultMesh.Name   = newName;
-            _writeBackMeshName = newName;
-
+            resultMesh.Name   = newName; _writeBackMeshName = newName;
             var newMc = new MeshContext
             {
-                Name          = newName, MeshObject = resultMesh,
-                Materials     = new List<Material>(originalMc.Materials ?? new List<Material>()),
-                MirrorType    = originalMc.MirrorType,
-                MirrorAxis    = originalMc.MirrorAxis,
-                MirrorDistance = originalMc.MirrorDistance,
+                Name = newName, MeshObject = resultMesh,
+                Materials = new List<Material>(originalMc.Materials ?? new List<Material>()),
+                MirrorType = originalMc.MirrorType, MirrorAxis = originalMc.MirrorAxis, MirrorDistance = originalMc.MirrorDistance,
             };
-            newMc.UnityMesh           = resultMesh.ToUnityMesh();
-            newMc.UnityMesh.name      = newName;
-            newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+            newMc.UnityMesh = resultMesh.ToUnityMesh(); newMc.UnityMesh.name = newName; newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
             tc.AddMeshContext?.Invoke(newMc);
-
             SetStatus($"WriteBack 完了: '{newName}'");
             tc.Repaint?.Invoke();
         }
 
         private void OnBlend()
         {
-            var tc = GetToolContext?.Invoke();
-            if (tc == null) { SetStatus("ToolContext 未設定"); return; }
+            var model = GetModel?.Invoke();
+            if (model == null) { SetStatus("モデルがありません"); return; }
 
-            var sourceMc    = FindMeshContextByName(tc, _sourceMeshName);
-            var writeBackMc = FindMeshContextByName(tc, _writeBackMeshName);
+            MeshContext sourceMc = null, writeBackMc = null;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var m = model.GetMeshContext(i);
+                if (m?.Name == _sourceMeshName)    sourceMc    = m;
+                if (m?.Name == _writeBackMeshName) writeBackMc = m;
+            }
             if (sourceMc?.MeshObject == null || writeBackMc?.MeshObject == null)
             { SetStatus("ソースと WriteBack のメッシュが必要です"); return; }
+            if (sourceMc.MeshObject.VertexCount != writeBackMc.MeshObject.VertexCount)
+            { SetStatus($"頂点数不一致: {sourceMc.MeshObject.VertexCount} vs {writeBackMc.MeshObject.VertexCount}"); return; }
 
-            var srcMesh = sourceMc.MeshObject;
-            var wbMesh  = writeBackMc.MeshObject;
-            if (srcMesh.VertexCount != wbMesh.VertexCount)
-            { SetStatus($"頂点数不一致: {srcMesh.VertexCount} vs {wbMesh.VertexCount}"); return; }
+            int srcIdx  = model.IndexOf(sourceMc);
+            int wbIdx   = model.IndexOf(writeBackMc);
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
 
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new BlendMirrorCommand(modelIdx, srcIdx, wbIdx, _blendWeight));
+                SetStatus($"Blend 完了 (weight={_blendWeight:F2})");
+                return;
+            }
+            // フォールバック
+            var tc = GetToolContext?.Invoke();
+            var srcMesh = sourceMc.MeshObject; var wbMesh = writeBackMc.MeshObject;
             var blended = srcMesh.Clone();
-            string blendName = $"{_sourceMeshName}_Blend{Mathf.RoundToInt(_blendWeight * 100)}";
-            blended.Name = blendName;
+            string blendName = $"{_sourceMeshName}_Blend{Mathf.RoundToInt(_blendWeight * 100)}"; blended.Name = blendName;
             for (int i = 0; i < blended.VertexCount; i++)
                 blended.Vertices[i].Position = Vector3.Lerp(srcMesh.Vertices[i].Position, wbMesh.Vertices[i].Position, _blendWeight);
             blended.RecalculateSmoothNormals();
-
             var newMc = new MeshContext
             {
                 Name = blendName, MeshObject = blended,
                 Materials = new List<Material>(sourceMc.Materials ?? new List<Material>()),
                 MirrorType = sourceMc.MirrorType, MirrorAxis = sourceMc.MirrorAxis, MirrorDistance = sourceMc.MirrorDistance,
             };
-            newMc.UnityMesh           = blended.ToUnityMesh();
-            newMc.UnityMesh.name      = blendName;
-            newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            tc.AddMeshContext?.Invoke(newMc);
-
+            newMc.UnityMesh = blended.ToUnityMesh(); newMc.UnityMesh.name = blendName; newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
+            tc?.AddMeshContext?.Invoke(newMc);
             SetStatus($"Blend 完了: '{blendName}'");
-            tc.Repaint?.Invoke();
+            tc?.Repaint?.Invoke();
         }
 
         // ── Helpers ──────────────────────────────────────────────────────

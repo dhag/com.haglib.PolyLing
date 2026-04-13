@@ -6,6 +6,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Tools.Panels.QuadDecimator;
 using Poly_Ling.UI.QuadDecimator;
@@ -14,7 +15,10 @@ namespace Poly_Ling.Player
 {
     public class PlayerQuadDecimatorSubPanel
     {
-        public Func<ToolContext> GetToolContext;
+        public Func<ToolContext>     GetToolContext;
+        public Action<PanelCommand> SendCommand;
+        public Func<ModelContext>   GetModel;
+        public Func<int>            GetModelIndex;
 
         // 設定
         private float _targetRatio     = 0.5f;
@@ -151,10 +155,24 @@ namespace Poly_Ling.Player
 
         private void OnExecute()
         {
-            var tc = GetToolContext?.Invoke();
-            var mc = tc?.FirstSelectedMeshContext;
+            var model = GetModel?.Invoke();
+            var tc    = GetToolContext?.Invoke();
+            var mc    = tc?.FirstSelectedMeshContext ?? model?.FirstSelectedMeshContext;
             if (mc?.MeshObject == null) { ShowWarning("メッシュが選択されていません"); return; }
 
+            int modelIdx  = GetModelIndex?.Invoke() ?? 0;
+            int masterIdx = model?.IndexOf(mc) ?? -1;
+
+            if (SendCommand != null && masterIdx >= 0)
+            {
+                SendCommand.Invoke(new QuadDecimateCommand(
+                    modelIdx, masterIdx,
+                    _targetRatio, _maxPasses,
+                    _normalAngleDeg, _hardAngleDeg, _uvSeamThreshold));
+                SetWarningHidden();
+                return;
+            }
+            // フォールバック
             var prms = new DecimatorParams
             {
                 TargetRatio     = _targetRatio,
@@ -163,10 +181,14 @@ namespace Poly_Ling.Player
                 HardAngleDeg    = _hardAngleDeg,
                 UvSeamThreshold = _uvSeamThreshold,
             };
-
             _lastResult = QuadDecimatorOperation.Execute(mc, prms, tc);
             RefreshResult();
             tc?.Repaint?.Invoke();
+        }
+
+        private void SetWarningHidden()
+        {
+            if (_warningLabel != null) _warningLabel.style.display = DisplayStyle.None;
         }
 
         private void RefreshResult()

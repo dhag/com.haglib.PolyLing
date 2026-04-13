@@ -20,10 +20,20 @@ namespace Poly_Ling.Player
     public class MeshFilterToSkinnedSubPanel
     {
         // ================================================================
-        // コールバック
+        // コールバック・コンテキスト
         // ================================================================
 
         public Action OnConversionComplete;
+
+        // コマンド送信（PanelContext 経由）
+        private PanelContext _panelContext;
+        private Func<int>    _getModelIndex;
+
+        public void SetContext(PanelContext ctx, Func<int> getModelIndex)
+        {
+            _panelContext   = ctx;
+            _getModelIndex  = getModelIndex;
+        }
 
         // ================================================================
         // 内部状態
@@ -214,19 +224,30 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            try
+            // コマンド経由で変換（Undo記録あり）
+            if (_panelContext != null)
             {
-                int boneCount = MeshFilterToSkinnedConverter.Execute(
-                    _model, entries, _swapAxisForRotated, _setAxisForIdentity);
-
-                SetStatus(T("ConvertSuccess", boneCount));
-                RefreshHierarchy();
-                OnConversionComplete?.Invoke();
+                int modelIdx = _getModelIndex?.Invoke() ?? 0;
+                _panelContext.SendCommand(new ConvertMeshFilterToSkinnedCommand(
+                    modelIdx, _swapAxisForRotated, _setAxisForIdentity));
+                SetStatus(T("ConvertSuccess", "?"));  // 完了はNotifyPanels経由でRefreshされる
             }
-            catch (Exception ex)
+            else
             {
-                SetStatus($"Error: {ex.Message}");
-                Debug.LogException(ex);
+                // フォールバック（PanelContext未設定時）
+                try
+                {
+                    int boneCount = MeshFilterToSkinnedConverter.Execute(
+                        _model, entries, _swapAxisForRotated, _setAxisForIdentity);
+                    SetStatus(T("ConvertSuccess", boneCount));
+                    RefreshHierarchy();
+                    OnConversionComplete?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    SetStatus($"Error: {ex.Message}");
+                    Debug.LogException(ex);
+                }
             }
         }
 

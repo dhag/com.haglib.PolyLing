@@ -56,6 +56,18 @@ namespace Poly_Ling.Player
         public Func<CommandQueue>        GetCommandQueue;
         public Action                    OnRepaint;
 
+        // コマンド送信
+        private PanelContext _panelContext;
+        private Func<int>    _getModelIndex;
+
+        public void SetCommandContext(PanelContext ctx, Func<int> getModelIndex)
+        {
+            _panelContext  = ctx;
+            _getModelIndex = getModelIndex;
+        }
+
+        private void SendCmd(PanelCommand cmd) => _panelContext?.SendCommand(cmd);
+
         // ================================================================
         // 描画定数
         // ================================================================
@@ -590,17 +602,19 @@ namespace Poly_Ling.Player
 
             if (!moved) { _dragStartUVs.Clear(); return; }
 
-            var movedUVs = new Dictionary<UVVertexId, Vector2>();
-            foreach (var kv in _dragStartUVs)
+            // 変更後UV を収集
+            var keys = new List<UVVertexId>(_dragStartUVs.Keys);
+            var afterUVs = new Vector2[keys.Count];
+            for (int i = 0; i < keys.Count; i++)
             {
-                var id = kv.Key;
-                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var id = keys[i];
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) { afterUVs[i] = _dragStartUVs[id]; continue; }
                 var v = mo.Vertices[id.VertexIndex];
-                if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
-                    movedUVs[id] = v.UVs[id.UVIndex];
+                afterUVs[i] = (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
+                    ? v.UVs[id.UVIndex] : _dragStartUVs[id];
             }
 
-            // 元に戻してからUndo記録
+            // ドラッグ中の変更を元に戻す（コマンドが AfterUVs を再適用する）
             foreach (var kv in _dragStartUVs)
             {
                 var id = kv.Key;
@@ -610,19 +624,42 @@ namespace Poly_Ling.Player
                     v.UVs[id.UVIndex] = kv.Value;
             }
 
-            RecordTopologyChange($"UV Move {movedUVs.Count}V", obj =>
+            // コマンド送信
+            if (_panelContext != null)
             {
-                foreach (var kv in movedUVs)
+                var mc = GetMeshContext();
+                var model = GetModel?.Invoke();
+                int masterIdx = mc != null && model != null ? model.IndexOf(mc) : 0;
+                int modelIdx  = _getModelIndex?.Invoke() ?? 0;
+                var viArr     = new int   [keys.Count];
+                var uiArr     = new int   [keys.Count];
+                var beforeArr = new Vector2[keys.Count];
+                for (int i = 0; i < keys.Count; i++)
                 {
-                    var id = kv.Key;
-                    if (id.VertexIndex < 0 || id.VertexIndex >= obj.VertexCount) continue;
-                    var v = obj.Vertices[id.VertexIndex];
-                    if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
-                        v.UVs[id.UVIndex] = kv.Value;
+                    viArr[i]     = keys[i].VertexIndex;
+                    uiArr[i]     = keys[i].UVIndex;
+                    beforeArr[i] = _dragStartUVs[keys[i]];
                 }
-            });
+                SendCmd(new ApplyUVChangesCommand(modelIdx, masterIdx,
+                    viArr, uiArr, beforeArr, afterUVs, $"UV Move {keys.Count}V"));
+            }
+            else
+            {
+                // フォールバック（PanelContext 未設定時）
+                RecordTopologyChange($"UV Move {keys.Count}V", obj =>
+                {
+                    for (int i = 0; i < keys.Count; i++)
+                    {
+                        var id = keys[i];
+                        if (id.VertexIndex < 0 || id.VertexIndex >= obj.VertexCount) continue;
+                        var v = obj.Vertices[id.VertexIndex];
+                        if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
+                            v.UVs[id.UVIndex] = afterUVs[i];
+                    }
+                });
+            }
 
-            SetStatus($"UV {movedUVs.Count}頂点を移動");
+            SetStatus($"UV {keys.Count}頂点を移動");
             _dragStartUVs.Clear();
         }
 
@@ -712,8 +749,44 @@ namespace Poly_Ling.Player
             var targets = _selected.Count > 0 ? new HashSet<UVVertexId>(_selected) : CollectAllUVVertices(mo);
             var pivot   = ComputeUVPivot(mo, targets);
 
-            RecordTopologyChange("UV Transform", obj =>
-                ApplyUVTransform(obj, targets, mu, mv, su, sv, deg, pivot));
+            if (_panelContext != null)
+            {
+                // コマンド経由：before/after を収集してから送信
+                var mc    = GetMeshContext();
+                var model = GetModel?.Invoke();
+                int masterIdx = mc != null && model != null ? model.IndexOf(mc) : 0;
+                int modelIdx  = _getModelIndex?.Invoke() ?? 0;
+
+                var keyList   = new List<UVVertexId>(targets);
+                var beforeArr = new Vector2[keyList.Count];
+                var afterArr  = new Vector2[keyList.Count];
+                var viArr     = new int   [keyList.Count];
+                var uiArr     = new int   [keyList.Count];
+
+                for (int i = 0; i < keyList.Count; i++)
+                {
+                    var id = keyList[i];
+                    viArr[i] = id.VertexIndex;
+                    uiArr[i] = id.UVIndex;
+                    if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) { beforeArr[i] = afterArr[i] = Vector2.zero; continue; }
+                    var v = mo.Vertices[id.VertexIndex];
+                    beforeArr[i] = (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count) ? v.UVs[id.UVIndex] : Vector2.zero;
+                }
+
+                // after を計算（実際には MeshObject に書き込まない）
+                var tempAfter = new Dictionary<UVVertexId, Vector2>();
+                ApplyUVTransformToDict(mo, targets, mu, mv, su, sv, deg, pivot, tempAfter);
+                for (int i = 0; i < keyList.Count; i++)
+                    afterArr[i] = tempAfter.TryGetValue(keyList[i], out var uv) ? uv : beforeArr[i];
+
+                SendCmd(new ApplyUVChangesCommand(modelIdx, masterIdx,
+                    viArr, uiArr, beforeArr, afterArr, "UV Transform"));
+            }
+            else
+            {
+                RecordTopologyChange("UV Transform", obj =>
+                    ApplyUVTransform(obj, targets, mu, mv, su, sv, deg, pivot));
+            }
 
             SetStatus("UV変換を適用しました");
             _canvas.MarkDirtyRepaint();
@@ -767,18 +840,39 @@ namespace Poly_Ling.Player
                 if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
                 var v = mo.Vertices[id.VertexIndex];
                 if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
-                Vector2 uv = v.UVs[id.UVIndex];
-                uv.x = pivot.x + (uv.x - pivot.x) * su;
-                uv.y = pivot.y + (uv.y - pivot.y) * sv;
-                if (!Mathf.Approximately(deg, 0f))
-                {
-                    float dx = uv.x - pivot.x, dy = uv.y - pivot.y;
-                    uv.x = pivot.x + dx * cos - dy * sin;
-                    uv.y = pivot.y + dx * sin + dy * cos;
-                }
-                uv.x += mu; uv.y += mv;
-                v.UVs[id.UVIndex] = uv;
+                v.UVs[id.UVIndex] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, cos, sin, deg);
             }
+        }
+
+        /// <summary>before/after を計算するだけで MeshObject を変更しない。コマンド化用。</summary>
+        private static void ApplyUVTransformToDict(MeshObject mo, HashSet<UVVertexId> targets,
+            float mu, float mv, float su, float sv, float deg, Vector2 pivot,
+            Dictionary<UVVertexId, Vector2> result)
+        {
+            float rad = deg * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+            foreach (var id in targets)
+            {
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var v = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
+                result[id] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, cos, sin, deg);
+            }
+        }
+
+        private static Vector2 CalcTransformedUV(Vector2 uv, Vector2 pivot,
+            float mu, float mv, float su, float sv, float cos, float sin, float deg)
+        {
+            uv.x = pivot.x + (uv.x - pivot.x) * su;
+            uv.y = pivot.y + (uv.y - pivot.y) * sv;
+            if (!Mathf.Approximately(deg, 0f))
+            {
+                float dx = uv.x - pivot.x, dy = uv.y - pivot.y;
+                uv.x = pivot.x + dx * cos - dy * sin;
+                uv.y = pivot.y + dx * sin + dy * cos;
+            }
+            uv.x += mu; uv.y += mv;
+            return uv;
         }
 
         // ================================================================

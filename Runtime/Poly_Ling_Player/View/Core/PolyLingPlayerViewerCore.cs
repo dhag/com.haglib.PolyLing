@@ -122,12 +122,13 @@ namespace Poly_Ling.Player
 
         private MoveToolHandler              _moveToolHandler;
         private ObjectMoveToolHandler        _objectMoveHandler;
-        private ObjectMoveTRSPanel           _objectMoveTRSPanel;
         private PivotOffsetToolHandler       _pivotOffsetHandler;
         private SculptToolHandler            _sculptHandler;
         private AdvancedSelectToolHandler    _advancedSelectHandler;
         private SkinWeightPaintToolHandler   _skinWeightPaintHandler;
         private PlayerSkinWeightPaintPanel   _skinWeightPaintPanel;
+        private int                          _skinWeightUndoMasterIndex = -1;
+        private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;
         private BoneInputHandler             _boneInputHandler;
@@ -204,6 +205,119 @@ namespace Poly_Ling.Player
             _receiver = new RemoteProjectReceiver();
             _editOps  = new PlayerEditOps(_undoManager);
 
+            // VertexEdit スタック Undo/Redo 後の復元ハンドラ
+            // 頂点移動（PendingMeshMoveEntries）と選択変更（CurrentSelectionSnapshot）を消費する
+            _editOps.UndoController.OnUndoRedoPerformed += () =>
+            {
+                var stackType = _editOps.UndoController.LastUndoRedoStackType;
+
+                // ── MeshList（BoneTransform変更・PivotMove等）の復元
+                if (stackType == MeshUndoController.UndoStackType.MeshList)
+                {
+                    // MeshListStack のコンテキストが現在モデルと異なる場合（モデルブレンドUndoなど）
+                    // コンテキストを優先して使う
+                    var listCtx   = _editOps.UndoController.MeshListContext;
+                    var model     = listCtx ?? ActiveProject?.CurrentModel;
+                    if (model != null)
+                    {
+                        model.ComputeWorldMatrices();
+                        _viewportManager.RebuildAdapter(0, model);
+                        _renderer?.UpdateSelectedDrawableMesh(0, model);
+                        _viewportManager.UpdateTransform();
+                        NotifyPanels(ChangeKind.Attributes);
+                    }
+                    return;
+                }
+
+                if (stackType != MeshUndoController.UndoStackType.VertexEdit)
+                    return;
+                var ctx = _editOps.UndoController.MeshUndoContext;
+                if (ctx == null) return;
+                var targetModel = ctx.ParentModelContext;
+                if (targetModel == null) return;
+
+                // ── 頂点移動の復元
+                var pending = ctx.PendingMeshMoveEntries;
+                if (pending != null && pending.Length > 0)
+                {
+                    foreach (var entry in pending)
+                    {
+                        var mc = targetModel.GetMeshContext(entry.MeshContextIndex);
+                        if (mc?.MeshObject == null) continue;
+                        var mo = mc.MeshObject;
+                        for (int i = 0; i < entry.Indices.Length; i++)
+                        {
+                            int vi = entry.Indices[i];
+                            if (vi >= 0 && vi < mo.VertexCount)
+                                mo.Vertices[vi].Position = entry.NewPositions[i];
+                        }
+                        mo.InvalidatePositionCache();
+                        _viewportManager.SyncMeshPositionsAndTransform(mc, targetModel);
+                    }
+                    ctx.PendingMeshMoveEntries = null;
+                    _viewportManager.UpdateTransform();
+                    NotifyPanels(ChangeKind.Attributes);
+                }
+
+                // ── 選択状態の復元
+                var snapshot = ctx.CurrentSelectionSnapshot;
+                if (snapshot != null)
+                {
+                    var firstMc = targetModel.FirstSelectedMeshContext
+                                  ?? targetModel.FirstDrawableMeshContext;
+                    if (firstMc?.Selection != null)
+                    {
+                        firstMc.Selection.RestoreFromSnapshot(snapshot);
+                        _selectionOps?.SetSelectionState(firstMc.Selection);
+                        _renderer?.SetSelectionState(firstMc.Selection);
+                    }
+                    ctx.CurrentSelectionSnapshot = null;
+                    NotifyPanels(ChangeKind.Selection);
+                }
+
+                // ── トポロジー／ボーンウェイト／UV／マテリアル変更の復元
+                // MeshSnapshotRecord は ctx.MeshObject をクローンに差し替えるだけで
+                // ModelContext 上の実 MeshContext には書き戻さないため、ここで同期する
+                if (ctx.MeshObject != null)
+                {
+                    // 優先度順で対象 MasterIndex を決定
+                    int topoMasterIdx = _skinWeightUndoMasterIndex >= 0
+                        ? _skinWeightUndoMasterIndex
+                        : _uvUndoMasterIndex;
+
+                    // 明示的な MasterIndex がない場合は MeshObject 参照から逆引き
+                    if (topoMasterIdx < 0)
+                    {
+                        for (int mi = 0; mi < targetModel.MeshContextCount; mi++)
+                        {
+                            var searchMc = targetModel.GetMeshContext(mi);
+                            if (searchMc?.MeshObject != null &&
+                                ReferenceEquals(searchMc.MeshObject, ctx.MeshObject))
+                            { topoMasterIdx = mi; break; }
+                        }
+                        // 逆引きでも見つからない（既に差し替え後）→ 先頭Drawableにフォールバック
+                        if (topoMasterIdx < 0)
+                        {
+                            var fb = targetModel.FirstDrawableMeshContext;
+                            if (fb != null) topoMasterIdx = targetModel.IndexOf(fb);
+                        }
+                    }
+
+                    if (topoMasterIdx >= 0)
+                    {
+                        var liveMc = targetModel.GetMeshContext(topoMasterIdx);
+                        if (liveMc?.MeshObject != null && !ReferenceEquals(liveMc.MeshObject, ctx.MeshObject))
+                        {
+                            CopyMeshObjectVertexData(ctx.MeshObject, liveMc.MeshObject);
+                            _editOps.UndoController.SetMeshObject(liveMc.MeshObject, liveMc.UnityMesh);
+                            _viewportManager.RebuildAdapter(0, targetModel);
+                            _renderer?.UpdateSelectedDrawableMesh(0, targetModel);
+                            NotifyPanels(ChangeKind.Attributes);
+                        }
+                    }
+                }
+            };
+
             _selectionState = new SelectionState();
             _renderer.SetSelectionState(_selectionState);
 
@@ -220,7 +334,8 @@ namespace Poly_Ling.Player
                 _selectionOps,
                 NotifyPanels,
                 RebuildModelList,
-                _editOps?.UndoController);
+                _editOps?.UndoController,
+                _editOps?.CommandQueue);
 
             _fetchFlow = new PlayerRemoteFetchFlow(
                 _client,
@@ -311,6 +426,7 @@ namespace Poly_Ling.Player
                 _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
 
                 RebuildModelList();
+                _skinWeightPaintPanel?.RefreshMeshList(loadedModel);
                 _skinWeightPaintPanel?.RefreshBoneList(loadedModel);
                 NotifyPanels(ChangeKind.ModelSwitch);
             };
@@ -344,8 +460,6 @@ namespace Poly_Ling.Player
             UpdateSelectedFacesOverlay();
             UpdateGizmoOverlay();
             UpdateAdvancedSelectOverlay();
-            if (_toolMode == ToolMode.SkinWeightPaint)
-                _skinWeightPaintHandler?.TickVisualization();
             UpdateBoneOverlay();
         }
 
@@ -517,8 +631,13 @@ namespace Poly_Ling.Player
             _skinWeightPaintHandler.OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging();
             _skinWeightPaintHandler.OnSyncMeshPositions = mc =>
             {
-                _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                _viewportManager.UpdateTransform();
+                // boneWeights 変更はバッファ全体の再構築が必要
+                var swModel = ActiveProject?.CurrentModel;
+                if (swModel != null)
+                {
+                    _viewportManager.RebuildAdapter(0, swModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, swModel);
+                }
             };
             _skinWeightPaintHandler.OnUpdateBrushCircle = (center, radius, color) =>
                 _activePanel?.ShowBrushCircle(center, radius, color);
@@ -795,7 +914,7 @@ namespace Poly_Ling.Player
                 _renderer?.UpdateSelectedDrawableMesh(0, model);
             _renderer?.NotifySelectionChanged();
             NotifyPanels(ChangeKind.Selection);
-            _objectMoveTRSPanel?.Refresh();
+            _boneEditorSubPanel?.Refresh();
             _activePanel?.MarkDirtyRepaint();
             return true;
         }
@@ -949,11 +1068,20 @@ namespace Poly_Ling.Player
             _meshListSubPanel.Build(_layoutRoot.MeshListSection);
             _meshListSubPanel.SetContext(_panelContext);
 
-            _objectMoveTRSPanel = new ObjectMoveTRSPanel();
-            _objectMoveTRSPanel.Build(_layoutRoot.ObjectMoveTRSSection, _panelContext, () => ActiveProject);
+            // ObjectMoveTRSPanel は BoneEditorSubPanel に統合済みのため生成不要
 
             _skinWeightPaintPanel = new PlayerSkinWeightPaintPanel();
             _skinWeightPaintPanel.OnRepaint = () => _activePanel?.MarkDirtyRepaint();
+            _skinWeightPaintPanel.OnMeshSelectionChanged = () =>
+            {
+                if (_toolMode == ToolMode.SkinWeightPaint)
+                    SyncSkinWeightUndoMesh();
+                _activePanel?.MarkDirtyRepaint();
+            };
+            _skinWeightPaintPanel.GetToolContext =
+                () => _viewportManager.GetCurrentToolContext(_activeViewport);
+            _skinWeightPaintPanel.SetCommandContext(
+                _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _skinWeightPaintPanel.Build(_layoutRoot.SkinWeightPaintSection);
 
             _blendSubPanel = new PlayerBlendSubPanel();
@@ -970,7 +1098,10 @@ namespace Poly_Ling.Player
                 _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
                 NotifyPanels(ChangeKind.ListStructure);
             };
-            _blendSubPanel.OnRepaint = () => _activePanel?.MarkDirtyRepaint();
+            _blendSubPanel.OnRepaint          = () => _activePanel?.MarkDirtyRepaint();
+            _blendSubPanel.GetUndoController  = () => _editOps?.UndoController;
+            _blendSubPanel.GetCommandQueue    = () => _editOps?.CommandQueue;
+            _blendSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _blendSubPanel.Build(_layoutRoot.BlendSection);
 
             _modelBlendSubPanel = new PlayerModelBlendSubPanel();
@@ -999,13 +1130,15 @@ namespace Poly_Ling.Player
             _boneEditorSubPanel.GetModel          = () => ActiveProject?.CurrentModel;
             _boneEditorSubPanel.GetUndoController = () => _editOps?.UndoController;
             _boneEditorSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
-            _boneEditorSubPanel.SendCommand       = cmd => _commandDispatcher?.Dispatch(cmd);
+            _boneEditorSubPanel.SetContext(_panelContext);
             _boneEditorSubPanel.GetModelIndex     = () => ActiveProject?.CurrentModelIndex ?? 0;
             _boneEditorSubPanel.OnFocusCamera     = pos =>
             {
                 var orbit = _activeViewport?.Orbit;
                 if (orbit != null) { orbit.SetTarget(pos); _activePanel?.MarkDirtyRepaint(); }
             };
+            // ObjectMoveツール用セクションとBoneEditorセクションを統合
+            // ObjectMoveTRSSectionは廃止し、BoneEditorSectionを共用する
             _boneEditorSubPanel.Build(_layoutRoot.BoneEditorSection);
 
             _uvEditorSubPanel = new PlayerUVEditorSubPanel();
@@ -1013,12 +1146,16 @@ namespace Poly_Ling.Player
             _uvEditorSubPanel.GetUndoController = () => _editOps?.UndoController;
             _uvEditorSubPanel.GetCommandQueue   = () => _editOps?.CommandQueue;
             _uvEditorSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
+            _uvEditorSubPanel.SetCommandContext(
+                _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _uvEditorSubPanel.Build(_layoutRoot.UVEditorSection);
 
             _uvUnwrapSubPanel = new PlayerUVUnwrapSubPanel();
             _uvUnwrapSubPanel.GetModel    = () => ActiveProject?.CurrentModel;
             _uvUnwrapSubPanel.SendCommand = cmd => _commandDispatcher?.Dispatch(cmd);
             _uvUnwrapSubPanel.OnRepaint   = () => _activePanel?.MarkDirtyRepaint();
+            _uvUnwrapSubPanel.SetCommandContext(
+                _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _uvUnwrapSubPanel.Build(_layoutRoot.UVUnwrapSection);
 
             _materialListSubPanel = new PlayerMaterialListSubPanel
@@ -1027,6 +1164,8 @@ namespace Poly_Ling.Player
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
             };
+            _materialListSubPanel.SetCommandContext(
+                _panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _materialListSubPanel.Build(_layoutRoot.MaterialListSection);
 
             _uvzSubPanel = new PlayerUVZSubPanel
@@ -1089,8 +1228,10 @@ namespace Poly_Ling.Player
 
             _morphCreateSubPanel = new PlayerMorphCreateSubPanel
             {
-                GetProject         = () => ActiveProject,
-                OnRebuildModelList = RebuildModelList,
+                GetProject          = () => ActiveProject,
+                OnRebuildModelList  = RebuildModelList,
+                GetUndoController   = () => _editOps?.UndoController,
+                SendCommand         = cmd => _commandDispatcher?.Dispatch(cmd),
             };
             _morphCreateSubPanel.Build(_layoutRoot.MorphCreateSection);
 
@@ -1098,6 +1239,8 @@ namespace Poly_Ling.Player
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _tposeSubPanel.Build(_layoutRoot.TPoseSection);
 
@@ -1105,31 +1248,43 @@ namespace Poly_Ling.Player
             {
                 GetModel      = () => ActiveProject?.CurrentModel,
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _humanoidMappingSubPanel.Build(_layoutRoot.HumanoidMappingSection);
 
             _mirrorSubPanel = new PlayerMirrorSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _mirrorSubPanel.Build(_layoutRoot.MirrorSection);
 
             _quadDecimatorSubPanel = new PlayerQuadDecimatorSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _quadDecimatorSubPanel.Build(_layoutRoot.QuadDecimatorSection);
 
             _mediaPipeSubPanel = new PlayerMediaPipeFaceDeformSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                SendCommand   = cmd => _commandDispatcher?.Dispatch(cmd),
+                GetModel      = () => ActiveProject?.CurrentModel,
+                GetModelIndex = () => ActiveProject?.CurrentModelIndex ?? 0,
             };
             _mediaPipeSubPanel.Build(_layoutRoot.MediaPipeSection);
 
             _vmdTestSubPanel = new PlayerVMDTestSubPanel
             {
-                GetModel      = () => ActiveProject?.CurrentModel,
-                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetModel          = () => ActiveProject?.CurrentModel,
+                GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetUndoController = () => _editOps?.UndoController,
             };
             _vmdTestSubPanel.Build(_layoutRoot.VMDTestSection);
 
@@ -1196,6 +1351,7 @@ namespace Poly_Ling.Player
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
             _mfToSkinnedSubPanel.OnConversionComplete = OnMeshFilterToSkinnedComplete;
+            _mfToSkinnedSubPanel.SetContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
 
             _layoutRoot.MeshFilterToSkinnedBtn.clicked += ShowMeshFilterToSkinnedPanel;
 
@@ -1365,6 +1521,17 @@ namespace Poly_Ling.Player
             SetActiveButton(_layoutRoot?.UVEditorBtn);
             if (_layoutRoot?.UVEditorSection != null)
                 _layoutRoot.UVEditorSection.style.display = DisplayStyle.Flex;
+
+            // UndoController に対象メッシュを設定（CaptureMeshObjectSnapshot に必要）
+            var uvModel = ActiveProject?.CurrentModel;
+            var uvMc    = uvModel?.FirstDrawableMeshContext;
+            if (uvMc?.MeshObject != null && _editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetMeshObject(uvMc.MeshObject, uvMc.UnityMesh);
+                _editOps.UndoController.MeshUndoContext.ParentModelContext = uvModel;
+                _uvUndoMasterIndex = uvModel.IndexOf(uvMc);
+            }
+
             _uvEditorSubPanel?.Refresh();
         }
 
@@ -1428,6 +1595,13 @@ namespace Poly_Ling.Player
             SetActiveButton(_layoutRoot?.MorphBtn);
             if (_layoutRoot?.MorphSection != null)
                 _layoutRoot.MorphSection.style.display = DisplayStyle.Flex;
+
+            // MeshListStack のコンテキストを現在のモデルに設定
+            // （MorphExpressionEditRecord/ChangeRecord が正しいモデルを参照するために必要）
+            var morphModel = ActiveProject?.CurrentModel;
+            if (morphModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(morphModel);
+
             _morphSubPanel?.Refresh();
         }
 
@@ -1437,6 +1611,12 @@ namespace Poly_Ling.Player
             SetActiveButton(_layoutRoot?.MorphCreateBtn);
             if (_layoutRoot?.MorphCreateSection != null)
                 _layoutRoot.MorphCreateSection.style.display = DisplayStyle.Flex;
+
+            // MeshListStack のコンテキストを現在のモデルに設定
+            var morphCrModel = ActiveProject?.CurrentModel;
+            if (morphCrModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(morphCrModel);
+
             _morphCreateSubPanel?.Refresh();
         }
 
@@ -1446,6 +1626,10 @@ namespace Poly_Ling.Player
             SetActiveButton(_layoutRoot?.TPoseBtn);
             if (_layoutRoot?.TPoseSection != null)
                 _layoutRoot.TPoseSection.style.display = DisplayStyle.Flex;
+            // MeshListStack のコンテキストを現在のモデルに設定（TPoseUndoRecord が参照するため）
+            var tpModel = ActiveProject?.CurrentModel;
+            if (tpModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(tpModel);
             _tposeSubPanel?.Refresh();
         }
 
@@ -1455,6 +1639,9 @@ namespace Poly_Ling.Player
             SetActiveButton(_layoutRoot?.HumanoidMappingBtn);
             if (_layoutRoot?.HumanoidMappingSection != null)
                 _layoutRoot.HumanoidMappingSection.style.display = DisplayStyle.Flex;
+            var hmModel = ActiveProject?.CurrentModel;
+            if (hmModel != null && _editOps?.UndoController != null)
+                _editOps.UndoController.SetModelContext(hmModel);
             _humanoidMappingSubPanel?.Refresh();
         }
 
@@ -1569,7 +1756,6 @@ namespace Poly_Ling.Player
             void Hide(VisualElement e) { if (e != null) e.style.display = DisplayStyle.None; }
             Hide(_layoutRoot.ModelListSection);
             Hide(_layoutRoot.MeshListSection);
-            Hide(_layoutRoot.ObjectMoveTRSSection);
             Hide(_layoutRoot.SkinWeightPaintSection);
             Hide(_layoutRoot.VertexMoveSection);
             Hide(_layoutRoot.PivotSection);
@@ -1913,8 +2099,11 @@ namespace Poly_Ling.Player
                 case ToolMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);
                     SkinWeightPaintTool.ActivePanel = _skinWeightPaintPanel;
+                    _skinWeightPaintPanel?.RefreshMeshList(ActiveProject?.CurrentModel);
                     _skinWeightPaintPanel?.RefreshBoneList(ActiveProject?.CurrentModel);
                     _skinWeightPaintHandler?.OnActivate();
+                    // UndoController に対象 MeshObject を設定（スナップショット取得のため必須）
+                    SyncSkinWeightUndoMesh();
                     break;
             }
 
@@ -1926,7 +2115,7 @@ namespace Poly_Ling.Player
             {
                 case ToolMode.ObjectMove:
                     activeBtn = _layoutRoot?.ToolObjectMoveBtn;
-                    section   = _layoutRoot?.ObjectMoveTRSSection;
+                    section   = _layoutRoot?.BoneEditorSection;
                     break;
                 case ToolMode.SkinWeightPaint:
                     activeBtn = _layoutRoot?.ToolSkinWeightPaintBtn;
@@ -1957,7 +2146,7 @@ namespace Poly_Ling.Player
             SetActiveButton(activeBtn);
 
             if (mode == ToolMode.ObjectMove)
-                _objectMoveTRSPanel?.Refresh();
+                _boneEditorSubPanel?.Refresh();
         }
 
         // ================================================================
@@ -1993,6 +2182,7 @@ namespace Poly_Ling.Player
             _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
 
             RebuildModelList();
+            _skinWeightPaintPanel?.RefreshMeshList(model);
             _skinWeightPaintPanel?.RefreshBoneList(model);
             NotifyPanels(ChangeKind.ModelSwitch);
         }
@@ -2061,6 +2251,49 @@ namespace Poly_Ling.Player
             _commandDispatcher?.Dispatch(cmd);
         }
 
+        /// <summary>
+        /// SkinWeightPaint 用 UndoController に現在のターゲットメッシュを設定する。
+        /// ツール切り替え時・メッシュドロップダウン変更時に呼ぶ。
+        /// </summary>
+        private void SyncSkinWeightUndoMesh()
+        {
+            var swModel = ActiveProject?.CurrentModel;
+            if (swModel == null || _editOps?.UndoController == null) return;
+
+            // パネルで選択されたメッシュを優先、なければ FirstDrawableMeshContext
+            int targetMasterIdx = _skinWeightPaintPanel?.CurrentTargetMesh ?? -1;
+            MeshContext swMc = targetMasterIdx >= 0
+                ? swModel.GetMeshContext(targetMasterIdx)
+                : swModel.FirstDrawableMeshContext;
+
+            if (swMc?.MeshObject == null) return;
+            _editOps.UndoController.SetMeshObject(swMc.MeshObject, swMc.UnityMesh);
+            _editOps.UndoController.MeshUndoContext.ParentModelContext = swModel;
+            _skinWeightUndoMasterIndex = swModel.IndexOf(swMc);
+        }
+
+        /// <summary>
+        /// src の頂点データ（Position・Normal・BoneWeight 等）を dst に上書きコピーする。
+        /// 頂点数が一致する場合のみ実行。スキンウェイト Undo 書き戻し用。
+        /// </summary>
+        private static void CopyMeshObjectVertexData(Poly_Ling.Data.MeshObject src, Poly_Ling.Data.MeshObject dst)
+        {
+            if (src == null || dst == null) return;
+            if (src.VertexCount != dst.VertexCount) return;
+            for (int i = 0; i < src.VertexCount; i++)
+            {
+                var sv = src.Vertices[i];
+                var dv = dst.Vertices[i];
+                dv.Position   = sv.Position;
+                dv.BoneWeight = sv.BoneWeight;
+                // UV スロットを同期（UV 編集の Undo に必要）
+                dv.UVs.Clear();
+                foreach (var uv in sv.UVs)
+                    dv.UVs.Add(uv);
+            }
+            dst.InvalidatePositionCache();
+        }
+
         private void NotifyPanels(ChangeKind kind)
         {
             var project = ActiveProject;
@@ -2069,7 +2302,7 @@ namespace Poly_Ling.Player
             _panelContext.Notify(view, kind);
 
             if (_toolMode == ToolMode.ObjectMove)
-                _objectMoveTRSPanel?.Refresh();
+                _boneEditorSubPanel?.Refresh();
 
             if (kind == ChangeKind.Selection || kind == ChangeKind.ModelSwitch)
                 _blendSubPanel?.OnSelectionChanged();

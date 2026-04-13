@@ -10,6 +10,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
+using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.EditorBridge;
 
@@ -21,6 +22,18 @@ namespace Poly_Ling.Player
         public Func<ModelContext>  GetModel;
         public Func<ToolContext>   GetToolContext;
         public Action              OnRepaint;
+
+        // コマンド送信
+        private PanelContext _panelContext;
+        private Func<int>    _getModelIndex;
+
+        public void SetCommandContext(PanelContext ctx, Func<int> getModelIndex)
+        {
+            _panelContext  = ctx;
+            _getModelIndex = getModelIndex;
+        }
+
+        private void SendCmd(PanelCommand cmd) => _panelContext?.SendCommand(cmd);
 
         // ── UI ────────────────────────────────────────────────────────────
         private Label         _countLabel;
@@ -490,34 +503,53 @@ namespace Poly_Ling.Player
         private void OnAdd()
         {
             var m = GetModel?.Invoke(); if (m == null) return;
-            var tc = GetToolContext?.Invoke();
-            var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
-            m.AddMaterial(null);
-            m.CurrentMaterialIndex = m.MaterialCount - 1;
-            RecordChange(before, "Add Material Slot");
-            AutoUpdateDefault(m);
-            NotifyAndRefresh("スロット追加");
+            int modelIdx = _getModelIndex?.Invoke() ?? 0;
+            if (_panelContext != null)
+            {
+                SendCmd(new AddMaterialSlotCommand(modelIdx));
+                Refresh();
+            }
+            else
+            {
+                var tc = GetToolContext?.Invoke();
+                var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
+                m.AddMaterial(null);
+                m.CurrentMaterialIndex = m.MaterialCount - 1;
+                RecordChange(before, "Add Material Slot");
+                AutoUpdateDefault(m);
+                NotifyAndRefresh("スロット追加");
+            }
         }
 
         private void OnRemoveSlot(int index)
         {
             var m = GetModel?.Invoke(); if (m == null || m.MaterialCount <= 1) return;
-            var tc = GetToolContext?.Invoke();
-            var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
-            var mc = m.FirstDrawableMeshContext;
-            if (mc?.MeshObject != null)
-                foreach (var face in mc.MeshObject.Faces)
-                {
-                    if (face.MaterialIndex == index)        face.MaterialIndex = 0;
-                    else if (face.MaterialIndex > index)    face.MaterialIndex--;
-                }
-            m.RemoveMaterialAt(index);
-            if (m.CurrentMaterialIndex >= m.MaterialCount)
-                m.CurrentMaterialIndex = m.MaterialCount - 1;
-            if (_editingSlot == index) _editingSlot = -1;
-            RecordChange(before, $"Remove Material Slot [{index}]");
-            tc?.SyncMesh?.Invoke();
-            NotifyAndRefresh("スロット削除");
+            int modelIdx = _getModelIndex?.Invoke() ?? 0;
+            if (_panelContext != null)
+            {
+                if (_editingSlot == index) _editingSlot = -1;
+                SendCmd(new RemoveMaterialSlotCommand(modelIdx, index));
+                Refresh();
+            }
+            else
+            {
+                var tc = GetToolContext?.Invoke();
+                var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
+                var mc = m.FirstDrawableMeshContext;
+                if (mc?.MeshObject != null)
+                    foreach (var face in mc.MeshObject.Faces)
+                    {
+                        if (face.MaterialIndex == index)        face.MaterialIndex = 0;
+                        else if (face.MaterialIndex > index)    face.MaterialIndex--;
+                    }
+                m.RemoveMaterialAt(index);
+                if (m.CurrentMaterialIndex >= m.MaterialCount)
+                    m.CurrentMaterialIndex = m.MaterialCount - 1;
+                if (_editingSlot == index) _editingSlot = -1;
+                RecordChange(before, $"Remove Material Slot [{index}]");
+                tc?.SyncMesh?.Invoke();
+                NotifyAndRefresh("スロット削除");
+            }
         }
 
         private void OnApplyToSelection()
@@ -527,17 +559,29 @@ namespace Poly_Ling.Player
             var sel = tc?.SelectionState;
             var mc = m.FirstDrawableMeshContext;
             if (mc?.MeshObject == null || sel == null || sel.Faces.Count == 0) return;
-            int matIdx = m.CurrentMaterialIndex;
-            var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
-            bool changed = false;
-            foreach (int fi in sel.Faces)
-                if (fi >= 0 && fi < mc.MeshObject.FaceCount)
-                { mc.MeshObject.Faces[fi].MaterialIndex = matIdx; changed = true; }
-            if (changed)
+            int matIdx   = m.CurrentMaterialIndex;
+            int modelIdx = _getModelIndex?.Invoke() ?? 0;
+
+            if (_panelContext != null)
             {
-                tc?.SyncMesh?.Invoke();
-                RecordChange(before, $"Apply Material [{matIdx}]");
+                int masterIdx = m.IndexOf(mc);
+                SendCmd(new ApplyMaterialToFacesCommand(
+                    modelIdx, masterIdx, matIdx, sel.Faces.ToArray()));
                 NotifyAndRefresh($"[{matIdx}] を {sel.Faces.Count} 面に適用");
+            }
+            else
+            {
+                var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
+                bool changed = false;
+                foreach (int fi in sel.Faces)
+                    if (fi >= 0 && fi < mc.MeshObject.FaceCount)
+                    { mc.MeshObject.Faces[fi].MaterialIndex = matIdx; changed = true; }
+                if (changed)
+                {
+                    tc?.SyncMesh?.Invoke();
+                    RecordChange(before, $"Apply Material [{matIdx}]");
+                    NotifyAndRefresh($"[{matIdx}] を {sel.Faces.Count} 面に適用");
+                }
             }
         }
 

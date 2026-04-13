@@ -11,6 +11,7 @@ using Poly_Ling.Tools;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 using Poly_Ling.Commands;
 using Poly_Ling.UI;
+using Poly_Ling.Context;
 
 namespace Poly_Ling.Tools
 {
@@ -47,6 +48,22 @@ namespace Poly_Ling.Tools
         private BrushFalloff Falloff => ActivePanel?.CurrentFalloff ?? _settings.Falloff;
         private float WeightValue => ActivePanel?.CurrentWeightValue ?? _settings.WeightValue;
         private int TargetBone => ActivePanel?.CurrentTargetBone ?? _settings.TargetBoneMasterIndex;
+
+        /// <summary>
+        /// パネルで選択中のメッシュコンテキストを返す。
+        /// CurrentTargetMesh が有効なら GetMeshContext、そうでなければ FirstDrawableMeshContext。
+        /// </summary>
+        private static MeshContext GetTargetMeshContext(ModelContext model)
+        {
+            if (model == null) return null;
+            int masterIdx = ActivePanel?.CurrentTargetMesh ?? -1;
+            if (masterIdx >= 0)
+            {
+                var mc = model.GetMeshContext(masterIdx);
+                if (mc?.MeshObject != null) return mc;
+            }
+            return model.FirstDrawableMeshContext;
+        }
 
         // ================================================================
         // ウェイト可視化
@@ -218,7 +235,7 @@ namespace Poly_Ling.Tools
             // ターゲットボーンが未設定
             if (TargetBone < 0 && PaintMode != SkinWeightPaintMode.Smooth) return false;
 
-            var meshCtx = model.FirstDrawableMeshContext;
+            var meshCtx = GetTargetMeshContext(model);
             if (meshCtx?.MeshObject == null) return false;
 
             _isDragging = true;
@@ -277,7 +294,7 @@ namespace Poly_Ling.Tools
         {
             if (ctx.Model == null || !ctx.Model.HasMeshSelection) return;
 
-            var meshCtx = ctx.Model.FirstDrawableMeshContext;
+            var meshCtx = GetTargetMeshContext(ctx.Model);
             if (meshCtx?.MeshObject == null) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -337,7 +354,7 @@ namespace Poly_Ling.Tools
             // 頂点カラーをクリア
             if (ctx?.Model != null)
             {
-                var meshCtx = ctx.Model.FirstDrawableMeshContext;
+                var meshCtx = GetTargetMeshContext(ctx.Model);
                 if (meshCtx?.UnityMesh != null)
                     meshCtx.UnityMesh.colors = null;
             }
@@ -360,7 +377,7 @@ namespace Poly_Ling.Tools
             var model = ctx.Model;
             if (model == null) return;
 
-            var meshCtx = model.FirstDrawableMeshContext;
+            var meshCtx = GetTargetMeshContext(model);
             if (meshCtx?.MeshObject == null) return;
 
             // マウス位置からレイを取得

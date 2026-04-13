@@ -28,6 +28,22 @@ namespace Poly_Ling.Player
         /// <summary>再描画要求コールバック。</summary>
         public Action OnRepaint;
 
+        /// <summary>Undo記録のため UndoController を取得するコールバック。</summary>
+        public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
+
+        /// <summary>Undo記録のため CommandQueue を取得するコールバック。</summary>
+        public Func<Poly_Ling.Commands.CommandQueue> GetCommandQueue;
+
+        // コマンド送信
+        private PanelContext _panelContext;
+        private Func<int>    _getModelIndex;
+
+        public void SetCommandContext(PanelContext ctx, Func<int> getModelIndex)
+        {
+            _panelContext  = ctx;
+            _getModelIndex = getModelIndex;
+        }
+
         // ================================================================
         // 内部状態
         // ================================================================
@@ -403,10 +419,24 @@ namespace Poly_Ling.Player
         {
             var model = _model;
             if (model == null) return;
-            BlendOperation.ApplyAndCreateBackups(
-                model, _blendPreview, model.SelectedDrawableMeshIndices, _sourceIndex,
-                _blendWeight, _recalculateNormals,
-                _selectedVerticesOnly, null, _matchByVertexId, BuildToolCtx());
+
+            if (_panelContext != null)
+            {
+                // コマンド経由（Undo記録はDispatcher側で行う）
+                var targets = model.SelectedDrawableMeshIndices.ToArray();
+                _panelContext.SendCommand(new ApplyBlendCommand(
+                    _getModelIndex?.Invoke() ?? 0,
+                    targets, _sourceIndex, _blendWeight,
+                    _recalculateNormals, _selectedVerticesOnly, _matchByVertexId));
+            }
+            else
+            {
+                // フォールバック（PanelContext未設定時）
+                BlendOperation.ApplyAndCreateBackups(
+                    model, _blendPreview, model.SelectedDrawableMeshIndices, _sourceIndex,
+                    _blendWeight, _recalculateNormals,
+                    _selectedVerticesOnly, null, _matchByVertexId, BuildToolCtx());
+            }
 
             _blendWeight                = 0f;
             _sourceIndex                = -1;
@@ -434,8 +464,10 @@ namespace Poly_Ling.Player
         private Poly_Ling.Tools.ToolContext BuildToolCtx()
         {
             var ctx = new Poly_Ling.Tools.ToolContext();
-            ctx.Model   = _model;
-            ctx.Repaint = OnRepaint;
+            ctx.Model          = _model;
+            ctx.Repaint        = OnRepaint;
+            ctx.UndoController = GetUndoController?.Invoke();
+            ctx.CommandQueue   = GetCommandQueue?.Invoke();
 
             // SyncMeshContextPositionsOnly: UnityMesh + GPU バッファを更新
             ctx.SyncMeshContextPositionsOnly = mc =>

@@ -21,6 +21,8 @@ namespace Poly_Ling.Player
     {
         public Func<ModelContext>  GetModel;
         public Func<ToolContext>   GetToolContext;
+        public Action<PanelCommand> SendCommand;
+        public Func<int>            GetModelIndex;
 
         private Label       _warningLabel;
         private TextField   _csvPathField;
@@ -156,16 +158,22 @@ namespace Poly_Ling.Player
         private void OnApply()
         {
             if (_previewMapping == null || Model == null) return;
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new ApplyHumanoidMappingCommand(modelIdx, _previewMapping.Clone()));
+                SetStatus($"適用しました ({_previewMapping.Count} ボーン)");
+                Refresh();
+                return;
+            }
+            // フォールバック
             var tc     = GetToolContext?.Invoke();
             var before = Model.HumanoidMapping.Clone();
             Model.HumanoidMapping.CopyFrom(_previewMapping);
             var after  = Model.HumanoidMapping.Clone();
             var undo   = tc?.UndoController;
             if (undo != null)
-            {
-                var record = new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping");
-                undo.MeshListStack.Record(record, "Apply Humanoid Mapping");
-            }
+                undo.MeshListStack.Record(new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping"), "Apply Humanoid Mapping");
             Model.IsDirty = true;
             SetStatus($"適用しました ({_previewMapping.Count} ボーン)");
             Refresh();
@@ -174,16 +182,23 @@ namespace Poly_Ling.Player
         private void OnClear()
         {
             if (Model == null) return;
+            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            if (SendCommand != null)
+            {
+                SendCommand.Invoke(new ClearHumanoidMappingCommand(modelIdx));
+                _previewMapping = null;
+                SetStatus("マッピングをクリアしました");
+                UpdatePreviewUI();
+                return;
+            }
+            // フォールバック
             var tc     = GetToolContext?.Invoke();
             var before = Model.HumanoidMapping.Clone();
             Model.HumanoidMapping.ClearAll();
             var after  = Model.HumanoidMapping.Clone();
             var undo   = tc?.UndoController;
             if (undo != null)
-            {
-                var record = new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping");
-                undo.MeshListStack.Record(record, "Clear Humanoid Mapping");
-            }
+                undo.MeshListStack.Record(new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping"), "Clear Humanoid Mapping");
             Model.IsDirty   = true;
             _previewMapping = null;
             SetStatus("マッピングをクリアしました");

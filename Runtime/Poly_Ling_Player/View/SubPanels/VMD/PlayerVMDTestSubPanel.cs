@@ -11,6 +11,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.UndoSystem;
 using Poly_Ling.VMD;
 
 namespace Poly_Ling.Player
@@ -20,6 +21,7 @@ namespace Poly_Ling.Player
         // ── コールバック ──────────────────────────────────────────────────
         public Func<ModelContext>  GetModel;
         public Func<ToolContext>   GetToolContext;
+        public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
 
         // ── VMD 状態 ──────────────────────────────────────────────────────
         private VMDData    _vmd;
@@ -295,8 +297,8 @@ namespace Poly_Ling.Player
                 if (_applier == null) _applier = new VMDApplier();
 
                 // EditorState から初期値を反映
-                var tc = GetToolContext?.Invoke();
-                var es = tc?.UndoController?.EditorState;
+                var undo = GetUndoController?.Invoke();
+                var es   = undo?.EditorState;
                 if (es != null)
                 {
                     _applier.PositionScale             = es.PmxUnityRatio;
