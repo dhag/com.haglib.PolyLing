@@ -3,6 +3,7 @@
 // MeshSceneRenderer の描画呼び出しを各カメラに対して行う。
 // Runtime/Poly_Ling_Player/View/ に配置
 
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Context;
@@ -34,7 +35,9 @@ namespace Poly_Ling.Player
         private MeshSceneRenderer _renderer;
 
         // AxisGizmo 用
-        private MoveToolHandler   _moveToolHandler;
+        private MoveToolHandler    _moveToolHandler;
+        /// <summary>MoveToolHandler 以外のアクティブツールの UpdateHover コールバック。</summary>
+        private Action<Vector2, Poly_Ling.Tools.ToolContext> _activeToolHoverCallback;
         private PlayerToolContext _toolCtx = new PlayerToolContext();
 
         // カリングスロット（ビューポートごとに独立した per-slot カリングバッファを使用）
@@ -62,7 +65,13 @@ namespace Poly_Ling.Player
         public ViewportDisplaySettings GetDisplaySettings(int slot) => _displaySettings[slot];
 
         /// <summary>指定スロットの表示設定を更新する。</summary>
-        public void SetDisplaySettings(int slot, ViewportDisplaySettings s) => _displaySettings[slot] = s;
+        public void SetDisplaySettings(int slot, ViewportDisplaySettings s)
+        {
+            _displaySettings[slot] = s;
+            // 表示設定（カリングON/OFF等）が変わったらカリングバッファを再計算する。
+            if (slot >= 0 && slot < _slotCameraDirty.Length)
+                _slotCameraDirty[slot] = true;
+        }
 
         // LateUpdate で UpdateFrame を呼ぶための最後のカメラ参照とマウス位置。
         // NotifyCameraChanged / NotifyPointerHover で更新される。
@@ -107,6 +116,17 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// MoveToolHandler 以外のアクティブなツールを登録する。
+        /// SwitchTool で _vertexInteractor.SetToolHandler と同時に呼ぶこと。
+        /// null を渡すと MoveToolHandler のみが UpdateHover を受け取る（デフォルト）。
+        /// </summary>
+        public void RegisterActiveToolHandler(Action<Vector2, Poly_Ling.Tools.ToolContext> callback)
+        {
+            _activeToolHoverCallback = callback;
+        }
+
+
+        /// <summary>
         /// ビューポートに対応するカリングスロット番号を返す。該当なしは -1。
         /// </summary>
         private int ViewportToSlot(PlayerViewport vp)
@@ -149,6 +169,23 @@ namespace Poly_Ling.Player
             var cam = target?.Cam;
             if (cam == null) return null;
             _toolCtx.UpdateFromViewport(target);
+            return _toolCtx.ToToolContext(cam);
+        }
+
+        /// <summary>
+        /// 指定カメラを持つビューポートの ToolContext を返す。
+        /// Camera.onPostRender コールバックからギズモ描画に使用する。
+        /// </summary>
+        public ToolContext GetToolContextForCamera(Camera cam)
+        {
+            if (cam == null) return null;
+            PlayerViewport vp;
+            if      (PerspectiveViewport?.Cam == cam) vp = PerspectiveViewport;
+            else if (TopViewport?.Cam         == cam) vp = TopViewport;
+            else if (FrontViewport?.Cam       == cam) vp = FrontViewport;
+            else if (SideViewport?.Cam        == cam) vp = SideViewport;
+            else return null;
+            _toolCtx.UpdateFromViewport(vp);
             return _toolCtx.ToToolContext(cam);
         }
 
@@ -284,8 +321,18 @@ namespace Poly_Ling.Player
 
             // ポインター移動時は RequestNormal → UpdateFrame でフルパイプライン実行。
             _toolCtx.UpdateFromViewport(vp);
+
+            // ヒットテストに使う BackfaceCullingEnabled をこのビューポートの設定に同期する。
+            // DrawViewport は複数ビューポートを順番に処理するため、最後に処理した
+            // ビューポートの設定が adapter に残ってしまう。
+            int hoverSlot = ViewportToSlot(vp);
+            if (hoverSlot >= 0)
+                adapter.BackfaceCullingEnabled = _displaySettings[hoverSlot].BackfaceCulling;
+
             if (_moveToolHandler != null)
                 _moveToolHandler.UpdateHover(panelLocalPos, _toolCtx.ToToolContext(cam));
+            // アクティブなツールが MoveToolHandler 以外の場合、そちらにも通知する
+            _activeToolHoverCallback?.Invoke(panelLocalPos, _toolCtx.ToToolContext(cam));
 
             adapter.RequestNormal();
             adapter.UpdateFrame(cam, rect, panelLocalPos);

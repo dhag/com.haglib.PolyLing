@@ -85,7 +85,7 @@ namespace Poly_Ling.Player
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null) return;
-            _tool.OnMouseDrag(ctx, screenPos, Vector2.zero);
+            _tool.UpdateHoverOnly(ctx, ToImgui(screenPos, ctx));
         }
 
         // ================================================================

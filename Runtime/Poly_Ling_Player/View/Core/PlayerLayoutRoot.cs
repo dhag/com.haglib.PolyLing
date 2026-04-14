@@ -153,6 +153,35 @@ namespace Poly_Ling.Player
         // ── 追加パネル（最終残件） ─────────────────────────────────────────
         public VisualElement QuadDecimatorSection   { get; private set; }
         public Button        QuadDecimatorBtn       { get; private set; }
+
+        public VisualElement AlignVerticesSection       { get; private set; }
+        public Button        AlignVerticesBtn           { get; private set; }
+        public VisualElement PlanarizeAlongBonesSection { get; private set; }
+        public Button        PlanarizeAlongBonesBtn     { get; private set; }
+        public VisualElement MergeVerticesSection       { get; private set; }
+        public Button        MergeVerticesBtn           { get; private set; }
+        public VisualElement SplitVerticesSection       { get; private set; }
+        public Button        SplitVerticesBtn           { get; private set; }
+        public VisualElement AddFaceSection             { get; private set; }
+        public Button        AddFaceBtn                 { get; private set; }
+        public VisualElement FlipFaceSection            { get; private set; }
+        public Button        FlipFaceBtn                { get; private set; }
+        public VisualElement RotateSection              { get; private set; }
+        public Button        RotateBtn                  { get; private set; }
+        public VisualElement ScaleSection               { get; private set; }
+        public Button        ScaleBtn                   { get; private set; }
+        public VisualElement EdgeBevelSection           { get; private set; }
+        public Button        EdgeBevelBtn               { get; private set; }
+        public VisualElement EdgeExtrudeSection         { get; private set; }
+        public Button        EdgeExtrudeBtn             { get; private set; }
+        public VisualElement FaceExtrudeSection         { get; private set; }
+        public Button        FaceExtrudeBtn             { get; private set; }
+        public VisualElement EdgeTopologySection        { get; private set; }
+        public Button        EdgeTopologyBtn            { get; private set; }
+        public VisualElement KnifeSection               { get; private set; }
+        public Button        KnifeBtn                   { get; private set; }
+        public VisualElement LineExtrudeSection         { get; private set; }
+        public Button        LineExtrudeBtn             { get; private set; }
         public VisualElement MediaPipeSection       { get; private set; }
         public Button        MediaPipeBtn           { get; private set; }
         public VisualElement VMDTestSection         { get; private set; }
@@ -581,6 +610,37 @@ namespace Poly_Ling.Player
 
             MirrorBtn = MakeBtn("ミラー編集"); scroll.Add(MirrorBtn);
 
+            var rowAlignPlanarize = new VisualElement(); rowAlignPlanarize.style.flexDirection = FlexDirection.Row; rowAlignPlanarize.style.marginBottom = 2;
+            AlignVerticesBtn       = MakeBtn("頂点整列");   AlignVerticesBtn.style.flexGrow       = 1; AlignVerticesBtn.style.marginRight       = 2;
+            PlanarizeAlongBonesBtn = MakeBtn("ボーン間平面化"); PlanarizeAlongBonesBtn.style.flexGrow = 1;
+            rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); scroll.Add(rowAlignPlanarize);
+
+            var rowMergeSplit = new VisualElement(); rowMergeSplit.style.flexDirection = FlexDirection.Row; rowMergeSplit.style.marginBottom = 2;
+            MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
+            SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
+            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); scroll.Add(rowMergeSplit);
+
+            AddFaceBtn = MakeBtn("面追加"); scroll.Add(AddFaceBtn);
+
+            var rowFlipRotScale = new VisualElement(); rowFlipRotScale.style.flexDirection = FlexDirection.Row; rowFlipRotScale.style.marginBottom = 2;
+            FlipFaceBtn = MakeBtn("面反転"); FlipFaceBtn.style.flexGrow = 1; FlipFaceBtn.style.marginRight = 2;
+            RotateBtn   = MakeBtn("回転");   RotateBtn.style.flexGrow   = 1; RotateBtn.style.marginRight   = 2;
+            ScaleBtn    = MakeBtn("スケール"); ScaleBtn.style.flexGrow   = 1;
+            rowFlipRotScale.Add(FlipFaceBtn); rowFlipRotScale.Add(RotateBtn); rowFlipRotScale.Add(ScaleBtn); scroll.Add(rowFlipRotScale);
+
+            var rowBevelExtrude = new VisualElement(); rowBevelExtrude.style.flexDirection = FlexDirection.Row; rowBevelExtrude.style.marginBottom = 2;
+            EdgeBevelBtn   = MakeBtn("辺ベベル");   EdgeBevelBtn.style.flexGrow   = 1; EdgeBevelBtn.style.marginRight   = 2;
+            EdgeExtrudeBtn = MakeBtn("辺押し出し"); EdgeExtrudeBtn.style.flexGrow = 1; EdgeExtrudeBtn.style.marginRight = 2;
+            FaceExtrudeBtn = MakeBtn("面押し出し"); FaceExtrudeBtn.style.flexGrow = 1;
+            rowBevelExtrude.Add(EdgeBevelBtn); rowBevelExtrude.Add(EdgeExtrudeBtn); rowBevelExtrude.Add(FaceExtrudeBtn); scroll.Add(rowBevelExtrude);
+
+            var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
+            EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
+            KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1;
+            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); scroll.Add(rowEdgeKnife);
+
+            LineExtrudeBtn = MakeBtn("ライン押し出し"); scroll.Add(LineExtrudeBtn);
+
             // ── 追加パネルボタン（最終残件）─────────────────────────────────
             var rowFinal = new VisualElement(); rowFinal.style.flexDirection = FlexDirection.Row; rowFinal.style.marginBottom = 2;
             QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1; QuadDecimatorBtn.style.marginRight = 2;
@@ -849,6 +909,20 @@ namespace Poly_Ling.Player
             HumanoidMappingSection = MakeHiddenSection(); RightPaneContent.Add(HumanoidMappingSection); RightPaneContent.Add(Separator());
             MirrorSection          = MakeHiddenSection(); RightPaneContent.Add(MirrorSection);          RightPaneContent.Add(Separator());
             QuadDecimatorSection   = MakeHiddenSection(); RightPaneContent.Add(QuadDecimatorSection);   RightPaneContent.Add(Separator());
+            AlignVerticesSection       = MakeHiddenSection(); RightPaneContent.Add(AlignVerticesSection);       RightPaneContent.Add(Separator());
+            PlanarizeAlongBonesSection = MakeHiddenSection(); RightPaneContent.Add(PlanarizeAlongBonesSection); RightPaneContent.Add(Separator());
+            MergeVerticesSection       = MakeHiddenSection(); RightPaneContent.Add(MergeVerticesSection);       RightPaneContent.Add(Separator());
+            SplitVerticesSection       = MakeHiddenSection(); RightPaneContent.Add(SplitVerticesSection);       RightPaneContent.Add(Separator());
+            AddFaceSection             = MakeHiddenSection(); RightPaneContent.Add(AddFaceSection);             RightPaneContent.Add(Separator());
+            FlipFaceSection            = MakeHiddenSection(); RightPaneContent.Add(FlipFaceSection);            RightPaneContent.Add(Separator());
+            RotateSection              = MakeHiddenSection(); RightPaneContent.Add(RotateSection);              RightPaneContent.Add(Separator());
+            ScaleSection               = MakeHiddenSection(); RightPaneContent.Add(ScaleSection);               RightPaneContent.Add(Separator());
+            EdgeBevelSection           = MakeHiddenSection(); RightPaneContent.Add(EdgeBevelSection);           RightPaneContent.Add(Separator());
+            EdgeExtrudeSection         = MakeHiddenSection(); RightPaneContent.Add(EdgeExtrudeSection);         RightPaneContent.Add(Separator());
+            FaceExtrudeSection         = MakeHiddenSection(); RightPaneContent.Add(FaceExtrudeSection);         RightPaneContent.Add(Separator());
+            EdgeTopologySection        = MakeHiddenSection(); RightPaneContent.Add(EdgeTopologySection);        RightPaneContent.Add(Separator());
+            KnifeSection               = MakeHiddenSection(); RightPaneContent.Add(KnifeSection);               RightPaneContent.Add(Separator());
+            LineExtrudeSection         = MakeHiddenSection(); RightPaneContent.Add(LineExtrudeSection);         RightPaneContent.Add(Separator());
             MediaPipeSection       = MakeHiddenSection(); RightPaneContent.Add(MediaPipeSection);       RightPaneContent.Add(Separator());
             VMDTestSection         = MakeHiddenSection(); RightPaneContent.Add(VMDTestSection);         RightPaneContent.Add(Separator());
             RemoteServerSection    = MakeHiddenSection(); RightPaneContent.Add(RemoteServerSection);    RightPaneContent.Add(Separator());

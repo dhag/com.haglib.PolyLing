@@ -7,6 +7,8 @@ using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
+using Poly_Ling.Profile2DExtrude;
 
 namespace Poly_Ling.Player
 {
@@ -26,10 +28,90 @@ namespace Poly_Ling.Player
         public Func<ToolContext> GetToolContext;
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
+        public Action            NotifyTopologyChanged;
+
+        // ================================================================
+        // 押し出しパラメータ
+        // ================================================================
+
+        public float Thickness       = 0.1f;
+        public float Scale           = 1.0f;
+        public Vector2 Offset        = Vector2.zero;
+        public bool  FlipY           = false;
+        public int   SegmentsFront   = 0;
+        public int   SegmentsBack    = 0;
+        public float EdgeSizeFront   = 0.1f;
+        public float EdgeSizeBack    = 0.1f;
+        public bool  EdgeInward      = false;
 
         // ================================================================
         // 設定公開API
         // ================================================================
+
+        /// <summary>
+        /// 検出済みループを押し出してモデルに追加する。
+        /// </summary>
+        public void ExecuteExtrude(string meshName = "LineExtrude", bool addToCurrent = false)
+        {
+            var loops = _tool.GetLoopsForExtrude();
+            if (loops == null || loops.Count == 0)
+            {
+                Debug.LogWarning("[LineExtrudeToolHandler] No loops detected. Run Analyze first.");
+                return;
+            }
+
+            var genParams = new Profile2DGenerateParams
+            {
+                Scale         = Scale,
+                Offset        = Offset,
+                FlipY         = FlipY,
+                Thickness     = Thickness,
+                SegmentsFront = SegmentsFront,
+                SegmentsBack  = SegmentsBack,
+                EdgeSizeFront = EdgeSizeFront,
+                EdgeSizeBack  = EdgeSizeBack,
+                EdgeInward    = EdgeInward,
+            };
+
+            var meshObject = Profile2DExtrudeMeshGenerator.Generate(loops, meshName, genParams);
+            if (meshObject == null)
+            {
+                Debug.LogWarning("[LineExtrudeToolHandler] Profile2DExtrudeMeshGenerator returned null.");
+                return;
+            }
+
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) return;
+            // ctx を補完してモデル参照を確保
+            var model = _project?.CurrentModel;
+            if (model == null) return;
+            ctx.Model          = model;
+            ctx.UndoController = _undoController;
+            ctx.CommandQueue   = _commandQueue;
+
+            if (addToCurrent)
+            {
+                ctx.AddMeshObjectToCurrentMesh?.Invoke(meshObject, meshName);
+            }
+            else
+            {
+                // 新規 MeshContext として追加
+                var unityMesh      = meshObject.ToUnityMesh();
+                unityMesh.name     = meshName;
+                unityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+                var newMc = new Poly_Ling.Data.MeshContext
+                {
+                    Name       = meshName,
+                    MeshObject = meshObject,
+                };
+                newMc.UnityMesh = unityMesh;
+                ctx.AddMeshContext?.Invoke(newMc);
+            }
+
+            NotifyTopologyChanged?.Invoke();
+            OnRepaint?.Invoke();
+            Debug.Log($"[LineExtrudeToolHandler] Extruded {loops.Count} loops → {meshObject.VertexCount} verts, {meshObject.FaceCount} faces.");
+        }
 
         public int  SelectedLineCount => _tool.GetSelectedLineCount();
         public int  DetectedLoopCount => _tool.GetDetectedLoopCount();
@@ -42,8 +124,9 @@ namespace Poly_Ling.Player
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project) => _project = project;
+        public void SetProject(ProjectContext project)         => _project = project;
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
+        public void SetCommandQueue(CommandQueue queue)         { _commandQueue   = queue; }
 
         // ================================================================
         // IPlayerToolHandler
@@ -63,7 +146,22 @@ namespace Poly_Ling.Player
             if (ctx == null) return;
             _tool.DrawGizmo(ctx);
         }
-        public void Activate(ToolContext ctx)   { _tool.OnActivate(ctx); }
+        public void Activate(ToolContext ctx)
+        {
+            if (ctx != null)
+            {
+                var model = _project?.CurrentModel;
+                ctx.Model            = model;
+                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
+                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.UndoController   = _undoController;
+                ctx.CommandQueue     = _commandQueue;
+                ctx.Repaint          = OnRepaint;
+                ctx.NotifyTopologyChanged = NotifyTopologyChanged;
+                ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            }
+            _tool.OnActivate(ctx);
+        }
         public void Deactivate(ToolContext ctx) { _tool.OnDeactivate(ctx); }
 
         // ================================================================
@@ -71,6 +169,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private MeshUndoController _undoController;
+        private CommandQueue       _commandQueue;
 
         private ToolContext BuildCtx(ModifierKeys mods, Vector2 sp)
         {

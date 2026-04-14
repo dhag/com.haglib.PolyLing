@@ -75,7 +75,8 @@ namespace Poly_Ling.Player
 
         public void SetProject(ProjectContext project) => _project = project;
         public void SetSelectionOps(PlayerSelectionOps ops) => _selectionOps = ops;
-        public void SetUndoController(MeshUndoController ctrl) { /* 現状未使用 */ }
+        public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
+        private MeshUndoController _undoController;
 
         // ================================================================
         // IPlayerToolHandler
@@ -85,9 +86,14 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
-            if (_tool.OnMouseDown(ctx, ToImgui(screenPos, ctx)))
-                OnSelectionChanged?.Invoke();
+            var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
+            bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+            if (changed)
+            {
+                RecordSelectionUndo(ctx, oldSnap);
+                OnSelectionChanged?.Invoke();
+            }
             OnRepaint?.Invoke();
         }
 
@@ -95,7 +101,13 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
-            _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
+            bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            if (changed)
+            {
+                RecordSelectionUndo(ctx, oldSnap);
+                OnSelectionChanged?.Invoke();
+            }
         }
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
@@ -168,6 +180,19 @@ namespace Poly_Ling.Player
             }
 
             return baseCtx;
+        }
+
+        private void RecordSelectionUndo(ToolContext ctx, SelectionSnapshot oldSnap)
+        {
+            if (_undoController == null || oldSnap == null) return;
+            var newSnap = _selectionOps?.SelectionState?.CreateSnapshot();
+            if (newSnap == null) return;
+            var model = ctx.Model;
+            if (model == null) return;
+            _undoController.MeshUndoContext.ParentModelContext = model;
+            var record = new SelectionChangeRecord(oldSnap, newSnap);
+            _undoController.VertexEditStack.Record(record, "詳細選択");
+            _undoController.FocusVertexEdit();
         }
 
         private static Vector2 ToImgui(Vector2 screenPosYDown, ToolContext ctx)

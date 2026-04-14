@@ -201,6 +201,7 @@ namespace Poly_Ling.Tools
 
                     if (allEntries.Count > 0)
                     {
+                        ctx.UndoController.MeshUndoContext.ParentModelContext = model;
                         ctx.UndoController.FocusVertexEdit();
                         var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
                         ctx.UndoController.VertexEditStack.Record(record, $"Sculpt ({Mode})");

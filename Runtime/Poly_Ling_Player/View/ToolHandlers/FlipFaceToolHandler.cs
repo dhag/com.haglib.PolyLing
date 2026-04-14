@@ -7,6 +7,7 @@ using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
@@ -26,6 +27,7 @@ namespace Poly_Ling.Player
         public Func<ToolContext> GetToolContext;
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
+        public Action            NotifyTopologyChanged;
 
         // ================================================================
         // 設定公開API
@@ -40,6 +42,7 @@ namespace Poly_Ling.Player
 
         public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
+        public void SetCommandQueue(CommandQueue queue)         { _commandQueue   = queue; }
 
         // ================================================================
         // IPlayerToolHandler
@@ -50,14 +53,47 @@ namespace Poly_Ling.Player
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods) {}
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) {}
         public void UpdateHover(Vector2 screenPos, ToolContext ctx) {}
-        public void Activate(ToolContext ctx)   { _tool.OnActivate(ctx); }
+        public void Activate(ToolContext ctx)
+        {
+            if (ctx != null)
+            {
+                var model = _project?.CurrentModel;
+                ctx.Model            = model;
+                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
+                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.UndoController   = _undoController;
+                ctx.CommandQueue     = _commandQueue;
+                ctx.Repaint          = OnRepaint;
+                ctx.NotifyTopologyChanged = NotifyTopologyChanged;
+                ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            }
+            _tool.OnActivate(ctx);
+        }
         public void Deactivate(ToolContext ctx) { _tool.OnDeactivate(ctx); }
 
         // ================================================================
         // 内部ヘルパー
         // ================================================================
 
+
+        private ToolContext GetEnrichedCtx()
+        {
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) return null;
+            var model = _project?.CurrentModel;
+            ctx.Model            = model;
+            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.UndoController   = _undoController;
+            ctx.CommandQueue     = _commandQueue;
+            ctx.Repaint          = OnRepaint;
+            ctx.NotifyTopologyChanged = NotifyTopologyChanged;
+            ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            return ctx;
+        }
+
         private MeshUndoController _undoController;
+        private CommandQueue       _commandQueue;
 
         private ToolContext BuildCtx(ModifierKeys mods, Vector2 sp)
         {

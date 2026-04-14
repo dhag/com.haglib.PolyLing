@@ -1,6 +1,6 @@
-// EdgeTopologyToolHandler.cs
-// EdgeTopologyTool を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
-// Runtime/Poly_Ling_Player/View/ に配置
+// AlignVerticesToolHandler.cs
+// AlignVerticesTool を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
+// Runtime/Poly_Ling_Player/View/ToolHandlers/ に配置
 
 using System;
 using UnityEngine;
@@ -11,35 +11,48 @@ using Poly_Ling.Commands;
 
 namespace Poly_Ling.Player
 {
-    public class EdgeTopologyToolHandler : IPlayerToolHandler
+    public class AlignVerticesToolHandler : IPlayerToolHandler
     {
         // ================================================================
         // 依存
         // ================================================================
 
-        private readonly EdgeTopologyTool _tool = new EdgeTopologyTool();
-        private          ProjectContext _project;
+        private readonly AlignVerticesTool _tool    = new AlignVerticesTool();
+        private          ProjectContext    _project;
 
         // ================================================================
         // 外部コールバック（Viewer から設定）
         // ================================================================
 
-        public Func<ToolContext> GetToolContext;
-        public Action            OnRepaint;
-        public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
-        public Action            NotifyTopologyChanged;
+        public Func<ToolContext>                          GetToolContext;
+        public Action                                     OnRepaint;
+        public Action<Poly_Ling.Data.MeshContext>         OnSyncMeshPositions;
 
         // ================================================================
-        // 設定公開API
+        // 設定公開 API
         // ================================================================
 
-        public EdgeTopoMode ModePublic { get => _tool.ModePublic; set => _tool.ModePublic = value; }
+        public bool      AlignX          { get => _tool.AlignX;          set => _tool.AlignX = value; }
+        public bool      AlignY          { get => _tool.AlignY;          set => _tool.AlignY = value; }
+        public bool      AlignZ          { get => _tool.AlignZ;          set => _tool.AlignZ = value; }
+        public AlignMode Mode            { get => _tool.Mode;            set => _tool.Mode   = value; }
+
+        public float StdDevX         => _tool.StdDevX;
+        public float StdDevY         => _tool.StdDevY;
+        public float StdDevZ         => _tool.StdDevZ;
+        public bool  StatsCalculated => _tool.StatsCalculated;
+
+        public int     SelectedVertexCount => _tool.SelectedVertexCount;
+        public Vector3 GetAlignTarget()    => _tool.GetAlignTarget();
+
+        public void TriggerAlign()      => _tool.TriggerAlign();
+        public void TriggerAutoSelect() => _tool.TriggerAutoSelect();
 
         // ================================================================
         // 初期化
         // ================================================================
 
-        public void SetProject(ProjectContext project) => _project = project;
+        public void SetProject(ProjectContext project)       => _project = project;
         public void SetUndoController(MeshUndoController ctrl) { _undoController = ctrl; }
         public void SetCommandQueue(CommandQueue queue)         { _commandQueue   = queue; }
 
@@ -47,37 +60,11 @@ namespace Poly_Ling.Player
         // IPlayerToolHandler
         // ================================================================
 
-        public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
-        {
-            var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
-            _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
-        }
-        public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
-        {
-            var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
-        }
-        public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
-        {
-            var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
-        }
-        public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
-        {
-            var ctx = GetEnrichedCtx(); if (ctx == null) return;
-            _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
-        }
-        public void UpdateHover(Vector2 screenPos, ToolContext ctx)
-        {
-            if (ctx == null) return;
-            var model = _project?.CurrentModel;
-            ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
-            ctx.Repaint          = OnRepaint;
-            // DrawGizmo は IMGUI を使用するため UIToolkit 環境では呼ばない。
-        }
+        public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods) {}
+        public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods) {}
+        public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods) {}
+        public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) {}
+        public void UpdateHover(Vector2 screenPos, ToolContext ctx) {}
         public void Activate(ToolContext ctx)
         {
             if (ctx != null)
@@ -89,8 +76,15 @@ namespace Poly_Ling.Player
                 ctx.UndoController   = _undoController;
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;
-                ctx.NotifyTopologyChanged = NotifyTopologyChanged;
-                ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+                ctx.SyncMesh = () =>
+                {
+                    if (model == null) return;
+                    foreach (int idx in model.SelectedDrawableMeshIndices)
+                    {
+                        var mc = model.GetMeshContext(idx);
+                        if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+                    }
+                };
             }
             _tool.OnActivate(ctx);
         }
@@ -100,25 +94,8 @@ namespace Poly_Ling.Player
         // 内部ヘルパー
         // ================================================================
 
-
-        private ToolContext GetEnrichedCtx()
-        {
-            var ctx = GetToolContext?.Invoke();
-            if (ctx == null) return null;
-            var model = _project?.CurrentModel;
-            ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
-            ctx.UndoController   = _undoController;
-            ctx.CommandQueue     = _commandQueue;
-            ctx.Repaint          = OnRepaint;
-            ctx.NotifyTopologyChanged = NotifyTopologyChanged;
-            ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
-            return ctx;
-        }
-
         private MeshUndoController _undoController;
-        private CommandQueue       _commandQueue;
+        private CommandQueue        _commandQueue;
 
         private ToolContext BuildCtx(ModifierKeys mods, Vector2 sp)
         {

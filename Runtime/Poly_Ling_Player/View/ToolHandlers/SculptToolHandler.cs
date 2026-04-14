@@ -203,7 +203,12 @@ namespace Poly_Ling.Player
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null) return;
-            UpdateBrushCircleOverlay(ctx, screenPos);
+            // OnPointerHover は UIToolkit 座標（Y=0 が上）で渡される。
+            // UpdateBrushCircleOverlay / ShowBrushCircle は Y=0 が下を期待するため反転する。
+            // ドラッグ中は PlayerViewportPanel.ToViewportCoord で反転済みなので一致する。
+            float panelH = ctx.PreviewRect.height;
+            var screenPosYDown = new Vector2(screenPos.x, panelH - screenPos.y);
+            UpdateBrushCircleOverlay(ctx, screenPosYDown);
         }
 
         // ================================================================

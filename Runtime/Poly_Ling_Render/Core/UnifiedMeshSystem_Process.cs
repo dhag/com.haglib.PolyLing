@@ -150,6 +150,7 @@ namespace Poly_Ling.Core
         /// </param>
         public void ProcessMouseUpdate(bool cpuOnly = false)
         {
+            //Debug.Log($"MeshSelectMode ");
             // ホバー抑止モード（ブラシ系ツール等）
             if (SuppressHover)
             {
@@ -178,9 +179,23 @@ namespace Poly_Ling.Core
                 // ★注意: DispatchClearBuffersGPUは_VertexFlagsBuffer等を全クリアする。
                 //   フルパイプライン外（cpuOnly=true）では絶対に実行してはならない。
                 _bufferManager.DispatchClearBuffersGPU();
+                // per-slot カリングバッファを「全カリング済み=1u」に初期化する。
+                // 4画面対応で per-slot バッファが導入されたため必須。
+                // この呼び出しがないと DispatchFaceVisibilityGPU が書き込む前の
+                // 不定値（または前フレームの残留値）がカリング判定に使われ、
+                // 常にカリング済みと判定されてしまう。
+                _bufferManager.DispatchClearCulledBuffersGPU(0);
                 _bufferManager.ComputeScreenPositionsGPU(viewProjection, _viewport);
-                _bufferManager.DispatchFaceVisibilityGPU();
-                _bufferManager.DispatchLineVisibilityGPU();
+                if (_backfaceCullingEnabled)
+                {
+                    _bufferManager.DispatchFaceVisibilityGPU();
+                    _bufferManager.DispatchLineVisibilityGPU();
+                }
+                else
+                {
+                    // カリングOFF: 全頂点・辺・面を可視（0u）に設定
+                    _bufferManager.ClearCulledFlagsGPU(0);
+                }
                 _bufferManager.DispatchVertexHitTestGPU(_mousePosition, _hitRadius, _backfaceCullingEnabled);
                 _bufferManager.DispatchLineHitTestGPU(_mousePosition, _hitRadius, _backfaceCullingEnabled);
                 _bufferManager.DispatchFaceHitTestGPU(_mousePosition, _backfaceCullingEnabled);
@@ -243,6 +258,8 @@ namespace Poly_Ling.Core
             int effectiveVertex = -1;
             int effectiveLine = -1;
             int effectiveFace = -1;
+
+            //Debug.Log($"MeshSelectMode{mode}");
 
             // 頂点モードが有効で頂点ヒットあり → 頂点ホバー
             if (hasVertexMode && newHoveredVertex >= 0)
@@ -330,7 +347,7 @@ namespace Poly_Ling.Core
             {
                 ProcessTopologyUpdate();
                 ProcessCameraUpdate();
-                ProcessMouseUpdate();
+                ProcessMouseUpdate();//Debug.Log("ProcessMouseUpdate1");
                 return; // 全て処理済み
             }
 
@@ -338,7 +355,7 @@ namespace Poly_Ling.Core
             {
                 ProcessTransformUpdate();
                 ProcessCameraUpdate(); // 位置変更後はスクリーン座標も更新
-                ProcessMouseUpdate();  // スクリーン座標変更後はヒットテストも更新
+                ProcessMouseUpdate(); //Debug.Log("ProcessMouseUpdate2");  // スクリーン座標変更後はヒットテストも更新
                 return;
             }
 
@@ -352,13 +369,13 @@ namespace Poly_Ling.Core
             if (level.Has(DirtyLevel.Camera))
             {
                 ProcessCameraUpdate();
-                ProcessMouseUpdate();  // スクリーン座標変更後はヒットテストも更新
+                ProcessMouseUpdate(); //Debug.Log("ProcessMouseUpdate3");  // スクリーン座標変更後はヒットテストも更新
                 return;
             }
 
             if (level.Has(DirtyLevel.Mouse))
             {
-                ProcessMouseUpdate();
+                ProcessMouseUpdate(); //Debug.Log("ProcessMouseUpdate4");
             }
         }
 
@@ -517,6 +534,8 @@ namespace Poly_Ling.Core
             // GPU版はDispatchClearBuffersGPUで_VertexFlagsBufferをゼロクリアし、
             // Idle時はAllowSelectedDrawableMeshSync=falseのため再設定されずちらつく。
             ProcessMouseUpdate(cpuOnly: true);
+
+            Debug.LogError("cpuOnly: trueは禁止");
         }
 
         // ============================================================

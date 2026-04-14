@@ -100,6 +100,40 @@ namespace Poly_Ling.Tools
         public int  RequiredPointsPublic => RequiredPoints;
         public void ClearPointsPublic()  { _points.Clear(); _lastLinePoint = null; }
 
+        // ================================================================
+        // Player オーバーレイ描画用プレビューデータ
+        // ================================================================
+
+        /// <summary>Player の UIToolkit オーバーレイが使うプレビューデータ</summary>
+        public struct AddFacePreviewData
+        {
+            /// <summary>配置済み点（Position, IsExistingVertex）</summary>
+            public PointInfo[] PlacedPoints;
+            /// <summary>プレビュー点が有効か</summary>
+            public bool PreviewValid;
+            /// <summary>プレビュー点ワールド座標</summary>
+            public Vector3 PreviewPoint;
+            /// <summary>プレビューが既存頂点にスナップしているか</summary>
+            public bool PreviewSnapped;
+            /// <summary>連続線分モードの開始点（nullなら不使用）</summary>
+            public PointInfo? ContinuousLineStart;
+        }
+
+        public AddFacePreviewData GetPreviewData()
+        {
+            PointInfo? contStart = null;
+            if (Mode == AddFaceMode.Line && ContinuousLine && _points.Count == 0 && _lastLinePoint.HasValue)
+                contStart = _lastLinePoint;
+            return new AddFacePreviewData
+            {
+                PlacedPoints       = _points.ToArray(),
+                PreviewValid       = _previewValid,
+                PreviewPoint       = _previewPoint,
+                PreviewSnapped     = _previewHitVertex >= 0,
+                ContinuousLineStart = contStart,
+            };
+        }
+
         /// <summary>配置済み点のラベルリストを返す（SubPanel 表示用）</summary>
         public System.Collections.Generic.List<string> GetPointLabels()
         {
@@ -244,8 +278,6 @@ namespace Poly_Ling.Tools
                     startScreen.y - size / 2,
                     size, size), startColor);
 
-                GUI.Label(new Rect(startScreen.x + 10, startScreen.y - 8, 50, 16),
-                    T("Start"), new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } });  // ← 変更
 
 
                 // プレビュー点への線
@@ -284,9 +316,6 @@ namespace Poly_Ling.Tools
 
             
 
-                // 番号を表示
-                GUI.Label(new Rect(screenPos.x + 8, screenPos.y - 8, 20, 16),
-                    (i + 1).ToString(), new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } });
 
                 // 前の点との線を描画
                 if (i > 0)
@@ -328,8 +357,6 @@ namespace Poly_Ling.Tools
                         new Vector3(previewScreen.x, previewScreen.y, 0),
                         Vector3.forward, 12f);
 
-                    GUI.Label(new Rect(previewScreen.x + 10, previewScreen.y - 8, 60, 16),
-                        $"V{_previewHitVertex}", new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, normal = { textColor = Color.white } });
                 }
 
                 // 最後の確定点からプレビュー点への線

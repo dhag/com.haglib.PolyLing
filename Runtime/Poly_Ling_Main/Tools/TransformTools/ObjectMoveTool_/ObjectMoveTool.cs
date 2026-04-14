@@ -70,7 +70,6 @@ namespace Poly_Ling.Tools
             _lastCtx = ctx;
             _lastMousePos = mousePos;
             _mouseDownPos = mousePos;
-
             if (ctx?.Model == null) return false;
 
             // 1. 選択があればギズモのヒットテスト（最優先）
@@ -109,7 +108,6 @@ namespace Poly_Ling.Tools
         {
             _lastCtx = ctx;
             _lastMousePos = mousePos;
-
             switch (_state)
             {
                 case DragState.PendingDrag:
@@ -191,6 +189,26 @@ namespace Poly_Ling.Tools
             _axisGizmo.DraggingAxis = AxisGizmo.AxisType.None;
             ctx.Repaint?.Invoke();
             return handled;
+        }
+
+        /// <summary>
+        /// ポインター移動時のホバー更新専用（ドラッグ中は何もしない）。
+        /// ObjectMoveToolHandler.UpdateHover から呼ぶ。
+        /// OnMouseDrag を呼ぶと _lastDragScreenPos が破壊されるため、この専用メソッドを使う。
+        /// </summary>
+        public void UpdateHoverOnly(ToolContext ctx, Vector2 mousePos)
+        {
+            _lastMousePos = mousePos;
+            if (_state != DragState.Idle) return;
+            if (!HasAnySelection(ctx)) return;
+            UpdateGizmoCenter(ctx);
+            var hovered = _axisGizmo.FindAxisAtScreenPos(mousePos, ctx);
+            if (hovered != _hoveredAxis)
+            {
+                _hoveredAxis = hovered;
+                _axisGizmo.HoveredAxis = _hoveredAxis;
+                ctx.Repaint?.Invoke();
+            }
         }
 
         public void DrawGizmo(ToolContext ctx)
@@ -556,6 +574,7 @@ namespace Poly_Ling.Tools
 
             if (record.Entries.Count > 0)
             {
+                undoCtrl.SetModelContext(model);
                 undoCtrl.MeshListStack.Record(record, "オブジェクト移動");
                 undoCtrl.FocusMeshList();
             }

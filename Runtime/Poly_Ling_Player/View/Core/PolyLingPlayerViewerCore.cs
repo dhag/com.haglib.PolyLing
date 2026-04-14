@@ -105,7 +105,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum ToolMode { VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint }
+        private enum ToolMode { VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife }
         private ToolMode               _toolMode = ToolMode.VertexMove;
 
         private Button _activeBtn;
@@ -146,6 +146,34 @@ namespace Poly_Ling.Player
         private PlayerHumanoidMappingSubPanel _humanoidMappingSubPanel;
         private PlayerMirrorSubPanel         _mirrorSubPanel;
         private PlayerQuadDecimatorSubPanel  _quadDecimatorSubPanel;
+        private PlayerAlignVerticesSubPanel       _alignVerticesSubPanel;
+        private AlignVerticesToolHandler          _alignVerticesHandler;
+        private PlayerPlanarizeAlongBonesSubPanel _planarizeAlongBonesSubPanel;
+        private PlanarizeAlongBonesToolHandler    _planarizeAlongBonesHandler;
+        private PlayerMergeVerticesSubPanel       _mergeVerticesSubPanel;
+        private MergeVerticesToolHandler          _mergeVerticesHandler;
+        private PlayerSplitVerticesSubPanel       _splitVerticesSubPanel;
+        private SplitVerticesToolHandler          _splitVerticesHandler;
+        private PlayerAddFaceSubPanel             _addFaceSubPanel;
+        private AddFaceToolHandler                _addFaceHandler;
+        private PlayerFlipFaceSubPanel            _flipFaceSubPanel;
+        private FlipFaceToolHandler               _flipFaceHandler;
+        private PlayerRotateSubPanel              _rotateSubPanel;
+        private RotateToolHandler                 _rotateHandler;
+        private PlayerScaleSubPanel               _scaleSubPanel;
+        private ScaleToolHandler                  _scaleHandler;
+        private PlayerEdgeBevelSubPanel           _edgeBevelSubPanel;
+        private EdgeBevelToolHandler              _edgeBevelHandler;
+        private PlayerEdgeExtrudeSubPanel         _edgeExtrudeSubPanel;
+        private EdgeExtrudeToolHandler            _edgeExtrudeHandler;
+        private PlayerFaceExtrudeSubPanel         _faceExtrudeSubPanel;
+        private FaceExtrudeToolHandler            _faceExtrudeHandler;
+        private PlayerEdgeTopologySubPanel        _edgeTopologySubPanel;
+        private EdgeTopologyToolHandler           _edgeTopologyHandler;
+        private PlayerKnifeSubPanel               _knifeSubPanel;
+        private KnifeToolHandler                  _knifeHandler;
+        private PlayerLineExtrudeSubPanel         _lineExtrudeSubPanel;
+        private LineExtrudeToolHandler            _lineExtrudeHandler;
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
         private PlayerRemoteServerSubPanel   _remoteServerSubPanel;
@@ -214,14 +242,30 @@ namespace Poly_Ling.Player
                 // ── MeshList（BoneTransform変更・PivotMove等）の復元
                 if (stackType == MeshUndoController.UndoStackType.MeshList)
                 {
-                    // MeshListStack のコンテキストが現在モデルと異なる場合（モデルブレンドUndoなど）
-                    // コンテキストを優先して使う
                     var listCtx   = _editOps.UndoController.MeshListContext;
                     var model     = listCtx ?? ActiveProject?.CurrentModel;
                     if (model != null)
                     {
                         model.ComputeWorldMatrices();
-                        _viewportManager.RebuildAdapter(0, model);
+
+                        var lastRecord = _editOps.UndoController.MeshListStack.LastExecutedRecord;
+                        bool needsRebuild = lastRecord is MeshListChangeRecord
+                                         || lastRecord is MeshAttributesBatchChangeRecord
+                                         || lastRecord is MultiMeshVertexSnapshotRecord;
+                        if (needsRebuild)
+                        {
+                            _viewportManager.RebuildAdapter(0, model);
+                            RebuildModelList();
+                        }
+                        else if (lastRecord is PivotMoveRecord pivotRec)
+                        {
+                            // PivotMoveRecord は頂点位置も変更するため、
+                            // GPU位置バッファを更新してからトランスフォームを適用する
+                            var pivotMc = model.GetMeshContext(pivotRec.MasterIndex);
+                            if (pivotMc != null)
+                                _viewportManager.SyncMeshPositionsAndTransform(pivotMc, model);
+                        }
+
                         _renderer?.UpdateSelectedDrawableMesh(0, model);
                         _viewportManager.UpdateTransform();
                         NotifyPanels(ChangeKind.Attributes);
@@ -255,8 +299,11 @@ namespace Poly_Ling.Player
                         _viewportManager.SyncMeshPositionsAndTransform(mc, targetModel);
                     }
                     ctx.PendingMeshMoveEntries = null;
+                    _viewportManager.ExitTransformDragging();
                     _viewportManager.UpdateTransform();
+                    _renderer?.UpdateSelectedDrawableMesh(0, targetModel);
                     NotifyPanels(ChangeKind.Attributes);
+                    return;
                 }
 
                 // ── 選択状態の復元
@@ -388,6 +435,22 @@ namespace Poly_Ling.Player
                 _advancedSelectHandler?.SetProject(ActiveProject);
                 _skinWeightPaintHandler?.SetProject(ActiveProject);
                 _boneInputHandler?.SetProject(ActiveProject);
+                _alignVerticesHandler?.SetProject(ActiveProject);
+                _planarizeAlongBonesHandler?.SetProject(ActiveProject);
+                _mergeVerticesHandler?.SetProject(ActiveProject);
+                _splitVerticesHandler?.SetProject(ActiveProject);
+                _addFaceHandler?.SetProject(ActiveProject);
+                _flipFaceHandler?.SetProject(ActiveProject);
+                _rotateHandler?.SetProject(ActiveProject);
+                _scaleHandler?.SetProject(ActiveProject);
+                _edgeBevelHandler?.SetProject(ActiveProject);
+                _edgeExtrudeHandler?.SetProject(ActiveProject);
+                _faceExtrudeHandler?.SetProject(ActiveProject);
+                _edgeTopologyHandler?.SetProject(ActiveProject);
+                _knifeHandler?.SetProject(ActiveProject);
+                _lineExtrudeHandler?.SetProject(ActiveProject);
+
+                _editOps?.UndoController.SetModelContext(loadedModel);
 
                 loadedModel.ComputeWorldMatrices();
 
@@ -425,6 +488,27 @@ namespace Poly_Ling.Player
                 _renderer?.UpdateSelectedDrawableMesh(0, loadedModel);
                 _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
 
+                // UNDO記録：インポートした全メッシュを1ステップとして記録
+                // 図形生成と同じパターン（RecordMeshContextsAdd）。
+                // UNDO → 全メッシュ削除（空モデルになる）、REDO → 復元。
+                if (_editOps?.UndoController != null && loadedModel.MeshContextCount > 0)
+                {
+                    var importAdded = new System.Collections.Generic.List<(int, Poly_Ling.Data.MeshContext)>();
+                    for (int _ii = 0; _ii < loadedModel.MeshContextCount; _ii++)
+                    {
+                        var _imc = loadedModel.GetMeshContext(_ii);
+                        if (_imc != null) importAdded.Add((_ii, _imc));
+                    }
+                    if (importAdded.Count > 0)
+                    {
+                        var importNewSel = loadedModel.CaptureAllSelectedIndices();
+                        _editOps.UndoController.RecordMeshContextsAdd(
+                            importAdded,
+                            new System.Collections.Generic.List<int>(),
+                            importNewSel);
+                    }
+                }
+
                 RebuildModelList();
                 _skinWeightPaintPanel?.RefreshMeshList(loadedModel);
                 _skinWeightPaintPanel?.RefreshBoneList(loadedModel);
@@ -458,6 +542,7 @@ namespace Poly_Ling.Player
             UpdateSelectedFacesOverlay();
             UpdateGizmoOverlay();
             UpdateAdvancedSelectOverlay();
+            UpdateAddFaceOverlay();
             UpdateBoneOverlay();
         }
 
@@ -546,6 +631,7 @@ namespace Poly_Ling.Player
                 OnRequestNormal          = () => _viewportManager.RequestNormal(),
                 OnClearMouseHover        = () => _viewportManager.ClearMouseHover(),
             };
+            _moveToolHandler.SetUndoController(_editOps?.UndoController);
             _viewportManager.RegisterMoveToolHandler(_moveToolHandler);
 
             _objectMoveHandler = new ObjectMoveToolHandler();
@@ -701,6 +787,7 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
+                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
                     _boneInputHandler?.OnLeftClick(PlayerHitResult.Miss, pos, mods);
                     _boneEditorSubPanel?.Refresh();
                 };
@@ -709,6 +796,7 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
+                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
                     _boneInputHandler?.OnLeftDragBegin(PlayerHitResult.Miss, pos, mods);
                 };
                 panel.OnDrag += (btn, pos, delta, mods) =>
@@ -716,6 +804,7 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
+                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
                     _boneInputHandler?.OnLeftDrag(pos, delta, mods);
                     _viewportManager.UpdateTransform();
                     _boneEditorSubPanel?.Refresh();
@@ -725,6 +814,7 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
+                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
                     _boneInputHandler?.OnLeftDragEnd(pos, mods);
                     _boneEditorSubPanel?.Refresh();
                 };
@@ -738,11 +828,6 @@ namespace Poly_Ling.Player
             {
                 if (p == null) return;
                 p.OnClick += (btn, pos, mods) =>
-                {
-                    if (btn != 0) return;
-                    TrySelectIndicatorAtScreenPos(pos, mods);
-                };
-                p.OnDragBegin += (btn, pos, mods) =>
                 {
                     if (btn != 0) return;
                     TrySelectIndicatorAtScreenPos(pos, mods);
@@ -915,6 +1000,61 @@ namespace Poly_Ling.Player
             _boneEditorSubPanel?.Refresh();
             _activePanel?.MarkDirtyRepaint();
             return true;
+        }
+
+        private void UpdateAddFaceOverlay()
+        {
+            var panel = _activePanel;
+            if (panel == null) return;
+
+            if (_toolMode != ToolMode.AddFace || _addFaceHandler == null)
+            {
+                panel.HideAddFacePreview();
+                return;
+            }
+
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx == null) { panel.HideAddFacePreview(); return; }
+
+            var data = _addFaceHandler.GetPreviewData();
+            float h = ctx.PreviewRect.height;
+
+            // AdvSel と完全に同じパターン:
+            // ViewerCore側で h - sp.y を行い、Panel側で panelH - pt.y を行う。
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            {
+                var sp = ctx.WorldToScreen(world);
+                return new UnityEngine.Vector2(sp.x, h - sp.y);
+            };
+
+            // 確定済み点
+            var pts = new System.Collections.Generic.List<UnityEngine.Vector2>();
+            foreach (var p in data.PlacedPoints)
+                pts.Add(toScreen(p.Position));
+
+            // 線（配置済み点間）
+            var lines = new System.Collections.Generic.List<(UnityEngine.Vector2, UnityEngine.Vector2)>();
+            for (int i = 1; i < data.PlacedPoints.Length; i++)
+                lines.Add((toScreen(data.PlacedPoints[i - 1].Position), toScreen(data.PlacedPoints[i].Position)));
+
+            // 連続線分モード開始点からプレビューへの線
+            if (data.ContinuousLineStart.HasValue && data.PreviewValid)
+                lines.Add((toScreen(data.ContinuousLineStart.Value.Position), toScreen(data.PreviewPoint)));
+
+            // 最後の確定済み点からプレビューへの線
+            if (data.PlacedPoints.Length > 0 && data.PreviewValid)
+                lines.Add((toScreen(data.PlacedPoints[data.PlacedPoints.Length - 1].Position), toScreen(data.PreviewPoint)));
+
+            // プレビュー点
+            var previewPts  = new System.Collections.Generic.List<UnityEngine.Vector2>();
+            var previewSnap = new System.Collections.Generic.List<bool>();
+            if (data.PreviewValid)
+            {
+                previewPts.Add(toScreen(data.PreviewPoint));
+                previewSnap.Add(data.PreviewSnapped);
+            }
+
+            panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines);
         }
 
         private void UpdateAdvancedSelectOverlay()
@@ -1269,6 +1409,329 @@ namespace Poly_Ling.Player
             };
             _quadDecimatorSubPanel.Build(_layoutRoot.QuadDecimatorSection);
 
+            _alignVerticesHandler = new AlignVerticesToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                },
+            };
+            _alignVerticesHandler.SetProject(ActiveProject);
+            _alignVerticesHandler.SetUndoController(_editOps?.UndoController);
+            _alignVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _alignVerticesSubPanel = new PlayerAlignVerticesSubPanel
+            {
+                GetH = () => _alignVerticesHandler,
+            };
+            _alignVerticesSubPanel.Build(_layoutRoot.AlignVerticesSection);
+
+            _planarizeAlongBonesHandler = new PlanarizeAlongBonesToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                },
+            };
+            _planarizeAlongBonesHandler.SetProject(ActiveProject);
+            _planarizeAlongBonesHandler.SetUndoController(_editOps?.UndoController);
+            _planarizeAlongBonesHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _planarizeAlongBonesSubPanel = new PlayerPlanarizeAlongBonesSubPanel
+            {
+                GetH = () => _planarizeAlongBonesHandler,
+            };
+            _planarizeAlongBonesSubPanel.Build(_layoutRoot.PlanarizeAlongBonesSection);
+
+            _mergeVerticesHandler = new MergeVerticesToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                },
+            };
+            _mergeVerticesHandler.SetProject(ActiveProject);
+            _mergeVerticesHandler.SetUndoController(_editOps?.UndoController);
+            _mergeVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _mergeVerticesHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _mergeVerticesSubPanel = new PlayerMergeVerticesSubPanel
+            {
+                GetH = () => _mergeVerticesHandler,
+            };
+            _mergeVerticesSubPanel.Build(_layoutRoot.MergeVerticesSection);
+
+            _splitVerticesHandler = new SplitVerticesToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                },
+            };
+            _splitVerticesHandler.SetProject(ActiveProject);
+            _splitVerticesHandler.SetUndoController(_editOps?.UndoController);
+            _splitVerticesHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _splitVerticesHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _splitVerticesSubPanel = new PlayerSplitVerticesSubPanel
+            {
+                GetH = () => _splitVerticesHandler,
+            };
+            _splitVerticesSubPanel.Build(_layoutRoot.SplitVerticesSection);
+
+            _addFaceHandler = new AddFaceToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+                EnsureDrawableMesh = () =>
+                {
+                    // モデル・描画メッシュがなければ空のMeshContextを自動生成する
+                    _localLoader.EnsureProject();
+                    _moveToolHandler?.SetProject(ActiveProject);
+                    _objectMoveHandler?.SetProject(ActiveProject);
+                    var proj = ActiveProject;
+                    if (proj == null) return false;
+                    if (proj.CurrentModel == null && proj.ModelCount > 0)
+                        proj.SelectModel(0);
+                    var model = proj.CurrentModel;
+                    if (model == null) return false;
+
+                    // 描画可能メッシュが既にあればそのまま使う
+                    if (model.FirstDrawableMeshContext != null) return true;
+
+                    // 空のMeshContextを1つ作成してUNDO記録
+                    var emptyMo = new Poly_Ling.Data.MeshObject("New Mesh");
+                    var unityMesh = emptyMo.ToUnityMesh();
+                    unityMesh.name      = "New Mesh";
+                    unityMesh.hideFlags = UnityEngine.HideFlags.HideAndDontSave;
+                    var ctx = new Poly_Ling.Data.MeshContext
+                    {
+                        Name       = "New Mesh",
+                        MeshObject = emptyMo,
+                        UnityMesh  = unityMesh,
+                        IsVisible  = true,
+                        ParentModelContext = model,
+                    };
+                    var oldSelected = model.CaptureAllSelectedIndices();
+                    int insertIndex = model.Add(ctx);
+                    model.ComputeWorldMatrices();
+                    model.SelectMeshContextExclusive(insertIndex);
+                    model.SelectMesh(insertIndex);
+                    var newSelected = model.CaptureAllSelectedIndices();
+
+                    if (_editOps?.UndoController != null)
+                    {
+                        _editOps.UndoController.SetModelContext(model);
+                        _editOps.UndoController.RecordMeshContextAdd(
+                            ctx, insertIndex, oldSelected, newSelected);
+                    }
+
+                    _viewportManager.RebuildAdapter(0, model);
+                    var firstMc = model.FirstDrawableMeshContext;
+                    if (firstMc != null)
+                    {
+                        _selectionOps?.SetSelectionState(firstMc.Selection);
+                        _renderer?.SetSelectionState(firstMc.Selection);
+                    }
+                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    _addFaceHandler?.SetProject(ActiveProject);
+                    RebuildModelList();
+                    NotifyPanels(ChangeKind.ListStructure);
+                    return true;
+                },
+            };
+            _addFaceHandler.SetProject(ActiveProject);
+            _addFaceHandler.SetUndoController(_editOps?.UndoController);
+            _addFaceSubPanel = new PlayerAddFaceSubPanel
+            {
+                GetH = () => _addFaceHandler,
+            };
+            _addFaceSubPanel.Build(_layoutRoot.AddFaceSection);
+            _flipFaceHandler = new FlipFaceToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _flipFaceHandler.SetProject(ActiveProject);
+            _flipFaceHandler.SetUndoController(_editOps?.UndoController);
+            _flipFaceHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _flipFaceSubPanel = new PlayerFlipFaceSubPanel { GetH = () => _flipFaceHandler };
+            _flipFaceSubPanel.Build(_layoutRoot.FlipFaceSection);
+            _rotateHandler = new RotateToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+            };
+            _rotateHandler.SetProject(ActiveProject);
+            _rotateHandler.SetUndoController(_editOps?.UndoController);
+            _rotateSubPanel = new PlayerRotateSubPanel { GetH = () => _rotateHandler };
+            _rotateSubPanel.Build(_layoutRoot.RotateSection);
+            _scaleHandler = new ScaleToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+            };
+            _scaleHandler.SetProject(ActiveProject);
+            _scaleHandler.SetUndoController(_editOps?.UndoController);
+            _scaleSubPanel = new PlayerScaleSubPanel { GetH = () => _scaleHandler };
+            _scaleSubPanel.Build(_layoutRoot.ScaleSection);
+            _edgeBevelHandler = new EdgeBevelToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _edgeBevelHandler.SetProject(ActiveProject);
+            _edgeBevelHandler.SetUndoController(_editOps?.UndoController);
+            _edgeBevelHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeBevelSubPanel = new PlayerEdgeBevelSubPanel { GetH = () => _edgeBevelHandler };
+            _edgeBevelSubPanel.Build(_layoutRoot.EdgeBevelSection);
+            _edgeExtrudeHandler = new EdgeExtrudeToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _edgeExtrudeHandler.SetProject(ActiveProject);
+            _edgeExtrudeHandler.SetUndoController(_editOps?.UndoController);
+            _edgeExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeExtrudeSubPanel = new PlayerEdgeExtrudeSubPanel { GetH = () => _edgeExtrudeHandler };
+            _edgeExtrudeSubPanel.Build(_layoutRoot.EdgeExtrudeSection);
+            _faceExtrudeHandler = new FaceExtrudeToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _faceExtrudeHandler.SetProject(ActiveProject);
+            _faceExtrudeHandler.SetUndoController(_editOps?.UndoController);
+            _faceExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _faceExtrudeSubPanel = new PlayerFaceExtrudeSubPanel { GetH = () => _faceExtrudeHandler };
+            _faceExtrudeSubPanel.Build(_layoutRoot.FaceExtrudeSection);
+            _edgeTopologyHandler = new EdgeTopologyToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _edgeTopologyHandler.SetProject(ActiveProject);
+            _edgeTopologyHandler.SetUndoController(_editOps?.UndoController);
+            _edgeTopologyHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _edgeTopologySubPanel = new PlayerEdgeTopologySubPanel { GetH = () => _edgeTopologyHandler };
+            _edgeTopologySubPanel.Build(_layoutRoot.EdgeTopologySection);
+            _knifeHandler = new KnifeToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _knifeHandler.SetProject(ActiveProject);
+            _knifeHandler.SetUndoController(_editOps?.UndoController);
+            _knifeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _knifeSubPanel = new PlayerKnifeSubPanel { GetH = () => _knifeHandler };
+            _knifeSubPanel.Build(_layoutRoot.KnifeSection);
+
+            _lineExtrudeHandler = new LineExtrudeToolHandler
+            {
+                GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
+                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    NotifyPanels(ChangeKind.ListStructure);
+                },
+            };
+            _lineExtrudeHandler.SetProject(ActiveProject);
+            _lineExtrudeHandler.SetUndoController(_editOps?.UndoController);
+            _lineExtrudeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _lineExtrudeSubPanel = new PlayerLineExtrudeSubPanel { GetH = () => _lineExtrudeHandler };
+            _lineExtrudeSubPanel.Build(_layoutRoot.LineExtrudeSection);
+
             _mediaPipeSubPanel = new PlayerMediaPipeFaceDeformSubPanel
             {
                 GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
@@ -1342,7 +1805,7 @@ namespace Poly_Ling.Player
 
             _primitiveSubPanel = new PlayerPrimitiveMeshSubPanel();
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
-            _primitiveSubPanel.OnMeshCreated = OnPrimitiveMeshCreated;
+            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
 
             _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
 
@@ -1367,6 +1830,20 @@ namespace Poly_Ling.Player
             _layoutRoot.HumanoidMappingBtn.clicked += ShowHumanoidMappingPanel;
             _layoutRoot.MirrorBtn.clicked          += ShowMirrorPanel;
             _layoutRoot.QuadDecimatorBtn.clicked   += ShowQuadDecimatorPanel;
+            _layoutRoot.AlignVerticesBtn.clicked       += ShowAlignVerticesPanel;
+            _layoutRoot.PlanarizeAlongBonesBtn.clicked += ShowPlanarizeAlongBonesPanel;
+            _layoutRoot.MergeVerticesBtn.clicked       += ShowMergeVerticesPanel;
+            _layoutRoot.SplitVerticesBtn.clicked        += ShowSplitVerticesPanel;
+            _layoutRoot.AddFaceBtn.clicked               += ShowAddFacePanel;
+            _layoutRoot.FlipFaceBtn.clicked              += ShowFlipFacePanel;
+            _layoutRoot.RotateBtn.clicked                += ShowRotatePanel;
+            _layoutRoot.ScaleBtn.clicked                 += ShowScalePanel;
+            _layoutRoot.EdgeBevelBtn.clicked             += ShowEdgeBevelPanel;
+            _layoutRoot.EdgeExtrudeBtn.clicked           += ShowEdgeExtrudePanel;
+            _layoutRoot.FaceExtrudeBtn.clicked           += ShowFaceExtrudePanel;
+            _layoutRoot.EdgeTopologyBtn.clicked          += ShowEdgeTopologyPanel;
+            _layoutRoot.KnifeBtn.clicked                 += ShowKnifePanel;
+            _layoutRoot.LineExtrudeBtn.clicked           += ShowLineExtrudePanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
@@ -1465,7 +1942,31 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.MorphCreateSection,       () => _morphCreateSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.TPoseSection,             () => _tposeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.HumanoidMappingSection,   () => _humanoidMappingSubPanel?.Refresh()));
-            _sectionRefreshPairs.Add((_layoutRoot.QuadDecimatorSection,     () => _quadDecimatorSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.QuadDecimatorSection,         () => _quadDecimatorSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.AlignVerticesSection,         () => _alignVerticesSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.PlanarizeAlongBonesSection,   () => _planarizeAlongBonesSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.MergeVerticesSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _mergeVerticesHandler?.UpdateHover(Vector2.zero, ctx);
+                _mergeVerticesSubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.SplitVerticesSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _splitVerticesHandler?.Activate(ctx);
+                _splitVerticesSubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.AddFaceSection,           () => _addFaceSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.FlipFaceSection,          () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _flipFaceHandler?.Activate(ctx); _flipFaceSubPanel?.Refresh(); }));
+            _sectionRefreshPairs.Add((_layoutRoot.RotateSection,            () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _rotateHandler?.Activate(ctx); _rotateSubPanel?.Refresh(); }));
+            _sectionRefreshPairs.Add((_layoutRoot.ScaleSection,             () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _scaleHandler?.Activate(ctx); _scaleSubPanel?.Refresh(); }));
+            _sectionRefreshPairs.Add((_layoutRoot.EdgeBevelSection,         () => _edgeBevelSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.EdgeExtrudeSection,       () => _edgeExtrudeSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.FaceExtrudeSection,       () => _faceExtrudeSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.EdgeTopologySection,      () => _edgeTopologySubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.KnifeSection,             () => _knifeSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.LineExtrudeSection,       () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _lineExtrudeHandler?.Activate(ctx); _lineExtrudeSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.MediaPipeSection,         () => _mediaPipeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
@@ -1663,6 +2164,7 @@ namespace Poly_Ling.Player
         private void ShowMirrorPanel()
         {
             HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
             SetActiveButton(_layoutRoot?.MirrorBtn);
             if (_layoutRoot?.MirrorSection != null)
                 _layoutRoot.MirrorSection.style.display = DisplayStyle.Flex;
@@ -1671,10 +2173,174 @@ namespace Poly_Ling.Player
         private void ShowQuadDecimatorPanel()
         {
             HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
             SetActiveButton(_layoutRoot?.QuadDecimatorBtn);
             if (_layoutRoot?.QuadDecimatorSection != null)
                 _layoutRoot.QuadDecimatorSection.style.display = DisplayStyle.Flex;
             _quadDecimatorSubPanel?.Refresh();
+        }
+
+        private void ShowAlignVerticesPanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.AlignVerticesBtn);
+            if (_layoutRoot?.AlignVerticesSection != null)
+                _layoutRoot.AlignVerticesSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _alignVerticesHandler?.Activate(ctx);
+            _alignVerticesSubPanel?.Refresh();
+        }
+
+        private void ShowPlanarizeAlongBonesPanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.PlanarizeAlongBonesBtn);
+            if (_layoutRoot?.PlanarizeAlongBonesSection != null)
+                _layoutRoot.PlanarizeAlongBonesSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _planarizeAlongBonesHandler?.Activate(ctx);
+            _planarizeAlongBonesSubPanel?.Refresh();
+        }
+
+        private void ShowMergeVerticesPanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.MergeVerticesBtn);
+            if (_layoutRoot?.MergeVerticesSection != null)
+                _layoutRoot.MergeVerticesSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null)
+            {
+                _mergeVerticesHandler?.Activate(ctx);
+                _mergeVerticesHandler?.UpdateHover(Vector2.zero, ctx);
+            }
+            _mergeVerticesSubPanel?.Refresh();
+        }
+
+
+        private void ShowFlipFacePanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.FlipFaceBtn);
+            if (_layoutRoot?.FlipFaceSection != null)
+                _layoutRoot.FlipFaceSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _flipFaceHandler?.Activate(ctx);
+            _flipFaceSubPanel?.Refresh();
+        }
+
+        private void ShowRotatePanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.RotateBtn);
+            if (_layoutRoot?.RotateSection != null)
+                _layoutRoot.RotateSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _rotateHandler?.Activate(ctx);
+            _rotateSubPanel?.Refresh();
+        }
+
+        private void ShowScalePanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.ScaleBtn);
+            if (_layoutRoot?.ScaleSection != null)
+                _layoutRoot.ScaleSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _scaleHandler?.Activate(ctx);
+            _scaleSubPanel?.Refresh();
+        }
+
+        private void ShowEdgeBevelPanel()
+        {
+            SwitchTool(ToolMode.EdgeBevel);
+            if (_layoutRoot?.EdgeBevelSection != null)
+                _layoutRoot.EdgeBevelSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _edgeBevelHandler?.Activate(ctx);
+            _edgeBevelSubPanel?.Refresh();
+        }
+
+        private void ShowEdgeExtrudePanel()
+        {
+            SwitchTool(ToolMode.EdgeExtrude);
+            if (_layoutRoot?.EdgeExtrudeSection != null)
+                _layoutRoot.EdgeExtrudeSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _edgeExtrudeHandler?.Activate(ctx);
+            _edgeExtrudeSubPanel?.Refresh();
+        }
+
+        private void ShowFaceExtrudePanel()
+        {
+            SwitchTool(ToolMode.FaceExtrude);
+            if (_layoutRoot?.FaceExtrudeSection != null)
+                _layoutRoot.FaceExtrudeSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _faceExtrudeHandler?.Activate(ctx);
+            _faceExtrudeSubPanel?.Refresh();
+        }
+
+        private void ShowEdgeTopologyPanel()
+        {
+            SwitchTool(ToolMode.EdgeTopology);
+            if (_layoutRoot?.EdgeTopologySection != null)
+                _layoutRoot.EdgeTopologySection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _edgeTopologyHandler?.Activate(ctx);
+            _edgeTopologySubPanel?.Refresh();
+        }
+
+        private void ShowLineExtrudePanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.LineExtrudeBtn);
+            if (_layoutRoot?.LineExtrudeSection != null)
+                _layoutRoot.LineExtrudeSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _lineExtrudeHandler?.Activate(ctx);
+            _lineExtrudeSubPanel?.Refresh();
+        }
+
+        private void ShowKnifePanel()
+        {
+            SwitchTool(ToolMode.Knife);
+            if (_layoutRoot?.KnifeSection != null)
+                _layoutRoot.KnifeSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _knifeHandler?.Activate(ctx);
+            _knifeSubPanel?.Refresh();
+        }
+        private void ShowAddFacePanel()
+        {
+            SwitchTool(ToolMode.AddFace);
+            if (_layoutRoot?.AddFaceSection != null)
+                _layoutRoot.AddFaceSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _addFaceHandler?.Activate(ctx);
+            // 面追加時は頂点ホバーのみ必要。辺・面のホバーは有害なので抑制する。
+            var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+            if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.Vertex;
+            _addFaceSubPanel?.Refresh();
+        }
+
+        private void ShowSplitVerticesPanel()
+        {
+            HideAllRightPanels();
+            _viewportManager?.RegisterActiveToolHandler(null);
+            SetActiveButton(_layoutRoot?.SplitVerticesBtn);
+            if (_layoutRoot?.SplitVerticesSection != null)
+                _layoutRoot.SplitVerticesSection.style.display = DisplayStyle.Flex;
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _splitVerticesHandler?.Activate(ctx);
+            _splitVerticesSubPanel?.Refresh();
         }
 
         private void ShowMediaPipePanel()
@@ -1732,6 +2398,7 @@ namespace Poly_Ling.Player
             if (_layoutRoot?.PartialImportSection != null)
                 _layoutRoot.PartialImportSection.style.display = DisplayStyle.Flex;
             var model = ActiveProject?.CurrentModel;
+            if (model != null) _editOps?.UndoController.SetModelContext(model);
             _partialImportSubPanel?.SetModel(model, _editOps?.UndoController);
             _partialImportSubPanel?.SetMode(mode);
         }
@@ -1799,6 +2466,20 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.HumanoidMappingSection);
             Hide(_layoutRoot.MirrorSection);
             Hide(_layoutRoot.QuadDecimatorSection);
+            Hide(_layoutRoot.AlignVerticesSection);
+            Hide(_layoutRoot.PlanarizeAlongBonesSection);
+            Hide(_layoutRoot.MergeVerticesSection);
+            Hide(_layoutRoot.SplitVerticesSection);
+            Hide(_layoutRoot.AddFaceSection);
+            Hide(_layoutRoot.FlipFaceSection);
+            Hide(_layoutRoot.RotateSection);
+            Hide(_layoutRoot.ScaleSection);
+            Hide(_layoutRoot.EdgeBevelSection);
+            Hide(_layoutRoot.EdgeExtrudeSection);
+            Hide(_layoutRoot.FaceExtrudeSection);
+            Hide(_layoutRoot.EdgeTopologySection);
+            Hide(_layoutRoot.KnifeSection);
+            Hide(_layoutRoot.LineExtrudeSection);
             Hide(_layoutRoot.MediaPipeSection);
             Hide(_layoutRoot.VMDTestSection);
             Hide(_layoutRoot.RemoteServerSection);
@@ -1824,7 +2505,9 @@ namespace Poly_Ling.Player
         // コールバック / イベントハンドラ
         // ================================================================
 
-        private void OnPrimitiveMeshCreated(MeshObject meshObject, string meshName, Vector3 worldPos, bool ignorePoseInArmature)
+        private void OnPrimitiveMeshCreated(
+            MeshObject meshObject, string meshName, Vector3 worldPos,
+            bool ignorePoseInArmature, PrimitiveAddMode addMode)
         {
             _localLoader.EnsureProject();
             _moveToolHandler?.SetProject(ActiveProject);
@@ -1834,21 +2517,53 @@ namespace Poly_Ling.Player
             _advancedSelectHandler?.SetProject(ActiveProject);
             _skinWeightPaintHandler?.SetProject(ActiveProject);
             _boneInputHandler?.SetProject(ActiveProject);
+            _alignVerticesHandler?.SetProject(ActiveProject);
+            _planarizeAlongBonesHandler?.SetProject(ActiveProject);
+            _mergeVerticesHandler?.SetProject(ActiveProject);
+            _splitVerticesHandler?.SetProject(ActiveProject);
+            _addFaceHandler?.SetProject(ActiveProject);
+            _flipFaceHandler?.SetProject(ActiveProject);
+            _rotateHandler?.SetProject(ActiveProject);
+            _scaleHandler?.SetProject(ActiveProject);
+            _edgeBevelHandler?.SetProject(ActiveProject);
+            _edgeExtrudeHandler?.SetProject(ActiveProject);
+            _faceExtrudeHandler?.SetProject(ActiveProject);
+            _edgeTopologyHandler?.SetProject(ActiveProject);
+            _knifeHandler?.SetProject(ActiveProject);
+            _lineExtrudeHandler?.SetProject(ActiveProject);
 
             var project = ActiveProject;
             if (project == null) return;
             if (project.CurrentModel == null && project.ModelCount > 0)
                 project.SelectModel(0);
-            var model = project.CurrentModel;
-            if (model == null) return;
 
+            switch (addMode)
+            {
+                case PrimitiveAddMode.NewObject:
+                    PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                    break;
+                case PrimitiveAddMode.AddToExisting:
+                    PrimitiveMeshAddToExisting(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                    break;
+                case PrimitiveAddMode.NewModel:
+                    PrimitiveMeshCreateNewModel(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 図形生成共通: MeshContextを作って返す。
+        /// </summary>
+        private MeshContext BuildPrimitiveMeshContext(
+            MeshObject meshObject, string meshName, Vector3 worldPos, bool ignorePoseInArmature)
+        {
             var unityMesh = meshObject.ToUnityMesh();
             unityMesh.name      = meshName;
             unityMesh.hideFlags = HideFlags.HideAndDontSave;
 
             var ctx = new MeshContext
             {
-                Name       = meshName,
+                Name      = meshName,
                 MeshObject = meshObject,
                 UnityMesh  = unityMesh,
                 IsVisible  = true,
@@ -1861,13 +2576,150 @@ namespace Poly_Ling.Player
             }
 
             ctx.IgnorePoseInArmature = ignorePoseInArmature;
+            return ctx;
+        }
 
-            model.Add(ctx);
+        /// <summary>
+        /// モード1: 新しい描画オブジェクトとして現在のモデルに追加。UNDO対応。
+        /// </summary>
+        private void PrimitiveMeshCreateNewObject(
+            ProjectContext project, MeshObject meshObject, string meshName,
+            Vector3 worldPos, bool ignorePoseInArmature)
+        {
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos, ignorePoseInArmature);
+            ctx.ParentModelContext = model;
+
+            var oldSelected = model.CaptureAllSelectedIndices();
+            int insertIndex = model.Add(ctx);
             model.ComputeWorldMatrices();
-            int newIndex = model.MeshContextCount - 1;
-            model.SelectMeshContextExclusive(newIndex);
-            model.SelectMesh(newIndex);
+            model.SelectMeshContextExclusive(insertIndex);
+            model.SelectMesh(insertIndex);
+            var newSelected = model.CaptureAllSelectedIndices();
 
+            // UNDO記録
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetModelContext(model);
+                _editOps.UndoController.RecordMeshContextAdd(
+                    ctx, insertIndex, oldSelected, newSelected);
+            }
+
+            PrimitiveMeshFinalize(model);
+        }
+
+        /// <summary>
+        /// モード2: 既存の選択中描画オブジェクトに頂点・面をマージ。UNDO対応。
+        /// 描画オブジェクトが存在しない場合はモード1にフォールバック。
+        /// </summary>
+        private void PrimitiveMeshAddToExisting(
+            ProjectContext project, MeshObject meshObject, string meshName,
+            Vector3 worldPos, bool ignorePoseInArmature)
+        {
+            var model  = project.CurrentModel;
+            if (model == null) return;
+
+            // 対象MeshContextを選択（なければ新規作成にフォールバック）
+            var targetMc = model.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
+            if (targetMc == null || targetMc.MeshObject == null)
+            {
+                PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                return;
+            }
+
+            // ワールド位置オフセットを頂点に適用
+            var srcObject = meshObject;
+            if (worldPos != Vector3.zero)
+            {
+                srcObject = meshObject.Clone();
+                foreach (var v in srcObject.Vertices)
+                    v.Position += worldPos;
+            }
+
+            // UNDO: 変更前スナップショット
+            MeshObjectSnapshot before = null;
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
+                _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
+                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+            }
+
+            // マージ
+            int baseVertIdx = targetMc.MeshObject.VertexCount;
+            foreach (var v in srcObject.Vertices)
+                targetMc.MeshObject.Vertices.Add(v.Clone());
+            foreach (var f in srcObject.Faces)
+            {
+                var newFace = new Face();
+                newFace.VertexIndices  = f.VertexIndices.ConvertAll(i => i + baseVertIdx);
+                newFace.UVIndices      = new System.Collections.Generic.List<int>(f.UVIndices);
+                newFace.NormalIndices  = new System.Collections.Generic.List<int>(f.NormalIndices);
+                newFace.MaterialIndex  = f.MaterialIndex;
+                targetMc.MeshObject.Faces.Add(newFace);
+            }
+            // UnityMesh再構築
+            var newUnityMesh = targetMc.MeshObject.ToUnityMesh();
+            newUnityMesh.name      = targetMc.Name;
+            newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
+            if (targetMc.UnityMesh != null)
+                UnityEngine.Object.Destroy(targetMc.UnityMesh);
+            targetMc.UnityMesh = newUnityMesh;
+
+            // UNDO: 変更後スナップショット記録
+            if (_editOps?.UndoController != null && before != null)
+            {
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                _editOps.UndoController.RecordTopologyChange(before, after, $"Add Primitive to {targetMc.Name}");
+            }
+
+            model.ComputeWorldMatrices();
+            PrimitiveMeshFinalize(model);
+        }
+
+        /// <summary>
+        /// モード3: 新しいモデルを作って描画オブジェクトを追加。UNDO対応（メッシュ追加のみ）。
+        /// </summary>
+        private void PrimitiveMeshCreateNewModel(
+            ProjectContext project, MeshObject meshObject, string meshName,
+            Vector3 worldPos, bool ignorePoseInArmature)
+        {
+            var newModel = project.CreateNewModel(meshName);
+            if (newModel == null) return;
+
+            var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos, ignorePoseInArmature);
+            ctx.ParentModelContext = newModel;
+
+            var oldSelected = newModel.CaptureAllSelectedIndices();
+            int insertIndex = newModel.Add(ctx);
+            newModel.ComputeWorldMatrices();
+            newModel.SelectMeshContextExclusive(insertIndex);
+            newModel.SelectMesh(insertIndex);
+            var newSelected = newModel.CaptureAllSelectedIndices();
+
+            // UNDO記録（新モデル上のメッシュ追加）
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetModelContext(newModel);
+                _editOps.UndoController.RecordMeshContextAdd(
+                    ctx, insertIndex, oldSelected, newSelected);
+            }
+
+            // ハンドラーを新モデルに切り替え
+            _moveToolHandler?.SetProject(ActiveProject);
+            _objectMoveHandler?.SetProject(ActiveProject);
+
+            PrimitiveMeshFinalize(newModel);
+            RebuildModelList();
+        }
+
+        /// <summary>
+        /// 図形生成後の共通ビュー更新処理。
+        /// </summary>
+        private void PrimitiveMeshFinalize(ModelContext model)
+        {
             _viewportManager.RebuildAdapter(0, model);
 
             var firstMc = model.FirstDrawableMeshContext;
@@ -2092,24 +2944,59 @@ namespace Poly_Ling.Player
                 SkinWeightPaintTool.ActivePanel = null;
             }
 
+            if (_toolMode == ToolMode.AddFace && mode != ToolMode.AddFace)
+            {
+                var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
+            }
+
             _toolMode = mode;
 
             switch (mode)
             {
                 case ToolMode.VertexMove:
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
                     break;
                 case ToolMode.ObjectMove:
                     _vertexInteractor?.SetToolHandler(_objectMoveHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _objectMoveHandler?.UpdateHover(pos, ctx));
                     break;
                 case ToolMode.PivotOffset:
                     _vertexInteractor?.SetToolHandler(_pivotOffsetHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _pivotOffsetHandler?.UpdateHover(pos, ctx));
                     break;
                 case ToolMode.Sculpt:
                     _vertexInteractor?.SetToolHandler(_sculptHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _sculptHandler?.UpdateHover(pos, ctx));
                     break;
                 case ToolMode.AdvancedSelect:
                     _vertexInteractor?.SetToolHandler(_advancedSelectHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _advancedSelectHandler?.UpdateHover(pos, ctx));
+                    break;
+                case ToolMode.AddFace:
+                    _vertexInteractor?.SetToolHandler(_addFaceHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _addFaceHandler?.UpdateHover(pos, ctx));
+                    break;
+                case ToolMode.EdgeBevel:
+                    _vertexInteractor?.SetToolHandler(_edgeBevelHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeBevelHandler?.UpdateHover(pos, ctx));
+                    break;
+                case ToolMode.EdgeExtrude:
+                    _vertexInteractor?.SetToolHandler(_edgeExtrudeHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeExtrudeHandler?.UpdateHover(pos, ctx));
+                    break;
+                case ToolMode.FaceExtrude:
+                    _vertexInteractor?.SetToolHandler(_faceExtrudeHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _faceExtrudeHandler?.UpdateHover(pos, ctx));
+                    break;
+                case ToolMode.EdgeTopology:
+                    _vertexInteractor?.SetToolHandler(_edgeTopologyHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeTopologyHandler?.UpdateHover(pos, ctx));
+                    break;
+                case ToolMode.Knife:
+                    _vertexInteractor?.SetToolHandler(_knifeHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _knifeHandler?.UpdateHover(pos, ctx));
                     break;
                 case ToolMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);
@@ -2148,6 +3035,17 @@ namespace Poly_Ling.Player
                     activeBtn = _layoutRoot?.ToolAdvancedSelBtn;
                     section   = _layoutRoot?.AdvancedSelectSection;
                     _advancedSelectSubPanel?.Refresh();
+                    break;
+                case ToolMode.AddFace:
+                case ToolMode.EdgeBevel:
+                case ToolMode.EdgeExtrude:
+                case ToolMode.FaceExtrude:
+                case ToolMode.EdgeTopology:
+                case ToolMode.Knife:
+                    // セクション表示は Show***Panel() 側で行う。
+                    // SwitchTool ではアクティブボタン・セクションを設定しない。
+                    activeBtn = null;
+                    section   = null;
                     break;
                 default: // VertexMove
                     activeBtn = _layoutRoot?.ToolVertexMoveBtn;
@@ -2372,6 +3270,20 @@ namespace Poly_Ling.Player
             _advancedSelectHandler?.SetProject(ActiveProject);
             _skinWeightPaintHandler?.SetProject(ActiveProject);
             _boneInputHandler?.SetProject(ActiveProject);
+            _alignVerticesHandler?.SetProject(ActiveProject);
+            _planarizeAlongBonesHandler?.SetProject(ActiveProject);
+                _mergeVerticesHandler?.SetProject(ActiveProject);
+                _splitVerticesHandler?.SetProject(ActiveProject);
+                _addFaceHandler?.SetProject(ActiveProject);
+                _flipFaceHandler?.SetProject(ActiveProject);
+                _rotateHandler?.SetProject(ActiveProject);
+                _scaleHandler?.SetProject(ActiveProject);
+                _edgeBevelHandler?.SetProject(ActiveProject);
+                _edgeExtrudeHandler?.SetProject(ActiveProject);
+                _faceExtrudeHandler?.SetProject(ActiveProject);
+                _edgeTopologyHandler?.SetProject(ActiveProject);
+                _knifeHandler?.SetProject(ActiveProject);
+                _lineExtrudeHandler?.SetProject(ActiveProject);
             RebuildModelList();
             NotifyPanels(ChangeKind.ListStructure);
         }

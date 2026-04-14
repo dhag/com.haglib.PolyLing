@@ -11,6 +11,8 @@ using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
+using Poly_Ling.UndoSystem;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
@@ -94,6 +96,7 @@ namespace Poly_Ling.Player
         // ================================================================
         private readonly PlayerSelectionOps               _selectionOps;
         private          ProjectContext                    _project;
+        private          MeshUndoController               _undoController;
 
         private const float DragThreshold = 4f;
         private Vector2  _mouseDownPos;
@@ -157,6 +160,7 @@ namespace Poly_Ling.Player
         }
 
         public void SetProject(ProjectContext project) => _project = project;
+        public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
 
         // ================================================================
         // IPlayerToolHandler
@@ -519,6 +523,37 @@ namespace Poly_Ling.Player
 
         private void EndMove()
         {
+            if (_undoController != null)
+            {
+                var model = _project?.CurrentModel;
+                if (model != null)
+                {
+                    var entries = new List<MeshMoveEntry>();
+                    foreach (var kv in _meshTransforms)
+                    {
+                        var mc = model.GetMeshContext(kv.Key);
+                        if (mc?.MeshObject == null) continue;
+                        var indices = kv.Value.GetAffectedIndices();
+                        var oldPos  = kv.Value.GetOriginalPositions();
+                        var newPos  = kv.Value.GetCurrentPositions();
+                        if (indices.Length == 0) continue;
+                        entries.Add(new MeshMoveEntry
+                        {
+                            MeshContextIndex = kv.Key,
+                            Indices          = indices,
+                            OldPositions     = oldPos,
+                            NewPositions     = newPos,
+                        });
+                    }
+                    if (entries.Count > 0)
+                    {
+                        _undoController.MeshUndoContext.ParentModelContext = model;
+                        var record = new MultiMeshVertexMoveRecord(entries.ToArray());
+                        _undoController.FocusVertexEdit();
+                        _undoController.VertexEditStack.Record(record, "Move Vertices");
+                    }
+                }
+            }
             foreach (var kv in _meshTransforms) kv.Value.End();
             _meshTransforms.Clear();
             _affectedVertices.Clear();

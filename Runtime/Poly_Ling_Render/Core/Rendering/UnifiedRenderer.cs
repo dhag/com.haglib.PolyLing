@@ -677,11 +677,11 @@ namespace Poly_Ling.Core.Rendering
                 {
                     _wireframeMaterial.SetBuffer("_LineFlagsBuffer",   _bufferManager.LineFlagsBuffer);
                     _wireframeMaterial.SetInt("_UseLineFlagsBuffer",    1);
-                    _wireframeMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
 
-                    // _LineCulledBuffer は per-slot → MPB でキャプチャ
+                    // _LineCulledBuffer と _EnableBackfaceCulling は per-slot → MPB でキャプチャ
                     mpb = _wireframeMPBs?[slot];
                     mpb?.SetBuffer("_LineCulledBuffer", lineCulledBuf ?? _bufferManager.LineFlagsBuffer);
+                    mpb?.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
                 }
                 else
                 {
@@ -702,10 +702,10 @@ namespace Poly_Ling.Core.Rendering
                 {
                     _wireframeOverlayMaterial.SetBuffer("_LineFlagsBuffer",   _bufferManager.LineFlagsBuffer);
                     _wireframeOverlayMaterial.SetInt("_UseLineFlagsBuffer",    1);
-                    _wireframeOverlayMaterial.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
 
                     mpb = _wireframeOverlayMPBs?[slot];
                     mpb?.SetBuffer("_LineCulledBuffer", lineCulledBuf ?? _bufferManager.LineFlagsBuffer);
+                    mpb?.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
                 }
                 _pendingMeshes.Add(_wireframeMeshSelected);
                 _pendingMaterials.Add(_wireframeOverlayMaterial);
@@ -734,10 +734,10 @@ namespace Poly_Ling.Core.Rendering
                 {
                     _pointMaterial.SetBuffer("_VertexFlagsBuffer",  _bufferManager.VertexFlagsBuffer);
                     _pointMaterial.SetInt("_UseVertexFlagsBuffer",   1);
-                    _pointMaterial.SetInt("_EnableBackfaceCulling",  BackfaceCullingEnabled ? 1 : 0);
 
                     mpb = _pointMPBs?[slot];
                     mpb?.SetBuffer("_VertexCulledBuffer", vtxCulledBuf ?? _bufferManager.VertexFlagsBuffer);
+                    mpb?.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
                 }
                 else
                 {
@@ -758,10 +758,10 @@ namespace Poly_Ling.Core.Rendering
                 {
                     _pointOverlayMaterial.SetBuffer("_VertexFlagsBuffer",  _bufferManager.VertexFlagsBuffer);
                     _pointOverlayMaterial.SetInt("_UseVertexFlagsBuffer",   1);
-                    _pointOverlayMaterial.SetInt("_EnableBackfaceCulling",  BackfaceCullingEnabled ? 1 : 0);
 
                     mpb = _pointOverlayMPBs?[slot];
                     mpb?.SetBuffer("_VertexCulledBuffer", vtxCulledBuf ?? _bufferManager.VertexFlagsBuffer);
+                    mpb?.SetInt("_EnableBackfaceCulling", BackfaceCullingEnabled ? 1 : 0);
                 }
                 _pendingMeshes.Add(_pointMeshSelected);
                 _pendingMaterials.Add(_pointOverlayMaterial);

@@ -59,12 +59,58 @@ namespace Poly_Ling.Player
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods) {}
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) {}
         public void UpdateHover(Vector2 screenPos, ToolContext ctx) {}
-        public void Activate(ToolContext ctx)   { _tool.SetContextPublic(ctx); }
+        public void Activate(ToolContext ctx)
+        {
+            if (ctx != null)
+            {
+                var model = _project?.CurrentModel;
+                ctx.Model            = model;
+                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
+                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.UndoController   = _undoController;
+                ctx.Repaint          = OnRepaint;
+                ctx.SyncMesh = () =>
+                {
+                    if (model == null) return;
+                    foreach (int idx in model.SelectedDrawableMeshIndices)
+                    {
+                        var mc = model.GetMeshContext(idx);
+                        if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+                    }
+                };
+                ctx.SyncMeshPositionsOnly = ctx.SyncMesh;
+            }
+            _tool.SetContextPublic(ctx);
+        }
         public void Deactivate(ToolContext ctx) {}
 
         // ================================================================
         // 内部ヘルパー
         // ================================================================
+
+
+        private ToolContext GetEnrichedCtx()
+        {
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null) return null;
+            var model = _project?.CurrentModel;
+            ctx.Model            = model;
+            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.UndoController   = _undoController;
+            ctx.Repaint          = OnRepaint;
+            ctx.SyncMesh = () =>
+            {
+                if (model == null) return;
+                foreach (int idx in model.SelectedDrawableMeshIndices)
+                {
+                    var mc = model.GetMeshContext(idx);
+                    if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+                }
+            };
+            ctx.SyncMeshPositionsOnly = ctx.SyncMesh;
+            return ctx;
+        }
 
         private MeshUndoController _undoController;
 

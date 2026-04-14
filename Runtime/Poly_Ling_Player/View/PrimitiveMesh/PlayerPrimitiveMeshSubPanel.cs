@@ -15,14 +15,22 @@ using static Poly_Ling.Player.PrimitiveMeshTexts;
 
 namespace Poly_Ling.Player
 {
+    /// <summary>図形の追加先モード</summary>
+    public enum PrimitiveAddMode
+    {
+        NewObject,      // 新しい描画オブジェクトを作る（デフォルト）
+        AddToExisting,  // 既存の描画オブジェクトに追加（なければ新規作成）
+        NewModel,       // 新しいモデルを作って描画オブジェクトを追加
+    }
+
     public class PlayerPrimitiveMeshSubPanel
     {
         // ================================================================
         // コールバック
         // ================================================================
 
-        /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition, ignorePoseInArmature)</summary>
-        public Action<MeshObject, string, Vector3, bool> OnMeshCreated;
+        /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition, ignorePoseInArmature, addMode)</summary>
+        public Action<MeshObject, string, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
 
         // ================================================================
         // 図形種別
@@ -51,8 +59,9 @@ namespace Poly_Ling.Player
         private FaceMeshParams                       _nohP    = FaceMeshParams.Default;
 
         // ワールド生成位置
-        private Vector3 _worldPos = Vector3.zero;
-        private bool    _ignorePoseInArmature = false;
+        private Vector3         _worldPos            = Vector3.zero;
+        private bool            _ignorePoseInArmature = false;
+        private PrimitiveAddMode _addMode             = PrimitiveAddMode.NewObject;
 
         // ================================================================
         // プレビュー
@@ -231,6 +240,21 @@ namespace Poly_Ling.Player
             ignorePoseToggle.style.color = new StyleColor(Color.white);
             ignorePoseToggle.RegisterValueChangedCallback(e => _ignorePoseInArmature = e.newValue);
             parent.Add(ignorePoseToggle);
+
+            // 追加先ドロップダウン
+            var addModeChoices = new List<string>
+            {
+                T("AddModeNewObj"),
+                T("AddModeExisting"),
+                T("AddModeNewModel"),
+            };
+            var addModeDd = new DropdownField(addModeChoices, 0);
+            addModeDd.label = T("AddMode");
+            addModeDd.style.marginTop    = 4;
+            addModeDd.style.marginBottom = 2;
+            addModeDd.RegisterValueChangedCallback(e =>
+                _addMode = (PrimitiveAddMode)addModeChoices.IndexOf(e.newValue));
+            parent.Add(addModeDd);
 
             parent.Add(Sep());
 
@@ -1871,7 +1895,7 @@ namespace Poly_Ling.Player
                     var mo = Generate();
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
                     _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
-                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, _ignorePoseInArmature);
+                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, _ignorePoseInArmature, _addMode);
                 }
                 catch (Exception ex)
                 {

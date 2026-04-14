@@ -308,6 +308,7 @@ namespace Poly_Ling.Tools
                     NewBoneTransform   = mc.BoneTransform.CreateSnapshot(),
                 };
 
+                ctx.UndoController.SetModelContext(ctx.Model);
                 ctx.UndoController.MeshListStack.Record(record, $"Pivot Move ({axisName})");
                 ctx.UndoController.FocusMeshList();
             }
@@ -484,5 +485,22 @@ namespace Poly_Ling.Tools
 
         public bool IsIdle => _state == ToolState.Idle;
         public bool IsMoving => _state != ToolState.Idle;
+
+        /// <summary>
+        /// ポインター移動時のホバー更新専用（ドラッグ中は何もしない）。
+        /// PivotOffsetToolHandler.UpdateHover から呼ぶ。
+        /// OnMouseDrag を呼ぶとドラッグ中に MoveFreely 等が実行されるため、この専用メソッドを使う。
+        /// </summary>
+        public void UpdateHoverOnly(ToolContext ctx, Vector2 mousePos)
+        {
+            _lastMousePos = mousePos;
+            if (_state != ToolState.Idle) return;
+            var newHovered = FindAxisHandleAtScreenPos(mousePos, ctx);
+            if (newHovered != _hoveredAxis)
+            {
+                _hoveredAxis = newHovered;
+                ctx.Repaint?.Invoke();
+            }
+        }
     }
 }

@@ -406,5 +406,33 @@ namespace Poly_Ling.Tools
                 sb.AppendLine($"{pos.x:F6},{pos.y:F6}");
             }
         }
+
+        // ================================================================
+        // 押し出し実行用：検出ループをProfile2DExtrude.Loop形式に変換
+        // ================================================================
+
+        /// <summary>
+        /// 検出済みループをProfile2DExtrudeMeshGeneratorに渡せるLoop形式に変換して返す。
+        /// AnalyzeLoops()実行後に呼ぶこと。メッシュ頂点のXY座標をループ点として使用する。
+        /// </summary>
+        public List<Poly_Ling.Profile2DExtrude.Loop> GetLoopsForExtrude()
+        {
+            var meshObject = _lastContext?.FirstSelectedMeshObject;
+            if (meshObject == null || _detectedLoops.Count == 0)
+                return null;
+
+            var result = new List<Poly_Ling.Profile2DExtrude.Loop>();
+            foreach (var loopInfo in _detectedLoops)
+            {
+                var loop = new Poly_Ling.Profile2DExtrude.Loop { IsHole = loopInfo.IsHole };
+                foreach (int vIdx in loopInfo.VertexIndices)
+                {
+                    Vector3 pos = meshObject.Vertices[vIdx].Position;
+                    loop.Points.Add(new Vector2(pos.x, pos.y));
+                }
+                result.Add(loop);
+            }
+            return result;
+        }
     }
 }

@@ -74,10 +74,18 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private readonly VisualElement _advSelOverlay;
+        private readonly VisualElement _addFaceOverlay;
         // スクリーン座標（Y=0下）で渡し、描画時に変換する
         private List<Vector2>         _advSelPreviewPts    = new List<Vector2>();
         private List<(Vector2, Vector2)> _advSelPreviewLines = new List<(Vector2, Vector2)>();
         private bool                  _advSelAddMode;
+
+        // 面追加オーバーレイ
+        private List<Vector2>            _addFacePts          = new List<Vector2>();
+        private List<Vector2>            _addFacePreviewPts   = new List<Vector2>(); // スナップ/通常プレビュー点
+        private List<bool>               _addFacePreviewSnap  = new List<bool>();
+        private List<(Vector2, Vector2)> _addFaceLines        = new List<(Vector2, Vector2)>();
+        private bool                     _addFaceVisible;
 
         // ================================================================
         // ボーンワイヤフレームオーバーレイ
@@ -251,6 +259,41 @@ namespace Poly_Ling.Player
         /// lines: 辺スクリーン座標ペアリスト（Y=0下）
         /// addMode: true=緑(追加)、false=赤(除外)
         /// </summary>
+        // ================================================================
+        // 面追加プレビューオーバーレイ
+        // ================================================================
+
+        /// <summary>
+        /// 面追加オーバーレイを更新する。
+        /// pts: 配置済み点（UIToolkit Y、Y=0上）
+        /// previewPts: プレビュー点（Y=0上）
+        /// previewSnapped: プレビュー点ごとのスナップフラグ
+        /// lines: 確定済み線＋プレビュー線（Y=0上）
+        /// </summary>
+        public void UpdateAddFacePreview(
+            List<Vector2> pts,
+            List<Vector2> previewPts,
+            List<bool>    previewSnapped,
+            List<(Vector2, Vector2)> lines)
+        {
+            _addFacePts         = pts         ?? new List<Vector2>();
+            _addFacePreviewPts  = previewPts  ?? new List<Vector2>();
+            _addFacePreviewSnap = previewSnapped ?? new List<bool>();
+            _addFaceLines       = lines       ?? new List<(Vector2, Vector2)>();
+            _addFaceVisible     = true;
+            _addFaceOverlay?.MarkDirtyRepaint();
+        }
+
+        public void HideAddFacePreview()
+        {
+            _addFaceVisible = false;
+            _addFacePts.Clear();
+            _addFacePreviewPts.Clear();
+            _addFacePreviewSnap.Clear();
+            _addFaceLines.Clear();
+            _addFaceOverlay?.MarkDirtyRepaint();
+        }
+
         public void UpdateAdvSelPreview(
             List<Vector2> pts, List<(Vector2, Vector2)> lines, bool addMode)
         {
@@ -386,6 +429,15 @@ namespace Poly_Ling.Player
             _advSelOverlay.pickingMode = PickingMode.Ignore;
             _advSelOverlay.generateVisualContent += OnGenerateAdvSelOverlay;
             Add(_advSelOverlay);
+
+            // 面追加プレビューオーバーレイ
+            _addFaceOverlay = new VisualElement();
+            _addFaceOverlay.style.position = Position.Absolute;
+            _addFaceOverlay.style.left = _addFaceOverlay.style.top =
+            _addFaceOverlay.style.right = _addFaceOverlay.style.bottom = 0;
+            _addFaceOverlay.pickingMode = PickingMode.Ignore;
+            _addFaceOverlay.generateVisualContent += OnGenerateAddFaceOverlay;
+            Add(_addFaceOverlay);
 
             // ボーンワイヤフレームオーバーレイ
             _boneOverlay = new VisualElement();
@@ -698,6 +750,71 @@ namespace Poly_Ling.Player
                     painter.LineTo(p + new Vector2(-halfSz,  halfSz));
                     painter.ClosePath();
                     painter.Fill();
+                }
+            }
+        }
+
+        private void OnGenerateAddFaceOverlay(MeshGenerationContext ctx)
+        {
+            if (!_addFaceVisible) return;
+            var painter = ctx.painter2D;
+            float panelH = resolvedStyle.height;
+
+            // AdvSel と同じパターン: panelH - pt.y で変換する。
+            System.Func<Vector2, Vector2> cv = (p) => new Vector2(p.x, panelH - p.y);
+
+            // 確定済み線（黄色）
+            if (_addFaceLines.Count > 0)
+            {
+                painter.strokeColor = new Color(1f, 0.85f, 0.2f, 0.9f);
+                painter.lineWidth = 2f;
+                foreach (var (a, b) in _addFaceLines)
+                {
+                    painter.BeginPath();
+                    painter.MoveTo(cv(a));
+                    painter.LineTo(cv(b));
+                    painter.Stroke();
+                }
+            }
+
+            // 確定済み点（シアン）
+            const float halfSz = 5f;
+            foreach (var pt in _addFacePts)
+            {
+                var p = cv(pt);
+                painter.fillColor = new Color(0f, 1f, 1f, 0.95f);
+                painter.BeginPath();
+                painter.MoveTo(p + new Vector2(-halfSz, -halfSz));
+                painter.LineTo(p + new Vector2( halfSz, -halfSz));
+                painter.LineTo(p + new Vector2( halfSz,  halfSz));
+                painter.LineTo(p + new Vector2(-halfSz,  halfSz));
+                painter.ClosePath();
+                painter.Fill();
+            }
+
+            // プレビュー点（スナップ=シアン大、通常=黄半透明）
+            for (int i = 0; i < _addFacePreviewPts.Count; i++)
+            {
+                var p   = cv(_addFacePreviewPts[i]);
+                bool snap = i < _addFacePreviewSnap.Count && _addFacePreviewSnap[i];
+                float sz = snap ? 7f : 5f;
+                painter.fillColor = snap
+                    ? new Color(0f, 1f, 1f, 0.95f)
+                    : new Color(1f, 1f, 0f, 0.55f);
+                painter.BeginPath();
+                painter.MoveTo(p + new Vector2(-sz, -sz));
+                painter.LineTo(p + new Vector2( sz, -sz));
+                painter.LineTo(p + new Vector2( sz,  sz));
+                painter.LineTo(p + new Vector2(-sz,  sz));
+                painter.ClosePath();
+                painter.Fill();
+                if (snap)
+                {
+                    painter.strokeColor = new Color(0f, 1f, 1f, 0.6f);
+                    painter.lineWidth = 1.5f;
+                    painter.BeginPath();
+                    painter.Arc(p, 12f, 0f, 360f);
+                    painter.Stroke();
                 }
             }
         }

@@ -138,6 +138,12 @@ namespace Poly_Ling.Player
             ["DepthScale"]       = new() { ["en"] = "Depth Scale",     ["ja"] = "奥行きスケール",   ["hi"] = "おくゆき" },
             ["FlipFaces"]        = new() { ["en"] = "Flip Faces",      ["ja"] = "面を反転",         ["hi"] = "うらがえす" },
             ["NotSelected"]      = new() { ["en"] = "(not selected)",  ["ja"] = "(未選択)",         ["hi"] = "(みせんたく)" },
+
+            // ── 追加先モード ─────────────────────────────────────────────
+            ["AddMode"]         = new() { ["en"] = "Add Target",             ["ja"] = "追加先",                         ["hi"] = "ついかさき" },
+            ["AddModeNewObj"]   = new() { ["en"] = "New Object (default)",   ["ja"] = "新しい描画オブジェクト（デフォルト）", ["hi"] = "あたらしいオブジェクト" },
+            ["AddModeExisting"] = new() { ["en"] = "Add to Existing Object", ["ja"] = "既存の描画オブジェクトに追加",         ["hi"] = "きそんについか" },
+            ["AddModeNewModel"] = new() { ["en"] = "New Model",              ["ja"] = "新しいモデルを作って追加",             ["hi"] = "あたらしいモデル" },
         };
 
         public static string T(string key) => L.GetFrom(Texts, key);
