@@ -40,11 +40,11 @@ namespace Poly_Ling.Tools
         // Player ビュー用公開 API（エディタ版 ScaleTool.EditorUI 相当）
         // ================================================================
 
-        public float ScaleX { get => _scaleX; set { _scaleX = value; if (_isDirty) UpdatePreview(); } }
-        public float ScaleY { get => _scaleY; set { _scaleY = value; if (_isDirty) UpdatePreview(); } }
-        public float ScaleZ { get => _scaleZ; set { _scaleZ = value; if (_isDirty) UpdatePreview(); } }
+        public float ScaleX { get => _scaleX; set { _scaleX = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float ScaleY { get => _scaleY; set { _scaleY = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float ScaleZ { get => _scaleZ; set { _scaleZ = value; if (_isSliderDragging) UpdatePreview(); } }
         public bool  UniformScale { get => _uniform; set { _uniform = value; if (_uniform) { _scaleY = _scaleZ = _scaleX; } UpdatePreview(); } }
-        public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isDirty) UpdatePreview(); } }
+        public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isSliderDragging) UpdatePreview(); } }
         public int   GetTotalAffectedCountPublic() { UpdateAffected(); return GetTotalAffectedCount(); }
 
         public void BeginSliderDrag()
@@ -185,6 +185,7 @@ namespace Poly_Ling.Tools
                         var v = meshObject.Vertices[i]; v.Position = _pivot + scaled; meshObject.Vertices[i] = v;
                     }
                 }
+                meshObject.InvalidatePositionCache();
             }
             _isDirty = true;
             _ctx.SyncMeshPositionsOnly?.Invoke();
@@ -245,6 +246,11 @@ namespace Poly_Ling.Tools
                     int i = posKv.Key;
                     if (i >= 0 && i < meshObject.VertexCount) { var v = meshObject.Vertices[i]; v.Position = posKv.Value; meshObject.Vertices[i] = v; }
                 }
+            }
+            foreach (var kv3 in _multiMeshStartPositions)
+            {
+                var mo3 = _ctx?.Model?.GetMeshContext(kv3.Key)?.MeshObject;
+                mo3?.InvalidatePositionCache();
             }
             _multiMeshStartPositions.Clear();
             _isDirty = false;

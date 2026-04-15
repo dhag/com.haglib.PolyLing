@@ -26,6 +26,8 @@ namespace Poly_Ling.Player
         public Func<ToolContext> GetToolContext;
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
+        public Action                                     OnApplyCompleted;
+        public Action                                     NotifyTopologyChanged;
 
         // ================================================================
         // 設定公開API
@@ -40,7 +42,7 @@ namespace Poly_Ling.Player
         public UnityEngine.Vector3 PivotPublic => _tool.PivotPublic;
         public int   GetTotalAffectedCount() => _tool.GetTotalAffectedCountPublic();
         public void  BeginSliderDrag() => _tool.BeginSliderDrag();
-        public void  EndSliderDrag()   => _tool.EndSliderDrag();
+        public void  EndSliderDrag()   { _tool.EndSliderDrag(); OnApplyCompleted?.Invoke(); }
         public void  Revert()          => _tool.RevertPublic();
 
         // ================================================================
@@ -65,17 +67,20 @@ namespace Poly_Ling.Player
             {
                 var model = _project?.CurrentModel;
                 ctx.Model            = model;
-                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                var mc0  = model?.FirstDrawableMeshContext;
+                ctx.SelectedVertices = mc0?.SelectedVertices;
+                ctx.SelectionState   = mc0?.Selection;
                 ctx.UndoController   = _undoController;
                 ctx.Repaint          = OnRepaint;
+                if (_undoController?.MeshUndoContext != null && model != null)
+                    _undoController.MeshUndoContext.ParentModelContext = model;
                 ctx.SyncMesh = () =>
                 {
                     if (model == null) return;
                     foreach (int idx in model.SelectedDrawableMeshIndices)
                     {
                         var mc = model.GetMeshContext(idx);
-                        if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+                        if (mc?.MeshObject != null) { mc.MeshObject.InvalidatePositionCache(); OnSyncMeshPositions?.Invoke(mc); }
                     }
                 };
                 ctx.SyncMeshPositionsOnly = ctx.SyncMesh;

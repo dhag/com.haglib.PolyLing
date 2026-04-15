@@ -60,14 +60,17 @@ namespace Poly_Ling.Player
             if (ctx != null)
             {
                 var model = _project?.CurrentModel;
+                var mc    = model?.FirstDrawableMeshContext;
                 ctx.Model            = model;
-                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.SelectedVertices = mc?.SelectedVertices;
+                ctx.SelectionState   = mc?.Selection;
                 ctx.UndoController   = _undoController;
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;
                 ctx.NotifyTopologyChanged = NotifyTopologyChanged;
                 ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+                if (_undoController?.MeshUndoContext != null && model != null)
+                    _undoController.MeshUndoContext.ParentModelContext = model;
             }
             _tool.OnActivate(ctx);
         }

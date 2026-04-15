@@ -94,7 +94,7 @@ namespace Poly_Ling.Tools
 
         private void CalculateAndAutoSelect(ToolContext ctx)
         {
-            if (ctx?.FirstSelectedMeshObject == null
+            if (ctx?.FirstDrawableMeshObject == null
                 || ctx.SelectedVertices == null
                 || ctx.SelectedVertices.Count < 2)
             {
@@ -105,8 +105,8 @@ namespace Poly_Ling.Tools
             var positions = new List<Vector3>();
             foreach (int idx in ctx.SelectedVertices)
             {
-                if (idx >= 0 && idx < ctx.FirstSelectedMeshObject.VertexCount)
-                    positions.Add(ctx.FirstSelectedMeshObject.Vertices[idx].Position);
+                if (idx >= 0 && idx < ctx.FirstDrawableMeshObject.VertexCount)
+                    positions.Add(ctx.FirstDrawableMeshObject.Vertices[idx].Position);
             }
 
             if (positions.Count < 2) { StatsCalculated = false; return; }
@@ -138,7 +138,7 @@ namespace Poly_Ling.Tools
 
         private Vector3 CalculateAlignTarget()
         {
-            if (_context?.FirstSelectedMeshObject == null
+            if (_context?.FirstDrawableMeshObject == null
                 || _context.SelectedVertices == null
                 || _context.SelectedVertices.Count == 0)
                 return Vector3.zero;
@@ -146,8 +146,8 @@ namespace Poly_Ling.Tools
             var positions = new List<Vector3>();
             foreach (int idx in _context.SelectedVertices)
             {
-                if (idx >= 0 && idx < _context.FirstSelectedMeshObject.VertexCount)
-                    positions.Add(_context.FirstSelectedMeshObject.Vertices[idx].Position);
+                if (idx >= 0 && idx < _context.FirstDrawableMeshObject.VertexCount)
+                    positions.Add(_context.FirstDrawableMeshObject.Vertices[idx].Position);
             }
 
             if (positions.Count == 0) return Vector3.zero;
@@ -180,7 +180,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteAlign()
         {
-            if (_context?.FirstSelectedMeshObject == null
+            if (_context?.FirstDrawableMeshObject == null
                 || _context.SelectedVertices == null
                 || _context.SelectedVertices.Count < 2)
                 return;
@@ -188,8 +188,8 @@ namespace Poly_Ling.Tools
             if (!_settings.AlignX && !_settings.AlignY && !_settings.AlignZ)
                 return;
 
-            MeshObjectSnapshot before = _context.UndoController != null
-                ? MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext)
+            MeshObjectSnapshot before = _context.UndoController != null && _context.FirstDrawableMeshContext != null
+                ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
                 : default;
 
             Vector3 target    = CalculateAlignTarget();
@@ -197,9 +197,9 @@ namespace Poly_Ling.Tools
 
             foreach (int idx in _context.SelectedVertices)
             {
-                if (idx < 0 || idx >= _context.FirstSelectedMeshObject.VertexCount) continue;
+                if (idx < 0 || idx >= _context.FirstDrawableMeshObject.VertexCount) continue;
 
-                Vertex  v      = _context.FirstSelectedMeshObject.Vertices[idx];
+                Vertex  v      = _context.FirstDrawableMeshObject.Vertices[idx];
                 Vector3 newPos = v.Position;
 
                 if (_settings.AlignX) newPos.x = target.x;
@@ -215,11 +215,12 @@ namespace Poly_Ling.Tools
 
             if (movedCount > 0)
             {
+                _context.FirstDrawableMeshObject.InvalidatePositionCache();
                 _context.SyncMesh?.Invoke();
 
                 if (_context.UndoController != null)
                 {
-                    var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
+                    var after = MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext);
                     _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         _context.UndoController, before, after, "Align Vertices"));
                 }

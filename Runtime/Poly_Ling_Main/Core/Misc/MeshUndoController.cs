@@ -220,6 +220,16 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// Undo/Redo後のメッシュ参照同期用。スタックをクリアしない。
+        /// </summary>
+        public void SyncMeshObjectReference(MeshObject meshObject, Mesh targetMesh = null)
+        {
+            _meshContext.MeshObject = meshObject;
+            if (targetMesh != null)
+                _meshContext.TargetMesh = targetMesh;
+        }
+
+        /// <summary>
         /// エディタ状態を設定
         /// </summary>
         public void SetEditorState(

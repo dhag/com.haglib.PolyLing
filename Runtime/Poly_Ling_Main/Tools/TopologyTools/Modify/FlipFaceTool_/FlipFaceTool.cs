@@ -90,7 +90,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         public void FlipSelectedFaces()
         {
-            if (_context == null || _context.FirstSelectedMeshObject == null)
+            if (_context == null || _context.FirstDrawableMeshObject == null)
             {
                 _lastMessage = T("NoMesh"); 
                 return;
@@ -107,22 +107,24 @@ namespace Poly_Ling.Tools
             MeshObjectSnapshot before = null;
             if (_context.UndoController != null)
             {
-                before = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
+                before = (_context.FirstDrawableMeshContext != null)
+                    ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
+                    : MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
             }
 
             // 選択された面を反転
             int flippedCount = 0;
             foreach (int faceIdx in faces)
             {
-                if (faceIdx >= 0 && faceIdx < _context.FirstSelectedMeshObject.FaceCount)
+                if (faceIdx >= 0 && faceIdx < _context.FirstDrawableMeshObject.FaceCount)
                 {
-                    _context.FirstSelectedMeshObject.Faces[faceIdx].Flip();
+                    _context.FirstDrawableMeshObject.Faces[faceIdx].Flip();
                     flippedCount++;
                 }
             }
 
             // 法線を再計算
-            _context.FirstSelectedMeshObject.RecalculateNormals();
+            _context.FirstDrawableMeshObject.RecalculateNormals();
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -130,7 +132,9 @@ namespace Poly_Ling.Tools
             // Undo記録
             if (_context.UndoController != null && before != null)
             {
-                var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
+                var after = (_context.FirstDrawableMeshContext != null)
+                    ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
+                    : MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
                 _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     _context.UndoController, before, after, $"Flip {flippedCount} Faces"));
             }
@@ -146,13 +150,13 @@ namespace Poly_Ling.Tools
         /// </summary>
         public void FlipAllFaces()
         {
-            if (_context == null || _context.FirstSelectedMeshObject == null)
+            if (_context == null || _context.FirstDrawableMeshObject == null)
             {
                 _lastMessage = "メッシュが選択されていません";
                 return;
             }
 
-            if (_context.FirstSelectedMeshObject.FaceCount == 0)
+            if (_context.FirstDrawableMeshObject.FaceCount == 0)
             {
                 _lastMessage = T("NoFacesExist");
                 return;
@@ -162,19 +166,21 @@ namespace Poly_Ling.Tools
             MeshObjectSnapshot before = null;
             if (_context.UndoController != null)
             {
-                before = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
+                before = (_context.FirstDrawableMeshContext != null)
+                    ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
+                    : MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
             }
 
             // 全ての面を反転
             int flippedCount = 0;
-            foreach (var face in _context.FirstSelectedMeshObject.Faces)
+            foreach (var face in _context.FirstDrawableMeshObject.Faces)
             {
                 face.Flip();
                 flippedCount++;
             }
 
             // 法線を再計算
-            _context.FirstSelectedMeshObject.RecalculateNormals();
+            _context.FirstDrawableMeshObject.RecalculateNormals();
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -182,7 +188,9 @@ namespace Poly_Ling.Tools
             // Undo記録
             if (_context.UndoController != null && before != null)
             {
-                var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
+                var after = (_context.FirstDrawableMeshContext != null)
+                    ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
+                    : MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
                 _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                     _context.UndoController, before, after, $"Flip All {flippedCount} Faces"));
             }

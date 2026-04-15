@@ -49,7 +49,13 @@ namespace Poly_Ling.Tools
         }
 
         // Player ビュー用公開 API
-        public void TriggerMerge() => _pendingMerge = true;
+        public void TriggerMerge()
+        {
+            if (_lastContext != null)
+                ExecuteMerge(_lastContext);
+            else
+                _pendingMerge = true;
+        }
         public MergePreviewInfo PreviewInfo => _preview;
 
         // === プレビュー ===
@@ -80,7 +86,7 @@ namespace Poly_Ling.Tools
 
         public void DrawGizmo(ToolContext ctx)
         {
-            if (ctx.FirstSelectedMeshObject == null || !ShowPreview) return;
+            if (ctx.FirstDrawableMeshObject == null || !ShowPreview) return;
             if (_preview.Groups == null || _preview.Groups.Count == 0) return;
 
             UnityEditor_Handles.BeginGUI();
@@ -107,8 +113,8 @@ namespace Poly_Ling.Tools
                     Vector3 centroid = Vector3.zero;
                     foreach (int vIdx in group)
                     {
-                        if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
-                            centroid += ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
+                        if (vIdx >= 0 && vIdx < ctx.FirstDrawableMeshObject.VertexCount)
+                            centroid += ctx.FirstDrawableMeshObject.Vertices[vIdx].Position;
                     }
                     centroid /= group.Count;
 
@@ -118,8 +124,8 @@ namespace Poly_Ling.Tools
                     UnityEditor_Handles.color = color;
                     foreach (int vIdx in group)
                     {
-                        if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                        Vector2 vScreen = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
+                        if (vIdx < 0 || vIdx >= ctx.FirstDrawableMeshObject.VertexCount) continue;
+                        Vector2 vScreen = ctx.WorldToScreen(ctx.FirstDrawableMeshObject.Vertices[vIdx].Position);
                         UnityEditor_Handles.DrawAAPolyLine(2f, vScreen, centroidScreen);
                     }
 
@@ -134,8 +140,8 @@ namespace Poly_Ling.Tools
                 GUI.color = color;
                 foreach (int vIdx in group)
                 {
-                    if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                    Vector2 sp = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
+                    if (vIdx < 0 || vIdx >= ctx.FirstDrawableMeshObject.VertexCount) continue;
+                    Vector2 sp = ctx.WorldToScreen(ctx.FirstDrawableMeshObject.Vertices[vIdx].Position);
                     float size = 8f;
                     GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size),
                         Texture2D.whiteTexture);
@@ -175,13 +181,13 @@ namespace Poly_Ling.Tools
             _lastContext = ctx;
 
             // プレビュー更新（毎フレーム再計算 - 選択変更を検出するため）
-            if (ctx.FirstSelectedMeshObject != null && ctx.SelectedVertices != null)
+            if (ctx.FirstDrawableMeshObject != null && ctx.SelectedVertices != null)
             {
-                _preview = CalculatePreview(ctx.FirstSelectedMeshObject, ctx.SelectedVertices, Threshold);
+                _preview = CalculatePreview(ctx.FirstDrawableMeshObject, ctx.SelectedVertices, Threshold);
             }
 
             // マージ実行
-            if (_pendingMerge && ctx.FirstSelectedMeshObject != null)
+            if (_pendingMerge && ctx.FirstDrawableMeshObject != null)
             {
                 ExecuteMerge(ctx);
                 _pendingMerge = false;
@@ -202,16 +208,16 @@ namespace Poly_Ling.Tools
 
         private void ExecuteMerge(ToolContext ctx)
         {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectedVertices == null) return;
+            if (ctx.FirstDrawableMeshObject == null || ctx.SelectedVertices == null) return;
             if (ctx.SelectedVertices.Count < 2) return;
 
             // Undo用スナップショット
-            MeshObjectSnapshot before = ctx.UndoController?.VertexEditStack != null
-                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext)
+            MeshObjectSnapshot before = ctx.UndoController?.VertexEditStack != null && ctx.FirstDrawableMeshContext != null
+                ? MeshObjectSnapshot.Capture(ctx.FirstDrawableMeshContext, ctx.UndoController.MeshUndoContext)
                 : default;
 
             // MeshMergeHelper使用
-            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.FirstSelectedMeshObject, ctx.SelectedVertices, Threshold);
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.FirstDrawableMeshObject, ctx.SelectedVertices, Threshold);
 
             if (result.Success)
             {
@@ -221,7 +227,7 @@ namespace Poly_Ling.Tools
                 // Undo記録（キュー経由）
                 if (ctx.UndoController != null && ctx.CommandQueue != null)
                 {
-                    MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                    MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.FirstDrawableMeshContext, ctx.UndoController.MeshUndoContext);
                     ctx.CommandQueue.Enqueue(new RecordTopologyChangeCommand(
                         ctx.UndoController, before, after, "Merge Vertices"));
                 }

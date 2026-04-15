@@ -45,12 +45,12 @@ namespace Poly_Ling.Tools
         // フィールドを Player サブパネルから操作できるよう公開する。
         // ================================================================
 
-        public float RotX { get => _rotX; set { _rotX = value; if (_isDirty) UpdatePreview(); } }
-        public float RotY { get => _rotY; set { _rotY = value; if (_isDirty) UpdatePreview(); } }
-        public float RotZ { get => _rotZ; set { _rotZ = value; if (_isDirty) UpdatePreview(); } }
+        public float RotX { get => _rotX; set { _rotX = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float RotY { get => _rotY; set { _rotY = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float RotZ { get => _rotZ; set { _rotZ = value; if (_isSliderDragging) UpdatePreview(); } }
         public bool  UseSnap      { get => _useSnap;      set => _useSnap      = value; }
         public float SnapAngle    { get => _snapAngle;    set => _snapAngle    = Mathf.Max(0.1f, value); }
-        public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isDirty) UpdatePreview(); } }
+        public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isSliderDragging) UpdatePreview(); } }
         public Vector3 PivotPublic  { get => _pivot; }
         public int   GetTotalAffectedCountPublic() { UpdateAffected(); return GetTotalAffectedCount(); }
 
@@ -257,6 +257,7 @@ namespace Poly_Ling.Tools
                         v.Position = _pivot + rotated;
                         meshObject.Vertices[i] = v;
                     }
+                    meshObject.InvalidatePositionCache();
                 }
             }
 
@@ -350,6 +351,11 @@ namespace Poly_Ling.Tools
                 }
             }
 
+            foreach (var kv in _multiMeshStartPositions)
+            {
+                var mo2 = _ctx?.Model?.GetMeshContext(kv.Key)?.MeshObject;
+                mo2?.InvalidatePositionCache();
+            }
             _multiMeshStartPositions.Clear();
             _isDirty = false;
             _ctx.SyncMesh?.Invoke();

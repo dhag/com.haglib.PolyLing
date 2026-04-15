@@ -32,6 +32,8 @@ namespace Poly_Ling.Player
             _sliderX = MakeSlider("X", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleX = v; });
             _sliderY = MakeSlider("Y", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleY = v; });
             _sliderZ = MakeSlider("Z", 0.01f, 5f, 1f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleZ = v; });
+            foreach (var s in new[] { _sliderXYZ, _sliderX, _sliderY, _sliderZ })
+                s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
             _root.Add(_sliderXYZ); _root.Add(_sliderX); _root.Add(_sliderY); _root.Add(_sliderZ);
             _originToggle = new Toggle("Origin Pivot") { value = false }; _originToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseOriginPivot = e.newValue; });
             _originToggle.style.color = new StyleColor(Color.white);

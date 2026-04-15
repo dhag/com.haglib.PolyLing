@@ -99,6 +99,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>選択先頭メッシュのMeshObject（単一メッシュ操作用便宜アクセサ）</summary>
         public MeshObject FirstSelectedMeshObject => FirstSelectedMeshContext?.MeshObject;
+        public MeshObject FirstDrawableMeshObject  => FirstDrawableMeshContext?.MeshObject;
 
         /// <summary>元の頂点位置</summary>
         public Vector3[] OriginalPositions { get; set; }

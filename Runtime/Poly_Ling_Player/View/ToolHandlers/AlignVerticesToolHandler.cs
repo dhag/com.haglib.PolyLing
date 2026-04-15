@@ -1,6 +1,33 @@
 // AlignVerticesToolHandler.cs
 // AlignVerticesTool を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
 // Runtime/Poly_Ling_Player/View/ToolHandlers/ に配置
+//
+// ================================================================
+// 【Player移植時の必要手順】（このファイルを参考実装として使うこと）
+//
+// Activate() で必須の設定:
+//   1. ctx.Model = model
+//      → FirstDrawableMeshContext を使うために必要
+//         （FirstSelectedMeshContext は ActiveCategory 依存で null になる）
+//   2. ctx.SelectedVertices = mc?.SelectedVertices
+//      ctx.SelectionState   = mc?.Selection
+//      mc = model?.FirstDrawableMeshContext を使うこと
+//   3. _undoController.MeshUndoContext.ParentModelContext = model
+//      → OnUndoRedoPerformed で targetModel を解決するために必須
+//         これが null だと Undo が無効のまま動かない
+//   4. ctx.SyncMesh = () => { OnSyncMeshPositions(mc); }
+//      → 位置変更後の軽量GPU更新パス
+//         OnSyncMeshPositions = mc => SyncMeshPositionsAndTransform(mc, model) + UpdateTransform()
+//         ※トポロジー変更ツールは NotifyTopologyChanged → RebuildAdapter を使うこと
+//
+// Apply/確定操作の後:
+//   5. OnApplyCompleted?.Invoke() → NotifyPanels(ChangeKind.Attributes)
+//      → Undoボタンの有効化に必要（NotifyPanels を呼ばないと更新されない）
+//
+// ViewerCore 側で必要な設定（PolyLingPlayerViewerCore 初期化ブロック）:
+//   OnSyncMeshPositions = mc => { SyncMeshPositionsAndTransform(mc, model); UpdateTransform(); }
+//   OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes)
+// ================================================================
 
 using System;
 using UnityEngine;
@@ -70,20 +97,19 @@ namespace Poly_Ling.Player
             if (ctx != null)
             {
                 var model = _project?.CurrentModel;
+                var mc    = model?.FirstDrawableMeshContext;
                 ctx.Model            = model;
-                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.SelectedVertices = mc?.SelectedVertices;
+                ctx.SelectionState   = mc?.Selection;
                 ctx.UndoController   = _undoController;
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;
+                if (_undoController?.MeshUndoContext != null && model != null)
+                    _undoController.MeshUndoContext.ParentModelContext = model;
                 ctx.SyncMesh = () =>
                 {
-                    if (model == null) return;
-                    foreach (int idx in model.SelectedDrawableMeshIndices)
-                    {
-                        var mc = model.GetMeshContext(idx);
-                        if (mc != null) OnSyncMeshPositions?.Invoke(mc);
-                    }
+                    var target = model?.FirstDrawableMeshContext;
+                    if (target != null) OnSyncMeshPositions?.Invoke(target);
                 };
             }
             _tool.OnActivate(ctx);

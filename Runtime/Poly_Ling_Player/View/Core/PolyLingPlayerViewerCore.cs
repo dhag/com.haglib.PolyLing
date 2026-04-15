@@ -353,10 +353,20 @@ namespace Poly_Ling.Player
                     if (topoMasterIdx >= 0)
                     {
                         var liveMc = targetModel.GetMeshContext(topoMasterIdx);
-                        if (liveMc?.MeshObject != null && !ReferenceEquals(liveMc.MeshObject, ctx.MeshObject))
+                        if (liveMc?.MeshObject != null)
                         {
-                            CopyMeshObjectVertexData(ctx.MeshObject, liveMc.MeshObject);
-                            _editOps.UndoController.SetMeshObject(liveMc.MeshObject, liveMc.UnityMesh);
+                            if (!ReferenceEquals(liveMc.MeshObject, ctx.MeshObject))
+                            {
+                                // 委譲が機能しなかった場合（ActiveCategory != Mesh）
+                                // → 頂点数/面数が変わる場合は丸ごと置換、変わらない場合はコピー
+                                if (ctx.MeshObject.VertexCount != liveMc.MeshObject.VertexCount ||
+                                    ctx.MeshObject.FaceCount   != liveMc.MeshObject.FaceCount)
+                                    liveMc.MeshObject = ctx.MeshObject.Clone();
+                                else
+                                    CopyMeshObjectVertexData(ctx.MeshObject, liveMc.MeshObject);
+                            }
+                            // 参照が同じ場合（委譲でデータ更新済み）もGPUを再構築する
+                            _editOps.UndoController.SyncMeshObjectReference(liveMc.MeshObject, liveMc.UnityMesh);
                             _viewportManager.RebuildAdapter(0, targetModel);
                             _renderer?.UpdateSelectedDrawableMesh(0, targetModel);
                             NotifyPanels(ChangeKind.Attributes);
@@ -1417,6 +1427,7 @@ namespace Poly_Ling.Player
                 OnSyncMeshPositions = mc =>
                 {
                     _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    _viewportManager.UpdateTransform();
                 },
             };
             _alignVerticesHandler.SetProject(ActiveProject);
@@ -1435,6 +1446,7 @@ namespace Poly_Ling.Player
                 OnSyncMeshPositions = mc =>
                 {
                     _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    _viewportManager.UpdateTransform();
                 },
             };
             _planarizeAlongBonesHandler.SetProject(ActiveProject);
@@ -1601,7 +1613,12 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    _viewportManager.UpdateTransform();
+                },
+                OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
             _rotateHandler.SetProject(ActiveProject);
             _rotateHandler.SetUndoController(_editOps?.UndoController);
@@ -1611,7 +1628,12 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    _viewportManager.UpdateTransform();
+                },
+                OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
             _scaleHandler.SetProject(ActiveProject);
             _scaleHandler.SetUndoController(_editOps?.UndoController);

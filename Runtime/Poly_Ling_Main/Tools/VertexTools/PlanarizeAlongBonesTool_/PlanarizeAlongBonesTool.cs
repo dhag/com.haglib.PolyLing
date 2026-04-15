@@ -137,7 +137,7 @@ namespace Poly_Ling.Tools
 
         private void ExecutePlanarize()
         {
-            if (_context?.FirstSelectedMeshObject == null
+            if (_context?.FirstDrawableMeshObject == null
                 || _context.SelectedVertices == null
                 || _context.SelectedVertices.Count < 1)
                 return;
@@ -149,11 +149,11 @@ namespace Poly_Ling.Tools
             Vector3 posB = GetBoneWorldPosition(_settings.BoneIndexB);
             if ((posB - posA).magnitude < 1e-8f) return;
 
-            MeshObjectSnapshot before = _context.UndoController != null
-                ? MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext)
+            MeshObjectSnapshot before = _context.UndoController != null && _context.FirstDrawableMeshContext != null
+                ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
                 : default;
 
-            MeshObject meshObj         = _context.FirstSelectedMeshObject;
+            MeshObject meshObj         = _context.FirstDrawableMeshObject;
             float      blend           = _settings.Blend;
             var        selectedIndices = _context.SelectedVertices.ToList();
 
@@ -187,11 +187,12 @@ namespace Poly_Ling.Tools
 
             if (movedCount > 0)
             {
+                meshObj.InvalidatePositionCache();
                 _context.SyncMesh?.Invoke();
 
                 if (_context.UndoController != null)
                 {
-                    var after = MeshObjectSnapshot.Capture(_context.UndoController.MeshUndoContext);
+                    var after = MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext);
                     _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         _context.UndoController, before, after, "Planarize Along Bones"));
                 }
