@@ -697,6 +697,7 @@ namespace Poly_Ling.Player
             _advancedSelectHandler = new AdvancedSelectToolHandler();
             _advancedSelectHandler.SetProject(ActiveProject);
             _advancedSelectHandler.SetSelectionOps(_selectionOps);
+            _advancedSelectHandler.SetUndoController(_editOps?.UndoController);
             _advancedSelectHandler.GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _advancedSelectHandler.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
             _advancedSelectHandler.OnSelectionChanged = () =>
