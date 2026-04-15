@@ -3,6 +3,7 @@
 // Undo/Redo操作の対象となるデータを保持
 // Phase 5: Materials を ModelContext に委譲
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -221,6 +222,12 @@ namespace Poly_Ling.UndoSystem
         /// 処理後にnullに戻される。
         /// </summary>
         public MeshMoveEntry[] PendingMeshMoveEntries;
+
+        /// <summary>
+        /// トポロジー変更後に呼ぶコールバック。
+        /// 設定されている場合（Player環境）はApplyToMesh()の代わりに呼ばれる。
+        /// </summary>
+        public Action OnTopologyChanged;
 
         // === コンストラクタ ===
 

@@ -173,7 +173,8 @@ namespace Poly_Ling.UndoSystem
                 }
             }
 
-            ctx.ApplyToMesh();
+            if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
+            else ctx.ApplyToMesh();
         }
 
         public override void Redo(MeshUndoContext ctx)
@@ -206,7 +207,8 @@ namespace Poly_Ling.UndoSystem
                 }
             }
 
-            ctx.ApplyToMesh();
+            if (ctx.OnTopologyChanged != null) ctx.OnTopologyChanged.Invoke();
+            else ctx.ApplyToMesh();
         }
 
         private void AdjustFaceIndicesAfterVertexRemoval(MeshObject meshObject, int removedIndex)

@@ -140,6 +140,11 @@ namespace Poly_Ling.Player
             ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
             ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
             ctx.UndoController   = _undoController;
+            if (_undoController?.MeshUndoContext != null)
+            {
+                _undoController.MeshUndoContext.OnTopologyChanged = NotifyTopologyChanged;
+                _undoController.MeshUndoContext.ParentModelContext = model;
+            }
             // SyncMesh は面追加後のトポロジー再構築に置き換える
             ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
             ctx.NotifyTopologyChanged = NotifyTopologyChanged;

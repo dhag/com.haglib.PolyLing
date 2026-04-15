@@ -12,7 +12,6 @@ using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
-using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
@@ -167,6 +166,8 @@ namespace Poly_Ling.Player
         // ================================================================
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            var before = CaptureSelectionSnapshot();
+
             var mode = _selectionOps.SelectionState?.Mode
                     ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge |
                         MeshSelectMode.Face   | MeshSelectMode.Line);
@@ -179,6 +180,7 @@ namespace Poly_Ling.Player
             ExpandLinkedVertices();
 
             OnRequestNormal?.Invoke();
+            RecordSelectionChange(before, CaptureSelectionSnapshot());
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
@@ -294,7 +296,11 @@ namespace Poly_Ling.Player
                     {
                         // ヒット要素が未選択なら選択
                         if (_elemOnMouseDown.HasHit && !IsElemSelected(_elemOnMouseDown))
+                        {
+                            var selBefore = CaptureSelectionSnapshot();
                             _selectionOps.ApplyElementClick(_elemOnMouseDown, new ModifierKeys());
+                            RecordSelectionChange(selBefore, CaptureSelectionSnapshot());
+                        }
 
                         UpdateAffectedVertices();
 
@@ -425,6 +431,36 @@ namespace Poly_Ling.Player
         // ================================================================
         // 内部
         // ================================================================
+        // ================================================================
+        // 選択変更 Undo ヘルパー
+        // ================================================================
+
+        private SelectionSnapshot CaptureSelectionSnapshot()
+        {
+            var sel = _selectionOps.SelectionState;
+            if (sel == null) return null;
+            return new SelectionSnapshot
+            {
+                Mode     = sel.Mode,
+                Vertices = new HashSet<int>(sel.Vertices),
+                Edges    = new HashSet<VertexPair>(sel.Edges),
+                Faces    = new HashSet<int>(sel.Faces),
+                Lines    = new HashSet<int>(sel.Lines),
+            };
+        }
+
+        private void RecordSelectionChange(SelectionSnapshot before, SelectionSnapshot after)
+        {
+            if (_undoController == null || before == null || after == null) return;
+            if (!before.IsDifferentFrom(after)) return;
+            var model = _project?.CurrentModel;
+            if (model != null)
+                _undoController.MeshUndoContext.ParentModelContext = model;
+            var record = new SelectionChangeRecord(before, after);
+            _undoController.FocusVertexEdit();
+            _undoController.VertexEditStack.Record(record, "選択変更");
+        }
+
         private void UpdateAffectedVertices()
         {
             _affectedVertices.Clear();
@@ -654,6 +690,8 @@ namespace Poly_Ling.Player
                 return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
             };
 
+            var selBefore = CaptureSelectionSnapshot();
+
             bool additive = mods.Shift || mods.Ctrl;
             if (!additive)
             {
@@ -727,6 +765,7 @@ namespace Poly_Ling.Player
 
             _selectionOps.EndBoxSelect(inBox, mods);
             ExpandLinkedVertices();
+            RecordSelectionChange(selBefore, CaptureSelectionSnapshot());
             OnRepaint?.Invoke();
         }
 
@@ -764,6 +803,8 @@ namespace Poly_Ling.Player
             // LassoPoints は ToViewportCoord()（h - local.y）→ GPU Y（Y=0下）
             // → vertexScreen と LassoPoints は同じ GPU Y。変換不要。
             var lassoGPU = lasso;
+
+            var selBefore = CaptureSelectionSnapshot();
 
             bool additive = mods.Shift || mods.Ctrl;
             if (!additive)
@@ -836,6 +877,7 @@ namespace Poly_Ling.Player
 
             _selectionOps.EndLassoSelect(inLasso, mods);
             ExpandLinkedVertices();
+            RecordSelectionChange(selBefore, CaptureSelectionSnapshot());
             OnRepaint?.Invoke();
         }
 
