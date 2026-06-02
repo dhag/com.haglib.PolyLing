@@ -99,6 +99,12 @@ namespace Poly_Ling.Player
             set { if (_tool.Settings is SculptSettings s) s.Falloff = value; }
         }
 
+        public DistanceMode DistanceMode
+        {
+            get => ((SculptSettings)_tool.Settings)?.DistanceMode ?? Poly_Ling.Tools.DistanceMode.Euclidean;
+            set { if (_tool.Settings is SculptSettings s) s.DistanceMode = value; }
+        }
+
         public float MinBrushRadius
         {
             get => ((SculptSettings)_tool.Settings)?.MinBrushRadius ?? 0.05f;

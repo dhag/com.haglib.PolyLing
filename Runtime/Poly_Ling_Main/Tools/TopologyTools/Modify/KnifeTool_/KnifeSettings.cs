@@ -1,65 +1,38 @@
-using Poly_Ling.Data;
-// Assets/Editor/Poly_Ling/Tools/Settings/KnifeSettings.cs
-// KnifeTool用設定クラス（IToolSettings対応）
+// Tools/TopologyTools/Modify/KnifeTool_/KnifeSettings.cs
+// KnifeTool 用設定（IToolSettings対応）。
+// 一新版: Mode = ラダー切断 / Erase の2つのみ。
 
 namespace Poly_Ling.Tools
 {
     /// <summary>
-    /// KnifeTool用設定
+    /// ナイフツールのモード。
+    /// </summary>
+    public enum KnifeMode
+    {
+        /// <summary>ラダー切断（開始頂点→セグメント→終了頂点、端点は既存頂点）。</summary>
+        LadderCut,
+        /// <summary>辺消去（共有辺で2面を統合）。</summary>
+        Erase
+    }
+
+    /// <summary>
+    /// KnifeTool 用設定。
     /// </summary>
     public class KnifeSettings : IToolSettings
     {
-        // ================================================================
-        // 設定値
-        // ================================================================
+        /// <summary>ナイフモード。</summary>
+        public KnifeMode Mode = KnifeMode.LadderCut;
 
-        /// <summary>ナイフモード (Cut/Vertex/Erase)</summary>
-        public KnifeMode Mode = KnifeMode.Cut;
-
-        /// <summary>辺選択モード（true: 2辺/2点指定, false: ドラッグ）</summary>
-        public bool EdgeSelect = false;
-
-        /// <summary>チェーンモード（常にtrue、互換性のため残す）</summary>
-        public bool ChainMode = true;
-
-        /// <summary>自動連続モード（true: 自動連続, false: 手動連続）</summary>
-        public bool AutoChain = true;
-
-        // ================================================================
-        // IToolSettings 実装
-        // ================================================================
-
-        public IToolSettings Clone()
-        {
-            return new KnifeSettings
-            {
-                Mode = this.Mode,
-                EdgeSelect = this.EdgeSelect,
-                ChainMode = this.ChainMode,
-                AutoChain = this.AutoChain
-            };
-        }
+        public IToolSettings Clone() => new KnifeSettings { Mode = this.Mode };
 
         public void CopyFrom(IToolSettings other)
         {
-            if (other is KnifeSettings src)
-            {
-                Mode = src.Mode;
-                EdgeSelect = src.EdgeSelect;
-                ChainMode = src.ChainMode;
-                AutoChain = src.AutoChain;
-            }
+            if (other is KnifeSettings src) Mode = src.Mode;
         }
 
         public bool IsDifferentFrom(IToolSettings other)
         {
-            if (other is KnifeSettings src)
-            {
-                return Mode != src.Mode ||
-                       EdgeSelect != src.EdgeSelect ||
-                       ChainMode != src.ChainMode ||
-                       AutoChain != src.AutoChain;
-            }
+            if (other is KnifeSettings src) return Mode != src.Mode;
             return true;
         }
     }

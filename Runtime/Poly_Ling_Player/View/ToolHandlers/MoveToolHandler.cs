@@ -126,6 +126,7 @@ namespace Poly_Ling.Player
         public bool        UseMagnet     { get; set; } = false;
         public float       MagnetRadius  { get; set; } = 0.5f;
         public FalloffType MagnetFalloff { get; set; } = FalloffType.Smooth;
+        public DistanceMode MagnetDistanceMode { get; set; } = DistanceMode.Euclidean;
 
         // ================================================================
         // ギズモオフセット設定（エディタ版 MoveTool.DrawSettingsUI のギズモ設定に対応）
@@ -648,7 +649,7 @@ namespace Poly_Ling.Player
 
                 var startPos = (Vector3[])mc.MeshObject.Positions.Clone();
                 IVertexTransform t = UseMagnet
-                    ? (IVertexTransform)new MagnetMoveTransform(MagnetRadius, MagnetFalloff)
+                    ? (IVertexTransform)new MagnetMoveTransform(MagnetRadius, MagnetFalloff, MagnetDistanceMode)
                     : new SimpleMoveTransform();
                 t.Begin(mc.MeshObject, kv.Value, startPos);
                 _meshTransforms[kv.Key] = t;

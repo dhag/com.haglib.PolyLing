@@ -258,15 +258,15 @@ namespace Poly_Ling.Tools
 
                 var meshObject = meshContext.MeshObject;
 
-                // ブラシ範囲内の頂点を収集
-                var affectedVertices = GetVerticesInBrushRadius(meshObject, brushCenter);
-                if (affectedVertices.Count == 0) continue;
-
                 // キャッシュ取得
                 Dictionary<int, HashSet<int>> adjacencyCache = null;
                 Dictionary<int, Vector3> vertexNormalsCache = null;
                 _adjacencyCachePerMesh?.TryGetValue(meshIdx, out adjacencyCache);
                 _vertexNormalsCachePerMesh?.TryGetValue(meshIdx, out vertexNormalsCache);
+
+                // ブラシ範囲内の頂点を収集
+                var affectedVertices = GetVerticesInBrushRadius(meshObject, brushCenter, adjacencyCache);
+                if (affectedVertices.Count == 0) continue;
 
                 // モードに応じて変形
                 switch (Mode)
@@ -347,7 +347,17 @@ namespace Poly_Ling.Tools
         }
 
 
-        private List<(int index, float weight)> GetVerticesInBrushRadius(MeshObject meshObject, Vector3 brushCenter)
+        private List<(int index, float weight)> GetVerticesInBrushRadius(
+            MeshObject meshObject, Vector3 brushCenter, Dictionary<int, HashSet<int>> adjacencyCache)
+        {
+            if (_settings.DistanceMode == DistanceMode.Link && adjacencyCache != null)
+                return GetVerticesInBrushRadiusLink(meshObject, brushCenter, adjacencyCache);
+
+            return GetVerticesInBrushRadiusEuclidean(meshObject, brushCenter);
+        }
+
+        // ユークリッド直線距離（従来）
+        private List<(int index, float weight)> GetVerticesInBrushRadiusEuclidean(MeshObject meshObject, Vector3 brushCenter)
         {
             var result = new List<(int, float)>();
 
@@ -360,6 +370,39 @@ namespace Poly_Ling.Tools
                     float weight = FalloffHelper.Calculate(t, Falloff);
                     result.Add((i, weight));
                 }
+            }
+
+            return result;
+        }
+
+        // リンク距離（ブラシ中心の最近傍頂点を始点に辺をたどった距離）
+        private List<(int index, float weight)> GetVerticesInBrushRadiusLink(
+            MeshObject meshObject, Vector3 brushCenter, Dictionary<int, HashSet<int>> adjacencyCache)
+        {
+            var result = new List<(int, float)>();
+
+            // ブラシ中心に最も近い頂点を始点とする
+            int seed = -1;
+            float minDist = float.MaxValue;
+            for (int i = 0; i < meshObject.VertexCount; i++)
+            {
+                float dist = Vector3.Distance(meshObject.Vertices[i].Position, brushCenter);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    seed = i;
+                }
+            }
+
+            if (seed < 0) return result;
+
+            var field = LinkDistanceField.Compute(adjacencyCache, meshObject.Positions, new[] { seed }, BrushRadius);
+
+            foreach (var kvp in field)
+            {
+                float t = BrushRadius > 0f ? kvp.Value / BrushRadius : 0f;
+                float weight = FalloffHelper.Calculate(t, Falloff);
+                result.Add((kvp.Key, weight));
             }
 
             return result;

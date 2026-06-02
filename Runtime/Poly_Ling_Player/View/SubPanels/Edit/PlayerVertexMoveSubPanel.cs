@@ -27,6 +27,7 @@ namespace Poly_Ling.Player
         private Slider        _magnetRadiusSlider;
         private FloatField    _magnetRadiusField;
         private DropdownField _falloffDropdown;
+        private DropdownField _distanceModeDropdown;
         private VisualElement _magnetParamsGroup;
         private Slider        _gizmoOffsetXSlider;
         private Slider        _gizmoOffsetYSlider;
@@ -43,6 +44,10 @@ namespace Poly_Ling.Player
         // フォールオフ選択肢（リニア/ガウス/円/シャープ に統一）
         private static readonly string[]      FalloffLabels = { "リニア", "ガウス", "円", "シャープ" };
         private static readonly FalloffType[] FalloffValues = { FalloffType.Linear, FalloffType.Gaussian, FalloffType.Sphere, FalloffType.Sharp };
+
+        // 距離モード選択肢
+        private static readonly string[]       DistanceModeLabels = { "直線", "リンク距離" };
+        private static readonly DistanceMode[] DistanceModeValues = { DistanceMode.Euclidean, DistanceMode.Link };
 
         // ================================================================
         // Build
@@ -146,6 +151,19 @@ namespace Poly_Ling.Player
             _radiusDragButton.style.marginBottom = 3;
             _radiusDragButton.style.fontSize     = 10;
             _magnetParamsGroup.Add(_radiusDragButton);
+
+            // 距離モード（直線 / リンク距離）
+            _distanceModeDropdown = new DropdownField("距離モード", new List<string>(DistanceModeLabels), 0);
+            _distanceModeDropdown.style.color = new StyleColor(Color.white);
+            _distanceModeDropdown.style.marginBottom = 3;
+            _distanceModeDropdown.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+                int idx = System.Array.IndexOf(DistanceModeLabels, e.newValue);
+                if (idx >= 0) h.MagnetDistanceMode = DistanceModeValues[idx];
+            });
+            _magnetParamsGroup.Add(_distanceModeDropdown);
 
             // フォールオフ
             _falloffDropdown = new DropdownField("フォールオフ", new List<string>(FalloffLabels), 1);
@@ -266,6 +284,12 @@ namespace Poly_Ling.Player
             {
                 int fidx = System.Array.IndexOf(FalloffValues, h.MagnetFalloff);
                 _falloffDropdown.SetValueWithoutNotify(fidx >= 0 ? FalloffLabels[fidx] : FalloffLabels[1]);
+            }
+
+            if (_distanceModeDropdown != null)
+            {
+                int didx = System.Array.IndexOf(DistanceModeValues, h.MagnetDistanceMode);
+                _distanceModeDropdown.SetValueWithoutNotify(didx >= 0 ? DistanceModeLabels[didx] : DistanceModeLabels[0]);
             }
 
             SetMagnetParamsVisible(h.UseMagnet);

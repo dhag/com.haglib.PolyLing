@@ -26,6 +26,9 @@ namespace Poly_Ling.Tools
         /// <summary>マグネット減衰タイプ</summary>
         public FalloffType MagnetFalloff = FalloffType.Smooth;
 
+        /// <summary>マグネット距離モード（直線 / リンク距離）</summary>
+        public DistanceMode MagnetDistanceMode = DistanceMode.Euclidean;
+
 
 
         public  float MIN_SCREEN_OFFSET_X = ParameterLimits.GetF("Move.ScreenOffsetX.Min");
@@ -46,7 +49,8 @@ namespace Poly_Ling.Tools
             {
                 UseMagnet = this.UseMagnet,
                 MagnetRadius = this.MagnetRadius,
-                MagnetFalloff = this.MagnetFalloff
+                MagnetFalloff = this.MagnetFalloff,
+                MagnetDistanceMode = this.MagnetDistanceMode
             };
         }
 
@@ -57,7 +61,8 @@ namespace Poly_Ling.Tools
 
             return UseMagnet != m.UseMagnet ||
                    !Mathf.Approximately(MagnetRadius, m.MagnetRadius) ||
-                   MagnetFalloff != m.MagnetFalloff;
+                   MagnetFalloff != m.MagnetFalloff ||
+                   MagnetDistanceMode != m.MagnetDistanceMode;
         }
 
         public override void CopyFrom(IToolSettings other)
@@ -68,6 +73,7 @@ namespace Poly_Ling.Tools
             UseMagnet = m.UseMagnet;
             MagnetRadius = m.MagnetRadius;
             MagnetFalloff = m.MagnetFalloff;
+            MagnetDistanceMode = m.MagnetDistanceMode;
         }
 
         // ================================================================
@@ -82,6 +88,7 @@ namespace Poly_Ling.Tools
             UseMagnet = false;
             MagnetRadius = 0.5f;
             MagnetFalloff = FalloffType.Smooth;
+            MagnetDistanceMode = DistanceMode.Euclidean;
         }
     }
 }

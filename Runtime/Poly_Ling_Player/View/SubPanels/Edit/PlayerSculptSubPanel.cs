@@ -27,6 +27,7 @@ namespace Poly_Ling.Player
         private Slider      _brushRadiusSlider;
         private FloatField  _brushRadiusField;
         private DropdownField _falloffDropdown;
+        private DropdownField _distanceModeDropdown;
         private Slider      _strengthSlider;
         private FloatField  _strengthField;
         private Toggle      _invertToggle;
@@ -53,6 +54,10 @@ namespace Poly_Ling.Player
         // フォールオフ選択肢（表示名 ↔ FalloffType の対応）
         private static readonly string[]      FalloffLabels = { "リニア", "ガウス", "円", "シャープ" };
         private static readonly FalloffType[] FalloffValues = { FalloffType.Linear, FalloffType.Gaussian, FalloffType.Sphere, FalloffType.Sharp };
+
+        // 距離モード選択肢
+        private static readonly string[]       DistanceModeLabels = { "直線", "リンク距離" };
+        private static readonly DistanceMode[] DistanceModeValues = { DistanceMode.Euclidean, DistanceMode.Link };
 
         // ================================================================
         // Build
@@ -155,6 +160,19 @@ namespace Poly_Ling.Player
                 if (idx >= 0) h.Falloff = FalloffValues[idx];
             });
             _root.Add(_falloffDropdown);
+
+            // ── 距離モード（直線 / リンク距離）──────────────────────
+            _distanceModeDropdown = new DropdownField("距離モード", new List<string>(DistanceModeLabels), 0);
+            _distanceModeDropdown.style.color = new StyleColor(Color.white);
+            _distanceModeDropdown.style.marginBottom = 3;
+            _distanceModeDropdown.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+                int idx = System.Array.IndexOf(DistanceModeLabels, e.newValue);
+                if (idx >= 0) h.DistanceMode = DistanceModeValues[idx];
+            });
+            _root.Add(_distanceModeDropdown);
 
             // ── 強度（スライダー + テキストボックス）────────────────
             AddSectionLabel("強度 (Strength)");
@@ -338,6 +356,13 @@ namespace Poly_Ling.Player
             {
                 int fidx = System.Array.IndexOf(FalloffValues, h.Falloff);
                 _falloffDropdown.SetValueWithoutNotify(fidx >= 0 ? FalloffLabels[fidx] : FalloffLabels[1]);
+            }
+
+            // 距離モード
+            if (_distanceModeDropdown != null)
+            {
+                int didx = System.Array.IndexOf(DistanceModeValues, h.DistanceMode);
+                _distanceModeDropdown.SetValueWithoutNotify(didx >= 0 ? DistanceModeLabels[didx] : DistanceModeLabels[0]);
             }
 
             _invertToggle?.SetValueWithoutNotify(h.Invert);

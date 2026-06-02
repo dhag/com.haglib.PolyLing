@@ -22,6 +22,7 @@ namespace Poly_Ling.Tools
             ["Enable"] = new() { ["en"] = "Enable", ["ja"] = "有効", ["hi"] = "つかう" },
             ["Radius"] = new() { ["en"] = "Radius", ["ja"] = "半径", ["hi"] = "はんけい" },
             ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "減衰", ["hi"] = "よわまりかた" },
+            ["DistanceMode"] = new() { ["en"] = "Distance", ["ja"] = "距離モード", ["hi"] = "きょりのはかりかた" },
 
             // ギズモ
             ["Gizmo"] = new() { ["en"] = "Gizmo", ["ja"] = "ギズモ", ["hi"] = "ギズモ" },

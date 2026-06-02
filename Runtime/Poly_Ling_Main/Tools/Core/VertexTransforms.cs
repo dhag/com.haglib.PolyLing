@@ -169,6 +169,7 @@ namespace Poly_Ling.Tools
         // マグネット設定
         private float _radius;
         private FalloffType _falloffType;
+        private DistanceMode _distanceMode;
 
         // 非選択頂点のうち影響を受けるもの
         // Key: 頂点インデックス, Value: 減衰係数（0〜1）
@@ -178,9 +179,15 @@ namespace Poly_Ling.Tools
         private HashSet<int> _allAffectedIndices;
 
         public MagnetMoveTransform(float radius, FalloffType falloffType)
+            : this(radius, falloffType, DistanceMode.Euclidean)
+        {
+        }
+
+        public MagnetMoveTransform(float radius, FalloffType falloffType, DistanceMode distanceMode)
         {
             _radius = radius;
             _falloffType = falloffType;
+            _distanceMode = distanceMode;
         }
 
         public float Radius
@@ -193,6 +200,12 @@ namespace Poly_Ling.Tools
         {
             get => _falloffType;
             set => _falloffType = value;
+        }
+
+        public DistanceMode DistanceMode
+        {
+            get => _distanceMode;
+            set => _distanceMode = value;
         }
 
         public void Begin(MeshObject meshObject, HashSet<int> selectedIndices, Vector3[] originalPositions)
@@ -214,6 +227,15 @@ namespace Poly_Ling.Tools
             if (_selectedIndices.Count == 0 || _meshObject == null)
                 return;
 
+            if (_distanceMode == DistanceMode.Link)
+                CalculateAffectedVerticesLink();
+            else
+                CalculateAffectedVerticesEuclidean();
+        }
+
+        // ユークリッド直線距離（従来）
+        private void CalculateAffectedVerticesEuclidean()
+        {
             // 選択頂点の位置リスト
             var selectedPositions = _selectedIndices
                 .Where(idx => idx >= 0 && idx < _originalPositions.Length)
@@ -252,6 +274,31 @@ namespace Poly_Ling.Tools
                         _affectedNonSelected[i] = falloff;
                         _allAffectedIndices.Add(i);
                     }
+                }
+            }
+        }
+
+        // リンク距離（辺グラフ上の測地距離）
+        private void CalculateAffectedVerticesLink()
+        {
+            var adjacency = SelectionHelper.BuildVertexAdjacency(_meshObject);
+            var field = LinkDistanceField.Compute(adjacency, _originalPositions, _selectedIndices, _radius);
+
+            foreach (var kvp in field)
+            {
+                int idx = kvp.Key;
+
+                // 選択頂点はスキップ
+                if (_selectedIndices.Contains(idx))
+                    continue;
+
+                float normalizedDist = _radius > 0f ? kvp.Value / _radius : 0f;
+                float falloff = FalloffHelper.Calculate(normalizedDist, _falloffType);
+
+                if (falloff > 0.0001f)
+                {
+                    _affectedNonSelected[idx] = falloff;
+                    _allAffectedIndices.Add(idx);
                 }
             }
         }
@@ -550,9 +597,9 @@ namespace Poly_Ling.Tools
             return new SimpleMoveTransform();
         }
 
-        public static IVertexTransform CreateMagnetMove(float radius, FalloffType falloff = FalloffType.Smooth)
+        public static IVertexTransform CreateMagnetMove(float radius, FalloffType falloff = FalloffType.Smooth, DistanceMode distanceMode = DistanceMode.Euclidean)
         {
-            return new MagnetMoveTransform(radius, falloff);
+            return new MagnetMoveTransform(radius, falloff, distanceMode);
         }
 
         public static IRotateTransform CreateSimpleRotate()

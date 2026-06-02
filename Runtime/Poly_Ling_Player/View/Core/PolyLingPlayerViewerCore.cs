@@ -1505,6 +1505,13 @@ namespace Poly_Ling.Player
             var panel = _activePanel;
             if (panel == null) return;
 
+            // ナイフ（ラダー切断）は同じプレビューチャネル（点＋線）を流用する。
+            if (_interactionMode == InteractionMode.Knife)
+            {
+                UpdateKnifePreviewInto(panel);
+                return;
+            }
+
             if (_interactionMode != InteractionMode.AdvancedSelect || _advancedSelectHandler == null)
             {
                 panel.HideAdvSelPreview();
@@ -1561,6 +1568,46 @@ namespace Poly_Ling.Player
                 }
 
             panel.UpdateAdvSelPreview(pts, lines, _advancedSelectHandler.AddToSelection);
+        }
+
+        /// <summary>
+        /// ナイフ（ラダー切断）のプレビューを AdvSel プレビューチャネルへ流し込む。
+        /// 確定済アンカー点・ラング中点・切断線を現在の視点で再投影する。
+        /// </summary>
+        private void UpdateKnifePreviewInto(PlayerViewportPanel panel)
+        {
+            if (_knifeHandler == null) { panel.HideAdvSelPreview(); return; }
+
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx == null) { panel.HideAdvSelPreview(); return; }
+
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo == null) { panel.HideAdvSelPreview(); return; }
+
+            var prev = _knifeHandler.GetPreview();
+            if (prev == null) { panel.HideAdvSelPreview(); return; }
+
+            float h = ctx.PreviewRect.height;
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            {
+                var sp = ctx.WorldToScreen(world);
+                return new UnityEngine.Vector2(sp.x, h - sp.y);
+            };
+
+            var pts = new System.Collections.Generic.List<UnityEngine.Vector2>();
+            foreach (int vi in prev.DotVertices)
+            {
+                if (vi < 0 || vi >= mo.VertexCount) continue;
+                pts.Add(toScreen(mo.Vertices[vi].Position));
+            }
+            foreach (var w in prev.DotWorld)
+                pts.Add(toScreen(w));
+
+            var lines = new System.Collections.Generic.List<(UnityEngine.Vector2, UnityEngine.Vector2)>();
+            foreach (var seg in prev.Lines)
+                lines.Add((toScreen(seg.Item1), toScreen(seg.Item2)));
+
+            panel.UpdateAdvSelPreview(pts, lines, prev.PlanValid);
         }
 
         private void UpdateGizmoOverlay()

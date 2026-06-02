@@ -31,6 +31,9 @@ namespace Poly_Ling.Tools
                 // フォールオフ
                 Falloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), Falloff);
 
+                // 距離モード（直線 / リンク距離）
+                _settings.DistanceMode = (DistanceMode)EditorGUILayout.EnumPopup(T("DistanceMode"), _settings.DistanceMode);
+
                 Strength = EditorGUILayout.Slider(T("Strength"), Strength,
                     _settings.MinStrength, _settings.MaxStrength);
 

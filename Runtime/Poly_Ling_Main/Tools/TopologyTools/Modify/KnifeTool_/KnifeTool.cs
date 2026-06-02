@@ -1,259 +1,256 @@
-// Tools/KnifeTool.cs
-// ナイフツール - 面を切断する（メインファイル）
+// Tools/TopologyTools/Modify/KnifeTool_/KnifeTool.cs
+// ナイフツール（一新版・メインファイル）。
+// ラダー切断: 開始頂点 → セグメント(1辺) → 終了頂点。端点は既存頂点。
+// 連続/非連続は終了頂点の位置で表現（専用トグル無し）。Erase は別モード。
+// 巡回・ヒットテストは AdvancedSelect / BeltSelectMode と同方式（インデックスベース）。
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
+using Poly_Ling.Data;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.Tools
 {
     /// <summary>
-    /// ナイフツールのモード
-    /// </summary>
-    public enum KnifeMode
-    {
-        /// <summary>面切断</summary>
-        Cut,
-        /// <summary>頂点ナイフ</summary>
-        Vertex,
-        /// <summary>辺消去</summary>
-        Erase
-    }
-
-    /// <summary>
-    /// ナイフツール
+    /// ナイフツール。
     /// </summary>
     public partial class KnifeTool : IEditTool
     {
         public string Name => "Knife";
         public string DisplayName => "Knife";
-        //public ToolCategory Category => ToolCategory.Topology;
-
-        // ================================================================
-        // 設定（IToolSettings対応）
-        // ================================================================
 
         private KnifeSettings _settings = new KnifeSettings();
         public IToolSettings Settings => _settings;
 
-        // 設定へのショートカットプロパティ
         public KnifeMode Mode
         {
             get => _settings.Mode;
-            set { _settings.Mode = value; Reset(); }
+            set { if (_settings.Mode != value) { _settings.Mode = value; Reset(); } }
         }
 
-        public bool EdgeSelect
+        // ================================================================
+        // 状態
+        // ================================================================
+
+        private enum LadderStage { Idle, HasStart, HasSegment }
+        private LadderStage _stage = LadderStage.Idle;
+
+        private int        _startVertex = -1;
+        private VertexPair _segment;
+        private bool       _hasSegment;
+
+        // ================================================================
+        // プレビュー（オーバーレイ描画用、ワールド座標）
+        // ================================================================
+
+        public sealed class KnifePreview
         {
-            get => _settings.EdgeSelect;
-            set => _settings.EdgeSelect = value;
+            /// <summary>点を打つ既存頂点（開始/終了候補）。</summary>
+            public readonly List<int> DotVertices = new List<int>();
+            /// <summary>点を打つラング中点（ワールド座標）。</summary>
+            public readonly List<Vector3> DotWorld = new List<Vector3>();
+            /// <summary>切断線・ハイライト線（ワールド座標の線分列）。</summary>
+            public readonly List<(Vector3, Vector3)> Lines = new List<(Vector3, Vector3)>();
+            /// <summary>解決可能か（終了頂点ホバー時）。</summary>
+            public bool PlanValid;
+
+            public void Clear()
+            {
+                DotVertices.Clear();
+                DotWorld.Clear();
+                Lines.Clear();
+                PlanValid = false;
+            }
         }
 
-        public bool ChainMode
+        private readonly KnifePreview _preview = new KnifePreview();
+        public KnifePreview Preview => _preview;
+
+        /// <summary>直近の解決失敗理由（UI 表示用）。</summary>
+        public string LastError { get; private set; } = "";
+
+        /// <summary>状態の簡易説明（UI 表示用）。</summary>
+        public string StageText()
         {
-            get => _settings.ChainMode;
-            set => _settings.ChainMode = value;
-        }
-
-        public bool AutoChain
-        {
-            get => _settings.AutoChain;
-            set => _settings.AutoChain = value;
-        }
-
-        // Player ビュー用公開 API（Bisect系）
-        public bool  EdgeBisectMode   { get => _edgeBisectMode;   set => _edgeBisectMode   = value; }
-        public float CutRatio         { get => _cutRatio;         set => _cutRatio         = Mathf.Clamp(value, 0.1f, 0.9f); }
-        public bool  VertexBisectMode { get => _vertexBisectMode; set => _vertexBisectMode = value; }
-        public bool  HasFirstEdge     => _firstEdgeWorldPos.HasValue;
-        public int   BeltEdgeCount    => _beltEdgePositions.Count;
-        public bool  HasFirstVertex   => _firstVertexWorldPos.HasValue;
-
-        // ================================================================
-        // ドラッグ状態
-        // ================================================================
-
-        private bool _isDragging;
-        private Vector2 _startScreenPos;
-        private Vector2 _currentScreenPos;
-        private bool _isShiftHeld;
-
-        // ================================================================
-        // 検出結果
-        // ================================================================
-
-        private int _targetFaceIndex = -1;
-        private List<EdgeIntersection> _intersections = new List<EdgeIntersection>();
-        private List<(int FaceIndex, List<EdgeIntersection> Intersections)> _chainTargets =
-            new List<(int, List<EdgeIntersection>)>();
-
-        // ================================================================
-        // Cut + EdgeSelect用
-        // ================================================================
-
-        private (Vector3, Vector3)? _firstEdgeWorldPos = null;
-        private (Vector3, Vector3)? _hoveredEdgeWorldPos = null;
-        private List<(Vector3, Vector3)> _beltEdgePositions = new List<(Vector3, Vector3)>();
-        private float _cutRatio = 0.5f;
-        private float _firstCutRatio = 0.5f;
-        private bool _edgeBisectMode = false;
-
-        // ================================================================
-        // Vertex用
-        // ================================================================
-
-        private Vector3? _firstVertexWorldPos = null;
-        private (Vector3, Vector3)? _targetEdgeWorldPos = null;
-        private bool _vertexBisectMode = false;
-
-        // ================================================================
-        // Erase用
-        // ================================================================
-
-        private (int, int) _hoveredEdge = (-1, -1);
-
-        // ================================================================
-        // 定数
-        // ================================================================
-
-        private const float POSITION_EPSILON = 0.0001f;
-        private const float SNAP_ANGLE_THRESHOLD = 15f;
-        private const float EDGE_CLICK_THRESHOLD = 12f;
-        private const float VERTEX_CLICK_THRESHOLD = 15f;
-
-        // ================================================================
-        // UI用
-        // ================================================================
-
-        private static readonly string[] ModeNames = { "Cut", "Vertex", "Erase" };
-        private static readonly KnifeMode[] ModeValues = { KnifeMode.Cut, KnifeMode.Vertex, KnifeMode.Erase };
-
-        // ================================================================
-        // データ構造
-        // ================================================================
-
-        /// <summary>
-        /// 辺と交点の情報
-        /// </summary>
-        private struct EdgeIntersection
-        {
-            public int EdgeStartIndex;
-            public int EdgeEndIndex;
-            public float T;
-            public Vector3 WorldPos;
-            public Vector2 ScreenPos;
+            if (Mode == KnifeMode.Erase) return T("HelpErase");
+            switch (_stage)
+            {
+                case LadderStage.Idle:       return T("PickStart");
+                case LadderStage.HasStart:   return T("PickSegment");
+                case LadderStage.HasSegment: return string.IsNullOrEmpty(LastError) ? T("PickEnd") : LastError;
+            }
+            return "";
         }
 
         // ================================================================
-        // IEditTool 実装
+        // IEditTool
         // ================================================================
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return false;
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo == null) return false;
 
-            switch (Mode)
+            if (ctx.CurrentKeyCode == KeyCode.Escape)
             {
-                case KnifeMode.Cut:
-                    return EdgeSelect 
-                        ? HandleEdgeSelectMouseDown(ctx, mousePos)
-                        : HandleDragCutMouseDown(ctx, mousePos);
-
-                case KnifeMode.Vertex:
-                    return EdgeSelect
-                        ? HandleVertexEdgeSelectMouseDown(ctx, mousePos)
-                        : HandleVertexDragMouseDown(ctx, mousePos);
-
-                case KnifeMode.Erase:
-                    return HandleEraseMouseDown(ctx, mousePos);
+                Reset();
+                ctx.Repaint?.Invoke();
+                return true;
             }
 
-            return false;
+            return Mode == KnifeMode.Erase
+                ? HandleEraseClick(ctx, mousePos)
+                : HandleLadderClick(ctx, mo, mousePos);
         }
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
-            if (ctx.FirstSelectedMeshObject == null) return false;
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo == null) return false;
 
-            switch (Mode)
-            {
-                case KnifeMode.Cut:
-                    return EdgeSelect
-                        ? HandleEdgeSelectMouseDrag(ctx, mousePos)
-                        : HandleDragCutMouseDrag(ctx, mousePos);
+            if (Mode == KnifeMode.Erase) UpdateEraseHover(ctx, mousePos);
+            else UpdateLadderHover(ctx, mo, mousePos);
 
-                case KnifeMode.Vertex:
-                    return EdgeSelect
-                        ? HandleVertexEdgeSelectMouseDrag(ctx, mousePos)
-                        : HandleVertexDragMouseDrag(ctx, mousePos);
-
-                case KnifeMode.Erase:
-                    return HandleEraseMouseDrag(ctx, mousePos);
-            }
-
+            ctx.Repaint?.Invoke();
             return false;
         }
 
-        public bool OnMouseUp(ToolContext ctx, Vector2 mousePos)
-        {
-            if (ctx.FirstSelectedMeshObject == null)
-            {
-                _isDragging = false;
-                return false;
-            }
+        public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) => false;
 
-            switch (Mode)
-            {
-                case KnifeMode.Cut:
-                    return EdgeSelect ? false : HandleDragCutMouseUp(ctx, mousePos);
-
-                case KnifeMode.Vertex:
-                    return EdgeSelect ? false : HandleVertexDragMouseUp(ctx, mousePos);
-
-                case KnifeMode.Erase:
-                    return false;
-            }
-
-            return false;
-        }
-
-        /// <summary>IMGUI 削除済み。</summary>
         public void DrawGizmo(ToolContext ctx) { }
-
-        private string GetHelpText()
-        {
-            switch (Mode)
-            {
-                case KnifeMode.Cut:
-                    return EdgeSelect ? T("HelpCutEdge") : T("HelpCutDrag");
-                case KnifeMode.Vertex:
-                    return EdgeSelect ? T("HelpVertexEdge") : T("HelpVertexDrag");
-                case KnifeMode.Erase:
-                    return T("HelpErase");
-            }
-            return "";
-        }
 
         public void OnActivate(ToolContext ctx) => Reset();
         public void OnDeactivate(ToolContext ctx) => Reset();
 
         public void Reset()
         {
-            _isDragging = false;
-            _targetFaceIndex = -1;
-            _intersections.Clear();
-            _chainTargets.Clear();
+            _stage = LadderStage.Idle;
+            _startVertex = -1;
+            _segment = default;
+            _hasSegment = false;
+            LastError = "";
+            _preview.Clear();
+            _hoveredEraseEdge = default;
+            _hasEraseHover = false;
+        }
 
-            _firstEdgeWorldPos = null;
-            _hoveredEdgeWorldPos = null;
-            _beltEdgePositions.Clear();
-            _firstCutRatio = 0.5f;
+        // ================================================================
+        // ラダー切断: クリック
+        // ================================================================
 
-            _firstVertexWorldPos = null;
-            _targetEdgeWorldPos = null;
+        private bool HandleLadderClick(ToolContext ctx, MeshObject mo, Vector2 mousePos)
+        {
+            switch (_stage)
+            {
+                case LadderStage.Idle:
+                {
+                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    if (v < 0) return false;
+                    _startVertex = v;
+                    _stage = LadderStage.HasStart;
+                    LastError = "";
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+                case LadderStage.HasStart:
+                {
+                    var e = SelectionHelper.FindNearestEdgePair(ctx, mousePos);
+                    if (!e.HasValue) return false;
+                    // 開始頂点に隣接する辺はセグメントにできない
+                    if (e.Value.Contains(_startVertex)) { LastError = T("ErrSegAdjacent"); ctx.Repaint?.Invoke(); return true; }
+                    _segment = e.Value;
+                    _hasSegment = true;
+                    _stage = LadderStage.HasSegment;
+                    LastError = "";
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+                case LadderStage.HasSegment:
+                {
+                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    if (v < 0) return false;
 
-            _hoveredEdge = (-1, -1);
+                    var plan = LadderCutResolver.Resolve(mo, _startVertex, _segment, v);
+                    if (!plan.Ok)
+                    {
+                        // 警告して何もしない。状態は維持（別の終了頂点を選べる）。
+                        LastError = plan.Error;
+                        ctx.Repaint?.Invoke();
+                        return true;
+                    }
+
+                    LadderCutExecutor.Execute(ctx, mo, plan);
+                    ctx.NotifyTopologyChanged?.Invoke();
+                    Reset();
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // ================================================================
+        // ラダー切断: ホバープレビュー
+        // ================================================================
+
+        private void UpdateLadderHover(ToolContext ctx, MeshObject mo, Vector2 mousePos)
+        {
+            _preview.Clear();
+
+            switch (_stage)
+            {
+                case LadderStage.Idle:
+                {
+                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    if (v >= 0) _preview.DotVertices.Add(v);
+                    break;
+                }
+                case LadderStage.HasStart:
+                {
+                    _preview.DotVertices.Add(_startVertex);
+                    var e = SelectionHelper.FindNearestEdgePair(ctx, mousePos);
+                    if (e.HasValue && !e.Value.Contains(_startVertex))
+                        _preview.Lines.Add((mo.Vertices[e.Value.V1].Position, mo.Vertices[e.Value.V2].Position));
+                    break;
+                }
+                case LadderStage.HasSegment:
+                {
+                    _preview.DotVertices.Add(_startVertex);
+                    // セグメントをハイライト
+                    _preview.Lines.Add((mo.Vertices[_segment.V1].Position, mo.Vertices[_segment.V2].Position));
+
+                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    if (v < 0 || v == _startVertex) break;
+
+                    var plan = LadderCutResolver.Resolve(mo, _startVertex, _segment, v);
+                    if (!plan.Ok) { _preview.PlanValid = false; break; }
+
+                    _preview.PlanValid = true;
+                    BuildPlanPolyline(mo, plan, v);
+                    _preview.DotVertices.Add(v);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 計画から切断線（開始頂点→各ラング中点→終了頂点）を構築する。
+        /// </summary>
+        private void BuildPlanPolyline(MeshObject mo, LadderCutPlan plan, int endVertex)
+        {
+            // 順序付きの切断点列を作る
+            var pts = new List<Vector3>();
+            pts.Add(mo.Vertices[_startVertex].Position);
+            foreach (var rung in plan.Rungs)
+            {
+                var mid = Vector3.Lerp(mo.Vertices[rung.V1].Position, mo.Vertices[rung.V2].Position, 0.5f);
+                pts.Add(mid);
+                _preview.DotWorld.Add(mid);
+            }
+            pts.Add(mo.Vertices[endVertex].Position);
+
+            for (int i = 0; i < pts.Count - 1; i++)
+                _preview.Lines.Add((pts[i], pts[i + 1]));
         }
     }
 }

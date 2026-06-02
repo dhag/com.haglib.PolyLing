@@ -21,6 +21,7 @@ namespace Poly_Ling.Tools
             using (new EditorGUI.DisabledScope(!_settings.UseMagnet))
             {
                 _settings.MagnetRadius = EditorGUILayout.Slider(T("Radius"), _settings.MagnetRadius, _settings.MIN_MAGNET_RADIUS, _settings.MAX_MAGNET_RADIUS);//スライダーの上限下限
+                _settings.MagnetDistanceMode = (DistanceMode)EditorGUILayout.EnumPopup(T("DistanceMode"), _settings.MagnetDistanceMode);
                 _settings.MagnetFalloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), _settings.MagnetFalloff);
             }
 

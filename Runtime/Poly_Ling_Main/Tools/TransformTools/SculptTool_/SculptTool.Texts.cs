@@ -30,6 +30,7 @@ namespace Poly_Ling.Tools
 
             // フォールオフ
             ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "フォールオフ", ["hi"] = "へりかた" },
+            ["DistanceMode"] = new() { ["en"] = "Distance", ["ja"] = "距離モード", ["hi"] = "きょりのはかりかた" },
             ["Falloff_Linear"] = new() { ["en"] = "Linear", ["ja"] = "リニア", ["hi"] = "リニア" },
             ["Falloff_Gaussian"] = new() { ["en"] = "Gaussian", ["ja"] = "ガウス", ["hi"] = "ガウス" },
             ["Falloff_Sphere"] = new() { ["en"] = "Sphere", ["ja"] = "円", ["hi"] = "えん" },

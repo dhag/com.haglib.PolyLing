@@ -517,37 +517,45 @@ namespace Poly_Ling.Player
             LocalLoaderSection.style.marginBottom = 6;
             scroll.Add(LocalLoaderSection);
 
-            // ── 部分インポートボタン（2列）
+            // ================================================================
+            // ここから下はカテゴリ別 Foldout（既定折りたたみ）にまとめる。
+            // ボタンのインスタンス・代入先プロパティは一切変更せず、
+            // 所属コンテナのみ Foldout に変更する（core 側の参照は不変）。
+            // ================================================================
+
+            // ── ファイル ───────────────────────────────────────────────
+            var foFile = MakeFoldout("ファイル");
+            scroll.Add(foFile);
+
             var pImportRow = new VisualElement();
             pImportRow.style.flexDirection = FlexDirection.Row;
             pImportRow.style.marginBottom  = 2;
             PartialImportPmxBtn = MakeBtn("PMX部分Import"); PartialImportPmxBtn.style.flexGrow = 1; PartialImportPmxBtn.style.marginRight = 2;
             PartialImportMqoBtn = MakeBtn("MQO部分Import"); PartialImportMqoBtn.style.flexGrow = 1;
             pImportRow.Add(PartialImportPmxBtn); pImportRow.Add(PartialImportMqoBtn);
-            scroll.Add(pImportRow);
+            foFile.Add(pImportRow);
 
-            // ── 部分エクスポートボタン（2列）
             var pExportRow = new VisualElement();
             pExportRow.style.flexDirection = FlexDirection.Row;
             pExportRow.style.marginBottom  = 2;
             PartialExportPmxBtn = MakeBtn("PMX部分Export"); PartialExportPmxBtn.style.flexGrow = 1; PartialExportPmxBtn.style.marginRight = 2;
             PartialExportMqoBtn = MakeBtn("MQO部分Export"); PartialExportMqoBtn.style.flexGrow = 1;
             pExportRow.Add(PartialExportPmxBtn); pExportRow.Add(PartialExportMqoBtn);
-            scroll.Add(pExportRow);
+            foFile.Add(pExportRow);
 
-            // ── フルエクスポート / プロジェクトファイル
-            // ── フルエクスポートボタン（2列）
             var fullExportRow = new VisualElement();
             fullExportRow.style.flexDirection = FlexDirection.Row;
             fullExportRow.style.marginBottom  = 2;
             FullExportPmxBtn = MakeBtn("PMXフルExport"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
             FullExportMqoBtn = MakeBtn("MQOフルExport"); FullExportMqoBtn.style.flexGrow = 1;
             fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
-            scroll.Add(fullExportRow);
+            foFile.Add(fullExportRow);
 
             ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
-            scroll.Add(ProjectFileBtn);
+            foFile.Add(ProjectFileBtn);
 
+            // ── リモート（Connect/Disconnect/Fetch）は core が表示制御するため
+            //    RemoteSection は従来どおり scroll 直下に残す。
             scroll.Add(Separator());
 
             RemoteSection = new VisualElement();
@@ -562,16 +570,18 @@ namespace Poly_Ling.Player
 
             scroll.Add(Separator());
 
-            // ── ツール切り替えボタン（1行目：頂点移動 / オブジェ移動）
+            // ── 選択・移動 ─────────────────────────────────────────────
+            var foSelectMove = MakeFoldout("選択・移動");
+            scroll.Add(foSelectMove);
+
             var toolRow = new VisualElement();
             toolRow.style.flexDirection = FlexDirection.Row;
             toolRow.style.marginBottom  = 2;
             ToolVertexMoveBtn  = MakeBtn("頂点移動");     ToolVertexMoveBtn.style.flexGrow  = 1; ToolVertexMoveBtn.style.marginRight  = 2;
             ToolObjectMoveBtn  = MakeBtn("オブジェ移動"); ToolObjectMoveBtn.style.flexGrow  = 1;
             toolRow.Add(ToolVertexMoveBtn); toolRow.Add(ToolObjectMoveBtn);
-            scroll.Add(toolRow);
+            foSelectMove.Add(toolRow);
 
-            // ── ツール切り替えボタン（2行目：ピボット / スカルプト / 詳細選択）
             var toolRow2 = new VisualElement();
             toolRow2.style.flexDirection = FlexDirection.Row;
             toolRow2.style.marginBottom  = 2;
@@ -579,96 +589,110 @@ namespace Poly_Ling.Player
             ToolSculptBtn      = MakeBtn("スカルプト");  ToolSculptBtn.style.flexGrow      = 1; ToolSculptBtn.style.marginRight      = 2;
             ToolAdvancedSelBtn = MakeBtn("詳細選択");    ToolAdvancedSelBtn.style.flexGrow = 1;
             toolRow2.Add(ToolPivotOffsetBtn); toolRow2.Add(ToolSculptBtn); toolRow2.Add(ToolAdvancedSelBtn);
-            scroll.Add(toolRow2);
+            foSelectMove.Add(toolRow2);
 
-            // ── ツール切り替えボタン（3行目：スキンウェイトペイント）
             ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
-            scroll.Add(ToolSkinWeightPaintBtn);
+            foSelectMove.Add(ToolSkinWeightPaintBtn);
 
-            PrimitiveBtn = MakeBtn("図形生成");
-            scroll.Add(PrimitiveBtn);
+            // ── トポロジー編集 ─────────────────────────────────────────
+            var foTopology = MakeFoldout("トポロジー編集");
+            scroll.Add(foTopology);
 
-            MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
-            scroll.Add(MeshFilterToSkinnedBtn);
+            AddFaceBtn = MakeBtn("面追加"); foTopology.Add(AddFaceBtn);
 
-            BlendBtn = MakeBtn("メッシュブレンド");
-            scroll.Add(BlendBtn);
+            var rowFlipBevel = new VisualElement(); rowFlipBevel.style.flexDirection = FlexDirection.Row; rowFlipBevel.style.marginBottom = 2;
+            FlipFaceBtn  = MakeBtn("面反転");   FlipFaceBtn.style.flexGrow  = 1; FlipFaceBtn.style.marginRight  = 2;
+            EdgeBevelBtn = MakeBtn("辺ベベル"); EdgeBevelBtn.style.flexGrow = 1;
+            rowFlipBevel.Add(FlipFaceBtn); rowFlipBevel.Add(EdgeBevelBtn); foTopology.Add(rowFlipBevel);
 
-            ModelBlendBtn = MakeBtn("モデルブレンド");
-            scroll.Add(ModelBlendBtn);
-
-            BoneEditorBtn = MakeBtn("ボーンエディタ");
-            scroll.Add(BoneEditorBtn);
-
-            UVEditorBtn = MakeBtn("UVエディタ");
-            scroll.Add(UVEditorBtn);
-
-            UVUnwrapBtn = MakeBtn("UV展開");
-            scroll.Add(UVUnwrapBtn);
-
-            scroll.Add(Separator());
-
-            // ── 追加パネルボタン ──────────────────────────────────────────
-            MaterialListBtn = MakeBtn("マテリアルリスト"); scroll.Add(MaterialListBtn);
-            UVZBtn          = MakeBtn("UVZ");              scroll.Add(UVZBtn);
-
-            var row9a = new VisualElement(); row9a.style.flexDirection = FlexDirection.Row; row9a.style.marginBottom = 2;
-            PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
-            MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
-            row9a.Add(PartsSelectionSetBtn); row9a.Add(MeshSelectionSetBtn); scroll.Add(row9a);
-
-            MergeMeshesBtn = MakeBtn("メッシュマージ"); scroll.Add(MergeMeshesBtn);
-            MorphBtn       = MakeBtn("モーフエクスプレッション編集"); scroll.Add(MorphBtn);
-            MorphCreateBtn = MakeBtn("差分からモーフ生成");         scroll.Add(MorphCreateBtn);
-
-            var row9b = new VisualElement(); row9b.style.flexDirection = FlexDirection.Row; row9b.style.marginBottom = 2;
-            TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1; TPoseBtn.style.marginRight          = 2;
-            HumanoidMappingBtn = MakeBtn("ヒューマノイド"); HumanoidMappingBtn.style.flexGrow = 1;
-            row9b.Add(TPoseBtn); row9b.Add(HumanoidMappingBtn); scroll.Add(row9b);
-
-            MirrorBtn = MakeBtn("ミラー編集"); scroll.Add(MirrorBtn);
-
-            var rowAlignPlanarize = new VisualElement(); rowAlignPlanarize.style.flexDirection = FlexDirection.Row; rowAlignPlanarize.style.marginBottom = 2;
-            AlignVerticesBtn       = MakeBtn("頂点整列");   AlignVerticesBtn.style.flexGrow       = 1; AlignVerticesBtn.style.marginRight       = 2;
-            PlanarizeAlongBonesBtn = MakeBtn("ボーン間平面化"); PlanarizeAlongBonesBtn.style.flexGrow = 1;
-            rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); scroll.Add(rowAlignPlanarize);
-
-            var rowMergeSplit = new VisualElement(); rowMergeSplit.style.flexDirection = FlexDirection.Row; rowMergeSplit.style.marginBottom = 2;
-            MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
-            SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
-            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); scroll.Add(rowMergeSplit);
-
-            AddFaceBtn = MakeBtn("面追加"); scroll.Add(AddFaceBtn);
-
-            var rowFlipRotScale = new VisualElement(); rowFlipRotScale.style.flexDirection = FlexDirection.Row; rowFlipRotScale.style.marginBottom = 2;
-            FlipFaceBtn = MakeBtn("面反転"); FlipFaceBtn.style.flexGrow = 1; FlipFaceBtn.style.marginRight = 2;
-            RotateBtn   = MakeBtn("回転");   RotateBtn.style.flexGrow   = 1; RotateBtn.style.marginRight   = 2;
-            ScaleBtn    = MakeBtn("スケール"); ScaleBtn.style.flexGrow   = 1;
-            rowFlipRotScale.Add(FlipFaceBtn); rowFlipRotScale.Add(RotateBtn); rowFlipRotScale.Add(ScaleBtn); scroll.Add(rowFlipRotScale);
-
-            var rowBevelExtrude = new VisualElement(); rowBevelExtrude.style.flexDirection = FlexDirection.Row; rowBevelExtrude.style.marginBottom = 2;
-            EdgeBevelBtn   = MakeBtn("辺ベベル");   EdgeBevelBtn.style.flexGrow   = 1; EdgeBevelBtn.style.marginRight   = 2;
+            var rowExtrude = new VisualElement(); rowExtrude.style.flexDirection = FlexDirection.Row; rowExtrude.style.marginBottom = 2;
             EdgeExtrudeBtn = MakeBtn("辺押し出し"); EdgeExtrudeBtn.style.flexGrow = 1; EdgeExtrudeBtn.style.marginRight = 2;
-            FaceExtrudeBtn = MakeBtn("面押し出し"); FaceExtrudeBtn.style.flexGrow = 1;
-            rowBevelExtrude.Add(EdgeBevelBtn); rowBevelExtrude.Add(EdgeExtrudeBtn); rowBevelExtrude.Add(FaceExtrudeBtn); scroll.Add(rowBevelExtrude);
+            FaceExtrudeBtn = MakeBtn("面押し出し"); FaceExtrudeBtn.style.flexGrow = 1; FaceExtrudeBtn.style.marginRight = 2;
+            LineExtrudeBtn = MakeBtn("ライン押し出し"); LineExtrudeBtn.style.flexGrow = 1;
+            rowExtrude.Add(EdgeExtrudeBtn); rowExtrude.Add(FaceExtrudeBtn); rowExtrude.Add(LineExtrudeBtn); foTopology.Add(rowExtrude);
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
             KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1;
-            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); scroll.Add(rowEdgeKnife);
+            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); foTopology.Add(rowEdgeKnife);
 
-            LineExtrudeBtn = MakeBtn("ライン押し出し"); scroll.Add(LineExtrudeBtn);
+            // ── 頂点編集 ───────────────────────────────────────────────
+            var foVertex = MakeFoldout("頂点編集");
+            scroll.Add(foVertex);
 
-            // ── 追加パネルボタン（最終残件）─────────────────────────────────
-            var rowFinal = new VisualElement(); rowFinal.style.flexDirection = FlexDirection.Row; rowFinal.style.marginBottom = 2;
-            QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1; QuadDecimatorBtn.style.marginRight = 2;
-            MediaPipeBtn     = MakeBtn("MediaPipe"); MediaPipeBtn.style.flexGrow     = 1;
-            rowFinal.Add(QuadDecimatorBtn); rowFinal.Add(MediaPipeBtn); scroll.Add(rowFinal);
+            var rowAlignPlanarize = new VisualElement(); rowAlignPlanarize.style.flexDirection = FlexDirection.Row; rowAlignPlanarize.style.marginBottom = 2;
+            AlignVerticesBtn       = MakeBtn("頂点整列");   AlignVerticesBtn.style.flexGrow       = 1; AlignVerticesBtn.style.marginRight       = 2;
+            PlanarizeAlongBonesBtn = MakeBtn("ボーン間平面化"); PlanarizeAlongBonesBtn.style.flexGrow = 1;
+            rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); foVertex.Add(rowAlignPlanarize);
 
-            var rowFinal2 = new VisualElement(); rowFinal2.style.flexDirection = FlexDirection.Row; rowFinal2.style.marginBottom = 2;
-            VMDTestBtn      = MakeBtn("VMDテスト");  VMDTestBtn.style.flexGrow      = 1; VMDTestBtn.style.marginRight      = 2;
+            var rowMergeSplit = new VisualElement(); rowMergeSplit.style.flexDirection = FlexDirection.Row; rowMergeSplit.style.marginBottom = 2;
+            MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
+            SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
+            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); foVertex.Add(rowMergeSplit);
+
+            var rowRotScaleQuad = new VisualElement(); rowRotScaleQuad.style.flexDirection = FlexDirection.Row; rowRotScaleQuad.style.marginBottom = 2;
+            RotateBtn        = MakeBtn("回転");     RotateBtn.style.flexGrow        = 1; RotateBtn.style.marginRight        = 2;
+            ScaleBtn         = MakeBtn("スケール"); ScaleBtn.style.flexGrow         = 1; ScaleBtn.style.marginRight         = 2;
+            QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
+            rowRotScaleQuad.Add(RotateBtn); rowRotScaleQuad.Add(ScaleBtn); rowRotScaleQuad.Add(QuadDecimatorBtn); foVertex.Add(rowRotScaleQuad);
+
+            // ── ボーン・モーフ ─────────────────────────────────────────
+            var foBoneMorph = MakeFoldout("ボーン・モーフ");
+            scroll.Add(foBoneMorph);
+
+            BoneEditorBtn = MakeBtn("ボーンエディタ");
+            foBoneMorph.Add(BoneEditorBtn);
+
+            var rowTPoseHuman = new VisualElement(); rowTPoseHuman.style.flexDirection = FlexDirection.Row; rowTPoseHuman.style.marginBottom = 2;
+            TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1; TPoseBtn.style.marginRight          = 2;
+            HumanoidMappingBtn = MakeBtn("ヒューマノイド"); HumanoidMappingBtn.style.flexGrow = 1;
+            rowTPoseHuman.Add(TPoseBtn); rowTPoseHuman.Add(HumanoidMappingBtn); foBoneMorph.Add(rowTPoseHuman);
+
+            MirrorBtn = MakeBtn("ミラー編集"); foBoneMorph.Add(MirrorBtn);
+
+            var rowBlend = new VisualElement(); rowBlend.style.flexDirection = FlexDirection.Row; rowBlend.style.marginBottom = 2;
+            BlendBtn      = MakeBtn("メッシュブレンド"); BlendBtn.style.flexGrow      = 1; BlendBtn.style.marginRight      = 2;
+            ModelBlendBtn = MakeBtn("モデルブレンド");   ModelBlendBtn.style.flexGrow = 1;
+            rowBlend.Add(BlendBtn); rowBlend.Add(ModelBlendBtn); foBoneMorph.Add(rowBlend);
+
+            MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
+            MorphCreateBtn = MakeBtn("差分からモーフ生成");         foBoneMorph.Add(MorphCreateBtn);
+
+            // ── UV・マテリアル ─────────────────────────────────────────
+            var foUvMat = MakeFoldout("UV・マテリアル");
+            scroll.Add(foUvMat);
+
+            var rowUv = new VisualElement(); rowUv.style.flexDirection = FlexDirection.Row; rowUv.style.marginBottom = 2;
+            UVEditorBtn = MakeBtn("UVエディタ"); UVEditorBtn.style.flexGrow = 1; UVEditorBtn.style.marginRight = 2;
+            UVUnwrapBtn = MakeBtn("UV展開");     UVUnwrapBtn.style.flexGrow = 1; UVUnwrapBtn.style.marginRight = 2;
+            UVZBtn      = MakeBtn("UVZ");        UVZBtn.style.flexGrow      = 1;
+            rowUv.Add(UVEditorBtn); rowUv.Add(UVUnwrapBtn); rowUv.Add(UVZBtn); foUvMat.Add(rowUv);
+
+            MaterialListBtn = MakeBtn("マテリアルリスト"); foUvMat.Add(MaterialListBtn);
+            MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
+
+            var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
+            PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
+            MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
+            rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foUvMat.Add(rowSelSet);
+
+            // ── その他 ─────────────────────────────────────────────────
+            var foOther = MakeFoldout("その他");
+            scroll.Add(foOther);
+
+            PrimitiveBtn = MakeBtn("図形生成");
+            foOther.Add(PrimitiveBtn);
+
+            MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
+            foOther.Add(MeshFilterToSkinnedBtn);
+
+            var rowMisc = new VisualElement(); rowMisc.style.flexDirection = FlexDirection.Row; rowMisc.style.marginBottom = 2;
+            MediaPipeBtn    = MakeBtn("MediaPipe");   MediaPipeBtn.style.flexGrow    = 1; MediaPipeBtn.style.marginRight    = 2;
+            VMDTestBtn      = MakeBtn("VMDテスト");    VMDTestBtn.style.flexGrow      = 1; VMDTestBtn.style.marginRight      = 2;
             RemoteServerBtn = MakeBtn("リモートサーバ"); RemoteServerBtn.style.flexGrow = 1;
-            rowFinal2.Add(VMDTestBtn); rowFinal2.Add(RemoteServerBtn); scroll.Add(rowFinal2);
+            rowMisc.Add(MediaPipeBtn); rowMisc.Add(VMDTestBtn); rowMisc.Add(RemoteServerBtn); foOther.Add(rowMisc);
+
+            scroll.Add(Separator());
 
             scroll.Add(Header("Display (P/T/F/S)"));
 
@@ -805,182 +829,139 @@ namespace Poly_Ling.Player
             RightPaneContent = scroll.contentContainer;
             RightPaneContent.style.color = new StyleColor(Color.white);
 
-            // ── モデルリストセクション
-            ModelListSection = new VisualElement();
-            ModelListSection.style.marginBottom = 4;
-            RightPaneContent.Add(ModelListSection);
+            // 各セクションを区切り線（上ボーダー）付きで ScrollView 内に追加する。
+            // 独立 Separator 要素を廃止し、ボーダーをセクション自身に持たせることで、
+            // 非表示セクションでは区切り線も一緒に消える（線分残り対策）。
+            //
+            // visible=true:  既定で表示（ModelList / MeshList / Import）
+            // visible=false: 既定で非表示（display=None）
 
-            RightPaneContent.Add(Separator());
+            // ── モデルリストセクション（先頭：区切り線なし）
+            ModelListSection = AddSection(visible: true, topBorder: false);
 
             // ── メッシュリストセクション
-            MeshListSection = new VisualElement();
-            MeshListSection.style.marginBottom = 4;
-            RightPaneContent.Add(MeshListSection);
+            MeshListSection = AddSection(visible: true);
 
-            RightPaneContent.Add(Separator());
+            // ── オブジェクト移動TRSセクション
+            ObjectMoveTRSSection = AddSection(visible: false);
 
-            // ── オブジェクト移動TRSセクション（デフォルト非表示）
-            ObjectMoveTRSSection = new VisualElement();
-            ObjectMoveTRSSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(ObjectMoveTRSSection);
+            // ── 頂点移動サブパネルセクション
+            VertexMoveSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── ピボットオフセットサブパネルセクション
+            PivotSection = AddSection(visible: false);
 
-            // ── 頂点移動サブパネルセクション（デフォルト非表示）
-            VertexMoveSection = new VisualElement();
-            VertexMoveSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(VertexMoveSection);
+            // ── スカルプトサブパネルセクション
+            SculptSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── 詳細選択サブパネルセクション
+            AdvancedSelectSection = AddSection(visible: false);
 
-            // ── ピボットオフセットサブパネルセクション（デフォルト非表示）
-            PivotSection = new VisualElement();
-            PivotSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(PivotSection);
+            // ── スキンウェイトペイントセクション
+            SkinWeightPaintSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── ブレンドセクション
+            BlendSection = AddSection(visible: false);
 
-            // ── スカルプトサブパネルセクション（デフォルト非表示）
-            SculptSection = new VisualElement();
-            SculptSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(SculptSection);
+            // ── モデルブレンドセクション
+            ModelBlendSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── ボーンエディタセクション
+            BoneEditorSection = AddSection(visible: false);
 
-            // ── 詳細選択サブパネルセクション（デフォルト非表示）
-            AdvancedSelectSection = new VisualElement();
-            AdvancedSelectSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(AdvancedSelectSection);
-
-            RightPaneContent.Add(Separator());
-
-            // ── スキンウェイトペイントセクション（デフォルト非表示）
-            SkinWeightPaintSection = new VisualElement();
-            SkinWeightPaintSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(SkinWeightPaintSection);
-
-            RightPaneContent.Add(Separator());
-
-            // ── ブレンドセクション（デフォルト非表示）
-            BlendSection = new VisualElement();
-            BlendSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(BlendSection);
-
-            RightPaneContent.Add(Separator());
-
-            // ── モデルブレンドセクション（デフォルト非表示）
-            ModelBlendSection = new VisualElement();
-            ModelBlendSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(ModelBlendSection);
-
-            RightPaneContent.Add(Separator());
-
-            // ── ボーンエディタセクション（デフォルト非表示）
-            BoneEditorSection = new VisualElement();
-            BoneEditorSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(BoneEditorSection);
-
-            RightPaneContent.Add(Separator());
-
-            UVEditorSection = new VisualElement();
-            UVEditorSection.style.display = DisplayStyle.None;
+            // ── UVエディタセクション
+            UVEditorSection = AddSection(visible: false);
             UVEditorSection.style.flexGrow = 1;
-            RightPaneContent.Add(UVEditorSection);
 
-            RightPaneContent.Add(Separator());
-
-            UVUnwrapSection = new VisualElement();
-            UVUnwrapSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(UVUnwrapSection);
-
-            RightPaneContent.Add(Separator());
+            // ── UV展開セクション
+            UVUnwrapSection = AddSection(visible: false);
 
             // ── 追加パネルセクション群（デフォルト非表示）────────────────
-            MaterialListSection    = MakeHiddenSection(); RightPaneContent.Add(MaterialListSection);    RightPaneContent.Add(Separator());
-            UVZSection             = MakeHiddenSection(); RightPaneContent.Add(UVZSection);             RightPaneContent.Add(Separator());
-            PartsSelectionSetSection = MakeHiddenSection(); RightPaneContent.Add(PartsSelectionSetSection); RightPaneContent.Add(Separator());
-            MeshSelectionSetSection  = MakeHiddenSection(); RightPaneContent.Add(MeshSelectionSetSection);  RightPaneContent.Add(Separator());
-            MergeMeshesSection     = MakeHiddenSection(); RightPaneContent.Add(MergeMeshesSection);     RightPaneContent.Add(Separator());
-            MorphSection           = MakeHiddenSection(); RightPaneContent.Add(MorphSection);           RightPaneContent.Add(Separator());
-            MorphCreateSection     = MakeHiddenSection(); RightPaneContent.Add(MorphCreateSection);     RightPaneContent.Add(Separator());
-            TPoseSection           = MakeHiddenSection(); RightPaneContent.Add(TPoseSection);           RightPaneContent.Add(Separator());
-            HumanoidMappingSection = MakeHiddenSection(); RightPaneContent.Add(HumanoidMappingSection); RightPaneContent.Add(Separator());
-            MirrorSection          = MakeHiddenSection(); RightPaneContent.Add(MirrorSection);          RightPaneContent.Add(Separator());
-            QuadDecimatorSection   = MakeHiddenSection(); RightPaneContent.Add(QuadDecimatorSection);   RightPaneContent.Add(Separator());
-            AlignVerticesSection       = MakeHiddenSection(); RightPaneContent.Add(AlignVerticesSection);       RightPaneContent.Add(Separator());
-            PlanarizeAlongBonesSection = MakeHiddenSection(); RightPaneContent.Add(PlanarizeAlongBonesSection); RightPaneContent.Add(Separator());
-            MergeVerticesSection       = MakeHiddenSection(); RightPaneContent.Add(MergeVerticesSection);       RightPaneContent.Add(Separator());
-            SplitVerticesSection       = MakeHiddenSection(); RightPaneContent.Add(SplitVerticesSection);       RightPaneContent.Add(Separator());
-            AddFaceSection             = MakeHiddenSection(); RightPaneContent.Add(AddFaceSection);             RightPaneContent.Add(Separator());
-            FlipFaceSection            = MakeHiddenSection(); RightPaneContent.Add(FlipFaceSection);            RightPaneContent.Add(Separator());
-            RotateSection              = MakeHiddenSection(); RightPaneContent.Add(RotateSection);              RightPaneContent.Add(Separator());
-            ScaleSection               = MakeHiddenSection(); RightPaneContent.Add(ScaleSection);               RightPaneContent.Add(Separator());
-            EdgeBevelSection           = MakeHiddenSection(); RightPaneContent.Add(EdgeBevelSection);           RightPaneContent.Add(Separator());
-            EdgeExtrudeSection         = MakeHiddenSection(); RightPaneContent.Add(EdgeExtrudeSection);         RightPaneContent.Add(Separator());
-            FaceExtrudeSection         = MakeHiddenSection(); RightPaneContent.Add(FaceExtrudeSection);         RightPaneContent.Add(Separator());
-            EdgeTopologySection        = MakeHiddenSection(); RightPaneContent.Add(EdgeTopologySection);        RightPaneContent.Add(Separator());
-            KnifeSection               = MakeHiddenSection(); RightPaneContent.Add(KnifeSection);               RightPaneContent.Add(Separator());
-            LineExtrudeSection         = MakeHiddenSection(); RightPaneContent.Add(LineExtrudeSection);         RightPaneContent.Add(Separator());
-            MediaPipeSection       = MakeHiddenSection(); RightPaneContent.Add(MediaPipeSection);       RightPaneContent.Add(Separator());
-            VMDTestSection         = MakeHiddenSection(); RightPaneContent.Add(VMDTestSection);         RightPaneContent.Add(Separator());
-            RemoteServerSection    = MakeHiddenSection(); RightPaneContent.Add(RemoteServerSection);    RightPaneContent.Add(Separator());
-            ExportSection = new VisualElement();
-            ExportSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(ExportSection);
+            MaterialListSection        = AddSection(visible: false);
+            UVZSection                 = AddSection(visible: false);
+            PartsSelectionSetSection   = AddSection(visible: false);
+            MeshSelectionSetSection    = AddSection(visible: false);
+            MergeMeshesSection         = AddSection(visible: false);
+            MorphSection               = AddSection(visible: false);
+            MorphCreateSection         = AddSection(visible: false);
+            TPoseSection               = AddSection(visible: false);
+            HumanoidMappingSection     = AddSection(visible: false);
+            MirrorSection              = AddSection(visible: false);
+            QuadDecimatorSection       = AddSection(visible: false);
+            AlignVerticesSection       = AddSection(visible: false);
+            PlanarizeAlongBonesSection = AddSection(visible: false);
+            MergeVerticesSection       = AddSection(visible: false);
+            SplitVerticesSection       = AddSection(visible: false);
+            AddFaceSection             = AddSection(visible: false);
+            FlipFaceSection            = AddSection(visible: false);
+            RotateSection              = AddSection(visible: false);
+            ScaleSection               = AddSection(visible: false);
+            EdgeBevelSection           = AddSection(visible: false);
+            EdgeExtrudeSection         = AddSection(visible: false);
+            FaceExtrudeSection         = AddSection(visible: false);
+            EdgeTopologySection        = AddSection(visible: false);
+            KnifeSection               = AddSection(visible: false);
+            LineExtrudeSection         = AddSection(visible: false);
+            MediaPipeSection           = AddSection(visible: false);
+            VMDTestSection             = AddSection(visible: false);
+            RemoteServerSection        = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── エクスポートセクション
+            ExportSection = AddSection(visible: false);
 
-            // ── プロジェクトファイルセクション（デフォルト非表示）
-            ProjectFileSection = new VisualElement();
-            ProjectFileSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(ProjectFileSection);
+            // ── プロジェクトファイルセクション
+            ProjectFileSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── 部分インポートセクション
+            PartialImportSection = AddSection(visible: false);
 
-            // ── 部分インポートセクション（デフォルト非表示）
-            PartialImportSection = new VisualElement();
-            PartialImportSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(PartialImportSection);
+            // ── 部分エクスポートセクション
+            PartialExportSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
+            // ── インポートセクション（既定表示）
+            ImportSection = AddSection(visible: true);
 
-            // ── 部分エクスポートセクション（デフォルト非表示）
-            PartialExportSection = new VisualElement();
-            PartialExportSection.style.display = DisplayStyle.None;
-            RightPaneContent.Add(PartialExportSection);
+            // ── 図形生成セクション
+            // 以前は ScrollView 外（pane 直下・flexShrink=0）に置いていたが、
+            // 内容がペイン高を超えると下端が overflow:Hidden で切られ、
+            // 最下部の生成ボタンが隠れていた。ScrollView 内へ移し、
+            // 内容超過時はスクロールで生成ボタンへ到達できるようにする。
+            // プレビュー／回転体／プロファイル2D の各キャンバスは WheelEvent を
+            // StopPropagation 済みのため、親 ScrollView がホイール操作を奪うことはない。
+            PrimitiveSection = AddSection(visible: false);
 
-            RightPaneContent.Add(Separator());
-
-            // ── インポートセクション
-            ImportSection = new VisualElement();
-            RightPaneContent.Add(ImportSection);
-
-            // ── 図形生成セクション（ScrollView外に配置してWheelEventを確保）
-            PrimitiveSection = new VisualElement();
-            PrimitiveSection.style.flexShrink = 0;
-            pane.Add(PrimitiveSection);
-
-            // ── MeshFilter→Skinnedセクション（ScrollView外）
-            MeshFilterToSkinnedSection = new VisualElement();
-            MeshFilterToSkinnedSection.style.flexShrink  = 0;
-            MeshFilterToSkinnedSection.style.paddingTop  = 4;
-            MeshFilterToSkinnedSection.style.paddingLeft = 4;
-            MeshFilterToSkinnedSection.style.paddingRight= 4;
-            pane.Add(MeshFilterToSkinnedSection);
+            // ── MeshFilter→Skinnedセクション（ScrollView内へ移動）
+            MeshFilterToSkinnedSection = AddSection(visible: false);
 
             return pane;
+        }
+
+        /// <summary>
+        /// 右ペイン ScrollView 内にセクションを追加する。
+        /// 区切り線はセクション自身の上ボーダーで表現するため、
+        /// 非表示時（display=None）には区切り線も一緒に消える。
+        /// </summary>
+        /// <param name="visible">true で既定表示、false で display=None</param>
+        /// <param name="topBorder">上ボーダー（区切り線）を付けるか</param>
+        private VisualElement AddSection(bool visible, bool topBorder = true)
+        {
+            var v = new VisualElement();
+            v.style.display      = visible ? DisplayStyle.Flex : DisplayStyle.None;
+            v.style.marginBottom = 4;
+            if (topBorder)
+            {
+                v.style.borderTopWidth = 1;
+                v.style.borderTopColor = new StyleColor(new Color(1f, 1f, 1f, 0.08f));
+                v.style.paddingTop     = 4;
+                v.style.marginTop      = 4;
+            }
+            RightPaneContent.Add(v);
+            return v;
         }
 
         // ================================================================
         // UIヘルパー
         // ================================================================
-
-        private static VisualElement MakeHiddenSection()
-        {
-            var v = new VisualElement();
-            v.style.display = DisplayStyle.None;
-            return v;
-        }
 
         private static VisualElement MakePane(float initialWidth)
         {
@@ -1100,6 +1081,24 @@ namespace Poly_Ling.Player
             v.style.marginBottom    = 4;
             v.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.08f));
             return v;
+        }
+
+        /// <summary>
+        /// 左ペインのカテゴリ折りたたみを作る。既定は折りたたみ（value=false）。
+        /// 見出しフォントを小さめにして縦スペースを節約する。
+        /// </summary>
+        private static Foldout MakeFoldout(string title)
+        {
+            var f = new Foldout { text = title, value = false };
+            f.style.marginTop    = 2;
+            f.style.marginBottom = 2;
+            // 見出しトグルのフォントサイズを縮小
+            f.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                var toggle = f.Q<Toggle>(className: "unity-foldout__toggle");
+                if (toggle != null) toggle.style.fontSize = 10;
+            });
+            return f;
         }
 
         private static StyleColor PaneBg(float v) => new StyleColor(new Color(v, v, v, 1f));

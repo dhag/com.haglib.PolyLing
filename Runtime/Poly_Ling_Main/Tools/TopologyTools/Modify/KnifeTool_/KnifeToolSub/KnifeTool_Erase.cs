@@ -1,244 +1,154 @@
-// Tools/KnifeTool.Erase.cs
-// ナイフツール - Eraseモード（辺消去）
+// Tools/TopologyTools/Modify/KnifeTool_/KnifeToolSub/KnifeTool_Erase.cs
+// ナイフツール - Erase モード（共有辺で2面を統合）。
+// インデックス / VertexPair ベース（SelectionHelper を流用）。
 
 using System.Collections.Generic;
 using UnityEngine;
-using Poly_Ling.UndoSystem;
 using Poly_Ling.Data;
-using static Poly_Ling.Gizmo.GLGizmoDrawer;
+using Poly_Ling.Selection;
+using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Tools
 {
     public partial class KnifeTool
     {
+        private const float ERASE_EDGE_THRESHOLD = 10f;
+
+        private VertexPair _hoveredEraseEdge;
+        private bool       _hasEraseHover;
+
         // ================================================================
-        // Erase: 辺消去
+        // クリック / ホバー
         // ================================================================
 
-        private bool HandleEraseMouseDown(ToolContext ctx, Vector2 mousePos)
+        private bool HandleEraseClick(ToolContext ctx, Vector2 mousePos)
         {
-            if (_hoveredEdge.Item1 < 0) return false;
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo == null) return false;
 
-            // 共有辺かどうか確認
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.FirstSelectedMeshObject);
-            var key = _hoveredEdge;
+            var edge = FindNearestSharedEdge(ctx, mo, mousePos, out var faces);
+            if (!edge.HasValue || faces == null || faces.Count != 2) return false;
 
-            if (!edgeToFaces.TryGetValue(key, out var faces) || faces.Count != 2)
-            {
-                // 共有辺でない場合は何もしない
-                return false;
-            }
-
-            // Undo用スナップショット（統合前）
-            MeshObjectSnapshot beforeSnapshot = ctx.UndoController != null 
-                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext) 
+            MeshObjectSnapshot before = ctx.UndoController != null
+                ? MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext)
                 : null;
 
-            // 2つの面を統合
-            MergeFaces(ctx, faces[0], faces[1], key);
+            MergeFaces(mo, faces[0], faces[1], edge.Value);
+            ctx.SyncMesh?.Invoke();
+            ctx.NotifyTopologyChanged?.Invoke();
 
-            // Undo記録
-            if (ctx.UndoController != null && beforeSnapshot != null)
+            if (ctx.UndoController != null && before != null)
             {
-                MeshObjectSnapshot afterSnapshot = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
-                ctx.UndoController.RecordMeshTopologyChange(beforeSnapshot, afterSnapshot, "Erase Edge");
+                var after = MeshObjectSnapshot.Capture(ctx.UndoController.MeshUndoContext);
+                ctx.UndoController.RecordMeshTopologyChange(before, after, "Knife Erase Edge");
             }
 
-            _hoveredEdge = (-1, -1);
+            _hasEraseHover = false;
+            _preview.Clear();
             ctx.Repaint?.Invoke();
             return true;
         }
 
-        private bool HandleEraseMouseDrag(ToolContext ctx, Vector2 mousePos)
+        private void UpdateEraseHover(ToolContext ctx, Vector2 mousePos)
         {
-            _hoveredEdge = FindNearestSharedEdge(ctx, mousePos);
-            ctx.Repaint?.Invoke();
-            return false;
-        }
+            _preview.Clear();
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo == null) return;
 
-        private void DrawEraseGizmo(ToolContext ctx)
-        {
-            // UnityEditor_Handles 削除済み
+            var edge = FindNearestSharedEdge(ctx, mo, mousePos, out _);
+            _hasEraseHover = edge.HasValue;
+            _hoveredEraseEdge = edge ?? default;
 
-            if (_hoveredEdge.Item1 >= 0)
-            {
-                // UnityEditor_Handles 削除済み
-                DrawEdge(ctx, _hoveredEdge);
-            }
-
-            // UnityEditor_Handles 削除済み
+            if (_hasEraseHover)
+                _preview.Lines.Add((mo.Vertices[_hoveredEraseEdge.V1].Position,
+                                    mo.Vertices[_hoveredEraseEdge.V2].Position));
         }
 
         // ================================================================
-        // Eraseヘルパー
+        // ヘルパー
         // ================================================================
 
-        /// <summary>
-        /// 最も近い共有辺を検出（2つの面で共有されている辺のみ）
-        /// </summary>
-        private (int, int) FindNearestSharedEdge(ToolContext ctx, Vector2 mousePos)
+        /// <summary>2面で共有される最近傍の辺を返す。</summary>
+        private VertexPair? FindNearestSharedEdge(ToolContext ctx, MeshObject mo, Vector2 mousePos, out List<int> hitFaces)
         {
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.FirstSelectedMeshObject);
+            hitFaces = null;
+            var edgeToFaces = SelectionHelper.BuildEdgeToFacesMap(mo);
 
-            float bestDist = EDGE_CLICK_THRESHOLD;
-            (int, int) bestEdge = (-1, -1);
+            float best = ERASE_EDGE_THRESHOLD;
+            VertexPair? bestEdge = null;
+            List<int> bestFaces = null;
 
             foreach (var kvp in edgeToFaces)
             {
-                // 2つの面で共有されている辺のみ対象
                 if (kvp.Value.Count != 2) continue;
-
-                var edge = kvp.Key;
-                var p1 = ctx.FirstSelectedMeshObject.Vertices[edge.Item1].Position;
-                var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
-                var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-
-                float dist = DistanceToLineSegment(mousePos, sp1, sp2);
-                if (dist < bestDist)
+                var e = kvp.Key;
+                Vector2 s1 = ctx.WorldToScreen(mo.Vertices[e.V1].Position);
+                Vector2 s2 = ctx.WorldToScreen(mo.Vertices[e.V2].Position);
+                float d = SelectionHelper.DistanceToLineSegment(mousePos, s1, s2);
+                if (d < best)
                 {
-                    bestDist = dist;
-                    bestEdge = edge;
+                    best = d;
+                    bestEdge = e;
+                    bestFaces = kvp.Value;
                 }
             }
 
+            hitFaces = bestFaces;
             return bestEdge;
         }
 
-        /// <summary>
-        /// 2つの面を統合（共有辺を消去）
-        /// </summary>
-        private void MergeFaces(ToolContext ctx, int faceIdx1, int faceIdx2, (int, int) sharedEdge)
+        /// <summary>共有辺を消して2面を統合する。</summary>
+        private void MergeFaces(MeshObject mo, int faceIdx1, int faceIdx2, VertexPair sharedEdge)
         {
-            var meshObject = ctx.FirstSelectedMeshObject;
-            var face1 = meshObject.Faces[faceIdx1];
-            var face2 = meshObject.Faces[faceIdx2];
+            var face1 = mo.Faces[faceIdx1];
+            var face2 = mo.Faces[faceIdx2];
 
-            // 新しい頂点リストを作成
+            int s1 = LocalEdgeStart(face1, sharedEdge);
+            int s2 = LocalEdgeStart(face2, sharedEdge);
+            if (s1 < 0 || s2 < 0) return;
+
             var newVerts = new List<int>();
 
-            // face1から共有辺以外の頂点を追加
             int n1 = face1.VertexIndices.Count;
-            int sharedStart1 = -1;
-
-            for (int i = 0; i < n1; i++)
-            {
-                int v1 = face1.VertexIndices[i];
-                int v2 = face1.VertexIndices[(i + 1) % n1];
-                var edge = NormalizeEdge(v1, v2);
-
-                if (edge == sharedEdge)
-                {
-                    sharedStart1 = i;
-                    break;
-                }
-            }
-
-            if (sharedStart1 < 0) return;
-
-            // face1の頂点（共有辺の終点からスタート）
             for (int i = 0; i < n1 - 1; i++)
-            {
-                int idx = (sharedStart1 + 1 + i) % n1;
-                newVerts.Add(face1.VertexIndices[idx]);
-            }
+                newVerts.Add(face1.VertexIndices[(s1 + 1 + i) % n1]);
 
-            // face2の頂点（共有辺以外）
             int n2 = face2.VertexIndices.Count;
-            int sharedStart2 = -1;
-
-            for (int i = 0; i < n2; i++)
-            {
-                int v1 = face2.VertexIndices[i];
-                int v2 = face2.VertexIndices[(i + 1) % n2];
-                var edge = NormalizeEdge(v1, v2);
-
-                if (edge == sharedEdge)
-                {
-                    sharedStart2 = i;
-                    break;
-                }
-            }
-
-            if (sharedStart2 < 0) return;
-
             for (int i = 0; i < n2 - 1; i++)
             {
-                int idx = (sharedStart2 + 1 + i) % n2;
-                int v = face2.VertexIndices[idx];
-
-                // 既に追加済みでなければ追加
-                if (!newVerts.Contains(v))
-                {
-                    newVerts.Add(v);
-                }
+                int v = face2.VertexIndices[(s2 + 1 + i) % n2];
+                if (!newVerts.Contains(v)) newVerts.Add(v);
             }
 
-            // 新しい面を作成
-            var newFace = new Face { VertexIndices = newVerts };
+            var uvs = new List<int>();
+            var normals = new List<int>();
+            for (int i = 0; i < newVerts.Count; i++) { uvs.Add(0); normals.Add(0); }
 
-            // 元の面を削除（インデックスが大きい方から）
+            var newFace = new Face
+            {
+                VertexIndices = newVerts,
+                UVIndices = uvs,
+                NormalIndices = normals,
+                MaterialIndex = face1.MaterialIndex
+            };
+
             int maxIdx = Mathf.Max(faceIdx1, faceIdx2);
             int minIdx = Mathf.Min(faceIdx1, faceIdx2);
-
-            meshObject.Faces.RemoveAt(maxIdx);
-            meshObject.Faces.RemoveAt(minIdx);
-
-            // 新しい面を追加
-            meshObject.Faces.Add(newFace);
-
-            ctx.SyncMesh?.Invoke();
+            mo.Faces.RemoveAt(maxIdx);
+            mo.Faces.RemoveAt(minIdx);
+            mo.Faces.Add(newFace);
         }
 
-        /// <summary>
-        /// 最も近い辺を検出（インデックスベース）
-        /// </summary>
-        private (int, int) FindNearestEdge(ToolContext ctx, Vector2 mousePos)
+        private static int LocalEdgeStart(Face face, VertexPair edge)
         {
-            float bestDist = EDGE_CLICK_THRESHOLD;
-            (int, int) bestEdge = (-1, -1);
-
-            var edgeSet = new HashSet<(int, int)>();
-
-            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
+            int n = face.VertexIndices.Count;
+            for (int i = 0; i < n; i++)
             {
-                int n = face.VertexIndices.Count;
-                for (int i = 0; i < n; i++)
-                {
-                    int v1 = face.VertexIndices[i];
-                    int v2 = face.VertexIndices[(i + 1) % n];
-                    var edge = NormalizeEdge(v1, v2);
-
-                    if (edgeSet.Contains(edge)) continue;
-                    edgeSet.Add(edge);
-
-                    var p1 = ctx.FirstSelectedMeshObject.Vertices[edge.Item1].Position;
-                    var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
-                    var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                    var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-
-                    float dist = DistanceToLineSegment(mousePos, sp1, sp2);
-                    if (dist < bestDist)
-                    {
-                        bestDist = dist;
-                        bestEdge = edge;
-                    }
-                }
+                int a = face.VertexIndices[i];
+                int b = face.VertexIndices[(i + 1) % n];
+                if ((a == edge.V1 && b == edge.V2) || (a == edge.V2 && b == edge.V1)) return i;
             }
-
-            return bestEdge;
-        }
-
-        /// <summary>
-        /// 辺を描画（インデックスベース）
-        /// </summary>
-        private void DrawEdge(ToolContext ctx, (int, int) edge)
-        {
-            var p1 = ctx.FirstSelectedMeshObject.Vertices[edge.Item1].Position;
-            var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
-            var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            // UnityEditor_Handles 削除済み
+            return -1;
         }
     }
 }

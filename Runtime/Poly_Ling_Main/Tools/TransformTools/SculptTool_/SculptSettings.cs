@@ -30,6 +30,9 @@ namespace Poly_Ling.Tools
         /// <summary>フォールオフ（減衰）タイプ</summary>
         public FalloffType Falloff = FalloffType.Gaussian;
 
+        /// <summary>距離モード（直線 / リンク距離）</summary>
+        public DistanceMode DistanceMode = DistanceMode.Euclidean;
+
         // ================================================================
         // 半径範囲（スライダーの最小値・最大値）
         // ================================================================
@@ -57,6 +60,7 @@ namespace Poly_Ling.Tools
                 Strength       = this.Strength,
                 Invert         = this.Invert,
                 Falloff        = this.Falloff,
+                DistanceMode   = this.DistanceMode,
                 MinBrushRadius = this.MinBrushRadius,
                 MaxBrushRadius = this.MaxBrushRadius,
                 MinStrength    = this.MinStrength,
@@ -73,6 +77,7 @@ namespace Poly_Ling.Tools
                 Strength       = src.Strength;
                 Invert         = src.Invert;
                 Falloff        = src.Falloff;
+                DistanceMode   = src.DistanceMode;
                 MinBrushRadius = src.MinBrushRadius;
                 MaxBrushRadius = src.MaxBrushRadius;
                 MinStrength    = src.MinStrength;
@@ -89,6 +94,7 @@ namespace Poly_Ling.Tools
                        !Mathf.Approximately(Strength, src.Strength) ||
                        Invert != src.Invert ||
                        Falloff != src.Falloff ||
+                       DistanceMode != src.DistanceMode ||
                        !Mathf.Approximately(MinBrushRadius, src.MinBrushRadius) ||
                        !Mathf.Approximately(MaxBrushRadius, src.MaxBrushRadius) ||
                        !Mathf.Approximately(MinStrength, src.MinStrength) ||

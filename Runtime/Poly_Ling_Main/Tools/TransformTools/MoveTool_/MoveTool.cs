@@ -68,6 +68,12 @@ namespace Poly_Ling.Tools
             set => _settings.MagnetFalloff = value;
         }
 
+        public DistanceMode MagnetDistanceMode
+        {
+            get => _settings.MagnetDistanceMode;
+            set => _settings.MagnetDistanceMode = value;
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -726,7 +732,7 @@ namespace Poly_Ling.Tools
 
                     IVertexTransform transform;
                     if (UseMagnet)
-                        transform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff);
+                        transform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff, MagnetDistanceMode);
                     else
                         transform = new SimpleMoveTransform();
 
@@ -875,7 +881,7 @@ namespace Poly_Ling.Tools
 
                     IVertexTransform transform;
                     if (UseMagnet)
-                        transform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff);
+                        transform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff, MagnetDistanceMode);
                     else
                         transform = new SimpleMoveTransform();
 
@@ -940,7 +946,7 @@ namespace Poly_Ling.Tools
 
                     IVertexTransform transform;
                     if (UseMagnet)
-                        transform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff);
+                        transform = new MagnetMoveTransform(MagnetRadius, MagnetFalloff, MagnetDistanceMode);
                     else
                         transform = new SimpleMoveTransform();
 
