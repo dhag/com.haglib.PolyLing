@@ -13,7 +13,28 @@ namespace Poly_Ling.Player
     public class PlayerEdgeTopologySubPanel
     {
         public Func<EdgeTopologyToolHandler> GetH;
+        /// <summary>
+        /// サブモード (Flip/Split/Dissolve) 変更通知。ViewerCore 側で Selection.Mode を
+        /// 切り替えてホバー有効範囲 (頂点/辺) を調整するために使われる。
+        ///
+        /// 【設計ポイント: サブパネルから ViewerCore への責務分離】
+        /// サブパネルは UI ウィジェット組立てのみの責務とし、Selection / InteractionMode /
+        /// Overlay 等への直接アクセスは禁じる (循環参照と責務混在を避けるため)。
+        /// サブパネル内で発火したモード変更イベントは Action コールバックで ViewerCore 側に
+        /// 通知し、そこから Selection.Mode 等の全体状態を触る。
+        /// 同様の構造を他サブパネルでも採用すること (例: Flip/Dissolve 以外に新モードを
+        /// 追加する場合は OnModeChanged の型引数だけ拡張すれば足りる)。
+        /// </summary>
+        public Action<EdgeTopoMode> OnModeChanged;
         private VisualElement _root;
+        private HelpBox       _help;
+
+        private static readonly string[] HelpTexts =
+        {
+            "共有辺をクリックして対角線を入れ替え（2つの三角形が必要）",
+            "四角形の対角頂点を順にクリックして分割",
+            "共有辺をクリックして2つの面を結合",
+        };
 
         public void Build(VisualElement parent)
         {
@@ -28,17 +49,20 @@ namespace Poly_Ling.Player
                 int idx = modeChoices.IndexOf(e.newValue);
                 if (idx >= 0 && GetH() != null) GetH().ModePublic = modeValues[idx];
                 UpdateHelp(idx);
+                if (idx >= 0) OnModeChanged?.Invoke(modeValues[idx]);
             });
             _root.Add(modeDD);
-            var help = new HelpBox("エッジをクリックして操作", HelpBoxMessageType.Info);
-            help.style.color = new StyleColor(Color.white);
-            help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
-            _root.Add(help);
+            _help = new HelpBox(HelpTexts[0], HelpBoxMessageType.Info);
+            _help.style.color = new StyleColor(Color.white);
+            _help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
+            _root.Add(_help);
         }
 
         private void UpdateHelp(int idx)
         {
-            // help text update handled by HelpBox above
+            if (_help == null) return;
+            if (idx < 0 || idx >= HelpTexts.Length) return;
+            _help.text = HelpTexts[idx];
         }
 
         public void Refresh() {}

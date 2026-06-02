@@ -436,7 +436,7 @@ namespace Poly_Ling.Context
 
             // 平面グリッド
             Color gridColor = new Color(0.5f, 0.8f, 1f, alpha);
-            UnityEditor_Handles.color = gridColor;
+            // UnityEditor_Handles 削除済み
 
             int gridLines = 5;
             float halfSize = size * 0.5f;
@@ -447,25 +447,25 @@ namespace Poly_Ling.Context
                 // U方向の線
                 Vector3 startU = origin + axisV * (t * size) - axisU * halfSize;
                 Vector3 endU = origin + axisV * (t * size) + axisU * halfSize;
-                UnityEditor_Handles.DrawLine(startU, endU);
+                // UnityEditor_Handles 削除済み
 
                 // V方向の線
                 Vector3 startV = origin + axisU * (t * size) - axisV * halfSize;
                 Vector3 endV = origin + axisU * (t * size) + axisV * halfSize;
-                UnityEditor_Handles.DrawLine(startV, endV);
+                // UnityEditor_Handles 削除済み
             }
 
             // 軸
-            UnityEditor_Handles.color = Color.red;
-            UnityEditor_Handles.DrawLine(origin, origin + axisU * size * 0.3f);
-            UnityEditor_Handles.color = Color.green;
-            UnityEditor_Handles.DrawLine(origin, origin + axisV * size * 0.3f);
-            UnityEditor_Handles.color = Color.blue;
-            UnityEditor_Handles.DrawLine(origin, origin + normal * size * 0.15f);
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
             // 原点マーカー
-            UnityEditor_Handles.color = Color.yellow;
-            UnityEditor_Handles.DrawWireDisc(origin, normal, size * 0.05f);
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
         }
     }
 }

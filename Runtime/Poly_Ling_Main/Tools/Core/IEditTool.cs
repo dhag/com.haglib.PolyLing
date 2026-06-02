@@ -65,7 +65,10 @@ namespace Poly_Ling.Tools
         bool OnMouseUp(ToolContext ctx, Vector2 mousePos);
 
         /// <summary>
-        /// ギズモ描画
+        /// ギズモ描画。
+        /// IMGUI / UnityEditor_Handles は使用禁止。
+        /// Player での描画は UIToolkit オーバーレイで行うこと。
+        /// 実装は空にすること（削除済みであること）。
         /// </summary>
         void DrawGizmo(ToolContext ctx);
 

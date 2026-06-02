@@ -44,6 +44,10 @@ namespace Poly_Ling.Player
         public Action             OnRepaint;
         public Action             OnSelectionChanged;
         public Action             OnDrawableMeshSelectionChanged;
+        // Phase 2c-2: ボーンポーズ変更（ApplyWorldDelta 後）に発火するコールバック。
+        // Core 側で _viewportManager.EnterVerticesMoved(project, Dragging) を呼ぶ想定。
+        // phase 引数: DragBegin / Dragging / DragEnd。
+        public Action<VerticesMovedPhase> OnBonePoseChanged;
 
         // ================================================================
         // 依存
@@ -98,6 +102,8 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             HandleMouseDown(ToImgui(screenPos, ctx), mods, ctx);
+            // Phase 2c-2: ボーンポーズドラッグ開始を通知。
+            OnBonePoseChanged?.Invoke(VerticesMovedPhase.DragBegin);
         }
 
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
@@ -105,6 +111,8 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             HandleMouseDrag(ToImgui(screenPos, ctx), ctx);
+            // Phase 2c-2: ドラッグ中のボーンポーズ更新を通知。
+            OnBonePoseChanged?.Invoke(VerticesMovedPhase.Dragging);
             OnRepaint?.Invoke();
         }
 
@@ -113,6 +121,8 @@ namespace Poly_Ling.Player
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             HandleMouseUp(ctx);
+            // Phase 2c-2: ドラッグ確定。
+            OnBonePoseChanged?.Invoke(VerticesMovedPhase.DragEnd);
             OnRepaint?.Invoke();
         }
 
@@ -295,7 +305,11 @@ namespace Poly_Ling.Player
             }
             if (record.Entries.Count > 0)
             {
-                _undoController.MeshListStack.Record(record, "ボーン移動");
+                {
+                    string __dbgDesc = "ボーン移動";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undoController.MeshListStack.Record(record, __dbgDesc);
+                }
                 _undoController.FocusMeshList();
             }
             model.OnListChanged?.Invoke();

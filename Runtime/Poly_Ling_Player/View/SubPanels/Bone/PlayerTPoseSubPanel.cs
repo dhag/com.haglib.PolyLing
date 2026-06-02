@@ -146,9 +146,11 @@ namespace Poly_Ling.Player
             var undo = tc?.UndoController;
             if (undo != null)
             {
-                undo.MeshListStack.Record(
-                    new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose"),
-                    "Apply T-Pose");
+                {
+                    string __dbgDesc = "Apply T-Pose";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose"))?.GetType().Name ?? "<null>"));
+                    undo.MeshListStack.Record(new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose"), __dbgDesc);
+                }
             }
             model.IsDirty = true;
             tc?.NotifyTopologyChanged?.Invoke();
@@ -180,9 +182,11 @@ namespace Poly_Ling.Player
             var undo = tc?.UndoController;
             if (undo != null)
             {
-                undo.MeshListStack.Record(
-                    new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose"),
-                    "Restore Original Pose");
+                {
+                    string __dbgDesc = "Restore Original Pose";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose"))?.GetType().Name ?? "<null>"));
+                    undo.MeshListStack.Record(new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose"), __dbgDesc);
+                }
             }
             model.IsDirty = true;
             tc?.NotifyTopologyChanged?.Invoke();

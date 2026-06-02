@@ -206,7 +206,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"isVisible,{mc.IsVisible}");
             sb.AppendLine($"isLocked,{mc.IsLocked}");
             sb.AppendLine($"isFolding,{mc.IsFolding}");
-            sb.AppendLine($"isExpanded,{mc.MeshObject?.IsExpanded ?? false}");
+            sb.AppendLine($"isTriangulated,{mc.MeshObject?.IsTriangulated ?? false}");
             sb.AppendLine($"mirrorType,{mc.MirrorType}");
             sb.AppendLine($"mirrorAxis,{mc.MirrorAxis}");
             sb.AppendLine($"mirrorDistance,{F(mc.MirrorDistance)}");
@@ -574,8 +574,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "isFolding":
                         mc.IsFolding = ParseBool(cols, 1);
                         break;
-                    case "isExpanded":
-                        meshObject.IsExpanded = ParseBool(cols, 1);
+                    case "isTriangulated":
+                        meshObject.IsTriangulated = ParseBool(cols, 1);
                         break;
                     case "mirrorType":
                         mc.MirrorType = ParseInt(cols, 1);

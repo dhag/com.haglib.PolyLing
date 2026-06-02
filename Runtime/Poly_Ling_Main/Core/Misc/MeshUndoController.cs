@@ -31,6 +31,9 @@ namespace Poly_Ling.UndoSystem
         private UndoStack<EditorStateContext> _editorStateStack;
         private UndoStack<WorkPlaneContext> _workPlaneStack;
         private UndoStack<ModelContext> _meshListStack;
+        // Player: 問題 A/B 対応。モデル切替などプロジェクトレベル操作を
+        // UndoGroup 下で OperationLog に乗せるための独立スタック。
+        private UndoStack<ProjectContext> _projectStack;
         private UndoGroup _subWindowGroup;
 
         // ====================================================================
@@ -90,6 +93,8 @@ namespace Poly_Ling.UndoSystem
         public UndoStack<EditorStateContext> EditorStateStack => _editorStateStack;
         public UndoStack<WorkPlaneContext> WorkPlaneStack => _workPlaneStack;
         public UndoStack<ModelContext> MeshListStack => _meshListStack;
+        /// <summary>Player 問題 A/B: モデル切替等のプロジェクトレベル Undo 用スタック。</summary>
+        public UndoStack<ProjectContext> ProjectStack => _projectStack;
         public UndoGroup SubWindowGroup => _subWindowGroup;
 
         // === プロジェクトレベルUndo プロパティ ===
@@ -105,6 +110,12 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public enum UndoStackType { VertexEdit, EditorState, WorkPlane, MeshList, Project, Unknown }
         public UndoStackType LastUndoRedoStackType { get; private set; } = UndoStackType.Unknown;
+
+        /// <summary>
+        /// 直前に実行されたのが Redo であれば true、Undo であれば false。
+        /// Player 側 OnUndoRedoPerformed ハンドラで分岐判定に使用。
+        /// </summary>
+        public bool LastUndoRedoIsRedo { get; private set; } = false;
         
         /// <summary>
         /// プロジェクトUndo実行時のコールバック（復元処理用）
@@ -159,6 +170,17 @@ namespace Poly_Ling.UndoSystem
             );
             _mainGroup.AddChild(_meshListStack);
 
+            // Projectスタック（ProjectContextを使用）
+            // Player 問題 A/B 対応: モデル切替・Add/Remove 等のプロジェクト操作を
+            // OperationLog ポリシーの UndoGroup 下で時系列統合するための独立スタック。
+            // Context は外部から SetProjectContext() で設定する。
+            _projectStack = new UndoStack<ProjectContext>(
+                $"{windowId}/ProjectContext",
+                "Project",
+                null
+            );
+            _mainGroup.AddChild(_projectStack);
+
             // MeshContextにWorkPlane参照を設定（選択連動Undo用）
             _meshContext.WorkPlane = _workPlane;
 
@@ -169,15 +191,17 @@ namespace Poly_Ling.UndoSystem
             _subWindowGroup = new UndoGroup($"{windowId}/SubWindows", "Sub Panels");
             _mainGroup.AddChild(_subWindowGroup);
 
-            // イベント購読（スタック種別を記録してからInvoke）
-            _vertexEditStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.VertexEdit; OnUndoRedoPerformed?.Invoke(); };
-            _vertexEditStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.VertexEdit; OnUndoRedoPerformed?.Invoke(); };
-            _editorStateStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.EditorState; OnUndoRedoPerformed?.Invoke(); };
-            _editorStateStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.EditorState; OnUndoRedoPerformed?.Invoke(); };
-            _workPlaneStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.WorkPlane; OnUndoRedoPerformed?.Invoke(); };
-            _workPlaneStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.WorkPlane; OnUndoRedoPerformed?.Invoke(); };
-            _meshListStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList; OnUndoRedoPerformed?.Invoke(); };
-            _meshListStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList; OnUndoRedoPerformed?.Invoke(); };
+            // イベント購読（スタック種別・Undo/Redo 区別を記録してからInvoke）
+            _vertexEditStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.VertexEdit;  LastUndoRedoIsRedo = false; OnUndoRedoPerformed?.Invoke(); };
+            _vertexEditStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.VertexEdit;  LastUndoRedoIsRedo = true;  OnUndoRedoPerformed?.Invoke(); };
+            _editorStateStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.EditorState; LastUndoRedoIsRedo = false; OnUndoRedoPerformed?.Invoke(); };
+            _editorStateStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.EditorState; LastUndoRedoIsRedo = true;  OnUndoRedoPerformed?.Invoke(); };
+            _workPlaneStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.WorkPlane;    LastUndoRedoIsRedo = false; OnUndoRedoPerformed?.Invoke(); };
+            _workPlaneStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.WorkPlane;    LastUndoRedoIsRedo = true;  OnUndoRedoPerformed?.Invoke(); };
+            _meshListStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList;      LastUndoRedoIsRedo = false; OnUndoRedoPerformed?.Invoke(); };
+            _meshListStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.MeshList;      LastUndoRedoIsRedo = true;  OnUndoRedoPerformed?.Invoke(); };
+            _projectStack.OnUndoPerformed += _ => { LastUndoRedoStackType = UndoStackType.Project;        LastUndoRedoIsRedo = false; OnUndoRedoPerformed?.Invoke(); };
+            _projectStack.OnRedoPerformed += _ => { LastUndoRedoStackType = UndoStackType.Project;        LastUndoRedoIsRedo = true;  OnUndoRedoPerformed?.Invoke(); };
 
             // グローバルマネージャーに登録（既存があれば削除してから追加）
             var existingChild = _undoManager.FindById(windowId);
@@ -329,7 +353,11 @@ namespace Poly_Ling.UndoSystem
             
             _editorStateStack.EndGroup();  // 独立した操作として記録
             EditorStateChangeRecord record = new EditorStateChangeRecord(before, after);
-            _editorStateStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] EditorState.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _editorStateStack.Record(record, __dbgDesc);
+            }
             FocusEditorState();
             
             // Debug.Log($"[RecordEditorStateChangeInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
@@ -381,7 +409,11 @@ namespace Poly_Ling.UndoSystem
             if (currentSnapshot.IsDifferentFrom(_workPlaneStartSnapshot))
             {
                 WorkPlaneChangeRecord record = new WorkPlaneChangeRecord(_workPlaneStartSnapshot, currentSnapshot, description);
-                _workPlaneStack.Record(record, description);
+                {
+                    string __dbgDesc = description;
+                    UnityEngine.Debug.Log("[UndoDbg] WorkPlane.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                    _workPlaneStack.Record(record, __dbgDesc);
+                }
                 FocusWorkPlane();
             }
         }
@@ -406,7 +438,11 @@ namespace Poly_Ling.UndoSystem
             if (!before.IsDifferentFrom(after)) return;
 
             var record = new WorkPlaneChangeRecord(before, after, description);
-            _workPlaneStack.Record(record, record.Description);
+            {
+                string __dbgDesc = record.Description;
+                UnityEngine.Debug.Log("[UndoDbg] WorkPlane.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _workPlaneStack.Record(record, __dbgDesc);
+            }
             FocusWorkPlane();
         }
 
@@ -489,7 +525,11 @@ namespace Poly_Ling.UndoSystem
                 }
 
                 var record = new VertexMoveRecord(movedIndices, oldPositions, newPos);
-                _vertexEditStack.Record(record, "Move Vertices");
+                {
+                    string __dbgDesc = "Move Vertices";
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                    _vertexEditStack.Record(record, __dbgDesc);
+                }
                 FocusVertexEdit();
                 
                 // Debug.Log($"[EndVertexDragInternal] Recorded vertex move. Focus={_mainGroup.FocusedChildId}");
@@ -544,7 +584,11 @@ namespace Poly_Ling.UndoSystem
                 (Vector3[])newOffsets.Clone(),
                 (Vector3[])originalVertices.Clone()
             );
-            _vertexEditStack.Record(record, "Move Vertex Group");
+            {
+                string __dbgDesc = "Move Vertex Group";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -571,7 +615,11 @@ namespace Poly_Ling.UndoSystem
         {
             _vertexEditStack.EndGroup();
             var record = new SelectionChangeRecord(oldVertices, newVertices, oldFaces, newFaces);
-            _vertexEditStack.Record(record, "Change Selection");
+            {
+                string __dbgDesc = "Change Selection";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -606,7 +654,11 @@ namespace Poly_Ling.UndoSystem
                 oldVertices, newVertices,
                 oldWorkPlane, newWorkPlane,
                 oldFaces, newFaces);
-            _vertexEditStack.Record(record, "Change Selection");
+            {
+                string __dbgDesc = "Change Selection";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -634,7 +686,11 @@ namespace Poly_Ling.UndoSystem
             _vertexEditStack.EndGroup();
             var record = new SelectionChangeRecord(oldSnapshot, newSnapshot, oldWorkPlane, newWorkPlane);
             string desc = newSnapshot?.Mode.ToString() ?? "Selection";
-            _vertexEditStack.Record(record, $"Change {desc} Selection");
+            {
+                string __dbgDesc = $"Change {desc} Selection";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
         // === スナップショット（トポロジー変更用） ===
@@ -690,7 +746,11 @@ namespace Poly_Ling.UndoSystem
         {
             _vertexEditStack.EndGroup();  // 独立した操作として記録
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
-            _vertexEditStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -738,7 +798,11 @@ namespace Poly_Ling.UndoSystem
 
             // selectionStateを渡すことでEdge/Line選択もUndo対象に
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after, selectionState);
-            _vertexEditStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
  
@@ -760,7 +824,11 @@ namespace Poly_Ling.UndoSystem
             MeshObjectSnapshot afterData = MeshObjectSnapshot.Capture(_meshContext);
 
             MeshSnapshotRecord record = new MeshSnapshotRecord(beforeData, afterData);
-            _vertexEditStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -773,7 +841,11 @@ namespace Poly_Ling.UndoSystem
         {
             _vertexEditStack.EndGroup();  // グループをリセットして独立した操作に
             var record = new FaceAddRecord(face, index);
-            _vertexEditStack.Record(record, "Add Face");
+            {
+                string __dbgDesc = "Add Face";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -784,7 +856,11 @@ namespace Poly_Ling.UndoSystem
         {
             _vertexEditStack.EndGroup();  // グループをリセットして独立した操作に
             var record = new FaceDeleteRecord(face, index);
-            _vertexEditStack.Record(record, "Delete Face");
+            {
+                string __dbgDesc = "Delete Face";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -795,7 +871,11 @@ namespace Poly_Ling.UndoSystem
         {
             _vertexEditStack.EndGroup();  // グループをリセットして独立した操作に
             var record = new VertexAddRecord(vertex, index);
-            _vertexEditStack.Record(record, "Add Vertex");
+            {
+                string __dbgDesc = "Add Vertex";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -818,7 +898,11 @@ namespace Poly_Ling.UndoSystem
             {
                 desc = $"Add {addedVertices.Count} Vertices";
             }
-            _vertexEditStack.Record(record, desc);
+            {
+                string __dbgDesc = desc;
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -843,7 +927,11 @@ namespace Poly_Ling.UndoSystem
                 newFace2,
                 addedVertices
             );
-            _vertexEditStack.Record(record, "Knife Cut");
+            {
+                string __dbgDesc = "Knife Cut";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -855,7 +943,11 @@ namespace Poly_Ling.UndoSystem
             _vertexEditStack.EndGroup();  // 独立した操作として記録
 
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
-            _vertexEditStack.Record(record, "Delete Vertices");
+            {
+                string __dbgDesc = "Delete Vertices";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
 
@@ -868,7 +960,11 @@ namespace Poly_Ling.UndoSystem
             _vertexEditStack.EndGroup();  // 独立した操作として記録
 
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
-            _vertexEditStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _vertexEditStack.Record(record, __dbgDesc);
+            }
             FocusVertexEdit();
         }
         /// <summary>
@@ -919,7 +1015,11 @@ namespace Poly_Ling.UndoSystem
             after.CameraTarget = newTarget;
 
             var record = new EditorStateChangeRecord(before, after);
-            _editorStateStack.Record(record, "Change View");
+            {
+                string __dbgDesc = "Change View";
+                UnityEngine.Debug.Log("[UndoDbg] EditorState.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _editorStateStack.Record(record, __dbgDesc);
+            }
             FocusEditorState();
             
             //Debug.Log($"[RecordViewChangeInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
@@ -969,7 +1069,11 @@ namespace Poly_Ling.UndoSystem
             after.CameraTarget = newTarget;
 
             var record = new EditorStateChangeRecord(before, after, oldWorkPlane, newWorkPlane);
-            _editorStateStack.Record(record, "Change View");
+            {
+                string __dbgDesc = "Change View";
+                UnityEngine.Debug.Log("[UndoDbg] EditorState.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _editorStateStack.Record(record, __dbgDesc);
+            }
             FocusEditorState();
             
             //Debug.Log($"[RecordViewChangeWithWorkPlaneInternal] After FocusEditorState(). Focus={_mainGroup.FocusedChildId}");
@@ -1131,6 +1235,72 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// Player 問題 A/B: ProjectStack の Context を設定する。
+        /// モデル切替などプロジェクトレベル Undo が復元対象とする ProjectContext。
+        /// 起動時および ActiveProject 切替時に呼び出すこと。
+        /// </summary>
+        public void SetProjectContext(ProjectContext projectContext)
+        {
+            if (_projectStack != null)
+                _projectStack.Context = projectContext;
+        }
+
+        /// <summary>
+        /// Player 問題 A: モデル切替（CurrentModelIndex の変更）を Undo 記録する。
+        /// 既存の ModelOperationRecord.CreateSwitch を使い、_projectStack へ push する。
+        /// 呼出し前に SetProjectContext で Context が設定されていること。
+        /// </summary>
+        public void RecordModelSwitch(int oldIndex, int newIndex)
+        {
+            if (_projectStack == null) return;
+            if (oldIndex == newIndex) return;
+            var record = ModelOperationRecord.CreateSwitch(
+                oldIndex, newIndex,
+                default(CameraSnapshot), default(CameraSnapshot),
+                null, null);
+            {
+                string __dbgDesc = $"Switch Model {oldIndex} -> {newIndex}";
+                UnityEngine.Debug.Log("[UndoDbg] Project.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _projectStack.Record(record, __dbgDesc);
+            }
+            FocusProjectStack();
+        }
+
+        /// <summary>
+        /// Player 問題 E/I: モデル追加 (PMX 読込等) を Undo 記録する。
+        /// 既存の ModelOperationRecord.CreateAdd を使い、_projectStack へ push する。
+        /// ModelContextSnapshot に追加モデル全体が保存されるため、Undo で
+        /// モデル自体 (リスト上のエントリ含む) が除去され、Redo で完全復元される。
+        /// 呼出し前に SetProjectContext で Context が設定されていること。
+        /// </summary>
+        public void RecordModelAdd(int addedIndex, ModelContext addedModel, int oldModelIndex)
+        {
+            if (_projectStack == null) return;
+            if (addedModel == null) return;
+            var record = ModelOperationRecord.CreateAdd(
+                addedIndex, addedModel, oldModelIndex,
+                default(CameraSnapshot), default(CameraSnapshot));
+            {
+                string __dbgDesc = $"Add Model: {addedModel.Name} (idx={addedIndex}, meshes={addedModel.MeshContextCount})";
+                UnityEngine.Debug.Log("[UndoDbg] Project.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _projectStack.Record(record, __dbgDesc);
+            }
+            FocusProjectStack();
+        }
+
+        /// <summary>
+        /// Player 問題: UndoManager._root は FocusPriority なので FocusedChildId が
+        /// 設定されていないと Undo が解決されない。ProjectStack に Record した直後に
+        /// _mainGroup と _undoManager の FocusedChildId を設定して Undo を可能にする。
+        /// </summary>
+        public void FocusProjectStack()
+        {
+            if (_projectStack == null) return;
+            _mainGroup.FocusedChildId = _projectStack.Id;
+            _undoManager.FocusedChildId = _mainGroup.Id;
+        }
+
+        /// <summary>
         /// ModelContextを設定し、OnListChangedコールバックを付け替える
         /// </summary>
         public void SetModelContext(ModelContext modelContext, Action onListChangedCallback)
@@ -1183,7 +1353,11 @@ namespace Poly_Ling.UndoSystem
                 NewCameraState = newCamera
             };
 
-            _meshListStack.Record(record, $"Add UnityMesh: {meshContext.Name}");
+            {
+                string __dbgDesc = $"Add UnityMesh: {meshContext.Name}";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             FocusMeshList();
         }
 
@@ -1216,7 +1390,11 @@ namespace Poly_Ling.UndoSystem
                 ? $"Add Mesh: {addedContexts[0].MeshContext.Name}"
                 : $"Add {addedContexts.Count} Meshes";
 
-            _meshListStack.Record(record, desc);
+            {
+                string __dbgDesc = desc;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             _lastMeshListRecord = record;
             FocusMeshList();
         }
@@ -1247,7 +1425,11 @@ namespace Poly_Ling.UndoSystem
         {
             record.OldMaterials = oldMaterials != null ? new List<Material>(oldMaterials) : null;
             record.OldCurrentMaterialIndex = oldMaterialIndex;
-            _meshListStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             _lastMeshListRecord = record;
             FocusMeshList();
         }
@@ -1277,7 +1459,11 @@ namespace Poly_Ling.UndoSystem
                 ? $"Remove UnityMesh: {removedContexts[0].meshContext.Name}"
                 : $"Remove {removedContexts.Count} Meshes";
 
-            _meshListStack.Record(record, desc);
+            {
+                string __dbgDesc = desc;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             FocusMeshList();
         }
 
@@ -1312,7 +1498,11 @@ namespace Poly_Ling.UndoSystem
                 NewCameraState = newCamera
             };
 
-            _meshListStack.Record(record, $"Reorder UnityMesh: {meshContext.Name}");
+            {
+                string __dbgDesc = $"Reorder UnityMesh: {meshContext.Name}";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             FocusMeshList();
         }
 
@@ -1333,7 +1523,11 @@ namespace Poly_Ling.UndoSystem
             var record = new MeshSelectionChangeRecord(
                 oldIndices ?? new List<int>(), 
                 newIndices ?? new List<int>());
-            _meshListStack.Record(record, "Select Mesh");
+            {
+                string __dbgDesc = "Select Mesh";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             FocusMeshList();
         }
 
@@ -1363,7 +1557,11 @@ namespace Poly_Ling.UndoSystem
                 oldIndices ?? new List<int>(), 
                 newIndices ?? new List<int>(), 
                 oldCamera, newCamera);
-            _meshListStack.Record(record, "Select Mesh");
+            {
+                string __dbgDesc = "Select Mesh";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                _meshListStack.Record(record, __dbgDesc);
+            }
             FocusMeshList();
         }
 

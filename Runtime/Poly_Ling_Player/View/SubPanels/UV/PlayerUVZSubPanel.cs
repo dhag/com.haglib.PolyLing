@@ -24,6 +24,11 @@ namespace Poly_Ling.Player
         /// <summary>現在のカメラ前向きを返す。</summary>
         public Func<Vector3>        GetCameraForward;
 
+        /// <summary>UV編集モード開始（Viewer 側で UVZ生成→Front正射影→既存ツール編集）。</summary>
+        public Action               OnEnterUvEditMode;
+        /// <summary>UV編集モード終了（Viewer 側で 書き戻し→UVZ破棄→復元）。</summary>
+        public Action               OnExitUvEditMode;
+
         // ── 設定値 ────────────────────────────────────────────────────────
         private float _uvScale    = 10f;
         private float _depthScale = 1f;
@@ -57,6 +62,21 @@ namespace Poly_Ling.Player
             _targetInfo.style.fontSize    = 10;
             _targetInfo.style.marginBottom = 4;
             root.Add(_targetInfo);
+
+            // UV編集モード（マグネット/彫刻をUVに適用：A方式）
+            root.Add(SecLabel("UV編集モード（マグネット/彫刻）"));
+            root.Add(new HelpBox(
+                "選択メッシュのUVを平面に展開し、既存のマグネット/彫刻を Front 正射影ビューで適用。終了でUVへ書き戻す。",
+                HelpBoxMessageType.None));
+            var modeRow = new VisualElement();
+            modeRow.style.flexDirection = FlexDirection.Row;
+            modeRow.style.marginTop = 4; modeRow.style.marginBottom = 8;
+            var enterBtn = new Button(() => OnEnterUvEditMode?.Invoke()) { text = "UV編集モード開始" };
+            enterBtn.style.flexGrow = 1; enterBtn.style.height = 28;
+            var exitBtn = new Button(() => OnExitUvEditMode?.Invoke()) { text = "終了（書き戻し）" };
+            exitBtn.style.flexGrow = 1; exitBtn.style.height = 28; exitBtn.style.marginLeft = 4;
+            modeRow.Add(enterBtn); modeRow.Add(exitBtn);
+            root.Add(modeRow);
 
             // スケール
             root.Add(SecLabel("スケール"));

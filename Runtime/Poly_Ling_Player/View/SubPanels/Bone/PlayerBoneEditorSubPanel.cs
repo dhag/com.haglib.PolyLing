@@ -35,6 +35,13 @@ namespace Poly_Ling.Player
         public Action<Vector3>           OnFocusCamera;
         public Func<int>                 GetModelIndex;
 
+        /// <summary>
+        /// ObjectMoveTool の共有設定インスタンスを返すコールバック。
+        /// 設定: MoveWithChildren / PickBones / PickMeshesNoSkin / PickMeshesSkinned。
+        /// サブパネルのチェックボックスとこの設定を双方向で同期する。
+        /// </summary>
+        public Func<Poly_Ling.Tools.ObjectMoveSettings> GetObjectMoveSettings;
+
         // PanelContext 経由でコマンドを送信
         private PanelContext _panelContext;
 
@@ -84,6 +91,15 @@ namespace Poly_Ling.Player
         private Toggle        _ignorePoseToggle;
         private VisualElement _ignorePoseRow;
 
+        // ── ObjectMoveSettings 連動チェックボックス ───────────────
+        // BoneInputHandler 廃止に伴い、ObjectMoveTool のピック対象を
+        // ここから操作する。GetObjectMoveSettings() 経由で同一インスタンスを共有。
+        private Toggle        _toggleMoveWithChildren;
+        private Toggle        _togglePickBones;
+        private Toggle        _togglePickMeshesNoSkin;
+        private Toggle        _togglePickMeshesSkinned;
+        private bool          _suppressMoveSettings;
+
         private Label _statusLabel;
 
         // ================================================================
@@ -108,6 +124,54 @@ namespace Poly_Ling.Player
             tabRow.Add(_tabBones); tabRow.Add(_tabMeshes); tabRow.Add(_tabBoth);
             root.Add(tabRow);
             UpdateTabHighlight();
+
+            // ── ピック対象・挙動オプション ───────────────────────────
+            // ObjectMoveTool の ObjectMoveSettings と同期するチェックボックス 4 個。
+            // BoneInputHandler 廃止後、ボーンエディタ表示中のピック対象を
+            // このサブパネルから操作する。
+            var pickSection = new VisualElement();
+            pickSection.style.marginBottom = 6;
+            pickSection.Add(MakeSecLabel("ピック対象 / 挙動"));
+
+            _togglePickBones         = new Toggle("ボーン") { value = true };
+            _togglePickMeshesNoSkin  = new Toggle("スキンドでないメッシュ") { value = true };
+            _togglePickMeshesSkinned = new Toggle("スキンドメッシュ") { value = false };
+            _toggleMoveWithChildren  = new Toggle("子を一緒に移動") { value = true };
+            _togglePickBones.style.color         = new StyleColor(Color.white);
+            _togglePickMeshesNoSkin.style.color  = new StyleColor(Color.white);
+            _togglePickMeshesSkinned.style.color = new StyleColor(Color.white);
+            _toggleMoveWithChildren.style.color  = new StyleColor(Color.white);
+
+            _togglePickBones.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.PickBones = e.newValue;
+            });
+            _togglePickMeshesNoSkin.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.PickMeshesNoSkin = e.newValue;
+            });
+            _togglePickMeshesSkinned.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.PickMeshesSkinned = e.newValue;
+            });
+            _toggleMoveWithChildren.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.MoveWithChildren = e.newValue;
+            });
+
+            pickSection.Add(_togglePickBones);
+            pickSection.Add(_togglePickMeshesNoSkin);
+            pickSection.Add(_togglePickMeshesSkinned);
+            pickSection.Add(_toggleMoveWithChildren);
+            root.Add(pickSection);
 
             // ── 警告・選択カウント ───────────────────────────────────
             _warningLabel = new Label();
@@ -336,6 +400,23 @@ namespace Poly_Ling.Player
         {
             if (_warningLabel == null) return;
 
+            // ObjectMoveSettings -> チェックボックス同期
+            // 他経路 (Editor 拡張 UI 等) で値が変わっている可能性があるので
+            // Refresh のたびに読み直す。_suppressMoveSettings で循環更新を防止。
+            var moveSettings = GetObjectMoveSettings?.Invoke();
+            if (moveSettings != null)
+            {
+                _suppressMoveSettings = true;
+                try
+                {
+                    _togglePickBones?.SetValueWithoutNotify(moveSettings.PickBones);
+                    _togglePickMeshesNoSkin?.SetValueWithoutNotify(moveSettings.PickMeshesNoSkin);
+                    _togglePickMeshesSkinned?.SetValueWithoutNotify(moveSettings.PickMeshesSkinned);
+                    _toggleMoveWithChildren?.SetValueWithoutNotify(moveSettings.MoveWithChildren);
+                }
+                finally { _suppressMoveSettings = false; }
+            }
+
             var model = GetModel?.Invoke();
 
             bool showBoneSection = _scope != SubPanelScope.MeshesOnly;
@@ -486,7 +567,11 @@ namespace Poly_Ling.Player
                         OldSnapshot = beforeSnapshots.TryGetValue(idx, out var b) ? b : (BonePoseDataSnapshot?)null,
                         NewSnapshot = ctx.BonePoseData.CreateSnapshot(),
                     });
-                undo.MeshListStack.Record(record, "ボーンポーズリセット");
+                {
+                    string __dbgDesc = "ボーンポーズリセット";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    undo.MeshListStack.Record(record, __dbgDesc);
+                }
                 undo.FocusMeshList();
             }
 

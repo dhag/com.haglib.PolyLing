@@ -650,8 +650,18 @@ namespace Poly_Ling.MeshListV2
 
         private void OnItemExpandedChanged(TreeViewExpansionChangedArgs args)
         {
+            // _isReceiving: OnViewChanged 経由で TreeView をプログラム的に展開/折りたたみ
+            // した場合にここへ再入する。Undo/Redo 連鎖記録を防ぐためスキップする。
+            if (_isReceiving) return;
             var a = _treeRoot?.FindById(args.id);
-            if (a != null) a.IsExpanded = _treeView.IsExpanded(args.id);
+            if (a == null) return;
+            bool newExpanded = _treeView.IsExpanded(args.id);
+            // UI 側アダプタ状態を更新
+            a.IsExpanded = newExpanded;
+            // データモデル (MeshContext.IsFolding) にも反映 + Undo 記録
+            // IsFolding は IsExpanded の反転値 (folding = true で折りたたみ)
+            if (a.MasterIndex >= 0)
+                SendCmd(new SetMeshFoldingCommand(ModelIndex, a.MasterIndex, !newExpanded));
         }
 
         private void SyncTreeViewSelection()
@@ -805,7 +815,14 @@ namespace Poly_Ling.MeshListV2
                         UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
                     case ChangeKind.Attributes:
-                        if (_currentTab != TabType.Morph) { _treeView?.RefreshItems(); SyncTreeViewSelection(); }
+                        if (_currentTab != TabType.Morph)
+                        {
+                            // MeshContext.IsFolding の変化 (Undo/Redo 等) を TreeView 展開状態に反映
+                            if (_treeRoot != null)
+                                SyncExpandedFromData(_treeRoot.RootItems);
+                            _treeView?.RefreshItems();
+                            SyncTreeViewSelection();
+                        }
                         else RefreshMorphEditor();
                         // Bone タブは BonePoseData 等が変化した可能性があるため
                         // _selectedAdapters のビューを最新スナップショットで更新する
@@ -866,6 +883,27 @@ namespace Poly_Ling.MeshListV2
             {
                 if (i.IsExpanded) _treeView.ExpandItem(i.Id, false);
                 if (i.HasChildren) RestoreExpanded(i.Children);
+            }
+        }
+
+        /// <summary>
+        /// MeshContext.IsFolding (データ側) の最新値を SummaryTreeAdapter.IsExpanded (UI 側)
+        /// および TreeView の展開状態に反映する。
+        /// Undo/Redo 経由で IsFolding が書き換わった際に呼び、UI を追従させる。
+        /// </summary>
+        private void SyncExpandedFromData(List<SummaryTreeAdapter> items)
+        {
+            if (items == null || _treeView == null) return;
+            foreach (var i in items)
+            {
+                bool shouldExpand = !i.MeshView.IsFolding;
+                if (i.IsExpanded != shouldExpand)
+                {
+                    i.IsExpanded = shouldExpand;
+                    if (shouldExpand) _treeView.ExpandItem(i.Id, false);
+                    else              _treeView.CollapseItem(i.Id, false);
+                }
+                if (i.HasChildren) SyncExpandedFromData(i.Children);
             }
         }
 

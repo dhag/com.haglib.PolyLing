@@ -66,7 +66,7 @@ namespace Poly_Ling.PrimitiveMesh
         // 生成エントリポイント
         // ================================================================
         public static MeshObject Generate(CubeParams p) =>
-            p.CornerRadius <= 0f ? GenerateSimple(p) : GenerateRounded(p);
+            (p.CornerRadius <= 0f || p.CornerSegments <= 0) ? GenerateSimple(p) : GenerateRounded(p);
 
         // ================================================================
         // シンプルキューブ

@@ -283,11 +283,14 @@ namespace Poly_Ling.Player
             {
                 var afterList = Poly_Ling.UndoSystem.MeshFilterToSkinnedRecord.CaptureList(baseModel);
                 var afterExpr = baseModel.MorphExpressions.Select(e => e.Clone()).ToList();
-                undo.MeshListStack.Record(new Poly_Ling.UndoSystem.MorphCreateRecord
+                var __rec = new Poly_Ling.UndoSystem.MorphCreateRecord
                 {
                     BeforeList = beforeList, AfterList = afterList,
                     BeforeExpressions = beforeExpr, AfterExpressions = afterExpr,
-                }, $"モーフ作成: {morphName}");
+                };
+                string __dbgDesc = $"モーフ作成: {morphName}";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (__rec?.GetType().Name ?? "<null>"));
+                undo.MeshListStack.Record(__rec, __dbgDesc);
                 undo.FocusMeshList();
             }
 

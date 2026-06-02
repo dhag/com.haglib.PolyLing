@@ -204,7 +204,11 @@ namespace Poly_Ling.Tools
                         ctx.UndoController.MeshUndoContext.ParentModelContext = model;
                         ctx.UndoController.FocusVertexEdit();
                         var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
-                        ctx.UndoController.VertexEditStack.Record(record, $"Sculpt ({Mode})");
+                        {
+                            string __dbgDesc = $"Sculpt ({Mode})";
+                            UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
+                        }
                     }
                 }
 
@@ -216,28 +220,8 @@ namespace Poly_Ling.Tools
                 return true;
             }
 
-            public void DrawGizmo(ToolContext ctx)
-            {
-                if (ctx.Model == null || ctx.Model.SelectedDrawableMeshIndices.Count == 0) return;
-
-                UnityEditor_Handles.BeginGUI();
-
-                Color brushColor = Invert ? new Color(1f, 0.5f, 0.5f, 0.5f) : new Color(0.5f, 0.8f, 1f, 0.5f);
-                UnityEditor_Handles.color = brushColor;
-
-                // GUI.BeginClip後のローカル座標系でのマウス位置を使用
-                // _currentScreenPosはBeginClip前のグローバル座標のため、左ペイン幅分ずれる
-                Vector2 centerScreen = ctx.CurrentMousePosition;
-                float screenRadius = EstimateBrushScreenRadius(ctx);
-
-                DrawCircle(centerScreen, screenRadius, 32);
-
-                GUI.color = Color.white;
-                string modeText = GetModeName(Mode) + (Invert ? $" ({T("Invert")})" : "");
-                GUI.Label(new Rect(centerScreen.x + screenRadius + 5, centerScreen.y - 10, 150, 20), modeText);
-
-                UnityEditor_Handles.EndGUI();
-            }
+            /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+            public void DrawGizmo(ToolContext ctx) { }
 
             public void OnActivate(ToolContext ctx) => Reset();
             public void OnDeactivate(ToolContext ctx) => Reset();
@@ -604,7 +588,7 @@ namespace Poly_Ling.Tools
             {
                 float angle = (float)i / segments * Mathf.PI * 2f;
                 Vector2 point = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-                UnityEditor_Handles.DrawAAPolyLine(2f, prevPoint, point);
+                // UnityEditor_Handles 削除済み
                 prevPoint = point;
             }
         }

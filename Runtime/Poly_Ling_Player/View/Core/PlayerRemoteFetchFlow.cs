@@ -22,8 +22,13 @@ namespace Poly_Ling.Player
         private readonly RemoteProjectReceiver _receiver;
         private readonly PlayerLocalLoader     _localLoader;
         private readonly PlayerViewportManager _viewportManager;
+        // Phase 2a-2g-2 (設計 Z) 以降、以下 2 フィールドは直接参照しなくなった。
+        // GPU 反映・選択状態同期は EnterSceneReset 経由で ViewportManager が担う。
+        // シグネチャ互換性のためフィールド・コンストラクタ引数は保持する。
+        #pragma warning disable CS0414
         private readonly MeshSceneRenderer     _renderer;
         private readonly PlayerSelectionOps    _selectionOps;
+        #pragma warning restore CS0414
         private readonly Action<ChangeKind>    _notifyPanels;
         private readonly Action<string>        _setStatus;
         public Action<ModelContext>             OnModelContextReady;
@@ -74,7 +79,8 @@ namespace Poly_Ling.Player
             _receiver?.Reset();
             ModelCount         = 0;
             FetchingModelIndex = -1;
-            _viewportManager.ClearScene();
+            // Phase 2a-2g-2 (設計 Z): ClearScene はフェッチ完了時の EnterSceneReset(clearScene: true) に統合。
+            // ここでの ClearScene 呼出しは削除。
 
             _client.FetchProjectHeader((json, bin) =>
             {
@@ -98,10 +104,11 @@ namespace Poly_Ling.Player
                 if (project != null && mi < project.ModelCount)
                 {
                     var model = project.Models[mi];
-                    _viewportManager.RebuildAdapter(mi, model);
 
                     // ────────────────────────────────────────────────
-                    // RebuildAdapter 後の初期選択設定
+                    // Phase 2a-2g-2 (設計 Z): データの初期選択設定のみ行う。
+                    // GPU 反映 (RebuildAdapter / SetSelectionState / UpdateSelectedDrawableMesh /
+                    // カメラ通知) はループ完了後の 1 回にまとめる。
                     //
                     // 【描画メッシュ選択】
                     //   DrawableMeshes から頂点数がゼロでない先頭を選択する。
@@ -141,26 +148,28 @@ namespace Poly_Ling.Player
                     if (selectedBone >= 0)
                         model.SelectBone(selectedBone);
 
-                    // SelectionState 同期（選択描画メッシュの Selection を使う）
-                    var firstMc = model.FirstDrawableMeshContext;
-                    if (firstMc != null)
-                    {
-                        _selectionOps?.SetSelectionState(firstMc.Selection);
-                        _renderer?.SetSelectionState(firstMc.Selection);
-                    }
-
                     // DrawWireframeAndVertices 用の selectedMeshIndex を更新
                     OnModelContextReady?.Invoke(model);
-                    _renderer?.UpdateSelectedDrawableMesh(mi, model);
-
-                    // カメラパラメータをアダプターに設定（UpdateFrame 1回）
-                    _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
                 }
 
                 int next = mi + 1;
-                if (next < ModelCount) FetchAllModelsBatch(next);
+                if (next < ModelCount)
+                {
+                    FetchAllModelsBatch(next);
+                }
                 else
                 {
+                    // Phase 2a-2g-2 (設計 Z): 全モデルフェッチ完了後、先頭モデルを
+                    // CurrentModel にしてから EnterSceneReset で slot 0 に反映。
+                    // 「画面に表示するのは常に 1 モデル (CurrentModel)」規約に揃う。
+                    if (project != null && project.ModelCount > 0)
+                    {
+                        project.SelectModel(0);
+                        _viewportManager.EnterSceneReset(project, clearScene: true);
+                        _viewportManager.EnterCameraChanged(
+                            _viewportManager.PerspectiveViewport,
+                            CameraChangePhase.Committed);
+                    }
                     _setStatus($"完了 ({project?.Name})");
                     _notifyPanels(ChangeKind.ModelSwitch);
                 }

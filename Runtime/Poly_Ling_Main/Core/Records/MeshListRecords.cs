@@ -538,6 +538,7 @@ namespace Poly_Ling.UndoSystem
                 if (change.MirrorType.HasValue) meshContext.MirrorType = change.MirrorType.Value;
                 if (change.Name != null) meshContext.Name = change.Name;
                 if (change.IgnorePoseInArmature.HasValue) meshContext.IgnorePoseInArmature = change.IgnorePoseInArmature.Value;
+                if (change.IsFolding.HasValue) meshContext.IsFolding = change.IsFolding.Value;
             }
         }
 

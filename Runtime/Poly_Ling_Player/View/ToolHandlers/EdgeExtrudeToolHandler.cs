@@ -8,6 +8,7 @@ using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Commands;
+using Poly_Ling.Selection;
 
 namespace Poly_Ling.Player
 {
@@ -28,6 +29,9 @@ namespace Poly_Ling.Player
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
         public Action            NotifyTopologyChanged;
+        /// <summary>GPU ホバー結果取得。FindEdgeAtPosition 等 CPU 側探索の代替。</summary>
+        public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
+        public Action            OnApplyCompleted;
 
         // ================================================================
         // 設定公開API
@@ -56,6 +60,10 @@ namespace Poly_Ling.Player
         }
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
+            var el = GetHoverElement?.Invoke(MeshSelectMode.Edge) ?? PlayerHoverElement.None;
+            var edge = (el.Kind == PlayerHoverKind.Edge) ? new VertexPair(el.EdgeV1, el.EdgeV2) : (VertexPair?)null;
+            int  line = (el.Kind == PlayerHoverKind.Line) ? el.FaceIndex : -1;
+            _tool.PrepareHit(edge, line);
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
         }
@@ -64,21 +72,23 @@ namespace Poly_Ling.Player
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), delta);
         }
+
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
+            OnApplyCompleted?.Invoke();
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
-            if (ctx == null) return;
-            var model = _project?.CurrentModel;
-            ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
-            ctx.Repaint          = OnRepaint;
-            // DrawGizmo は IMGUI を使用するため UIToolkit 環境では呼ばない。
+            var el = GetHoverElement?.Invoke(MeshSelectMode.Edge) ?? PlayerHoverElement.None;
+            var edge = (el.Kind == PlayerHoverKind.Edge) ? new VertexPair(el.EdgeV1, el.EdgeV2) : (VertexPair?)null;
+            int  line = (el.Kind == PlayerHoverKind.Line) ? el.FaceIndex : -1;
+            _tool.SetHoverEdge(edge, line);
         }
+
+        // ── UIToolkit オーバーレイ用 ────────────────────────────────────
+        public VertexPair? HoverEdge => _tool.HoverEdge;
         public void Activate(ToolContext ctx)
         {
             if (ctx != null)
@@ -92,6 +102,8 @@ namespace Poly_Ling.Player
                 ctx.Repaint          = OnRepaint;
                 ctx.NotifyTopologyChanged = NotifyTopologyChanged;
                 ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+                if (_undoController?.MeshUndoContext != null)
+                    _undoController.MeshUndoContext.ParentModelContext = model;
             }
             _tool.OnActivate(ctx);
         }
@@ -113,8 +125,15 @@ namespace Poly_Ling.Player
             ctx.UndoController   = _undoController;
             ctx.CommandQueue     = _commandQueue;
             ctx.Repaint          = OnRepaint;
-            ctx.NotifyTopologyChanged = NotifyTopologyChanged;
-            ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            ctx.NotifyTopologyChanged    = NotifyTopologyChanged;
+            ctx.SyncMesh                 = () => NotifyTopologyChanged?.Invoke();
+            ctx.SyncMeshPositionsOnly    = () =>
+            {
+                var mc = _project?.CurrentModel?.FirstDrawableMeshContext;
+                if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+            };
+            if (_undoController?.MeshUndoContext != null)
+                _undoController.MeshUndoContext.ParentModelContext = model;
             return ctx;
         }
 

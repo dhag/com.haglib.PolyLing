@@ -246,7 +246,11 @@ namespace Poly_Ling.Core
             if (_undoController != null && oldValues.Count > 0)
             {
                 var record = new MeshAttributesBatchChangeRecord(oldValues, changes.ToList());
-                _undoController.MeshListStack.Record(record, "属性変更");
+                {
+                    string __dbgDesc = "属性変更";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undoController.MeshListStack.Record(record, __dbgDesc);
+                }
             }
 
             _model.IsDirty = true;

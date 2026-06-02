@@ -13,6 +13,69 @@ using Poly_Ling.Selection;
 
 namespace Poly_Ling.Player
 {
+    // ================================================================
+    // ★★★ 正規入口カテゴリ（Phase 2a）★★★
+    //
+    // PlayerViewportManager / MeshSceneRenderer / UnifiedSystemAdapter への
+    // 外部アクセスは以下の 6 入口のみを使うこと。
+    //   1. EnterProjectChanged         — プロジェクト/モデル変更
+    //   2. EnterTopologyChanged        — トポロジ変更・選択変更
+    //   3. EnterCameraChanged          — 視点・カメラパラメータ変更
+    //   4. EnterVerticesMoved          — 頂点位置変更
+    //   5. EnterHoverChanged           — ホバー状態変更
+    //   6. EnterDisplaySettingsChanged — per-viewport 表示トグル
+    //
+    // ライフサイクル API（Initialize / Dispose / RegisterMoveToolHandler）は
+    // 別グループ。純粋 getter（GetCurrentToolContext, PerspectiveViewport 等）も
+    // 対象外。
+    //
+    // 新規入口の追加には明示的な承認が必須。
+    // ================================================================
+
+    /// <summary>カメラ操作のフェーズ。</summary>
+    public enum CameraChangePhase
+    {
+        /// <summary>ドラッグ開始（軽量プロファイル切替）</summary>
+        DragBegin,
+        /// <summary>ドラッグ中の連続更新（軽量パス）</summary>
+        Dragging,
+        /// <summary>ドラッグ終了（確定 + 重いパイプライン）</summary>
+        DragEnd,
+        /// <summary>単発のカメラパラメータ確定（スクロール等、ドラッグ無関係）</summary>
+        Committed,
+        /// <summary>カメラ位置をリセット（ResetToMesh）</summary>
+        Reset,
+    }
+
+    /// <summary>頂点移動のフェーズ。</summary>
+    public enum VerticesMovedPhase
+    {
+        /// <summary>ドラッグ開始（軽量プロファイル切替）</summary>
+        DragBegin,
+        /// <summary>ドラッグ中の連続更新（軽量パス）</summary>
+        Dragging,
+        /// <summary>ドラッグ終了（確定）</summary>
+        DragEnd,
+    }
+
+    /// <summary>ホバー対象の種類。ツールごとにホバー対象を限定することで、
+    /// 辺ツール中に頂点色が変わる等の誤動作を防ぐ。</summary>
+    public enum HoverTargetKind
+    {
+        /// <summary>ホバー表示を消す。</summary>
+        None,
+        /// <summary>頂点編集系ツール</summary>
+        Vertex,
+        /// <summary>辺編集系ツール（EdgeTopology, EdgeBevel 等）</summary>
+        Edge,
+        /// <summary>面編集系ツール（AddFace, FaceExtrude 等）</summary>
+        Face,
+        /// <summary>ボーン編集系ツール</summary>
+        Bone,
+        /// <summary>ツールギズモ（Move/Rotate/Scale 等のギズモ軸）</summary>
+        Gizmo,
+    }
+
     /// <summary>
     /// Perspective / Top / Front の3ビューポートを管理する。
     /// Viewer の Update / LateUpdate から対応メソッドを呼ぶこと。
@@ -40,6 +103,46 @@ namespace Poly_Ling.Player
         private Action<Vector2, Poly_Ling.Tools.ToolContext> _activeToolHoverCallback;
         private PlayerToolContext _toolCtx = new PlayerToolContext();
 
+        // ================================================================
+        // Overlay 再描画コールバック (Phase 2b-1)
+        //
+        // 各正規入口 (Enter*) の末尾から必要な overlay のみを発火する。
+        // PolyLingPlayerViewerCore が Initialize 時に 3 つのコールバックを設定する。
+        // ================================================================
+        public Action OnRefreshFaceHoverOverlay;
+        public Action OnRefreshSelectedFacesOverlay;
+        public Action OnRefreshGizmoOverlay;
+        // Phase 2c-2: ボーン位置マーカー（UIToolkit 菱形マーカー）の refresh。
+        // ボーン GPU wire は Poly_Ling/Bone3D_Overlay で自動追従するため
+        // refresh 不要だが、UIToolkit マーカーの CPU 投影座標は event 駆動。
+        public Action OnRefreshBoneOverlay;
+        // Phase 2c-3: ツール固有の UIToolkit overlay。各ハンドラが内部状態を
+        // 保持し、正規入口 (Enter*) の末尾で再投影・再描画する。
+        public Action OnRefreshAddFaceOverlay;
+        public Action OnRefreshTopologyToolsOverlay;
+        public Action OnRefreshAdvancedSelectOverlay;
+
+        /// <summary>
+        /// Phase 2a-2b-2 Batch 3: EnterSceneReset 内部から Core 側の
+        /// _selectionOps.SetSelectionState を呼ぶためのコールバック。
+        /// Core 初期化時に設定する。ViewportManager 自身は _selectionOps に
+        /// 参照を持たないため、このコールバック経由で選択状態を Core に届ける。
+        /// </summary>
+        public Action<Poly_Ling.Selection.SelectionState> OnSetSelectionState;
+
+        /// <summary>
+        /// Phase 2c-3: ツール固有の UIToolkit overlay (AddFace / TopologyTools /
+        /// AdvancedSelect) を一括再描画する。各正規入口の末尾から呼ばれる。
+        /// 各ハンドラ内部の状態（ホバー辺、プレビュー点等）はそのままに、
+        /// 視点変更や頂点移動に伴う CPU 投影だけを再実行する。
+        /// </summary>
+        private void RefreshToolOverlays()
+        {
+            OnRefreshAddFaceOverlay?.Invoke();
+            OnRefreshTopologyToolsOverlay?.Invoke();
+            OnRefreshAdvancedSelectOverlay?.Invoke();
+        }
+
         // カリングスロット（ビューポートごとに独立した per-slot カリングバッファを使用）
         private const int SlotPerspective = 0;
         private const int SlotTop         = 1;
@@ -65,6 +168,12 @@ namespace Poly_Ling.Player
         public ViewportDisplaySettings GetDisplaySettings(int slot) => _displaySettings[slot];
 
         /// <summary>指定スロットの表示設定を更新する。</summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void SetDisplaySettings(int slot, ViewportDisplaySettings s)
         {
             _displaySettings[slot] = s;
@@ -163,6 +272,24 @@ namespace Poly_Ling.Player
                 _slotCameraDirty[i] = true;
         }
 
+        /// <summary>
+        /// Phase 2a-2g-3 Fix: 重量級入口 (EnterSceneReset / EnterTopologyChanged /
+        /// EnterUndoApplied / EnterVerticesMoved DragEnd) から呼ばれる。
+        /// 4 viewport 全てに対して ApplyCameraTransform を実行し、Unity Camera.transform を
+        /// 最新のカメラパラメータに同期する。
+        ///
+        /// 背景: Phase 2a-2f で毎フレーム呼ばれていた _viewportManager.Update() が削除され、
+        /// イベント駆動のみになったため、user がカメラオービットしていない viewport の
+        /// Camera.transform が古い値のまま残り、新モデル表示位置にズレが発生していた。
+        /// </summary>
+        private void ApplyAllViewportCameraTransforms()
+        {
+            PerspectiveViewport?.ApplyCameraTransform();
+            TopViewport        ?.ApplyCameraTransform();
+            FrontViewport      ?.ApplyCameraTransform();
+            SideViewport       ?.ApplyCameraTransform();
+        }
+
         public ToolContext GetCurrentToolContext(PlayerViewport vp = null)
         {
             var target = vp ?? PerspectiveViewport;
@@ -205,6 +332,346 @@ namespace Poly_Ling.Player
         // 描画（LateUpdate から呼ぶ）
         // ================================================================
 
+        // ================================================================
+        // ★★★ 正規入口 (Phase 2a) ★★★
+        //
+        // 以下 6 メソッドは PlayerViewportManager への外部アクセス唯一の入口。
+        // 旧プリミティブ API (NotifyCameraChanged / NotifyPointerHover /
+        // PresentAll / RebuildAdapter / SyncMeshPositionsAndTransform /
+        // UpdateTransform / Enter(Camera/Transform/Box)Dragging 等) は
+        // [Obsolete] でマークされる。直接呼ぶことは規約違反。
+        // ================================================================
+
+        /// <summary>
+        /// カテゴリ 1: プロジェクト/モデル変更。重量級。バッファ全再構築を許容。
+        /// 契機: モデルロード、プロジェクト切替、モデル破棄/初期化。
+        /// </summary>
+        /// <summary>
+        /// カテゴリ 1: プロジェクト/モデル変更。重量級。バッファ全再構築を許容。
+        /// 契機: モデルロード、プロジェクト切替、モデル破棄/初期化。
+        ///
+        /// Phase 2a-2b-1: 責務完備化。
+        /// RebuildAdapter + UpdateSelectedDrawableMesh + PresentAll を内包する。
+        /// SelectionState の初期化（SetSelectionState）はモデル固有情報を扱うため
+        /// 本メソッドの責務外。呼出し側（Core の OnModelLoaded 等）で行うこと。
+        /// </summary>
+        public void EnterProjectChanged(ProjectContext project)
+        {
+#pragma warning disable CS0618
+            var model = project?.CurrentModel;
+            if (_renderer != null && model != null)
+            {
+                _renderer.RebuildAdapter(0, model);
+                _renderer.UpdateSelectedDrawableMesh(0, model);
+            }
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// カテゴリ 2: トポロジ変更・選択変更。バッファ再構築あり、視点不変。
+        /// 契機: 選択変更、面追加、面分割、頂点削除、矩形/投げ縄選択の確定、ツール切替等。
+        /// </summary>
+        /// <summary>
+        /// カテゴリ 2: トポロジ変更・選択変更。バッファ再構築あり、視点不変。
+        /// 契機: 選択変更、面追加、面分割、頂点削除、矩形/投げ縄選択の確定、ツール切替等。
+        ///
+        /// Phase 2a-2b-1: 責務完備化。
+        /// 従来、呼出し側で _viewportManager.RebuildAdapter → _renderer.UpdateSelectedDrawableMesh →
+        /// NotifyPanels の連鎖を手書きしていたが、本メソッドに内包する。
+        /// 呼出し側は EnterTopologyChanged(proj) 一発で済むようにする。
+        /// </summary>
+        public void EnterTopologyChanged(ProjectContext project)
+        {
+#pragma warning disable CS0618
+            var model = project?.CurrentModel;
+            if (_renderer != null && model != null)
+            {
+                _renderer.RebuildAdapter(0, model);
+                _renderer.UpdateSelectedDrawableMesh(0, model);
+            }
+            // Phase 2a-2g-3 Fix: トポロジ変更は全 viewport のカリング再計算が必要。
+            // 図形生成・モデルロード・面追加/削除等で Perspective 以外も更新されるようにする。
+            MarkAllSlotsDirty();
+            ApplyAllViewportCameraTransforms();
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// カテゴリ 3: 視点・カメラパラメータ変更。トポロジ・頂点位置不変。
+        /// 契機: カメラオービット、パン、ズーム、ResetToMesh。
+        /// </summary>
+        public void EnterCameraChanged(PlayerViewport vp, CameraChangePhase phase, Bounds? resetBounds = null)
+        {
+            if (vp == null) return;
+#pragma warning disable CS0618
+            switch (phase)
+            {
+                case CameraChangePhase.DragBegin:
+                    EnterCameraDragging();
+                    // DragBegin は overlay 更新不要（カメラはまだ動いていない）。
+                    return;
+                case CameraChangePhase.Dragging:
+                    NotifyCameraMoved(vp);
+                    break;
+                case CameraChangePhase.DragEnd:
+                    ExitCameraDragging();
+                    NotifyCameraChanged(vp);
+                    break;
+                case CameraChangePhase.Committed:
+                    NotifyCameraChanged(vp);
+                    break;
+                case CameraChangePhase.Reset:
+                    if (resetBounds.HasValue) ResetToMesh(resetBounds.Value);
+                    NotifyCameraChanged(vp);
+                    break;
+            }
+#pragma warning restore CS0618
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// カテゴリ 4: 頂点位置変更。トポロジ不変、視点不変。
+        /// 契機: Move/Rotate/Scale ツール、ボーンポーズ変更。
+        /// </summary>
+        /// <param name="project">現在のプロジェクト</param>
+        /// <param name="phase">ドラッグフェーズ</param>
+        /// <param name="syncMc">
+        /// Dragging フェーズで特定メッシュのみ位置同期する場合に指定。
+        /// 指定時は SyncMeshPositionsAndTransform + UpdateTransform の軽量経路を実行。
+        /// null の場合は PresentAll で全 slot Prepare を実行する。
+        /// </param>
+        public void EnterVerticesMoved(
+            ProjectContext project,
+            VerticesMovedPhase phase,
+            Poly_Ling.Data.MeshContext syncMc = null)
+        {
+#pragma warning disable CS0618
+            switch (phase)
+            {
+                case VerticesMovedPhase.DragBegin:
+                    EnterTransformDragging();
+                    break;
+                case VerticesMovedPhase.Dragging:
+                    if (syncMc != null)
+                    {
+                        // MoveToolHandler 等の頂点ドラッグ中の軽量同期経路。
+                        SyncMeshPositionsAndTransform(syncMc, project?.CurrentModel);
+                        UpdateTransform();
+                    }
+                    else
+                    {
+                        PresentAll(project);
+                    }
+                    break;
+                case VerticesMovedPhase.DragEnd:
+                    ExitTransformDragging();
+                    // Phase 2a-2g-3 Fix: ドラッグ終了時は全 viewport のカリング再計算が必要。
+                    MarkAllSlotsDirty();
+                    ApplyAllViewportCameraTransforms();
+                    PresentAll(project);
+                    break;
+            }
+#pragma warning restore CS0618
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// カテゴリ 5: ホバー状態変更。トポロジ不変、視点不変、頂点位置不変。
+        /// 契機: マウスポインタ移動。kind でホバー対象を限定。
+        /// </summary>
+        public void EnterHoverChanged(PlayerViewport vp, Vector2 mousePos, HoverTargetKind kind)
+        {
+            if (vp == null) return;
+#pragma warning disable CS0618
+            if (kind == HoverTargetKind.None)
+            {
+                ClearMouseHover();
+            }
+            else
+            {
+                // Phase 2a 暫定: kind による分岐は Phase 2b 以降で実装。
+                NotifyPointerHover(vp, mousePos);
+            }
+#pragma warning restore CS0618
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// カテゴリ 6: per-viewport 表示設定変更。
+        /// 契機: 表示トグル（面/辺/頂点/ボーン ON/OFF、BackfaceCulling ON/OFF）。
+        /// Phase 2b-1: overlay 更新は現状なし（別途検討）。
+        /// </summary>
+        public void EnterDisplaySettingsChanged(int slot, ViewportDisplaySettings ds)
+        {
+#pragma warning disable CS0618
+            SetDisplaySettings(slot, ds);
+            PresentAll(_lastProjectForPresent);
+#pragma warning restore CS0618
+        }
+
+        // ================================================================
+        // 【重量級専用入口】Phase 2a-2b-2 Batch 3 で追加
+        //
+        // ★★★ 使用前に必ず読むこと ★★★
+        //
+        // 以下の 2 入口は通常の編集操作からは絶対に呼ばないこと。
+        // カテゴリ 1〜6 の通常 Enter* (EnterProjectChanged / EnterTopologyChanged /
+        // EnterCameraChanged / EnterVerticesMoved / EnterHoverChanged /
+        // EnterDisplaySettingsChanged) のいずれかで対応できる場合はそちらを使う。
+        //
+        // これらは「シーン丸ごと再構築」「Undo 適用」という特殊重量級処理専用で、
+        // 安易に使うとパフォーマンス低下や順序依存バグの温床になる。
+        // 新規箇所で使う前に既存 6 入口で代替できないか必ず検討すること。
+        // ================================================================
+
+        /// <summary>
+        /// ★★★【重量級専用・カテゴリ 7: シーン全体リセット】★★★
+        ///
+        /// 使用場面（以下の特殊経路限定）:
+        ///   - モデル外部ロード完了直後 (LoadModel 完了後)
+        ///   - CSV マージ / 部分インポート / MeshFilter→Skinned 変換完了後
+        ///   - 図形生成 (Primitive) 完了後
+        ///   - プロジェクト切替直後
+        ///   - 空 MeshContext 追加直後 (EnsureDrawableMesh)
+        ///
+        /// 使用してはならない場面:
+        ///   - 通常のトポロジ変更 (選択、面追加、頂点削除等) → EnterTopologyChanged
+        ///   - 頂点移動・ボーンポーズ変更 → EnterVerticesMoved
+        ///   - カメラ操作 → EnterCameraChanged
+        ///
+        /// 責務:
+        ///   1. clearScene=true のとき _renderer.ClearScene()
+        ///   2. model.FirstDrawableMeshContext.Selection を Core と renderer に設定
+        ///      (OnSetSelectionState コールバック経由で Core の _selectionOps に届ける)
+        ///   3. RebuildAdapter + UpdateSelectedDrawableMesh
+        ///   4. PresentAll + overlay refresh
+        ///
+        /// カメラは責務外。必要なら別途 EnterCameraChanged を呼ぶこと。
+        /// </summary>
+        /// <param name="project">現在のプロジェクト</param>
+        /// <param name="clearScene">
+        /// true: _renderer.ClearScene() を呼ぶ (CSV マージ / 部分インポート等)。
+        /// false: ClearScene を呼ばない (通常のモデルロード / 図形生成等)。
+        /// </param>
+        public void EnterSceneReset(ProjectContext project, bool clearScene = false)
+        {
+#pragma warning disable CS0618
+            if (clearScene) _renderer?.ClearScene();
+
+            var model = project?.CurrentModel;
+            if (_renderer != null && model != null)
+            {
+                _renderer.RebuildAdapter(0, model);
+
+                // first MeshContext の Selection をアクティブ化
+                var firstMc = model.FirstDrawableMeshContext;
+                if (firstMc != null)
+                {
+                    OnSetSelectionState?.Invoke(firstMc.Selection);
+                    _renderer.SetSelectionState(firstMc.Selection);
+                }
+
+                _renderer.UpdateSelectedDrawableMesh(0, model);
+            }
+
+            // Phase 2a-2g-3 Fix: シーンリセット時は全 slot のカメラ dirty を立てる。
+            // これにより PresentAll 内の PrepareViewport で全 4 viewport に対して
+            // DispatchCullingForDisplay が実行される。
+            // (EnterCameraChanged は単一 vp のみ dirty にするため、図形生成やインポート後は
+            // Perspective 以外のビューポートが更新されない問題があった)
+            MarkAllSlotsDirty();
+            // 4 viewport 全てのカメラ Transform を最新値に同期（_Tick 削除の代替）。
+            ApplyAllViewportCameraTransforms();
+
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        /// <summary>
+        /// ★★★【重量級専用・カテゴリ 8: Undo/Redo 適用】★★★
+        ///
+        /// 使用場面（Undo/Redo 経路限定）:
+        ///   - Undo スタックから構造変更レコードを適用した直後
+        ///   - project.CurrentModel と異なる model が Undo スタックから取得される場合に対応
+        ///
+        /// 使用してはならない場面:
+        ///   - 通常のトポロジ変更 → EnterTopologyChanged
+        ///   - Undo 適用でも model が project.CurrentModel と同じとき → EnterTopologyChanged で十分
+        ///
+        /// 責務:
+        ///   1. 引数で渡された model (project.CurrentModel とは別の可能性) で
+        ///      RebuildAdapter + UpdateSelectedDrawableMesh を実行
+        ///   2. PresentAll(project)
+        ///   3. overlay refresh
+        ///
+        /// SetSelectionState は Undo 経路では Selection も Undo 対象として復元済みのため呼ばない。
+        /// </summary>
+        /// <param name="project">現在のプロジェクト (PresentAll に渡す)</param>
+        /// <param name="model">Undo スタックから取得した ModelContext (project.CurrentModel と異なり得る)</param>
+        public void EnterUndoApplied(ProjectContext project, Poly_Ling.Context.ModelContext model)
+        {
+#pragma warning disable CS0618
+            if (_renderer != null && model != null)
+            {
+                _renderer.RebuildAdapter(0, model);
+                _renderer.UpdateSelectedDrawableMesh(0, model);
+            }
+            // Phase 2a-2g-3 Fix: Undo 適用は全 viewport のカリング再計算が必要。
+            MarkAllSlotsDirty();
+            ApplyAllViewportCameraTransforms();
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshFaceHoverOverlay?.Invoke();
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        // ================================================================
+        // 描画 (Phase 1: PresentAll + SubmitForCamera の event 駆動 + OnRenderObject 分離)
+        //
+        // ・PresentAll(project):    event 駆動で呼ぶ。計算・Prepare を全 slot 実行。
+        // ・SubmitForCamera(cam, project): OnRenderObject() から毎フレーム呼ぶ。
+        //                                  Graphics.DrawMesh 提出のみ。
+        // ================================================================
+
+        /// <summary>
+        /// ★★★ 【重大規約違反コード: 旧 API】 ★★★
+        /// 旧 LateTick 経路から毎フレーム呼ばれていた実装。
+        /// 「毎フレームポーリング禁止」規約に違反する。
+        /// Phase 1 では暫定互換のため残置するが、新規コードから呼ぶことは厳禁。
+        /// 代わりに以下を使うこと:
+        ///   - 計算・準備:     PresentAll(project)        (event 駆動)
+        ///   - 描画提出:       SubmitForCamera(cam, proj) (OnRenderObject 経路)
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
         public void LateUpdate(ProjectContext project)
         {
             if (_renderer == null) return;
@@ -243,6 +710,108 @@ namespace Poly_Ling.Player
             }
         }
 
+        // Phase 1: 最後に PresentAll に渡された ProjectContext を保持。
+        // NotifyCameraChanged 等の event ハンドラ内で project 引数なしで PresentAll を
+        // 再呼出しするために使用する。
+        private ProjectContext _lastProjectForPresent;
+
+        /// <summary>
+        /// 【event 駆動で呼ぶ】全 slot の描画準備（計算・Prepare）を一括実行する。
+        /// カメラ操作・選択変更・トポロジ変更・モデルロード・ボーンポーズ変更等の
+        /// 各イベントから呼び出される想定。毎フレーム呼ぶのは禁止。
+        /// 実行内容:
+        ///   - RequestNormal / UpdateFrame (_lastCamera 基準)
+        ///   - 4 slot 分の PrepareViewport（display settings 適用・カリング・Mesh 再構築・Queue 登録）
+        ///   - アクティブ slot の最終カリング Dispatch（CommitBoxSelect 用のスクリーン座標確定）
+        /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
+        public void PresentAll(ProjectContext project)
+        {
+            if (_renderer == null) return;
+            _lastProjectForPresent = project;
+
+            if (_lastParamsValid && _lastCamera != null)
+            {
+                var adapter = _renderer.GetAdapter(0);
+                if (adapter != null && adapter.IsInitialized)
+                {
+                    var rect = new Rect(0, 0, _lastCamera.pixelWidth, _lastCamera.pixelHeight);
+                    adapter.RequestNormal();
+                    adapter.UpdateFrame(_lastCamera, rect, _lastMousePos);
+                }
+            }
+
+            PrepareViewport(project, PerspectiveViewport, SlotPerspective);
+            PrepareViewport(project, TopViewport,         SlotTop);
+            PrepareViewport(project, FrontViewport,       SlotFront);
+            PrepareViewport(project, SideViewport,        SlotSide);
+
+            // アクティブビューポートのスクリーン座標を最終確定させる。
+            if (_lastParamsValid && _lastCamera != null)
+            {
+                var adapter = _renderer?.GetAdapter(0);
+                if (adapter != null && adapter.IsInitialized)
+                {
+                    int activeSlot = ViewportToSlot(ActiveViewport);
+                    if (activeSlot >= 0)
+                        adapter.DispatchCullingForDisplay(_lastCamera, adapter.BackfaceCullingEnabled, activeSlot);
+                }
+            }
+        }
+
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// OnRenderObject() から毎フレーム呼ばれる想定。
+        /// 与えられたカメラから slot を判定し、当該 slot の面・辺・頂点・ボーン・
+        /// ウェイト可視化を Graphics.DrawMesh で提出する。
+        /// 計算処理（Mesh 再構築・バッファ更新・Dispatch 等）は一切禁止。
+        /// 全ての準備は PresentAll() で完了させておくこと。
+        /// ただし、面描画用 Cull 判定に必要な per-slot 表示設定の renderer への
+        /// 反映のみ、ここで行う（フィールド代入のみで計算なし）。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitForCamera(Camera cam, ProjectContext project)
+        {
+            if (_renderer == null || cam == null || project == null) return;
+
+            int slot = CameraToSlot(cam);
+            if (slot < 0) return;
+
+            // per-slot 表示設定を renderer に反映（SubmitMeshes が _Cull 判定に使用）
+            var ds = _displaySettings[slot];
+            _renderer.BackfaceCullingEnabled    = ds.BackfaceCulling;
+            _renderer.ShowSelectedMesh          = ds.ShowSelectedMesh;
+            _renderer.ShowSelectedWireframe     = ds.ShowSelectedWireframe;
+            _renderer.ShowSelectedVertices      = ds.ShowSelectedVertices;
+            _renderer.ShowSelectedBone          = ds.ShowSelectedBone;
+            _renderer.ShowUnselectedMesh        = ds.ShowUnselectedMesh;
+            _renderer.ShowUnselectedWireframe   = ds.ShowUnselectedWireframe;
+            _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
+            _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
+
+            _renderer.SubmitMeshes(project, cam);
+            _renderer.SubmitWireframeAndVertices(cam, slot);
+            _renderer.SubmitBones(project, cam);
+            _renderer.SubmitWeightVisualization(project, cam);
+        }
+
+        /// <summary>
+        /// カメラ → slot index 変換。見つからなければ -1。
+        /// </summary>
+        private int CameraToSlot(Camera cam)
+        {
+            if (PerspectiveViewport?.Cam == cam) return SlotPerspective;
+            if (TopViewport        ?.Cam == cam) return SlotTop;
+            if (FrontViewport      ?.Cam == cam) return SlotFront;
+            if (SideViewport       ?.Cam == cam) return SlotSide;
+            return -1;
+        }
+
         // ================================================================
         // ホバー・カメラ更新（イベント駆動）
         // ================================================================
@@ -259,6 +828,12 @@ namespace Poly_Ling.Player
         ///   UpdateFrame はGPUヒットテストパイプライン全体を走らせる重い処理。
         ///   パラメータが変化したタイミングだけで十分。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void NotifyCameraChanged(PlayerViewport vp)
         {
             if (vp == null || !vp.IsReady) return;
@@ -267,6 +842,10 @@ namespace Poly_Ling.Player
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;
 
+            // Phase 1: Tick 廃止で ApplyCameraTransform が毎フレーム呼ばれなくなったため、
+            // このタイミングで明示的に Unity Camera.transform へ反映する。
+            vp.ApplyCameraTransform();
+
             var rect = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
             var dummyMouse = new Vector2(rect.width * 0.5f, rect.height * 0.5f);
 
@@ -274,7 +853,7 @@ namespace Poly_Ling.Player
             if (!_lastParamsValid) _lastMousePos = dummyMouse;
             _lastParamsValid = true;
 
-            // カメラが変化したスロットを dirty にする（次フレームの DrawViewport で再カリング）
+            // カメラが変化したスロットを dirty にする（次 PresentAll で再カリング）
             int slot = ViewportToSlot(vp);
             if (slot >= 0) _slotCameraDirty[slot] = true;
 
@@ -282,6 +861,39 @@ namespace Poly_Ling.Player
 
             adapter.RequestNormal();
             adapter.UpdateFrame(cam, rect, _lastMousePos);
+
+            // Phase 1 event 配線: カメラ操作イベント → 全 slot 分の Prepare 再実行。
+            PresentAll(_lastProjectForPresent);
+        }
+
+        /// <summary>
+        /// 【event 駆動で呼ぶ】カメラドラッグ中の軽量更新版。
+        /// ApplyCameraTransform で Unity Camera.transform を更新し、
+        /// 該当 slot を dirty にマークして PresentAll で描画キューを再構築する。
+        /// UpdateFrame / RequestNormal 等の重い処理は呼ばない（ドラッグ終了時の
+        /// NotifyCameraChanged で 1 回だけ実行する）。
+        ///
+        /// 【いつ呼ぶか】
+        ///   - OrbitCameraController.OnCameraDragging（ドラッグ中連続）
+        ///   - OrthoViewController.OnCameraDragging（ドラッグ中連続）
+        /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
+        public void NotifyCameraMoved(PlayerViewport vp)
+        {
+            if (vp == null || !vp.IsReady) return;
+            if (_renderer == null) return;
+
+            vp.ApplyCameraTransform();
+
+            int slot = ViewportToSlot(vp);
+            if (slot >= 0) _slotCameraDirty[slot] = true;
+
+            PresentAll(_lastProjectForPresent);
         }
 
         /// <summary>
@@ -304,6 +916,12 @@ namespace Poly_Ling.Player
         ///   panelLocalPos は UIToolkit のパネルローカル座標（Y=0が上）。
         ///   UpdateFrame 内部の SetHitTestInput が期待する座標系と一致する。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void NotifyPointerHover(PlayerViewport vp, Vector2 panelLocalPos)
         {
             if (vp == null || !vp.IsReady) return;
@@ -336,6 +954,11 @@ namespace Poly_Ling.Player
 
             adapter.RequestNormal();
             adapter.UpdateFrame(cam, rect, panelLocalPos);
+
+            // Phase 1 event 配線: ホバー状態変更 → 描画キュー再構築。
+            // UpdateFrame で GPU フラグバッファは更新されるが、CPU 側の頂点色キャッシュは
+            // Prepare 系を通さないと反映されないため、ここで PresentAll を呼ぶ。
+            PresentAll(_lastProjectForPresent);
         }
 
         /// <summary>
@@ -344,13 +967,28 @@ namespace Poly_Ling.Player
         /// 【いつ呼ぶか】
         ///   MoveToolHandler.OnLeftDragEnd で矩形選択が確定する直前。
         ///   ReadBack後に IsVertexVisible() で背面頂点を除外できる。
+        ///
+        /// 【読み戻す内容】
+        ///   - VertexFlags (画面外判定含む全フラグ)
+        ///   - VertexCulled (表面の面に属すかの per-slot カリング結果、アクティブ slot)
         /// </summary>
         public void ReadBackVertexFlags()
         {
             var adapter = _renderer?.GetAdapter(0);
-            adapter?.ReadBackVertexFlags();
+            if (adapter == null) return;
+            adapter.ReadBackVertexFlags();
+            // 矩形選択はアクティブビューポートで行うのでそのスロットを読む。
+            int slot = ViewportToSlot(ActiveViewport);
+            if (slot < 0) slot = 0;
+            adapter.ReadBackVertexCulled(slot);
         }
 
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void ClearMouseHover()
         {
             _renderer?.GetAdapter(0)?.ClearMouseHover();
@@ -369,6 +1007,12 @@ namespace Poly_Ling.Player
         ///   全フラグ再計算 → ConsumeNormalMode() で Idle に自動降格。
         ///   これにより「何もしていない時」は重い処理が走らない。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void RequestNormal()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -383,6 +1027,12 @@ namespace Poly_Ling.Player
         /// ヒットテスト・GPU可視性計算・メッシュ再構築がスキップされる。
         /// 位置更新は軽量パス（ProcessTransformUpdate）で行う。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void EnterTransformDragging()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -393,6 +1043,12 @@ namespace Poly_Ling.Player
         /// 頂点ドラッグ終了を通知する。
         /// アダプターを Normal モード（1フレーム）→ Idle に戻す。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void ExitTransformDragging()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -405,6 +1061,12 @@ namespace Poly_Ling.Player
         /// CameraDragging 中は AllowUnselectedOverlay=false になり、
         /// 非選択メッシュの頂点・辺描画が抑止される。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void EnterCameraDragging()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -415,6 +1077,12 @@ namespace Poly_Ling.Player
         /// カメラ姿勢変更終了を通知する。
         /// アダプターを Normal モード（1フレーム）→ Idle に戻す。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void ExitCameraDragging()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -430,6 +1098,12 @@ namespace Poly_Ling.Player
         ///   AllowHitTest=false / AllowMeshRebuild=false のプロファイルで
         ///   「重い処理を全スキップ」を意味するため意図に合致する。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void EnterBoxSelecting()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -441,6 +1115,12 @@ namespace Poly_Ling.Player
         /// CameraDragging を終了して Normal モードに戻す。
         /// その後 ReadBackVertexFlags() + RequestNormal() を呼ぶこと。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void ExitBoxSelecting()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -492,7 +1172,10 @@ namespace Poly_Ling.Player
             if (adapter.BufferManager?.GlobalToLocalVertexIndex(
                     globalVertexIndex, out int meshIdx, out int localIdx) == true)
             {
-                return !adapter.IsVertexCulled(meshIdx, localIdx);
+                // IsVertexBackfaceCulled は ReadBackVertexCulled でキャッシュされた
+                // _VertexCulledBuffer (per-slot) の結果を参照する。
+                // IsVertexCulled (_vertexFlags & FLAG_CULLED) は画面外用なので使わない。
+                return !adapter.IsVertexBackfaceCulled(meshIdx, localIdx);
             }
             return true;
         }
@@ -616,6 +1299,36 @@ namespace Poly_Ling.Player
             return -1;
         }
 
+        /// <summary>
+        /// 通常面描画パイプライン (UnifiedBufferManager_Update.ComputeScreenPositions) と
+        /// 同じ cam.pixelWidth / cam.pixelHeight (RenderTexture 解像度) 基準で投影する共通ヘルパー。
+        /// cam.WorldToScreenPoint は Screen.width/Screen.height (メインディスプレイ解像度) を
+        /// 使うため RenderTexture カメラでは panel サイズと不整合になる (ウィンドウ拡大時に
+        /// overlay 座標がずれる)。これを回避するため cam.pixelWidth / cam.pixelHeight
+        /// に対して直接射影する。
+        /// 返す座標は cam.WorldToScreenPoint と同じ系 (Y=0 が下)。
+        /// Painter2D 側 (OnGenerateFaceOverlay) は panelH - y の反転を行って UIToolkit 系 (Y=0 が上) に変換する。
+        /// </summary>
+        /// <returns>投影成功時はスクリーン座標、カメラ背面の場合は NaN を含む Vector2。</returns>
+        private static Vector2 ProjectWorldToCameraScreen(Camera cam, Vector3 worldPos)
+        {
+            Matrix4x4 vpMat = cam.projectionMatrix * cam.worldToCameraMatrix;
+            Vector4 clip = vpMat * new Vector4(worldPos.x, worldPos.y, worldPos.z, 1f);
+            if (clip.w <= 0f) return new Vector2(float.NaN, float.NaN);
+            float ndcX = clip.x / clip.w;
+            float ndcY = clip.y / clip.w;
+            float screenX = (ndcX * 0.5f + 0.5f) * cam.pixelWidth;
+            // Unity の cam.WorldToScreenPoint と同じ系 (Y=0 が下)。
+            // Painter2D 側で panelH - y により反転される前提。
+            float screenY = (ndcY * 0.5f + 0.5f) * cam.pixelHeight;
+            return new Vector2(screenX, screenY);
+        }
+
+        /// <summary>
+        /// ホバー中の面のスクリーン座標を返す。
+        /// 頂点位置は GPU DisplayPositions（GetDisplayPositions）を参照する。
+        /// 座標投影は通常面描画パイプラインと同じ cam.pixelWidth/pixelHeight 基準で行う。
+        /// </summary>
         public Vector2[] GetHoverFaceScreenPts(
             PlayerViewport vp, Poly_Ling.Context.ModelContext model)
         {
@@ -632,14 +1345,38 @@ namespace Poly_Ling.Player
             if (face.VertexCount < 3) return null;
             var cam = vp?.Cam;
             if (cam == null) return null;
+
+            // GPU 計算済みの最新ワールド座標を取得（頂点ドラッグ・ボーン変形反映済み）。
+            UnityEngine.Vector3[] worldPositions = null;
+            int vertexStart = 0;
+            var bm = adapter.BufferManager;
+            if (bm != null)
+            {
+                var meshInfos = bm.MeshInfos;
+                if (meshInfos != null && mi < meshInfos.Length)
+                {
+                    vertexStart = (int)meshInfos[mi].VertexStart;
+                    worldPositions = bm.GetDisplayPositions();
+                }
+            }
+            int totalVertexCount = worldPositions?.Length ?? 0;
+
             var pts = new Vector2[face.VertexCount];
             for (int i = 0; i < face.VertexCount; i++)
             {
                 int vi = face.VertexIndices[i];
                 if (vi < 0 || vi >= mc.MeshObject.VertexCount) return null;
-                Vector3 sp = cam.WorldToScreenPoint(mc.WorldMatrix.MultiplyPoint3x4(mc.MeshObject.Vertices[vi].Position));
-                if (sp.z < 0) return null;
-                pts[i] = new Vector2(sp.x, sp.y);
+
+                UnityEngine.Vector3 worldPos;
+                int globalIdx = vertexStart + vi;
+                if (worldPositions != null && globalIdx < totalVertexCount)
+                    worldPos = worldPositions[globalIdx];
+                else
+                    worldPos = mc.WorldMatrix.MultiplyPoint3x4(mc.MeshObject.Vertices[vi].Position);
+
+                Vector2 sp = ProjectWorldToCameraScreen(cam, worldPos);
+                if (float.IsNaN(sp.x)) return null;
+                pts[i] = sp;
             }
             return pts;
         }
@@ -701,9 +1438,10 @@ namespace Poly_Ling.Player
                     else
                         worldPos = mc.WorldMatrix.MultiplyPoint3x4(mo.Vertices[vi].Position);
 
-                    UnityEngine.Vector3 sp = cam.WorldToScreenPoint(worldPos);
-                    if (sp.z < 0) { valid = false; break; }
-                    pts[i] = new UnityEngine.Vector2(sp.x, sp.y);
+                    // 通常面描画パイプライン (ComputeScreenPositions) と同一の cam.pixel 基準投影。
+                    Vector2 sp = ProjectWorldToCameraScreen(cam, worldPos);
+                    if (float.IsNaN(sp.x)) { valid = false; break; }
+                    pts[i] = sp;
                 }
                 if (valid) result.Add(pts);
             }
@@ -794,6 +1532,12 @@ namespace Poly_Ling.Player
         /// Viewer.Update() で毎フレーム呼ぶことで矩形選択・ホバーの
         /// スクリーン座標がスキンドポーズに追従する。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void UpdateTransform()
         {
             var adapter = _renderer?.GetAdapter(0);
@@ -872,11 +1616,31 @@ namespace Poly_Ling.Player
             mc.UnityMesh.RecalculateBounds();
         }
 
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void RebuildAdapter(int mi, ModelContext model)
-            => _renderer?.RebuildAdapter(mi, model);
+        {
+#pragma warning disable CS0618
+            _renderer?.RebuildAdapter(mi, model);
+#pragma warning restore CS0618
+        }
 
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void ClearScene()
-            => _renderer?.ClearScene();
+        {
+#pragma warning disable CS0618
+            _renderer?.ClearScene();
+#pragma warning restore CS0618
+        }
 
         /// <summary>
         /// CPU の MeshObject 位置を GPU バッファに同期する。
@@ -888,6 +1652,12 @@ namespace Poly_Ling.Player
         ///   1. MeshObject.Positions → GPU _positionsBuffer（UpdatePositions）
         ///   2. NotifyTransformChanged で次フレームのワイヤー/頂点メッシュ再構築を予約
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void SyncMeshPositionsAndTransform(
             Poly_Ling.Data.MeshContext mc,
             Poly_Ling.Context.ModelContext model)
@@ -994,6 +1764,12 @@ namespace Poly_Ling.Player
         // カメラ初期位置リセット
         // ================================================================
 
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
         public void ResetToMesh(Bounds bounds)
         {
             PerspectiveViewport?.ResetToMesh(bounds);
@@ -1006,7 +1782,12 @@ namespace Poly_Ling.Player
         // 内部
         // ================================================================
 
-        private void DrawViewport(ProjectContext project, PlayerViewport vp, int slot)
+        /// <summary>
+        /// 【event 駆動・内部】指定 slot の描画準備（計算・Prepare）を実行する。
+        /// display settings の適用・カリング Dispatch・CPU Mesh 再構築・Queue 登録を行う。
+        /// Submit は一切行わない（そちらは SubmitForCamera が担当）。
+        /// </summary>
+        private void PrepareViewport(ProjectContext project, PlayerViewport vp, int slot)
         {
             if (vp == null || !vp.IsReady) return;
             var cam     = vp.Cam;
@@ -1014,7 +1795,7 @@ namespace Poly_Ling.Player
             if (adapter == null || !adapter.IsInitialized) return;
 
             // 面ごとの表示設定をレンダラーに適用する。
-            // Draw*() 呼び出しはシーケンシャルなので面をまたいだ競合はない。
+            // Prepare 呼び出しはシーケンシャルなので面をまたいだ競合はない。
             var ds = _displaySettings[slot];
             _renderer.BackfaceCullingEnabled    = ds.BackfaceCulling;
             _renderer.ShowSelectedMesh          = ds.ShowSelectedMesh;
@@ -1031,6 +1812,43 @@ namespace Poly_Ling.Player
             adapter.BackfaceCullingEnabled = ds.BackfaceCulling;
 
             // カメラが変化したスロットのみ per-slot カリングを再計算する。
+            if (_slotCameraDirty[slot])
+            {
+                adapter.DispatchCullingForDisplay(cam, adapter.BackfaceCullingEnabled, slot);
+                _slotCameraDirty[slot] = false;
+            }
+
+            // Prepare 系のみ呼び出す。Submit は OnRenderObject / SubmitForCamera で行う。
+            _renderer.PrepareWireframeAndVertices(cam, project, slot);
+            _renderer.PrepareBones(project);
+            _renderer.PrepareWeightVisualization(project);
+        }
+
+        /// <summary>
+        /// 【重大規約違反コード: 旧 API】
+        /// LateUpdate 経路で使われていた per-slot の描画呼び出し。
+        /// 新規コードは PrepareViewport + SubmitForCamera を使うこと。
+        /// </summary>
+        private void DrawViewport(ProjectContext project, PlayerViewport vp, int slot)
+        {
+            if (vp == null || !vp.IsReady) return;
+            var cam     = vp.Cam;
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return;
+
+            var ds = _displaySettings[slot];
+            _renderer.BackfaceCullingEnabled    = ds.BackfaceCulling;
+            _renderer.ShowSelectedMesh          = ds.ShowSelectedMesh;
+            _renderer.ShowSelectedWireframe     = ds.ShowSelectedWireframe;
+            _renderer.ShowSelectedVertices      = ds.ShowSelectedVertices;
+            _renderer.ShowSelectedBone          = ds.ShowSelectedBone;
+            _renderer.ShowUnselectedMesh        = ds.ShowUnselectedMesh;
+            _renderer.ShowUnselectedWireframe   = ds.ShowUnselectedWireframe;
+            _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
+            _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
+
+            adapter.BackfaceCullingEnabled = ds.BackfaceCulling;
+
             if (_slotCameraDirty[slot])
             {
                 adapter.DispatchCullingForDisplay(cam, adapter.BackfaceCullingEnabled, slot);

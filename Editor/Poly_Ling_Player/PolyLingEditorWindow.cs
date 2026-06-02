@@ -54,8 +54,8 @@ namespace Poly_Ling.Editor.Player
 
         private void OnEditorUpdate()
         {
-            _core?.Tick();
-            _core?.LateTick();
+            //_core?.Tick();/// <summary>この関数は利用してはならない。厳守せよ</summary>
+            //_core?.LateTick();/// <summary>この関数は利用してはならない。厳守せよ</summary>
             Repaint();
         }
 

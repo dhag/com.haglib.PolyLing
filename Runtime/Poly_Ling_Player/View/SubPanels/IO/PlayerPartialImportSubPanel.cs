@@ -254,7 +254,11 @@ namespace Poly_Ling.Player
                     var afterSnapshot = MultiMeshVertexSnapshot.Capture(_model);
                     var label = _mode == Mode.PMX ? "PMX Partial Import" : "MQO Partial Import";
                     var record = new MultiMeshVertexSnapshotRecord(beforeSnapshot, afterSnapshot, label);
-                    _undoController.MeshListStack.Record(record, label);
+                    {
+                        string __dbgDesc = label;
+                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                        _undoController.MeshListStack.Record(record, __dbgDesc);
+                    }
                 }
 
                 string resultMsg = string.Join(", ", results);

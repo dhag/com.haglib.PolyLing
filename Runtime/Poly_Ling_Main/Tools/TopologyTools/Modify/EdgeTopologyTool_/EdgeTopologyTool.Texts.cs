@@ -14,7 +14,7 @@ namespace Poly_Ling.Tools
             ["Split"] = new() { ["en"] = "Split", ["ja"] = "分割", ["hi"] = "わける" },
             ["Dissolve"] = new() { ["en"] = "Dissolve", ["ja"] = "結合", ["hi"] = "くっつける" },
             ["HelpFlip"] = new() { ["en"] = "Click shared edge to flip diagonal\n(requires 2 triangles)", ["ja"] = "共有辺をクリックして対角線を入れ替え\n（2つの三角形が必要）", ["hi"] = "おなじへりをクリックしてななめをかえるよ\n（さんかくが2ついるよ）" },
-            ["HelpSplit"] = new() { ["en"] = "Drag from quad vertex to split", ["ja"] = "四角形の対角頂点をドラッグして分割", ["hi"] = "しかくのかどをひっぱってわけるよ" },
+            ["HelpSplit"] = new() { ["en"] = "Click two diagonal quad vertices in turn to split", ["ja"] = "四角形の対角頂点を順にクリックして分割", ["hi"] = "しかくのかどを２つクリックしてわけるよ" },
             ["HelpDissolve"] = new() { ["en"] = "Click shared edge to merge 2 faces", ["ja"] = "共有辺をクリックして2つの面を結合", ["hi"] = "おなじへりをクリックしてくっつけるよ" },
         };
 

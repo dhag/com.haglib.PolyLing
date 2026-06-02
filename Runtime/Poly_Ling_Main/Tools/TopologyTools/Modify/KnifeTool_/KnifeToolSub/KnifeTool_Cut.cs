@@ -110,10 +110,10 @@ namespace Poly_Ling.Tools
             
             if (minDist < float.MaxValue)
             {
-                UnityEditor_Handles.BeginGUI();
-                UnityEditor_Handles.color = Color.red;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(nearestScreenPos.x, nearestScreenPos.y, 0), Vector3.forward, 5f);
-                UnityEditor_Handles.EndGUI();
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
             }
         }
 
@@ -196,31 +196,31 @@ namespace Poly_Ling.Tools
 
         private void DrawEdgeSelectGizmo(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
             if (_hoveredEdgeWorldPos.HasValue)
             {
-                UnityEditor_Handles.color = Color.cyan;
+                // UnityEditor_Handles 削除済み
                 DrawEdgeByWorldPos(ctx, _hoveredEdgeWorldPos.Value);
                 
                 // ホバー中の辺上の切断位置に赤丸
                 float hoverRatio = GetEdgeCutRatio(ctx, ctx.CurrentMousePosition, _hoveredEdgeWorldPos.Value);
                 var hoverCutPoint = Vector3.Lerp(_hoveredEdgeWorldPos.Value.Item1, _hoveredEdgeWorldPos.Value.Item2, hoverRatio);
                 var hoverSp = ctx.WorldToScreenPos(hoverCutPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                UnityEditor_Handles.color = Color.red;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(hoverSp.x, hoverSp.y, 0), Vector3.forward, 5f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
             }
             if (_firstEdgeWorldPos.HasValue)
             {
-                UnityEditor_Handles.color = Color.yellow;
+                // UnityEditor_Handles 削除済み
                 DrawEdgeByWorldPos(ctx, _firstEdgeWorldPos.Value);
                 
                 // 開始辺上のクリック位置に赤丸
                 var startCutPoint = Vector3.Lerp(_firstEdgeWorldPos.Value.Item1, _firstEdgeWorldPos.Value.Item2, _firstCutRatio);
                 var startSp = ctx.WorldToScreenPos(startCutPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                UnityEditor_Handles.color = Color.red;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(startSp.x, startSp.y, 0), Vector3.forward, 5f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
             }
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         // ================================================================
@@ -349,24 +349,24 @@ namespace Poly_Ling.Tools
 
         private void DrawChainIntersections(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
             foreach (var (faceIdx, intersections) in _chainTargets)
             {
                 if (intersections.Count >= 2)
                 {
-                    UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+                    // UnityEditor_Handles 削除済み
                     var sp1 = intersections[0].ScreenPos;
                     var sp2 = intersections[1].ScreenPos;
-                    UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));
+                    // UnityEditor_Handles 削除済み
                 }
             }
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         private void DrawChainTargetFaces(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = new Color(1f, 1f, 0f, 0.15f);
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
             foreach (var (faceIdx, _) in _chainTargets)
             {
                 if (faceIdx < 0 || faceIdx >= ctx.FirstSelectedMeshObject.FaceCount) continue;
@@ -378,9 +378,9 @@ namespace Poly_Ling.Tools
                     var sp = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
                     screenPoints[i] = new Vector3(sp.x, sp.y, 0);
                 }
-                UnityEditor_Handles.DrawAAConvexPolygon(screenPoints);
+                // UnityEditor_Handles 削除済み
             }
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
     }
 }

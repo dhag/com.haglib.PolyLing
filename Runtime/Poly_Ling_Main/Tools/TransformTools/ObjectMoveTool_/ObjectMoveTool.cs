@@ -32,6 +32,18 @@ namespace Poly_Ling.Tools
         private ObjectMoveSettings _settings = new ObjectMoveSettings();
         public IToolSettings Settings => _settings;
 
+        /// <summary>
+        /// 設定インスタンスを外部から差し替える。
+        /// BoneEditor サブパネル側とオブジェ移動 UI 側で ObjectMoveSettings を
+        /// 共有したい場合に使う (両方のチェックボックスを同じ設定に結びつける)。
+        /// </summary>
+        public void SetSettings(ObjectMoveSettings settings)
+        {
+            if (settings != null) _settings = settings;
+        }
+
+        public ObjectMoveSettings GetSettings() => _settings;
+
         public bool MoveWithChildren
         {
             get => _settings.MoveWithChildren;
@@ -354,12 +366,33 @@ namespace Poly_Ling.Tools
             {
                 var mc = model.GetMeshContext(i);
                 if (mc == null) continue;
-                // ボーンとメッシュ（Bone/Mesh/BakedMirrorなど）を対象にする
-                // モーフ・剛体・ジョイント・グループは除外
+                // モーフ・剛体・ジョイント・グループは従来通り除外
                 var t = mc.Type;
                 if (t == MeshType.Morph || t == MeshType.RigidBody ||
                     t == MeshType.RigidBodyJoint || t == MeshType.Group)
                     continue;
+
+                // ObjectMoveSettings のピック対象フィルタ:
+                //   PickBones         : MeshType.Bone
+                //   PickMeshesNoSkin  : MeshType.Mesh かつ HasBoneWeight == false
+                //   PickMeshesSkinned : MeshType.Mesh かつ HasBoneWeight == true
+                // Helper / BakedMirror / MirrorSide は従来互換で常にピック対象。
+                if (t == MeshType.Bone)
+                {
+                    if (!_settings.PickBones) continue;
+                }
+                else if (t == MeshType.Mesh)
+                {
+                    bool skinned = mc.MeshObject != null && mc.MeshObject.HasBoneWeight;
+                    if (skinned)
+                    {
+                        if (!_settings.PickMeshesSkinned) continue;
+                    }
+                    else
+                    {
+                        if (!_settings.PickMeshesNoSkin) continue;
+                    }
+                }
 
                 var wm = mc.WorldMatrix;
                 Vector3 worldPos = new Vector3(wm.m03, wm.m13, wm.m23);
@@ -575,7 +608,11 @@ namespace Poly_Ling.Tools
             if (record.Entries.Count > 0)
             {
                 undoCtrl.SetModelContext(model);
-                undoCtrl.MeshListStack.Record(record, "オブジェクト移動");
+                {
+                    string __dbgDesc = "オブジェクト移動";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    undoCtrl.MeshListStack.Record(record, __dbgDesc);
+                }
                 undoCtrl.FocusMeshList();
             }
 

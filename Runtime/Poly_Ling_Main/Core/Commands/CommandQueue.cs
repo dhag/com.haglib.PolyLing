@@ -46,7 +46,10 @@ namespace Poly_Ling.Commands
         public bool EnableDebugLog { get; set; } = false;
 
         /// <summary>
-        /// コマンドをキューに追加
+        /// コマンドをキューに追加し、即座に処理する。
+        /// Phase 1: 旧実装は Tick から ProcessAll を毎フレーム呼ぶ設計だったが、
+        /// 「毎フレームポーリング禁止」規約のため enqueue 時同期実行に変更。
+        /// 再入時は _isProcessing ガードにより外側の ProcessAll ループに合流する。
         /// </summary>
         public void Enqueue(ICommand command)
         {
@@ -60,6 +63,10 @@ namespace Poly_Ling.Commands
             
             // 常にログ出力（デバッグ用）
             //Debug.Log($"[CommandQueue.Enqueue] {command.Description} (queue size: {_queue.Count})\n{UnityEngine.StackTraceUtility.ExtractStackTrace()}");
+
+            // Phase 1: enqueue 直後に同期実行。再入時は _isProcessing ガードで
+            // 即 return し、呼び出し元の ProcessAll ループで処理される。
+            ProcessAll();
         }
 
         /// <summary>

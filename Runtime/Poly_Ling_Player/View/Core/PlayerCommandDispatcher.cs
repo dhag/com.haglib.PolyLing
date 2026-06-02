@@ -76,25 +76,38 @@ namespace Poly_Ling.Player
             {
                 // ── モデル選択
                 case SwitchModelCommand c:
+                {
+                    // Undo 記録のため切替前の CurrentModelIndex を保存。
+                    int __oldIdx = project.CurrentModelIndex;
                     project.SelectModel(c.TargetModelIndex);
+                    int __newIdx = project.CurrentModelIndex;
+                    UnityEngine.Debug.Log(
+                        $"[UndoDbg] SwitchModelCommand oldIdx={__oldIdx} newIdx={__newIdx} " +
+                        $"CurrentModel={project.CurrentModel?.Name ?? "<null>"}");
+
+                    var switchedModel = project.CurrentModel;
+                    if (switchedModel != null)
                     {
-                        var switchedModel = project.CurrentModel;
-                        if (switchedModel != null)
-                        {
-                            _renderer?.ClearScene();
-                            _viewportManager.RebuildAdapter(0, switchedModel);
-                            var firstMc = switchedModel.FirstDrawableMeshContext;
-                            if (firstMc != null)
-                            {
-                                _selectionOps?.SetSelectionState(firstMc.Selection);
-                                _renderer?.SetSelectionState(firstMc.Selection);
-                            }
-                            _renderer?.UpdateSelectedDrawableMesh(0, switchedModel);
-                            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
-                        }
+                        // Phase 2a-2g-1: ClearScene + RebuildAdapter + SetSelectionState +
+                        // UpdateSelectedDrawableMesh + NotifyCameraChanged を集約。
+                        _viewportManager.EnterSceneReset(project, clearScene: true);
+                        _viewportManager.EnterCameraChanged(
+                            _viewportManager.PerspectiveViewport,
+                            CameraChangePhase.Committed);
                     }
+
+                    // 問題 A/B: モデル切替を Undo 記録し、UndoController の内部 Context を
+                    // 新しい ActiveProject / CurrentModel に同期する。
+                    if (_undoController != null)
+                    {
+                        _undoController.SetProjectContext(project);
+                        _undoController.SetModelContext(project.CurrentModel);
+                        _undoController.RecordModelSwitch(__oldIdx, __newIdx);
+                    }
+
                     _notifyPanels(ChangeKind.ModelSwitch);
                     return;
+                }
 
                 // ── モデル名前変更
                 case RenameModelCommand c:
@@ -128,11 +141,15 @@ namespace Poly_Ling.Player
                     {
                         var addAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
                         var addRecord = new MeshFilterToSkinnedRecord { BeforeList = addBefore, AfterList = addAfter };
-                        _undoController.MeshListStack.Record(addRecord, "Add Mesh");
+                        {
+                            string __dbgDesc = "Add Mesh";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((addRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(addRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -140,29 +157,44 @@ namespace Poly_Ling.Player
                 // ── メッシュ選択
                 case SelectMeshCommand sel:
                     if (model == null) return;
-                    switch (sel.Category)
                     {
-                        case MeshCategory.Drawable:
-                            model.ClearMeshSelection();
-                            foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
-                            if (sel.Indices.Length > 0)
-                                model.SelectMesh(sel.Indices[0]);
-                            var selMc = model.FirstDrawableMeshContext;
-                            if (selMc != null)
-                            {
-                                _selectionOps?.SetSelectionState(selMc.Selection);
-                                _renderer?.SetSelectionState(selMc.Selection);
-                            }
-                            _renderer?.UpdateSelectedDrawableMesh(0, model);
-                            break;
-                        case MeshCategory.Bone:
-                            model.ClearBoneSelection();
-                            foreach (int idx in sel.Indices) model.AddToBoneSelection(idx);
-                            break;
-                        case MeshCategory.Morph:
-                            model.ClearMorphSelection();
-                            foreach (int idx in sel.Indices) model.AddToMorphSelection(idx);
-                            break;
+                        // Undo 記録のため選択前のインデックスをキャプチャ
+                        var __oldSelected = model.CaptureAllSelectedIndices();
+
+                        switch (sel.Category)
+                        {
+                            case MeshCategory.Drawable:
+                                model.ClearMeshSelection();
+                                foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
+                                if (sel.Indices.Length > 0)
+                                    model.SelectMesh(sel.Indices[0]);
+                                var selMc = model.FirstDrawableMeshContext;
+                                if (selMc != null)
+                                {
+                                    _selectionOps?.SetSelectionState(selMc.Selection);
+                                    _renderer?.SetSelectionState(selMc.Selection);
+                                }
+                                // Phase 2a-2g-1: UpdateSelectedDrawableMesh を EnterTopologyChanged に集約。
+                                _viewportManager.EnterTopologyChanged(project);
+                                break;
+                            case MeshCategory.Bone:
+                                model.ClearBoneSelection();
+                                foreach (int idx in sel.Indices) model.AddToBoneSelection(idx);
+                                break;
+                            case MeshCategory.Morph:
+                                model.ClearMorphSelection();
+                                foreach (int idx in sel.Indices) model.AddToMorphSelection(idx);
+                                break;
+                        }
+
+                        // Undo 記録: 3 カテゴリ全部 CaptureAllSelectedIndices で一元管理。
+                        // SequenceEqual で差分なしなら記録されない (RecordMeshSelectionChange 内部で判定)。
+                        var __newSelected = model.CaptureAllSelectedIndices();
+                        UnityEngine.Debug.Log(
+                            $"[UndoDbg] SelectMesh {sel.Category}: old=[{string.Join(",", __oldSelected)}] " +
+                            $"new=[{string.Join(",", __newSelected)}]");
+                        _undoController?.SetModelContext(model);
+                        _undoController?.RecordMeshSelectionChange(__oldSelected, __newSelected);
                     }
                     _notifyPanels(ChangeKind.Selection);
                     return;
@@ -234,12 +266,17 @@ namespace Poly_Ling.Player
                         };
                         var record = new MultiMeshVertexMoveRecord(new[] { entry });
                         _undoController.FocusVertexEdit();
-                        _undoController.VertexEditStack.Record(record, $"Move {selectedVerts.Count} Vertices");
+                        {
+                            string __dbgDesc = $"Move {selectedVerts.Count} Vertices";
+                            UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.VertexEditStack.Record(record, __dbgDesc);
+                        }
                     }
 
                     // GPU 反映
-                    _viewportManager.SyncMeshPositionsAndTransform(moveMc, model);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, moveMc);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -307,14 +344,19 @@ namespace Poly_Ling.Player
                             OldBoneTransform  = oldBoneSnap,
                             NewBoneTransform  = newBoneSnap,
                         };
-                        _undoController.MeshListStack.Record(record, "Pivot Move");
+                        {
+                            string __dbgDesc = "Pivot Move";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
                     // GPU 反映
                     model.ComputeWorldMatrices();
-                    _viewportManager.SyncMeshPositionsAndTransform(pivotMc, model);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, pivotMc);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -392,14 +434,18 @@ namespace Poly_Ling.Player
                             };
                             var record = new MultiMeshVertexMoveRecord(new[] { entry });
                             _undoController.FocusVertexEdit();
-                            _undoController.VertexEditStack.Record(record,
-                                $"Sculpt ({c.Mode}) {movedIdx.Count} Vertices");
+                            {
+                                string __dbgDesc = $"Sculpt ({c.Mode}) {movedIdx.Count} Vertices";
+                                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                                _undoController.VertexEditStack.Record(record, __dbgDesc);
+                            }
                         }
                     }
 
                     // GPU 反映
-                    _viewportManager.SyncMeshPositionsAndTransform(sculptMc, model);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, sculptMc);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -535,23 +581,94 @@ namespace Poly_Ling.Player
 
                 // ── メッシュ名前変更
                 case RenameMeshCommand c:
+                {
                     if (model == null) return;
                     var renCtx = model.GetMeshContext(c.MasterIndex);
-                    if (renCtx != null && !string.IsNullOrEmpty(c.NewName))
-                        renCtx.Name = c.NewName;
+                    if (renCtx == null) return;
+                    if (string.IsNullOrEmpty(c.NewName)) return;
+                    string __oldName = renCtx.Name;
+                    if (__oldName == c.NewName) return; // 変更なし
+                    renCtx.Name = c.NewName;
+                    // Undo 記録 (MeshAttributesBatchChangeRecord は Name 属性に対応済み)
+                    if (_undoController != null)
+                    {
+                        var __oldList = new List<MeshAttributeChange> {
+                            new MeshAttributeChange { Index = c.MasterIndex, Name = __oldName }
+                        };
+                        var __newList = new List<MeshAttributeChange> {
+                            new MeshAttributeChange { Index = c.MasterIndex, Name = c.NewName }
+                        };
+                        var __record = new MeshAttributesBatchChangeRecord(__oldList, __newList);
+                        string __desc = $"Rename Mesh: {__oldName} -> {c.NewName}";
+                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __desc + " type=" + (__record?.GetType().Name ?? "<null>"));
+                        _undoController.MeshListStack.Record(__record, __desc);
+                        _undoController.FocusMeshList();
+                    }
                     _notifyPanels(ChangeKind.Attributes);
                     return;
+                }
+
+                // ── メッシュ折りたたみ状態変更 (TreeView の展開/折りたたみ)
+                // MeshContext.IsFolding を Undo 記録付きで更新する。
+                // MeshAttributesBatchChangeRecord は IsFolding 属性に対応済み。
+                case SetMeshFoldingCommand c:
+                {
+                    if (model == null) return;
+                    var fldCtx = model.GetMeshContext(c.MasterIndex);
+                    if (fldCtx == null) return;
+                    if (fldCtx.IsFolding == c.IsFolding) return; // 変更なし
+                    bool __oldFolding = fldCtx.IsFolding;
+                    fldCtx.IsFolding = c.IsFolding;
+                    if (_undoController != null)
+                    {
+                        var __oldList = new List<MeshAttributeChange> {
+                            new MeshAttributeChange { Index = c.MasterIndex, IsFolding = __oldFolding }
+                        };
+                        var __newList = new List<MeshAttributeChange> {
+                            new MeshAttributeChange { Index = c.MasterIndex, IsFolding = c.IsFolding }
+                        };
+                        var __record = new MeshAttributesBatchChangeRecord(__oldList, __newList);
+                        string __desc = $"Set Folding [{c.MasterIndex}]: {__oldFolding} -> {c.IsFolding}";
+                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __desc + " type=" + (__record?.GetType().Name ?? "<null>"));
+                        _undoController.MeshListStack.Record(__record, __desc);
+                        _undoController.FocusMeshList();
+                    }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
 
                 case DeleteMeshesCommand c:
+                {
                     if (model == null) return;
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    // 削除前の選択状態をキャプチャ
+                    var __oldSel = model.CaptureAllSelectedIndices();
+                    var __removed = new List<(int, MeshContext)>();
+                    // 降順で削除 (上位 index の削除で下位 index がずれないように)
                     foreach (int idx in c.MasterIndices.OrderByDescending(i => i))
+                    {
+                        if (idx < 0 || idx >= model.MeshContextCount) continue;
+                        var __mc = model.GetMeshContext(idx);
+                        if (__mc == null) continue;
+                        __removed.Add((idx, __mc));
                         model.RemoveAt(idx);
+                    }
+                    if (__removed.Count > 0 && _undoController != null)
+                    {
+                        var __newSel = model.CaptureAllSelectedIndices();
+                        _undoController.RecordMeshContextsRemove(__removed, __oldSel, __newSel);
+                    }
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
+                }
 
                 // ── メッシュ複製
                 case DuplicateMeshesCommand c:
+                {
                     if (model == null) return;
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    var __oldSel = model.CaptureAllSelectedIndices();
+                    var __added = new List<(int, MeshContext)>();
                     foreach (int idx in c.MasterIndices)
                     {
                         var srcCtx = model.GetMeshContext(idx);
@@ -564,10 +681,31 @@ namespace Poly_Ling.Player
                             IsLocked   = srcCtx.IsLocked,
                             Depth      = srcCtx.Depth,
                         };
-                        model.Add(dup);
+                        int __addedIdx = model.Add(dup);
+                        __added.Add((__addedIdx, dup));
+                    }
+                    if (__added.Count > 0 && _undoController != null)
+                    {
+                        var __newSel = model.CaptureAllSelectedIndices();
+                        _undoController.RecordMeshContextsAdd(__added, __oldSel, __newSel);
                     }
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
+                }
+
+                // ── メッシュリスト順序変更 (D&D/上下移動/Indent/Outdent)
+                // Editor と同一ロジック (MeshListOps.ReorderMeshes) を使用。
+                // Undo 記録 (MeshReorderChangeRecord) も内部で実行される。
+                case ReorderMeshesCommand c:
+                {
+                    if (model == null) return;
+                    if (c.Entries == null || c.Entries.Length == 0) return;
+                    var __ops = new MeshListOps(model, _undoController);
+                    __ops.ReorderMeshes(c.Category, c.Entries);
+                    model.OnListChanged?.Invoke();
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
 
                 // ── BonePose 初期化
                 case InitBonePoseCommand c:
@@ -665,7 +803,8 @@ namespace Poly_Ling.Player
                         }
                     }
                     model.ComputeWorldMatrices();
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2g-1: ComputeWorldMatrices + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
@@ -685,8 +824,8 @@ namespace Poly_Ling.Player
                     }
                     Poly_Ling.Core.PolyLingCoreUvHandlers.HandleApplyUvUnwrap(
                         model, _undoController, BuildMinimalToolCtx(model), () => { }, c);
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -747,8 +886,8 @@ namespace Poly_Ling.Player
                     }
                     if (remMc?.UnityMesh != null && remMc.MeshObject != null)
                         remMc.UnityMesh = remMc.MeshObject.ToUnityMesh();
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     model.IsDirty = true;
                     model.OnListChanged?.Invoke();
                     _notifyPanels(ChangeKind.Attributes);
@@ -775,7 +914,8 @@ namespace Poly_Ling.Player
                         var matAfter = _undoController.CaptureMeshObjectSnapshot();
                         _undoController.RecordTopologyChange(matBefore, matAfter, $"Apply Material [{c.MaterialSlot}]");
                     }
-                    _viewportManager.SyncMeshPositionsAndTransform(matMc, model);
+                    // Phase 2a-2g-1: Material 変更後の GPU 反映を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -812,8 +952,8 @@ namespace Poly_Ling.Player
                             _undoController.RecordTopologyChange(before, after, "LSCM UV展開");
                         }
                         lscmMc.UnityMesh = lscmMc.MeshObject.ToUnityMesh();
-                        _viewportManager.RebuildAdapter(0, model);
-                        _renderer?.UpdateSelectedDrawableMesh(0, model);
+                        // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                        _viewportManager.EnterTopologyChanged(project);
                         _notifyPanels(ChangeKind.Attributes);
                     }
                     else
@@ -849,12 +989,16 @@ namespace Poly_Ling.Player
                             BeforeList = uvzBefore,
                             AfterList  = uvzAfter,
                         };
-                        _undoController.MeshListStack.Record(uvzRecord, "UV→XYZ メッシュ生成");
+                        {
+                            string __dbgDesc = "UV→XYZ メッシュ生成";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((uvzRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(uvzRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -872,8 +1016,8 @@ namespace Poly_Ling.Player
                     }
                     Poly_Ling.Core.PolyLingCoreUvHandlers.HandleXyzToUv(
                         model, _undoController, BuildMinimalToolCtx(model), () => { }, c);
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -913,7 +1057,11 @@ namespace Poly_Ling.Player
                     }
                     if (record.Entries.Count > 0)
                     {
-                        _undoController.MeshListStack.Record(record, c.Description ?? "BoneTransform変更");
+                        {
+                            string __dbgDesc = c.Description ?? "BoneTransform変更";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
                     _boneTransformBeforeSnapshots.Clear();
@@ -929,10 +1077,16 @@ namespace Poly_Ling.Player
                         string.IsNullOrEmpty(c.CloneNameBase) ? src.Name + "_blend" : c.CloneNameBase);
                     var clone = DeepCloneModelContext(src, uniqueName);
                     if (clone == null) return;
-                    project.AddModel(clone);
+                    int cloneIndex = project.AddModel(clone);
                     // スキニング再計算（BoneTransform → WorldMatrix → BindPose）
                     clone.ComputeWorldAndBindPoses();
                     clone.ComputeMeshFilterBindPoses();
+                    // Phase 2a-2g-1: 設計 A - クローンを CurrentModel に切り替え、
+                    // 以降の Preview/Apply は通常編集フローと同じ扱いにする。
+                    // Undo でモデル切替戻し → クローン削除まで戻れる。
+                    project.SelectModel(cloneIndex);
+                    _viewportManager.EnterSceneReset(project, clearScene: true);
+                    _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
                     _notifyPanels(ChangeKind.ModelSwitch);
                     return;
                 }
@@ -940,28 +1094,39 @@ namespace Poly_Ling.Player
                 // ── モデルブレンド: プレビュー（Undo なし）
                 case PreviewModelBlendCommand c:
                 {
-                    var cloneModelPrev = project.GetModel(c.CloneModelIndex);
-                    if (cloneModelPrev == null) return;
+                    // 設計 A: クローンは CreateBlendCloneCommand で既に CurrentModel。
+                    // ExecuteBlend は project.GetModel(c.CloneModelIndex) を書き換えるが、
+                    // CurrentModel と同じであれば GPU は EnterTopologyChanged で正規更新される。
+                    if (project.CurrentModelIndex != c.CloneModelIndex)
+                    {
+                        Debug.LogWarning(
+                            $"[PlayerCommandDispatcher] PreviewModelBlend: CurrentModel " +
+                            $"({project.CurrentModelIndex}) != CloneModelIndex ({c.CloneModelIndex})。" +
+                            $"設計 A 規約違反。CreateBlendCloneCommand 後の Select が行われていない可能性。");
+                        return;
+                    }
                     ExecuteBlend(project, c.ModelIndex, c.CloneModelIndex,
                         c.Weights, c.MeshEnabled, recalcNormals: false, blendBones: c.BlendBones,
                         onSyncMesh: null);
-                    _viewportManager.RebuildAdapter(0, cloneModelPrev);
-                    var firstMcPrev = cloneModelPrev.FirstDrawableMeshContext;
-                    if (firstMcPrev != null)
-                    {
-                        _selectionOps?.SetSelectionState(firstMcPrev.Selection);
-                        _renderer?.SetSelectionState(firstMcPrev.Selection);
-                    }
-                    _renderer?.UpdateSelectedDrawableMesh(0, cloneModelPrev);
-                    _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+                    // Phase 2a-2g-1: RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を
+                    // EnterTopologyChanged に集約。CurrentModel = clone なので正規入口で対応可能。
+                    _viewportManager.EnterTopologyChanged(project);
                     return;
                 }
 
                 // ── モデルブレンド: 適用
                 case ApplyModelBlendCommand c:
                 {
-                    var cloneModelApply = project.GetModel(c.CloneModelIndex);
-                    if (cloneModelApply == null) return;
+                    // 設計 A: クローンは CreateBlendCloneCommand で既に CurrentModel。
+                    if (project.CurrentModelIndex != c.CloneModelIndex)
+                    {
+                        Debug.LogWarning(
+                            $"[PlayerCommandDispatcher] ApplyModelBlend: CurrentModel " +
+                            $"({project.CurrentModelIndex}) != CloneModelIndex ({c.CloneModelIndex})。" +
+                            $"設計 A 規約違反。");
+                        return;
+                    }
+                    var cloneModelApply = project.CurrentModel;
 
                     // クローンモデルをUndoControllerのMeshListStackコンテキストに設定
                     _undoController?.SetModelContext(cloneModelApply);
@@ -984,19 +1149,17 @@ namespace Poly_Ling.Player
                             BeforePositions = beforePos,
                             AfterPositions  = afterPos,
                         };
-                        _undoController.MeshListStack.Record(record, "モデルブレンド適用");
+                        {
+                            string __dbgDesc = "モデルブレンド適用";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
-                    _viewportManager.RebuildAdapter(0, cloneModelApply);
-                    var firstMcApply = cloneModelApply.FirstDrawableMeshContext;
-                    if (firstMcApply != null)
-                    {
-                        _selectionOps?.SetSelectionState(firstMcApply.Selection);
-                        _renderer?.SetSelectionState(firstMcApply.Selection);
-                    }
-                    _renderer?.UpdateSelectedDrawableMesh(0, cloneModelApply);
-                    _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+                    // Phase 2a-2g-1: RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を
+                    // EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -1043,8 +1206,8 @@ namespace Poly_Ling.Player
                     foreach (int idx in savedSelected)
                         model.SelectedDrawableMeshIndices.Add(idx);
 
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1088,8 +1251,9 @@ namespace Poly_Ling.Player
                     }
 
                     // UnityMesh + GPU 更新
-                    _viewportManager.SyncMeshPositionsAndTransform(uvMc, model);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.Dragging, uvMc);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -1156,21 +1320,18 @@ namespace Poly_Ling.Player
                             BeforeList = beforeList,
                             AfterList  = afterList,
                         };
-                        _undoController.MeshListStack.Record(record, "MeshFilter → Skinned 変換");
+                        {
+                            string __dbgDesc = "MeshFilter → Skinned 変換";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
-                    // GPU 再構築
-                    _renderer?.ClearScene();
-                    _viewportManager.RebuildAdapter(0, model);
-                    var firstMc = model.FirstDrawableMeshContext;
-                    if (firstMc != null)
-                    {
-                        _selectionOps?.SetSelectionState(firstMc.Selection);
-                        _renderer?.SetSelectionState(firstMc.Selection);
-                    }
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
-                    _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+                    // Phase 2a-2g-1: ClearScene + RebuildAdapter + SetSelectionState +
+                    // UpdateSelectedDrawableMesh を EnterSceneReset(clearScene: true) に集約。
+                    _viewportManager.EnterSceneReset(project, clearScene: true);
+                    _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
                     _notifyPanels(ChangeKind.ModelSwitch);
                     return;
                 }
@@ -1222,11 +1383,15 @@ namespace Poly_Ling.Player
                         {
                             var mpAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
                             var mpRecord = new MeshFilterToSkinnedRecord { BeforeList = mpBefore, AfterList = mpAfter };
-                            _undoController.MeshListStack.Record(mpRecord, "MediaPipe変形");
+                            {
+                                string __dbgDesc = "MediaPipe変形";
+                                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((mpRecord)?.GetType().Name ?? "<null>"));
+                                _undoController.MeshListStack.Record(mpRecord, __dbgDesc);
+                            }
                             _undoController.FocusMeshList();
                         }
-                        _viewportManager.RebuildAdapter(0, model);
-                        _renderer?.UpdateSelectedDrawableMesh(0, model);
+                        // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                        _viewportManager.EnterTopologyChanged(project);
                         _notifyPanels(ChangeKind.ListStructure);
                     }
                     catch (Exception ex)
@@ -1276,11 +1441,15 @@ namespace Poly_Ling.Player
                     {
                         var qdAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
                         var qdRecord = new MeshFilterToSkinnedRecord { BeforeList = qdBefore, AfterList = qdAfter };
-                        _undoController.MeshListStack.Record(qdRecord, "Quad減面");
+                        {
+                            string __dbgDesc = "Quad減面";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((qdRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(qdRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1316,11 +1485,15 @@ namespace Poly_Ling.Player
                     {
                         var bakeAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
                         var bakeRecord = new MeshFilterToSkinnedRecord { BeforeList = bakeBefore, AfterList = bakeAfter };
-                        _undoController.MeshListStack.Record(bakeRecord, "Bake Mirror");
+                        {
+                            string __dbgDesc = "Bake Mirror";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((bakeRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(bakeRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1363,11 +1536,15 @@ namespace Poly_Ling.Player
                     {
                         var wbAfter   = MeshFilterToSkinnedRecord.CaptureList(model);
                         var wbRecord  = new MeshFilterToSkinnedRecord { BeforeList = wbBefore, AfterList = wbAfter };
-                        _undoController.MeshListStack.Record(wbRecord, "Mirror WriteBack");
+                        {
+                            string __dbgDesc = "Mirror WriteBack";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((wbRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(wbRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1414,11 +1591,15 @@ namespace Poly_Ling.Player
                     {
                         var blAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
                         var blRecord = new MeshFilterToSkinnedRecord { BeforeList = blBefore, AfterList = blAfter };
-                        _undoController.MeshListStack.Record(blRecord, "Mirror Blend");
+                        {
+                            string __dbgDesc = "Mirror Blend";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((blRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(blRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1434,7 +1615,11 @@ namespace Poly_Ling.Player
                     if (_undoController != null)
                     {
                         var record = new HumanoidMappingChangedRecord(hmBefore, hmAfter, "Apply Humanoid Mapping");
-                        _undoController.MeshListStack.Record(record, "Apply Humanoid Mapping");
+                        {
+                            string __dbgDesc = "Apply Humanoid Mapping";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
                     model.IsDirty = true;
@@ -1453,7 +1638,11 @@ namespace Poly_Ling.Player
                     if (_undoController != null)
                     {
                         var record = new HumanoidMappingChangedRecord(hmcBefore, hmcAfter, "Clear Humanoid Mapping");
-                        _undoController.MeshListStack.Record(record, "Clear Humanoid Mapping");
+                        {
+                            string __dbgDesc = "Clear Humanoid Mapping";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
                     model.IsDirty = true;
@@ -1485,14 +1674,18 @@ namespace Poly_Ling.Player
                     if (_undoController != null)
                     {
                         var record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose");
-                        _undoController.MeshListStack.Record(record, "Apply T-Pose");
+                        {
+                            string __dbgDesc = "Apply T-Pose";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
                     model.IsDirty = true;
                     model.OnListChanged?.Invoke();
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -1516,14 +1709,18 @@ namespace Poly_Ling.Player
                     if (_undoController != null)
                     {
                         var record = new TPoseUndoRecord(restoreBefore, restoreAfter, oldTPoseBackup, null, "Restore Original Pose");
-                        _undoController.MeshListStack.Record(record, "Restore Original Pose");
+                        {
+                            string __dbgDesc = "Restore Original Pose";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
                     model.IsDirty = true;
                     model.OnListChanged?.Invoke();
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -1654,12 +1851,16 @@ namespace Poly_Ling.Player
                             BeforeList = mergeBefore,
                             AfterList  = mergeAfter,
                         };
-                        _undoController.MeshListStack.Record(mergeRecord, "メッシュマージ");
+                        {
+                            string __dbgDesc = "メッシュマージ";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((mergeRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(mergeRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
-                    _viewportManager.RebuildAdapter(0, model);
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1674,6 +1875,11 @@ namespace Poly_Ling.Player
                     if (baseModel == null || morphModel == null) return;
                     if (c.BaseModelIndex == c.MorphModelIndex) return;
                     if (baseModel.Count != morphModel.Count) return;
+
+                    // Phase 2a-2g-1: 設計 A - baseModel を CurrentModel に切り替えてから処理。
+                    // これ以降 GPU は project.CurrentModel = baseModel で EnterTopologyChanged 経由で更新可能。
+                    if (morphProject.CurrentModelIndex != c.BaseModelIndex)
+                        morphProject.SelectModel(c.BaseModelIndex);
 
                     // 変更前スナップショット
                     var morphBefore     = MeshFilterToSkinnedRecord.CaptureList(baseModel);
@@ -1743,12 +1949,16 @@ namespace Poly_Ling.Player
                             BeforeExpressions = morphExprBefore,
                             AfterExpressions  = morphExprAfter,
                         };
-                        _undoController.MeshListStack.Record(record, $"モーフ作成: {c.MorphName}");
+                        {
+                            string __dbgDesc = $"モーフ作成: {c.MorphName}";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(record, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
 
-                    _viewportManager.RebuildAdapter(0, baseModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, baseModel);
+                    // Phase 2a-2g-1: 設計 A - baseModel = CurrentModel なので EnterTopologyChanged で統一。
+                    _viewportManager.EnterTopologyChanged(morphProject);
                     _notifyPanels(ChangeKind.ListStructure);
                     return;
                 }
@@ -1856,10 +2066,15 @@ namespace Poly_Ling.Player
                     if (_undoController != null)
                     {
                         var sdRecord = new MeshSelectionChangeRecord(sdOldSel, sdNewSel);
-                        _undoController.MeshListStack.Record(sdRecord, "メッシュ選択辞書適用");
+                        {
+                            string __dbgDesc = "メッシュ選択辞書適用";
+                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((sdRecord)?.GetType().Name ?? "<null>"));
+                            _undoController.MeshListStack.Record(sdRecord, __dbgDesc);
+                        }
                         _undoController.FocusMeshList();
                     }
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2g-1: UpdateSelectedDrawableMesh を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Selection);
                     return;
                 }
@@ -1980,7 +2195,7 @@ namespace Poly_Ling.Player
 
                 var nonIsolated  = BuildBlendNonIsolatedSet(targetMesh);
                 var blended      = new Vector3[rawCount];
-                bool targetIsExp = targetMesh.IsExpanded;
+                bool targetIsTriangulated = targetMesh.IsTriangulated;
 
                 foreach (var kv in srcFilteredMap)
                 {
@@ -1996,16 +2211,16 @@ namespace Poly_Ling.Player
                     if (matchSi < 0) continue;
                     srcCursors[kv.Key] = matchSi + 1;
                     var srcMesh = srcList[matchSi].MeshObject;
-                    bool srcIsExp = srcMesh.IsExpanded;
+                    bool srcIsTriangulated = srcMesh.IsTriangulated;
 
-                    if (targetIsExp)
+                    if (targetIsTriangulated)
                     {
-                        var srcInvMap = srcIsExp ? null : srcMesh.BuildInverseExpansionMap();
+                        var srcInvMap = srcIsTriangulated ? null : srcMesh.BuildInverseExpansionMap();
                         for (int vi = 0; vi < rawCount; vi++)
                         {
                             if (!nonIsolated.Contains(vi)) continue;
                             Vector3 srcPos;
-                            if (srcIsExp)
+                            if (srcIsTriangulated)
                             {
                                 if (vi >= srcMesh.Vertices.Count) continue;
                                 srcPos = srcMesh.Vertices[vi].Position;
@@ -2020,12 +2235,12 @@ namespace Poly_Ling.Player
                     }
                     else
                     {
-                        var srcExpMap = srcIsExp ? targetMesh.BuildExpansionMap() : null;
+                        var srcExpMap = srcIsTriangulated ? targetMesh.BuildExpansionMap() : null;
                         for (int vi = 0; vi < rawCount; vi++)
                         {
                             if (!nonIsolated.Contains(vi)) continue;
                             Vector3 srcPos;
-                            if (srcIsExp)
+                            if (srcIsTriangulated)
                             {
                                 if (!srcExpMap.TryGetValue((vi, 0), out int srcEi)) continue;
                                 if (srcEi >= srcMesh.Vertices.Count) continue;
@@ -2245,13 +2460,16 @@ namespace Poly_Ling.Player
             ctx.UndoController = _undoController;
             ctx.SyncMeshContextPositionsOnly = mc =>
             {
-                _viewportManager.SyncMeshPositionsAndTransform(mc, model);
-                _viewportManager.UpdateTransform();
-                _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+                // Phase 2a-2g-1: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+                // project は Dispatch ローカルでクロージャ不可のため、毎回 _getProject() で取得する。
+                var proj = _getProject();
+                _viewportManager.EnterVerticesMoved(proj, VerticesMovedPhase.Dragging, mc);
+                _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
             };
             ctx.NotifyTopologyChanged = () =>
             {
-                _viewportManager.RebuildAdapter(0, model);
+                // Phase 2a-2g-1: RebuildAdapter を EnterTopologyChanged に集約。
+                _viewportManager.EnterTopologyChanged(_getProject());
                 _notifyPanels(ChangeKind.ListStructure);
             };
             return ctx;
@@ -2267,8 +2485,8 @@ namespace Poly_Ling.Player
             ctx.CommandQueue   = _commandQueue;
             ctx.SyncMesh       = () =>
             {
-                _viewportManager.RebuildAdapter(0, model);
-                _renderer?.UpdateSelectedDrawableMesh(0, model);
+                // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                _viewportManager.EnterTopologyChanged(_getProject());
             };
             ctx.Repaint        = () => { };
             return ctx;
@@ -2836,7 +3054,11 @@ namespace Poly_Ling.Player
             if (_undoController != null)
             {
                 var record = new SelectionChangeRecord(oldSnap, newSnap);
-                _undoController.VertexEditStack.Record(record, "パーツ選択辞書 適用");
+                {
+                    string __dbgDesc = "パーツ選択辞書 適用";
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undoController.VertexEditStack.Record(record, __dbgDesc);
+                }
                 _undoController.FocusVertexEdit();
             }
 

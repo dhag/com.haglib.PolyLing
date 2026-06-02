@@ -68,7 +68,16 @@ namespace Poly_Ling.Tools
         // 押し出し
         private float _extrudeDistance;
         private Vector3 _extrudeDirection;
-        private List<Vector3> _previewPositions = new List<Vector3>();
+
+        // ドラッグ中の頂点位置更新用
+        private struct FaceDragVertex
+        {
+            public int     Index;
+            public Vector3 BasePos;
+            public Vector3 Normal;
+            public Vector3 FaceCenter;
+        }
+        private List<FaceDragVertex> _faceDragVertices = new List<FaceDragVertex>();
 
         // ホバー
         private int _hoverFace = -1;
@@ -104,11 +113,14 @@ namespace Poly_Ling.Tools
 
             _mouseDownScreenPos = mousePos;
 
-            _hitFaceOnMouseDown = FindFaceAtPosition(ctx, mousePos);
+            // _hitFaceOnMouseDown はハンドラーが PrepareHit() でセット
 
             if (_hitFaceOnMouseDown >= 0)
             {
                 _state = ExtrudeState.PendingAction;
+                // マウスダウン時にスナップショット取得
+                if (ctx.UndoController != null)
+                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 return false;
             }
 
@@ -166,58 +178,9 @@ namespace Poly_Ling.Tools
             return handled;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null) return;
-
-            if (_state == ExtrudeState.Idle || _state == ExtrudeState.PendingAction)
-            {
-                Vector2 mousePos = ctx.CurrentMousePosition;
-                _hoverFace = FindFaceAtPosition(ctx, mousePos);
-            }
-            else
-            {
-                _hoverFace = -1;
-            }
-
-            UnityEditor_Handles.BeginGUI();
-
-            if (_state == ExtrudeState.Extruding)
-            {
-                foreach (var faceInfo in _targetFaces)
-                {
-                    DrawFaceHighlight(ctx, faceInfo, new Color(1f, 0.5f, 0f, 0.4f));
-                }
-
-                DrawExtrudePreview(ctx);
-
-                GUI.color = Color.white;
-                GUI.Label(new Rect(10, 60, 200, 20), $"Distance: {_extrudeDistance:F3}");
-            }
-            else
-            {
-                if (_hoverFace >= 0 && !ctx.SelectionState.Faces.Contains(_hoverFace))
-                {
-                    var faceInfo = CreateFaceInfo(ctx.FirstSelectedMeshObject, _hoverFace);
-                    if (faceInfo.HasValue)
-                    {
-                        DrawFaceHighlight(ctx, faceInfo.Value, new Color(1f, 1f, 1f, 0.3f));
-                    }
-                }
-
-                if (_hoverFace >= 0 && ctx.SelectionState.Faces.Contains(_hoverFace))
-                {
-                    var faceInfo = CreateFaceInfo(ctx.FirstSelectedMeshObject, _hoverFace);
-                    if (faceInfo.HasValue)
-                    {
-                        DrawFaceHighlight(ctx, faceInfo.Value, new Color(1f, 1f, 1f, 0.5f));
-                    }
-                }
-            }
-
-            UnityEditor_Handles.color = Color.white;
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {
@@ -238,7 +201,7 @@ namespace Poly_Ling.Tools
         {
             _state = ExtrudeState.Idle;
             _hitFaceOnMouseDown = -1;
-            _previewPositions.Clear();
+            _faceDragVertices.Clear();
             _targetFaces.Clear();
             _snapshotBefore = null;
             _extrudeDistance = 0f;
@@ -248,6 +211,19 @@ namespace Poly_Ling.Tools
         public void OnSelectionChanged(ToolContext ctx)
         {
         }
+
+        // ── UIToolkit hover support ───────────────────────────────────────
+        /// <summary>現在ホバー中の面インデックス（-1=なし、UIToolkit オーバーレイ用）</summary>
+        public int HoverFace => _hoverFace;
+
+        /// <summary>ハンドラーが GPU ホバー結果からセット。FindFaceAtPosition（CPU・カリング無視）使用禁止。</summary>
+        public void SetHoverFace(int faceIdx)
+        {
+            _hoverFace = (_state == ExtrudeState.Idle || _state == ExtrudeState.PendingAction) ? faceIdx : -1;
+        }
+
+        /// <summary>OnLeftDragBegin でハンドラーが GPU ホバー結果から事前にセット。</summary>
+        public void PrepareHit(int faceIdx) { _hitFaceOnMouseDown = faceIdx; }
 
         // ================================================================
         // 押し出し処理
@@ -276,13 +252,10 @@ namespace Poly_Ling.Tools
                 ? _extrudeDirection.normalized
                 : Vector3.up;
 
-            if (ctx.UndoController != null)
-            {
-                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
-            }
-
             _extrudeDistance = 0f;
-            InitializePreview(ctx);
+
+            // トポロジーを即時実行し _faceDragVertices を確定させる
+            ExecuteExtrude(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
             _state = ExtrudeState.Extruding;
             ctx.EnterTransformDragging?.Invoke();
@@ -303,7 +276,24 @@ namespace Poly_Ling.Tools
                 _extrudeDistance = -totalDelta.y * 0.01f;
             }
 
-            UpdatePreview(ctx);
+            var meshObject = ctx.FirstSelectedMeshObject;
+            if (meshObject != null)
+            {
+                foreach (var dv in _faceDragVertices)
+                {
+                    if (dv.Index < 0 || dv.Index >= meshObject.VertexCount) continue;
+                    Vector3 offset  = dv.Normal * _extrudeDistance;
+                    Vector3 pos     = dv.BasePos + offset;
+                    if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
+                    {
+                        Vector3 newCenter = dv.FaceCenter + offset;
+                        Vector3 toCenter  = newCenter - pos;
+                        pos = pos + toCenter * (1f - BevelScale);
+                    }
+                    meshObject.Vertices[dv.Index].Position = pos;
+                }
+            }
+            ctx.SyncMeshPositionsOnly?.Invoke();
         }
 
         private Vector2 WorldDirToScreenDir(ToolContext ctx, Vector3 worldDir)
@@ -321,20 +311,16 @@ namespace Poly_Ling.Tools
         {
             ctx.ExitTransformDragging?.Invoke();
 
-            if (Mathf.Abs(_extrudeDistance) < 0.001f)
-            {
-                _snapshotBefore = null;
-                return;
-            }
-
-            ExecuteExtrude(ctx);
-
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
                 var snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, "Extrude Faces");
+                {
+                    string __dbgDesc = "Extrude Faces";
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
+                }
             }
 
             _snapshotBefore = null;
@@ -355,6 +341,8 @@ namespace Poly_Ling.Tools
             int materialIndex = ctx.CurrentMaterialIndex;
             var newVertexIndices = new List<int>();
             var newFaceIndices = new List<int>();
+
+            _faceDragVertices.Clear();
 
             foreach (var faceInfo in _targetFaces)
             {
@@ -377,14 +365,22 @@ namespace Poly_Ling.Tools
                         newPos = newPos + toCenter * (1f - BevelScale);
                     }
 
+                    int newIdx = meshObject.VertexCount;
                     var newVertex = new Vertex { Position = newPos };
                     newVertex.UVs.AddRange(oldVertex.UVs);
                     newVertex.Normals.AddRange(oldVertex.Normals);
 
-                    int newIdx = meshObject.VertexCount;
                     meshObject.Vertices.Add(newVertex);
                     vertexMap[oldVIdx] = newIdx;
                     newVertexIndices.Add(newIdx);
+
+                    _faceDragVertices.Add(new FaceDragVertex
+                    {
+                        Index      = newIdx,
+                        BasePos    = oldVertex.Position,
+                        Normal     = normal,
+                        FaceCenter = faceInfo.Center,
+                    });
                 }
 
                 int vertCount = faceInfo.VertexIndices.Count;
@@ -488,176 +484,9 @@ namespace Poly_Ling.Tools
             };
         }
 
-        private int FindFaceAtPosition(ToolContext ctx, Vector2 mousePos)
-        {
-            if (ctx.FirstSelectedMeshObject == null) return -1;
 
-            for (int fi = 0; fi < ctx.FirstSelectedMeshObject.FaceCount; fi++)
-            {
-                var face = ctx.FirstSelectedMeshObject.Faces[fi];
-                if (face.VertexCount < 3) continue;
 
-                var screenPoints = new List<Vector2>();
-                foreach (int vIdx in face.VertexIndices)
-                {
-                    if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
-                        screenPoints.Add(ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position));
-                }
 
-                if (screenPoints.Count >= 3 && PointInPolygon(mousePos, screenPoints))
-                    return fi;
-            }
 
-            return -1;
-        }
-
-        private bool PointInPolygon(Vector2 p, List<Vector2> polygon)
-        {
-            bool inside = false;
-            int j = polygon.Count - 1;
-
-            for (int i = 0; i < polygon.Count; j = i++)
-            {
-                if (((polygon[i].y > p.y) != (polygon[j].y > p.y)) &&
-                    (p.x < (polygon[j].x - polygon[i].x) * (p.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x))
-                {
-                    inside = !inside;
-                }
-            }
-
-            return inside;
-        }
-
-        private void InitializePreview(ToolContext ctx)
-        {
-            _previewPositions.Clear();
-
-            foreach (var faceInfo in _targetFaces)
-            {
-                foreach (int vIdx in faceInfo.VertexIndices)
-                {
-                    if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
-                        _previewPositions.Add(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
-                }
-            }
-        }
-
-        private void UpdatePreview(ToolContext ctx)
-        {
-            Vector3 avgNormal = Vector3.zero;
-            if (!IndividualNormals)
-            {
-                foreach (var faceInfo in _targetFaces)
-                    avgNormal += faceInfo.Normal;
-                avgNormal = avgNormal.magnitude > 0.001f ? avgNormal.normalized : Vector3.up;
-            }
-
-            int idx = 0;
-            foreach (var faceInfo in _targetFaces)
-            {
-                Vector3 normal = IndividualNormals ? faceInfo.Normal : avgNormal;
-                Vector3 offset = normal * _extrudeDistance;
-                Vector3 newCenter = faceInfo.Center + offset;
-
-                foreach (int vIdx in faceInfo.VertexIndices)
-                {
-                    if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount || idx >= _previewPositions.Count)
-                    {
-                        idx++;
-                        continue;
-                    }
-
-                    Vector3 newPos = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position + offset;
-
-                    if (Type == FaceExtrudeSettings.ExtrudeType.Bevel)
-                    {
-                        Vector3 toCenter = newCenter - newPos;
-                        newPos = newPos + toCenter * (1f - BevelScale);
-                    }
-
-                    _previewPositions[idx++] = newPos;
-                }
-            }
-        }
-
-        private void DrawExtrudePreview(ToolContext ctx)
-        {
-            int idx = 0;
-
-            foreach (var faceInfo in _targetFaces)
-            {
-                int vertCount = faceInfo.VertexIndices.Count;
-
-                UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
-                for (int i = 0; i < vertCount; i++)
-                {
-                    int next = (i + 1) % vertCount;
-                    if (idx + i >= _previewPositions.Count || idx + next >= _previewPositions.Count) continue;
-
-                    Vector2 p0 = ctx.WorldToScreen(_previewPositions[idx + i]);
-                    Vector2 p1 = ctx.WorldToScreen(_previewPositions[idx + next]);
-                    DrawThickLine(p0, p1, 2f);
-                }
-
-                UnityEditor_Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
-                for (int i = 0; i < vertCount; i++)
-                {
-                    int vIdx = faceInfo.VertexIndices[i];
-                    if (vIdx >= ctx.FirstSelectedMeshObject.VertexCount || idx + i >= _previewPositions.Count) continue;
-
-                    Vector2 orig = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
-                    Vector2 newPos = ctx.WorldToScreen(_previewPositions[idx + i]);
-                    DrawThickLine(orig, newPos, 1.5f);
-                }
-
-                idx += vertCount;
-            }
-        }
-
-        private void DrawFaceHighlight(ToolContext ctx, FaceExtrudeInfo faceInfo, Color color)
-        {
-            if (faceInfo.VertexIndices.Count < 3) return;
-
-            var screenPoints = new List<Vector2>();
-            foreach (int vIdx in faceInfo.VertexIndices)
-            {
-                if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
-                    screenPoints.Add(ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position));
-            }
-
-            if (screenPoints.Count >= 3)
-            {
-                UnityEditor_Handles.color = color;
-                DrawPolygon(screenPoints);
-
-                UnityEditor_Handles.color = new Color(color.r, color.g, color.b, 0.8f);
-                for (int i = 0; i < screenPoints.Count; i++)
-                {
-                    int next = (i + 1) % screenPoints.Count;
-                    DrawThickLine(screenPoints[i], screenPoints[next], 2f);
-                }
-            }
-        }
-
-        private void DrawPolygon(List<Vector2> points)
-        {
-            if (points.Count < 3) return;
-
-            for (int i = 1; i < points.Count - 1; i++)
-            {
-                Vector3[] verts = new Vector3[] { points[0], points[i], points[i + 1] };
-                UnityEditor_Handles.DrawAAConvexPolygon(verts);
-            }
-        }
-
-        private void DrawThickLine(Vector2 p0, Vector2 p1, float thickness)
-        {
-            Vector2 dir = (p1 - p0);
-            if (dir.magnitude < 0.001f) return;
-            dir.Normalize();
-
-            Vector2 perp = new Vector2(-dir.y, dir.x) * thickness * 0.5f;
-            UnityEditor_Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
-        }
     }
 }

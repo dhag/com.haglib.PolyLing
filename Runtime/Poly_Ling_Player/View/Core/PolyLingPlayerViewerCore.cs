@@ -105,10 +105,8 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum ToolMode { VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife }
-        private ToolMode               _toolMode = ToolMode.VertexMove;
-
-        private Button _activeBtn;
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, LineExtrude, Rotate, Scale }
+        private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         private struct OverlayIndicator
         {
@@ -131,12 +129,20 @@ namespace Poly_Ling.Player
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;
-        private BoneInputHandler             _boneInputHandler;
         private PlayerBoneEditorSubPanel     _boneEditorSubPanel;
         private PlayerUVEditorSubPanel       _uvEditorSubPanel;
         private PlayerUVUnwrapSubPanel       _uvUnwrapSubPanel;
         private PlayerMaterialListSubPanel   _materialListSubPanel;
         private PlayerUVZSubPanel            _uvzSubPanel;
+
+        // UV編集モード（A方式：UVZ平面メッシュに展開し既存ツールで編集→書き戻し）。
+        // 抑止なし・記録済みコマンド再利用のため、生成/書き戻し/破棄は各々Undo記録される。
+        private bool             _uvEditModeActive;
+        private int              _uvEditUvzMaster   = -1;   // 展開UVZメッシュの master index（末尾追加）
+        private int              _uvEditSrcMaster   = -1;   // 書き戻し先（元メッシュ）の master index
+        private float            _uvEditUvScale     = 10f;  // 生成と書き戻しで同一を使うこと
+        private PlayerViewportPanel _uvEditPrevPanel;
+        private PlayerViewport      _uvEditPrevViewport;
         private PlayerPartsSelectionSetSubPanel _partsSelSetSubPanel;
         private PlayerMeshSelectionSetSubPanel  _meshSelSetSubPanel;
         private PlayerMergeMeshesSubPanel    _mergeMeshesSubPanel;
@@ -238,12 +244,22 @@ namespace Poly_Ling.Player
             _editOps.UndoController.OnUndoRedoPerformed += () =>
             {
                 var stackType = _editOps.UndoController.LastUndoRedoStackType;
+                UnityEngine.Debug.Log(
+                    $"[UndoDbg] OnUndoRedoPerformed stack={stackType} " +
+                    $"ActiveProject.Current={ActiveProject?.CurrentModel?.Name ?? "<null>"} " +
+                    $"VertexEdit.Undo={_editOps.UndoController.VertexEditStack.UndoCount}/" +
+                    $"Redo={_editOps.UndoController.VertexEditStack.RedoCount} " +
+                    $"MeshList.Undo={_editOps.UndoController.MeshListStack.UndoCount}/" +
+                    $"Redo={_editOps.UndoController.MeshListStack.RedoCount}");
 
                 // ── MeshList（BoneTransform変更・PivotMove等）の復元
                 if (stackType == MeshUndoController.UndoStackType.MeshList)
                 {
                     var listCtx   = _editOps.UndoController.MeshListContext;
                     var model     = listCtx ?? ActiveProject?.CurrentModel;
+                    UnityEngine.Debug.Log(
+                        $"[UndoDbg]   MeshList branch: listCtx={listCtx?.Name ?? "<null>"}, " +
+                        $"effectiveModel={model?.Name ?? "<null>"}");
                     if (model != null)
                     {
                         model.ComputeWorldMatrices();
@@ -252,9 +268,14 @@ namespace Poly_Ling.Player
                         bool needsRebuild = lastRecord is MeshListChangeRecord
                                          || lastRecord is MeshAttributesBatchChangeRecord
                                          || lastRecord is MultiMeshVertexSnapshotRecord;
+                        UnityEngine.Debug.Log(
+                            $"[UndoDbg]   lastRecord={lastRecord?.GetType().Name ?? "<null>"}, " +
+                            $"needsRebuild={needsRebuild}");
                         if (needsRebuild)
                         {
-                            _viewportManager.RebuildAdapter(0, model);
+                            // Phase 2a-2b-2 Batch 3: Undo 適用による丸ごと再構築は EnterUndoApplied 経由。
+                            // model は UndoController 由来で ActiveProject.CurrentModel と異なる可能性あり。
+                            _viewportManager.EnterUndoApplied(ActiveProject, model);
                             RebuildModelList();
                         }
                         else if (lastRecord is PivotMoveRecord pivotRec)
@@ -264,26 +285,75 @@ namespace Poly_Ling.Player
                             var pivotMc = model.GetMeshContext(pivotRec.MasterIndex);
                             if (pivotMc != null)
                                 _viewportManager.SyncMeshPositionsAndTransform(pivotMc, model);
+                            // PivotMoveRecord ブランチのみ従来の UpdateSelectedDrawableMesh + UpdateTransform を維持。
+                            _renderer?.UpdateSelectedDrawableMesh(0, model);
+                            _viewportManager.UpdateTransform();
+                        }
+                        else if (lastRecord is MeshSelectionChangeRecord)
+                        {
+                            // 選択変更の Undo/Redo: Record.Undo / Redo で ModelContext の
+                            // SelectedDrawableMeshIndices / SelectedBoneIndices / SelectedMorphIndices が
+                            // RestoreSelectionFromIndices で既に復元済み。画面反映のみ行う。
+                            var firstMc = model.FirstDrawableMeshContext;
+                            if (firstMc?.Selection != null)
+                            {
+                                _selectionOps?.SetSelectionState(firstMc.Selection);
+                                _renderer?.SetSelectionState(firstMc.Selection);
+                            }
+                            _viewportManager.EnterTopologyChanged(ActiveProject);
+                            RebuildModelList();
                         }
 
-                        _renderer?.UpdateSelectedDrawableMesh(0, model);
-                        _viewportManager.UpdateTransform();
                         NotifyPanels(ChangeKind.Attributes);
                     }
                     return;
                 }
 
-                if (stackType != MeshUndoController.UndoStackType.VertexEdit)
+                // ── Project (モデル切替等)
+                // 問題 A/B 対応: ProjectStack の Record は ProjectContext.CurrentModelIndex を
+                // 書き換え済み。ここで UndoController 内部の ModelContext 参照を新モデルに同期し、
+                // シーン描画を再構築する。
+                if (stackType == MeshUndoController.UndoStackType.Project)
+                {
+                    var projLast = _editOps.UndoController.ProjectStack.LastExecutedRecord;
+                    UnityEngine.Debug.Log(
+                        $"[UndoDbg]   Project branch: lastRecord={projLast?.GetType().Name ?? "<null>"}, " +
+                        $"isRedo={_editOps.UndoController.LastUndoRedoIsRedo}, " +
+                        $"CurrentModel={ActiveProject?.CurrentModel?.Name ?? "<null>"}");
+                    if (ActiveProject != null)
+                    {
+                        _editOps.UndoController.SetProjectContext(ActiveProject);
+                        _editOps.UndoController.SetModelContext(ActiveProject.CurrentModel);
+                        _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+                        _viewportManager.EnterCameraChanged(
+                            _viewportManager.PerspectiveViewport,
+                            CameraChangePhase.Committed);
+                        RebuildModelList();
+                        NotifyPanels(ChangeKind.ModelSwitch);
+                    }
                     return;
+                }
+
+                if (stackType != MeshUndoController.UndoStackType.VertexEdit)
+                {
+                    UnityEngine.Debug.Log($"[UndoDbg]   skip (stack={stackType} not handled)");
+                    return;
+                }
                 var ctx = _editOps.UndoController.MeshUndoContext;
-                if (ctx == null) return;
+                if (ctx == null) { UnityEngine.Debug.Log("[UndoDbg]   ctx=null, bail"); return; }
                 var targetModel = ctx.ParentModelContext;
-                if (targetModel == null) return;
+                if (targetModel == null) { UnityEngine.Debug.Log("[UndoDbg]   targetModel=null, bail"); return; }
+                UnityEngine.Debug.Log(
+                    $"[UndoDbg]   VertexEdit branch: targetModel={targetModel.Name}, " +
+                    $"sameAsCurrent={ReferenceEquals(targetModel, ActiveProject?.CurrentModel)}");
 
                 // ── 頂点移動の復元
                 var pending = ctx.PendingMeshMoveEntries;
                 if (pending != null && pending.Length > 0)
                 {
+                    int totalV = 0; foreach (var e in pending) totalV += e.Indices?.Length ?? 0;
+                    UnityEngine.Debug.Log(
+                        $"[UndoDbg]   restore vertex move: entries={pending.Length}, totalVerts={totalV}");
                     foreach (var entry in pending)
                     {
                         var mc = targetModel.GetMeshContext(entry.MeshContextIndex);
@@ -299,6 +369,12 @@ namespace Poly_Ling.Player
                         _viewportManager.SyncMeshPositionsAndTransform(mc, targetModel);
                     }
                     ctx.PendingMeshMoveEntries = null;
+                    // Phase 2a-2e 修正: Undo 経路は「ドラッグ終了」ではないため、
+                    // EnterVerticesMoved(DragEnd) を呼ぶと ExitTransformDragging の
+                    // dispatch state 遷移と PresentAll(ActiveProject) が実行される。
+                    // 後者は ActiveProject.CurrentModel 基準で描画準備するため、
+                    // targetModel != ActiveProject.CurrentModel のケースで頂点位置が反映されない。
+                    // 元実装の軽量 API 呼出しに戻す。
                     _viewportManager.ExitTransformDragging();
                     _viewportManager.UpdateTransform();
                     _renderer?.UpdateSelectedDrawableMesh(0, targetModel);
@@ -310,6 +386,9 @@ namespace Poly_Ling.Player
                 var snapshot = ctx.CurrentSelectionSnapshot;
                 if (snapshot != null)
                 {
+                    UnityEngine.Debug.Log(
+                        $"[UndoDbg]   restore selection: V={snapshot.Vertices?.Count ?? 0}, " +
+                        $"E={snapshot.Edges?.Count ?? 0}");
                     var firstMc = targetModel.FirstSelectedMeshContext
                                   ?? targetModel.FirstDrawableMeshContext;
                     if (firstMc?.Selection != null)
@@ -367,8 +446,8 @@ namespace Poly_Ling.Player
                             }
                             // 参照が同じ場合（委譲でデータ更新済み）もGPUを再構築する
                             _editOps.UndoController.SyncMeshObjectReference(liveMc.MeshObject, liveMc.UnityMesh);
-                            _viewportManager.RebuildAdapter(0, targetModel);
-                            _renderer?.UpdateSelectedDrawableMesh(0, targetModel);
+                            // Phase 2a-2b-2 Batch 3: Undo 適用の GPU 丸ごと再構築は EnterUndoApplied 経由。
+                            _viewportManager.EnterUndoApplied(ActiveProject, targetModel);
                             NotifyPanels(ChangeKind.Attributes);
                         }
                     }
@@ -407,6 +486,9 @@ namespace Poly_Ling.Player
             {
                 if (_editOps?.UndoController?.MeshUndoContext != null)
                     _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
+                // 問題 A/B 対応: ProjectStack の Context も同期。
+                if (ActiveProject != null)
+                    _editOps?.UndoController?.SetProjectContext(ActiveProject);
             };
 
             // RemoteMode.Server: BuildLayout 後に Initialize（_commandDispatcher 確定後）
@@ -423,7 +505,8 @@ namespace Poly_Ling.Player
             _localLoader.OnStatusChanged = s => _status = s;
             _localLoader.OnLoaded = project =>
             {
-                _renderer.ClearScene();
+                // Phase 2a-2g-3: 冒頭の _renderer.ClearScene() を削除。
+                // 行末の EnterSceneReset(clearScene: true) に統合。
                 var loadedModel = project.CurrentModel;
 
                 if (_importSubPanel?.AutoScale == true)
@@ -433,7 +516,11 @@ namespace Poly_Ling.Player
                     {
                         if (list[i].UnityMesh != null)
                         {
-                            _viewportManager.ResetToMesh(list[i].UnityMesh.bounds);
+                            // Phase 2a-2d: ResetToMesh → EnterCameraChanged(Reset) に集約。
+                            _viewportManager.EnterCameraChanged(
+                                _viewportManager.PerspectiveViewport,
+                                CameraChangePhase.Reset,
+                                list[i].UnityMesh.bounds);
                             break;
                         }
                     }
@@ -444,7 +531,6 @@ namespace Poly_Ling.Player
                 _sculptHandler?.SetProject(ActiveProject);
                 _advancedSelectHandler?.SetProject(ActiveProject);
                 _skinWeightPaintHandler?.SetProject(ActiveProject);
-                _boneInputHandler?.SetProject(ActiveProject);
                 _alignVerticesHandler?.SetProject(ActiveProject);
                 _planarizeAlongBonesHandler?.SetProject(ActiveProject);
                 _mergeVerticesHandler?.SetProject(ActiveProject);
@@ -461,11 +547,12 @@ namespace Poly_Ling.Player
                 _lineExtrudeHandler?.SetProject(ActiveProject);
 
                 _editOps?.UndoController.SetModelContext(loadedModel);
+                // 問題 A/B 対応: ProjectStack (モデル切替用 Undo) の Context も同期する。
+                _editOps?.UndoController.SetProjectContext(project);
 
                 loadedModel.ComputeWorldMatrices();
 
-                _viewportManager.RebuildAdapter(0, loadedModel);
-
+                // Phase 2a-2b-2 Batch 3: モデル初期選択処理を先に行ってから EnterSceneReset で一括更新。
                 var loadedDrawables = loadedModel.DrawableMeshes;
                 if (loadedDrawables != null)
                     foreach (var entry in loadedDrawables)
@@ -487,36 +574,26 @@ namespace Poly_Ling.Player
                 int lSelBone = lNeckIdx >= 0 ? lNeckIdx : lFirstBone;
                 if (lSelBone >= 0) loadedModel.SelectBone(lSelBone);
 
-                var firstMcLocal = loadedModel.FirstDrawableMeshContext;
-                if (firstMcLocal != null)
-                {
-                    _selectionOps?.SetSelectionState(firstMcLocal.Selection);
-                    _renderer?.SetSelectionState(firstMcLocal.Selection);
-                }
                 if (_editOps?.UndoController?.MeshUndoContext != null)
                     _editOps.UndoController.MeshUndoContext.ParentModelContext = loadedModel;
-                _renderer?.UpdateSelectedDrawableMesh(0, loadedModel);
-                _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
 
-                // UNDO記録：インポートした全メッシュを1ステップとして記録
-                // 図形生成と同じパターン（RecordMeshContextsAdd）。
-                // UNDO → 全メッシュ削除（空モデルになる）、REDO → 復元。
-                if (_editOps?.UndoController != null && loadedModel.MeshContextCount > 0)
+                // RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を一括実行。
+                // Phase 2a-2g-3: clearScene: true で冒頭の ClearScene 呼出しを統合。
+                _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+                _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
+
+                // UNDO記録: PMX/MQO/CSV 読込によるモデル追加全体を 1 ステップ (ProjectStack) として記録。
+                // (問題 E/I: 従来は MeshListStack に RecordMeshContextsAdd していたが、Undo で
+                //  モデル内のメッシュが消えるだけで ProjectContext.Models にモデル自体 (空) が
+                //  残り、モデルリストに名前だけ残るバグがあった。ModelOperationRecord.CreateAdd は
+                //  ModelContextSnapshot にモデル全体を保存し、Undo でモデル自体を削除・
+                //  Redo で復元するため、リスト表示も一致する)
+                if (_editOps?.UndoController != null && loadedModel != null)
                 {
-                    var importAdded = new System.Collections.Generic.List<(int, Poly_Ling.Data.MeshContext)>();
-                    for (int _ii = 0; _ii < loadedModel.MeshContextCount; _ii++)
-                    {
-                        var _imc = loadedModel.GetMeshContext(_ii);
-                        if (_imc != null) importAdded.Add((_ii, _imc));
-                    }
-                    if (importAdded.Count > 0)
-                    {
-                        var importNewSel = loadedModel.CaptureAllSelectedIndices();
-                        _editOps.UndoController.RecordMeshContextsAdd(
-                            importAdded,
-                            new System.Collections.Generic.List<int>(),
-                            importNewSel);
-                    }
+                    int __addedIdx = _localLoader?.LastAddedModelIndex ?? project.CurrentModelIndex;
+                    int __oldIdx   = _localLoader?.LastPreviousCurrentModelIndex ?? -1;
+                    _editOps.UndoController.SetProjectContext(project);
+                    _editOps.UndoController.RecordModelAdd(__addedIdx, loadedModel, __oldIdx);
                 }
 
                 RebuildModelList();
@@ -539,27 +616,22 @@ namespace Poly_Ling.Player
 
         }
 
-        /// <summary>毎フレーム Update 相当。</summary>
-        public void Tick()
-        {
-            _viewportManager.Update();
-            _editOps?.Tick();
-            _client?.Tick();
-            _playerServer?.Tick();
-            _primitiveSubPanel?.Tick();
-            SyncUI();
-            UpdateFaceHoverOverlay();
-            UpdateSelectedFacesOverlay();
-            UpdateGizmoOverlay();
-            UpdateAdvancedSelectOverlay();
-            UpdateAddFaceOverlay();
-            UpdateBoneOverlay();
-        }
+        // Phase 2a-2f: 旧 Tick / LateTick / _Tick / _LateTick / PresentAll を削除。
+        // これらは全て「毎フレームポーリング禁止」規約に違反する旧 API で、
+        // MonoBehaviour.Update / LateUpdate から呼ばれていたが、Phase 2a-2f で
+        // 呼出し元を削除したため dead code となり、完全除去した。
+        // 代替:
+        //   - 計算処理: 各イベント駆動ハンドラ (Enter* 正規入口) に分散
+        //   - 描画提出: SubmitDrawForCamera (OnBeginCameraRendering 経由でカメラ毎に呼ばれる)
 
-        /// <summary>毎フレーム LateUpdate 相当。</summary>
-        public void LateTick()
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// OnRenderObject 経路から呼ばれる。計算処理は一切禁止。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitDrawForCamera(Camera cam)
         {
-            _viewportManager.LateUpdate(ActiveProject);
+            _viewportManager?.SubmitForCamera(cam, ActiveProject);
         }
 
         /// <summary>破棄。OnDestroy 相当。</summary>
@@ -611,10 +683,11 @@ namespace Poly_Ling.Player
 
             _moveToolHandler = new MoveToolHandler(_selectionOps, ActiveProject)
             {
+                // Phase 2b-1: 正規入口 EnterVerticesMoved(Dragging, syncMc) 経由に切替。
+                // 軽量同期 (SyncMeshPositionsAndTransform + UpdateTransform) + overlay 更新を一元化。
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                    _viewportManager.UpdateTransform();
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 OnRepaint = () => _activePanel?.MarkDirtyRepaint(),
 
@@ -633,34 +706,96 @@ namespace Poly_Ling.Player
                 OnLassoSelectUpdate = points => _activePanel?.ShowLassoSelect(points),
                 OnLassoSelectEnd    = () => _activePanel?.HideLassoSelect(),
 
-                OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging(),
-                OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging(),
+                OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin),
+                OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd),
                 OnEnterBoxSelecting      = () => _viewportManager.EnterBoxSelecting(),
                 OnReadBackVertexFlags    = () => _viewportManager.ReadBackVertexFlags(),
                 OnExitBoxSelecting       = () => _viewportManager.ExitBoxSelecting(),
                 OnRequestNormal          = () => _viewportManager.RequestNormal(),
-                OnClearMouseHover        = () => _viewportManager.ClearMouseHover(),
+                // Phase 2a-2d: ClearMouseHover → EnterHoverChanged(None) に集約。
+                OnClearMouseHover        = () => _viewportManager.EnterHoverChanged(_activeViewport, Vector2.zero, HoverTargetKind.None),
             };
             _moveToolHandler.SetUndoController(_editOps?.UndoController);
             _viewportManager.RegisterMoveToolHandler(_moveToolHandler);
+
+            // Phase 2b-1 / 2c: overlay 再描画コールバックを配線する。
+            // 面ホバー/選択面は Phase 2c で GPU 描画パスに統合されたため配線不要
+            // （_FaceFlagsBuffer を見てシェーダが自動追従で塗る）。
+            // ギズモ overlay のみ UIToolkit Painter2D で残置、従来どおりコールバック駆動。
+            _viewportManager.OnRefreshGizmoOverlay = UpdateGizmoOverlay;
+            // Phase 2c-2: ボーン wire は Poly_Ling/Bone3D_Overlay で GPU 描画されるが、
+            // UIToolkit 菱形マーカー（_boneWireData）は HitTestOverlayIndicator の
+            // クリック当たり判定補助として残置している。
+            // 【将来別途検討】3D wire と菱形マーカーが視覚的に重複するため、
+            // 3D 表示モード整理時に菱形マーカーの要否を再検討する。
+            _viewportManager.OnRefreshBoneOverlay = UpdateBoneOverlay;
+            // Phase 2c-3: ツール固有 overlay を各 Enter* 入口末尾から駆動する。
+            // 各ハンドラ側は内部状態（ホバー辺、プレビュー点、confirm 済み点等）を保持し、
+            // ここで呼ばれる Update*Overlay が現在の視点で再投影して panel.Show*Preview に渡す。
+            // Tool が無効なときは Update*Overlay 冒頭の if (_interactionMode != InteractionMode.X) ガードで早期 return。
+            _viewportManager.OnRefreshAddFaceOverlay        = UpdateAddFaceOverlay;
+            _viewportManager.OnRefreshTopologyToolsOverlay  = UpdateTopologyToolsOverlay;
+            _viewportManager.OnRefreshAdvancedSelectOverlay = UpdateAdvancedSelectOverlay;
+            // Phase 2a-2b-2 Batch 3: EnterSceneReset から Core の _selectionOps を呼ぶためのブリッジ。
+            // これにより ViewportManager が Core の参照を持たずに選択初期化を届けられる。
+            _viewportManager.OnSetSelectionState = sel =>
+            {
+                _selectionOps?.SetSelectionState(sel);
+            };
 
             _objectMoveHandler = new ObjectMoveToolHandler();
             _objectMoveHandler.SetProject(ActiveProject);
             _objectMoveHandler.SetUndoController(_editOps?.UndoController);
             _objectMoveHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _objectMoveHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
-            _objectMoveHandler.OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging();
-            _objectMoveHandler.OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging();
+            _objectMoveHandler.OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
+            _objectMoveHandler.OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
             _objectMoveHandler.OnMeshSelectionChanged   = () => { };
+            // BoneInputHandler 廃止に伴う移植:
+            // 選択カテゴリ問わず発火。EnterTopologyChanged + BoneEditor Refresh +
+            // NotifyPanels(Selection) を行う。
+            _objectMoveHandler.OnSelectionChanged = () =>
+            {
+                _viewportManager.EnterTopologyChanged(ActiveProject);
+                _boneEditorSubPanel?.Refresh();
+                NotifyPanels(ChangeKind.Selection);
+            };
+            // 描画メッシュ側に選択カテゴリが切り替わった場合の GPU 側ハイライト更新。
+            _objectMoveHandler.OnDrawableMeshSelectionChanged = () =>
+            {
+                _renderer?.UpdateSelectedDrawableMesh(0, ActiveProject?.CurrentModel);
+            };
             _objectMoveHandler.OnSyncBoneTransforms     = () =>
             {
                 var proj = ActiveProject;
+
                 if (proj?.CurrentModel != null)
+
                 {
+
                     proj.CurrentModel.ComputeWorldMatrices();
-                    _viewportManager.UpdateTransform();
+
+                    // Phase 2a-2e: ComputeWorldMatrices + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(proj, VerticesMovedPhase.Dragging);
+
                 }
                 NotifyPanels(ChangeKind.Attributes);
+            };
+
+            // オブジェ矩形 / 投げ縄選択の UI 描画コールバック。
+            // MoveToolHandler (頂点) と同じ panel API を使い、見た目を完全統一する。
+            // オブジェ選択はピボット 1 点判定でカリング不要なため
+            // EnterBoxSelecting / ExitBoxSelecting (GPU カリング関連) は呼ばない。
+            _objectMoveHandler.OnBoxSelectUpdate   = (s, e) => _activePanel?.ShowBoxSelect(s, e);
+            _objectMoveHandler.OnBoxSelectEnd      = ()     => _activePanel?.HideBoxSelect();
+            _objectMoveHandler.OnLassoSelectUpdate = pts    => _activePanel?.ShowLassoSelect(pts);
+            _objectMoveHandler.OnLassoSelectEnd    = ()     => _activePanel?.HideLassoSelect();
+            // ドラッグ中断・異常終了時の後片付け (両種の描画を確実に消す)
+            _objectMoveHandler.OnExitBoxSelecting  = () =>
+            {
+                _activePanel?.HideBoxSelect();
+                _activePanel?.HideLassoSelect();
             };
 
             _pivotOffsetHandler = new PivotOffsetToolHandler();
@@ -668,22 +803,30 @@ namespace Poly_Ling.Player
             _pivotOffsetHandler.SetUndoController(_editOps?.UndoController);
             _pivotOffsetHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _pivotOffsetHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
-            _pivotOffsetHandler.OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging();
-            _pivotOffsetHandler.OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging();
+            _pivotOffsetHandler.OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
+            _pivotOffsetHandler.OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
             _pivotOffsetHandler.OnSyncBoneTransforms     = () =>
             {
                 var proj = ActiveProject;
+
                 if (proj?.CurrentModel != null)
+
                 {
+
                     proj.CurrentModel.ComputeWorldMatrices();
-                    _viewportManager.UpdateTransform();
+
+                    // Phase 2a-2e: ComputeWorldMatrices + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(proj, VerticesMovedPhase.Dragging);
+
                 }
                 NotifyPanels(ChangeKind.Attributes);
             };
             _pivotOffsetHandler.OnSyncMeshPositions = mc =>
             {
-                _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                _viewportManager.UpdateTransform();
+                // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
             };
 
             _sculptHandler = new SculptToolHandler();
@@ -691,12 +834,13 @@ namespace Poly_Ling.Player
             _sculptHandler.SetUndoController(_editOps?.UndoController);
             _sculptHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _sculptHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
-            _sculptHandler.OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging();
-            _sculptHandler.OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging();
+            _sculptHandler.OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
+            _sculptHandler.OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
             _sculptHandler.OnSyncMeshPositions = mc =>
             {
-                _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                _viewportManager.UpdateTransform();
+                // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
             };
             _sculptHandler.OnUpdateBrushCircle = (center, radius) =>
                 _activePanel?.ShowBrushCircle(center, radius);
@@ -722,16 +866,16 @@ namespace Poly_Ling.Player
             _skinWeightPaintHandler.SetCommandQueue(_editOps?.CommandQueue);
             _skinWeightPaintHandler.GetToolContext           = () => _viewportManager.GetCurrentToolContext(_activeViewport);
             _skinWeightPaintHandler.OnRepaint                = () => _activePanel?.MarkDirtyRepaint();
-            _skinWeightPaintHandler.OnEnterTransformDragging = () => _viewportManager.EnterTransformDragging();
-            _skinWeightPaintHandler.OnExitTransformDragging  = () => _viewportManager.ExitTransformDragging();
+            _skinWeightPaintHandler.OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
+            _skinWeightPaintHandler.OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
             _skinWeightPaintHandler.OnSyncMeshPositions = mc =>
             {
                 // boneWeights 変更はバッファ全体の再構築が必要
-                var swModel = ActiveProject?.CurrentModel;
-                if (swModel != null)
+                var proj = ActiveProject;
+                if (proj?.CurrentModel != null)
                 {
-                    _viewportManager.RebuildAdapter(0, swModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, swModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                 }
             };
             _skinWeightPaintHandler.OnUpdateBrushCircle = (center, radius, color) =>
@@ -762,7 +906,7 @@ namespace Poly_Ling.Player
                         _layoutRoot.BoneEditorSection.style.display == DisplayStyle.Flex)
                     {
                         var boneCtx = _viewportManager.GetCurrentToolContext(_activeViewport);
-                        _boneInputHandler?.UpdateHover(pos, boneCtx);
+                        _objectMoveHandler?.UpdateHover(pos, boneCtx);
                     }
                 };
 
@@ -781,7 +925,10 @@ namespace Poly_Ling.Player
                         _activeViewport = vp;
                         _vertexInteractor.Connect(_activePanel);
                     }
-                    _viewportManager.NotifyPointerHover(vp, localPos);
+                    // Phase 2b-1: 正規入口 EnterHoverChanged 経由。
+                    // 入口末尾で面ホバー/ギズモ overlay refresh が発火される。
+                    // Phase 2b 以降で HoverTargetKind を現行ツールから取得して渡す。
+                    _viewportManager.EnterHoverChanged(vp, localPos, GetCurrentHoverTargetKind());
                 };
             }
 
@@ -790,7 +937,13 @@ namespace Poly_Ling.Player
             ConnectPanelHover(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport);
             ConnectPanelHover(_layoutRoot?.SidePanel,        _viewportManager.SideViewport);
 
-            void ConnectBoneInput(PlayerViewportPanel panel)
+            // BoneEditor サブパネル表示中に ObjectMoveToolHandler へマウスイベントを橋渡し。
+            // 旧 BoneInputHandler の後継 (統合)。従来通り InteractionMode が
+            // ObjectMove / PivotOffset のときは外す (それぞれ専用経路に任せる)。
+            // ObjectMoveToolHandler のピック対象フィルタ (PickBones /
+            // PickMeshesNoSkin / PickMeshesSkinned) と MoveWithChildren は
+            // PlayerBoneEditorSubPanel のチェックボックスから操作する。
+            void ConnectBoneEditorObjectMove(PlayerViewportPanel panel)
             {
                 if (panel == null) return;
                 panel.OnClick += (btn, pos, mods) =>
@@ -798,8 +951,8 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
-                    _boneInputHandler?.OnLeftClick(PlayerHitResult.Miss, pos, mods);
+                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
+                    _objectMoveHandler?.OnLeftClick(PlayerHitResult.Miss, pos, mods);
                     _boneEditorSubPanel?.Refresh();
                 };
                 panel.OnDragBegin += (btn, pos, mods) =>
@@ -807,17 +960,19 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
-                    _boneInputHandler?.OnLeftDragBegin(PlayerHitResult.Miss, pos, mods);
+                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
+                    _objectMoveHandler?.OnLeftDragBegin(PlayerHitResult.Miss, pos, mods);
                 };
                 panel.OnDrag += (btn, pos, delta, mods) =>
                 {
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
-                    _boneInputHandler?.OnLeftDrag(pos, delta, mods);
-                    _viewportManager.UpdateTransform();
+                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
+                    _objectMoveHandler?.OnLeftDrag(pos, delta, mods);
+                    // ObjectMoveTool.ApplyWorldDelta → ctx.SyncBoneTransforms →
+                    // ViewerCore 側配線で EnterVerticesMoved(Dragging) が発火するため
+                    // ここでの UpdateTransform は不要。
                     _boneEditorSubPanel?.Refresh();
                 };
                 panel.OnDragEnd += (btn, pos, mods) =>
@@ -825,15 +980,15 @@ namespace Poly_Ling.Player
                     if (btn != 0) return;
                     if (_layoutRoot?.BoneEditorSection == null) return;
                     if (_layoutRoot.BoneEditorSection.style.display != DisplayStyle.Flex) return;
-                    if (_toolMode == ToolMode.ObjectMove || _toolMode == ToolMode.PivotOffset) return;
-                    _boneInputHandler?.OnLeftDragEnd(pos, mods);
+                    if (_interactionMode == InteractionMode.ObjectMove || _interactionMode == InteractionMode.PivotOffset) return;
+                    _objectMoveHandler?.OnLeftDragEnd(pos, mods);
                     _boneEditorSubPanel?.Refresh();
                 };
             }
-            ConnectBoneInput(_layoutRoot?.PerspectivePanel);
-            ConnectBoneInput(_layoutRoot?.TopPanel);
-            ConnectBoneInput(_layoutRoot?.FrontPanel);
-            ConnectBoneInput(_layoutRoot?.SidePanel);
+            ConnectBoneEditorObjectMove(_layoutRoot?.PerspectivePanel);
+            ConnectBoneEditorObjectMove(_layoutRoot?.TopPanel);
+            ConnectBoneEditorObjectMove(_layoutRoot?.FrontPanel);
+            ConnectBoneEditorObjectMove(_layoutRoot?.SidePanel);
 
             void ConnectIndicatorInput(PlayerViewportPanel p)
             {
@@ -852,20 +1007,37 @@ namespace Poly_Ling.Player
             void ConnectCameraChanged(PlayerViewport vp)
             {
                 if (vp == null) return;
+                // Orbit の OnCameraChanged は DragEnd とスクロールの両方で発火するため、
+                // DragBegin/DragEnd のペア状態を追跡して Committed と区別する。
+                bool orbitDragging = false;
                 if (vp.Orbit != null)
                 {
-                    vp.Orbit.OnCameraDragBegin = () => _viewportManager.EnterCameraDragging();
+                    vp.Orbit.OnCameraDragBegin = () =>
+                    {
+                        orbitDragging = true;
+                        _viewportManager.EnterCameraChanged(vp, CameraChangePhase.DragBegin);
+                    };
+                    vp.Orbit.OnCameraDragging  = () =>
+                        _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Dragging);
                     vp.Orbit.OnCameraChanged   = () =>
                     {
-                        _viewportManager.ExitCameraDragging();
-                        _viewportManager.NotifyCameraChanged(vp);
+                        if (orbitDragging)
+                        {
+                            orbitDragging = false;
+                            _viewportManager.EnterCameraChanged(vp, CameraChangePhase.DragEnd);
+                        }
+                        else
+                        {
+                            _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Committed);
+                        }
                     };
                 }
                 if (vp.Ortho != null)
                 {
-                    vp.Ortho.OnCameraDragBegin = () => _viewportManager.EnterCameraDragging();
-                    vp.Ortho.OnCameraDragEnd   = () => _viewportManager.ExitCameraDragging();
-                    vp.Ortho.OnCameraChanged   = () => _viewportManager.NotifyCameraChanged(vp);
+                    vp.Ortho.OnCameraDragBegin = () => _viewportManager.EnterCameraChanged(vp, CameraChangePhase.DragBegin);
+                    vp.Ortho.OnCameraDragging  = () => _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Dragging);
+                    vp.Ortho.OnCameraDragEnd   = () => _viewportManager.EnterCameraChanged(vp, CameraChangePhase.DragEnd);
+                    vp.Ortho.OnCameraChanged   = () => _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Committed);
                 }
             }
 
@@ -877,13 +1049,30 @@ namespace Poly_Ling.Player
 
         // ================================================================
         // オーバーレイ更新
+        //
+        // ★★★ 【重大規約違反区画】 ★★★
+        // 以下の Update*Overlay 関数群は旧 Tick() から毎フレーム呼ばれる想定の
+        // 実装であり、「毎フレームポーリング禁止」規約に違反する。
+        // Phase 2 で各関数を対応するイベントハンドラへ移植し、ここからは削除する予定。
+        // 現在は呼び出し元が _Tick（dead code）のみ。
+        //
+        //   UpdateFaceHoverOverlay      → Phase 2: 面ホバー変更イベントへ
+        //   UpdateSelectedFacesOverlay  → Phase 2: 面選択変更イベントへ
+        //   UpdateGizmoOverlay          → Phase 2: 選択/ツール切替イベントへ
+        //   UpdateAdvancedSelectOverlay → Phase 2: マウスドラッグイベントへ
+        //   UpdateAddFaceOverlay        → Phase 2: AddFace handler hover/click イベントへ
+        //   UpdateTopologyToolsOverlay  → Phase 2: topology tool handler hover イベントへ
+        //   UpdateBoneOverlay           → Phase 2: ボーンポーズ/選択変更イベントへ
+        //
+        // 新規コードからこれら関数を呼ぶことは厳禁。
+        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
         // ================================================================
 
         private void UpdateFaceHoverOverlay()
         {
-            if (_toolMode == ToolMode.ObjectMove   ||
-                _toolMode == ToolMode.PivotOffset  ||
-                _toolMode == ToolMode.SkinWeightPaint)
+            if (_interactionMode == InteractionMode.ObjectMove   ||
+                _interactionMode == InteractionMode.PivotOffset  ||
+                _interactionMode == InteractionMode.SkinWeightPaint)
             {
                 _activePanel?.HideFaceHover();
                 return;
@@ -916,8 +1105,8 @@ namespace Poly_Ling.Player
             if (panel == null) return;
 
             bool boneEditorOpen = _layoutRoot?.BoneEditorSection?.style.display == DisplayStyle.Flex;
-            bool objectMoveMode = _toolMode == ToolMode.ObjectMove;
-            bool pivotMode      = _toolMode == ToolMode.PivotOffset;
+            bool objectMoveMode = _interactionMode == InteractionMode.ObjectMove;
+            bool pivotMode      = _interactionMode == InteractionMode.PivotOffset;
             if (!boneEditorOpen && !objectMoveMode && !pivotMode)
             {
                 panel.HideBoneWire();
@@ -990,7 +1179,7 @@ namespace Poly_Ling.Player
 
         private bool TrySelectIndicatorAtScreenPos(Vector2 screenPos, ModifierKeys mods)
         {
-            if (_toolMode != ToolMode.ObjectMove && _toolMode != ToolMode.PivotOffset)
+            if (_interactionMode != InteractionMode.ObjectMove && _interactionMode != InteractionMode.PivotOffset)
                 return false;
 
             int idx = HitTestOverlayIndicator(screenPos);
@@ -1004,9 +1193,9 @@ namespace Poly_Ling.Player
             else
                 model.Select(idx);
 
-            if (model.ActiveCategory == ModelContext.SelectionCategory.Mesh)
-                _renderer?.UpdateSelectedDrawableMesh(0, model);
-            _renderer?.NotifySelectionChanged();
+            // Phase 2a-2e: UpdateSelectedDrawableMesh + NotifySelectionChanged を
+            // EnterTopologyChanged に集約（選択変更扱い）。
+            _viewportManager.EnterTopologyChanged(ActiveProject);
             NotifyPanels(ChangeKind.Selection);
             _boneEditorSubPanel?.Refresh();
             _activePanel?.MarkDirtyRepaint();
@@ -1018,7 +1207,7 @@ namespace Poly_Ling.Player
             var panel = _activePanel;
             if (panel == null) return;
 
-            if (_toolMode != ToolMode.AddFace || _addFaceHandler == null)
+            if (_interactionMode != InteractionMode.AddFace || _addFaceHandler == null)
             {
                 panel.HideAddFacePreview();
                 return;
@@ -1068,12 +1257,255 @@ namespace Poly_Ling.Player
             panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines);
         }
 
+        /// <summary>
+        /// EdgeTopology の Split モード用オーバーレイ更新。
+        ///
+        /// 【設計ポイント: AddFace Overlay API の流用】
+        /// 描画は AddFace 専用に作られた PlayerViewportPanel.UpdateAddFacePreview を
+        /// そのまま借りて行う。AddFace と EdgeTopology-Split は InteractionMode が
+        /// 排他なので同時描画の干渉がない。同一の Painter2D overlay を 2 ツールで共用すると
+        /// 「確定点 + 候補ハイライト + マウスまでの線分」という汎用 UI が使い回せる。
+        ///
+        /// AddFace overlay API へのマッピング:
+        ///   - pts         : 第 1 頂点 (確定後のみ。AddFace では配置済み点)
+        ///   - lines       : 第 1 頂点 → マウス位置 (確定後のみ)
+        ///   - previewPts  : ホバー頂点 または マウス位置 (単一プレビュー点)
+        ///   - previewSnap : スナップ表示 (シアン大 + リング) の切替フラグ。以下参照
+        ///
+        /// 【previewSnap の 2 段階ロジック】
+        /// AddFace は「頂点にピッタリ合ったとき」だけ snap=true にする。
+        /// Split はクリック前後で意味を切り替えた:
+        ///   - 第 1 頂点未確定時 (firstValid=false):
+        ///       頂点にホバーしていれば無条件 snap=true
+        ///       → 「これから開始点になる候補」を常に強調
+        ///   - 第 1 頂点確定後 (firstValid=true):
+        ///       ホバー頂点が SplitOpponentCandidates に含まれるときだけ snap=true
+        ///       → 「対角に取れる頂点 = 有効な第 2 クリック先」だけを強調
+        ///
+        /// 【mo の取得: ctx.FirstSelectedMeshObject は使えない】
+        /// _viewportManager.GetCurrentToolContext() が返す ToolContext は Model を
+        /// 設定しないため、ctx.FirstSelectedMeshObject は常に null を返す罠がある。
+        /// AddFace overlay は Handler.GetPreviewData() 経由で世界座標を受け取るため
+        /// この罠を踏まないが、Split overlay は頂点座標そのものが必要なので
+        /// ActiveProject から直接取得する必要がある。同じ手口で他のオーバーレイを
+        /// 作るときも、ctx を世界座標変換 (WorldToScreen / PreviewRect) 専用と
+        /// 割り切り、データは ActiveProject / Handler から取ること。
+        ///
+        /// 【Y 座標変換】
+        /// ctx.WorldToScreen は UIToolkit Y (Y=0 上) を返すが、AddFace Overlay API は
+        /// overlay Y=0 下を期待する。toScreen で (sp.x, h - sp.y) 変換をかける。
+        /// マウス位置 (LastHoverScreenPos) は UpdateHover が UIToolkit Y で受け取って
+        /// キャッシュしているので、同様に Y 反転が必要。
+        /// </summary>
+        private void UpdateEdgeTopologySplitOverlay()
+        {
+            var panel = _activePanel;
+            if (panel == null) return;
+
+            if (_edgeTopologyHandler == null
+                || _edgeTopologyHandler.ModePublic != Poly_Ling.Tools.EdgeTopoMode.Split)
+            {
+                panel.HideAddFacePreview();
+                return;
+            }
+
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx == null) { panel.HideAddFacePreview(); return; }
+
+            // ActiveProject から直接取る (ctx.FirstSelectedMeshObject は上記注意点で null)
+            var mo = ActiveProject?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            if (mo == null) { panel.HideAddFacePreview(); return; }
+
+            float h = ctx.PreviewRect.height;
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            {
+                var sp = ctx.WorldToScreen(world);
+                return new UnityEngine.Vector2(sp.x, h - sp.y);
+            };
+
+            int firstV    = _edgeTopologyHandler.SplitFirstVertex;
+            int hoverV    = _edgeTopologyHandler.SplitHoverVertex;
+            var candidates = _edgeTopologyHandler.SplitOpponentCandidates;
+
+            var pts         = new System.Collections.Generic.List<UnityEngine.Vector2>();
+            var previewPts  = new System.Collections.Generic.List<UnityEngine.Vector2>();
+            var previewSnap = new System.Collections.Generic.List<bool>();
+            var lines       = new System.Collections.Generic.List<(UnityEngine.Vector2, UnityEngine.Vector2)>();
+
+            bool firstValid = firstV >= 0 && firstV < mo.VertexCount;
+            bool hoverValid = hoverV >= 0 && hoverV < mo.VertexCount;
+
+            // 確定点: 第 1 頂点
+            if (firstValid)
+                pts.Add(toScreen(mo.Vertices[firstV].Position));
+
+            // プレビュー点: ホバー頂点があればその位置、なければマウス位置
+            // マウス位置は UpdateHover が最後に受け取ったスクリーン座標
+            // (UIToolkit Y=0 上) を IMGUI Y に変換して使う。
+            UnityEngine.Vector2 previewPoint;
+            bool previewSnapped;
+            if (hoverValid)
+            {
+                previewPoint = toScreen(mo.Vertices[hoverV].Position);
+                if (!firstValid)
+                {
+                    // 第 1 頂点未確定時: 頂点にホバーしているなら常にスナップ扱いにする。
+                    // (「第 1 頂点に近づいたら大きめのまるで強調」という初期要件)
+                    previewSnapped = true;
+                }
+                else
+                {
+                    // 第 1 頂点確定後: ホバー頂点が候補集合にあるときだけスナップ扱い
+                    // (対向点候補をシアン大 + リングで強調)
+                    previewSnapped = candidates != null && candidates.ContainsKey(hoverV);
+                }
+            }
+            else
+            {
+                var lhp = _edgeTopologyHandler.LastHoverScreenPos;
+                previewPoint = new UnityEngine.Vector2(lhp.x, h - lhp.y);
+                previewSnapped = false;
+            }
+            previewPts.Add(previewPoint);
+            previewSnap.Add(previewSnapped);
+
+            // 線: 第 1 頂点 → プレビュー点 (確定後のみ)
+            if (firstValid)
+                lines.Add((toScreen(mo.Vertices[firstV].Position), previewPoint));
+
+            panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines);
+        }
+
+        private void UpdateTopologyToolsOverlay()
+        {
+            var panel = _activePanel;
+            if (panel == null) return;
+
+            // Split モードは AddFace overlay API を流用して描画する (別経路)。
+            // UpdateTopologyToolsOverlay が担う TopoToolOverlay (色付き線のみ) では
+            // AddFace 相当の「確定点 + 候補ハイライト + マウス線」が描けないため、
+            // AddFace 専用の Painter2D 経路 (UpdateAddFacePreview) を共用する。
+            bool isEdgeTopo = (_interactionMode == InteractionMode.EdgeTopology && _edgeTopologyHandler != null);
+            bool isSplit = isEdgeTopo && _edgeTopologyHandler.ModePublic == Poly_Ling.Tools.EdgeTopoMode.Split;
+            if (isSplit)
+            {
+                UpdateEdgeTopologySplitOverlay();
+                // TopoToolOverlay は空にして隠す (Flip/Dissolve 用の残留描画を防ぐ)
+                panel.HideTopoToolOverlay();
+                return;
+            }
+            // AddFace overlay は AddFace モード専用なので、Split 以外の EdgeTopology
+            // モード (Flip/Dissolve) に入っているときは隠す。AddFace モード自体の
+            // 管理は UpdateAddFaceOverlay 側に任せる。
+            if (_interactionMode == InteractionMode.EdgeTopology
+                && _edgeTopologyHandler != null
+                && _edgeTopologyHandler.ModePublic != Poly_Ling.Tools.EdgeTopoMode.Split
+                && _interactionMode != InteractionMode.AddFace)
+            {
+                panel.HideAddFacePreview();
+            }
+
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx == null)
+            {
+                panel.HideTopoToolOverlay();
+                return;
+            }
+
+            var mo = ctx.FirstSelectedMeshObject;
+            float h = ctx.PreviewRect.height;
+
+            // WorldToScreen: AddFaceOverlay と同じ変換 (h - sp.y)
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            {
+                var sp = ctx.WorldToScreen(world);
+                return new UnityEngine.Vector2(sp.x, h - sp.y);
+            };
+
+            var lines = new System.Collections.Generic.List<(UnityEngine.Vector2, UnityEngine.Vector2, UnityEngine.Color)>();
+
+            // ── EdgeBevel ─────────────────────────────────────────────────
+            if (_interactionMode == InteractionMode.EdgeBevel && _edgeBevelHandler != null && mo != null)
+            {
+                var edge = _edgeBevelHandler.HoverEdge;
+                if (edge.HasValue)
+                {
+                    int v0 = edge.Value.V1, v1 = edge.Value.V2;
+                    if (v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                        lines.Add((toScreen(mo.Vertices[v0].Position),
+                                   toScreen(mo.Vertices[v1].Position),
+                                   UnityEngine.Color.white));
+                }
+                panel.UpdateTopoToolOverlay(lines);
+                return;
+            }
+
+            // ── EdgeExtrude ───────────────────────────────────────────────
+            if (_interactionMode == InteractionMode.EdgeExtrude && _edgeExtrudeHandler != null && mo != null)
+            {
+                var edge = _edgeExtrudeHandler.HoverEdge;
+                if (edge.HasValue)
+                {
+                    int v0 = edge.Value.V1, v1 = edge.Value.V2;
+                    if (v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                        lines.Add((toScreen(mo.Vertices[v0].Position),
+                                   toScreen(mo.Vertices[v1].Position),
+                                   new UnityEngine.Color(0.2f, 0.8f, 1f)));
+                }
+                panel.UpdateTopoToolOverlay(lines);
+                return;
+            }
+
+            // ── FaceExtrude ───────────────────────────────────────────────
+            if (_interactionMode == InteractionMode.FaceExtrude && _faceExtrudeHandler != null && mo != null)
+            {
+                int fi = _faceExtrudeHandler.HoverFace;
+                if (fi >= 0 && fi < mo.FaceCount)
+                {
+                    var face = mo.Faces[fi];
+                    int n = face.VertexIndices.Count;
+                    for (int i = 0; i < n; i++)
+                    {
+                        int va = face.VertexIndices[i];
+                        int vb = face.VertexIndices[(i + 1) % n];
+                        if (va >= 0 && va < mo.VertexCount && vb >= 0 && vb < mo.VertexCount)
+                            lines.Add((toScreen(mo.Vertices[va].Position),
+                                       toScreen(mo.Vertices[vb].Position),
+                                       new UnityEngine.Color(1f, 1f, 1f, 0.7f)));
+                    }
+                }
+                panel.UpdateTopoToolOverlay(lines);
+                return;
+            }
+
+            // ── EdgeTopology (Flip / Dissolve) ───────────────────────────
+            // Split モードはメソッド冒頭で UpdateEdgeTopologySplitOverlay() に分岐済み。
+            // ここに到達するのは Flip/Dissolve モードのみ。辺ホバーを黄色線で示す。
+            if (_interactionMode == InteractionMode.EdgeTopology && _edgeTopologyHandler != null && mo != null)
+            {
+                if (_edgeTopologyHandler.HasHoverEdge)
+                {
+                    int v0 = _edgeTopologyHandler.HoverEdgeV1;
+                    int v1 = _edgeTopologyHandler.HoverEdgeV2;
+                    if (v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                        lines.Add((toScreen(mo.Vertices[v0].Position),
+                                   toScreen(mo.Vertices[v1].Position),
+                                   new UnityEngine.Color(1f, 0.8f, 0.2f)));
+                }
+
+                panel.UpdateTopoToolOverlay(lines);
+                return;
+            }
+
+            panel.HideTopoToolOverlay();
+        }
+
         private void UpdateAdvancedSelectOverlay()
         {
             var panel = _activePanel;
             if (panel == null) return;
 
-            if (_toolMode != ToolMode.AdvancedSelect || _advancedSelectHandler == null)
+            if (_interactionMode != InteractionMode.AdvancedSelect || _advancedSelectHandler == null)
             {
                 panel.HideAdvSelPreview();
                 return;
@@ -1138,7 +1570,7 @@ namespace Poly_Ling.Player
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx == null) { panel.HideGizmo(); return; }
 
-            if (_toolMode == ToolMode.ObjectMove)
+            if (_interactionMode == InteractionMode.ObjectMove)
             {
                 if (_objectMoveHandler == null) { panel.HideGizmo(); return; }
                 if (_objectMoveHandler.TryGetGizmoScreenPositions(
@@ -1158,7 +1590,7 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            if (_toolMode == ToolMode.PivotOffset)
+            if (_interactionMode == InteractionMode.PivotOffset)
             {
                 if (_pivotOffsetHandler == null) { panel.HideGizmo(); return; }
                 if (_pivotOffsetHandler.TryGetGizmoScreenPositions(
@@ -1176,8 +1608,8 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            if (_toolMode == ToolMode.Sculpt || _toolMode == ToolMode.AdvancedSelect ||
-                _toolMode == ToolMode.SkinWeightPaint)
+            if (_interactionMode == InteractionMode.Sculpt || _interactionMode == InteractionMode.AdvancedSelect ||
+                _interactionMode == InteractionMode.SkinWeightPaint)
             {
                 panel.HideGizmo();
                 return;
@@ -1223,7 +1655,7 @@ namespace Poly_Ling.Player
             _skinWeightPaintPanel.OnRepaint = () => _activePanel?.MarkDirtyRepaint();
             _skinWeightPaintPanel.OnMeshSelectionChanged = () =>
             {
-                if (_toolMode == ToolMode.SkinWeightPaint)
+                if (_interactionMode == InteractionMode.SkinWeightPaint)
                     SyncSkinWeightUndoMesh();
                 _activePanel?.MarkDirtyRepaint();
             };
@@ -1236,15 +1668,16 @@ namespace Poly_Ling.Player
             _blendSubPanel = new PlayerBlendSubPanel();
             _blendSubPanel.OnSyncMeshPositions = mc =>
             {
-                _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                _viewportManager.UpdateTransform();
+                // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
             };
             _blendSubPanel.OnNotifyTopologyChanged = () =>
             {
                 var proj = ActiveProject;
                 if (proj?.CurrentModel == null) return;
-                _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                _viewportManager.EnterTopologyChanged(proj);
                 NotifyPanels(ChangeKind.ListStructure);
             };
             _blendSubPanel.OnRepaint          = () => _activePanel?.MarkDirtyRepaint();
@@ -1259,22 +1692,6 @@ namespace Poly_Ling.Player
                 ? new PlayerProjectView(ActiveProject) : null;
             _modelBlendSubPanel.Build(_layoutRoot.ModelBlendSection);
 
-            _boneInputHandler = new BoneInputHandler();
-            _boneInputHandler.SetProject(ActiveProject);
-            _boneInputHandler.SetUndoController(_editOps?.UndoController);
-            _boneInputHandler.GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport);
-            _boneInputHandler.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
-            _boneInputHandler.OnSelectionChanged = () =>
-            {
-                _viewportManager.RebuildAdapter(0, ActiveProject?.CurrentModel);
-                _boneEditorSubPanel?.Refresh();
-                NotifyPanels(ChangeKind.Selection);
-            };
-            _boneInputHandler.OnDrawableMeshSelectionChanged = () =>
-            {
-                _renderer?.UpdateSelectedDrawableMesh(0, ActiveProject?.CurrentModel);
-            };
-
             _boneEditorSubPanel = new PlayerBoneEditorSubPanel();
             _boneEditorSubPanel.GetModel          = () => ActiveProject?.CurrentModel;
             _boneEditorSubPanel.GetUndoController = () => _editOps?.UndoController;
@@ -1286,6 +1703,10 @@ namespace Poly_Ling.Player
                 var orbit = _activeViewport?.Orbit;
                 if (orbit != null) { orbit.SetTarget(pos); _activePanel?.MarkDirtyRepaint(); }
             };
+            // BoneInputHandler 廃止に伴う ObjectMoveTool 設定共有:
+            // サブパネル側のチェックボックスと ObjectMoveHandler 内部の
+            // ObjectMoveSettings を同一インスタンスで結びつける。
+            _boneEditorSubPanel.GetObjectMoveSettings = () => _objectMoveHandler?.GetSettings();
             // ObjectMoveツール用セクションとBoneEditorセクションを統合
             // ObjectMoveTRSSectionは廃止し、BoneEditorSectionを共用する
             _boneEditorSubPanel.Build(_layoutRoot.BoneEditorSection);
@@ -1328,6 +1749,8 @@ namespace Poly_Ling.Player
                     var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
                     return ctx != null ? (ctx.CameraTarget - ctx.CameraPosition).normalized : Vector3.forward;
                 },
+                OnEnterUvEditMode = EnterUvEditMode,
+                OnExitUvEditMode  = ExitUvEditMode,
             };
             _uvzSubPanel.Build(_layoutRoot.UVZSection);
 
@@ -1364,9 +1787,10 @@ namespace Poly_Ling.Player
                     ctx.UndoController = _editOps?.UndoController;
                     ctx.SyncMeshContextPositionsOnly = mc =>
                     {
-                        _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                        _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
-                        _viewportManager.UpdateTransform();
+                        // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+                        // Phase 2a-2e: 後続の UpdateTransform は EnterVerticesMoved 内で実行されるため冗長、削除。
+                        _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                        _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
                         _activePanel?.MarkDirtyRepaint();
                     };
                     ctx.Repaint = () => _activePanel?.MarkDirtyRepaint();
@@ -1426,8 +1850,9 @@ namespace Poly_Ling.Player
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
             _alignVerticesHandler.SetProject(ActiveProject);
@@ -1445,8 +1870,9 @@ namespace Poly_Ling.Player
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
             _planarizeAlongBonesHandler.SetProject(ActiveProject);
@@ -1464,7 +1890,9 @@ namespace Poly_Ling.Player
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
             _mergeVerticesHandler.SetProject(ActiveProject);
@@ -1474,8 +1902,8 @@ namespace Poly_Ling.Player
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 };
             _mergeVerticesSubPanel = new PlayerMergeVerticesSubPanel
@@ -1490,7 +1918,9 @@ namespace Poly_Ling.Player
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
             };
             _splitVerticesHandler.SetProject(ActiveProject);
@@ -1500,8 +1930,8 @@ namespace Poly_Ling.Player
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 };
             _splitVerticesSubPanel = new PlayerSplitVerticesSubPanel
@@ -1514,16 +1944,25 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                // Phase 2c-3: 確定点追加時に overlay 再描画を発火する。
+                // 確定点の追加はトポロジを実質変更していないが、UIToolkit overlay の
+                // 再投影が必要なため EnterTopologyChanged 経由で一括 refresh する。
+                OnPointPlaced       = () =>
+                {
+                    _viewportManager.EnterTopologyChanged(ActiveProject);
+                },
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 },
                 EnsureDrawableMesh = () =>
@@ -1569,15 +2008,25 @@ namespace Poly_Ling.Player
                             ctx, insertIndex, oldSelected, newSelected);
                     }
 
-                    _viewportManager.RebuildAdapter(0, model);
-                    var firstMc = model.FirstDrawableMeshContext;
-                    if (firstMc != null)
-                    {
-                        _selectionOps?.SetSelectionState(firstMc.Selection);
-                        _renderer?.SetSelectionState(firstMc.Selection);
-                    }
-                    _renderer?.UpdateSelectedDrawableMesh(0, model);
+                    // Phase 2a-2b-2 Batch 3: 新規 MeshContext 作成後の RebuildAdapter +
+                    // SetSelectionState + UpdateSelectedDrawableMesh を EnterSceneReset に集約。
+                    _viewportManager.EnterSceneReset(ActiveProject);
                     _addFaceHandler?.SetProject(ActiveProject);
+                    // 【設計ポイント: プロジェクト生成経路では全ハンドラに SetProject 伝播】
+                    // EnsureProject はユーザがメッシュを持たない状態で編集ツールを起動したときに
+                    // 暗黙に Project を生成する経路。_addFaceHandler だけ再設定していた過去の
+                    // 残骸があると、EdgeTopology / Knife / EdgeBevel 等の他トポロジ系ハンドラは
+                    // 初期化時の 1 回切りの SetProject(null) のまま取り残され、
+                    // GetEnrichedCtx が null model を返してツールが無反応になる。
+                    // 同じ症状を他ツールで繰り返さないために、プロジェクト生成/切替/受信経路は
+                    // 全トポロジハンドラを漏れなく伝播する (OnPrimitiveMeshCreated,
+                    // OnMeshDataReceived 等の他経路も同じ列挙を持つ)。新ハンドラ追加時は
+                    // 全伝播箇所に新しい `_xxxHandler?.SetProject(ActiveProject);` を追加すること。
+                    _edgeBevelHandler?.SetProject(ActiveProject);
+                    _edgeExtrudeHandler?.SetProject(ActiveProject);
+                    _faceExtrudeHandler?.SetProject(ActiveProject);
+                    _edgeTopologyHandler?.SetProject(ActiveProject);
+                    _knifeHandler?.SetProject(ActiveProject);
                     RebuildModelList();
                     NotifyPanels(ChangeKind.ListStructure);
                     return true;
@@ -1594,13 +2043,14 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+ _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
@@ -1615,8 +2065,9 @@ namespace Poly_Ling.Player
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
@@ -1630,8 +2081,9 @@ namespace Poly_Ling.Player
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 OnSyncMeshPositions = mc =>
                 {
-                    _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel);
-                    _viewportManager.UpdateTransform();
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
                 },
                 OnApplyCompleted    = () => NotifyPanels(ChangeKind.Attributes),
             };
@@ -1643,15 +2095,22 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnSyncMeshPositions = mc =>
+                {
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
-                    NotifyPanels(ChangeKind.ListStructure);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
+                    // ベベルはトポロジー変更後も辺/頂点を表示し続けるため EnterTransformDragging を呼ばない
                 },
+                OnApplyCompleted = () => NotifyPanels(ChangeKind.ListStructure),
             };
             _edgeBevelHandler.SetProject(ActiveProject);
             _edgeBevelHandler.SetUndoController(_editOps?.UndoController);
@@ -1662,15 +2121,22 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnSyncMeshPositions = mc =>
+                {
+                    // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
+
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
-                    NotifyPanels(ChangeKind.ListStructure);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
+                    // 押し出しはトポロジー変更後も辺/頂点を表示し続けるため EnterTransformDragging を呼ばない
                 },
+                OnApplyCompleted = () => NotifyPanels(ChangeKind.ListStructure),
             };
             _edgeExtrudeHandler.SetProject(ActiveProject);
             _edgeExtrudeHandler.SetUndoController(_editOps?.UndoController);
@@ -1681,13 +2147,22 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+ _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin); // 新アダプターをTransformDraggingモードに
+                },
+                OnEnterTransformDragging = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin),
+                OnExitTransformDragging  = () => _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd),
+                OnApplyCompleted = () =>
+                {
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
@@ -1700,13 +2175,16 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+ _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
+                // Phase 2c-3: トポロジ確定（Flip/Dissolve/Split 2 点目）時の一括更新。
+                // EnterTopologyChanged 経由で overlay refresh も同期実行される。
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
@@ -1714,18 +2192,23 @@ namespace Poly_Ling.Player
             _edgeTopologyHandler.SetUndoController(_editOps?.UndoController);
             _edgeTopologyHandler.SetCommandQueue(_editOps?.CommandQueue);
             _edgeTopologySubPanel = new PlayerEdgeTopologySubPanel { GetH = () => _edgeTopologyHandler };
+            // サブパネル上のモード切替 (Flip/Split/Dissolve ドロップダウン) に連動して
+            // Selection.Mode (ホバー有効範囲) を切り替える。
+            _edgeTopologySubPanel.OnModeChanged = m => ApplySelectionModeForEdgeTopology(m);
             _edgeTopologySubPanel.Build(_layoutRoot.EdgeTopologySection);
             _knifeHandler = new KnifeToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+ _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
@@ -1739,13 +2222,14 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
-                OnSyncMeshPositions = mc => { _viewportManager.SyncMeshPositionsAndTransform(mc, ActiveProject?.CurrentModel); },
+                OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
+ _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
                 NotifyTopologyChanged = () =>
                 {
                     var proj = ActiveProject;
                     if (proj?.CurrentModel == null) return;
-                    _viewportManager.RebuildAdapter(0, proj.CurrentModel);
-                    _renderer?.UpdateSelectedDrawableMesh(0, proj.CurrentModel);
+                    // Phase 2a-2b-2: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    _viewportManager.EnterTopologyChanged(proj);
                     NotifyPanels(ChangeKind.ListStructure);
                 },
             };
@@ -1877,12 +2361,12 @@ namespace Poly_Ling.Player
             _layoutRoot.PartialExportPmxBtn.clicked += () => ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode.PMX);
             _layoutRoot.PartialExportMqoBtn.clicked += () => ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode.MQO);
 
-            _layoutRoot.ToolVertexMoveBtn.clicked        += () => SwitchTool(ToolMode.VertexMove);
-            _layoutRoot.ToolObjectMoveBtn.clicked        += () => SwitchTool(ToolMode.ObjectMove);
-            _layoutRoot.ToolPivotOffsetBtn.clicked       += () => SwitchTool(ToolMode.PivotOffset);
-            _layoutRoot.ToolSculptBtn.clicked            += () => SwitchTool(ToolMode.Sculpt);
-            _layoutRoot.ToolAdvancedSelBtn.clicked       += () => SwitchTool(ToolMode.AdvancedSelect);
-            _layoutRoot.ToolSkinWeightPaintBtn.clicked   += () => SwitchTool(ToolMode.SkinWeightPaint);
+            _layoutRoot.ToolVertexMoveBtn.clicked        += () => ShowCategory1Panel(InteractionMode.VertexMove);
+            _layoutRoot.ToolObjectMoveBtn.clicked        += () => ShowCategory1Panel(InteractionMode.ObjectMove);
+            _layoutRoot.ToolPivotOffsetBtn.clicked       += () => ShowCategory1Panel(InteractionMode.PivotOffset);
+            _layoutRoot.ToolSculptBtn.clicked            += () => ShowCategory1Panel(InteractionMode.Sculpt);
+            _layoutRoot.ToolAdvancedSelBtn.clicked       += () => ShowCategory1Panel(InteractionMode.AdvancedSelect);
+            _layoutRoot.ToolSkinWeightPaintBtn.clicked   += () => ShowCategory1Panel(InteractionMode.SkinWeightPaint);
 
             _layoutRoot.LassoToggle.RegisterValueChangedCallback(e =>
             {
@@ -1890,6 +2374,11 @@ namespace Poly_Ling.Player
                     _moveToolHandler.DragSelectMode = e.newValue
                         ? MoveToolHandler.SelectionDragMode.Lasso
                         : MoveToolHandler.SelectionDragMode.Box;
+                // ObjectMove (BoneEditor 統合先) でも頂点モードと同じ Lasso 切替を共有。
+                if (_objectMoveHandler != null)
+                    _objectMoveHandler.DragSelectMode = e.newValue
+                        ? ObjectMoveToolHandler.SelectionDragMode.Lasso
+                        : ObjectMoveToolHandler.SelectionDragMode.Box;
             });
 
             _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
@@ -1942,7 +2431,8 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_VERT: ds.ShowUnselectedVertices  = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_BONE: ds.ShowUnselectedBone      = e.newValue; break;
                             }
-                            _viewportManager.SetDisplaySettings(slot, ds);
+                            // Phase 2a-2g-3: SetDisplaySettings → EnterDisplaySettingsChanged に集約。
+                            _viewportManager.EnterDisplaySettingsChanged(slot, ds);
                         });
                 }
             }
@@ -1994,7 +2484,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
 
-            SwitchTool(ToolMode.VertexMove);
+            ShowCategory1Panel(InteractionMode.VertexMove);
         }
 
         // ================================================================
@@ -2003,63 +2493,56 @@ namespace Poly_Ling.Player
 
         private void ShowImportPanel(PlayerImportSubPanel.Mode mode)
         {
-            HideAllRightPanels();
-            SetActiveButton(null);
-            if (_layoutRoot?.ImportSection != null)
-                _layoutRoot.ImportSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ImportSection, null);
             _importSubPanel?.SetMode(mode);
         }
 
         private void ShowPrimitivePanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.PrimitiveBtn);
-            if (_layoutRoot?.PrimitiveSection != null)
-                _layoutRoot.PrimitiveSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持
+            ShowRightPanel(_layoutRoot?.PrimitiveSection, _layoutRoot?.PrimitiveBtn);
         }
 
         private void ShowMeshFilterToSkinnedPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MeshFilterToSkinnedBtn);
-            if (_layoutRoot?.MeshFilterToSkinnedSection != null)
-                _layoutRoot.MeshFilterToSkinnedSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MeshFilterToSkinnedSection, _layoutRoot?.MeshFilterToSkinnedBtn);
             _mfToSkinnedSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
 
         private void ShowBlendPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.BlendBtn);
-            if (_layoutRoot?.BlendSection != null)
-                _layoutRoot.BlendSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.BlendSection, _layoutRoot?.BlendBtn);
             _blendSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
 
         private void ShowModelBlendPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.ModelBlendBtn);
-            if (_layoutRoot?.ModelBlendSection != null)
-                _layoutRoot.ModelBlendSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ModelBlendSection, _layoutRoot?.ModelBlendBtn);
             _modelBlendSubPanel?.Init();
         }
 
         private void ShowBoneEditorPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.BoneEditorBtn);
-            if (_layoutRoot?.BoneEditorSection != null)
-                _layoutRoot.BoneEditorSection.style.display = DisplayStyle.Flex;
+            // 案 A: InteractionMode を ObjectMove に強制 + RightPanel ボタンは BoneEditorBtn
+            // 結果: ToolObjectMoveBtn が青 (InteractionMode)、BoneEditorBtn が緑 (RightPanel)
+            SetInteractionMode(InteractionMode.ObjectMove);
+            ShowRightPanel(_layoutRoot?.BoneEditorSection, _layoutRoot?.BoneEditorBtn);
             _boneEditorSubPanel?.Refresh();
         }
 
         private void ShowUVEditorPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.UVEditorBtn);
-            if (_layoutRoot?.UVEditorSection != null)
-                _layoutRoot.UVEditorSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.UVEditorSection, _layoutRoot?.UVEditorBtn);
 
             // UndoController に対象メッシュを設定（CaptureMeshObjectSnapshot に必要）
             var uvModel = ActiveProject?.CurrentModel;
@@ -2076,64 +2559,56 @@ namespace Poly_Ling.Player
 
         private void ShowUVUnwrapPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.UVUnwrapBtn);
-            if (_layoutRoot?.UVUnwrapSection != null)
-                _layoutRoot.UVUnwrapSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.UVUnwrapSection, _layoutRoot?.UVUnwrapBtn);
             _uvUnwrapSubPanel?.Refresh();
         }
 
         private void ShowMaterialListPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MaterialListBtn);
-            if (_layoutRoot?.MaterialListSection != null)
-                _layoutRoot.MaterialListSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MaterialListSection, _layoutRoot?.MaterialListBtn);
             _materialListSubPanel?.Refresh();
         }
 
         private void ShowUVZPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.UVZBtn);
-            if (_layoutRoot?.UVZSection != null)
-                _layoutRoot.UVZSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.UVZSection, _layoutRoot?.UVZBtn);
             _uvzSubPanel?.Refresh();
         }
 
         private void ShowPartsSelectionSetPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.PartsSelectionSetBtn);
-            if (_layoutRoot?.PartsSelectionSetSection != null)
-                _layoutRoot.PartsSelectionSetSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持
+            ShowRightPanel(_layoutRoot?.PartsSelectionSetSection, _layoutRoot?.PartsSelectionSetBtn);
             _partsSelSetSubPanel?.Refresh();
         }
 
         private void ShowMeshSelectionSetPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MeshSelectionSetBtn);
-            if (_layoutRoot?.MeshSelectionSetSection != null)
-                _layoutRoot.MeshSelectionSetSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MeshSelectionSetSection, _layoutRoot?.MeshSelectionSetBtn);
             _meshSelSetSubPanel?.Refresh();
         }
 
         private void ShowMergeMeshesPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MergeMeshesBtn);
-            if (_layoutRoot?.MergeMeshesSection != null)
-                _layoutRoot.MergeMeshesSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MergeMeshesSection, _layoutRoot?.MergeMeshesBtn);
             _mergeMeshesSubPanel?.Refresh();
         }
 
         private void ShowMorphPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MorphBtn);
-            if (_layoutRoot?.MorphSection != null)
-                _layoutRoot.MorphSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MorphSection, _layoutRoot?.MorphBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
             // （MorphExpressionEditRecord/ChangeRecord が正しいモデルを参照するために必要）
@@ -2146,10 +2621,9 @@ namespace Poly_Ling.Player
 
         private void ShowMorphCreatePanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MorphCreateBtn);
-            if (_layoutRoot?.MorphCreateSection != null)
-                _layoutRoot.MorphCreateSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MorphCreateSection, _layoutRoot?.MorphCreateBtn);
 
             // MeshListStack のコンテキストを現在のモデルに設定
             var morphCrModel = ActiveProject?.CurrentModel;
@@ -2161,10 +2635,9 @@ namespace Poly_Ling.Player
 
         private void ShowTPosePanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.TPoseBtn);
-            if (_layoutRoot?.TPoseSection != null)
-                _layoutRoot.TPoseSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.TPoseSection, _layoutRoot?.TPoseBtn);
             // MeshListStack のコンテキストを現在のモデルに設定（TPoseUndoRecord が参照するため）
             var tpModel = ActiveProject?.CurrentModel;
             if (tpModel != null && _editOps?.UndoController != null)
@@ -2174,10 +2647,9 @@ namespace Poly_Ling.Player
 
         private void ShowHumanoidMappingPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.HumanoidMappingBtn);
-            if (_layoutRoot?.HumanoidMappingSection != null)
-                _layoutRoot.HumanoidMappingSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.HumanoidMappingSection, _layoutRoot?.HumanoidMappingBtn);
             var hmModel = ActiveProject?.CurrentModel;
             if (hmModel != null && _editOps?.UndoController != null)
                 _editOps.UndoController.SetModelContext(hmModel);
@@ -2186,30 +2658,23 @@ namespace Poly_Ling.Player
 
         private void ShowMirrorPanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.MirrorBtn);
-            if (_layoutRoot?.MirrorSection != null)
-                _layoutRoot.MirrorSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MirrorSection, _layoutRoot?.MirrorBtn);
         }
 
         private void ShowQuadDecimatorPanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.QuadDecimatorBtn);
-            if (_layoutRoot?.QuadDecimatorSection != null)
-                _layoutRoot.QuadDecimatorSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.QuadDecimatorSection, _layoutRoot?.QuadDecimatorBtn);
             _quadDecimatorSubPanel?.Refresh();
         }
 
         private void ShowAlignVerticesPanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.AlignVerticesBtn);
-            if (_layoutRoot?.AlignVerticesSection != null)
-                _layoutRoot.AlignVerticesSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 2: 3D 操作 (InteractionMode) は維持。右ペインのみ切替。
+            ShowRightPanel(_layoutRoot?.AlignVerticesSection, _layoutRoot?.AlignVerticesBtn);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _alignVerticesHandler?.Activate(ctx);
             _alignVerticesSubPanel?.Refresh();
@@ -2217,11 +2682,8 @@ namespace Poly_Ling.Player
 
         private void ShowPlanarizeAlongBonesPanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.PlanarizeAlongBonesBtn);
-            if (_layoutRoot?.PlanarizeAlongBonesSection != null)
-                _layoutRoot.PlanarizeAlongBonesSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 2
+            ShowRightPanel(_layoutRoot?.PlanarizeAlongBonesSection, _layoutRoot?.PlanarizeAlongBonesBtn);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _planarizeAlongBonesHandler?.Activate(ctx);
             _planarizeAlongBonesSubPanel?.Refresh();
@@ -2229,11 +2691,8 @@ namespace Poly_Ling.Player
 
         private void ShowMergeVerticesPanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.MergeVerticesBtn);
-            if (_layoutRoot?.MergeVerticesSection != null)
-                _layoutRoot.MergeVerticesSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 2
+            ShowRightPanel(_layoutRoot?.MergeVerticesSection, _layoutRoot?.MergeVerticesBtn);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null)
             {
@@ -2246,121 +2705,93 @@ namespace Poly_Ling.Player
 
         private void ShowFlipFacePanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.FlipFaceBtn);
-            if (_layoutRoot?.FlipFaceSection != null)
-                _layoutRoot.FlipFaceSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 1 化: MoveToolHandler の選択/矩形選択を流用し、Selection.Mode を
+            // Face のみに絞る。反転実行自体はサブパネル経由 (本セッション対象外、別件)。
+            ShowCategory1Panel(InteractionMode.FlipFace);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _flipFaceHandler?.Activate(ctx);
-            _flipFaceSubPanel?.Refresh();
         }
 
         private void ShowRotatePanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.RotateBtn);
-            if (_layoutRoot?.RotateSection != null)
-                _layoutRoot.RotateSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 1 化: MoveToolHandler の選択/矩形選択を流用。
+            // 現状の回転実行はサブパネルのスライダ経由のまま。
+            // 将来的には独自形状ギズモ (回転リング) をビューポートに表示し、
+            // MoveToolHandler のフック (OnDragStartExtra 等) 経由で回転操作を
+            // 実現する予定。
+            ShowCategory1Panel(InteractionMode.Rotate);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _rotateHandler?.Activate(ctx);
-            _rotateSubPanel?.Refresh();
         }
 
         private void ShowScalePanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.ScaleBtn);
-            if (_layoutRoot?.ScaleSection != null)
-                _layoutRoot.ScaleSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 1 化: MoveToolHandler の選択/矩形選択を流用。
+            // 現状の拡大縮小実行はサブパネルのスライダ経由のまま。
+            // 将来的には独自形状ギズモ (軸端ハンドル等) をビューポートに表示し、
+            // MoveToolHandler のフック経由で拡大縮小操作を実現する予定。
+            ShowCategory1Panel(InteractionMode.Scale);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _scaleHandler?.Activate(ctx);
-            _scaleSubPanel?.Refresh();
         }
 
         private void ShowEdgeBevelPanel()
         {
-            SwitchTool(ToolMode.EdgeBevel);
-            if (_layoutRoot?.EdgeBevelSection != null)
-                _layoutRoot.EdgeBevelSection.style.display = DisplayStyle.Flex;
+            ShowCategory1Panel(InteractionMode.EdgeBevel);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _edgeBevelHandler?.Activate(ctx);
-            _edgeBevelSubPanel?.Refresh();
         }
 
         private void ShowEdgeExtrudePanel()
         {
-            SwitchTool(ToolMode.EdgeExtrude);
-            if (_layoutRoot?.EdgeExtrudeSection != null)
-                _layoutRoot.EdgeExtrudeSection.style.display = DisplayStyle.Flex;
+            ShowCategory1Panel(InteractionMode.EdgeExtrude);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _edgeExtrudeHandler?.Activate(ctx);
-            _edgeExtrudeSubPanel?.Refresh();
         }
 
         private void ShowFaceExtrudePanel()
         {
-            SwitchTool(ToolMode.FaceExtrude);
-            if (_layoutRoot?.FaceExtrudeSection != null)
-                _layoutRoot.FaceExtrudeSection.style.display = DisplayStyle.Flex;
+            ShowCategory1Panel(InteractionMode.FaceExtrude);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _faceExtrudeHandler?.Activate(ctx);
-            _faceExtrudeSubPanel?.Refresh();
         }
 
         private void ShowEdgeTopologyPanel()
         {
-            SwitchTool(ToolMode.EdgeTopology);
-            if (_layoutRoot?.EdgeTopologySection != null)
-                _layoutRoot.EdgeTopologySection.style.display = DisplayStyle.Flex;
+            ShowCategory1Panel(InteractionMode.EdgeTopology);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _edgeTopologyHandler?.Activate(ctx);
-            _edgeTopologySubPanel?.Refresh();
         }
 
         private void ShowLineExtrudePanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.LineExtrudeBtn);
-            if (_layoutRoot?.LineExtrudeSection != null)
-                _layoutRoot.LineExtrudeSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 1 化: MoveToolHandler の選択/矩形選択を流用し、Selection.Mode を
+            // Line のみに絞る。押し出し実行自体はサブパネル経由 (本セッション対象外、別件)。
+            ShowCategory1Panel(InteractionMode.LineExtrude);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _lineExtrudeHandler?.Activate(ctx);
-            _lineExtrudeSubPanel?.Refresh();
         }
 
         private void ShowKnifePanel()
         {
-            SwitchTool(ToolMode.Knife);
-            if (_layoutRoot?.KnifeSection != null)
-                _layoutRoot.KnifeSection.style.display = DisplayStyle.Flex;
+            ShowCategory1Panel(InteractionMode.Knife);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _knifeHandler?.Activate(ctx);
-            _knifeSubPanel?.Refresh();
         }
         private void ShowAddFacePanel()
         {
-            SwitchTool(ToolMode.AddFace);
-            if (_layoutRoot?.AddFaceSection != null)
-                _layoutRoot.AddFaceSection.style.display = DisplayStyle.Flex;
+            ShowCategory1Panel(InteractionMode.AddFace);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _addFaceHandler?.Activate(ctx);
             // 面追加時は頂点ホバーのみ必要。辺・面のホバーは有害なので抑制する。
             var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
             if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.Vertex;
-            _addFaceSubPanel?.Refresh();
         }
 
         private void ShowSplitVerticesPanel()
         {
-            HideAllRightPanels();
-            _viewportManager?.RegisterActiveToolHandler(null);
-            SetActiveButton(_layoutRoot?.SplitVerticesBtn);
-            if (_layoutRoot?.SplitVerticesSection != null)
-                _layoutRoot.SplitVerticesSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 2
+            ShowRightPanel(_layoutRoot?.SplitVerticesSection, _layoutRoot?.SplitVerticesBtn);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _splitVerticesHandler?.Activate(ctx);
             _splitVerticesSubPanel?.Refresh();
@@ -2368,58 +2799,54 @@ namespace Poly_Ling.Player
 
         private void ShowMediaPipePanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MediaPipeBtn);
-            if (_layoutRoot?.MediaPipeSection != null)
-                _layoutRoot.MediaPipeSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MediaPipeSection, _layoutRoot?.MediaPipeBtn);
             _mediaPipeSubPanel?.Refresh();
         }
 
         private void ShowVMDTestPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.VMDTestBtn);
-            if (_layoutRoot?.VMDTestSection != null)
-                _layoutRoot.VMDTestSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.VMDTestSection, _layoutRoot?.VMDTestBtn);
             _vmdTestSubPanel?.Refresh();
         }
 
         private void ShowRemoteServerPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.RemoteServerBtn);
-            if (_layoutRoot?.RemoteServerSection != null)
-                _layoutRoot.RemoteServerSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.RemoteServerSection, _layoutRoot?.RemoteServerBtn);
             _remoteServerSubPanel?.Refresh();
         }
 
         private void ShowExportPanel(PlayerExportSubPanel.Mode mode)
         {
-            HideAllRightPanels();
-            SetActiveButton(mode == PlayerExportSubPanel.Mode.PMX
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            var btn = mode == PlayerExportSubPanel.Mode.PMX
                 ? _layoutRoot?.FullExportPmxBtn
-                : _layoutRoot?.FullExportMqoBtn);
-            if (_layoutRoot?.ExportSection != null)
-                _layoutRoot.ExportSection.style.display = DisplayStyle.Flex;
+                : _layoutRoot?.FullExportMqoBtn;
+            ShowRightPanel(_layoutRoot?.ExportSection, btn);
             _exportSubPanel?.SetMode(mode);
         }
 
         private void ShowProjectFilePanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.ProjectFileBtn);
-            if (_layoutRoot?.ProjectFileSection != null)
-                _layoutRoot.ProjectFileSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ProjectFileSection, _layoutRoot?.ProjectFileBtn);
         }
 
         private void ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode mode)
         {
-            HideAllRightPanels();
-            SetActiveButton(mode == PlayerPartialImportSubPanel.Mode.PMX
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            var btn = mode == PlayerPartialImportSubPanel.Mode.PMX
                 ? _layoutRoot?.PartialImportPmxBtn
-                : _layoutRoot?.PartialImportMqoBtn);
-            if (_layoutRoot?.PartialImportSection != null)
-                _layoutRoot.PartialImportSection.style.display = DisplayStyle.Flex;
+                : _layoutRoot?.PartialImportMqoBtn;
+            ShowRightPanel(_layoutRoot?.PartialImportSection, btn);
             var model = ActiveProject?.CurrentModel;
             if (model != null) _editOps?.UndoController.SetModelContext(model);
             _partialImportSubPanel?.SetModel(model, _editOps?.UndoController);
@@ -2428,12 +2855,12 @@ namespace Poly_Ling.Player
 
         private void ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode mode)
         {
-            HideAllRightPanels();
-            SetActiveButton(mode == PlayerPartialExportSubPanel.Mode.PMX
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            var btn = mode == PlayerPartialExportSubPanel.Mode.PMX
                 ? _layoutRoot?.PartialExportPmxBtn
-                : _layoutRoot?.PartialExportMqoBtn);
-            if (_layoutRoot?.PartialExportSection != null)
-                _layoutRoot.PartialExportSection.style.display = DisplayStyle.Flex;
+                : _layoutRoot?.PartialExportMqoBtn;
+            ShowRightPanel(_layoutRoot?.PartialExportSection, btn);
             var model = ActiveProject?.CurrentModel;
             _partialExportSubPanel?.SetModel(model);
             _partialExportSubPanel?.SetMode(mode);
@@ -2441,18 +2868,16 @@ namespace Poly_Ling.Player
 
         private void ShowModelListPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.ModelListBtn);
-            if (_layoutRoot?.ModelListSection != null)
-                _layoutRoot.ModelListSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ModelListSection, _layoutRoot?.ModelListBtn);
         }
 
         private void ShowMeshListPanel()
         {
-            HideAllRightPanels();
-            SetActiveButton(_layoutRoot?.MeshListBtn);
-            if (_layoutRoot?.MeshListSection != null)
-                _layoutRoot.MeshListSection.style.display = DisplayStyle.Flex;
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn);
         }
 
         private void HideAllRightPanels()
@@ -2512,16 +2937,124 @@ namespace Poly_Ling.Player
         // ボタンアクティブ色
         // ================================================================
 
-        private static readonly StyleColor ActiveBtnColor   = new StyleColor(new Color(0.3f, 0.5f, 1f));
-        private static readonly StyleColor InactiveBtnColor = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+        // ================================================================
+        // ボタンハイライト 2 系統 (段階 2)
+        //
+        // カテゴリ 1 ボタン (VertexMove 等): InteractionMode と RightPanel の両方を担う
+        // カテゴリ 2 ボタン (AlignVertices 等): RightPanel のみ。InteractionMode は維持
+        // カテゴリ 3 ボタン (Mirror 等): RightPanel のみ。InteractionMode=None
+        //
+        // 同一ボタンが両系統 active になる場合は BothActiveBtnColor で表示する。
+        // ================================================================
 
-        private void SetActiveButton(Button btn)
+        // 非 active 色 (既存)
+        private static readonly StyleColor InactiveBtnColor         = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+        // InteractionMode のみ active (青)
+        private static readonly StyleColor InteractionActiveBtnColor = new StyleColor(new Color(0.3f,  0.5f,  1.0f));
+        // RightPanel のみ active (緑系)
+        private static readonly StyleColor PanelActiveBtnColor       = new StyleColor(new Color(0.3f,  0.75f, 0.4f));
+        // 両方 active (α: 混色の青緑)
+        private static readonly StyleColor BothActiveBtnColor        = new StyleColor(new Color(0.3f,  0.625f, 0.7f));
+
+        // 旧 _activeBtn を 2 つに分割
+        private Button _activeInteractionBtn;   // InteractionMode を示すボタン
+        private Button _activePanelBtn;         // 現在開いている RightPanel を示すボタン
+
+        /// <summary>
+        /// InteractionMode に対応するボタンを取得。ない (None / 未割当) なら null。
+        /// </summary>
+        private Button GetButtonForInteractionMode(InteractionMode mode)
         {
-            if (_activeBtn != null)
-                _activeBtn.style.backgroundColor = InactiveBtnColor;
-            _activeBtn = btn;
-            if (_activeBtn != null)
-                _activeBtn.style.backgroundColor = ActiveBtnColor;
+            if (_layoutRoot == null) return null;
+            switch (mode)
+            {
+                case InteractionMode.VertexMove:      return _layoutRoot.ToolVertexMoveBtn;
+                case InteractionMode.ObjectMove:      return _layoutRoot.ToolObjectMoveBtn;
+                case InteractionMode.PivotOffset:     return _layoutRoot.ToolPivotOffsetBtn;
+                case InteractionMode.Sculpt:          return _layoutRoot.ToolSculptBtn;
+                case InteractionMode.AdvancedSelect:  return _layoutRoot.ToolAdvancedSelBtn;
+                case InteractionMode.SkinWeightPaint: return _layoutRoot.ToolSkinWeightPaintBtn;
+                // AddFace / EdgeBevel / EdgeExtrude / FaceExtrude / EdgeTopology / Knife
+                // はツールボタンを持たない (右ペインから起動) ため null のまま。
+                default: return null;
+            }
+        }
+
+        /// <summary>
+        /// 全ツールボタン/パネルボタンの背景色を _activeInteractionBtn / _activePanelBtn
+        /// の状態から再計算する。両系統を同時に反映するため単一の経路にまとめる。
+        /// </summary>
+        private void RepaintButtonHighlights()
+        {
+            // 候補ボタン集合 (null 安全に列挙)
+            var btns = new System.Collections.Generic.List<Button>();
+            if (_layoutRoot != null)
+            {
+                void Add(Button b) { if (b != null) btns.Add(b); }
+                // InteractionMode 側
+                Add(_layoutRoot.ToolVertexMoveBtn);
+                Add(_layoutRoot.ToolObjectMoveBtn);
+                Add(_layoutRoot.ToolPivotOffsetBtn);
+                Add(_layoutRoot.ToolSculptBtn);
+                Add(_layoutRoot.ToolAdvancedSelBtn);
+                Add(_layoutRoot.ToolSkinWeightPaintBtn);
+                // 現在パネルを示す可能性があるボタンは、_activePanelBtn が非 null のとき
+                // それ 1 つだけなので個別列挙は不要 (下の色設定で扱う)
+            }
+
+            // InteractionMode ボタンのデフォルト色: _activeInteractionBtn なら青、そうでなければ非 active
+            foreach (var b in btns)
+            {
+                bool isInteraction = (b == _activeInteractionBtn);
+                bool isPanel       = (b == _activePanelBtn);
+                if (isInteraction && isPanel) b.style.backgroundColor = BothActiveBtnColor;
+                else if (isInteraction)       b.style.backgroundColor = InteractionActiveBtnColor;
+                else if (isPanel)             b.style.backgroundColor = PanelActiveBtnColor;
+                else                          b.style.backgroundColor = InactiveBtnColor;
+            }
+
+            // _activePanelBtn が btns 以外 (カテゴリ 3 のパネル専用ボタン等) のとき単独着色
+            if (_activePanelBtn != null && !btns.Contains(_activePanelBtn))
+            {
+                // InteractionMode ボタンと同時 active は別ボタンに分離されているので緑のみ
+                _activePanelBtn.style.backgroundColor = PanelActiveBtnColor;
+            }
+        }
+
+        /// <summary>
+        /// InteractionMode ボタンのハイライトを現在の _interactionMode に基づき更新する。
+        /// SetInteractionMode 末尾で呼ぶ。
+        /// </summary>
+        private void UpdateInteractionButtonHighlight()
+        {
+            // 旧 _activeInteractionBtn が別パネルの _activePanelBtn と重なっていたら、
+            // その重なりを外すためにも Repaint で一括処理する。
+            _activeInteractionBtn = GetButtonForInteractionMode(_interactionMode);
+            RepaintButtonHighlights();
+        }
+
+        /// <summary>
+        /// RightPanel ボタンのハイライトを設定。null で解除。
+        /// </summary>
+        private void SetActivePanelButton(Button btn)
+        {
+            // 以前の _activePanelBtn が候補外 (カテゴリ 3 系) の場合、そのボタンだけは
+            // 個別に非 active 色へ戻す。
+            if (_activePanelBtn != null && _activePanelBtn != btn)
+                _activePanelBtn.style.backgroundColor = InactiveBtnColor;
+            _activePanelBtn = btn;
+            RepaintButtonHighlights();
+        }
+
+        /// <summary>
+        /// RightPanel の標準切替: HideAllRightPanels → section 表示 → パネルボタンをハイライト。
+        /// カテゴリ 1/2/3 共通に使える。SetInteractionMode とは独立。
+        /// </summary>
+        private void ShowRightPanel(VisualElement section, Button panelBtn)
+        {
+            HideAllRightPanels();
+            if (section != null) section.style.display = DisplayStyle.Flex;
+            SetActivePanelButton(panelBtn);
         }
 
         // ================================================================
@@ -2539,7 +3072,6 @@ namespace Poly_Ling.Player
             _sculptHandler?.SetProject(ActiveProject);
             _advancedSelectHandler?.SetProject(ActiveProject);
             _skinWeightPaintHandler?.SetProject(ActiveProject);
-            _boneInputHandler?.SetProject(ActiveProject);
             _alignVerticesHandler?.SetProject(ActiveProject);
             _planarizeAlongBonesHandler?.SetProject(ActiveProject);
             _mergeVerticesHandler?.SetProject(ActiveProject);
@@ -2743,16 +3275,10 @@ namespace Poly_Ling.Player
         /// </summary>
         private void PrimitiveMeshFinalize(ModelContext model)
         {
-            _viewportManager.RebuildAdapter(0, model);
-
-            var firstMc = model.FirstDrawableMeshContext;
-            if (firstMc != null)
-            {
-                _selectionOps?.SetSelectionState(firstMc.Selection);
-                _renderer?.SetSelectionState(firstMc.Selection);
-            }
-            _renderer?.UpdateSelectedDrawableMesh(0, model);
-            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+            // Phase 2a-2b-2 Batch 3: RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を
+            // EnterSceneReset に集約。カメラは別途 NotifyCameraChanged で個別に呼ぶ。
+            _viewportManager.EnterSceneReset(ActiveProject);
+            _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
 
             RebuildModelList();
             NotifyPanels(ChangeKind.ListStructure);
@@ -2890,8 +3416,10 @@ namespace Poly_Ling.Player
             }
             CsvModelSerializer.BuildMirrorPairsFromEntries(entries, model);
 
-            _renderer?.ClearScene();
-            _viewportManager.RebuildAdapter(0, model);
+            // Phase 2a-2b-2 Batch 3: ClearScene + RebuildAdapter を EnterSceneReset(clearScene: true) に集約。
+            // MergeCsv は selection を変更しないため、EnterSceneReset 内の SetSelectionState は
+            // current selection (first mesh) を再セットする形となる。
+            _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
             model.OnListChanged?.Invoke();
 
             _projectFileSubPanel?.SetStatus($"マージ完了: +{added} /{replaced}置換");
@@ -2902,30 +3430,19 @@ namespace Poly_Ling.Player
         {
             var model = ActiveProject?.CurrentModel;
             if (model == null) return;
-            _renderer?.ClearScene();
-            _viewportManager.RebuildAdapter(0, model);
-            var firstMc = model.FirstDrawableMeshContext;
-            if (firstMc != null)
-            {
-                _selectionOps?.SetSelectionState(firstMc.Selection);
-                _renderer?.SetSelectionState(firstMc.Selection);
-            }
+            // Phase 2a-2b-2 Batch 3: ClearScene + RebuildAdapter + SetSelectionState を
+            // EnterSceneReset(clearScene: true) に集約。
+            _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
         }
 
         private void OnMeshFilterToSkinnedComplete()
         {
             var model = ActiveProject?.CurrentModel;
             if (model == null) return;
-            _renderer?.ClearScene();
-            _viewportManager.RebuildAdapter(0, model);
-            var firstMc = model.FirstDrawableMeshContext;
-            if (firstMc != null)
-            {
-                _selectionOps?.SetSelectionState(firstMc.Selection);
-                _renderer?.SetSelectionState(firstMc.Selection);
-            }
-            _renderer?.UpdateSelectedDrawableMesh(0, model);
-            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
+            // Phase 2a-2b-2 Batch 3: ClearScene + RebuildAdapter + SetSelectionState +
+            // UpdateSelectedDrawableMesh を EnterSceneReset(clearScene: true) に集約。
+            _viewportManager.EnterSceneReset(ActiveProject, clearScene: true);
+            _viewportManager.EnterCameraChanged(_viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
             RebuildModelList();
             NotifyPanels(ChangeKind.ModelSwitch);
         }
@@ -2953,75 +3470,320 @@ namespace Poly_Ling.Player
         // ツール切り替え
         // ================================================================
 
-        private void SwitchTool(ToolMode mode)
+        /// <summary>
+        /// カテゴリ 1 (3D 操作と右ペインが一体) のパネルを開く共通ヘルパー。
+        /// SetInteractionMode + ShowRightPanel + サブパネル Refresh を一括で行う。
+        ///
+        /// 【設計ポイント: 右ペイン型ツールでも btn 設定が必要】
+        /// InteractionMode ボタンを持つツール (VertexMove 等) は GetButtonForInteractionMode
+        /// が btn を返すが、右ペインから起動するツール (EdgeBevel / EdgeExtrude / FaceExtrude
+        /// / EdgeTopology / Knife / AddFace) はそちらでは null になる。
+        /// このため switch 内で自分の `btn = _layoutRoot?.〇〇Btn;` を明示的に割当てないと
+        /// `_activePanelBtn` が null のままとなり、右ペインを開いても当該ボタンが緑
+        /// ハイライトされない。ボタンを持つツールを追加するときは、ここにも case を
+        /// 追加して btn を設定すること (section / refresh と同列)。
+        /// </summary>
+        private void ShowCategory1Panel(InteractionMode mode)
         {
-            if (_toolMode == ToolMode.Sculpt && mode != ToolMode.Sculpt)
+            SetInteractionMode(mode);
+
+            VisualElement section = null;
+            Button btn = null;
+            System.Action refresh = null;
+
+            switch (mode)
+            {
+                case InteractionMode.VertexMove:
+                    section = _layoutRoot?.VertexMoveSection;
+                    btn     = _layoutRoot?.ToolVertexMoveBtn;
+                    refresh = () => _vertexMoveSubPanel?.Refresh();
+                    break;
+                case InteractionMode.ObjectMove:
+                    section = _layoutRoot?.BoneEditorSection;
+                    btn     = _layoutRoot?.ToolObjectMoveBtn;
+                    refresh = () => _boneEditorSubPanel?.Refresh();
+                    break;
+                case InteractionMode.PivotOffset:
+                    section = _layoutRoot?.PivotSection;
+                    btn     = _layoutRoot?.ToolPivotOffsetBtn;
+                    break;
+                case InteractionMode.Sculpt:
+                    section = _layoutRoot?.SculptSection;
+                    btn     = _layoutRoot?.ToolSculptBtn;
+                    break;
+                case InteractionMode.AdvancedSelect:
+                    section = _layoutRoot?.AdvancedSelectSection;
+                    btn     = _layoutRoot?.ToolAdvancedSelBtn;
+                    refresh = () => _advancedSelectSubPanel?.Refresh();
+                    break;
+                case InteractionMode.SkinWeightPaint:
+                    section = _layoutRoot?.SkinWeightPaintSection;
+                    btn     = _layoutRoot?.ToolSkinWeightPaintBtn;
+                    break;
+                case InteractionMode.AddFace:
+                    section = _layoutRoot?.AddFaceSection;
+                    // AddFace は右ペインから起動するためツールボタンなし → btn = null
+                    refresh = () => _addFaceSubPanel?.Refresh();
+                    break;
+                case InteractionMode.EdgeBevel:
+                    section = _layoutRoot?.EdgeBevelSection;
+                    btn     = _layoutRoot?.EdgeBevelBtn;
+                    refresh = () => _edgeBevelSubPanel?.Refresh();
+                    break;
+                case InteractionMode.EdgeExtrude:
+                    section = _layoutRoot?.EdgeExtrudeSection;
+                    btn     = _layoutRoot?.EdgeExtrudeBtn;
+                    refresh = () => _edgeExtrudeSubPanel?.Refresh();
+                    break;
+                case InteractionMode.FaceExtrude:
+                    section = _layoutRoot?.FaceExtrudeSection;
+                    btn     = _layoutRoot?.FaceExtrudeBtn;
+                    refresh = () => _faceExtrudeSubPanel?.Refresh();
+                    break;
+                case InteractionMode.EdgeTopology:
+                    section = _layoutRoot?.EdgeTopologySection;
+                    btn     = _layoutRoot?.EdgeTopologyBtn;
+                    refresh = () => _edgeTopologySubPanel?.Refresh();
+                    break;
+                case InteractionMode.Knife:
+                    section = _layoutRoot?.KnifeSection;
+                    btn     = _layoutRoot?.KnifeBtn;
+                    refresh = () => _knifeSubPanel?.Refresh();
+                    break;
+                case InteractionMode.FlipFace:
+                    section = _layoutRoot?.FlipFaceSection;
+                    btn     = _layoutRoot?.FlipFaceBtn;
+                    refresh = () => _flipFaceSubPanel?.Refresh();
+                    break;
+                case InteractionMode.LineExtrude:
+                    section = _layoutRoot?.LineExtrudeSection;
+                    btn     = _layoutRoot?.LineExtrudeBtn;
+                    refresh = () => _lineExtrudeSubPanel?.Refresh();
+                    break;
+                case InteractionMode.Rotate:
+                    section = _layoutRoot?.RotateSection;
+                    btn     = _layoutRoot?.RotateBtn;
+                    refresh = () => _rotateSubPanel?.Refresh();
+                    break;
+                case InteractionMode.Scale:
+                    section = _layoutRoot?.ScaleSection;
+                    btn     = _layoutRoot?.ScaleBtn;
+                    refresh = () => _scaleSubPanel?.Refresh();
+                    break;
+            }
+
+            ShowRightPanel(section, btn);
+            refresh?.Invoke();
+        }
+
+        // ================================================================
+        // SetInteractionMode: 3D 操作モード (ビューポートの入力ハンドラ) のみを切り替える。
+        // 右ペイン表示やボタンハイライトには関与しない。
+        //
+        // カテゴリ 1 (3D 操作と右ペインが一体) → ShowRightPanel と組で呼ぶ
+        // カテゴリ 2 (3D 操作を維持) → 呼ばない
+        // カテゴリ 3 (3D 操作無効) → SetInteractionMode(None) を呼ぶ
+        // ================================================================
+
+        private void SetInteractionMode(InteractionMode mode)
+        {
+            // 旧モードの後始末 (新モードに関係なく必要な処理)
+            if (_interactionMode == InteractionMode.Sculpt && mode != InteractionMode.Sculpt)
                 _activePanel?.HideBrushCircle();
 
-            if (_toolMode == ToolMode.AdvancedSelect && mode != ToolMode.AdvancedSelect)
+            if (_interactionMode == InteractionMode.AdvancedSelect && mode != InteractionMode.AdvancedSelect)
                 _activePanel?.HideAdvSelPreview();
 
-            if (_toolMode == ToolMode.SkinWeightPaint && mode != ToolMode.SkinWeightPaint)
+            if (_interactionMode == InteractionMode.SkinWeightPaint && mode != InteractionMode.SkinWeightPaint)
             {
                 _skinWeightPaintHandler?.OnDeactivate();
                 SkinWeightPaintTool.ActivePanel = null;
             }
 
-            if (_toolMode == ToolMode.AddFace && mode != ToolMode.AddFace)
+            if (_interactionMode == InteractionMode.AddFace && mode != InteractionMode.AddFace)
             {
                 var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
                 if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
             }
 
-            _toolMode = mode;
+            // EdgeTopology から脱出するとき、Selection.Mode を All に戻す。
+            // Flip/Dissolve は Edge、Split は Vertex に絞っているため、戻さないと
+            // 次のモード (VertexMove 等) でホバー範囲が狭いままになる。
+            if (_interactionMode == InteractionMode.EdgeTopology && mode != InteractionMode.EdgeTopology)
+            {
+                var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
+            }
 
+            // ---------------------------------------------------------------
+            // カテゴリ 1 ツール (EdgeBevel / EdgeExtrude / FaceExtrude /
+            // FlipFace / LineExtrude / Rotate / Scale) は MoveToolHandler の
+            // 共通選択ロジックを流用している。
+            // - EdgeBevel / EdgeExtrude / FaceExtrude はフック (OnDragStartExtra 等) に
+            //   ツール固有ドラッグ動作を差し込む
+            // - FlipFace / LineExtrude / Rotate / Scale は選択のみフック不要
+            //   (ツール動作はサブパネル経由。将来 Rotate/Scale 用ギズモを追加する場合は
+            //    フック利用に移行予定)
+            // 脱出時は:
+            //   - 全フックを null に戻す (次モードで古いフックが発火しないように)
+            //   - Selection.Mode を All に復元 (次モードのホバー範囲が絞られたままに
+            //     ならないように。Rotate/Scale は絞っていないので実質空振りだが、
+            //     一律復元として統一)
+            // ---------------------------------------------------------------
+            bool leavingSharedSelectionTools =
+                   (_interactionMode == InteractionMode.EdgeBevel   && mode != InteractionMode.EdgeBevel)
+                || (_interactionMode == InteractionMode.EdgeExtrude && mode != InteractionMode.EdgeExtrude)
+                || (_interactionMode == InteractionMode.FaceExtrude && mode != InteractionMode.FaceExtrude)
+                || (_interactionMode == InteractionMode.FlipFace    && mode != InteractionMode.FlipFace)
+                || (_interactionMode == InteractionMode.LineExtrude && mode != InteractionMode.LineExtrude)
+                || (_interactionMode == InteractionMode.Rotate      && mode != InteractionMode.Rotate)
+                || (_interactionMode == InteractionMode.Scale       && mode != InteractionMode.Scale);
+            if (leavingSharedSelectionTools)
+            {
+                if (_moveToolHandler != null)
+                {
+                    _moveToolHandler.OnLeftClickExtra   = null;
+                    _moveToolHandler.OnDragStartExtra   = null;
+                    _moveToolHandler.OnToolDragExtra    = null;
+                    _moveToolHandler.OnToolDragEndExtra = null;
+                }
+                var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
+            }
+
+            _interactionMode = mode;
+
+            // 新モードの ToolHandler 割当 + ホバーコールバック登録
             switch (mode)
             {
-                case ToolMode.VertexMove:
+                case InteractionMode.None:
+                    // カテゴリ 3: 3D 操作無効 (ビュー回転/パン/ズームのみ)
+                    _vertexInteractor?.SetToolHandler(null);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    break;
+                case InteractionMode.VertexMove:
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
                     break;
-                case ToolMode.ObjectMove:
+                case InteractionMode.ObjectMove:
                     _vertexInteractor?.SetToolHandler(_objectMoveHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _objectMoveHandler?.UpdateHover(pos, ctx));
                     break;
-                case ToolMode.PivotOffset:
+                case InteractionMode.PivotOffset:
                     _vertexInteractor?.SetToolHandler(_pivotOffsetHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _pivotOffsetHandler?.UpdateHover(pos, ctx));
                     break;
-                case ToolMode.Sculpt:
+                case InteractionMode.Sculpt:
                     _vertexInteractor?.SetToolHandler(_sculptHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _sculptHandler?.UpdateHover(pos, ctx));
                     break;
-                case ToolMode.AdvancedSelect:
+                case InteractionMode.AdvancedSelect:
                     _vertexInteractor?.SetToolHandler(_advancedSelectHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _advancedSelectHandler?.UpdateHover(pos, ctx));
                     break;
-                case ToolMode.AddFace:
+                case InteractionMode.AddFace:
                     _vertexInteractor?.SetToolHandler(_addFaceHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _addFaceHandler?.UpdateHover(pos, ctx));
                     break;
-                case ToolMode.EdgeBevel:
-                    _vertexInteractor?.SetToolHandler(_edgeBevelHandler);
+                case InteractionMode.EdgeBevel:
+                    // MoveToolHandler の選択/矩形選択を流用。
+                    // ドラッグ開始フックで EdgeBevel の開始、継続ドラッグで幅調整、
+                    // ドラッグ終了で確定 + Undo 記録を行う。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeBevelHandler?.UpdateHover(pos, ctx));
+                    _moveToolHandler.OnDragStartExtra = (elem, mods) =>
+                    {
+                        // Edge ヒットのみベベル発火。要素なし or 型違いは通常の矩形選択等に任せる
+                        if (elem.Kind != PlayerHoverKind.Edge) return false;
+                        _edgeBevelHandler?.OnLeftDragBegin(
+                            new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
+                            Vector2.zero, mods);
+                        return true;
+                    };
+                    _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeBevelHandler?.OnLeftDrag(pos, delta, mods);
+                    _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _edgeBevelHandler?.OnLeftDragEnd(pos, mods);
+                    ApplySelectionModeForInteractionMode(InteractionMode.EdgeBevel);
                     break;
-                case ToolMode.EdgeExtrude:
-                    _vertexInteractor?.SetToolHandler(_edgeExtrudeHandler);
+                case InteractionMode.EdgeExtrude:
+                    // MoveToolHandler の選択/矩形選択を流用。ドラッグ系ツール (EdgeBevel と同パターン)。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeExtrudeHandler?.UpdateHover(pos, ctx));
+                    _moveToolHandler.OnDragStartExtra = (elem, mods) =>
+                    {
+                        // Edge ヒットのみ押し出し発火。要素なし or 型違いは通常の矩形選択等に任せる
+                        if (elem.Kind != PlayerHoverKind.Edge) return false;
+                        _edgeExtrudeHandler?.OnLeftDragBegin(
+                            new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
+                            Vector2.zero, mods);
+                        return true;
+                    };
+                    _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeExtrudeHandler?.OnLeftDrag(pos, delta, mods);
+                    _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _edgeExtrudeHandler?.OnLeftDragEnd(pos, mods);
+                    ApplySelectionModeForInteractionMode(InteractionMode.EdgeExtrude);
                     break;
-                case ToolMode.FaceExtrude:
-                    _vertexInteractor?.SetToolHandler(_faceExtrudeHandler);
+                case InteractionMode.FaceExtrude:
+                    // MoveToolHandler の選択/矩形選択を流用。ドラッグ系ツール (EdgeBevel と同パターン)。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _faceExtrudeHandler?.UpdateHover(pos, ctx));
+                    _moveToolHandler.OnDragStartExtra = (elem, mods) =>
+                    {
+                        // Face ヒットのみ押し出し発火
+                        if (elem.Kind != PlayerHoverKind.Face) return false;
+                        _faceExtrudeHandler?.OnLeftDragBegin(
+                            new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
+                            Vector2.zero, mods);
+                        return true;
+                    };
+                    _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _faceExtrudeHandler?.OnLeftDrag(pos, delta, mods);
+                    _moveToolHandler.OnToolDragEndExtra = (pos, mods)        => _faceExtrudeHandler?.OnLeftDragEnd(pos, mods);
+                    ApplySelectionModeForInteractionMode(InteractionMode.FaceExtrude);
                     break;
-                case ToolMode.EdgeTopology:
+                case InteractionMode.FlipFace:
+                    // ビューポートでは選択のみ (面の単独選択 / Shift 追加 / 矩形選択)。
+                    // 面反転自体はサブパネル経由で実行 (本セッション対象外、別件で修正)。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.FlipFace);
+                    break;
+                case InteractionMode.LineExtrude:
+                    // ビューポートでは選択のみ (ラインの単独選択 / Shift 追加 / 矩形選択)。
+                    // 押し出し実行はサブパネル経由 (本セッション対象外、別件で修正)。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.LineExtrude);
+                    break;
+                case InteractionMode.Rotate:
+                    // 【現状】ビューポート操作は選択のみ。回転実行はサブパネルのスライダ経由。
+                    // 【将来の拡張方針】独自形状ギズモ (回転リング) を追加する場合:
+                    //   1) MoveToolHandler.OnDragStartExtra で「マウス位置がギズモ上にあるか」を判定
+                    //   2) true を返せばツール固有ドラッグセッションに遷移 (MovingVertices は抑制)
+                    //   3) OnToolDragExtra / OnToolDragEndExtra で回転量更新と確定
+                    //   AxisGizmo (MoveToolHandler 内部) の仕組みが参考になる。
+                    //   Selection.Mode は All のまま (部分選択を想定するため絞らない)。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.Rotate);
+                    break;
+                case InteractionMode.Scale:
+                    // 【現状】ビューポート操作は選択のみ。拡大縮小実行はサブパネルのスライダ経由。
+                    // 【将来の拡張方針】独自形状ギズモ (軸端ハンドル、中心均等スケール等) を
+                    // 追加する場合は Rotate と同様にフック (OnDragStartExtra) に差し込む。
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.Scale);
+                    break;
+                case InteractionMode.EdgeTopology:
                     _vertexInteractor?.SetToolHandler(_edgeTopologyHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeTopologyHandler?.UpdateHover(pos, ctx));
+                    // Split → Vertex ホバーのみ、Flip/Dissolve → Edge ホバーのみ
+                    ApplySelectionModeForEdgeTopology(
+                        _edgeTopologyHandler?.ModePublic ?? Poly_Ling.Tools.EdgeTopoMode.Flip);
                     break;
-                case ToolMode.Knife:
+                case InteractionMode.Knife:
                     _vertexInteractor?.SetToolHandler(_knifeHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _knifeHandler?.UpdateHover(pos, ctx));
                     break;
-                case ToolMode.SkinWeightPaint:
+                case InteractionMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);
                     SkinWeightPaintTool.ActivePanel = _skinWeightPaintPanel;
                     _skinWeightPaintPanel?.RefreshMeshList(ActiveProject?.CurrentModel);
@@ -3032,57 +3794,62 @@ namespace Poly_Ling.Player
                     break;
             }
 
-            HideAllRightPanels();
+            // InteractionMode ボタンのハイライト (2 系統色の片方)
+            UpdateInteractionButtonHighlight();
+        }
 
-            Button activeBtn;
-            VisualElement section;
+        /// <summary>
+        /// EdgeTopology のサブモード (Flip/Split/Dissolve) に応じてホバー有効範囲
+        /// (Selection.Mode) を切り替える。Split は頂点クリックで対角を指定、
+        /// Flip/Dissolve は辺クリックで実行するため、それぞれ不要な要素のホバーを
+        /// 抑制してユーザ体験を明確にする。
+        /// </summary>
+        /// <summary>
+        /// EdgeTopology のサブモード (Flip/Split/Dissolve) に応じてホバー有効範囲
+        /// (Selection.Mode) を切り替える。Split は頂点クリックで対角を指定、
+        /// Flip/Dissolve は辺クリックで実行するため、それぞれ不要な要素のホバーを
+        /// 抑制してユーザ体験を明確にする。
+        ///
+        /// 【設計ポイント: サブモード別のホバー絞り込みパターン】
+        /// 1 ツールの中でクリック対象が頂点/辺/面と切り替わるとき、
+        /// GPU ホバー全種類を流したままにするとユーザが混乱する。
+        /// ツール進入時と内部サブモード切替時の両方で Selection.Mode を絞り、
+        /// ツール脱出時 (SetInteractionMode の旧モード判定) で MeshSelectMode.All に
+        /// 戻すのが安全なパターン。AddFace が Vertex 絞り + 脱出時 All 復元を先例として
+        /// 既に実装しており、ここもそれを踏襲している (SetInteractionMode の脱出処理を参照)。
+        /// </summary>
+        private void ApplySelectionModeForEdgeTopology(Poly_Ling.Tools.EdgeTopoMode mode)
+        {
+            var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+            if (firstMc == null) return;
+            firstMc.Selection.Mode = (mode == Poly_Ling.Tools.EdgeTopoMode.Split)
+                ? MeshSelectMode.Vertex
+                : MeshSelectMode.Edge;
+        }
+
+        /// <summary>
+        /// カテゴリ 1 ツール進入時にホバー有効範囲 (Selection.Mode) を絞る。
+        /// MoveToolHandler は Selection.Mode を尊重する設計になっているため、
+        /// ここで絞るだけで GPU ホバーの要素種・クリック選択・矩形選択いずれも
+        /// 対象要素タイプだけに応答するようになる。
+        /// 脱出時 (SetInteractionMode の旧モード判定) で MeshSelectMode.All に
+        /// 戻すこと (既に脱出処理側で実装済)。
+        /// </summary>
+        private void ApplySelectionModeForInteractionMode(InteractionMode mode)
+        {
+            var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+            if (firstMc == null) return;
             switch (mode)
             {
-                case ToolMode.ObjectMove:
-                    activeBtn = _layoutRoot?.ToolObjectMoveBtn;
-                    section   = _layoutRoot?.BoneEditorSection;
-                    break;
-                case ToolMode.SkinWeightPaint:
-                    activeBtn = _layoutRoot?.ToolSkinWeightPaintBtn;
-                    section   = _layoutRoot?.SkinWeightPaintSection;
-                    break;
-                case ToolMode.PivotOffset:
-                    activeBtn = _layoutRoot?.ToolPivotOffsetBtn;
-                    section   = _layoutRoot?.PivotSection;
-                    break;
-                case ToolMode.Sculpt:
-                    activeBtn = _layoutRoot?.ToolSculptBtn;
-                    section   = _layoutRoot?.SculptSection;
-                    break;
-                case ToolMode.AdvancedSelect:
-                    activeBtn = _layoutRoot?.ToolAdvancedSelBtn;
-                    section   = _layoutRoot?.AdvancedSelectSection;
-                    _advancedSelectSubPanel?.Refresh();
-                    break;
-                case ToolMode.AddFace:
-                case ToolMode.EdgeBevel:
-                case ToolMode.EdgeExtrude:
-                case ToolMode.FaceExtrude:
-                case ToolMode.EdgeTopology:
-                case ToolMode.Knife:
-                    // セクション表示は Show***Panel() 側で行う。
-                    // SwitchTool ではアクティブボタン・セクションを設定しない。
-                    activeBtn = null;
-                    section   = null;
-                    break;
-                default: // VertexMove
-                    activeBtn = _layoutRoot?.ToolVertexMoveBtn;
-                    section   = _layoutRoot?.VertexMoveSection;
-                    _vertexMoveSubPanel?.Refresh();
+                case InteractionMode.EdgeBevel:    firstMc.Selection.Mode = MeshSelectMode.Edge; break;
+                case InteractionMode.EdgeExtrude:  firstMc.Selection.Mode = MeshSelectMode.Edge; break;
+                case InteractionMode.FaceExtrude:  firstMc.Selection.Mode = MeshSelectMode.Face; break;
+                case InteractionMode.FlipFace:     firstMc.Selection.Mode = MeshSelectMode.Face; break;
+                case InteractionMode.LineExtrude:  firstMc.Selection.Mode = MeshSelectMode.Line; break;
+                default:
+                    // 他のモードはこの関数の責務ではない
                     break;
             }
-
-            if (section != null)
-                section.style.display = DisplayStyle.Flex;
-            SetActiveButton(activeBtn);
-
-            if (mode == ToolMode.ObjectMove)
-                _boneEditorSubPanel?.Refresh();
         }
 
         // ================================================================
@@ -3093,40 +3860,43 @@ namespace Poly_Ling.Player
         {
             var project = ActiveProject;
             if (project == null) return;
-            if (!project.SelectModel(index)) return;
+            // 範囲外なら何もしない
+            if (index < 0 || index >= project.ModelCount) return;
+            if (project.CurrentModelIndex == index) return;
+
+            // 問題: 従来ここで project.SelectModel() + EnterSceneReset を直接行い
+            // Undo 記録を伴わない経路だった。SwitchModelCommand ハンドラに統一して
+            // Undo 記録 (RecordModelSwitch) + SetModelContext 同期を経由させる。
+            _commandDispatcher?.Dispatch(new SwitchModelCommand(index));
 
             var model = project.CurrentModel;
             if (model == null) return;
 
+            // ツールハンドラへの Project 参照更新 (SwitchModelCommand ハンドラでは扱わない分)。
             _moveToolHandler?.SetProject(project);
             _objectMoveHandler?.SetProject(project);
             _pivotOffsetHandler?.SetProject(project);
             _sculptHandler?.SetProject(project);
             _advancedSelectHandler?.SetProject(project);
             _skinWeightPaintHandler?.SetProject(project);
-            _boneInputHandler?.SetProject(project);
 
-            _viewportManager.RebuildAdapter(0, model);
-
-            var firstMc = model.FirstDrawableMeshContext;
-            if (firstMc != null)
-            {
-                _selectionOps?.SetSelectionState(firstMc.Selection);
-                _renderer?.SetSelectionState(firstMc.Selection);
-            }
-            _renderer?.UpdateSelectedDrawableMesh(0, model);
-            _viewportManager.NotifyCameraChanged(_viewportManager.PerspectiveViewport);
-
-            RebuildModelList();
             _skinWeightPaintPanel?.RefreshMeshList(model);
             _skinWeightPaintPanel?.RefreshBoneList(model);
-            NotifyPanels(ChangeKind.ModelSwitch);
         }
 
         // ================================================================
         // SyncUI / RebuildModelList
         // ================================================================
 
+        /// <summary>
+        /// ★★★ 【重大規約違反コード】 ★★★
+        /// 旧 Tick から毎フレーム呼ばれる UI 同期処理。
+        /// 各値（Status, 接続状態, Undo/Redo 可否等）はイベント駆動で更新すべき。
+        /// Phase 5: モデル変更・選択変更・接続状態変更・Undo スタック変更等の
+        /// 各イベント購読に分解して置き換える予定。
+        /// 新規コードからこの関数を呼ぶことは厳禁。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
         private void SyncUI()
         {
             if (_layoutRoot == null) return;
@@ -3230,6 +4000,25 @@ namespace Poly_Ling.Player
             dst.InvalidatePositionCache();
         }
 
+        /// <summary>
+        /// 現在アクティブなツールに応じたホバー対象種別を返す。
+        /// Phase 2b-1 暫定実装: ホバーを完全に抑制すべきツール（SkinWeightPaint / Sculpt 等）では
+        /// None を、それ以外では Vertex を返す（Vertex は「ホバー有効」の仮値。現状の入口側は
+        /// None 判定のみで分岐するため、既存の GPU ホバー優先度 (頂点>辺>面) がそのまま動作する）。
+        /// Phase 2b 以降で Edge / Face / Bone / Gizmo の厳密な kind 分岐を実装する。
+        /// </summary>
+        private HoverTargetKind GetCurrentHoverTargetKind()
+        {
+            switch (_interactionMode)
+            {
+                case InteractionMode.SkinWeightPaint:
+                case InteractionMode.Sculpt:
+                    return HoverTargetKind.None;
+                default:
+                    return HoverTargetKind.Vertex;
+            }
+        }
+
         private void NotifyPanels(ChangeKind kind)
         {
             var project = ActiveProject;
@@ -3237,7 +4026,7 @@ namespace Poly_Ling.Player
             var view = new PlayerProjectView(project);
             _panelContext.Notify(view, kind);
 
-            if (_toolMode == ToolMode.ObjectMove)
+            if (_interactionMode == InteractionMode.ObjectMove)
                 _boneEditorSubPanel?.Refresh();
 
             if (kind == ChangeKind.Selection || kind == ChangeKind.ModelSwitch)
@@ -3249,6 +4038,12 @@ namespace Poly_Ling.Player
             if (_layoutRoot?.ModelBlendSection != null &&
                 _layoutRoot.ModelBlendSection.style.display == DisplayStyle.Flex)
                 _modelBlendSubPanel?.OnViewChanged(view, kind);
+
+            // Phase 1 event 配線: 選択・トポロジ・モデル切替・属性変更などに
+            // 追随して描画準備を再実行する（OnRenderObject 経路の Submit 用データを更新）。
+            // Phase 2a-2f: 自己定義 PresentAll() を正規入口 EnterTopologyChanged に置換。
+            // kind によらず包括的にバッファ再構築 + 描画キュー準備 + overlay refresh を行う。
+            _viewportManager.EnterTopologyChanged(ActiveProject);
 
             OnChanged?.Invoke(kind);
         }
@@ -3274,7 +4069,13 @@ namespace Poly_Ling.Player
         private void OnProjectHeaderReceived(ProjectContext project)
         {
             if (_fetchFlow != null) _fetchFlow.ModelCount = project.ModelCount;
+            // Phase 2a-2g-3: ヘッダ受信時の即時シーンクリア。軽量操作として据え置き。
+            // EnterSceneReset で置換すると RebuildAdapter + PresentAll まで走って過剰。
+            // フェッチ完了時に PlayerRemoteFetchFlow.FetchAllModelsBatch 末尾で
+            // EnterSceneReset(clearScene: true) が呼ばれる (設計 Z)。
+            #pragma warning disable CS0618
             _viewportManager.ClearScene();
+            #pragma warning restore CS0618
             RebuildModelList();
         }
 
@@ -3285,14 +4086,17 @@ namespace Poly_Ling.Player
         {
             if (_receiver?.Project == null) return;
             if (mi == 0 && si == 0 && mc.UnityMesh != null)
-                _viewportManager.ResetToMesh(mc.UnityMesh.bounds);
+                // Phase 2a-2d: ResetToMesh → EnterCameraChanged(Reset) に集約。
+                _viewportManager.EnterCameraChanged(
+                    _viewportManager.PerspectiveViewport,
+                    CameraChangePhase.Reset,
+                    mc.UnityMesh.bounds);
             _moveToolHandler?.SetProject(ActiveProject);
             _objectMoveHandler?.SetProject(ActiveProject);
             _pivotOffsetHandler?.SetProject(ActiveProject);
             _sculptHandler?.SetProject(ActiveProject);
             _advancedSelectHandler?.SetProject(ActiveProject);
             _skinWeightPaintHandler?.SetProject(ActiveProject);
-            _boneInputHandler?.SetProject(ActiveProject);
             _alignVerticesHandler?.SetProject(ActiveProject);
             _planarizeAlongBonesHandler?.SetProject(ActiveProject);
                 _mergeVerticesHandler?.SetProject(ActiveProject);
@@ -3308,6 +4112,109 @@ namespace Poly_Ling.Player
                 _knifeHandler?.SetProject(ActiveProject);
                 _lineExtrudeHandler?.SetProject(ActiveProject);
             RebuildModelList();
+            NotifyPanels(ChangeKind.ListStructure);
+        }
+
+        // ================================================================
+        // UV編集モード（A方式：UVZ平面に展開→既存マグネット/彫刻で編集→書き戻し）
+        // ================================================================
+
+        private void EnterUvEditMode()
+        {
+            if (_uvEditModeActive) return;
+            var model = ActiveProject?.CurrentModel;
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0) return;
+
+            int srcMaster = model.SelectedDrawableMeshIndices[0];
+            var srcMc     = model.GetMeshContext(srcMaster);
+            if (srcMc?.MeshObject == null || srcMc.MeshObject.VertexCount == 0) return;
+
+            int modelIdx = ActiveProject?.CurrentModelIndex ?? 0;
+            var toolCtx  = _viewportManager.GetCurrentToolContext(_activeViewport);
+            Vector3 camPos = toolCtx?.CameraPosition ?? Vector3.zero;
+            Vector3 camFwd = toolCtx != null
+                ? (toolCtx.CameraTarget - toolCtx.CameraPosition).normalized
+                : Vector3.forward;
+
+            // UVZメッシュ生成（depthScale=0＝完全平面）。model.Add は末尾追加。
+            int beforeCount = model.MeshContextCount;
+            _commandDispatcher?.Dispatch(new UvToXyzCommand(
+                modelIdx, srcMaster, _uvEditUvScale, 0f, camPos, camFwd));
+            if (model.MeshContextCount <= beforeCount) return; // 生成失敗
+            int uvzMaster = model.MeshContextCount - 1;
+
+            _uvEditModeActive = true;
+            _uvEditSrcMaster  = srcMaster;
+            _uvEditUvzMaster  = uvzMaster;
+
+            // UVZを単独選択（ツールの編集対象にする）
+            model.SelectMeshContextExclusive(uvzMaster);
+
+            // Front 正射影ビューへ切替＋フィット
+            _uvEditPrevPanel    = _activePanel;
+            _uvEditPrevViewport = _activeViewport;
+            var frontPanel = _layoutRoot?.FrontPanel;
+            var frontVp    = _viewportManager.FrontViewport;
+            if (frontPanel != null && frontVp != null)
+            {
+                if (_activePanel != null) _vertexInteractor?.Disconnect(_activePanel);
+                _activePanel    = frontPanel;
+                _activeViewport = frontVp;
+                _vertexInteractor?.Connect(_activePanel);
+
+                var uvzMc = model.GetMeshContext(uvzMaster);
+                if (uvzMc?.MeshObject != null)
+                    frontVp.ResetToMesh(uvzMc.MeshObject.CalculateBounds());
+                _viewportManager.EnterCameraChanged(frontVp, CameraChangePhase.Committed);
+            }
+
+            _viewportManager.EnterTopologyChanged(ActiveProject);
+            NotifyPanels(ChangeKind.ListStructure);
+        }
+
+        private void ExitUvEditMode()
+        {
+            if (!_uvEditModeActive) return;
+            var model    = ActiveProject?.CurrentModel;
+            int modelIdx = ActiveProject?.CurrentModelIndex ?? 0;
+
+            int uvzMaster = _uvEditUvzMaster;
+            int srcMaster = _uvEditSrcMaster;
+
+            // 状態を先にクリア（通知での再入防止）
+            _uvEditModeActive = false;
+            _uvEditUvzMaster  = -1;
+            _uvEditSrcMaster  = -1;
+
+            if (model != null && uvzMaster >= 0 && srcMaster >= 0
+                && uvzMaster < model.MeshContextCount && srcMaster < model.MeshContextCount)
+            {
+                // XY→UV 書き戻し（ソース側Undo記録）。src=UVZ, target=元メッシュ。
+                _commandDispatcher?.Dispatch(new XyzToUvCommand(
+                    modelIdx, uvzMaster, srcMaster, _uvEditUvScale));
+
+                // UVZメッシュ破棄（末尾indexなので他indexはずれない）
+                _commandDispatcher?.Dispatch(new DeleteMeshesCommand(
+                    modelIdx, new[] { uvzMaster }));
+
+                // 元メッシュを選択へ復元
+                if (srcMaster < model.MeshContextCount)
+                    model.SelectMeshContextExclusive(srcMaster);
+            }
+
+            // ビュー復元
+            var prevPanel = _uvEditPrevPanel;
+            var prevVp    = _uvEditPrevViewport;
+            _uvEditPrevPanel = null; _uvEditPrevViewport = null;
+            if (prevPanel != null && prevVp != null)
+            {
+                if (_activePanel != null) _vertexInteractor?.Disconnect(_activePanel);
+                _activePanel    = prevPanel;
+                _activeViewport = prevVp;
+                _vertexInteractor?.Connect(_activePanel);
+            }
+
+            _viewportManager.EnterTopologyChanged(ActiveProject);
             NotifyPanels(ChangeKind.ListStructure);
         }
 

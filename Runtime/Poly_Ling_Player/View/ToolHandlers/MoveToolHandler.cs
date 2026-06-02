@@ -2,6 +2,32 @@
 // 移動モードの IPlayerToolHandler 実装。
 // Editor MoveTool と同等の状態機・IVertexTransform・AxisGizmo を使用する。
 // Runtime/Poly_Ling_Player/View/ に配置
+//
+// ================================================================
+// 【他ツールでの流用について】
+//
+// 本ハンドラは VertexMove モード専用ではなく、カテゴリ 1 の編集ツール
+// (EdgeBevel / FlipFace / FaceExtrude / LineExtrude 等) の「選択・矩形選択・
+// Shift/Ctrl 修飾による選択追加・Ctrl 抑止ロジック」の共通基盤としても使う。
+//
+// 各ツールハンドラは内部に MoveToolHandler を 1 つ参照し、以下の 2 種類のフック
+// を差し込むことでツール固有の動作を乗せる:
+//
+//   1) OnLeftClickExtra:
+//        クリック (ドラッグ閾値を超えずに離した瞬間) でツール動作を発火させたい
+//        ツール用 (例: FlipFace は対象面クリックで即反転)。
+//        OnLeftClick の選択処理が終わった末尾で呼ばれる。
+//
+//   2) OnDragStartExtra:
+//        ドラッグ開始時 (PendingAction → 移動開始の直前) で「移動」の代わりに
+//        ツール動作を発火させたいツール用 (例: EdgeBevel は辺ドラッグで幅調整)。
+//        戻り値 true で通常の移動処理 (BeginMove + MovingVertices 遷移) を抑制する。
+//
+// Selection.Mode を各ツール進入時に絞る (EdgeBevel → Edge、FlipFace → Face 等)
+// ことで、MoveToolHandler 内部の GetHoverElement / 矩形選択 / 単独クリック選択は
+// 自動的にその要素タイプだけに応答する。要素タイプ切替は MoveToolHandler の
+// 既存ロジック (mode.Has(...) 判定) がそのまま活きる。
+// ================================================================
 
 using System;
 using System.Collections.Generic;
@@ -20,7 +46,7 @@ namespace Poly_Ling.Player
         // ================================================================
         // 状態機（Editor MoveTool と同等）
         // ================================================================
-        private enum MoveState { Idle, PendingAction, MovingVertices, AxisDragging, CenterDragging }
+        private enum MoveState { Idle, PendingAction, MovingVertices, AxisDragging, CenterDragging, ToolDragging }
         private MoveState _state = MoveState.Idle;
 
         // ================================================================
@@ -39,6 +65,47 @@ namespace Poly_Ling.Player
         public Action OnExitBoxSelecting;
         public Action OnRequestNormal;
         public Action OnClearMouseHover;
+
+        // ================================================================
+        // ツール流用フック (EdgeBevel / FlipFace / FaceExtrude / LineExtrude 等)
+        // 未設定 (null) なら MoveToolHandler は純粋な移動モードとして動作。
+        // 各ツール進入時に設定、脱出時に null に戻すこと。
+        // ================================================================
+        /// <summary>
+        /// クリック (ドラッグ閾値を超えずに離した) 完了時に呼ばれる追加フック。
+        /// 引数: (クリック時のヒット要素, 修飾キー)。
+        /// 用途例: FlipFace が対象面の単独クリックで即座に反転を実行するなど。
+        /// 選択処理 (ApplyElementClick) は既に終わっているので、
+        /// このフックはツール固有の追加動作だけを書く。
+        /// </summary>
+        public Action<PlayerHoverElement, ModifierKeys> OnLeftClickExtra;
+
+        /// <summary>
+        /// ドラッグ開始確定時 (閾値超え、未選択要素の選択処理も完了) に呼ばれる追加フック。
+        /// 引数: (ドラッグ開始時のヒット要素, 修飾キー)。
+        /// 戻り値: true を返すと通常の移動処理 (BeginMove + MovingVertices 遷移) を
+        ///         抑制し、_state を ToolDragging に遷移させ、以降の OnLeftDrag /
+        ///         OnLeftDragEnd は OnToolDragExtra / OnToolDragEndExtra に委譲する。
+        ///         false なら通常の移動動作が発火する。
+        /// 用途例: EdgeBevel は辺上ドラッグ開始でベベルセッションを開始し true を返す。
+        /// </summary>
+        public Func<PlayerHoverElement, ModifierKeys, bool> OnDragStartExtra;
+
+        /// <summary>
+        /// OnDragStartExtra が true を返した後のドラッグ継続時に呼ばれる。
+        /// 引数: (現在スクリーン座標, 前フレームからの差分, 修飾キー)。
+        /// 用途例: EdgeBevel の幅更新、FaceExtrude の押し出し距離更新。
+        /// </summary>
+        public Action<Vector2, Vector2, ModifierKeys> OnToolDragExtra;
+
+        /// <summary>
+        /// OnDragStartExtra が true を返した後のドラッグ終了時に呼ばれる。
+        /// 引数: (終了時スクリーン座標, 修飾キー)。
+        /// 用途例: EdgeBevel のベベル確定 + Undo 記録。
+        /// </summary>
+        public Action<Vector2, ModifierKeys> OnToolDragEndExtra;
+
+
         public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
         public Func<Vector2[]>  GetScreenPositions;
         public Func<int, int>   GetVertexOffset;
@@ -172,8 +239,12 @@ namespace Poly_Ling.Player
                     ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge |
                         MeshSelectMode.Face   | MeshSelectMode.Line);
 
+            var clickedElem = GetHoverElement != null
+                ? GetHoverElement(mode)
+                : PlayerHoverElement.None;
+
             if (GetHoverElement != null)
-                _selectionOps.ApplyElementClick(GetHoverElement(mode), mods);
+                _selectionOps.ApplyElementClick(clickedElem, mods);
             else
                 _selectionOps.ApplyClick(hit, mods);
 
@@ -181,6 +252,9 @@ namespace Poly_Ling.Player
 
             OnRequestNormal?.Invoke();
             RecordSelectionChange(before, CaptureSelectionSnapshot());
+
+            // ツール流用フック: クリック系ツール (FlipFace 等) がここで発火
+            OnLeftClickExtra?.Invoke(clickedElem, mods);
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
@@ -307,6 +381,28 @@ namespace Poly_Ling.Player
                         // Ctrl + 未選択 → 移動キャンセル
                         if (_ctrlHeld && !HasAnyAffected()) { _state = MoveState.Idle; return; }
 
+                        // ツール流用フック: ドラッグ系ツール (EdgeBevel / FaceExtrude 等) が
+                        // ここで発火し、true を返したら通常の移動処理を抑制する。
+                        // ツール側で独自のドラッグセッションを開始するため、
+                        // 以降の OnLeftDrag / OnLeftDragEnd はツールハンドラ側で処理される想定。
+                        bool suppressMove = false;
+                        if (OnDragStartExtra != null)
+                        {
+                            var modsForHook = new ModifierKeys
+                            {
+                                Shift = _shiftHeld,
+                                Ctrl  = _ctrlHeld,
+                            };
+                            suppressMove = OnDragStartExtra(_elemOnMouseDown, modsForHook);
+                        }
+                        if (suppressMove)
+                        {
+                            // ツール固有ドラッグセッション開始。以降の OnLeftDrag /
+                            // OnLeftDragEnd は OnToolDragExtra / OnToolDragEndExtra に委譲。
+                            _state = MoveState.ToolDragging;
+                            return;
+                        }
+
                         BeginMove();
                         _state = MoveState.MovingVertices;
                         OnRepaint?.Invoke();
@@ -331,6 +427,12 @@ namespace Poly_Ling.Player
                             ApplyDelta(wd);
                         }
                     }
+                    break;
+
+                case MoveState.ToolDragging:
+                    // ツール流用フック: EdgeBevel / FaceExtrude 等がドラッグ中の
+                    // 幅調整・押し出し量更新をここで受け取る
+                    OnToolDragExtra?.Invoke(screenPos, delta, mods);
                     break;
             }
         }
@@ -376,6 +478,12 @@ namespace Poly_Ling.Player
             {
                 EndMove();
                 OnExitTransformDragging?.Invoke();
+            }
+
+            // ツール流用フック: ツール固有ドラッグの終了 (Bevel 確定、Extrude 確定等)
+            if (_state == MoveState.ToolDragging)
+            {
+                OnToolDragEndExtra?.Invoke(screenPos, mods);
             }
 
             _state        = MoveState.Idle;
@@ -458,7 +566,17 @@ namespace Poly_Ling.Player
                 _undoController.MeshUndoContext.ParentModelContext = model;
             var record = new SelectionChangeRecord(before, after);
             _undoController.FocusVertexEdit();
+            UnityEngine.Debug.Log(
+                $"[UndoDbg] Push SelectionChangeRecord (model={model?.Name ?? "<null>"}, " +
+                $"beforeV={before.Vertices?.Count ?? 0}, afterV={after.Vertices?.Count ?? 0}, " +
+                $"beforeE={before.Edges?.Count ?? 0}, afterE={after.Edges?.Count ?? 0}, " +
+                $"mode={after.Mode})");
             _undoController.VertexEditStack.Record(record, "選択変更");
+            UnityEngine.Debug.Log(
+                $"[UndoDbg]   after Record: VertexEdit.Undo={_undoController.VertexEditStack.UndoCount}, " +
+                $"VertexEdit.Pending={_undoController.VertexEditStack.PendingCount}, " +
+                $"MeshList.Undo={_undoController.MeshListStack.UndoCount}, " +
+                $"MeshList.Pending={_undoController.MeshListStack.PendingCount}");
         }
 
         private void UpdateAffectedVertices()
@@ -586,7 +704,17 @@ namespace Poly_Ling.Player
                         _undoController.MeshUndoContext.ParentModelContext = model;
                         var record = new MultiMeshVertexMoveRecord(entries.ToArray());
                         _undoController.FocusVertexEdit();
+                        int totalVerts = 0;
+                        foreach (var e in entries) totalVerts += e.Indices?.Length ?? 0;
+                        UnityEngine.Debug.Log(
+                            $"[UndoDbg] Push MultiMeshVertexMoveRecord (model={model.Name}, " +
+                            $"entries={entries.Count}, totalVerts={totalVerts})");
                         _undoController.VertexEditStack.Record(record, "Move Vertices");
+                        UnityEngine.Debug.Log(
+                            $"[UndoDbg]   after Record: VertexEdit.Undo={_undoController.VertexEditStack.UndoCount}, " +
+                            $"VertexEdit.Pending={_undoController.VertexEditStack.PendingCount}, " +
+                            $"MeshList.Undo={_undoController.MeshListStack.UndoCount}, " +
+                            $"MeshList.Pending={_undoController.MeshListStack.PendingCount}");
                     }
                 }
             }
@@ -713,6 +841,10 @@ namespace Poly_Ling.Player
             }
 
             // 辺選択
+            // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
+            // 表面の面に属さない頂点から成る辺は除外する。
+            // 厳密には「両端が可視でも辺自体は裏を通る」ケースも稀に拾うが、
+            // GPU 側でも辺単位の可視判定は無く頂点ベースなので同じ挙動で OK。
             if (mode.Has(MeshSelectMode.Edge))
             {
                 for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -723,6 +855,9 @@ namespace Poly_Ling.Player
                     {
                         int v1 = face.VertexIndices[ei];
                         int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                        if (IsVertexVisible != null
+                            && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
+                            continue;
                         if (rect.Contains(vertexScreen(v1), true) &&
                             rect.Contains(vertexScreen(v2), true))
                         {
@@ -733,6 +868,7 @@ namespace Poly_Ling.Player
             }
 
             // 面選択
+            // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
             if (mode.Has(MeshSelectMode.Face))
             {
                 for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -742,6 +878,7 @@ namespace Poly_Ling.Player
                     bool allIn = true;
                     foreach (int vi in face.VertexIndices)
                     {
+                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
                         if (!rect.Contains(vertexScreen(vi), true)) { allIn = false; break; }
                     }
                     if (allIn) mc.Selection.SelectFace(fi, true);
@@ -749,14 +886,20 @@ namespace Poly_Ling.Player
             }
 
             // 線分選択
+            // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
             if (mode.Has(MeshSelectMode.Line))
             {
                 for (int fi = 0; fi < mo.FaceCount; fi++)
                 {
                     var face = mo.Faces[fi];
                     if (face.VertexCount != 2) continue;
-                    if (rect.Contains(vertexScreen(face.VertexIndices[0]), true) &&
-                        rect.Contains(vertexScreen(face.VertexIndices[1]), true))
+                    int v1 = face.VertexIndices[0];
+                    int v2 = face.VertexIndices[1];
+                    if (IsVertexVisible != null
+                        && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
+                        continue;
+                    if (rect.Contains(vertexScreen(v1), true) &&
+                        rect.Contains(vertexScreen(v2), true))
                     {
                         mc.Selection.SelectLine(fi, true);
                     }
@@ -825,6 +968,8 @@ namespace Poly_Ling.Player
             }
 
             // 辺選択
+            // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
+            // 表面の面に属さない頂点から成る辺は除外する。矩形選択と同じ扱い。
             if (mode.Has(MeshSelectMode.Edge))
             {
                 for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -835,6 +980,9 @@ namespace Poly_Ling.Player
                     {
                         int v1 = face.VertexIndices[ei];
                         int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                        if (IsVertexVisible != null
+                            && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
+                            continue;
                         if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
                             IsPointInLasso(vertexScreen(v2), lassoGPU))
                         {
@@ -845,6 +993,7 @@ namespace Poly_Ling.Player
             }
 
             // 面選択
+            // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
             if (mode.Has(MeshSelectMode.Face))
             {
                 for (int fi = 0; fi < mo.FaceCount; fi++)
@@ -854,6 +1003,7 @@ namespace Poly_Ling.Player
                     bool allIn = true;
                     foreach (int vi in face.VertexIndices)
                     {
+                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
                         if (!IsPointInLasso(vertexScreen(vi), lassoGPU)) { allIn = false; break; }
                     }
                     if (allIn) mc.Selection.SelectFace(fi, true);
@@ -861,14 +1011,20 @@ namespace Poly_Ling.Player
             }
 
             // 線分選択
+            // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
             if (mode.Has(MeshSelectMode.Line))
             {
                 for (int fi = 0; fi < mo.FaceCount; fi++)
                 {
                     var face = mo.Faces[fi];
                     if (face.VertexCount != 2) continue;
-                    if (IsPointInLasso(vertexScreen(face.VertexIndices[0]), lassoGPU) &&
-                        IsPointInLasso(vertexScreen(face.VertexIndices[1]), lassoGPU))
+                    int v1 = face.VertexIndices[0];
+                    int v2 = face.VertexIndices[1];
+                    if (IsVertexVisible != null
+                        && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
+                        continue;
+                    if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
+                        IsPointInLasso(vertexScreen(v2), lassoGPU))
                     {
                         mc.Selection.SelectLine(fi, true);
                     }

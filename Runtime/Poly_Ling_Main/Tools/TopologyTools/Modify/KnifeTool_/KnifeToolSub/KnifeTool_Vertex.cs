@@ -99,16 +99,16 @@ namespace Poly_Ling.Tools
 
         private void DrawVertexDragGizmo(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
 
             if (_isDragging && _firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                UnityEditor_Handles.color = Color.yellow;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
 
-                UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
-                UnityEditor_Handles.DrawAAPolyLine(2f, new Vector3(sp.x, sp.y, 0), new Vector3(_currentScreenPos.x, _currentScreenPos.y, 0));
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
 
                 var candidates = FindNonAdjacentEdgesForVertex(ctx, _firstVertexWorldPos.Value);
                 foreach (var (faceIdx, edgeLocalIdx, edgePos) in candidates)
@@ -116,17 +116,17 @@ namespace Poly_Ling.Tools
                     bool isTarget = _targetEdgeWorldPos.HasValue && IsSameEdgePosition(edgePos, _targetEdgeWorldPos.Value);
                     if (isTarget)
                     {
-                        UnityEditor_Handles.color = Color.cyan;
+                        // UnityEditor_Handles 削除済み
                         DrawEdgeByWorldPos(ctx, edgePos);
                         float cutRatio = GetVertexCutRatio(ctx, _currentScreenPos, edgePos);
                         var midPoint = Vector3.Lerp(edgePos.Item1, edgePos.Item2, cutRatio);
                         var midSp = ctx.WorldToScreenPos(midPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                        UnityEditor_Handles.color = Color.green;
-                        UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(sp.x, sp.y, 0), new Vector3(midSp.x, midSp.y, 0));
+                        // UnityEditor_Handles 削除済み
+                        // UnityEditor_Handles 削除済み
                     }
                     else
                     {
-                        UnityEditor_Handles.color = new Color(0f, 1f, 0f, 0.3f);
+                        // UnityEditor_Handles 削除済み
                         DrawEdgeByWorldPos(ctx, edgePos);
                     }
                 }
@@ -134,8 +134,8 @@ namespace Poly_Ling.Tools
             else if (ChainMode && !AutoChain && _firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                UnityEditor_Handles.color = Color.yellow;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
             }
             else
             {
@@ -143,12 +143,12 @@ namespace Poly_Ling.Tools
                 if (hoveredVertex.HasValue)
                 {
                     var sp = ctx.WorldToScreenPos(hoveredVertex.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                    UnityEditor_Handles.color = Color.white;
-                    UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 6f);
+                    // UnityEditor_Handles 削除済み
+                    // UnityEditor_Handles 削除済み
                 }
             }
 
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         // ================================================================
@@ -229,13 +229,13 @@ namespace Poly_Ling.Tools
 
         private void DrawVertexEdgeSelectGizmo(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
 
             if (_firstVertexWorldPos.HasValue)
             {
                 var sp = ctx.WorldToScreenPos(_firstVertexWorldPos.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                UnityEditor_Handles.color = Color.yellow;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 7f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
 
                 var candidates = FindNonAdjacentEdgesForVertex(ctx, _firstVertexWorldPos.Value);
                 foreach (var (faceIdx, edgeLocalIdx, edgePos) in candidates)
@@ -243,17 +243,17 @@ namespace Poly_Ling.Tools
                     bool isHovered = _targetEdgeWorldPos.HasValue && IsSameEdgePosition(edgePos, _targetEdgeWorldPos.Value);
                     if (isHovered)
                     {
-                        UnityEditor_Handles.color = Color.cyan;
+                        // UnityEditor_Handles 削除済み
                         DrawEdgeByWorldPos(ctx, edgePos);
                         float cutRatio = GetVertexCutRatio(ctx, ctx.CurrentMousePosition, edgePos);
                         var midPoint = Vector3.Lerp(edgePos.Item1, edgePos.Item2, cutRatio);
                         var midSp = ctx.WorldToScreenPos(midPoint, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                        UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
-                        UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(sp.x, sp.y, 0), new Vector3(midSp.x, midSp.y, 0));
+                        // UnityEditor_Handles 削除済み
+                        // UnityEditor_Handles 削除済み
                     }
                     else
                     {
-                        UnityEditor_Handles.color = new Color(0f, 1f, 0f, 0.4f);
+                        // UnityEditor_Handles 削除済み
                         DrawEdgeByWorldPos(ctx, edgePos);
                     }
                 }
@@ -264,12 +264,12 @@ namespace Poly_Ling.Tools
                 if (hoveredVertex.HasValue)
                 {
                     var sp = ctx.WorldToScreenPos(hoveredVertex.Value, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                    UnityEditor_Handles.color = Color.white;
-                    UnityEditor_Handles.DrawSolidDisc(new Vector3(sp.x, sp.y, 0), Vector3.forward, 6f);
+                    // UnityEditor_Handles 削除済み
+                    // UnityEditor_Handles 削除済み
                 }
             }
 
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         // ================================================================

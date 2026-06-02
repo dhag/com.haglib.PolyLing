@@ -296,26 +296,96 @@ namespace Poly_Ling.UndoSystem
         /// <summary>
         /// 全子ノードの保留キューを処理
         /// メインスレッドで定期的に呼び出す
+        ///
+        /// 重要: 全子ノード横断で、Record 時に発行された Sequence の**昇順**で処理する。
+        /// これにより _undoLog の順序がユーザ操作の実時系列に一致する。
+        /// 子リスト順で処理する旧実装では、異スタックへの Record が交互に発生した際に
+        /// _undoLog の末尾 (OperationLog の Undo 対象) が実際の最新操作と一致しなかった。
         /// </summary>
         /// <returns>処理した合計レコード数</returns>
         public int ProcessPendingQueue()
         {
             int totalProcessed = 0;
-            
-            foreach (var child in _children)
+
+            // 全子 queueable を列挙して、先頭 pending の Sequence 最小のものを 1 件ずつ処理。
+            // 子ノードが UndoGroup の場合はそちらの ProcessPendingQueue が再帰的に子を見る。
+            while (true)
             {
-                if (child is IQueueableUndoNode queueable)
+                IQueueableUndoNode minNode = null;
+                long minSeq = long.MaxValue;
+
+                foreach (var child in _children)
                 {
-                    totalProcessed += queueable.ProcessPendingQueue();
+                    if (child is IQueueableUndoNode queueable && queueable.HasPendingRecords)
+                    {
+                        long seq = queueable.PeekNextPendingSequence();
+                        if (seq < minSeq)
+                        {
+                            minSeq = seq;
+                            minNode = queueable;
+                        }
+                    }
+                }
+
+                if (minNode == null) break;
+
+                // 子ノードが UndoStack ならば指定 Sequence を 1 件処理。
+                // 子ノードが UndoGroup ならば PeekNextPendingSequence/ProcessNextPendingIfMatches を
+                // 再帰委譲する (UndoGroup 実装参照)。
+                if (minNode.ProcessNextPendingIfMatches(minSeq))
+                {
+                    totalProcessed++;
+                }
+                else
+                {
+                    // 想定外 (他スレッドが取り出したか空になった)。fallback として子の
+                    // ProcessPendingQueue を呼んで残りを処理する。
+                    totalProcessed += minNode.ProcessPendingQueue();
                 }
             }
-            
+
             if (totalProcessed > 0)
             {
                 OnQueueProcessed?.Invoke(totalProcessed);
             }
-            
+
             return totalProcessed;
+        }
+
+        /// <summary>
+        /// 自身 (UndoGroup) の先頭 pending Sequence を覗く。全子の最小値を返す。
+        /// </summary>
+        public long PeekNextPendingSequence()
+        {
+            long minSeq = long.MaxValue;
+            foreach (var child in _children)
+            {
+                if (child is IQueueableUndoNode queueable && queueable.HasPendingRecords)
+                {
+                    long seq = queueable.PeekNextPendingSequence();
+                    if (seq < minSeq) minSeq = seq;
+                }
+            }
+            return minSeq;
+        }
+
+        /// <summary>
+        /// 指定 Sequence を持つ子の pending を 1 件処理する。
+        /// </summary>
+        public bool ProcessNextPendingIfMatches(long sequence)
+        {
+            foreach (var child in _children)
+            {
+                if (child is IQueueableUndoNode queueable && queueable.HasPendingRecords)
+                {
+                    long seq = queueable.PeekNextPendingSequence();
+                    if (seq == sequence)
+                    {
+                        return queueable.ProcessNextPendingIfMatches(sequence);
+                    }
+                }
+            }
+            return false;
         }
 
         // === Undo/Redo実行 ===

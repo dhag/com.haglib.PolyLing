@@ -218,27 +218,8 @@ namespace Poly_Ling.Tools
             return false;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null) return;
-
-            switch (Mode)
-            {
-                case KnifeMode.Cut:
-                    if (EdgeSelect) DrawEdgeSelectGizmo(ctx);
-                    else DrawDragCutGizmo(ctx);
-                    break;
-
-                case KnifeMode.Vertex:
-                    if (EdgeSelect) DrawVertexEdgeSelectGizmo(ctx);
-                    else DrawVertexDragGizmo(ctx);
-                    break;
-
-                case KnifeMode.Erase:
-                    DrawEraseGizmo(ctx);
-                    break;
-            }
-        }
+        /// <summary>IMGUI 削除済み。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         private string GetHelpText()
         {

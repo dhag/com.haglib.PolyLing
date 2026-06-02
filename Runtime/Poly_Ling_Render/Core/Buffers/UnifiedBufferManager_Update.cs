@@ -1099,6 +1099,30 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// 指定スロットの GPU 頂点カリングバッファ (_VertexCulledBuffer) を
+        /// CPU キャッシュ配列 (_vertexCulledCache) に読み戻す。
+        ///
+        /// 矩形選択・投げ縄選択の CPU ループで「表面の面に属さない頂点」を除外する
+        /// ために使用。_vertexFlags は CPU 側の編集対象のためカリング情報を混ぜられない
+        /// (CPU→GPU の SetData で消失する) ので、独立したキャッシュを持つ。
+        ///
+        /// 呼び出しタイミング: 矩形/投げ縄選択の確定直前 (OnLeftDragEnd 内)。
+        /// GPU 計算 (DispatchFaceVisibilityGPU) は別経路で毎フレーム走っているので、
+        /// ReadBack するだけで最新の結果が得られる。
+        /// </summary>
+        public void ReadBackVertexCulled(int slot = 0)
+        {
+            if (_totalVertexCount <= 0) return;
+            var vCulledBuf = GetVertexCulledBuffer(slot);
+            if (vCulledBuf == null) return;
+
+            if (_vertexCulledCache == null || _vertexCulledCache.Length < _totalVertexCount)
+                _vertexCulledCache = new uint[_totalVertexCount];
+
+            vCulledBuf.GetData(_vertexCulledCache, 0, 0, _totalVertexCount);
+        }
+
+        /// <summary>
         /// デバッグ: 頂点・線分・面のカリング状態をカウント
         /// </summary>
         public void DebugPrintCullingStats(string label = "")

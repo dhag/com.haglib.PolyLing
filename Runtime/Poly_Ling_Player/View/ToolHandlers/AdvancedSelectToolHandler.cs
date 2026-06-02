@@ -191,7 +191,11 @@ namespace Poly_Ling.Player
             if (model == null) return;
             _undoController.MeshUndoContext.ParentModelContext = model;
             var record = new SelectionChangeRecord(oldSnap, newSnap);
-            _undoController.VertexEditStack.Record(record, "詳細選択");
+            {
+                string __dbgDesc = "詳細選択";
+                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                _undoController.VertexEditStack.Record(record, __dbgDesc);
+            }
             _undoController.FocusVertexEdit();
         }
 

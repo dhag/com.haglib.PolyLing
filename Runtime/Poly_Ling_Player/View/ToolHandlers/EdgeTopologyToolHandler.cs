@@ -4,6 +4,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Selection;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
@@ -28,6 +29,8 @@ namespace Poly_Ling.Player
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
         public Action            NotifyTopologyChanged;
+        /// <summary>GPU ホバー結果取得。FindEdgeAtPosition 等 CPU 側探索の代替。</summary>
+        public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
         // ================================================================
         // 設定公開API
@@ -70,14 +73,47 @@ namespace Poly_Ling.Player
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
-            if (ctx == null) return;
-            var model = _project?.CurrentModel;
-            ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
-            ctx.Repaint          = OnRepaint;
-            // DrawGizmo は IMGUI を使用するため UIToolkit 環境では呼ばない。
+            _lastHoverScreenPos = screenPos; // UIToolkit Y（Y=0 上）
+            // ToToolContext 由来の ctx には Model が設定されていないため、
+            // ctx.FirstSelectedMeshObject は null を返す。MeshObject は _project から直接取得する。
+            var mo = _project?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            if (_tool.ModePublic == EdgeTopoMode.Split)
+            {
+                // Split モード: GPU 頂点ホバー
+                var v = GetHoverElement?.Invoke(MeshSelectMode.Vertex) ?? PlayerHoverElement.None;
+                int hv = (v.Kind == PlayerHoverKind.Vertex ? v.VertexIndex : -1);
+                _tool.SetSplitHoverVertex(hv);
+                _tool.SetHoverEdge(-1, -1, null);
+            }
+            else
+            {
+                // Flip / Dissolve: GPU 辺ホバー
+                var el = GetHoverElement?.Invoke(MeshSelectMode.Edge) ?? PlayerHoverElement.None;
+                if (el.Kind == PlayerHoverKind.Edge)
+                    _tool.SetHoverEdge(el.EdgeV1, el.EdgeV2, mo);
+                else
+                    _tool.SetHoverEdge(-1, -1, null);
+                _tool.SetSplitHoverVertex(-1);
+            }
         }
+
+        // ── UIToolkit オーバーレイ用 ────────────────────────────────────
+        public bool HasHoverEdge => _tool.HasHoverEdge;
+        public int  HoverEdgeV1  => _tool.HoverEdgeV1;
+        public int  HoverEdgeV2  => _tool.HoverEdgeV2;
+        /// <summary>Split モード: 1クリック目が確定済みか</summary>
+        public bool HasSplitFirstVertex => _tool.HasSplitFirstVertex;
+        /// <summary>Split モード: 1クリック目で確定した頂点インデックス（-1=未確定）</summary>
+        public int  SplitFirstVertex    => _tool.SplitFirstVertex;
+        /// <summary>Split モード: 現在ホバー中の頂点インデックス（-1=なし）</summary>
+        public int  SplitHoverVertex    => _tool.SplitHoverVertex;
+        /// <summary>
+        /// Split モード: 第 1 頂点確定時にキャッシュされた対向点候補。
+        /// Key = 対角頂点 index、Value = 対応する四角形 face index。
+        /// 第 2 クリック時の判定および overlay で候補ハイライトに使用する。
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyDictionary<int, int> SplitOpponentCandidates
+            => _tool.SplitOpponentCandidates;
         public void Activate(ToolContext ctx)
         {
             if (ctx != null)
@@ -91,6 +127,8 @@ namespace Poly_Ling.Player
                 ctx.Repaint          = OnRepaint;
                 ctx.NotifyTopologyChanged = NotifyTopologyChanged;
                 ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+                if (_undoController?.MeshUndoContext != null)
+                    _undoController.MeshUndoContext.ParentModelContext = model;
             }
             _tool.OnActivate(ctx);
         }
@@ -114,11 +152,22 @@ namespace Poly_Ling.Player
             ctx.Repaint          = OnRepaint;
             ctx.NotifyTopologyChanged = NotifyTopologyChanged;
             ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            if (_undoController?.MeshUndoContext != null)
+                _undoController.MeshUndoContext.ParentModelContext = model;
             return ctx;
         }
 
         private MeshUndoController _undoController;
         private CommandQueue       _commandQueue;
+        /// <summary>
+        /// 最後の UpdateHover で受け取ったスクリーン位置（UIToolkit Y、Y=0 上）。
+        /// UpdateHover は viewport の pointer move イベント駆動で呼ばれるため、
+        /// ここへの更新は Tick 経由ではない。Split overlay で第 1 頂点と
+        /// マウス位置を結ぶ線分の終点に使用する。
+        /// </summary>
+        private UnityEngine.Vector2 _lastHoverScreenPos;
+
+        public UnityEngine.Vector2 LastHoverScreenPos => _lastHoverScreenPos;
 
         private ToolContext BuildCtx(ModifierKeys mods, Vector2 sp)
         {

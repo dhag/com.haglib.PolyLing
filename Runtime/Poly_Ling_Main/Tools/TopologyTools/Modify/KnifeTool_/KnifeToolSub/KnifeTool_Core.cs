@@ -407,10 +407,10 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void DrawWire(ToolContext ctx)
         {
-            UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
+            // UnityEditor_Handles 削除済み
             var start = new Vector3(_startScreenPos.x, _startScreenPos.y, 0);
             var end = new Vector3(_currentScreenPos.x, _currentScreenPos.y, 0);
-            UnityEditor_Handles.DrawLine(start, end, 2f);
+            // UnityEditor_Handles 削除済み
         }
 
         /// <summary>
@@ -420,10 +420,10 @@ namespace Poly_Ling.Tools
         {
             if (_intersections.Count < 2) return;
 
-            UnityEditor_Handles.color = Color.green;
+            // UnityEditor_Handles 削除済み
             var p0 = new Vector3(_intersections[0].ScreenPos.x, _intersections[0].ScreenPos.y, 0);
             var p1 = new Vector3(_intersections[1].ScreenPos.x, _intersections[1].ScreenPos.y, 0);
-            UnityEditor_Handles.DrawLine(p0, p1, 3f);
+            // UnityEditor_Handles 削除済み
         }
 
         /// <summary>
@@ -436,7 +436,7 @@ namespace Poly_Ling.Tools
             var face = ctx.FirstSelectedMeshObject.Faces[_targetFaceIndex];
             if (face.VertexCount < 3) return;
 
-            UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.3f);
+            // UnityEditor_Handles 削除済み
 
             var points = new Vector3[face.VertexCount + 1];
             for (int i = 0; i < face.VertexCount; i++)
@@ -447,7 +447,7 @@ namespace Poly_Ling.Tools
             }
             points[face.VertexCount] = points[0];
 
-            UnityEditor_Handles.DrawAAPolyLine(3f, points);
+            // UnityEditor_Handles 削除済み
         }
     }
 }

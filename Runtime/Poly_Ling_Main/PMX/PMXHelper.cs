@@ -525,7 +525,7 @@ namespace Poly_Ling.PMX
                 return null;
 
             var meshObject = new MeshObject(group.ObjectName);
-            meshObject.IsExpanded = true;  // PMXは展開済み形式
+            meshObject.IsTriangulated = true;  // PMX は三角形化済み形式
 
             // 頂点を追加（VertexIndicesの順序通り = PMX出現順）
             foreach (int pmxVertexIndex in group.VertexIndices)

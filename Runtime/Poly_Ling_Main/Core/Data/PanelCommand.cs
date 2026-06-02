@@ -93,6 +93,17 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndex = masterIndex; NewName = newName; }
     }
 
+    /// <summary>
+    /// メッシュの TreeView 折りたたみ状態変更
+    /// </summary>
+    public class SetMeshFoldingCommand : PanelCommand
+    {
+        public int MasterIndex { get; }
+        public bool IsFolding { get; }
+        public SetMeshFoldingCommand(int modelIndex, int masterIndex, bool isFolding)
+            : base(modelIndex) { MasterIndex = masterIndex; IsFolding = isFolding; }
+    }
+
     // ================================================================
     // リスト操作
     // ================================================================

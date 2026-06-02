@@ -200,11 +200,11 @@ namespace Poly_Ling.Serialization
         public bool isFolding = false;
 
         /// <summary>
-        /// 頂点が展開済みか（PMX形式）
-        /// true: 各頂点が1つのUV/法線を持つ（展開済み、PMX互換）
-        /// false: 頂点が複数のUV/法線を持つ可能性あり（MQO形式）
+        /// 頂点が三角形化済みか（PMX形式）
+        /// true: 各頂点が1つのUV/法線を持ち、すべての面が三角形 (PMX互換)
+        /// false: 頂点が複数のUV/法線を持つ可能性あり (MQO形式)
         /// </summary>
-        public bool isExpanded = false;
+        public bool isTriangulated = false;
 
         // ================================================================
         // ミラー設定
@@ -995,7 +995,7 @@ namespace Poly_Ling.Serialization
     {
         /// <summary>対応するメッシュのインデックス（ModelContext.MeshContextList内）</summary>
         public int meshIndex;
-        public bool isExpanded = false;
+        public bool isTriangulated = false;
         public List<VertexDTO> vertices = new List<VertexDTO>();
         public List<FaceDTO>   faces    = new List<FaceDTO>();
     }

@@ -146,7 +146,8 @@ namespace Poly_Ling.Ops
                 }
             }
 
-            // 縮退面を削除
+            // figure-8型自己交差面を分割してから縮退面を削除
+            SplitSelfIntersectingFaces(meshObject);
             RemoveDegenerateFaces(meshObject);
 
             // 不要頂点を削除
@@ -430,6 +431,96 @@ namespace Poly_Ling.Ops
         /// </summary>
         /// <param name="meshObject">対象メッシュ</param>
         /// <returns>削除した面の数</returns>
+        /// <summary>
+        /// 頂点リストに重複頂点が現れる面（figure-8型自己交差）を、
+        /// 重複頂点の位置で複数の面に再帰的に分割する。
+        /// マージ後に呼ぶこと。RemoveDegenerateFaces の前に実行する。
+        /// </summary>
+        public static void SplitSelfIntersectingFaces(MeshObject meshObject)
+        {
+            if (meshObject == null) return;
+
+            int i = 0;
+            while (i < meshObject.FaceCount)
+            {
+                var face = meshObject.Faces[i];
+                var verts = face.VertexIndices;
+                var uvs   = face.UVIndices;
+                var norms = face.NormalIndices;
+
+                // 最初の重複頂点を探す
+                int splitPos = -1;
+                for (int a = 0; a < verts.Count; a++)
+                {
+                    for (int b = a + 1; b < verts.Count; b++)
+                    {
+                        if (verts[a] == verts[b])
+                        {
+                            splitPos = a; // ループ開始位置
+                            goto found;
+                        }
+                    }
+                }
+                found:
+
+                if (splitPos < 0)
+                {
+                    i++;
+                    continue;
+                }
+
+                // verts[splitPos] == verts[splitEnd] となる splitEnd を探す
+                int splitStart = splitPos;
+                int splitEnd   = -1;
+                for (int b = splitStart + 1; b < verts.Count; b++)
+                {
+                    if (verts[b] == verts[splitStart])
+                    {
+                        splitEnd = b;
+                        break;
+                    }
+                }
+                if (splitEnd < 0) { i++; continue; }
+
+                // ループ1: [splitStart .. splitEnd-1]
+                // ループ2: [splitEnd  .. verts.Count-1] + [0 .. splitStart-1]
+                var loop1V = verts.GetRange(splitStart, splitEnd - splitStart);
+                var loop1U = uvs.Count  >= splitEnd ? uvs.GetRange(splitStart,  splitEnd - splitStart) : new List<int>();
+                var loop1N = norms.Count >= splitEnd ? norms.GetRange(splitStart, splitEnd - splitStart) : new List<int>();
+
+                var loop2V = new List<int>();
+                var loop2U = new List<int>();
+                var loop2N = new List<int>();
+                for (int k = splitEnd; k < verts.Count; k++)          { loop2V.Add(verts[k]); if (k < uvs.Count)   loop2U.Add(uvs[k]);   if (k < norms.Count) loop2N.Add(norms[k]); }
+                for (int k = 0;        k < splitStart; k++)            { loop2V.Add(verts[k]); if (k < uvs.Count)   loop2U.Add(uvs[k]);   if (k < norms.Count) loop2N.Add(norms[k]); }
+
+                // 元の面を削除して2面を末尾に追加（後続のwhileループで再検査される）
+                meshObject.Faces.RemoveAt(i);
+
+                if (loop1V.Count >= 3)
+                {
+                    var f1 = new Face { MaterialIndex = face.MaterialIndex };
+                    f1.VertexIndices.AddRange(loop1V);
+                    f1.UVIndices.AddRange(loop1U);
+                    f1.NormalIndices.AddRange(loop1N);
+                    meshObject.Faces.Add(f1);
+                }
+                if (loop2V.Count >= 3)
+                {
+                    var f2 = new Face { MaterialIndex = face.MaterialIndex };
+                    f2.VertexIndices.AddRange(loop2V);
+                    f2.UVIndices.AddRange(loop2U);
+                    f2.NormalIndices.AddRange(loop2N);
+                    meshObject.Faces.Add(f2);
+                }
+                // i はインクリメントしない（追加された面は末尾なので再検査不要）
+            }
+        }
+
+        /// <summary>
+        /// 縮退した面（unique頂点数 &lt; 3 または face.VertexCount と不一致）を削除。
+        /// SplitSelfIntersectingFaces の後に呼ぶこと。
+        /// </summary>
         public static int RemoveDegenerateFaces(MeshObject meshObject)
         {
             if (meshObject == null) return 0;
@@ -438,10 +529,11 @@ namespace Poly_Ling.Ops
 
             for (int i = 0; i < meshObject.FaceCount; i++)
             {
-                var face = meshObject.Faces[i];
+                var face   = meshObject.Faces[i];
                 var unique = new HashSet<int>(face.VertexIndices);
 
-                if (unique.Count < 2 || (face.VertexCount >= 3 && unique.Count < 3))
+                // unique頂点が3未満、または重複頂点が残存している面を削除
+                if (unique.Count < 3 || unique.Count < face.VertexCount)
                     toRemove.Add(i);
             }
 

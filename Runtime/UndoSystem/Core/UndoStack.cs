@@ -21,6 +21,9 @@ namespace Poly_Ling.UndoSystem
         public string Description;
         public int GroupId;
         public long EnqueueTimestamp;
+        // グローバル操作シーケンス番号。UndoManager.NextSequence() で発行。
+        // UndoGroup.ProcessPendingQueue が全子スタック横断で昇順処理する際のキー。
+        public long Sequence;
     }
 
     /// <summary>
@@ -122,7 +125,8 @@ namespace Poly_Ling.UndoSystem
                 Record = record,
                 Description = description,
                 GroupId = groupId,
-                EnqueueTimestamp = DateTime.Now.Ticks
+                EnqueueTimestamp = DateTime.Now.Ticks,
+                Sequence = UndoManager.NextSequence()
             });
         }
 
@@ -197,6 +201,43 @@ namespace Poly_Ling.UndoSystem
         }
 
         /// <summary>
+        /// 先頭 pending の Sequence を覗く。pending が空なら long.MaxValue を返す。
+        /// UndoGroup.ProcessPendingQueue が全子スタック横断で最小 Sequence を持つ
+        /// 子スタックを特定する用途に使う。
+        /// </summary>
+        public long PeekNextPendingSequence()
+        {
+            if (_pendingQueue.TryPeek(out var pending))
+                return pending.Sequence;
+            return long.MaxValue;
+        }
+
+        /// <summary>
+        /// 先頭 pending の Sequence が指定値と一致するとき、その 1 件だけ処理する。
+        /// 一致しなかった (既に他のスレッドが取り出した / 空 / Sequence が異なる) 場合は false を返す。
+        /// UndoGroup.ProcessPendingQueue が全子スタック横断で Sequence 順に処理するためのプリミティブ。
+        /// </summary>
+        public bool ProcessNextPendingIfMatches(long sequence)
+        {
+            if (!_pendingQueue.TryPeek(out var pending)) return false;
+            if (pending.Sequence != sequence) return false;
+            if (!_pendingQueue.TryDequeue(out var dequeued)) return false;
+            // peek と dequeue の間で他スレッドが取ったときに Sequence が変わる可能性。
+            // 取り出した要素の Sequence を最終確認。
+            if (dequeued.Sequence != sequence)
+            {
+                // 想定外: dequeue した Sequence が違う。そのまま処理して整合性を保つ。
+                // (捨てるとレコード損失になるため)
+                ProcessRecord(dequeued);
+                OnQueueProcessed?.Invoke(1);
+                return true;
+            }
+            ProcessRecord(dequeued);
+            OnQueueProcessed?.Invoke(1);
+            return true;
+        }
+
+        /// <summary>
         /// 内部処理: レコードをスタックに積む
         /// </summary>
         private void ProcessRecord(PendingRecord<TContext> pending)
@@ -215,6 +256,16 @@ namespace Poly_Ling.UndoSystem
 
             // サイズ制限
             EnforceMaxSize();
+
+            // [UndoDbg] Pending → Undo スタック昇格時のログ。
+            // Record() 呼出し箇所のログが仮に漏れていてもここで必ず補足できる。
+            UnityEngine.Debug.Log(
+                "[UndoDbg] ProcessRecord stackId=" + Id +
+                " type=" + (record?.GetType().Name ?? "<null>") +
+                " desc=" + (pending.Description ?? "<null>") +
+                " seq=" + pending.Sequence +
+                " groupId=" + pending.GroupId +
+                " UndoCount=" + _undoStack.Count);
 
             OnOperationRecorded?.Invoke(record.Info);
         }

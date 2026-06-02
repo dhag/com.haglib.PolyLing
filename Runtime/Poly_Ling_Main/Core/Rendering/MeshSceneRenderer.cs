@@ -53,6 +53,10 @@ namespace Poly_Ling.Core
 
         private Material _defaultMaterial;
         private Material _boneMaterial;
+        // Phase 2c-2: 選択/非選択で alpha を変えるため 2 種類保持する。
+        // シェーダは Poly_Ling/Bone3D_Overlay (ZTest Always)。
+        private Material _boneOverlayMaterialSelected;
+        private Material _boneOverlayMaterialUnselected;
         private bool     _disposed;
 
         // ================================================================
@@ -87,6 +91,13 @@ namespace Poly_Ling.Core
         /// <summary>
         /// 選択状態を設定する。RebuildAdapter より前に呼ぶこと。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (PlayerViewportManager 上の " +
+            "EnterProjectChanged / EnterTopologyChanged / EnterCameraChanged / " +
+            "EnterVerticesMoved / EnterHoverChanged / EnterDisplaySettingsChanged) " +
+            "経由で呼ぶこと。本 API を Player 配下の Core / Dispatcher / RemoteFlow から " +
+            "直接呼ぶことは禁止。",
+            error: false)]
         public void SetSelectionState(SelectionState selectionState)
         {
             _selectionState = selectionState;
@@ -127,6 +138,13 @@ namespace Poly_Ling.Core
         /// _selectedMeshIndexForDraw を更新し、PrepareDrawing に正しい index が渡るようにする。
         /// Viewer が model.SelectedDrawableMeshIndices を変更した後に呼ぶこと。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (PlayerViewportManager 上の " +
+            "EnterProjectChanged / EnterTopologyChanged / EnterCameraChanged / " +
+            "EnterVerticesMoved / EnterHoverChanged / EnterDisplaySettingsChanged) " +
+            "経由で呼ぶこと。本 API を Player 配下の Core / Dispatcher / RemoteFlow から " +
+            "直接呼ぶことは禁止。",
+            error: false)]
         public void UpdateSelectedDrawableMesh(int mi, ModelContext model)
         {
             while (_selectedMeshIndexForDraw.Count <= mi)
@@ -155,6 +173,13 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>選択変更をGPUバッファに通知する。</summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (PlayerViewportManager 上の " +
+            "EnterProjectChanged / EnterTopologyChanged / EnterCameraChanged / " +
+            "EnterVerticesMoved / EnterHoverChanged / EnterDisplaySettingsChanged) " +
+            "経由で呼ぶこと。本 API を Player 配下の Core / Dispatcher / RemoteFlow から " +
+            "直接呼ぶことは禁止。",
+            error: false)]
         public void NotifySelectionChanged()
         {
             foreach (var adapter in _adapters)
@@ -164,6 +189,12 @@ namespace Poly_Ling.Core
         /// <summary>
         /// モデルのメッシュ受信完了後にAdapterを再構築する。
         /// </summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (PlayerViewportManager 上の " +
+            "EnterProjectChanged / EnterTopologyChanged / EnterCameraChanged / " +
+            "EnterVerticesMoved / EnterHoverChanged / EnterDisplaySettingsChanged) " +
+            "経由で呼ぶこと。",
+            error: false)]
         public void RebuildAdapter(int mi, ModelContext model)
         {
             while (_adapters.Count <= mi) _adapters.Add(null);
@@ -224,10 +255,22 @@ namespace Poly_Ling.Core
         }
 
         // ================================================================
-        // 描画（LateUpdateから呼ぶ）
+        // 描画（Phase 1: Prepare / Submit 分離）
+        //
+        // ・Prepare*: event 駆動で呼ぶ。計算・CPU Mesh 再構築・ComputeBuffer 更新・
+        //            Dispatch 等を含む。毎フレーム呼ぶのは禁止。
+        // ・Submit*:  OnRenderObject() から毎フレーム呼ぶ。Graphics.DrawMesh 提出のみ。
+        //            計算処理は一切禁止（厳守）。
         // ================================================================
 
-        public void DrawMeshes(ProjectContext project, Camera cam)
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 計算処理（バッファ更新、フラグ計算、マテリアル設定等）は一切禁止。
+        /// 全ての準備は事前に event 駆動で済ませておくこと。
+        /// 面本体の Graphics.DrawMesh 提出のみを担当する。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitMeshes(ProjectContext project, Camera cam)
         {
             if (project == null || cam == null) return;
 
@@ -269,11 +312,23 @@ namespace Poly_Ling.Core
             }
         }
 
+        /// <summary>
+        /// 【旧 API】面本体を描画する。Phase 1 暫定として残置。
+        /// 内部は SubmitMeshes へ委譲。新規コードは SubmitMeshes を直接呼ぶこと。
+        /// </summary>
+        public void DrawMeshes(ProjectContext project, Camera cam) => SubmitMeshes(project, cam);
+
+        /// <summary>
+        /// 【event 駆動で呼ぶ】指定 slot の辺・頂点描画に必要な計算を行う。
+        /// CPU Mesh 再構築 / ComputeBuffer 更新 / Dispatch / Queue 登録を含む重い処理。
+        /// Phase 1: カメラ操作・選択変更・トポロジ変更イベント等から呼び出される想定。
+        /// Submit と分離されているため、毎フレーム呼ぶのは禁止。
         /// <param name="project">
         /// ProjectContext を渡すと選択状態（VertexSelected 等）を GPU に正しく反映する。
         /// null の場合は選択フラグ更新をスキップする。
         /// </param>
-        public void DrawWireframeAndVertices(Camera cam, ProjectContext project = null, int cullingSlot = 0)
+        /// </summary>
+        public void PrepareWireframeAndVertices(Camera cam, ProjectContext project = null, int cullingSlot = 0)
         {
             if (cam == null) return;
             float pointSize = ShaderColorSettings.Default.VertexPointScale;
@@ -283,7 +338,7 @@ namespace Poly_Ling.Core
                 var adapter = _adapters[mi];
                 if (adapter == null || !adapter.IsInitialized) continue;
 
-                adapter.CleanupQueued();
+                adapter.CleanupQueued(cullingSlot);
                 adapter.BackfaceCullingEnabled = BackfaceCullingEnabled;
 
                 var profile = adapter.CurrentProfile;
@@ -333,23 +388,50 @@ namespace Poly_Ling.Core
                     pointSize:               pointSize,
                     cullingSlot:             cullingSlot);
                 adapter.ConsumeNormalMode();
-                adapter.DrawQueued(cam);
             }
         }
 
-        public void DrawBones(ProjectContext project, Camera cam)
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 計算処理は一切禁止。全ての準備は PrepareWireframeAndVertices で完了させておくこと。
+        /// OnRenderObject() から毎フレーム呼ばれる想定。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitWireframeAndVertices(Camera cam, int cullingSlot = 0)
         {
-            if (project == null || cam == null) return;
-            if (!ShowSelectedBone && !ShowUnselectedBone) return;
+            if (cam == null) return;
+            for (int mi = 0; mi < _adapters.Count; mi++)
+            {
+                var adapter = _adapters[mi];
+                if (adapter == null || !adapter.IsInitialized) continue;
+                adapter.DrawQueued(cam, cullingSlot);
+            }
+        }
 
-            var mat = GetBoneMaterial();
-            if (mat == null) return;
+        /// <summary>
+        /// 【旧 API】辺・頂点を描画する。Phase 1 暫定として残置。
+        /// 内部は Prepare + Submit を連続呼びする。新規コードは分離して呼ぶこと。
+        /// </summary>
+        public void DrawWireframeAndVertices(Camera cam, ProjectContext project = null, int cullingSlot = 0)
+        {
+            PrepareWireframeAndVertices(cam, project, cullingSlot);
+            SubmitWireframeAndVertices(cam, cullingSlot);
+        }
+
+        /// <summary>
+        /// 【event 駆動で呼ぶ】ボーン描画用のラインメッシュを事前構築・更新する。
+        /// 各ボーンの pos/rot/col を抽出し、_boneMeshCache を再構築。
+        /// Phase 1: ボーンポーズ変更・ボーン選択変更・モデルロード時に呼び出す想定。
+        /// Submit と分離されているため、毎フレーム呼ぶのは禁止。
+        /// </summary>
+        public void PrepareBones(ProjectContext project)
+        {
+            if (project == null) return;
+            if (!ShowSelectedBone && !ShowUnselectedBone) return;
 
             for (int mi = 0; mi < project.ModelCount; mi++)
             {
                 var model = project.Models[mi];
-                // model.SelectedBoneIndices（MeshContextList インデックス）で
-                // 選択ボーンを判定する。
                 var selBones = model.SelectedBoneIndices;
 
                 for (int ci = 0; ci < model.MeshContextCount; ci++)
@@ -374,11 +456,59 @@ namespace Poly_Ling.Core
                     {
                         UpdateBoneLineMesh(boneMesh, pos, rot, col);
                     }
-
-                    if (boneMesh != null)
-                        Graphics.DrawMesh(boneMesh, Matrix4x4.identity, mat, 0, cam);
                 }
             }
+        }
+
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 計算処理（BuildBoneLineMesh / UpdateBoneLineMesh / ExtractBoneTransform 等）は
+        /// 一切禁止。全ての準備は PrepareBones で完了させておくこと。
+        /// OnRenderObject() から毎フレーム呼ばれる想定。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitBones(ProjectContext project, Camera cam)
+        {
+            if (project == null || cam == null) return;
+            if (!ShowSelectedBone && !ShowUnselectedBone) return;
+
+            // Phase 2c-2: 選択/非選択で別マテリアル（global alpha が異なる）。
+            var matSel   = GetBoneOverlayMaterial(isSelected: true);
+            var matUnsel = GetBoneOverlayMaterial(isSelected: false);
+            if (matSel == null && matUnsel == null) return;
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                var model = project.Models[mi];
+                var selBones = model.SelectedBoneIndices;
+
+                for (int ci = 0; ci < model.MeshContextCount; ci++)
+                {
+                    var ctx = model.GetMeshContext(ci);
+                    if (ctx == null || ctx.Type != MeshType.Bone) continue;
+
+                    bool isSel = selBones.Contains(ci);
+                    if ( isSel && !ShowSelectedBone)   continue;
+                    if (!isSel && !ShowUnselectedBone) continue;
+
+                    var chosenMat = isSel ? matSel : matUnsel;
+                    if (chosenMat == null) continue;
+
+                    var key = (mi, ci);
+                    if (_boneMeshCache.TryGetValue(key, out var boneMesh) && boneMesh != null)
+                        Graphics.DrawMesh(boneMesh, Matrix4x4.identity, chosenMat, 0, cam);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 【旧 API】ボーンを描画する。Phase 1 暫定として残置。
+        /// 内部は Prepare + Submit を連続呼びする。新規コードは分離して呼ぶこと。
+        /// </summary>
+        public void DrawBones(ProjectContext project, Camera cam)
+        {
+            PrepareBones(project);
+            SubmitBones(project, cam);
         }
 
         // ================================================================
@@ -389,20 +519,22 @@ namespace Poly_Ling.Core
         /// スキンウェイトペイントモード時にウェイトをヒートマップカラーで描画する。
         /// DrawMeshes の直後に呼ぶこと。
         /// </summary>
-        public void DrawWeightVisualization(ProjectContext project, Camera cam)
+        /// <summary>
+        /// 【event 駆動で呼ぶ】ウェイトヒートマップ用の頂点カラーを事前計算する。
+        /// ApplyVisualizationColors は Mesh.colors への書き込みを含む重い処理。
+        /// Phase 1: スキンウェイトパネル操作・選択ボーン変更・ターゲットメッシュ変更時に呼び出す。
+        /// Submit と分離されているため、毎フレーム呼ぶのは禁止。
+        /// </summary>
+        public void PrepareWeightVisualization(ProjectContext project)
         {
             if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return;
-            if (project == null || cam == null) return;
-
-            var visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
-            if (visMat == null) return;
+            if (project == null) return;
 
             var model = project.CurrentModel;
             if (model == null) return;
 
             int targetBone = Poly_Ling.Tools.SkinWeightPaintTool.VisualizationTargetBone;
 
-            // CurrentTargetMesh が指定されていればそれだけ描画、なければ選択中Drawable全て
             int targetMeshIdx = Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel?.CurrentTargetMesh ?? -1;
             var masterIndices = targetMeshIdx >= 0
                 ? new System.Collections.Generic.List<int> { targetMeshIdx }
@@ -415,22 +547,73 @@ namespace Poly_Ling.Core
 
                 var mesh = ctx.UnityMesh;
                 Poly_Ling.Tools.SkinWeightPaintTool.ApplyVisualizationColors(mesh, ctx.MeshObject, targetBone);
+            }
+        }
 
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 計算処理（ApplyVisualizationColors 等）は一切禁止。
+        /// 全ての準備は PrepareWeightVisualization で完了させておくこと。
+        /// OnRenderObject() から毎フレーム呼ばれる想定。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitWeightVisualization(ProjectContext project, Camera cam)
+        {
+            if (!Poly_Ling.Tools.SkinWeightPaintTool.IsVisualizationActive) return;
+            if (project == null || cam == null) return;
+
+            var visMat = Poly_Ling.Tools.SkinWeightPaintTool.GetVisualizationMaterial();
+            if (visMat == null) return;
+
+            var model = project.CurrentModel;
+            if (model == null) return;
+
+            int targetMeshIdx = Poly_Ling.Tools.SkinWeightPaintTool.ActivePanel?.CurrentTargetMesh ?? -1;
+            var masterIndices = targetMeshIdx >= 0
+                ? new System.Collections.Generic.List<int> { targetMeshIdx }
+                : new System.Collections.Generic.List<int>(model.SelectedDrawableMeshIndices);
+
+            foreach (int masterIdx in masterIndices)
+            {
+                var ctx = model.GetMeshContext(masterIdx);
+                if (ctx?.UnityMesh == null || ctx.MeshObject == null || !ctx.IsVisible) continue;
+
+                var mesh = ctx.UnityMesh;
                 var displayMatrix = ctx.WorldMatrix;
                 for (int sub = 0; sub < mesh.subMeshCount; sub++)
                     Graphics.DrawMesh(mesh, displayMatrix, visMat, 0, cam, sub);
             }
         }
 
+        /// <summary>
+        /// 【旧 API】ウェイト可視化を描画する。Phase 1 暫定として残置。
+        /// 内部は Prepare + Submit を連続呼びする。新規コードは分離して呼ぶこと。
+        /// </summary>
+        public void DrawWeightVisualization(ProjectContext project, Camera cam)
+        {
+            PrepareWeightVisualization(project);
+            SubmitWeightVisualization(project, cam);
+        }
+
         // ================================================================
         // シーンクリア
         // ================================================================
 
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (PlayerViewportManager 上の " +
+            "EnterProjectChanged / EnterTopologyChanged / EnterCameraChanged / " +
+            "EnterVerticesMoved / EnterHoverChanged / EnterDisplaySettingsChanged) " +
+            "経由で呼ぶこと。本 API を Player 配下の Core / Dispatcher / RemoteFlow から " +
+            "直接呼ぶことは禁止。",
+            error: false)]
         public void ClearScene()
         {
             foreach (var adapter in _adapters)
             {
+                // ClearScene では全 slot を対象にクリア（Dispose 前処理）
+#pragma warning disable CS0618
                 adapter?.CleanupQueued();
+#pragma warning restore CS0618
                 adapter?.Dispose();
             }
             _adapters.Clear();
@@ -444,6 +627,17 @@ namespace Poly_Ling.Core
             {
                 UnityEngine.Object.DestroyImmediate(_boneMaterial);
                 _boneMaterial = null;
+            }
+            // Phase 2c-2: ボーン overlay 用マテリアルも破棄
+            if (_boneOverlayMaterialSelected != null)
+            {
+                UnityEngine.Object.DestroyImmediate(_boneOverlayMaterialSelected);
+                _boneOverlayMaterialSelected = null;
+            }
+            if (_boneOverlayMaterialUnselected != null)
+            {
+                UnityEngine.Object.DestroyImmediate(_boneOverlayMaterialUnselected);
+                _boneOverlayMaterialUnselected = null;
             }
             if (_defaultMaterial != null)
             {
@@ -482,7 +676,9 @@ namespace Poly_Ling.Core
         {
             if (_disposed) return;
             _disposed = true;
+#pragma warning disable CS0618
             ClearScene();
+#pragma warning restore CS0618
         }
 
         // ================================================================
@@ -505,13 +701,37 @@ namespace Poly_Ling.Core
 
         private Material GetBoneMaterial()
         {
-            if (_boneMaterial != null) return _boneMaterial;
-            var shader = Shader.Find("Poly_Ling/Wireframe3D");
-            if (shader == null) return null;
-            _boneMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            _boneMaterial.SetInt("_UseLineFlagsBuffer",    0);
-            _boneMaterial.SetInt("_EnableBackfaceCulling", 0);
-            return _boneMaterial;
+            // Phase 2c-2 以降の新規コードは GetBoneOverlayMaterial(isSelected) を使うこと。
+            // 本メソッドは後方互換のため残置。
+            return GetBoneOverlayMaterial(isSelected: true);
+        }
+
+        /// <summary>
+        /// Phase 2c-2: ボーン overlay 用マテリアル（ZTest Always、常に最前面）。
+        /// 選択/非選択で global alpha を切り替えて保持する。
+        /// </summary>
+        private Material GetBoneOverlayMaterial(bool isSelected)
+        {
+            if (isSelected)
+            {
+                if (_boneOverlayMaterialSelected != null) return _boneOverlayMaterialSelected;
+                var shader = Shader.Find("Poly_Ling/Bone3D_Overlay");
+                if (shader == null) return null;
+                _boneOverlayMaterialSelected = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                // 選択ボーンは不透明
+                _boneOverlayMaterialSelected.SetFloat("_GlobalAlpha", 1.0f);
+                return _boneOverlayMaterialSelected;
+            }
+            else
+            {
+                if (_boneOverlayMaterialUnselected != null) return _boneOverlayMaterialUnselected;
+                var shader = Shader.Find("Poly_Ling/Bone3D_Overlay");
+                if (shader == null) return null;
+                _boneOverlayMaterialUnselected = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                // 非選択ボーンはボディと干渉しないよう半透明化
+                _boneOverlayMaterialUnselected.SetFloat("_GlobalAlpha", 0.5f);
+                return _boneOverlayMaterialUnselected;
+            }
         }
 
         // ================================================================

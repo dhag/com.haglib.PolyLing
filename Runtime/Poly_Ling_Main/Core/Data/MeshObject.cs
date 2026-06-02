@@ -836,11 +836,15 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 頂点が展開済みか（PMX形式）
-        /// true: 各頂点が1つのUV/法線を持つ（展開済み、PMX互換）
-        /// false: 頂点が複数のUV/法線を持つ可能性あり（MQO形式）
+        /// 頂点が三角形化済みか（PMX形式）
+        /// true: 各頂点が1つのUV/法線を持ち、すべての面が三角形 (展開済み、PMX互換)
+        /// false: 頂点が複数のUV/法線を持つ可能性あり、四角形等も含みうる (MQO形式)
+        ///
+        /// ※従来は "IsExpanded" と呼称されていたが、TreeView の展開/折りたたみ
+        /// (MeshContext.IsFolding / SummaryTreeAdapter.IsExpanded) と紛らわしいため改名。
+        /// 実体としては "三角形化 + 頂点展開" が同時に行われる PMX 化処理のフラグ。
         /// </summary>
-        public bool IsExpanded { get; set; } = false;
+        public bool IsTriangulated { get; set; } = false;
 
 
 
@@ -1880,7 +1884,7 @@ namespace Poly_Ling.Data
         {
             var copy = new MeshObject(Name);
             copy.Type = this.Type;
-            copy.IsExpanded = this.IsExpanded;
+            copy.IsTriangulated = this.IsTriangulated;
             copy.Vertices = Vertices.Select(v => v.Clone()).ToList();
             copy.Faces = Faces.Select(f => f.Clone()).ToList();
             copy.ParentIndex = this.ParentIndex;
@@ -1907,7 +1911,7 @@ namespace Poly_Ling.Data
         {
             var copy = new MeshObject(Name);
             copy.Type = this.Type;
-            copy.IsExpanded = this.IsExpanded;
+            copy.IsTriangulated = this.IsTriangulated;
             copy.ParentIndex = this.ParentIndex;
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;

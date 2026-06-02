@@ -58,15 +58,15 @@ namespace Poly_Ling.Tools
 
         private void DrawEraseGizmo(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
 
             if (_hoveredEdge.Item1 >= 0)
             {
-                UnityEditor_Handles.color = Color.red;
+                // UnityEditor_Handles 削除済み
                 DrawEdge(ctx, _hoveredEdge);
             }
 
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         // ================================================================
@@ -238,7 +238,7 @@ namespace Poly_Ling.Tools
             var p2 = ctx.FirstSelectedMeshObject.Vertices[edge.Item2].Position;
             var sp1 = ctx.WorldToScreenPos(p1, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
             var sp2 = ctx.WorldToScreenPos(p2, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(sp1.x, sp1.y, 0), new Vector3(sp2.x, sp2.y, 0));
+            // UnityEditor_Handles 削除済み
         }
     }
 }

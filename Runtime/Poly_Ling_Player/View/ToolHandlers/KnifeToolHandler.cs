@@ -4,6 +4,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Selection;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
@@ -28,6 +29,8 @@ namespace Poly_Ling.Player
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
         public Action            NotifyTopologyChanged;
+        /// <summary>GPU ホバー結果取得。CPU 側探索の代替。</summary>
+        public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
         // ================================================================
         // 設定公開API
@@ -78,13 +81,7 @@ namespace Poly_Ling.Player
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
-            if (ctx == null) return;
-            var model = _project?.CurrentModel;
-            ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
-            ctx.Repaint          = OnRepaint;
-            // DrawGizmo は IMGUI を使用するため UIToolkit 環境では呼ばない。
+            // ホバー表示はUIToolkitオーバーレイで処理。CPU側探索は使用しない。
         }
         public void Activate(ToolContext ctx)
         {
@@ -99,6 +96,8 @@ namespace Poly_Ling.Player
                 ctx.Repaint          = OnRepaint;
                 ctx.NotifyTopologyChanged = NotifyTopologyChanged;
                 ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+                if (_undoController?.MeshUndoContext != null)
+                    _undoController.MeshUndoContext.ParentModelContext = model;
             }
             _tool.OnActivate(ctx);
         }
@@ -122,6 +121,8 @@ namespace Poly_Ling.Player
             ctx.Repaint          = OnRepaint;
             ctx.NotifyTopologyChanged = NotifyTopologyChanged;
             ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            if (_undoController?.MeshUndoContext != null)
+                _undoController.MeshUndoContext.ParentModelContext = model;
             return ctx;
         }
 

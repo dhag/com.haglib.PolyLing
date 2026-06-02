@@ -55,6 +55,10 @@ namespace Poly_Ling.Core
                 _meshListOps.RenameMesh(c.MasterIndex, c.NewName);
                 NotifyPanels(ChangeKind.Attributes);
                 return;
+            case SetMeshFoldingCommand c:
+                _meshListOps.SetMeshFolding(c.MasterIndex, c.IsFolding);
+                NotifyPanels(ChangeKind.Attributes);
+                return;
 
             // --- リスト操作（構造変更） ---
             case AddMeshCommand _:
@@ -634,8 +638,8 @@ namespace Poly_Ling.Core
 
                 var blended = new Vector3[rawCount];
 
-                bool targetIsExpanded = targetMesh.IsExpanded;
-                if (targetIsExpanded)
+                bool targetIsTriangulated = targetMesh.IsTriangulated;
+                if (targetIsTriangulated)
                 {
                     foreach (var kv in srcFilteredMap)
                     {
@@ -651,14 +655,14 @@ namespace Poly_Ling.Core
                         if (matchSi < 0) continue;
                         srcCursors[kv.Key] = matchSi + 1;
                         var srcMesh = srcList[matchSi].MeshObject;
-                        bool srcIsExpanded = srcMesh.IsExpanded;
-                        var srcInvMap = srcIsExpanded ? null : srcMesh.BuildInverseExpansionMap();
+                        bool srcIsTriangulated = srcMesh.IsTriangulated;
+                        var srcInvMap = srcIsTriangulated ? null : srcMesh.BuildInverseExpansionMap();
 
                         for (int vi = 0; vi < rawCount; vi++)
                         {
                             if (!nonIsolated.Contains(vi)) continue;
                             Vector3 srcPos;
-                            if (srcIsExpanded)
+                            if (srcIsTriangulated)
                             {
                                 if (vi >= srcMesh.Vertices.Count) continue;
                                 srcPos = srcMesh.Vertices[vi].Position;
@@ -688,14 +692,14 @@ namespace Poly_Ling.Core
                         if (matchSi2 < 0) continue;
                         srcCursors[kv.Key] = matchSi2 + 1;
                         var srcMesh = srcList[matchSi2].MeshObject;
-                        bool srcIsExpanded = srcMesh.IsExpanded;
-                        var srcExpMap = srcIsExpanded ? targetMesh.BuildExpansionMap() : null;
+                        bool srcIsTriangulated = srcMesh.IsTriangulated;
+                        var srcExpMap = srcIsTriangulated ? targetMesh.BuildExpansionMap() : null;
 
                         for (int vi = 0; vi < rawCount; vi++)
                         {
                             if (!nonIsolated.Contains(vi)) continue;
                             Vector3 srcPos;
-                            if (srcIsExpanded)
+                            if (srcIsTriangulated)
                             {
                                 if (!srcExpMap.TryGetValue((vi, 0), out int srcEi)) continue;
                                 if (srcEi >= srcMesh.Vertices.Count) continue;

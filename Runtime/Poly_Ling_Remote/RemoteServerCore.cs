@@ -79,6 +79,10 @@ namespace Poly_Ling.Remote
         private readonly List<WsClient>      _clients    = new List<WsClient>();
         private readonly object              _clientLock = new object();
         private readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
+        // Phase 1: Tick による毎フレームポーリング禁止のため、
+        // 背景スレッドからのメインスレッドディスパッチは SynchronizationContext 経由で行う。
+        // Start() でメインスレッドから呼ばれるタイミングでキャプチャする。
+        private SynchronizationContext _syncCtx;
 
         // ================================================================
         // プッシュ／画像
@@ -112,6 +116,9 @@ namespace Poly_Ling.Remote
             if (IsRunning) return;
             try
             {
+                // メインスレッドから呼ばれる想定。
+                // 背景スレッドからのディスパッチ用に UnitySynchronizationContext をキャプチャする。
+                _syncCtx     = SynchronizationContext.Current;
                 _cts         = new CancellationTokenSource();
                 _tcpListener = new TcpListener(IPAddress.Loopback, Port);
                 _tcpListener.Start();
@@ -163,6 +170,27 @@ namespace Poly_Ling.Remote
                 try { action(); }
                 catch (Exception ex) { Log($"メインスレッドエラー: {ex.Message}"); }
                 processed++;
+            }
+        }
+
+        /// <summary>
+        /// 背景スレッドからメインスレッドへ action を event 駆動でディスパッチする。
+        /// SynchronizationContext が使えない場合はフォールバックとして _mainThreadQueue に積む。
+        /// </summary>
+        private void RunOnMainThread(Action action)
+        {
+            if (action == null) return;
+            if (_syncCtx != null)
+            {
+                _syncCtx.Post(_ =>
+                {
+                    try { action(); }
+                    catch (Exception ex) { Log($"メインスレッドエラー: {ex.Message}"); }
+                }, null);
+            }
+            else
+            {
+                _mainThreadQueue.Enqueue(action);
             }
         }
 
@@ -249,7 +277,7 @@ namespace Poly_Ling.Remote
                 catch (Exception ex)
                 {
                     if (!ct.IsCancellationRequested)
-                        _mainThreadQueue.Enqueue(() => Log($"接続受付エラー: {ex.Message}"));
+                        RunOnMainThread(() => Log($"接続受付エラー: {ex.Message}"));
                 }
             }
         }
@@ -282,7 +310,7 @@ namespace Poly_Ling.Remote
                     var wsClient = new WsClient(tcpClient, stream);
                     lock (_clientLock) { _clients.Add(wsClient); }
 
-                    _mainThreadQueue.Enqueue(() =>
+                    RunOnMainThread(() =>
                     {
                         Log("クライアント接続");
                         OnRepaint?.Invoke();
@@ -310,7 +338,7 @@ namespace Poly_Ling.Remote
             catch (Exception ex)
             {
                 if (!ct.IsCancellationRequested)
-                    _mainThreadQueue.Enqueue(() => Log($"接続処理エラー: {ex.Message}"));
+                    RunOnMainThread(() => Log($"接続処理エラー: {ex.Message}"));
                 try { tcpClient?.Close(); } catch { }
             }
         }
@@ -345,7 +373,7 @@ namespace Poly_Ling.Remote
                         if (string.IsNullOrEmpty(f.Text)) continue;
                         Debug.Log($"[SRV←CLI] TEXT ({f.Text.Length}B): {f.Text.Substring(0, System.Math.Min(200, f.Text.Length))}");
 
-                        _mainThreadQueue.Enqueue(async () =>
+                        RunOnMainThread(async () =>
                         {
                             _pendingBinaryResponses = null;
                             string response = ProcessMessage(f.Text);
@@ -372,7 +400,7 @@ namespace Poly_Ling.Remote
                     else if (f.Type == WsFrameType.Binary)
                     {
                         Debug.Log($"[SRV←CLI] BINARY ({f.Binary.Length}B)");
-                        _mainThreadQueue.Enqueue(() =>
+                        RunOnMainThread(() =>
                         {
                             byte[] response = ProcessBinaryMessage(f.Binary);
                             if (response != null && client.IsConnected)
@@ -388,13 +416,13 @@ namespace Poly_Ling.Remote
             catch (System.IO.IOException)       { }
             catch (Exception ex)
             {
-                _mainThreadQueue.Enqueue(() => Log($"WSエラー: {ex.Message}"));
+                RunOnMainThread(() => Log($"WSエラー: {ex.Message}"));
             }
             finally
             {
                 lock (_clientLock) { _clients.Remove(client); }
                 client.Close();
-                _mainThreadQueue.Enqueue(() =>
+                RunOnMainThread(() =>
                 {
                     Log("クライアント切断");
                     OnRepaint?.Invoke();

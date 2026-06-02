@@ -50,6 +50,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public System.Action OnCameraChanged;
 
+        /// <summary>
+        /// カメラドラッグ中（連続移動中）に発火する軽量コールバック。
+        /// Phase 1: ApplyCameraTransform + PresentAll など軽量な更新のみを実行する想定。
+        /// UpdateFrame（GPU ヒットテスト等の重い処理）はドラッグ終了時の OnCameraChanged で行う。
+        /// </summary>
+        public System.Action OnCameraDragging;
+
         // ================================================================
         // 状態
         // ================================================================
@@ -166,6 +173,10 @@ namespace Poly_Ling.Player
                     break;
             }
             Target += panDelta;
+
+            // Phase 1: ドラッグ中はフレーム駆動で transform 反映していたが
+            // Tick 廃止に伴い、軽量コールバックで event 駆動化する。
+            OnCameraDragging?.Invoke();
         }
 
         private void OnDragEnd(int btn, Vector2 screenPos, ModifierKeys mods)
@@ -181,6 +192,8 @@ namespace Poly_Ling.Player
         {
             OrthoSize *= 1f - scroll * ZoomSensitivity;
             OrthoSize  = Mathf.Clamp(OrthoSize, OrthoSizeMin, OrthoSizeMax);
+            // Phase 1: スクロールは単発イベントのため、フル更新を伴う OnCameraChanged を発火する。
+            OnCameraChanged?.Invoke();
         }
     }
 }

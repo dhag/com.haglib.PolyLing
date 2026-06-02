@@ -65,6 +65,7 @@ namespace Poly_Ling.Player
             ["WorldPosY"]     = new() { ["en"] = "Y",           ["ja"] = "Y",           ["hi"] = "Y" },
             ["WorldPosZ"]     = new() { ["en"] = "Z",           ["ja"] = "Z",           ["hi"] = "Z" },
             ["IgnorePose"]    = new() { ["en"] = "Ignore Pose (Armature)", ["ja"] = "姿勢無視(アーマチャ)", ["hi"] = "しせいむし" },
+            ["MergeDuplicates"] = new() { ["en"] = "Merge Duplicate Vertices", ["ja"] = "重複頂点をマージ", ["hi"] = "てんをまとめる" },
             ["UpperSphere"]   = new() { ["en"] = "Upper Sphere",           ["ja"] = "上球",                  ["hi"] = "うえのたま" },
             ["LowerSphere"]   = new() { ["en"] = "Lower Sphere",           ["ja"] = "下球",                  ["hi"] = "したのたま" },
             ["Create"]        = new() { ["en"] = "Create",      ["ja"] = "生成",        ["hi"] = "つくる" },

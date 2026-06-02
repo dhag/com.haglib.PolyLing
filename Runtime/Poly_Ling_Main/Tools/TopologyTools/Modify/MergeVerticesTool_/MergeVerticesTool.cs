@@ -84,73 +84,8 @@ namespace Poly_Ling.Tools
             return false;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstDrawableMeshObject == null || !ShowPreview) return;
-            if (_preview.Groups == null || _preview.Groups.Count == 0) return;
-
-            UnityEditor_Handles.BeginGUI();
-
-            // マージグループをプレビュー表示
-            Color[] groupColors = {
-                new Color(1f, 0.3f, 0.3f, 0.8f),    // 赤
-                new Color(0.3f, 1f, 0.3f, 0.8f),    // 緑
-                new Color(0.3f, 0.3f, 1f, 0.8f),    // 青
-                new Color(1f, 1f, 0.3f, 0.8f),      // 黄
-                new Color(1f, 0.3f, 1f, 0.8f),      // マゼンタ
-                new Color(0.3f, 1f, 1f, 0.8f),      // シアン
-            };
-
-            for (int g = 0; g < _preview.Groups.Count; g++)
-            {
-                var group = _preview.Groups[g];
-                Color color = groupColors[g % groupColors.Length];
-
-                // グループ内の頂点を結ぶ線を描画
-                if (group.Count >= 2)
-                {
-                    // 重心を計算
-                    Vector3 centroid = Vector3.zero;
-                    foreach (int vIdx in group)
-                    {
-                        if (vIdx >= 0 && vIdx < ctx.FirstDrawableMeshObject.VertexCount)
-                            centroid += ctx.FirstDrawableMeshObject.Vertices[vIdx].Position;
-                    }
-                    centroid /= group.Count;
-
-                    Vector2 centroidScreen = ctx.WorldToScreen(centroid);
-
-                    // 各頂点から重心への線を描画
-                    UnityEditor_Handles.color = color;
-                    foreach (int vIdx in group)
-                    {
-                        if (vIdx < 0 || vIdx >= ctx.FirstDrawableMeshObject.VertexCount) continue;
-                        Vector2 vScreen = ctx.WorldToScreen(ctx.FirstDrawableMeshObject.Vertices[vIdx].Position);
-                        UnityEditor_Handles.DrawAAPolyLine(2f, vScreen, centroidScreen);
-                    }
-
-                    // 重心にマーカー
-                    GUI.color = color;
-                    float size = 10f;
-                    GUI.DrawTexture(new Rect(centroidScreen.x - size / 2, centroidScreen.y - size / 2, size, size),
-                        Texture2D.whiteTexture);
-                }
-
-                // グループ内の頂点をハイライト
-                GUI.color = color;
-                foreach (int vIdx in group)
-                {
-                    if (vIdx < 0 || vIdx >= ctx.FirstDrawableMeshObject.VertexCount) continue;
-                    Vector2 sp = ctx.WorldToScreen(ctx.FirstDrawableMeshObject.Vertices[vIdx].Position);
-                    float size = 8f;
-                    GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size),
-                        Texture2D.whiteTexture);
-                }
-            }
-
-            GUI.color = Color.white;
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         private bool _pendingMerge = false;
         private ToolContext _lastContext;

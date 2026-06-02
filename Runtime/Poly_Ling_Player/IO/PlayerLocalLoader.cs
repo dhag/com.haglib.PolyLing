@@ -137,13 +137,26 @@ namespace Poly_Ling.Player
         // 内部
         // ================================================================
 
+        /// <summary>直前の FinishLoad で追加されたモデルの index (Undo 記録用)</summary>
+        public int LastAddedModelIndex { get; private set; } = -1;
+        /// <summary>直前の FinishLoad 直前 (AddModel 前) の CurrentModelIndex (Undo 記録用)</summary>
+        public int LastPreviousCurrentModelIndex { get; private set; } = -1;
+
         private void FinishLoad(string filePath, ModelContext model)
         {
             // 修正：毎回新規作成せず、既存プロジェクトにモデルを追加する
             if (_project == null)
                 _project = new ProjectContext(Path.GetFileNameWithoutExtension(filePath));
 
-            _project.AddModel(model);
+            // Undo 記録用: 追加前の CurrentModelIndex を保存。
+            LastPreviousCurrentModelIndex = _project.CurrentModelIndex;
+
+            int addedIdx = _project.AddModel(model);
+            LastAddedModelIndex = addedIdx;
+            // 読込直後は新しく追加されたモデルを自動選択する。
+            // (問題 D/E: これがないと `project.CurrentModel` が古いモデルのままで、
+            // OnLoaded ハンドラ内で古いモデルに対して Record が走るバグを誘発する)
+            _project.SelectModel(addedIdx);
 
             NotifyStatus($"読み込み完了: {model.Name}  Meshes: {model.Count}");
             Debug.Log($"[PlayerLocalLoader] ロード完了: {filePath}");

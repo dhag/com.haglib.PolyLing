@@ -51,7 +51,7 @@ namespace Poly_Ling.Serialization
             var meshDTO = new MeshDTO
             {
                 name = name ?? meshObject.Name ?? "Untitled",
-                isExpanded = meshObject.IsExpanded
+                isTriangulated = meshObject.IsTriangulated
             };
 
             // BoneTransform
@@ -152,7 +152,7 @@ namespace Poly_Ling.Serialization
                 return null;
 
             var meshObject = new MeshObject(meshDTO.name);
-            meshObject.IsExpanded = meshDTO.isExpanded;
+            meshObject.IsTriangulated = meshDTO.isTriangulated;
 
             // Vertices
             foreach (var vd in meshDTO.vertices)
@@ -1300,7 +1300,7 @@ namespace Poly_Ling.Serialization
             var geo = new MeshGeoDTO
             {
                 meshIndex  = meshIndex,
-                isExpanded = meshObject.IsExpanded,
+                isTriangulated = meshObject.IsTriangulated,
             };
 
             foreach (var vertex in meshObject.Vertices)
@@ -1342,7 +1342,7 @@ namespace Poly_Ling.Serialization
             // ToMeshObject はMeshDTOを受け取るため、最小限のMeshDTOに詰め替えて委譲
             var tmp = new MeshDTO
             {
-                isExpanded = geo.isExpanded,
+                isTriangulated = geo.isTriangulated,
                 vertices   = geo.vertices ?? new System.Collections.Generic.List<VertexDTO>(),
                 faces      = geo.faces    ?? new System.Collections.Generic.List<FaceDTO>(),
             };

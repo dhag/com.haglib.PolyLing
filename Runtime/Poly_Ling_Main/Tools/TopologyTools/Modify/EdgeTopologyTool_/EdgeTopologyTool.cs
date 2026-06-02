@@ -64,6 +64,30 @@ namespace Poly_Ling.Tools
         private int _startVertexIndex = -1;   // Split用：スナップ確定時の開始頂点
         private int _endVertexIndex = -1;     // Split用
 
+        // === Split クリック式 ===
+        private int _splitFirstVertex = -1;   // 1クリック目の頂点インデックス（-1=未確定）
+        private int _splitHoverVertex = -1;   // 現在ホバー中の頂点インデックス（GPUホバーから）
+
+        /// <summary>
+        /// Split モード: 第 1 頂点確定時に 1 回だけ計算される対向点候補集合。
+        /// Key = 対角頂点 index、Value = その頂点と第 1 頂点を対角に持つ四角形 face index。
+        ///
+        /// 【設計ポイント: 「クリック時 1 回だけ計算してキャッシュ」パターン】
+        /// 本ツールの規約上、毎フレーム CPU で頂点/辺を走査するのは禁止。
+        /// Split では第 2 クリック時に「第 1 頂点と対角になる四角形」を特定する必要があるが、
+        /// これを従来は毎フレーム CPU 全面走査 (FindQuadWithDiagonal) で行っていて規約違反だった。
+        /// 代わりに「第 1 クリック時に 1 度だけ面を舐めて対角頂点集合を作る → Dict にキャッシュ」
+        /// に切り替え、第 2 クリック時は Dict lookup で O(1) 判定する。
+        /// オーバーレイ描画側 (候補頂点ハイライト) もこの Dict を ContainsKey 参照するだけで済む。
+        /// 同様のパターンは他ツールでも使える (クリック確定時の近傍/対応関係の事前計算)。
+        ///
+        /// 【自動クリアのタイミング】
+        /// Reset() / ModePublic setter (Reset を呼ぶ) / OnDeactivate / 第 2 クリック成否問わず。
+        /// これを一箇所でも漏らすと古い候補が次モード/次回クリックに持ち越されてバグる。
+        /// </summary>
+        private readonly Dictionary<int, int> _splitOpponentCandidates = new Dictionary<int, int>();
+        public IReadOnlyDictionary<int, int> SplitOpponentCandidates => _splitOpponentCandidates;
+
         // === 定数 ===
         private const float EDGE_CLICK_THRESHOLD = 10f;  // 辺クリック判定の距離（ピクセル）
         private const float VERTEX_CLICK_THRESHOLD = 15f; // 頂点クリック判定の距離（ピクセル）
@@ -110,38 +134,53 @@ namespace Poly_Ling.Tools
             switch (Mode)
             {
                 case EdgeTopoMode.Flip:
-                    // 辺をクリックで即時実行
-                    var flipEdge = FindNearestEdge(ctx, mousePos);
-                    if (flipEdge.HasValue && flipEdge.Value.IsShared && flipEdge.Value.CanFlip(ctx.FirstSelectedMeshObject))
+                    // GPUホバー由来の _hoveredEdge を使用（CPU側 FindNearestEdge は閾値・カリングの問題で不正確）
+                    if (_hoveredEdge.HasValue && _hoveredEdge.Value.IsShared && _hoveredEdge.Value.CanFlip(ctx.FirstSelectedMeshObject))
                     {
-                        ExecuteFlip(ctx, flipEdge.Value);
+                        ExecuteFlip(ctx, _hoveredEdge.Value);
                     }
                     _isDragging = false;
                     return true;
 
                 case EdgeTopoMode.Dissolve:
-                    // 辺をクリックで即時実行
-                    var dissolveEdge = FindNearestEdge(ctx, mousePos);
-                    if (dissolveEdge.HasValue && dissolveEdge.Value.IsShared)
+                    // GPUホバー由来の _hoveredEdge を使用
+                    if (_hoveredEdge.HasValue && _hoveredEdge.Value.IsShared)
                     {
-                        ExecuteDissolve(ctx, dissolveEdge.Value);
+                        ExecuteDissolve(ctx, _hoveredEdge.Value);
                     }
                     _isDragging = false;
                     return true;
 
                 case EdgeTopoMode.Split:
-                    // 距離ベースで最も近い四角形頂点を検索
-                    var (faceIdx, vertIdx) = FindNearestQuadVertex(ctx, mousePos, 30f);
-
-                    if (vertIdx >= 0)
+                    // クリック式: GPUホバー頂点を1点目→2点目と選択し、対角が同一四角形なら分割
+                    _isDragging = false;
+                    if (_splitHoverVertex < 0)
                     {
-                        _startWorldPos = ctx.FirstSelectedMeshObject.Vertices[vertIdx].Position;
-                        _currentScreenPos = mousePos;
+                        // ホバー頂点なしのクリックは無視
+                        return true;
+                    }
+                    if (_splitFirstVertex < 0)
+                    {
+                        // 1クリック目: 第1頂点を確定し、対向点候補を 1 回だけ計算してキャッシュ
+                        _splitFirstVertex = _splitHoverVertex;
+                        BuildSplitOpponentCandidates(ctx.FirstSelectedMeshObject, _splitFirstVertex);
                     }
                     else
                     {
-                        _isDragging = false;
+                        // 2クリック目: キャッシュされた候補集合に含まれるかを O(1) で判定
+                        int v1 = _splitFirstVertex;
+                        int v2 = _splitHoverVertex;
+                        if (v1 != v2 && _splitOpponentCandidates.TryGetValue(v2, out int quadFaceIdx))
+                        {
+                            ExecuteSplit(ctx, quadFaceIdx, v1, v2);
+                        }
+                        // 成功でも失敗でも、2点目クリックで状態をリセット
+                        _splitFirstVertex = -1;
+                        _splitOpponentCandidates.Clear();
                     }
+                    ctx.Repaint?.Invoke();
+                    return true;
+                    ctx.Repaint?.Invoke();
                     return true;
             }
 
@@ -166,10 +205,7 @@ namespace Poly_Ling.Tools
 
             _isDragging = false;
 
-            if (Mode == EdgeTopoMode.Split && _startVertexIndex >= 0 && _endVertexIndex >= 0)
-            {
-                ExecuteSplit(ctx, _hoveredFaceIndex, _startVertexIndex, _endVertexIndex);
-            }
+            // Split はクリック式に変更（OnMouseDown で即時判定）。ドラッグ依存ロジックは削除。
 
             _startWorldPos = null;
             _startVertexIndex = -1;
@@ -180,6 +216,11 @@ namespace Poly_Ling.Tools
             return true;
         }
 
+        /// <summary>
+        /// 【重大規約違反: CPU 検索呼出しあり】
+        /// 呼び出し元なし（dead code）。Phase 6 で関数ごと削除予定。
+        /// ハンドラ層の GPU ホバー経路 (EdgeTopologyToolHandler.UpdateHover) へ移行済み。
+        /// </summary>
         public void OnMouseMove(ToolContext ctx, Vector2 mousePos)
         {
             if (ctx.FirstSelectedMeshObject == null) return;
@@ -188,7 +229,7 @@ namespace Poly_Ling.Tools
             {
                 case EdgeTopoMode.Flip:
                 case EdgeTopoMode.Dissolve:
-                    _hoveredEdge = FindNearestEdge(ctx, mousePos);
+                    _hoveredEdge = FindNearestEdge(ctx, mousePos);   // 違反: CPU 検索呼出し
                     break;
 
                 case EdgeTopoMode.Split:
@@ -236,38 +277,13 @@ namespace Poly_Ling.Tools
             _endVertexIndex = -1;
             _hoveredFaceIndex = -1;
             _hoveredEdge = null;
+            _splitFirstVertex = -1;
+            _splitHoverVertex = -1;
+            _splitOpponentCandidates.Clear();
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null) return;
-
-            var mousePos = ctx.CurrentMousePosition;
-
-            switch (Mode)
-            {
-                case EdgeTopoMode.Flip:
-                    _hoveredEdge = FindNearestEdge(ctx, mousePos);
-                    DrawFlipPreview(ctx);
-                    break;
-
-                case EdgeTopoMode.Dissolve:
-                    _hoveredEdge = FindNearestEdge(ctx, mousePos);
-                    DrawDissolvePreview(ctx);
-                    break;
-
-                case EdgeTopoMode.Split:
-                    // ドラッグ中でなければホバー状態を更新
-                    if (!_isDragging && _startVertexIndex < 0)
-                    {
-                        var (_, vert) = FindNearestQuadVertex(ctx, mousePos, 30f);
-                        _hoveredVertexIndex = vert;
-                    }
-                    _currentScreenPos = mousePos;
-                    DrawSplitPreview(ctx);
-                    break;
-            }
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {
@@ -279,12 +295,110 @@ namespace Poly_Ling.Tools
             Reset();
         }
 
+        // ── UIToolkit hover support ───────────────────────────────────────
+        /// <summary>ホバー辺が存在するか（Flip/Dissolve モード）</summary>
+        public bool HasHoverEdge => _hoveredEdge.HasValue;
+        /// <summary>ホバー辺の頂点1インデックス（-1=なし）</summary>
+        public int  HoverEdgeV1  => _hoveredEdge?.VertexIndex1 ?? -1;
+        /// <summary>ホバー辺の頂点2インデックス（-1=なし）</summary>
+        public int  HoverEdgeV2  => _hoveredEdge?.VertexIndex2 ?? -1;
+
+        /// <summary>
+        /// ハンドラーが GPU ホバー結果からセット。
+        /// FindEdgeAtPosition/FindNearestEdge の直接呼び出しはハンドラーから行わないこと。
+        /// </summary>
+        public void SetHoverEdge(int v1, int v2, MeshObject meshObject)
+        {
+            if (v1 < 0 || v2 < 0 || meshObject == null) { _hoveredEdge = null; return; }
+            // vertex indices から EdgeInfo を再構築
+            int fi1 = -1, fi2 = -1;
+            for (int fi = 0; fi < meshObject.FaceCount; fi++)
+            {
+                var verts = meshObject.Faces[fi].VertexIndices;
+                if (verts.Contains(v1) && verts.Contains(v2))
+                {
+                    if (fi1 < 0) fi1 = fi;
+                    else { fi2 = fi; break; }
+                }
+            }
+            if (fi1 < 0) { _hoveredEdge = null; return; }
+            _hoveredEdge = new EdgeInfo
+            {
+                VertexIndex1 = v1, VertexIndex2 = v2,
+                FaceIndex1 = fi1, FaceIndex2 = fi2,
+            };
+        }
+
+        // ── Split クリック式 公開API ───────────────────────────────────
+        /// <summary>1点目が確定済みか</summary>
+        public bool HasSplitFirstVertex => _splitFirstVertex >= 0;
+        /// <summary>1クリック目で確定した頂点（-1=未確定）</summary>
+        public int SplitFirstVertex => _splitFirstVertex;
+        /// <summary>現在ホバー中の頂点（-1=なし）</summary>
+        public int SplitHoverVertex => _splitHoverVertex;
+
+        /// <summary>ハンドラーが GPU 頂点ホバーからセット。Split モード以外では使わない。</summary>
+        public void SetSplitHoverVertex(int v) { _splitHoverVertex = v; }
+
+        /// <summary>
+        /// Split モード: 第 1 頂点確定時に、対向点候補 (第 1 頂点を対角として含む
+        /// 4 頂点面の反対側頂点集合) を 1 回だけ計算してキャッシュする。
+        ///
+        /// 仕様:
+        ///   - Key = 対角頂点 index、Value = 対応する四角形 face index
+        ///   - 4 頂点面以外 (三角形、5 頂点以上) は無視
+        ///   - IsTriangulated == true のメッシュでは 4 頂点面が存在しないため候補は
+        ///     空集合になる。意図的にブロックせず自然に空のまま通す。
+        ///   - 毎フレームではなく第 1 クリック時 1 回のみ呼ばれるため、面走査自体は
+        ///     規約違反 (CPU 頂点/辺検索の禁止) には該当しない。
+        /// </summary>
+        /// <summary>
+        /// Split モード第 1 頂点確定時に、対向点候補集合を 1 回だけ計算する。
+        ///
+        /// 仕様:
+        ///   - Key = 対角頂点 index、Value = 対応する四角形 face index
+        ///   - 4 頂点面以外 (三角形、5 頂点以上) は無視
+        ///   - IsTriangulated == true のメッシュでは 4 頂点面がないので候補は空になる
+        ///     (意図的にブロックはしない。ユーザが Split を試みても「候補なし」で無反応になるだけ)
+        ///   - 単発呼び出しのため面走査しても規約違反にはならない (毎フレーム走査が禁止)
+        /// </summary>
+        private void BuildSplitOpponentCandidates(MeshObject mo, int firstVertex)
+        {
+            _splitOpponentCandidates.Clear();
+            if (mo == null || firstVertex < 0) return;
+            for (int f = 0; f < mo.FaceCount; f++)
+            {
+                var face = mo.Faces[f];
+                if (face.VertexIndices.Count != 4) continue;
+                int i1 = face.VertexIndices.IndexOf(firstVertex);
+                if (i1 < 0) continue;
+                int diagIdx = face.VertexIndices[(i1 + 2) % 4];
+                // 同じ頂点が複数四角形の対角に現れた場合は最初の face を保持
+                // (Split では最初の四角形で実行されるだけで実害はない)
+                if (!_splitOpponentCandidates.ContainsKey(diagIdx))
+                    _splitOpponentCandidates[diagIdx] = f;
+            }
+        }
+
         // ================================================================
         // 辺検出
+        //
+        // ★★★ 【重大規約違反区画: CPU ベース頂点・辺検索】 ★★★
+        // 以下の関数群は「CPU ベース頂点・辺検索は禁止」規約に違反する。
+        // AI が無断追加・残置したため、Phase 6 で GPU ベース経路へ置換後に削除する。
+        //
+        //   FindNearestEdge      → GPU ホバー (_hoveredEdge) 経由に置換済み、関数のみ残骸
+        //   BuildEdgeToFacesMap  → FindNearestEdge の補助、連鎖 dead
+        //   FindNearestQuadVertex → 旧 Split 経路残骸、呼出し元なし
+        //   OnMouseMove 内の FindNearestEdge 呼出し → ハンドラから呼ばれず dead
+        //
+        // 新規コードからこれら関数を呼ぶことは厳禁。
+        // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
         // ================================================================
 
         /// <summary>
-        /// マウス位置に最も近い辺を検索
+        /// 【重大規約違反: CPU 検索】マウス位置に最も近い辺を検索。
+        /// 呼び出し元は OnMouseMove（dead code）のみ。Phase 6 で関数ごと削除予定。
         /// </summary>
         private EdgeInfo? FindNearestEdge(ToolContext ctx, Vector2 mousePos)
         {
@@ -327,7 +441,8 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// 辺→面のマップを構築
+        /// 【重大規約違反: CPU 検索】辺→面のマップを構築。
+        /// FindNearestEdge の補助のみ。Phase 6 で削除予定。
         /// </summary>
         private Dictionary<(int, int), List<int>> BuildEdgeToFacesMap(MeshObject meshObject)
         {
@@ -375,8 +490,8 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
-        /// 最も近い四角形面の頂点を検索（距離ベース）
-        /// 返される頂点は必ずその面に属している
+        /// 【重大規約違反: CPU 検索】最も近い四角形面の頂点を検索（距離ベース）。
+        /// 呼び出し元なし（完全な残骸）。Phase 6 で関数ごと削除予定。
         /// </summary>
         private (int faceIndex, int vertexIndex) FindNearestQuadVertex(ToolContext ctx, Vector2 mousePos, float threshold)
         {
@@ -760,47 +875,56 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// 2つの面の頂点を結合（共有辺を除去）
+        /// 2つの面の頂点を結合（共有辺を除去）。
+        /// 各 face で共有辺の forward 方向を判定し、非共有経路を走査する。
+        /// 三角形・四角形・多角形、および closing edge 位置のいずれにも対応。
         /// </summary>
         private List<int> MergeFaceVertices(Face face1, Face face2, int sharedV1, int sharedV2)
         {
             var verts1 = face1.VertexIndices;
             var verts2 = face2.VertexIndices;
+            int n1 = verts1.Count, n2 = verts2.Count;
 
-            // face1から共有辺を除いた頂点列を取得
-            // sharedV1 -> sharedV2の辺を見つけ、その間の頂点を除外
-            int idx1Start = verts1.IndexOf(sharedV1);
-            int idx1End = verts1.IndexOf(sharedV2);
+            int i1a = verts1.IndexOf(sharedV1);
+            int i1b = verts1.IndexOf(sharedV2);
+            if (i1a < 0 || i1b < 0) return null;
 
-            if (idx1Start < 0 || idx1End < 0) return null;
+            int i2a = verts2.IndexOf(sharedV1);
+            int i2b = verts2.IndexOf(sharedV2);
+            if (i2a < 0 || i2b < 0) return null;
 
-            // face2でsharedV2 -> sharedV1の順を見つける
-            int idx2Start = verts2.IndexOf(sharedV2);
-            int idx2End = verts2.IndexOf(sharedV1);
+            // face1 の共有辺 forward 方向を判定
+            //   (i1a+1)%n1 == i1b : 共有辺 = sharedV1→sharedV2 forward
+            //     → 非共有経路 = sharedV2 から forward に sharedV1 直前まで（start=i1b, end=i1a）
+            //   (i1b+1)%n1 == i1a : 共有辺 = sharedV2→sharedV1 forward（closing edge の場合を含む）
+            //     → 非共有経路 = sharedV1 から forward に sharedV2 直前まで（start=i1a, end=i1b）
+            int start1, end1;
+            if ((i1a + 1) % n1 == i1b)      { start1 = i1b; end1 = i1a; }
+            else if ((i1b + 1) % n1 == i1a) { start1 = i1a; end1 = i1b; }
+            else return null; // 共有辺が face1 の辺として存在しない
 
-            if (idx2Start < 0 || idx2End < 0) return null;
+            int start2, end2;
+            if ((i2a + 1) % n2 == i2b)      { start2 = i2b; end2 = i2a; }
+            else if ((i2b + 1) % n2 == i2a) { start2 = i2a; end2 = i2b; }
+            else return null; // 共有辺が face2 の辺として存在しない
 
             var result = new List<int>();
 
-            // face1をsharedV2からsharedV1まで（共有辺を除く）
-            int n1 = verts1.Count;
-            int current = idx1End;
-            while (current != idx1Start)
+            // face1 を start1 から forward に end1 直前まで追加
+            int current = start1;
+            while (current != end1)
             {
                 result.Add(verts1[current]);
                 current = (current + 1) % n1;
             }
-            // sharedV1は追加しない（face2で追加される）
 
-            // face2をsharedV1からsharedV2まで（共有辺を除く）
-            int n2 = verts2.Count;
-            current = idx2End;
-            while (current != idx2Start)
+            // face2 を start2 から forward に end2 直前まで追加
+            current = start2;
+            while (current != end2)
             {
                 result.Add(verts2[current]);
                 current = (current + 1) % n2;
             }
-            // sharedV2は追加しない（face1で既に追加済み）
 
             return result;
         }
@@ -818,7 +942,7 @@ namespace Poly_Ling.Tools
 
             var edge = _hoveredEdge.Value;
 
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
 
             // 辺の状態に応じた色を決定
             Color edgeColor;
@@ -837,8 +961,6 @@ namespace Poly_Ling.Tools
                 lineWidth = 5f;
 
                 // 隣接する2つの三角形をハイライト
-                DrawFaceHighlight(ctx, edge.FaceIndex1, new Color(0f, 1f, 0f, 0.2f));
-                DrawFaceHighlight(ctx, edge.FaceIndex2, new Color(0f, 1f, 0f, 0.2f));
 
                 // 新しい対角線をプレビュー
                 DrawNewDiagonalPreview(ctx, edge);
@@ -851,17 +973,15 @@ namespace Poly_Ling.Tools
             }
 
             // 辺を描画
-            UnityEditor_Handles.color = edgeColor;
-            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
-                new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0),
-                new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
             // 端点を描画
             float size = edge.IsShared && edge.CanFlip(ctx.FirstSelectedMeshObject) ? 8f : 5f;
-            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
-            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         /// <summary>
@@ -897,7 +1017,7 @@ namespace Poly_Ling.Tools
                 Vector2 sp2 = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[opposite2].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                 // 新しい対角線を点線で描画
-                UnityEditor_Handles.color = new Color(0f, 1f, 1f, 0.8f);
+                // UnityEditor_Handles 削除済み
                 DrawDashedLine(sp1, sp2, 4f, 8f);
             }
         }
@@ -911,7 +1031,7 @@ namespace Poly_Ling.Tools
 
             var edge = _hoveredEdge.Value;
 
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
 
             Color edgeColor;
             float lineWidth;
@@ -929,44 +1049,23 @@ namespace Poly_Ling.Tools
                 lineWidth = 5f;
 
                 // 結合される面をハイライト
-                DrawFaceHighlight(ctx, edge.FaceIndex1, new Color(1f, 0f, 1f, 0.2f));
-                DrawFaceHighlight(ctx, edge.FaceIndex2, new Color(1f, 0f, 1f, 0.2f));
             }
 
             // 辺を描画
-            UnityEditor_Handles.color = edgeColor;
-            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
-                new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0),
-                new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0));
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
             // 端点
             float size = edge.IsShared ? 8f : 5f;
-            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos1.x, edge.ScreenPos1.y, 0), Vector3.forward, size / 2);
-            UnityEditor_Handles.DrawSolidDisc(new Vector3(edge.ScreenPos2.x, edge.ScreenPos2.y, 0), Vector3.forward, size / 2);
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         /// <summary>
         /// 面をハイライト描画
         /// </summary>
-        private void DrawFaceHighlight(ToolContext ctx, int faceIndex, Color color)
-        {
-            if (faceIndex < 0 || faceIndex >= ctx.FirstSelectedMeshObject.FaceCount) return;
-
-            var face = ctx.FirstSelectedMeshObject.Faces[faceIndex];
-            var screenPoints = new Vector3[face.VertexIndices.Count];
-
-            for (int i = 0; i < face.VertexIndices.Count; i++)
-            {
-                var worldPos = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
-                var sp = ctx.WorldToScreenPos(worldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                screenPoints[i] = new Vector3(sp.x, sp.y, 0);
-            }
-
-            UnityEditor_Handles.color = color;
-            UnityEditor_Handles.DrawAAConvexPolygon(screenPoints);
-        }
 
         /// <summary>
         /// 点線を描画
@@ -987,7 +1086,7 @@ namespace Poly_Ling.Tools
                 {
                     Vector2 p1 = start + dir * current;
                     Vector2 p2 = start + dir * nextPos;
-                    UnityEditor_Handles.DrawAAPolyLine(3f, new Vector3(p1.x, p1.y, 0), new Vector3(p2.x, p2.y, 0));
+                    // UnityEditor_Handles 削除済み
                 }
 
                 current = nextPos;
@@ -1000,7 +1099,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void DrawSplitPreview(ToolContext ctx)
         {
-            UnityEditor_Handles.BeginGUI();
+            // UnityEditor_Handles 削除済み
 
             // 開始位置が選択されている場合
             if (_startWorldPos.HasValue)
@@ -1009,15 +1108,15 @@ namespace Poly_Ling.Tools
                 Vector2 startScreen = ctx.WorldToScreenPos(startWorldPos, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
                 // 開始位置を黄色で表示
-                UnityEditor_Handles.color = Color.yellow;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(startScreen.x, startScreen.y, 0), Vector3.forward, 6f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
 
                 // 対角頂点候補を取得（開始位置と同位置の全頂点から）
                 var candidates = GetOppositeVertexCandidates(ctx, startWorldPos);
 
                 if (candidates.Count == 0)
                 {
-                    UnityEditor_Handles.EndGUI();
+                    // UnityEditor_Handles 削除済み
                     return;
                 }
 
@@ -1058,35 +1157,35 @@ namespace Poly_Ling.Tools
                         if (isSnapped)
                         {
                             // スナップ状態：白で大きく
-                            UnityEditor_Handles.color = Color.white;
-                            UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 8f);
+                            // UnityEditor_Handles 削除済み
+                            // UnityEditor_Handles 削除済み
 
                             // 対角線を太く
-                            UnityEditor_Handles.color = Color.white;
-                            UnityEditor_Handles.DrawAAPolyLine(4f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
+                            // UnityEditor_Handles 削除済み
+                            // UnityEditor_Handles 削除済み
                         }
                         else if (isNear)
                         {
                             // 接近中：緑
-                            UnityEditor_Handles.color = Color.green;
-                            UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 6f);
+                            // UnityEditor_Handles 削除済み
+                            // UnityEditor_Handles 削除済み
 
                             // 対角線プレビュー（細め）
-                            UnityEditor_Handles.color = new Color(0f, 1f, 0f, 0.6f);
-                            UnityEditor_Handles.DrawAAPolyLine(2f, new Vector3(startScreen.x, startScreen.y, 0), new Vector3(oppScreen.x, oppScreen.y, 0));
+                            // UnityEditor_Handles 削除済み
+                            // UnityEditor_Handles 削除済み
                         }
                         else
                         {
                             // 遠い：灰色（線なし）
-                            UnityEditor_Handles.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
-                            UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 5f);
+                            // UnityEditor_Handles 削除済み
+                            // UnityEditor_Handles 削除済み
                         }
                     }
                     else
                     {
                         // その他の候補は小さく灰色
-                        UnityEditor_Handles.color = new Color(0.6f, 0.6f, 0.6f, 0.4f);
-                        UnityEditor_Handles.DrawSolidDisc(new Vector3(oppScreen.x, oppScreen.y, 0), Vector3.forward, 3f);
+                        // UnityEditor_Handles 削除済み
+                        // UnityEditor_Handles 削除済み
                     }
                 }
 
@@ -1111,11 +1210,11 @@ namespace Poly_Ling.Tools
             else if (_hoveredVertexIndex >= 0)
             {
                 Vector2 hoverScreen = ctx.WorldToScreenPos(ctx.FirstSelectedMeshObject.Vertices[_hoveredVertexIndex].Position, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                UnityEditor_Handles.color = Color.white;
-                UnityEditor_Handles.DrawSolidDisc(new Vector3(hoverScreen.x, hoverScreen.y, 0), Vector3.forward, 7f);
+                // UnityEditor_Handles 削除済み
+                // UnityEditor_Handles 削除済み
             }
 
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
         }
 
         /// <summary>

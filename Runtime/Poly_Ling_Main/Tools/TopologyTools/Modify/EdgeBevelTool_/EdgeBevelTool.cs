@@ -71,9 +71,24 @@ namespace Poly_Ling.Tools
         {
             public int V0, V1;
             public int FaceA, FaceB;
+            /// <summary>
+            /// FaceB 内での辺端点インデックス。
+            /// 共有頂点トポロジーでは V0/V1 と一致。
+            /// 非共有頂点（面ごとに独立した頂点）では異なる値になる。
+            /// </summary>
+            public int FaceB_V0, FaceB_V1;
             public Vector3 EdgeDir;
             public float EdgeLength;
         }
+
+        // ドラッグ中の頂点位置更新用
+        private struct DragVertex
+        {
+            public int     Index;
+            public Vector3 BasePos;
+            public Vector3 OffsetDir;
+        }
+        private List<DragVertex> _dragVertices = new List<DragVertex>();
 
         // ================================================================
         // IEditTool 実装
@@ -88,14 +103,22 @@ namespace Poly_Ling.Tools
                 return false;
 
             if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            {
+                UnityEngine.Debug.Log($"[BevelDBG] OnMouseDown: MeshObject={ctx.FirstSelectedMeshObject != null}, SelectionState={ctx.SelectionState != null} → skip");
                 return false;
+            }
 
             _mouseDownScreenPos = mousePos;
-            _hitEdgeOnMouseDown = FindEdgeAtPosition(ctx, mousePos);
+            // _hitEdgeOnMouseDown はハンドラーが PrepareHit() で GPU ホバー結果からセットする
+
+            UnityEngine.Debug.Log($"[BevelDBG] OnMouseDown: pos={mousePos}, hitEdge={_hitEdgeOnMouseDown.HasValue}, vertexCount={ctx.FirstSelectedMeshObject.VertexCount}, faceCount={ctx.FirstSelectedMeshObject.FaceCount}");
 
             if (_hitEdgeOnMouseDown.HasValue)
             {
                 _state = BevelState.PendingAction;
+                // マウスダウン時にスナップショット取得
+                if (ctx.UndoController != null)
+                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 return false;
             }
 
@@ -108,6 +131,7 @@ namespace Poly_Ling.Tools
             {
                 case BevelState.PendingAction:
                     float dragDistance = Vector2.Distance(mousePos, _mouseDownScreenPos);
+                    UnityEngine.Debug.Log($"[BevelDBG] OnMouseDrag PendingAction: dist={dragDistance:F1} threshold={DragThreshold}");
                     if (dragDistance > DragThreshold)
                     {
                         if (_hitEdgeOnMouseDown.HasValue)
@@ -151,60 +175,9 @@ namespace Poly_Ling.Tools
             return handled;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null) return;
-
-            if (_state == BevelState.Idle || _state == BevelState.PendingAction)
-            {
-                Vector2 mousePos = ctx.CurrentMousePosition;
-                _hoverEdge = FindEdgeAtPosition(ctx, mousePos);
-            }
-            else
-            {
-                _hoverEdge = null;
-            }
-
-            UnityEditor_Handles.BeginGUI();
-
-            if (_state == BevelState.Beveling)
-            {
-                UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 1f);
-                foreach (var edge in _targetEdges)
-                {
-                    if (edge.V0 < 0 || edge.V0 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                    if (edge.V1 < 0 || edge.V1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-
-                    Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[edge.V0].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[edge.V1].Position);
-                    DrawThickLine(p0, p1, 4f);
-                }
-
-                DrawBevelPreview(ctx);
-
-                GUI.color = Color.white;
-                GUI.Label(new Rect(10, 60, 200, 20), $"Amount: {_dragAmount:F3}");
-                GUI.Label(new Rect(10, 80, 200, 20), $"Segments: {Segments}");
-            }
-            else
-            {
-                if (_hoverEdge.HasValue)
-                {
-                    int v0 = _hoverEdge.Value.V1, v1 = _hoverEdge.Value.V2;
-                    if (v0 >= 0 && v0 < ctx.FirstSelectedMeshObject.VertexCount &&
-                        v1 >= 0 && v1 < ctx.FirstSelectedMeshObject.VertexCount)
-                    {
-                        UnityEditor_Handles.color = Color.white;
-                        Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v0].Position);
-                        Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-                        DrawThickLine(p0, p1, 5f);
-                    }
-                }
-            }
-
-            UnityEditor_Handles.color = Color.white;
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {
@@ -214,8 +187,6 @@ namespace Poly_Ling.Tools
 
         public void OnDeactivate(ToolContext ctx)
         {
-            if (_state == BevelState.Beveling)
-                ctx.ExitTransformDragging?.Invoke();
             Reset();
         }
 
@@ -226,9 +197,23 @@ namespace Poly_Ling.Tools
             _targetEdges.Clear();
             _snapshotBefore = null;
             _dragAmount = 0f;
+            _dragVertices.Clear();
         }
 
         public void OnSelectionChanged(ToolContext ctx) { }
+
+        // ── UIToolkit hover support ───────────────────────────────────────
+        /// <summary>現在ホバー中のエッジ（UIToolkit オーバーレイ用）</summary>
+        public VertexPair? HoverEdge => _hoverEdge;
+
+        /// <summary>ハンドラーが GPU ホバー結果からセット。FindEdgeAtPosition（CPU・カリング無視）使用禁止。</summary>
+        public void SetHoverEdge(VertexPair? edge)
+        {
+            _hoverEdge = (_state == BevelState.Idle || _state == BevelState.PendingAction) ? edge : (VertexPair?)null;
+        }
+
+        /// <summary>OnLeftDragBegin でハンドラーが GPU ホバー結果から事前にセット。</summary>
+        public void PrepareHit(VertexPair? edge) { _hitEdgeOnMouseDown = edge; }
 
         // ================================================================
         // ベベル処理
@@ -236,7 +221,10 @@ namespace Poly_Ling.Tools
 
         private void StartBevel(ToolContext ctx)
         {
-            if (_hitEdgeOnMouseDown.HasValue && !ctx.SelectionState.Edges.Contains(_hitEdgeOnMouseDown.Value))
+            UnityEngine.Debug.Log($"[BevelDBG] StartBevel: hitEdge={_hitEdgeOnMouseDown}, selectionEdges={ctx.SelectionState?.Edges?.Count}");
+
+            // ヒットエッジを常に単独でセット（選択状態に関わらず）
+            if (_hitEdgeOnMouseDown.HasValue)
             {
                 ctx.SelectionState.Edges.Clear();
                 ctx.SelectionState.Edges.Add(_hitEdgeOnMouseDown.Value);
@@ -244,47 +232,65 @@ namespace Poly_Ling.Tools
 
             CollectTargetEdges(ctx);
 
+            UnityEngine.Debug.Log($"[BevelDBG] StartBevel: targetEdges={_targetEdges.Count}, Amount={Amount}, vertexCount={ctx.FirstSelectedMeshObject?.VertexCount}");
+
             if (_targetEdges.Count == 0)
             {
                 _state = BevelState.Idle;
                 return;
             }
 
-            if (ctx.UndoController != null)
-            {
-                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
-            }
+            _dragAmount = 0f;
+            // トポロジーを即時実行し _dragVertices を確定させる
+            ExecuteBevel(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
-            _dragAmount = Amount;
+            UnityEngine.Debug.Log($"[BevelDBG] StartBevel after ExecuteBevel: dragVertices={_dragVertices.Count}, vertexCount={ctx.FirstSelectedMeshObject?.VertexCount}, state→Beveling");
+
             _state = BevelState.Beveling;
-            ctx.EnterTransformDragging?.Invoke();
+            // EnterTransformDragging は使用しない。
+            // ベベルはトポロジー変更後の位置更新であり TransformDragging モードを使うと
+            // エッジ/頂点描画が無効化されるため。SyncMeshPositionsOnly で直接更新する。
         }
 
         private void UpdateBevel(ToolContext ctx, Vector2 mousePos)
         {
             Vector2 totalDelta = mousePos - _mouseDownScreenPos;
-            _dragAmount = Mathf.Max(0.001f, Amount + totalDelta.x * 0.002f);
+            _dragAmount = Mathf.Max(0.001f, totalDelta.x * 0.002f);
+
+            var meshObject = ctx.FirstSelectedMeshObject;
+            int updated = 0;
+            if (meshObject != null)
+            {
+                foreach (var dv in _dragVertices)
+                {
+                    if (dv.Index >= 0 && dv.Index < meshObject.VertexCount)
+                    {
+                        meshObject.Vertices[dv.Index].Position = dv.BasePos + dv.OffsetDir * _dragAmount;
+                        updated++;
+                    }
+                }
+            }
+            if (updated == 0 || _dragVertices.Count == 0)
+                UnityEngine.Debug.Log($"[BevelDBG] UpdateBevel: dragAmount={_dragAmount:F4}, dragVertices={_dragVertices.Count}, updated={updated}, meshNull={meshObject == null}, meshVertCount={meshObject?.VertexCount}");
+            ctx.SyncMeshPositionsOnly?.Invoke();
         }
 
         private void EndBevel(ToolContext ctx)
         {
-            ctx.ExitTransformDragging?.Invoke();
-
-            if (_dragAmount < 0.001f)
-            {
-                _snapshotBefore = null;
-                return;
-            }
+            UnityEngine.Debug.Log($"[BevelDBG] EndBevel: finalAmount={_dragAmount:F4}, dragVertices={_dragVertices.Count}");
 
             Amount = _dragAmount;
-            ExecuteBevel(ctx);
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
                 MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 MeshSnapshotRecord record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, "Bevel Edges");
+                {
+                    string __dbgDesc = "Bevel Edges";
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
+                }
             }
 
             _snapshotBefore = null;
@@ -295,7 +301,8 @@ namespace Poly_Ling.Tools
         // ----------------------------------------------------------------
         private struct BevelEdgeData
         {
-            public int V0, V1;           // ベベル対象エッジの元頂点インデックス
+            public int V0, V1;           // ベベル対象エッジの元頂点インデックス（FaceA側）
+            public int FaceB_V0, FaceB_V1; // FaceB 内での対応頂点インデックス（非共有頂点対応）
             public int FaceAIdx;         // 隣接フェース A のインデックス
             public int FaceBIdx;         // 隣接フェース B のインデックス
             public HashSet<int> FaceAOrigVerts; // FaceA の元の頂点集合（方向判定用）
@@ -304,6 +311,8 @@ namespace Poly_Ling.Tools
             public int[] RowV1;          // V1 側の row 頂点列 [0=FaceA端 .. segments=FaceB端]
             public Vector3 OffsetA;      // FaceA 側インワード方向（ベベル面の法線向き判定用）
             public Vector3 OffsetB;      // FaceB 側インワード方向（ベベル面の法線向き判定用）
+            public Vector3 P0;           // 元の V0 ワールド座標（ドラッグ更新用）
+            public Vector3 P1;           // 元の V1 ワールド座標（ドラッグ更新用）
         }
 
         private void ExecuteBevel(ToolContext ctx)
@@ -379,11 +388,16 @@ namespace Poly_Ling.Tools
 
                 orphanCandidates.Add(edgeInfo.V0);
                 orphanCandidates.Add(edgeInfo.V1);
+                // 非共有頂点の場合 FaceB 側の対応頂点も orphan 候補に追加
+                if (edgeInfo.FaceB_V0 != edgeInfo.V0) orphanCandidates.Add(edgeInfo.FaceB_V0);
+                if (edgeInfo.FaceB_V1 != edgeInfo.V1) orphanCandidates.Add(edgeInfo.FaceB_V1);
 
                 bevelDataList.Add(new BevelEdgeData
                 {
                     V0 = edgeInfo.V0,
                     V1 = edgeInfo.V1,
+                    FaceB_V0 = edgeInfo.FaceB_V0,
+                    FaceB_V1 = edgeInfo.FaceB_V1,
                     FaceAIdx = edgeInfo.FaceA,
                     FaceBIdx = edgeInfo.FaceB,
                     // フェース頂点集合は Pass1 の時点でスナップショット。
@@ -394,6 +408,8 @@ namespace Poly_Ling.Tools
                     RowV1 = rowV1,
                     OffsetA = offsetA,
                     OffsetB = offsetB,
+                    P0 = p0,
+                    P1 = p1,
                 });
             }
 
@@ -478,6 +494,24 @@ namespace Poly_Ling.Tools
                 }
             }
 
+            // Pass 1.5 終了後: bevelDataList の RowV0/RowV1 はマージ済み最終値。
+            // ドラッグ更新用に (rawIndex, basePos, offsetDir) を収集する。
+            // orphanCandidates 除去によるインデックスシフトは後で調整する。
+            bool useFillet = Fillet && segments >= 2;
+            var rawDragVerts = new List<(int rawIdx, Vector3 basePos, Vector3 offsetDir)>();
+            foreach (var bd in bevelDataList)
+            {
+                for (int s = 0; s <= segments; s++)
+                {
+                    float t = segments > 0 ? (float)s / segments : 0f;
+                    Vector3 dir = useFillet
+                        ? Vector3.Slerp(bd.OffsetA, bd.OffsetB, t)
+                        : Vector3.Lerp(bd.OffsetA, bd.OffsetB, t);
+                    rawDragVerts.Add((bd.RowV0[s], bd.P0, dir));
+                    rawDragVerts.Add((bd.RowV1[s], bd.P1, dir));
+                }
+            }
+
             // ============================================================
             // Pass 2: ベベル前の全フェースを走査し、頂点置換を一括適用する
             //
@@ -526,7 +560,13 @@ namespace Poly_Ling.Tools
                     // このエッジの両端点 (V0, V1) それぞれについて処理
                     for (int vi = 0; vi < 2; vi++)
                     {
-                        int v   = (vi == 0) ? bd.V0 : bd.V1;
+                        // FaceB の場合は FaceB_V0/FaceB_V1 を使う（非共有頂点対応）
+                        int v;
+                        if (fi == bd.FaceBIdx)
+                            v = (vi == 0) ? bd.FaceB_V0 : bd.FaceB_V1;
+                        else
+                            v = (vi == 0) ? bd.V0 : bd.V1;
+
                         int[] row = (vi == 0) ? bd.RowV0 : bd.RowV1;
 
                         // v がこのフェースに含まれていなければスキップ
@@ -638,7 +678,25 @@ namespace Poly_Ling.Tools
                 }
             }
 
-            RemoveOrphanVertices(meshObject, orphanCandidates);
+            var removedAsc = RemoveOrphanVertices(meshObject, orphanCandidates);
+
+            // _dragVertices を確定: rawIndex をシフト補正し、重複除外
+            _dragVertices.Clear();
+            var seenIdx = new HashSet<int>();
+            foreach (var (rawIdx, basePos, offsetDir) in rawDragVerts)
+            {
+                int bsResult = removedAsc.BinarySearch(rawIdx);
+                if (bsResult >= 0) continue; // このrowがorphan除去された場合はスキップ
+                int shift    = ~bsResult;    // rawIdx より小さい除去済みインデックスの数
+                int adjusted = rawIdx - shift;
+                if (seenIdx.Add(adjusted))
+                    _dragVertices.Add(new DragVertex { Index = adjusted, BasePos = basePos, OffsetDir = offsetDir });
+            }
+
+            UnityEngine.Debug.Log($"[BevelDBG] ExecuteBevel done: rawDragVerts={rawDragVerts.Count}, removed={removedAsc.Count}, dragVertices={_dragVertices.Count}, finalVertexCount={meshObject.VertexCount}, finalFaceCount={meshObject.FaceCount}");
+            if (_dragVertices.Count > 0)
+                UnityEngine.Debug.Log($"[BevelDBG] dragVertices[0]: Index={_dragVertices[0].Index}, BasePos={_dragVertices[0].BasePos}, OffsetDir={_dragVertices[0].OffsetDir}");
+
             ctx.SelectionState?.Edges.Clear();
             ctx.SyncMesh?.Invoke();
         }
@@ -669,7 +727,7 @@ namespace Poly_Ling.Tools
             }
         }
 
-        private void RemoveOrphanVertices(MeshObject meshObject, HashSet<int> candidates)
+        private List<int> RemoveOrphanVertices(MeshObject meshObject, HashSet<int> candidates)
         {
             var usedVertices = new HashSet<int>();
             foreach (var face in meshObject.Faces)
@@ -705,6 +763,10 @@ namespace Poly_Ling.Tools
                     }
                 }
             }
+
+            // 呼び出し元がインデックスシフト補正に使えるよう昇順で返す
+            toRemove.Sort();
+            return toRemove;
         }
 
         private Vector3 GetInwardOffset(MeshObject meshObject, Face face, int v0, int v1)
@@ -760,17 +822,20 @@ namespace Poly_Ling.Tools
                 if (v0 < 0 || v0 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
                 if (v1 < 0 || v1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
 
-                var adjacentFaces = FindAdjacentFaces(ctx.FirstSelectedMeshObject, v0, v1);
-
                 Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[v0].Position;
                 Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+
+                FindAdjacentFacesWithEdgeVertices(ctx.FirstSelectedMeshObject, v0, v1, p0, p1,
+                    out int faceA, out int faceB, out int faceB_V0, out int faceB_V1);
 
                 var info = new BevelEdgeInfo
                 {
                     V0 = v0,
                     V1 = v1,
-                    FaceA = adjacentFaces.Count > 0 ? adjacentFaces[0] : -1,
-                    FaceB = adjacentFaces.Count > 1 ? adjacentFaces[1] : -1,
+                    FaceA = faceA,
+                    FaceB = faceB,
+                    FaceB_V0 = faceB_V0,
+                    FaceB_V1 = faceB_V1,
                     EdgeDir = (p1 - p0).normalized,
                     EdgeLength = Vector3.Distance(p0, p1)
                 };
@@ -779,50 +844,56 @@ namespace Poly_Ling.Tools
             }
         }
 
-        private List<int> FindAdjacentFaces(MeshObject meshObject, int v0, int v1)
+        /// <summary>
+        /// edgeの両端(v0,v1)を含む隣接面を最大2つ探す。
+        /// まず頂点インデックスで検索し、見つからない場合は位置ベースで探索する（非共有頂点対応）。
+        /// faceB_V0/faceB_V1 は FaceB 内での対応頂点インデックス（共有時は v0/v1 と同値）。
+        /// </summary>
+        private void FindAdjacentFacesWithEdgeVertices(
+            MeshObject meshObject, int v0, int v1, Vector3 p0, Vector3 p1,
+            out int faceA, out int faceB, out int faceB_V0, out int faceB_V1)
         {
-            var result = new List<int>();
+            faceA = -1; faceB = -1;
+            faceB_V0 = v0; faceB_V1 = v1; // デフォルト: 共有頂点と同値
+
+            const float eps = 1e-4f;
 
             for (int i = 0; i < meshObject.FaceCount; i++)
             {
                 var face = meshObject.Faces[i];
                 if (face.VertexCount < 3) continue;
 
+                // ── 頂点インデックスによる一致（共有頂点） ──
                 if (face.VertexIndices.Contains(v0) && face.VertexIndices.Contains(v1))
-                    result.Add(i);
-            }
-
-            return result;
-        }
-
-        private VertexPair? FindEdgeAtPosition(ToolContext ctx, Vector2 mousePos)
-        {
-            if (ctx.FirstSelectedMeshObject == null) return null;
-
-            const float threshold = 8f;
-
-            for (int fi = 0; fi < ctx.FirstSelectedMeshObject.FaceCount; fi++)
-            {
-                var face = ctx.FirstSelectedMeshObject.Faces[fi];
-                if (face.VertexCount < 3) continue;
-
-                for (int i = 0; i < face.VertexCount; i++)
                 {
-                    int v0 = face.VertexIndices[i];
-                    int v1 = face.VertexIndices[(i + 1) % face.VertexCount];
-                    if (v0 < 0 || v1 < 0 || v0 >= ctx.FirstSelectedMeshObject.VertexCount || v1 >= ctx.FirstSelectedMeshObject.VertexCount)
-                        continue;
+                    if (faceA < 0) faceA = i;
+                    else if (faceB < 0) { faceB = i; faceB_V0 = v0; faceB_V1 = v1; break; }
+                    continue;
+                }
 
-                    Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v0].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
+                // ── 位置による一致（非共有頂点フォールバック） ──
+                int matchV0 = -1, matchV1 = -1;
+                foreach (int vi in face.VertexIndices)
+                {
+                    if (vi < 0 || vi >= meshObject.VertexCount) continue;
+                    Vector3 vp = meshObject.Vertices[vi].Position;
+                    if (matchV0 < 0 && (vp - p0).sqrMagnitude < eps) matchV0 = vi;
+                    if (matchV1 < 0 && (vp - p1).sqrMagnitude < eps) matchV1 = vi;
+                    if (matchV0 >= 0 && matchV1 >= 0) break;
+                }
+                if (matchV0 < 0 || matchV1 < 0) continue;
 
-                    if (DistancePointToSegment(mousePos, p0, p1) < threshold)
-                        return new VertexPair(v0, v1);
+                if (faceA < 0) faceA = i;
+                else if (faceB < 0)
+                {
+                    faceB = i;
+                    faceB_V0 = matchV0;
+                    faceB_V1 = matchV1;
+                    break;
                 }
             }
-
-            return null;
         }
+
 
         private float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b)
         {
@@ -833,50 +904,5 @@ namespace Poly_Ling.Tools
             return Vector2.Distance(p, a + t * ab);
         }
 
-        private void DrawBevelPreview(ToolContext ctx)
-        {
-            UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
-
-            foreach (var edge in _targetEdges)
-            {
-                if (edge.FaceA < 0 || edge.FaceB < 0) continue;
-
-                Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[edge.V0].Position;
-                Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[edge.V1].Position;
-
-                var faceA = ctx.FirstSelectedMeshObject.Faces[edge.FaceA];
-                var faceB = ctx.FirstSelectedMeshObject.Faces[edge.FaceB];
-
-                Vector3 offsetA = GetInwardOffset(ctx.FirstSelectedMeshObject, faceA, edge.V0, edge.V1);
-                Vector3 offsetB = GetInwardOffset(ctx.FirstSelectedMeshObject, faceB, edge.V0, edge.V1);
-
-                Vector3 newA0 = p0 + offsetA * _dragAmount;
-                Vector3 newA1 = p1 + offsetA * _dragAmount;
-                Vector2 sA0 = ctx.WorldToScreen(newA0);
-                Vector2 sA1 = ctx.WorldToScreen(newA1);
-                DrawThickLine(sA0, sA1, 2f);
-
-                Vector3 newB0 = p0 + offsetB * _dragAmount;
-                Vector3 newB1 = p1 + offsetB * _dragAmount;
-                Vector2 sB0 = ctx.WorldToScreen(newB0);
-                Vector2 sB1 = ctx.WorldToScreen(newB1);
-                DrawThickLine(sB0, sB1, 2f);
-
-                UnityEditor_Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
-                DrawThickLine(sA0, sB0, 1f);
-                DrawThickLine(sA1, sB1, 1f);
-                UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
-            }
-        }
-
-        private void DrawThickLine(Vector2 p0, Vector2 p1, float thickness)
-        {
-            Vector2 dir = (p1 - p0);
-            if (dir.magnitude < 0.001f) return;
-            dir.Normalize();
-
-            Vector2 perp = new Vector2(-dir.y, dir.x) * thickness * 0.5f;
-            UnityEditor_Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
-        }
     }
 }

@@ -19,6 +19,15 @@ namespace Poly_Ling.UndoSystem
         private static UndoManager _instance;
         public static UndoManager Instance => _instance ??= new UndoManager();
 
+        // === グローバル操作シーケンス番号 ===
+        // 全スタック横断で、Record 呼出しに対して単調増加の番号を発行する。
+        // UndoGroup.ProcessPendingQueue はこの番号で全子スタックの pending を
+        // 時系列順にソートして処理する。これによりユーザ操作の時系列に沿った
+        // OperationLog が構築される。
+        private static long _globalOpSeq = 0;
+        public static long NextSequence() =>
+            System.Threading.Interlocked.Increment(ref _globalOpSeq);
+
         // === 内部グループ ===
         private readonly UndoGroup _root;
 
@@ -119,6 +128,12 @@ namespace Poly_Ling.UndoSystem
         /// 全スタックの保留キューを処理（エイリアス）
         /// </summary>
         public int ProcessAllQueues() => ProcessPendingQueue();
+
+        /// <summary>IQueueableUndoNode 実装: ルートへ委譲。</summary>
+        public long PeekNextPendingSequence() => _root.PeekNextPendingSequence();
+
+        /// <summary>IQueueableUndoNode 実装: ルートへ委譲。</summary>
+        public bool ProcessNextPendingIfMatches(long sequence) => _root.ProcessNextPendingIfMatches(sequence);
 
         // === 便利メソッド ===
 

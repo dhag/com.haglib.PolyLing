@@ -501,6 +501,9 @@ namespace Poly_Ling.Tools
         /// <summary>アーマチャ生成時ボーン生成スキップ（nullで変更なし）</summary>
         public bool? IgnorePoseInArmature;
 
+        /// <summary>TreeView 折りたたみ状態（nullで変更なし）</summary>
+        public bool? IsFolding;
+
         public override string ToString()
         {
             var parts = new List<string> { $"[{Index}]" };
@@ -509,6 +512,7 @@ namespace Poly_Ling.Tools
             if (MirrorType.HasValue) parts.Add($"Mirror={MirrorType.Value}");
             if (Name != null) parts.Add($"Name={Name}");
             if (IgnorePoseInArmature.HasValue) parts.Add($"IgnorePose={IgnorePoseInArmature.Value}");
+            if (IsFolding.HasValue) parts.Add($"Folding={IsFolding.Value}");
             return string.Join(" ", parts);
         }
     }

@@ -50,6 +50,10 @@ namespace Poly_Ling.Player
         private CancellationTokenSource          _cts;
         private readonly System.Random           _maskRng = new System.Random();
         private readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
+        // Phase 1: Tick による毎フレームポーリング禁止のため、
+        // 背景スレッドからのメインスレッドディスパッチは SynchronizationContext 経由で行う。
+        // Initialize で UnitySynchronizationContext をキャプチャする。
+        private SynchronizationContext           _syncCtx;
 
         // リクエスト管理
         private int    _requestId;
@@ -72,7 +76,34 @@ namespace Poly_Ling.Player
             _host        = host;
             _port        = port;
             _autoConnect = autoConnect;
+            // Initialize はメインスレッドから呼ばれる想定。
+            // ここで UnitySynchronizationContext をキャプチャして、
+            // 背景スレッドからのディスパッチに使う。
+            _syncCtx = SynchronizationContext.Current;
             if (_autoConnect) Connect();
+        }
+
+        /// <summary>
+        /// 背景スレッドからメインスレッドへ action を event 駆動でディスパッチする。
+        /// SynchronizationContext が使えない場合（未初期化等）はフォールバックとして
+        /// 従来の _mainThreadQueue に積む（Tick 経由の処理には非対応のため
+        /// 実質的にはメインスレッドから呼ばれた場合のみ到達する想定）。
+        /// </summary>
+        private void RunOnMainThread(Action action)
+        {
+            if (action == null) return;
+            if (_syncCtx != null)
+            {
+                _syncCtx.Post(_ =>
+                {
+                    try { action(); }
+                    catch (Exception ex) { Debug.LogError($"[PolyLingPlayerClient] 実行エラー: {ex.Message}"); }
+                }, null);
+            }
+            else
+            {
+                _mainThreadQueue.Enqueue(action);
+            }
         }
 
         /// <summary>
@@ -144,7 +175,7 @@ namespace Poly_Ling.Player
                 }
 
                 _stream.ReadTimeout = 300_000;
-                _mainThreadQueue.Enqueue(() =>
+                RunOnMainThread(() =>
                 {
                     Debug.Log($"[PolyLingPlayerClient] 接続: {_host}:{_port}");
                     OnConnected?.Invoke();
@@ -155,13 +186,13 @@ namespace Poly_Ling.Player
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                _mainThreadQueue.Enqueue(() =>
+                RunOnMainThread(() =>
                     Debug.LogWarning($"[PolyLingPlayerClient] 接続エラー: {ex.Message}"));
             }
             finally
             {
                 CloseSocket();
-                _mainThreadQueue.Enqueue(() =>
+                RunOnMainThread(() =>
                 {
                     Debug.Log("[PolyLingPlayerClient] 切断");
                     OnDisconnected?.Invoke();
@@ -196,13 +227,13 @@ namespace Poly_Ling.Player
                 {
                     string text = f.Text;
                     Debug.Log($"[CLI←SRV] TEXT ({text.Length}B): {text.Substring(0, Math.Min(200, text.Length))}");
-                    _mainThreadQueue.Enqueue(() => HandleTextMessage(text));
+                    RunOnMainThread(() => HandleTextMessage(text));
                 }
                 else if (f.Type == WsFrameType.Binary)
                 {
                     byte[] bin = f.Binary;
                     Debug.Log($"[CLI←SRV] BINARY ({bin.Length}B)");
-                    _mainThreadQueue.Enqueue(() => HandleBinaryMessage(bin));
+                    RunOnMainThread(() => HandleBinaryMessage(bin));
                 }
             }
         }

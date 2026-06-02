@@ -21,6 +21,22 @@ namespace Poly_Ling.Tools
         /// </summary>
         public bool MoveWithChildren = true;
 
+        /// <summary>ピック対象: ボーン (MeshType.Bone)</summary>
+        public bool PickBones = true;
+
+        /// <summary>
+        /// ピック対象: スキンドでないメッシュ
+        /// (MeshType.Mesh かつ MeshObject.HasBoneWeight == false)
+        /// </summary>
+        public bool PickMeshesNoSkin = true;
+
+        /// <summary>
+        /// ピック対象: スキンドメッシュ
+        /// (MeshType.Mesh かつ MeshObject.HasBoneWeight == true)
+        /// 通常ボーン側を動かすので OFF 推奨。
+        /// </summary>
+        public bool PickMeshesSkinned = false;
+
         // ================================================================
         // IToolSettings 実装
         // ================================================================
@@ -29,20 +45,29 @@ namespace Poly_Ling.Tools
         {
             return new ObjectMoveSettings
             {
-                MoveWithChildren = this.MoveWithChildren,
+                MoveWithChildren  = this.MoveWithChildren,
+                PickBones         = this.PickBones,
+                PickMeshesNoSkin  = this.PickMeshesNoSkin,
+                PickMeshesSkinned = this.PickMeshesSkinned,
             };
         }
 
         public override bool IsDifferentFrom(IToolSettings other)
         {
             if (!IsSameType<ObjectMoveSettings>(other, out var o)) return true;
-            return MoveWithChildren != o.MoveWithChildren;
+            return MoveWithChildren  != o.MoveWithChildren
+                || PickBones         != o.PickBones
+                || PickMeshesNoSkin  != o.PickMeshesNoSkin
+                || PickMeshesSkinned != o.PickMeshesSkinned;
         }
 
         public override void CopyFrom(IToolSettings other)
         {
             if (!IsSameType<ObjectMoveSettings>(other, out var o)) return;
-            MoveWithChildren = o.MoveWithChildren;
+            MoveWithChildren  = o.MoveWithChildren;
+            PickBones         = o.PickBones;
+            PickMeshesNoSkin  = o.PickMeshesNoSkin;
+            PickMeshesSkinned = o.PickMeshesSkinned;
         }
     }
 }

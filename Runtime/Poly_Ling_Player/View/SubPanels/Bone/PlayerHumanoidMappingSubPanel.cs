@@ -173,7 +173,12 @@ namespace Poly_Ling.Player
             var after  = Model.HumanoidMapping.Clone();
             var undo   = tc?.UndoController;
             if (undo != null)
-                undo.MeshListStack.Record(new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping"), "Apply Humanoid Mapping");
+            {
+                var __rec = new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping");
+                string __dbgDesc = "Apply Humanoid Mapping";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (__rec?.GetType().Name ?? "<null>"));
+                undo.MeshListStack.Record(__rec, __dbgDesc);
+            }
             Model.IsDirty = true;
             SetStatus($"適用しました ({_previewMapping.Count} ボーン)");
             Refresh();
@@ -198,7 +203,12 @@ namespace Poly_Ling.Player
             var after  = Model.HumanoidMapping.Clone();
             var undo   = tc?.UndoController;
             if (undo != null)
-                undo.MeshListStack.Record(new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping"), "Clear Humanoid Mapping");
+            {
+                var __rec = new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping");
+                string __dbgDesc = "Clear Humanoid Mapping";
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (__rec?.GetType().Name ?? "<null>"));
+                undo.MeshListStack.Record(__rec, __dbgDesc);
+            }
             Model.IsDirty   = true;
             _previewMapping = null;
             SetStatus("マッピングをクリアしました");

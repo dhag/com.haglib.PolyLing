@@ -102,6 +102,18 @@ namespace Poly_Ling.Ops
                 { Index = masterIndex, Name = newName });
         }
 
+        /// <summary>
+        /// TreeView 折りたたみ状態を設定 (Undo 記録あり)
+        /// </summary>
+        public bool SetMeshFolding(int masterIndex, bool isFolding)
+        {
+            var ctx = GetMeshContext(masterIndex);
+            if (ctx == null) return false;
+            if (ctx.IsFolding == isFolding) return false; // 変更なし
+            return ApplyAttributeChange(new MeshAttributeChange
+                { Index = masterIndex, IsFolding = isFolding });
+        }
+
         // ================================================================
         // リスト操作
         // ================================================================
@@ -227,7 +239,11 @@ namespace Poly_Ling.Ops
                         OldParentMap = preParentMap,
                         NewParentMap = newParentMap,
                     };
-                    _undo.MeshListStack.Record(record, "メッシュ順序変更");
+                    {
+                        string __dbgDesc = "メッシュ順序変更";
+                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                        _undo.MeshListStack.Record(record, __dbgDesc);
+                    }
                     _undo.FocusMeshList();
 
                 }
@@ -372,7 +388,11 @@ namespace Poly_Ling.Ops
             }
             if (record.Entries.Count > 0)
             {
-                _undo?.MeshListStack.Record(record, "BindPoseにベイク");
+                {
+                    string __dbgDesc = "BindPoseにベイク";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undo?.MeshListStack.Record(record, __dbgDesc);
+                }
                 _undo?.FocusMeshList();
             }
             MarkDirty();
@@ -410,7 +430,11 @@ namespace Poly_Ling.Ops
                         NewSnapshot = afterSnapshot,
                     });
                 }
-                _undo.MeshListStack.Record(record, description);
+                {
+                    string __dbgDesc = description;
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undo.MeshListStack.Record(record, __dbgDesc);
+                }
                 _undo.FocusMeshList();
             }
             _sliderDragBeforeSnapshots.Clear();
@@ -487,7 +511,11 @@ namespace Poly_Ling.Ops
                             NewSnapshot = ctx.BoneTransform.CreateSnapshot()
                         });
                 }
-                _undo.MeshListStack.Record(record, description);
+                {
+                    string __dbgDesc = description;
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undo.MeshListStack.Record(record, __dbgDesc);
+                }
                 _undo.FocusMeshList();
             }
             _boneTransformSliderSnapshots.Clear();
@@ -518,7 +546,11 @@ namespace Poly_Ling.Ops
                 record.Entries.Add(new MultiBoneTransformChangeRecord.Entry
                     { MasterIndex = kvp.Key, OldSnapshot = kvp.Value, NewSnapshot = afterVal });
             }
-            _undo.MeshListStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                _undo.MeshListStack.Record(record, __dbgDesc);
+            }
             _undo.FocusMeshList();
         }
         // ================================================================
@@ -660,7 +692,11 @@ namespace Poly_Ling.Ops
         {
             if (_undo == null || oldIndices.SequenceEqual(newIndices)) return;
             var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
-            _undo.MeshListStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                _undo.MeshListStack.Record(record, __dbgDesc);
+            }
             _undo.FocusMeshList();
         }
 
@@ -822,6 +858,7 @@ namespace Poly_Ling.Ops
                 if (change.MirrorType.HasValue) old.MirrorType = ctx.MirrorType;
                 if (change.Name != null) old.Name = ctx.Name;
                 if (change.IgnorePoseInArmature.HasValue) old.IgnorePoseInArmature = ctx.IgnorePoseInArmature;
+                if (change.IsFolding.HasValue) old.IsFolding = ctx.IsFolding;
                 oldValues.Add(old);
                 if (change.IsVisible.HasValue) ctx.IsVisible = change.IsVisible.Value;
                 if (change.IsLocked.HasValue) ctx.IsLocked = change.IsLocked.Value;
@@ -833,11 +870,16 @@ namespace Poly_Ling.Ops
                     if (change.IgnorePoseInArmature.Value && ctx.BoneTransform != null)
                         ctx.BoneTransform.Rotation = Vector3.zero;
                 }
+                if (change.IsFolding.HasValue) ctx.IsFolding = change.IsFolding.Value;
             }
             if (_undo != null && oldValues.Count > 0)
             {
                 var record = new MeshAttributesBatchChangeRecord(oldValues, changes);
-                _undo.MeshListStack.Record(record, "属性変更");
+                {
+                    string __dbgDesc = "属性変更";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undo.MeshListStack.Record(record, __dbgDesc);
+                }
             }
             MarkDirty();
             return oldValues.Count > 0;
@@ -872,14 +914,22 @@ namespace Poly_Ling.Ops
                 record.Entries.Add(new MultiBonePoseChangeRecord.Entry
                     { MasterIndex = kvp.Key, OldSnapshot = kvp.Value, NewSnapshot = afterVal });
             }
-            _undo.MeshListStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                _undo.MeshListStack.Record(record, __dbgDesc);
+            }
             _undo.FocusMeshList();
         }
 
         private void RecordMorphUndo(MeshListUndoRecord record, string description)
         {
             if (_undo == null) return;
-            _undo.MeshListStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                _undo.MeshListStack.Record(record, __dbgDesc);
+            }
             _undo.FocusMeshList();
         }
 

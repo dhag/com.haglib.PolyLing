@@ -51,61 +51,8 @@ namespace Poly_Ling.Tools
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) => false;
         public bool OnMouseUp(ToolContext ctx, Vector2 mousePos) => false;
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null) return;
-            if (_selectedLineIndices.Count == 0) return;
-
-            UnityEditor_Handles.BeginGUI();
-
-            // 選択ラインをハイライト
-            UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 0.8f);
-            foreach (int lineIdx in _selectedLineIndices)
-            {
-                if (lineIdx < 0 || lineIdx >= ctx.FirstSelectedMeshObject.FaceCount) continue;
-                var face = ctx.FirstSelectedMeshObject.Faces[lineIdx];
-                if (face.VertexCount != 2) continue;
-
-                Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[0]].Position;
-                Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[1]].Position;
-
-                Vector2 sp0 = ctx.WorldToScreen(p0);
-                Vector2 sp1 = ctx.WorldToScreen(p1);
-
-                UnityEditor_Handles.DrawAAPolyLine(4f, sp0, sp1);
-            }
-
-            // 検出されたループを表示
-            int loopColorIdx = 0;
-            Color[] loopColors = { Color.cyan, Color.magenta, Color.yellow, Color.green };
-            
-            foreach (var loop in _detectedLoops)
-            {
-                Color col = loopColors[loopColorIdx % loopColors.Length];
-                col.a = 0.6f;
-                UnityEditor_Handles.color = col;
-                
-                for (int i = 0; i < loop.VertexIndices.Count; i++)
-                {
-                    int next = (i + 1) % loop.VertexIndices.Count;
-                    int v0 = loop.VertexIndices[i];
-                    int v1 = loop.VertexIndices[next];
-                    
-                    if (v0 < ctx.FirstSelectedMeshObject.VertexCount && v1 < ctx.FirstSelectedMeshObject.VertexCount)
-                    {
-                        Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[v0].Position;
-                        Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
-                        Vector2 sp0 = ctx.WorldToScreen(p0);
-                        Vector2 sp1 = ctx.WorldToScreen(p1);
-                        UnityEditor_Handles.DrawAAPolyLine(2f, sp0, sp1);
-                    }
-                }
-                loopColorIdx++;
-            }
-
-            GUI.color = Color.white;
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {

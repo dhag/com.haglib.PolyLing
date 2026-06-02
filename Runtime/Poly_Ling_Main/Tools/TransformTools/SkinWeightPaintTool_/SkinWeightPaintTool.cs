@@ -290,53 +290,8 @@ namespace Poly_Ling.Tools
             return true;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.Model == null || !ctx.Model.HasMeshSelection) return;
-
-            var meshCtx = GetTargetMeshContext(ctx.Model);
-            if (meshCtx?.MeshObject == null) return;
-
-            UnityEditor_Handles.BeginGUI();
-
-            // ブラシカラー: モード別（ボーン未選択時はグレー）
-            Color brushColor;
-            bool noBone = TargetBone < 0 && PaintMode != SkinWeightPaintMode.Smooth;
-            if (noBone)
-                brushColor = new Color(0.6f, 0.6f, 0.6f, 0.3f);
-            else
-                brushColor = GetBrushColor();
-            UnityEditor_Handles.color = brushColor;
-
-            Vector2 centerScreen = ctx.CurrentMousePosition;
-            float screenRadius = EstimateBrushScreenRadius(ctx);
-
-            // ブラシ円
-            DrawCircle(centerScreen, screenRadius, 32);
-
-            // 中心ドット
-            UnityEditor_Handles.color = new Color(brushColor.r, brushColor.g, brushColor.b, 0.8f);
-            DrawCircle(centerScreen, 2f, 8);
-
-            // モード・ボーン名テキスト
-            GUI.color = Color.white;
-            string modeName = PaintMode.ToString();
-            string boneName = GetTargetBoneName(ctx);
-            string label;
-            if (TargetBone < 0 && PaintMode != SkinWeightPaintMode.Smooth)
-            {
-                GUI.color = new Color(1f, 0.8f, 0.3f);
-                label = "← パネルでボーンを選択してください";
-            }
-            else
-            {
-                label = $"{modeName}  [{boneName}]  V={WeightValue:F2}";
-            }
-            GUI.Label(new Rect(centerScreen.x + screenRadius + 5, centerScreen.y - 10, 280, 20), label);
-            GUI.color = Color.white;
-
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {
@@ -902,7 +857,7 @@ namespace Poly_Ling.Tools
             {
                 float angle = (float)i / segments * Mathf.PI * 2f;
                 Vector2 point = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-                UnityEditor_Handles.DrawAAPolyLine(2f, prevPoint, point);
+                // UnityEditor_Handles 削除済み
                 prevPoint = point;
             }
         }

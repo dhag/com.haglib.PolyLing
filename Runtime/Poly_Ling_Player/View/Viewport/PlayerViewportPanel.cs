@@ -87,6 +87,19 @@ namespace Poly_Ling.Player
         private List<(Vector2, Vector2)> _addFaceLines        = new List<(Vector2, Vector2)>();
         private bool                     _addFaceVisible;
 
+        // トポロジーツール（辺ベベル/押し出し/トポロジー/面押し出し）ホバーオーバーレイ
+        private readonly VisualElement                        _topoToolOverlay;
+        private List<(Vector2 a, Vector2 b, Color col)>      _topoToolLines  = new List<(Vector2, Vector2, Color)>();
+        private List<(Vector2 p, Color col, float halfSize)> _topoToolPoints = new List<(Vector2, Color, float)>();
+        // 【要確認: Tick 経路に依存した追加 (AI 無断追加)】
+        // Split モードのリング (1クリック目マーカー / ホバーリング) を描画するために
+        // AI が無断追加したフィールド。データ供給は UpdateTopologyToolsOverlay
+        // (Tick 経由毎フレーム実行) からのみ。Phase 2 で UpdateTopologyToolsOverlay を
+        // hover イベント駆動に置換する際、リング描画継続要否を確認の上、
+        // 不要ならフィールドごと削除予定。
+        private List<(Vector2 p, Color col, float radius)>   _topoToolRings  = new List<(Vector2, Color, float)>();
+        private bool                                          _topoToolVisible;
+
         // ================================================================
         // ボーンワイヤフレームオーバーレイ
         // ================================================================
@@ -105,15 +118,14 @@ namespace Poly_Ling.Player
         private bool    _brushCircleVisible;
 
         // ================================================================
-        // 面ホバーオーバーレイ（generateVisualContent による多角形描画）
+        // 面ホバー / 選択面 overlay (Phase 2c 以降は GPU パス)
+        //
+        // 元々は generateVisualContent による UIToolkit Painter2D 描画だったが、
+        // Phase 2c で UnifiedRenderer の GPU パイプラインに統合（選択面・ホバー面は
+        // _FaceFlagsBuffer を見てシェーダが塗る）。本ファイル側は API のみ残す
+        // no-op 実装。画面サイズ変更・視点移動・頂点移動すべて GPU 投影で自動追従する。
         // ================================================================
 
-        // 現在ホバー中の面の頂点スクリーン座標（Y=0が下）。
-        // null のとき非表示。UpdateFaceHover() で更新する。
-        private UnityEngine.Vector2[] _hoverFaceScreenPts;
-        private List<UnityEngine.Vector2[]> _selectedFacesScreenPts;
-
-        private readonly VisualElement _faceOverlay;
         private readonly VisualElement _gizmoOverlay;
         private GizmoData _gizmoData;
 
@@ -136,40 +148,19 @@ namespace Poly_Ling.Player
         { _gizmoData = default; _gizmoOverlay.MarkDirtyRepaint(); }
 
         /// <summary>
-        /// 面ホバーオーバーレイを更新する。
-        /// screenPts はビューポートスクリーン座標（Y=0が下）の頂点リスト。
-        /// null を渡すと非表示になる。
-        ///
-        /// 【座標変換】
-        ///   Camera.WorldToScreenPoint は Y=0 が下。
-        ///   UIToolkit の panel local は Y=0 が上なので Y 反転して渡す。
+        /// 【Phase 2c 以降 no-op】面ホバー overlay は GPU 描画に移行済み。
+        /// 呼出し元残置のため空実装。将来的に API 削除予定。
         /// </summary>
-        public void ShowFaceHover(UnityEngine.Vector2[] screenPts)
-        {
-            _hoverFaceScreenPts = screenPts;
-            _faceOverlay.MarkDirtyRepaint();
-        }
+        public void ShowFaceHover(UnityEngine.Vector2[] screenPts) { }
 
-        /// <summary>面ホバーオーバーレイを非表示にする。</summary>
-        public void HideFaceHover()
-        {
-            _hoverFaceScreenPts = null;
-            _faceOverlay.MarkDirtyRepaint();
-        }
+        /// <summary>【Phase 2c 以降 no-op】</summary>
+        public void HideFaceHover() { }
 
-        /// <summary>選択面オーバーレイを表示/更新する。</summary>
-        public void ShowSelectedFaces(List<UnityEngine.Vector2[]> faces)
-        {
-            _selectedFacesScreenPts = faces;
-            _faceOverlay.MarkDirtyRepaint();
-        }
+        /// <summary>【Phase 2c 以降 no-op】選択面 overlay は GPU 描画に移行済み。</summary>
+        public void ShowSelectedFaces(List<UnityEngine.Vector2[]> faces) { }
 
-        /// <summary>選択面オーバーレイを非表示にする。</summary>
-        public void HideSelectedFaces()
-        {
-            _selectedFacesScreenPts = null;
-            _faceOverlay.MarkDirtyRepaint();
-        }
+        /// <summary>【Phase 2c 以降 no-op】</summary>
+        public void HideSelectedFaces() { }
 
         /// <summary>
         /// 矩形選択オーバーレイを表示/更新する。
@@ -265,9 +256,22 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 面追加オーバーレイを更新する。
+        ///
+        /// 【用途】
+        /// もともとは AddFace (面追加ツール) 専用の Painter2D オーバーレイだが、
+        /// EdgeTopology の Split モードでも同じ API を流用する (共通の見た目 = 確定点
+        /// シアン四角 + プレビュー点黄/シアン + 黄色い接続線)。
+        /// 将来他のツール (例: 2 点を指定する系) でも同じ API で描けるよう汎用扱いする。
+        ///
+        /// AddFace / EdgeTopology-Split は InteractionMode が排他なので同時に描画
+        /// されることはない。OverlayUpdate 経路 (OnRefreshAddFaceOverlay /
+        /// OnRefreshTopologyToolsOverlay) も排他に設計されている。
+        ///
+        /// 【パラメータ】
         /// pts: 配置済み点（UIToolkit Y、Y=0上）
         /// previewPts: プレビュー点（Y=0上）
         /// previewSnapped: プレビュー点ごとのスナップフラグ
+        ///                 (AddFace では頂点スナップ時、Split では対向点候補に乗ったとき true)
         /// lines: 確定済み線＋プレビュー線（Y=0上）
         /// </summary>
         public void UpdateAddFacePreview(
@@ -292,6 +296,60 @@ namespace Poly_Ling.Player
             _addFacePreviewSnap.Clear();
             _addFaceLines.Clear();
             _addFaceOverlay?.MarkDirtyRepaint();
+        }
+
+        // ----------------------------------------------------------------
+        // トポロジーツールホバーオーバーレイ
+        // ----------------------------------------------------------------
+
+        /// <summary>
+        /// トポロジーツール用ホバーオーバーレイを更新する。
+        /// lines: (始点, 終点, 色) のリスト。座標は IMGUI Y（Y=0 上）で渡す。
+        /// </summary>
+        public void UpdateTopoToolOverlay(List<(Vector2 a, Vector2 b, Color col)> lines)
+        {
+            UpdateTopoToolOverlay(lines, null, null);
+        }
+
+        /// <summary>
+        /// トポロジーツール用ホバーオーバーレイを更新する（点マーカー対応版）。
+        /// lines: (始点, 終点, 色)。points: (点, 色, halfSize)。座標は IMGUI Y（Y=0 上）。
+        /// </summary>
+        public void UpdateTopoToolOverlay(
+            List<(Vector2 a, Vector2 b, Color col)> lines,
+            List<(Vector2 p, Color col, float halfSize)> points)
+        {
+            UpdateTopoToolOverlay(lines, points, null);
+        }
+
+        /// <summary>
+        /// 【要確認: Tick 経路依存 (AI 無断追加)】
+        /// トポロジーツール用ホバーオーバーレイを更新する（リング対応版）。
+        /// lines: (始点, 終点, 色)。points: (点, 色, halfSize)。rings: (点, 色, radius)。座標は IMGUI Y（Y=0 上）。
+        /// rings 引数は Split モードのリング描画のために AI が無断追加した。
+        /// 呼び出し元は UpdateTopologyToolsOverlay (Tick 経由毎フレーム実行) のみ。
+        /// Phase 2 で hover イベント駆動に置換する際、リング継続要否を確認の上、
+        /// 不要なら 2 引数版に戻して 3 引数版を削除予定。
+        /// </summary>
+        public void UpdateTopoToolOverlay(
+            List<(Vector2 a, Vector2 b, Color col)> lines,
+            List<(Vector2 p, Color col, float halfSize)> points,
+            List<(Vector2 p, Color col, float radius)> rings)
+        {
+            _topoToolLines   = lines  ?? new List<(Vector2, Vector2, Color)>();
+            _topoToolPoints  = points ?? new List<(Vector2, Color, float)>();
+            _topoToolRings   = rings  ?? new List<(Vector2, Color, float)>();
+            _topoToolVisible = _topoToolLines.Count > 0 || _topoToolPoints.Count > 0 || _topoToolRings.Count > 0;
+            _topoToolOverlay?.MarkDirtyRepaint();
+        }
+
+        public void HideTopoToolOverlay()
+        {
+            _topoToolVisible = false;
+            _topoToolLines.Clear();
+            _topoToolPoints.Clear();
+            _topoToolRings.Clear();
+            _topoToolOverlay?.MarkDirtyRepaint();
         }
 
         public void UpdateAdvSelPreview(
@@ -394,16 +452,8 @@ namespace Poly_Ling.Player
             _lassoOverlay.generateVisualContent += OnGenerateLassoOverlay;
             Add(_lassoOverlay);
 
-            // 面ホバーオーバーレイ（generateVisualContent による多角形描画）
-            _faceOverlay = new VisualElement();
-            _faceOverlay.style.position  = Position.Absolute;
-            _faceOverlay.style.left      = 0;
-            _faceOverlay.style.top       = 0;
-            _faceOverlay.style.right     = 0;
-            _faceOverlay.style.bottom    = 0;
-            _faceOverlay.pickingMode     = PickingMode.Ignore;
-            _faceOverlay.generateVisualContent += OnGenerateFaceOverlay;
-            Add(_faceOverlay);
+            // Phase 2c: 面ホバー / 選択面 overlay は GPU パスに移行したため
+            // ここに VisualElement を作成しない。ギズモ overlay のみ残る。
             _gizmoOverlay = new VisualElement();
             _gizmoOverlay.style.position = Position.Absolute;
             _gizmoOverlay.style.left = _gizmoOverlay.style.top =
@@ -438,6 +488,15 @@ namespace Poly_Ling.Player
             _addFaceOverlay.pickingMode = PickingMode.Ignore;
             _addFaceOverlay.generateVisualContent += OnGenerateAddFaceOverlay;
             Add(_addFaceOverlay);
+
+            // トポロジーツールホバーオーバーレイ
+            _topoToolOverlay = new VisualElement();
+            _topoToolOverlay.style.position = Position.Absolute;
+            _topoToolOverlay.style.left = _topoToolOverlay.style.top =
+            _topoToolOverlay.style.right = _topoToolOverlay.style.bottom = 0;
+            _topoToolOverlay.pickingMode = PickingMode.Ignore;
+            _topoToolOverlay.generateVisualContent += OnGenerateTopoToolOverlay;
+            Add(_topoToolOverlay);
 
             // ボーンワイヤフレームオーバーレイ
             _boneOverlay = new VisualElement();
@@ -819,6 +878,56 @@ namespace Poly_Ling.Player
             }
         }
 
+        private void OnGenerateTopoToolOverlay(MeshGenerationContext ctx)
+        {
+            if (!_topoToolVisible) return;
+            var painter = ctx.painter2D;
+            float panelH = resolvedStyle.height;
+            // AddFace と同じ座標変換パターン: panelH - pt.y
+            System.Func<Vector2, Vector2> cv = (p) => new Vector2(p.x, panelH - p.y);
+
+            foreach (var (a, b, col) in _topoToolLines)
+            {
+                painter.strokeColor = col;
+                painter.lineWidth   = 3f;
+                painter.BeginPath();
+                painter.MoveTo(cv(a));
+                painter.LineTo(cv(b));
+                painter.Stroke();
+            }
+
+            // 点マーカー（塗りつぶし矩形: AddFace と同じスタイル）
+            foreach (var (p, col, hs) in _topoToolPoints)
+            {
+                var c = cv(p);
+                painter.fillColor = col;
+                painter.BeginPath();
+                painter.MoveTo(c + new Vector2(-hs, -hs));
+                painter.LineTo(c + new Vector2( hs, -hs));
+                painter.LineTo(c + new Vector2( hs,  hs));
+                painter.LineTo(c + new Vector2(-hs,  hs));
+                painter.ClosePath();
+                painter.Fill();
+            }
+
+            // 【要確認: Tick 経路依存 (AI 無断追加)】
+            // リング描画 (AddFace のスナップ視覚と同じ円描画)。
+            // Split モードのリング (1クリック目マーカー / ホバーリング) のために
+            // AI が無断追加した分岐。データ供給は UpdateTopologyToolsOverlay
+            // (Tick 経由毎フレーム実行) からのみ。
+            // Phase 2 で UpdateTopologyToolsOverlay を hover イベント駆動に
+            // 置換する際、リング継続要否を確認の上、不要ならこのブロックも削除予定。
+            foreach (var (p, col, radius) in _topoToolRings)
+            {
+                var c = cv(p);
+                painter.strokeColor = col;
+                painter.lineWidth = 1.5f;
+                painter.BeginPath();
+                painter.Arc(c, radius, 0f, 360f);
+                painter.Stroke();
+            }
+        }
+
         private void OnGenerateGizmoOverlay(MeshGenerationContext ctx)
         {
             if (!_gizmoData.HasGizmo) return;
@@ -924,57 +1033,8 @@ namespace Poly_Ling.Player
         private static ModifierKeys GetMods(PointerEventBase<PointerDownEvent> evt)
             => new ModifierKeys { Shift = evt.shiftKey, Ctrl = evt.ctrlKey, Alt = evt.altKey };
 
-        // ================================================================
-        // 面ホバーオーバーレイ描画
-        // ================================================================
-
-        /// <summary>
-        /// generateVisualContent コールバック。
-        /// _hoverFaceScreenPts（スクリーン座標 Y=0が下）を panel local（Y=0が上）に変換して描画。
-        /// ポリゴンをファンで三角形分割して塗りつぶし + 枠線を描く。
-        /// </summary>
-        private void OnGenerateFaceOverlay(MeshGenerationContext ctx)
-        {
-            float panelH = resolvedStyle.height;
-
-            // 選択面（青系）
-            var selFaces = _selectedFacesScreenPts;
-            if (selFaces != null)
-            {
-                var selColor = new UnityEngine.Color(0.2f, 0.5f, 1f, 0.3f);
-                foreach (var pts in selFaces)
-                    DrawFacePolygon(ctx, pts, panelH, selColor);
-            }
-
-            // ホバー面（オレンジ）
-            var hoverPts = _hoverFaceScreenPts;
-            if (hoverPts != null && hoverPts.Length >= 3)
-                DrawFacePolygon(ctx, hoverPts, panelH, new UnityEngine.Color(1f, 0.6f, 0.1f, 0.25f));
-        }
-
-        private static void DrawFacePolygon(MeshGenerationContext ctx,
-            UnityEngine.Vector2[] pts, float panelH, UnityEngine.Color color)
-        {
-            if (pts == null || pts.Length < 3) return;
-            int triCount = pts.Length - 2;
-            var localPts = new Vertex[pts.Length];
-            for (int i = 0; i < pts.Length; i++)
-                localPts[i] = new Vertex
-                {
-                    position = new UnityEngine.Vector3(pts[i].x, panelH - pts[i].y, Vertex.nearZ),
-                    tint     = color,
-                };
-            var mesh = ctx.Allocate(localPts.Length, triCount * 3);
-            mesh.SetAllVertices(localPts);
-            var indices = new ushort[triCount * 3];
-            for (int t = 0; t < triCount; t++)
-            {
-                indices[t * 3]     = 0;
-                indices[t * 3 + 1] = (ushort)(t + 1);
-                indices[t * 3 + 2] = (ushort)(t + 2);
-            }
-            mesh.SetAllIndices(indices);
-        }
+        // Phase 2c: 面ホバー・選択面は GPU 描画パスに統合済み。
+        // 旧 OnGenerateFaceOverlay / DrawFacePolygon は削除。
 
         private static ModifierKeys GetMods(PointerEventBase<PointerMoveEvent> evt)
             => new ModifierKeys { Shift = evt.shiftKey, Ctrl = evt.ctrlKey, Alt = evt.altKey };

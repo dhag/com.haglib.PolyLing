@@ -125,110 +125,8 @@ namespace Poly_Ling.Tools
             return false;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null) return;
-
-            UnityEditor_Handles.BeginGUI();
-
-            Color previewColor = AddToSelection ? new Color(0, 1, 0, 0.7f) : new Color(1, 0, 0, 0.7f);
-
-            // プレビュー頂点を描画
-            GUI.color = previewColor;
-            foreach (int vIdx in _ctx.PreviewVertices)
-            {
-                if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                Vector2 sp = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
-                float size = 8f;
-                GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size), Texture2D.whiteTexture);
-            }
-
-            // プレビューエッジを描画
-            UnityEditor_Handles.color = previewColor;
-            foreach (var edge in _ctx.PreviewEdges)
-            {
-                if (edge.V1 < 0 || edge.V1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                if (edge.V2 < 0 || edge.V2 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[edge.V1].Position);
-                Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[edge.V2].Position);
-                UnityEditor_Handles.DrawAAPolyLine(3f, sp1, sp2);
-            }
-
-            // プレビュー面を描画
-            foreach (int faceIdx in _ctx.PreviewFaces)
-            {
-                DrawFacePreview(ctx, faceIdx, previewColor);
-            }
-
-            // プレビューラインを描画
-            UnityEditor_Handles.color = new Color(previewColor.r, previewColor.g, previewColor.b, 0.9f);
-            foreach (int lineIdx in _ctx.PreviewLines)
-            {
-                DrawLinePreview(ctx, lineIdx);
-            }
-
-            // 最短パスのプレビュー
-            if (Mode == AdvancedSelectMode.ShortestPath && _ctx.PreviewPath.Count > 1)
-            {
-                UnityEditor_Handles.color = previewColor;
-                for (int i = 0; i < _ctx.PreviewPath.Count - 1; i++)
-                {
-                    int v1 = _ctx.PreviewPath[i];
-                    int v2 = _ctx.PreviewPath[i + 1];
-                    if (v1 < 0 || v1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                    if (v2 < 0 || v2 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-
-                    Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-                    Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v2].Position);
-                    UnityEditor_Handles.DrawAAPolyLine(3f, sp1, sp2);
-                }
-
-                GUI.color = previewColor;
-                foreach (int vIdx in _ctx.PreviewPath)
-                {
-                    if (vIdx < 0 || vIdx >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                    Vector2 sp = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[vIdx].Position);
-                    float size = 8f;
-                    GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size), Texture2D.whiteTexture);
-                }
-            }
-
-            // ShortestPath: 1つ目の頂点をハイライト
-            if (Mode == AdvancedSelectMode.ShortestPath)
-            {
-                var shortestMode = _modes[AdvancedSelectMode.ShortestPath] as ShortestPathSelectMode;
-                if (shortestMode != null && shortestMode.FirstVertex >= 0 && shortestMode.FirstVertex < ctx.FirstSelectedMeshObject.VertexCount)
-                {
-                    GUI.color = Color.yellow;
-                    Vector2 sp = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[shortestMode.FirstVertex].Position);
-                    float size = 12f;
-                    GUI.DrawTexture(new Rect(sp.x - size / 2, sp.y - size / 2, size, size), Texture2D.whiteTexture);
-                }
-            }
-
-            // ホバー中のエッジをハイライト
-            if (_ctx.HoveredEdgePair.HasValue)
-            {
-                UnityEditor_Handles.color = Color.cyan;
-                var edge = _ctx.HoveredEdgePair.Value;
-                if (edge.V1 >= 0 && edge.V1 < ctx.FirstSelectedMeshObject.VertexCount &&
-                    edge.V2 >= 0 && edge.V2 < ctx.FirstSelectedMeshObject.VertexCount)
-                {
-                    Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[edge.V1].Position);
-                    Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[edge.V2].Position);
-                    UnityEditor_Handles.DrawAAPolyLine(4f, sp1, sp2);
-                }
-            }
-
-            // ホバー中の面をハイライト
-            if (_ctx.HoveredFace >= 0)
-            {
-                DrawFacePreview(ctx, _ctx.HoveredFace, Color.cyan * 0.5f);
-            }
-
-            GUI.color = Color.white;
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {
@@ -285,7 +183,7 @@ namespace Poly_Ling.Tools
             var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
             if (face.VertexCount < 3) return;
 
-            UnityEditor_Handles.color = color;
+            // UnityEditor_Handles 削除済み
             for (int i = 0; i < face.VertexCount; i++)
             {
                 int v1 = face.VertexIndices[i];
@@ -294,7 +192,7 @@ namespace Poly_Ling.Tools
                 if (v2 < 0 || v2 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
                 Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
                 Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v2].Position);
-                UnityEditor_Handles.DrawAAPolyLine(2f, sp1, sp2);
+                // UnityEditor_Handles 削除済み
             }
         }
 
@@ -311,7 +209,7 @@ namespace Poly_Ling.Tools
 
             Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
             Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v2].Position);
-            UnityEditor_Handles.DrawAAPolyLine(4f, sp1, sp2);
+            // UnityEditor_Handles 削除済み
         }
     }
 }

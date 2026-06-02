@@ -13,6 +13,9 @@ namespace Poly_Ling.Tools
             ["Title"]            = new() { ["en"] = "Object Move Tool", ["ja"] = "オブジェクト移動ツール", ["hi"] = "おぶじぇくとうごかすどうぐ" },
             ["MoveWithChildren"] = new() { ["en"] = "Move With Children",  ["ja"] = "子を一緒に移動",        ["hi"] = "こどもといっしょにうごかす" },
             ["TargetObjects"]    = new() { ["en"] = "Target: {0} objects", ["ja"] = "移動対象: {0} オブジェクト", ["hi"] = "うごかすもの: {0}こ" },
+            ["PickBones"]        = new() { ["en"] = "Pick Bones",            ["ja"] = "ボーン",                  ["hi"] = "ほね" },
+            ["PickMeshesNoSkin"] = new() { ["en"] = "Pick Meshes (no skin)", ["ja"] = "スキンドでないメッシュ",  ["hi"] = "すきんなしのめっしゅ" },
+            ["PickMeshesSkinned"]= new() { ["en"] = "Pick Meshes (skinned)", ["ja"] = "スキンドメッシュ",         ["hi"] = "すきんあめっしゅ" },
         };
 
         private static string T(string key) => L.GetFrom(Texts, key);

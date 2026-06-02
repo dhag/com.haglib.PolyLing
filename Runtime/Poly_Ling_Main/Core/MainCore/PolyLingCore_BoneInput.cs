@@ -315,7 +315,11 @@ namespace Poly_Ling.Core
 
             if (record.Entries.Count > 0)
             {
-                _undoController.MeshListStack.Record(record, "ボーン移動");
+                {
+                    string __dbgDesc = "ボーン移動";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    _undoController.MeshListStack.Record(record, __dbgDesc);
+                }
                 _undoController.FocusMeshList();
             }
 

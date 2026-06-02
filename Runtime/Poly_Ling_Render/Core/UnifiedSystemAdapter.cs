@@ -709,7 +709,8 @@ namespace Poly_Ling.Core
             int selectedMeshIndex,
             float pointSize,
             float alpha = 1f,
-            int cullingSlot = 0)
+            int cullingSlot = 0,
+            bool showFaceOverlay = true)
         {
             if (!_isInitialized)
             {
@@ -733,6 +734,11 @@ namespace Poly_Ling.Core
                     _renderer.UpdateWireframePositionsOnly();
                 if (showVertices)
                     _renderer.UpdatePointPositionsOnly(camera, pointSize);
+                // Phase 2c: 面塗り overlay は頂点位置に連動するため、軽量更新時も再構築が必要。
+                // ただし wireframe の UpdateWireframePositionsOnly 相当の軽量経路は現状未実装のため、
+                // やむをえずフル再構築する（ドラッグ中は毎フレーム走る点、許容する）。
+                if (showFaceOverlay)
+                    _renderer.UpdateFaceOverlayMeshSelected();
             }
 
             if (showWireframe)
@@ -754,34 +760,65 @@ namespace Poly_Ling.Core
                 }
                 _renderer.QueuePoints(showUnselectedVertices, cullingSlot);
             }
+
+            // Phase 2c: 面塗り overlay
+            if (showFaceOverlay)
+            {
+                if (rebuildMesh)
+                {
+                    _renderer.UpdateFaceOverlayMeshSelected();
+                }
+                _renderer.QueueFaceOverlay(cullingSlot);
+            }
         }
 
         /// <summary>
-        /// キューに入っているメッシュを指定カメラに描画
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 指定 slot のキューに入っているメッシュを指定カメラに描画する。
+        /// 計算処理は一切禁止。全ての準備は PrepareDrawing で完了させておくこと。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
         /// </summary>
+        public void DrawQueued(Camera camera, int slot)
+        {
+            if (!_isInitialized) return;
+            _renderer.DrawQueued(camera, slot);
+        }
+
+        /// <summary>
+        /// 【重大規約違反: 旧 API】slot 非対応版。slot=0 で動作する。Phase 1 で削除予定。
+        /// </summary>
+        [System.Obsolete("Use DrawQueued(camera, slot) instead.")]
         public void DrawQueued(Camera camera)
         {
-            if (!_isInitialized)
-                return;
-
-            _renderer.DrawQueued(camera);
+            if (!_isInitialized) return;
+            _renderer.DrawQueued(camera, 0);
         }
 
 
         /// <summary>
-        /// 描画後のクリーンアップ
+        /// 指定 slot の描画後クリーンアップ。
         /// </summary>
+        public void CleanupQueued(int slot)
+        {
+            if (!_isInitialized) return;
+            _renderer.CleanupQueued(slot);
+        }
+
+        /// <summary>
+        /// 【重大規約違反: 旧 API】全 slot をクリア。Phase 1 で削除予定。
+        /// </summary>
+        [System.Obsolete("Use CleanupQueued(slot) instead.")]
         public void CleanupQueued()
         {
-            if (!_isInitialized)
-                return;
-
+            if (!_isInitialized) return;
+#pragma warning disable CS0618
             _renderer.CleanupQueued();
+#pragma warning restore CS0618
         }
 
         /// <summary>
         /// プレイヤービルド用: カメラ情報からGPUカリングを実行して per-slot カリングバッファを更新する。
-        /// DrawSRP / DrawQueued の前に呼ぶこと。
+        /// DrawQueued の前に呼ぶこと。
         /// </summary>
         public void DispatchCullingForDisplay(Camera camera, bool backfaceCulling = true, int slot = 0)
         {
@@ -807,15 +844,6 @@ namespace Poly_Ling.Core
             {
                 bm.ClearCulledFlagsGPU(slot);
             }
-        }
-
-        /// <summary>
-        /// SRP (URP) 用描画。Graphics.RenderPrimitives で GPU バッファを直接参照。
-        /// </summary>
-        public void DrawSRP(Camera camera, bool showWireframe, bool showVertices, float screenSpacePointSize = 8f, int cullingSlot = 0)
-        {
-            if (!_isInitialized) return;
-            _renderer.DrawSRP(camera, showWireframe, showVertices, screenSpacePointSize, cullingSlot);
         }
 
         /// <summary>
@@ -954,13 +982,55 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
-        /// GPUの頂点フラグをCPUに読み戻す
+        /// 指定メッシュのローカル頂点が「表面の面に属さない」(背面カリング対象) かを取得。
+        ///
+        /// IsVertexCulled (_vertexFlags & FLAG_CULLED) は画面外判定専用で、
+        /// 背面カリングの結果は反映されていない。本メソッドは GPU 側
+        /// _VertexCulledBuffer を ReadBackVertexCulled で CPU に読み戻した
+        /// _vertexCulledCache を参照する。矩形・投げ縄選択の CPU ループから使う。
+        ///
+        /// 呼出前に必ず ReadBackVertexCulled(slot) を呼ぶこと。
+        /// </summary>
+        public bool IsVertexBackfaceCulled(int meshIndex, int localVertexIndex)
+        {
+            var bufferManager = _unifiedSystem?.BufferManager;
+            if (!_isInitialized || bufferManager == null)
+                return false;
+
+            int globalIndex = bufferManager.LocalToGlobalVertexIndex(meshIndex, localVertexIndex);
+            if (globalIndex < 0)
+                return false;
+
+            var vertexCulled = bufferManager.VertexCulled;
+            if (vertexCulled == null || globalIndex >= vertexCulled.Length)
+                return false;
+
+            return vertexCulled[globalIndex] != 0u;
+        }
+
+        /// <summary>
+        /// GPUの頂点フラグをCPUに読み戻す。
+        ///
+        /// 呼出し元は MoveToolHandler.OnLeftDragEnd 内の矩形/投げ縄選択確定直前
+        /// のワンショットのみ。ドラッグ中は UpdateMode が TransformDragging 等で
+        /// AllowVertexFlagsReadback=false になっているが、本メソッドは矩形選択
+        /// 確定時に CPU カリング判定を行うための必須処理のためガードを設けない。
         /// </summary>
         public void ReadBackVertexFlags()
         {
-            if (!_currentProfile.AllowVertexFlagsReadback)
-                return;
             _unifiedSystem?.BufferManager?.ReadBackVertexFlags();
+        }
+
+        /// <summary>
+        /// 指定スロットの GPU 頂点カリングバッファを CPU キャッシュに読み戻す。
+        /// 矩形選択・投げ縄選択の直前に呼ぶこと。IsVertexBackfaceCulled はこの
+        /// キャッシュを参照する。
+        ///
+        /// ReadBackVertexFlags と同じ理由 (ワンショット呼出し) でガードは設けない。
+        /// </summary>
+        public void ReadBackVertexCulled(int slot = 0)
+        {
+            _unifiedSystem?.BufferManager?.ReadBackVertexCulled(slot);
         }
 
         // ============================================================

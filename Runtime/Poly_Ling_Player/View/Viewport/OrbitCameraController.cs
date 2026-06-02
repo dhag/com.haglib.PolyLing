@@ -57,6 +57,13 @@ namespace Poly_Ling.Player
         /// </summary>
         public System.Action OnCameraDragBegin;
 
+        /// <summary>
+        /// カメラドラッグ中（連続移動中）に発火する軽量コールバック。
+        /// Phase 1: ApplyCameraTransform + PresentAll など軽量な更新のみを実行する想定。
+        /// UpdateFrame（GPU ヒットテスト等の重い処理）はドラッグ終了時の OnCameraChanged で行う。
+        /// </summary>
+        public System.Action OnCameraDragging;
+
         // ================================================================
         // 内部状態
         // ================================================================
@@ -151,11 +158,13 @@ namespace Poly_Ling.Player
 
         private void OnDrag(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
+            bool changed = false;
             if (btn == 1 && _isOrbiting)
             {
                 RotY  += delta.x * OrbitSensitivity;
                 RotX  -= delta.y * OrbitSensitivity;
                 RotX   = Mathf.Clamp(RotX, -89f, 89f);
+                changed = true;
             }
             else if (btn == 2 && _isPanning)
             {
@@ -163,7 +172,12 @@ namespace Poly_Ling.Player
                 float      panScale = Distance * PanSensitivity;
                 Target -= rot * Vector3.right * delta.x * panScale;
                 Target -= rot * Vector3.up    * delta.y * panScale;
+                changed = true;
             }
+
+            // Phase 1: ドラッグ中はフレーム駆動で transform 反映していたが
+            // Tick 廃止に伴い、軽量コールバックで event 駆動化する。
+            if (changed) OnCameraDragging?.Invoke();
         }
 
         private void OnDragEnd(int btn, Vector2 screenPos, ModifierKeys mods)
@@ -183,6 +197,9 @@ namespace Poly_Ling.Player
         {
             Distance *= 1f - scroll * ZoomSensitivity;
             Distance  = Mathf.Clamp(Distance, ZoomMin, ZoomMax);
+            // Phase 1: スクロールは単発イベントのため、フル更新（UpdateFrame 含む）を
+            // 伴う OnCameraChanged を発火する。
+            OnCameraChanged?.Invoke();
         }
 
         // ================================================================

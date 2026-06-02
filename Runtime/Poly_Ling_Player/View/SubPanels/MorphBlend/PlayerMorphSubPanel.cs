@@ -336,7 +336,11 @@ namespace Poly_Ling.Player
         {
             var tc = GetToolContext?.Invoke();
             var undo = tc?.UndoController; if (undo == null) return;
-            undo.MeshListStack.Record(record, description);
+            {
+                string __dbgDesc = description;
+                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                undo.MeshListStack.Record(record, __dbgDesc);
+            }
             undo.FocusMeshList();
         }
 

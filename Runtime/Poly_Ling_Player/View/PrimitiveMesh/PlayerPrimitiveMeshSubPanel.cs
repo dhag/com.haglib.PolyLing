@@ -5,8 +5,10 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.PrimitiveMesh;
 using Poly_Ling.Revolution;
 using Poly_Ling.Profile2DExtrude;
@@ -62,6 +64,7 @@ namespace Poly_Ling.Player
         private Vector3         _worldPos            = Vector3.zero;
         private bool            _ignorePoseInArmature = false;
         private PrimitiveAddMode _addMode             = PrimitiveAddMode.NewObject;
+        private bool            _mergeDuplicateVertices = true;
 
         // ================================================================
         // プレビュー
@@ -241,6 +244,11 @@ namespace Poly_Ling.Player
             ignorePoseToggle.RegisterValueChangedCallback(e => _ignorePoseInArmature = e.newValue);
             parent.Add(ignorePoseToggle);
 
+            var mergeToggle = new Toggle(T("MergeDuplicates")) { value = _mergeDuplicateVertices };
+            mergeToggle.style.color = new StyleColor(Color.white);
+            mergeToggle.RegisterValueChangedCallback(e => { _mergeDuplicateVertices = e.newValue; _dirty = true; });
+            parent.Add(mergeToggle);
+
             // 追加先ドロップダウン
             var addModeChoices = new List<string>
             {
@@ -270,35 +278,69 @@ namespace Poly_Ling.Player
             parent.Add(_statusLabel);
 
             Select(ShapeKind.Cube);
+
+            // URP の beginCameraRendering にフック。メインカメラ描画前に
+            // プレビューカメラを 1 回手動 Render する。外部から毎フレーム
+            // Tick を呼ぶ必要がなくなる (規約: camera callbacks は OK)。
+            RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
         }
 
         // ================================================================
-        // Tick / Dispose
+        // プレビュー再生成 / カメラレンダー / Dispose
         // ================================================================
 
-        public void Tick()
+        /// <summary>
+        /// パラメータ変更時 (_dirty=true) にメッシュとワイヤを再構築する。
+        /// イベント駆動で呼んでもよいし、カメラレンダー前 (TickPreview) の
+        /// 先頭で呼んでもよい。
+        /// </summary>
+        private void Regenerate()
         {
             if (_preview == null) return;
-            if (_dirty)
+            if (!_dirty) return;
+            _dirty = false;
+            try
             {
-                _dirty = false;
-                try
-                {
-                    var mo = Generate();
-                    _preview.SetMesh(mo);
-                    DestroyWire();
-                    if (mo != null) _wireMesh = BuildWire(mo);
-                }
-                catch { }
+                var mo = Generate();
+                _preview.SetMesh(mo);
+                DestroyWire();
+                if (mo != null) _wireMesh = BuildWire(mo);
             }
+            catch { }
+        }
+
+        /// <summary>
+        /// プレビューカメラの描画を 1 回実行する。
+        /// RenderPipelineManager.beginCameraRendering コールバックから
+        /// (メインカメラ描画の直前に) 呼ばれる。毎フレームポーリングは
+        /// 行わず、Unity のカメラレンダーループに寄り添う形で動かす。
+        /// </summary>
+        private void TickPreview()
+        {
+            if (_preview == null) return;
+            Regenerate();
             _preview.Tick(_wireMesh);
             if (_previewEl != null && _preview.RT != null)
                 _previewEl.style.backgroundImage = new StyleBackground(
                     Background.FromRenderTexture(_preview.RT));
         }
 
+        /// <summary>
+        /// URP の beginCameraRendering コールバック。
+        /// プレビューカメラ自身 (_preview.Cam) および非 Game カメラは除外。
+        /// メインカメラ描画の直前にプレビューを更新する。
+        /// </summary>
+        private void OnBeginCameraRendering(ScriptableRenderContext ctx, Camera cam)
+        {
+            if (cam == null) return;
+            if (cam.cameraType != CameraType.Game) return;
+            if (_preview != null && cam == _preview.Cam) return;
+            TickPreview();
+        }
+
         public void Dispose()
         {
+            RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
             _preview?.Dispose();
             _preview = null;
             DestroyWire();
@@ -1800,20 +1842,22 @@ namespace Poly_Ling.Player
 
         private MeshObject Generate()
         {
+            MeshObject mo;
             switch (_current)
             {
-                case ShapeKind.Cube:      return CubeMeshGenerator.Generate(_cubeP);
-                case ShapeKind.Sphere:    return SphereMeshGenerator.Generate(_sphereP);
-                case ShapeKind.Cylinder:  return CylinderMeshGenerator.Generate(_cylP);
-                case ShapeKind.Capsule:   return CapsuleMeshGenerator.Generate(_capsP);
-                case ShapeKind.Plane:     return PlaneMeshGenerator.Generate(_planeP);
-                case ShapeKind.Pyramid:   return PyramidMeshGenerator.Generate(_pyramidP);
+                case ShapeKind.Cube:      mo = CubeMeshGenerator.Generate(_cubeP); break;
+                case ShapeKind.Sphere:    mo = SphereMeshGenerator.Generate(_sphereP); break;
+                case ShapeKind.Cylinder:  mo = CylinderMeshGenerator.Generate(_cylP); break;
+                case ShapeKind.Capsule:   mo = CapsuleMeshGenerator.Generate(_capsP); break;
+                case ShapeKind.Plane:     mo = PlaneMeshGenerator.Generate(_planeP); break;
+                case ShapeKind.Pyramid:   mo = PyramidMeshGenerator.Generate(_pyramidP); break;
                 case ShapeKind.Revolution:
                     EnsureRevProfile();
-                    return RevolutionMeshGenerator.Generate(_revProfile, _revP);
+                    mo = RevolutionMeshGenerator.Generate(_revProfile, _revP);
+                    break;
                 case ShapeKind.Profile2D:
                     EnsureP2DLoops();
-                    return Profile2DExtrudeMeshGenerator.Generate(_p2dLoops, _p2dP.MeshName,
+                    mo = Profile2DExtrudeMeshGenerator.Generate(_p2dLoops, _p2dP.MeshName,
                         new Profile2DGenerateParams
                         {
                             Scale          = _p2dP.Scale,
@@ -1826,10 +1870,17 @@ namespace Poly_Ling.Player
                             EdgeSizeBack   = _p2dP.EdgeSizeBack,
                             EdgeInward     = _p2dP.EdgeInward,
                         });
+                    break;
                 case ShapeKind.NohMask:
-                    return NohMaskMeshGenerator.GenerateFromFiles(_nohP);
+                    mo = NohMaskMeshGenerator.GenerateFromFiles(_nohP);
+                    break;
                 default: return null;
             }
+
+            if (_mergeDuplicateVertices && mo != null && mo.VertexCount >= 2)
+                MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, 0.001f);
+
+            return mo;
         }
 
         private string Name()

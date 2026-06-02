@@ -322,7 +322,11 @@ namespace Poly_Ling.Tools
             {
                 ctx.UndoController.FocusVertexEdit();
                 var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
-                ctx.UndoController.VertexEditStack.Record(record, T("UndoRotate"));
+                {
+                    string __dbgDesc = T("UndoRotate");
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
+                }
             }
 
             _multiMeshStartPositions.Clear();
@@ -361,34 +365,18 @@ namespace Poly_Ling.Tools
             _ctx.SyncMesh?.Invoke();
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            _ctx = ctx;
-            if (GetTotalAffectedCount() == 0) return;
-
-            var rect = ctx.PreviewRect;
-            Vector2 p = ctx.WorldToScreenPos(_pivot, rect, ctx.CameraPosition, ctx.CameraTarget);
-            if (!rect.Contains(p)) return;
-
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = new Color(1f, 0.8f, 0.2f);
-            UnityEditor_Handles.DrawSolidDisc(new Vector3(p.x, p.y, 0), Vector3.forward, 6f);
-            UnityEditor_Handles.EndGUI();
-
-            DrawAxis(ctx, rect, p, Vector3.right, Color.red);
-            DrawAxis(ctx, rect, p, Vector3.up, Color.green);
-            DrawAxis(ctx, rect, p, Vector3.forward, Color.blue);
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         private void DrawAxis(ToolContext ctx, Rect rect, Vector2 origin, Vector3 dir, Color col)
         {
             Vector2 end = ctx.WorldToScreenPos(_pivot + dir * 0.1f, rect, ctx.CameraPosition, ctx.CameraTarget);
             Vector2 d = (end - origin).normalized * 40f;
 
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = col;
-            UnityEditor_Handles.DrawAAPolyLine(2f, new Vector3(origin.x, origin.y, 0), new Vector3(origin.x + d.x, origin.y + d.y, 0));
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
         }
     }
 }

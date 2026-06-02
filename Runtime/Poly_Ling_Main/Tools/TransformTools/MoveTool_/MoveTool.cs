@@ -829,7 +829,11 @@ namespace Poly_Ling.Tools
 
                 var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
                 ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, actionName);
+                {
+                    string __dbgDesc = actionName;
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
+                }
             }
 
             // Mirror波及: 移動した各MeshContextのMirror側を同期

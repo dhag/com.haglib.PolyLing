@@ -170,6 +170,12 @@ namespace Poly_Ling.Core
         private ComputeBuffer _vertexFlagsBuffer;
         private uint[] _vertexFlags;
 
+        // 頂点カリング結果の CPU キャッシュ (slot 別)
+        // GPU 側 _VertexCulledBuffer (per-slot) を ReadBack したもの。
+        // 矩形/投げ縄選択の CPU ループで「表面の面に属さない頂点」を除外するために使う。
+        // _vertexFlags に混ぜると CPU 側からの SetData で消失するため、独立した配列として保持。
+        private uint[] _vertexCulledCache;
+
         // ラインフラグ
         private ComputeBuffer _lineFlagsBuffer;
         private uint[] _lineFlags;
@@ -385,12 +391,22 @@ namespace Poly_Ling.Core
         public bool UseWorldPositions { get; set; } = false;
         
         public uint[] VertexFlags => _vertexFlags;
+
+        /// <summary>
+        /// 頂点カリング結果の CPU キャッシュ。ReadBackVertexCulled(slot) で埋める。
+        /// 各 uint は 0=可視 / 非 0=カリング済み (表面の面に属さない)。
+        /// </summary>
+        public uint[] VertexCulled => _vertexCulledCache;
         public uint[] LineFlags => _lineFlags;
         public UnifiedLine[] Lines => _lines;
         public MeshInfo[] MeshInfos => _meshInfos;
         public float[] FaceHitResults => _faceHitResults;
         public float[] FaceHitDepths => _faceHitDepths;
         public uint[] CullingResults => _cullingResults;
+        // Phase 2c: 面塗り overlay の CPU mesh 構築で参照。
+        public UnifiedFace[] Faces => _faces;
+        public uint[] FaceFlags => _faceFlags;
+        public uint[] Indices => _indices;
 
         // ============================================================
         // コンストラクタ

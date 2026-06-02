@@ -127,18 +127,8 @@ namespace Poly_Ling.Tools
             return handled;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            _lastContext = ctx;
-
-            // ホバー更新
-            if (_state == ToolState.Idle)
-            {
-                _hoveredAxis = FindAxisHandleAtScreenPos(_lastMousePos, ctx);
-            }
-
-            DrawAxisGizmo(ctx);
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
         public void OnActivate(ToolContext ctx)
         {
             _lastContext = ctx;
@@ -309,7 +299,11 @@ namespace Poly_Ling.Tools
                 };
 
                 ctx.UndoController.SetModelContext(ctx.Model);
-                ctx.UndoController.MeshListStack.Record(record, $"Pivot Move ({axisName})");
+                {
+                    string __dbgDesc = $"Pivot Move ({axisName})";
+                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    ctx.UndoController.MeshListStack.Record(record, __dbgDesc);
+                }
                 ctx.UndoController.FocusMeshList();
             }
 
@@ -365,11 +359,11 @@ namespace Poly_Ling.Tools
                 currentCenterSize);
 
             // 中央の枠線
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.DrawRect(centerRect, centerColor);// 中心点
-            UnityEditor_Handles.color = centerHovered ? Color.white : new Color(0.8f, 0.5f, 0f);
-            UnityEditor_Handles.DrawSolidRectangleWithOutline(centerRect, Color.clear, UnityEditor_Handles.color);
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み// 中心点
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
             // ラベル
             GUIStyle labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 10 };
@@ -400,12 +394,10 @@ namespace Poly_Ling.Tools
 
         private void DrawAxisLine(Vector2 from, Vector2 to, Color color, float lineWidth)
         {
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = color;
-            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
-                new Vector3(from.x, from.y, 0),
-                new Vector3(to.x, to.y, 0));
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
         }
 
         private void DrawAxisHandle(Vector2 pos, Color color, bool hovered, string label)
@@ -414,11 +406,11 @@ namespace Poly_Ling.Tools
 
             Rect handleRect = new Rect(pos.x - size / 2, pos.y - size / 2, size, size);
 
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.DrawRect(handleRect, color);
-            UnityEditor_Handles.color = Color.white;
-            UnityEditor_Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
             GUIStyle style = new GUIStyle(GUI.skin.label) { fontSize = 10 };
             style.normal.textColor = color;

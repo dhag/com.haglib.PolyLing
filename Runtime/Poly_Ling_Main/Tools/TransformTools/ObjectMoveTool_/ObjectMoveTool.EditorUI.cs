@@ -13,7 +13,12 @@ namespace Poly_Ling.Tools
         public void DrawSettingsUI()
         {
             EditorGUILayout.LabelField(T("Title"), EditorStyles.miniBoldLabel);
-            _settings.MoveWithChildren = EditorGUILayout.Toggle(T("MoveWithChildren"), _settings.MoveWithChildren);
+            _settings.MoveWithChildren  = EditorGUILayout.Toggle(T("MoveWithChildren"),  _settings.MoveWithChildren);
+
+            EditorGUILayout.Space(2);
+            _settings.PickBones         = EditorGUILayout.Toggle(T("PickBones"),         _settings.PickBones);
+            _settings.PickMeshesNoSkin  = EditorGUILayout.Toggle(T("PickMeshesNoSkin"),  _settings.PickMeshesNoSkin);
+            _settings.PickMeshesSkinned = EditorGUILayout.Toggle(T("PickMeshesSkinned"), _settings.PickMeshesSkinned);
 
             EditorGUILayout.Space(4);
             if (_lastCtx != null)

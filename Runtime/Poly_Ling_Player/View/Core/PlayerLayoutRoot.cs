@@ -478,6 +478,35 @@ namespace Poly_Ling.Player
             StatusLabel.style.whiteSpace   = WhiteSpace.Normal;
             scroll.Add(StatusLabel);
 
+            var undoRow = new VisualElement();
+            undoRow.style.flexDirection = FlexDirection.Row;
+            undoRow.style.marginBottom  = 6;
+            UndoBtn = MakeBtn("Undo"); UndoBtn.style.flexGrow = 1; UndoBtn.style.marginRight = 2;
+            RedoBtn = MakeBtn("Redo"); RedoBtn.style.flexGrow = 1; RedoBtn.style.marginLeft  = 2;
+            undoRow.Add(UndoBtn); undoRow.Add(RedoBtn);
+            scroll.Add(undoRow);
+
+            scroll.Add(Separator());
+            scroll.Add(Header("Models"));
+
+            ModelSelectDropdown = new DropdownField();
+            ModelSelectDropdown.style.marginBottom = 4;
+            scroll.Add(ModelSelectDropdown);
+
+            ModelListContainer = new VisualElement();
+            scroll.Add(ModelListContainer);
+
+            var listBtnRow = new VisualElement();
+            listBtnRow.style.flexDirection = FlexDirection.Row;
+            listBtnRow.style.marginTop     = 4;
+            ModelListBtn = MakeBtn("モデルリスト"); ModelListBtn.style.flexGrow = 1; ModelListBtn.style.marginRight = 2;
+            MeshListBtn  = MakeBtn("オブジェクトリスト"); MeshListBtn.style.flexGrow = 1;
+            listBtnRow.Add(ModelListBtn);
+            listBtnRow.Add(MeshListBtn);
+            scroll.Add(listBtnRow);
+
+            scroll.Add(Separator());
+
             LassoToggle = new Toggle("Lasso Select") { value = false };
             LassoToggle.style.marginBottom = 4;
             scroll.Add(LassoToggle);
@@ -556,17 +585,6 @@ namespace Poly_Ling.Player
             ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
             scroll.Add(ToolSkinWeightPaintBtn);
 
-            scroll.Add(Separator());
-
-            var undoRow = new VisualElement();
-            undoRow.style.flexDirection = FlexDirection.Row;
-            undoRow.style.marginBottom  = 6;
-            UndoBtn = MakeBtn("Undo"); UndoBtn.style.flexGrow = 1; UndoBtn.style.marginRight = 2;
-            RedoBtn = MakeBtn("Redo"); RedoBtn.style.flexGrow = 1; RedoBtn.style.marginLeft  = 2;
-            undoRow.Add(UndoBtn); undoRow.Add(RedoBtn);
-            scroll.Add(undoRow);
-
-            scroll.Add(Separator());
             PrimitiveBtn = MakeBtn("図形生成");
             scroll.Add(PrimitiveBtn);
 
@@ -652,26 +670,6 @@ namespace Poly_Ling.Player
             RemoteServerBtn = MakeBtn("リモートサーバ"); RemoteServerBtn.style.flexGrow = 1;
             rowFinal2.Add(VMDTestBtn); rowFinal2.Add(RemoteServerBtn); scroll.Add(rowFinal2);
 
-            scroll.Add(Separator());
-            scroll.Add(Header("Models"));
-
-            ModelSelectDropdown = new DropdownField();
-            ModelSelectDropdown.style.marginBottom = 4;
-            scroll.Add(ModelSelectDropdown);
-
-            ModelListContainer = new VisualElement();
-            scroll.Add(ModelListContainer);
-
-            var listBtnRow = new VisualElement();
-            listBtnRow.style.flexDirection = FlexDirection.Row;
-            listBtnRow.style.marginTop     = 4;
-            ModelListBtn = MakeBtn("モデルリスト"); ModelListBtn.style.flexGrow = 1; ModelListBtn.style.marginRight = 2;
-            MeshListBtn  = MakeBtn("オブジェクトリスト"); MeshListBtn.style.flexGrow = 1;
-            listBtnRow.Add(ModelListBtn);
-            listBtnRow.Add(MeshListBtn);
-            scroll.Add(listBtnRow);
-
-            scroll.Add(Separator());
             scroll.Add(Header("Display (P/T/F/S)"));
 
             // 4ビューポート × 9項目のグリッド

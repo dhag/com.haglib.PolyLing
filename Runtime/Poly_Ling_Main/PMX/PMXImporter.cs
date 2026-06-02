@@ -1382,7 +1382,7 @@ namespace Poly_Ling.PMX
                 : $"Group_{meshIndex}_{materialNames[0]}";
 
             var meshObject = new MeshObject(meshName);
-            meshObject.IsExpanded = true;  // PMXは展開済み形式
+            meshObject.IsTriangulated = true;  // PMX は三角形化済み形式
 
             // 頂点を追加（スケールなしで追加し、法線計算後にスケール適用）
             int debugCount = 0;

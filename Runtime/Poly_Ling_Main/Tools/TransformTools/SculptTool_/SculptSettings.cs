@@ -18,10 +18,10 @@ namespace Poly_Ling.Tools
         public SculptMode Mode = SculptMode.Draw;
 
         /// <summary>ブラシ半径</summary>
-        public float BrushRadius = 0.5f;
+        public float BrushRadius = 0.1f;
 
         /// <summary>強度</summary>
-        public float Strength = 0.1f;
+        public float Strength = 0.0005f;
 
         /// <summary>凹凸反転</summary>
         public bool Invert = false;
@@ -34,14 +34,14 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         public float MinBrushRadius = 0.05f;
-        public float MaxBrushRadius = 1.00f;
+        public float MaxBrushRadius = 0.1f;
 
         // ================================================================
         // 強度範囲（スライダーの最小値・最大値）
         // ================================================================
 
-        public float MinStrength = 0.01f;
-        public float MaxStrength = 0.05f;
+        public float MinStrength = 0.0005f;
+        public float MaxStrength = 0.0010f;
 
         // ================================================================
         // IToolSettings 実装

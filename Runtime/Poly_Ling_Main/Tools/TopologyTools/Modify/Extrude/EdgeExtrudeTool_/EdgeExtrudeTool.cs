@@ -67,7 +67,10 @@ namespace Poly_Ling.Tools
         // 押し出し
         private Vector3 _extrudeDirection;
         private float _extrudeDistance;
-        private List<Vector3> _previewNewPositions = new List<Vector3>();
+
+        // ドラッグ中の頂点位置更新用
+        private struct ExtrudeDragVertex { public int Index; public Vector3 BasePos; }
+        private List<ExtrudeDragVertex> _extrudeDragVertices = new List<ExtrudeDragVertex>();
 
         // 押し出し対象
         private List<EdgeInfo> _targetEdges = new List<EdgeInfo>();
@@ -99,12 +102,15 @@ namespace Poly_Ling.Tools
 
             _mouseDownScreenPos = mousePos;
 
-            _hitEdgeOnMouseDown = FindEdgeAtPosition(ctx, mousePos);
-            _hitLineOnMouseDown = FindLineAtPosition(ctx, mousePos);
+            // _hitEdgeOnMouseDown はハンドラーが PrepareHit() でセット
+            // _hitLineOnMouseDown はハンドラーが PrepareHit() でセット
 
             if (_hitEdgeOnMouseDown.HasValue || _hitLineOnMouseDown >= 0)
             {
                 _state = ExtrudeState.PendingAction;
+                // マウスダウン時にスナップショット取得
+                if (ctx.UndoController != null)
+                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 return false;
             }
 
@@ -162,85 +168,9 @@ namespace Poly_Ling.Tools
             return handled;
         }
 
-        public void DrawGizmo(ToolContext ctx)
-        {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null) return;
-
-            if (_state == ExtrudeState.Idle || _state == ExtrudeState.PendingAction)
-            {
-                Vector2 mousePos = ctx.CurrentMousePosition;
-                _hoverEdge = FindEdgeAtPosition(ctx, mousePos);
-                _hoverLine = FindLineAtPosition(ctx, mousePos);
-            }
-            else
-            {
-                _hoverEdge = null;
-                _hoverLine = -1;
-            }
-
-            UnityEditor_Handles.BeginGUI();
-
-            if (_state == ExtrudeState.Extruding)
-            {
-                UnityEditor_Handles.color = new Color(1f, 0.5f, 0f, 1f);
-
-                foreach (var e in _targetEdges)
-                {
-                    if (e.V0 < 0 || e.V0 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                    if (e.V1 < 0 || e.V1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                    Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[e.V0].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[e.V1].Position);
-                    DrawThickLine(p0, p1, 4f);
-                }
-
-                foreach (int li in _targetLines)
-                {
-                    if (li < 0 || li >= ctx.FirstSelectedMeshObject.FaceCount) continue;
-                    var f = ctx.FirstSelectedMeshObject.Faces[li];
-                    if (f.VertexCount != 2) continue;
-                    Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[0]].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[1]].Position);
-                    DrawThickLine(p0, p1, 4f);
-                }
-
-                DrawExtrudePreview(ctx);
-                GUI.color = Color.white;
-                GUI.Label(new Rect(10, 60, 200, 20), $"Distance: {_extrudeDistance:F3}");
-            }
-            else
-            {
-                // ホバー表示
-                if (_hoverEdge.HasValue)
-                {
-                    int v0 = _hoverEdge.Value.V1, v1 = _hoverEdge.Value.V2;
-                    if (v0 >= 0 && v0 < ctx.FirstSelectedMeshObject.VertexCount &&
-                        v1 >= 0 && v1 < ctx.FirstSelectedMeshObject.VertexCount)
-                    {
-                        bool isSelected = ctx.SelectionState.Edges.Contains(_hoverEdge.Value);
-                        UnityEditor_Handles.color = isSelected ? new Color(0.5f, 0.8f, 1f) : Color.white;
-                        Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v0].Position);
-                        Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-                        DrawThickLine(p0, p1, 5f);
-                    }
-                }
-
-                if (_hoverLine >= 0 && _hoverLine < ctx.FirstSelectedMeshObject.FaceCount)
-                {
-                    var face = ctx.FirstSelectedMeshObject.Faces[_hoverLine];
-                    if (face.VertexCount == 2)
-                    {
-                        bool isSelected = ctx.SelectionState.Lines.Contains(_hoverLine);
-                        UnityEditor_Handles.color = isSelected ? new Color(0.5f, 0.8f, 1f) : Color.white;
-                        Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[0]].Position);
-                        Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[1]].Position);
-                        DrawThickLine(p0, p1, 5f);
-                    }
-                }
-            }
-
-            UnityEditor_Handles.color = Color.white;
-            UnityEditor_Handles.EndGUI();
-        }
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        /// <summary>IMGUI 削除済み。Player は UIToolkit オーバーレイを使用。UnityEditor_Handles 使用禁止。</summary>
+        public void DrawGizmo(ToolContext ctx) { }
 
         public void OnActivate(ToolContext ctx)
         {
@@ -252,8 +182,6 @@ namespace Poly_Ling.Tools
 
         public void OnDeactivate(ToolContext ctx)
         {
-            if (_state == ExtrudeState.Extruding)
-                ctx.ExitTransformDragging?.Invoke();
             Reset();
         }
 
@@ -262,7 +190,7 @@ namespace Poly_Ling.Tools
             _state = ExtrudeState.Idle;
             _hitEdgeOnMouseDown = null;
             _hitLineOnMouseDown = -1;
-            _previewNewPositions.Clear();
+            _extrudeDragVertices.Clear();
             _targetEdges.Clear();
             _targetLines.Clear();
             _snapshotBefore = null;
@@ -273,14 +201,32 @@ namespace Poly_Ling.Tools
         {
         }
 
+        // ── UIToolkit hover support ───────────────────────────────────────
+        /// <summary>現在ホバー中のエッジ（UIToolkit オーバーレイ用）</summary>
+        public VertexPair? HoverEdge => _hoverEdge;
+        public int HoverLine => _hoverLine;
+
+        /// <summary>ハンドラーが GPU ホバー結果からセット。FindEdgeAtPosition/FindLineAtPosition（CPU・カリング無視）使用禁止。</summary>
+        public void SetHoverEdge(VertexPair? edge, int line = -1)
+        {
+            bool canSet = _state == ExtrudeState.Idle || _state == ExtrudeState.PendingAction;
+            _hoverEdge = canSet ? edge : (VertexPair?)null;
+            _hoverLine = canSet ? line : -1;
+        }
+
+        /// <summary>OnLeftDragBegin でハンドラーが GPU ホバー結果から事前にセット。</summary>
+        public void PrepareHit(VertexPair? edge, int line = -1)
+        {
+            _hitEdgeOnMouseDown = edge;
+            _hitLineOnMouseDown = line;
+        }
+
         // ================================================================
         // 押し出し処理
         // ================================================================
 
         private void StartExtrude(ToolContext ctx)
         {
-            //bool selectionChanged = false;
-
             if (_hitEdgeOnMouseDown.HasValue)
             {
                 var edge = _hitEdgeOnMouseDown.Value;
@@ -289,7 +235,6 @@ namespace Poly_Ling.Tools
                     ctx.SelectionState.Edges.Clear();
                     ctx.SelectionState.Lines.Clear();
                     ctx.SelectionState.Edges.Add(edge);
-                    //selectionChanged = true;
                 }
             }
 
@@ -300,7 +245,6 @@ namespace Poly_Ling.Tools
                     ctx.SelectionState.Edges.Clear();
                     ctx.SelectionState.Lines.Clear();
                     ctx.SelectionState.Lines.Add(_hitLineOnMouseDown);
-                    //selectionChanged = true;
                 }
             }
 
@@ -312,20 +256,18 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            if (ctx.UndoController != null)
-            {
-                _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
-            }
-
             _extrudeDirection = (Mode == EdgeExtrudeSettings.ExtrudeMode.Normal)
                 ? CalculateExtrudeDirection(ctx)
                 : Vector3.up;
             _extrudeDistance = 0f;
 
-            InitializePreviewPositions(ctx);
+            // トポロジーを即時実行し _extrudeDragVertices を確定させる
+            ExecuteExtrude(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
             _state = ExtrudeState.Extruding;
-            ctx.EnterTransformDragging?.Invoke();
+            // EnterTransformDragging は使用しない。
+            // 押し出しはトポロジー変更後の位置更新であり TransformDragging モードを使うと
+            // エッジ/頂点描画が無効化されるため。SyncMeshPositionsOnly で直接更新する。
         }
 
         private void UpdateExtrude(ToolContext ctx, Vector2 mousePos)
@@ -363,27 +305,31 @@ namespace Poly_Ling.Tools
             if (SnapToAxis)
                 _extrudeDirection = SnapToAxisDir(_extrudeDirection);
 
-            UpdatePreviewPositions(ctx);
+            var meshObject = ctx.FirstSelectedMeshObject;
+            if (meshObject != null)
+            {
+                Vector3 offset = _extrudeDirection * _extrudeDistance;
+                foreach (var dv in _extrudeDragVertices)
+                {
+                    if (dv.Index >= 0 && dv.Index < meshObject.VertexCount)
+                        meshObject.Vertices[dv.Index].Position = dv.BasePos + offset;
+                }
+            }
+            ctx.SyncMeshPositionsOnly?.Invoke();
         }
 
         private void EndExtrude(ToolContext ctx)
         {
-            ctx.ExitTransformDragging?.Invoke();
-
-            if (Mathf.Abs(_extrudeDistance) < 0.001f)
-            {
-                _snapshotBefore = null;
-                return;
-            }
-
-            ExecuteExtrude(ctx);
-
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
                 var snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
-                ctx.UndoController.VertexEditStack.Record(record, "Extrude Edges");
+                {
+                    string __dbgDesc = "Extrude Edges";
+                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
+                }
             }
 
             _snapshotBefore = null;
@@ -412,18 +358,22 @@ namespace Poly_Ling.Tools
 
             if (allVertices.Count == 0) return;
 
+            _extrudeDragVertices.Clear();
             foreach (int vIdx in allVertices)
             {
                 var oldV = meshObject.Vertices[vIdx];
+                int newIdx = meshObject.VertexCount;
                 var newV = new Vertex { Position = oldV.Position + offset };
                 newV.UVs.AddRange(oldV.UVs);
                 newV.Normals.AddRange(oldV.Normals);
-                vertexRemap[vIdx] = meshObject.VertexCount;
+                vertexRemap[vIdx] = newIdx;
                 meshObject.Vertices.Add(newV);
+                _extrudeDragVertices.Add(new ExtrudeDragVertex { Index = newIdx, BasePos = oldV.Position });
             }
 
             int matIdx = ctx.CurrentMaterialIndex;
             var newEdges = new List<VertexPair>();
+            var newFaceIndices = new List<int>();
 
             foreach (var edge in _targetEdges)
             {
@@ -457,6 +407,7 @@ namespace Poly_Ling.Tools
                     f.NormalIndices.AddRange(new[] { edge.V0, edge.V1, nv1, nv0 });
                 }
                 meshObject.Faces.Add(f);
+                newFaceIndices.Add(meshObject.FaceCount - 1);
                 newEdges.Add(new VertexPair(nv0, nv1));
             }
 
@@ -475,12 +426,16 @@ namespace Poly_Ling.Tools
                 line.VertexIndices.AddRange(new[] { v0, v1, nv1, nv0 });
                 line.UVIndices.AddRange(new[] { v0, v1, nv1, nv0 });
                 line.NormalIndices.AddRange(new[] { v0, v1, nv1, nv0 });
+                newFaceIndices.Add(lineIdx);
             }
 
             ctx.SelectionState.Edges.Clear();
             ctx.SelectionState.Lines.Clear();
+            ctx.SelectionState.Faces.Clear();
             foreach (var e in newEdges)
                 ctx.SelectionState.Edges.Add(e);
+            foreach (int fi in newFaceIndices)
+                ctx.SelectionState.Faces.Add(fi);
 
             ctx.SyncMesh?.Invoke();
         }
@@ -525,51 +480,7 @@ namespace Poly_Ling.Tools
             return null;
         }
 
-        private VertexPair? FindEdgeAtPosition(ToolContext ctx, Vector2 mousePos)
-        {
-            const float threshold = 8f;
-            for (int fi = 0; fi < ctx.FirstSelectedMeshObject.FaceCount; fi++)
-            {
-                var face = ctx.FirstSelectedMeshObject.Faces[fi];
-                if (face.VertexCount < 3) continue;
 
-                for (int i = 0; i < face.VertexCount; i++)
-                {
-                    int v0 = face.VertexIndices[i];
-                    int v1 = face.VertexIndices[(i + 1) % face.VertexCount];
-                    if (v0 < 0 || v1 < 0 || v0 >= ctx.FirstSelectedMeshObject.VertexCount || v1 >= ctx.FirstSelectedMeshObject.VertexCount)
-                        continue;
-
-                    Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v0].Position);
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-
-                    if (DistancePointToSegment(mousePos, p0, p1) < threshold)
-                        return new VertexPair(v0, v1);
-                }
-            }
-            return null;
-        }
-
-        private int FindLineAtPosition(ToolContext ctx, Vector2 mousePos)
-        {
-            const float threshold = 8f;
-            for (int fi = 0; fi < ctx.FirstSelectedMeshObject.FaceCount; fi++)
-            {
-                var face = ctx.FirstSelectedMeshObject.Faces[fi];
-                if (face.VertexCount != 2) continue;
-
-                int v0 = face.VertexIndices[0], v1 = face.VertexIndices[1];
-                if (v0 < 0 || v1 < 0 || v0 >= ctx.FirstSelectedMeshObject.VertexCount || v1 >= ctx.FirstSelectedMeshObject.VertexCount)
-                    continue;
-
-                Vector2 p0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v0].Position);
-                Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-
-                if (DistancePointToSegment(mousePos, p0, p1) < threshold)
-                    return fi;
-            }
-            return -1;
-        }
 
         private float DistancePointToSegment(Vector2 p, Vector2 a, Vector2 b)
         {
@@ -578,86 +489,6 @@ namespace Poly_Ling.Tools
             if (len2 < 0.0001f) return Vector2.Distance(p, a);
             float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2);
             return Vector2.Distance(p, a + t * ab);
-        }
-
-        private void InitializePreviewPositions(ToolContext ctx)
-        {
-            _previewNewPositions.Clear();
-            foreach (var e in _targetEdges)
-            {
-                _previewNewPositions.Add(ctx.FirstSelectedMeshObject.Vertices[e.V0].Position);
-                _previewNewPositions.Add(ctx.FirstSelectedMeshObject.Vertices[e.V1].Position);
-            }
-            foreach (int li in _targetLines)
-            {
-                var f = ctx.FirstSelectedMeshObject.Faces[li];
-                _previewNewPositions.Add(ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[0]].Position);
-                _previewNewPositions.Add(ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[1]].Position);
-            }
-        }
-
-        private void UpdatePreviewPositions(ToolContext ctx)
-        {
-            Vector3 offset = _extrudeDirection * _extrudeDistance;
-            int idx = 0;
-            foreach (var e in _targetEdges)
-            {
-                if (idx < _previewNewPositions.Count)
-                    _previewNewPositions[idx++] = ctx.FirstSelectedMeshObject.Vertices[e.V0].Position + offset;
-                if (idx < _previewNewPositions.Count)
-                    _previewNewPositions[idx++] = ctx.FirstSelectedMeshObject.Vertices[e.V1].Position + offset;
-            }
-            foreach (int li in _targetLines)
-            {
-                var f = ctx.FirstSelectedMeshObject.Faces[li];
-                if (idx < _previewNewPositions.Count)
-                    _previewNewPositions[idx++] = ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[0]].Position + offset;
-                if (idx < _previewNewPositions.Count)
-                    _previewNewPositions[idx++] = ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[1]].Position + offset;
-            }
-        }
-
-        private void DrawExtrudePreview(ToolContext ctx)
-        {
-            int idx = 0;
-
-            UnityEditor_Handles.color = new Color(0.3f, 1f, 0.3f, 0.8f);
-            for (int i = 0; i < _targetEdges.Count && idx + 1 < _previewNewPositions.Count; i++)
-            {
-                Vector2 np0 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                Vector2 np1 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                DrawThickLine(np0, np1, 2f);
-            }
-            for (int i = 0; i < _targetLines.Count && idx + 1 < _previewNewPositions.Count; i++)
-            {
-                Vector2 np0 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                Vector2 np1 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                DrawThickLine(np0, np1, 2f);
-            }
-
-            UnityEditor_Handles.color = new Color(1f, 0.6f, 0.2f, 0.6f);
-            idx = 0;
-            foreach (var e in _targetEdges)
-            {
-                if (idx + 1 >= _previewNewPositions.Count) break;
-                Vector2 o0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[e.V0].Position);
-                Vector2 o1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[e.V1].Position);
-                Vector2 n0 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                Vector2 n1 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                DrawThickLine(o0, n0, 1.5f);
-                DrawThickLine(o1, n1, 1.5f);
-            }
-            foreach (int li in _targetLines)
-            {
-                if (idx + 1 >= _previewNewPositions.Count) break;
-                var f = ctx.FirstSelectedMeshObject.Faces[li];
-                Vector2 o0 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[0]].Position);
-                Vector2 o1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[f.VertexIndices[1]].Position);
-                Vector2 n0 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                Vector2 n1 = ctx.WorldToScreen(_previewNewPositions[idx++]);
-                DrawThickLine(o0, n0, 1.5f);
-                DrawThickLine(o1, n1, 1.5f);
-            }
         }
 
         private Vector3 CalculateExtrudeDirection(ToolContext ctx)
@@ -730,13 +561,5 @@ namespace Poly_Ling.Tools
             return new Vector3(0, 0, Mathf.Sign(d.z));
         }
 
-        private void DrawThickLine(Vector2 p0, Vector2 p1, float t)
-        {
-            Vector2 d = (p1 - p0);
-            if (d.magnitude < 0.001f) return;
-            d.Normalize();
-            Vector2 perp = new Vector2(-d.y, d.x) * t * 0.5f;
-            UnityEditor_Handles.DrawAAConvexPolygon(p0 - perp, p0 + perp, p1 + perp, p1 - perp);
-        }
     }
 }

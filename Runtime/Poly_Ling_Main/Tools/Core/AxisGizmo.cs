@@ -102,11 +102,11 @@ namespace Poly_Ling.Tools
                 CenterSize,
                 CenterSize);
 
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.DrawRect(centerRect, centerColor);
-            UnityEditor_Handles.color = centerHovered ? Color.white : new Color(0.5f, 0.5f, 0.5f);
-            UnityEditor_Handles.DrawSolidRectangleWithOutline(centerRect, Color.clear, UnityEditor_Handles.color);
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
         }
 
         // ================================================================
@@ -241,12 +241,10 @@ namespace Poly_Ling.Tools
 
         private static void DrawAxisLine(Vector2 from, Vector2 to, Color color, float lineWidth)
         {
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.color = color;
-            UnityEditor_Handles.DrawAAPolyLine(lineWidth,
-                new Vector3(from.x, from.y, 0),
-                new Vector3(to.x, to.y, 0));
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
         }
 
         private void DrawAxisHandle(Vector2 pos, Color color, bool hovered, string label)
@@ -254,11 +252,11 @@ namespace Poly_Ling.Tools
             float size = hovered ? HandleSize * 1.3f : HandleSize;
             Rect handleRect = new Rect(pos.x - size / 2, pos.y - size / 2, size, size);
 
-            UnityEditor_Handles.BeginGUI();
-            UnityEditor_Handles.DrawRect(handleRect, color);
-            UnityEditor_Handles.color = Color.white;
-            UnityEditor_Handles.DrawSolidRectangleWithOutline(handleRect, Color.clear, Color.white);
-            UnityEditor_Handles.EndGUI();
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
+            // UnityEditor_Handles 削除済み
 
 #if UNITY_EDITOR
             GUIStyle style = new GUIStyle(EditorStyles.miniLabel);

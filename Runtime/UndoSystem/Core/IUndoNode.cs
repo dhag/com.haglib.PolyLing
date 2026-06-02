@@ -124,6 +124,18 @@ namespace Poly_Ling.UndoSystem
         
         /// <summary>保留中のレコードがあるか</summary>
         bool HasPendingRecords { get; }
+
+        /// <summary>
+        /// 先頭 pending の Sequence を覗く。空なら long.MaxValue。
+        /// UndoGroup が全子ノード横断で Sequence 順に処理するためのプリミティブ。
+        /// </summary>
+        long PeekNextPendingSequence();
+
+        /// <summary>
+        /// 先頭 pending の Sequence が指定値と一致する場合のみ 1 件処理する。
+        /// 一致しなかった場合は何もせず false を返す。
+        /// </summary>
+        bool ProcessNextPendingIfMatches(long sequence);
     }
 
     /// <summary>
