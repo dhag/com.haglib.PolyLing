@@ -11,6 +11,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -104,16 +105,31 @@ namespace Poly_Ling.Player
 
             string ext      = _mode == Mode.PMX ? "pmx" : "mqo";
             string title    = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
-            string savePath = PLEditorBridge.I.SaveFilePanel(title, Application.dataPath, "model", ext);
+
+            string prev     = RecentPaths.Get(ExportPathKey());
+            string dir      = string.IsNullOrEmpty(prev)
+                ? Application.dataPath
+                : (Path.GetDirectoryName(prev) ?? Application.dataPath);
+            string defName  = string.IsNullOrEmpty(prev)
+                ? "model"
+                : Path.GetFileNameWithoutExtension(prev);
+
+            string savePath = PLEditorBridge.I.SaveFilePanel(title, dir, defName, ext);
 
             if (string.IsNullOrEmpty(savePath))
                 return;
+
+            RecentPaths.Set(ExportPathKey(), savePath);
 
             if (_mode == Mode.PMX)
                 OnExportPmx?.Invoke(savePath, ClonePmxSettings());
             else
                 OnExportMqo?.Invoke(savePath, CloneMqoSettings());
         }
+
+        /// <summary>エクスポートパスの保存キー（モード別）</summary>
+        private string ExportPathKey()
+            => "Export." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".Path";
 
         public void SetStatus(string msg)
         {

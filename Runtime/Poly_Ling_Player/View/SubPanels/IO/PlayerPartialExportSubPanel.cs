@@ -13,6 +13,7 @@ using Poly_Ling.Context;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -123,7 +124,38 @@ namespace Poly_Ling.Player
             _mode = mode;
             if (_panelNameLabel != null)
                 _panelNameLabel.text = mode == Mode.PMX ? "PMX部分エクスポート" : "MQO部分エクスポート";
+
+            RestoreRefForMode();
             RebuildAll();
+        }
+
+        /// <summary>現在モードの参照元パスを RecentPaths から復元・読込（未設定かつ実在時のみ）</summary>
+        private void RestoreRefForMode()
+        {
+            if (_mode == Mode.PMX)
+            {
+                if (string.IsNullOrEmpty(_pmxRefPath))
+                {
+                    string p = RecentPaths.Get("PartialExport.PMX.Ref");
+                    if (!string.IsNullOrEmpty(p) && File.Exists(p))
+                    {
+                        _pmxRefPath = p;
+                        LoadPMXRef(p);
+                    }
+                }
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(_mqoRefPath))
+                {
+                    string p = RecentPaths.Get("PartialExport.MQO.Ref");
+                    if (!string.IsNullOrEmpty(p) && File.Exists(p))
+                    {
+                        _mqoRefPath = p;
+                        LoadMQORef(p);
+                    }
+                }
+            }
         }
 
         // ================================================================
@@ -241,6 +273,7 @@ namespace Poly_Ling.Player
             parent.Add(FilePickRow(_pmxRefPath, "pmx", "Select PMX", path =>
             {
                 _pmxRefPath = path;
+                RecentPaths.Set("PartialExport.PMX.Ref", path);
                 LoadPMXRef(path);
                 RebuildList();
             }));
@@ -345,6 +378,7 @@ namespace Poly_Ling.Player
             parent.Add(FilePickRow(_mqoRefPath, "mqo", "Select MQO", path =>
             {
                 _mqoRefPath = path;
+                RecentPaths.Set("PartialExport.MQO.Ref", path);
                 LoadMQORef(path);
                 RebuildList();
             }));

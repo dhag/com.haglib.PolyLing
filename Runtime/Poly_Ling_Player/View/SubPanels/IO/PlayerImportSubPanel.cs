@@ -13,6 +13,7 @@ using Poly_Ling.PMX;
 using Poly_Ling.MQO;
 using Poly_Ling.Localization;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -98,6 +99,7 @@ namespace Poly_Ling.Player
             _pathField = new TextField();
             _pathField.style.flexGrow   = 1;
             _pathField.style.marginRight = 2;
+            _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(ImportPathKey(), e.newValue));
 
             var browseBtn = new Button(OnBrowse) { text = "..." };
             browseBtn.style.width = 28;
@@ -137,11 +139,20 @@ namespace Poly_Ling.Player
             if (_panelNameLabel != null)
                 _panelNameLabel.text = mode == Mode.PMX ? "PMXインポータ" : "MQOインポータ";
 
-            if (_pathField != null && !string.IsNullOrEmpty(filePath))
-                _pathField.value = filePath;
+            if (_pathField != null)
+            {
+                if (!string.IsNullOrEmpty(filePath))
+                    _pathField.value = filePath;
+                else
+                    _pathField.SetValueWithoutNotify(RecentPaths.Get(ImportPathKey()));
+            }
 
             RebuildSettings();
         }
+
+        /// <summary>インポートパスの保存キー（モード別）</summary>
+        private string ImportPathKey()
+            => "Import." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".Path";
 
         // ================================================================
         // ファイルブラウズ

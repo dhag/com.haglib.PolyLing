@@ -3310,7 +3310,10 @@ namespace Poly_Ling.Player
             {
                 var result = PMXExporter.Export(model, outputPath, settings);
                 if (result.Success)
+                {
+                    AuxiliaryBackupWriter.Save(model, outputPath);
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}");
+                }
                 else
                     _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
             }
@@ -3325,7 +3328,10 @@ namespace Poly_Ling.Player
             {
                 var result = MQOExporter.ExportFile(outputPath, model, settings);
                 if (result.Success)
+                {
+                    AuxiliaryBackupWriter.Save(model, outputPath);
                     _exportSubPanel?.SetStatus($"完了: {System.IO.Path.GetFileName(outputPath)}");
+                }
                 else
                     _exportSubPanel?.SetStatus($"失敗: {result.ErrorMessage}");
             }

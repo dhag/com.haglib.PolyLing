@@ -14,6 +14,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.Core;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.UndoSystem;
 
@@ -125,6 +126,7 @@ namespace Poly_Ling.Player
             _filePathField = new TextField();
             _filePathField.style.flexGrow    = 1;
             _filePathField.style.marginRight = 2;
+            _filePathField.RegisterValueChangedCallback(e => RecentPaths.Set(PartialImportPathKey(), e.newValue));
 
             var browseBtn = new Button(OnBrowse) { text = "..." };
             browseBtn.style.width = 28;
@@ -160,9 +162,14 @@ namespace Poly_Ling.Player
             _mode = mode;
             if (_panelNameLabel != null)
                 _panelNameLabel.text = mode == Mode.PMX ? "PMX部分インポート" : "MQO部分インポート";
-            if (_filePathField != null) _filePathField.value = "";
+            if (_filePathField != null)
+                _filePathField.SetValueWithoutNotify(RecentPaths.Get(PartialImportPathKey()));
             RebuildAll();
         }
+
+        /// <summary>部分インポートパスの保存キー（モード別）</summary>
+        private string PartialImportPathKey()
+            => "PartialImport." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".Path";
 
         // ================================================================
         // ファイルブラウズ
