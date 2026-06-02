@@ -4,6 +4,7 @@
 
 using UnityEngine;
 using Poly_Ling.Tools;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -27,12 +28,12 @@ namespace Poly_Ling.Tools
 
 
 
-        public  float MIN_SCREEN_OFFSET_X = -100f;
-        public  float MAX_SCREEN_OFFSET_X = 100f;
-        public  float MIN_SCREEN_OFFSET_Y = -100f;
-        public  float MAX_SCREEN_OFFSET_Y = 100f;
-        public  float MIN_MAGNET_RADIUS = 0.01f;
-        public  float MAX_MAGNET_RADIUS = 1.00f;
+        public  float MIN_SCREEN_OFFSET_X = ParameterLimits.GetF("Move.ScreenOffsetX.Min");
+        public  float MAX_SCREEN_OFFSET_X = ParameterLimits.GetF("Move.ScreenOffsetX.Max");
+        public  float MIN_SCREEN_OFFSET_Y = ParameterLimits.GetF("Move.ScreenOffsetY.Min");
+        public  float MAX_SCREEN_OFFSET_Y = ParameterLimits.GetF("Move.ScreenOffsetY.Max");
+        public  float MIN_MAGNET_RADIUS = ParameterLimits.GetF("Move.MagnetRadius.Min");
+        public  float MAX_MAGNET_RADIUS = ParameterLimits.GetF("Move.MagnetRadius.Max");
 
 
         // ================================================================

@@ -2,6 +2,7 @@
 // SculptTool用設定クラス（IToolSettings対応）
 
 using UnityEngine;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -33,15 +34,15 @@ namespace Poly_Ling.Tools
         // 半径範囲（スライダーの最小値・最大値）
         // ================================================================
 
-        public float MinBrushRadius = 0.05f;
-        public float MaxBrushRadius = 0.1f;
+        public float MinBrushRadius = ParameterLimits.GetF("Sculpt.BrushRadius.Min");
+        public float MaxBrushRadius = ParameterLimits.GetF("Sculpt.BrushRadius.Max");
 
         // ================================================================
         // 強度範囲（スライダーの最小値・最大値）
         // ================================================================
 
-        public float MinStrength = 0.0005f;
-        public float MaxStrength = 0.0010f;
+        public float MinStrength = ParameterLimits.GetF("Sculpt.Strength.Min");
+        public float MaxStrength = ParameterLimits.GetF("Sculpt.Strength.Max");
 
         // ================================================================
         // IToolSettings 実装

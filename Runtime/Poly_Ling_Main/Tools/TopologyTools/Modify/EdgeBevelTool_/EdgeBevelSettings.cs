@@ -3,6 +3,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -19,13 +20,13 @@ namespace Poly_Ling.Tools
         public float Amount
         {
             get => _amount;
-            set => _amount = Mathf.Max(0.001f, value);
+            set => _amount = Mathf.Max(ParameterLimits.GetF("EdgeBevel.Amount.Min"), value);
         }
 
         public int Segments
         {
             get => _segments;
-            set => _segments = Mathf.Clamp(value, 1, 10);
+            set => _segments = Mathf.Clamp(value, ParameterLimits.GetI("EdgeBevel.Segments.Min"), ParameterLimits.GetI("EdgeBevel.Segments.Max"));
         }
 
         public bool Fillet
@@ -38,8 +39,8 @@ namespace Poly_Ling.Tools
 
         public EdgeBevelSettings(float amount, int segments, bool fillet)
         {
-            _amount = Mathf.Max(0.001f, amount);
-            _segments = Mathf.Clamp(segments, 1, 10);
+            _amount = Mathf.Max(ParameterLimits.GetF("EdgeBevel.Amount.Min"), amount);
+            _segments = Mathf.Clamp(segments, ParameterLimits.GetI("EdgeBevel.Segments.Min"), ParameterLimits.GetI("EdgeBevel.Segments.Max"));
             _fillet = fillet;
         }
 

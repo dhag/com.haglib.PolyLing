@@ -4,6 +4,7 @@
 using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.UI;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -38,10 +39,10 @@ namespace Poly_Ling.Tools
         // 定数
         // ================================================================
 
-        public const float MIN_BRUSH_RADIUS = 0.001f;
-        public const float MAX_BRUSH_RADIUS = 1.0f;
-        public const float MIN_STRENGTH = 0.0f;
-        public const float MAX_STRENGTH = 1.0f;
+        public static readonly float MIN_BRUSH_RADIUS = ParameterLimits.GetF("SkinWeight.BrushRadius.Min");
+        public static readonly float MAX_BRUSH_RADIUS = ParameterLimits.GetF("SkinWeight.BrushRadius.Max");
+        public static readonly float MIN_STRENGTH = ParameterLimits.GetF("SkinWeight.Strength.Min");
+        public static readonly float MAX_STRENGTH = ParameterLimits.GetF("SkinWeight.Strength.Max");
 
         // ================================================================
         // IToolSettings 実装

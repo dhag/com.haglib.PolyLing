@@ -3,6 +3,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -46,7 +47,7 @@ namespace Poly_Ling.Tools
         public float EdgeLoopThreshold
         {
             get => _edgeLoopThreshold;
-            set => _edgeLoopThreshold = Mathf.Clamp(value, 0f, 1f);
+            set => _edgeLoopThreshold = Mathf.Clamp(value, ParameterLimits.GetF("AdvancedSelect.EdgeLoopThreshold.Min"), ParameterLimits.GetF("AdvancedSelect.EdgeLoopThreshold.Max"));
         }
 
         /// <summary>
@@ -63,7 +64,7 @@ namespace Poly_Ling.Tools
         public AdvancedSelectSettings(AdvancedSelectMode mode, float edgeLoopThreshold, bool addToSelection)
         {
             _mode = mode;
-            _edgeLoopThreshold = Mathf.Clamp(edgeLoopThreshold, 0f, 1f);
+            _edgeLoopThreshold = Mathf.Clamp(edgeLoopThreshold, ParameterLimits.GetF("AdvancedSelect.EdgeLoopThreshold.Min"), ParameterLimits.GetF("AdvancedSelect.EdgeLoopThreshold.Max"));
             _addToSelection = addToSelection;
         }
 

@@ -4,6 +4,7 @@
 // ピボットモード追加
 
 using UnityEngine;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -17,14 +18,14 @@ namespace Poly_Ling.Tools
         public float ScaleY = 1f;
         public float ScaleZ = 1f;
 
-        public float MIN_SCALE_XYZ = 0.01f;
-        public float MAX_SCALE_XYZ = 5.00f;
-        public float MIN_SCALE_X = 0.01f;
-        public float MAX_SCALE_X = 5.00f;
-        public float MIN_SCALE_Y = 0.01f;
-        public float MAX_SCALE_Y = 5.00f;
-        public float MIN_SCALE_Z = 0.01f;
-        public float MAX_SCALE_Z = 5.00f;
+        public float MIN_SCALE_XYZ = ParameterLimits.GetF("Scale.XYZ.Min");
+        public float MAX_SCALE_XYZ = ParameterLimits.GetF("Scale.XYZ.Max");
+        public float MIN_SCALE_X = ParameterLimits.GetF("Scale.X.Min");
+        public float MAX_SCALE_X = ParameterLimits.GetF("Scale.X.Max");
+        public float MIN_SCALE_Y = ParameterLimits.GetF("Scale.Y.Min");
+        public float MAX_SCALE_Y = ParameterLimits.GetF("Scale.Y.Max");
+        public float MIN_SCALE_Z = ParameterLimits.GetF("Scale.Z.Min");
+        public float MAX_SCALE_Z = ParameterLimits.GetF("Scale.Z.Max");
 
         // 連動モード
         public bool UniformScale = true;

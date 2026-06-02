@@ -3,6 +3,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Tools
 {
@@ -34,7 +35,7 @@ namespace Poly_Ling.Tools
         public float BevelScale
         {
             get => _bevelScale;
-            set => _bevelScale = Mathf.Clamp(value, 0.01f, 1f);
+            set => _bevelScale = Mathf.Clamp(value, ParameterLimits.GetF("FaceExtrude.BevelScale.Min"), ParameterLimits.GetF("FaceExtrude.BevelScale.Max"));
         }
 
         public bool IndividualNormals
@@ -48,7 +49,7 @@ namespace Poly_Ling.Tools
         public FaceExtrudeSettings(ExtrudeType type, float bevelScale, bool individualNormals)
         {
             _type = type;
-            _bevelScale = Mathf.Clamp(bevelScale, 0.01f, 1f);
+            _bevelScale = Mathf.Clamp(bevelScale, ParameterLimits.GetF("FaceExtrude.BevelScale.Min"), ParameterLimits.GetF("FaceExtrude.BevelScale.Max"));
             _individualNormals = individualNormals;
         }
 
