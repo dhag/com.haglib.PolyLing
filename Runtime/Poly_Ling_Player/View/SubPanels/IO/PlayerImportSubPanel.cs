@@ -260,6 +260,10 @@ namespace Poly_Ling.Player
                 v => SetPmxTarget(PMXImportTarget.Bones, v)));
             parent.Add(FlagToggle(TP("TargetMorphs"), () => _pmxSettings.ShouldImportMorphs,
                 v => SetPmxTarget(PMXImportTarget.Morphs, v)));
+            parent.Add(FlagToggle("剛体", () => _pmxSettings.ShouldImportBodies,
+                v => SetPmxTarget(PMXImportTarget.Bodies, v)));
+            parent.Add(FlagToggle("Joint", () => _pmxSettings.ShouldImportJoints,
+                v => SetPmxTarget(PMXImportTarget.Joints, v)));
 
             parent.Add(Separator());
 

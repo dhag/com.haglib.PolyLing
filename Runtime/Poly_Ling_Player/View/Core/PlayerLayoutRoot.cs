@@ -235,19 +235,35 @@ namespace Poly_Ling.Player
         private TwoPaneSplitView _splitCenter;
         private TwoPaneSplitView _splitPerspSide;
         private TwoPaneSplitView _splitTopFront;
+        private TwoPaneSplitView _splitLCR;   // 左ペイン | (中央+右)
+        private TwoPaneSplitView _splitCR;    // 中央 | 右ペイン
         private VisualElement    _perspPane;
         private VisualElement    _topPane;
+        private VisualElement    _leftPaneEl;   // _splitLCR の左固定ペイン（幅保存用）
+        private VisualElement    _rightPaneEl;  // _splitCR の右固定ペイン（幅保存用）
         private float            _lastSyncedHeight = -1f;
 
         // クロスドラッグ領域
         private VisualElement _crossDragRegion;
         private VisualElement _centerDraglineAnchor;   // _splitCenter 専用 dragline（Build中にキャッシュ）
+        private VisualElement _lcrDraglineAnchor;       // _splitLCR 専用 dragline（Build中にキャッシュ）
+        private VisualElement _crDraglineAnchor;        // _splitCR 専用 dragline（Build中にキャッシュ）
         private VisualElement _rootRef;
         private float         _dragStartVH;
         private float         _dragStartHW;
         private float         _currentRightW;
         private Vector2       _dragStartPanelPos;
         private bool          _crossDragging;
+
+        // ── レイアウト永続化（端末ローカル: PlayerPrefs）─────────────────
+        private const string PrefLeftW       = "PolyLing.Player.Layout.LeftW";
+        private const string PrefRightW      = "PolyLing.Player.Layout.RightW";
+        private const string PrefCenterRight = "PolyLing.Player.Layout.CenterRightW";
+        private const string PrefCenterH     = "PolyLing.Player.Layout.CenterH";
+        private const float  DefLeftW   = 200f;
+        private const float  DefRightW  = 220f;
+        private const float  DefCenterW = 240f;
+        private bool         _layoutRestored;
 
         // ================================================================
         // Build
@@ -259,19 +275,32 @@ namespace Poly_Ling.Player
             root.style.width         = new StyleLength(new Length(100, LengthUnit.Percent));
             root.style.height        = new StyleLength(new Length(100, LengthUnit.Percent));
 
-            var splitLCR = new TwoPaneSplitView(0, 200f, TwoPaneSplitViewOrientation.Horizontal);
-            splitLCR.style.flexGrow = 1;
-            root.Add(splitLCR);
+            // 保存済みレイアウト（端末ローカル）を読み込む。未保存時は既定値。
+            float savedLeftW   = LoadPref(PrefLeftW,       DefLeftW);
+            float savedRightW  = LoadPref(PrefRightW,      DefRightW);
+            float savedCenterW = LoadPref(PrefCenterRight, DefCenterW);
 
-            splitLCR.Add(BuildLeftPane());
+            _splitLCR = new TwoPaneSplitView(0, savedLeftW, TwoPaneSplitViewOrientation.Horizontal);
+            _splitLCR.style.flexGrow = 1;
+            root.Add(_splitLCR);
 
-            var splitCR = new TwoPaneSplitView(1, 220f, TwoPaneSplitViewOrientation.Horizontal);
-            splitCR.style.flexGrow = 1;
-            splitLCR.Add(splitCR);
+            var leftPaneEl = BuildLeftPane();
+            _leftPaneEl = leftPaneEl;
+            _splitLCR.Add(leftPaneEl);
+            // 子 TwoPaneSplitView を Add する前に自身の dragline-anchor をキャッシュする
+            // （後から Q() すると子の anchor を誤って返すため）。
+            _lcrDraglineAnchor = _splitLCR.Q(className: "unity-two-pane-split-view__dragline-anchor");
 
-            _splitCenter = new TwoPaneSplitView(1, 240f, TwoPaneSplitViewOrientation.Horizontal);
+            _splitCR = new TwoPaneSplitView(1, savedRightW, TwoPaneSplitViewOrientation.Horizontal);
+            _splitCR.style.flexGrow = 1;
+            _splitLCR.Add(_splitCR);
+
+            _splitCenter = new TwoPaneSplitView(1, savedCenterW, TwoPaneSplitViewOrientation.Horizontal);
             _splitCenter.style.flexGrow = 1;
-            splitCR.Add(_splitCenter);
+            _splitCR.Add(_splitCenter);
+            // _splitCR の dragline-anchor は _splitCenter を Add した後だと混同するため、
+            // この時点でキャッシュする。
+            _crDraglineAnchor = _splitCR.Q(className: "unity-two-pane-split-view__dragline-anchor");
             // 子 TwoPaneSplitView を追加する前にキャッシュする。
             // 後から Q() すると _splitPerspSide の dragline を誤って返す。
             _centerDraglineAnchor = _splitCenter.Q(className: "unity-two-pane-split-view__dragline-anchor");
@@ -294,12 +323,96 @@ namespace Poly_Ling.Player
             _topPane = topWrap;
             _splitTopFront.Add(BuildViewportPane("Front", out frontPanel)); FrontPanel = frontPanel;
 
-            splitCR.Add(BuildRightPane());
+            var rightPaneEl = BuildRightPane();
+            _rightPaneEl = rightPaneEl;
+            _splitCR.Add(rightPaneEl);
 
             SetupVerticalSplitSync();
 
             _rootRef = root;
             SetupCrossDragRegion(root);
+            SetupLayoutPersistence(root);
+        }
+
+        // ================================================================
+        // レイアウト永続化（端末ローカル: PlayerPrefs）
+        // ================================================================
+
+        private void SetupLayoutPersistence(VisualElement root)
+        {
+            // 外側スプリッター（左幅・右幅）のドラッグ確定で保存。
+            if (_lcrDraglineAnchor != null)
+                _lcrDraglineAnchor.RegisterCallback<PointerUpEvent>(_ => SaveLayout());
+            if (_crDraglineAnchor != null)
+                _crDraglineAnchor.RegisterCallback<PointerUpEvent>(_ => SaveLayout());
+
+            // 中央の左右区切り（標準ドラッグ）の確定で保存。
+            if (_centerDraglineAnchor != null)
+                _centerDraglineAnchor.RegisterCallback<PointerUpEvent>(_ => SaveLayout());
+
+            // 中央の上下区切り（persp/top の縦スプリッター標準ドラッグ）の確定で保存。
+            // 各 split は最下層で子に split を持たないため、自身の anchor が取れる。
+            var dlPersp = _splitPerspSide?.Q(className: "unity-two-pane-split-view__dragline-anchor");
+            if (dlPersp != null) dlPersp.RegisterCallback<PointerUpEvent>(_ => SaveLayout());
+            var dlTop = _splitTopFront?.Q(className: "unity-two-pane-split-view__dragline-anchor");
+            if (dlTop != null) dlTop.RegisterCallback<PointerUpEvent>(_ => SaveLayout());
+
+            // レイアウト確定後に中央の左右・上下区切りを復元する（初回のみ）。
+            // 中央の左右区切りはカスタムドラッグ機構（_currentRightW + dragline 再配置）、
+            // 上下区切りは persp/top の height 同期のため、コンストラクタ初期値だけでは
+            // 内部状態が揃わない。resolvedStyle が確定する初回 GeometryChanged で適用する。
+            root.RegisterCallback<GeometryChangedEvent>(OnRootFirstGeometry);
+
+            // ウィンドウ破棄時に最終保存。
+            root.RegisterCallback<DetachFromPanelEvent>(_ => SaveLayout());
+        }
+
+        private void OnRootFirstGeometry(GeometryChangedEvent evt)
+        {
+            if (_layoutRestored) return;
+            float w = _rootRef != null ? _rootRef.resolvedStyle.width : 0f;
+            if (float.IsNaN(w) || w <= 0f) return;   // レイアウト未確定
+            _layoutRestored = true;
+            _rootRef.UnregisterCallback<GeometryChangedEvent>(OnRootFirstGeometry);
+
+            float savedCenterW = LoadPref(PrefCenterRight, DefCenterW);
+            ApplyHorizontalSplitWidth(Mathf.Max(50f, savedCenterW));
+
+            float savedCenterH = LoadPref(PrefCenterH, -1f);
+            if (savedCenterH > 0f)
+                ApplyVerticalSplitHeight(Mathf.Max(50f, savedCenterH));
+        }
+
+        private void SaveLayout()
+        {
+            // resolvedStyle から実寸を取得し、異常値（NaN/0以下）は保存しない。
+            if (_leftPaneEl != null)
+            {
+                float v = _leftPaneEl.resolvedStyle.width;
+                if (!float.IsNaN(v) && v > 0f) PlayerPrefs.SetFloat(PrefLeftW, v);
+            }
+            if (_rightPaneEl != null)
+            {
+                float v = _rightPaneEl.resolvedStyle.width;
+                if (!float.IsNaN(v) && v > 0f) PlayerPrefs.SetFloat(PrefRightW, v);
+            }
+            if (_splitTopFront != null)
+            {
+                float v = _splitTopFront.resolvedStyle.width;
+                if (!float.IsNaN(v) && v > 0f) PlayerPrefs.SetFloat(PrefCenterRight, v);
+            }
+            if (_perspPane != null)
+            {
+                float v = _perspPane.resolvedStyle.height;
+                if (!float.IsNaN(v) && v > 0f) PlayerPrefs.SetFloat(PrefCenterH, v);
+            }
+            PlayerPrefs.Save();
+        }
+
+        private static float LoadPref(string key, float def)
+        {
+            float v = PlayerPrefs.GetFloat(key, def);
+            return (float.IsNaN(v) || v <= 0f) ? def : v;
         }
 
         // ================================================================
@@ -416,6 +529,7 @@ namespace Poly_Ling.Player
             if (_crossDragRegion.HasPointerCapture(evt.pointerId))
                 _crossDragRegion.ReleasePointer(evt.pointerId);
             evt.StopPropagation();
+            SaveLayout();   // 交差ドラッグ確定（中央の左右＋上下）を保存
         }
 
         // ================================================================

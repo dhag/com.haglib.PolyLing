@@ -397,6 +397,7 @@ namespace Poly_Ling.Data
                     { manual.DeltaRotation.x, manual.DeltaRotation.y,
                       manual.DeltaRotation.z, manual.DeltaRotation.w };
                 dto.manualWeight = manual.Weight;
+                dto.manualEnabled = manual.Enabled;
             }
 
             return dto;
@@ -431,7 +432,7 @@ namespace Poly_Ling.Data
                         dto.manualDeltaRotation[3]);
                 }
                 layer.Weight = dto.manualWeight;
-                layer.Enabled = true;
+                layer.Enabled = dto.manualEnabled;
             }
 
             data._dirty = true;

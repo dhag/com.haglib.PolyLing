@@ -11,6 +11,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Selection;
 using Poly_Ling.Tools;
+using Poly_Ling.Serialization;
 
 namespace Poly_Ling.Serialization.FolderSerializer
 {
@@ -97,6 +98,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 var mc = entry.MeshContext;
                 if (mc == null) continue;
 
+                // === R2-a: DTO単一真実源化（書き出しをMeshDTO経由に）===
+                // 保存データを必ず MeshDTO に通す：mc → MeshDTO → mc' とラウンドトリップしてから
+                // 既存writerで書き出す。既存writerは不変のため出力フォーマットは保たれ、
+                // MeshDTO往復が無損失（構造=R1.5 / population=R1.6）なので出力はバイト一致。
+                // buildUnityMesh=false で保存時の不要なUnityメッシュ生成を回避する。
+                var roundTripDTO = ModelSerializer.FromMeshContext(mc);
+                if (roundTripDTO != null)
+                {
+                    var roundTripMc = ModelSerializer.ToMeshContext(roundTripDTO, false);
+                    if (roundTripMc != null) mc = roundTripMc;
+                }
+
                 sb.AppendLine(Separator);
                 WriteMeshHeader(sb, entry.GlobalIndex, mc, useNameBased, indexToName,
                     entry.MirrorPeerName, entry.MirrorPeerAxis);
@@ -115,6 +128,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
                 // 選択セット
                 WriteSelectionSets(sb, mc);
+
+                // 剛体 / JOINT（Type=RigidBody/RigidBodyJoint の頂点ゼロ・メタデータ）
+                WriteRigidJointData(sb, mc);
 
                 // 頂点
                 if (mc.MeshObject != null)
@@ -630,6 +646,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "bindPose":
                         mc.BindPose = ReadMatrix4x4(cols);
                         break;
+                    case "rigidBody":
+                        meshObject.RigidBodyData = ReadRigidBodyData(cols);
+                        break;
+                    case "joint":
+                        meshObject.JointData = ReadJointData(cols);
+                        break;
                     case "morphParentIndex":
                         mc.MorphParentIndex = ParseInt(cols, 1, -1);
                         break;
@@ -770,6 +792,84 @@ namespace Poly_Ling.Serialization.FolderSerializer
             m.m20 = ParseFloat(cols, 9); m.m21 = ParseFloat(cols, 10); m.m22 = ParseFloat(cols, 11); m.m23 = ParseFloat(cols, 12);
             m.m30 = ParseFloat(cols, 13); m.m31 = ParseFloat(cols, 14); m.m32 = ParseFloat(cols, 15); m.m33 = ParseFloat(cols, 16);
             return m;
+        }
+
+        // ================================================================
+        // 剛体 / JOINT（Type=RigidBody/RigidBodyJoint のメタデータ）
+        // ================================================================
+
+        private static void WriteRigidJointData(StringBuilder sb, MeshContext mc)
+        {
+            var rb = mc.MeshObject?.RigidBodyData;
+            if (rb != null)
+            {
+                // rigidBody,nameEng,relatedBone,boneIdx,group,mask,shape,sx,sy,sz,px,py,pz,rx,ry,rz,mass,linDamp,angDamp,restitution,friction,physMode
+                sb.AppendLine(
+                    $"rigidBody,{EscapeCsv(rb.NameEnglish)},{EscapeCsv(rb.RelatedBoneName)},{rb.BoneIndex},{rb.Group},{rb.CollisionMask},{(int)rb.Shape}," +
+                    $"{F(rb.Size.x)},{F(rb.Size.y)},{F(rb.Size.z)}," +
+                    $"{F(rb.Position.x)},{F(rb.Position.y)},{F(rb.Position.z)}," +
+                    $"{F(rb.Rotation.x)},{F(rb.Rotation.y)},{F(rb.Rotation.z)}," +
+                    $"{F(rb.Mass)},{F(rb.LinearDamping)},{F(rb.AngularDamping)},{F(rb.Restitution)},{F(rb.Friction)},{(int)rb.PhysicsMode}");
+            }
+
+            var jd = mc.MeshObject?.JointData;
+            if (jd != null)
+            {
+                // joint,nameEng,jointType,bodyA,bodyB,idxA,idxB,px,py,pz,rx,ry,rz,tMin xyz,tMax xyz,rMin xyz,rMax xyz,springT xyz,springR xyz
+                sb.AppendLine(
+                    $"joint,{EscapeCsv(jd.NameEnglish)},{jd.JointType},{EscapeCsv(jd.BodyAName)},{EscapeCsv(jd.BodyBName)},{jd.RigidBodyIndexA},{jd.RigidBodyIndexB}," +
+                    $"{F(jd.Position.x)},{F(jd.Position.y)},{F(jd.Position.z)}," +
+                    $"{F(jd.Rotation.x)},{F(jd.Rotation.y)},{F(jd.Rotation.z)}," +
+                    $"{F(jd.TranslationMin.x)},{F(jd.TranslationMin.y)},{F(jd.TranslationMin.z)}," +
+                    $"{F(jd.TranslationMax.x)},{F(jd.TranslationMax.y)},{F(jd.TranslationMax.z)}," +
+                    $"{F(jd.RotationMin.x)},{F(jd.RotationMin.y)},{F(jd.RotationMin.z)}," +
+                    $"{F(jd.RotationMax.x)},{F(jd.RotationMax.y)},{F(jd.RotationMax.z)}," +
+                    $"{F(jd.SpringTranslation.x)},{F(jd.SpringTranslation.y)},{F(jd.SpringTranslation.z)}," +
+                    $"{F(jd.SpringRotation.x)},{F(jd.SpringRotation.y)},{F(jd.SpringRotation.z)}");
+            }
+        }
+
+        private static RigidBodyData ReadRigidBodyData(string[] cols)
+        {
+            return new RigidBodyData
+            {
+                NameEnglish     = cols.Length > 1 ? UnescapeCsv(cols[1]) : "",
+                RelatedBoneName = cols.Length > 2 ? UnescapeCsv(cols[2]) : "",
+                BoneIndex       = ParseInt(cols, 3, -1),
+                Group           = ParseInt(cols, 4),
+                CollisionMask   = (ushort)ParseInt(cols, 5),
+                Shape           = (RigidBodyShape)ParseInt(cols, 6),
+                Size            = new Vector3(ParseFloat(cols, 7),  ParseFloat(cols, 8),  ParseFloat(cols, 9)),
+                Position        = new Vector3(ParseFloat(cols, 10), ParseFloat(cols, 11), ParseFloat(cols, 12)),
+                Rotation        = new Vector3(ParseFloat(cols, 13), ParseFloat(cols, 14), ParseFloat(cols, 15)),
+                Mass            = ParseFloat(cols, 16),
+                LinearDamping   = ParseFloat(cols, 17),
+                AngularDamping  = ParseFloat(cols, 18),
+                Restitution     = ParseFloat(cols, 19),
+                Friction        = ParseFloat(cols, 20),
+                PhysicsMode     = (RigidBodyPhysicsMode)ParseInt(cols, 21)
+            };
+        }
+
+        private static JointData ReadJointData(string[] cols)
+        {
+            return new JointData
+            {
+                NameEnglish       = cols.Length > 1 ? UnescapeCsv(cols[1]) : "",
+                JointType         = ParseInt(cols, 2),
+                BodyAName         = cols.Length > 3 ? UnescapeCsv(cols[3]) : "",
+                BodyBName         = cols.Length > 4 ? UnescapeCsv(cols[4]) : "",
+                RigidBodyIndexA   = ParseInt(cols, 5, -1),
+                RigidBodyIndexB   = ParseInt(cols, 6, -1),
+                Position          = new Vector3(ParseFloat(cols, 7),  ParseFloat(cols, 8),  ParseFloat(cols, 9)),
+                Rotation          = new Vector3(ParseFloat(cols, 10), ParseFloat(cols, 11), ParseFloat(cols, 12)),
+                TranslationMin    = new Vector3(ParseFloat(cols, 13), ParseFloat(cols, 14), ParseFloat(cols, 15)),
+                TranslationMax    = new Vector3(ParseFloat(cols, 16), ParseFloat(cols, 17), ParseFloat(cols, 18)),
+                RotationMin       = new Vector3(ParseFloat(cols, 19), ParseFloat(cols, 20), ParseFloat(cols, 21)),
+                RotationMax       = new Vector3(ParseFloat(cols, 22), ParseFloat(cols, 23), ParseFloat(cols, 24)),
+                SpringTranslation = new Vector3(ParseFloat(cols, 25), ParseFloat(cols, 26), ParseFloat(cols, 27)),
+                SpringRotation    = new Vector3(ParseFloat(cols, 28), ParseFloat(cols, 29), ParseFloat(cols, 30))
+            };
         }
 
         // ================================================================

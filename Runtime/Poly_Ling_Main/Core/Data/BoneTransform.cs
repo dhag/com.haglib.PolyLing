@@ -143,41 +143,6 @@ namespace Poly_Ling.Data
             _hasBoneTransform   = snapshot.HasBoneTransform;
         }
 
-        public void ApplyToGameObject(GameObject go, bool asLocal = true)
-        {
-            if (go == null) return;
-
-            if (!_useLocalTransform)
-            {
-                if (asLocal)
-                {
-                    go.transform.localPosition = Vector3.zero;
-                    go.transform.localRotation = Quaternion.identity;
-                    go.transform.localScale    = Vector3.one;
-                }
-                else
-                {
-                    go.transform.position   = Vector3.zero;
-                    go.transform.rotation   = Quaternion.identity;
-                    go.transform.localScale = Vector3.one;
-                }
-                return;
-            }
-
-            if (asLocal)
-            {
-                go.transform.localPosition = _position;
-                go.transform.localRotation = RotationQuaternion;
-                go.transform.localScale    = _scale;
-            }
-            else
-            {
-                go.transform.position   = _position;
-                go.transform.rotation   = RotationQuaternion;
-                go.transform.localScale = _scale;
-            }
-        }
-
         public static BoneTransform FromSerializable(BoneTransformDTO data)
         {
             if (data == null) return new BoneTransform();

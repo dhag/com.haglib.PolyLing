@@ -22,7 +22,7 @@ namespace Poly_Ling.MeshListV2
 {
     public class MeshListSubPanel
     {
-        private enum TabType { Drawable, Bone, Morph }
+        private enum TabType { Drawable, Bone, Morph, RigidBody, Joint }
 
         // ================================================================
         // コンテキスト
@@ -36,7 +36,7 @@ namespace Poly_Ling.MeshListV2
         // ================================================================
 
         private VisualElement _root;
-        private Button _tabDrawable, _tabBone, _tabMorph;
+        private Button _tabDrawable, _tabBone, _tabMorph, _tabRigidBody, _tabJoint;
         private VisualElement _mainContent, _morphEditor;
         private TreeView _treeView;
         private Label _countLabel, _statusLabel;
@@ -123,6 +123,8 @@ namespace Poly_Ling.MeshListV2
             TabType.Drawable => MeshCategory.Drawable,
             TabType.Bone     => MeshCategory.Bone,
             TabType.Morph    => MeshCategory.Morph,
+            TabType.RigidBody => MeshCategory.RigidBody,
+            TabType.Joint    => MeshCategory.RigidBodyJoint,
             _                => MeshCategory.All
         };
 
@@ -195,7 +197,10 @@ namespace Poly_Ling.MeshListV2
             _tabDrawable = MakeTabBtn("Mesh",  "tab-drawable");
             _tabBone     = MakeTabBtn("Bone",  "tab-bone");
             _tabMorph    = MakeTabBtn("Morph", "tab-morph");
+            _tabRigidBody = MakeTabBtn("剛体",  "tab-rigidbody");
+            _tabJoint    = MakeTabBtn("Joint", "tab-joint");
             _tabHeader.Add(_tabDrawable); _tabHeader.Add(_tabBone); _tabHeader.Add(_tabMorph);
+            _tabHeader.Add(_tabRigidBody); _tabHeader.Add(_tabJoint);
             root.Add(_tabHeader);
 
             // ── カウント・フィルター行
@@ -412,6 +417,7 @@ namespace Poly_Ling.MeshListV2
         {
             if (_treeView == null) return;
             _treeView.fixedItemHeight    = 20;
+            _treeView.horizontalScrollingEnabled = true;
             _treeView.makeItem           = MakeTreeItem;
             _treeView.bindItem           = BindTreeItem;
             _treeView.selectionType      = SelectionType.Multiple;
@@ -430,6 +436,8 @@ namespace Poly_Ling.MeshListV2
             SetTabActive(_tabDrawable, tab == TabType.Drawable);
             SetTabActive(_tabBone,     tab == TabType.Bone);
             SetTabActive(_tabMorph,    tab == TabType.Morph);
+            SetTabActive(_tabRigidBody, tab == TabType.RigidBody);
+            SetTabActive(_tabJoint,    tab == TabType.Joint);
 
             bool simpleMode = IsSimpleMode;
             if (_tabHeader != null) _tabHeader.style.display = simpleMode ? DisplayStyle.None : DisplayStyle.Flex;
@@ -495,6 +503,8 @@ namespace Poly_Ling.MeshListV2
                 {
                     TabType.Drawable => model.DrawableList,
                     TabType.Bone     => model.BoneList,
+                    TabType.RigidBody => model.RigidBodyList,
+                    TabType.Joint    => model.RigidBodyJointList,
                     _                => null
                 };
                 category = CurrentCategory;
@@ -531,8 +541,7 @@ namespace Poly_Ling.MeshListV2
 
             var nameLabel = new Label { name = "name" };
             nameLabel.style.color = new StyleColor(Color.white);
-            nameLabel.style.flexGrow = 1; nameLabel.style.flexShrink = 1;
-            nameLabel.style.overflow = Overflow.Hidden; nameLabel.style.textOverflow = TextOverflow.Ellipsis;
+            nameLabel.style.flexGrow = 1; nameLabel.style.flexShrink = 0;
             nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft; nameLabel.style.marginRight = 4;
             c.Add(nameLabel);
 
@@ -710,6 +719,8 @@ namespace Poly_Ling.MeshListV2
             _tabDrawable?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Drawable));
             _tabBone    ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Bone));
             _tabMorph   ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Morph));
+            _tabRigidBody?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.RigidBody));
+            _tabJoint   ?.RegisterCallback<ClickEvent>(_ => SwitchTab(TabType.Joint));
 
             Q<Button>("btn-add")      ?.RegisterCallback<ClickEvent>(_ => OnAdd());
             Q<Button>("btn-up")       ?.RegisterCallback<ClickEvent>(_ => MoveSelected(-1));
@@ -911,7 +922,7 @@ namespace Poly_Ling.MeshListV2
         {
             if (_countLabel == null) return;
             if (IsSimpleMode) { _countLabel.text = $"メッシュ+ボーン: {_treeRoot?.TotalCount ?? 0}"; return; }
-            string label = _currentTab switch { TabType.Drawable => "メッシュ", TabType.Bone => "ボーン", _ => "モーフ" };
+            string label = _currentTab switch { TabType.Drawable => "メッシュ", TabType.Bone => "ボーン", TabType.RigidBody => "剛体", TabType.Joint => "Joint", _ => "モーフ" };
             _countLabel.text = $"{label}: {_treeRoot?.TotalCount ?? 0}";
         }
 

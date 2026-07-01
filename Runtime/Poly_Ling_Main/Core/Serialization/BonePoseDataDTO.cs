@@ -1,7 +1,7 @@
 // Assets/Editor/Poly_Ling/Serialization/BonePoseDataDTO.cs
 // BonePoseDataのシリアライズ用データ構造
 // Manualレイヤーのみ保存
-// VMD/IK/Physicsレイヤーはトランジェント（保存しない）
+// VMDは現状保存しない（VMD/IK/Physicsの「現在の状態」にリンクするトランジェント分）
 
 using System;
 using UnityEngine;
@@ -25,5 +25,8 @@ namespace Poly_Ling.Serialization
 
         /// <summary>Manualウェイト</summary>
         public float manualWeight = 1f;
+
+        /// <summary>Manual有効フラグ</summary>
+        public bool manualEnabled = true;
     }
 }

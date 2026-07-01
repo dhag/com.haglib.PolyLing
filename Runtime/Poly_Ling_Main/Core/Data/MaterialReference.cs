@@ -5,6 +5,7 @@
 using System;
 using UnityEngine;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.MaterialBridge;
 using Poly_Ling.Data;
 
 namespace Poly_Ling.Materials
@@ -224,9 +225,13 @@ namespace Poly_Ling.Materials
                     return false;
                 
                 // 既存アセットの場合はコピーを作成
+                // 複製はランタイムAPI(new Material)なので PLMaterialBridge 経由で行う。
+                // 直後のアセット保存(AssetDatabase)は Editor依存なので PLEditorBridge 経由。
+                // 複製と保存でブリッジを意図的に分けている（理由は IMaterialBridge のコメント参照、
+                // IEditorBridge へ統合し直さないこと）。
                 if (HasAssetPath && AssetPath != savePath)
                 {
-                    mat = new Material(mat);
+                    mat = PLMaterialBridge.I.Clone(mat);
                 }
                 
                 // 新規オンメモリの場合はそのまま保存
@@ -237,8 +242,8 @@ namespace Poly_Ling.Materials
                 }
                 else if (existingPath != savePath)
                 {
-                    // 別パスにコピー
-                    var newMat = new Material(mat);
+                    // 別パスにコピー（複製=ランタイム→PLMaterialBridge、保存=Editor依存→PLEditorBridge）
+                    var newMat = PLMaterialBridge.I.Clone(mat);
                     PLEditorBridge.I.CreateAsset(newMat, savePath);
                     mat = newMat;
                 }

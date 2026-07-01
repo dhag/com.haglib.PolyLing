@@ -29,6 +29,8 @@ namespace Poly_Ling.View
         public IReadOnlyList<IMeshView> DrawableList { get; }
         public IReadOnlyList<IMeshView> BoneList { get; }
         public IReadOnlyList<IMeshView> MorphList { get; }
+        public IReadOnlyList<IMeshView> RigidBodyList { get; }
+        public IReadOnlyList<IMeshView> RigidBodyJointList { get; }
         public int[] SelectedDrawableIndices { get; }
         public int[] SelectedBoneIndices { get; }
         public int[] SelectedMorphIndices { get; }
@@ -43,7 +45,9 @@ namespace Poly_Ling.View
             IReadOnlyList<IMeshView> morphList = null,
             int[] selectedDrawableIndices = null,
             int[] selectedBoneIndices = null,
-            int[] selectedMorphIndices = null)
+            int[] selectedMorphIndices = null,
+            IReadOnlyList<IMeshView> rigidBodyList = null,
+            IReadOnlyList<IMeshView> rigidBodyJointList = null)
         {
             Name = name ?? "Untitled";
             FilePath = filePath;
@@ -58,6 +62,8 @@ namespace Poly_Ling.View
             DrawableList = drawableList ?? _empty;
             BoneList = boneList ?? _empty;
             MorphList = morphList ?? _empty;
+            RigidBodyList = rigidBodyList ?? _empty;
+            RigidBodyJointList = rigidBodyJointList ?? _empty;
             SelectedDrawableIndices = selectedDrawableIndices ?? _emptyIndices;
             SelectedBoneIndices = selectedBoneIndices ?? _emptyIndices;
             SelectedMorphIndices = selectedMorphIndices ?? _emptyIndices;

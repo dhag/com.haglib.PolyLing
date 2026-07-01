@@ -45,7 +45,7 @@ namespace Poly_Ling.PMX
         /// <summary>全て</summary>
         All = Mesh | Bones | Morphs | Bodies | Joints,
         /// <summary>デフォルト（メッシュ＋ボーン＋モーフ）</summary>
-        Default = Mesh | Bones | Morphs,
+        Default = Mesh | Bones | Morphs | Bodies | Joints,
         /// <summary>ボーンのみ</summary>
         BonesOnly = Bones,
         /// <summary>物理（剛体＋ジョイント）</summary>

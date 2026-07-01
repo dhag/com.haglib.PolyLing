@@ -581,6 +581,13 @@ namespace Poly_Ling.Serialization
 
                 // BonePoseData（Phase BonePose追加）
                 SaveBonePoseDataToDTO(meshContext, contextData);
+
+                // 永続化拡張（DTO単一真実源化）
+                SaveIKDataToDTO(meshContext, contextData);
+                SaveBindPoseToDTO(meshContext, contextData);
+                SaveBoneModelRotationToDTO(meshContext, contextData);
+                SaveRigidBodyDataToDTO(meshContext, contextData);
+                SaveJointDataToDTO(meshContext, contextData);
             }
 
             return contextData;
@@ -590,6 +597,15 @@ namespace Poly_Ling.Serialization
         /// MeshContextDataからMeshContextを復元（簡易版）
         /// </summary>
         public static MeshContext ToMeshContext(MeshDTO meshDTO)
+        {
+            return ToMeshContext(meshDTO, true);
+        }
+
+        /// <summary>
+        /// MeshDTO → MeshContext。buildUnityMesh=false で Unityメッシュ生成をスキップする
+        /// （CSV直列化のように頂点/面データのみ必要な用途向け。保存時の不要なメッシュ生成を回避）。
+        /// </summary>
+        public static MeshContext ToMeshContext(MeshDTO meshDTO, bool buildUnityMesh)
         {
             if (meshDTO == null)
                 return null;
@@ -609,13 +625,14 @@ namespace Poly_Ling.Serialization
             {
                 Name = meshDTO.name ?? "UnityMesh",
                 MeshObject = meshObject,
-                UnityMesh = meshObject.ToUnityMeshShared(),
+                UnityMesh = buildUnityMesh ? meshObject.ToUnityMeshShared() : null,
                 OriginalPositions = (Vector3[])meshObject.Positions.Clone(),
                 BoneTransform = ToBoneTransform(meshDTO.exportSettingsDTO),
                 // Phase 1: Materials は ModelContext に集約
                 // オブジェクト属性
                 Type = meshType,
                 ParentIndex = meshDTO.parentIndex,
+                HierarchyParentIndex = meshDTO.hierarchyParentIndex,
                 Depth = meshDTO.depth,
                 IsVisible = meshDTO.isVisible,
                 IsLocked = meshDTO.isLocked,
@@ -638,6 +655,13 @@ namespace Poly_Ling.Serialization
 
             // BonePoseData復元（Phase BonePose追加）
             LoadBonePoseDataFromDTO(meshDTO, meshContext);
+
+            // 永続化拡張（DTO単一真実源化）
+            LoadIKDataFromDTO(meshDTO, meshContext);
+            LoadBindPoseFromDTO(meshDTO, meshContext);
+            LoadBoneModelRotationFromDTO(meshDTO, meshContext);
+            LoadRigidBodyDataFromDTO(meshDTO, meshContext);
+            LoadJointDataFromDTO(meshDTO, meshContext);
 
             return meshContext;
         }
@@ -1170,6 +1194,211 @@ namespace Poly_Ling.Serialization
                 meshContext.BonePoseData = null;
             }
         }
+
+        // ================================================================
+        // 永続化拡張（DTO単一真実源化）：IK / BindPose / BoneModelRotation / 剛体 / JOINT
+        //   POCO（Poly_Ling.Data）⇔ DTO（フィールド型）の変換。
+        // ================================================================
+
+        public static void SaveIKDataToDTO(MeshContext mc, MeshDTO dto)
+        {
+            var ik = mc?.MeshObject?.IKData;
+            if (ik == null) { dto.ikData = null; return; }
+
+            var d = new IKDataDTO
+            {
+                isIK = ik.IsIK,
+                targetIndex = ik.TargetIndex,
+                loopCount = ik.LoopCount,
+                limitAngle = ik.LimitAngle,
+                links = new List<IKLinkInfoDTO>()
+            };
+            if (ik.Links != null)
+            {
+                foreach (var l in ik.Links)
+                {
+                    if (l == null) continue;
+                    d.links.Add(new IKLinkInfoDTO
+                    {
+                        boneIndex = l.BoneIndex,
+                        hasLimit = l.HasLimit,
+                        limitMin = SerVec3(l.LimitMin),
+                        limitMax = SerVec3(l.LimitMax)
+                    });
+                }
+            }
+            dto.ikData = d;
+        }
+
+        public static void LoadIKDataFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.ikData == null || mc?.MeshObject == null) return;
+
+            var d = dto.ikData;
+            var ik = new IKData
+            {
+                IsIK = d.isIK,
+                TargetIndex = d.targetIndex,
+                LoopCount = d.loopCount,
+                LimitAngle = d.limitAngle,
+                Links = new List<IKLinkInfo>()
+            };
+            if (d.links != null)
+            {
+                foreach (var ld in d.links)
+                {
+                    if (ld == null) continue;
+                    ik.Links.Add(new IKLinkInfo
+                    {
+                        BoneIndex = ld.boneIndex,
+                        HasLimit = ld.hasLimit,
+                        LimitMin = SerVec3(ld.limitMin),
+                        LimitMax = SerVec3(ld.limitMax)
+                    });
+                }
+            }
+            mc.MeshObject.IKData = ik;
+        }
+
+        public static void SaveBindPoseToDTO(MeshContext mc, MeshDTO dto)
+        {
+            if (mc == null) return;
+            var m = mc.BindPose;
+            if (m == Matrix4x4.identity) { dto.bindPose = null; return; }
+            dto.bindPose = new[]
+            {
+                m.m00, m.m01, m.m02, m.m03,
+                m.m10, m.m11, m.m12, m.m13,
+                m.m20, m.m21, m.m22, m.m23,
+                m.m30, m.m31, m.m32, m.m33
+            };
+        }
+
+        public static void LoadBindPoseFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.bindPose == null || dto.bindPose.Length < 16 || mc == null) return;
+            var a = dto.bindPose;
+            var m = new Matrix4x4();
+            m.m00 = a[0];  m.m01 = a[1];  m.m02 = a[2];  m.m03 = a[3];
+            m.m10 = a[4];  m.m11 = a[5];  m.m12 = a[6];  m.m13 = a[7];
+            m.m20 = a[8];  m.m21 = a[9];  m.m22 = a[10]; m.m23 = a[11];
+            m.m30 = a[12]; m.m31 = a[13]; m.m32 = a[14]; m.m33 = a[15];
+            mc.BindPose = m;
+        }
+
+        public static void SaveBoneModelRotationToDTO(MeshContext mc, MeshDTO dto)
+        {
+            if (mc == null) return;
+            var q = mc.BoneModelRotation;
+            if (q == Quaternion.identity) { dto.boneModelRotation = null; return; }
+            dto.boneModelRotation = new[] { q.x, q.y, q.z, q.w };
+        }
+
+        public static void LoadBoneModelRotationFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.boneModelRotation == null || dto.boneModelRotation.Length < 4 || mc == null) return;
+            var a = dto.boneModelRotation;
+            mc.BoneModelRotation = new Quaternion(a[0], a[1], a[2], a[3]);
+        }
+
+        public static void SaveRigidBodyDataToDTO(MeshContext mc, MeshDTO dto)
+        {
+            var rb = mc?.MeshObject?.RigidBodyData;
+            if (rb == null) { dto.rigidBodyData = null; return; }
+            dto.rigidBodyData = new RigidBodyDataDTO
+            {
+                nameEnglish = rb.NameEnglish ?? "",
+                relatedBoneName = rb.RelatedBoneName ?? "",
+                boneIndex = rb.BoneIndex,
+                group = rb.Group,
+                collisionMask = rb.CollisionMask,
+                shape = (int)rb.Shape,
+                size = SerVec3(rb.Size),
+                position = SerVec3(rb.Position),
+                rotation = SerVec3(rb.Rotation),
+                mass = rb.Mass,
+                linearDamping = rb.LinearDamping,
+                angularDamping = rb.AngularDamping,
+                restitution = rb.Restitution,
+                friction = rb.Friction,
+                physicsMode = (int)rb.PhysicsMode
+            };
+        }
+
+        public static void LoadRigidBodyDataFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.rigidBodyData == null || mc?.MeshObject == null) return;
+            var d = dto.rigidBodyData;
+            mc.MeshObject.RigidBodyData = new RigidBodyData
+            {
+                NameEnglish = d.nameEnglish ?? "",
+                RelatedBoneName = d.relatedBoneName ?? "",
+                BoneIndex = d.boneIndex,
+                Group = d.group,
+                CollisionMask = (ushort)d.collisionMask,
+                Shape = (RigidBodyShape)d.shape,
+                Size = SerVec3(d.size),
+                Position = SerVec3(d.position),
+                Rotation = SerVec3(d.rotation),
+                Mass = d.mass,
+                LinearDamping = d.linearDamping,
+                AngularDamping = d.angularDamping,
+                Restitution = d.restitution,
+                Friction = d.friction,
+                PhysicsMode = (RigidBodyPhysicsMode)d.physicsMode
+            };
+        }
+
+        public static void SaveJointDataToDTO(MeshContext mc, MeshDTO dto)
+        {
+            var jd = mc?.MeshObject?.JointData;
+            if (jd == null) { dto.jointData = null; return; }
+            dto.jointData = new JointDataDTO
+            {
+                nameEnglish = jd.NameEnglish ?? "",
+                jointType = jd.JointType,
+                bodyAName = jd.BodyAName ?? "",
+                bodyBName = jd.BodyBName ?? "",
+                rigidBodyIndexA = jd.RigidBodyIndexA,
+                rigidBodyIndexB = jd.RigidBodyIndexB,
+                position = SerVec3(jd.Position),
+                rotation = SerVec3(jd.Rotation),
+                translationMin = SerVec3(jd.TranslationMin),
+                translationMax = SerVec3(jd.TranslationMax),
+                rotationMin = SerVec3(jd.RotationMin),
+                rotationMax = SerVec3(jd.RotationMax),
+                springTranslation = SerVec3(jd.SpringTranslation),
+                springRotation = SerVec3(jd.SpringRotation)
+            };
+        }
+
+        public static void LoadJointDataFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.jointData == null || mc?.MeshObject == null) return;
+            var d = dto.jointData;
+            mc.MeshObject.JointData = new JointData
+            {
+                NameEnglish = d.nameEnglish ?? "",
+                JointType = d.jointType,
+                BodyAName = d.bodyAName ?? "",
+                BodyBName = d.bodyBName ?? "",
+                RigidBodyIndexA = d.rigidBodyIndexA,
+                RigidBodyIndexB = d.rigidBodyIndexB,
+                Position = SerVec3(d.position),
+                Rotation = SerVec3(d.rotation),
+                TranslationMin = SerVec3(d.translationMin),
+                TranslationMax = SerVec3(d.translationMax),
+                RotationMin = SerVec3(d.rotationMin),
+                RotationMax = SerVec3(d.rotationMax),
+                SpringTranslation = SerVec3(d.springTranslation),
+                SpringRotation = SerVec3(d.springRotation)
+            };
+        }
+
+        // Vector3 ⇔ float[3]（本拡張専用の小ヘルパ）
+        private static float[] SerVec3(Vector3 v) => new[] { v.x, v.y, v.z };
+        private static Vector3 SerVec3(float[] a) =>
+            (a != null && a.Length >= 3) ? new Vector3(a[0], a[1], a[2]) : Vector3.zero;
 
         // ================================================================
         // MeshMetaDTO 変換（Phase 1）

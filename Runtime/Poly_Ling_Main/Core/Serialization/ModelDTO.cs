@@ -266,6 +266,27 @@ namespace Poly_Ling.Serialization
         /// アーマチャ生成時にボーンを生成しない
         /// </summary>
         public bool ignorePoseInArmature = false;
+
+        // ================================================================
+        // 永続化拡張（DTO単一真実源化）：従来CSV直書きでのみ保持していた
+        // IK / BindPose / BoneModelRotation と、未保存だった 剛体 / JOINT を
+        // MeshDTO に集約する。null = 当該データなし。
+        // ================================================================
+
+        /// <summary>IK情報（null=非IKボーン）。</summary>
+        public IKDataDTO ikData;
+
+        /// <summary>BindPose（4x4・行優先16値。null=未設定/単位行列）。</summary>
+        public float[] bindPose;
+
+        /// <summary>ボーンモデル回転（[x,y,z,w]。null=未設定/単位）。</summary>
+        public float[] boneModelRotation;
+
+        /// <summary>剛体データ（null=非剛体）。</summary>
+        public RigidBodyDataDTO rigidBodyData;
+
+        /// <summary>JOINTデータ（null=非JOINT）。</summary>
+        public JointDataDTO jointData;
     }
 
     // ================================================================
@@ -998,5 +1019,74 @@ namespace Poly_Ling.Serialization
         public bool isTriangulated = false;
         public List<VertexDTO> vertices = new List<VertexDTO>();
         public List<FaceDTO>   faces    = new List<FaceDTO>();
+    }
+
+    // ================================================================
+    // IK / 剛体 / JOINT 用DTO（フィールド型・[Serializable]）
+    //   既存POCO（Poly_Ling.Data の IKData/RigidBodyData/JointData）は
+    //   プロパティ主体のため、JsonUtility互換のフィールド型DTOを別途用意する。
+    //   POCO⇔DTO の変換は ModelSerializer の Save/Load ヘルパで行う。
+    // ================================================================
+
+    /// <summary>IKリンク（CCD-IKチェーン要素）DTO。</summary>
+    [Serializable]
+    public class IKLinkInfoDTO
+    {
+        public int boneIndex;
+        public bool hasLimit;
+        public float[] limitMin; // [x,y,z]（ラジアン）
+        public float[] limitMax; // [x,y,z]（ラジアン）
+    }
+
+    /// <summary>IKデータDTO。</summary>
+    [Serializable]
+    public class IKDataDTO
+    {
+        public bool isIK = true;
+        public int targetIndex = -1;
+        public int loopCount = 0;
+        public float limitAngle = 0f;        // ラジアン
+        public List<IKLinkInfoDTO> links = new List<IKLinkInfoDTO>();
+    }
+
+    /// <summary>剛体データDTO。</summary>
+    [Serializable]
+    public class RigidBodyDataDTO
+    {
+        public string nameEnglish = "";
+        public string relatedBoneName = "";
+        public int boneIndex = -1;
+        public int group = 0;
+        public int collisionMask = 0;       // ushort を int で保持
+        public int shape = 0;               // RigidBodyShape
+        public float[] size;                // [x,y,z]
+        public float[] position;            // [x,y,z]（working空間）
+        public float[] rotation;            // [x,y,z]（working空間・ラジアン）
+        public float mass = 1f;
+        public float linearDamping = 0f;
+        public float angularDamping = 0f;
+        public float restitution = 0f;
+        public float friction = 0f;
+        public int physicsMode = 0;         // RigidBodyPhysicsMode
+    }
+
+    /// <summary>JOINTデータDTO。</summary>
+    [Serializable]
+    public class JointDataDTO
+    {
+        public string nameEnglish = "";
+        public int jointType = 0;
+        public string bodyAName = "";
+        public string bodyBName = "";
+        public int rigidBodyIndexA = -1;
+        public int rigidBodyIndexB = -1;
+        public float[] position;            // [x,y,z]（working空間）
+        public float[] rotation;            // [x,y,z]（working空間・ラジアン）
+        public float[] translationMin;      // [x,y,z]（raw）
+        public float[] translationMax;      // [x,y,z]（raw）
+        public float[] rotationMin;         // [x,y,z]（raw・ラジアン）
+        public float[] rotationMax;         // [x,y,z]（raw・ラジアン）
+        public float[] springTranslation;   // [x,y,z]（raw）
+        public float[] springRotation;      // [x,y,z]（raw）
     }
 }

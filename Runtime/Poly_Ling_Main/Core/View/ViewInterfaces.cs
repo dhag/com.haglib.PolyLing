@@ -120,6 +120,8 @@ namespace Poly_Ling.View
         IReadOnlyList<IMeshView> DrawableList { get; }
         IReadOnlyList<IMeshView> BoneList { get; }
         IReadOnlyList<IMeshView> MorphList { get; }
+        IReadOnlyList<IMeshView> RigidBodyList { get; }
+        IReadOnlyList<IMeshView> RigidBodyJointList { get; }
 
         int[] SelectedDrawableIndices { get; }
         int[] SelectedBoneIndices { get; }

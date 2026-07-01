@@ -409,20 +409,41 @@ namespace Poly_Ling.PMX
             // メッシュを変換（頂点・面）
             ConvertMeshes(meshOnlyContexts, document, boneNameToIndex, settings);
 
-            // 元PMXDocumentから物理データ等をパススルー
+            // 剛体・JOINT を MeshObject データから再構築（段階③）。
+            // RigidBodyData/JointData を持つコンテキストが1つでも存在すれば
+            // そちらを正として再構築し、無ければ従来通り SourceDocument から
+            // 剛体・JOINTをパススルーする（後方互換）。
+            var rigidBodyContexts = meshContexts
+                .Where(ctx => ctx != null && ctx.Type == MeshType.RigidBody && ctx.MeshObject?.RigidBodyData != null)
+                .ToList();
+            var jointContexts = meshContexts
+                .Where(ctx => ctx != null && ctx.Type == MeshType.RigidBodyJoint && ctx.MeshObject?.JointData != null)
+                .ToList();
+
+            bool hasPhysicsData = rigidBodyContexts.Count > 0 || jointContexts.Count > 0;
+
+            if (hasPhysicsData)
+            {
+                // 剛体を先に出力し、剛体名→PMX剛体index のマップを得る。
+                var rigidBodyNameToIndex = ConvertRigidBodies(rigidBodyContexts, document, boneNameToIndex, settings);
+                // JOINTは剛体index解決のため上記マップを使用。
+                ConvertJoints(jointContexts, document, rigidBodyNameToIndex, settings);
+            }
+            else if (model.SourceDocument is PMXDocument fallbackPmx)
+            {
+                // データ非保持時のみ従来パススルー。
+                foreach (var body in fallbackPmx.RigidBodies)
+                    document.RigidBodies.Add(body);
+                foreach (var joint in fallbackPmx.Joints)
+                    document.Joints.Add(joint);
+            }
+
+            // 表示枠・ソフトボディは現状 MeshObject 未対応のため SourceDocument からパススルー。
             if (model.SourceDocument is PMXDocument sourcePmx)
             {
                 // 表示枠
                 foreach (var frame in sourcePmx.DisplayFrames)
                     document.DisplayFrames.Add(frame);
-
-                // 剛体
-                foreach (var body in sourcePmx.RigidBodies)
-                    document.RigidBodies.Add(body);
-
-                // ジョイント
-                foreach (var joint in sourcePmx.Joints)
-                    document.Joints.Add(joint);
 
                 // ソフトボディ
                 foreach (var softBody in sourcePmx.SoftBodies)
@@ -625,6 +646,7 @@ namespace Poly_Ling.PMX
                 // 空メッシュかつミラーはスキップ（ミラー材質を作らない）
                 if (ctx.MeshObject.VertexCount == 0 && (ctx.IsBakedMirror || ctx.Type == MeshType.MirrorSide)) continue;
                 if (ctx.Type == MeshType.Morph) continue;  // モーフは除外
+                if (ctx.Type == MeshType.RigidBody || ctx.Type == MeshType.RigidBodyJoint) continue;  // 剛体/JOINTはメッシュ変換対象外（頂点ゼロのメタデータ専用）
                 if (ctx.ExcludeFromExport) continue;       // エクスポート除外
 
                 string objectName = ctx.Name ?? "Unnamed";
@@ -1035,6 +1057,138 @@ namespace Poly_Ling.PMX
             if (settings.FlipZ)
                 return new Vector3(normal.x, normal.y, -normal.z).normalized;
             return normal.normalized;
+        }
+
+        // ================================================================
+        // 剛体・JOINT エクスポート（段階③）
+        // ================================================================
+        //
+        // 【方針】
+        //   RigidBodyData/JointData を持つ MeshObject から PMXRigidBody/PMXJoint を
+        //   再構築する。インポート（段階②）の逆変換であり、座標規約は対称：
+        //     位置 = ConvertPosition（×Scale ＋ FlipZ）… import の逆（Scaleは逆数）
+        //     回転 = ConvertEulerRotation（FlipZ共役は自己逆元のため import と同一処理）
+        //     サイズ = ×Scale（Z反転なし）
+        //     質量・減衰・反発・摩擦・Group・Mask・JointType・min/max・Spring = 生値
+        //
+        // 【参照系：name主】
+        //   剛体→ボーン：RelatedBoneName を boneNameToIndex（PMX出力ボーン順）で解決。
+        //   JOINT→剛体A/B：BodyAName/BodyBName を「剛体名→PMX剛体index」マップで解決。
+        //   PMXWriter のJOINT名補完は発火条件が index<-1 のため index 解決は必須
+        //   （ここで正しい index を設定する）。
+        // ----------------------------------------------------------------
+
+        /// <summary>
+        /// 剛体コンテキスト群を PMXRigidBody に変換して document に追加する。
+        /// </summary>
+        /// <returns>剛体名 → PMX剛体index のマップ（JOINTの剛体参照解決に使用）。</returns>
+        private static Dictionary<string, int> ConvertRigidBodies(
+            List<MeshContext> rigidBodyContexts,
+            PMXDocument document,
+            Dictionary<string, int> boneNameToIndex,
+            PMXExportSettings settings)
+        {
+            var nameToIndex = new Dictionary<string, int>();
+
+            foreach (var ctx in rigidBodyContexts)
+            {
+                var data = ctx.MeshObject.RigidBodyData;
+
+                // 関連ボーンは name主で解決（PMX出力ボーンindexは boneNameToIndex に一致）
+                int boneIndex = -1;
+                if (!string.IsNullOrEmpty(data.RelatedBoneName) &&
+                    boneNameToIndex.TryGetValue(data.RelatedBoneName, out int bi))
+                {
+                    boneIndex = bi;
+                }
+
+                var pmxBody = new PMXRigidBody
+                {
+                    Name            = ctx.Name,
+                    NameEnglish     = string.IsNullOrEmpty(data.NameEnglish) ? ctx.Name : data.NameEnglish,
+                    BoneIndex       = boneIndex,
+                    RelatedBoneName = data.RelatedBoneName ?? "",
+                    Group           = data.Group,
+                    CollisionMask   = data.CollisionMask,
+                    Shape           = (int)data.Shape,
+                    Size            = data.Size * settings.Scale,            // ×Scale（範囲量のためZ反転しない）
+                    Position        = ConvertPosition(data.Position, settings),
+                    Rotation        = ConvertEulerRotation(data.Rotation, settings),
+                    Mass            = data.Mass,
+                    LinearDamping   = data.LinearDamping,
+                    AngularDamping  = data.AngularDamping,
+                    Restitution     = data.Restitution,
+                    Friction        = data.Friction,
+                    PhysicsMode     = (int)data.PhysicsMode
+                };
+
+                // 名前→index（同名は最初の出現を採用。Writerの名前検索と整合）
+                if (!nameToIndex.ContainsKey(pmxBody.Name))
+                    nameToIndex[pmxBody.Name] = document.RigidBodies.Count;
+
+                document.RigidBodies.Add(pmxBody);
+            }
+
+            return nameToIndex;
+        }
+
+        /// <summary>
+        /// JOINTコンテキスト群を PMXJoint に変換して document に追加する。
+        /// 剛体A/Bは rigidBodyNameToIndex（剛体名→PMX剛体index）で解決する。
+        /// </summary>
+        private static void ConvertJoints(
+            List<MeshContext> jointContexts,
+            PMXDocument document,
+            Dictionary<string, int> rigidBodyNameToIndex,
+            PMXExportSettings settings)
+        {
+            foreach (var ctx in jointContexts)
+            {
+                var data = ctx.MeshObject.JointData;
+
+                // 剛体A/BのPMX剛体index（未解決は-1。WriterはJOINTで名前補完しないため必須）
+                int idxA = (!string.IsNullOrEmpty(data.BodyAName) &&
+                            rigidBodyNameToIndex.TryGetValue(data.BodyAName, out int a)) ? a : -1;
+                int idxB = (!string.IsNullOrEmpty(data.BodyBName) &&
+                            rigidBodyNameToIndex.TryGetValue(data.BodyBName, out int b)) ? b : -1;
+
+                var pmxJoint = new PMXJoint
+                {
+                    Name              = ctx.Name,
+                    NameEnglish       = string.IsNullOrEmpty(data.NameEnglish) ? ctx.Name : data.NameEnglish,
+                    JointType         = data.JointType,
+                    RigidBodyIndexA   = idxA,
+                    BodyAName         = data.BodyAName ?? "",
+                    RigidBodyIndexB   = idxB,
+                    BodyBName         = data.BodyBName ?? "",
+                    Position          = ConvertPosition(data.Position, settings),
+                    Rotation          = ConvertEulerRotation(data.Rotation, settings),
+                    TranslationMin    = data.TranslationMin,
+                    TranslationMax    = data.TranslationMax,
+                    RotationMin       = data.RotationMin,
+                    RotationMax       = data.RotationMax,
+                    SpringTranslation = data.SpringTranslation,
+                    SpringRotation    = data.SpringRotation
+                };
+
+                document.Joints.Add(pmxJoint);
+            }
+        }
+
+        /// <summary>
+        /// モデル空間のオイラー角回転（ラジアン）を PMX のオイラー角（ラジアン）へ変換する。
+        /// FlipZ時は右手系⇔左手系のZ鏡映共役（クォータニオン (x,y,z,w)→(-x,-y,z,w)）を適用する。
+        /// この共役は自己逆元のため、インポート側 ConvertEulerRotation と同一処理で逆変換になる。
+        /// 入力/出力ともラジアン（Unity APIは度のため内部で度に変換して扱う）。
+        /// </summary>
+        private static Vector3 ConvertEulerRotation(Vector3 modelEulerRad, PMXExportSettings settings)
+        {
+            Quaternion q = Quaternion.Euler(modelEulerRad * Mathf.Rad2Deg);
+
+            if (settings.FlipZ)
+                q = new Quaternion(-q.x, -q.y, q.z, q.w);
+
+            return q.eulerAngles * Mathf.Deg2Rad;
         }
     }
 }

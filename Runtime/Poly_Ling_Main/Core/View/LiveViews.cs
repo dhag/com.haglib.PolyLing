@@ -237,6 +237,8 @@ namespace Poly_Ling.View
         private IMeshView[] _drawableList;
         private IMeshView[] _boneList;
         private IMeshView[] _morphList;
+        private IMeshView[] _rigidBodyList;
+        private IMeshView[] _rigidBodyJointList;
         private bool _listsDirty = true;
 
         public LiveModelView(ModelContext model)
@@ -264,6 +266,8 @@ namespace Poly_Ling.View
         public IReadOnlyList<IMeshView> DrawableList { get { EnsureLists(); return _drawableList; } }
         public IReadOnlyList<IMeshView> BoneList { get { EnsureLists(); return _boneList; } }
         public IReadOnlyList<IMeshView> MorphList { get { EnsureLists(); return _morphList; } }
+        public IReadOnlyList<IMeshView> RigidBodyList { get { EnsureLists(); return _rigidBodyList; } }
+        public IReadOnlyList<IMeshView> RigidBodyJointList { get { EnsureLists(); return _rigidBodyJointList; } }
 
         /// <summary>リスト構造変更時に呼ぶ。次回アクセス時にリビルド。</summary>
         public void InvalidateLists() { _listsDirty = true; }
@@ -274,6 +278,8 @@ namespace Poly_Ling.View
             _drawableList = BuildList(_model.DrawableMeshes);
             _boneList = BuildList(_model.Bones);
             _morphList = BuildList(_model.Morphs);
+            _rigidBodyList = BuildList(_model.RigidBodies);
+            _rigidBodyJointList = BuildList(_model.RigidBodyJoints);
             _listsDirty = false;
         }
 

@@ -15,6 +15,7 @@ using Poly_Ling.Tools;
 using Poly_Ling.Serialization;
 using Poly_Ling.Selection;
 using Poly_Ling.Context;
+using Poly_Ling.MeshBridge;
 using Poly_Ling.Localization;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 using Poly_Ling.Rendering;
@@ -346,23 +347,97 @@ namespace Poly_Ling.Data
         public Quaternion BoneModelRotation { get; set; } = Quaternion.identity;
 
         // ================================================================
-        // IKデータ（PMXインポート時に設定）
+        // IKデータ（MeshObject.IKData へ委譲）
         // ================================================================
+        //
+        // 【設計方針】
+        //   IKデータの実体は MeshObject.IKData（純POCO）に統一した。
+        //   MeshContext は後方互換のため薄い委譲プロパティのみを公開する
+        //   （Type / BoneTransform / ParentIndex と同一パターン）。
+        //   これにより既存の全呼び出し元（PMX/MQO/CSV/Remote/CCDIK 等）は
+        //   無改修のまま、データ実体だけが MeshObject 側へ移動する。
+        //
+        // 【不変条件】
+        //   MeshObject.IKData != null  ⇔  このボーンはIKボーン。
+        //   非IKボーンでは IKData を生成しない（意味とメモリの明確化）。
+        //
+        // 【遅延生成の安全性】
+        //   全インポータ/デシリアライザは IsIK を true にしてからスカラーを
+        //   設定する。さらに各スカラー setter は「デフォルト値かつ未生成」の
+        //   場合に生成をスキップするため、非IKボーンに IKData が漏れ生成され
+        //   ない（Remote の全ボーン一括読み込みでもデフォルト値のため安全）。
+        // ----------------------------------------------------------------
 
-        /// <summary>このボーンがIKボーンか</summary>
-        public bool IsIK { get; set; }
+        /// <summary>IKDataを遅延生成（MeshObjectが存在する場合のみ）。</summary>
+        private void EnsureIKData()
+        {
+            if (MeshObject != null && MeshObject.IKData == null)
+                MeshObject.IKData = new IKData();
+        }
 
-        /// <summary>IKターゲット（エフェクタ）のMeshContextListインデックス</summary>
-        public int IKTargetIndex { get; set; } = -1;
+        /// <summary>このボーンがIKボーンか（MeshObject.IKData へ委譲）。</summary>
+        public bool IsIK
+        {
+            get => MeshObject?.IKData?.IsIK ?? false;
+            set
+            {
+                // 非IK化要求で未生成なら、IKDataを作らずに済ませる
+                if (!value && (MeshObject == null || MeshObject.IKData == null)) return;
+                EnsureIKData();
+                if (MeshObject?.IKData != null) MeshObject.IKData.IsIK = value;
+            }
+        }
 
-        /// <summary>IKループ回数</summary>
-        public int IKLoopCount { get; set; }
+        /// <summary>IKターゲット（エフェクタ）のMeshContextListインデックス。</summary>
+        public int IKTargetIndex
+        {
+            get => MeshObject?.IKData?.TargetIndex ?? -1;
+            set
+            {
+                if (value == -1 && (MeshObject == null || MeshObject.IKData == null)) return;
+                EnsureIKData();
+                if (MeshObject?.IKData != null) MeshObject.IKData.TargetIndex = value;
+            }
+        }
 
-        /// <summary>IK1回あたりの制限角度（ラジアン）</summary>
-        public float IKLimitAngle { get; set; }
+        /// <summary>IKループ回数。</summary>
+        public int IKLoopCount
+        {
+            get => MeshObject?.IKData?.LoopCount ?? 0;
+            set
+            {
+                if (value == 0 && (MeshObject == null || MeshObject.IKData == null)) return;
+                EnsureIKData();
+                if (MeshObject?.IKData != null) MeshObject.IKData.LoopCount = value;
+            }
+        }
 
-        /// <summary>IKリンクチェーン</summary>
-        public List<IKLinkInfo> IKLinks { get; set; }
+        /// <summary>IK1回あたりの制限角度（ラジアン）。</summary>
+        public float IKLimitAngle
+        {
+            get => MeshObject?.IKData?.LimitAngle ?? 0f;
+            set
+            {
+                if (value == 0f && (MeshObject == null || MeshObject.IKData == null)) return;
+                EnsureIKData();
+                if (MeshObject?.IKData != null) MeshObject.IKData.LimitAngle = value;
+            }
+        }
+
+        /// <summary>
+        /// IKリンクチェーン（実体は MeshObject.IKData.Links）。
+        /// getter は生成済みIKDataでは常に非null（空リスト）を返す。
+        /// </summary>
+        public List<IKLinkInfo> IKLinks
+        {
+            get => MeshObject?.IKData?.Links;
+            set
+            {
+                if (value == null && (MeshObject == null || MeshObject.IKData == null)) return;
+                EnsureIKData();
+                if (MeshObject?.IKData != null) MeshObject.IKData.Links = value;
+            }
+        }
 
         /// <summary>
         /// スキニング行列を取得（WorldMatrix × BindPose）
@@ -786,16 +861,8 @@ namespace Poly_Ling.Data
         {
             if (UnityMesh == null || MeshObject == null) return;
 
-            var newMesh = MeshObject.ToUnityMeshShared();
-
-            UnityMesh.Clear();
-            UnityMesh.vertices = newMesh.vertices;
-            UnityMesh.triangles = newMesh.triangles;
-            UnityMesh.uv = newMesh.uv;
-            UnityMesh.normals = newMesh.normals;
-            UnityMesh.RecalculateBounds();
-
-            UnityEngine.Object.DestroyImmediate(newMesh);
+            // 生Unity Mesh 操作は MeshBridge に集約（一時Mesh生成・コピー・破棄を内包）。
+            PLMeshBridge.I.RebuildMeshInPlace(UnityMesh, MeshObject);
         }
 
         /// <summary>
@@ -805,12 +872,7 @@ namespace Poly_Ling.Data
         {
             if (UnityMesh == null || MeshObject == null) return;
 
-            var newMesh = MeshObject.ToUnityMeshShared();
-            UnityMesh.vertices = newMesh.vertices;
-            UnityMesh.RecalculateNormals();
-            UnityMesh.RecalculateBounds();
-
-            UnityEngine.Object.DestroyImmediate(newMesh);
+            PLMeshBridge.I.ApplyVertexPositionsInPlace(UnityMesh, MeshObject);
         }
     }
 
@@ -931,21 +993,6 @@ namespace Poly_Ling.Data
         }
     }
 
-    /// <summary>
-    /// IKリンク情報（CCDIKのチェーン要素）
-    /// </summary>
-    public class IKLinkInfo
-    {
-        /// <summary>リンクボーンのMeshContextListインデックス</summary>
-        public int BoneIndex { get; set; }
-
-        /// <summary>角度制限あり</summary>
-        public bool HasLimit { get; set; }
-
-        /// <summary>角度制限下限（ラジアン）</summary>
-        public Vector3 LimitMin { get; set; }
-
-        /// <summary>角度制限上限（ラジアン）</summary>
-        public Vector3 LimitMax { get; set; }
-    }
+    // IKLinkInfo は IKData.cs へ移設済み（namespace Poly_Ling.Data 不変のため
+    // 既存参照は無改修で解決される）。
 }

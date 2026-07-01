@@ -453,18 +453,19 @@ namespace Poly_Ling.PMX
                 //Debug.Log($"[PMXImporter] Converted to T-Pose");
             }
 
-            // TODO: 剛体をインポート（将来実装）
+            // 剛体をインポート（Type=RigidBody の空MeshObject + RigidBodyData）
+            // ジョイントの剛体参照解決のため、剛体コンテキストの開始indexを記録する。
+            int rigidBodyContextBase = -1;
             if (settings.ShouldImportBodies && document.RigidBodies.Count > 0)
             {
-                //Debug.Log($"[PMXImporter] Bodies import not yet implemented ({document.RigidBodies.Count} bodies)");
-                // ConvertBodies(document, settings, result);
+                rigidBodyContextBase = result.MeshContexts.Count;
+                ConvertRigidBodies(document, settings, result);
             }
 
-            // TODO: ジョイントをインポート（将来実装）
+            // ジョイントをインポート（Type=RigidBodyJoint の空MeshObject + JointData）
             if (settings.ShouldImportJoints && document.Joints.Count > 0)
             {
-                //Debug.Log($"[PMXImporter] Joints import not yet implemented ({document.Joints.Count} joints)");
-                // ConvertJoints(document, settings, result);
+                ConvertJoints(document, settings, result, rigidBodyContextBase);
             }
 
             // モーフをインポート
@@ -2511,6 +2512,143 @@ namespace Poly_Ling.PMX
             {
                 result.MorphExpressions.Add(MorphExpression);
             }
+        }
+
+        // ================================================================
+        // 剛体・JOINT インポート（段階②）
+        // ================================================================
+        //
+        // 【方針】
+        //   剛体/JOINTを頂点ゼロの空 MeshObject（Type=RigidBody / RigidBodyJoint）
+        //   ＋付帯POCO（RigidBodyData / JointData）として取り込み、ボーン・モーフと
+        //   同様に result.MeshContexts へ追加する。形状はギズモとして利用時に生成し、
+        //   ここではジオメトリを持たせない（Drawableカテゴリ外のためGPU構築に入らない）。
+        //
+        // 【参照系：name主・index従】
+        //   剛体→関連ボーン：RelatedBoneName（PMXReaderで解決済み）。BoneIndexはPMX
+        //   ボーンindexで、ボーンを先頭に追加する本インポータでは MeshContextList の
+        //   ボーンindexと一致する。
+        //   JOINT→剛体A/B：BodyAName/BodyBName（解決済み）。indexは
+        //   「剛体コンテキスト開始index ＋ PMX剛体index」で MeshContextList 上に解決する。
+        //
+        // 【座標変換】
+        //   位置：ConvertPosition（×Scale ＋ FlipZ で z=-z）。頂点・ボーンと同一。
+        //   回転：ConvertEulerRotation（PMX Euler(rad)→Quaternion→FlipZ共役→Euler(rad)）。
+        //   サイズ：×Scale のみ（範囲量のためZ反転しない）。
+        //   質量・減衰・反発・摩擦・Group・Mask・JointType・各min/max・Spring：生値。
+        //   （JOINTのmin/max・SpringのFlipZ軸入替えは段階③エクスポート整合と併せて扱う）
+        // ----------------------------------------------------------------
+
+        /// <summary>剛体をMeshContext（Type=RigidBody）に変換して追加する。</summary>
+        private static void ConvertRigidBodies(PMXDocument document, PMXImportSettings settings, PMXImportResult result)
+        {
+            foreach (var body in document.RigidBodies)
+            {
+                // 頂点/面を持たない空MeshObject（ボーンと同形）
+                var meshObject = new MeshObject(body.Name)
+                {
+                    Type = MeshType.RigidBody
+                };
+
+                meshObject.RigidBodyData = new RigidBodyData
+                {
+                    NameEnglish     = body.NameEnglish ?? "",
+                    RelatedBoneName = body.RelatedBoneName ?? "",
+                    // ボーンを先頭に追加する本インポータでは PMXボーンindex == MeshContextListボーンindex
+                    BoneIndex       = body.BoneIndex,
+                    Group           = body.Group,
+                    CollisionMask   = body.CollisionMask,
+                    Shape           = (RigidBodyShape)body.Shape,
+                    Size            = body.Size * settings.Scale,
+                    Position        = ConvertPosition(body.Position, settings),
+                    Rotation        = ConvertEulerRotation(body.Rotation, settings),
+                    Mass            = body.Mass,
+                    LinearDamping   = body.LinearDamping,
+                    AngularDamping  = body.AngularDamping,
+                    Restitution     = body.Restitution,
+                    Friction        = body.Friction,
+                    PhysicsMode     = (RigidBodyPhysicsMode)body.PhysicsMode
+                };
+
+                // MeshContextでラップ（MeshObjectを先に設定 → Name/Type委譲が成立）
+                var meshContext = new MeshContext
+                {
+                    MeshObject = meshObject,
+                    Name       = body.Name,
+                    Type       = MeshType.RigidBody,
+                    IsVisible  = true
+                };
+
+                result.MeshContexts.Add(meshContext);
+            }
+        }
+
+        /// <summary>
+        /// ジョイントをMeshContext（Type=RigidBodyJoint）に変換して追加する。
+        /// </summary>
+        /// <param name="rigidBodyContextBase">
+        /// 剛体コンテキストの開始index（MeshContextList上）。-1=剛体未インポート。
+        /// </param>
+        private static void ConvertJoints(PMXDocument document, PMXImportSettings settings, PMXImportResult result, int rigidBodyContextBase)
+        {
+            foreach (var joint in document.Joints)
+            {
+                var meshObject = new MeshObject(joint.Name)
+                {
+                    Type = MeshType.RigidBodyJoint
+                };
+
+                // 剛体A/BのMeshContextList index（剛体未インポート時は-1のまま）
+                int idxA = (rigidBodyContextBase >= 0 && joint.RigidBodyIndexA >= 0)
+                    ? rigidBodyContextBase + joint.RigidBodyIndexA : -1;
+                int idxB = (rigidBodyContextBase >= 0 && joint.RigidBodyIndexB >= 0)
+                    ? rigidBodyContextBase + joint.RigidBodyIndexB : -1;
+
+                meshObject.JointData = new JointData
+                {
+                    NameEnglish       = joint.NameEnglish ?? "",
+                    JointType         = joint.JointType,
+                    BodyAName         = joint.BodyAName ?? "",
+                    BodyBName         = joint.BodyBName ?? "",
+                    RigidBodyIndexA   = idxA,
+                    RigidBodyIndexB   = idxB,
+                    Position          = ConvertPosition(joint.Position, settings),
+                    Rotation          = ConvertEulerRotation(joint.Rotation, settings),
+                    TranslationMin    = joint.TranslationMin,
+                    TranslationMax    = joint.TranslationMax,
+                    RotationMin       = joint.RotationMin,
+                    RotationMax       = joint.RotationMax,
+                    SpringTranslation = joint.SpringTranslation,
+                    SpringRotation    = joint.SpringRotation
+                };
+
+                var meshContext = new MeshContext
+                {
+                    MeshObject = meshObject,
+                    Name       = joint.Name,
+                    Type       = MeshType.RigidBodyJoint,
+                    IsVisible  = true
+                };
+
+                result.MeshContexts.Add(meshContext);
+            }
+        }
+
+        /// <summary>
+        /// PMXのオイラー角回転（ラジアン）をモデル空間のオイラー角（ラジアン）へ変換する。
+        /// FlipZ時は右手系→左手系のZ鏡映共役 S·R·S(S=diag(1,1,-1)) を適用する。
+        /// クォータニオン表現では (x,y,z,w) → (-x,-y,z,w)（回転軸のZ鏡映＋角度反転に相当）で、
+        /// これはボーン基底変換 CalculateBoneModelRotation のFlipZ規則と同一。
+        /// 入力/出力ともラジアン（Unity APIは度のため内部で度に変換して扱う）。
+        /// </summary>
+        private static Vector3 ConvertEulerRotation(Vector3 pmxEulerRad, PMXImportSettings settings)
+        {
+            Quaternion q = Quaternion.Euler(pmxEulerRad * Mathf.Rad2Deg);
+
+            if (settings.FlipZ)
+                q = new Quaternion(-q.x, -q.y, q.z, q.w);
+
+            return q.eulerAngles * Mathf.Deg2Rad;
         }
     }
 }

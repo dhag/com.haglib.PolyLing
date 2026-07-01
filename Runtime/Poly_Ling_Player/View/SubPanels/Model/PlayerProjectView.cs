@@ -47,6 +47,8 @@ namespace Poly_Ling.Player
         private IReadOnlyList<IMeshView> _drawableList;
         private IReadOnlyList<IMeshView> _boneList;
         private IReadOnlyList<IMeshView> _morphList;
+        private IReadOnlyList<IMeshView> _rigidBodyList;
+        private IReadOnlyList<IMeshView> _rigidBodyJointList;
         private int[] _selectedDrawableIndices;
         private int[] _selectedBoneIndices;
         private int[] _selectedMorphIndices;
@@ -71,6 +73,10 @@ namespace Poly_Ling.Player
             => _boneList     ??= BuildList(MeshCategory.Bone);
         public IReadOnlyList<IMeshView> MorphList
             => _morphList    ??= BuildList(MeshCategory.Morph);
+        public IReadOnlyList<IMeshView> RigidBodyList
+            => _rigidBodyList ??= BuildList(MeshCategory.RigidBody);
+        public IReadOnlyList<IMeshView> RigidBodyJointList
+            => _rigidBodyJointList ??= BuildList(MeshCategory.RigidBodyJoint);
 
         public int[] SelectedDrawableIndices
             => _selectedDrawableIndices ??= _model.SelectedDrawableMeshIndices.ToArray();
