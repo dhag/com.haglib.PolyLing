@@ -831,7 +831,8 @@ namespace Poly_Ling.Remote
                 if (it.Type != ContentType.Json && it.Type != ContentType.Text) { hasBinary = true; break; }
 
             var kind = hasBinary ? WebSocketFrameKind.Binary : WebSocketFrameKind.Text;
-            var wsChannel = channel as WebSocketDuplexChannel;
+            var wsChannel  = channel as WebSocketDuplexChannel;
+            var tcpChannel = channel as TcpDuplexServerChannel;
 
             try
             {
@@ -839,6 +840,8 @@ namespace Poly_Ling.Remote
                 {
                     if (wsChannel != null)
                         _ = wsChannel.ReplyAsync(request, reply.ToMessage(), kind);
+                    else if (tcpChannel != null)
+                        _ = tcpChannel.ReplyAsync(request, reply.ToMessage(), kind);
                     else
                         _ = channel.ReplyAsync(request, reply.ToMessage());
                 }
@@ -846,6 +849,8 @@ namespace Poly_Ling.Remote
                 {
                     if (wsChannel != null)
                         _ = wsChannel.SendAsync(reply.ToMessage(), kind);
+                    else if (tcpChannel != null)
+                        _ = tcpChannel.SendAsync(reply.ToMessage(), kind);
                     else
                         _ = channel.SendAsync(reply.ToMessage());
                 }

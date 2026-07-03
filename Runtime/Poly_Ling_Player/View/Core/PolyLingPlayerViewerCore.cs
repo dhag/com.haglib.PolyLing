@@ -497,7 +497,16 @@ namespace Poly_Ling.Player
                 _playerServer.Initialize(
                     _serverPort,
                     _serverAutoStart,
-                    () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                    () =>
+                    {
+                        var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                        if (ctx != null)
+                        {
+                            ctx.Project = ActiveProject;
+                            ctx.Model   = ActiveProject?.CurrentModel;
+                        }
+                        return ctx;
+                    },
                     cmd => _commandDispatcher?.Dispatch(cmd));
             }
 
