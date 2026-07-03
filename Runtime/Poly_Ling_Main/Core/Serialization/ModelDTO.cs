@@ -102,6 +102,13 @@ namespace Poly_Ling.Serialization
         /// <summary>ミラーペア情報（Real↔Mirror のメッシュインデックスペア）</summary>
         public List<MirrorPairDTO> mirrorPairs = new List<MirrorPairDTO>();
 
+        // ================================================================
+        // スプリングボーン・コライダーグループ（モデルレベル：名前のみ）
+        // ================================================================
+
+        /// <summary>スプリングボーン・コライダーグループ名リスト（index＝並び順）。</summary>
+        public List<string> springBoneColliderGroupNames = new List<string>();
+
         // === ファクトリメソッド ===
 
         public static ModelDTO Create(string modelName)
@@ -287,6 +294,15 @@ namespace Poly_Ling.Serialization
 
         /// <summary>JOINTデータ（null=非JOINT）。</summary>
         public JointDataDTO jointData;
+
+        /// <summary>スプリングボーン・コライダー（null/空=なし。1ボーンに複数可）。</summary>
+        public List<SpringBoneColliderDataDTO> springBoneColliders;
+
+        /// <summary>スプリングボーン・ジョイント（null=非揺れjoint）。</summary>
+        public SpringBoneJointDataDTO springBoneJoint;
+
+        /// <summary>スプリングボーン・チェーンルート（null=非ルート）。</summary>
+        public SpringBoneChainDataDTO springBoneChainRoot;
     }
 
     // ================================================================
@@ -1088,5 +1104,44 @@ namespace Poly_Ling.Serialization
         public float[] rotationMax;         // [x,y,z]（raw・ラジアン）
         public float[] springTranslation;   // [x,y,z]（raw）
         public float[] springRotation;      // [x,y,z]（raw）
+    }
+
+    // ================================================================
+    // スプリングボーン用DTO（VRM SpringBone。フィールド型・[Serializable]）
+    //   POCO（Poly_Ling.Data の SpringBoneColliderData/SpringBoneJointData/
+    //   SpringBoneChainData）はプロパティ主体のため、JsonUtility互換の
+    //   フィールド型DTOを別途用意する。POCO⇔DTO 変換は ModelSerializer が行う。
+    // ================================================================
+
+    /// <summary>スプリングボーン・コライダーDTO。</summary>
+    [Serializable]
+    public class SpringBoneColliderDataDTO
+    {
+        public int shape = 0;                       // SpringBoneColliderShape
+        public float[] offset;                      // [x,y,z]（付帯ボーンのローカル）
+        public float radius = 0.05f;
+        public float[] tail;                        // [x,y,z]（カプセル終点）
+        public float[] normal;                      // [x,y,z]（平面法線）
+        public List<int> groupIndices = new List<int>();  // 所属group index（複数可）
+    }
+
+    /// <summary>スプリングボーン・ジョイントDTO。</summary>
+    [Serializable]
+    public class SpringBoneJointDataDTO
+    {
+        public float hitRadius = 0.02f;
+        public float stiffnessForce = 1.0f;
+        public float gravityPower = 0f;
+        public float[] gravityDir;                  // [x,y,z]
+        public float dragForce = 0.4f;
+    }
+
+    /// <summary>スプリングボーン・チェーンルートDTO。</summary>
+    [Serializable]
+    public class SpringBoneChainDataDTO
+    {
+        public string name = "";
+        public List<int> colliderGroupIndices = new List<int>();  // 衝突group index
+        public string centerBoneName = "";          // name主（空=World）
     }
 }

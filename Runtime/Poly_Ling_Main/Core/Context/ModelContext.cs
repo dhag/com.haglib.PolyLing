@@ -854,6 +854,16 @@ namespace Poly_Ling.Context
         /// <summary>ミラーペアのリスト（実体側↔ミラー側の対応）</summary>
         public List<MirrorPair> MirrorPairs { get; set; } = new List<MirrorPair>();
 
+        // ================================================================
+        // スプリングボーン・コライダーグループ（モデルレベル：名前のみ保持）
+        //   VRM SpringBone の colliderGroups に相当。ここには名前だけを持ち、
+        //   index＝この並び順。コライダー本体は各ボーンの
+        //   MeshObject.SpringBoneColliders が保持し、所属は index で参照する。
+        // ================================================================
+
+        /// <summary>スプリングボーン・コライダーグループ名リスト（index＝並び順）。</summary>
+        public List<string> SpringBoneColliderGroupNames { get; set; } = new List<string>();
+
         /// <summary>
         /// 指定MeshContextが属するMirrorPairを取得（実体側・ミラー側どちらでも検索）
         /// </summary>

@@ -924,6 +924,25 @@ namespace Poly_Ling.Data
         /// </summary>
         public JointData JointData { get; set; } = null;
 
+        // ------------------------------------------------------------
+        // スプリングボーン付帯データ（Type == MeshType.Bone のボーンに付く）
+        //   VRM SpringBone(VRMC_springBone) 由来。物理演算(RigidBody/Joint)とは別物。
+        //   - コライダー : SpringBoneColliders（1ボーンに複数可。null/空=なし）
+        //   - ジョイント : SpringBoneJoint（揺れチェーンメンバー。非null=揺れjoint）
+        //   - チェーンルート : SpringBoneChainRoot（チェーン起点ボーンのみ。非null=ルート）
+        //   チェーンの形状・順序はボーン階層(HierarchyParentIndex)＋SpringBoneJoint有無
+        //   から導出する（明示的な順序リストは持たない）。
+        // ------------------------------------------------------------
+
+        /// <summary>スプリングボーン・コライダー（付帯ボーンに複数可。null/空=なし）。</summary>
+        public List<SpringBoneColliderData> SpringBoneColliders { get; set; } = null;
+
+        /// <summary>スプリングボーン・ジョイント（非null=揺れチェーンのメンバー）。</summary>
+        public SpringBoneJointData SpringBoneJoint { get; set; } = null;
+
+        /// <summary>スプリングボーン・チェーンルート（非null=このボーンがチェーン起点）。</summary>
+        public SpringBoneChainData SpringBoneChainRoot { get; set; } = null;
+
         // === プロパティ ===
 
         /// <summary>頂点数</summary>
@@ -1242,6 +1261,18 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// スプリングボーン・コライダーリストのディープコピー（null は null のまま）。
+        /// </summary>
+        private static List<SpringBoneColliderData> CloneSpringBoneColliders(List<SpringBoneColliderData> src)
+        {
+            if (src == null) return null;
+            var dst = new List<SpringBoneColliderData>(src.Count);
+            foreach (var c in src)
+                dst.Add(c?.Clone());
+            return dst;
+        }
+
+        /// <summary>
         /// ディープコピー（IDも保持）
         /// </summary>
         public MeshObject Clone()
@@ -1266,6 +1297,11 @@ namespace Poly_Ling.Data
             copy.IKData = this.IKData?.Clone();
             copy.RigidBodyData = this.RigidBodyData?.Clone();
             copy.JointData = this.JointData?.Clone();
+
+            // スプリングボーン付帯データをディープコピー（nullはnullのまま）
+            copy.SpringBoneColliders = CloneSpringBoneColliders(this.SpringBoneColliders);
+            copy.SpringBoneJoint = this.SpringBoneJoint?.Clone();
+            copy.SpringBoneChainRoot = this.SpringBoneChainRoot?.Clone();
 
             // ID管理セットを再構築
             copy.RebuildIdSets();
@@ -1298,6 +1334,11 @@ namespace Poly_Ling.Data
             copy.IKData = this.IKData?.Clone();
             copy.RigidBodyData = this.RigidBodyData?.Clone();
             copy.JointData = this.JointData?.Clone();
+
+            // スプリングボーン付帯データをディープコピー（頂点/面IDとは独立）。
+            copy.SpringBoneColliders = CloneSpringBoneColliders(this.SpringBoneColliders);
+            copy.SpringBoneJoint = this.SpringBoneJoint?.Clone();
+            copy.SpringBoneChainRoot = this.SpringBoneChainRoot?.Clone();
 
             // 頂点をコピー（新しいID）
             foreach (var v in Vertices)

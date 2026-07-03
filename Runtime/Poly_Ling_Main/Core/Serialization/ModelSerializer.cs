@@ -368,6 +368,15 @@ namespace Poly_Ling.Serialization
 
             SaveMirrorPairsToDTO(model, modelDTO);
 
+            // ================================================================
+            // スプリングボーン・コライダーグループ名（モデルレベル：名前のみ）
+            // ================================================================
+
+            modelDTO.springBoneColliderGroupNames =
+                (model.SpringBoneColliderGroupNames != null)
+                    ? new List<string>(model.SpringBoneColliderGroupNames)
+                    : new List<string>();
+
             return modelDTO;
         }
 
@@ -532,6 +541,15 @@ namespace Poly_Ling.Serialization
 
             LoadMirrorPairsFromDTO(modelDTO, model);
 
+            // ================================================================
+            // スプリングボーン・コライダーグループ名復元（モデルレベル）
+            // ================================================================
+
+            model.SpringBoneColliderGroupNames =
+                (modelDTO.springBoneColliderGroupNames != null)
+                    ? new List<string>(modelDTO.springBoneColliderGroupNames)
+                    : new List<string>();
+
             return model;
         }
 
@@ -588,6 +606,7 @@ namespace Poly_Ling.Serialization
                 SaveBoneModelRotationToDTO(meshContext, contextData);
                 SaveRigidBodyDataToDTO(meshContext, contextData);
                 SaveJointDataToDTO(meshContext, contextData);
+                SaveSpringBoneDataToDTO(meshContext, contextData);
             }
 
             return contextData;
@@ -662,6 +681,7 @@ namespace Poly_Ling.Serialization
             LoadBoneModelRotationFromDTO(meshDTO, meshContext);
             LoadRigidBodyDataFromDTO(meshDTO, meshContext);
             LoadJointDataFromDTO(meshDTO, meshContext);
+            LoadSpringBoneDataFromDTO(meshDTO, meshContext);
 
             return meshContext;
         }
@@ -1392,6 +1412,126 @@ namespace Poly_Ling.Serialization
                 RotationMax = SerVec3(d.rotationMax),
                 SpringTranslation = SerVec3(d.springTranslation),
                 SpringRotation = SerVec3(d.springRotation)
+            };
+        }
+
+        // ================================================================
+        // スプリングボーン（VRM SpringBone）POCO⇔DTO 変換
+        //   コライダー(複数)・ジョイント・チェーンルート をまとめて往復させる。
+        //   いずれか非nullのボーンのみDTOに書き出す（null=当該属性なし）。
+        // ================================================================
+
+        public static void SaveSpringBoneDataToDTO(MeshContext mc, MeshDTO dto)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null)
+            {
+                dto.springBoneColliders = null;
+                dto.springBoneJoint = null;
+                dto.springBoneChainRoot = null;
+                return;
+            }
+
+            // コライダー（複数）
+            if (mo.SpringBoneColliders != null && mo.SpringBoneColliders.Count > 0)
+            {
+                var list = new List<SpringBoneColliderDataDTO>(mo.SpringBoneColliders.Count);
+                foreach (var c in mo.SpringBoneColliders)
+                {
+                    if (c == null) continue;
+                    list.Add(new SpringBoneColliderDataDTO
+                    {
+                        shape = (int)c.Shape,
+                        offset = SerVec3(c.Offset),
+                        radius = c.Radius,
+                        tail = SerVec3(c.Tail),
+                        normal = SerVec3(c.Normal),
+                        groupIndices = c.SpringBoneGroupIndices != null
+                            ? new List<int>(c.SpringBoneGroupIndices)
+                            : new List<int>()
+                    });
+                }
+                dto.springBoneColliders = list.Count > 0 ? list : null;
+            }
+            else
+            {
+                dto.springBoneColliders = null;
+            }
+
+            // ジョイント
+            var j = mo.SpringBoneJoint;
+            dto.springBoneJoint = (j == null) ? null : new SpringBoneJointDataDTO
+            {
+                hitRadius = j.HitRadius,
+                stiffnessForce = j.StiffnessForce,
+                gravityPower = j.GravityPower,
+                gravityDir = SerVec3(j.GravityDir),
+                dragForce = j.DragForce
+            };
+
+            // チェーンルート
+            var ch = mo.SpringBoneChainRoot;
+            dto.springBoneChainRoot = (ch == null) ? null : new SpringBoneChainDataDTO
+            {
+                name = ch.Name ?? "",
+                colliderGroupIndices = ch.SpringBoneColliderGroupIndices != null
+                    ? new List<int>(ch.SpringBoneColliderGroupIndices)
+                    : new List<int>(),
+                centerBoneName = ch.CenterBoneName ?? ""
+            };
+        }
+
+        public static void LoadSpringBoneDataFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            var mo = mc?.MeshObject;
+            if (dto == null || mo == null) return;
+
+            // コライダー（複数）
+            if (dto.springBoneColliders != null && dto.springBoneColliders.Count > 0)
+            {
+                var list = new List<SpringBoneColliderData>(dto.springBoneColliders.Count);
+                foreach (var d in dto.springBoneColliders)
+                {
+                    if (d == null) continue;
+                    list.Add(new SpringBoneColliderData
+                    {
+                        Shape = (SpringBoneColliderShape)d.shape,
+                        Offset = SerVec3(d.offset),
+                        Radius = d.radius,
+                        Tail = SerVec3(d.tail),
+                        Normal = SerVec3(d.normal),
+                        SpringBoneGroupIndices = d.groupIndices != null
+                            ? new List<int>(d.groupIndices)
+                            : new List<int>()
+                    });
+                }
+                mo.SpringBoneColliders = list.Count > 0 ? list : null;
+            }
+            else
+            {
+                mo.SpringBoneColliders = null;
+            }
+
+            // ジョイント
+            var jd = dto.springBoneJoint;
+            mo.SpringBoneJoint = (jd == null) ? null : new SpringBoneJointData
+            {
+                HitRadius = jd.hitRadius,
+                StiffnessForce = jd.stiffnessForce,
+                GravityPower = jd.gravityPower,
+                GravityDir = SerVec3(jd.gravityDir),
+                DragForce = jd.dragForce
+            };
+
+            // チェーンルート
+            var cd = dto.springBoneChainRoot;
+            mo.SpringBoneChainRoot = (cd == null) ? null : new SpringBoneChainData
+            {
+                Name = cd.name ?? "",
+                SpringBoneColliderGroupIndices = cd.colliderGroupIndices != null
+                    ? new List<int>(cd.colliderGroupIndices)
+                    : new List<int>(),
+                CenterBoneName = cd.centerBoneName ?? ""
             };
         }
 

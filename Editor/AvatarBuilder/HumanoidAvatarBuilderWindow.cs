@@ -39,7 +39,7 @@ public class HumanoidAvatarBuilderWindow : EditorWindow
     private Vector2 _scroll;
     private string _log = "";
 
-    [MenuItem("Tools/Humanoid Avatar 作成")]
+    [MenuItem("PolyLing/Avatar/humanoid.csv → Humanoid Avatar")]
     public static void Open() => GetWindow<HumanoidAvatarBuilderWindow>("Humanoid Avatar 作成");
 
     private void OnGUI()

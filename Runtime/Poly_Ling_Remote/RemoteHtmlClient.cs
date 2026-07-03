@@ -170,18 +170,24 @@ function connect() {
 
   ws.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
-      handleBinaryMessage(event.data);
+      // Binaryフレーム = DuplexPacket（Json/Binary アイテム混在の可能性あり）
+      const items = parseDuplexPacket(event.data) || [];
+      const jsonItems = [];
+      const binItems = [];
+      for (const it of items) {
+        if (it.type === 0 || it.type === 3) {
+          jsonItems.push(new TextDecoder().decode(it.data));
+        } else {
+          binItems.push(it.data);
+        }
+      }
+      dispatchEnvelopeItems(jsonItems, binItems);
       return;
     }
 
-    const msg = JSON.parse(event.data);
-
-    if (msg.id && pendingCallbacks[msg.id]) {
-      pendingCallbacks[msg.id](msg);
-      delete pendingCallbacks[msg.id];
-    } else if (msg.type === 'push') {
-      handlePush(msg);
-    }
+    // Textフレーム = JSON封筒 {type,id,items[]}
+    const env = decodeTextEnvelope(event.data);
+    dispatchEnvelopeItems(env.jsonItems, env.binItems);
   };
 }
 
@@ -198,7 +204,7 @@ function send(obj) {
     const id = `r${++requestId}`;
     obj.id = id;
     pendingCallbacks[id] = resolve;
-    ws.send(JSON.stringify(obj));
+    ws.send(encodeJsonEnvelope(obj));
 
     // タイムアウト
     setTimeout(() => {
@@ -361,6 +367,108 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = String(s);
   return d.innerHTML;
+}
+
+// ================================================================
+// Duplex 封筒（com.haglib.net_duplexchannel 互換）
+// Text: {type,id,items:[{type,mimeType,data,encoding}]}
+// Binary: DuplexPacket(16B header 'DPX\n'|ver|type|id|payloadLen|tagLen) + tag + TypedPayload
+// ContentType: Text=0, Binary=1, Image=2, Json=3, Custom=255
+// ================================================================
+
+let envId = 0;
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+
+function encodeJsonEnvelope(appObj) {
+  return JSON.stringify({
+    type: 'request',
+    id: ++envId,
+    items: [{ type: 3, mimeType: 'application/json', data: JSON.stringify(appObj) }]
+  });
+}
+
+function decodeTextEnvelope(str) {
+  const jsonItems = [];
+  const binItems = [];
+  let root;
+  try { root = JSON.parse(str); } catch (e) { return { jsonItems, binItems }; }
+  const items = Array.isArray(root.items) ? root.items : null;
+  if (items) {
+    for (const it of items) {
+      const t = it.type | 0;
+      if (t === 0 || t === 3) {
+        jsonItems.push(it.data != null ? String(it.data) : '');
+      } else {
+        const raw = it.data != null ? String(it.data) : '';
+        binItems.push(it.encoding === 'base64' ? b64ToBytes(raw) : new TextEncoder().encode(raw));
+      }
+    }
+  } else if (root.text != null) {
+    jsonItems.push(String(root.text));
+  } else if (root.json != null) {
+    jsonItems.push(typeof root.json === 'string' ? root.json : JSON.stringify(root.json));
+  }
+  return { jsonItems, binItems };
+}
+
+function parseDuplexPacket(buffer) {
+  const view = new DataView(buffer);
+  if (buffer.byteLength < 16) return null;
+  // Magic 'DPX\n' = 0x44 0x50 0x58 0x0A
+  if (view.getUint8(0) !== 0x44 || view.getUint8(1) !== 0x50 ||
+      view.getUint8(2) !== 0x58 || view.getUint8(3) !== 0x0A) return null;
+  if (view.getUint8(4) !== 1) return null; // version
+  const payloadLen = view.getUint32(10, true);
+  const tagLen = view.getUint16(14, true);
+  const payloadStart = 16 + tagLen;
+  if (payloadStart + payloadLen > buffer.byteLength) return null;
+  const payload = new Uint8Array(buffer, payloadStart, payloadLen);
+  return parseTypedPayload(payload);
+}
+
+function parseTypedPayload(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.byteLength < 4) return [];
+  const count = dv.getInt32(0, true);
+  let off = 4;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    if (off + 4 > bytes.byteLength) break;
+    const size = dv.getInt32(off, true); off += 4;
+    if (off + size > bytes.byteLength) break;
+    const type = dv.getUint8(off);
+    const mimeLen = dv.getUint16(off + 1, true);
+    const dataStart = off + 3 + mimeLen;
+    const dataLen = size - 3 - mimeLen;
+    const data = bytes.subarray(dataStart, dataStart + dataLen);
+    out.push({ type, data });
+    off += size;
+  }
+  return out;
+}
+
+// 封筒アイテムを既存処理へ振り分ける（Text/Binary フレーム共通）。
+// jsonItems: 応答/pushのJSON文字列群、binItems: PLRx バイト列(Uint8Array)群。
+function dispatchEnvelopeItems(jsonItems, binItems) {
+  for (const j of jsonItems) {
+    let msg;
+    try { msg = JSON.parse(j); } catch (e) { continue; }
+    if (msg.id && pendingCallbacks[msg.id]) {
+      pendingCallbacks[msg.id](msg);
+      delete pendingCallbacks[msg.id];
+    } else if (msg.type === 'push') {
+      handlePush(msg);
+    }
+  }
+  for (const b of binItems) {
+    handleBinaryMessage(b.slice().buffer);
+  }
 }
 
 // ================================================================

@@ -28,7 +28,7 @@ namespace Poly_Ling.Editor.Player
         /// <summary>他ウィンドウからデータ参照用に公開。</summary>
         public PolyLingPlayerViewerCore Core => _core;
 
-        [MenuItem("PolyLing/PolyLingEditorWindow")]
+        [MenuItem("Tools/PolyLing/PolyLingEditorWindow")]
         public static void Open()
         {
             GetWindow<PolyLingEditorWindow>("PolyLing Player");

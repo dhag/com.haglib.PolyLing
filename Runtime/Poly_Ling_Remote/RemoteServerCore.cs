@@ -14,13 +14,11 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using HagLib.NET.Duplex;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
@@ -40,10 +38,7 @@ namespace Poly_Ling.Remote
         public int  Port      { get; set; }
         public bool IsRunning { get; private set; }
 
-        public int ClientCount
-        {
-            get { lock (_clientLock) { return _clients.Count; } }
-        }
+        public int ClientCount => _wsServer?.Clients.Length ?? 0;
 
         // ================================================================
         // コールバック（ホスト側が設定）
@@ -71,13 +66,10 @@ namespace Poly_Ling.Remote
         private ToolContext Context => _contextProvider?.Invoke();
 
         // ================================================================
-        // TCP / WebSocket
+        // WebSocket（com.haglib.net_duplexchannel）
         // ================================================================
 
-        private TcpListener                  _tcpListener;
-        private CancellationTokenSource      _cts;
-        private readonly List<WsClient>      _clients    = new List<WsClient>();
-        private readonly object              _clientLock = new object();
+        private WebSocketDuplexServer        _wsServer;
         private readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
         // Phase 1: Tick による毎フレームポーリング禁止のため、
         // 背景スレッドからのメインスレッドディスパッチは SynchronizationContext 経由で行う。
@@ -118,14 +110,22 @@ namespace Poly_Ling.Remote
             {
                 // メインスレッドから呼ばれる想定。
                 // 背景スレッドからのディスパッチ用に UnitySynchronizationContext をキャプチャする。
-                _syncCtx     = SynchronizationContext.Current;
-                _cts         = new CancellationTokenSource();
-                _tcpListener = new TcpListener(IPAddress.Loopback, Port);
-                _tcpListener.Start();
-                IsRunning = true;
+                _syncCtx = SynchronizationContext.Current;
 
+                _wsServer = new WebSocketDuplexServer
+                {
+                    // 既定はJSON(Text)。バイナリ送信時のみ kind=Binary を明示する。
+                    DefaultFrame      = WebSocketFrameKind.Text,
+                    // 非WSのHTTP GET(/)にはブラウザ用クライアントHTMLを返す。
+                    IndexHtmlProvider = () => RemoteHtmlClient.GetHtml(Port),
+                };
+                _wsServer.OnReceived          += OnDuplexReceived;
+                _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); OnRepaint?.Invoke(); });
+                _wsServer.OnClientDisconnected += _ => RunOnMainThread(() => { Log("クライアント切断"); OnRepaint?.Invoke(); });
+
+                IsRunning = true;
                 SubscribeModel();
-                _ = AcceptClientsAsync(_cts.Token);
+                _ = _wsServer.StartAsync($"http://localhost:{Port}/");
 
                 Log($"サーバー起動: http://localhost:{Port}/");
             }
@@ -141,19 +141,10 @@ namespace Poly_Ling.Remote
             if (!IsRunning) return;
 
             UnsubscribeModel();
-            _cts?.Cancel();
 
-            lock (_clientLock)
-            {
-                foreach (var c in _clients) c.Close();
-                _clients.Clear();
-            }
-
-            try { _tcpListener?.Stop(); } catch { }
-            _tcpListener = null;
+            try { _ = _wsServer?.StopAsync(); } catch { }
+            _wsServer = null;
             IsRunning = false;
-            _cts?.Dispose();
-            _cts = null;
 
             Log("サーバー停止");
         }
@@ -259,177 +250,6 @@ namespace Poly_Ling.Remote
             Log("キャプチャリストクリア");
         }
 
-        // ================================================================
-        // TCP接続受付
-        // ================================================================
-
-        private async Task AcceptClientsAsync(CancellationToken ct)
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                try
-                {
-                    var tcpClient = await _tcpListener.AcceptTcpClientAsync();
-                    _ = HandleConnectionAsync(tcpClient, ct);
-                }
-                catch (ObjectDisposedException) { break; }
-                catch (SocketException)         { break; }
-                catch (Exception ex)
-                {
-                    if (!ct.IsCancellationRequested)
-                        RunOnMainThread(() => Log($"接続受付エラー: {ex.Message}"));
-                }
-            }
-        }
-
-        private async Task HandleConnectionAsync(TcpClient tcpClient, CancellationToken ct)
-        {
-            System.Net.Sockets.NetworkStream stream = null;
-            try
-            {
-                stream = tcpClient.GetStream();
-                string httpRequest = await ReadHttpRequestAsync(stream, ct);
-                if (string.IsNullOrEmpty(httpRequest)) { tcpClient.Close(); return; }
-
-                if (httpRequest.IndexOf("Upgrade: websocket", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    string wsKey = ExtractWebSocketKey(httpRequest);
-                    if (wsKey == null) { tcpClient.Close(); return; }
-
-                    string acceptKey = ComputeAcceptKey(wsKey);
-                    string handshake =
-                        "HTTP/1.1 101 Switching Protocols\r\n" +
-                        "Upgrade: websocket\r\n" +
-                        "Connection: Upgrade\r\n" +
-                        "Sec-WebSocket-Accept: " + acceptKey + "\r\n" +
-                        "\r\n";
-
-                    byte[] hsBytes = Encoding.UTF8.GetBytes(handshake);
-                    await stream.WriteAsync(hsBytes, 0, hsBytes.Length, ct);
-
-                    var wsClient = new WsClient(tcpClient, stream);
-                    lock (_clientLock) { _clients.Add(wsClient); }
-
-                    RunOnMainThread(() =>
-                    {
-                        Log("クライアント接続");
-                        OnRepaint?.Invoke();
-                    });
-
-                    await HandleWebSocketAsync(wsClient, ct);
-                }
-                else
-                {
-                    string html  = RemoteHtmlClient.GetHtml(Port);
-                    byte[] body  = Encoding.UTF8.GetBytes(html);
-                    string httpResp =
-                        "HTTP/1.1 200 OK\r\n" +
-                        "Content-Type: text/html; charset=utf-8\r\n" +
-                        "Content-Length: " + body.Length + "\r\n" +
-                        "Connection: close\r\n" +
-                        "\r\n";
-
-                    byte[] hdrBytes = Encoding.UTF8.GetBytes(httpResp);
-                    await stream.WriteAsync(hdrBytes, 0, hdrBytes.Length, ct);
-                    await stream.WriteAsync(body,     0, body.Length,     ct);
-                    tcpClient.Close();
-                }
-            }
-            catch (Exception ex)
-            {
-                if (!ct.IsCancellationRequested)
-                    RunOnMainThread(() => Log($"接続処理エラー: {ex.Message}"));
-                try { tcpClient?.Close(); } catch { }
-            }
-        }
-
-        // ================================================================
-        // WebSocketメッセージ処理
-        // ================================================================
-
-        private enum WsFrameType { Text, Binary, Ping, Close }
-
-        private struct WsFrame
-        {
-            public WsFrameType Type;
-            public string  Text;
-            public byte[]  Binary;
-        }
-
-        private async Task HandleWebSocketAsync(WsClient client, CancellationToken ct)
-        {
-            try
-            {
-                while (!ct.IsCancellationRequested && client.IsConnected)
-                {
-                    var frame = await ReadWsFrameAsync(client.Stream, ct);
-                    if (frame == null || frame.Value.Type == WsFrameType.Close) break;
-                    if (frame.Value.Type == WsFrameType.Ping) continue;
-
-                    var f = frame.Value;
-
-                    if (f.Type == WsFrameType.Text)
-                    {
-                        if (string.IsNullOrEmpty(f.Text)) continue;
-                        Debug.Log($"[SRV←CLI] TEXT ({f.Text.Length}B): {f.Text.Substring(0, System.Math.Min(200, f.Text.Length))}");
-
-                        RunOnMainThread(async () =>
-                        {
-                            _pendingBinaryResponses = null;
-                            string response = ProcessMessage(f.Text);
-                            var pending = _pendingBinaryResponses;
-                            _pendingBinaryResponses = null;
-
-                            if (response != null && client.IsConnected)
-                            {
-                                try
-                                {
-                                    Debug.Log($"[SRV→CLI] TEXT ({response.Length}B): {response.Substring(0, System.Math.Min(200, response.Length))}");
-                                    await SendWsTextAsync(client.Stream, response);
-                                    if (pending != null && client.IsConnected)
-                                    {
-                                        var batch = BuildBatch(pending);
-                                        Debug.Log($"[SRV→CLI] BINARY batch ({batch.Length}B, {pending.Count}フレーム)");
-                                        await SendWsBinaryAsync(client.Stream, batch);
-                                    }
-                                }
-                                catch { }
-                            }
-                        });
-                    }
-                    else if (f.Type == WsFrameType.Binary)
-                    {
-                        Debug.Log($"[SRV←CLI] BINARY ({f.Binary.Length}B)");
-                        RunOnMainThread(() =>
-                        {
-                            byte[] response = ProcessBinaryMessage(f.Binary);
-                            if (response != null && client.IsConnected)
-                            {
-                                Debug.Log($"[SRV→CLI] BINARY response ({response.Length}B)");
-                                _ = SendWsBinaryAsync(client.Stream, response);
-                            }
-                        });
-                    }
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (System.IO.IOException)       { }
-            catch (Exception ex)
-            {
-                RunOnMainThread(() => Log($"WSエラー: {ex.Message}"));
-            }
-            finally
-            {
-                lock (_clientLock) { _clients.Remove(client); }
-                client.Close();
-                RunOnMainThread(() =>
-                {
-                    Log("クライアント切断");
-                    OnRepaint?.Invoke();
-                });
-            }
-        }
-
         private byte[] ProcessBinaryMessage(byte[] data)
         {
             var header = RemoteBinarySerializer.ReadHeader(data);
@@ -473,171 +293,6 @@ namespace Poly_Ling.Remote
                     Log($"未知のバイナリタイプ: {h.MessageType}");
                     return null;
             }
-        }
-
-        // ================================================================
-        // WebSocketフレーム読み書き（RFC 6455 最小実装）
-        // ================================================================
-
-        private static async Task<WsFrame?> ReadWsFrameAsync(
-            System.Net.Sockets.NetworkStream stream, CancellationToken ct)
-        {
-            byte[] header = new byte[2];
-            if (!await ReadExactAsync(stream, header, 0, 2, ct)) return null;
-
-            int  opcode     = header[0] & 0x0F;
-            bool masked     = (header[1] & 0x80) != 0;
-            long payloadLen = header[1] & 0x7F;
-
-            if (opcode == 0x08) return new WsFrame { Type = WsFrameType.Close };
-
-            if (payloadLen == 126)
-            {
-                byte[] ext = new byte[2];
-                if (!await ReadExactAsync(stream, ext, 0, 2, ct)) return null;
-                payloadLen = (ext[0] << 8) | ext[1];
-            }
-            else if (payloadLen == 127)
-            {
-                byte[] ext = new byte[8];
-                if (!await ReadExactAsync(stream, ext, 0, 8, ct)) return null;
-                payloadLen = 0;
-                for (int i = 0; i < 8; i++) payloadLen = (payloadLen << 8) | ext[i];
-            }
-
-            byte[] maskKey = null;
-            if (masked)
-            {
-                maskKey = new byte[4];
-                if (!await ReadExactAsync(stream, maskKey, 0, 4, ct)) return null;
-            }
-
-            if (payloadLen > 1_000_000_000L) return null;   // 1GB上限
-            byte[] payload = new byte[payloadLen];
-            if (payloadLen > 0 && !await ReadExactAsync(stream, payload, 0, (int)payloadLen, ct))
-                return null;
-
-            if (masked && maskKey != null)
-                for (int i = 0; i < payload.Length; i++) payload[i] ^= maskKey[i % 4];
-
-            if (opcode == 0x09) // Ping → Pong
-            {
-                byte[] pong = new byte[2 + payload.Length];
-                pong[0] = 0x8A;
-                pong[1] = (byte)payload.Length;
-                Array.Copy(payload, 0, pong, 2, payload.Length);
-                try { await stream.WriteAsync(pong, 0, pong.Length, ct); } catch { }
-                return new WsFrame { Type = WsFrameType.Ping };
-            }
-
-            return opcode == 0x02
-                ? new WsFrame { Type = WsFrameType.Binary, Binary = payload }
-                : new WsFrame { Type = WsFrameType.Text,   Text   = Encoding.UTF8.GetString(payload) };
-        }
-
-        private static async Task SendWsTextAsync(
-            System.Net.Sockets.NetworkStream stream, string message)
-            => await SendWsRawAsync(stream, 0x81, Encoding.UTF8.GetBytes(message));
-
-        private static async Task SendWsBinaryAsync(
-            System.Net.Sockets.NetworkStream stream, byte[] payload)
-            => await SendWsRawAsync(stream, 0x82, payload);
-
-        private static async Task SendWsRawAsync(
-            System.Net.Sockets.NetworkStream stream, byte opcodeWithFin, byte[] payload)
-        {
-            byte[] frame;
-            if (payload.Length < 126)
-            {
-                frame = new byte[2 + payload.Length];
-                frame[0] = opcodeWithFin;
-                frame[1] = (byte)payload.Length;
-                Array.Copy(payload, 0, frame, 2, payload.Length);
-            }
-            else if (payload.Length <= 65535)
-            {
-                frame = new byte[4 + payload.Length];
-                frame[0] = opcodeWithFin;
-                frame[1] = 126;
-                frame[2] = (byte)(payload.Length >> 8);
-                frame[3] = (byte)(payload.Length & 0xFF);
-                Array.Copy(payload, 0, frame, 4, payload.Length);
-            }
-            else
-            {
-                frame = new byte[10 + payload.Length];
-                frame[0] = opcodeWithFin;
-                frame[1] = 127;
-                long len = payload.Length;
-                for (int i = 7; i >= 0; i--) { frame[2 + i] = (byte)(len & 0xFF); len >>= 8; }
-                Array.Copy(payload, 0, frame, 10, payload.Length);
-            }
-            try { await stream.WriteAsync(frame, 0, frame.Length); } catch { }
-        }
-
-        private static async Task<bool> ReadExactAsync(
-            System.Net.Sockets.NetworkStream stream,
-            byte[] buf, int offset, int count, CancellationToken ct)
-        {
-            int total = 0;
-            while (total < count)
-            {
-                int read = await stream.ReadAsync(buf, offset + total, count - total, ct);
-                if (read <= 0) return false;
-                total += read;
-            }
-            return true;
-        }
-
-        // ================================================================
-        // HTTPリクエスト読み取り
-        // ================================================================
-
-        private static async Task<string> ReadHttpRequestAsync(
-            System.Net.Sockets.NetworkStream stream, CancellationToken ct)
-        {
-            var sb = new StringBuilder();
-            byte[] buf = new byte[1];
-            int crlfCount = 0;
-
-            while (crlfCount < 4)
-            {
-                int read = await stream.ReadAsync(buf, 0, 1, ct);
-                if (read <= 0) return null;
-
-                char c = (char)buf[0];
-                sb.Append(c);
-
-                if ((crlfCount % 2 == 0 && c == '\r') || (crlfCount % 2 == 1 && c == '\n'))
-                    crlfCount++;
-                else
-                    crlfCount = (c == '\r') ? 1 : 0;
-
-                if (sb.Length > 8192) return null;
-            }
-            return sb.ToString();
-        }
-
-        // ================================================================
-        // WebSocketハンドシェイクヘルパー
-        // ================================================================
-
-        private static string ExtractWebSocketKey(string httpRequest)
-        {
-            foreach (string line in httpRequest.Split('\n'))
-            {
-                string trimmed = line.Trim();
-                if (trimmed.StartsWith("Sec-WebSocket-Key:", StringComparison.OrdinalIgnoreCase))
-                    return trimmed.Substring("Sec-WebSocket-Key:".Length).Trim();
-            }
-            return null;
-        }
-
-        private static string ComputeAcceptKey(string wsKey)
-        {
-            string combined = wsKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-            using (var sha1 = SHA1.Create())
-                return Convert.ToBase64String(sha1.ComputeHash(Encoding.UTF8.GetBytes(combined)));
         }
 
         // ================================================================
@@ -1098,18 +753,104 @@ namespace Poly_Ling.Remote
 
         private void BroadcastAsync(string json)
         {
-            List<WsClient> snapshot;
-            lock (_clientLock) { snapshot = new List<WsClient>(_clients); }
-            foreach (var c in snapshot)
-                if (c.IsConnected) _ = SendWsTextAsync(c.Stream, json);
+            var server = _wsServer;
+            if (server == null) return;
+            // JSONメッセージは Text フレーム（TypedPayload の Json アイテム）で配信。
+            _ = server.BroadcastAsync(TypedPayload.FromJson(json).ToMessage(), WebSocketFrameKind.Text);
         }
 
         private void BroadcastBinaryAsync(byte[] data)
         {
-            List<WsClient> snapshot;
-            lock (_clientLock) { snapshot = new List<WsClient>(_clients); }
-            foreach (var c in snapshot)
-                if (c.IsConnected) _ = SendWsBinaryAsync(c.Stream, data);
+            var server = _wsServer;
+            if (server == null || data == null) return;
+            // PLRx バイナリは Binary フレーム（DuplexPacket + TypedPayload の Binary アイテム）で配信。
+            _ = server.BroadcastAsync(TypedPayload.FromBinary(data).ToMessage(), WebSocketFrameKind.Binary);
+        }
+
+        // ================================================================
+        // 受信（WebSocketDuplexServer.OnReceived）
+        // ================================================================
+
+        /// <summary>
+        /// DuplexChannel の受信ハンドラ（背景スレッド）。
+        /// TypedPayload のアイテムを既存アプリ層（ProcessMessage / ProcessBinaryMessage）へ委譲し、
+        /// 応答を items（Json + Binary×n）にまとめて同一チャネルへ返す。
+        /// </summary>
+        private void OnDuplexReceived(IDuplexChannel channel, DuplexMessage message)
+        {
+            // アプリ層はメインスレッド前提のため、必ず RunOnMainThread 経由で処理する。
+            RunOnMainThread(() =>
+            {
+                TypedPayload incoming;
+                try { incoming = message.ToTypedPayload(); }
+                catch { return; }
+
+                bool isRequest = message.Type == MessageType.Request;
+
+                foreach (var item in incoming)
+                {
+                    if (item.Type == ContentType.Json || item.Type == ContentType.Text)
+                    {
+                        string json = item.DataString ?? "";
+                        if (string.IsNullOrEmpty(json)) continue;
+
+                        _pendingBinaryResponses = null;
+                        string response = ProcessMessage(json);
+                        var pending = _pendingBinaryResponses;
+                        _pendingBinaryResponses = null;
+
+                        if (response == null) continue;
+
+                        var reply = new TypedPayload().AddJson(response);
+                        if (pending != null)
+                            foreach (var bin in pending)
+                                if (bin != null) reply.AddBinary(bin);
+
+                        SendReply(channel, message, reply, isRequest);
+                    }
+                    else if (item.Type == ContentType.Binary || item.Type == ContentType.Image
+                             || item.Type == ContentType.Custom)
+                    {
+                        byte[] response = ProcessBinaryMessage(item.Data);
+                        if (response == null) continue;
+
+                        var reply = new TypedPayload().AddBinary(response);
+                        SendReply(channel, message, reply, isRequest);
+                    }
+                }
+            });
+        }
+
+        /// <summary>
+        /// 応答を返す。JSONは Text、バイナリを含む場合は Binary フレームで送出する。
+        /// </summary>
+        private void SendReply(IDuplexChannel channel, DuplexMessage request, TypedPayload reply, bool isRequest)
+        {
+            bool hasBinary = false;
+            foreach (var it in reply)
+                if (it.Type != ContentType.Json && it.Type != ContentType.Text) { hasBinary = true; break; }
+
+            var kind = hasBinary ? WebSocketFrameKind.Binary : WebSocketFrameKind.Text;
+            var wsChannel = channel as WebSocketDuplexChannel;
+
+            try
+            {
+                if (isRequest)
+                {
+                    if (wsChannel != null)
+                        _ = wsChannel.ReplyAsync(request, reply.ToMessage(), kind);
+                    else
+                        _ = channel.ReplyAsync(request, reply.ToMessage());
+                }
+                else
+                {
+                    if (wsChannel != null)
+                        _ = wsChannel.SendAsync(reply.ToMessage(), kind);
+                    else
+                        _ = channel.SendAsync(reply.ToMessage());
+                }
+            }
+            catch { }
         }
 
         // ================================================================
@@ -1178,31 +919,5 @@ namespace Poly_Ling.Remote
             OnLog?.Invoke(line);
         }
 
-        // ================================================================
-        // WebSocketクライアント管理
-        // ================================================================
-
-        private class WsClient
-        {
-            public TcpClient     Tcp    { get; }
-            public System.Net.Sockets.NetworkStream Stream { get; }
-
-            public bool IsConnected
-            {
-                get { try { return Tcp != null && Tcp.Connected; } catch { return false; } }
-            }
-
-            public WsClient(TcpClient tcp, System.Net.Sockets.NetworkStream stream)
-            {
-                Tcp    = tcp;
-                Stream = stream;
-            }
-
-            public void Close()
-            {
-                try { Stream?.Close(); } catch { }
-                try { Tcp?.Close();    } catch { }
-            }
-        }
     }
 }

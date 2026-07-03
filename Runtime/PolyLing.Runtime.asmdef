@@ -2,7 +2,8 @@
     "name": "PolyLing.Runtime",
     "rootNamespace": "",
     "references": [
-        "Unity.TextMeshPro"
+        "Unity.TextMeshPro",
+        "HagLib.NET.Duplex.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
