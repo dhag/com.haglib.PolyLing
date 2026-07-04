@@ -197,6 +197,10 @@ namespace Poly_Ling.Player
         private readonly List<(VisualElement section, Action refresh)> _sectionRefreshPairs = new();
         private PlayerRemoteFetchFlow   _fetchFlow;
 
+        // フェッチ受信中はメッシュ1件ごとのフル GPU 再構築を抑止する。
+        // 完了時の EnterSceneReset で1回だけ再構築する。
+        private bool _suppressRebuildDuringFetch;
+
         private string _status = "未接続";
 
         // ================================================================
@@ -489,6 +493,13 @@ namespace Poly_Ling.Player
                 // 問題 A/B 対応: ProjectStack の Context も同期。
                 if (ActiveProject != null)
                     _editOps?.UndoController?.SetProjectContext(ActiveProject);
+            };
+
+            // フェッチ受信中フラグの受け渡し。完了(false)時にモデルリストを1回だけ更新する。
+            _fetchFlow.SetFetchActive = active =>
+            {
+                _suppressRebuildDuringFetch = active;
+                if (!active) RebuildModelList();
             };
 
             // RemoteMode.Server: BuildLayout 後に Initialize（_commandDispatcher 確定後）
@@ -4173,8 +4184,12 @@ namespace Poly_Ling.Player
                 _edgeTopologyHandler?.SetProject(ActiveProject);
                 _knifeHandler?.SetProject(ActiveProject);
                 _lineExtrudeHandler?.SetProject(ActiveProject);
-            RebuildModelList();
-            NotifyPanels(ChangeKind.ListStructure);
+            // 受信中はフル GPU 再構築を抑止（完了時 EnterSceneReset で1回だけ行う）。
+            if (!_suppressRebuildDuringFetch)
+            {
+                RebuildModelList();
+                NotifyPanels(ChangeKind.ListStructure);
+            }
         }
 
         // ================================================================

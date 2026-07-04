@@ -33,6 +33,9 @@ namespace Poly_Ling.Player
         private readonly Action<string>        _setStatus;
         public Action<ModelContext>             OnModelContextReady;
 
+        // フェッチ受信中フラグを Viewer 側へ伝える（true=受信中/false=完了・中断）。
+        public Action<bool>                     SetFetchActive;
+
         // ================================================================
         // 状態
         // ================================================================
@@ -79,14 +82,36 @@ namespace Poly_Ling.Player
             _receiver?.Reset();
             ModelCount         = 0;
             FetchingModelIndex = -1;
+
+            // 受信中フル GPU 再構築の抑止を開始。
+            // このログは受信中抑止の動作確認用。完成時も残す。
+            SetFetchActive?.Invoke(true);
+            Debug.Log("[Fetch] 開始");
             // Phase 2a-2g-2 (設計 Z): ClearScene はフェッチ完了時の EnterSceneReset(clearScene: true) に統合。
             // ここでの ClearScene 呼出しは削除。
 
             _client.FetchProjectHeader((json, bin) =>
             {
-                if (bin == null || bin.Length < 4) { _setStatus("project_header 失敗"); return; }
+                if (bin == null || bin.Length < 4)
+                {
+                    // 中断: 抑止を解除する。
+                    // このログは完成時も残す。
+                    SetFetchActive?.Invoke(false);
+                    Debug.Log("[Fetch] 中断 (project_header 失敗)");
+                    _setStatus("project_header 失敗");
+                    return;
+                }
                 _receiver?.ProcessBatch(bin);
-                if (ModelCount > 0) FetchAllModelsBatch(0);
+                if (ModelCount > 0)
+                {
+                    FetchAllModelsBatch(0);
+                }
+                else
+                {
+                    // モデル0件: 抑止を解除する。このログは完成時も残す。
+                    SetFetchActive?.Invoke(false);
+                    Debug.Log("[Fetch] 完了 (モデル0件)");
+                }
             });
         }
 
@@ -159,6 +184,11 @@ namespace Poly_Ling.Player
                 }
                 else
                 {
+                    // 受信中抑止を解除してから最終再構築を1回だけ行う。
+                    // このログは完成時も残す。
+                    SetFetchActive?.Invoke(false);
+                    Debug.Log($"[Fetch] 完了 ({project?.Name})");
+
                     // Phase 2a-2g-2 (設計 Z): 全モデルフェッチ完了後、先頭モデルを
                     // CurrentModel にしてから EnterSceneReset で slot 0 に反映。
                     // 「画面に表示するのは常に 1 モデル (CurrentModel)」規約に揃う。
