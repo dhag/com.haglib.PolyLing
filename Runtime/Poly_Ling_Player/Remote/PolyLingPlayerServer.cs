@@ -30,6 +30,7 @@ namespace Poly_Ling.Player
         public List<ImageEntry>          CapturedImages    => _server?.CapturedImages;
         public void SendProjectHeader()                    => _server?.SendProjectHeader();
         public void SendCapturedImages()                   => _server?.SendCapturedImages();
+        public void BroadcastPositions(MeshObject mesh)    => _server?.BroadcastPositions(mesh);
         public void ClearCapturedImages()                  => _server?.ClearCapturedImages();
 
         private readonly List<string> _logMessages = new List<string>();

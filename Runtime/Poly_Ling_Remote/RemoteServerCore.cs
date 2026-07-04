@@ -252,7 +252,18 @@ namespace Poly_Ling.Remote
 
         private byte[] ProcessBinaryMessage(byte[] data)
         {
-            var header = RemoteBinarySerializer.ReadHeader(data);
+            UnityEngine.Debug.Log($"[EditSync] ProcessBinaryMessage enter data={data?.Length ?? 0}");
+            Poly_Ling.Remote.BinaryHeader? header;
+            try
+            {
+                header = RemoteBinarySerializer.ReadHeader(data);
+                UnityEngine.Debug.Log($"[EditSync] ReadHeader done null={header == null}");
+            }
+            catch (Exception __ex)
+            {
+                UnityEngine.Debug.Log($"[EditSync] ReadHeader EX: {__ex.GetType().Name}: {__ex.Message}");
+                return null;
+            }
             if (header == null) { Log("バイナリ: 無効なヘッダ"); return null; }
 
             var h = header.Value;
@@ -273,9 +284,9 @@ namespace Poly_Ling.Remote
                 }
                 case BinaryMessageType.PositionsOnly:
                 {
-                    if (Context?.FirstSelectedMeshObject != null)
+                    if (Context?.FirstDrawableMeshObject != null)
                     {
-                        RemoteBinarySerializer.Deserialize(data, Context.FirstSelectedMeshObject);
+                        RemoteBinarySerializer.Deserialize(data, Context.FirstDrawableMeshObject);
                         Context.SyncMesh?.Invoke();
                         Context.Repaint?.Invoke();
                         Log("位置更新適用");
@@ -372,7 +383,7 @@ namespace Poly_Ling.Remote
                 }
             }
 
-            _pendingBinaryResponses = binaries;
+            _pendingBinaryResponses = new List<byte[]> { BuildBatch(binaries) };
 
             int totalMeshes = 0;
             for (int mi = 0; mi < project.ModelCount; mi++) totalMeshes += project.Models[mi].Count;
@@ -411,7 +422,7 @@ namespace Poly_Ling.Remote
                 if (ms != null) binaries.Add(ms);
             }
 
-            _pendingBinaryResponses = binaries;
+            _pendingBinaryResponses = new List<byte[]> { BuildBatch(binaries) };
             Log($"model_meta: [{modelIndex}] {model.Name} meshes={model.Count}");
 
             var jb = new JsonBuilder();
@@ -767,6 +778,15 @@ namespace Poly_Ling.Remote
             _ = server.BroadcastAsync(TypedPayload.FromBinary(data).ToMessage(), WebSocketFrameKind.Binary);
         }
 
+        /// <summary>選択メッシュの位置（PositionsOnly）を全クライアントへ配信する（サーバ→クライアント連動用）。</summary>
+        public void BroadcastPositions(Poly_Ling.Data.MeshObject mesh)
+        {
+            if (mesh == null) return;
+            var data = RemoteBinarySerializer.SerializePositionsOnly(mesh);
+            UnityEngine.Debug.Log($"[EditSync] BroadcastPositions V={mesh.VertexCount} bytes={data?.Length ?? 0} clients={ClientCount}");
+            if (data != null) BroadcastBinaryAsync(data);
+        }
+
         // ================================================================
         // 受信（WebSocketDuplexServer.OnReceived）
         // ================================================================
@@ -783,7 +803,17 @@ namespace Poly_Ling.Remote
             {
                 TypedPayload incoming;
                 try { incoming = message.ToTypedPayload(); }
-                catch { return; }
+                catch (Exception __ex)
+                {
+                    UnityEngine.Debug.Log($"[EditSync] OnDup ToTypedPayload EX: {__ex.Message}");
+                    return;
+                }
+
+                {
+                    int __n = 0; var __sb = new System.Text.StringBuilder();
+                    foreach (var __it in incoming) { __sb.Append($"{__it.Type}({__it.Data?.Length ?? 0}) "); __n++; }
+                    UnityEngine.Debug.Log($"[EditSync] OnDup items={__n} types=[{__sb}]");
+                }
 
                 bool isRequest = message.Type == MessageType.Request;
 
@@ -811,6 +841,7 @@ namespace Poly_Ling.Remote
                     else if (item.Type == ContentType.Binary || item.Type == ContentType.Image
                              || item.Type == ContentType.Custom)
                     {
+                        UnityEngine.Debug.Log($"[EditSync] OnDup binary-branch enter type={item.Type} data={item.Data?.Length ?? 0}");
                         byte[] response = ProcessBinaryMessage(item.Data);
                         if (response == null) continue;
 

@@ -1663,11 +1663,15 @@ namespace Poly_Ling.Player
             Poly_Ling.Context.ModelContext model)
         {
             var adapter = _renderer?.GetAdapter(0);
-            if (adapter == null || !adapter.IsInitialized) return;
+            if (adapter == null || !adapter.IsInitialized)
+            {
+                UnityEngine.Debug.Log($"[EditSync] SyncPos adapter=null_or_uninit ({(adapter == null ? "null" : "uninit")})");
+                return;
+            }
             if (mc?.MeshObject == null || model == null) return;
 
             var bm = adapter.BufferManager;
-            if (bm == null) return;
+            if (bm == null) { UnityEngine.Debug.Log("[EditSync] SyncPos bm=null"); return; }
 
             // MeshContext → contextIndex → unifiedMeshIndex
             int ctxIdx = -1;
@@ -1675,11 +1679,12 @@ namespace Poly_Ling.Player
             {
                 if (ReferenceEquals(model.GetMeshContext(i), mc)) { ctxIdx = i; break; }
             }
-            if (ctxIdx < 0) return;
+            if (ctxIdx < 0) { UnityEngine.Debug.Log("[EditSync] SyncPos ctxIdx=-1 (mc not found)"); return; }
 
             int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
-            if (unifiedIdx < 0) return;
+            if (unifiedIdx < 0) { UnityEngine.Debug.Log($"[EditSync] SyncPos unifiedIdx=-1 (ctxIdx={ctxIdx})"); return; }
 
+            UnityEngine.Debug.Log($"[EditSync] SyncPos UpdatePositions ctxIdx={ctxIdx} unifiedIdx={unifiedIdx} V={mc.MeshObject.VertexCount}");
             // ① CPU MeshObject.Positions（またはWorkingPositions）→ GPU _positionsBuffer
             bm.UpdatePositions(mc, unifiedIdx);
 

@@ -212,6 +212,9 @@ namespace Poly_Ling.Player
         private Vector2 _radiusDragStartPos;
         private bool    _inRadiusDrag;
 
+        /// <summary>頂点移動確定時に、影響した各メッシュコンテキストを通知する（リモート連動用）。</summary>
+        public Action<MeshContext> OnVerticesCommitted;
+
         // ================================================================
         // 初期化
         // ================================================================
@@ -716,6 +719,17 @@ namespace Poly_Ling.Player
                             $"VertexEdit.Pending={_undoController.VertexEditStack.PendingCount}, " +
                             $"MeshList.Undo={_undoController.MeshListStack.UndoCount}, " +
                             $"MeshList.Pending={_undoController.MeshListStack.PendingCount}");
+
+                        // リモート連動: 影響した各メッシュを通知する。
+                        if (OnVerticesCommitted != null)
+                        {
+                            UnityEngine.Debug.Log($"[EditSync] OnVerticesCommitted fire: entries={entries.Count}");
+                            foreach (var e in entries)
+                            {
+                                var emc = model.GetMeshContext(e.MeshContextIndex);
+                                if (emc?.MeshObject != null) OnVerticesCommitted.Invoke(emc);
+                            }
+                        }
                     }
                 }
             }

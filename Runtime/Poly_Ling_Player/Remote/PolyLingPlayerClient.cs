@@ -36,6 +36,8 @@ namespace Poly_Ling.Player
 
         /// <summary>フェッチ以外のpushイベント受信時</summary>
         public Action<string> OnPushReceived;
+        /// <summary>クエリ相関の取れない（サーバからの一方的な）バイナリ受信通知。連動の位置更新用。</summary>
+        public Action<byte[]> OnBinaryPushReceived;
         public Action         OnConnected;
         public Action         OnDisconnected;
 
@@ -238,6 +240,12 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // クエリ相関が取れないバイナリ = サーバからの一方的 push（位置連動等）。
+            if (OnBinaryPushReceived != null)
+            {
+                OnBinaryPushReceived.Invoke(data);
+                return;
+            }
             Debug.Log($"[PolyLingPlayerClient] 未対応バイナリ受信 ({data.Length}B)");
         }
 
@@ -256,7 +264,14 @@ namespace Poly_Ling.Player
         {
             if (!IsConnected || data == null) return;
             Debug.Log($"[CLI→SRV] BINARY ({data.Length}B)");
-            _ = _client.SendAsync(TypedPayload.FromBinary(data).ToMessage(), WebSocketFrameKind.Binary);
+            _client.SendAsync(TypedPayload.FromBinary(data).ToMessage(), WebSocketFrameKind.Binary)
+                .ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                        Debug.LogWarning($"[EditSync] SendBinary faulted: {t.Exception?.GetBaseException().Message}");
+                    else
+                        Debug.Log("[EditSync] SendBinary done");
+                });
         }
 
         // ================================================================

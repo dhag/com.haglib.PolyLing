@@ -53,6 +53,9 @@ namespace Poly_Ling.Core
 
         private Material _defaultMaterial;
         private Material _boneMaterial;
+
+        // 診断用: 材質 null ログを1回だけ出すためのフラグ
+        private static bool _matDbgLogged = false;
         // Phase 2c-2: 選択/非選択で alpha を変えるため 2 種類保持する。
         // シェーダは Poly_Ling/Bone3D_Overlay (ZTest Always)。
         private Material _boneOverlayMaterialSelected;
@@ -295,7 +298,16 @@ namespace Poly_Ling.Core
                 for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {
                     Material mat = (sub < model.MaterialCount) ? model.GetMaterial(sub) : null;
-                    if (mat == null) mat = GetDefaultMaterial();
+                    if (mat == null)
+                    {
+                        // 診断: 描画時に材質が null になる原因を1回だけ記録。
+                        if (!_matDbgLogged)
+                        {
+                            _matDbgLogged = true;
+                            Debug.Log($"[MatDbg] MaterialCount={model.MaterialCount} subMeshCount={mesh.subMeshCount} sub={sub} mesh=\"{ctx.Name}\"");
+                        }
+                        mat = GetDefaultMaterial();
+                    }
                     if (mat == null) continue;
 
                     if (mat.HasProperty("_Cull"))

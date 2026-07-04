@@ -68,6 +68,10 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private RemoteMode _remoteMode;
+
+        // 頂点編集のリモート連動フラグ（方向別・既定オフ）。比較検証用に実行時トグル可能。
+        public bool SyncServerToClient = true; // サーバでの編集をクライアントへ配信
+        public bool SyncClientToServer = true; // クライアントでの編集をサーバへ送信
         private string     _clientHost;
         private int        _clientPort;
         private bool       _clientAutoConnect;
@@ -515,6 +519,18 @@ namespace Poly_Ling.Player
                         {
                             ctx.Project = ActiveProject;
                             ctx.Model   = ActiveProject?.CurrentModel;
+                            // リモート受信の位置適用後に GPU 反映・再描画するため配線する。
+                            ctx.SyncMesh = () =>
+                            {
+                                var m = ActiveProject?.CurrentModel;
+                                var smc = m?.FirstDrawableMeshContext;
+                                if (m != null && smc != null)
+                                {
+                                    _viewportManager.SyncMeshPositionsAndTransform(smc, m);
+                                    _viewportManager.UpdateTransform();
+                                }
+                            };
+                            ctx.Repaint = () => _activePanel?.MarkDirtyRepaint();
                         }
                         return ctx;
                     },
@@ -632,6 +648,7 @@ namespace Poly_Ling.Player
                 _client.OnConnected    += OnConnected;
                 _client.OnDisconnected += OnDisconnected;
                 _client.OnPushReceived += OnPushReceived;
+                _client.OnBinaryPushReceived = ApplyRemotePositions;
             }
 
         }
@@ -670,6 +687,7 @@ namespace Poly_Ling.Player
                 _client.OnConnected    -= OnConnected;
                 _client.OnDisconnected -= OnDisconnected;
                 _client.OnPushReceived -= OnPushReceived;
+                _client.OnBinaryPushReceived = null;
                 _client.Dispose();
             }
             _playerServer?.Dispose();
@@ -737,6 +755,21 @@ namespace Poly_Ling.Player
             };
             _moveToolHandler.SetUndoController(_editOps?.UndoController);
             _viewportManager.RegisterMoveToolHandler(_moveToolHandler);
+
+            // リモート連動: 頂点移動確定時に、フラグとモードに応じて送信/配信する。
+            _moveToolHandler.OnVerticesCommitted = mc =>
+            {
+                UnityEngine.Debug.Log($"[EditSync] commit mc=\"{mc?.Name}\" C2S={SyncClientToServer} S2C={SyncServerToClient} mode={_remoteMode} client={_client!=null} server={_playerServer!=null}");
+                if (mc?.MeshObject == null) return;
+                if (SyncClientToServer && _remoteMode == RemoteMode.Client && _client != null)
+                {
+                    _client.SendBinary(RemoteBinarySerializer.SerializePositionsOnly(mc.MeshObject));
+                }
+                else if (SyncServerToClient && _remoteMode == RemoteMode.Server && _playerServer != null)
+                {
+                    _playerServer.BroadcastPositions(mc.MeshObject);
+                }
+            };
 
             // Phase 2b-1 / 2c: overlay 再描画コールバックを配線する。
             // 面ホバー/選択面は Phase 2c で GPU 描画パスに統合されたため配線不要
@@ -4133,6 +4166,25 @@ namespace Poly_Ling.Player
             if (json.Contains("\"event\":\"mesh_changed\"") ||
                 json.Contains("\"event\":\"model_changed\""))
                 FetchProject();
+        }
+
+        /// <summary>
+        /// サーバから push された PositionsOnly を、クライアントの選択メッシュへ適用する（S→C 連動）。
+        /// メインスレッドで呼ばれる。連動は選択メッシュ1つに限定（PositionsOnly は index を持たない）。
+        /// </summary>
+        private void ApplyRemotePositions(byte[] data)
+        {
+            if (data == null) return;
+            var header = RemoteBinarySerializer.ReadHeader(data);
+            if (header == null || header.Value.MessageType != BinaryMessageType.PositionsOnly) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.FirstDrawableMeshContext;
+            if (mc?.MeshObject == null) return;
+
+            RemoteBinarySerializer.Deserialize(data, mc.MeshObject);
+            _viewportManager.SyncMeshPositionsAndTransform(mc, model);
+            _viewportManager.UpdateTransform();
         }
 
         // ================================================================
