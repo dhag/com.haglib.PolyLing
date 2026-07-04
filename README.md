@@ -12,3 +12,4 @@ https://github.com/dhag/com.haglib.PolyLing.git
 　UI Documentをつける。
 　　パネルセッティングをつける。
 　PolyLingPlayerViewerをつける。
+　　　必要ならサーバモードかクライアントモードかを設定する。

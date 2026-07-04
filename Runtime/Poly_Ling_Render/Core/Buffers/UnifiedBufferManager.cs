@@ -289,6 +289,9 @@ namespace Poly_Ling.Core
         private bool _isInitialized = false;
         private bool _disposed = false;
 
+        // 診断用: 生存中の UnifiedBufferManager インスタンス数
+        private static int _liveCount = 0;
+
         // 依存コンポーネント
         private FlagManager _flagManager;
         private UpdateManager _updateManager;
@@ -423,6 +426,9 @@ namespace Poly_Ling.Core
             _lineCapacity = DEFAULT_LINE_CAPACITY;
             _faceCapacity = DEFAULT_FACE_CAPACITY;
             _indexCapacity = DEFAULT_INDEX_CAPACITY;
+
+            int live = System.Threading.Interlocked.Increment(ref _liveCount);
+            UnityEngine.Debug.Log($"[BufMgrLive] +1 live={live}");
         }
 
         // ============================================================
@@ -817,6 +823,9 @@ namespace Poly_Ling.Core
                     _meshInfos = null;
                     _modelInfos = null;
                 }
+
+                int live = System.Threading.Interlocked.Decrement(ref _liveCount);
+                UnityEngine.Debug.Log($"[BufMgrLive] -1 live={live}");
 
                 _disposed = true;
                 _isInitialized = false;
