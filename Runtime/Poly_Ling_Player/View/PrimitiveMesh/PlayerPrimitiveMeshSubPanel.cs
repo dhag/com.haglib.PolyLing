@@ -80,6 +80,7 @@ namespace Poly_Ling.Player
 
         private readonly Button[]  _shapeBtns = new Button[9];
         private VisualElement      _settingsContainer;
+        private VisualElement      _profileEditorContainer;
         private VisualElement      _previewEl;
         private Label              _statusLabel;
 
@@ -88,7 +89,23 @@ namespace Poly_Ling.Player
         private int     _mouseBtn;
         private Vector2 _mouseDownPos;
         private Vector2 _mousePrevPos;
+
+        // プレビュー高さ（下端ドラッグで手動リサイズ）
+        private float _previewHeight = 200f;
+        private bool  _resizeDragging;
+        private float _resizeStartY;
+        private float _resizeStartHeight;
+        private const float PreviewMinHeight = 80f;
+        private const float PreviewMaxHeight = 1200f;
         private const float DragThreshold = 3f;
+
+        // プロファイル編集キャンバス高さ（下端ドラッグで手動リサイズ）
+        private float _profileHeight = 260f;
+        private bool  _profileResizeDragging;
+        private float _profileResizeStartY;
+        private float _profileResizeStartHeight;
+        private const float ProfileMinHeight = 120f;
+        private const float ProfileMaxHeight = 900f;
 
         // ================================================================
         // Revolution プロファイルエディタ状態
@@ -179,7 +196,7 @@ namespace Poly_Ling.Player
             // プレビュー領域
             _previewEl = new VisualElement();
             _previewEl.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
-            _previewEl.style.height          = 200;
+            _previewEl.style.height          = _previewHeight;
             _previewEl.style.backgroundColor = new StyleColor(new Color(0.13f, 0.13f, 0.16f));
             _previewEl.style.marginBottom    = 4;
             _previewEl.style.backgroundSize  = new StyleBackgroundSize(new BackgroundSize(BackgroundSizeType.Cover));
@@ -230,9 +247,57 @@ namespace Poly_Ling.Player
                 e.StopPropagation();
             });
 
+            // プレビュー下端のリサイズハンドル（下方向ドラッグで拡大）
+            var resizeHandle = new VisualElement();
+            resizeHandle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+            resizeHandle.style.height          = 6;
+            resizeHandle.style.marginBottom    = 4;
+            resizeHandle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+            resizeHandle.pickingMode           = PickingMode.Position;
+            parent.Add(resizeHandle);
+
+            resizeHandle.RegisterCallback<PointerDownEvent>(e =>
+            {
+                resizeHandle.CapturePointer(e.pointerId);
+                _resizeDragging    = true;
+                _resizeStartY      = e.position.y;
+                _resizeStartHeight = _previewHeight;
+                e.StopPropagation();
+            });
+            resizeHandle.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (!_resizeDragging || !resizeHandle.HasPointerCapture(e.pointerId)) return;
+                float delta = e.position.y - _resizeStartY;
+                _previewHeight = Mathf.Clamp(_resizeStartHeight + delta, PreviewMinHeight, PreviewMaxHeight);
+                _previewEl.style.height = _previewHeight; // GeometryChangedEvent → _preview.Resize が追従
+                e.StopPropagation();
+            });
+            resizeHandle.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!resizeHandle.HasPointerCapture(e.pointerId)) return;
+                resizeHandle.ReleasePointer(e.pointerId);
+                _resizeDragging = false;
+                e.StopPropagation();
+            });
+
             parent.Add(Sep());
 
-            // ワールド生成位置
+            // ステータスラベル（生成ボタンのクリックハンドラが参照するため先に生成）
+            _statusLabel = new Label("");
+            _statusLabel.style.color     = new StyleColor(new Color(0.7f, 0.9f, 0.7f));
+            _statusLabel.style.fontSize  = 10;
+            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
+
+            // 生成ボタン（単一・永続。3Dプレビュー直下）
+            parent.Add(CB());
+
+            parent.Add(Sep());
+
+            // プロファイル編集コンテナ（回転体/2D押し出し時のみ中身を持つ）
+            _profileEditorContainer = new VisualElement();
+            parent.Add(_profileEditorContainer);
+
+            // ワールド生成位置 ほか
             parent.Add(SL(T("WorldPos")));
             parent.Add(V3F(T("WorldPosX"), T("WorldPosY"), T("WorldPosZ"),
                 () => _worldPos.x, v => _worldPos.x = v,
@@ -266,15 +331,11 @@ namespace Poly_Ling.Player
 
             parent.Add(Sep());
 
+            // 詳細設定コンテナ
             _settingsContainer = new VisualElement();
             parent.Add(_settingsContainer);
 
             parent.Add(Sep());
-
-            _statusLabel = new Label("");
-            _statusLabel.style.color     = new StyleColor(new Color(0.7f, 0.9f, 0.7f));
-            _statusLabel.style.fontSize  = 10;
-            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
             parent.Add(_statusLabel);
 
             Select(ShapeKind.Cube);
@@ -370,6 +431,7 @@ namespace Poly_Ling.Player
 
         private void RebuildSettings()
         {
+            _profileEditorContainer?.Clear();
             _settingsContainer?.Clear();
             switch (_current)
             {
@@ -390,6 +452,8 @@ namespace Poly_Ling.Player
                     break;
             }
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
+            if (_profileEditorContainer != null)
+                PlayerLayoutRoot.ApplyDarkTheme(_profileEditorContainer);
         }
 
         private void D() => _dirty = true;
@@ -431,7 +495,6 @@ namespace Poly_Ling.Player
                 -0.5f, 0.5f,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
 
-            c.Add(CB());
         }
 
         private void BuildSphereUI(VisualElement c)
@@ -449,7 +512,6 @@ namespace Poly_Ling.Player
                 -0.5f, 0.5f,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
 
-            c.Add(CB());
         }
 
         private void BuildCylinderUI(VisualElement c)
@@ -480,7 +542,6 @@ namespace Poly_Ling.Player
                 () => _cylP.Pivot.y, v => { _cylP.Pivot = new Vector3(0, v, 0); D(); },
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
 
-            c.Add(CB());
         }
 
         private void BuildCapsuleUI(VisualElement c)
@@ -520,7 +581,6 @@ namespace Poly_Ling.Player
             });
             c.Add(sphereRow);
 
-            c.Add(CB());
         }
 
         private void BuildPlaneUI(VisualElement c)
@@ -543,7 +603,6 @@ namespace Poly_Ling.Player
                 -0.5f, 0.5f,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
 
-            c.Add(CB());
         }
 
         private void BuildPyramidUI(VisualElement c)
@@ -561,7 +620,6 @@ namespace Poly_Ling.Player
                 -0.5f, 0.5f,
                 new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
 
-            c.Add(CB());
         }
 
         // ================================================================
@@ -678,12 +736,13 @@ namespace Poly_Ling.Player
             }
 
             // ── プロファイルエディタ ──────────────────────────────────────
-            c.Add(SL(T("ProfileEditor")));
+            var pe = _profileEditorContainer;
+            pe.Add(SL(T("ProfileEditor")));
 
             // インタラクティブキャンバス
             _revCanvas = new VisualElement();
             _revCanvas.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
-            _revCanvas.style.height          = 260;
+            _revCanvas.style.height          = _profileHeight;
             _revCanvas.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.15f));
             _revCanvas.style.marginBottom    = 4;
             _revCanvas.style.borderTopWidth  = _revCanvas.style.borderBottomWidth =
@@ -714,7 +773,10 @@ namespace Poly_Ling.Player
                 }
                 e.StopPropagation();
             });
-            c.Add(_revCanvas);
+            pe.Add(_revCanvas);
+
+            // キャンバス縦リサイズハンドル
+            AddProfileResizeHandle(pe, _revCanvas, RefreshRevCanvas);
 
             // ボタン行: 削除 / リセット
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginBottom = 4;
@@ -732,10 +794,10 @@ namespace Poly_Ling.Player
                 _revP.CurrentPreset = ProfilePreset.Custom;
                 D(); RefreshRevCanvas(); RefreshRevPointUI();
             });
-            c.Add(btnRow);
+            pe.Add(btnRow);
 
             // ── 下絵セクション ─────────────────────────────────────────────
-            BuildBgSection(c,
+            BuildBgSection(pe,
                 T("BgImage"),
                 () => _revBgPath, v => _revBgPath = v,
                 () => _revBgAlpha, v => { _revBgAlpha = v; UpdateRevBgEl(); },
@@ -808,14 +870,14 @@ namespace Poly_Ling.Player
                 _revPtYSlider = ySl; _revPtYField = yFf;
             }
             _revPtRow.style.display = DisplayStyle.None;
-            c.Add(_revPtRow);
+            pe.Add(_revPtRow);
 
             // CSV 読み書き
-            c.Add(SL(T("LoadCSV")));
+            pe.Add(SL(T("LoadCSV")));
             var csvPathField = new TextField { value = _revCsvPath };
             csvPathField.style.marginBottom = 2;
             csvPathField.RegisterValueChangedCallback(e => _revCsvPath = e.newValue);
-            c.Add(csvPathField);
+            pe.Add(csvPathField);
 
             var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
             SB(csvRow, T("LoadCSV"), () =>
@@ -850,9 +912,8 @@ namespace Poly_Ling.Player
                 EnsureRevProfile();
                 RevolutionCSVIO.Save(_revCsvPath, _revProfile, _revP);
             });
-            c.Add(csvRow);
+            pe.Add(csvRow);
 
-            c.Add(CB());
         }
 
         private void ApplyRevPreset()
@@ -1133,18 +1194,20 @@ namespace Poly_Ling.Player
             c.Add(SL(T("Profile2D")));
             c.Add(NF(() => _p2dP.MeshName, v => _p2dP.MeshName = v));
 
+            var pe = _profileEditorContainer;
+
             // ヘルプ
             var helpLbl = new Label(T("P2dEditorHelp"));
             helpLbl.style.fontSize = 9;
             helpLbl.style.color = new StyleColor(new Color(0.6f, 0.7f, 0.6f));
             helpLbl.style.marginBottom = 3;
             helpLbl.style.whiteSpace = WhiteSpace.Normal;
-            c.Add(helpLbl);
+            pe.Add(helpLbl);
 
             // ── 2D キャンバス ──────────────────────────────────────────────
             _p2dCanvas = new VisualElement();
             _p2dCanvas.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
-            _p2dCanvas.style.height          = 260;
+            _p2dCanvas.style.height          = _profileHeight;
             _p2dCanvas.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.15f));
             _p2dCanvas.style.marginBottom    = 4;
             _p2dCanvas.style.borderTopWidth  = _p2dCanvas.style.borderBottomWidth =
@@ -1180,10 +1243,13 @@ namespace Poly_Ling.Player
                 }
                 e.StopPropagation();
             });
-            c.Add(_p2dCanvas);
+            pe.Add(_p2dCanvas);
+
+            // キャンバス縦リサイズハンドル
+            AddProfileResizeHandle(pe, _p2dCanvas, RefreshP2dCanvas);
 
             // ── 下絵セクション ─────────────────────────────────────────────
-            BuildBgSection(c,
+            BuildBgSection(pe,
                 T("BgImage"),
                 () => _p2dBgPath, v => _p2dBgPath = v,
                 () => _p2dBgAlpha, v => { _p2dBgAlpha = v; UpdateP2dBgEl(); },
@@ -1242,10 +1308,10 @@ namespace Poly_Ling.Player
                 _p2dSelLoop = Mathf.Clamp(_p2dSelLoop, 0, _p2dLoops.Count - 1);
                 _p2dSelPt = -1; D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
-            c.Add(loopBtnRow);
+            pe.Add(loopBtnRow);
 
             // ── ループ一覧（穴フラグ切替） ─────────────────────────────────
-            c.Add(SL(T("Loops")));
+            pe.Add(SL(T("Loops")));
             for (int i = 0; i < _p2dLoops.Count; i++)
             {
                 int li = i;
@@ -1262,7 +1328,7 @@ namespace Poly_Ling.Player
                 var holeTog = new Toggle(T("IsHole")) { value = _p2dLoops[i].IsHole };
                 holeTog.RegisterValueChangedCallback(e => { _p2dLoops[li].IsHole = e.newValue; D(); RefreshP2dCanvas(); });
                 row.Add(selBtn); row.Add(holeTog);
-                c.Add(row);
+                pe.Add(row);
             }
 
             // ── 選択点スライダー ───────────────────────────────────────────
@@ -1310,13 +1376,13 @@ namespace Poly_Ling.Player
                 _p2dPtYSlider = ySl; _p2dPtYField = yFf;
             }
             _p2dPtRow.style.display = DisplayStyle.None;
-            c.Add(_p2dPtRow);
+            pe.Add(_p2dPtRow);
 
             // ── CSV ────────────────────────────────────────────────────────
-            c.Add(SL(T("LoadCSV")));
+            pe.Add(SL(T("LoadCSV")));
             var csvTf = new TextField { value = _p2dCsvPath }; csvTf.style.marginBottom = 2;
             csvTf.RegisterValueChangedCallback(e => _p2dCsvPath = e.newValue);
-            c.Add(csvTf);
+            pe.Add(csvTf);
             var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
             SB(csvRow, T("LoadCSV"), () =>
             {
@@ -1349,7 +1415,7 @@ namespace Poly_Ling.Player
                 }
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
             });
-            c.Add(csvRow);
+            pe.Add(csvRow);
 
             // ── パラメータ ────────────────────────────────────────────────
             c.Add(SL(T("Scale")));
@@ -1372,7 +1438,6 @@ namespace Poly_Ling.Player
                     c.Add(TR(T("EdgeInward"), () => _p2dP.EdgeInward, v => { _p2dP.EdgeInward = v; D(); }));
             }
 
-            c.Add(CB());
         }
 
         // ── P2D 座標変換 ──────────────────────────────────────────────────
@@ -1833,7 +1898,6 @@ namespace Poly_Ling.Player
             c.Add(TR(T("FlipFaces"),           () => _nohP.FlipFaces,   v => { _nohP.FlipFaces  = v; D(); }));
             c.Add(IR(T("FaceIndex"), 0, 10,    () => _nohP.FaceIndex,   v => { _nohP.FaceIndex  = v; D(); }));
 
-            c.Add(CB());
         }
 
         // ================================================================
@@ -1958,6 +2022,44 @@ namespace Poly_Ling.Player
             btn.style.unityFontStyleAndWeight = FontStyle.Bold;
             btn.style.backgroundColor = new StyleColor(new Color(0.22f, 0.48f, 0.22f));
             return btn;
+        }
+
+        /// <summary>プロファイル編集キャンバス直下に縦リサイズハンドルを追加する（3Dプレビューと同方式）。</summary>
+        private void AddProfileResizeHandle(VisualElement container, VisualElement canvas, Action refresh)
+        {
+            var handle = new VisualElement();
+            handle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+            handle.style.height          = 6;
+            handle.style.marginBottom    = 4;
+            handle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+            handle.pickingMode           = PickingMode.Position;
+
+            handle.RegisterCallback<PointerDownEvent>(e =>
+            {
+                handle.CapturePointer(e.pointerId);
+                _profileResizeDragging    = true;
+                _profileResizeStartY      = e.position.y;
+                _profileResizeStartHeight = _profileHeight;
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (!_profileResizeDragging || !handle.HasPointerCapture(e.pointerId)) return;
+                float delta = e.position.y - _profileResizeStartY;
+                _profileHeight = Mathf.Clamp(_profileResizeStartHeight + delta, ProfileMinHeight, ProfileMaxHeight);
+                canvas.style.height = _profileHeight;
+                refresh?.Invoke();
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!handle.HasPointerCapture(e.pointerId)) return;
+                handle.ReleasePointer(e.pointerId);
+                _profileResizeDragging = false;
+                e.StopPropagation();
+            });
+
+            container.Add(handle);
         }
 
         // ================================================================
