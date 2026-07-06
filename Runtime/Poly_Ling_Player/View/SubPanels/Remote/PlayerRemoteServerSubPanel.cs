@@ -30,6 +30,10 @@ namespace Poly_Ling.Player
         private Button        _btnSendImages, _btnClearImages, _btnSendHeader;
         private ScrollView    _logScroll;
         private VisualElement _logContainer;
+        private Button        _btnCopyLog;
+
+        // ログ更新イベントの購読先（多重購読防止）
+        private PolyLingPlayerServer _subscribedServer;
 
         public void Build(VisualElement parent)
         {
@@ -122,7 +126,11 @@ namespace Poly_Ling.Player
             _logScroll.Add(_logContainer);
             root.Add(_logScroll);
 
-            new Button(OnClearLog) { text = "Clear Log" }.Apply(b => { b.style.marginBottom = 4; root.Add(b); });
+            var logBtnRow = new VisualElement(); logBtnRow.style.flexDirection = FlexDirection.Row; logBtnRow.style.marginBottom = 4;
+            _btnCopyLog = new Button(OnCopyLog) { text = "Copy" };            _btnCopyLog.style.flexGrow = 1; _btnCopyLog.style.marginRight = 4;
+            var btnClearLog = new Button(OnClearLog) { text = "Clear Log" };  btnClearLog.style.flexGrow = 1;
+            logBtnRow.Add(_btnCopyLog); logBtnRow.Add(btnClearLog);
+            root.Add(logBtnRow);
         }
 
         // ================================================================
@@ -133,6 +141,7 @@ namespace Poly_Ling.Player
         {
             if (_missingLabel == null) return;
             var server = GetServer?.Invoke();
+            EnsureLogSubscription(server);
             if (server == null)
             {
                 _missingLabel.style.display  = DisplayStyle.Flex;
@@ -235,12 +244,39 @@ namespace Poly_Ling.Player
         {
             var server = GetServer?.Invoke();
             if (server == null) return;
-            // LogMessages は ReadOnly — server 側の List をクリアするために Flush メソッドを呼ぶ
-            // PolyLingPlayerServer.ClearLog() は未実装のため、ここでは別手段
-            // → PolyLingPlayerServer に ClearLog() を追加済みならそれを使う
-            //   今回は LogMessages が IReadOnlyList のため、内部 List には直接アクセスできない
-            //   → RefreshLog で表示だけクリアする方式（ログ本体は維持）
-            if (_logContainer != null) _logContainer.Clear();
+            // サーバ側のログ本体を消去してから表示を更新する。
+            // （表示だけ消しても RefreshLog で LogMessages から復活するため）
+            server.ClearLog();
+            RefreshLog(server);
+        }
+
+        private void OnCopyLog()
+        {
+            var server = GetServer?.Invoke();
+            if (server == null) return;
+            var msgs = server.LogMessages;
+            if (msgs == null || msgs.Count == 0) return;
+            GUIUtility.systemCopyBuffer = string.Join("\n", msgs);
+        }
+
+        // ================================================================
+        // ログ更新イベント購読（リアルタイム反映）
+        // ================================================================
+
+        private void EnsureLogSubscription(PolyLingPlayerServer server)
+        {
+            if (ReferenceEquals(server, _subscribedServer)) return;
+            if (_subscribedServer != null)
+                _subscribedServer.OnLogChanged -= OnServerLogChanged;
+            _subscribedServer = server;
+            if (_subscribedServer != null)
+                _subscribedServer.OnLogChanged += OnServerLogChanged;
+        }
+
+        private void OnServerLogChanged()
+        {
+            var server = GetServer?.Invoke();
+            if (server != null) RefreshLog(server);
         }
 
         // ================================================================

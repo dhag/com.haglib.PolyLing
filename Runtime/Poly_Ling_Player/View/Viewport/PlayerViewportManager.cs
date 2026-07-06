@@ -793,6 +793,8 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedWireframe   = ds.ShowUnselectedWireframe;
             _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
             _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
+            _renderer.ShowSelectedMirror        = ds.ShowSelectedMirror;
+            _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
 
             _renderer.SubmitMeshes(project, cam);
             _renderer.SubmitWireframeAndVertices(cam, slot);
@@ -1811,10 +1813,17 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedWireframe   = ds.ShowUnselectedWireframe;
             _renderer.ShowUnselectedVertices    = ds.ShowUnselectedVertices;
             _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
+            _renderer.ShowSelectedMirror        = ds.ShowSelectedMirror;
+            _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
 
             // adapter の BackfaceCullingEnabled もここで同期する
             // （DispatchCullingForDisplay の引数に使用するため）。
             adapter.BackfaceCullingEnabled = ds.BackfaceCulling;
+
+            // 永続ミラーの per-slot 表示状態を bufMgr へ設定する。
+            // （直後の DispatchCullingForDisplay(slot) と、後段のアクティブ slot 最終カリングが
+            //   slot ごとの正しい値を参照できるようにするため。）
+            adapter.BufferManager?.SetMirrorDisplay(slot, ds.ShowSelectedMirror, ds.ShowUnselectedMirror);
 
             // カメラが変化したスロットのみ per-slot カリングを再計算する。
             if (_slotCameraDirty[slot])

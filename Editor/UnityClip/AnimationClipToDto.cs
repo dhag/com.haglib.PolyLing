@@ -11,13 +11,16 @@ namespace Poly_Ling.UnityClip.Editor
     // AnimationUtility が UnityEditor 名前空間のため Editor アセンブリ専用。
     //
     // 対応範囲（今回）:
-    //   - Generic の Transform カーブのみ:
+    //   - Generic の Transform カーブ:
     //       m_LocalPosition.{x,y,z} / m_LocalRotation.{x,y,z,w} / m_LocalScale.{x,y,z}
-    //   - 接線は捨てて線形化（キー時刻で Evaluate してサンプル化）。
+    //       → dto.bones（path 別トラック）。
+    //   - Humanoid の Animator バインディング（マッスル/ルート等）:
+    //       生のまま dto.muscles（name = propertyName, w = 疎キー[{t,v}]）に格納する。
+    //       分類・マッスル→ボーン変換はしない。muscles があれば clipType="Humanoid"。
+    //   - 接線は捨てて線形化（キー時刻で Evaluate してサンプル化）。キー時刻 t は秒（丸めなし）。
     //   - 座標系変換なし（AnimationClip は Unity 左手系のまま）。
     //
     // 未対応（別途）:
-    //   - Humanoid Muscle（typeof(Animator) バインディング）: clipType のみ "Humanoid" とし bones は未生成。
     //   - localEulerAnglesRaw.* 等の Euler 回転プロパティ。
     // ================================================================
     public static class AnimationClipToDto
@@ -55,15 +58,20 @@ namespace Poly_Ling.UnityClip.Editor
 
             // Transform パス別に成分カーブを集約
             var map = new Dictionary<string, PathCurves>();
-            bool sawHumanoid = false;
 
             var bindings = AnimationUtility.GetCurveBindings(clip);
             foreach (var b in bindings)
             {
                 if (b.type != typeof(Transform))
                 {
-                    // Humanoid Muscle 等は今回対象外
-                    if (b.type == typeof(Animator)) sawHumanoid = true;
+                    // Humanoid の Animator バインディング（マッスル/ルート等）は
+                    // 生のまま dto.muscles に格納する（分類・変換はしない）。
+                    if (b.type == typeof(Animator))
+                    {
+                        var mcurve = AnimationUtility.GetEditorCurve(clip, b);
+                        var mtrack = BuildMuscleTrack(b.propertyName, mcurve);
+                        if (mtrack != null) dto.muscles.Add(mtrack);
+                    }
                     continue;
                 }
 
@@ -81,13 +89,10 @@ namespace Poly_Ling.UnityClip.Editor
                 pc.Set(ch, comp, curve);
             }
 
-            if (sawHumanoid && map.Count == 0)
-            {
+            // マッスル（Animator）カーブがあれば Humanoid とする。
+            // Transform カーブ（二次骨）＝ bones はそのまま併存させる。
+            if (dto.muscles.Count > 0)
                 dto.clipType = "Humanoid";
-                Debug.LogWarning(
-                    "[AnimationClipToDto] Humanoid(Muscle) クリップです。" +
-                    "今回は Generic 抽出のみのため bones は未生成です。");
-            }
 
             foreach (var kv in map)
             {
@@ -96,6 +101,25 @@ namespace Poly_Ling.UnityClip.Editor
             }
 
             return dto;
+        }
+
+        // ------------------------------------------------------------
+        // 単一 float カーブ（マッスル等）を疎キー {t,v} 列に変換
+        //   t = Keyframe.time（秒・丸めなし）、v = Evaluate(t)
+        // ------------------------------------------------------------
+        private static UnityMuscleTrackDTO BuildMuscleTrack(string name, AnimationCurve curve)
+        {
+            if (curve == null) return null;
+            var keys = curve.keys;
+            if (keys == null || keys.Length == 0) return null;
+
+            var track = new UnityMuscleTrackDTO { name = name };
+            for (int i = 0; i < keys.Length; i++)
+            {
+                float t = keys[i].time;
+                track.w.Add(new UnityWeightKeyDTO { t = t, v = curve.Evaluate(t) });
+            }
+            return track;
         }
 
         // ------------------------------------------------------------
@@ -128,17 +152,16 @@ namespace Poly_Ling.UnityClip.Editor
         // ------------------------------------------------------------
         private static UnityBoneTrackDTO BuildTrack(string path, PathCurves pc, float fps)
         {
-            // 全成分カーブのキー時刻を frame 量子化して union
-            var frames = new SortedSet<int>();
-            pc.CollectFrames(frames, fps);
-            if (frames.Count == 0) return null;
+            // 全成分カーブのキー時刻（秒）を union（丸めなし）
+            var times = new SortedSet<float>();
+            pc.CollectTimes(times);
+            if (times.Count == 0) return null;
 
             var track = new UnityBoneTrackDTO { path = path };
 
-            foreach (int f in frames)
+            foreach (float t in times)
             {
-                float t = f / fps;
-                var key = new UnityBoneKeyDTO { f = f };
+                var key = new UnityBoneKeyDTO { t = t };
 
                 if (pc.HasPos)
                 {
@@ -216,20 +239,20 @@ namespace Poly_Ling.UnityClip.Editor
                 }
             }
 
-            public void CollectFrames(SortedSet<int> frames, float fps)
+            public void CollectTimes(SortedSet<float> times)
             {
-                AddFrames(Px, frames, fps); AddFrames(Py, frames, fps); AddFrames(Pz, frames, fps);
-                AddFrames(Rx, frames, fps); AddFrames(Ry, frames, fps);
-                AddFrames(Rz, frames, fps); AddFrames(Rw, frames, fps);
-                AddFrames(Sx, frames, fps); AddFrames(Sy, frames, fps); AddFrames(Sz, frames, fps);
+                AddTimes(Px, times); AddTimes(Py, times); AddTimes(Pz, times);
+                AddTimes(Rx, times); AddTimes(Ry, times);
+                AddTimes(Rz, times); AddTimes(Rw, times);
+                AddTimes(Sx, times); AddTimes(Sy, times); AddTimes(Sz, times);
             }
 
-            private static void AddFrames(AnimationCurve c, SortedSet<int> frames, float fps)
+            private static void AddTimes(AnimationCurve c, SortedSet<float> times)
             {
                 if (c == null) return;
                 var keys = c.keys;
                 for (int i = 0; i < keys.Length; i++)
-                    frames.Add(Mathf.RoundToInt(keys[i].time * fps));
+                    times.Add(keys[i].time);
             }
         }
     }

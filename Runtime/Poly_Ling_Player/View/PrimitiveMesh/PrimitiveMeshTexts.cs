@@ -145,6 +145,16 @@ namespace Poly_Ling.Player
             ["AddModeNewObj"]   = new() { ["en"] = "New Object (default)",   ["ja"] = "新しい描画オブジェクト（デフォルト）", ["hi"] = "あたらしいオブジェクト" },
             ["AddModeExisting"] = new() { ["en"] = "Add to Existing Object", ["ja"] = "既存の描画オブジェクトに追加",         ["hi"] = "きそんについか" },
             ["AddModeNewModel"] = new() { ["en"] = "New Model",              ["ja"] = "新しいモデルを作って追加",             ["hi"] = "あたらしいモデル" },
+
+            // ── メッシュ⇄プロファイル連携 ───────────────────────────────
+            ["MeshProfileIO"]   = new() { ["en"] = "Mesh <-> Profile",   ["ja"] = "メッシュ連携",        ["hi"] = "メッシュれんけい" },
+            ["ImportFromMesh"]  = new() { ["en"] = "Import from Mesh",   ["ja"] = "取り込み(メッシュ→)", ["hi"] = "とりこみ" },
+            ["ApplyToMesh"]     = new() { ["en"] = "Apply to Mesh",      ["ja"] = "反映(→メッシュ)",    ["hi"] = "はんえい" },
+            ["ImportedPoints"]  = new() { ["en"] = "Imported {0} pts",   ["ja"] = "取り込み: {0}点",     ["hi"] = "とりこみ: {0}てん" },
+            ["ImportedLoops"]   = new() { ["en"] = "Imported {0} loops", ["ja"] = "取り込み: {0}ループ",  ["hi"] = "とりこみ: {0}ループ" },
+            ["NoSelectedMesh"]  = new() { ["en"] = "No selected mesh",   ["ja"] = "選択メッシュなし",    ["hi"] = "えらんでない" },
+            ["NoLinesFound"]    = new() { ["en"] = "No line segments",   ["ja"] = "線分が見つからない",  ["hi"] = "せんぶんなし" },
+            ["AppliedToMesh"]   = new() { ["en"] = "Applied: {0} lines", ["ja"] = "反映: 線分{0}",       ["hi"] = "はんえい: せん{0}" },
         };
 
         public static string T(string key) => L.GetFrom(Texts, key);

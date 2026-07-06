@@ -186,6 +186,7 @@ namespace Poly_Ling.Player
         private LineExtrudeToolHandler            _lineExtrudeHandler;
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
+        private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
         private PlayerRemoteServerSubPanel   _remoteServerSubPanel;
         private PlayerVertexMoveSubPanel     _vertexMoveSubPanel;
         private PlayerPivotSubPanel          _pivotSubPanel;
@@ -651,6 +652,9 @@ namespace Poly_Ling.Player
                 _client.OnBinaryPushReceived = ApplyRemotePositions;
             }
 
+            // リモートモード（インスペクタ設定）に応じた左ペイン表示の出し分け。
+            // _remoteMode はセッション中不変のため、ここで一度だけ適用する。
+            ApplyRemoteModeVisibility();
         }
 
         // Phase 2a-2f: 旧 Tick / LateTick / _Tick / _LateTick / PresentAll を削除。
@@ -2353,8 +2357,26 @@ namespace Poly_Ling.Player
                 GetModel          = () => ActiveProject?.CurrentModel,
                 GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 GetUndoController = () => _editOps?.UndoController,
+                OnFrameApplied    = () =>
+                {
+                    _viewportManager.UpdateTransform();
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+                },
             };
             _vmdTestSubPanel.Build(_layoutRoot.VMDTestSection);
+
+            _unityClipTestSubPanel = new PlayerUnityClipTestSubPanel
+            {
+                GetModel          = () => ActiveProject?.CurrentModel,
+                GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetUndoController = () => _editOps?.UndoController,
+                OnFrameApplied    = () =>
+                {
+                    _viewportManager.UpdateTransform();
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+                },
+            };
+            _unityClipTestSubPanel.Build(_layoutRoot.UnityClipTestSection);
 
             _remoteServerSubPanel = new PlayerRemoteServerSubPanel
             {
@@ -2413,6 +2435,8 @@ namespace Poly_Ling.Player
             _primitiveSubPanel = new PlayerPrimitiveMeshSubPanel();
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
             _primitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
+            _primitiveSubPanel.GetSelectedMeshObject = () =>
+                ActiveProject?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
 
             _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
 
@@ -2453,6 +2477,7 @@ namespace Poly_Ling.Player
             _layoutRoot.LineExtrudeBtn.clicked           += ShowLineExtrudePanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
+            _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
             _layoutRoot.FullExportMqoBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.MQO);
             _layoutRoot.ProjectFileBtn.clicked      += ShowProjectFilePanel;
@@ -2529,7 +2554,9 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_MESH: ds.ShowUnselectedMesh      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_WIRE: ds.ShowUnselectedWireframe = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_VERT: ds.ShowUnselectedVertices  = e.newValue; break;
-                                case PlayerLayoutRoot.VD_UNSEL_BONE: ds.ShowUnselectedBone      = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_BONE:   ds.ShowUnselectedBone      = e.newValue; break;
+                                case PlayerLayoutRoot.VD_SEL_MIRROR:   ds.ShowSelectedMirror      = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MIRROR: ds.ShowUnselectedMirror    = e.newValue; break;
                             }
                             // Phase 2a-2g-3: SetDisplaySettings → EnterDisplaySettingsChanged に集約。
                             _viewportManager.EnterDisplaySettingsChanged(slot, ds);
@@ -2582,6 +2609,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.LineExtrudeSection,       () => { var ctx = _viewportManager.GetCurrentToolContext(_activeViewport); if (ctx != null) _lineExtrudeHandler?.Activate(ctx); _lineExtrudeSubPanel?.Refresh(); }));
             _sectionRefreshPairs.Add((_layoutRoot.MediaPipeSection,         () => _mediaPipeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
 
             ShowCategory1Panel(InteractionMode.VertexMove);
@@ -2913,6 +2941,13 @@ namespace Poly_Ling.Player
             _vmdTestSubPanel?.Refresh();
         }
 
+        private void ShowUnityClipTestPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.UnityClipTestSection, _layoutRoot?.UnityClipTestBtn);
+            _unityClipTestSubPanel?.Refresh();
+        }
+
         private void ShowRemoteServerPanel()
         {
             // カテゴリ 3
@@ -3030,6 +3065,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.LineExtrudeSection);
             Hide(_layoutRoot.MediaPipeSection);
             Hide(_layoutRoot.VMDTestSection);
+            Hide(_layoutRoot.UnityClipTestSection);
             Hide(_layoutRoot.RemoteServerSection);
         }
 
@@ -4020,6 +4056,23 @@ namespace Poly_Ling.Player
             _layoutRoot.FetchBtn.SetEnabled(isConnected);
             _layoutRoot.UndoBtn.SetEnabled(_editOps?.CanUndo ?? false);
             _layoutRoot.RedoBtn.SetEnabled(_editOps?.CanRedo ?? false);
+        }
+
+        /// <summary>
+        /// リモートモード（インスペクタ設定）に応じて左ペインの表示を出し分ける。
+        /// Client 時のみ「サーバと連携」、Server 時のみ「リモートサーバ」を表示。
+        /// _remoteMode はセッション中不変のため初期化時に一度だけ適用する。
+        /// </summary>
+        private void ApplyRemoteModeVisibility()
+        {
+            if (_layoutRoot == null) return;
+            bool isClient = _remoteMode == RemoteMode.Client;
+            bool isServer = _remoteMode == RemoteMode.Server;
+
+            if (_layoutRoot.RemoteFoldout != null)
+                _layoutRoot.RemoteFoldout.style.display = isClient ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_layoutRoot.RemoteServerBtn != null)
+                _layoutRoot.RemoteServerBtn.style.display = isServer ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void RebuildModelList()

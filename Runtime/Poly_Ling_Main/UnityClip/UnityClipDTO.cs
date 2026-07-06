@@ -23,7 +23,7 @@ namespace Poly_Ling.UnityClip
     //           （AnimationClip の接線は抽出時に捨てる）。
     //   - 座標系: 値はすべて Unity 左手系。AnimationClip は元から Unity 左手系のため
     //             座標変換は行わない（VMD のような右手系→左手系変換は不要）。
-    //   - フレーム番号: f はフレーム番号。time = f / frameRate。
+    //   - 時刻: t は秒（Keyframe.time）。丸めなし。
     //
     // ■ clipType
     //   "Generic"  : bones（Transform パス階層カーブ）を使う。
@@ -44,7 +44,7 @@ namespace Poly_Ling.UnityClip
         /// <summary>"Generic" または "Humanoid"。</summary>
         public string clipType = "Generic";
 
-        /// <summary>フレームレート（AnimationClip.frameRate）。time = f / frameRate。</summary>
+        /// <summary>フレームレート（AnimationClip.frameRate）。参考値。キー時刻 t は秒。</summary>
         public float frameRate = 30f;
 
         /// <summary>ループ設定（AnimationClip.isLooping）。</summary>
@@ -81,8 +81,8 @@ namespace Poly_Ling.UnityClip
     [Serializable]
     public class UnityBoneKeyDTO
     {
-        /// <summary>フレーム番号。</summary>
-        public int f;
+        /// <summary>時刻（秒）＝ Keyframe.time。</summary>
+        public float t;
 
         /// <summary>位置 [x, y, z]（Unity左手系）。使わない場合は null。</summary>
         public float[] pos;
@@ -103,15 +103,15 @@ namespace Poly_Ling.UnityClip
         /// <summary>Muscle 名（HumanTrait.MuscleName）。</summary>
         public string name;
 
-        /// <summary>重みキー。フレーム昇順。</summary>
+        /// <summary>重みキー。時刻昇順（秒）。</summary>
         public List<UnityWeightKeyDTO> w = new List<UnityWeightKeyDTO>();
     }
 
-    /// <summary>重みキー。v = Muscle 値。</summary>
+    /// <summary>重みキー。t = 時刻（秒）、v = Muscle 値。</summary>
     [Serializable]
     public class UnityWeightKeyDTO
     {
-        public int f;
+        public float t;
         public float v;
     }
 
@@ -121,15 +121,15 @@ namespace Poly_Ling.UnityClip
     [Serializable]
     public class UnityBodyTrackDTO
     {
-        /// <summary>ルート姿勢キー。フレーム昇順。</summary>
+        /// <summary>ルート姿勢キー。時刻昇順（秒）。</summary>
         public List<UnityBodyKeyDTO> keys = new List<UnityBodyKeyDTO>();
     }
 
-    /// <summary>ルート姿勢キー。pos = [x,y,z]、rot = [x,y,z,w]。</summary>
+    /// <summary>ルート姿勢キー。t = 時刻（秒）、pos = [x,y,z]、rot = [x,y,z,w]。</summary>
     [Serializable]
     public class UnityBodyKeyDTO
     {
-        public int f;
+        public float t;
         public float[] pos;
         public float[] rot;
     }

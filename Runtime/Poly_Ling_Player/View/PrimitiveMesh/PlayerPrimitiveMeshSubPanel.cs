@@ -34,6 +34,9 @@ namespace Poly_Ling.Player
         /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition, ignorePoseInArmature, addMode)</summary>
         public Action<MeshObject, string, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
 
+        /// <summary>選択中の描画オブジェクトの MeshObject を返す(なければ null)。取り込み/反映で使用。</summary>
+        public Func<MeshObject> GetSelectedMeshObject;
+
         // ================================================================
         // 図形種別
         // ================================================================
@@ -914,6 +917,12 @@ namespace Poly_Ling.Player
             });
             pe.Add(csvRow);
 
+            // ── メッシュ⇄プロファイル ─────────────────────────────────────
+            pe.Add(SL(T("MeshProfileIO")));
+            var ioRow = new VisualElement(); ioRow.style.flexDirection = FlexDirection.Row; ioRow.style.marginBottom = 4;
+            SB(ioRow, T("ImportFromMesh"), ImportRevolutionFromMesh);
+            SB(ioRow, T("ApplyToMesh"),    ApplyRevolutionToMesh);
+            pe.Add(ioRow);
         }
 
         private void ApplyRevPreset()
@@ -1416,6 +1425,13 @@ namespace Poly_Ling.Player
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
             });
             pe.Add(csvRow);
+
+            // ── メッシュ⇄プロファイル ─────────────────────────────────────
+            pe.Add(SL(T("MeshProfileIO")));
+            var ioRow = new VisualElement(); ioRow.style.flexDirection = FlexDirection.Row; ioRow.style.marginBottom = 4;
+            SB(ioRow, T("ImportFromMesh"), ImportProfile2DFromMesh);
+            SB(ioRow, T("ApplyToMesh"),    ApplyProfile2DToMesh);
+            pe.Add(ioRow);
 
             // ── パラメータ ────────────────────────────────────────────────
             c.Add(SL(T("Scale")));
@@ -1962,6 +1978,73 @@ namespace Poly_Ling.Player
                 case ShapeKind.NohMask:    return _nohP.MeshName;
                 default:                   return _current.ToString();
             }
+        }
+
+        // ================================================================
+        // メッシュ⇄プロファイル連携（取り込み/反映）
+        // 方針: Z を破棄し XY をそのまま扱う（座標変換なし）。
+        // 取り込み元 = 選択オブジェクト内の全2頂点ライン（未選択でも対象）。
+        // 反映先 = 既存 AddMode ドロップダウンに従う。
+        // ================================================================
+
+        /// <summary>選択オブジェクトの全2頂点ラインを Revolution プロファイルへ取り込む。</summary>
+        private void ImportRevolutionFromMesh()
+        {
+            var mesh = GetSelectedMeshObject?.Invoke();
+            if (mesh == null) { _statusLabel.text = T("NoSelectedMesh"); return; }
+
+            var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
+            var pts       = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
+            if (pts == null || pts.Count < 2) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            _revProfile = new List<Vector2>(pts);
+            _revSelIdx  = -1;
+            _revP.CurrentPreset = ProfilePreset.Custom;
+            _statusLabel.text = T("ImportedPoints", pts.Count);
+            D(); RefreshRevCanvas(); RefreshRevPointUI();
+        }
+
+        /// <summary>Revolution プロファイルを2頂点ラインの MeshObject として反映する。</summary>
+        private void ApplyRevolutionToMesh()
+        {
+            EnsureRevProfile();
+            if (_revProfile == null || _revProfile.Count < 2) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            var mo = LineProfileExtractor.PolylineToLineMesh(_revProfile, _revP.MeshName, _revP.CloseLoop);
+            if (mo == null || mo.FaceCount == 0) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
+            OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, _ignorePoseInArmature, _addMode);
+        }
+
+        /// <summary>選択オブジェクトの全2頂点ラインを Profile2D ループへ取り込む。</summary>
+        private void ImportProfile2DFromMesh()
+        {
+            var mesh = GetSelectedMeshObject?.Invoke();
+            if (mesh == null) { _statusLabel.text = T("NoSelectedMesh"); return; }
+
+            var lineFaces = LineProfileExtractor.CollectLineFaceIndices(mesh);
+            var loops     = LineProfileExtractor.ExtractLoops(mesh, lineFaces);
+            if (loops == null || loops.Count == 0) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            _p2dLoops   = loops;
+            _p2dSelLoop = 0;
+            _p2dSelPt   = -1;
+            _statusLabel.text = T("ImportedLoops", loops.Count);
+            D(); RebuildSettings();
+        }
+
+        /// <summary>Profile2D ループを2頂点ラインの MeshObject として反映する。</summary>
+        private void ApplyProfile2DToMesh()
+        {
+            EnsureP2DLoops();
+            if (_p2dLoops == null || _p2dLoops.Count == 0) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            var mo = LineProfileExtractor.LoopsToLineMesh(_p2dLoops, _p2dP.MeshName);
+            if (mo == null || mo.FaceCount == 0) { _statusLabel.text = T("NoLinesFound"); return; }
+
+            _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
+            OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, _ignorePoseInArmature, _addMode);
         }
 
         // ================================================================

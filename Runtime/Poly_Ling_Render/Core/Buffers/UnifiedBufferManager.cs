@@ -274,6 +274,7 @@ namespace Poly_Ling.Core
         private int _kernelUpdateHover;
         private int _kernelClearCulled;
         private int _kernelClearFaceCulled;
+        private int _kernelApplyMirrorCull;
         private bool _gpuComputeAvailable = false;
 
         // GPU出力バッファ（float4: xy=screen, z=depth, w=valid）
@@ -520,6 +521,7 @@ namespace Poly_Ling.Core
                 _kernelUpdateHover    = _computeShader.FindKernel("UpdateHoverFlags");
                 _kernelClearCulled    = _computeShader.FindKernel("ClearCulledBuffers");
                 _kernelClearFaceCulled= _computeShader.FindKernel("ClearFaceCulledBuffers");
+                _kernelApplyMirrorCull= _computeShader.FindKernel("ApplyMirrorCull");
                 _gpuComputeAvailable = true;
             }
             catch (System.Exception e)

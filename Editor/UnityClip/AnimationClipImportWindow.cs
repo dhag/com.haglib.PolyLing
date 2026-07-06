@@ -9,7 +9,7 @@
 //   対応範囲（AnimationClipToDto の逆に対応）:
 //     - Transform カーブのみ:
 //         m_LocalPosition.{x,y,z} / m_LocalRotation.{x,y,z,w} / m_LocalScale.{x,y,z}
-//     - 各キーは key.f / frameRate を時刻とする線形サンプル（接線既定）。
+//     - 各キーは key.t（秒）を時刻とする線形サンプル（接線既定）。
 //     - 座標系変換なし（Unity 左手系のまま）。
 //     - clipType=="Humanoid" かつ bones 空 → 空クリップ＋警告。
 // ============================================================
@@ -160,7 +160,7 @@ namespace Poly_Ling.UnityClip.Editor
             foreach (var key in track.keys)
             {
                 if (key == null) continue;
-                float t = key.f / fps;
+                float t = key.t;
 
                 if (key.pos != null && key.pos.Length >= 3)
                 {

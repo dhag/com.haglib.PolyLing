@@ -41,6 +41,7 @@ namespace Poly_Ling.Remote
             ["MirrorType"]  = (mc, jb) => jb.Value(mc.MirrorType),
             ["Depth"]       = (mc, jb) => jb.Value(mc.Depth),
             ["ParentIndex"] = (mc, jb) => jb.Value(mc.ParentIndex),
+            ["HierarchyParentIndex"] = (mc, jb) => jb.Value(mc.HierarchyParentIndex),
             ["IsMorph"]     = (mc, jb) => jb.Value(mc.IsMorph),
             ["MorphName"]   = (mc, jb) => jb.Value(mc.MorphName),
             ["MorphPanel"]  = (mc, jb) => jb.Value(mc.MorphPanel),

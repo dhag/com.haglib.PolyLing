@@ -21,6 +21,7 @@ namespace Poly_Ling.Player
         public Button        UndoBtn            { get; private set; }
         public Button        RedoBtn            { get; private set; }
         public VisualElement RemoteSection      { get; private set; }
+        public Foldout       RemoteFoldout      { get; private set; }
         public VisualElement ModelListContainer  { get; private set; }
         public DropdownField ModelSelectDropdown { get; private set; }
         public Button        ModelListBtn        { get; private set; }
@@ -59,7 +60,9 @@ namespace Poly_Ling.Player
         public const int VD_UNSEL_WIRE = 6;
         public const int VD_UNSEL_VERT = 7;
         public const int VD_UNSEL_BONE = 8;
-        public const int VD_COUNT      = 9;
+        public const int VD_SEL_MIRROR   = 9;
+        public const int VD_UNSEL_MIRROR = 10;
+        public const int VD_COUNT      = 11;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -186,6 +189,8 @@ namespace Poly_Ling.Player
         public Button        MediaPipeBtn           { get; private set; }
         public VisualElement VMDTestSection         { get; private set; }
         public Button        VMDTestBtn             { get; private set; }
+        public VisualElement UnityClipTestSection    { get; private set; }
+        public Button        UnityClipTestBtn        { get; private set; }
         public VisualElement RemoteServerSection    { get; private set; }
         public Button        RemoteServerBtn        { get; private set; }
 
@@ -668,21 +673,14 @@ namespace Poly_Ling.Player
             ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
             foFile.Add(ProjectFileBtn);
 
-            // ── リモート（Connect/Disconnect/Fetch）は core が表示制御するため
-            //    RemoteSection は従来どおり scroll 直下に残す。
             scroll.Add(Separator());
 
-            RemoteSection = new VisualElement();
-            RemoteSection.style.marginBottom = 4;
-            ConnectBtn    = MakeBtn("Connect");
-            DisconnectBtn = MakeBtn("Disconnect");
-            FetchBtn      = MakeBtn("Fetch Project");
-            RemoteSection.Add(ConnectBtn);
-            RemoteSection.Add(DisconnectBtn);
-            RemoteSection.Add(FetchBtn);
-            scroll.Add(RemoteSection);
+            // ── 図形生成 ───────────────────────────────────────────────
+            var foPrimitive = MakeFoldout("図形生成");
+            scroll.Add(foPrimitive);
 
-            scroll.Add(Separator());
+            PrimitiveBtn = MakeBtn("基本図形");
+            foPrimitive.Add(PrimitiveBtn);
 
             // ── 選択・移動 ─────────────────────────────────────────────
             var foSelectMove = MakeFoldout("選択・移動");
@@ -790,12 +788,27 @@ namespace Poly_Ling.Player
             MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
             rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foUvMat.Add(rowSelSet);
 
+            // ── サーバと連携 ───────────────────────────────────────────
+            // クライアントモードでのサーバとのやり取り。
+            // RemoteSection の表示制御・ボタン配線は core が担う（プロパティ名・
+            // インスタンスは不変）。Foldout はコンテナのみを提供する。
+            var foRemote = MakeFoldout("サーバと連携");
+            RemoteFoldout = foRemote;
+            scroll.Add(foRemote);
+
+            RemoteSection = new VisualElement();
+            RemoteSection.style.marginBottom = 4;
+            ConnectBtn    = MakeBtn("Connect");
+            DisconnectBtn = MakeBtn("Disconnect");
+            FetchBtn      = MakeBtn("プロジェクト取得");
+            RemoteSection.Add(ConnectBtn);
+            RemoteSection.Add(DisconnectBtn);
+            RemoteSection.Add(FetchBtn);
+            foRemote.Add(RemoteSection);
+
             // ── その他 ─────────────────────────────────────────────────
             var foOther = MakeFoldout("その他");
             scroll.Add(foOther);
-
-            PrimitiveBtn = MakeBtn("図形生成");
-            foOther.Add(PrimitiveBtn);
 
             MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
             foOther.Add(MeshFilterToSkinnedBtn);
@@ -805,6 +818,10 @@ namespace Poly_Ling.Player
             VMDTestBtn      = MakeBtn("VMDテスト");    VMDTestBtn.style.flexGrow      = 1; VMDTestBtn.style.marginRight      = 2;
             RemoteServerBtn = MakeBtn("リモートサーバ"); RemoteServerBtn.style.flexGrow = 1;
             rowMisc.Add(MediaPipeBtn); rowMisc.Add(VMDTestBtn); rowMisc.Add(RemoteServerBtn); foOther.Add(rowMisc);
+
+            var rowMisc2 = new VisualElement(); rowMisc2.style.flexDirection = FlexDirection.Row; rowMisc2.style.marginBottom = 2;
+            UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1;
+            rowMisc2.Add(UnityClipTestBtn); foOther.Add(rowMisc2);
 
             scroll.Add(Separator());
 
@@ -819,6 +836,7 @@ namespace Poly_Ling.Player
             {
                 "カリング", "選択Mesh", "選択辺", "選択頂点", "選択Bone",
                 "非選Mesh", "非選辺",  "非選頂点", "非選Bone",
+                "選択Mirror", "非選Mirror",
             };
             // ViewportDisplaySettings.Default と一致させる
             var itemDefaults = new bool[]
@@ -832,6 +850,8 @@ namespace Poly_Ling.Player
                 true,  // 非選辺
                 true,  // 非選頂点
                 false, // 非選Bone
+                true,  // 選択Mirror
+                true,  // 非選Mirror
             };
 
             // ヘッダ行
@@ -1018,6 +1038,7 @@ namespace Poly_Ling.Player
             LineExtrudeSection         = AddSection(visible: false);
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
+            UnityClipTestSection       = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
 
             // ── エクスポートセクション

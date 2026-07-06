@@ -23,6 +23,8 @@ namespace Poly_Ling.Player
         public bool ShowUnselectedWireframe;
         public bool ShowUnselectedVertices;
         public bool ShowUnselectedBone;
+        public bool ShowSelectedMirror;
+        public bool ShowUnselectedMirror;
 
         /// <summary>
         /// MeshSceneRenderer のデフォルト値と一致するデフォルト設定を返す。
@@ -38,6 +40,8 @@ namespace Poly_Ling.Player
             ShowUnselectedWireframe = true,
             ShowUnselectedVertices  = true,
             ShowUnselectedBone      = false,
+            ShowSelectedMirror      = true,
+            ShowUnselectedMirror    = true,
         };
     }
 }

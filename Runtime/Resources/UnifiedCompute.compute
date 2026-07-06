@@ -16,6 +16,7 @@
 #pragma kernel ComputeFaceHitTest
 #pragma kernel ComputeFaceVisibility
 #pragma kernel ComputeLineVisibility
+#pragma kernel ApplyMirrorCull
 #pragma kernel UpdateHoverFlags
 #pragma kernel TransformVertices
 #pragma kernel ExpandVertices
@@ -162,6 +163,11 @@ uint _MeshCount;
 int _UseMirror;             // 1: ミラー計算も実行
 int _IsMirrored;            // 現在ミラーパスかどうか
 
+// 永続ミラー（MirrorSide/BakedMirror）の per-slot 表示制御。
+// 0 のとき、該当選択状態のミラー要素を per-slot culled バッファで非表示にする。
+int _ShowSelectedMirror;    // 1: 選択中ミラーを表示 / 0: 非表示
+int _ShowUnselectedMirror;  // 1: 非選択ミラーを表示 / 0: 非表示
+
 float2 _MousePosition;
 float _HitRadius;
 int _EnableBackfaceCulling;  // バックフェースカリング有効時は1
@@ -227,6 +233,38 @@ void ClearCulledBuffers(uint3 id : SV_DispatchThreadID)
     {
         uint lFlags = _LineFlagsBuffer[index];
         _LineCulledBuffer[index] = HAS_FLAG(lFlags, FLAG_HIDDEN) ? 0u : 1u;
+    }
+}
+
+// ============================================================
+// ApplyMirrorCull: 永続ミラー（MirrorSide/BakedMirror）要素の最終カリング。
+// ComputeFaceVisibility / ComputeLineVisibility の後に per-slot で実行し、
+// 表向き面による un-cull 上書きを受けないようにする。
+// 規約: culled バッファは 0=visible, 1=culled。ミラーを隠す場合は 1 を書く。
+// ============================================================
+[numthreads(64, 1, 1)]
+void ApplyMirrorCull(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+
+    if (index < _VertexCount)
+    {
+        uint vFlags = _VertexFlagsBuffer[index];
+        if (HAS_FLAG(vFlags, FLAG_MIRROR))
+        {
+            int vShow = HAS_FLAG(vFlags, FLAG_MESH_SELECTED) ? _ShowSelectedMirror : _ShowUnselectedMirror;
+            if (vShow == 0) _VertexCulledBuffer[index] = 1u;
+        }
+    }
+
+    if (index < _LineCount)
+    {
+        uint lFlags = _LineFlagsBuffer[index];
+        if (HAS_FLAG(lFlags, FLAG_MIRROR))
+        {
+            int lShow = HAS_FLAG(lFlags, FLAG_MESH_SELECTED) ? _ShowSelectedMirror : _ShowUnselectedMirror;
+            if (lShow == 0) _LineCulledBuffer[index] = 1u;
+        }
     }
 }
 

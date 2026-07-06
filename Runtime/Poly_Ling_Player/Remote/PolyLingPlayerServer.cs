@@ -38,6 +38,9 @@ namespace Poly_Ling.Player
         public IReadOnlyList<string> LogMessages => _logMessages;
         public void ClearLog() => _logMessages.Clear();
 
+        /// <summary>ログ表示更新の通知（メインスレッドで発火。UI 側が購読してログ欄を再描画する）。</summary>
+        public System.Action OnLogChanged;
+
         // ================================================================
         // 初期化 / 破棄
         // ================================================================
@@ -58,7 +61,7 @@ namespace Poly_Ling.Player
             _server = new RemoteServerCore(getToolContext, port)
             {
                 DispatchCommand = dispatchCommand,
-                OnRepaint       = () => { },
+                OnRepaint       = () => OnLogChanged?.Invoke(),
                 OnLog           = msg =>
                 {
                     _logMessages.Add(msg);

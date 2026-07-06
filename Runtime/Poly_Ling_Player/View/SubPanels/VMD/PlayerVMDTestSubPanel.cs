@@ -23,6 +23,9 @@ namespace Poly_Ling.Player
         public Func<ToolContext>   GetToolContext;
         public Func<Poly_Ling.UndoSystem.MeshUndoController> GetUndoController;
 
+        /// <summary>フレーム適用後に呼ぶ。GPU メッシュ再スキン（UpdateTransform）を core 側で起こすため。</summary>
+        public Action OnFrameApplied;
+
         // ── VMD 状態 ──────────────────────────────────────────────────────
         private VMDData    _vmd;
         private VMDApplier _applier;
@@ -350,6 +353,7 @@ namespace Poly_Ling.Player
         {
             if (_vmd == null || Model == null || _applier == null) return;
             _applier.ApplyFrame(Model, _vmd, _currentFrame);
+            OnFrameApplied?.Invoke();
             GetToolContext?.Invoke()?.Repaint?.Invoke();
         }
 

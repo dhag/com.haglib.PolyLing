@@ -34,6 +34,8 @@ namespace Poly_Ling.Core
         public bool ShowUnselectedWireframe   { get; set; } = true;
         public bool ShowSelectedBone          { get; set; } = true;
         public bool ShowUnselectedBone        { get; set; } = false;
+        public bool ShowSelectedMirror        { get; set; } = true;
+        public bool ShowUnselectedMirror      { get; set; } = true;
         public bool BackfaceCullingEnabled    { get; set; } = true;
 
         // ================================================================
@@ -287,12 +289,21 @@ namespace Poly_Ling.Core
 
             for (int i = 0; i < drawables.Count; i++)
             {
-                bool isSel = selDrawable.Contains(drawables[i].MasterIndex);
-                if ( isSel && !ShowSelectedMesh)   continue;
-                if (!isSel && !ShowUnselectedMesh) continue;
-
                 var ctx = drawables[i].Context;
                 if (ctx?.UnityMesh == null || !ctx.IsVisible) continue;
+
+                bool isSel = selDrawable.Contains(drawables[i].MasterIndex);
+                bool isMirror = ctx.Type == MeshType.BakedMirror || ctx.Type == MeshType.MirrorSide;
+                if (isMirror)
+                {
+                    if ( isSel && !ShowSelectedMirror)   continue;
+                    if (!isSel && !ShowUnselectedMirror) continue;
+                }
+                else
+                {
+                    if ( isSel && !ShowSelectedMesh)   continue;
+                    if (!isSel && !ShowUnselectedMesh) continue;
+                }
 
                 var mesh = ctx.UnityMesh;
                 for (int sub = 0; sub < mesh.subMeshCount; sub++)
@@ -381,12 +392,14 @@ namespace Poly_Ling.Core
                     if (bufMgr != null)
                     {
                         var viewport = new Rect(0, 0, cam.pixelWidth, cam.pixelHeight);
+                        bufMgr.SetMirrorDisplay(cullingSlot, ShowSelectedMirror, ShowUnselectedMirror);
                         bufMgr.DispatchClearBuffersGPU();
                         bufMgr.DispatchClearCulledBuffersGPU(cullingSlot);
                         bufMgr.ComputeScreenPositionsGPU(
                             cam.projectionMatrix * cam.worldToCameraMatrix, viewport, cullingSlot);
                         bufMgr.DispatchFaceVisibilityGPU(cullingSlot);
                         bufMgr.DispatchLineVisibilityGPU(cullingSlot);
+                        bufMgr.DispatchApplyMirrorCullGPU(cullingSlot);
                     }
                 }
 

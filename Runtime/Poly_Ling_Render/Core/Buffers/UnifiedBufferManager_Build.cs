@@ -325,6 +325,8 @@ namespace Poly_Ling.Core
         {
             bool isVisible = meshContext?.IsVisible ?? true;
             bool isLocked = meshContext?.IsLocked ?? false;
+            bool isMirror = meshContext != null &&
+                (meshContext.Type == MeshType.MirrorSide || meshContext.Type == MeshType.BakedMirror);
 
             for (int v = 0; v < meshObject.VertexCount; v++)
             {
@@ -382,7 +384,7 @@ namespace Poly_Ling.Core
                 // フラグ計算
                 _vertexFlags[globalIdx] = (uint)_flagManager.ComputeVertexFlags(
                     modelIndex, meshIndex, v,
-                    isVisible, isLocked, false);
+                    isVisible, isLocked, isMirror);
             }
 
             vertexOffset += (uint)meshObject.VertexCount;
@@ -411,6 +413,8 @@ namespace Poly_Ling.Core
             uint startLineOffset = lineOffset;
             bool isVisible = meshContext?.IsVisible ?? true;
             bool isLocked = meshContext?.IsLocked ?? false;
+            bool isMirror = meshContext != null &&
+                (meshContext.Type == MeshType.MirrorSide || meshContext.Type == MeshType.BakedMirror);
 
             // 面ごとの線分情報を一時保存
             if (_faceLineInfos == null || _faceLineInfos.Length < meshObject.FaceCount)
@@ -434,7 +438,7 @@ namespace Poly_Ling.Core
                         V2 = vertexBase + (uint)v2,
                         Flags = (uint)_flagManager.ComputeLineFlags(
                             modelIndex, meshIndex, v1, v2, faceIdx,
-                            true, isVisible, isLocked, false, false),
+                            true, isVisible, isLocked, isMirror, false),
                         FaceIndex = globalFaceIndex,
                         MeshIndex = (uint)meshIndex,
                         ModelIndex = (uint)modelIndex
@@ -456,7 +460,7 @@ namespace Poly_Ling.Core
                             V2 = vertexBase + (uint)v2,
                             Flags = (uint)_flagManager.ComputeLineFlags(
                                 modelIndex, meshIndex, v1, v2, faceIdx,
-                                false, isVisible, isLocked, false, false),
+                                false, isVisible, isLocked, isMirror, false),
                             FaceIndex = globalFaceIndex,
                             MeshIndex = (uint)meshIndex,
                             ModelIndex = (uint)modelIndex

@@ -844,6 +844,9 @@ namespace Poly_Ling.Core
             {
                 bm.ClearCulledFlagsGPU(slot);
             }
+
+            // 永続ミラーの最終カリング（両分岐後に適用し、上書きを受けないようにする）。
+            bm.DispatchApplyMirrorCullGPU(slot);
         }
 
         /// <summary>

@@ -1330,6 +1330,20 @@ namespace Poly_Ling.Core
         /// per-slot カリングバッファをクリア（全頂点・辺・面を「カリング済み」で初期化）。
         /// ComputeScreenPositionsGPU の前に呼ぶこと。
         /// </summary>
+        // 永続ミラー（MirrorSide/BakedMirror）の per-slot 表示状態。
+        // 描画準備（ClearCulledBuffers 発行）前に SetMirrorDisplay で slot ごとに設定する。
+        // 既定は全 slot 表示(1)。要素数は CullingSlotCount(=4) に一致させる。
+        private readonly int[] _showSelectedMirror   = { 1, 1, 1, 1 };
+        private readonly int[] _showUnselectedMirror = { 1, 1, 1, 1 };
+
+        /// <summary>永続ミラーの表示可否を slot 単位で設定する（次回の per-slot カリングクリアに反映）。</summary>
+        public void SetMirrorDisplay(int slot, bool showSelected, bool showUnselected)
+        {
+            if (slot < 0 || slot >= CullingSlotCount) return;
+            _showSelectedMirror[slot]   = showSelected ? 1 : 0;
+            _showUnselectedMirror[slot] = showUnselected ? 1 : 0;
+        }
+
         public void DispatchClearCulledBuffersGPU(int slot)
         {
             if (!_gpuComputeAvailable || _computeShader == null) return;
@@ -1359,6 +1373,36 @@ namespace Poly_Ling.Core
                 if (_totalFaceCount > 0)
                     _computeShader.Dispatch(_kernelClearFaceCulled, ThreadGroups(_totalFaceCount), 1, 1);
             }
+        }
+
+        /// <summary>
+        /// 永続ミラー（MirrorSide/BakedMirror）要素の最終カリングを per-slot で適用する。
+        /// 表向き面による un-cull 上書きを受けないよう、ComputeFace/LineVisibility の後に呼ぶこと。
+        /// SetMirrorDisplay(slot, ...) で設定した slot ごとの表示状態を参照する。
+        /// </summary>
+        public void DispatchApplyMirrorCullGPU(int slot)
+        {
+            if (!_gpuComputeAvailable || _computeShader == null) return;
+            var vBuf = GetVertexCulledBuffer(slot);
+            var lBuf = GetLineCulledBuffer(slot);
+            if (vBuf == null || lBuf == null) return;
+
+            int msSel   = (slot >= 0 && slot < CullingSlotCount) ? _showSelectedMirror[slot]   : 1;
+            int msUnsel = (slot >= 0 && slot < CullingSlotCount) ? _showUnselectedMirror[slot] : 1;
+            // 選択・非選択とも表示なら適用不要（無駄な dispatch を避ける）
+            if (msSel != 0 && msUnsel != 0) return;
+
+            _computeShader.SetInt("_VertexCount", _totalVertexCount);
+            _computeShader.SetInt("_LineCount",   _totalLineCount);
+            _computeShader.SetInt("_ShowSelectedMirror",   msSel);
+            _computeShader.SetInt("_ShowUnselectedMirror", msUnsel);
+            _computeShader.SetBuffer(_kernelApplyMirrorCull, "_VertexFlagsBuffer",  _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelApplyMirrorCull, "_VertexCulledBuffer", vBuf);
+            _computeShader.SetBuffer(_kernelApplyMirrorCull, "_LineFlagsBuffer",    _lineFlagsBuffer);
+            _computeShader.SetBuffer(_kernelApplyMirrorCull, "_LineCulledBuffer",   lBuf);
+            int maxVL = Mathf.Max(_totalVertexCount, _totalLineCount);
+            if (maxVL > 0)
+                _computeShader.Dispatch(_kernelApplyMirrorCull, ThreadGroups(maxVL), 1, 1);
         }
 
         /// <summary>
