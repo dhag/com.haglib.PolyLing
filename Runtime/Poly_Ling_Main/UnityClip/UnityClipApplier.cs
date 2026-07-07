@@ -263,8 +263,8 @@ namespace Poly_Ling.UnityClip
             return new Q(q.x / n, q.y / n, q.z / n, q.w / n);
         }
 
-        // X面反射の共役（Unity→MMD 左右ミラー）
-        private static Q QMir(Q q) => new Q(q.x, -q.y, -q.z, q.w);
+        // Y軸180°回転の共役（Unity→PMX: 両左手系で向き-Z差のみ、正則回転）
+        private static Q QMir(Q q) => new Q(-q.x, q.y, -q.z, q.w);
 
         // 単位ベクトル a→b の最短弧（JS QR.ft 逐語）
         private static Q QFromTo(Vector3 a, Vector3 b)
@@ -292,7 +292,7 @@ namespace Poly_Ling.UnityClip
             return new Q(c.x / n, c.y / n, c.z / n, w / n);
         }
 
-        private static Vector3 Mx(Vector3 v) => new Vector3(-v.x, v.y, v.z);   // X面反射（位置/方向）
+        private static Vector3 Mx(Vector3 v) => new Vector3(-v.x, v.y, -v.z);   // Y軸180°回転（位置/方向）
 
         // 正準(Humanoid)階層テーブル（motion_timeline.html CANON_PARENT / CANON_CHILD と同一）
         private static Dictionary<string, string> _canonParent;
@@ -393,6 +393,7 @@ namespace Poly_Ling.UnityClip
                 var ctx = model.MeshContextList[master];
                 if (ctx == null) continue;
                 Matrix4x4 world = ctx.BindPose.inverse;
+                // Mx(Y軸180°回転)が向きを担うため、tp は Z 反転しない（二重反転回避）
                 tp[cn] = new Vector3(world.m03, world.m13, world.m23);
             }
 
@@ -436,27 +437,26 @@ namespace Poly_Ling.UnityClip
                 string p = ParentOf(cn, present);
                 Q outLocal = (p != null) ? QNorm(QMul(QConj(Wt[p]), Wt[cn])) : QNorm(Wt[cn]);
 
-                if (ApplyLocalRotationToBone(model, cn, outLocal.ToUnity())) matched++;
+                if (ApplyLocalRotationToBone(model, cn, outLocal)) matched++;
             }
             return matched;
         }
 
         // CANON名（= Humanoid名）のモデルボーンへ CANON親相対ローカル回転を適用（回転のみ・位置は rest 維持）。
-        private bool ApplyLocalRotationToBone(ModelContext model, string canonName, Quaternion localRot)
+        private bool ApplyLocalRotationToBone(ModelContext model, string canonName, Q outLocal)
         {
             int master = ResolveMasterIndex(canonName);
             if (master < 0 || master >= model.MeshContextList.Count) return false;
             var ctx = model.MeshContextList[master];
             if (ctx == null) return false;
 
-            var bt = ctx.BoneTransform;
-            Matrix4x4 baseMat = (bt != null && bt.UseLocalTransform) ? bt.TransformMatrix : Matrix4x4.identity;
-            Vector3 restPos = bt != null ? bt.Position : Vector3.zero;   // bakedBones は回転のみ
-
-            Matrix4x4 clipLocal = Matrix4x4.TRS(restPos, localRot, Vector3.one);
-            Matrix4x4 deltaMat = baseMat.inverse * clipLocal;
-            Vector3 deltaPos = new Vector3(deltaMat.m03, deltaMat.m13, deltaMat.m23);
-            SetDelta(ctx, deltaPos, deltaMat.rotation);
+            // outLocal は「ターゲット rest 回転 = identity」前提（motion_timeline と同じ MMD 規約）の
+            // CANON 親相対ローカル回転。PMX ボーンはボーン整列の rest 回転 R(=BoneModelRotation, 非identity)
+            // を持つため、上書きすると R を捨てて全ボーンが誤配向になる。
+            // VMDApplier と同じく delta = R^-1 * outLocal * R を rest（baseMat）へのデルタとして適用する（回転のみ）。
+            Q R = Q.From(ctx.BoneModelRotation);
+            Q delta = QMul(QConj(R), QMul(outLocal, R));
+            SetDelta(ctx, Vector3.zero, delta.ToUnity());
             return true;
         }
 
