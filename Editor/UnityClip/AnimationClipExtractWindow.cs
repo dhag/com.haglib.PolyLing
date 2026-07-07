@@ -23,6 +23,8 @@ namespace Poly_Ling.UnityClip.Editor
     {
         // 入力クリップ
         private AnimationClip _clip;
+        // 焼き込み用アバター（Humanoid Animator）。null なら bakedBones は生成しない。
+        private Animator _avatar;
 
         [MenuItem("PolyLing/UnityClip/AnimationClip → UnityClipDTO JSON")]
         public static void Open()
@@ -42,6 +44,13 @@ namespace Poly_Ling.UnityClip.Editor
             _clip = (AnimationClip)EditorGUILayout.ObjectField(
                 "AnimationClip", _clip, typeof(AnimationClip), false);
 
+            _avatar = (Animator)EditorGUILayout.ObjectField(
+                "Avatar (Humanoid Animator)", _avatar, typeof(Animator), true);
+            EditorGUILayout.HelpBox(
+                "Avatar を指定すると、本体ボーンのローカル回転を焼き込み bakedBones に格納します。\n" +
+                "未指定なら bones（二次骨）＋ muscles（生）のみを出力します。",
+                MessageType.Info);
+
             EditorGUILayout.Space();
             using (new EditorGUI.DisabledScope(_clip == null))
             {
@@ -60,7 +69,7 @@ namespace Poly_Ling.UnityClip.Editor
         {
             if (_clip == null) return;
 
-            var dto = AnimationClipToDto.Convert(_clip);
+            var dto = AnimationClipToDto.Convert(_clip, _avatar);
             if (dto == null)
             {
                 EditorUtility.DisplayDialog("エラー", "変換に失敗しました。", "OK");

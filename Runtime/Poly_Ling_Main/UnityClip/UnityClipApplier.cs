@@ -31,6 +31,18 @@ namespace Poly_Ling.UnityClip
     {
         private const string LayerName = "UnityClip";
 
+        // ================================================================
+        // 本体ボーンの適用方式は2種類を実装している（コード切替。public 化しない）:
+        //   (a) UseBakedBones = true  … 拡張Aで焼いた dto.bakedBones
+        //       （HumanBodyBones の localRotation）をそのまま適用する。既定。
+        //   (b) UseBakedBones = false … dto.muscles（生マッスル）から PolyLing 側で
+        //       ローカル回転を近似再構成して適用する（HumanTrait の min/max と DoF を使用）。
+        //       pre/post 回転・sign を省く近似。精度は Unity 実測前提。
+        // 二次骨（dto.bones：袖/髪/スカート等）は、どちらの方式でも常時適用する。
+        // 切替は下記フラグの書き換えで行う。
+        // ================================================================
+        private const bool UseBakedBones = true;
+
         // マッピング状態
         private ModelContext _mappedModel;
         private HumanoidBoneMapping _mapping;          // Unity名 → boneNames のインデックス
@@ -94,53 +106,122 @@ namespace Poly_Ling.UnityClip
         {
             if (model == null || clip == null) return;
             if (_mappedModel != model || _mapping == null) BuildMapping(model);
-            if (clip.bones == null) return;
 
             int matched = 0;
 
-            foreach (var track in clip.bones)
+            // 二次骨（袖/髪/スカート等）: どちらの方式でも常時適用
+            if (clip.bones != null)
+                foreach (var track in clip.bones)
+                    matched += ApplyTrackAt(model, track, timeSec);
+
+            // 本体ボーン: (a) 焼いた使用 / (b) 自前実装（近似）
+            if (UseBakedBones)
             {
-                if (track == null || track.keys == null || track.keys.Count == 0) continue;
-
-                int master = ResolveMasterIndex(track.path);
-                if (master < 0) continue;
-
-                var ctx = model.MeshContextList[master];
-                if (ctx == null) continue;
-
-                matched++;
-
-                // ベース（rest ローカル）
-                var bt = ctx.BoneTransform;
-                Matrix4x4 baseMat = (bt != null && bt.UseLocalTransform)
-                    ? bt.TransformMatrix
-                    : Matrix4x4.identity;
-                Vector3 restPos = bt != null ? bt.Position : Vector3.zero;
-                Quaternion restRot = bt != null ? bt.RotationQuaternion : Quaternion.identity;
-
-                // サンプリング（null チャンネルは rest を使用）
-                Vector3? sPos = SamplePosition(track, timeSec);
-                Quaternion? sRot = SampleRotation(track, timeSec);
-
-                Vector3 localPos = sPos.HasValue ? sPos.Value * PositionScale : restPos;
-                Quaternion localRot = sRot.HasValue ? sRot.Value : restRot;
-
-                // clip 絶対ローカル → デルタ（BoneTransform^-1 × clipLocal）
-                Matrix4x4 clipLocal = Matrix4x4.TRS(localPos, localRot, Vector3.one);
-                Matrix4x4 deltaMat = baseMat.inverse * clipLocal;
-                Vector3 deltaPos = new Vector3(deltaMat.m03, deltaMat.m13, deltaMat.m23);
-                Quaternion deltaRot = deltaMat.rotation;
-
-                if (ctx.BonePoseData == null)
-                {
-                    ctx.BonePoseData = new BonePoseData();
-                    ctx.BonePoseData.IsActive = true;
-                }
-                ctx.BonePoseData.SetLayer(LayerName, deltaPos, deltaRot);
+                if (clip.bakedBones != null)
+                    foreach (var track in clip.bakedBones)
+                        matched += ApplyTrackAt(model, track, timeSec);
+            }
+            else
+            {
+                matched += ApplySelfMuscle(model, clip, timeSec);
             }
 
             MatchedTrackCount = matched;
             model.ComputeWorldMatrices();
+        }
+
+        // 1 トラックを timeSec でサンプルして適用。適用できたら 1。
+        private int ApplyTrackAt(ModelContext model, UnityBoneTrackDTO track, float timeSec)
+        {
+            if (track == null || track.keys == null || track.keys.Count == 0) return 0;
+            int master = ResolveMasterIndex(track.path);
+            if (master < 0) return 0;
+            var ctx = model.MeshContextList[master];
+            if (ctx == null) return 0;
+
+            Vector3? sPos = SamplePosition(track, timeSec);
+            Quaternion? sRot = SampleRotation(track, timeSec);
+
+            // ベース（rest ローカル）
+            var bt = ctx.BoneTransform;
+            Matrix4x4 baseMat = (bt != null && bt.UseLocalTransform) ? bt.TransformMatrix : Matrix4x4.identity;
+            Vector3 restPos = bt != null ? bt.Position : Vector3.zero;
+            Quaternion restRot = bt != null ? bt.RotationQuaternion : Quaternion.identity;
+
+            Vector3 localPos = sPos.HasValue ? sPos.Value * PositionScale : restPos;
+            Quaternion localRot = sRot.HasValue ? sRot.Value : restRot;
+
+            // clip 絶対ローカル → デルタ（BoneTransform^-1 × clipLocal）
+            Matrix4x4 clipLocal = Matrix4x4.TRS(localPos, localRot, Vector3.one);
+            Matrix4x4 deltaMat = baseMat.inverse * clipLocal;
+            Vector3 deltaPos = new Vector3(deltaMat.m03, deltaMat.m13, deltaMat.m23);
+            SetDelta(ctx, deltaPos, deltaMat.rotation);
+            return 1;
+        }
+
+        // (b) 自前実装（近似）: dto.muscles から本体ボーンのローカル回転を再構成して適用。
+        //   ※ Muscle Referential の pre/post 回転・sign を省く近似。
+        //     各ボーンの DoF 値を HumanTrait.GetMuscleDefaultMin/Max で角度化し、
+        //     dof(0,1,2) を局所軸(X,Y,Z)へ直接対応させて Euler 合成する。
+        //     rest からのデルタとして BonePoseData に載せる（muscle=0 で rest）。
+        //     精度は Unity 実測前提。
+        private int ApplySelfMuscle(ModelContext model, UnityClipDTO clip, float timeSec)
+        {
+            if (clip.muscles == null || clip.muscles.Count == 0) return 0;
+
+            var muscleByName = new Dictionary<string, UnityMuscleTrackDTO>();
+            foreach (var m in clip.muscles)
+                if (m != null && !string.IsNullOrEmpty(m.name)) muscleByName[m.name] = m;
+
+            var muscleNames = HumanTrait.MuscleName;
+            int boneCount = HumanTrait.BoneCount;
+            int matched = 0;
+
+            for (int bi = 0; bi < boneCount; bi++)
+            {
+                string boneName = HumanTrait.BoneName[bi];          // 例 "Left Upper Arm"（空白入り）
+                string key = boneName.Replace(" ", string.Empty);    // 対応表キー "LeftUpperArm"
+
+                int k = _mapping.Get(key);
+                if (k < 0)
+                    k = HumanoidBoneMapping.FindBoneByAliases(
+                        _boneNames, new List<string> { key, boneName }, fuzzyMatch: true);
+                if (k < 0 || k >= _boneMasterIndices.Count) continue;
+
+                var ctx = model.MeshContextList[_boneMasterIndices[k]];
+                if (ctx == null) continue;
+
+                Vector3 euler = Vector3.zero;
+                bool any = false;
+                for (int dof = 0; dof < 3; dof++)
+                {
+                    int mi = HumanTrait.MuscleFromBone(bi, dof);
+                    if (mi < 0 || muscleNames == null || mi >= muscleNames.Length) continue;
+                    if (!muscleByName.TryGetValue(muscleNames[mi], out var mt)) continue;
+
+                    float v = SampleWeight(mt, timeSec);                 // 正規化値 [-1,1]
+                    float min = HumanTrait.GetMuscleDefaultMin(mi);
+                    float max = HumanTrait.GetMuscleDefaultMax(mi);
+                    euler[dof] = v >= 0f ? v * max : -v * min;           // v=+1→max, v=-1→min, v=0→0
+                    any = true;
+                }
+                if (!any) continue;
+
+                // rest からのデルタ（位置は変えない）
+                SetDelta(ctx, Vector3.zero, Quaternion.Euler(euler));
+                matched++;
+            }
+            return matched;
+        }
+
+        private void SetDelta(MeshContext ctx, Vector3 deltaPos, Quaternion deltaRot)
+        {
+            if (ctx.BonePoseData == null)
+            {
+                ctx.BonePoseData = new BonePoseData();
+                ctx.BonePoseData.IsActive = true;
+            }
+            ctx.BonePoseData.SetLayer(LayerName, deltaPos, deltaRot);
         }
 
         /// <summary>適用した "UnityClip" レイヤーを全ボーンから除去して復帰。</summary>
@@ -163,6 +244,25 @@ namespace Poly_Ling.UnityClip
         // ================================================================
         // サンプリング（スパースキー・線形補間）
         // ================================================================
+
+        // マッスル重み（正規化値）を timeSec で線形補間
+        private static float SampleWeight(UnityMuscleTrackDTO track, float timeSec)
+        {
+            if (track == null || track.w == null || track.w.Count == 0) return 0f;
+            UnityWeightKeyDTO prev = null, next = null;
+            foreach (var key in track.w)
+            {
+                if (key == null) continue;
+                if (key.t <= timeSec) prev = key;
+                if (key.t >= timeSec) { next = key; break; }
+            }
+            if (prev == null && next == null) return 0f;
+            if (prev == null) return next.v;
+            if (next == null) return prev.v;
+            if (prev.t == next.t) return prev.v;
+            float a = (timeSec - prev.t) / (next.t - prev.t);
+            return Mathf.Lerp(prev.v, next.v, a);
+        }
 
         private static Vector3? SamplePosition(UnityBoneTrackDTO track, float timeSec)
         {

@@ -60,6 +60,15 @@ namespace Poly_Ling.UnityClip
 
         /// <summary>Humanoid 用: ルート（body）姿勢キー列。未使用時は null。</summary>
         public UnityBodyTrackDTO body = null;
+
+        /// <summary>
+        /// 拡張Aで焼いた本体ボーンのローカル回転トラック。
+        /// マッスルを AnimationMode.SampleAnimationClip でアバターに焼き、
+        /// GetBoneTransform(HumanBodyBones).localRotation を格納したもの。
+        /// path = HumanBodyBones 名（例 "LeftUpperArm"）。key.t=秒、rot=[x,y,z,w]。
+        /// PolyLing 側「焼いた使用」経路(a)で用いる。
+        /// </summary>
+        public List<UnityBoneTrackDTO> bakedBones = new List<UnityBoneTrackDTO>();
     }
 
     // ----------------------------------------------------------------

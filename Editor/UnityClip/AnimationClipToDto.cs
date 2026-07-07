@@ -42,7 +42,19 @@ namespace Poly_Ling.UnityClip.Editor
         // ------------------------------------------------------------
         // AnimationClip -> UnityClipDTO
         // ------------------------------------------------------------
+        /// <summary>アバターなし（焼き込みなし）。bones（二次骨）＋ muscles（生）のみ。</summary>
         public static UnityClipDTO Convert(AnimationClip clip)
+        {
+            return Convert(clip, null);
+        }
+
+        /// <summary>
+        /// avatar（Humanoid Animator）を渡すと、AnimationMode.SampleAnimationClip で
+        /// 各キー時刻にサンプルし、GetBoneTransform(HumanBodyBones).localRotation を
+        /// dto.bakedBones へ焼き込む（本体ボーンのローカル回転）。
+        /// avatar が null / 非 Humanoid のときは焼き込みをスキップする。
+        /// </summary>
+        public static UnityClipDTO Convert(AnimationClip clip, Animator avatar)
         {
             if (clip == null) return null;
 
@@ -100,7 +112,81 @@ namespace Poly_Ling.UnityClip.Editor
                 if (track != null) dto.bones.Add(track);
             }
 
+            // アバターが Humanoid なら、本体ボーンのローカル回転を焼き込む。
+            BakeBodyBones(clip, avatar, fps, dto);
+
             return dto;
+        }
+
+        // ------------------------------------------------------------
+        // 本体ボーン焼き込み:
+        //   AnimationMode.SampleAnimationClip でアバターにサンプルし、
+        //   各 HumanBodyBones の localRotation を dto.bakedBones へ格納。
+        //   path = HumanBodyBones 名（例 "LeftUpperArm"）、key.t=秒、rot=[x,y,z,w]。
+        //   ※ Editor 専用 API（AnimationMode）を使用。
+        // ------------------------------------------------------------
+        private static void BakeBodyBones(AnimationClip clip, Animator avatar, float fps, UnityClipDTO dto)
+        {
+            if (avatar == null || avatar.avatar == null || !avatar.avatar.isHuman) return;
+
+            // 焼き込み対象の Humanoid ボーンと、その localRotation キー列
+            var bones = new List<HumanBodyBones>();
+            var trackByBone = new Dictionary<HumanBodyBones, UnityBoneTrackDTO>();
+            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            {
+                var hbb = (HumanBodyBones)i;
+                var tr = avatar.GetBoneTransform(hbb);
+                if (tr == null) continue;
+                bones.Add(hbb);
+                trackByBone[hbb] = new UnityBoneTrackDTO { path = hbb.ToString() };
+            }
+            if (bones.Count == 0) return;
+
+            // キー時刻（秒）を、全 Animator/Transform カーブから union（丸めなし）
+            var times = new SortedSet<float>();
+            foreach (var b in AnimationUtility.GetCurveBindings(clip))
+            {
+                var c = AnimationUtility.GetEditorCurve(clip, b);
+                if (c == null) continue;
+                var keys = c.keys;
+                for (int i = 0; i < keys.Length; i++) times.Add(keys[i].time);
+            }
+            if (times.Count == 0) return;
+
+            var go = avatar.gameObject;
+            try
+            {
+                AnimationMode.StartAnimationMode();
+                foreach (float t in times)
+                {
+                    float time = Mathf.Clamp(t, 0f, clip.length);
+                    AnimationMode.BeginSampling();
+                    AnimationMode.SampleAnimationClip(go, clip, time);
+                    AnimationMode.EndSampling();
+
+                    foreach (var hbb in bones)
+                    {
+                        var tr = avatar.GetBoneTransform(hbb);
+                        if (tr == null) continue;
+                        Quaternion q = tr.localRotation;
+                        trackByBone[hbb].keys.Add(new UnityBoneKeyDTO
+                        {
+                            t = t,
+                            rot = new[] { q.x, q.y, q.z, q.w }
+                        });
+                    }
+                }
+            }
+            finally
+            {
+                AnimationMode.StopAnimationMode();
+            }
+
+            foreach (var hbb in bones)
+            {
+                var tr = trackByBone[hbb];
+                if (tr.keys.Count > 0) dto.bakedBones.Add(tr);
+            }
         }
 
         // ------------------------------------------------------------
