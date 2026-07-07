@@ -38,7 +38,7 @@ public class UnityBoneCsvExporter : EditorWindow
     {
         var w = GetWindow<UnityBoneCsvExporter>("骨CSV書き出し");
         w.minSize = new Vector2(360, 200);
-        if (Selection.activeGameObject != null) w.root = Selection.activeGameObject;
+        if (UnityEditor.Selection.activeGameObject != null) w.root = UnityEditor.Selection.activeGameObject;
         w.Show();
     }
 
