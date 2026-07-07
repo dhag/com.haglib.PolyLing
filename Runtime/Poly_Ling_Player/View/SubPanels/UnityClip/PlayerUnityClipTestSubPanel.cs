@@ -36,6 +36,7 @@ namespace Poly_Ling.Player
         // ── UI 要素 ───────────────────────────────────────────────────────
         private Label         _modelLabel;
         private Label         _fileLabel;
+        private Label         _bindPoseLabel;
         private Button        _btnClear, _btnReload;
         private VisualElement _clipSection;
         private Label         _clipInfoLabel;
@@ -80,6 +81,21 @@ namespace Poly_Ling.Player
             _btnReload = new Button(Reload) { text = "再読込" }; _btnReload.style.width  = 52;
             fileRow.Add(_fileLabel); fileRow.Add(btnOpen); fileRow.Add(_btnClear); fileRow.Add(_btnReload);
             root.Add(fileRow);
+
+            // ── バインドポーズ行（ソース rest = 外部 UnityBone CSV v2）───────
+            //   clip には bind pose が無いため、拡張C の UnityBone CSV v2 を読む。
+            //   読込済みなら ApplyFrame が Unity→MMD リターゲット経路になる。
+            var bindRow = new VisualElement();
+            bindRow.style.flexDirection = FlexDirection.Row;
+            bindRow.style.marginBottom  = 3;
+            var btnBindPose = new Button(OpenSourceRestCsv) { text = "Clipのバインドポーズ" };
+            btnBindPose.style.width = 150;
+            _bindPoseLabel = new Label("(未読込)");
+            _bindPoseLabel.style.flexGrow = 1; _bindPoseLabel.style.fontSize = 10;
+            _bindPoseLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _bindPoseLabel.style.marginLeft = 4;
+            bindRow.Add(btnBindPose); bindRow.Add(_bindPoseLabel);
+            root.Add(bindRow);
 
             // ── クリップセクション（ロード後に表示）──────────────────────
             _clipSection = new VisualElement();
@@ -264,6 +280,37 @@ namespace Poly_Ling.Player
             catch (Exception ex)
             {
                 SetStatus($"読込み失敗: {ex.Message}");
+                UnityEngine.Debug.LogError($"[PlayerUnityClipTestSubPanel] {ex}");
+            }
+        }
+
+        // 外部 UnityBone CSV v2（拡張C）を読み、ソース rest（バインドポーズ）を設定する。
+        // 読込済みなら以後 ApplyFrame が Unity→MMD リターゲット経路になる。
+        private void OpenSourceRestCsv()
+        {
+            string path = PLEditorBridge.I.OpenFilePanel("Open UnityBone CSV (bind pose)", "", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                string text = File.ReadAllText(path);
+                if (_applier == null) _applier = new UnityClipApplier();
+                int n = _applier.LoadSourceRestCsv(text);
+
+                var model = Model;
+                if (model != null) _applier.BuildMapping(model);
+
+                if (_bindPoseLabel != null)
+                    _bindPoseLabel.text = n > 0 ? $"✓ {Path.GetFileName(path)} ({n} bones)" : "(0 bones)";
+
+                if (_clip != null) ApplyFrame();
+                SetStatus(n > 0
+                    ? $"バインドポーズ読込: {n} bones（リターゲット有効）"
+                    : "バインドポーズ: Humanoid 行が見つかりません");
+                RefreshAll();
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"バインドポーズ読込失敗: {ex.Message}");
                 UnityEngine.Debug.LogError($"[PlayerUnityClipTestSubPanel] {ex}");
             }
         }

@@ -49,6 +49,13 @@ namespace Poly_Ling.UnityClip
         private List<int> _boneMasterIndices;          // boneNames のインデックス → MeshContextList インデックス
         private List<string> _boneNames;               // モデルボーン名（列挙順）
 
+        // リターゲット用ソース rest（外部 UnityBone CSV v2 由来）。null/空 = 未読込。
+        private struct SourceRest { public Quaternion RestW; public Vector3 RestPos; }
+        private Dictionary<string, SourceRest> _sourceRest;   // Humanoid名 → rest
+
+        /// <summary>ソース rest（バインドポーズ）読込済みなら true＝レスト補正リターゲットが有効。</summary>
+        public bool HasSourceRest => _sourceRest != null && _sourceRest.Count > 0;
+
         /// <summary>位置スケール（Unity 空間値にそのまま乗算。既定 1）。</summary>
         public float PositionScale { get; set; } = 1f;
 
@@ -117,9 +124,17 @@ namespace Poly_Ling.UnityClip
             // 本体ボーン: (a) 焼いた使用 / (b) 自前実装（近似）
             if (UseBakedBones)
             {
-                if (clip.bakedBones != null)
+                if (HasSourceRest)
+                {
+                    // レスト補正あり: Unity→MMD 完全リターゲット（applyRetarget 移植）
+                    matched += ApplyRetargetedBody(model, clip, timeSec);
+                }
+                else if (clip.bakedBones != null)
+                {
+                    // 未読込: 同一リグ用の従来経路（モデル rest デルタ）
                     foreach (var track in clip.bakedBones)
                         matched += ApplyTrackAt(model, track, timeSec);
+                }
             }
             else
             {
@@ -212,6 +227,306 @@ namespace Poly_Ling.UnityClip
                 matched++;
             }
             return matched;
+        }
+
+        // ================================================================
+        // レスト補正（Unity→MMD 完全リターゲット）
+        //   motion_timeline.html applyRetarget（isModel=false 経路）を逐語移植。
+        //   「FK でワールド化 → ソース rest(RestW) 相対のワールド差分 → 左右ミラー
+        //     → A/T 整列 → CANON 親相対のローカルへ戻す」。
+        //   ソース rest（RestW/位置）は外部 UnityBone CSV v2（拡張C）から供給する。
+        //   独自の座標変換は足さない（mir / ft / Mx は逐語）。
+        // ================================================================
+
+        // JS QR 準拠のクォータニオン [x,y,z,w]（world = QMul(parentWorld, local)）
+        private struct Q
+        {
+            public float x, y, z, w;
+            public Q(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; }
+            public static Q Identity => new Q(0f, 0f, 0f, 1f);
+            public Quaternion ToUnity() => new Quaternion(x, y, z, w);
+            public static Q From(Quaternion q) => new Q(q.x, q.y, q.z, q.w);
+        }
+
+        private static Q QMul(Q a, Q b) => new Q(
+            a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+            a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z);
+
+        private static Q QConj(Q q) => new Q(-q.x, -q.y, -q.z, q.w);
+
+        private static Q QNorm(Q q)
+        {
+            float n = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            if (n <= 1e-20f) n = 1f;
+            return new Q(q.x / n, q.y / n, q.z / n, q.w / n);
+        }
+
+        // X面反射の共役（Unity→MMD 左右ミラー）
+        private static Q QMir(Q q) => new Q(q.x, -q.y, -q.z, q.w);
+
+        // 単位ベクトル a→b の最短弧（JS QR.ft 逐語）
+        private static Q QFromTo(Vector3 a, Vector3 b)
+        {
+            float d = Mathf.Clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1f, 1f);
+            if (d > 0.999999f) return Q.Identity;
+            if (d < -0.999999f)
+            {
+                Vector3 ax = Mathf.Abs(a.x) < 0.9f ? new Vector3(1f, 0f, 0f) : new Vector3(0f, 1f, 0f);
+                Vector3 c0 = new Vector3(
+                    a.y * ax.z - a.z * ax.y,
+                    a.z * ax.x - a.x * ax.z,
+                    a.x * ax.y - a.y * ax.x);
+                float n0 = Mathf.Sqrt(c0.x * c0.x + c0.y * c0.y + c0.z * c0.z);
+                if (n0 <= 1e-20f) n0 = 1f;
+                return new Q(c0.x / n0, c0.y / n0, c0.z / n0, 0f);
+            }
+            Vector3 c = new Vector3(
+                a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x);
+            float w = 1f + d;
+            float n = Mathf.Sqrt(c.x * c.x + c.y * c.y + c.z * c.z + w * w);
+            if (n <= 1e-20f) n = 1f;
+            return new Q(c.x / n, c.y / n, c.z / n, w / n);
+        }
+
+        private static Vector3 Mx(Vector3 v) => new Vector3(-v.x, v.y, v.z);   // X面反射（位置/方向）
+
+        // 正準(Humanoid)階層テーブル（motion_timeline.html CANON_PARENT / CANON_CHILD と同一）
+        private static Dictionary<string, string> _canonParent;
+        private static Dictionary<string, string> _canonChild;
+
+        private static void EnsureCanon()
+        {
+            if (_canonParent != null) return;
+            var P = new Dictionary<string, string>
+            {
+                { "Hips", null }, { "Spine", "Hips" }, { "Chest", "Spine" }, { "UpperChest", "Chest" },
+                { "Neck", "UpperChest" }, { "Head", "Neck" }, { "Jaw", "Head" },
+                { "LeftEye", "Head" }, { "RightEye", "Head" },
+            };
+            var C = new Dictionary<string, string>
+            {
+                { "Hips", "Spine" }, { "Spine", "Chest" }, { "Chest", "Neck" },
+                { "UpperChest", "Neck" }, { "Neck", "Head" },
+            };
+            string[] fingers = { "Thumb", "Index", "Middle", "Ring", "Little" };
+            foreach (var s in new[] { "Left", "Right" })
+            {
+                P[s + "Shoulder"] = "UpperChest"; P[s + "UpperArm"] = s + "Shoulder";
+                P[s + "LowerArm"] = s + "UpperArm"; P[s + "Hand"] = s + "LowerArm";
+                P[s + "UpperLeg"] = "Hips"; P[s + "LowerLeg"] = s + "UpperLeg";
+                P[s + "Foot"] = s + "LowerLeg"; P[s + "Toes"] = s + "Foot";
+
+                C[s + "Shoulder"] = s + "UpperArm"; C[s + "UpperArm"] = s + "LowerArm"; C[s + "LowerArm"] = s + "Hand";
+                C[s + "UpperLeg"] = s + "LowerLeg"; C[s + "LowerLeg"] = s + "Foot"; C[s + "Foot"] = s + "Toes";
+
+                foreach (var fg in fingers)
+                {
+                    P[s + fg + "Proximal"] = s + "Hand";
+                    P[s + fg + "Intermediate"] = s + fg + "Proximal";
+                    P[s + fg + "Distal"] = s + fg + "Intermediate";
+
+                    C[s + fg + "Proximal"] = s + fg + "Intermediate";
+                    C[s + fg + "Intermediate"] = s + fg + "Distal";
+                }
+            }
+            _canonParent = P;
+            _canonChild = C;
+        }
+
+        // present で親をたどる（欠損はスキップ）
+        private static string ParentOf(string cn, HashSet<string> present)
+        {
+            _canonParent.TryGetValue(cn, out var p);
+            while (p != null && !present.Contains(p)) _canonParent.TryGetValue(p, out p);
+            return p;
+        }
+
+        private static int DepthOf(string cn)
+        {
+            int d = 0;
+            _canonParent.TryGetValue(cn, out var p);
+            while (p != null) { d++; _canonParent.TryGetValue(p, out p); }
+            return d;
+        }
+
+        // rest 方向（骨→CANON子の単位ベクトル）
+        private static bool DirRest(Dictionary<string, Vector3> pos, string cn, out Vector3 dir)
+        {
+            dir = Vector3.zero;
+            if (!_canonChild.TryGetValue(cn, out var ch) || ch == null) return false;
+            if (!pos.TryGetValue(cn, out var pc) || !pos.TryGetValue(ch, out var pch)) return false;
+            Vector3 v = pch - pc;
+            float n = v.magnitude;
+            if (n <= 1e-9f) return false;
+            dir = v / n;
+            return true;
+        }
+
+        // 本体レスト補正の本体：applyRetarget(isModel=false) を移植し timeSec で適用。
+        private int ApplyRetargetedBody(ModelContext model, UnityClipDTO clip, float timeSec)
+        {
+            if (clip.bakedBones == null || clip.bakedBones.Count == 0) return 0;
+            if (_sourceRest == null || _sourceRest.Count == 0) return 0;
+            EnsureCanon();
+
+            // byCanon: Humanoid名（= bakedBones.path）→ トラック
+            var byCanon = new Dictionary<string, UnityBoneTrackDTO>();
+            foreach (var t in clip.bakedBones)
+                if (t != null && t.keys != null && t.keys.Count > 0 && !string.IsNullOrEmpty(t.path))
+                    byCanon[t.path] = t;
+            if (byCanon.Count == 0) return 0;
+
+            var present = new HashSet<string>(byCanon.Keys);
+            var order = new List<string>(byCanon.Keys);
+            order.Sort((a, b) => DepthOf(a) - DepthOf(b));
+
+            // ターゲット rest 位置（モデル空間 = BindPose.inverse の並進）
+            var tp = new Dictionary<string, Vector3>();
+            foreach (var cn in order)
+            {
+                int master = ResolveMasterIndex(cn);
+                if (master < 0 || master >= model.MeshContextList.Count) continue;
+                var ctx = model.MeshContextList[master];
+                if (ctx == null) continue;
+                Matrix4x4 world = ctx.BindPose.inverse;
+                tp[cn] = new Vector3(world.m03, world.m13, world.m23);
+            }
+
+            // ソース rest 位置
+            var sp = new Dictionary<string, Vector3>();
+            foreach (var kv in _sourceRest) sp[kv.Key] = kv.Value.RestPos;
+
+            // 整列 A[cn] = ft(ターゲットrest方向 → ミラーしたソースrest方向)。子が無ければ単位。
+            var Aq = new Dictionary<string, Q>();
+            foreach (var cn in order)
+            {
+                bool hasDs = DirRest(sp, cn, out var ds);
+                bool hasDt = DirRest(tp, cn, out var dt);
+                Aq[cn] = (hasDs && hasDt) ? QFromTo(dt, Mx(ds)) : Q.Identity;
+            }
+
+            // timeSec で local をサンプル
+            var Lsrc = new Dictionary<string, Q>();
+            foreach (var cn in order)
+            {
+                Quaternion? s = SampleRotation(byCanon[cn], timeSec);
+                Lsrc[cn] = s.HasValue ? Q.From(s.Value) : Q.Identity;
+            }
+
+            // FK でワールド化
+            var W = new Dictionary<string, Q>();
+            foreach (var cn in order)
+            {
+                string p = ParentOf(cn, present);
+                W[cn] = (p != null) ? QMul(W[p], Lsrc[cn]) : Lsrc[cn];
+            }
+
+            // ワールド差分 → ミラー＋整列 → CANON親相対ローカル → 適用
+            var Wt = new Dictionary<string, Q>();
+            int matched = 0;
+            foreach (var cn in order)
+            {
+                Q srcRestW = _sourceRest.TryGetValue(cn, out var sr) ? Q.From(sr.RestW) : Q.Identity;
+                Q E = QMul(W[cn], QConj(srcRestW));         // ワールド差分（レスト相対）
+                Wt[cn] = QMul(QMir(E), Aq[cn]);             // 左右ミラー＋A/T整列
+                string p = ParentOf(cn, present);
+                Q outLocal = (p != null) ? QNorm(QMul(QConj(Wt[p]), Wt[cn])) : QNorm(Wt[cn]);
+
+                if (ApplyLocalRotationToBone(model, cn, outLocal.ToUnity())) matched++;
+            }
+            return matched;
+        }
+
+        // CANON名（= Humanoid名）のモデルボーンへ CANON親相対ローカル回転を適用（回転のみ・位置は rest 維持）。
+        private bool ApplyLocalRotationToBone(ModelContext model, string canonName, Quaternion localRot)
+        {
+            int master = ResolveMasterIndex(canonName);
+            if (master < 0 || master >= model.MeshContextList.Count) return false;
+            var ctx = model.MeshContextList[master];
+            if (ctx == null) return false;
+
+            var bt = ctx.BoneTransform;
+            Matrix4x4 baseMat = (bt != null && bt.UseLocalTransform) ? bt.TransformMatrix : Matrix4x4.identity;
+            Vector3 restPos = bt != null ? bt.Position : Vector3.zero;   // bakedBones は回転のみ
+
+            Matrix4x4 clipLocal = Matrix4x4.TRS(restPos, localRot, Vector3.one);
+            Matrix4x4 deltaMat = baseMat.inverse * clipLocal;
+            Vector3 deltaPos = new Vector3(deltaMat.m03, deltaMat.m13, deltaMat.m23);
+            SetDelta(ctx, deltaPos, deltaMat.rotation);
+            return true;
+        }
+
+        // ================================================================
+        // 外部 UnityBone CSV v2（拡張C）読込：Humanoid毎の RestW/位置
+        //   列: UnityBone,Name,NameEn,Humanoid,Parent,PosX,PosY,PosZ,
+        //       RestLX,RestLY,RestLZ,RestLW,RestWX,RestWY,RestWZ,RestWW
+        //   ※ HumanoidBoneMapping.LoadFromCSV は使わない（あれは名前対応CSV用）。
+        // ================================================================
+        public int LoadSourceRestCsv(string csvText)
+        {
+            var dict = new Dictionary<string, SourceRest>();
+            if (!string.IsNullOrEmpty(csvText))
+            {
+                var lines = csvText.Split('\n');
+                foreach (var raw in lines)
+                {
+                    string line = raw.TrimEnd('\r');
+                    if (line.Length == 0 || line[0] == ';') continue;   // コメント行
+                    var f = SplitCsvLine(line);
+                    if (f.Count < 16) continue;
+                    if ((f[0] ?? "").Trim() != "UnityBone") continue;   // データ行のみ
+                    if ((f[1] ?? "").Trim() == "Name") continue;        // ヘッダ行スキップ
+                    string hum = (f[3] ?? "").Trim();
+                    if (hum.Length == 0) continue;                      // Humanoid割当のみ採用
+                    Vector3 pos = new Vector3(ParseF(f[5]), ParseF(f[6]), ParseF(f[7]));
+                    var qn = QNorm(new Q(ParseF(f[12]), ParseF(f[13]), ParseF(f[14]), ParseF(f[15])));
+                    dict[hum] = new SourceRest { RestW = qn.ToUnity(), RestPos = pos };
+                }
+            }
+            _sourceRest = dict;
+            return dict.Count;
+        }
+
+        /// <summary>ソース rest（バインドポーズ）を破棄。以後は同一リグ用の従来経路に戻る。</summary>
+        public void ClearSourceRest() { _sourceRest = null; }
+
+        private static float ParseF(string s)
+        {
+            return float.TryParse((s ?? "").Trim(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
+        }
+
+        // 引用対応 CSV 分割（"..."、"" エスケープ対応。JS splitCsvLine 準拠）
+        private static List<string> SplitCsvLine(string line)
+        {
+            var outp = new List<string>();
+            var cur = new System.Text.StringBuilder();
+            bool q = false;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (q)
+                {
+                    if (c == '"')
+                    {
+                        if (i + 1 < line.Length && line[i + 1] == '"') { cur.Append('"'); i++; }
+                        else q = false;
+                    }
+                    else cur.Append(c);
+                }
+                else
+                {
+                    if (c == '"') q = true;
+                    else if (c == ',') { outp.Add(cur.ToString()); cur.Clear(); }
+                    else cur.Append(c);
+                }
+            }
+            outp.Add(cur.ToString());
+            return outp;
         }
 
         private void SetDelta(MeshContext ctx, Vector3 deltaPos, Quaternion deltaRot)
