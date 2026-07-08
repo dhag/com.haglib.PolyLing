@@ -1,6 +1,13 @@
 // HumanoidBoneMapping.cs
 // Unity Humanoid Avatar用のボーンマッピングデータ
 // モデルごとに保持し、Avatar作成時に使用
+//
+// 【格納規約】格納・参照・永続化の規約は
+//   MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+//   ※本クラスの name→index Dict は規約3の「派生ビュー／実行時 working」。
+//     canonical は per-bone（MeshObject.HumanBodyBone）。両者の同期は保存・読込の
+//     境界のみ（保存時 SyncPerBoneFromMapping／読込後 RebuildMappingFromPerBone）で、
+//     編集中のリアルタイム同期はしない（割当は本 Dict を UI 経由で編集する）。
 
 using System;
 using System.Collections.Generic;

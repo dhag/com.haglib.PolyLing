@@ -104,6 +104,10 @@ namespace Poly_Ling.Commands
             // 呼ぶため問題ないが、プレーヤー側はここで明示的に計算する必要がある。
             model.ComputeWorldMatrices();
 
+            // IK: import で構築した集約 Links から per-bone（EffectorBoneName/IKLink）を確定。
+            //     以降 per-bone を正とする（規約: MeshObject.cs「ボーン付帯データ格納規約」）。
+            Poly_Ling.Ops.IKChainResolver.SyncPerBoneFromLinks(model);
+
             _onResult?.Invoke(model, result);
         }
     }
@@ -198,6 +202,9 @@ namespace Poly_Ling.Commands
 
             // ボーン階層の WorldMatrix を確定させる（PMXと同様）。
             model.ComputeWorldMatrices();
+
+            // IK: import で構築した集約 Links から per-bone（EffectorBoneName/IKLink）を確定。
+            Poly_Ling.Ops.IKChainResolver.SyncPerBoneFromLinks(model);
 
             _onResult?.Invoke(model, result);
         }

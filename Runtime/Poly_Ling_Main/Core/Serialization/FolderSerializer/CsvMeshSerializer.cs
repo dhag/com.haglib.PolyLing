@@ -31,8 +31,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
         public string HierarchyParentName;
         public string BakedMirrorSourceName;
         public string MorphParentName;
-        public string IKTargetName;
-        public List<NamedIKLink> IKLinksByName;
         /// <summary>頂点ごとのBoneWeight参照ボーン名 [name0,name1,name2,name3]</summary>
         public List<string[]> VertexBoneNames;
         /// <summary>頂点ごとのMirrorBoneWeight参照ボーン名</summary>
@@ -45,17 +43,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
         public string MirrorPeerName;
         /// <summary>ミラーペアの軸（0=X, 1=Y, 2=Z）</summary>
         public int MirrorPeerAxis = -1;
-    }
-
-    /// <summary>
-    /// 名前ベースIKリンク情報（読み込み一時格納用）
-    /// </summary>
-    public class NamedIKLink
-    {
-        public string BoneName;
-        public bool HasLimit;
-        public Vector3 LimitMin;
-        public Vector3 LimitMax;
     }
 
     /// <summary>
@@ -118,6 +105,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (mc.Type == MeshType.Bone)
                 {
                     WriteBoneData(sb, mc, useNameBased, indexToName);
+                    // SpringBone 付帯データ（規約4: CSV/JSON 対称）
+                    WriteSpringBoneData(sb, mc);
                 }
 
                 // モーフ固有データ
@@ -292,33 +281,38 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"boneModelRotation,{F(bmr.x)},{F(bmr.y)},{F(bmr.z)},{F(bmr.w)}");
             }
 
-            // IK
-            if (mc.IsIK)
+            // IK（per-bone 形式・規約2 name主）
+            //   ルート : ikRoot,effectorName,loopCount,limitAngle（name主・mode非依存）
+            //   リンク : ikLinkBone,hasLimit,limitMin xyz,limitMax xyz（per-bone マーカー）
+            //   ※源泉の集約Links→per-bone同期は CsvModelSerializer.Serialize 冒頭で実施済み。
+            var moIk = mc.MeshObject?.IKData;
+            if (moIk != null && moIk.IsIK)
             {
-                if (useNameBased)
-                {
-                    string targetName = ResolveName(mc.IKTargetIndex, indexToName);
-                    sb.AppendLine($"ikByName,{EscapeCsv(targetName)},{mc.IKLoopCount},{F(mc.IKLimitAngle)}");
-                    if (mc.IKLinks != null)
-                    {
-                        foreach (var link in mc.IKLinks)
-                        {
-                            string linkName = ResolveName(link.BoneIndex, indexToName);
-                            sb.AppendLine($"ikLinkByName,{EscapeCsv(linkName)},{link.HasLimit},{F(link.LimitMin.x)},{F(link.LimitMin.y)},{F(link.LimitMin.z)},{F(link.LimitMax.x)},{F(link.LimitMax.y)},{F(link.LimitMax.z)}");
-                        }
-                    }
-                }
-                else
-                {
-                    sb.AppendLine($"ik,{mc.IKTargetIndex},{mc.IKLoopCount},{F(mc.IKLimitAngle)}");
-                    if (mc.IKLinks != null)
-                    {
-                        foreach (var link in mc.IKLinks)
-                        {
-                            sb.AppendLine($"ikLink,{link.BoneIndex},{link.HasLimit},{F(link.LimitMin.x)},{F(link.LimitMin.y)},{F(link.LimitMin.z)},{F(link.LimitMax.x)},{F(link.LimitMax.y)},{F(link.LimitMax.z)}");
-                        }
-                    }
-                }
+                sb.AppendLine($"ikRoot,{EscapeCsv(moIk.EffectorBoneName ?? "")},{moIk.LoopCount},{F(moIk.LimitAngle)}");
+            }
+            var moLink = mc.MeshObject?.IKLink;
+            if (moLink != null)
+            {
+                sb.AppendLine($"ikLinkBone,{moLink.HasLimit},{F(moLink.LimitMin.x)},{F(moLink.LimitMin.y)},{F(moLink.LimitMin.z)},{F(moLink.LimitMax.x)},{F(moLink.LimitMax.y)},{F(moLink.LimitMax.z)}");
+            }
+
+            // Humanoid 割当（per-bone・name主・#5b）
+            var human = mc.MeshObject?.HumanBodyBone;
+            if (!string.IsNullOrEmpty(human))
+            {
+                sb.AppendLine($"humanBodyBone,{EscapeCsv(human)}");
+            }
+
+            // Humanoid マッスル可動域（per-bone・#5d-1）
+            //   humanLimit,useDefault,minXYZ,maxXYZ,centerXYZ,axisLength（ラジアン）
+            var hl = mc.MeshObject?.HumanLimit;
+            if (hl != null)
+            {
+                sb.AppendLine(
+                    $"humanLimit,{hl.UseDefaultValues}," +
+                    $"{F(hl.Min.x)},{F(hl.Min.y)},{F(hl.Min.z)}," +
+                    $"{F(hl.Max.x)},{F(hl.Max.y)},{F(hl.Max.z)}," +
+                    $"{F(hl.Center.x)},{F(hl.Center.y)},{F(hl.Center.z)},{F(hl.AxisLength)}");
             }
 
             // BindPose (4x4 matrix, 16 values, row-major)
@@ -327,6 +321,78 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 sb.AppendLine($"bindPose,{F(bp2.m00)},{F(bp2.m01)},{F(bp2.m02)},{F(bp2.m03)},{F(bp2.m10)},{F(bp2.m11)},{F(bp2.m12)},{F(bp2.m13)},{F(bp2.m20)},{F(bp2.m21)},{F(bp2.m22)},{F(bp2.m23)},{F(bp2.m30)},{F(bp2.m31)},{F(bp2.m32)},{F(bp2.m33)}");
             }
+        }
+
+        // ================================================================
+        // Write: SpringBone 付帯データ（Type == Bone のボーンに付く）
+        //   規約: MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+        //   グループ参照は JSON と同じ index（ModelContext.SpringBoneColliderGroupNames
+        //   への index）を ';' 連結で格納する（規約4: CSV/JSON 対称）。
+        //   centerBoneName は bone名のまま格納（POCO実体が string）。
+        // ================================================================
+
+        private static void WriteSpringBoneData(StringBuilder sb, MeshContext mc)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null) return;
+
+            // コライダー（1ボーンに複数可）
+            if (mo.SpringBoneColliders != null)
+            {
+                foreach (var c in mo.SpringBoneColliders)
+                {
+                    if (c == null) continue;
+                    // sbCollider,shape,offX,offY,offZ,radius,tailX,tailY,tailZ,nX,nY,nZ,grp
+                    sb.AppendLine(
+                        $"sbCollider,{(int)c.Shape}," +
+                        $"{F(c.Offset.x)},{F(c.Offset.y)},{F(c.Offset.z)},{F(c.Radius)}," +
+                        $"{F(c.Tail.x)},{F(c.Tail.y)},{F(c.Tail.z)}," +
+                        $"{F(c.Normal.x)},{F(c.Normal.y)},{F(c.Normal.z)}," +
+                        $"{JoinIndices(c.SpringBoneGroupIndices)}");
+                }
+            }
+
+            // ジョイント（非null=揺れチェーンのメンバー）
+            var j = mo.SpringBoneJoint;
+            if (j != null)
+            {
+                // sbJoint,hitRadius,stiffness,gravityPower,gdX,gdY,gdZ,dragForce
+                sb.AppendLine(
+                    $"sbJoint,{F(j.HitRadius)},{F(j.StiffnessForce)},{F(j.GravityPower)}," +
+                    $"{F(j.GravityDir.x)},{F(j.GravityDir.y)},{F(j.GravityDir.z)},{F(j.DragForce)}");
+            }
+
+            // チェーンルート（非null=このボーンがチェーン起点）
+            var ch = mo.SpringBoneChainRoot;
+            if (ch != null)
+            {
+                // sbChain,name,centerBoneName,grp
+                sb.AppendLine(
+                    $"sbChain,{EscapeCsv(ch.Name ?? "")},{EscapeCsv(ch.CenterBoneName ?? "")}," +
+                    $"{JoinIndices(ch.SpringBoneColliderGroupIndices)}");
+            }
+        }
+
+        /// <summary>int リストを ';' 連結（CSVカンマと非衝突）。null/空は空文字。</summary>
+        private static string JoinIndices(List<int> indices)
+        {
+            if (indices == null || indices.Count == 0) return "";
+            return string.Join(";", indices);
+        }
+
+        /// <summary>';' 連結の index 文字列をパース。空/欠損は空リスト。</summary>
+        private static List<int> ParseIndices(string[] cols, int idx)
+        {
+            var list = new List<int>();
+            if (idx >= cols.Length) return list;
+            var s = cols[idx];
+            if (string.IsNullOrEmpty(s)) return list;
+            foreach (var tok in s.Split(';'))
+            {
+                if (int.TryParse(tok, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+                    list.Add(v);
+            }
+            return list;
         }
 
         // ================================================================
@@ -632,16 +698,38 @@ namespace Poly_Ling.Serialization.FolderSerializer
                             ParseFloat(cols, 1), ParseFloat(cols, 2),
                             ParseFloat(cols, 3), ParseFloat(cols, 4, 1f));
                         break;
-                    case "ik":
-                        mc.IsIK = true;
-                        mc.IKTargetIndex = ParseInt(cols, 1, -1);
-                        mc.IKLoopCount = ParseInt(cols, 2);
-                        mc.IKLimitAngle = ParseFloat(cols, 3);
-                        if (mc.IKLinks == null) mc.IKLinks = new List<IKLinkInfo>();
+                    case "ikRoot":
+                        // ikRoot,effectorName,loopCount,limitAngle（name主）
+                        if (meshObject.IKData == null) meshObject.IKData = new IKData();
+                        meshObject.IKData.IsIK = true;
+                        meshObject.IKData.EffectorBoneName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        meshObject.IKData.LoopCount = ParseInt(cols, 2);
+                        meshObject.IKData.LimitAngle = ParseFloat(cols, 3);
+                        // TargetIndex / Links は読込後 IKChainResolver.RebuildLinksFromPerBone で再構築
                         break;
-                    case "ikLink":
-                        if (mc.IKLinks == null) mc.IKLinks = new List<IKLinkInfo>();
-                        mc.IKLinks.Add(ReadIKLink(cols));
+                    case "ikLinkBone":
+                        // ikLinkBone,hasLimit,limitMin xyz,limitMax xyz（per-bone マーカー）
+                        meshObject.IKLink = new IKLinkData
+                        {
+                            HasLimit = ParseBool(cols, 1),
+                            LimitMin = new Vector3(ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)),
+                            LimitMax = new Vector3(ParseFloat(cols, 5), ParseFloat(cols, 6), ParseFloat(cols, 7))
+                        };
+                        break;
+                    case "humanBodyBone":
+                        // humanBodyBone,<Unity Humanoid名>（per-bone・#5b）
+                        meshObject.HumanBodyBone = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        break;
+                    case "humanLimit":
+                        // humanLimit,useDefault,minXYZ,maxXYZ,centerXYZ,axisLength（#5d-1）
+                        meshObject.HumanLimit = new HumanLimitData
+                        {
+                            UseDefaultValues = ParseBool(cols, 1, true),
+                            Min = new Vector3(ParseFloat(cols, 2), ParseFloat(cols, 3), ParseFloat(cols, 4)),
+                            Max = new Vector3(ParseFloat(cols, 5), ParseFloat(cols, 6), ParseFloat(cols, 7)),
+                            Center = new Vector3(ParseFloat(cols, 8), ParseFloat(cols, 9), ParseFloat(cols, 10)),
+                            AxisLength = ParseFloat(cols, 11)
+                        };
                         break;
                     case "bindPose":
                         mc.BindPose = ReadMatrix4x4(cols);
@@ -651,6 +739,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "joint":
                         meshObject.JointData = ReadJointData(cols);
+                        break;
+                    case "sbCollider":
+                        if (meshObject.SpringBoneColliders == null)
+                            meshObject.SpringBoneColliders = new List<SpringBoneColliderData>();
+                        meshObject.SpringBoneColliders.Add(ReadSpringBoneCollider(cols));
+                        break;
+                    case "sbJoint":
+                        meshObject.SpringBoneJoint = ReadSpringBoneJoint(cols);
+                        break;
+                    case "sbChain":
+                        meshObject.SpringBoneChainRoot = ReadSpringBoneChain(cols);
                         break;
                     case "morphParentIndex":
                         mc.MorphParentIndex = ParseInt(cols, 1, -1);
@@ -696,24 +795,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "morphParentName":
                         entry.MorphParentName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
                         entry.IsNameBased = true;
-                        break;
-                    case "ikByName":
-                        mc.IsIK = true;
-                        entry.IKTargetName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
-                        mc.IKLoopCount = ParseInt(cols, 2);
-                        mc.IKLimitAngle = ParseFloat(cols, 3);
-                        if (mc.IKLinks == null) mc.IKLinks = new List<IKLinkInfo>();
-                        entry.IsNameBased = true;
-                        break;
-                    case "ikLinkByName":
-                        if (entry.IKLinksByName == null) entry.IKLinksByName = new List<NamedIKLink>();
-                        entry.IKLinksByName.Add(new NamedIKLink
-                        {
-                            BoneName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "",
-                            HasLimit = ParseBool(cols, 2),
-                            LimitMin = new Vector3(ParseFloat(cols, 3), ParseFloat(cols, 4), ParseFloat(cols, 5)),
-                            LimitMax = new Vector3(ParseFloat(cols, 6), ParseFloat(cols, 7), ParseFloat(cols, 8))
-                        });
                         break;
                     case "vn":
                         var (vtx, boneNames, mirrorBoneNames) = ReadVertexNameBased(cols);
@@ -873,6 +954,49 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // Read: SpringBone 付帯データ
+        //   規約: MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+        // ================================================================
+
+        private static SpringBoneColliderData ReadSpringBoneCollider(string[] cols)
+        {
+            // sbCollider,shape,offX,offY,offZ,radius,tailX,tailY,tailZ,nX,nY,nZ,grp
+            return new SpringBoneColliderData
+            {
+                Shape                  = (SpringBoneColliderShape)ParseInt(cols, 1),
+                Offset                 = new Vector3(ParseFloat(cols, 2),  ParseFloat(cols, 3),  ParseFloat(cols, 4)),
+                Radius                 = ParseFloat(cols, 5),
+                Tail                   = new Vector3(ParseFloat(cols, 6),  ParseFloat(cols, 7),  ParseFloat(cols, 8)),
+                Normal                 = new Vector3(ParseFloat(cols, 9),  ParseFloat(cols, 10), ParseFloat(cols, 11)),
+                SpringBoneGroupIndices = ParseIndices(cols, 12)
+            };
+        }
+
+        private static SpringBoneJointData ReadSpringBoneJoint(string[] cols)
+        {
+            // sbJoint,hitRadius,stiffness,gravityPower,gdX,gdY,gdZ,dragForce
+            return new SpringBoneJointData
+            {
+                HitRadius      = ParseFloat(cols, 1, 0.02f),
+                StiffnessForce = ParseFloat(cols, 2, 1.0f),
+                GravityPower   = ParseFloat(cols, 3),
+                GravityDir     = new Vector3(ParseFloat(cols, 4), ParseFloat(cols, 5, -1f), ParseFloat(cols, 6)),
+                DragForce      = ParseFloat(cols, 7, 0.4f)
+            };
+        }
+
+        private static SpringBoneChainData ReadSpringBoneChain(string[] cols)
+        {
+            // sbChain,name,centerBoneName,grp
+            return new SpringBoneChainData
+            {
+                Name                          = cols.Length > 1 ? UnescapeCsv(cols[1]) : "",
+                CenterBoneName                = cols.Length > 2 ? UnescapeCsv(cols[2]) : "",
+                SpringBoneColliderGroupIndices = ParseIndices(cols, 3)
+            };
+        }
+
+        // ================================================================
         // Read: BonePoseData
         // ================================================================
 
@@ -895,22 +1019,6 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             return data;
-        }
-
-        // ================================================================
-        // Read: IKLink
-        // ================================================================
-
-        private static IKLinkInfo ReadIKLink(string[] cols)
-        {
-            // ikLink,boneIndex,hasLimit,minX,minY,minZ,maxX,maxY,maxZ
-            return new IKLinkInfo
-            {
-                BoneIndex = ParseInt(cols, 1),
-                HasLimit = ParseBool(cols, 2),
-                LimitMin = new Vector3(ParseFloat(cols, 3), ParseFloat(cols, 4), ParseFloat(cols, 5)),
-                LimitMax = new Vector3(ParseFloat(cols, 6), ParseFloat(cols, 7), ParseFloat(cols, 8))
-            };
         }
 
         // ================================================================
@@ -1295,25 +1403,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 if (!string.IsNullOrEmpty(entry.MorphParentName))
                     mc.MorphParentIndex = LookupIndex(entry.MorphParentName, nameToIndex);
 
-                // IKTargetIndex
-                if (!string.IsNullOrEmpty(entry.IKTargetName))
-                    mc.IKTargetIndex = LookupIndex(entry.IKTargetName, nameToIndex);
-
-                // IKLinks
-                if (entry.IKLinksByName != null && entry.IKLinksByName.Count > 0)
-                {
-                    mc.IKLinks = new List<IKLinkInfo>();
-                    foreach (var nl in entry.IKLinksByName)
-                    {
-                        mc.IKLinks.Add(new IKLinkInfo
-                        {
-                            BoneIndex = LookupIndex(nl.BoneName, nameToIndex),
-                            HasLimit = nl.HasLimit,
-                            LimitMin = nl.LimitMin,
-                            LimitMax = nl.LimitMax
-                        });
-                    }
-                }
+                // IK は per-bone 形式（ikRoot/ikLinkBone）で読み込み、
+                // 集約 Links / TargetIndex は CsvModelSerializer.Deserialize 末尾の
+                // IKChainResolver.RebuildLinksFromPerBone で再構築する（ここでは解決しない）。
 
                 // 頂点 BoneWeight
                 if (entry.VertexBoneNames != null)

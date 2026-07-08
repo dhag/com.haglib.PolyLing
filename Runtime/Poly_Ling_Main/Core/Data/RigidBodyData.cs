@@ -8,6 +8,9 @@
 //   剛体は Type == MeshType.RigidBody の MeshObject に付帯し、
 //   頂点/面は持たない（形状は利用時にギズモとして生成する）。
 //
+// 【格納規約】格納・参照・永続化の規約は
+//   MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+//
 // 【参照系：name主・index従】
 //   関連ボーンは RelatedBoneName を一次キーとする。
 //   BoneIndex は実行時キャッシュであり、ヒエラルキー並べ替えや

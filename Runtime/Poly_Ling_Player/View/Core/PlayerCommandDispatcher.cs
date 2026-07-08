@@ -1660,15 +1660,15 @@ namespace Poly_Ling.Player
                     // SetModelContext（MeshListStack の context を現在のモデルに設定）
                     _undoController?.SetModelContext(model);
 
-                    var beforeState    = new Poly_Ling.Ops.TPoseBackup();
+                    var beforeState    = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, beforeState);
                     var oldTPoseBackup = model.TPoseBackup;
 
-                    var backup = new Poly_Ling.Ops.TPoseBackup();
+                    var backup = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.ConvertToTPose(model.MeshContextList, mapping, backup);
                     model.TPoseBackup = backup;
 
-                    var afterState = new Poly_Ling.Ops.TPoseBackup();
+                    var afterState = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, afterState);
 
                     if (_undoController != null)
@@ -1696,13 +1696,13 @@ namespace Poly_Ling.Player
                     if (model?.TPoseBackup == null) return;
                     _undoController?.SetModelContext(model);
 
-                    var restoreBefore = new Poly_Ling.Ops.TPoseBackup();
+                    var restoreBefore = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, restoreBefore);
                     var oldTPoseBackup = model.TPoseBackup;
 
                     Poly_Ling.Ops.TPoseConverter.RestoreFromBackup(model.MeshContextList, model.TPoseBackup);
 
-                    var restoreAfter = new Poly_Ling.Ops.TPoseBackup();
+                    var restoreAfter = new TPoseBackup();
                     Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, restoreAfter);
                     model.TPoseBackup = null;
 

@@ -124,18 +124,39 @@ namespace Poly_Ling.UnityClip.Editor
                 frameRate = fps
             };
 
-            if (dto.clipType == "Humanoid" && (dto.bones == null || dto.bones.Count == 0))
+            bool hasBones   = dto.bones   != null && dto.bones.Count   > 0;
+            bool hasMuscles = dto.muscles != null && dto.muscles.Count > 0;
+
+            if (dto.clipType == "Humanoid" && !hasBones && !hasMuscles)
             {
                 Debug.LogWarning(
-                    "[AnimationClipImportWindow] Humanoid クリップ（bones 空）です。" +
-                    "Transform カーブが無いため空クリップを生成します。");
+                    "[AnimationClipImportWindow] Humanoid クリップ（bones・muscles 空）です。" +
+                    "カーブが無いため空クリップを生成します。");
             }
-            else if (dto.bones != null)
+
+            // 二次骨（Transform カーブ）
+            if (hasBones)
             {
                 foreach (var track in dto.bones)
                 {
                     if (track == null || track.keys == null || track.keys.Count == 0) continue;
                     BuildTrackCurves(clip, track, fps);
+                }
+            }
+
+            // Humanoid マッスル/ルート（Animator バインディング）を復元。
+            //   export（AnimationClipToDto: typeof(Animator) を GetEditorCurve）と対称。
+            //   track.name = propertyName（マッスル軸名・RootT/RootQ 等）。
+            if (hasMuscles)
+            {
+                foreach (var mt in dto.muscles)
+                {
+                    if (mt == null || string.IsNullOrEmpty(mt.name)) continue;
+                    var curve = BuildMuscleCurve(mt);
+                    if (curve == null || curve.length == 0) continue;
+
+                    var binding = EditorCurveBinding.FloatCurve("", typeof(Animator), mt.name);
+                    AnimationUtility.SetEditorCurve(clip, binding, curve);
                 }
             }
 
@@ -201,6 +222,19 @@ namespace Poly_Ling.UnityClip.Editor
         {
             if (c == null) c = new AnimationCurve();
             c.AddKey(new Keyframe(t, v));
+        }
+
+        // muscle トラック（{t,v} 疎キー列）→ AnimationCurve
+        private static AnimationCurve BuildMuscleCurve(UnityMuscleTrackDTO mt)
+        {
+            if (mt?.w == null || mt.w.Count == 0) return null;
+            var c = new AnimationCurve();
+            foreach (var k in mt.w)
+            {
+                if (k == null) continue;
+                c.AddKey(new Keyframe(k.t, k.v));
+            }
+            return c;
         }
 
         private static void SetCurve(AnimationClip clip, string path, string prop, AnimationCurve c)

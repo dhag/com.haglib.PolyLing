@@ -8,6 +8,9 @@
 //   JOINTは Type == MeshType.RigidBodyJoint の MeshObject に付帯し、
 //   頂点/面は持たない（表示は利用時にギズモとして生成する）。
 //
+// 【格納規約】格納・参照・永続化の規約は
+//   MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+//
 // 【参照系：name主・index従】
 //   接続する2剛体は BodyAName / BodyBName を一次キーとする。
 //   RigidBodyIndexA / RigidBodyIndexB は実行時キャッシュであり、

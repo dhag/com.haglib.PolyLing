@@ -3,6 +3,12 @@
 // IKデータ（純POCOデータ契約）
 // ============================================================
 //
+// 【格納規約】格納・参照・永続化の規約は
+//   MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+//   ※#4a: ターゲット参照へ EffectorBoneName（name主）を追加。TargetIndex/Links は
+//     実行時キャッシュへ位置づけ。per-bone 形式（各リンク＝MeshObject.IKLink）とは
+//     IKChainResolver で相互同期する（併存・非破壊）。
+//
 // 【役割】
 //   PMX互換のCCD-IK情報を MeshObject に持たせるための純データ。
 //   従来は MeshContext のフィールドとして保持していたが、
@@ -50,6 +56,13 @@ namespace Poly_Ling.Data
         /// </summary>
         public int TargetIndex { get; set; } = -1;
 
+        /// <summary>
+        /// IKターゲット（エフェクタ＝先端）のボーン名（name主・規約2）。
+        /// #4a: 追加のみ。TargetIndex は並べ替え・I/O で無効化されうる実行時
+        /// キャッシュへ位置づける（本欄が一次キー）。空=未解決。
+        /// </summary>
+        public string EffectorBoneName { get; set; } = "";
+
         /// <summary>IKループ回数（CCD反復回数）。</summary>
         public int LoopCount { get; set; } = 0;
 
@@ -69,6 +82,7 @@ namespace Poly_Ling.Data
             {
                 IsIK = this.IsIK,
                 TargetIndex = this.TargetIndex,
+                EffectorBoneName = this.EffectorBoneName,
                 LoopCount = this.LoopCount,
                 LimitAngle = this.LimitAngle,
                 Links = new List<IKLinkInfo>()

@@ -100,6 +100,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // MirrorPair情報をReal側entryに設定 + MirrorSide同梱
             EnrichEntriesWithMirrorPeers(meshEntries, model);
 
+            // IK: 集約 Links → per-bone を同期してから書き出す（規約4：CSV/JSON 対称）
+            IKChainResolver.SyncPerBoneFromLinks(model);
+
+            // Humanoid: 集中 Dict → per-bone を同期（humanBodyBone を bone.csv へ）
+            HumanoidMappingResolver.SyncPerBoneFromMapping(model);
+
             // mesh/bone/morph CSV
             string meshFile = $"{modelName}.mesh.csv";
             string boneFile = $"{modelName}.bone.csv";
@@ -145,6 +151,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             // tposebackup.csv
             if (model.TPoseBackup != null)
                 WriteTPoseBackupCsv(modelFolderPath, model.TPoseBackup, useNameBased, indexToName);
+
+            // springbonegroups.csv（SpringBone コライダーグループ名。規約4: CSV/JSON 対称）
+            if (model.SpringBoneColliderGroupNames != null && model.SpringBoneColliderGroupNames.Count > 0)
+                WriteSpringBoneGroupsCsv(modelFolderPath, model);
 
             // textures フォルダにテクスチャをコピー
             string texturesFolder = Path.Combine(modelFolderPath, "textures");
@@ -279,7 +289,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             LoadTextures(modelFolderPath, model);
 
             // humanoid.csv
-            ReadHumanoidCsv(modelFolderPath, model);
+            //   ※#5b（案A）: humanoid.csv は AvatarBuilder 向けの派生エクスポート（書き出し専用）。
+            //     canonical は per-bone（bone.csv の humanBodyBone）。読込は行わず、
+            //     Deserialize 末尾の RebuildMappingFromPerBone で Dict を再構築する。
 
             // morphgroups.csv
             ReadMorphGroupsCsv(modelFolderPath, model);
@@ -308,6 +320,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string tpPath = Path.Combine(modelFolderPath, "tposebackup.csv");
             if (File.Exists(tpPath))
                 model.TPoseBackup = ReadTPoseBackupCsv(tpPath, model);
+
+            // springbonegroups.csv（SpringBone コライダーグループ名）
+            string sbgPath = Path.Combine(modelFolderPath, "springbonegroups.csv");
+            if (File.Exists(sbgPath))
+                ReadSpringBoneGroupsCsv(sbgPath, model);
+
+            // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
+            IKChainResolver.RebuildLinksFromPerBone(model);
+
+            // Humanoid: per-bone → 集中 Dict を再構築（消費側は Dict を読む）
+            HumanoidMappingResolver.RebuildMappingFromPerBone(model);
 
             return model;
         }
@@ -597,52 +620,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             File.WriteAllText(Path.Combine(folderPath, "humanoid.csv"), sb.ToString(), Encoding.UTF8);
         }
 
-        private static void ReadHumanoidCsv(string folderPath, ModelContext model)
-        {
-            string path = Path.Combine(folderPath, "humanoid.csv");
-            if (!File.Exists(path)) return;
-
-            var dict = new Dictionary<string, int>();
-            var nameDict = new Dictionary<string, string>(); // humanoidBoneName → meshContextName
-            bool isNameBased = false;
-
-            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
-            {
-                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
-                var cols = Split(line);
-                if (cols.Length >= 2)
-                {
-                    string boneName = Unesc(cols[0]);
-                    string value = cols[1];
-
-                    if (int.TryParse(value, out int boneIndex) && boneIndex >= 0)
-                    {
-                        // インデックスベース
-                        dict[boneName] = boneIndex;
-                    }
-                    else
-                    {
-                        // 名前ベース
-                        isNameBased = true;
-                        nameDict[boneName] = Unesc(value);
-                    }
-                }
-            }
-
-            if (isNameBased && nameDict.Count > 0)
-            {
-                // 名前→インデックス辞書を構築して解決
-                var nameToIndex = BuildNameToIndex(model);
-                foreach (var kvp in nameDict)
-                {
-                    if (nameToIndex.TryGetValue(kvp.Value, out int idx))
-                        dict[kvp.Key] = idx;
-                }
-            }
-
-            if (dict.Count > 0)
-                model.HumanoidMapping.FromDictionary(dict);
-        }
+        // ※#5b（案A）: ReadHumanoidCsv は撤去。humanoid.csv は書き出し専用の派生
+        //   エクスポート（AvatarBuilder 向け）で、canonical 読込は per-bone（bone.csv）。
 
         // ================================================================
         // morphgroups.csv
@@ -887,6 +866,36 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     Debug.LogWarning($"[CsvModelSerializer] Failed to rebuild MirrorPair: {realCtx.Name} ↔ {mirrorCtx.Name}: {pair.BuildLog}");
                 }
             }
+        }
+
+        // ================================================================
+        // springbonegroups.csv（SpringBone コライダーグループ名）
+        //   規約: MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+        //   本リストの並び順が index を定める。per-bone 側の grp index はここへの参照。
+        // ================================================================
+
+        private static void WriteSpringBoneGroupsCsv(string folderPath, ModelContext model)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_SpringBoneGroups,version,1.0");
+
+            foreach (var name in model.SpringBoneColliderGroupNames)
+                sb.AppendLine(Esc(name ?? ""));
+
+            File.WriteAllText(Path.Combine(folderPath, "springbonegroups.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadSpringBoneGroupsCsv(string path, ModelContext model)
+        {
+            var names = new List<string>();
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+                var cols = Split(line);
+                if (cols.Length < 1) continue;
+                names.Add(Unesc(cols[0]));
+            }
+            model.SpringBoneColliderGroupNames = names;
         }
 
         /// <summary>

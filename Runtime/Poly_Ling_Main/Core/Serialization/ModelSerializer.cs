@@ -17,6 +17,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Materials;
 using Poly_Ling.Selection;
 using Poly_Ling.Symmetry;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.Serialization
 {
@@ -283,6 +284,12 @@ namespace Poly_Ling.Serialization
             if (model == null)
                 return null;
 
+            // IK: 集約 Links → per-bone（EffectorBoneName / MeshObject.IKLink）を同期してから保存
+            Poly_Ling.Ops.IKChainResolver.SyncPerBoneFromLinks(model);
+
+            // Humanoid: 集中 Dict → per-bone（MeshObject.HumanBodyBone）を同期してから保存
+            Poly_Ling.Ops.HumanoidMappingResolver.SyncPerBoneFromMapping(model);
+
             var modelDTO = new ModelDTO
             {
                 name = model.Name ?? "Untitled"
@@ -344,11 +351,8 @@ namespace Poly_Ling.Serialization
             // ================================================================
             // Humanoidボーンマッピング
             // ================================================================
-            
-            if (model.HumanoidMapping != null && !model.HumanoidMapping.IsEmpty)
-            {
-                modelDTO.humanoidBoneMapping = model.HumanoidMapping.ToDictionary();
-            }
+            //   ※#5b: モデルレベル Dict の保存は撤去。per-bone（MeshDTO.humanBodyBone）へ。
+            //     FromModelContext 冒頭の SyncPerBoneFromMapping で per-bone を確定済み。
 
             // ================================================================
             // MorphExpressions
@@ -376,6 +380,12 @@ namespace Poly_Ling.Serialization
                 (model.SpringBoneColliderGroupNames != null)
                     ? new List<string>(model.SpringBoneColliderGroupNames)
                     : new List<string>();
+
+            // ================================================================
+            // TPoseバックアップ（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            modelDTO.tPoseBackup = ToTPoseBackupDTO(model.TPoseBackup);
 
             return modelDTO;
         }
@@ -517,11 +527,8 @@ namespace Poly_Ling.Serialization
             // ================================================================
             // Humanoidボーンマッピング復元
             // ================================================================
-            
-            if (modelDTO.humanoidBoneMapping != null && modelDTO.humanoidBoneMapping.Count > 0)
-            {
-                model.HumanoidMapping.FromDictionary(modelDTO.humanoidBoneMapping);
-            }
+            //   ※#5b: Dict の直接復元は撤去。per-bone（humanBodyBone）読込後、
+            //     ToModelContext 末尾の RebuildMappingFromPerBone で Dict を再構築する。
 
             // ================================================================
             // MorphExpressions復元
@@ -549,6 +556,19 @@ namespace Poly_Ling.Serialization
                 (modelDTO.springBoneColliderGroupNames != null)
                     ? new List<string>(modelDTO.springBoneColliderGroupNames)
                     : new List<string>();
+
+            // ================================================================
+            // TPoseバックアップ復元（規約4：CSV/JSON 対称）
+            // ================================================================
+
+            if (modelDTO.tPoseBackup != null)
+                model.TPoseBackup = FromTPoseBackupDTO(modelDTO.tPoseBackup);
+
+            // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
+            Poly_Ling.Ops.IKChainResolver.RebuildLinksFromPerBone(model);
+
+            // Humanoid: per-bone → 集中 Dict を再構築（消費側は Dict を読む）
+            Poly_Ling.Ops.HumanoidMappingResolver.RebuildMappingFromPerBone(model);
 
             return model;
         }
@@ -602,11 +622,18 @@ namespace Poly_Ling.Serialization
 
                 // 永続化拡張（DTO単一真実源化）
                 SaveIKDataToDTO(meshContext, contextData);
+                SaveIKLinkDataToDTO(meshContext, contextData);
                 SaveBindPoseToDTO(meshContext, contextData);
                 SaveBoneModelRotationToDTO(meshContext, contextData);
                 SaveRigidBodyDataToDTO(meshContext, contextData);
                 SaveJointDataToDTO(meshContext, contextData);
                 SaveSpringBoneDataToDTO(meshContext, contextData);
+
+                // Humanoid 割当（per-bone・#5b）
+                contextData.humanBodyBone = meshContext.MeshObject?.HumanBodyBone;
+
+                // Humanoid マッスル可動域（per-bone・#5d-1）
+                SaveHumanLimitDataToDTO(meshContext, contextData);
             }
 
             return contextData;
@@ -677,11 +704,19 @@ namespace Poly_Ling.Serialization
 
             // 永続化拡張（DTO単一真実源化）
             LoadIKDataFromDTO(meshDTO, meshContext);
+            LoadIKLinkDataFromDTO(meshDTO, meshContext);
             LoadBindPoseFromDTO(meshDTO, meshContext);
             LoadBoneModelRotationFromDTO(meshDTO, meshContext);
             LoadRigidBodyDataFromDTO(meshDTO, meshContext);
             LoadJointDataFromDTO(meshDTO, meshContext);
             LoadSpringBoneDataFromDTO(meshDTO, meshContext);
+
+            // Humanoid 割当（per-bone・#5b）
+            if (meshContext.MeshObject != null)
+                meshContext.MeshObject.HumanBodyBone = meshDTO.humanBodyBone ?? "";
+
+            // Humanoid マッスル可動域（per-bone・#5d-1）
+            LoadHumanLimitDataFromDTO(meshDTO, meshContext);
 
             return meshContext;
         }
@@ -1225,29 +1260,13 @@ namespace Poly_Ling.Serialization
             var ik = mc?.MeshObject?.IKData;
             if (ik == null) { dto.ikData = null; return; }
 
-            var d = new IKDataDTO
+            dto.ikData = new IKDataDTO
             {
                 isIK = ik.IsIK,
-                targetIndex = ik.TargetIndex,
+                effectorBoneName = ik.EffectorBoneName ?? "",
                 loopCount = ik.LoopCount,
-                limitAngle = ik.LimitAngle,
-                links = new List<IKLinkInfoDTO>()
+                limitAngle = ik.LimitAngle
             };
-            if (ik.Links != null)
-            {
-                foreach (var l in ik.Links)
-                {
-                    if (l == null) continue;
-                    d.links.Add(new IKLinkInfoDTO
-                    {
-                        boneIndex = l.BoneIndex,
-                        hasLimit = l.HasLimit,
-                        limitMin = SerVec3(l.LimitMin),
-                        limitMax = SerVec3(l.LimitMax)
-                    });
-                }
-            }
-            dto.ikData = d;
         }
 
         public static void LoadIKDataFromDTO(MeshDTO dto, MeshContext mc)
@@ -1255,29 +1274,68 @@ namespace Poly_Ling.Serialization
             if (dto?.ikData == null || mc?.MeshObject == null) return;
 
             var d = dto.ikData;
-            var ik = new IKData
+            // Links / TargetIndex は読込後に IKChainResolver.RebuildLinksFromPerBone で
+            // 再構築する（本段階では per-bone 表現のみ復元）。
+            mc.MeshObject.IKData = new IKData
             {
                 IsIK = d.isIK,
-                TargetIndex = d.targetIndex,
+                EffectorBoneName = d.effectorBoneName ?? "",
                 LoopCount = d.loopCount,
                 LimitAngle = d.limitAngle,
                 Links = new List<IKLinkInfo>()
             };
-            if (d.links != null)
+        }
+
+        public static void SaveIKLinkDataToDTO(MeshContext mc, MeshDTO dto)
+        {
+            var lk = mc?.MeshObject?.IKLink;
+            if (lk == null) { dto.ikLink = null; return; }
+            dto.ikLink = new IKLinkDataDTO
             {
-                foreach (var ld in d.links)
-                {
-                    if (ld == null) continue;
-                    ik.Links.Add(new IKLinkInfo
-                    {
-                        BoneIndex = ld.boneIndex,
-                        HasLimit = ld.hasLimit,
-                        LimitMin = SerVec3(ld.limitMin),
-                        LimitMax = SerVec3(ld.limitMax)
-                    });
-                }
-            }
-            mc.MeshObject.IKData = ik;
+                hasLimit = lk.HasLimit,
+                limitMin = SerVec3(lk.LimitMin),
+                limitMax = SerVec3(lk.LimitMax)
+            };
+        }
+
+        public static void LoadIKLinkDataFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.ikLink == null || mc?.MeshObject == null) return;
+            var d = dto.ikLink;
+            mc.MeshObject.IKLink = new IKLinkData
+            {
+                HasLimit = d.hasLimit,
+                LimitMin = SerVec3(d.limitMin),
+                LimitMax = SerVec3(d.limitMax)
+            };
+        }
+
+        public static void SaveHumanLimitDataToDTO(MeshContext mc, MeshDTO dto)
+        {
+            var hl = mc?.MeshObject?.HumanLimit;
+            if (hl == null) { dto.humanLimit = null; return; }
+            dto.humanLimit = new HumanLimitDataDTO
+            {
+                min = SerVec3(hl.Min),
+                max = SerVec3(hl.Max),
+                center = SerVec3(hl.Center),
+                axisLength = hl.AxisLength,
+                useDefaultValues = hl.UseDefaultValues
+            };
+        }
+
+        public static void LoadHumanLimitDataFromDTO(MeshDTO dto, MeshContext mc)
+        {
+            if (dto?.humanLimit == null || mc?.MeshObject == null) return;
+            var d = dto.humanLimit;
+            mc.MeshObject.HumanLimit = new HumanLimitData
+            {
+                Min = SerVec3(d.min),
+                Max = SerVec3(d.max),
+                Center = SerVec3(d.center),
+                AxisLength = d.axisLength,
+                UseDefaultValues = d.useDefaultValues
+            };
         }
 
         public static void SaveBindPoseToDTO(MeshContext mc, MeshDTO dto)
@@ -1539,6 +1597,105 @@ namespace Poly_Ling.Serialization
         private static float[] SerVec3(Vector3 v) => new[] { v.x, v.y, v.z };
         private static Vector3 SerVec3(float[] a) =>
             (a != null && a.Length >= 3) ? new Vector3(a[0], a[1], a[2]) : Vector3.zero;
+
+        // ================================================================
+        // TPoseBackup ⇔ TPoseBackupDTO（規約4：CSV/JSON 対称）
+        //   参照は MeshContext index（実体が index キー）。座標系変換なし（生値）。
+        // ================================================================
+
+        // Matrix4x4 ⇔ float[16]（row-major）
+        private static float[] SerMat(Matrix4x4 m) => new[]
+        {
+            m.m00, m.m01, m.m02, m.m03,
+            m.m10, m.m11, m.m12, m.m13,
+            m.m20, m.m21, m.m22, m.m23,
+            m.m30, m.m31, m.m32, m.m33
+        };
+        private static Matrix4x4 SerMat(float[] a)
+        {
+            var m = new Matrix4x4();
+            if (a == null || a.Length < 16) return m;
+            m.m00 = a[0];  m.m01 = a[1];  m.m02 = a[2];  m.m03 = a[3];
+            m.m10 = a[4];  m.m11 = a[5];  m.m12 = a[6];  m.m13 = a[7];
+            m.m20 = a[8];  m.m21 = a[9];  m.m22 = a[10]; m.m23 = a[11];
+            m.m30 = a[12]; m.m31 = a[13]; m.m32 = a[14]; m.m33 = a[15];
+            return m;
+        }
+
+        public static TPoseBackupDTO ToTPoseBackupDTO(TPoseBackup backup)
+        {
+            if (backup == null) return null;
+
+            var dto = new TPoseBackupDTO();
+
+            if (backup.BoneRotations != null)
+                foreach (var kv in backup.BoneRotations)
+                    dto.boneRotations.Add(new TPoseBoneRotDTO { index = kv.Key, rot = SerVec3(kv.Value) });
+
+            if (backup.WorldMatrices != null)
+                foreach (var kv in backup.WorldMatrices)
+                    dto.worldMatrices.Add(new TPoseMatrixDTO { index = kv.Key, m = SerMat(kv.Value) });
+
+            if (backup.BindPoses != null)
+                foreach (var kv in backup.BindPoses)
+                    dto.bindPoses.Add(new TPoseMatrixDTO { index = kv.Key, m = SerMat(kv.Value) });
+
+            if (backup.VertexPositions != null)
+            {
+                foreach (var kv in backup.VertexPositions)
+                {
+                    var arr = kv.Value;
+                    var flat = new float[(arr?.Length ?? 0) * 3];
+                    if (arr != null)
+                    {
+                        for (int i = 0; i < arr.Length; i++)
+                        {
+                            flat[i * 3]     = arr[i].x;
+                            flat[i * 3 + 1] = arr[i].y;
+                            flat[i * 3 + 2] = arr[i].z;
+                        }
+                    }
+                    dto.vertexPositions.Add(new TPoseVtxPosDTO { index = kv.Key, p = flat });
+                }
+            }
+
+            return dto;
+        }
+
+        public static TPoseBackup FromTPoseBackupDTO(TPoseBackupDTO dto)
+        {
+            if (dto == null) return null;
+
+            var backup = new TPoseBackup();
+
+            if (dto.boneRotations != null)
+                foreach (var d in dto.boneRotations)
+                    if (d != null) backup.BoneRotations[d.index] = SerVec3(d.rot);
+
+            if (dto.worldMatrices != null)
+                foreach (var d in dto.worldMatrices)
+                    if (d != null) backup.WorldMatrices[d.index] = SerMat(d.m);
+
+            if (dto.bindPoses != null)
+                foreach (var d in dto.bindPoses)
+                    if (d != null) backup.BindPoses[d.index] = SerMat(d.m);
+
+            if (dto.vertexPositions != null)
+            {
+                foreach (var d in dto.vertexPositions)
+                {
+                    if (d == null) continue;
+                    var flat = d.p ?? System.Array.Empty<float>();
+                    int count = flat.Length / 3;
+                    var arr = new Vector3[count];
+                    for (int i = 0; i < count; i++)
+                        arr[i] = new Vector3(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]);
+                    backup.VertexPositions[d.index] = arr;
+                }
+            }
+
+            return backup;
+        }
 
         // ================================================================
         // MeshMetaDTO 変換（Phase 1）

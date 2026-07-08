@@ -885,15 +885,53 @@ namespace Poly_Ling.Data
         public BoneTransform BoneTransform { get; set; } = new BoneTransform();
 
         // ================================================================
-        // 付帯データ（IK / 剛体 / JOINT）— 純POCOデータ契約
+        // 付帯データ（IK / 剛体 / JOINT / SpringBone）— 純POCOデータ契約
+        // ================================================================
+        //
+        // ================================================================
+        // 【ボーン付帯データ格納規約（厳守）】※本ブロックを正典とする
+        // ----------------------------------------------------------------
+        //   1. per-bone POCO 統一
+        //      ボーン付帯データ（IK / 剛体 / JOINT / SpringBone / Humanoid割当）は
+        //      Type == MeshType.Bone の MeshObject に per-bone POCO として持つ。
+        //      null = 当該属性を持たない。#if UNITY_EDITOR を含めない。
+        //
+        //   2. 参照は name主・index従
+        //      ボーン間参照は付帯先/相手の MeshObject.Name を一次キーとする。
+        //      index は実行時キャッシュであり、並べ替え・I/O で無効化されうるため
+        //      永続化の基準に用いない。IK の TargetIndex/BoneIndex も本規約に従い
+        //      name を一次キー、index をキャッシュへ降格する。
+        //
+        //   3. モデルレベルは「モデル固有」と「派生ビュー」のみ
+        //      ModelContext に置いてよいのは、真にモデル固有のもの
+        //      （例: SpringBoneColliderGroupNames）と、per-bone から再構築できる
+        //      派生ビュー／キャッシュ（例: HumanoidMapping の name→index Dict）のみ。
+        //      派生ビューは per-bone を正として導出する。
+        //      Humanoid割当は per-bone を正とし、同一 Humanoidボーンを複数ボーンが
+        //      主張しない一意性を不変条件として維持する。
+        //
+        //   4. 永続化は CSV/JSON 対称
+        //      両経路で同じ付帯データを読み書きする（片方のみの実装を残さない）。
+        //      座標系変換は I/O 境界のみで行い、POCO は生値（Unity左手系）を保持する。
+        //
+        //   【運用（IK / Humanoid の派生ビューと同期タイミング）】
+        //      per-bone を永続 canonical とする一方、実行時は集約ビューを working
+        //      として使う（consumer は集約ビューを読む）。両者の同期は
+        //      「保存・読込の境界のみ」で行い、編集中のリアルタイム同期はしない。
+        //        - IK       : per-bone(EffectorBoneName/IKLink) ⇔ 集約(IKData.Links)。
+        //                     import 時に Sync 済み（ImportCommands）。
+        //        - Humanoid : per-bone(MeshObject.HumanBodyBone) ⇔ Dict(HumanoidMapping)。
+        //                     割当は UI 経由で Dict を編集し、per-bone へは保存時 Sync、
+        //                     読込時 Rebuild のみ（import は Dict を確立しないため無同期）。
+        //      同期の実体は IKChainResolver / HumanoidMappingResolver（境界で呼ぶ）。
         // ================================================================
         //
         // 【設計方針】
-        //   IK・剛体・JOINTを MeshObject に統一して持たせる。これにより
+        //   IK・剛体・JOINT・SpringBone を MeshObject に統一して持たせる。これにより
         //   クロス言語移植（Python/JavaScript）と Unityヒエラルキー
         //   エクスポートのための単一データ契約が MeshObject 上で完結する。
         //   いずれも #if UNITY_EDITOR を含まない POCO（IKData/RigidBodyData/
-        //   JointData）であり、null = 当該属性を持たないことを表す。
+        //   JointData/SpringBone*）であり、null = 当該属性を持たないことを表す。
         //
         // 【役割の判別は Type(MeshType) を流用】
         //   - 剛体     : Type == MeshType.RigidBody       かつ RigidBodyData != null
@@ -911,6 +949,14 @@ namespace Poly_Ling.Data
         /// 非null ⇔ このボーンはIKボーン。
         /// </summary>
         public IKData IKData { get; set; } = null;
+
+        /// <summary>
+        /// IKリンクデータ（IKチェーンのリンクボーンのみ非null）。
+        /// 非null ⇔ このボーンはIKリンク。所属チェーン・順序は IKルートの
+        /// EffectorBoneName から階層(HierarchyParentIndex)で導出する（IKChainResolver）。
+        /// ※#4a: 追加のみ。現段階の源泉は IKData.Links。
+        /// </summary>
+        public IKLinkData IKLink { get; set; } = null;
 
         /// <summary>
         /// 剛体データ（Type == MeshType.RigidBody のとき非null）。
@@ -942,6 +988,25 @@ namespace Poly_Ling.Data
 
         /// <summary>スプリングボーン・チェーンルート（非null=このボーンがチェーン起点）。</summary>
         public SpringBoneChainData SpringBoneChainRoot { get; set; } = null;
+
+        // ------------------------------------------------------------
+        // Humanoid 割当（Type == MeshType.Bone のボーンに付く）
+        //   規約: MeshObject.cs「ボーン付帯データ格納規約」を正典とする。
+        //   このボーンが対応する Unity Humanoid 名（例 "LeftUpperArm"）。空=非割当。
+        //   モデルレベルの HumanoidMapping（name→index Dict）は本欄からの派生ビュー。
+        //   ※#5a: 追加のみ。現段階の源泉は ModelContext.HumanoidMapping。
+        //     相互同期は HumanoidMappingResolver で行う（併存・非破壊）。
+        // ------------------------------------------------------------
+
+        /// <summary>Unity Humanoid 割当名（空=非割当）。</summary>
+        public string HumanBodyBone { get; set; } = "";
+
+        /// <summary>
+        /// Humanoid マッスル可動域（null=Unity 既定を使う）。
+        /// 3マッスル軸は Min/Max/Center の Vector3 成分で表現する。
+        /// ※5d-1: 格納のみ。consumer 差し替えは 5d-2。
+        /// </summary>
+        public HumanLimitData HumanLimit { get; set; } = null;
 
         // === プロパティ ===
 
@@ -1295,6 +1360,7 @@ namespace Poly_Ling.Data
 
             // 付帯データ（IK/剛体/JOINT）をディープコピー（nullはnullのまま）
             copy.IKData = this.IKData?.Clone();
+            copy.IKLink = this.IKLink?.Clone();
             copy.RigidBodyData = this.RigidBodyData?.Clone();
             copy.JointData = this.JointData?.Clone();
 
@@ -1302,6 +1368,8 @@ namespace Poly_Ling.Data
             copy.SpringBoneColliders = CloneSpringBoneColliders(this.SpringBoneColliders);
             copy.SpringBoneJoint = this.SpringBoneJoint?.Clone();
             copy.SpringBoneChainRoot = this.SpringBoneChainRoot?.Clone();
+            copy.HumanBodyBone = this.HumanBodyBone;
+            copy.HumanLimit = this.HumanLimit?.Clone();
 
             // ID管理セットを再構築
             copy.RebuildIdSets();
@@ -1332,6 +1400,7 @@ namespace Poly_Ling.Data
             // 内部のボーン/剛体参照は index/name のいずれもオブジェクトIDとは
             // 独立のため、頂点・面のID再割り当てとは無関係にそのまま複製する。
             copy.IKData = this.IKData?.Clone();
+            copy.IKLink = this.IKLink?.Clone();
             copy.RigidBodyData = this.RigidBodyData?.Clone();
             copy.JointData = this.JointData?.Clone();
 
@@ -1339,6 +1408,8 @@ namespace Poly_Ling.Data
             copy.SpringBoneColliders = CloneSpringBoneColliders(this.SpringBoneColliders);
             copy.SpringBoneJoint = this.SpringBoneJoint?.Clone();
             copy.SpringBoneChainRoot = this.SpringBoneChainRoot?.Clone();
+            copy.HumanBodyBone = this.HumanBodyBone;
+            copy.HumanLimit = this.HumanLimit?.Clone();
 
             // 頂点をコピー（新しいID）
             foreach (var v in Vertices)

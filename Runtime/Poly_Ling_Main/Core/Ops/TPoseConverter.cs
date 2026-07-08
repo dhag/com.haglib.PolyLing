@@ -12,31 +12,8 @@ using Poly_Ling.Core;
 
 namespace Poly_Ling.Ops
 {
-    /// <summary>
-    /// Tポーズ変換前の姿勢バックアップ
-    /// </summary>
-    public class TPoseBackup
-    {
-        /// <summary>
-        /// ボーン別のローカル回転バックアップ（MeshContextインデックス→Euler角）
-        /// </summary>
-        public Dictionary<int, Vector3> BoneRotations = new();
-
-        /// <summary>
-        /// ボーン別のWorldMatrixバックアップ
-        /// </summary>
-        public Dictionary<int, Matrix4x4> WorldMatrices = new();
-
-        /// <summary>
-        /// ボーン別のBindPoseバックアップ
-        /// </summary>
-        public Dictionary<int, Matrix4x4> BindPoses = new();
-
-        /// <summary>
-        /// メッシュ別の頂点座標バックアップ（MeshContextインデックス→頂点Position配列）
-        /// </summary>
-        public Dictionary<int, Vector3[]> VertexPositions = new();
-    }
+    // TPoseBackup クラスは Core/Data/TPoseBackup.cs（namespace Poly_Ling.Data）へ移設。
+    // 本ファイルは using Poly_Ling.Data 済みのため参照は無改修で解決される。
 
     /// <summary>
     /// Tポーズ変換の統合ユーティリティ

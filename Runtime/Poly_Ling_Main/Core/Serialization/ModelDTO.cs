@@ -71,12 +71,9 @@ namespace Poly_Ling.Serialization
         // ================================================================
         // Humanoidボーンマッピング
         // ================================================================
-
-        /// <summary>
-        /// Humanoidボーンマッピング
-        /// Unity Humanoid名 → ボーンインデックス（MeshContextListのインデックス）
-        /// </summary>
-        public Dictionary<string, int> humanoidBoneMapping = new Dictionary<string, int>();
+        //   ※#5b: モデルレベルの humanoidBoneMapping（Dict）は撤去。
+        //     Humanoid 割当は per-bone（MeshDTO.humanBodyBone）を正とし、
+        //     読込後 HumanoidMappingResolver.RebuildMappingFromPerBone で Dict を再構築する。
 
         // ================================================================
         // モーフエクスプレッション
@@ -109,6 +106,13 @@ namespace Poly_Ling.Serialization
         /// <summary>スプリングボーン・コライダーグループ名リスト（index＝並び順）。</summary>
         public List<string> springBoneColliderGroupNames = new List<string>();
 
+        // ================================================================
+        // TPoseバックアップ（Tポーズ変換前の姿勢。CSV/JSON 対称：規約4）
+        // ================================================================
+
+        /// <summary>Tポーズ変換前バックアップ（null=バックアップ無し）。</summary>
+        public TPoseBackupDTO tPoseBackup;
+
         // === ファクトリメソッド ===
 
         public static ModelDTO Create(string modelName)
@@ -118,6 +122,53 @@ namespace Poly_Ling.Serialization
                 name = modelName
             };
         }
+    }
+
+    // ================================================================
+    // TPoseバックアップ DTO（純POCO・Unity型非依存）
+    //   規約: MeshObject.cs「ボーン付帯データ格納規約」に準拠。
+    //   参照は MeshContext index（TPoseBackup 実体が index キーのため）。
+    //   行列は 16 要素 row-major、Vector3 は [x,y,z]、頂点列は flat xyz。
+    // ================================================================
+
+    [Serializable]
+    public class TPoseBackupDTO
+    {
+        /// <summary>ボーン別ローカル回転（Euler）。</summary>
+        public List<TPoseBoneRotDTO> boneRotations = new List<TPoseBoneRotDTO>();
+
+        /// <summary>ボーン別 WorldMatrix。</summary>
+        public List<TPoseMatrixDTO> worldMatrices = new List<TPoseMatrixDTO>();
+
+        /// <summary>ボーン別 BindPose。</summary>
+        public List<TPoseMatrixDTO> bindPoses = new List<TPoseMatrixDTO>();
+
+        /// <summary>メッシュ別 頂点座標バックアップ。</summary>
+        public List<TPoseVtxPosDTO> vertexPositions = new List<TPoseVtxPosDTO>();
+    }
+
+    /// <summary>ボーン回転バックアップ1件（index＝MeshContext index、rot=[x,y,z]）。</summary>
+    [Serializable]
+    public class TPoseBoneRotDTO
+    {
+        public int index;
+        public float[] rot;
+    }
+
+    /// <summary>行列バックアップ1件（index＝MeshContext index、m=16 row-major）。</summary>
+    [Serializable]
+    public class TPoseMatrixDTO
+    {
+        public int index;
+        public float[] m;
+    }
+
+    /// <summary>頂点座標バックアップ1件（index＝MeshContext index、p=flat xyz）。</summary>
+    [Serializable]
+    public class TPoseVtxPosDTO
+    {
+        public int index;
+        public float[] p;
     }
 
     // ================================================================
@@ -282,6 +333,15 @@ namespace Poly_Ling.Serialization
 
         /// <summary>IK情報（null=非IKボーン）。</summary>
         public IKDataDTO ikData;
+
+        /// <summary>IKリンクの per-bone データ（null=非IKリンク）。</summary>
+        public IKLinkDataDTO ikLink;
+
+        /// <summary>Unity Humanoid 割当名（空/null=非割当）。#5b: per-bone。</summary>
+        public string humanBodyBone;
+
+        /// <summary>Humanoid マッスル可動域（null=既定使用）。#5d-1: per-bone。</summary>
+        public HumanLimitDataDTO humanLimit;
 
         /// <summary>BindPose（4x4・行優先16値。null=未設定/単位行列）。</summary>
         public float[] bindPose;
@@ -1044,25 +1104,41 @@ namespace Poly_Ling.Serialization
     //   POCO⇔DTO の変換は ModelSerializer の Save/Load ヘルパで行う。
     // ================================================================
 
-    /// <summary>IKリンク（CCD-IKチェーン要素）DTO。</summary>
+    /// <summary>
+    /// IKリンクの per-bone データDTO（各リンクボーンに付帯）。
+    /// 非null ⇔ そのボーンはIKリンク。所属チェーン・順序は保持しない
+    /// （IKルートの effectorBoneName ＋ ボーン階層から IKChainResolver で導出）。
+    /// </summary>
     [Serializable]
-    public class IKLinkInfoDTO
+    public class IKLinkDataDTO
     {
-        public int boneIndex;
         public bool hasLimit;
         public float[] limitMin; // [x,y,z]（ラジアン）
         public float[] limitMax; // [x,y,z]（ラジアン）
     }
 
-    /// <summary>IKデータDTO。</summary>
+    /// <summary>IKデータDTO（IKルート）。ターゲットは effectorBoneName（name主）。</summary>
     [Serializable]
     public class IKDataDTO
     {
         public bool isIK = true;
-        public int targetIndex = -1;
+        public string effectorBoneName = ""; // エフェクタ（先端）ボーン名・name主
         public int loopCount = 0;
         public float limitAngle = 0f;        // ラジアン
-        public List<IKLinkInfoDTO> links = new List<IKLinkInfoDTO>();
+    }
+
+    /// <summary>
+    /// Humanoid マッスル可動域DTO（per-bone・null=既定使用）。
+    /// min/max/center は [x,y,z]（ラジアン）。3マッスル軸に対応。
+    /// </summary>
+    [Serializable]
+    public class HumanLimitDataDTO
+    {
+        public float[] min;    // [x,y,z]（ラジアン）
+        public float[] max;    // [x,y,z]
+        public float[] center; // [x,y,z]
+        public float axisLength = 0f;
+        public bool useDefaultValues = true;
     }
 
     /// <summary>剛体データDTO。</summary>
