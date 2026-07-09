@@ -821,16 +821,9 @@ namespace Poly_Ling.Context
                 }
                 
                 string savePath = $"{saveDir}/{matName}.mat";
-                
-                // 重複チェック
-                int counter = 1;
-                while (PLEditorBridge.I.LoadAssetAtPath<Material>(savePath) != null)
-                {
-                    savePath = $"{saveDir}/{matName}_{counter}.mat";
-                    counter++;
-                }
-                
-                // 保存
+
+                // 決定論パス：同名は同一 .mat に収束（_counter 廃止）。
+                // 既存があれば SaveAsAsset 内で内容上書き（GUID/参照保持）＝増殖しない。
                 if (matRef.SaveAsAsset(savePath))
                 {
                     savedCount++;

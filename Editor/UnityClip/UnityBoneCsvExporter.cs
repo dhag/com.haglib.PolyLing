@@ -6,16 +6,22 @@
 //   3) Root に Humanoid アバターを持つモデル（Animator付き）をセット → 「CSV書き出し」
 //   4) 出力された .csv を motion_timeline.html の「骨CSV読込」ボタンで読み込む
 //
-// CSV仕様 (UnityBone CSV v2):
+// CSV仕様 (UnityBone CSV v3):
 //   1行目  ; から始まるメタ行（コメント）
-//   列      UnityBone, Name, NameEn, Humanoid, Parent, PosX, PosY, PosZ, RestQX, RestQY, RestQZ, RestQW
+//   列（先頭16列は v2 と同一・位置不変）
+//          UnityBone, Name, NameEn, Humanoid, Parent, PosX, PosY, PosZ,
+//          RestLX, RestLY, RestLZ, RestLW, RestWX, RestWY, RestWZ, RestWW
 //   - Name      : Transform名（日本語可）
 //   - NameEn    : 英名エイリアス（無ければ空）
 //   - Humanoid  : HumanBodyBones 列挙名（例 LeftUpperArm）。Humanoid未割当は空
 //   - Parent    : 親Transform名（ルートは空）
 //   - PosX/Y/Z  : ルート基準の絶対位置・Unity座標（メートル, Z反転なし）
-//   - RestQ*    : レスト(束ね)姿勢のワールド回転・ルート相対 = root.rotation^-1 * bone.rotation （四元数 x,y,z,w）
+//   - RestL*/W* : レスト(束ね)姿勢の local / world(ルート相対) 回転（四元数 x,y,z,w）
 //                 ※ リターゲットで A/T ポーズ差を吸収するために使用。書き出し時はモデルをレスト姿勢に。
+//   - v3 追加（任意・可変加算＝custom 可動域のある行のみ末尾に付与。度）:
+//          LimUseDefault, LMinX, LMinY, LMinZ, LMaxX, LMaxY, LMaxZ, LCenX, LCenY, LCenZ, LAxis
+//     出力元は Avatar の humanDescription.human[].limit（度）。既定値のボーンは付与しない。
+//     ※消費側（motion_timeline.html 等）は本リポジトリ外。列を読むには別途 HTML 側の対応が必要。
 //   文字コード  : UTF-8（BOM付き既定。HTML側は自動判定）
 
 using System.Collections.Generic;
@@ -85,6 +91,35 @@ public class UnityBoneCsvExporter : EditorWindow
         return map;
     }
 
+    // Transform → HumanLimit（Avatar の humanDescription 由来・度）。
+    //   既定値(useDefaultValues=true)のボーンは含めない（＝可変加算：limit 列なし）。
+    //   humanDescription.humanName は HumanTrait.BoneName 形式。GetBoneTransform で
+    //   Transform に解決してキーにする（humanMap と同じ引き方で衝突を避ける）。
+    Dictionary<Transform, HumanLimit> BuildHumanLimitMap(Animator a)
+    {
+        var byTf = new Dictionary<Transform, HumanLimit>();
+        if (a == null || a.avatar == null || !a.avatar.isHuman) return byTf;
+
+        var byTrait = new Dictionary<string, HumanLimit>();
+        var human = a.avatar.humanDescription.human;
+        if (human != null)
+            foreach (var hb in human)
+                if (!hb.limit.useDefaultValues && !string.IsNullOrEmpty(hb.humanName))
+                    byTrait[hb.humanName] = hb.limit;
+
+        if (byTrait.Count == 0) return byTf;
+
+        for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+        {
+            var tr = a.GetBoneTransform((HumanBodyBones)i);
+            if (tr == null) continue;
+            string traitName = HumanTrait.BoneName[i];
+            if (byTrait.TryGetValue(traitName, out var lim) && !byTf.ContainsKey(tr))
+                byTf[tr] = lim;
+        }
+        return byTf;
+    }
+
     // 書き出し対象ボーン集合を作る
     HashSet<Transform> CollectBones(Transform rootT, Dictionary<Transform, string> humanMap)
     {
@@ -147,6 +182,7 @@ public class UnityBoneCsvExporter : EditorWindow
         var rootT = root.transform;
         var animator = FindAnimator();
         var humanMap = BuildHumanoidMap(animator);
+        var limitMap = BuildHumanLimitMap(animator);
 
         var set = CollectBones(rootT, humanMap);
         var ordered = new List<Transform>();
@@ -158,10 +194,13 @@ public class UnityBoneCsvExporter : EditorWindow
         foreach (var t in ordered) { if (!seen.Add(t.name)) dups.Add(t.name); }
 
         var sb = new StringBuilder();
-        sb.Append(";UnityBoneCSV,version,2,space,unity,units,m,root,").Append(Esc(rootT.name)).Append('\n');
-        if (writeHeader) sb.Append("UnityBone,Name,NameEn,Humanoid,Parent,PosX,PosY,PosZ,RestLX,RestLY,RestLZ,RestLW,RestWX,RestWY,RestWZ,RestWW\n");
+        sb.Append(";UnityBoneCSV,version,3,space,unity,units,m,root,").Append(Esc(rootT.name)).Append('\n');
+        // 先頭16列は v2 と同一（位置不変）。以降は任意の可動域列（度・custom のみ・可変加算）。
+        //   LimUseDefault,LMinX,LMinY,LMinZ,LMaxX,LMaxY,LMaxZ,LCenX,LCenY,LCenZ,LAxis
+        if (writeHeader) sb.Append("UnityBone,Name,NameEn,Humanoid,Parent,PosX,PosY,PosZ,RestLX,RestLY,RestLZ,RestLW,RestWX,RestWY,RestWZ,RestWW,LimUseDefault,LMinX,LMinY,LMinZ,LMaxX,LMaxY,LMaxZ,LCenX,LCenY,LCenZ,LAxis\n");
 
         int humCount = 0;
+        int limCount = 0;
         foreach (var t in ordered)
         {
             string hum = humanMap.TryGetValue(t, out var h) ? h : "";
@@ -180,7 +219,20 @@ public class UnityBoneCsvExporter : EditorWindow
               .Append(F(lp.y)).Append(',')
               .Append(F(lp.z)).Append(',')
               .Append(F(rl.x)).Append(',').Append(F(rl.y)).Append(',').Append(F(rl.z)).Append(',').Append(F(rl.w)).Append(',')
-              .Append(F(rw.x)).Append(',').Append(F(rw.y)).Append(',').Append(F(rw.z)).Append(',').Append(F(rw.w)).Append('\n');
+              .Append(F(rw.x)).Append(',').Append(F(rw.y)).Append(',').Append(F(rw.z)).Append(',').Append(F(rw.w));
+
+            // 可動域（度・custom のみ・可変加算）: A-1 と同じ加算互換スタイル。
+            if (limitMap.TryGetValue(t, out var lim))
+            {
+                var mn = lim.min; var mx = lim.max; var ce = lim.center;
+                sb.Append(",false")
+                  .Append(',').Append(F(mn.x)).Append(',').Append(F(mn.y)).Append(',').Append(F(mn.z))
+                  .Append(',').Append(F(mx.x)).Append(',').Append(F(mx.y)).Append(',').Append(F(mx.z))
+                  .Append(',').Append(F(ce.x)).Append(',').Append(F(ce.y)).Append(',').Append(F(ce.z))
+                  .Append(',').Append(F(lim.axisLength));
+                limCount++;
+            }
+            sb.Append('\n');
         }
 
         string defName = (rootT.name + "_bones.csv");
@@ -190,7 +242,7 @@ public class UnityBoneCsvExporter : EditorWindow
         var enc = new UTF8Encoding(utf8Bom);
         System.IO.File.WriteAllText(path, sb.ToString(), enc);
 
-        string msg = $"書き出し完了: {ordered.Count} ボーン / Humanoid割当 {humCount}";
+        string msg = $"書き出し完了: {ordered.Count} ボーン / Humanoid割当 {humCount} / 可動域 {limCount}";
         if (dups.Count > 0) msg += $"\n注意: 同名ボーンが {dups.Count} 種あります（HTML側は名前キーのため衝突の可能性）: " + string.Join(", ", new List<string>(dups).ToArray());
         if (animator == null) msg += "\n注意: Animatorが見つかりません（Humanoid割当は空になります）";
         else if (animator.avatar == null || !animator.avatar.isHuman) msg += "\n注意: Humanoidアバターではありません（Humanoid割当は空。HTML側で名前補完されます）";

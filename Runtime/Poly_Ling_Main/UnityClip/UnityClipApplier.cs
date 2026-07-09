@@ -176,8 +176,9 @@ namespace Poly_Ling.UnityClip
 
         // (b) 自前実装（近似）: dto.muscles から本体ボーンのローカル回転を再構成して適用。
         //   ※ Muscle Referential の pre/post 回転・sign を省く近似。
-        //     各ボーンの DoF 値を HumanTrait.GetMuscleDefaultMin/Max で角度化し、
-        //     dof(0,1,2) を局所軸(X,Y,Z)へ直接対応させて Euler 合成する。
+        //     各 DoF 値を可動域で角度化（度）し、dof(0,1,2) を局所軸(X,Y,Z)へ直接対応させて
+        //     Euler 合成する。可動域は per-bone HumanLimit（custom・ラジアン→度）を優先し、
+        //     無ければ HumanTrait.GetMuscleDefaultMin/Max（Unity既定・度）を使う（#5d-2）。
         //     rest からのデルタとして BonePoseData に載せる（muscle=0 で rest）。
         //     精度は Unity 実測前提。
         private int ApplySelfMuscle(ModelContext model, UnityClipDTO clip, float timeSec)
@@ -206,6 +207,10 @@ namespace Poly_Ling.UnityClip
                 var ctx = model.MeshContextList[_boneMasterIndices[k]];
                 if (ctx == null) continue;
 
+                // per-bone 可動域（custom のみ・ラジアン）。無ければ null で既定にフォールバック。
+                var hl = ctx.MeshObject?.HumanLimit;
+                bool useCustom = hl != null && !hl.UseDefaultValues;
+
                 Vector3 euler = Vector3.zero;
                 bool any = false;
                 for (int dof = 0; dof < 3; dof++)
@@ -215,8 +220,20 @@ namespace Poly_Ling.UnityClip
                     if (!muscleByName.TryGetValue(muscleNames[mi], out var mt)) continue;
 
                     float v = SampleWeight(mt, timeSec);                 // 正規化値 [-1,1]
-                    float min = HumanTrait.GetMuscleDefaultMin(mi);
-                    float max = HumanTrait.GetMuscleDefaultMax(mi);
+
+                    float min, max;
+                    if (useCustom)
+                    {
+                        // HumanLimitData はラジアン → 度へ（Quaternion.Euler は度）
+                        min = hl.Min[dof] * Mathf.Rad2Deg;
+                        max = hl.Max[dof] * Mathf.Rad2Deg;
+                    }
+                    else
+                    {
+                        min = HumanTrait.GetMuscleDefaultMin(mi);          // 度
+                        max = HumanTrait.GetMuscleDefaultMax(mi);          // 度
+                    }
+
                     euler[dof] = v >= 0f ? v * max : -v * min;           // v=+1→max, v=-1→min, v=0→0
                     any = true;
                 }

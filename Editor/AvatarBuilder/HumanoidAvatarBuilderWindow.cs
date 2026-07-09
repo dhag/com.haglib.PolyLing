@@ -16,9 +16,11 @@
 //
 // 【humanoid.csv 形式】（PolyLing ランタイムが書き出す形式）
 //    先頭行: #PolyLing_Humanoid,version,1.0  （'#' 始まりはコメント＝スキップ）
-//    データ: <Humanoid名>,<値>
+//    データ: <Humanoid名>,<値>[,useDefault,minX,minY,minZ,maxX,maxY,maxZ,centerX,centerY,centerZ,axisLength]
 //      値がボーン名 → 名前ベース（本拡張が使うのはこれ）
 //      値が整数     → indexベース（GameObject からは復元不可のため非対応。警告）
+//      3列目以降（任意・加算互換）→ マッスル可動域（度）。useDefault=false の行のみ採用。
+//        2列のみの行＝可動域は既定値（従来通り）。
 //    引用は標準CSV（カンマ/引用符を含む場合のみ "..." で囲み、内部の " は "" に倍化）。
 //
 // 置き場所: Assets 以下の "Editor" フォルダ。 メニュー: Tools ▸ Humanoid Avatar 作成
@@ -29,6 +31,7 @@ using System.IO;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.EditorIO;
 
 public class HumanoidAvatarBuilderWindow : EditorWindow
 {
@@ -96,7 +99,7 @@ public class HumanoidAvatarBuilderWindow : EditorWindow
         if (!File.Exists(_csvPath)) { Log("humanoid.csv が見つからない: " + _csvPath); return; }
 
         // 1) 対応表 CSV を解析（Humanoid名 → ボーン名）
-        if (!ParseHumanoidCsv(_csvPath, out var map, out var csvWarn)) return;
+        if (!ParseHumanoidCsv(_csvPath, out var map, out var limits, out var csvWarn)) return;
         foreach (var w in csvWarn) Log(w);
         if (map.Count == 0) { Log("対応表が空（名前ベースの行が無い）。"); return; }
 
@@ -113,91 +116,10 @@ public class HumanoidAvatarBuilderWindow : EditorWindow
 
         try
         {
-            // 2) root 配下の全 Transform を名前で索引化（ボーン名→Transform）
-            var allTf = root.GetComponentsInChildren<Transform>(true);
-            var byName = new Dictionary<string, Transform>();
-            foreach (var t in allTf)
-            {
-                if (!byName.ContainsKey(t.name)) byName[t.name] = t;
-                else Log("ボーン名の重複（先勝ちで採用）: " + t.name);
-            }
-
-            // Unity が認識する Humanoid 名の集合（指はスペース付き "Left Thumb Proximal" 等）
-            var validHuman = new HashSet<string>(HumanTrait.BoneName);
-
-            // 3) HumanBone[] を構築（CSV のペアを階層 Transform に解決）
-            var humanBones = new List<HumanBone>();
-            var resolvedHuman = new HashSet<string>();
-            foreach (var kv in map)
-            {
-                string humanName = kv.Key, boneName = kv.Value;
-                if (!validHuman.Contains(humanName)) { Log("未知の Humanoid 名（無視）: " + humanName); continue; }
-                if (!byName.ContainsKey(boneName))    { Log("ボーンが階層に無い（無視）: " + humanName + " → " + boneName); continue; }
-
-                var hb = new HumanBone { humanName = humanName, boneName = boneName };
-                hb.limit.useDefaultValues = true;   // 筋肉可動域は既定値
-                humanBones.Add(hb);
-                resolvedHuman.Add(humanName);
-            }
-
-            // 4) 必須ボーンの充足を Unity HumanTrait で判定（欠落があれば中止）
-            var missing = new List<string>();
-            for (int i = 0; i < HumanTrait.BoneCount; i++)
-                if (HumanTrait.RequiredBone(i) && !resolvedHuman.Contains(HumanTrait.BoneName[i]))
-                    missing.Add(HumanTrait.BoneName[i]);
-            if (missing.Count > 0)
-            {
-                Log("必須ボーンが不足のため生成中止:\n  " + string.Join("\n  ", missing));
-                return;
-            }
-
-            // 5) SkeletonBone[]（root 含む配下の全 Transform を局所TRSで）
-            //    GetComponentsInChildren は親→子の階層順なので順序はそのままで良い。
-            var skeleton = new List<SkeletonBone>(allTf.Length);
-            foreach (var t in allTf)
-            {
-                skeleton.Add(new SkeletonBone
-                {
-                    name = t.name,
-                    position = t.localPosition,
-                    rotation = t.localRotation,
-                    scale = t.localScale
-                });
-            }
-
-            // 6) HumanDescription → Avatar（現姿勢をバインドに使用）
-            var desc = new HumanDescription
-            {
-                human = humanBones.ToArray(),
-                skeleton = skeleton.ToArray(),
-                upperArmTwist = 0.5f,
-                lowerArmTwist = 0.5f,
-                upperLegTwist = 0.5f,
-                lowerLegTwist = 0.5f,
-                armStretch = 0.05f,
-                legStretch = 0.05f,
-                feetSpacing = 0.0f,
-                hasTranslationDoF = false
-            };
-
-            Avatar avatar = AvatarBuilder.BuildHumanAvatar(root, desc);
-            if (avatar == null || !avatar.isValid)
-            {
-                Log("Avatar 生成に失敗（isValid=false）。マッピング/姿勢/必須ボーンを確認。");
-                if (avatar != null) DestroyImmediate(avatar);
-                return;
-            }
-            avatar.name = Path.GetFileNameWithoutExtension(_savePath);
-
-            // 7) .asset として保存
-            if (!_savePath.Replace('\\', '/').StartsWith("Assets/"))
-            {
-                Log("保存先は Assets/ 以下を指定してください: " + _savePath);
-                DestroyImmediate(avatar);
-                return;
-            }
-            AssetDatabase.CreateAsset(avatar, _savePath);
-            AssetDatabase.SaveAssets();
+            // 手順2〜7（HumanBone/必須判定/SkeletonBone/HumanDescription/生成/保存）は
+            // 共有コアへ集約（HierarchyExportWindow と同一処理・重複排除）。
+            var avatar = AvatarBuildCore.BuildAndSaveAvatar(root, map, limits, _savePath, Log);
+            if (avatar == null) return;
 
             // 任意：シーン上のモデルへ Animator を付与し Avatar を割当（資産選択時はスキップ）
             if (_addAnimator)
@@ -215,7 +137,7 @@ public class HumanoidAvatarBuilderWindow : EditorWindow
                 }
             }
 
-            Log($"完了：Avatar 生成・保存。human={humanBones.Count} / skeleton={skeleton.Count}\n  → {_savePath}");
+            Log("完了。");
             EditorGUIUtility.PingObject(avatar);
         }
         finally
@@ -225,9 +147,13 @@ public class HumanoidAvatarBuilderWindow : EditorWindow
     }
 
     // ── humanoid.csv 解析（名前ベースのみ採用） ─────────────────────────────
-    private bool ParseHumanoidCsv(string path, out Dictionary<string, string> map, out List<string> warn)
+    //   3列目以降があれば可動域（度）として limits に格納（案(i)加算互換）。
+    //   列: humanName,bone,useDefault,minX,minY,minZ,maxX,maxY,maxZ,centerX,centerY,centerZ,axisLength
+    private bool ParseHumanoidCsv(string path, out Dictionary<string, string> map,
+                                  out Dictionary<string, HumanLimit> limits, out List<string> warn)
     {
         map = new Dictionary<string, string>();
+        limits = new Dictionary<string, HumanLimit>();
         warn = new List<string>();
         string[] lines;
         try { lines = File.ReadAllLines(path, Encoding.UTF8); }
@@ -250,12 +176,33 @@ public class HumanoidAvatarBuilderWindow : EditorWindow
             string boneName = Unesc(value);
             if (humanName.Length == 0 || boneName.Length == 0) continue;
             map[humanName] = boneName;   // 後勝ち（重複Humanoid名は通常無い）
+
+            // 可動域（度）: useDefault=false かつ 13列以上のときのみ採用
+            if (cols.Count >= 13 &&
+                bool.TryParse(cols[2].Trim(), out bool useDefault) && !useDefault)
+            {
+                limits[humanName] = new HumanLimit
+                {
+                    useDefaultValues = false,
+                    min    = new Vector3(Pf(cols[3]),  Pf(cols[4]),  Pf(cols[5])),
+                    max    = new Vector3(Pf(cols[6]),  Pf(cols[7]),  Pf(cols[8])),
+                    center = new Vector3(Pf(cols[9]),  Pf(cols[10]), Pf(cols[11])),
+                    axisLength = Pf(cols[12])
+                };
+            }
         }
 
         if (indexBasedSeen)
             warn.Add("※ humanoid.csv に index 形式の行があります。GameObject からは復元不可のため、" +
                      "名前ベースで書き出した humanoid.csv を使用してください（該当行は無視）。");
         return true;
+    }
+
+    // 度の数値をパース（InvariantCulture）。失敗は0。
+    private static float Pf(string s)
+    {
+        return float.TryParse((s ?? "").Trim(), System.Globalization.NumberStyles.Float,
+                              System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : 0f;
     }
 
     // 引用対応のCSV分割（カンマ区切り。引用符内のカンマは保護。フィールドは生のまま返し Unesc で復元）

@@ -41,6 +41,7 @@ using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Serialization.FolderSerializer;
+using Poly_Ling.AssetIO;
 
 namespace Poly_Ling.EditorIO
 {
@@ -58,6 +59,14 @@ namespace Poly_Ling.EditorIO
         private bool _exportVisibleOnly = false;  // 可視メッシュのみ書き出し
         private bool _exportMeshOnly    = false;  // ボーンを除外しメッシュのみ
         private bool _exportPhysics     = true;   // 剛体/JOINT を Unity 物理部品として出力
+        private bool _saveAsPrefab      = false;  // シーンではなくプレファブとして保存（アセット化）
+        private bool _buildAvatar       = false;  // プレファブと同時に Humanoid Avatar(.asset) を生成
+        private bool _writeAttach       = true;   // IK 付帯を attach.csv でプレファブ同居出力
+
+        // --- プレファブ保存時のみ有効な一時状態（Export→Attach 間で共有） ---
+        private bool   _prefabExportActive = false;  // このExportがアセット化を伴うか
+        private string _meshesDir = "";              // メッシュ .asset 出力先（Assets/...）
+        private readonly HashSet<string> _usedMeshNames = new HashSet<string>(); // 同名衝突回避
 
         [MenuItem("PolyLing/IO/Hierarchy Export (Project File → Hierarchy)")]
         public static void Open()
@@ -90,11 +99,23 @@ namespace Poly_Ling.EditorIO
             _exportVisibleOnly = EditorGUILayout.Toggle("可視メッシュのみ", _exportVisibleOnly);
             _exportMeshOnly    = EditorGUILayout.Toggle("メッシュのみ（ボーン除外）", _exportMeshOnly);
             _exportPhysics     = EditorGUILayout.Toggle("剛体/JOINTを出力", _exportPhysics);
+            _saveAsPrefab      = EditorGUILayout.Toggle("プレファブとして保存", _saveAsPrefab);
+            if (_saveAsPrefab)
+            {
+                _buildAvatar = EditorGUILayout.Toggle("Avatar も生成", _buildAvatar);
+                _writeAttach = EditorGUILayout.Toggle("IK付帯(attach.csv)も出力", _writeAttach);
+                EditorGUILayout.HelpBox(
+                    "Assets/PolyLing/<モデル名>/ にメッシュ/マテリアルを共有アセット化し、" +
+                    "同名プレファブへ上書き保存します（繰り返しても増えません）。" +
+                    (_buildAvatar ? "\nHumanoid 割当から Avatar(.asset) も同時生成します。" : ""),
+                    MessageType.Info);
+            }
 
             EditorGUILayout.Space();
             using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(_modelFolderPath)))
             {
-                if (GUILayout.Button("ロードしてヒエラルキーに書き出し", GUILayout.Height(28)))
+                string label = _saveAsPrefab ? "ロードしてプレファブに保存" : "ロードしてヒエラルキーに書き出し";
+                if (GUILayout.Button(label, GUILayout.Height(28)))
                 {
                     LoadAndExport();
                 }
@@ -126,12 +147,168 @@ namespace Poly_Ling.EditorIO
             // BoneTransform の親子関係から WorldMatrix を構築してから書き出す。
             model.ComputeWorldMatrices();
 
+            if (_saveAsPrefab)
+            {
+                ExportAsPrefab(model);
+                return;
+            }
+
             var root = Export(model);
             if (root != null)
             {
                 UnityEditor.Selection.activeGameObject = root;
                 EditorGUIUtility.PingObject(root);
             }
+        }
+
+        // ================================================================
+        // プレファブ保存（決定論パス・上書き・アセット化）
+        // ================================================================
+
+        private void ExportAsPrefab(ModelContext model)
+        {
+            string modelName = SanitizeName(model.Name ?? "Model");
+            string baseDir      = $"Assets/PolyLing/{modelName}";
+            string materialsDir = $"{baseDir}/materials";
+            string meshesDir    = $"{baseDir}/meshes";
+            string prefabPath   = $"{baseDir}/{modelName}.prefab";
+
+            // フォルダ作成（ModelContext.SaveOnMemoryMaterialsAsAssets と同パターン）
+            Directory.CreateDirectory(materialsDir);
+            Directory.CreateDirectory(meshesDir);
+            AssetDatabase.Refresh();
+
+            // マテリアルを共有アセット化（→ matRef.Material が共有アセットになり BuildMaterials が参照）
+            int matCount = model.SaveOnMemoryMaterialsAsAssets(materialsDir);
+
+            // メッシュのアセット化は Attach 系で行う（一時状態を設定）
+            _prefabExportActive = true;
+            _meshesDir = meshesDir;
+            _usedMeshNames.Clear();
+
+            GameObject root = null;
+            try
+            {
+                root = Export(model);
+                if (root == null)
+                {
+                    EditorUtility.DisplayDialog("エラー", "ヒエラルキー生成に失敗しました。", "OK");
+                    return;
+                }
+
+                // 同名プレファブへ上書き保存（繰り返しても増えない）
+                var prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+                AssetDatabase.SaveAssets();
+
+                // Avatar も生成（Humanoid 割当 + 可動域を model から直接）
+                if (_buildAvatar)
+                {
+                    BuildAvatarMapsFromModel(model, out var avMap, out var avLimits);
+                    if (avMap.Count == 0)
+                    {
+                        Debug.LogWarning("[HierarchyExport] Humanoid 割当が無いため Avatar 生成をスキップ。");
+                    }
+                    else
+                    {
+                        string avatarPath = $"{baseDir}/{modelName}.asset";
+                        AvatarBuildCore.BuildAndSaveAvatar(root, avMap, avLimits, avatarPath,
+                            m => Debug.Log("[HierarchyExport] " + m));
+                    }
+                }
+
+                UnityEditor.Selection.activeObject = prefab;
+                EditorGUIUtility.PingObject(prefab);
+                Debug.Log($"[HierarchyExport] プレファブ保存: {prefabPath}（材料アセット {matCount}）");
+
+                // IK 付帯を attach.csv でプレファブ同居出力（案X: Humanoid/HumanLimit は Avatar が正）
+                if (_writeAttach)
+                {
+                    AttachSidecarCsv.Write(model, $"{baseDir}/attach.csv");
+                    AssetDatabase.Refresh();
+                }
+            }
+            finally
+            {
+                _prefabExportActive = false;
+                _meshesDir = "";
+                // シーン上の一時ルートは破棄（プレファブが成果物）
+                if (root != null) UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        // ファイル名に使えない文字を '_' に置換
+        private static string SanitizeName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "Model";
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name;
+        }
+
+        // メッシュ .asset のパス（同一 export 内の同名衝突は _n を付与）
+        private string ResolveMeshAssetPath(string meshName)
+        {
+            string baseName = SanitizeName(string.IsNullOrEmpty(meshName) ? "Mesh" : meshName);
+            string name = baseName;
+            int n = 1;
+            while (!_usedMeshNames.Add(name))
+            {
+                name = $"{baseName}_{n}";
+                n++;
+            }
+            return $"{_meshesDir}/{name}.asset";
+        }
+
+        // model の Humanoid 割当・可動域から Avatar 用 map/limits を構築。
+        //   map    : humanName(HumanTrait.BoneName 形式) → ボーン名
+        //   limits : humanName → HumanLimit（度・custom のみ）
+        //   ※ model の humanName は HumanBodyBones 列挙形（"LeftUpperArm" 等）なので
+        //     HumanTrait.BoneName 形式（指はスペース付き）へ正規化する。
+        private static void BuildAvatarMapsFromModel(
+            ModelContext model,
+            out Dictionary<string, string> map,
+            out Dictionary<string, HumanLimit> limits)
+        {
+            map = new Dictionary<string, string>();
+            limits = new Dictionary<string, HumanLimit>();
+
+            var mapping = model?.HumanoidMapping;
+            if (mapping == null || mapping.IsEmpty) return;
+
+            foreach (var kv in mapping.BoneIndexMap)
+            {
+                string traitName = ToHumanTraitName(kv.Key);
+                var ctx = model.GetMeshContext(kv.Value);
+                if (ctx == null || string.IsNullOrEmpty(ctx.Name)) continue;
+
+                map[traitName] = ctx.Name;
+
+                var hl = ctx.MeshObject?.HumanLimit;
+                if (hl != null && !hl.UseDefaultValues)
+                {
+                    limits[traitName] = new HumanLimit
+                    {
+                        useDefaultValues = false,
+                        min    = hl.Min * Mathf.Rad2Deg,
+                        max    = hl.Max * Mathf.Rad2Deg,
+                        center = hl.Center * Mathf.Rad2Deg,
+                        axisLength = hl.AxisLength
+                    };
+                }
+            }
+        }
+
+        // HumanBodyBones 列挙形 → HumanTrait.BoneName 形式（解釈できなければそのまま）
+        private static string ToHumanTraitName(string enumName)
+        {
+            if (!string.IsNullOrEmpty(enumName) &&
+                System.Enum.TryParse<HumanBodyBones>(enumName, out var hbb))
+            {
+                int i = (int)hbb;
+                if (i >= 0 && i < HumanTrait.BoneName.Length)
+                    return HumanTrait.BoneName[i];
+            }
+            return enumName;
         }
 
         // ================================================================
@@ -274,6 +451,10 @@ namespace Poly_Ling.EditorIO
             mesh.name = unityMesh.name;
             mesh.bindposes = bindposes.ToArray();
 
+            // プレファブ保存時は共有アセット化（決定論パス・上書き）。
+            if (_prefabExportActive)
+                mesh = MeshAssetUtil.SaveDeterministic(mesh, ResolveMeshAssetPath(mesh.name));
+
             smr.sharedMesh = mesh;
             smr.bones      = boneList.ToArray();
             smr.rootBone   = armatureRoot;
@@ -290,7 +471,11 @@ namespace Poly_Ling.EditorIO
             var mf = Undo.AddComponent<MeshFilter>(go);
             var mr = Undo.AddComponent<MeshRenderer>(go);
 
-            mf.sharedMesh = unityMesh;
+            // プレファブ保存時は共有アセット化（決定論パス・上書き）。
+            var staticMesh = _prefabExportActive
+                ? MeshAssetUtil.SaveDeterministic(unityMesh, ResolveMeshAssetPath(unityMesh.name))
+                : unityMesh;
+            mf.sharedMesh = staticMesh;
 
             var wm = mc.WorldMatrix;
             go.transform.position   = new Vector3(wm.m03, wm.m13, wm.m23);

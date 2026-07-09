@@ -223,29 +223,40 @@ namespace Poly_Ling.Materials
                 var mat = GetOrCreateMaterial();
                 if (mat == null)
                     return false;
-                
-                // 既存アセットの場合はコピーを作成
-                // 複製はランタイムAPI(new Material)なので PLMaterialBridge 経由で行う。
-                // 直後のアセット保存(AssetDatabase)は Editor依存なので PLEditorBridge 経由。
-                // 複製と保存でブリッジを意図的に分けている（理由は IMaterialBridge のコメント参照、
-                // IEditorBridge へ統合し直さないこと）。
-                if (HasAssetPath && AssetPath != savePath)
+
+                // 保存先に既存 .mat があれば、その中身を現在のマテリアルで上書きする
+                // （GUID/参照を保持したまま内容更新＝再エクスポートで別物化しない）。
+                // 上書き=EditorUtility.CopySerialized 相当は Editor依存なので PLEditorBridge 経由。
+                var existingAtTarget = PLEditorBridge.I.LoadAssetAtPath<Material>(savePath);
+                if (existingAtTarget != null && !ReferenceEquals(existingAtTarget, mat))
                 {
-                    mat = PLMaterialBridge.I.Clone(mat);
+                    PLEditorBridge.I.CopySerialized(mat, existingAtTarget);
+                    mat = existingAtTarget;
                 }
-                
-                // 新規オンメモリの場合はそのまま保存
-                string existingPath = PLEditorBridge.I.GetAssetPath(mat);
-                if (string.IsNullOrEmpty(existingPath))
+                else
                 {
-                    PLEditorBridge.I.CreateAsset(mat, savePath);
-                }
-                else if (existingPath != savePath)
-                {
-                    // 別パスにコピー（複製=ランタイム→PLMaterialBridge、保存=Editor依存→PLEditorBridge）
-                    var newMat = PLMaterialBridge.I.Clone(mat);
-                    PLEditorBridge.I.CreateAsset(newMat, savePath);
-                    mat = newMat;
+                    // 保存先が空：新規作成、または別アセットからの複製保存。
+                    // 複製はランタイムAPI(new Material)なので PLMaterialBridge 経由で行う。
+                    // 直後のアセット保存(AssetDatabase)は Editor依存なので PLEditorBridge 経由。
+                    // 複製と保存でブリッジを意図的に分けている（理由は IMaterialBridge のコメント参照、
+                    // IEditorBridge へ統合し直さないこと）。
+                    if (HasAssetPath && AssetPath != savePath)
+                    {
+                        mat = PLMaterialBridge.I.Clone(mat);
+                    }
+
+                    string existingPath = PLEditorBridge.I.GetAssetPath(mat);
+                    if (string.IsNullOrEmpty(existingPath))
+                    {
+                        PLEditorBridge.I.CreateAsset(mat, savePath);
+                    }
+                    else if (existingPath != savePath)
+                    {
+                        // 別パスにコピー（複製=ランタイム→PLMaterialBridge、保存=Editor依存→PLEditorBridge）
+                        var newMat = PLMaterialBridge.I.Clone(mat);
+                        PLEditorBridge.I.CreateAsset(newMat, savePath);
+                        mat = newMat;
+                    }
                 }
                 
                 PLEditorBridge.I.SaveAssets();

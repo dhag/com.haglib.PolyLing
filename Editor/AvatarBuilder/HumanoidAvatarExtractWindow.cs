@@ -72,6 +72,19 @@ public class HumanoidAvatarExtractWindow : EditorWindow
             sb.Append(Esc(hb.humanName));
             sb.Append(',');
             sb.Append(Esc(hb.boneName));
+
+            // 可動域（度）。既定値の場合は2列のまま（加算互換）。
+            var lim = hb.limit;
+            if (!lim.useDefaultValues)
+            {
+                var mn = lim.min; var mx = lim.max; var ce = lim.center;
+                sb.Append(",false");
+                sb.Append(',').Append(F(mn.x)).Append(',').Append(F(mn.y)).Append(',').Append(F(mn.z));
+                sb.Append(',').Append(F(mx.x)).Append(',').Append(F(mx.y)).Append(',').Append(F(mx.z));
+                sb.Append(',').Append(F(ce.x)).Append(',').Append(F(ce.y)).Append(',').Append(F(ce.z));
+                sb.Append(',').Append(F(lim.axisLength));
+            }
+
             sb.Append('\n');
             count++;
         }
@@ -85,6 +98,12 @@ public class HumanoidAvatarExtractWindow : EditorWindow
         File.WriteAllText(savePath, sb.ToString(), new UTF8Encoding(false));
         AssetDatabase.Refresh();
         Log($"完了：humanoid.csv 書き出し。件数={count}\n  → {savePath}");
+    }
+
+    // 度の数値を InvariantCulture で書式化（区切りのカンマ混入を防ぐ）
+    private static string F(float v)
+    {
+        return v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // ── CSVフィールドのエスケープ（順方向 Unesc の逆） ───────────────────────

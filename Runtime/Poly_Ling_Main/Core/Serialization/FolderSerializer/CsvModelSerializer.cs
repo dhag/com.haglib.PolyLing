@@ -606,18 +606,44 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var dict = model.HumanoidMapping.ToDictionary();
             foreach (var kvp in dict)
             {
+                string row;
                 if (useNameBased && indexToName != null)
                 {
                     string boneName = indexToName.TryGetValue(kvp.Value, out var n) ? n : "";
-                    sb.AppendLine($"{Esc(kvp.Key)},{Esc(boneName)}");
+                    row = $"{Esc(kvp.Key)},{Esc(boneName)}";
                 }
                 else
                 {
-                    sb.AppendLine($"{Esc(kvp.Key)},{kvp.Value}");
+                    row = $"{Esc(kvp.Key)},{kvp.Value}";
                 }
+
+                // マッスル可動域（per-bone・A-2）。ラジアン→度で追記（加算互換）。
+                //   AvatarBuild(A-1) が読む列: useDefault,minXYZ,maxXYZ,centerXYZ,axisLength
+                row += BuildHumanLimitColumnsDeg(model, kvp.Value);
+
+                sb.AppendLine(row);
             }
 
             File.WriteAllText(Path.Combine(folderPath, "humanoid.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        // per-bone HumanLimit（ラジアン）→ humanoid.csv の可動域列（度）。
+        //   既定値／未保持なら空文字（＝2列のまま・加算互換）。axisLength は角度でないため無変換。
+        private static string BuildHumanLimitColumnsDeg(ModelContext model, int boneIndex)
+        {
+            if (boneIndex < 0) return "";
+            var mo = model.GetMeshContext(boneIndex)?.MeshObject;
+            var hl = mo?.HumanLimit;
+            if (hl == null || hl.UseDefaultValues) return "";
+
+            Vector3 mn = hl.Min * Mathf.Rad2Deg;
+            Vector3 mx = hl.Max * Mathf.Rad2Deg;
+            Vector3 ce = hl.Center * Mathf.Rad2Deg;
+
+            return $",false," +
+                   $"{Fl(mn.x)},{Fl(mn.y)},{Fl(mn.z)}," +
+                   $"{Fl(mx.x)},{Fl(mx.y)},{Fl(mx.z)}," +
+                   $"{Fl(ce.x)},{Fl(ce.y)},{Fl(ce.z)},{Fl(hl.AxisLength)}";
         }
 
         // ※#5b（案A）: ReadHumanoidCsv は撤去。humanoid.csv は書き出し専用の派生

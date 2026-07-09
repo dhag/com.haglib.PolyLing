@@ -39,6 +39,7 @@ using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Serialization.FolderSerializer;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.EditorIO
 {
@@ -50,6 +51,7 @@ namespace Poly_Ling.EditorIO
         // 入力
         private GameObject _rootObject;
         private Transform  _boneRoot;          // 任意。未指定なら自動検出。
+        private bool _restoreHumanoid = true;  // Animator/Avatar から Humanoid+可動域を復元
         private string     _outputFolder = "";
         private bool       _detectNamedMirror = true;
 
@@ -87,6 +89,7 @@ namespace Poly_Ling.EditorIO
 
             EditorGUILayout.Space();
             _detectNamedMirror = EditorGUILayout.Toggle("名前末尾\"+\"をミラー検出", _detectNamedMirror);
+            _restoreHumanoid   = EditorGUILayout.Toggle("Avatarから Humanoid 復元", _restoreHumanoid);
 
             EditorGUILayout.Space();
             using (new EditorGUI.DisabledScope(_rootObject == null || string.IsNullOrEmpty(_outputFolder)))
@@ -115,37 +118,171 @@ namespace Poly_Ling.EditorIO
                 return;
             }
 
-            Transform boneRoot = _boneRoot != null ? _boneRoot : AutoDetectBoneRoot(_rootObject);
+            // プレファブ資産が指定された場合はシーンへ一時インスタンス化して読む
+            //   （BindPose フォールバックの worldToLocalMatrix や剛体の world 位置は
+            //     「原点評価」を前提とするため、資産直読みでは不正確になりうる。
+            //     一時インスタンスを原点に置いて読取り、後で破棄する）。
+            bool isAsset = EditorUtility.IsPersistent(_rootObject);
+            GameObject workRoot = _rootObject;
+            Transform boneRootHint = _boneRoot;
+            bool temp = false;
+            if (isAsset)
+            {
+                workRoot = PrefabUtility.InstantiatePrefab(_rootObject) as GameObject;
+                if (workRoot == null) workRoot = Instantiate(_rootObject);
+                temp = true;
+                // 原点評価にするため一時インスタンスを原点・無回転へ
+                workRoot.transform.position = Vector3.zero;
+                workRoot.transform.rotation = Quaternion.identity;
+                // 資産上の _boneRoot はインスタンスの Transform と別物なのでパスで再解決
+                boneRootHint = RemapToInstance(_rootObject.transform, _boneRoot, workRoot.transform);
+            }
 
-            ModelContext model;
             try
             {
-                model = BuildModelFromHierarchy(_rootObject, boneRoot, _detectNamedMirror);
+                Transform boneRoot = boneRootHint != null ? boneRootHint : AutoDetectBoneRoot(workRoot);
+
+                ModelContext model;
+                try
+                {
+                    model = BuildModelFromHierarchy(workRoot, boneRoot, _detectNamedMirror);
+                }
+                catch (Exception e)
+                {
+                    EditorUtility.DisplayDialog("エラー", "取り込みに失敗しました:\n" + e.Message, "OK");
+                    Debug.LogException(e);
+                    return;
+                }
+
+                if (model == null || model.MeshContextCount == 0)
+                {
+                    EditorUtility.DisplayDialog("エラー", "取り込み対象（メッシュ/ボーン）が見つかりませんでした。", "OK");
+                    return;
+                }
+
+                // Avatar から Humanoid + 可動域を復元（案X: Avatar が Humanoid の正本）。
+                // ※ per-bone へ復元後、Dict を整合してから保存する（SaveModel の Sync が
+                //   Dict→per-bone のため、Dict を先に埋めないと復元が消える）。
+                if (_restoreHumanoid)
+                {
+                    int n = RestoreHumanoidFromAvatar(model, workRoot);
+                    if (n > 0)
+                        HumanoidMappingResolver.RebuildMappingFromPerBone(model);
+                }
+
+                // IK 付帯を attach.csv（プレファブ同居）から復元（プレファブ資産入力時のみ）
+                if (isAsset)
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(_rootObject);
+                    if (!string.IsNullOrEmpty(assetPath))
+                    {
+                        string dir = Path.GetDirectoryName(assetPath);
+                        string attachPath = string.IsNullOrEmpty(dir) ? null : Path.Combine(dir, "attach.csv");
+                        if (!string.IsNullOrEmpty(attachPath) && File.Exists(attachPath))
+                        {
+                            AttachSidecarCsv.Read(model, attachPath);
+                            IKChainResolver.RebuildLinksFromPerBone(model);
+                            Debug.Log("[HierarchyImport] attach.csv から IK 付帯を復元。");
+                        }
+                    }
+                }
+
+                Directory.CreateDirectory(_outputFolder);
+                CsvModelSerializer.SaveModel(_outputFolder, model);
+
+                // Assets 配下に保存した場合は反映
+                if (_outputFolder.Replace("\\", "/").Contains("/Assets"))
+                    AssetDatabase.Refresh();
+
+                EditorUtility.DisplayDialog(
+                    "完了",
+                    $"保存しました:\n{_outputFolder}\n(コンテキスト数: {model.MeshContextCount})",
+                    "OK");
             }
-            catch (Exception e)
+            finally
             {
-                EditorUtility.DisplayDialog("エラー", "取り込みに失敗しました:\n" + e.Message, "OK");
-                Debug.LogException(e);
-                return;
+                if (temp && workRoot != null) DestroyImmediate(workRoot);   // 一時インスタンスを後片付け
             }
+        }
 
-            if (model == null || model.MeshContextCount == 0)
+        /// <summary>
+        /// 資産側の _boneRoot を、インスタンス側の同一相対パスの Transform へ再解決する。
+        /// _boneRoot が assetRoot 配下でない/未指定なら null（呼び出し側で自動検出）。
+        /// </summary>
+        private static Transform RemapToInstance(Transform assetRoot, Transform boneRoot, Transform instRoot)
+        {
+            if (boneRoot == null || assetRoot == null || instRoot == null) return null;
+            if (boneRoot == assetRoot) return instRoot;
+
+            // assetRoot → boneRoot の相対パスを構築
+            var names = new List<string>();
+            var t = boneRoot;
+            while (t != null && t != assetRoot)
             {
-                EditorUtility.DisplayDialog("エラー", "取り込み対象（メッシュ/ボーン）が見つかりませんでした。", "OK");
-                return;
+                names.Add(t.name);
+                t = t.parent;
+            }
+            if (t != assetRoot) return null;   // assetRoot 配下でない
+            names.Reverse();
+            return instRoot.Find(string.Join("/", names));
+        }
+
+        /// <summary>
+        /// workRoot の Animator(human Avatar) から Humanoid 割当 + 可動域を復元し、
+        /// model のボーン MeshObject（名前一致）へ per-bone で設定する。返り値は復元件数。
+        /// HumanBodyBone は enum 形（5a と一致）、HumanLimit は度→ラジアンで格納。
+        /// </summary>
+        private static int RestoreHumanoidFromAvatar(ModelContext model, GameObject workRoot)
+        {
+            if (model == null || workRoot == null) return 0;
+            var animator = workRoot.GetComponentInChildren<Animator>(true);
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman) return 0;
+
+            // 可動域を HumanTrait 名でマップ（度）
+            var limitByTrait = new Dictionary<string, HumanLimit>();
+            var human = animator.avatar.humanDescription.human;
+            if (human != null)
+                foreach (var hb in human)
+                    if (!string.IsNullOrEmpty(hb.humanName)) limitByTrait[hb.humanName] = hb.limit;
+
+            // ボーン名 → MeshObject（Type==Bone・先勝ち）
+            var boneByName = new Dictionary<string, MeshObject>();
+            var list = model.MeshContextList;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var ctx = list[i];
+                var mo = ctx?.MeshObject;
+                if (mo == null || mo.Type != MeshType.Bone) continue;
+                if (!string.IsNullOrEmpty(mo.Name) && !boneByName.ContainsKey(mo.Name))
+                    boneByName[mo.Name] = mo;
             }
 
-            Directory.CreateDirectory(_outputFolder);
-            CsvModelSerializer.SaveModel(_outputFolder, model);
+            int count = 0;
+            for (int i = 0; i < (int)HumanBodyBones.LastBone; i++)
+            {
+                var hbb = (HumanBodyBones)i;
+                var tf = animator.GetBoneTransform(hbb);
+                if (tf == null) continue;
+                if (!boneByName.TryGetValue(tf.name, out var mo)) continue;
 
-            // Assets 配下に保存した場合は反映
-            if (_outputFolder.Replace("\\", "/").Contains("/Assets"))
-                AssetDatabase.Refresh();
+                mo.HumanBodyBone = hbb.ToString();   // enum 形（5a と一致）
 
-            EditorUtility.DisplayDialog(
-                "完了",
-                $"保存しました:\n{_outputFolder}\n(コンテキスト数: {model.MeshContextCount})",
-                "OK");
+                string traitName = HumanTrait.BoneName[i];
+                if (limitByTrait.TryGetValue(traitName, out var lim) && !lim.useDefaultValues)
+                {
+                    mo.HumanLimit = new HumanLimitData
+                    {
+                        UseDefaultValues = false,
+                        Min    = lim.min * Mathf.Deg2Rad,
+                        Max    = lim.max * Mathf.Deg2Rad,
+                        Center = lim.center * Mathf.Deg2Rad,
+                        AxisLength = lim.axisLength
+                    };
+                }
+                count++;
+            }
+            if (count > 0) Debug.Log($"[HierarchyImport] Avatar から Humanoid 復元: {count} 件");
+            return count;
         }
 
         /// <summary>
