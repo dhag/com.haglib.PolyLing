@@ -315,20 +315,35 @@ namespace Poly_Ling.EditorIO
             CollectGameObjectsDepthFirst(rootGameObject, gameObjects);
 
             // ── ボーン収集 ＋ BindPose 収集 ──────────────────────────
+            //   ボーン集合 = 全 SkinnedMeshRenderer の smr.bones（実スキニングボーン）
+            //     ∪ boneRoot subtree（どのメッシュにも束ねられない揺れボーン等）。
+            //   ※ 従来は boneRoot の単一 subtree のみを収集していたため、subtree 外の
+            //     スキニングボーンが Mesh へ転落していた（例: Unity-chan の Character1_*）。
+            //     smr.bones の和集合で必ずボーンとして拾い、全階層 DFS 順で整列する。
             var boneTransforms = new List<Transform>();
             var boneToIndex    = new Dictionary<Transform, int>();
             var boneBindPoses  = new Dictionary<Transform, Matrix4x4>();
 
-            if (boneRootTransform != null)
             {
-                CollectBoneTransformsDepthFirst(boneRootTransform, boneTransforms);
-                for (int i = 0; i < boneTransforms.Count; i++)
-                    boneToIndex[boneTransforms[i]] = i;
+                var boneSet = new HashSet<Transform>();
 
+                // boneRoot subtree（スキニングに使われない骨も拾う）
+                if (boneRootTransform != null)
+                {
+                    var sub = new List<Transform>();
+                    CollectBoneTransformsDepthFirst(boneRootTransform, sub);
+                    foreach (var t in sub) boneSet.Add(t);
+                }
+
+                // 全 SMR の smr.bones を併合 ＋ BindPose 収集（boneRoot の有無に依らず実行）
                 var smrs = rootGameObject.GetComponentsInChildren<SkinnedMeshRenderer>(true);
                 foreach (var smr in smrs)
                 {
-                    if (smr.sharedMesh == null || smr.bones == null) continue;
+                    if (smr.bones == null) continue;
+                    foreach (var b in smr.bones)
+                        if (b != null) boneSet.Add(b);
+
+                    if (smr.sharedMesh == null) continue;
                     var bindposes = smr.sharedMesh.bindposes;
                     if (bindposes == null) continue;
                     for (int i = 0; i < smr.bones.Length && i < bindposes.Length; i++)
@@ -338,6 +353,13 @@ namespace Poly_Ling.EditorIO
                             boneBindPoses[bone] = bindposes[i];
                     }
                 }
+
+                // gameObjects は全階層 DFS 順（親→子）。boneSet のものを順に採用。
+                foreach (var go in gameObjects)
+                    if (boneSet.Contains(go.transform))
+                        boneTransforms.Add(go.transform);
+                for (int i = 0; i < boneTransforms.Count; i++)
+                    boneToIndex[boneTransforms[i]] = i;
             }
 
             // ── マテリアル収集（重複排除）──────────────────────────
