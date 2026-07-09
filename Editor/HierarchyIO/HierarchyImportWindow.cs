@@ -52,6 +52,13 @@ namespace Poly_Ling.EditorIO
         private GameObject _rootObject;
         private Transform  _boneRoot;          // 任意。未指定なら自動検出。
         private bool _restoreHumanoid = true;  // Animator/Avatar から Humanoid+可動域を復元
+
+        // error-shader（Hidden/InternalErrorShader）マテリアルの復旧設定。
+        //   元マテリアルがエラーシェーダだと HasProperty が全 false になりテクスチャを抽出できない。
+        //   クローンに復旧シェーダを割り当てると、シリアライズ済みの _MainTex 等が束縛され抽出可能になる。
+        //   Unity-chan は _MainTex 格納のため既定は "Standard"（必要に応じて変更可）。
+        private static string ErrorShaderRecoveryName = "Standard";
+        private const  string InternalErrorShaderName = "Hidden/InternalErrorShader";
         private string     _outputFolder = "";
         private bool       _detectNamedMirror = true;
 
@@ -373,8 +380,10 @@ namespace Poly_Ling.EditorIO
                 {
                     if (mat != null && !materialToIndex.ContainsKey(mat))
                     {
+                        // dedup キーは元マテリアル（面→マテリアル参照は元を指す）。
+                        // 実体は error-shader なら復旧クローンに差し替える。
                         materialToIndex[mat] = allMaterials.Count;
-                        allMaterials.Add(mat);
+                        allMaterials.Add(RecoverIfErrorShader(mat));
                     }
                 }
             }
@@ -492,6 +501,32 @@ namespace Poly_Ling.EditorIO
             result.Add(go);
             for (int i = 0; i < go.transform.childCount; i++)
                 CollectGameObjectsDepthFirst(go.transform.GetChild(i).gameObject, result);
+        }
+
+        /// <summary>
+        /// error-shader（Hidden/InternalErrorShader）のマテリアルを復旧クローンに置換する。
+        /// クローンに復旧シェーダ（ErrorShaderRecoveryName）を割り当てると、シリアライズ済みの
+        /// _MainTex 等が束縛され、以降の FromMaterial でテクスチャを抽出できる。
+        /// 元アセットは非改変（クローンのみ）。エラーシェーダでなければ元をそのまま返す。
+        /// </summary>
+        private static Material RecoverIfErrorShader(Material mat)
+        {
+            if (mat == null || mat.shader == null) return mat;
+            if (mat.shader.name != InternalErrorShaderName) return mat;
+
+            var recovShader = Shader.Find(ErrorShaderRecoveryName);
+            if (recovShader == null)
+            {
+                Debug.LogWarning(
+                    $"[HierarchyImport] 復旧シェーダ '{ErrorShaderRecoveryName}' が見つからず、" +
+                    $"'{mat.name}' はエラーシェーダのまま（テクスチャ抽出不可）。");
+                return mat;
+            }
+
+            var clone = new Material(mat) { name = mat.name };  // シリアライズ済みプロパティを保持
+            clone.shader = recovShader;                          // _MainTex 等が束縛される
+            Debug.Log($"[HierarchyImport] error-shader 復旧: '{mat.name}' → {ErrorShaderRecoveryName}");
+            return clone;
         }
 
         /// <summary>ボーン Transform を深さ優先で収集。</summary>
