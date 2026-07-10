@@ -634,7 +634,7 @@ namespace Poly_Ling.Player
 
             LocalLoaderSection = new VisualElement();
             LocalLoaderSection.style.marginBottom = 6;
-            scroll.Add(LocalLoaderSection);
+            // ※ LocalLoaderSection（Load PMX / Load MQO）は「ファイル」foldout の先頭へ移動する（下記）。
 
             // ================================================================
             // ここから下はカテゴリ別 Foldout（既定折りたたみ）にまとめる。
@@ -645,6 +645,9 @@ namespace Poly_Ling.Player
             // ── ファイル ───────────────────────────────────────────────
             var foFile = MakeFoldout("ファイル");
             scroll.Add(foFile);
+
+            // Load PMX / Load MQO（旧: foldout の外・上）を「ファイル」の先頭に配置する。
+            foFile.Add(LocalLoaderSection);
 
             var pImportRow = new VisualElement();
             pImportRow.style.flexDirection = FlexDirection.Row;

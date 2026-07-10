@@ -2564,6 +2564,26 @@ namespace Poly_Ling.Player
                 }
             }
 
+            // 起動時：復元済みの表示設定（RecentPaths から復元）でチェックボックスを同期する。
+            // トグル初期値は itemDefaults（既定）で作られているため、これをしないと
+            // 復元値と UI が食い違う（render は _displaySettings を毎フレーム反映するが UI が既定のまま）。
+            for (int s = 0; s < 4; s++)
+            {
+                var ds = _viewportManager.GetDisplaySettings(s);
+                void SyncTog(int item, bool v) => _layoutRoot.ViewportDisplayToggles[s, item]?.SetValueWithoutNotify(v);
+                SyncTog(PlayerLayoutRoot.VD_CULLING,      ds.BackfaceCulling);
+                SyncTog(PlayerLayoutRoot.VD_SEL_MESH,     ds.ShowSelectedMesh);
+                SyncTog(PlayerLayoutRoot.VD_SEL_WIRE,     ds.ShowSelectedWireframe);
+                SyncTog(PlayerLayoutRoot.VD_SEL_VERT,     ds.ShowSelectedVertices);
+                SyncTog(PlayerLayoutRoot.VD_SEL_BONE,     ds.ShowSelectedBone);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_MESH,   ds.ShowUnselectedMesh);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_WIRE,   ds.ShowUnselectedWireframe);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_VERT,   ds.ShowUnselectedVertices);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_BONE,   ds.ShowUnselectedBone);
+                SyncTog(PlayerLayoutRoot.VD_SEL_MIRROR,   ds.ShowSelectedMirror);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR, ds.ShowUnselectedMirror);
+            }
+
             _layoutRoot.MorphBtn.clicked       += ShowMorphPanel;
             _layoutRoot.MorphCreateBtn.clicked += ShowMorphCreatePanel;
 
@@ -3519,8 +3539,10 @@ namespace Poly_Ling.Player
             var model = ActiveProject?.CurrentModel;
             if (model == null) { _projectFileSubPanel?.SetStatus("モデルがありません"); return; }
 
-            string folderPath = PLEditorBridge.I.OpenFolderPanel("Add from CSV Folder", Application.dataPath, "");
+            string folderPath = PLEditorBridge.I.OpenFolderPanel("Add from CSV Folder",
+                RecentPaths.Get(CsvProjectSerializer.CsvFolderKey, Application.dataPath), "");
             if (string.IsNullOrEmpty(folderPath)) { _projectFileSubPanel?.SetStatus("キャンセル"); return; }
+            RecentPaths.Set(CsvProjectSerializer.CsvFolderKey, folderPath);
 
             var entries = CsvModelSerializer.LoadAllMeshEntriesFromFolder(folderPath);
             if (entries == null || entries.Count == 0) { _projectFileSubPanel?.SetStatus("読み込めるデータがありません"); return; }

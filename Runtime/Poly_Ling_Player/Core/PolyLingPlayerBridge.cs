@@ -99,6 +99,26 @@ namespace Poly_Ling.EditorBridge
         [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
         private static extern bool SHGetPathFromIDList(IntPtr pidl, System.Text.StringBuilder pszPath);
 
+        // 初期フォルダ設定用（SHBrowseForFolder は directory 引数を直接取れないため
+        // コールバックで BFFM_INITIALIZED 時に BFFM_SETSELECTION を送って初期選択する）。
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        private const uint BFFM_INITIALIZED  = 1;
+        private const uint BFFM_SETSELECTIONW = 0x0400 + 103; // WM_USER+103（Unicode パス指定）
+
+        private delegate int BrowseCallbackProc(IntPtr hwnd, uint uMsg, IntPtr lParam, IntPtr lpData);
+        // マーシャルした関数ポインタが GC 回収されないよう static 保持する。
+        private static readonly BrowseCallbackProc _browseCallback = OnBrowseEvent;
+
+        private static int OnBrowseEvent(IntPtr hwnd, uint uMsg, IntPtr lParam, IntPtr lpData)
+        {
+            // lpData は OpenFolderPanel で bi.lParam に渡した初期パス（Unicode）ポインタ。
+            if (uMsg == BFFM_INITIALIZED && lpData != IntPtr.Zero)
+                SendMessage(hwnd, BFFM_SETSELECTIONW, (IntPtr)1, lpData);
+            return 0;
+        }
+
         private static string BuildFilter(string extension)
         {
             if (string.IsNullOrEmpty(extension)) return "All Files\0*.*\0\0";
@@ -137,13 +157,31 @@ namespace Poly_Ling.EditorBridge
 
         public string OpenFolderPanel(string title, string directory, string defaultName)
         {
-            var bi = new BrowseInfo();
-            bi.lpszTitle = title;
-            bi.ulFlags   = 0x0001 | 0x0010; // BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
-            var pidl = SHBrowseForFolder(ref bi);
-            if (pidl == IntPtr.Zero) return string.Empty;
-            var sb = new System.Text.StringBuilder(512);
-            return SHGetPathFromIDList(pidl, sb) ? sb.ToString() : string.Empty;
+            IntPtr dirPtr = IntPtr.Zero;
+            try
+            {
+                var bi = new BrowseInfo();
+                bi.lpszTitle = title;
+                bi.ulFlags   = 0x0001 | 0x0010; // BIF_RETURNONLYFSDIRS | BIF_EDITBOX
+
+                // 初期フォルダを設定（存在する場合のみ）。コールバック経由で BFFM_SETSELECTION。
+                if (!string.IsNullOrEmpty(directory) && System.IO.Directory.Exists(directory))
+                {
+                    dirPtr    = System.Runtime.InteropServices.Marshal.StringToHGlobalUni(directory);
+                    bi.lpfn   = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_browseCallback);
+                    bi.lParam = dirPtr;
+                }
+
+                var pidl = SHBrowseForFolder(ref bi);
+                if (pidl == IntPtr.Zero) return string.Empty;
+                var sb = new System.Text.StringBuilder(512);
+                return SHGetPathFromIDList(pidl, sb) ? sb.ToString() : string.Empty;
+            }
+            finally
+            {
+                if (dirPtr != IntPtr.Zero)
+                    System.Runtime.InteropServices.Marshal.FreeHGlobal(dirPtr);
+            }
         }
 
         public string SaveFolderPanel(string title, string directory, string defaultName)

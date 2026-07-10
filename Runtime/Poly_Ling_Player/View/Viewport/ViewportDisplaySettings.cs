@@ -43,5 +43,38 @@ namespace Poly_Ling.Player
             ShowSelectedMirror      = true,
             ShowUnselectedMirror    = true,
         };
+
+        // ── 永続化（RecentPaths に int ビットマスク文字列で保存する） ──────────
+        public int ToBits()
+        {
+            int b = 0;
+            if (BackfaceCulling)         b |= 1 << 0;
+            if (ShowSelectedMesh)        b |= 1 << 1;
+            if (ShowSelectedWireframe)   b |= 1 << 2;
+            if (ShowSelectedVertices)    b |= 1 << 3;
+            if (ShowSelectedBone)        b |= 1 << 4;
+            if (ShowUnselectedMesh)      b |= 1 << 5;
+            if (ShowUnselectedWireframe) b |= 1 << 6;
+            if (ShowUnselectedVertices)  b |= 1 << 7;
+            if (ShowUnselectedBone)      b |= 1 << 8;
+            if (ShowSelectedMirror)      b |= 1 << 9;
+            if (ShowUnselectedMirror)    b |= 1 << 10;
+            return b;
+        }
+
+        public static ViewportDisplaySettings FromBits(int b) => new ViewportDisplaySettings
+        {
+            BackfaceCulling         = (b & (1 << 0)) != 0,
+            ShowSelectedMesh        = (b & (1 << 1)) != 0,
+            ShowSelectedWireframe   = (b & (1 << 2)) != 0,
+            ShowSelectedVertices    = (b & (1 << 3)) != 0,
+            ShowSelectedBone        = (b & (1 << 4)) != 0,
+            ShowUnselectedMesh      = (b & (1 << 5)) != 0,
+            ShowUnselectedWireframe = (b & (1 << 6)) != 0,
+            ShowUnselectedVertices  = (b & (1 << 7)) != 0,
+            ShowUnselectedBone      = (b & (1 << 8)) != 0,
+            ShowSelectedMirror      = (b & (1 << 9)) != 0,
+            ShowUnselectedMirror    = (b & (1 << 10)) != 0,
+        };
     }
 }

@@ -38,6 +38,7 @@ namespace Poly_Ling.Player
 
         public float   RotX     { get; private set; } =  20f;
         public float   RotY     { get; private set; } =   0f;
+        public float   RotZ     { get; private set; } =   0f;   // カメラのロール（Z軸周り・視線軸回転）
         public float   Distance { get; private set; } =   3f;
         public Vector3 Target   { get; private set; } = Vector3.zero;
 
@@ -132,7 +133,11 @@ namespace Poly_Ling.Player
             if (cam == null) return;
             Quaternion camRot = Quaternion.Euler(RotX, RotY, 0f);
             cam.transform.position = Target + camRot * (Vector3.back * Distance);
-            cam.transform.LookAt(Target);
+            // ロール（RotZ）は視線軸周りの up ベクトル回転で反映する。
+            //   Euler(RotX,RotY,RotZ) = Euler(RotX,RotY,0) * Rz(RotZ) なので、
+            //   その up は「視線軸周りに RotZ 回した up」に一致する。
+            Vector3 up = Quaternion.Euler(RotX, RotY, RotZ) * Vector3.up;
+            cam.transform.LookAt(Target, up);
         }
 
         // ================================================================
@@ -161,9 +166,17 @@ namespace Poly_Ling.Player
             bool changed = false;
             if (btn == 1 && _isOrbiting)
             {
-                RotY  += delta.x * OrbitSensitivity;
-                RotX  -= delta.y * OrbitSensitivity;
-                RotX   = Mathf.Clamp(RotX, -89f, 89f);
+                if (mods.Alt)
+                {
+                    // Alt＋右ドラッグの左右移動 → カメラのZ軸周り回転（ロール）。
+                    RotZ += delta.x * OrbitSensitivity;
+                }
+                else
+                {
+                    RotY  += delta.x * OrbitSensitivity;
+                    RotX  -= delta.y * OrbitSensitivity;
+                    RotX   = Mathf.Clamp(RotX, -89f, 89f);
+                }
                 changed = true;
             }
             else if (btn == 2 && _isPanning)

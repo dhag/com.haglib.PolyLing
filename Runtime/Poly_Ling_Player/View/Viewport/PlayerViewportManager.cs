@@ -156,13 +156,23 @@ namespace Poly_Ling.Player
         // ビューポート表示設定（面ごと）
         // ================================================================
 
-        private readonly ViewportDisplaySettings[] _displaySettings = new ViewportDisplaySettings[4]
+        private readonly ViewportDisplaySettings[] _displaySettings = LoadDisplaySettings();
+
+        // RecentPaths から4面分の表示設定を復元（未保存/不正なら Default）。
+        private static ViewportDisplaySettings[] LoadDisplaySettings()
         {
-            ViewportDisplaySettings.Default,
-            ViewportDisplaySettings.Default,
-            ViewportDisplaySettings.Default,
-            ViewportDisplaySettings.Default,
-        };
+            var arr = new ViewportDisplaySettings[4];
+            for (int i = 0; i < 4; i++)
+            {
+                string s = RecentPaths.Get(DisplaySettingsKey(i), "");
+                arr[i] = int.TryParse(s, out int bits)
+                    ? ViewportDisplaySettings.FromBits(bits)
+                    : ViewportDisplaySettings.Default;
+            }
+            return arr;
+        }
+
+        private static string DisplaySettingsKey(int slot) => $"Viewport.Display.{slot}";
 
         /// <summary>指定スロットの表示設定を取得する。</summary>
         public ViewportDisplaySettings GetDisplaySettings(int slot) => _displaySettings[slot];
@@ -177,6 +187,9 @@ namespace Poly_Ling.Player
         public void SetDisplaySettings(int slot, ViewportDisplaySettings s)
         {
             _displaySettings[slot] = s;
+            // 表示設定を起動間で記録（write-through）。
+            if (slot >= 0 && slot < 4)
+                RecentPaths.Set(DisplaySettingsKey(slot), s.ToBits().ToString());
             // 表示設定（カリングON/OFF等）が変わったらカリングバッファを再計算する。
             if (slot >= 0 && slot < _slotCameraDirty.Length)
                 _slotCameraDirty[slot] = true;

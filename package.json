@@ -1,7 +1,7 @@
 {
   "name": "com.haglib.polyling",
   "displayName": "PolyLing",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "unity": "6000.0",
   "description": "ちょろっとメッシュを作るやつ。",
   "author": {

@@ -12,6 +12,7 @@ using Unity.Plastic.Newtonsoft.Json;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 
 // MeshContextはSimpleMeshFactoryのネストクラスを参照
 ////using MeshContext = MeshContext;
@@ -30,6 +31,9 @@ namespace Poly_Ling.Serialization
         public const string FileExtension = "mfproj";
         public const string FileFilter = "Poly_Ling Project";
         public const string CurrentVersion = "1.0";
+
+        // RecentPaths のキー（.mfproj 保存/読込フォルダを起動間で記録する）
+        public const string JsonFolderKey = "Project.JsonFolder";
 
         // ================================================================
         // エクスポート
@@ -71,11 +75,13 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static bool ExportWithDialog(ProjectDTO projectDTO, string defaultName = "Project")
         {
-            string path = PLEditorBridge.I.SaveFilePanel("Export Project", Application.dataPath, defaultName, FileExtension);
+            string path = PLEditorBridge.I.SaveFilePanel("Export Project",
+                RecentPaths.Get(JsonFolderKey, Application.dataPath), defaultName, FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return false;
 
+            RecentPaths.Set(JsonFolderKey, Path.GetDirectoryName(path));
             return Export(path, projectDTO);
         }
 
@@ -120,11 +126,13 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public static ProjectDTO ImportWithDialog()
         {
-            string path = PLEditorBridge.I.OpenFilePanel("Import Project", Application.dataPath, FileExtension);
+            string path = PLEditorBridge.I.OpenFilePanel("Import Project",
+                RecentPaths.Get(JsonFolderKey, Application.dataPath), FileExtension);
 
             if (string.IsNullOrEmpty(path))
                 return null;
 
+            RecentPaths.Set(JsonFolderKey, Path.GetDirectoryName(path));
             return Import(path);
         }
 

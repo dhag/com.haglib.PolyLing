@@ -17,6 +17,7 @@ using Poly_Ling.EditorBridge;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.Serialization;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Serialization.FolderSerializer
 {
@@ -27,6 +28,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
     {
         public const string ProjectFileName = "project.csv";
         public const string CurrentVersion = "1.0";
+
+        // RecentPaths のキー（CSVフォルダの保存/読込先を起動間で記録する）
+        public const string CsvFolderKey = "Project.CsvFolder";
 
         // ================================================================
         // Export: ダイアログ付き
@@ -44,13 +48,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             string folderPath = PLEditorBridge.I.SaveFolderPanel(
                 "Export Project Folder",
-                Application.dataPath,
+                RecentPaths.Get(CsvFolderKey, Application.dataPath),
                 defaultName
             );
 
             if (string.IsNullOrEmpty(folderPath))
                 return false;
 
+            RecentPaths.Set(CsvFolderKey, folderPath);
             return Export(folderPath, project, workPlanes, editorStates, useNameBased);
         }
 
@@ -66,12 +71,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             string folderPath = PLEditorBridge.I.SaveFolderPanel(
                 "Export Project Folder",
-                Application.dataPath,
+                RecentPaths.Get(CsvFolderKey, Application.dataPath),
                 defaultName
             );
 
             if (string.IsNullOrEmpty(folderPath))
                 return false;
+
+            RecentPaths.Set(CsvFolderKey, folderPath);
 
             // 単一モデルのProjectContextを構築
             var project = new ProjectContext(model.Name ?? defaultName);
@@ -97,7 +104,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         {
             string folderPath = PLEditorBridge.I.OpenFolderPanel(
                 "Import Project Folder",
-                Application.dataPath,
+                RecentPaths.Get(CsvFolderKey, Application.dataPath),
                 ""
             );
 
@@ -107,6 +114,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (string.IsNullOrEmpty(folderPath))
                 return null;
 
+            RecentPaths.Set(CsvFolderKey, folderPath);
             return Import(folderPath, out editorStates, out workPlanes);
         }
 
@@ -124,12 +132,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             string folderPath = PLEditorBridge.I.OpenFolderPanel(
                 "Import Project Folder",
-                Application.dataPath,
+                RecentPaths.Get(CsvFolderKey, Application.dataPath),
                 ""
             );
 
             if (string.IsNullOrEmpty(folderPath))
                 return null;
+
+            RecentPaths.Set(CsvFolderKey, folderPath);
 
             // project.csv があればプロジェクトとして読み込み（追加エントリは無視）
             string projectCsvPath = Path.Combine(folderPath, ProjectFileName);
