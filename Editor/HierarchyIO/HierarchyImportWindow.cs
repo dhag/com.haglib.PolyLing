@@ -457,7 +457,7 @@ namespace Poly_Ling.EditorIO
             for (int i = 0; i < meshGameObjects.Count; i++)
             {
                 var go = meshGameObjects[i];
-                var meshContext = CreateMeshContextFromGameObject(go, goToIndex, materialToIndex, boneToIndex);
+                var meshContext = CreateMeshContextFromGameObject(go, goToIndex, materialToIndex, boneToIndex, rootGameObject.transform);
                 meshContext.ParentModelContext = model;
                 model.Add(meshContext);
             }
@@ -529,6 +529,33 @@ namespace Poly_Ling.EditorIO
             return clone;
         }
 
+        /// <summary>
+        /// スキンド頂点をルート空間へベイクする（Position は点、Normals はベクトルとして変換）。
+        /// render 時の per-bone BindPose（WorldMatrix.inverse）に整合させ、renderer ローカル空間由来の
+        /// オフセット欠落による原点落ちを防ぐ。
+        /// </summary>
+        private static void BakeVertices(MeshObject mo, Matrix4x4 m)
+        {
+            if (mo == null || mo.Vertices == null) return;
+            foreach (var v in mo.Vertices)
+            {
+                if (v == null) continue;
+                v.Position = m.MultiplyPoint3x4(v.Position);
+                if (v.Normals != null)
+                    for (int i = 0; i < v.Normals.Count; i++)
+                        v.Normals[i] = m.MultiplyVector(v.Normals[i]).normalized;
+            }
+        }
+
+        /// <summary>行列が恒等に十分近いか（ベイク不要判定）。</summary>
+        private static bool IsApproxIdentity(Matrix4x4 m)
+        {
+            var d = Matrix4x4.identity;
+            for (int i = 0; i < 16; i++)
+                if (Mathf.Abs(m[i] - d[i]) > 1e-5f) return false;
+            return true;
+        }
+
         /// <summary>ボーン Transform を深さ優先で収集。</summary>
         private static void CollectBoneTransformsDepthFirst(Transform bone, List<Transform> result)
         {
@@ -597,7 +624,8 @@ namespace Poly_Ling.EditorIO
             GameObject go,
             Dictionary<GameObject, int> goToIndex,
             Dictionary<Material, int> materialToIndex,
-            Dictionary<Transform, int> boneToIndex)
+            Dictionary<Transform, int> boneToIndex,
+            Transform rootTransform)
         {
             var meshContext = new MeshContext
             {
@@ -605,10 +633,20 @@ namespace Poly_Ling.EditorIO
             };
 
             // 親（HierarchyParentIndex）
+            //   親がメッシュなら goToIndex、ボーンなら boneToIndex で解決する。
+            //   ※ 顔などボーンの子メッシュは goToIndex に親が無く -1 になり、親ボーンの
+            //     world 変換が効かず原点（地面）に落ちるため、boneToIndex もフォールバックで引く。
+            //     ボーンの MeshContext index は boneToIndex 値と一致（ボーンは先頭に同順で追加済み）。
             var parentTransform = go.transform.parent;
-            meshContext.HierarchyParentIndex =
-                (parentTransform != null && goToIndex.TryGetValue(parentTransform.gameObject, out int parentIndex))
-                    ? parentIndex : -1;
+            int resolvedParent = -1;
+            if (parentTransform != null)
+            {
+                if (goToIndex.TryGetValue(parentTransform.gameObject, out int meshParentIndex))
+                    resolvedParent = meshParentIndex;
+                else if (boneToIndex != null && boneToIndex.TryGetValue(parentTransform, out int boneParentIndex))
+                    resolvedParent = boneParentIndex;
+            }
+            meshContext.HierarchyParentIndex = resolvedParent;
 
             // ローカルトランスフォーム
             meshContext.BoneTransform.Position = go.transform.localPosition;
@@ -625,6 +663,7 @@ namespace Poly_Ling.EditorIO
             Mesh sourceMesh = null;
             Material[] sharedMats = null;
             Dictionary<int, int> boneIndexRemap = null;
+            Matrix4x4? skinnedBakeMatrix = null;   // スキンド頂点をルート空間へ移すベイク行列
 
             var meshFilter = go.GetComponent<MeshFilter>();
             var skinnedMeshRenderer = go.GetComponent<SkinnedMeshRenderer>();
@@ -651,6 +690,30 @@ namespace Poly_Ling.EditorIO
                             boneIndexRemap[i] = meshCtxBoneIndex;
                     }
                 }
+
+                // ── ベイク行列（ルート空間正規化） ─────────────────────
+                //   render 時のボーン BindPose は ComputeBindPoses により WorldMatrix.inverse
+                //   （ルート相対・メッシュ非依存）へ再計算される。よってメッシュ頂点も
+                //   ルート空間に揃える必要がある。頂点が renderer ローカル空間のままだと
+                //   （例: Character1_Head の子 MTH_DEF 等）オフセットが失われ原点へ落ちる。
+                //   meshBindTransform = bone.localToWorld × bindpose[i]（どのボーンでも同一）を
+                //   bindpose から厳密導出し、workRoot 相対にしてベイク行列とする。
+                //   body（renderer≒ルート）ではほぼ恒等になり無影響。
+                if (rootTransform != null)
+                {
+                    var bindposes = skinnedMeshRenderer.sharedMesh.bindposes;
+                    if (bindposes != null && bindposes.Length > 0 && skinnedMeshRenderer.bones != null)
+                    {
+                        for (int i = 0; i < skinnedMeshRenderer.bones.Length && i < bindposes.Length; i++)
+                        {
+                            var bone = skinnedMeshRenderer.bones[i];
+                            if (bone == null) continue;
+                            var meshBindWorld = bone.localToWorldMatrix * bindposes[i];
+                            skinnedBakeMatrix = rootTransform.worldToLocalMatrix * meshBindWorld;
+                            break;   // 最初の有効ボーンで確定（全ボーンで同一のはず）
+                        }
+                    }
+                }
             }
 
             // メッシュデータ変換（Unityメッシュ読取はブリッジ経由の FromUnityMesh）
@@ -661,6 +724,10 @@ namespace Poly_Ling.EditorIO
 
                 if (isSkinnedMesh)
                     RemapBoneWeightIndices(meshContext.MeshObject, boneIndexRemap);
+
+                // スキンド頂点をルート空間へベイク（恒等に近い場合はスキップ＝body/新モデルは無影響）
+                if (isSkinnedMesh && skinnedBakeMatrix.HasValue && !IsApproxIdentity(skinnedBakeMatrix.Value))
+                    BakeVertices(meshContext.MeshObject, skinnedBakeMatrix.Value);
 
                 // サブメッシュ index → グローバル material index を Face へ反映
                 if (sharedMats != null)
