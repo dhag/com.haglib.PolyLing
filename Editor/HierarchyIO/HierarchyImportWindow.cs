@@ -329,7 +329,6 @@ namespace Poly_Ling.EditorIO
             //     smr.bones の和集合で必ずボーンとして拾い、全階層 DFS 順で整列する。
             var boneTransforms = new List<Transform>();
             var boneToIndex    = new Dictionary<Transform, int>();
-            var boneBindPoses  = new Dictionary<Transform, Matrix4x4>();
 
             {
                 var boneSet = new HashSet<Transform>();
@@ -342,23 +341,13 @@ namespace Poly_Ling.EditorIO
                     foreach (var t in sub) boneSet.Add(t);
                 }
 
-                // 全 SMR の smr.bones を併合 ＋ BindPose 収集（boneRoot の有無に依らず実行）
+                // 全 SMR の smr.bones を併合（boneRoot の有無に依らず）
                 var smrs = rootGameObject.GetComponentsInChildren<SkinnedMeshRenderer>(true);
                 foreach (var smr in smrs)
                 {
                     if (smr.bones == null) continue;
                     foreach (var b in smr.bones)
                         if (b != null) boneSet.Add(b);
-
-                    if (smr.sharedMesh == null) continue;
-                    var bindposes = smr.sharedMesh.bindposes;
-                    if (bindposes == null) continue;
-                    for (int i = 0; i < smr.bones.Length && i < bindposes.Length; i++)
-                    {
-                        var bone = smr.bones[i];
-                        if (bone != null && !boneBindPoses.ContainsKey(bone))
-                            boneBindPoses[bone] = bindposes[i];
-                    }
                 }
 
                 // gameObjects は全階層 DFS 順（親→子）。boneSet のものを順に採用。
@@ -402,10 +391,13 @@ namespace Poly_Ling.EditorIO
                     boneCtx.ParentModelContext = model;
                     model.Add(boneCtx);
 
-                    // BindPose: 収集できた場合はそれを、無ければワールド逆行列を採用
-                    boneCtx.BindPose = boneBindPoses.TryGetValue(boneTransform, out Matrix4x4 bindPose)
-                        ? bindPose
-                        : boneTransform.worldToLocalMatrix;
+                    // BindPose = ボーンの root 相対ワールドの逆行列（メッシュ非依存）。
+                    //   表示パスは ComputeWorldMatrices のみで BindPose を再計算しない（シリアライズ値使用）。
+                    //   よって WorldMatrix.inverse 相当（root 相対ボーン世界の逆）をここで確定する。
+                    //   これによりベイク済み頂点（root 空間）が skinning=I で正位置に描画される。
+                    //   ※ sharedMesh.bindposes の first-wins は共有ボーンで破綻するため使わない。
+                    var boneWorldRel = rootGameObject.transform.worldToLocalMatrix * boneTransform.localToWorldMatrix;
+                    boneCtx.BindPose = boneWorldRel.inverse;
 
                     // BonePoseData は BoneTransform へのデルタ。IsActive のみ立て、Pre は零のまま
                     boneCtx.BonePoseData = new BonePoseData { IsActive = true };
