@@ -398,7 +398,7 @@ namespace Poly_Ling.EditorIO
                 for (int i = 0; i < boneTransforms.Count; i++)
                 {
                     var boneTransform = boneTransforms[i];
-                    var boneCtx = CreateMeshContextFromBone(boneTransform, boneToIndex);
+                    var boneCtx = CreateMeshContextFromBone(boneTransform, boneToIndex, rootGameObject.transform);
                     boneCtx.ParentModelContext = model;
                     model.Add(boneCtx);
 
@@ -569,18 +569,39 @@ namespace Poly_Ling.EditorIO
         // ボーン MeshContext 構築
         // ================================================================
 
-        private static MeshContext CreateMeshContextFromBone(Transform bone, Dictionary<Transform, int> boneToIndex)
+        private static MeshContext CreateMeshContextFromBone(Transform bone, Dictionary<Transform, int> boneToIndex, Transform rootTransform)
         {
             var meshObject = new MeshObject(bone.name)
             {
                 Type = MeshType.Bone
             };
 
+            bool parentIsBone = bone.parent != null && boneToIndex.ContainsKey(bone.parent);
+
+            // BoneTransform：
+            //   親がボーン → 親ボーン相対のローカル変換（従来通り）。
+            //   親がボーンでない（構造ノード=Mesh 分類の MeshRoot/Reference 等）→ その親の変換が
+            //     ボーン階層から脱落するため、workRoot 相対の変換に畳み込む（非ボーン祖先の回転等を保持）。
+            Vector3 pos, rot, scale;
+            if (parentIsBone || rootTransform == null)
+            {
+                pos   = bone.localPosition;
+                rot   = bone.localEulerAngles;
+                scale = bone.localScale;
+            }
+            else
+            {
+                var m = rootTransform.worldToLocalMatrix * bone.localToWorldMatrix;
+                pos   = m.GetColumn(3);
+                rot   = m.rotation.eulerAngles;
+                scale = m.lossyScale;
+            }
+
             var boneTransform = new BoneTransform
             {
-                Position = bone.localPosition,
-                Rotation = bone.localEulerAngles,
-                Scale    = bone.localScale,
+                Position = pos,
+                Rotation = rot,
+                Scale    = scale,
                 UseLocalTransform = true
             };
             meshObject.BoneTransform = boneTransform;
@@ -593,8 +614,9 @@ namespace Poly_Ling.EditorIO
             };
 
             // 親インデックス（HierarchyParentIndex は ComputeWorldMatrices で使用）
-            if (bone.parent != null && boneToIndex.TryGetValue(bone.parent, out int parentIndex))
+            if (parentIsBone)
             {
+                int parentIndex = boneToIndex[bone.parent];
                 meshContext.ParentIndex = parentIndex;
                 meshContext.HierarchyParentIndex = parentIndex;
             }
@@ -603,12 +625,6 @@ namespace Poly_Ling.EditorIO
                 meshContext.ParentIndex = -1;
                 meshContext.HierarchyParentIndex = -1;
             }
-
-            // ローカルトランスフォーム（MeshObject.BoneTransform へ反映）
-            meshContext.BoneTransform.Position = bone.localPosition;
-            meshContext.BoneTransform.Rotation = bone.localEulerAngles;
-            meshContext.BoneTransform.Scale    = bone.localScale;
-            meshContext.BoneTransform.UseLocalTransform = true;
 
             meshContext.OriginalPositions = new Vector3[0];
             meshContext.UnityMesh = new Mesh { name = bone.name };
