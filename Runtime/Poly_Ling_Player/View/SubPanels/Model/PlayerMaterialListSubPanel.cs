@@ -55,7 +55,7 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("マテリアルリスト"));
+            root.Add(SecLabel("マテリアル（質感・色）"));
 
             _countLabel = new Label("0 slots");
             _countLabel.style.fontSize = 10;
@@ -69,7 +69,7 @@ namespace Poly_Ling.Player
             root.Add(_list);
 
             // スロット追加ボタン
-            var addBtn = new Button(OnAdd) { text = "+ スロット追加" };
+            var addBtn = new Button(OnAdd) { text = "+ 新規マテリアルを作成" };
             addBtn.style.marginBottom = 4;
             root.Add(addBtn);
 
@@ -98,6 +98,21 @@ namespace Poly_Ling.Player
             root.Add(_statusLabel);
         }
 
+        // ── 表示同期 ───────────────────────────────────────────────────────
+        // パネル表示直後、ハイライト行(CurrentMaterialIndex)と詳細展開(_editingSlot)が
+        // 別変数のままだと詳細が出ない。表示時に _editingSlot を現在スロットへ揃える。
+        // 折りたたみトグルは Refresh() では触らないため、パネル表示時のみ呼ぶこと。
+        public void SyncEditingSlotToCurrent()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) { _editingSlot = -1; return; }
+            int count = model.MaterialCount;
+            if (count <= 0) { _editingSlot = -1; return; }
+            int idx = model.CurrentMaterialIndex;
+            if (idx < 0 || idx >= count) idx = count - 1;
+            _editingSlot = idx;
+        }
+
         // ── Refresh ───────────────────────────────────────────────────────
         public void Refresh()
         {
@@ -124,9 +139,9 @@ namespace Poly_Ling.Player
             // パラメータエリア
             RebuildParamSection(model);
 
-            // 面適用セクション
-            var tc  = GetToolContext?.Invoke();
-            var sel = tc?.SelectionState;
+            // 面適用セクション（面は描画メッシュの Selection に入るためそこから直接読む。
+            // GetToolContext().SelectionState は ToToolContext で未設定=null のため使えない）
+            var sel = model?.FirstDrawableMeshContext?.Selection;
             bool hasFace = sel != null && sel.Faces.Count > 0;
             if (_applySection != null) _applySection.style.display = hasFace ? DisplayStyle.Flex : DisplayStyle.None;
             if (hasFace)
@@ -244,7 +259,25 @@ namespace Poly_Ling.Player
                 _paramSection.Add(ParamLabel("メインテクスチャ"));
                 var texRow = new VisualElement();
                 texRow.style.flexDirection = FlexDirection.Row;
+                texRow.style.alignItems    = Align.Center;
                 texRow.style.marginBottom  = 4;
+
+                // サムネプレビュー（メインテクスチャが設定されていれば表示）
+                var thumb = new VisualElement();
+                thumb.style.width  = 40;
+                thumb.style.height = 40;
+                thumb.style.marginRight = 6;
+                thumb.style.borderTopWidth  = thumb.style.borderBottomWidth =
+                thumb.style.borderLeftWidth = thumb.style.borderRightWidth  = 1;
+                thumb.style.borderTopColor  = thumb.style.borderBottomColor =
+                thumb.style.borderLeftColor = thumb.style.borderRightColor  =
+                    new StyleColor(new Color(0.5f, 0.5f, 0.5f));
+                thumb.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+                thumb.style.backgroundSize  = new StyleBackgroundSize(
+                    new BackgroundSize(BackgroundSizeType.Contain));
+                if (tex != null)
+                    thumb.style.backgroundImage = new StyleBackground(tex);
+                texRow.Add(thumb);
 
                 var texLabel = new Label(texName);
                 texLabel.style.flexGrow = 1;
@@ -255,7 +288,7 @@ namespace Poly_Ling.Player
                 texLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
 
                 string capturedProp = propName;
-                var browseBtn = new Button(() => OnBrowseTexture(mat, capturedProp, texLabel)) { text = "..." };
+                var browseBtn = new Button(() => OnBrowseTexture(mat, capturedProp, texLabel, thumb)) { text = "..." };
                 browseBtn.style.width = 28;
 
                 texRow.Add(texLabel);
@@ -398,7 +431,7 @@ namespace Poly_Ling.Player
         }
 
         // ── テクスチャブラウズ ────────────────────────────────────────────
-        private void OnBrowseTexture(Material mat, string propName, Label displayLabel)
+        private void OnBrowseTexture(Material mat, string propName, Label displayLabel, VisualElement preview)
         {
             string dir = Application.dataPath;
             string path = PLEditorBridge.I.OpenFilePanel("テクスチャ選択", dir, "png,jpg,jpeg,tga,bmp");
@@ -414,6 +447,7 @@ namespace Poly_Ling.Player
                     tex.name = Path.GetFileNameWithoutExtension(path);
                     mat.SetTexture(propName, tex);
                     displayLabel.text = tex.name;
+                    if (preview != null) preview.style.backgroundImage = new StyleBackground(tex);
                     MarkDirty();
                     SetStatus($"テクスチャ設定: {tex.name}");
                 }
@@ -517,7 +551,7 @@ namespace Poly_Ling.Player
                 m.CurrentMaterialIndex = m.MaterialCount - 1;
                 RecordChange(before, "Add Material Slot");
                 AutoUpdateDefault(m);
-                NotifyAndRefresh("スロット追加");
+                NotifyAndRefresh("マテリアル追加");
             }
         }
 
@@ -548,7 +582,7 @@ namespace Poly_Ling.Player
                 if (_editingSlot == index) _editingSlot = -1;
                 RecordChange(before, $"Remove Material Slot [{index}]");
                 tc?.SyncMesh?.Invoke();
-                NotifyAndRefresh("スロット削除");
+                NotifyAndRefresh("マテリアル削除");
             }
         }
 
@@ -556,8 +590,8 @@ namespace Poly_Ling.Player
         {
             var m  = GetModel?.Invoke();     if (m == null) return;
             var tc = GetToolContext?.Invoke();
-            var sel = tc?.SelectionState;
             var mc = m.FirstDrawableMeshContext;
+            var sel = mc?.Selection;   // 面は描画メッシュの Selection に入る（tc.SelectionState は null）
             if (mc?.MeshObject == null || sel == null || sel.Faces.Count == 0) return;
             int matIdx   = m.CurrentMaterialIndex;
             int modelIdx = _getModelIndex?.Invoke() ?? 0;

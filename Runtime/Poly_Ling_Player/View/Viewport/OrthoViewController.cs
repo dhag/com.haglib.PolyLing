@@ -11,6 +11,25 @@ namespace Poly_Ling.Player
     public enum OrthoViewDirection { Top, Front, Side }
 
     /// <summary>
+    /// Top / Side / Front の3正投影ビューで共有する視点状態（連動用）。
+    /// 同一インスタンスを各 <see cref="OrthoViewController"/> に注入すると、
+    /// いずれかのパン／ズーム操作が3ビュー全てに反映される。
+    /// </summary>
+    public sealed class OrthoViewSharedState
+    {
+        public Vector3 Target = Vector3.zero;
+
+        // ビューポート高さに依存しない共有ズーム：スクリーン1pxあたりのワールド高さ。
+        // 各ビューの orthographicSize = WorldHeightPerPixel × pixelHeight ÷ 2。
+        // これにより高さの異なるビュー間でも見かけのズーム（px/world）が一致する。
+        public float WorldHeightPerPixel = 0.01f;
+
+        // ResetToMesh の遅延解決用。pixelHeight 確定時に WorldHeightPerPixel へ変換する
+        // 目標ワールド半高さ（<0 は解決不要）。
+        public float PendingResetHalfHeight = -1f;
+    }
+
+    /// <summary>
     /// 正投影カメラ用パン・ズームコントローラー。
     /// <see cref="IMouseEventSource"/> のイベントを購読する。
     /// 毎フレーム <see cref="ApplyCameraTransform"/> を呼ぶこと。
@@ -61,8 +80,27 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
-        public Vector3 Target    { get; private set; } = Vector3.zero;
-        public float   OrthoSize { get; private set; } = 1f;
+        // Top/Side/Front で共有する視点状態（連動）。既定は個別インスタンス。
+        // Manager が Top/Side/Front に同一インスタンスを注入することで連動する。
+        private OrthoViewSharedState _shared = new OrthoViewSharedState();
+
+        public Vector3 Target { get => _shared.Target; private set => _shared.Target = value; }
+
+        /// <summary>共有ズーム（スクリーン1pxあたりのワールド高さ）。高さ非依存。</summary>
+        public float WorldHeightPerPixel
+        {
+            get => _shared.WorldHeightPerPixel;
+            private set => _shared.WorldHeightPerPixel = value;
+        }
+
+        /// <summary>true のとき反対方向から見る（Top↔Bottom / Front↔Back / Right↔Left）。</summary>
+        public bool Flipped { get; set; } = false;
+
+        /// <summary>連動用の共有視点状態を注入する。Top/Side/Front に同一インスタンスを渡す。</summary>
+        public void SetSharedState(OrthoViewSharedState shared)
+        {
+            if (shared != null) _shared = shared;
+        }
 
         private readonly OrthoViewDirection _direction;
         private bool _isDragging;
@@ -78,8 +116,11 @@ namespace Poly_Ling.Player
 
         public void ResetToMesh(Bounds bounds)
         {
-            Target   = bounds.center;
-            OrthoSize = Mathf.Clamp(bounds.size.magnitude * 0.6f, OrthoSizeMin, OrthoSizeMax);
+            Target = bounds.center;
+            // pixelHeight はここでは不明なため、目標ワールド半高さを保留し、
+            // 次の ApplyCameraTransform（cam.pixelHeight 確定時）で解決する。
+            _shared.PendingResetHalfHeight =
+                Mathf.Clamp(bounds.size.magnitude * 0.6f, OrthoSizeMin, OrthoSizeMax);
         }
 
         // ================================================================
@@ -110,29 +151,72 @@ namespace Poly_Ling.Player
         public void ApplyCameraTransform(Camera cam)
         {
             if (cam == null) return;
-            cam.orthographic     = true;
-            cam.orthographicSize = OrthoSize;
+            cam.orthographic = true;
+
+            // ビューポート高さ補正：全ビューで px/world 比を一致させるため、
+            // 高さ非依存の WorldHeightPerPixel から orthographicSize を算出する。
+            float halfPix = Mathf.Max(1f, cam.pixelHeight * 0.5f);
+
+            // ResetToMesh の遅延解決：pixelHeight が有効なこのタイミングで
+            // 目標ワールド半高さ → WorldHeightPerPixel へ変換する。
+            if (_shared.PendingResetHalfHeight >= 0f && cam.pixelHeight > 1f)
+            {
+                WorldHeightPerPixel = _shared.PendingResetHalfHeight / halfPix;
+                _shared.PendingResetHalfHeight = -1f;
+            }
+
+            cam.orthographicSize =
+                Mathf.Clamp(WorldHeightPerPixel * halfPix, OrthoSizeMin, OrthoSizeMax);
 
             const float camDist = 100f; // 十分遠い位置に置く（クリッピング回避）
 
             switch (_direction)
             {
                 case OrthoViewDirection.Top:
-                    cam.transform.position = Target + Vector3.up * camDist;
-                    cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+                    if (!Flipped)
+                    {
+                        // Top: 上から見下ろす
+                        cam.transform.position = Target + Vector3.up * camDist;
+                        cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+                    }
+                    else
+                    {
+                        // Bottom: 下から見上げる
+                        cam.transform.position = Target + Vector3.down * camDist;
+                        cam.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
+                    }
                     break;
 
                 case OrthoViewDirection.Front:
                     // PMXモデルは-Z向き。正面(Front)ビューはモデルの正面を見るため
                     // カメラを -Z 側に置き +Z 方向を向く
-                    cam.transform.position = Target + Vector3.back * camDist;
-                    cam.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
+                    if (!Flipped)
+                    {
+                        // Front
+                        cam.transform.position = Target + Vector3.back * camDist;
+                        cam.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
+                    }
+                    else
+                    {
+                        // Back: +Z 側に置き -Z 方向を向く
+                        cam.transform.position = Target + Vector3.forward * camDist;
+                        cam.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+                    }
                     break;
 
                 case OrthoViewDirection.Side:
-                    // Side: +X 側に置き -X 方向を向く（右側面ビュー）
-                    cam.transform.position = Target + Vector3.right * camDist;
-                    cam.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+                    if (!Flipped)
+                    {
+                        // Right: +X 側に置き -X 方向を向く（右側面ビュー）
+                        cam.transform.position = Target + Vector3.right * camDist;
+                        cam.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+                    }
+                    else
+                    {
+                        // Left: -X 側に置き +X 方向を向く（左側面ビュー）
+                        cam.transform.position = Target + Vector3.left * camDist;
+                        cam.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+                    }
                     break;
             }
         }
@@ -153,23 +237,25 @@ namespace Poly_Ling.Player
             // 右ボタン(1) または 中ボタン(2) → パン
             if (btn != 1 && btn != 2) return;
 
+            // 連動一致のため、フリップはパン方向に影響させない（表示のみ反転）。
+            // 移動量は高さ非依存の WorldHeightPerPixel による等倍（カーソル追従）。
+            float wpp = WorldHeightPerPixel;
+
             Vector3 panDelta;
             switch (_direction)
             {
                 case OrthoViewDirection.Top:
                     // Top: X→X, Y（スクリーン上下）→ Z
-                    panDelta = new Vector3(-delta.x, 0f, -delta.y) * OrthoSize * PanSensitivity;
+                    panDelta = new Vector3(-delta.x, 0f, -delta.y) * wpp;
                     break;
                 case OrthoViewDirection.Front:
                 default:
-                    // Front: カメラ -Z 側、+Z 向き。
-                    // スクリーン右 → Target.x 減少（カメラが右に動く＝シーンが左に見える）
-                    panDelta = new Vector3(-delta.x, -delta.y, 0f) * OrthoSize * PanSensitivity;
+                    // Front: スクリーン右 → Target.x
+                    panDelta = new Vector3(-delta.x, -delta.y, 0f) * wpp;
                     break;
                 case OrthoViewDirection.Side:
-                    // Side: カメラ +X 側、-X 向き。
-                    // スクリーン右 → Target.z 減少
-                    panDelta = new Vector3(0f, -delta.y, -delta.x) * OrthoSize * PanSensitivity;
+                    // Side: スクリーン右 → Target.z
+                    panDelta = new Vector3(0f, -delta.y, -delta.x) * wpp;
                     break;
             }
             Target += panDelta;
@@ -190,8 +276,10 @@ namespace Poly_Ling.Player
 
         private void OnScroll(float scroll, ModifierKeys mods)
         {
-            OrthoSize *= 1f - scroll * ZoomSensitivity;
-            OrthoSize  = Mathf.Clamp(OrthoSize, OrthoSizeMin, OrthoSizeMax);
+            // 高さ非依存の共有ズームを更新する。実際の orthographicSize は
+            // ApplyCameraTransform で各ビューの pixelHeight から算出される。
+            WorldHeightPerPixel *= 1f - scroll * ZoomSensitivity;
+            WorldHeightPerPixel  = Mathf.Max(1e-6f, WorldHeightPerPixel);
             // Phase 1: スクロールは単発イベントのため、フル更新を伴う OnCameraChanged を発火する。
             OnCameraChanged?.Invoke();
         }

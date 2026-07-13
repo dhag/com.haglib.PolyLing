@@ -152,7 +152,22 @@ namespace Poly_Ling.Player
                 OnButtonUp?.Invoke(btn, pos, mods);
 
                 if (prevState == BtnState.Pressed)
-                    OnClick?.Invoke(btn, pos, mods);
+                {
+                    // ポーリングが DragThreshold 越えを取りこぼした高速ドラッグ対策。
+                    // down→up の総移動量が閾値超なら click ではなく drag として確定する
+                    // （矩形が出ず、過去の GPU hover 結果が1つ選ばれてしまう誤選択を防ぐ）。
+                    float movedTotal = Vector2.Distance(pos, _downPos[btn]);
+                    if (movedTotal > DragThreshold)
+                    {
+                        OnDragBegin?.Invoke(btn, _downPos[btn], mods);
+                        OnDrag?.Invoke(btn, pos, pos - _downPos[btn], mods);
+                        OnDragEnd?.Invoke(btn, pos, mods);
+                    }
+                    else
+                    {
+                        OnClick?.Invoke(btn, pos, mods);
+                    }
+                }
                 else if (prevState == BtnState.Dragging)
                     OnDragEnd?.Invoke(btn, pos, mods);
                 return;

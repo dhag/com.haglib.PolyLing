@@ -175,6 +175,26 @@ namespace Poly_Ling.Player
         private Dictionary<int, IVertexTransform> _meshTransforms   = new Dictionary<int, IVertexTransform>();
 
         private AxisGizmo          _axisGizmo      = new AxisGizmo();
+
+        /// <summary>
+        /// 選択専用モード。true のとき移動ギズモのヒットテスト/描画と移動フックを無効化し、
+        /// ドラッグは常に box/lasso 選択、クリックは選択のみになる（パネル文脈での誤移動を防ぐ）。
+        /// </summary>
+        public bool SelectOnly;
+
+        /// <summary>
+        /// 組み込み移動ギズモ（AxisGizmo）の描画/ヒットテストを抑止する。
+        /// 将来、回転・拡大など移動以外のギズモを持つモードが、自前ギズモを描くために true にする。
+        /// </summary>
+        public bool SuppressBuiltinGizmo;
+
+        /// <summary>
+        /// 将来ギズモ用のヒットテスト差し替え。設定されている場合、組み込み移動ギズモの代わりに
+        /// これを呼び、true（＝自前ギズモに当たった）ならツール操作フック（OnDragStartExtra 経由）へ入る。
+        /// SelectOnly 時は呼ばれない（選択専用のためツール操作を一切行わない）。
+        /// </summary>
+        public Func<Vector2, ToolContext, bool> GizmoHitTestOverride;
+
         private AxisGizmo.AxisType _draggingAxis   = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _hoveredAxis    = AxisGizmo.AxisType.None;
         private Vector2            _lastAxisDragPos;
@@ -285,9 +305,10 @@ namespace Poly_Ling.Player
                           MeshIndex = hit.MeshIndex, VertexIndex = hit.VertexIndex }
                     : PlayerHoverElement.None);
 
-            // 軸ギズモヒットテスト（最優先）
+            // 軸ギズモヒットテスト（最優先）。SelectOnly 時は移動を一切行わないためスキップし、
+            // 常に box/lasso 選択へ進む。SuppressBuiltinGizmo 時も組み込み移動ギズモは使わない。
             var ctx = GetToolContext?.Invoke();
-            if (ctx != null)
+            if (!SelectOnly && !SuppressBuiltinGizmo && ctx != null)
             {
                 UpdateAffectedVertices();
                 if (HasAnyAffected())
@@ -308,9 +329,20 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // 要素ヒット → PendingAction
+            // 将来ギズモ（回転/拡大等）のヒットテスト差し替え。当たったらツール操作フックへ委譲する。
+            // （PendingAction 経由で OnDragStartExtra が呼ばれ、ツール側が処理する）。
+            if (!SelectOnly && GizmoHitTestOverride != null && ctx != null
+                && GizmoHitTestOverride(screenPos, ctx))
+            {
+                UpdateAffectedVertices();
+                _state    = MoveState.PendingAction;
+                _dragMode = DragMode.Moving;
+                return;
+            }
+
+            // 要素ヒット → PendingAction（SelectOnly 時は移動/ツール操作を行わず box/lasso 選択へ）
             UpdateAffectedVertices();
-            if (_elemOnMouseDown.HasHit)
+            if (!SelectOnly && _elemOnMouseDown.HasHit)
             {
                 _state    = MoveState.PendingAction;
                 _dragMode = DragMode.Moving;
@@ -513,6 +545,8 @@ namespace Poly_Ling.Player
         {
             origin = xEnd = yEnd = zEnd = Vector2.zero;
             hoveredAxis = AxisGizmo.AxisType.None;
+            if (SelectOnly) return false;   // 選択専用モードではギズモを描画しない
+            if (SuppressBuiltinGizmo) return false;   // 自前ギズモを使うモードでは組み込みギズモを描画しない
             if (ctx == null) return false;
             UpdateAffectedVertices();
             if (!HasAnyAffected()) return false;
@@ -528,6 +562,8 @@ namespace Poly_Ling.Player
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             _lastMousePos = ToImgui(screenPos);
+            if (SelectOnly) return;   // 選択専用モードではギズモ軸ホバーを更新しない
+            if (SuppressBuiltinGizmo) return;   // 自前ギズモを使うモードでは組み込みギズモをホバーしない
             if (ctx == null || _state != MoveState.Idle) return;
             UpdateAffectedVertices();
             if (!HasAnyAffected()) return;
@@ -574,6 +610,8 @@ namespace Poly_Ling.Player
                 $"[UndoDbg] Push SelectionChangeRecord (model={model?.Name ?? "<null>"}, " +
                 $"beforeV={before.Vertices?.Count ?? 0}, afterV={after.Vertices?.Count ?? 0}, " +
                 $"beforeE={before.Edges?.Count ?? 0}, afterE={after.Edges?.Count ?? 0}, " +
+                $"beforeF={before.Faces?.Count ?? 0}, afterF={after.Faces?.Count ?? 0}, " +
+                $"beforeL={before.Lines?.Count ?? 0}, afterL={after.Lines?.Count ?? 0}, " +
                 $"mode={after.Mode})");
             _undoController.VertexEditStack.Record(record, "選択変更");
             UnityEngine.Debug.Log(

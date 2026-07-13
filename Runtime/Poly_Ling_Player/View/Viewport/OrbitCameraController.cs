@@ -42,6 +42,13 @@ namespace Poly_Ling.Player
         public float   Distance { get; private set; } =   3f;
         public Vector3 Target   { get; private set; } = Vector3.zero;
 
+        /// <summary>
+        /// true のとき透視カメラを正投影(orthographic)で描画する。
+        /// 視点(RotX/RotY/RotZ/Target/Distance)は透視と共有し、
+        /// orthographicSize は現在の Distance と fov から算出する。
+        /// </summary>
+        public bool    Orthographic { get; set; } = false;
+
         // ================================================================
         // コールバック
         // ================================================================
@@ -138,6 +145,16 @@ namespace Poly_Ling.Player
             //   その up は「視線軸周りに RotZ 回した up」に一致する。
             Vector3 up = Quaternion.Euler(RotX, RotY, RotZ) * Vector3.up;
             cam.transform.LookAt(Target, up);
+
+            // 透視／正投影の切替。
+            // 正投影時は、現在の Distance と fov から見かけのスケールが
+            // 一致する orthographicSize を算出する（Target 平面での半画面高）。
+            cam.orthographic = Orthographic;
+            if (Orthographic)
+            {
+                float halfFovRad = cam.fieldOfView * 0.5f * Mathf.Deg2Rad;
+                cam.orthographicSize = Mathf.Max(0.0001f, Distance * Mathf.Tan(halfFovRad));
+            }
         }
 
         // ================================================================

@@ -120,7 +120,7 @@ namespace Poly_Ling.NohMask
     /// FaceMesh メッシュ生成ユーティリティ。
     /// ★★★ 頂点の自動結合は行わない ★★★
     /// </summary>
-    public static class NohMaskMeshGenerator
+    public  static partial class NohMaskMeshGenerator
     {
         /// <summary>
         /// JSON文字列からメッシュを生成する。
@@ -292,4 +292,9 @@ namespace Poly_Ling.NohMask
             return result;
         }
     }
+
+
+
+
+
 }

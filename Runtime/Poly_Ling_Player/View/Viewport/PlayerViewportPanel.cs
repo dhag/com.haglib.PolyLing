@@ -106,6 +106,12 @@ namespace Poly_Ling.Player
 
         private readonly VisualElement _boneOverlay;
 
+        // 下絵（3D背面）と RenderTexture 表示用の子要素。
+        // z順（下→上）: _underlayImage → _rtImage → 各ツールオーバーレイ。
+        // RT はカメラ背景を透明化した場合、非ジオメトリ部が透過して背面の下絵が見える。
+        private readonly VisualElement _underlayImage;
+        private readonly VisualElement _rtImage;
+
         public struct BoneWireData
         {
             public Vector2[] ScreenPos;   // ボーン位置スクリーン座標（Y=0下）
@@ -417,8 +423,9 @@ namespace Poly_Ling.Player
         {
             style.flexGrow        = 1;
             style.overflow        = Overflow.Hidden;
-            style.backgroundSize  = new StyleBackgroundSize(
-                new BackgroundSize(BackgroundSizeType.Cover));
+            // RT は子要素 _rtImage に移したため、パネル自身の背景はグレー単色にする
+            // （下絵・ジオメトリのいずれにも覆われない領域の色。従来のクリア色と同じ）。
+            style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.18f, 1f));
 
             RegisterCallback<PointerDownEvent>(OnPointerDown);
             RegisterCallback<PointerMoveEvent>(OnPointerMove);
@@ -426,6 +433,23 @@ namespace Poly_Ling.Player
             RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureLost);
             RegisterCallback<WheelEvent>(OnWheel);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
+
+            // ── 下絵（最背面・既定非表示） ──────────────────────────────
+            _underlayImage = new VisualElement();
+            _underlayImage.style.position    = Position.Absolute;
+            _underlayImage.style.display     = DisplayStyle.None;
+            _underlayImage.pickingMode       = PickingMode.Ignore;
+            Add(_underlayImage);
+
+            // ── RenderTexture 表示（下絵の上・ツールオーバーレイの下） ──
+            _rtImage = new VisualElement();
+            _rtImage.style.position   = Position.Absolute;
+            _rtImage.style.left = _rtImage.style.top =
+            _rtImage.style.right = _rtImage.style.bottom = 0;
+            _rtImage.style.backgroundSize = new StyleBackgroundSize(
+                new BackgroundSize(BackgroundSizeType.Cover));
+            _rtImage.pickingMode      = PickingMode.Ignore;
+            Add(_rtImage);
 
             // 矩形選択オーバーレイ（初期非表示）
             _boxOverlay = new VisualElement();
@@ -535,8 +559,39 @@ namespace Poly_Ling.Player
         private void RefreshBackground()
         {
             if (Viewport?.RT != null)
-                style.backgroundImage = new StyleBackground(
+                _rtImage.style.backgroundImage = new StyleBackground(
                     Background.FromRenderTexture(Viewport.RT));
+        }
+
+        // ================================================================
+        // 下絵（3D背面）
+        // ================================================================
+
+        /// <summary>
+        /// このパネルに下絵を設定する。RT の背面に配置され、非ジオメトリ部から見える。
+        /// topLeft: パネル左上からのpx位置。scaleOrigin: 拡大縮小の原点（要素ローカルpx）。
+        /// scale: 2Dスケール（x,y）。
+        /// </summary>
+        public void SetUnderlay(Texture2D tex, Vector2 topLeft, Vector2 scaleOrigin, Vector2 scale)
+        {
+            if (tex == null) { ClearUnderlay(); return; }
+
+            _underlayImage.style.display         = DisplayStyle.Flex;
+            _underlayImage.style.backgroundImage = new StyleBackground(tex);
+            _underlayImage.style.width           = tex.width;
+            _underlayImage.style.height          = tex.height;
+            _underlayImage.style.left            = topLeft.x;
+            _underlayImage.style.top             = topLeft.y;
+            _underlayImage.style.transformOrigin = new TransformOrigin(
+                new Length(scaleOrigin.x, LengthUnit.Pixel),
+                new Length(scaleOrigin.y, LengthUnit.Pixel), 0f);
+            _underlayImage.style.scale           = new Scale(new Vector3(scale.x, scale.y, 1f));
+        }
+
+        /// <summary>下絵を非表示にする。</summary>
+        public void ClearUnderlay()
+        {
+            _underlayImage.style.display = DisplayStyle.None;
         }
 
         // ================================================================

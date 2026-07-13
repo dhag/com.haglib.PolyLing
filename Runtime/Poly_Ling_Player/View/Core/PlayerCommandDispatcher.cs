@@ -914,6 +914,10 @@ namespace Poly_Ling.Player
                         var matAfter = _undoController.CaptureMeshObjectSnapshot();
                         _undoController.RecordTopologyChange(matBefore, matAfter, $"Apply Material [{c.MaterialSlot}]");
                     }
+                    // テクスチャ表面(ctx.UnityMesh)は MaterialIndex 別サブメッシュで描画されるため、
+                    // MaterialIndex 変更後は UnityMesh を再構築しないと表面に反映されない
+                    // （EnterTopologyChanged は編集用GPUアダプタのみ再構築し UnityMesh は触らない）。
+                    matMc.UnityMesh = matMc.MeshObject.ToUnityMesh(model.MaterialCount);
                     // Phase 2a-2g-1: Material 変更後の GPU 反映を EnterTopologyChanged に集約。
                     _viewportManager.EnterTopologyChanged(project);
                     _notifyPanels(ChangeKind.Attributes);

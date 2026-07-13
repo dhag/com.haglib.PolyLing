@@ -109,7 +109,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, LineExtrude, Rotate, Scale }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, LineExtrude, Rotate, Scale, SelectOnly }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         private struct OverlayIndicator
@@ -187,6 +187,11 @@ namespace Poly_Ling.Player
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
         private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
+
+        // 下絵（3D背面に敷く参照画像）
+        private readonly UnderlayConfig      _underlay = new UnderlayConfig();
+        private PlayerUnderlaySubPanel       _underlaySubPanel;
+        private bool                         _underlayActive;  // 下絵パネル表示中＝左ドラッグでオフセット移動
         private PlayerRemoteServerSubPanel   _remoteServerSubPanel;
         private PlayerVertexMoveSubPanel     _vertexMoveSubPanel;
         private PlayerPivotSubPanel          _pivotSubPanel;
@@ -454,6 +459,11 @@ namespace Poly_Ling.Player
                                     CopyMeshObjectVertexData(ctx.MeshObject, liveMc.MeshObject);
                             }
                             // 参照が同じ場合（委譲でデータ更新済み）もGPUを再構築する
+                            // マテリアル/トポロジ Undo 復元後、テクスチャ表面(UnityMesh)を
+                            // MaterialIndex 別サブメッシュで再構築する。EnterUndoApplied は編集用
+                            // GPUアダプタのみ再構築するため、これが無いと Undo しても表面の材質が
+                            // 戻らない（適用側 ApplyMaterialToFacesCommand と対称の処理）。
+                            liveMc.UnityMesh = liveMc.MeshObject.ToUnityMesh(targetModel.MaterialCount);
                             _editOps.UndoController.SyncMeshObjectReference(liveMc.MeshObject, liveMc.UnityMesh);
                             // Phase 2a-2b-2 Batch 3: Undo 適用の GPU 丸ごと再構築は EnterUndoApplied 経由。
                             _viewportManager.EnterUndoApplied(ActiveProject, targetModel);
@@ -721,6 +731,11 @@ namespace Poly_Ling.Player
             _selectionOps.OnSelectionChanged = () =>
             {
                 _renderer?.NotifySelectionChanged();
+                // 選択変更を可視サブパネルへ反映する（例: マテリアルの「選択面に適用」
+                // セクションは Refresh 内で SelectionState.Faces を見て表示可否を決めるため、
+                // 選択しただけでは更新されずセクションが出ない問題を防ぐ）。
+                foreach (var (section, refresh) in _sectionRefreshPairs)
+                    if (section?.style.display == DisplayStyle.Flex) refresh();
             };
 
             _moveToolHandler = new MoveToolHandler(_selectionOps, ActiveProject)
@@ -1102,6 +1117,57 @@ namespace Poly_Ling.Player
             ConnectCameraChanged(_viewportManager.TopViewport);
             ConnectCameraChanged(_viewportManager.FrontViewport);
             ConnectCameraChanged(_viewportManager.SideViewport);
+
+            // ── Perspective オルソ切替トグル ──────────────────────────
+            if (_layoutRoot?.PerspOrthoToggle != null)
+            {
+                _layoutRoot.PerspOrthoToggle.RegisterValueChangedCallback(evt =>
+                {
+                    var vp = _viewportManager.PerspectiveViewport;
+                    if (vp?.Orbit == null) return;
+                    vp.Orbit.Orthographic = evt.newValue;
+                    // 方向（persp/ortho）に応じた下絵へ差し替え＋再描画。
+                    ApplyUnderlayToViewport(vp, _layoutRoot?.PerspectivePanel);
+                });
+            }
+
+            // ── Top/Front/Side フリップボタン ─────────────────────────
+            void WireFlip(Button btn, PlayerViewport vp, PlayerViewportPanel panel, Label lbl, string normal, string flipped)
+            {
+                if (btn == null || vp?.Ortho == null) return;
+                btn.clicked += () =>
+                {
+                    vp.Ortho.Flipped = !vp.Ortho.Flipped;
+                    if (lbl != null) lbl.text = vp.Ortho.Flipped ? flipped : normal;
+                    // 反転後の方向に応じた下絵へ差し替え＋再描画。
+                    ApplyUnderlayToViewport(vp, panel);
+                };
+            }
+            WireFlip(_layoutRoot?.TopFlipBtn,   _viewportManager.TopViewport,   _layoutRoot?.TopPanel,   _layoutRoot?.TopViewLabel,   "TOP",   "BOTTOM");
+            WireFlip(_layoutRoot?.FrontFlipBtn, _viewportManager.FrontViewport, _layoutRoot?.FrontPanel, _layoutRoot?.FrontViewLabel, "Front", "Back");
+            WireFlip(_layoutRoot?.SideFlipBtn,  _viewportManager.SideViewport,  _layoutRoot?.SidePanel,  _layoutRoot?.SideViewLabel,  "Right", "Left");
+
+            // ── 下絵オフセット移動（下絵パネル表示中の左ドラッグ） ─────
+            void ConnectUnderlayDrag(PlayerViewport vp, PlayerViewportPanel panel)
+            {
+                if (vp == null || panel == null) return;
+                panel.OnDrag += (btn, pos, delta, mods) =>
+                {
+                    if (!_underlayActive || btn != 0) return;
+                    var dir = GetUnderlayDirection(vp);
+                    var s   = _underlay.Get(dir);
+                    if (s == null || !s.HasImage) return;
+
+                    // delta は viewport座標(Y=0下)。TopLeft は UIToolkit(Y=0上) のためY反転。
+                    s.TopLeft += new Vector2(delta.x, -delta.y);
+                    panel.SetUnderlay(s.Texture, s.TopLeft, s.ScaleOrigin, s.Scale);
+                    _underlaySubPanel?.RefreshFields(dir);
+                };
+            }
+            ConnectUnderlayDrag(_viewportManager.PerspectiveViewport, _layoutRoot?.PerspectivePanel);
+            ConnectUnderlayDrag(_viewportManager.TopViewport,        _layoutRoot?.TopPanel);
+            ConnectUnderlayDrag(_viewportManager.FrontViewport,      _layoutRoot?.FrontPanel);
+            ConnectUnderlayDrag(_viewportManager.SideViewport,       _layoutRoot?.SidePanel);
         }
 
         // ================================================================
@@ -2378,6 +2444,9 @@ namespace Poly_Ling.Player
             };
             _unityClipTestSubPanel.Build(_layoutRoot.UnityClipTestSection);
 
+            _underlaySubPanel = new PlayerUnderlaySubPanel(_underlay, ApplyAllUnderlays);
+            _underlaySubPanel.Build(_layoutRoot.UnderlaySection);
+
             _remoteServerSubPanel = new PlayerRemoteServerSubPanel
             {
                 GetServer = () => _playerServer,
@@ -2392,6 +2461,8 @@ namespace Poly_Ling.Player
 
             _pivotSubPanel = new PlayerPivotSubPanel();
             _pivotSubPanel.Build(_layoutRoot.PivotSection);
+            _pivotSubPanel.OnPivotToVertexCentroid = () => MovePivotToCentroid(useBones: false);
+            _pivotSubPanel.OnPivotToBoneCentroid   = () => MovePivotToCentroid(useBones: true);
 
             _sculptSubPanel = new PlayerSculptSubPanel
             {
@@ -2439,6 +2510,7 @@ namespace Poly_Ling.Player
                 ActiveProject?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
 
             _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
+            _layoutRoot.AdvancedPrimitiveBtn.clicked += ShowAdvancedPrimitivePanel;
 
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
@@ -2479,6 +2551,8 @@ namespace Poly_Ling.Player
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
             _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
+            if (_layoutRoot.UnderlayBtn != null)
+                _layoutRoot.UnderlayBtn.clicked     += ShowUnderlayPanel;
             _layoutRoot.FullExportMqoBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.MQO);
             _layoutRoot.ProjectFileBtn.clicked      += ShowProjectFilePanel;
             _layoutRoot.PartialImportPmxBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.PMX);
@@ -2505,6 +2579,27 @@ namespace Poly_Ling.Player
                         ? ObjectMoveToolHandler.SelectionDragMode.Lasso
                         : ObjectMoveToolHandler.SelectionDragMode.Box;
             });
+
+            // 選択モード切替（頂点/辺/面/線分・非排他）→ 現モデル各メッシュの Selection.Mode に反映。
+            System.Action applySelectMode = () =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model?.MeshContextList == null) return;
+                MeshSelectMode m = MeshSelectMode.None;
+                if (_layoutRoot.SelModeVertexToggle.value) m |= MeshSelectMode.Vertex;
+                if (_layoutRoot.SelModeEdgeToggle.value)   m |= MeshSelectMode.Edge;
+                if (_layoutRoot.SelModeFaceToggle.value)   m |= MeshSelectMode.Face;
+                if (_layoutRoot.SelModeLineToggle.value)   m |= MeshSelectMode.Line;
+                if (m == MeshSelectMode.None) m = MeshSelectMode.Vertex;  // 全OFFは頂点にフォールバック
+                foreach (var mc in model.MeshContextList)
+                    if (mc?.Selection != null && mc.Type != MeshType.Bone)
+                        mc.Selection.Mode = m;
+                _activePanel?.MarkDirtyRepaint();
+            };
+            _layoutRoot.SelModeVertexToggle.RegisterValueChangedCallback(_ => applySelectMode());
+            _layoutRoot.SelModeEdgeToggle  .RegisterValueChangedCallback(_ => applySelectMode());
+            _layoutRoot.SelModeFaceToggle  .RegisterValueChangedCallback(_ => applySelectMode());
+            _layoutRoot.SelModeLineToggle  .RegisterValueChangedCallback(_ => applySelectMode());
 
             _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
             _layoutRoot.MeshListBtn .clicked += ShowMeshListPanel;
@@ -2650,7 +2745,16 @@ namespace Poly_Ling.Player
         private void ShowPrimitivePanel()
         {
             // カテゴリ 2: 3D 操作 (InteractionMode) は維持
+            // 基本図形/高度な図形は同一 PrimitiveSection を共有し、グリッドだけカテゴリで切替える。
             ShowRightPanel(_layoutRoot?.PrimitiveSection, _layoutRoot?.PrimitiveBtn);
+            _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Basic);
+        }
+
+        private void ShowAdvancedPrimitivePanel()
+        {
+            // 基本図形と同じセクションを開き、カテゴリのみ高度な図形へ切り替える。
+            ShowRightPanel(_layoutRoot?.PrimitiveSection, _layoutRoot?.AdvancedPrimitiveBtn);
+            _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
         }
 
         private void ShowMeshFilterToSkinnedPanel()
@@ -2715,9 +2819,10 @@ namespace Poly_Ling.Player
 
         private void ShowMaterialListPanel()
         {
-            // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
+            // 選択専用: 面を選択してマテリアルを適用できるよう、移動なしの選択のみ有効化する。
+            SetInteractionMode(InteractionMode.SelectOnly);
             ShowRightPanel(_layoutRoot?.MaterialListSection, _layoutRoot?.MaterialListBtn);
+            _materialListSubPanel?.SyncEditingSlotToCurrent();
             _materialListSubPanel?.Refresh();
         }
 
@@ -2976,6 +3081,68 @@ namespace Poly_Ling.Player
             _remoteServerSubPanel?.Refresh();
         }
 
+        private void ShowUnderlayPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.UnderlaySection, _layoutRoot?.UnderlayBtn);
+            _underlayActive = true;   // 左ドラッグでオフセット移動を有効化
+        }
+
+        // ================================================================
+        // 下絵（3D背面に敷く参照画像）の適用
+        // ================================================================
+
+        /// <summary>ビューポート vp の現在の表示方向に対応する下絵スロットを返す。</summary>
+        private UnderlayDirection GetUnderlayDirection(PlayerViewport vp)
+        {
+            if (vp == _viewportManager.PerspectiveViewport)
+                return (vp.Orbit != null && vp.Orbit.Orthographic)
+                     ? UnderlayDirection.Ortho : UnderlayDirection.Persp;
+            if (vp == _viewportManager.TopViewport)
+                return (vp.Ortho != null && vp.Ortho.Flipped)
+                     ? UnderlayDirection.Bottom : UnderlayDirection.Top;
+            if (vp == _viewportManager.FrontViewport)
+                return (vp.Ortho != null && vp.Ortho.Flipped)
+                     ? UnderlayDirection.Back : UnderlayDirection.Front;
+            if (vp == _viewportManager.SideViewport)
+                return (vp.Ortho != null && vp.Ortho.Flipped)
+                     ? UnderlayDirection.Left : UnderlayDirection.Right;
+            return UnderlayDirection.Persp;
+        }
+
+        /// <summary>
+        /// 指定ビューへ現在方向の下絵を適用する。画像があればカメラ背景を透明化して
+        /// 背面の下絵を見せ、なければ不透明に戻す。最後に再描画を要求する。
+        /// </summary>
+        private void ApplyUnderlayToViewport(PlayerViewport vp, PlayerViewportPanel panel)
+        {
+            if (vp == null || panel == null) return;
+
+            var slot = _underlay.Get(GetUnderlayDirection(vp));
+            if (slot != null && slot.HasImage)
+            {
+                panel.SetUnderlay(slot.Texture, slot.TopLeft, slot.ScaleOrigin, slot.Scale);
+                vp.SetClearTransparent(true);
+            }
+            else
+            {
+                panel.ClearUnderlay();
+                vp.SetClearTransparent(false);
+            }
+
+            // クリア色の変化を反映するため再描画。
+            _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Committed);
+        }
+
+        /// <summary>4ビュー全てへ下絵を再適用する（設定変更時）。</summary>
+        private void ApplyAllUnderlays()
+        {
+            ApplyUnderlayToViewport(_viewportManager.PerspectiveViewport, _layoutRoot?.PerspectivePanel);
+            ApplyUnderlayToViewport(_viewportManager.TopViewport,        _layoutRoot?.TopPanel);
+            ApplyUnderlayToViewport(_viewportManager.FrontViewport,      _layoutRoot?.FrontPanel);
+            ApplyUnderlayToViewport(_viewportManager.SideViewport,       _layoutRoot?.SidePanel);
+        }
+
         private void ShowExportPanel(PlayerExportSubPanel.Mode mode)
         {
             // カテゴリ 3
@@ -3087,6 +3254,8 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.VMDTestSection);
             Hide(_layoutRoot.UnityClipTestSection);
             Hide(_layoutRoot.RemoteServerSection);
+            Hide(_layoutRoot.UnderlaySection);
+            _underlayActive = false;   // 別パネルへ切替時は下絵ドラッグを無効化
         }
 
         // ================================================================
@@ -3431,6 +3600,11 @@ namespace Poly_Ling.Player
         /// </summary>
         private void PrimitiveMeshFinalize(ModelContext model)
         {
+            // 材質0件のモデルへ基本図形を追加したとき、描画は GetDefaultMaterial()（灰0.7）へ
+            // フォールバックするだけで材質リストには何も入らない。マテリアルパネルで編集できるよう、
+            // 初回0件時のみ同じ灰の既定スロットを1つ生成する（見た目は変えない）。
+            EnsureDefaultMaterialSlot(model);
+
             // Phase 2a-2b-2 Batch 3: RebuildAdapter + SetSelectionState + UpdateSelectedDrawableMesh を
             // EnterSceneReset に集約。カメラは別途 NotifyCameraChanged で個別に呼ぶ。
             _viewportManager.EnterSceneReset(ActiveProject);
@@ -3438,6 +3612,25 @@ namespace Poly_Ling.Player
 
             RebuildModelList();
             NotifyPanels(ChangeKind.ListStructure);
+        }
+
+        /// <summary>
+        /// 材質0件のモデルに、描画フォールバック(GetDefaultMaterial)と同じ灰(0.7)の
+        /// 既定材質スロットを1つ生成する。既に1件以上あれば何もしない。
+        /// </summary>
+        private void EnsureDefaultMaterialSlot(ModelContext model)
+        {
+            if (model == null || model.MaterialCount > 0) return;
+
+            model.AddMaterial(null);   // 既定 MaterialData（URPLit）でスロット追加
+            var matRef = model.GetMaterialReference(0);
+            if (matRef?.Data != null)
+            {
+                matRef.Data.Name = "Default";
+                matRef.Data.SetBaseColor(new Color(0.7f, 0.7f, 0.7f, 1f));
+                matRef.InvalidateCache();   // Data から材質を再生成させる
+            }
+            model.CurrentMaterialIndex = 0;
         }
 
         private void OnImportPmx(string filePath, PMXImportSettings settings)
@@ -3532,6 +3725,95 @@ namespace Poly_Ling.Player
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? loadedProject.Name, m);
             _projectFileSubPanel?.SetStatus($"CSV読込完了: {loadedProject.Name}");
+        }
+
+        // ==== ピボット重心スナップ（頂点のみ移動＋カメラ逆移動で「ピボットが動いた」ように見せる） ====
+        // C = 目標重心(world)、P = 現ピボット原点(world)、Δ = C − P。
+        // 原点・ボーンは動かさず、当該メッシュの全頂点を −Δ 相当だけローカルにシフトし、
+        // カメラ Target を −Δ 動かす（見た目静止・ピボットが重心へ来たように見せる）。
+        private void MovePivotToCentroid(bool useBones)
+        {
+            var model = ActiveProject?.CurrentModel;
+            var ctx   = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (model == null || ctx == null) return;
+
+            var mc = ctx.FirstSelectedMeshContext;
+            var mo = mc?.MeshObject;
+            if (mo == null || mo.VertexCount == 0)
+            {
+                Debug.LogWarning("[Pivot] 頂点を持つメッシュが選択されていません。");
+                return;
+            }
+
+            // 目標重心 C（world）
+            Vector3 C;
+            if (useBones)
+            {
+                Vector3 sum = Vector3.zero; int nb = 0;
+                var bones = ctx.SelectedMeshContexts;
+                if (bones != null)
+                    foreach (var b in bones)
+                        if (b != null && b.Type == MeshType.Bone) { sum += (Vector3)b.WorldMatrix.GetColumn(3); nb++; }
+                if (nb == 0) { Debug.LogWarning("[Pivot] ボーンが選択されていません。"); return; }
+                C = sum / nb;
+            }
+            else
+            {
+                var sel = ctx.SelectedVertices;
+                if (sel == null || sel.Count == 0) { Debug.LogWarning("[Pivot] 頂点が選択されていません。"); return; }
+                Vector3 sum = Vector3.zero; int nv = 0;
+                foreach (int idx in sel)
+                {
+                    if (idx < 0 || idx >= mo.VertexCount) continue;
+                    sum += mc.WorldMatrix.MultiplyPoint3x4(mo.Vertices[idx].Position);
+                    nv++;
+                }
+                if (nv == 0) { Debug.LogWarning("[Pivot] 有効な選択頂点がありません。"); return; }
+                C = sum / nv;
+            }
+
+            Vector3 P = mc.WorldMatrix.GetColumn(3);        // 現ピボット原点(world)
+            Vector3 deltaWorld = C - P;
+            if (deltaWorld.sqrMagnitude < 1e-12f) return;    // 既に一致
+
+            // 原点は不変のまま、全頂点を −Δ 相当だけローカルにシフト
+            Vector3 localShift = mc.WorldMatrix.inverse.MultiplyVector(-deltaWorld);
+
+            int count = mo.VertexCount;
+            var indices = new int[count];
+            var oldPos  = new Vector3[count];
+            var newPos  = new Vector3[count];
+            for (int i = 0; i < count; i++)
+            {
+                indices[i] = i;
+                var v = mo.Vertices[i];
+                oldPos[i] = v.Position;
+                v.Position += localShift;
+                mo.Vertices[i] = v;
+                newPos[i] = v.Position;
+            }
+
+            // Undo 記録
+            if (_editOps?.UndoController != null)
+            {
+                int mcIndex = model.MeshContextList.IndexOf(mc);
+                var entry = new MeshMoveEntry
+                {
+                    MeshContextIndex = mcIndex,
+                    Indices = indices,
+                    OldPositions = oldPos,
+                    NewPositions = newPos
+                };
+                var record = new MultiMeshVertexMoveRecord(new[] { entry });
+                _editOps.UndoController.FocusVertexEdit();
+                _editOps.UndoController.VertexEditStack.Record(record, useBones ? "Pivot→ボーン重心" : "Pivot→頂点重心");
+            }
+
+            // 同期＋カメラ逆移動（Target を −Δ 動かして見た目静止）
+            _viewportManager.SyncMeshPositionsAndTransform(mc, model);
+            var orbit = _activeViewport?.Orbit;
+            if (orbit != null) orbit.SetTarget(orbit.Target - deltaWorld);
+            _activePanel?.MarkDirtyRepaint();
         }
 
         private void OnMergeCsvProject()
@@ -3817,12 +4099,27 @@ namespace Poly_Ling.Player
 
             _interactionMode = mode;
 
+            // SelectOnly は毎回リセットし、下の SelectOnly case でのみ再有効化する
+            // （他モードへ移ったら選択専用を確実に解除）。将来ギズモ用フックも同様にリセット。
+            if (_moveToolHandler != null)
+            {
+                _moveToolHandler.SelectOnly           = false;
+                _moveToolHandler.SuppressBuiltinGizmo = false;
+                _moveToolHandler.GizmoHitTestOverride = null;
+            }
+
             // 新モードの ToolHandler 割当 + ホバーコールバック登録
             switch (mode)
             {
                 case InteractionMode.None:
                     // カテゴリ 3: 3D 操作無効 (ビュー回転/パン/ズームのみ)
                     _vertexInteractor?.SetToolHandler(null);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    break;
+                case InteractionMode.SelectOnly:
+                    // 選択専用: MoveToolHandler の選択/矩形/投げ縄のみ有効化し、移動ギズモ/頂点移動は無効。
+                    if (_moveToolHandler != null) _moveToolHandler.SelectOnly = true;
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
                     _viewportManager?.RegisterActiveToolHandler(null);
                     break;
                 case InteractionMode.VertexMove:

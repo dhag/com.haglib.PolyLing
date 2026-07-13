@@ -36,6 +36,15 @@ namespace Poly_Ling.Player
         public PlayerViewportPanel FrontPanel       { get; private set; }
         public PlayerViewportPanel SidePanel        { get; private set; }
 
+        // 中央ペイン ビューポート操作UI
+        public Toggle PerspOrthoToggle { get; private set; }   // Perspective をオルソ表示に切替
+        public Button TopFlipBtn       { get; private set; }   // Top ↔ Bottom
+        public Button FrontFlipBtn     { get; private set; }   // Front ↔ Back
+        public Button SideFlipBtn      { get; private set; }   // Right ↔ Left
+        public Label  TopViewLabel     { get; private set; }
+        public Label  FrontViewLabel   { get; private set; }
+        public Label  SideViewLabel    { get; private set; }
+
         // ================================================================
         // ビューポート表示フラグ（面ごと）
         // ================================================================
@@ -67,6 +76,12 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
 
+        // 選択モード切替（頂点/辺/面/線分・非排他）。SelectionState.Mode を設定する。
+        public Toggle SelModeVertexToggle { get; private set; }
+        public Toggle SelModeEdgeToggle   { get; private set; }
+        public Toggle SelModeFaceToggle   { get; private set; }
+        public Toggle SelModeLineToggle   { get; private set; }
+
         /// <summary>右ペイン内の動的コンテンツ領域（ScrollView の contentContainer）。</summary>
         public VisualElement RightPaneContent { get; private set; }
 
@@ -82,8 +97,11 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：図形生成セクション（PlayerPrimitiveMeshSubPanel を Build する対象）。</summary>
         public VisualElement PrimitiveSection { get; private set; }
 
-        /// <summary>左ペイン：図形生成ボタン。</summary>
+        /// <summary>左ペイン：図形生成ボタン（基本図形）。</summary>
         public Button PrimitiveBtn { get; private set; }
+
+        /// <summary>左ペイン：図形生成ボタン（高度な図形）。基本図形と同じ PrimitiveSection を開く。</summary>
+        public Button AdvancedPrimitiveBtn { get; private set; }
 
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
         public Button ToolVertexMoveBtn  { get; private set; }
@@ -110,6 +128,12 @@ namespace Poly_Ling.Player
 
         /// <summary>左ペイン：MeshFilter→Skinnedボタン。</summary>
         public Button MeshFilterToSkinnedBtn { get; private set; }
+
+        /// <summary>左ペイン：下絵ボタン（その他）。</summary>
+        public Button UnderlayBtn { get; private set; }
+
+        /// <summary>右ペイン：下絵設定セクション（ScrollView内）。</summary>
+        public VisualElement UnderlaySection { get; private set; }
 
         /// <summary>右ペイン：ブレンドセクション（ScrollView内）。</summary>
         public VisualElement BlendSection { get; private set; }
@@ -315,18 +339,30 @@ namespace Poly_Ling.Player
             _splitPerspSide = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
             _splitPerspSide.style.flexGrow = 1;
             _splitCenter.Add(_splitPerspSide);
-            var perspWrap = BuildViewportPane("Perspective", out perspPanel);
+            PerspOrthoToggle = new Toggle("オルソ") { value = false };
+            PerspOrthoToggle.style.fontSize = 10;
+            PerspOrthoToggle.style.color    = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+            var perspWrap = BuildViewportPane("Perspective", out perspPanel, out _, PerspOrthoToggle);
             _splitPerspSide.Add(perspWrap); PerspectivePanel = perspPanel;
             _perspPane = perspWrap;
-            _splitPerspSide.Add(BuildViewportPane("Side", out sidePanel)); SidePanel = sidePanel;
+
+            SideFlipBtn = MakeFlipBtn("反転");
+            _splitPerspSide.Add(BuildViewportPane("Right", out sidePanel, out var sideLbl, SideFlipBtn));
+            SidePanel = sidePanel; SideViewLabel = sideLbl;
 
             _splitTopFront = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
             _splitTopFront.style.flexGrow = 1;
             _splitCenter.Add(_splitTopFront);
-            var topWrap = BuildViewportPane("TOP", out topPanel);
+
+            TopFlipBtn = MakeFlipBtn("反転");
+            var topWrap = BuildViewportPane("TOP", out topPanel, out var topLbl, TopFlipBtn);
+            TopViewLabel = topLbl;
             _splitTopFront.Add(topWrap); TopPanel = topPanel;
             _topPane = topWrap;
-            _splitTopFront.Add(BuildViewportPane("Front", out frontPanel)); FrontPanel = frontPanel;
+
+            FrontFlipBtn = MakeFlipBtn("反転");
+            _splitTopFront.Add(BuildViewportPane("Front", out frontPanel, out var frontLbl, FrontFlipBtn));
+            FrontPanel = frontPanel; FrontViewLabel = frontLbl;
 
             var rightPaneEl = BuildRightPane();
             _rightPaneEl = rightPaneEl;
@@ -626,6 +662,34 @@ namespace Poly_Ling.Player
 
             scroll.Add(Separator());
 
+            // 選択モード（頂点/辺/面/線分・非排他）— Lasso Select の上に配置。
+            scroll.Add(Header("選択モード"));
+            var selModeRow = new VisualElement();
+            selModeRow.style.flexDirection = FlexDirection.Row;
+            selModeRow.style.flexWrap      = Wrap.Wrap;   // 収まらない場合は折り返して見切れを防ぐ
+            selModeRow.style.marginBottom  = 4;
+            SelModeVertexToggle = new Toggle("頂点") { value = true };
+            SelModeEdgeToggle   = new Toggle("辺")   { value = false };
+            SelModeFaceToggle   = new Toggle("面")   { value = false };
+            SelModeLineToggle   = new Toggle("線分") { value = false };
+            foreach (var t in new[] { SelModeVertexToggle, SelModeEdgeToggle, SelModeFaceToggle, SelModeLineToggle })
+            {
+                t.style.color      = new StyleColor(Color.white);
+                t.style.flexGrow   = 0;
+                t.style.flexShrink = 0;
+                t.style.marginRight = 12;
+                // 既定の広い label min-width を解除し、ラベルとチェックの間隔を詰める
+                // （これが無いとラベルとチェックが大きく離れ、右が見切れる）。
+                if (t.labelElement != null)
+                {
+                    t.labelElement.style.minWidth    = 0;
+                    t.labelElement.style.flexGrow    = 0;
+                    t.labelElement.style.marginRight = 3;
+                }
+                selModeRow.Add(t);
+            }
+            scroll.Add(selModeRow);
+
             LassoToggle = new Toggle("Lasso Select") { value = false };
             LassoToggle.style.marginBottom = 4;
             scroll.Add(LassoToggle);
@@ -644,7 +708,6 @@ namespace Poly_Ling.Player
 
             // ── ファイル ───────────────────────────────────────────────
             var foFile = MakeFoldout("ファイル");
-            scroll.Add(foFile);
 
             // Load PMX / Load MQO（旧: foldout の外・上）を「ファイル」の先頭に配置する。
             foFile.Add(LocalLoaderSection);
@@ -676,18 +739,17 @@ namespace Poly_Ling.Player
             ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
             foFile.Add(ProjectFileBtn);
 
-            scroll.Add(Separator());
-
             // ── 図形生成 ───────────────────────────────────────────────
             var foPrimitive = MakeFoldout("図形生成");
-            scroll.Add(foPrimitive);
 
             PrimitiveBtn = MakeBtn("基本図形");
             foPrimitive.Add(PrimitiveBtn);
 
+            AdvancedPrimitiveBtn = MakeBtn("高度な図形");
+            foPrimitive.Add(AdvancedPrimitiveBtn);
+
             // ── 選択・移動 ─────────────────────────────────────────────
             var foSelectMove = MakeFoldout("選択・移動");
-            scroll.Add(foSelectMove);
 
             var toolRow = new VisualElement();
             toolRow.style.flexDirection = FlexDirection.Row;
@@ -706,12 +768,13 @@ namespace Poly_Ling.Player
             toolRow2.Add(ToolPivotOffsetBtn); toolRow2.Add(ToolSculptBtn); toolRow2.Add(ToolAdvancedSelBtn);
             foSelectMove.Add(toolRow2);
 
-            ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
-            foSelectMove.Add(ToolSkinWeightPaintBtn);
+            var rowRotScale = new VisualElement(); rowRotScale.style.flexDirection = FlexDirection.Row; rowRotScale.style.marginBottom = 2;
+            RotateBtn = MakeBtn("回転");     RotateBtn.style.flexGrow = 1; RotateBtn.style.marginRight = 2;
+            ScaleBtn  = MakeBtn("スケール"); ScaleBtn.style.flexGrow  = 1;
+            rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foSelectMove.Add(rowRotScale);
 
             // ── トポロジー編集 ─────────────────────────────────────────
             var foTopology = MakeFoldout("トポロジー編集");
-            scroll.Add(foTopology);
 
             AddFaceBtn = MakeBtn("面追加"); foTopology.Add(AddFaceBtn);
 
@@ -733,7 +796,6 @@ namespace Poly_Ling.Player
 
             // ── 頂点編集 ───────────────────────────────────────────────
             var foVertex = MakeFoldout("頂点編集");
-            scroll.Add(foVertex);
 
             var rowAlignPlanarize = new VisualElement(); rowAlignPlanarize.style.flexDirection = FlexDirection.Row; rowAlignPlanarize.style.marginBottom = 2;
             AlignVerticesBtn       = MakeBtn("頂点整列");   AlignVerticesBtn.style.flexGrow       = 1; AlignVerticesBtn.style.marginRight       = 2;
@@ -745,15 +807,12 @@ namespace Poly_Ling.Player
             SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
             rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); foVertex.Add(rowMergeSplit);
 
-            var rowRotScaleQuad = new VisualElement(); rowRotScaleQuad.style.flexDirection = FlexDirection.Row; rowRotScaleQuad.style.marginBottom = 2;
-            RotateBtn        = MakeBtn("回転");     RotateBtn.style.flexGrow        = 1; RotateBtn.style.marginRight        = 2;
-            ScaleBtn         = MakeBtn("スケール"); ScaleBtn.style.flexGrow         = 1; ScaleBtn.style.marginRight         = 2;
+            var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
             QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
-            rowRotScaleQuad.Add(RotateBtn); rowRotScaleQuad.Add(ScaleBtn); rowRotScaleQuad.Add(QuadDecimatorBtn); foVertex.Add(rowRotScaleQuad);
+            rowQuad.Add(QuadDecimatorBtn); foVertex.Add(rowQuad);
 
             // ── ボーン・モーフ ─────────────────────────────────────────
             var foBoneMorph = MakeFoldout("ボーン・モーフ");
-            scroll.Add(foBoneMorph);
 
             BoneEditorBtn = MakeBtn("ボーンエディタ");
             foBoneMorph.Add(BoneEditorBtn);
@@ -773,9 +832,11 @@ namespace Poly_Ling.Player
             MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
             MorphCreateBtn = MakeBtn("差分からモーフ生成");         foBoneMorph.Add(MorphCreateBtn);
 
+            ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
+            foBoneMorph.Add(ToolSkinWeightPaintBtn);
+
             // ── UV・マテリアル ─────────────────────────────────────────
             var foUvMat = MakeFoldout("UV・マテリアル");
-            scroll.Add(foUvMat);
 
             var rowUv = new VisualElement(); rowUv.style.flexDirection = FlexDirection.Row; rowUv.style.marginBottom = 2;
             UVEditorBtn = MakeBtn("UVエディタ"); UVEditorBtn.style.flexGrow = 1; UVEditorBtn.style.marginRight = 2;
@@ -783,7 +844,7 @@ namespace Poly_Ling.Player
             UVZBtn      = MakeBtn("UVZ");        UVZBtn.style.flexGrow      = 1;
             rowUv.Add(UVEditorBtn); rowUv.Add(UVUnwrapBtn); rowUv.Add(UVZBtn); foUvMat.Add(rowUv);
 
-            MaterialListBtn = MakeBtn("マテリアルリスト"); foUvMat.Add(MaterialListBtn);
+            MaterialListBtn = MakeBtn("マテリアル（質感・色）"); foUvMat.Add(MaterialListBtn);
             MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
 
             var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
@@ -797,7 +858,6 @@ namespace Poly_Ling.Player
             // インスタンスは不変）。Foldout はコンテナのみを提供する。
             var foRemote = MakeFoldout("サーバと連携");
             RemoteFoldout = foRemote;
-            scroll.Add(foRemote);
 
             RemoteSection = new VisualElement();
             RemoteSection.style.marginBottom = 4;
@@ -811,7 +871,6 @@ namespace Poly_Ling.Player
 
             // ── その他 ─────────────────────────────────────────────────
             var foOther = MakeFoldout("その他");
-            scroll.Add(foOther);
 
             MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
             foOther.Add(MeshFilterToSkinnedBtn);
@@ -825,6 +884,21 @@ namespace Poly_Ling.Player
             var rowMisc2 = new VisualElement(); rowMisc2.style.flexDirection = FlexDirection.Row; rowMisc2.style.marginBottom = 2;
             UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(UnityClipTestBtn); foOther.Add(rowMisc2);
+
+            UnderlayBtn = MakeBtn("下絵");
+            foOther.Add(UnderlayBtn);
+
+            // ── 左ペイン カテゴリ表示順 ───────────────────────────────
+            // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
+            scroll.Add(foRemote);
+            scroll.Add(foFile);
+            scroll.Add(foPrimitive);
+            scroll.Add(foSelectMove);
+            scroll.Add(foVertex);
+            scroll.Add(foTopology);
+            scroll.Add(foUvMat);
+            scroll.Add(foBoneMorph);
+            scroll.Add(foOther);
 
             scroll.Add(Separator());
 
@@ -923,14 +997,14 @@ namespace Poly_Ling.Player
         // ビューポートペイン
         // ================================================================
 
-        private VisualElement BuildViewportPane(string label, out PlayerViewportPanel panel)
+        private VisualElement BuildViewportPane(string label, out PlayerViewportPanel panel, out Label lbl, VisualElement headerRight = null)
         {
             var wrap = new VisualElement();
             wrap.style.flexGrow        = 1;
             wrap.style.flexDirection   = FlexDirection.Column;
             wrap.style.backgroundColor = new StyleColor(Color.white);
 
-            var lbl = new Label(label);
+            lbl = new Label(label);
             lbl.style.position  = Position.Absolute;
             lbl.style.top       = 4;
             lbl.style.left      = 6;
@@ -941,7 +1015,31 @@ namespace Poly_Ling.Player
             panel = new PlayerViewportPanel();
             wrap.Add(panel);
             wrap.Add(lbl);
+
+            // 任意のヘッダ操作UI（オルソトグル／フリップボタン）を右上に絶対配置。
+            if (headerRight != null)
+            {
+                headerRight.style.position = Position.Absolute;
+                headerRight.style.top      = 2;
+                headerRight.style.right    = 4;
+                wrap.Add(headerRight);
+            }
             return wrap;
+        }
+
+        /// <summary>ビューポート右上に置く小型フリップボタン。</summary>
+        private static Button MakeFlipBtn(string text)
+        {
+            var b = new Button { text = text };
+            b.style.fontSize      = 10;
+            b.style.height        = 18;
+            b.style.paddingTop    = 0;
+            b.style.paddingBottom = 0;
+            b.style.paddingLeft   = 5;
+            b.style.paddingRight  = 5;
+            b.style.marginTop     = 0;
+            b.style.marginBottom  = 0;
+            return b;
         }
 
         // ================================================================
@@ -1042,6 +1140,7 @@ namespace Poly_Ling.Player
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
             UnityClipTestSection       = AddSection(visible: false);
+            UnderlaySection            = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
 
             // ── エクスポートセクション

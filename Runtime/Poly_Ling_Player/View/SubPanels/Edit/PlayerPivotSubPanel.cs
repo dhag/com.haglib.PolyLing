@@ -15,6 +15,10 @@ namespace Poly_Ling.Player
     /// </summary>
     public class PlayerPivotSubPanel
     {
+        // 「選択頂点/ボーンの重心へピボットを移動」ボタンのコールバック（Viewer が配線）。
+        public System.Action OnPivotToVertexCentroid;
+        public System.Action OnPivotToBoneCentroid;
+
         // ================================================================
         // Build
         // ================================================================
@@ -42,6 +46,15 @@ namespace Poly_Ling.Player
             help.style.color = new StyleColor(Color.white);
             help.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             root.Add(help);
+
+            // 重心へピボットを移動（頂点のみ移動＋カメラ逆移動で「ピボットが動いた」ように見せる）
+            var toVert = new Button(() => OnPivotToVertexCentroid?.Invoke()) { text = "選択頂点の重心へ" };
+            toVert.style.marginTop = 6;
+            root.Add(toVert);
+
+            var toBone = new Button(() => OnPivotToBoneCentroid?.Invoke()) { text = "選択ボーンの重心へ" };
+            toBone.style.marginTop = 2;
+            root.Add(toBone);
         }
     }
 }

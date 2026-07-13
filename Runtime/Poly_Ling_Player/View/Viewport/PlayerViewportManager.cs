@@ -218,6 +218,12 @@ namespace Poly_Ling.Player
             TopViewport        .Initialize(ViewportMode.Top,         parent);
             FrontViewport      .Initialize(ViewportMode.Front,       parent);
             SideViewport       .Initialize(ViewportMode.Side,        parent);
+
+            // Top / Side / Front は視点(Target/WorldHeightPerPixel)を共有して連動させる。
+            var orthoShared = new OrthoViewSharedState();
+            TopViewport  .Ortho?.SetSharedState(orthoShared);
+            FrontViewport.Ortho?.SetSharedState(orthoShared);
+            SideViewport .Ortho?.SetSharedState(orthoShared);
         }
 
         public void Dispose()
@@ -301,6 +307,28 @@ namespace Poly_Ling.Player
             TopViewport        ?.ApplyCameraTransform();
             FrontViewport      ?.ApplyCameraTransform();
             SideViewport       ?.ApplyCameraTransform();
+        }
+
+        /// <summary>
+        /// Top/Side/Front は Target/WorldHeightPerPixel を共有（連動）するため、
+        /// いずれか1つの ortho カメラが変化したら、他2つにも Camera.transform を
+        /// 反映し slot を dirty にする。呼び出し側で PresentAll される前提。
+        /// changed が ortho でない（Perspective）場合は何もしない。
+        /// </summary>
+        private void ApplyAndDirtyLinkedOrtho(PlayerViewport changed)
+        {
+            if (changed == null || changed.Ortho == null) return;
+
+            void Sync(PlayerViewport vp)
+            {
+                if (vp == null || vp == changed || vp.Ortho == null) return;
+                vp.ApplyCameraTransform();
+                int s = ViewportToSlot(vp);
+                if (s >= 0) _slotCameraDirty[s] = true;
+            }
+            Sync(TopViewport);
+            Sync(FrontViewport);
+            Sync(SideViewport);
         }
 
         public ToolContext GetCurrentToolContext(PlayerViewport vp = null)
@@ -872,6 +900,9 @@ namespace Poly_Ling.Player
             int slot = ViewportToSlot(vp);
             if (slot >= 0) _slotCameraDirty[slot] = true;
 
+            // Top/Side/Front 連動：ortho の場合は他の連動 slot も反映＋dirty。
+            ApplyAndDirtyLinkedOrtho(vp);
+
             _toolCtx.UpdateFromViewport(vp);
 
             adapter.RequestNormal();
@@ -907,6 +938,9 @@ namespace Poly_Ling.Player
 
             int slot = ViewportToSlot(vp);
             if (slot >= 0) _slotCameraDirty[slot] = true;
+
+            // Top/Side/Front 連動：ortho の場合は他の連動 slot も反映＋dirty。
+            ApplyAndDirtyLinkedOrtho(vp);
 
             PresentAll(_lastProjectForPresent);
         }
@@ -1796,6 +1830,10 @@ namespace Poly_Ling.Player
             TopViewport        ?.ResetToMesh(bounds);
             FrontViewport      ?.ResetToMesh(bounds);
             SideViewport       ?.ResetToMesh(bounds);
+
+            // リセットは Perspective vp 経由で呼ばれるため、ortho の遅延ズーム解決
+            // （pixelHeight 確定時）を確実に行うべく、全ビューの transform を適用する。
+            ApplyAllViewportCameraTransforms();
         }
 
         // ================================================================

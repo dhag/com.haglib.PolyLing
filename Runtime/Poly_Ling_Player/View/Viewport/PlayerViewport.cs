@@ -74,10 +74,21 @@ namespace Poly_Ling.Player
             CreateRT(1, 1);
         }
 
+        /// <summary>
+        /// カメラのクリア背景を透明（下絵表示用）／不透明グレー（通常）に切り替える。
+        /// 透明時は RT の非ジオメトリ部が抜け、パネル背面の下絵が見える。
+        /// </summary>
+        public void SetClearTransparent(bool transparent)
+        {
+            if (Cam == null) return;
+            var c = Cam.backgroundColor;
+            c.a = transparent ? 0f : 1f;
+            Cam.backgroundColor = c;
+        }
+
         public void Dispose()
         {
             if (_source != null) DisconnectSource(_source);
-
             ReleaseRT();
 
             if (_camGo != null)

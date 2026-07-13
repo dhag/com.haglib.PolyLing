@@ -9,6 +9,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
+using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Commands;
 
@@ -95,11 +96,16 @@ namespace Poly_Ling.Player
         private Vector2 _panOffset = Vector2.zero;
         private float   _zoom      = 1f;
 
-        private enum Interaction { Idle, Panning, PendingAction, MovingVertex }
+        private enum Interaction { Idle, Panning, PendingAction, MovingVertex, Marquee, AnchorDrag }
         private Interaction _interaction = Interaction.Idle;
 
         private Vector2 _mouseDownPos;
         private Vector2 _panStartOffset;
+
+        // 矩形/投げ縄マーキー選択
+        private readonly Canvas2DMarquee _marquee = new Canvas2DMarquee();
+        private bool _lassoMode;        // true=投げ縄、false=矩形
+        private bool _marqueeAdditive;  // Shiftドラッグ=追加
 
         private readonly HashSet<UVVertexId>              _selected    = new HashSet<UVVertexId>();
         private readonly Dictionary<UVVertexId, Vector2>  _dragStartUVs = new Dictionary<UVVertexId, Vector2>();
@@ -119,7 +125,31 @@ namespace Poly_Ling.Player
         private Label         _statusLabel;
         private VisualElement _canvas;
         private VisualElement _transformSection;
+
+        // プレビューキャンバスの縦サイズ（ドラッグで変更）
+        private float _uvCanvasHeight = 300f;
+        private bool  _uvResizeDragging;
+        private float _uvResizeStartY;
+        private float _uvResizeStartHeight;
+        private const float UvCanvasMinHeight = 160f;
+        private const float UvCanvasMaxHeight = 1000f;
         private FloatField    _moveU, _moveV, _scaleU, _scaleV, _rotateDeg;
+        private FloatField    _scaleAxisDeg;   // スケール軸の回転角(°)
+
+        // マグネット（比例編集）
+        private readonly Canvas2DMagnet _uvMagnet = new Canvas2DMagnet();
+        private readonly Dictionary<UVVertexId, float> _uvMagnetW = new Dictionary<UVVertexId, float>();
+        private Slider        _uvMagnetRadius;
+
+        // 回転/拡大縮小アンカー（UV空間 0-1）
+        private Vector2       _anchor = new Vector2(0.5f, 0.5f);
+        private bool          _anchorManual;   // true=手動固定（重心へ自動追従しない）
+        private bool          _anchorMode;     // アンカー設定サブモード
+        private Slider        _anchorXSlider, _anchorYSlider;
+        private FloatField    _anchorXField,  _anchorYField;
+        private Button        _anchorEnterBtn;
+        private VisualElement _anchorPanel;
+        private bool          _anchorSuppress; // フィールド更新中の通知抑制
 
         // 頂点が存在するマテリアルのインデックスリスト（MeshContext.GetMaterial用）
         private readonly List<int> _matsWithVerts = new List<int>();
@@ -173,10 +203,11 @@ namespace Poly_Ling.Player
 
             // キャンバス
             _canvas = new VisualElement();
-            _canvas.style.flexGrow        = 1;
-            _canvas.style.minHeight       = 240;
+            _canvas.style.height          = _uvCanvasHeight;   // 縦サイズはハンドルで可変
+            _canvas.style.flexShrink      = 0;
             _canvas.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
             _canvas.style.marginBottom    = 4;
+            _canvas.style.overflow        = Overflow.Hidden;   // 頂点/線分をキャンバス内にクリップ
             _canvas.generateVisualContent += OnGenerateVisualContent;
             _canvas.RegisterCallback<WheelEvent>(OnCanvasWheel);
             _canvas.RegisterCallback<MouseDownEvent>(OnCanvasMouseDown);
@@ -193,6 +224,9 @@ namespace Poly_Ling.Player
             });
             _root.Add(_canvas);
 
+            // 縦リサイズハンドル（ドラッグでプレビュー高さを変更）
+            AddUvResizeHandle(_root);
+
             // ボタン行
             var btnRow = new VisualElement();
             btnRow.style.flexDirection = FlexDirection.Row;
@@ -200,6 +234,10 @@ namespace Poly_Ling.Player
             MkBtn("フィット",      btnRow, FitToUVBounds);
             MkBtn("全選択",        btnRow, SelectAll);
             MkBtn("選択解除",      btnRow, ClearSelection);
+            var lassoToggle = new Toggle("投げ縄") { value = false };
+            lassoToggle.style.marginLeft = 4;
+            lassoToggle.RegisterValueChangedCallback(e => _lassoMode = e.newValue);
+            btnRow.Add(lassoToggle);
             _root.Add(btnRow);
 
             // 変換セクション
@@ -210,7 +248,55 @@ namespace Poly_Ling.Player
 
             _transformSection.Add(FR2("移動 U", "V", 0f, 0f,   out _moveU,    out _moveV));
             _transformSection.Add(FR2("スケール U", "V", 1f, 1f, out _scaleU,  out _scaleV));
+            _transformSection.Add(FR1("スケール軸 (°)", 0f,      out _scaleAxisDeg));
             _transformSection.Add(FR1("回転 (°)",  0f,          out _rotateDeg));
+
+            // ── 回転/拡大縮小アンカー ──────────────────────────────────
+            _transformSection.Add(SecLabel("回転/拡大縮小アンカー"));
+            _anchorEnterBtn = new Button(() => SetAnchorMode(true)) { text = "アンカー設定" };
+            _anchorEnterBtn.style.height = 22; _anchorEnterBtn.style.fontSize = 10;
+            _anchorEnterBtn.style.marginBottom = 2;
+            _transformSection.Add(_anchorEnterBtn);
+
+            _anchorPanel = new VisualElement();
+            _anchorPanel.style.marginBottom = 4;
+            {
+                var headRow = new VisualElement(); headRow.style.flexDirection = FlexDirection.Row; headRow.style.marginBottom = 2;
+                var adjLbl = new Label("アンカー調整中（キャンバスをドラッグで移動）");
+                adjLbl.style.fontSize = 10; adjLbl.style.flexGrow = 1; adjLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+                var doneBtn = new Button(() => SetAnchorMode(false)) { text = "決定" };
+                doneBtn.style.width = 60; doneBtn.style.height = 22; doneBtn.style.fontSize = 10;
+                headRow.Add(adjLbl); headRow.Add(doneBtn);
+                _anchorPanel.Add(headRow);
+
+                var presetRow = new VisualElement(); presetRow.style.flexDirection = FlexDirection.Row; presetRow.style.marginBottom = 2;
+                MkBtn("重心", presetRow, () => ApplyAnchorPreset(AnchorPreset.Centroid));
+                MkBtn("中心", presetRow, () => ApplyAnchorPreset(AnchorPreset.Center));
+                MkBtn("左上", presetRow, () => ApplyAnchorPreset(AnchorPreset.TopLeft));
+                MkBtn("左下", presetRow, () => ApplyAnchorPreset(AnchorPreset.BottomLeft));
+                _anchorPanel.Add(presetRow);
+
+                _anchorPanel.Add(BuildAnchorRow("X", 0f, out _anchorXSlider, out _anchorXField,
+                    v => SetAnchorComponent(true, v)));
+                _anchorPanel.Add(BuildAnchorRow("Y", 0f, out _anchorYSlider, out _anchorYField,
+                    v => SetAnchorComponent(false, v)));
+            }
+            _transformSection.Add(_anchorPanel);
+            RefreshAnchorModeUI();
+            RefreshAnchorFields();
+
+            // マグネット（比例編集）
+            _uvMagnet.Radius = 0.15f;
+            _transformSection.Add(SecLabel("マグネット（比例編集）"));
+            var uvMagRow = new VisualElement(); uvMagRow.style.flexDirection = FlexDirection.Row; uvMagRow.style.marginBottom = 2;
+            var uvMagToggle = new Toggle("有効") { value = _uvMagnet.Enabled }; uvMagToggle.style.marginRight = 6;
+            uvMagToggle.RegisterValueChangedCallback(ev => { _uvMagnet.Enabled = ev.newValue; _canvas.MarkDirtyRepaint(); });
+            var uvFalloff = new EnumField(_uvMagnet.Falloff); uvFalloff.style.flexGrow = 1;
+            uvFalloff.RegisterValueChangedCallback(ev => _uvMagnet.Falloff = (FalloffType)ev.newValue);
+            uvMagRow.Add(uvMagToggle); uvMagRow.Add(uvFalloff);
+            _transformSection.Add(uvMagRow);
+            _transformSection.Add(BuildAnchorRow("半径", 0.15f, out _uvMagnetRadius, out _,
+                v => { _uvMagnet.Radius = v; _canvas.MarkDirtyRepaint(); }));
 
             var applyRow = new VisualElement();
             applyRow.style.flexDirection = FlexDirection.Row;
@@ -286,6 +372,50 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // プレビュー縦リサイズ
+        // ================================================================
+
+        /// <summary>プレビューキャンバス直下に縦リサイズハンドルを追加する。</summary>
+        private void AddUvResizeHandle(VisualElement container)
+        {
+            var handle = new VisualElement();
+            handle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+            handle.style.height          = 6;
+            handle.style.marginBottom    = 4;
+            handle.style.flexShrink      = 0;
+            handle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+            handle.pickingMode           = PickingMode.Position;
+
+            handle.RegisterCallback<PointerDownEvent>(e =>
+            {
+                handle.CapturePointer(e.pointerId);
+                _uvResizeDragging    = true;
+                _uvResizeStartY      = e.position.y;
+                _uvResizeStartHeight = _uvCanvasHeight;
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (!_uvResizeDragging || !handle.HasPointerCapture(e.pointerId)) return;
+                float delta = e.position.y - _uvResizeStartY;
+                _uvCanvasHeight = Mathf.Clamp(_uvResizeStartHeight + delta, UvCanvasMinHeight, UvCanvasMaxHeight);
+                _canvas.style.height = _uvCanvasHeight;
+                UpdateCanvasBackground();
+                _canvas.MarkDirtyRepaint();
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!handle.HasPointerCapture(e.pointerId)) return;
+                handle.ReleasePointer(e.pointerId);
+                _uvResizeDragging = false;
+                e.StopPropagation();
+            });
+
+            container.Add(handle);
+        }
+
+        // ================================================================
         // 座標変換
         // ================================================================
 
@@ -353,6 +483,10 @@ namespace Poly_Ling.Player
             if (rect.width < 1) return;
             DrawGrid(painter, rect);
             DrawUVWireframe(painter, rect);
+            DrawAnchorMarker(painter, rect);
+            DrawUVMagnetRadius(painter, rect);
+            if (_marquee.Active)
+                _marquee.Draw(painter, new Color(1f, 0.85f, 0.2f, 0.9f));
         }
 
         private void DrawGrid(Painter2D p, Rect rect)
@@ -448,6 +582,38 @@ namespace Poly_Ling.Player
             p.BeginPath(); p.MoveTo(a); p.LineTo(b); p.Stroke();
         }
 
+        /// <summary>マグネット影響半径を選択頂点まわりの円で描画する。</summary>
+        private void DrawUVMagnetRadius(Painter2D p, Rect rect)
+        {
+            if (!_uvMagnet.Enabled || _selected.Count == 0) return;
+            var mo = GetMeshObject();
+            if (mo == null) return;
+            var centers = new List<Vector2>();
+            foreach (var id in _selected)
+            {
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var v = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
+                    centers.Add(UVToCanvas(v.UVs[id.UVIndex], rect));
+            }
+            float cr = Vector2.Distance(UVToCanvas(Vector2.zero, rect),
+                                        UVToCanvas(new Vector2(_uvMagnet.Radius, 0f), rect));
+            _uvMagnet.DrawRadius(p, centers, cr);
+        }
+
+        /// <summary>回転/拡大縮小アンカーの十字マーカーを描画する。</summary>
+        private void DrawAnchorMarker(Painter2D p, Rect rect)
+        {
+            var c = UVToCanvas(_anchor, rect);
+            float s = 9f;
+            var col = _anchorMode ? new Color(1f, 0.35f, 0.85f) : new Color(1f, 0.5f, 0.9f, 0.75f);
+            p.strokeColor = col; p.lineWidth = _anchorMode ? 2f : 1.25f;
+            Line(p, new Vector2(c.x - s, c.y), new Vector2(c.x + s, c.y));
+            Line(p, new Vector2(c.x, c.y - s), new Vector2(c.x, c.y + s));
+            p.fillColor = new Color(col.r, col.g, col.b, 0.15f);
+            p.BeginPath(); p.Arc(c, s * 0.6f, 0f, 360f); p.Stroke();
+        }
+
         // ================================================================
         // キャンバス入力
         // ================================================================
@@ -477,6 +643,20 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            if (evt.button == 0 && _anchorMode)
+            {
+                // アンカー設定モード：ドラッグでアンカーを移動（点編集/マーキーは行わない）
+                var rectA = _canvas.contentRect;
+                _anchor = CanvasToUV(evt.localMousePosition, rectA);
+                _anchorManual = true;
+                RefreshAnchorFields();
+                _interaction = Interaction.AnchorDrag;
+                _canvas.CaptureMouse();
+                _canvas.MarkDirtyRepaint();
+                evt.StopPropagation();
+                return;
+            }
+
             if (evt.button == 0)
             {
                 _mouseDownPos = evt.localMousePosition;
@@ -484,19 +664,34 @@ namespace Poly_Ling.Player
 
                 if (_hitUV.HasValue)
                 {
-                    if (!_selected.Contains(_hitUV.Value))
+                    if (evt.shiftKey)
                     {
-                        _selected.Clear();
-                        _selected.Add(_hitUV.Value);
+                        // Shift+クリック＝トグル（ドラッグ移動しない）
+                        if (!_selected.Add(_hitUV.Value)) _selected.Remove(_hitUV.Value);
                         UpdateInfo(GetMeshObject());
+                        RefreshAnchorAuto();
                         _canvas.MarkDirtyRepaint();
+                        _interaction = Interaction.Idle;
                     }
-                    _interaction = Interaction.PendingAction;
+                    else
+                    {
+                        if (!_selected.Contains(_hitUV.Value))
+                        {
+                            _selected.Clear();
+                            _selected.Add(_hitUV.Value);
+                            UpdateInfo(GetMeshObject());
+                            RefreshAnchorAuto();
+                            _canvas.MarkDirtyRepaint();
+                        }
+                        _interaction = Interaction.PendingAction;
+                    }
                 }
                 else
                 {
-                    if (_selected.Count > 0) { _selected.Clear(); UpdateInfo(GetMeshObject()); _canvas.MarkDirtyRepaint(); }
-                    _interaction = Interaction.Idle;
+                    // 空ドラッグ＝矩形/投げ縄マーキー選択（Shiftで追加）
+                    _marqueeAdditive = evt.shiftKey;
+                    _marquee.Begin(evt.localMousePosition, _lassoMode);
+                    _interaction = Interaction.Marquee;
                 }
                 _canvas.CaptureMouse();
                 evt.StopPropagation();
@@ -532,6 +727,20 @@ namespace Poly_Ling.Player
                     evt.StopPropagation();
                     return;
 
+                case Interaction.Marquee:
+                    _marquee.Update(mp);
+                    _canvas.MarkDirtyRepaint();
+                    evt.StopPropagation();
+                    return;
+
+                case Interaction.AnchorDrag:
+                    _anchor = CanvasToUV(mp, _canvas.contentRect);
+                    _anchorManual = true;
+                    RefreshAnchorFields();
+                    _canvas.MarkDirtyRepaint();
+                    evt.StopPropagation();
+                    return;
+
                 case Interaction.Idle:
                     var newHov = HitTestUVVertex(mp);
                     bool changed = (newHov.HasValue != _hovered.HasValue) ||
@@ -544,9 +753,44 @@ namespace Poly_Ling.Player
         private void OnCanvasMouseUp(MouseUpEvent evt)
         {
             if (_interaction == Interaction.MovingVertex) EndUVMove();
+            else if (_interaction == Interaction.Marquee) { ApplyMarqueeSelection(); _marquee.End(); }
             _interaction = Interaction.Idle;
             if (_canvas.HasMouseCapture()) _canvas.ReleaseMouse();
             evt.StopPropagation();
+        }
+
+        /// <summary>マーキー内側のUV頂点を選択する（Shift追加でなければ置換）。</summary>
+        private void ApplyMarqueeSelection()
+        {
+            var mo = GetMeshObject();
+            if (mo == null) return;
+            var rect = _canvas.contentRect;
+            if (rect.width < 1) return;
+
+            if (!_marqueeAdditive) _selected.Clear();
+
+            var tested = new HashSet<long>();
+            foreach (var face in mo.Faces)
+            {
+                if (face == null) continue;
+                // 表示中マテリアルのみ対象（ワイヤフレーム描画と整合）
+                if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
+                for (int ci = 0; ci < face.VertexCount; ci++)
+                {
+                    int vi = face.VertexIndices[ci];
+                    if (vi < 0 || vi >= mo.VertexCount) continue;
+                    int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
+                    long key = ((long)vi << 32) | (uint)ui;
+                    if (!tested.Add(key)) continue;
+                    var v = mo.Vertices[vi];
+                    if (ui < 0 || ui >= v.UVs.Count) continue;
+                    if (_marquee.Contains(UVToCanvas(v.UVs[ui], rect)))
+                        _selected.Add(new UVVertexId(vi, ui));
+                }
+            }
+            UpdateInfo(mo);
+            RefreshAnchorAuto();
+            _canvas.MarkDirtyRepaint();
         }
 
         // ================================================================
@@ -556,14 +800,44 @@ namespace Poly_Ling.Player
         private void BeginUVMove()
         {
             _dragStartUVs.Clear();
+            _uvMagnetW.Clear();
             var mo = GetMeshObject();
             if (mo == null) return;
+            var selPos = new List<Vector2>();
             foreach (var id in _selected)
             {
                 if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
                 var v = mo.Vertices[id.VertexIndex];
                 if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
+                {
                     _dragStartUVs[id] = v.UVs[id.UVIndex];
+                    _uvMagnetW[id]    = 1f;
+                    selPos.Add(v.UVs[id.UVIndex]);
+                }
+            }
+            // マグネット影響頂点（非選択で半径内）
+            if (_uvMagnet.Enabled && selPos.Count > 0)
+            {
+                var tested = new HashSet<long>();
+                foreach (var face in mo.Faces)
+                {
+                    if (face == null) continue;
+                    if (_matsWithVerts.Count > 0 && face.MaterialIndex != _matsWithVerts[_selectedMatListIndex]) continue;
+                    for (int ci = 0; ci < face.VertexCount; ci++)
+                    {
+                        int vi = face.VertexIndices[ci];
+                        if (vi < 0 || vi >= mo.VertexCount) continue;
+                        int ui = ci < face.UVIndices.Count ? face.UVIndices[ci] : 0;
+                        long key = ((long)vi << 32) | (uint)ui;
+                        if (!tested.Add(key)) continue;
+                        var id = new UVVertexId(vi, ui);
+                        if (_dragStartUVs.ContainsKey(id)) continue;
+                        var v = mo.Vertices[vi];
+                        if (ui < 0 || ui >= v.UVs.Count) continue;
+                        float wt = _uvMagnet.WeightFor(v.UVs[ui], selPos);
+                        if (wt > 0f) { _dragStartUVs[id] = v.UVs[ui]; _uvMagnetW[id] = wt; }
+                    }
+                }
             }
             _interaction = Interaction.MovingVertex;
         }
@@ -580,7 +854,10 @@ namespace Poly_Ling.Player
                 if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
                 var v = mo.Vertices[id.VertexIndex];
                 if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count)
-                    v.UVs[id.UVIndex] = kv.Value + d;
+                {
+                    float wt = _uvMagnetW.TryGetValue(id, out var mw) ? mw : 1f;
+                    v.UVs[id.UVIndex] = kv.Value + d * wt;
+                }
             }
         }
 
@@ -718,14 +995,14 @@ namespace Poly_Ling.Player
                     _selected.Add(new UVVertexId(vi, ui));
                 }
             }
-            UpdateInfo(mo); _canvas.MarkDirtyRepaint();
+            UpdateInfo(mo); RefreshAnchorAuto(); _canvas.MarkDirtyRepaint();
         }
 
         private void ClearSelection()
         {
             if (_selected.Count == 0) return;
             _selected.Clear();
-            UpdateInfo(GetMeshObject()); _canvas.MarkDirtyRepaint();
+            UpdateInfo(GetMeshObject()); RefreshAnchorAuto(); _canvas.MarkDirtyRepaint();
         }
 
         // ================================================================
@@ -741,13 +1018,48 @@ namespace Poly_Ling.Player
             float su  = _scaleU?.value   ?? 1f;
             float sv  = _scaleV?.value   ?? 1f;
             float deg = _rotateDeg?.value ?? 0f;
+            float saDeg = _scaleAxisDeg?.value ?? 0f;
 
             if (Mathf.Approximately(mu, 0f) && Mathf.Approximately(mv, 0f) &&
                 Mathf.Approximately(su, 1f) && Mathf.Approximately(sv, 1f) &&
                 Mathf.Approximately(deg, 0f)) { SetStatus("変換パラメータが初期値です"); return; }
 
             var targets = _selected.Count > 0 ? new HashSet<UVVertexId>(_selected) : CollectAllUVVertices(mo);
-            var pivot   = ComputeUVPivot(mo, targets);
+            RefreshAnchorAuto();          // 自動モードなら重心に更新
+            var pivot   = _anchor;        // 可変アンカーを基準に使用
+
+            // 重みマップ（選択=1、マグネット影響=weight、選択なし=全点1）
+            var weights = new Dictionary<UVVertexId, float>();
+            if (_selected.Count > 0)
+            {
+                var selPos = new List<Vector2>();
+                foreach (var id in _selected)
+                {
+                    weights[id] = 1f;
+                    if (id.VertexIndex >= 0 && id.VertexIndex < mo.VertexCount)
+                    {
+                        var vv = mo.Vertices[id.VertexIndex];
+                        if (id.UVIndex >= 0 && id.UVIndex < vv.UVs.Count) selPos.Add(vv.UVs[id.UVIndex]);
+                    }
+                }
+                if (_uvMagnet.Enabled && selPos.Count > 0)
+                {
+                    foreach (var id in CollectAllUVVertices(mo))
+                    {
+                        if (weights.ContainsKey(id)) continue;
+                        if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                        var vv = mo.Vertices[id.VertexIndex];
+                        if (id.UVIndex < 0 || id.UVIndex >= vv.UVs.Count) continue;
+                        float wt = _uvMagnet.WeightFor(vv.UVs[id.UVIndex], selPos);
+                        if (wt > 0f) weights[id] = wt;
+                    }
+                }
+            }
+            else
+            {
+                foreach (var id in targets) weights[id] = 1f;
+            }
+            targets = new HashSet<UVVertexId>(weights.Keys);
 
             if (_panelContext != null)
             {
@@ -775,7 +1087,7 @@ namespace Poly_Ling.Player
 
                 // after を計算（実際には MeshObject に書き込まない）
                 var tempAfter = new Dictionary<UVVertexId, Vector2>();
-                ApplyUVTransformToDict(mo, targets, mu, mv, su, sv, deg, pivot, tempAfter);
+                ApplyUVTransformToDict(mo, weights, mu, mv, su, sv, deg, pivot, saDeg, tempAfter);
                 for (int i = 0; i < keyList.Count; i++)
                     afterArr[i] = tempAfter.TryGetValue(keyList[i], out var uv) ? uv : beforeArr[i];
 
@@ -785,7 +1097,7 @@ namespace Poly_Ling.Player
             else
             {
                 RecordTopologyChange("UV Transform", obj =>
-                    ApplyUVTransform(obj, targets, mu, mv, su, sv, deg, pivot));
+                    ApplyUVTransform(obj, weights, mu, mv, su, sv, deg, pivot, saDeg));
             }
 
             SetStatus("UV変換を適用しました");
@@ -799,6 +1111,7 @@ namespace Poly_Ling.Player
             if (_scaleU   != null) _scaleU.value    = 1f;
             if (_scaleV   != null) _scaleV.value    = 1f;
             if (_rotateDeg!= null) _rotateDeg.value = 0f;
+            if (_scaleAxisDeg != null) _scaleAxisDeg.value = 0f;
         }
 
         private static HashSet<UVVertexId> CollectAllUVVertices(MeshObject mo)
@@ -830,48 +1143,170 @@ namespace Poly_Ling.Player
             return cnt > 0 ? sum / cnt : new Vector2(0.5f, 0.5f);
         }
 
-        private static void ApplyUVTransform(MeshObject mo, HashSet<UVVertexId> targets,
-            float mu, float mv, float su, float sv, float deg, Vector2 pivot)
+        // ================================================================
+        // 回転/拡大縮小アンカー
+        // ================================================================
+
+        private enum AnchorPreset { Centroid, Center, TopLeft, BottomLeft }
+
+        private VisualElement BuildAnchorRow(string label, float val,
+            out Slider slider, out FloatField field, Action<float> onChange)
         {
-            float rad = deg * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+            var lb = new Label(label + ":"); lb.style.width = 16; lb.style.fontSize = 10;
+            lb.style.color = new StyleColor(Color.white);
+            lb.style.unityTextAlign = TextAnchor.MiddleLeft;
+
+            var sl = new Slider(0f, 1f) { value = Mathf.Clamp01(val) };
+            sl.style.flexGrow = 1; sl.style.marginRight = 3;
+            var ff = new FloatField { value = val };
+            ff.style.color = new StyleColor(Color.black); ff.style.width = 52;
+
+            sl.RegisterValueChangedCallback(e => { if (!_anchorSuppress) onChange(e.newValue); });
+            ff.RegisterValueChangedCallback(e => { if (!_anchorSuppress) onChange(e.newValue); });
+
+            row.Add(lb); row.Add(sl); row.Add(ff);
+            slider = sl; field = ff;
+            return row;
+        }
+
+        private void SetAnchorMode(bool on)
+        {
+            _anchorMode = on;
+            if (on) RefreshAnchorAuto();  // 入る時点の重心を初期表示
+            RefreshAnchorModeUI();
+            _canvas?.MarkDirtyRepaint();
+        }
+
+        private void RefreshAnchorModeUI()
+        {
+            if (_anchorEnterBtn != null) _anchorEnterBtn.style.display = _anchorMode ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_anchorPanel    != null) _anchorPanel.style.display    = _anchorMode ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>アンカー数値フィールド/スライダーを _anchor に同期（通知抑制）。</summary>
+        private void RefreshAnchorFields()
+        {
+            _anchorSuppress = true;
+            _anchorXSlider?.SetValueWithoutNotify(Mathf.Clamp01(_anchor.x));
+            _anchorYSlider?.SetValueWithoutNotify(Mathf.Clamp01(_anchor.y));
+            _anchorXField?.SetValueWithoutNotify(_anchor.x);
+            _anchorYField?.SetValueWithoutNotify(_anchor.y);
+            _anchorSuppress = false;
+        }
+
+        /// <summary>手動固定でなければ選択の重心へ追従。</summary>
+        private void RefreshAnchorAuto()
+        {
+            if (_anchorManual) return;
+            var mo = GetMeshObject();
+            if (mo == null) return;
+            var targets = _selected.Count > 0 ? _selected : CollectAllUVVertices(mo);
+            _anchor = ComputeUVPivot(mo, targets);
+            RefreshAnchorFields();
+        }
+
+        private void SetAnchorComponent(bool isX, float v)
+        {
+            if (isX) _anchor.x = v; else _anchor.y = v;
+            _anchorManual = true;
+            RefreshAnchorFields();
+            _canvas?.MarkDirtyRepaint();
+        }
+
+        private void ApplyAnchorPreset(AnchorPreset preset)
+        {
+            var mo = GetMeshObject();
+            if (mo == null) return;
+            var targets = _selected.Count > 0 ? _selected : CollectAllUVVertices(mo);
+
+            if (preset == AnchorPreset.Centroid)
+            {
+                _anchor = ComputeUVPivot(mo, targets);
+                _anchorManual = false;   // 重心＝自動追従に戻す
+                RefreshAnchorFields();
+                _canvas?.MarkDirtyRepaint();
+                return;
+            }
+
+            // バウンディングから中心/左上/左下
+            bool any = false;
+            float minU = float.MaxValue, maxU = float.MinValue, minV = float.MaxValue, maxV = float.MinValue;
             foreach (var id in targets)
             {
                 if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var vv = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex < 0 || id.UVIndex >= vv.UVs.Count) continue;
+                var uv = vv.UVs[id.UVIndex];
+                minU = Mathf.Min(minU, uv.x); maxU = Mathf.Max(maxU, uv.x);
+                minV = Mathf.Min(minV, uv.y); maxV = Mathf.Max(maxV, uv.y);
+                any = true;
+            }
+            if (!any) return;
+
+            switch (preset)
+            {
+                case AnchorPreset.Center:     _anchor = new Vector2((minU + maxU) * 0.5f, (minV + maxV) * 0.5f); break;
+                case AnchorPreset.TopLeft:    _anchor = new Vector2(minU, maxV); break;  // UV上=大きいV
+                case AnchorPreset.BottomLeft: _anchor = new Vector2(minU, minV); break;
+            }
+            _anchorManual = true;
+            RefreshAnchorFields();
+            _canvas?.MarkDirtyRepaint();
+        }
+
+        private static void ApplyUVTransform(MeshObject mo, Dictionary<UVVertexId, float> weights,
+            float mu, float mv, float su, float sv, float deg, Vector2 pivot, float saDeg)
+        {
+            float saRad = saDeg * Mathf.Deg2Rad;
+            float saCos = Mathf.Cos(saRad), saSin = Mathf.Sin(saRad);
+            foreach (var kv in weights)
+            {
+                var id = kv.Key;
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
                 var v = mo.Vertices[id.VertexIndex];
                 if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
-                v.UVs[id.UVIndex] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, cos, sin, deg);
+                v.UVs[id.UVIndex] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, deg, saCos, saSin, kv.Value);
             }
         }
 
         /// <summary>before/after を計算するだけで MeshObject を変更しない。コマンド化用。</summary>
-        private static void ApplyUVTransformToDict(MeshObject mo, HashSet<UVVertexId> targets,
-            float mu, float mv, float su, float sv, float deg, Vector2 pivot,
+        private static void ApplyUVTransformToDict(MeshObject mo, Dictionary<UVVertexId, float> weights,
+            float mu, float mv, float su, float sv, float deg, Vector2 pivot, float saDeg,
             Dictionary<UVVertexId, Vector2> result)
         {
-            float rad = deg * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
-            foreach (var id in targets)
+            float saRad = saDeg * Mathf.Deg2Rad;
+            float saCos = Mathf.Cos(saRad), saSin = Mathf.Sin(saRad);
+            foreach (var kv in weights)
             {
+                var id = kv.Key;
                 if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
                 var v = mo.Vertices[id.VertexIndex];
                 if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
-                result[id] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, cos, sin, deg);
+                result[id] = CalcTransformedUV(v.UVs[id.UVIndex], pivot, mu, mv, su, sv, deg, saCos, saSin, kv.Value);
             }
         }
 
         private static Vector2 CalcTransformedUV(Vector2 uv, Vector2 pivot,
-            float mu, float mv, float su, float sv, float cos, float sin, float deg)
+            float mu, float mv, float su, float sv, float deg, float saCos, float saSin, float w)
         {
-            uv.x = pivot.x + (uv.x - pivot.x) * su;
-            uv.y = pivot.y + (uv.y - pivot.y) * sv;
-            if (!Mathf.Approximately(deg, 0f))
-            {
-                float dx = uv.x - pivot.x, dy = uv.y - pivot.y;
-                uv.x = pivot.x + dx * cos - dy * sin;
-                uv.y = pivot.y + dx * sin + dy * cos;
-            }
-            uv.x += mu; uv.y += mv;
+            float suw = 1f + (su - 1f) * w, svw = 1f + (sv - 1f) * w;
+            float degw = deg * w * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(degw), sin = Mathf.Sin(degw);
+            float dx = uv.x - pivot.x, dy = uv.y - pivot.y;
+            // スケール軸フレームへ回転(-φ) → 重み付きスケール → 戻す(+φ)
+            float rx =  dx * saCos + dy * saSin;
+            float ry = -dx * saSin + dy * saCos;
+            rx *= suw; ry *= svw;
+            dx = rx * saCos - ry * saSin;
+            dy = rx * saSin + ry * saCos;
+            // 重み付き全体回転
+            float ex = dx * cos - dy * sin;
+            float ey = dx * sin + dy * cos;
+            uv.x = pivot.x + ex + mu * w;
+            uv.y = pivot.y + ey + mv * w;
             return uv;
         }
 
