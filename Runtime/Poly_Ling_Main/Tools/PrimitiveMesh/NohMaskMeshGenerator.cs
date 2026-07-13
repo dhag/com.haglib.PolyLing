@@ -120,7 +120,7 @@ namespace Poly_Ling.NohMask
     /// FaceMesh メッシュ生成ユーティリティ。
     /// ★★★ 頂点の自動結合は行わない ★★★
     /// </summary>
-    public  static partial class NohMaskMeshGenerator
+    public static class NohMaskMeshGenerator
     {
         /// <summary>
         /// JSON文字列からメッシュを生成する。
@@ -219,24 +219,32 @@ namespace Poly_Ling.NohMask
         /// </summary>
         public static MeshObject GenerateFromFiles(FaceMeshParams p)
         {
-            if (string.IsNullOrEmpty(p.LandmarksFilePath) ||
-                string.IsNullOrEmpty(p.TrianglesFilePath))
-                return new MeshObject(p.MeshName);
+            string landmarksJson, trianglesJson;
 
-            string landmarksJson = null, trianglesJson = null;
-
-            try { landmarksJson = System.IO.File.ReadAllText(p.LandmarksFilePath); }
-            catch (Exception ex)
+            // ランドマーク: 未選択なら内蔵デフォルト（プリセット）
+            if (string.IsNullOrEmpty(p.LandmarksFilePath))
+                landmarksJson = FaceLandmarksData.Json;
+            else
             {
-                Debug.LogError($"[NohMaskMeshGenerator] Failed to load landmarks: {ex.Message}");
-                return new MeshObject(p.MeshName);
+                try { landmarksJson = System.IO.File.ReadAllText(p.LandmarksFilePath); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[NohMaskMeshGenerator] Failed to load landmarks: {ex.Message}");
+                    return new MeshObject(p.MeshName);
+                }
             }
 
-            try { trianglesJson = System.IO.File.ReadAllText(p.TrianglesFilePath); }
-            catch (Exception ex)
+            // トライアングル: 未選択なら内蔵デフォルト（プリセット）
+            if (string.IsNullOrEmpty(p.TrianglesFilePath))
+                trianglesJson = FaceTrianglesData.Json;
+            else
             {
-                Debug.LogError($"[NohMaskMeshGenerator] Failed to load triangles: {ex.Message}");
-                return new MeshObject(p.MeshName);
+                try { trianglesJson = System.IO.File.ReadAllText(p.TrianglesFilePath); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[NohMaskMeshGenerator] Failed to load triangles: {ex.Message}");
+                    return new MeshObject(p.MeshName);
+                }
             }
 
             return Generate(p, landmarksJson, trianglesJson);
@@ -292,9 +300,4 @@ namespace Poly_Ling.NohMask
             return result;
         }
     }
-
-
-
-
-
 }

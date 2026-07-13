@@ -128,6 +128,9 @@ namespace Poly_Ling.Player
             ["RemoveLoop"]       = new() { ["en"] = "Remove",          ["ja"] = "削除",             ["hi"] = "さくじょ" },
             ["IsHole"]           = new() { ["en"] = "Hole",            ["ja"] = "穴",               ["hi"] = "あな" },
             ["LoadCSV"]          = new() { ["en"] = "Load CSV",        ["ja"] = "CSV読込",          ["hi"] = "CSVよみこむ" },
+            ["Browse"]           = new() { ["en"] = "Browse…",        ["ja"] = "参照…",            ["hi"] = "さがす" },
+            ["SelectAllLoop"]    = new() { ["en"] = "Select All",     ["ja"] = "全選択",           ["hi"] = "ぜんせんたく" },
+            ["DuplicateLoop"]    = new() { ["en"] = "Duplicate Loop", ["ja"] = "ループ複製",       ["hi"] = "ループふくせい" },
             ["SaveCSV"]          = new() { ["en"] = "Save CSV",        ["ja"] = "CSV保存",          ["hi"] = "CSVほぞん" },
             ["NoFile"]           = new() { ["en"] = "(no file)",       ["ja"] = "(未選択)",         ["hi"] = "(みせんたく)" },
             ["LoopSides"]        = new() { ["en"] = "Sides",           ["ja"] = "辺数",             ["hi"] = "へんすう" },
@@ -139,6 +142,8 @@ namespace Poly_Ling.Player
             ["DepthScale"]       = new() { ["en"] = "Depth Scale",     ["ja"] = "奥行きスケール",   ["hi"] = "おくゆき" },
             ["FlipFaces"]        = new() { ["en"] = "Flip Faces",      ["ja"] = "面を反転",         ["hi"] = "うらがえす" },
             ["NotSelected"]      = new() { ["en"] = "(not selected)",  ["ja"] = "(未選択)",         ["hi"] = "(みせんたく)" },
+            ["BuiltinDefault"]   = new() { ["en"] = "(built-in default)", ["ja"] = "(内蔵デフォルト)", ["hi"] = "(ないぞう)" },
+            ["UseBuiltinDefault"]= new() { ["en"] = "Use built-in default", ["ja"] = "内蔵デフォルトを使用", ["hi"] = "ないぞうをつかう" },
 
             // ── 追加先モード ─────────────────────────────────────────────
             ["AddMode"]         = new() { ["en"] = "Add Target",             ["ja"] = "追加先",                         ["hi"] = "ついかさき" },

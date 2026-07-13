@@ -33,6 +33,19 @@ namespace Poly_Ling.Tools
         // ピボットモード
         public PivotMode PivotMode = PivotMode.SelectionCenter;
 
+        // マグネット（比例編集）
+        public bool         UseMagnet          = false;
+        public float        MagnetRadius       = 0.5f;
+        public FalloffType  MagnetFalloff      = FalloffType.Smooth;
+        public DistanceMode MagnetDistanceMode = DistanceMode.Euclidean;
+        public float MIN_MAGNET_RADIUS = Poly_Ling.Core.ParameterLimits.GetF("Rotate.MagnetRadius.Min");
+        public float MAX_MAGNET_RADIUS = Poly_Ling.Core.ParameterLimits.GetF("Rotate.MagnetRadius.Max");
+
+        // 軸-角度回転（Euler と排他）
+        public bool  UseAxisAngle = false;
+        public float AxisX = 0f, AxisY = 1f, AxisZ = 0f;
+        public float AxisAngle = 0f;
+
         /// <summary>
         /// 回転をリセット
         /// </summary>
@@ -78,7 +91,14 @@ namespace Poly_Ling.Tools
                 RotationZ = this.RotationZ,
                 UseSnap = this.UseSnap,
                 SnapAngle = this.SnapAngle,
-                PivotMode = this.PivotMode
+                PivotMode = this.PivotMode,
+                UseMagnet = this.UseMagnet,
+                MagnetRadius = this.MagnetRadius,
+                MagnetFalloff = this.MagnetFalloff,
+                MagnetDistanceMode = this.MagnetDistanceMode,
+                UseAxisAngle = this.UseAxisAngle,
+                AxisX = this.AxisX, AxisY = this.AxisY, AxisZ = this.AxisZ,
+                AxisAngle = this.AxisAngle
             };
         }
 
@@ -91,7 +111,14 @@ namespace Poly_Ling.Tools
                    RotationZ != o.RotationZ ||
                    UseSnap != o.UseSnap ||
                    SnapAngle != o.SnapAngle ||
-                   PivotMode != o.PivotMode;
+                   PivotMode != o.PivotMode ||
+                   UseMagnet != o.UseMagnet ||
+                   !Mathf.Approximately(MagnetRadius, o.MagnetRadius) ||
+                   MagnetFalloff != o.MagnetFalloff ||
+                   MagnetDistanceMode != o.MagnetDistanceMode ||
+                   UseAxisAngle != o.UseAxisAngle ||
+                   AxisX != o.AxisX || AxisY != o.AxisY || AxisZ != o.AxisZ ||
+                   AxisAngle != o.AxisAngle;
         }
 
         public override void CopyFrom(IToolSettings other)
@@ -104,6 +131,13 @@ namespace Poly_Ling.Tools
             UseSnap = o.UseSnap;
             SnapAngle = o.SnapAngle;
             PivotMode = o.PivotMode;
+            UseMagnet = o.UseMagnet;
+            MagnetRadius = o.MagnetRadius;
+            MagnetFalloff = o.MagnetFalloff;
+            MagnetDistanceMode = o.MagnetDistanceMode;
+            UseAxisAngle = o.UseAxisAngle;
+            AxisX = o.AxisX; AxisY = o.AxisY; AxisZ = o.AxisZ;
+            AxisAngle = o.AxisAngle;
         }
     }
 }

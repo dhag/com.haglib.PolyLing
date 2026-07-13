@@ -16,6 +16,10 @@ namespace Poly_Ling.Player
         private VisualElement _root;
         private Slider _sliderX, _sliderY, _sliderZ, _sliderXYZ;
         private Toggle _uniformToggle, _originToggle;
+        private Toggle _magnetToggle;
+        private Slider _magnetRadius;
+        private EnumField _magnetFalloff, _magnetDistance;
+        private Slider _axisX, _axisY, _axisZ;
         private Label _targetLabel;
 
         public void Build(VisualElement parent)
@@ -38,6 +42,34 @@ namespace Poly_Ling.Player
             _originToggle = new Toggle("Origin Pivot") { value = false }; _originToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseOriginPivot = e.newValue; });
             _originToggle.style.color = new StyleColor(Color.white);
             _root.Add(_originToggle);
+
+            // スケール軸（フレーム回転）
+            _root.Add(Header("Scale Axis (°)"));
+            _axisX = MakeSlider("X", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisX = v; });
+            _axisY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisY = v; });
+            _axisZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); if (GetH() != null) GetH().ScaleAxisZ = v; });
+            foreach (var s in new[] { _axisX, _axisY, _axisZ })
+            {
+                s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
+                _root.Add(s);
+            }
+
+            // マグネット（比例編集）
+            _magnetToggle = new Toggle("Magnet") { value = false };
+            _magnetToggle.style.color = new StyleColor(Color.white);
+            _magnetToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseMagnet = e.newValue; });
+            _root.Add(_magnetToggle);
+            _magnetRadius = MakeSlider("Radius", 0.01f, 1f, 0.5f, v => { if (GetH() != null) GetH().MagnetRadius = v; });
+            _root.Add(_magnetRadius);
+            _magnetDistance = new EnumField("Distance", DistanceMode.Euclidean);
+            _magnetDistance.style.color = new StyleColor(Color.white);
+            _magnetDistance.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().MagnetDistanceMode = (DistanceMode)e.newValue; });
+            _root.Add(_magnetDistance);
+            _magnetFalloff = new EnumField("Falloff", FalloffType.Smooth);
+            _magnetFalloff.style.color = new StyleColor(Color.white);
+            _magnetFalloff.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().MagnetFalloff = (FalloffType)e.newValue; });
+            _root.Add(_magnetFalloff);
+
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginTop = 4;
             var applyBtn = new Button(() => GetH()?.EndSliderDrag()) { text = "Apply" }; applyBtn.style.flexGrow = 1; applyBtn.style.marginRight = 2;
             var revertBtn = new Button(() => { GetH()?.Revert(); _sliderX?.SetValueWithoutNotify(1); _sliderY?.SetValueWithoutNotify(1); _sliderZ?.SetValueWithoutNotify(1); _sliderXYZ?.SetValueWithoutNotify(1); }) { text = "Reset" }; revertBtn.style.flexGrow = 1;
@@ -57,6 +89,13 @@ namespace Poly_Ling.Player
             if (uni) _sliderXYZ?.SetValueWithoutNotify(h.ScaleX);
             else { _sliderX?.SetValueWithoutNotify(h.ScaleX); _sliderY?.SetValueWithoutNotify(h.ScaleY); _sliderZ?.SetValueWithoutNotify(h.ScaleZ); }
             _originToggle?.SetValueWithoutNotify(h.UseOriginPivot);
+            _magnetToggle?.SetValueWithoutNotify(h.UseMagnet);
+            _magnetRadius?.SetValueWithoutNotify(h.MagnetRadius);
+            _magnetFalloff?.SetValueWithoutNotify(h.MagnetFalloff);
+            _magnetDistance?.SetValueWithoutNotify(h.MagnetDistanceMode);
+            _axisX?.SetValueWithoutNotify(h.ScaleAxisX);
+            _axisY?.SetValueWithoutNotify(h.ScaleAxisY);
+            _axisZ?.SetValueWithoutNotify(h.ScaleAxisZ);
         }
 
         // ── ヘルパー ──────────────────────────────────────────────────────

@@ -17,6 +17,12 @@ namespace Poly_Ling.Tools
             ["Pivot"] = new() { ["en"] = "Pivot", ["ja"] = "ピボット", ["hi"] = "ぴぼっと" },
             ["UseOrigin"] = new() { ["en"] = "Use Origin", ["ja"] = "原点を使用", ["hi"] = "げんてんをつかう" },
             ["UndoScale"] = new() { ["en"] = "Scale Vertices", ["ja"] = "頂点を拡大縮小", ["hi"] = "ちょうてんをかくだいしゅくしょう" },
+            ["Magnet"] = new() { ["en"] = "Magnet", ["ja"] = "マグネット", ["hi"] = "じしゃく" },
+            ["Enable"] = new() { ["en"] = "Enable", ["ja"] = "有効", ["hi"] = "つかう" },
+            ["Radius"] = new() { ["en"] = "Radius", ["ja"] = "半径", ["hi"] = "はんけい" },
+            ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "減衰", ["hi"] = "よわまりかた" },
+            ["DistanceMode"] = new() { ["en"] = "Distance", ["ja"] = "距離モード", ["hi"] = "きょりのはかりかた" },
+            ["ScaleAxis"] = new() { ["en"] = "Scale Axis (°)", ["ja"] = "スケール軸 (°)", ["hi"] = "スケールのむき" },
         };
 
         private static string T(string key) => L.GetFrom(Texts, key);

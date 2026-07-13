@@ -749,7 +749,7 @@ namespace Poly_Ling.Player
             foPrimitive.Add(AdvancedPrimitiveBtn);
 
             // ── 選択・移動 ─────────────────────────────────────────────
-            var foSelectMove = MakeFoldout("選択・移動");
+            var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小");
 
             var toolRow = new VisualElement();
             toolRow.style.flexDirection = FlexDirection.Row;

@@ -33,6 +33,19 @@ namespace Poly_Ling.Tools
         // 全選択メッシュの影響頂点と開始位置
         private Dictionary<int, HashSet<int>> _multiMeshAffected = new Dictionary<int, HashSet<int>>();
         private Dictionary<int, Dictionary<int, Vector3>> _multiMeshStartPositions = new Dictionary<int, Dictionary<int, Vector3>>();
+        // マグネット影響（非選択）: meshKey -> (vertexIndex -> weight)
+        private Dictionary<int, Dictionary<int, float>> _multiMeshMagnetW = new Dictionary<int, Dictionary<int, float>>();
+
+        // マグネット（比例編集）
+        private bool _useMagnet = false;
+        private float _magnetRadius = 0.5f;
+        private FalloffType _magnetFalloff = FalloffType.Smooth;
+        private DistanceMode _magnetDistanceMode = DistanceMode.Euclidean;
+
+        // 軸-角度回転（Euler と排他）
+        private bool _axisMode = false;
+        private Vector3 _axisVec = new Vector3(0f, 1f, 0f);
+        private float _axisAngle = 0f;
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos) { _ctx = ctx; return false; }
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) { _ctx = ctx; return false; }
@@ -51,7 +64,16 @@ namespace Poly_Ling.Tools
         public bool  UseSnap      { get => _useSnap;      set => _useSnap      = value; }
         public float SnapAngle    { get => _snapAngle;    set => _snapAngle    = Mathf.Max(0.1f, value); }
         public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isSliderDragging) UpdatePreview(); } }
-        public Vector3 PivotPublic  { get => _pivot; }
+        public Vector3 PivotPublic  { get { if (!_isSliderDragging) { UpdateAffected(); UpdatePivot(); } return _pivot; } }
+        public bool         UseMagnet          { get => _useMagnet;          set => _useMagnet = value; }
+        public float        MagnetRadius       { get => _magnetRadius;       set => _magnetRadius = Mathf.Max(0.001f, value); }
+        public FalloffType  MagnetFalloff      { get => _magnetFalloff;      set => _magnetFalloff = value; }
+        public DistanceMode MagnetDistanceMode { get => _magnetDistanceMode; set => _magnetDistanceMode = value; }
+        public bool  AxisMode  { get => _axisMode;  set { _axisMode = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float AxisVecX  { get => _axisVec.x; set { _axisVec.x = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float AxisVecY  { get => _axisVec.y; set { _axisVec.y = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float AxisVecZ  { get => _axisVec.z; set { _axisVec.z = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float AxisAngle { get => _axisAngle; set { _axisAngle = value; if (_isSliderDragging) UpdatePreview(); } }
         public int   GetTotalAffectedCountPublic() { UpdateAffected(); return GetTotalAffectedCount(); }
 
         /// <summary>スライダー変更後に回転プレビューを更新する。ドラッグ開始を通知する。</summary>
@@ -72,7 +94,7 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>回転をリセットして元の位置に戻す。</summary>
-        public void RevertPublic() { RevertToStart(); _rotX = _rotY = _rotZ = 0f; }
+        public void RevertPublic() { RevertToStart(); _rotX = _rotY = _rotZ = 0f; _axisAngle = 0f; }
 
         /// <summary>コンテキストを手動設定する（スライダーUI から使用）。</summary>
         public void SetContextPublic(ToolContext ctx) { _ctx = ctx; UpdateAffected(); UpdatePivot(); }
@@ -103,6 +125,7 @@ namespace Poly_Ling.Tools
             _isSliderDragging = false;
             _multiMeshAffected.Clear();
             _multiMeshStartPositions.Clear();
+            _multiMeshMagnetW.Clear();
         }
 
         private void ExitSliderDragging()
@@ -221,6 +244,7 @@ namespace Poly_Ling.Tools
             if (_multiMeshStartPositions.Count == 0)
             {
                 UpdatePivot();
+                _multiMeshMagnetW.Clear();
                 foreach (var kv in _multiMeshAffected)
                 {
                     var meshContext = model.GetMeshContext(kv.Key);
@@ -233,12 +257,42 @@ namespace Poly_Ling.Tools
                         if (i >= 0 && i < meshObject.VertexCount)
                             startPos[i] = meshObject.Vertices[i].Position;
                     }
+
+                    // マグネット: 非選択の影響点を追加
+                    if (_useMagnet)
+                    {
+                        var orig = new Vector3[meshObject.VertexCount];
+                        for (int i = 0; i < meshObject.VertexCount; i++)
+                            orig[i] = meshObject.Vertices[i].Position;
+                        var affected = MagnetInfluence.Compute(meshObject, kv.Value, orig,
+                            _magnetRadius, _magnetFalloff, _magnetDistanceMode);
+                        if (affected.Count > 0)
+                        {
+                            var wmap = new Dictionary<int, float>();
+                            foreach (var akv in affected)
+                            {
+                                if (!startPos.ContainsKey(akv.Key)) startPos[akv.Key] = orig[akv.Key];
+                                wmap[akv.Key] = akv.Value;
+                            }
+                            _multiMeshMagnetW[kv.Key] = wmap;
+                        }
+                    }
+
                     _multiMeshStartPositions[kv.Key] = startPos;
                 }
             }
 
             // 回転適用（開始位置から計算）
-            Quaternion rot = Quaternion.Euler(_rotX, _rotY, _rotZ);
+            Quaternion rot;
+            if (_axisMode)
+            {
+                Vector3 dir = _axisVec.sqrMagnitude > 1e-8f ? _axisVec.normalized : Vector3.up;
+                rot = Quaternion.AngleAxis(_axisAngle, dir);
+            }
+            else
+            {
+                rot = Quaternion.Euler(_rotX, _rotY, _rotZ);
+            }
 
             foreach (var kv in _multiMeshStartPositions)
             {
@@ -246,13 +300,20 @@ namespace Poly_Ling.Tools
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
 
+                _multiMeshMagnetW.TryGetValue(kv.Key, out var wmap);
+
                 foreach (var posKv in kv.Value)
                 {
                     int i = posKv.Key;
                     if (i >= 0 && i < meshObject.VertexCount)
                     {
+                        // マグネット影響点は重み付き回転（Slerp）、選択点はフル
+                        Quaternion rq = rot;
+                        if (wmap != null && wmap.TryGetValue(i, out float wt))
+                            rq = Quaternion.Slerp(Quaternion.identity, rot, wt);
+
                         Vector3 offset = posKv.Value - _pivot;
-                        Vector3 rotated = rot * offset;
+                        Vector3 rotated = rq * offset;
                         var v = meshObject.Vertices[i];
                         v.Position = _pivot + rotated;
                         meshObject.Vertices[i] = v;
@@ -330,6 +391,7 @@ namespace Poly_Ling.Tools
             }
 
             _multiMeshStartPositions.Clear();
+            _multiMeshMagnetW.Clear();
             _isDirty = false;
         }
 
@@ -361,6 +423,7 @@ namespace Poly_Ling.Tools
                 mo2?.InvalidatePositionCache();
             }
             _multiMeshStartPositions.Clear();
+            _multiMeshMagnetW.Clear();
             _isDirty = false;
             _ctx.SyncMesh?.Invoke();
         }

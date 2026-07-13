@@ -1778,6 +1778,40 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            if (_interactionMode == InteractionMode.Rotate)
+            {
+                if (_rotateHandler != null &&
+                    _rotateHandler.TryGetGizmoRings(ctx, out var rx, out var ry, out var rz, out var rha))
+                {
+                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
+                    {
+                        HasGizmo    = true,
+                        IsRingStyle = true,
+                        RingX = rx, RingY = ry, RingZ = rz,
+                        HoveredAxis = rha,
+                    });
+                }
+                else panel.HideGizmo();
+                return;
+            }
+
+            if (_interactionMode == InteractionMode.Scale)
+            {
+                if (_scaleHandler != null &&
+                    _scaleHandler.TryGetGizmoScreenPositions(
+                        ctx, out var so, out var sxe, out var sye, out var sze, out var sha))
+                {
+                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
+                    {
+                        HasGizmo    = true,
+                        Origin      = so, XEnd = sxe, YEnd = sye, ZEnd = sze,
+                        HoveredAxis = sha,
+                    });
+                }
+                else panel.HideGizmo();
+                return;
+            }
+
             if (_interactionMode == InteractionMode.Sculpt || _interactionMode == InteractionMode.AdvancedSelect ||
                 _interactionMode == InteractionMode.SkinWeightPaint)
             {
@@ -2233,6 +2267,7 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                GetPanelHeight      = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
                 OnSyncMeshPositions = mc =>
                 {
                     // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
@@ -2249,6 +2284,7 @@ namespace Poly_Ling.Player
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
+                GetPanelHeight      = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
                 OnSyncMeshPositions = mc =>
                 {
                     // Phase 2a-2c: SyncMeshPositionsAndTransform + UpdateTransform を EnterVerticesMoved(Dragging) に集約。
@@ -4214,23 +4250,33 @@ namespace Poly_Ling.Player
                     ApplySelectionModeForInteractionMode(InteractionMode.LineExtrude);
                     break;
                 case InteractionMode.Rotate:
-                    // 【現状】ビューポート操作は選択のみ。回転実行はサブパネルのスライダ経由。
-                    // 【将来の拡張方針】独自形状ギズモ (回転リング) を追加する場合:
-                    //   1) MoveToolHandler.OnDragStartExtra で「マウス位置がギズモ上にあるか」を判定
-                    //   2) true を返せばツール固有ドラッグセッションに遷移 (MovingVertices は抑制)
-                    //   3) OnToolDragExtra / OnToolDragEndExtra で回転量更新と確定
-                    //   AxisGizmo (MoveToolHandler 内部) の仕組みが参考になる。
-                    //   Selection.Mode は All のまま (部分選択を想定するため絞らない)。
+                    // ビューポート・回転リングギズモ: 選択は MoveToolHandler を維持し、
+                    // 組み込み移動ギズモを抑制、フック経由で RotateToolHandler のリングへ委譲。
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
-                    _viewportManager?.RegisterActiveToolHandler(null);
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SuppressBuiltinGizmo = true;
+                        _moveToolHandler.GizmoHitTestOverride  = (pos, c) => _rotateHandler != null && _rotateHandler.GizmoHitTest(pos, c);
+                        _moveToolHandler.OnDragStartExtra      = (elem, mods) => _rotateHandler != null && _rotateHandler.BeginGizmoDrag();
+                        _moveToolHandler.OnToolDragExtra       = (pos, delta, mods) => _rotateHandler?.GizmoDrag(pos);
+                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) => _rotateHandler?.EndGizmoDrag();
+                    }
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _rotateHandler?.UpdateHover(pos, ctx));
                     ApplySelectionModeForInteractionMode(InteractionMode.Rotate);
                     break;
                 case InteractionMode.Scale:
-                    // 【現状】ビューポート操作は選択のみ。拡大縮小実行はサブパネルのスライダ経由。
-                    // 【将来の拡張方針】独自形状ギズモ (軸端ハンドル、中心均等スケール等) を
-                    // 追加する場合は Rotate と同様にフック (OnDragStartExtra) に差し込む。
+                    // ビューポート・スケールギズモ: 選択は MoveToolHandler を維持し、
+                    // 組み込み移動ギズモを抑制、フック経由で ScaleToolHandler のギズモへ委譲。
                     _vertexInteractor?.SetToolHandler(_moveToolHandler);
-                    _viewportManager?.RegisterActiveToolHandler(null);
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SuppressBuiltinGizmo = true;
+                        _moveToolHandler.GizmoHitTestOverride  = (pos, c) => _scaleHandler != null && _scaleHandler.GizmoHitTest(pos, c);
+                        _moveToolHandler.OnDragStartExtra      = (elem, mods) => _scaleHandler != null && _scaleHandler.BeginGizmoDrag();
+                        _moveToolHandler.OnToolDragExtra       = (pos, delta, mods) => _scaleHandler?.GizmoDrag(pos);
+                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) => _scaleHandler?.EndGizmoDrag();
+                    }
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _scaleHandler?.UpdateHover(pos, ctx));
                     ApplySelectionModeForInteractionMode(InteractionMode.Scale);
                     break;
                 case InteractionMode.EdgeTopology:

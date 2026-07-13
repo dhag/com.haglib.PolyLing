@@ -44,6 +44,30 @@ namespace Poly_Ling.Tools
                 if (EditorGUI.EndChangeCheck()) { if (!_isSliderDragging) { _isSliderDragging = true; _ctx?.EnterTransformDragging?.Invoke(); } _scaleX = newX; _scaleY = newY; _scaleZ = newZ; UpdatePreview(); }
             }
 
+            // スケール軸（フレーム回転）
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField(T("ScaleAxis"), EditorStyles.miniBoldLabel);
+            EditorGUI.BeginChangeCheck();
+            float ax = EditorGUILayout.Slider("X", _scaleAxisX, -180f, 180f);
+            float ay = EditorGUILayout.Slider("Y", _scaleAxisY, -180f, 180f);
+            float az = EditorGUILayout.Slider("Z", _scaleAxisZ, -180f, 180f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                _scaleAxisX = ax; _scaleAxisY = ay; _scaleAxisZ = az;
+                if (_isDirty) UpdatePreview();
+            }
+
+            // マグネット（比例編集）
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField(T("Magnet"), EditorStyles.miniBoldLabel);
+            _useMagnet = EditorGUILayout.Toggle(T("Enable"), _useMagnet);
+            using (new EditorGUI.DisabledScope(!_useMagnet))
+            {
+                _magnetRadius = EditorGUILayout.Slider(T("Radius"), _magnetRadius, _settings.MIN_MAGNET_RADIUS, _settings.MAX_MAGNET_RADIUS);
+                _magnetDistanceMode = (DistanceMode)EditorGUILayout.EnumPopup(T("DistanceMode"), _magnetDistanceMode);
+                _magnetFalloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), _magnetFalloff);
+            }
+
             EditorGUILayout.Space(8);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button(T("Apply"))) { ExitSliderDragging(); ApplyScale(_ctx); _scaleX = _scaleY = _scaleZ = 1f; }

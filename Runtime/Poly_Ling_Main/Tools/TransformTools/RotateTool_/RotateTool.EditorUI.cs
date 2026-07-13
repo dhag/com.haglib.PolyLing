@@ -39,29 +39,48 @@ namespace Poly_Ling.Tools
 
             EditorGUILayout.Space(4);
 
-            // 回転スライダー
-            EditorGUI.BeginChangeCheck();
-            float newX = EditorGUILayout.Slider("X", _rotX, -180f, 180f);
-            float newY = EditorGUILayout.Slider("Y", _rotY, -180f, 180f);
-            float newZ = EditorGUILayout.Slider("Z", _rotZ, -180f, 180f);
+            // 軸-角度モード（Euler と排他）
+            _axisMode = EditorGUILayout.Toggle(T("AxisAngleMode"), _axisMode);
 
-            if (EditorGUI.EndChangeCheck())
+            if (_axisMode)
             {
-                if (!_isSliderDragging)
+                EditorGUI.BeginChangeCheck();
+                Vector3 newAxis = EditorGUILayout.Vector3Field(T("Axis"), _axisVec);
+                float newAngle = EditorGUILayout.Slider(T("Angle"), _axisAngle, -180f, 180f);
+                if (EditorGUI.EndChangeCheck())
                 {
-                    _isSliderDragging = true;
-                    _ctx?.EnterTransformDragging?.Invoke();
+                    if (!_isSliderDragging) { _isSliderDragging = true; _ctx?.EnterTransformDragging?.Invoke(); }
+                    if (_useSnap) newAngle = Mathf.Round(newAngle / _snapAngle) * _snapAngle;
+                    _axisVec = newAxis; _axisAngle = newAngle;
+                    UpdatePreview();
                 }
-                if (_useSnap)
+            }
+            else
+            {
+                // 回転スライダー
+                EditorGUI.BeginChangeCheck();
+                float newX = EditorGUILayout.Slider("X", _rotX, -180f, 180f);
+                float newY = EditorGUILayout.Slider("Y", _rotY, -180f, 180f);
+                float newZ = EditorGUILayout.Slider("Z", _rotZ, -180f, 180f);
+
+                if (EditorGUI.EndChangeCheck())
                 {
-                    newX = Mathf.Round(newX / _snapAngle) * _snapAngle;
-                    newY = Mathf.Round(newY / _snapAngle) * _snapAngle;
-                    newZ = Mathf.Round(newZ / _snapAngle) * _snapAngle;
+                    if (!_isSliderDragging)
+                    {
+                        _isSliderDragging = true;
+                        _ctx?.EnterTransformDragging?.Invoke();
+                    }
+                    if (_useSnap)
+                    {
+                        newX = Mathf.Round(newX / _snapAngle) * _snapAngle;
+                        newY = Mathf.Round(newY / _snapAngle) * _snapAngle;
+                        newZ = Mathf.Round(newZ / _snapAngle) * _snapAngle;
+                    }
+                    _rotX = newX;
+                    _rotY = newY;
+                    _rotZ = newZ;
+                    UpdatePreview();
                 }
-                _rotX = newX;
-                _rotY = newY;
-                _rotZ = newZ;
-                UpdatePreview();
             }
 
             EditorGUILayout.Space(2);
@@ -71,6 +90,19 @@ namespace Poly_Ling.Tools
             if (_useSnap) _snapAngle = EditorGUILayout.FloatField(_snapAngle, GUILayout.Width(40));
             EditorGUILayout.EndHorizontal();
 
+            // マグネット（比例編集）
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField(T("Magnet"), EditorStyles.miniBoldLabel);
+            _useMagnet = EditorGUILayout.Toggle(T("Enable"), _useMagnet);
+            using (new EditorGUI.DisabledScope(!_useMagnet))
+            {
+                _magnetRadius = EditorGUILayout.Slider(T("Radius"), _magnetRadius,
+                    Poly_Ling.Core.ParameterLimits.GetF("Rotate.MagnetRadius.Min"),
+                    Poly_Ling.Core.ParameterLimits.GetF("Rotate.MagnetRadius.Max"));
+                _magnetDistanceMode = (DistanceMode)EditorGUILayout.EnumPopup(T("DistanceMode"), _magnetDistanceMode);
+                _magnetFalloff = (FalloffType)EditorGUILayout.EnumPopup(T("Falloff"), _magnetFalloff);
+            }
+
             EditorGUILayout.Space(8);
 
             EditorGUILayout.BeginHorizontal();
@@ -78,13 +110,13 @@ namespace Poly_Ling.Tools
             {
                 ExitSliderDragging();
                 ApplyRotation(_ctx);
-                _rotX = _rotY = _rotZ = 0f;
+                _rotX = _rotY = _rotZ = 0f; _axisAngle = 0f;
             }
             if (GUILayout.Button(T("Reset")))
             {
                 ExitSliderDragging();
                 RevertToStart();
-                _rotX = _rotY = _rotZ = 0f;
+                _rotX = _rotY = _rotZ = 0f; _axisAngle = 0f;
             }
             EditorGUILayout.EndHorizontal();
 

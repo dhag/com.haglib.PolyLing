@@ -31,6 +31,16 @@ namespace Poly_Ling.Tools
         // 全選択メッシュの影響頂点と開始位置
         private Dictionary<int, HashSet<int>> _multiMeshAffected = new Dictionary<int, HashSet<int>>();
         private Dictionary<int, Dictionary<int, Vector3>> _multiMeshStartPositions = new Dictionary<int, Dictionary<int, Vector3>>();
+        private Dictionary<int, Dictionary<int, float>> _multiMeshMagnetW = new Dictionary<int, Dictionary<int, float>>();
+
+        // マグネット（比例編集）
+        private bool _useMagnet = false;
+        private float _magnetRadius = 0.5f;
+        private FalloffType _magnetFalloff = FalloffType.Smooth;
+        private DistanceMode _magnetDistanceMode = DistanceMode.Euclidean;
+
+        // スケール軸（Euler、フレーム回転）
+        private float _scaleAxisX = 0f, _scaleAxisY = 0f, _scaleAxisZ = 0f;
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos) { _ctx = ctx; return false; }
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta) { _ctx = ctx; return false; }
@@ -46,6 +56,14 @@ namespace Poly_Ling.Tools
         public bool  UniformScale { get => _uniform; set { _uniform = value; if (_uniform) { _scaleY = _scaleZ = _scaleX; } UpdatePreview(); } }
         public bool  UseOriginPivot { get => _useOriginPivot; set { _useOriginPivot = value; UpdatePivot(); if (_isSliderDragging) UpdatePreview(); } }
         public int   GetTotalAffectedCountPublic() { UpdateAffected(); return GetTotalAffectedCount(); }
+        public bool         UseMagnet          { get => _useMagnet;          set => _useMagnet = value; }
+        public float        MagnetRadius       { get => _magnetRadius;       set => _magnetRadius = Mathf.Max(0.001f, value); }
+        public FalloffType  MagnetFalloff      { get => _magnetFalloff;      set => _magnetFalloff = value; }
+        public DistanceMode MagnetDistanceMode { get => _magnetDistanceMode; set => _magnetDistanceMode = value; }
+        public float ScaleAxisX { get => _scaleAxisX; set { _scaleAxisX = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float ScaleAxisY { get => _scaleAxisY; set { _scaleAxisY = value; if (_isSliderDragging) UpdatePreview(); } }
+        public float ScaleAxisZ { get => _scaleAxisZ; set { _scaleAxisZ = value; if (_isSliderDragging) UpdatePreview(); } }
+        public Vector3 PivotPublic { get { if (!_isSliderDragging) { UpdateAffected(); UpdatePivot(); } return _pivot; } }
 
         public void BeginSliderDrag()
         {
@@ -84,6 +102,7 @@ namespace Poly_Ling.Tools
             _isSliderDragging = false;
             _multiMeshAffected.Clear();
             _multiMeshStartPositions.Clear();
+            _multiMeshMagnetW.Clear();
         }
 
         private void ExitSliderDragging() { if (!_isSliderDragging) return; _isSliderDragging = false; _ctx?.ExitTransformDragging?.Invoke(); }
@@ -157,6 +176,7 @@ namespace Poly_Ling.Tools
             if (_multiMeshStartPositions.Count == 0)
             {
                 UpdatePivot();
+                _multiMeshMagnetW.Clear();
                 foreach (var kv in _multiMeshAffected)
                 {
                     var meshContext = model.GetMeshContext(kv.Key);
@@ -165,23 +185,52 @@ namespace Poly_Ling.Tools
                     var startPos = new Dictionary<int, Vector3>();
                     foreach (int i in kv.Value)
                         if (i >= 0 && i < meshObject.VertexCount) startPos[i] = meshObject.Vertices[i].Position;
+
+                    if (_useMagnet)
+                    {
+                        var orig = new Vector3[meshObject.VertexCount];
+                        for (int i = 0; i < meshObject.VertexCount; i++) orig[i] = meshObject.Vertices[i].Position;
+                        var affected = MagnetInfluence.Compute(meshObject, kv.Value, orig,
+                            _magnetRadius, _magnetFalloff, _magnetDistanceMode);
+                        if (affected.Count > 0)
+                        {
+                            var wmap = new Dictionary<int, float>();
+                            foreach (var akv in affected)
+                            {
+                                if (!startPos.ContainsKey(akv.Key)) startPos[akv.Key] = orig[akv.Key];
+                                wmap[akv.Key] = akv.Value;
+                            }
+                            _multiMeshMagnetW[kv.Key] = wmap;
+                        }
+                    }
+
                     _multiMeshStartPositions[kv.Key] = startPos;
                 }
             }
 
             Vector3 scale = new Vector3(_scaleX, _scaleY, _scaleZ);
+            Quaternion axisRot = Quaternion.Euler(_scaleAxisX, _scaleAxisY, _scaleAxisZ);
+            Quaternion axisInv = Quaternion.Inverse(axisRot);
             foreach (var kv in _multiMeshStartPositions)
             {
                 var meshContext = model.GetMeshContext(kv.Key);
                 var meshObject = meshContext?.MeshObject;
                 if (meshObject == null) continue;
+                _multiMeshMagnetW.TryGetValue(kv.Key, out var wmap);
                 foreach (var posKv in kv.Value)
                 {
                     int i = posKv.Key;
                     if (i >= 0 && i < meshObject.VertexCount)
                     {
+                        // マグネット影響点は軸毎 1+(s-1)*w、選択点はフル
+                        Vector3 sc = scale;
+                        if (wmap != null && wmap.TryGetValue(i, out float wt))
+                            sc = new Vector3(1f + (scale.x - 1f) * wt, 1f + (scale.y - 1f) * wt, 1f + (scale.z - 1f) * wt);
+
+                        // スケール軸フレーム: R⁻¹ → スケール → R
                         Vector3 offset = posKv.Value - _pivot;
-                        Vector3 scaled = Vector3.Scale(offset, scale);
+                        Vector3 local  = axisInv * offset;
+                        Vector3 scaled = axisRot * Vector3.Scale(local, sc);
                         var v = meshObject.Vertices[i]; v.Position = _pivot + scaled; meshObject.Vertices[i] = v;
                     }
                 }
@@ -234,6 +283,7 @@ namespace Poly_Ling.Tools
                 }
             }
             _multiMeshStartPositions.Clear();
+            _multiMeshMagnetW.Clear();
             _isDirty = false;
         }
 
@@ -257,6 +307,7 @@ namespace Poly_Ling.Tools
                 mo3?.InvalidatePositionCache();
             }
             _multiMeshStartPositions.Clear();
+            _multiMeshMagnetW.Clear();
             _isDirty = false;
             _ctx.SyncMeshPositionsOnly?.Invoke();
         }

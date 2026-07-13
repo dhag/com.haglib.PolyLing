@@ -146,6 +146,10 @@ namespace Poly_Ling.Player
             /// <summary>ピボット位置のダイヤ型ギズモ。</summary>
             public bool HasPivotGizmo;
             public Vector2 PivotOrigin, PivotXEnd, PivotYEnd, PivotZEnd;
+
+            /// <summary>回転リングギズモ。true=3軸リングを描画。</summary>
+            public bool IsRingStyle;
+            public Vector2[] RingX, RingY, RingZ;
         }
 
         public void UpdateGizmo(GizmoData d)
@@ -988,6 +992,17 @@ namespace Poly_Ling.Player
             if (!_gizmoData.HasGizmo) return;
             var at = _gizmoData.HoveredAxis; var dt = _gizmoData.DraggingAxis;
 
+            if (_gizmoData.IsRingStyle)
+            {
+                bool hx = (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X);
+                bool hy = (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y);
+                bool hz = (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z);
+                DrawGizmoPolyline(ctx, _gizmoData.RingX, hx?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f), hx?2.5f:1.5f);
+                DrawGizmoPolyline(ctx, _gizmoData.RingY, hy?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f), hy?2.5f:1.5f);
+                DrawGizmoPolyline(ctx, _gizmoData.RingZ, hz?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f), hz?2.5f:1.5f);
+                return;
+            }
+
             if (_gizmoData.IsDiamondStyle)
             {
                 // オブジェクト移動: 軸線 + 先端ダイヤ + 中心ダイヤ
@@ -1036,9 +1051,29 @@ namespace Poly_Ling.Player
             }
         }
 
-        /// <summary>軸線のみ描画（ダイヤスタイル用）。</summary>
-        private static void DrawGizmoAxisLine(MeshGenerationContext ctx, Vector2 from, Vector2 to, Color col)
+        /// <summary>スクリーン折れ線（リング）を太さ付きで描画する。</summary>
+        private static void DrawGizmoPolyline(MeshGenerationContext ctx, Vector2[] pts, Color col, float width)
         {
+            if (pts == null || pts.Length < 2) return;
+            float hw = width * 0.5f;
+            for (int i = 0; i + 1 < pts.Length; i++)
+            {
+                Vector2 from = pts[i], to = pts[i + 1];
+                Vector2 dir = to - from;
+                if (dir.sqrMagnitude < 1e-6f) continue;
+                dir.Normalize();
+                Vector2 p = new Vector2(-dir.y, dir.x) * hw;
+                var m = ctx.Allocate(4, 6); var v = new Vertex[4];
+                v[0]=new Vertex{position=new Vector3(from.x-p.x,from.y-p.y,Vertex.nearZ),tint=col};
+                v[1]=new Vertex{position=new Vector3(from.x+p.x,from.y+p.y,Vertex.nearZ),tint=col};
+                v[2]=new Vertex{position=new Vector3(to.x+p.x,to.y+p.y,Vertex.nearZ),tint=col};
+                v[3]=new Vertex{position=new Vector3(to.x-p.x,to.y-p.y,Vertex.nearZ),tint=col};
+                m.SetAllVertices(v); m.SetAllIndices(new ushort[]{0,2,1,0,3,2});
+            }
+        }
+
+        /// <summary>軸線のみ描画（ダイヤスタイル用）。</summary>
+        private static void DrawGizmoAxisLine(MeshGenerationContext ctx, Vector2 from, Vector2 to, Color col)        {
             Vector2 d = (to - from).normalized, p = new Vector2(-d.y, d.x) * 1.5f;
             var m = ctx.Allocate(4, 6); var v = new Vertex[4];
             v[0]=new Vertex{position=new Vector3(from.x-p.x,from.y-p.y,Vertex.nearZ),tint=col};

@@ -46,6 +46,10 @@ namespace Poly_Ling.Core
             ("Move.ScreenOffsetY.Max",            100f,    "移動: 画面オフセットY の上限"),
             ("Move.MagnetRadius.Min",             0.01f,   "移動: マグネット半径の下限"),
             ("Move.MagnetRadius.Max",             1.0f,    "移動: マグネット半径の上限"),
+            ("Rotate.MagnetRadius.Min",           0.01f,   "回転: マグネット半径の下限"),
+            ("Rotate.MagnetRadius.Max",           1.0f,    "回転: マグネット半径の上限"),
+            ("Scale.MagnetRadius.Min",            0.01f,   "拡大縮小: マグネット半径の下限"),
+            ("Scale.MagnetRadius.Max",            1.0f,    "拡大縮小: マグネット半径の上限"),
 
             // --- Scale（スケール） ---
             ("Scale.XYZ.Min",                     0.01f,   "スケール: XYZ一括の下限"),

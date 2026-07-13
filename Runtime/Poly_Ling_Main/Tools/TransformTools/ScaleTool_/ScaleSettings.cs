@@ -33,6 +33,19 @@ namespace Poly_Ling.Tools
         // ピボットモード
         public PivotMode PivotMode = PivotMode.SelectionCenter;
 
+        // マグネット（比例編集）
+        public bool         UseMagnet          = false;
+        public float        MagnetRadius       = 0.5f;
+        public FalloffType  MagnetFalloff      = FalloffType.Smooth;
+        public DistanceMode MagnetDistanceMode = DistanceMode.Euclidean;
+        public float MIN_MAGNET_RADIUS = ParameterLimits.GetF("Scale.MagnetRadius.Min");
+        public float MAX_MAGNET_RADIUS = ParameterLimits.GetF("Scale.MagnetRadius.Max");
+
+        // スケール軸（Euler、フレーム回転）
+        public float ScaleAxisX = 0f;
+        public float ScaleAxisY = 0f;
+        public float ScaleAxisZ = 0f;
+
         /// <summary>
         /// スケールをリセット（1.0に戻す）
         /// </summary>
@@ -88,7 +101,14 @@ namespace Poly_Ling.Tools
                 ScaleY = this.ScaleY,
                 ScaleZ = this.ScaleZ,
                 UniformScale = this.UniformScale,
-                PivotMode = this.PivotMode
+                PivotMode = this.PivotMode,
+                UseMagnet = this.UseMagnet,
+                MagnetRadius = this.MagnetRadius,
+                MagnetFalloff = this.MagnetFalloff,
+                MagnetDistanceMode = this.MagnetDistanceMode,
+                ScaleAxisX = this.ScaleAxisX,
+                ScaleAxisY = this.ScaleAxisY,
+                ScaleAxisZ = this.ScaleAxisZ
             };
         }
 
@@ -100,7 +120,14 @@ namespace Poly_Ling.Tools
                    ScaleY != o.ScaleY ||
                    ScaleZ != o.ScaleZ ||
                    UniformScale != o.UniformScale ||
-                   PivotMode != o.PivotMode;
+                   PivotMode != o.PivotMode ||
+                   UseMagnet != o.UseMagnet ||
+                   !Mathf.Approximately(MagnetRadius, o.MagnetRadius) ||
+                   MagnetFalloff != o.MagnetFalloff ||
+                   MagnetDistanceMode != o.MagnetDistanceMode ||
+                   ScaleAxisX != o.ScaleAxisX ||
+                   ScaleAxisY != o.ScaleAxisY ||
+                   ScaleAxisZ != o.ScaleAxisZ;
         }
 
         public override void CopyFrom(IToolSettings other)
@@ -112,6 +139,13 @@ namespace Poly_Ling.Tools
             ScaleZ = o.ScaleZ;
             UniformScale = o.UniformScale;
             PivotMode = o.PivotMode;
+            UseMagnet = o.UseMagnet;
+            MagnetRadius = o.MagnetRadius;
+            MagnetFalloff = o.MagnetFalloff;
+            MagnetDistanceMode = o.MagnetDistanceMode;
+            ScaleAxisX = o.ScaleAxisX;
+            ScaleAxisY = o.ScaleAxisY;
+            ScaleAxisZ = o.ScaleAxisZ;
         }
     }
 }

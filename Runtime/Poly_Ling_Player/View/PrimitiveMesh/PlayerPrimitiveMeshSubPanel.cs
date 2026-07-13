@@ -169,7 +169,7 @@ namespace Poly_Ling.Player
         private VisualElement _revBgEl;
         private string        _revBgPath    = "";
         private Vector2       _revBgOffset  = Vector2.zero;
-        private float         _revBgScale   = 1f;
+        private float         _revBgScale   = 3f;   // 画像高さ(ワールド単位)
         private Vector2       _revBgOrigin  = Vector2.zero; // 拡大縮小の原点（画像px, 既定=中心）
         private Slider        _revBgScaleSlider;
         private Label         _revBgSizeLabel;
@@ -218,6 +218,8 @@ namespace Poly_Ling.Player
         private VisualElement _p2dAnchorPanel;
         private FloatField    _p2dTfMoveX, _p2dTfMoveY, _p2dTfScaleX, _p2dTfScaleY, _p2dTfRot;
         private FloatField    _p2dTfScaleAxis;
+        // 角処理(ベベル)UI 要素（Thickness/Segments に応じて表示切替）
+        private VisualElement _p2dEdgeLabel, _p2dEdgeFrontSeg, _p2dEdgeFrontSize, _p2dEdgeBackSeg, _p2dEdgeBackSize, _p2dEdgeInward;
 
         // マグネット（比例編集、Phase）
         private readonly Canvas2DMagnet _p2dMagnet = new Canvas2DMagnet();
@@ -238,7 +240,7 @@ namespace Poly_Ling.Player
         private VisualElement _p2dBgEl;
         private string        _p2dBgPath   = "";
         private Vector2       _p2dBgOffset = Vector2.zero;
-        private float         _p2dBgScale  = 1f;
+        private float         _p2dBgScale  = 8f;    // 画像高さ(ワールド単位)
         private Vector2       _p2dBgOrigin = Vector2.zero; // 拡大縮小の原点（画像px, 既定=中心）
         private Slider        _p2dBgScaleSlider;
         private Label         _p2dBgSizeLabel;
@@ -977,7 +979,7 @@ namespace Poly_Ling.Player
                 {
                     if (string.IsNullOrEmpty(_revBgPath)) return;
                     LoadBgTexture(_revBgPath, ref _revBgTex, _revBgEl);
-                    _revBgOffset = Vector2.zero; _revBgScale = 1f;
+                    _revBgOffset = Vector2.zero; _revBgScale = 3f;
                     if (_revBgTex != null)
                         _revBgOrigin = new Vector2(_revBgTex.width * 0.5f, _revBgTex.height * 0.5f);
                     _revBgScaleSlider?.SetValueWithoutNotify(1f);
@@ -1057,9 +1059,20 @@ namespace Poly_Ling.Player
             pe.Add(csvPathField);
 
             var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
+            SB(csvRow, T("Browse"), () =>
+            {
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
+                if (string.IsNullOrEmpty(path)) return;
+                _revCsvPath = path; csvPathField.SetValueWithoutNotify(path);
+            });
             SB(csvRow, T("LoadCSV"), () =>
             {
-                if (string.IsNullOrEmpty(_revCsvPath)) return;
+                if (string.IsNullOrEmpty(_revCsvPath))
+                {
+                    _revCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
+                    if (string.IsNullOrEmpty(_revCsvPath)) return;
+                    csvPathField.SetValueWithoutNotify(_revCsvPath);
+                }
                 var result = RevolutionCSVIO.Load(_revCsvPath, _revP);
                 if (result.Success)
                 {
@@ -1085,7 +1098,12 @@ namespace Poly_Ling.Player
             });
             SB(csvRow, T("SaveCSV"), () =>
             {
-                if (string.IsNullOrEmpty(_revCsvPath)) return;
+                if (string.IsNullOrEmpty(_revCsvPath))
+                {
+                    _revCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(T("SaveCSV"), "", "revolution.csv", "csv");
+                    if (string.IsNullOrEmpty(_revCsvPath)) return;
+                    csvPathField.SetValueWithoutNotify(_revCsvPath);
+                }
                 EnsureRevProfile();
                 RevolutionCSVIO.Save(_revCsvPath, _revProfile, _revP);
             });
@@ -1619,7 +1637,8 @@ namespace Poly_Ling.Player
             // 下絵移動モード
             if (_revBgDrag && _revCanvas.HasPointerCapture(e.pointerId))
             {
-                _revBgOffset = _revBgOffsetOnDragStart + (cp - _revBgDragStart);
+                _revBgOffset = _revBgOffsetOnDragStart
+                             + (RevC2P(cp, w, h) - RevC2P(_revBgDragStart, w, h));
                 UpdateRevBgEl();
                 e.StopPropagation(); return;
             }
@@ -1837,7 +1856,7 @@ namespace Poly_Ling.Player
                 {
                     if (string.IsNullOrEmpty(_p2dBgPath)) return;
                     LoadBgTexture(_p2dBgPath, ref _p2dBgTex, _p2dBgEl);
-                    _p2dBgOffset = Vector2.zero; _p2dBgScale = 1f;
+                    _p2dBgOffset = Vector2.zero; _p2dBgScale = 8f;
                     if (_p2dBgTex != null)
                         _p2dBgOrigin = new Vector2(_p2dBgTex.width * 0.5f, _p2dBgTex.height * 0.5f);
                     _p2dBgScaleSlider?.SetValueWithoutNotify(1f);
@@ -1920,6 +1939,31 @@ namespace Poly_Ling.Player
             });
             pe.Add(loopBtnRow);
 
+            // ── ループ操作ボタン行2（全選択 / 複製） ─────────────────────────
+            var loopBtnRow2 = new VisualElement(); loopBtnRow2.style.flexDirection = FlexDirection.Row; loopBtnRow2.style.marginBottom = 3;
+            SB(loopBtnRow2, T("SelectAllLoop"), () =>
+            {
+                if (_p2dLoops == null || _p2dSelLoop < 0 || _p2dSelLoop >= _p2dLoops.Count) return;
+                var lp = _p2dLoops[_p2dSelLoop];
+                _p2dSel.Clear();
+                for (int pi = 0; pi < lp.Points.Count; pi++) _p2dSel.Add(P2dKey(_p2dSelLoop, pi));
+                _p2dSelPt = lp.Points.Count > 0 ? 0 : -1;
+                RefreshP2dCanvas(); RefreshP2dPointUI();
+            });
+            SB(loopBtnRow2, T("DuplicateLoop"), () =>
+            {
+                if (_p2dLoops == null || _p2dSelLoop < 0 || _p2dSelLoop >= _p2dLoops.Count) return;
+                var src = _p2dLoops[_p2dSelLoop];
+                var dup = new Loop(src);                    // 点列＋穴フラグを複製
+                var ofs = new Vector2(0.1f, 0.1f);          // 少しずらして重なり回避
+                for (int pi = 0; pi < dup.Points.Count; pi++) dup.Points[pi] += ofs;
+                _p2dLoops.Add(dup);
+                _p2dSelLoop = _p2dLoops.Count - 1;          // 複製先を選択
+                _p2dSel.Clear(); _p2dSelPt = -1;
+                D(); RefreshP2dCanvas(); RefreshP2dPointUI();
+            });
+            pe.Add(loopBtnRow2);
+
             // ── ループ一覧（穴フラグ切替） ─────────────────────────────────
             pe.Add(SL(T("Loops")));
             for (int i = 0; i < _p2dLoops.Count; i++)
@@ -1994,9 +2038,20 @@ namespace Poly_Ling.Player
             csvTf.RegisterValueChangedCallback(e => _p2dCsvPath = e.newValue);
             pe.Add(csvTf);
             var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
+            SB(csvRow, T("Browse"), () =>
+            {
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
+                if (string.IsNullOrEmpty(path)) return;
+                _p2dCsvPath = path; csvTf.SetValueWithoutNotify(path);
+            });
             SB(csvRow, T("LoadCSV"), () =>
             {
-                if (string.IsNullOrEmpty(_p2dCsvPath)) return;
+                if (string.IsNullOrEmpty(_p2dCsvPath))
+                {
+                    _p2dCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
+                    if (string.IsNullOrEmpty(_p2dCsvPath)) return;
+                    csvTf.SetValueWithoutNotify(_p2dCsvPath);
+                }
                 try
                 {
                     var lines = System.IO.File.ReadAllLines(_p2dCsvPath);
@@ -2007,7 +2062,13 @@ namespace Poly_Ling.Player
             });
             SB(csvRow, T("SaveCSV"), () =>
             {
-                if (string.IsNullOrEmpty(_p2dCsvPath) || _p2dLoops == null) return;
+                if (_p2dLoops == null) return;
+                if (string.IsNullOrEmpty(_p2dCsvPath))
+                {
+                    _p2dCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(T("SaveCSV"), "", "profile2d.csv", "csv");
+                    if (string.IsNullOrEmpty(_p2dCsvPath)) return;
+                    csvTf.SetValueWithoutNotify(_p2dCsvPath);
+                }
                 try
                 {
                     var sb = new System.Text.StringBuilder();
@@ -2040,21 +2101,33 @@ namespace Poly_Ling.Player
             c.Add(SR(T("OffsetX"), -5f,   5f,  () => _p2dP.Offset.x, v => { _p2dP.Offset = new Vector2(v, _p2dP.Offset.y); D(); }));
             c.Add(SR(T("OffsetY"), -5f,   5f,  () => _p2dP.Offset.y, v => { _p2dP.Offset = new Vector2(_p2dP.Offset.x, v); D(); }));
             c.Add(TR(T("FlipY"),               () => _p2dP.FlipY,    v => { _p2dP.FlipY    = v; D(); }));
-            c.Add(SR(T("Thickness"), 0f, 2f,   () => _p2dP.Thickness, v => { _p2dP.Thickness = v; D(); }));
+            c.Add(SR(T("Thickness"), 0f, 2f,   () => _p2dP.Thickness, v => { _p2dP.Thickness = v; D(); UpdateP2dEdgeVis(); }));
 
-            if (_p2dP.Thickness > 0.001f)
-            {
-                c.Add(SL(T("EdgeSettings")));
-                c.Add(IR(T("FrontSegments"), 0, 16, () => _p2dP.SegmentsFront, v => { _p2dP.SegmentsFront = v; D(); }));
-                if (_p2dP.SegmentsFront > 0)
-                    c.Add(SR(T("EdgeSize"), 0.01f, 0.5f, () => _p2dP.EdgeSizeFront, v => { _p2dP.EdgeSizeFront = v; D(); }));
-                c.Add(IR(T("BackSegments"),  0, 16, () => _p2dP.SegmentsBack, v => { _p2dP.SegmentsBack = v; D(); }));
-                if (_p2dP.SegmentsBack > 0)
-                    c.Add(SR(T("EdgeSize"), 0.01f, 0.5f, () => _p2dP.EdgeSizeBack, v => { _p2dP.EdgeSizeBack = v; D(); }));
-                if (_p2dP.SegmentsFront > 0 || _p2dP.SegmentsBack > 0)
-                    c.Add(TR(T("EdgeInward"), () => _p2dP.EdgeInward, v => { _p2dP.EdgeInward = v; D(); }));
-            }
+            // 角処理(ベベル)UI は常時生成し、Thickness/Segments に応じて表示切替
+            // （ビルド時条件生成だと Thickness を後から上げても出ないため）
+            _p2dEdgeLabel     = SL(T("EdgeSettings"));
+            _p2dEdgeFrontSeg  = IR(T("FrontSegments"), 0, 16, () => _p2dP.SegmentsFront, v => { _p2dP.SegmentsFront = v; D(); UpdateP2dEdgeVis(); });
+            _p2dEdgeFrontSize = SR(T("EdgeSize"), 0.01f, 0.5f, () => _p2dP.EdgeSizeFront, v => { _p2dP.EdgeSizeFront = v; D(); });
+            _p2dEdgeBackSeg   = IR(T("BackSegments"),  0, 16, () => _p2dP.SegmentsBack, v => { _p2dP.SegmentsBack = v; D(); UpdateP2dEdgeVis(); });
+            _p2dEdgeBackSize  = SR(T("EdgeSize"), 0.01f, 0.5f, () => _p2dP.EdgeSizeBack, v => { _p2dP.EdgeSizeBack = v; D(); });
+            _p2dEdgeInward    = TR(T("EdgeInward"), () => _p2dP.EdgeInward, v => { _p2dP.EdgeInward = v; D(); });
+            c.Add(_p2dEdgeLabel); c.Add(_p2dEdgeFrontSeg); c.Add(_p2dEdgeFrontSize);
+            c.Add(_p2dEdgeBackSeg); c.Add(_p2dEdgeBackSize); c.Add(_p2dEdgeInward);
+            UpdateP2dEdgeVis();
 
+        }
+
+        /// <summary>角処理(ベベル)UI の表示を Thickness/Segments に応じて更新する。</summary>
+        private void UpdateP2dEdgeVis()
+        {
+            if (_p2dEdgeLabel == null) return;
+            bool thick = _p2dP.Thickness > 0.001f;
+            _p2dEdgeLabel.style.display     = thick ? DisplayStyle.Flex : DisplayStyle.None;
+            _p2dEdgeFrontSeg.style.display  = thick ? DisplayStyle.Flex : DisplayStyle.None;
+            _p2dEdgeFrontSize.style.display = (thick && _p2dP.SegmentsFront > 0) ? DisplayStyle.Flex : DisplayStyle.None;
+            _p2dEdgeBackSeg.style.display   = thick ? DisplayStyle.Flex : DisplayStyle.None;
+            _p2dEdgeBackSize.style.display  = (thick && _p2dP.SegmentsBack > 0) ? DisplayStyle.Flex : DisplayStyle.None;
+            _p2dEdgeInward.style.display    = (thick && (_p2dP.SegmentsFront > 0 || _p2dP.SegmentsBack > 0)) ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         // ── P2D 座標変換 ──────────────────────────────────────────────────
@@ -2578,7 +2651,8 @@ namespace Poly_Ling.Player
             // 下絵移動モード
             if (_p2dBgDrag && _p2dCanvas.HasPointerCapture(e.pointerId))
             {
-                _p2dBgOffset = _p2dBgOffsetOnDragStart + (cp - _p2dBgDragStart);
+                _p2dBgOffset = _p2dBgOffsetOnDragStart
+                             + (P2dCanvasToWorld(cp, w, h) - P2dCanvasToWorld(_p2dBgDragStart, w, h));
                 UpdateP2dBgEl();
                 e.StopPropagation(); return;
             }
@@ -2812,15 +2886,21 @@ namespace Poly_Ling.Player
             if (cw <= 0 || ch <= 0) return;
             float bw = _revBgTex.width;
             float bh = _revBgTex.height;
-            // ネイティブサイズの箱を中心配置＋オフセット。拡縮は原点(画像px)基準の transform。
-            float cx = (cw - bw) * 0.5f + _revBgOffset.x;
-            float cy = (ch - bh) * 0.5f + _revBgOffset.y;
-            _revBgEl.style.left   = cx; _revBgEl.style.top    = cy;
+            if (bw < 0.5f || bh < 0.5f) return;
+
+            // ジオメトリ(ProfileToCanvas)と同じ基準倍率（ズーム除く）
+            float baseScale = Mathf.Min(cw / RevolutionProfileEditCore.RangeX,
+                                        ch / RevolutionProfileEditCore.RangeY);
+            // 画像の高さ = _revBgScale ワールド単位（アスペクト維持）
+            float s = (_revBgScale * baseScale) / bh;
+
+            // 画像中心をプロファイル点 _revBgOffset に合わせる（zoom=1,offset=0 相当）
+            Vector2 c = RevolutionProfileEditCore.ProfileToCanvas(_revBgOffset, cw, ch, 1f, Vector2.zero);
+            _revBgEl.style.left   = c.x - bw * 0.5f; _revBgEl.style.top = c.y - bh * 0.5f;
             _revBgEl.style.width  = bw; _revBgEl.style.height = bh;
             _revBgEl.style.transformOrigin = new TransformOrigin(
-                new Length(_revBgOrigin.x, LengthUnit.Pixel),
-                new Length(_revBgOrigin.y, LengthUnit.Pixel), 0f);
-            _revBgEl.style.scale   = new Scale(new Vector3(_revBgScale, _revBgScale, 1f));
+                new Length(bw * 0.5f, LengthUnit.Pixel), new Length(bh * 0.5f, LengthUnit.Pixel), 0f);
+            _revBgEl.style.scale   = new Scale(new Vector3(s, s, 1f));
             _revBgEl.style.opacity = _revBgAlpha;
             _revBgEl.style.backgroundSize = new StyleBackgroundSize(
                 new BackgroundSize(BackgroundSizeType.Cover));
@@ -2835,14 +2915,21 @@ namespace Poly_Ling.Player
             if (cw <= 0 || ch <= 0) return;
             float bw = _p2dBgTex.width;
             float bh = _p2dBgTex.height;
-            float cx = (cw - bw) * 0.5f + _p2dBgOffset.x;
-            float cy = (ch - bh) * 0.5f + _p2dBgOffset.y;
-            _p2dBgEl.style.left   = cx; _p2dBgEl.style.top    = cy;
+            if (bw < 0.5f || bh < 0.5f) return;
+
+            // ジオメトリと同じワールド→キャンバス基準倍率（ズーム除く。ズームはビューレイヤーが付与）
+            float baseScale = Mathf.Min(cw, ch) * 0.4f;
+            // 画像の高さ = _p2dBgScale ワールド単位（アスペクト維持）
+            float s = (_p2dBgScale * baseScale) / bh;
+
+            // 画像中心をワールド点 _p2dBgOffset に合わせる（P2dWorldToCanvas の zoom=1,offset=0 相当）
+            float ccx = cw * 0.5f + _p2dBgOffset.x * baseScale;
+            float ccy = ch * 0.5f - _p2dBgOffset.y * baseScale;
+            _p2dBgEl.style.left   = ccx - bw * 0.5f; _p2dBgEl.style.top = ccy - bh * 0.5f;
             _p2dBgEl.style.width  = bw; _p2dBgEl.style.height = bh;
             _p2dBgEl.style.transformOrigin = new TransformOrigin(
-                new Length(_p2dBgOrigin.x, LengthUnit.Pixel),
-                new Length(_p2dBgOrigin.y, LengthUnit.Pixel), 0f);
-            _p2dBgEl.style.scale   = new Scale(new Vector3(_p2dBgScale, _p2dBgScale, 1f));
+                new Length(bw * 0.5f, LengthUnit.Pixel), new Length(bh * 0.5f, LengthUnit.Pixel), 0f);
+            _p2dBgEl.style.scale   = new Scale(new Vector3(s, s, 1f));
             _p2dBgEl.style.opacity = _p2dBgAlpha;
             _p2dBgEl.style.backgroundSize = new StyleBackgroundSize(
                 new BackgroundSize(BackgroundSizeType.Cover));
@@ -2895,7 +2982,7 @@ namespace Poly_Ling.Player
 
             c.Add(SL(T("Landmarks")));
             var lmLabel = new Label(string.IsNullOrEmpty(_nohP.LandmarksFilePath)
-                ? T("NotSelected") : System.IO.Path.GetFileName(_nohP.LandmarksFilePath));
+                ? T("BuiltinDefault") : System.IO.Path.GetFileName(_nohP.LandmarksFilePath));
             lmLabel.style.fontSize = 10; lmLabel.style.marginBottom = 2;
             c.Add(lmLabel);
             var lmBtn = new Button(() =>
@@ -2908,7 +2995,7 @@ namespace Poly_Ling.Player
 
             c.Add(SL(T("TrianglesJson")));
             var triLabel = new Label(string.IsNullOrEmpty(_nohP.TrianglesFilePath)
-                ? T("NotSelected") : System.IO.Path.GetFileName(_nohP.TrianglesFilePath));
+                ? T("BuiltinDefault") : System.IO.Path.GetFileName(_nohP.TrianglesFilePath));
             triLabel.style.fontSize = 10; triLabel.style.marginBottom = 2;
             c.Add(triLabel);
             var triBtn = new Button(() =>
@@ -2918,6 +3005,17 @@ namespace Poly_Ling.Player
                 _nohP.TrianglesFilePath = path; triLabel.text = System.IO.Path.GetFileName(path); D();
             }) { text = "..." };
             triBtn.style.marginBottom = 3; c.Add(triBtn);
+
+            // 内蔵デフォルト（プリセット）に戻す: パスを空にすると焼き込み済みデータを使用
+            var defBtn = new Button(() =>
+            {
+                _nohP.LandmarksFilePath = "";
+                _nohP.TrianglesFilePath = "";
+                lmLabel.text  = T("BuiltinDefault");
+                triLabel.text = T("BuiltinDefault");
+                D();
+            }) { text = T("UseBuiltinDefault") };
+            defBtn.style.marginBottom = 4; c.Add(defBtn);
 
             c.Add(SR(T("Scale"),      1f,  10f, () => _nohP.Scale,      v => { _nohP.Scale      = v; D(); }));
             c.Add(SR(T("DepthScale"), 0.1f, 5f, () => _nohP.DepthScale, v => { _nohP.DepthScale = v; D(); }));

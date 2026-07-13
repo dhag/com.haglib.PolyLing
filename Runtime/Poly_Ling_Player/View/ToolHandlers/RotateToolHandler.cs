@@ -25,6 +25,7 @@ namespace Poly_Ling.Player
 
         public Func<ToolContext> GetToolContext;
         public Action            OnRepaint;
+        public Func<float>       GetPanelHeight;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
         public Action                                     OnApplyCompleted;
         public Action                                     NotifyTopologyChanged;
@@ -39,6 +40,15 @@ namespace Poly_Ling.Player
         public bool  UseSnap       { get => _tool.UseSnap;      set => _tool.UseSnap = value; }
         public float SnapAngle     { get => _tool.SnapAngle;    set => _tool.SnapAngle = value; }
         public bool  UseOriginPivot{ get => _tool.UseOriginPivot; set => _tool.UseOriginPivot = value; }
+        public bool         UseMagnet          { get => _tool.UseMagnet;          set => _tool.UseMagnet = value; }
+        public float        MagnetRadius       { get => _tool.MagnetRadius;       set => _tool.MagnetRadius = value; }
+        public Poly_Ling.Tools.FalloffType  MagnetFalloff      { get => _tool.MagnetFalloff;      set => _tool.MagnetFalloff = value; }
+        public Poly_Ling.Tools.DistanceMode MagnetDistanceMode { get => _tool.MagnetDistanceMode; set => _tool.MagnetDistanceMode = value; }
+        public bool  AxisMode  { get => _tool.AxisMode;  set => _tool.AxisMode = value; }
+        public float AxisVecX  { get => _tool.AxisVecX;  set => _tool.AxisVecX = value; }
+        public float AxisVecY  { get => _tool.AxisVecY;  set => _tool.AxisVecY = value; }
+        public float AxisVecZ  { get => _tool.AxisVecZ;  set => _tool.AxisVecZ = value; }
+        public float AxisAngle { get => _tool.AxisAngle; set => _tool.AxisAngle = value; }
         public UnityEngine.Vector3 PivotPublic => _tool.PivotPublic;
         public int   GetTotalAffectedCount() => _tool.GetTotalAffectedCountPublic();
         public void  BeginSliderDrag() => _tool.BeginSliderDrag();
@@ -60,7 +70,110 @@ namespace Poly_Ling.Player
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods) {}
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods) {}
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) {}
-        public void UpdateHover(Vector2 screenPos, ToolContext ctx) {}
+
+        // ── ビューポート・回転リングギズモ ────────────────────────────────
+
+        private readonly RotateRingGizmo _ringGizmo = new RotateRingGizmo();
+        private AxisGizmo.AxisType _gizmoHoverAxis = AxisGizmo.AxisType.None;
+        private AxisGizmo.AxisType _gizmoDragAxis  = AxisGizmo.AxisType.None;
+        private Vector2 _gizmoPivotScreen;
+        private float   _gizmoStartAngle;
+        private float   _gizmoAxisSign = 1f;
+        private bool    _prevAxisMode;
+
+        public void UpdateHover(Vector2 screenPos, ToolContext ctx)
+        {
+            if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0)
+            {
+                _gizmoHoverAxis = AxisGizmo.AxisType.None; return;
+            }
+            _ringGizmo.Center = _tool.PivotPublic;
+            _gizmoHoverAxis = _ringGizmo.FindRingAtScreenPos(ToImgui(screenPos), ctx);
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>3軸リングのスクリーン点列を返す（UpdateGizmoOverlay 用）。</summary>
+        public bool TryGetGizmoRings(ToolContext ctx,
+            out Vector2[] ringX, out Vector2[] ringY, out Vector2[] ringZ,
+            out AxisGizmo.AxisType hoveredAxis)
+        {
+            ringX = ringY = ringZ = null;
+            hoveredAxis = AxisGizmo.AxisType.None;
+            if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
+            _ringGizmo.Center = _tool.PivotPublic;
+            ringX = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.X);
+            ringY = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Y);
+            ringZ = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Z);
+            hoveredAxis = _gizmoDragAxis != AxisGizmo.AxisType.None ? _gizmoDragAxis : _gizmoHoverAxis;
+            return true;
+        }
+
+        public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
+        {
+            if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
+            _ringGizmo.Center = _tool.PivotPublic;
+            var axis = _ringGizmo.FindRingAtScreenPos(ToImgui(screenPos), ctx);
+            if (axis == AxisGizmo.AxisType.None) return false;
+            _gizmoDragAxis = axis;
+            return true;
+        }
+
+        public bool BeginGizmoDrag()
+        {
+            if (_gizmoDragAxis == AxisGizmo.AxisType.None) return false;
+            var ctx = GetToolContext?.Invoke();
+            if (ctx == null || ctx.WorldToScreenPos == null) { _gizmoDragAxis = AxisGizmo.AxisType.None; return false; }
+
+            Vector3 center = _tool.PivotPublic;
+            _gizmoPivotScreen = ctx.WorldToScreenPos(center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+            // 開始角（ピボットスクリーン基準、ctx系=Y上）
+            var cursor = LastImguiCursor;
+            _gizmoStartAngle = Mathf.Atan2(cursor.y - _gizmoPivotScreen.y, cursor.x - _gizmoPivotScreen.x);
+
+            // 符号: 軸がカメラ側を向くとき +1
+            Vector3 worldAxis = RotateRingGizmo.AxisVector(_gizmoDragAxis);
+            Vector3 camDir = (ctx.CameraPosition - center).normalized;
+            _gizmoAxisSign = Vector3.Dot(worldAxis, camDir) >= 0f ? 1f : -1f;
+
+            _prevAxisMode = _tool.AxisMode;
+            _tool.AxisMode = true;
+            _tool.AxisVecX = worldAxis.x; _tool.AxisVecY = worldAxis.y; _tool.AxisVecZ = worldAxis.z;
+            _tool.AxisAngle = 0f;
+            _tool.BeginSliderDrag();
+            return true;
+        }
+
+        public void GizmoDrag(Vector2 screenPos)
+        {
+            if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
+            Vector2 cur = ToImgui(screenPos);
+            float ang = Mathf.Atan2(cur.y - _gizmoPivotScreen.y, cur.x - _gizmoPivotScreen.x);
+            float delta = Mathf.DeltaAngle(_gizmoStartAngle * Mathf.Rad2Deg, ang * Mathf.Rad2Deg);
+            _tool.AxisAngle = delta * _gizmoAxisSign;
+            OnRepaint?.Invoke();
+        }
+
+        public void EndGizmoDrag()
+        {
+            if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
+            _gizmoDragAxis = AxisGizmo.AxisType.None;
+            EndSliderDrag();
+            _tool.AxisMode  = _prevAxisMode;
+            _tool.AxisAngle = 0f;
+        }
+
+        // ドラッグ中の最新カーソル（ctx系=Y上）。GizmoHitTest / hover で更新。
+        private Vector2 LastImguiCursor;
+
+        private Vector2 ToImgui(Vector2 screenPosYDown)
+        {
+            float h = GetPanelHeight?.Invoke() ?? 0f;
+            var v = new Vector2(screenPosYDown.x, h - screenPosYDown.y);
+            LastImguiCursor = v;
+            return v;
+        }
+
         public void Activate(ToolContext ctx)
         {
             if (ctx != null)

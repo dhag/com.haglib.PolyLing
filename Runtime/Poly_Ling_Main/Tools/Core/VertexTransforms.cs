@@ -588,6 +588,61 @@ namespace Poly_Ling.Tools
     }
 
     // ================================================================
+    // マグネット影響係数（移動/回転/拡大縮小 共通）
+    // ================================================================
+    public static class MagnetInfluence
+    {
+        /// <summary>非選択頂点の影響係数（idx→weight, 0〜1）を計算する。</summary>
+        public static Dictionary<int, float> Compute(MeshObject mesh, HashSet<int> selected,
+            Vector3[] originalPositions, float radius, FalloffType falloff, DistanceMode distanceMode)
+        {
+            var result = new Dictionary<int, float>();
+            if (mesh == null || selected == null || selected.Count == 0 ||
+                originalPositions == null || radius <= 0f)
+                return result;
+
+            if (distanceMode == DistanceMode.Link)
+            {
+                var adjacency = SelectionHelper.BuildVertexAdjacency(mesh);
+                var field = LinkDistanceField.Compute(adjacency, originalPositions, selected, radius);
+                foreach (var kvp in field)
+                {
+                    int idx = kvp.Key;
+                    if (selected.Contains(idx)) continue;
+                    float nd = radius > 0f ? kvp.Value / radius : 0f;
+                    float w = FalloffHelper.Calculate(nd, falloff);
+                    if (w > 0.0001f) result[idx] = w;
+                }
+            }
+            else
+            {
+                var selPos = selected
+                    .Where(i => i >= 0 && i < originalPositions.Length)
+                    .Select(i => originalPositions[i]).ToList();
+                if (selPos.Count == 0) return result;
+
+                for (int i = 0; i < mesh.VertexCount; i++)
+                {
+                    if (selected.Contains(i) || i >= originalPositions.Length) continue;
+                    Vector3 pos = originalPositions[i];
+                    float minDist = float.MaxValue;
+                    for (int s = 0; s < selPos.Count; s++)
+                    {
+                        float d = Vector3.Distance(pos, selPos[s]);
+                        if (d < minDist) minDist = d;
+                    }
+                    if (minDist < radius)
+                    {
+                        float w = FalloffHelper.Calculate(minDist / radius, falloff);
+                        if (w > 0.0001f) result[i] = w;
+                    }
+                }
+            }
+            return result;
+        }
+    }
+
+    // ================================================================
     // ファクトリ / ヘルパー
     // ================================================================
     public static class VertexTransformFactory

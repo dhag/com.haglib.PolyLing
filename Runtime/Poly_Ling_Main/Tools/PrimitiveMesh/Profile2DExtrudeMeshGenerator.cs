@@ -166,77 +166,105 @@ namespace Poly_Ling.Profile2DExtrude
         private static void GenerateFlatFace(MeshObject md, List<List<Vector2>> loops, List<bool> isHoleFlags,
                                               float z, Vector3 normal, bool flipWinding)
         {
-            // 外側ループを探す
-            int outerIdx = -1;
-            for (int i = 0; i < isHoleFlags.Count; i++)
+            // 外周とホールを分類（複数の独立外周に対応）
+            var outers = new List<int>();
+            var holes  = new List<int>();
+            for (int i = 0; i < loops.Count; i++)
             {
-                if (!isHoleFlags[i])
-                {
-                    outerIdx = i;
-                    break;
-                }
+                if (loops[i] == null || loops[i].Count < 3) continue;
+                if (isHoleFlags[i]) holes.Add(i); else outers.Add(i);
             }
-            if (outerIdx < 0) return;
+            if (outers.Count == 0) return;
+
+            // 各ホールを内包する外周へ割り当て（点内包判定、最初にヒットした外周）
+            var holesByOuter = new Dictionary<int, List<int>>();
+            foreach (int hi in holes)
+            {
+                Vector2 hp0 = loops[hi][0];
+                int owner = -1;
+                foreach (int oi in outers)
+                    if (PointInPolygon(hp0, loops[oi])) { owner = oi; break; }
+                if (owner < 0) owner = outers[0];
+                if (!holesByOuter.TryGetValue(owner, out var lst)) { lst = new List<int>(); holesByOuter[owner] = lst; }
+                lst.Add(hi);
+            }
 
             // Poly2Triは頂点が辺上にあるとエラーになるため、微小なオフセットを追加
             const float epsilon = 1e-5f;
             int seed = 12345;
 
-            var outerPoints = new List<PolygonPoint>();
-            foreach (var pt in loops[outerIdx])
+            // 外周ごとに三角形化（1つ失敗しても他は継続）
+            foreach (int oi in outers)
             {
-                seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-                float offsetX = ((seed % 1000) / 1000f - 0.5f) * epsilon;
-                seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-                float offsetY = ((seed % 1000) / 1000f - 0.5f) * epsilon;
-                outerPoints.Add(new PolygonPoint(pt.x + offsetX, pt.y + offsetY));
-            }
-
-            var polygon = new Polygon(outerPoints);
-
-            // 穴を追加
-            for (int i = 0; i < loops.Count; i++)
-            {
-                if (!isHoleFlags[i]) continue;
-
-                var holePoints = new List<PolygonPoint>();
-                foreach (var pt in loops[i])
+                var outerPoints = new List<PolygonPoint>();
+                foreach (var pt in loops[oi])
                 {
                     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
                     float offsetX = ((seed % 1000) / 1000f - 0.5f) * epsilon;
                     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
                     float offsetY = ((seed % 1000) / 1000f - 0.5f) * epsilon;
-                    holePoints.Add(new PolygonPoint(pt.x + offsetX, pt.y + offsetY));
+                    outerPoints.Add(new PolygonPoint(pt.x + offsetX, pt.y + offsetY));
                 }
-                polygon.AddHole(new Polygon(holePoints));
-            }
+                var polygon = new Polygon(outerPoints);
 
-            P2T.Triangulate(polygon);
-
-            var vertexMap = new Dictionary<TriangulationPoint, int>();
-
-            foreach (var tri in polygon.Triangles)
-            {
-                int[] indices = new int[3];
-                for (int i = 0; i < 3; i++)
+                if (holesByOuter.TryGetValue(oi, out var hlist))
                 {
-                    TriangulationPoint p = tri.Points[i];
-                    if (!vertexMap.TryGetValue(p, out int idx))
+                    foreach (int hi in hlist)
                     {
-                        idx = md.VertexCount;
-                        Vector3 pos = new Vector3((float)p.X, (float)p.Y, z);
-                        Vector2 uv = new Vector2((float)p.X, (float)p.Y);
-                        md.Vertices.Add(new Vertex(pos, uv, normal));
-                        vertexMap[p] = idx;
+                        var holePoints = new List<PolygonPoint>();
+                        foreach (var pt in loops[hi])
+                        {
+                            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+                            float offsetX = ((seed % 1000) / 1000f - 0.5f) * epsilon;
+                            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+                            float offsetY = ((seed % 1000) / 1000f - 0.5f) * epsilon;
+                            holePoints.Add(new PolygonPoint(pt.x + offsetX, pt.y + offsetY));
+                        }
+                        polygon.AddHole(new Polygon(holePoints));
                     }
-                    indices[i] = idx;
                 }
 
-                if (flipWinding)
-                    md.AddTriangle(indices[0], indices[1], indices[2]);
-                else
-                    md.AddTriangle(indices[0], indices[2], indices[1]);
+                try { P2T.Triangulate(polygon); }
+                catch (Exception ex) { Debug.LogWarning($"Poly2Tri failed for a contour: {ex.Message}"); continue; }
+
+                var vertexMap = new Dictionary<TriangulationPoint, int>();
+                foreach (var tri in polygon.Triangles)
+                {
+                    int[] indices = new int[3];
+                    for (int i = 0; i < 3; i++)
+                    {
+                        TriangulationPoint p = tri.Points[i];
+                        if (!vertexMap.TryGetValue(p, out int idx))
+                        {
+                            idx = md.VertexCount;
+                            Vector3 pos = new Vector3((float)p.X, (float)p.Y, z);
+                            Vector2 uv = new Vector2((float)p.X, (float)p.Y);
+                            md.Vertices.Add(new Vertex(pos, uv, normal));
+                            vertexMap[p] = idx;
+                        }
+                        indices[i] = idx;
+                    }
+
+                    if (flipWinding)
+                        md.AddTriangle(indices[0], indices[1], indices[2]);
+                    else
+                        md.AddTriangle(indices[0], indices[2], indices[1]);
+                }
             }
+        }
+
+        /// <summary>点がポリゴン内部か（even-odd）。</summary>
+        private static bool PointInPolygon(Vector2 pt, List<Vector2> poly)
+        {
+            bool inside = false;
+            int n = poly.Count;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                if (((poly[i].y > pt.y) != (poly[j].y > pt.y)) &&
+                    (pt.x < (poly[j].x - poly[i].x) * (pt.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+                    inside = !inside;
+            }
+            return inside;
         }
 
         /// <summary>

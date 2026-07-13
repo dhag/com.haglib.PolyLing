@@ -17,6 +17,14 @@ namespace Poly_Ling.Tools
             ["Pivot"] = new() { ["en"] = "Pivot", ["ja"] = "ピボット", ["hi"] = "ぴぼっと" },
             ["UseOrigin"] = new() { ["en"] = "Use Origin", ["ja"] = "原点を使用", ["hi"] = "げんてんをつかう" },
             ["UndoRotate"] = new() { ["en"] = "Rotate Vertices", ["ja"] = "頂点を回転", ["hi"] = "ちょうてんをかいてん" },
+            ["Magnet"] = new() { ["en"] = "Magnet", ["ja"] = "マグネット", ["hi"] = "じしゃく" },
+            ["Enable"] = new() { ["en"] = "Enable", ["ja"] = "有効", ["hi"] = "つかう" },
+            ["Radius"] = new() { ["en"] = "Radius", ["ja"] = "半径", ["hi"] = "はんけい" },
+            ["Falloff"] = new() { ["en"] = "Falloff", ["ja"] = "減衰", ["hi"] = "よわまりかた" },
+            ["DistanceMode"] = new() { ["en"] = "Distance", ["ja"] = "距離モード", ["hi"] = "きょりのはかりかた" },
+            ["AxisAngleMode"] = new() { ["en"] = "Axis-Angle", ["ja"] = "軸-角度", ["hi"] = "じくとかくど" },
+            ["Axis"] = new() { ["en"] = "Axis", ["ja"] = "軸", ["hi"] = "じく" },
+            ["Angle"] = new() { ["en"] = "Angle", ["ja"] = "角度", ["hi"] = "かくど" },
         };
 
         private static string T(string key) => L.GetFrom(Texts, key);
