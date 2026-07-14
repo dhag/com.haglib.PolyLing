@@ -463,12 +463,14 @@ namespace Poly_Ling.Tools
         private void ApplyFreeDelta(Vector2 screenDelta, ToolContext ctx)
         {
             Vector3 worldDelta = _axisGizmo.ComputeFreeDelta(screenDelta, ctx);
+            UnityEngine.Debug.Log($"[MoveDbg] FREE screenDelta={screenDelta} worldDelta={worldDelta} camDist={ctx.CameraDistance} display={(ctx.DisplayMatrix != UnityEngine.Matrix4x4.identity ? "nonId" : "id")}");
             ApplyWorldDelta(worldDelta, ctx);
         }
 
         private void ApplyAxisDelta(Vector2 screenDelta, ToolContext ctx)
         {
             Vector3 worldDelta = _axisGizmo.ComputeAxisDelta(screenDelta, _draggingAxis, ctx);
+            UnityEngine.Debug.Log($"[MoveDbg] AXIS axis={_draggingAxis} screenDelta={screenDelta} worldDelta={worldDelta} center={_axisGizmo.Center}");
             ApplyWorldDelta(worldDelta, ctx);
         }
 
@@ -510,12 +512,26 @@ namespace Poly_Ling.Tools
             {
                 var mc = model.GetMeshContext(idx);
                 if (mc?.BoneTransform == null) continue;
+                var __wmB = mc.WorldMatrix;
+                UnityEngine.Vector3 __beforeLocal = mc.BoneTransform.Position;
+                UnityEngine.Vector3 __beforeWorld = new UnityEngine.Vector3(__wmB.m03, __wmB.m13, __wmB.m23);
+                bool __useLocalWas = mc.BoneTransform.UseLocalTransform;
+                UnityEngine.Debug.Log($"[MoveDbg] BEFORE idx={idx} useLocal={__useLocalWas} local={__beforeLocal} world={__beforeWorld} parent={mc.HierarchyParentIndex} worldDelta={worldDelta}");
+
                 mc.BoneTransform.UseLocalTransform = true;
                 mc.BoneTransform.Position += worldDelta;
+                UnityEngine.Debug.Log($"[MoveDbg] AFTER_POS idx={idx} local={mc.BoneTransform.Position}");
             }
 
             // 親の新 WorldMatrix を確定
             model.ComputeWorldMatrices();
+            foreach (int idx in selectedSet)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc == null) continue;
+                var __wmC = mc.WorldMatrix;
+                UnityEngine.Debug.Log($"[MoveDbg] AFTER_COMPUTE idx={idx} world={new UnityEngine.Vector3(__wmC.m03, __wmC.m13, __wmC.m23)}");
+            }
 
             // 子補正: 新しい親 WorldMatrixInverse でワールド位置をローカルに逆算
             if (childSavedWorldPos != null && childSavedWorldPos.Count > 0)
@@ -542,6 +558,13 @@ namespace Poly_Ling.Tools
             }
 
             ctx.SyncBoneTransforms?.Invoke();
+            foreach (int idx in selectedSet)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc?.BoneTransform == null) continue;
+                var __wmS = mc.WorldMatrix;
+                UnityEngine.Debug.Log($"[MoveDbg] AFTER_SYNC idx={idx} useLocal={mc.BoneTransform.UseLocalTransform} local={mc.BoneTransform.Position} world={new UnityEngine.Vector3(__wmS.m03, __wmS.m13, __wmS.m23)}");
+            }
             ctx.Repaint?.Invoke();
         }
 

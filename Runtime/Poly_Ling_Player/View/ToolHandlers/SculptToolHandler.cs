@@ -44,6 +44,18 @@ namespace Poly_Ling.Player
         public Action<float> OnRadiusChanged;
 
         /// <summary>
+        /// 半径ドラッグ指定モードを抜けたときに呼ばれるコールバック（ボタンスタイルを戻す用）。
+        /// Refresh() に依存せずボタンの青表示を解除するために使用する。
+        /// </summary>
+        public Action OnRadiusDragModeExited;
+
+        /// <summary>
+        /// 半径ドラッグ指定中のプレビュー描画コールバック（center: スクリーン座標Y=0下, radius: px）。
+        /// 通常のブラシ円と異なり、ドラッグ開始位置に中心マーカーを表示する。
+        /// </summary>
+        public Action<Vector2, float> OnUpdateRadiusDragMarker;
+
+        /// <summary>
         /// スカルプトブラシ用ヒットテスト。PlayerViewportManager.GetBrushHit を設定する。
         /// Normal モード時は HoverVertexIndex を、TransformDragging 時は _screenPositions から直接検索する。
         /// </summary>
@@ -130,6 +142,18 @@ namespace Poly_Ling.Player
         private Vector2 _radiusDragStartPos;
         private bool    _inRadiusDrag;
 
+        /// <summary>
+        /// 半径ドラッグ指定モードを終了し、プレビューとボタンスタイルを解除する。
+        /// クリック終了・ドラッグ終了の両方から呼ばれる単一の退出処理。
+        /// </summary>
+        private void ExitRadiusDragMode()
+        {
+            _inRadiusDrag    = false;
+            IsRadiusDragMode = false;
+            OnHideBrushCircle?.Invoke();
+            OnRadiusDragModeExited?.Invoke();
+        }
+
         // ================================================================
         // 初期化
         // ================================================================
@@ -143,7 +167,7 @@ namespace Poly_Ling.Player
 
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            if (IsRadiusDragMode) { IsRadiusDragMode = false; return; }
+            if (IsRadiusDragMode) { ExitRadiusDragMode(); return; }
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
@@ -177,9 +201,9 @@ namespace Poly_Ling.Player
                         newRadius = Mathf.Clamp(newRadius, s.MinBrushRadius, s.MaxBrushRadius);
                     BrushRadius = newRadius;
                     OnRadiusChanged?.Invoke(newRadius);
-                    // ドラッグ開始位置を中心にブラシ円をプレビュー
+                    // ドラッグ開始位置を中心にブラシ円＋中心マーカーをプレビュー
                     float previewPx = ScreenRadiusFromWorldRadius(newRadius, ctx);
-                    OnUpdateBrushCircle?.Invoke(_radiusDragStartPos, previewPx);
+                    OnUpdateRadiusDragMarker?.Invoke(_radiusDragStartPos, previewPx);
                 }
                 return;
             }
@@ -194,9 +218,7 @@ namespace Poly_Ling.Player
         {
             if (_inRadiusDrag)
             {
-                _inRadiusDrag       = false;
-                IsRadiusDragMode    = false;
-                OnHideBrushCircle?.Invoke();
+                ExitRadiusDragMode();
                 return;
             }
 

@@ -39,13 +39,18 @@ namespace Poly_Ling.Tools
         private enum AxisType { None, X, Y, Z, Center }
         private AxisType _draggingAxis = AxisType.None;
         private AxisType _hoveredAxis = AxisType.None;
-        private Vector2 _lastDragScreenPos;
         private Vector2 _mouseDownScreenPos;
 
         // ドラッグ開始時の位置
         private Vector3[] _dragStartPositions;
         private BoneTransformSnapshot _dragStartBoneSnapshot;   // ← 追加
-        private Vector3 _totalOffset = Vector3.zero;  // 累積オフセット
+        private Vector3 _totalOffset = Vector3.zero;  // 表示用の総オフセット
+
+        // ドラッグ開始時に固定する基準（絶対計算用）。毎フレーム再計算するとドリフトの原因になる。
+        private Vector3 _dragStartBonePosition;  // 開始ピボット位置
+        private Vector2 _dragAxisScreenDir;      // 軸のスクリーン方向（開始時固定）
+        private Vector3 _dragAxisWorldDir;       // 軸のワールド方向（開始時固定）
+        private Matrix4x4 _dragStartWorldMatrix = Matrix4x4.identity; // 開始WorldMatrix（見かけ保持のローカル変換用）
 
         // ギズモ設定
         private float _handleHitRadius = 12f;
@@ -88,12 +93,11 @@ namespace Poly_Ling.Tools
             {
                 case ToolState.AxisDragging:
                     MoveAlongAxis(mousePos, ctx);
-                    _lastDragScreenPos = mousePos;
                     ctx.Repaint?.Invoke();
                     return true;
 
                 case ToolState.CenterDragging:
-                    MoveFreely(delta, ctx);
+                    MoveFreely(mousePos, ctx);
                     ctx.Repaint?.Invoke();
                     return true;
             }
@@ -154,7 +158,6 @@ namespace Poly_Ling.Tools
         private void StartDrag(ToolContext ctx, AxisType axis)
         {
             _draggingAxis = axis;
-            _lastDragScreenPos = _mouseDownScreenPos;
             _totalOffset = Vector3.zero;
 
             // 全頂点の開始位置を記録
@@ -163,7 +166,33 @@ namespace Poly_Ling.Tools
             // BoneTransform の開始状態を記録
             var mc = ctx.FirstSelectedMeshContext;
             if (mc?.BoneTransform != null)
+            {
                 _dragStartBoneSnapshot = mc.BoneTransform.CreateSnapshot();
+                _dragStartBonePosition = mc.BoneTransform.Position;
+            }
+            // 見かけ保持のローカル変換に使う WorldMatrix を開始時点で固定する
+            _dragStartWorldMatrix = mc?.WorldMatrix ?? Matrix4x4.identity;
+
+            // 軸移動時は、軸のスクリーン方向とワールド方向を開始時点で固定する。
+            // （毎フレーム再計算するとピボット移動で方向がぶれ、往復が相殺せずドリフトする）
+            if (axis != AxisType.Center)
+            {
+                var worldMatrix = mc?.WorldMatrix ?? Matrix4x4.identity;
+                _dragAxisWorldDir = GetLocalAxisDirection(axis, worldMatrix);
+                Vector3 pivotWorld = worldMatrix.GetColumn(3);
+                Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector3 axisEnd = pivotWorld + _dragAxisWorldDir * 0.1f;
+                Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+                Vector2 dir = (axisEndScreen - originScreen).normalized;
+                if (dir.sqrMagnitude < 0.001f)
+                {
+                    // 軸がカメラを向いている場合のフォールバック
+                    if (axis == AxisType.X) dir = new Vector2(1, 0);
+                    else if (axis == AxisType.Y) dir = new Vector2(0, -1);
+                    else dir = new Vector2(-0.7f, 0.7f);
+                }
+                _dragAxisScreenDir = dir;
+            }
 
             _state = (axis == AxisType.Center) ? ToolState.CenterDragging : ToolState.AxisDragging;
         }
@@ -173,75 +202,68 @@ namespace Poly_Ling.Tools
             if (_draggingAxis == AxisType.None || _draggingAxis == AxisType.Center)
                 return;
 
-            // 選択メッシュのワールド位置をピボットとして使用
-            var worldMatrix = ctx.FirstSelectedMeshContext?.WorldMatrix ?? Matrix4x4.identity;
-            Vector3 axisWorldDir = GetLocalAxisDirection(_draggingAxis, worldMatrix); // スクリーン投影用（ワールド空間）
-            Vector3 pivotWorld = worldMatrix.GetColumn(3);
-            Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-            Vector3 axisEnd = pivotWorld + axisWorldDir * 0.1f;
-            Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-
-            Vector2 axisScreenDir = (axisEndScreen - originScreen).normalized;
-            if (axisScreenDir.sqrMagnitude < 0.001f)
-            {
-                // 軸がカメラを向いている場合のフォールバック
-                if (_draggingAxis == AxisType.X) axisScreenDir = new Vector2(1, 0);
-                else if (_draggingAxis == AxisType.Y) axisScreenDir = new Vector2(0, -1);
-                else axisScreenDir = new Vector2(-0.7f, 0.7f);
-            }
-
-            Vector2 mouseDelta = mousePos - _lastDragScreenPos;
-            float screenMovement = Vector2.Dot(mouseDelta, axisScreenDir);
+            // 開始マウス位置からの総移動を、開始時に固定した軸スクリーン方向へ投影する（絶対計算）。
+            Vector2 totalMouseDelta = mousePos - _mouseDownScreenPos;
+            float screenMovement = Vector2.Dot(totalMouseDelta, _dragAxisScreenDir);
             float worldMovement = screenMovement * ctx.CameraDistance * 0.002f;
 
-            // 頂点はローカル空間に格納されているのでローカル軸で移動する
-            // ハンドルの移動方向 = 頂点の逆方向
-            Vector3 localAxisDir = GetAxisDirection(_draggingAxis); // ローカル空間軸（Vector3.up等）
-            Vector3 vertexDelta = localAxisDir * (-worldMovement);
-            _totalOffset += vertexDelta;
-
-            // BoneTransform のデルタはワールド空間で +worldMovement（ハンドル方向）
-            Vector3 boneWorldDelta = GetLocalAxisDirection(_draggingAxis, worldMatrix) * worldMovement;
-            ApplyOffset(vertexDelta, boneWorldDelta, ctx);
+            // ピボット(ローカル原点)のワールド移動量。頂点補正は ApplyAbsolute でローカル変換する。
+            Vector3 worldDelta = _dragAxisWorldDir * worldMovement;
+            ApplyAbsolute(worldDelta, ctx);
         }
 
-        private void MoveFreely(Vector2 screenDelta, ToolContext ctx)
+        private void MoveFreely(Vector2 mousePos, ToolContext ctx)
         {
+            // 開始マウス位置からの総移動で絶対計算する。
+            // mousePos は IMGUI 系(Y=0 上)。元実装は Y=0 下系の delta を使っていたため、
+            // 同じ向きに揃えるよう Y を反転する。
+            Vector2 totalMouseDelta = mousePos - _mouseDownScreenPos;
+            totalMouseDelta.y = -totalMouseDelta.y;
+
             Vector3 worldDelta = ctx.ScreenDeltaToWorldDelta(
-                screenDelta, ctx.CameraPosition, ctx.CameraTarget,
+                totalMouseDelta, ctx.CameraPosition, ctx.CameraTarget,
                 ctx.CameraDistance, ctx.PreviewRect);
 
-            // ハンドルの移動方向 = 頂点の逆方向
-            Vector3 vertexDelta = -worldDelta;
-            _totalOffset += vertexDelta;
-
-            ApplyOffset(vertexDelta, worldDelta, ctx);
+            ApplyAbsolute(worldDelta, ctx);
         }
 
-        private void ApplyOffset(Vector3 vertexDelta, Vector3 boneWorldDelta, ToolContext ctx)
+        private void ApplyAbsolute(Vector3 worldDelta, ToolContext ctx)
         {
-            // 全頂点を逆方向に移動
-            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo == null || _dragStartPositions == null) return;
+
+            // ピボット(ローカル原点)のワールド移動 worldDelta を、開始WorldMatrixの線形逆変換で
+            // メッシュのローカル空間へ変換する。R·S·localDelta = worldDelta が成り立つため、
+            // 頂点を -localDelta、ピボットを +worldDelta とすると見かけが厳密に相殺される
+            // （回転・スケールがあっても保持される）。
+            Vector3 localDelta = _dragStartWorldMatrix.inverse.MultiplyVector(worldDelta);
+
+            int n = Mathf.Min(mo.VertexCount, _dragStartPositions.Length);
+            for (int i = 0; i < n; i++)
             {
-                var v = ctx.FirstSelectedMeshObject.Vertices[i];
-                v.Position += vertexDelta;
-                ctx.FirstSelectedMeshObject.Vertices[i] = v;
+                var v = mo.Vertices[i];
+                v.Position = _dragStartPositions[i] - localDelta; // 開始基準で絶対（見かけ保持のローカル逆補正）
+                mo.Vertices[i] = v;
 
                 // オフセット更新
-                if (ctx.VertexOffsets != null && i < ctx.VertexOffsets.Length)
+                if (ctx.VertexOffsets != null && i < ctx.VertexOffsets.Length &&
+                    ctx.OriginalPositions != null && i < ctx.OriginalPositions.Length)
                 {
-                    ctx.VertexOffsets[i] = ctx.FirstSelectedMeshObject.Vertices[i].Position - ctx.OriginalPositions[i];
-                    ctx.GroupOffsets[i] = ctx.VertexOffsets[i];
+                    ctx.VertexOffsets[i] = mo.Vertices[i].Position - ctx.OriginalPositions[i];
+                    if (ctx.GroupOffsets != null && i < ctx.GroupOffsets.Length)
+                        ctx.GroupOffsets[i] = ctx.VertexOffsets[i];
                 }
             }
 
-            // BoneTransform をハンドルと同方向に移動してピボットを追従させる
+            // ピボット(BoneTransform)はワールドで worldDelta 移動（親なし/identity 前提）。
             var mc = ctx.FirstSelectedMeshContext;
             if (mc?.BoneTransform != null)
             {
                 mc.BoneTransform.UseLocalTransform = true;
-                mc.BoneTransform.Position += boneWorldDelta;
+                mc.BoneTransform.Position = _dragStartBonePosition + worldDelta;
             }
+
+            _totalOffset = -localDelta; // 表示用（頂点側オフセット）
 
             ctx.SyncMesh?.Invoke();
             ctx.SyncBoneTransforms?.Invoke();

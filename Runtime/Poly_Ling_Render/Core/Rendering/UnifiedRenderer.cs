@@ -53,6 +53,11 @@ namespace Poly_Ling.Core.Rendering
         private Mesh _wireframeMeshUnselected;
         private Mesh _pointMeshSelected;
         private Mesh _pointMeshUnselected;
+
+        // 点Mesh構築時の直近 camera/pointSize。ドラッグ中の軽量座標更新（引数なし
+        // UpdatePointPositionsOnly）で再利用し、同期経路が camera を知らなくても済むようにする。
+        private Camera _lastPointCamera;
+        private float  _lastPointSize;
         // Phase 2c: 面塗り overlay mesh（選択メッシュのみ、非選択メッシュの面は塗らない）
         private Mesh _faceOverlayMeshSelected;
 
@@ -609,6 +614,10 @@ namespace Poly_Ling.Core.Rendering
                 return;
             }
 
+            // ドラッグ中の軽量更新で再利用するため、直近の描画パラメータを保持する。
+            _lastPointCamera = camera;
+            _lastPointSize   = pointSize;
+
             int totalVertexCount = _bufferManager.TotalVertexCount;
             int meshCount = _bufferManager.MeshCount;
 
@@ -775,6 +784,16 @@ namespace Poly_Ling.Core.Rendering
             {
                 _wireframeMeshSelected.SetVertices(_cachedVertices);
             }
+        }
+
+        /// <summary>
+        /// 直近の描画で使用した camera/pointSize を用いて点位置のみを更新する軽量オーバーロード。
+        /// 同期経路（PlayerViewportManager）が camera を保持しなくても呼べる。
+        /// </summary>
+        public void UpdatePointPositionsOnly()
+        {
+            if (_lastPointCamera == null) return;
+            UpdatePointPositionsOnly(_lastPointCamera, _lastPointSize);
         }
 
         /// <summary>

@@ -122,6 +122,7 @@ namespace Poly_Ling.Player
         private float   _brushCircleRadius;
         private Color   _brushCircleColor = new Color(0.5f, 0.8f, 1f, 0.7f);
         private bool    _brushCircleVisible;
+        private bool    _brushCircleShowCenter; // 中心マーカー（半径ドラッグ指定時のみ true）
 
         // ================================================================
         // 面ホバー / 選択面 overlay (Phase 2c 以降は GPU パス)
@@ -234,19 +235,28 @@ namespace Poly_Ling.Player
         /// center はスクリーン座標（Y=0 が下）、radius はピクセル。
         /// </summary>
         public void ShowBrushCircle(Vector2 center, float radius, Color color)
+            => ShowBrushCircle(center, radius, color, showCenter: false);
+
+        /// <summary>
+        /// ブラシ円を指定カラーで表示する。showCenter=true のとき中心マーカー（十字）も描画する。
+        /// center はスクリーン座標（Y=0 が下）、radius はピクセル。
+        /// </summary>
+        public void ShowBrushCircle(Vector2 center, float radius, Color color, bool showCenter)
         {
             float panelH = resolvedStyle.height;
-            _brushCircleCenter  = new Vector2(center.x, panelH - center.y);
-            _brushCircleRadius  = radius;
-            _brushCircleColor   = color;
-            _brushCircleVisible = true;
+            _brushCircleCenter     = new Vector2(center.x, panelH - center.y);
+            _brushCircleRadius     = radius;
+            _brushCircleColor      = color;
+            _brushCircleShowCenter = showCenter;
+            _brushCircleVisible    = true;
             _brushCircleOverlay?.MarkDirtyRepaint();
         }
 
         /// <summary>ブラシ円を非表示にする。</summary>
         public void HideBrushCircle()
         {
-            _brushCircleVisible = false;
+            _brushCircleVisible    = false;
+            _brushCircleShowCenter = false;
             _brushCircleOverlay?.MarkDirtyRepaint();
         }
 
@@ -787,6 +797,18 @@ namespace Poly_Ling.Player
             }
             painter.ClosePath();
             painter.Stroke();
+
+            // 半径ドラッグ指定時: 開始位置（中心）に十字マーカーを描画
+            if (_brushCircleShowCenter)
+            {
+                const float m = 6f;
+                painter.BeginPath();
+                painter.MoveTo(_brushCircleCenter + new Vector2(-m, 0f));
+                painter.LineTo(_brushCircleCenter + new Vector2( m, 0f));
+                painter.MoveTo(_brushCircleCenter + new Vector2(0f, -m));
+                painter.LineTo(_brushCircleCenter + new Vector2(0f,  m));
+                painter.Stroke();
+            }
         }
 
         private void OnGenerateBoneOverlay(MeshGenerationContext ctx)

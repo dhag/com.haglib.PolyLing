@@ -14,6 +14,7 @@ using Poly_Ling.Revolution;
 using Poly_Ling.Profile2DExtrude;
 using Poly_Ling.NohMask;
 using Poly_Ling.Tools;
+using Poly_Ling.UndoSystem;
 using static Poly_Ling.Player.PrimitiveMeshTexts;
 
 namespace Poly_Ling.Player
@@ -37,6 +38,9 @@ namespace Poly_Ling.Player
 
         /// <summary>選択中の描画オブジェクトの MeshObject を返す(なければ null)。取り込み/反映で使用。</summary>
         public Func<MeshObject> GetSelectedMeshObject;
+
+        /// <summary>Undoコントローラ取得（プロファイル編集Undo用）。未設定なら記録しない。</summary>
+        public Func<MeshUndoController> GetUndoController;
 
         // ================================================================
         // 図形種別
@@ -150,6 +154,16 @@ namespace Poly_Ling.Player
         private FloatField    _revTfMoveX, _revTfMoveY, _revTfScaleX, _revTfScaleY, _revTfRot;
         private FloatField    _revTfScaleAxis;
 
+        // 回転/拡大縮小ハンドル（キャンバス上ドラッグ）
+        private readonly Canvas2DHandle _revHandle = new Canvas2DHandle();
+        private bool                    _revHandleDrag;
+        private Canvas2DHandle.HandleType _revHandleType = Canvas2DHandle.HandleType.None;
+        private readonly Dictionary<int, Vector2> _revHandleStart = new Dictionary<int, Vector2>();
+        private readonly Dictionary<int, float>   _revHandleW     = new Dictionary<int, float>();
+        private Vector2 _revHandleAnchorC;   // ドラッグ開始時のアンカー(キャンバス座標)
+        private float   _revHandlePrevAngle; // 回転累積用の直前角度
+        private float   _revHandleTotalDeg;  // 累積回転角(データ空間deg)
+
         // マグネット（比例編集、Phase）
         private readonly Canvas2DMagnet _revMagnet = new Canvas2DMagnet();
         private readonly Dictionary<int, Vector2> _revMagnetStart = new Dictionary<int, Vector2>();
@@ -218,6 +232,16 @@ namespace Poly_Ling.Player
         private VisualElement _p2dAnchorPanel;
         private FloatField    _p2dTfMoveX, _p2dTfMoveY, _p2dTfScaleX, _p2dTfScaleY, _p2dTfRot;
         private FloatField    _p2dTfScaleAxis;
+
+        // 回転/拡大縮小ハンドル（キャンバス上ドラッグ）
+        private readonly Canvas2DHandle _p2dHandle = new Canvas2DHandle();
+        private bool                    _p2dHandleDrag;
+        private Canvas2DHandle.HandleType _p2dHandleType = Canvas2DHandle.HandleType.None;
+        private readonly Dictionary<long, Vector2> _p2dHandleStart = new Dictionary<long, Vector2>();
+        private readonly Dictionary<long, float>   _p2dHandleW     = new Dictionary<long, float>();
+        private Vector2 _p2dHandleAnchorC;
+        private float   _p2dHandlePrevAngle;
+        private float   _p2dHandleTotalDeg;
         // 角処理(ベベル)UI 要素（Thickness/Segments に応じて表示切替）
         private VisualElement _p2dEdgeLabel, _p2dEdgeFrontSeg, _p2dEdgeFrontSize, _p2dEdgeBackSeg, _p2dEdgeBackSize, _p2dEdgeInward;
 
@@ -821,8 +845,10 @@ namespace Poly_Ling.Player
                 _revP.CurrentPreset = presetEnum[idx];
                 if (_revP.CurrentPreset != ProfilePreset.Custom)
                 {
+                    RevBegin();
                     _revProfile = RevolutionProfileGenerator.CreatePreset(_revP.CurrentPreset, ref _revP);
                     _revSel.Clear(); _revSelIdx = -1;
+                    RevCommit("プリセット適用");
                 }
                 D(); RefreshRevCanvas(); RefreshRevPointUI();
             });
@@ -926,6 +952,7 @@ namespace Poly_Ling.Player
             SB(btnRow, T("DeletePoint"), () =>
             {
                 EnsureRevProfile();
+                RevBegin();
                 if (_revSel.Count > 0)
                 {
                     // 選択点を一括削除（インデックス降順・最小2点は維持）。
@@ -941,14 +968,17 @@ namespace Poly_Ling.Player
                     RevolutionProfileEditCore.RemovePoint(_revProfile, ref _revSelIdx);
                 }
                 _revP.CurrentPreset = ProfilePreset.Custom;
+                RevCommit("点削除");
                 D(); RefreshRevCanvas(); RefreshRevPointUI();
             });
             SB(btnRow, T("ClearProfile"), () =>
             {
                 EnsureRevProfile();
+                RevBegin();
                 RevolutionProfileEditCore.ResetProfile(_revProfile, ref _revSelIdx);
                 _revSel.Clear();
                 _revP.CurrentPreset = ProfilePreset.Custom;
+                RevCommit("プロファイルリセット");
                 D(); RefreshRevCanvas(); RefreshRevPointUI();
             });
             SB(btnRow, "ビュー初期化", () =>
@@ -1011,13 +1041,17 @@ namespace Poly_Ling.Player
                     _revProfile[_revSelIdx] = new Vector2(e.newValue, _revProfile[_revSelIdx].y);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
                 });
+                xSl.RegisterCallback<PointerDownEvent>(_ => RevBegin());
+                xSl.RegisterCallback<PointerUpEvent>(_ => RevCommit("点X編集"));
                 xFf.RegisterValueChangedCallback(e =>
                 {
                     if (_revSelIdx < 0 || _revProfile == null || _revSelIdx >= _revProfile.Count) return;
+                    RevBegin();
                     float v = Mathf.Clamp(e.newValue, 0f, 2f);
                     xSl.SetValueWithoutNotify(v);
                     _revProfile[_revSelIdx] = new Vector2(v, _revProfile[_revSelIdx].y);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
+                    RevCommit("点X編集");
                 });
                 var xRow = new VisualElement(); xRow.style.flexDirection = FlexDirection.Row; xRow.style.marginBottom = 2;
                 xRow.Add(ML("R (X)")); xRow.Add(xSl); xRow.Add(xFf);
@@ -1035,13 +1069,17 @@ namespace Poly_Ling.Player
                     _revProfile[_revSelIdx] = new Vector2(_revProfile[_revSelIdx].x, e.newValue);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
                 });
+                ySl.RegisterCallback<PointerDownEvent>(_ => RevBegin());
+                ySl.RegisterCallback<PointerUpEvent>(_ => RevCommit("点Y編集"));
                 yFf.RegisterValueChangedCallback(e =>
                 {
                     if (_revSelIdx < 0 || _revProfile == null || _revSelIdx >= _revProfile.Count) return;
+                    RevBegin();
                     float v = Mathf.Clamp(e.newValue, -1f, 2f);
                     ySl.SetValueWithoutNotify(v);
                     _revProfile[_revSelIdx] = new Vector2(_revProfile[_revSelIdx].x, v);
                     _revP.CurrentPreset = ProfilePreset.Custom; D(); RefreshRevCanvas();
+                    RevCommit("点Y編集");
                 });
                 var yRow = new VisualElement(); yRow.style.flexDirection = FlexDirection.Row; yRow.style.marginBottom = 2;
                 yRow.Add(ML("Y")); yRow.Add(ySl); yRow.Add(yFf);
@@ -1076,6 +1114,7 @@ namespace Poly_Ling.Player
                 var result = RevolutionCSVIO.Load(_revCsvPath, _revP);
                 if (result.Success)
                 {
+                    RevBegin();
                     _revProfile           = result.Profile;
                     _revP.RadialSegments  = result.RadialSegments;
                     _revP.CloseTop        = result.CloseTop;
@@ -1089,6 +1128,7 @@ namespace Poly_Ling.Player
                     _revP.FlipZ           = result.FlipZ;
                     _revP.CurrentPreset   = ProfilePreset.Custom;
                     _revSel.Clear(); _revSelIdx = -1;
+                    RevCommit("CSV読込");
                     D(); RefreshRevCanvas(); RefreshRevPointUI();
                 }
                 else
@@ -1224,6 +1264,10 @@ namespace Poly_Ling.Player
             // アンカー
             _revAnchor.Draw(p2d, RevP2C(_revAnchor.Value, w, h));
 
+            // 回転/拡大縮小ハンドル（アンカー設定モード中は非表示）
+            if (!_revAnchor.Mode)
+                _revHandle.Draw(p2d, RevP2C(_revAnchor.Value, w, h));
+
             // マグネット半径（選択点まわり）
             if (_revMagnet.Enabled && _revSel.Count > 0)
             {
@@ -1315,6 +1359,16 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
+            // 0. ハンドルヒット判定（回転/拡大縮小、点編集より優先）
+            var revHit = _revHandle.HitTest(cp, RevP2C(_revAnchor.Value, w, h));
+            if (revHit != Canvas2DHandle.HandleType.None)
+            {
+                BeginRevHandle(revHit, cp, w, h);
+                _revCanvas.CapturePointer(e.pointerId);
+                RefreshRevCanvas();
+                e.StopPropagation(); return;
+            }
+
             // 1. 頂点ヒット判定（優先、15px以内）
             int ptIdx = RevFind(_revProfile, cp, w, h, 15f);
             if (ptIdx >= 0)
@@ -1330,6 +1384,7 @@ namespace Poly_Ling.Player
                 }
                 if (!_revSel.Contains(ptIdx)) { _revSel.Clear(); _revSel.Add(ptIdx); }
                 _revSelIdx = ptIdx;
+                RevBegin();
                 BeginRevDrag(cp, w, h);
                 _revCanvas.CapturePointer(e.pointerId);
                 RefreshRevCanvas(); RefreshRevPointUI();
@@ -1360,6 +1415,7 @@ namespace Poly_Ling.Player
             if (bestSeg >= 0)
             {
                 int insertIdx = bestSeg + 1;
+                RevBegin();
                 _revProfile.Insert(insertIdx, insertProf);
                 _revSel.Clear(); _revSel.Add(insertIdx);
                 _revSelIdx  = insertIdx;
@@ -1579,6 +1635,7 @@ namespace Poly_Ling.Player
         private void ApplyRevTransform()
         {
             EnsureRevProfile();
+            RevBegin();
             RefreshRevAnchorAuto();
             var a  = _revAnchor.Value;
             float mx = _revTfMoveX?.value ?? 0f, my = _revTfMoveY?.value ?? 0f;
@@ -1600,24 +1657,109 @@ namespace Poly_Ling.Player
                 else wt = _revMagnet.Enabled ? _revMagnet.WeightFor(orig[i], sel) : 0f;
                 if (wt <= 0f) continue;
 
-                float sxw = 1f + (sx - 1f) * wt, syw = 1f + (sy - 1f) * wt;
-                float degw = deg * wt * Mathf.Deg2Rad;
-                float cw = Mathf.Cos(degw), sw = Mathf.Sin(degw);
+                var np = Xform2D(orig[i], a, mx, my, sx, sy, saCos, saSin, deg, wt);
+                np.x = Mathf.Max(0f, np.x);   // 回転体 R は非負
+                _revProfile[i] = np;
+            }
+            _revP.CurrentPreset = ProfilePreset.Custom;
+            RevCommit("変換適用");
+            D(); RefreshRevCanvas(); RefreshRevPointUI();
+        }
 
-                Vector2 d = orig[i] - a;
-                // スケール軸フレームへ回転(-φ) → 重み付きスケール → 戻す(+φ)
-                float rx =  d.x * saCos + d.y * saSin;
-                float ry = -d.x * saSin + d.y * saCos;
-                rx *= sxw; ry *= syw;
-                d = new Vector2(rx * saCos - ry * saSin, rx * saSin + ry * saCos);
-                // 重み付き全体回転
-                d = new Vector2(d.x * cw - d.y * sw, d.x * sw + d.y * cw);
-                var np = a + d + new Vector2(mx, my) * wt;
+        /// <summary>
+        /// アンカー a 基準の2D変換（移動/スケール(スケール軸フレーム)/回転、重み wt）。
+        /// 3キャンバス（回転体/Profile2D/UV と同一数式）で共有。
+        /// </summary>
+        private static Vector2 Xform2D(Vector2 p, Vector2 a,
+            float mx, float my, float sx, float sy, float saCos, float saSin, float deg, float wt)
+        {
+            float sxw = 1f + (sx - 1f) * wt, syw = 1f + (sy - 1f) * wt;
+            float degw = deg * wt * Mathf.Deg2Rad;
+            float cw = Mathf.Cos(degw), sw = Mathf.Sin(degw);
+            Vector2 d = p - a;
+            // スケール軸フレームへ回転(-φ) → 重み付きスケール → 戻す(+φ)
+            float rx =  d.x * saCos + d.y * saSin;
+            float ry = -d.x * saSin + d.y * saCos;
+            rx *= sxw; ry *= syw;
+            d = new Vector2(rx * saCos - ry * saSin, rx * saSin + ry * saCos);
+            // 重み付き全体回転
+            d = new Vector2(d.x * cw - d.y * sw, d.x * sw + d.y * cw);
+            return a + d + new Vector2(mx, my) * wt;
+        }
+
+        // ── 回転体：ハンドルドラッグ（回転/拡大縮小） ─────────────────────
+
+        /// <summary>ハンドルドラッグ開始。影響点（選択=1/マグネット=weight、選択なし=全点1）を記録。</summary>
+        private void BeginRevHandle(Canvas2DHandle.HandleType type, Vector2 cp, float w, float h)
+        {
+            _revHandleDrag = true;
+            _revHandleType = type;
+            _revHandle.Active = type;
+            RefreshRevAnchorAuto();
+            RevBegin();
+
+            _revHandleAnchorC   = RevP2C(_revAnchor.Value, w, h);
+            _revHandlePrevAngle = Canvas2DHandle.AngleDeg(_revHandleAnchorC, cp);
+            _revHandleTotalDeg  = 0f;
+
+            _revHandleStart.Clear(); _revHandleW.Clear();
+            if (_revProfile == null) return;
+
+            bool useSel = _revSel.Count > 0;
+            var sel = new List<Vector2>();
+            if (useSel) foreach (var i in _revSel) if (i >= 0 && i < _revProfile.Count) sel.Add(_revProfile[i]);
+
+            for (int i = 0; i < _revProfile.Count; i++)
+            {
+                float wt;
+                if (!useSel)                  wt = 1f;
+                else if (_revSel.Contains(i)) wt = 1f;
+                else wt = _revMagnet.Enabled ? _revMagnet.WeightFor(_revProfile[i], sel) : 0f;
+                if (wt <= 0f) continue;
+                _revHandleStart[i] = _revProfile[i];
+                _revHandleW[i]     = wt;
+            }
+        }
+
+        /// <summary>ハンドルドラッグ中：開始スナップショットへ変換を適用（ライブプレビュー）。</summary>
+        private void ApplyRevHandle(Vector2 cp, float w, float h)
+        {
+            if (!_revHandleDrag || _revProfile == null) return;
+
+            float sx = 1f, sy = 1f, deg = 0f;
+            if (_revHandleType == Canvas2DHandle.HandleType.Rotate)
+            {
+                float ang = Canvas2DHandle.AngleDeg(_revHandleAnchorC, cp);
+                _revHandleTotalDeg += -Mathf.DeltaAngle(_revHandlePrevAngle, ang); // Y反転補正
+                _revHandlePrevAngle = ang;
+                deg = _revHandleTotalDeg;
+            }
+            else
+            {
+                _revHandle.ScaleFactors(_revHandleType, _revHandleAnchorC, cp, out sx, out sy);
+            }
+
+            var a = _revAnchor.Value;
+            foreach (var kv in _revHandleStart)
+            {
+                int i = kv.Key;
+                if (i < 0 || i >= _revProfile.Count) continue;
+                var np = Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, _revHandleW[i]);
                 np.x = Mathf.Max(0f, np.x);
                 _revProfile[i] = np;
             }
             _revP.CurrentPreset = ProfilePreset.Custom;
             D(); RefreshRevCanvas(); RefreshRevPointUI();
+        }
+
+        /// <summary>ハンドルドラッグ終了：コミット。</summary>
+        private void EndRevHandle()
+        {
+            if (!_revHandleDrag) return;
+            _revHandleDrag = false;
+            _revHandleType = Canvas2DHandle.HandleType.None;
+            _revHandle.Active = Canvas2DHandle.HandleType.None;
+            RevCommit("回転/拡大縮小");
         }
 
         private void OnRevCanvasPointerMove(PointerMoveEvent e)
@@ -1648,6 +1790,13 @@ namespace Poly_Ling.Player
             {
                 _revAnchor.Value = RevC2P(cp, w, h);
                 RefreshRevAnchorFields(); RefreshRevCanvas();
+                e.StopPropagation(); return;
+            }
+
+            // ハンドルドラッグ（回転/拡大縮小）
+            if (_revHandleDrag && _revCanvas.HasPointerCapture(e.pointerId))
+            {
+                ApplyRevHandle(cp, w, h);
                 e.StopPropagation(); return;
             }
 
@@ -1688,6 +1837,11 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
+            // ハンドルホバー更新（非ドラッグ中）
+            var revHovType = _revAnchor.Mode ? Canvas2DHandle.HandleType.None
+                                             : _revHandle.HitTest(cp, RevP2C(_revAnchor.Value, w, h));
+            if (revHovType != _revHandle.Hovered) { _revHandle.Hovered = revHovType; RefreshRevCanvas(); }
+
             // ホバーエッジ更新（非ドラッグ中）
             int prevHov = _revHoverEI;
             _revHoverEI = -1;
@@ -1717,10 +1871,13 @@ namespace Poly_Ling.Player
             if (!_revCanvas.HasPointerCapture(e.pointerId)) return;
             _revCanvas.ReleasePointer(e.pointerId);
             if (_revMarqueeDrag) { ApplyRevMarquee(); _revMarquee.End(); _revMarqueeDrag = false; }
+            if (_revHandleDrag) EndRevHandle();
+            bool wasRevDrag = _revDrag;
             _revDrag    = false;
             _revBgDrag  = false;
             _revPanDrag = false;
             _revAnchorDrag = false;
+            if (wasRevDrag) RevCommit("プロファイル点編集");
             e.StopPropagation();
         }
 
@@ -1889,6 +2046,7 @@ namespace Poly_Ling.Player
             SB(loopBtnRow, T("DeletePoint"), () =>
             {
                 if (_p2dLoops == null) return;
+                P2dBegin();
                 if (_p2dSel.Count > 0)
                 {
                     // 選択点をループ別にインデックス降順で一括削除（各ループ最小3点を維持）。
@@ -1918,24 +2076,29 @@ namespace Poly_Ling.Player
                     lp.Points.RemoveAt(_p2dSelPt);
                     _p2dSelPt = Mathf.Clamp(_p2dSelPt, 0, lp.Points.Count - 1);
                 }
+                P2dCommit("点削除");
                 D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
             SB(loopBtnRow, T("AddLoop"), () =>
             {
+                if (_p2dLoops == null) return;
+                P2dBegin();
                 var lp = new Loop(); float r2 = 0.2f;
                 lp.Points.AddRange(new[] {
                     new Vector2(-r2,-r2), new Vector2(r2,-r2),
                     new Vector2(r2, r2),  new Vector2(-r2, r2) });
                 _p2dLoops.Add(lp);
                 _p2dSelLoop = _p2dLoops.Count - 1; _p2dSel.Clear(); _p2dSelPt = -1;
+                P2dCommit("ループ追加");
                 D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
             SB(loopBtnRow, T("RemoveLoop"), () =>
             {
                 if (_p2dLoops.Count <= 1 || _p2dSelLoop < 0 || _p2dSelLoop >= _p2dLoops.Count) return;
+                P2dBegin();
                 _p2dLoops.RemoveAt(_p2dSelLoop);
                 _p2dSelLoop = Mathf.Clamp(_p2dSelLoop, 0, _p2dLoops.Count - 1);
-                _p2dSel.Clear(); _p2dSelPt = -1; D(); RefreshP2dCanvas(); RefreshP2dPointUI();
+                _p2dSel.Clear(); _p2dSelPt = -1; P2dCommit("ループ削除"); D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
             pe.Add(loopBtnRow);
 
@@ -1953,6 +2116,7 @@ namespace Poly_Ling.Player
             SB(loopBtnRow2, T("DuplicateLoop"), () =>
             {
                 if (_p2dLoops == null || _p2dSelLoop < 0 || _p2dSelLoop >= _p2dLoops.Count) return;
+                P2dBegin();
                 var src = _p2dLoops[_p2dSelLoop];
                 var dup = new Loop(src);                    // 点列＋穴フラグを複製
                 var ofs = new Vector2(0.1f, 0.1f);          // 少しずらして重なり回避
@@ -1960,6 +2124,7 @@ namespace Poly_Ling.Player
                 _p2dLoops.Add(dup);
                 _p2dSelLoop = _p2dLoops.Count - 1;          // 複製先を選択
                 _p2dSel.Clear(); _p2dSelPt = -1;
+                P2dCommit("ループ複製");
                 D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
             pe.Add(loopBtnRow2);
@@ -1997,11 +2162,15 @@ namespace Poly_Ling.Player
                     lp.Points[_p2dSelPt] = new Vector2(e.newValue, lp.Points[_p2dSelPt].y);
                     D(); RefreshP2dCanvas();
                 });
+                xSl.RegisterCallback<PointerDownEvent>(_ => P2dBegin());
+                xSl.RegisterCallback<PointerUpEvent>(_ => P2dCommit("点X編集"));
                 xFf.RegisterValueChangedCallback(e =>
                 {
                     if (!P2dGetSelPt(out var lp, out _)) return;
+                    P2dBegin();
                     xSl.SetValueWithoutNotify(e.newValue); lp.Points[_p2dSelPt] = new Vector2(e.newValue, lp.Points[_p2dSelPt].y);
                     D(); RefreshP2dCanvas();
+                    P2dCommit("点X編集");
                 });
                 var xRow = new VisualElement(); xRow.style.flexDirection = FlexDirection.Row; xRow.style.marginBottom = 2;
                 xRow.Add(ML("X")); xRow.Add(xSl); xRow.Add(xFf);
@@ -2018,11 +2187,15 @@ namespace Poly_Ling.Player
                     lp.Points[_p2dSelPt] = new Vector2(lp.Points[_p2dSelPt].x, e.newValue);
                     D(); RefreshP2dCanvas();
                 });
+                ySl.RegisterCallback<PointerDownEvent>(_ => P2dBegin());
+                ySl.RegisterCallback<PointerUpEvent>(_ => P2dCommit("点Y編集"));
                 yFf.RegisterValueChangedCallback(e =>
                 {
                     if (!P2dGetSelPt(out var lp, out _)) return;
+                    P2dBegin();
                     ySl.SetValueWithoutNotify(e.newValue); lp.Points[_p2dSelPt] = new Vector2(lp.Points[_p2dSelPt].x, e.newValue);
                     D(); RefreshP2dCanvas();
+                    P2dCommit("点Y編集");
                 });
                 var yRow = new VisualElement(); yRow.style.flexDirection = FlexDirection.Row; yRow.style.marginBottom = 2;
                 yRow.Add(ML("Y")); yRow.Add(ySl); yRow.Add(yFf);
@@ -2056,7 +2229,7 @@ namespace Poly_Ling.Player
                 {
                     var lines = System.IO.File.ReadAllLines(_p2dCsvPath);
                     var loaded = ParseProfile2DCSV(lines);
-                    if (loaded != null) { _p2dLoops = loaded; _p2dSelLoop = 0; _p2dSel.Clear(); _p2dSelPt = -1; D(); RebuildSettings(); }
+                    if (loaded != null) { P2dBegin(); _p2dLoops = loaded; _p2dSelLoop = 0; _p2dSel.Clear(); _p2dSelPt = -1; P2dCommit("CSV読込"); D(); RebuildSettings(); }
                 }
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
             });
@@ -2239,6 +2412,10 @@ namespace Poly_Ling.Player
             // アンカー
             _p2dAnchor.Draw(p2d, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
 
+            // 回転/拡大縮小ハンドル（アンカー設定モード中は非表示）
+            if (!_p2dAnchor.Mode)
+                _p2dHandle.Draw(p2d, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
+
             // マグネット半径（選択点まわり）
             if (_p2dMagnet.Enabled && _p2dSel.Count > 0)
             {
@@ -2327,6 +2504,16 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
+            // 0. ハンドルヒット判定（回転/拡大縮小、点編集より優先）
+            var p2dHit = _p2dHandle.HitTest(cp, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
+            if (p2dHit != Canvas2DHandle.HandleType.None)
+            {
+                BeginP2dHandle(p2dHit, cp, w, h);
+                _p2dCanvas.CapturePointer(e.pointerId);
+                RefreshP2dCanvas();
+                e.StopPropagation(); return;
+            }
+
             // 1. 頂点ヒット判定（全ループ、15px以内）
             int   bestL = -1, bestP = -1;
             float bestD = 15f;
@@ -2352,6 +2539,7 @@ namespace Poly_Ling.Player
                 }
                 if (!_p2dSel.Contains(key)) { _p2dSel.Clear(); _p2dSel.Add(key); }
                 _p2dSelLoop = bestL; _p2dSelPt = bestP;
+                P2dBegin();
                 BeginP2dDrag(cp, w, h);
                 _p2dCanvas.CapturePointer(e.pointerId);
                 RefreshP2dCanvas(); RefreshP2dPointUI();
@@ -2382,6 +2570,7 @@ namespace Poly_Ling.Player
             if (edgeL >= 0)
             {
                 int insertIdx = edgeI + 1;
+                P2dBegin();
                 _p2dLoops[edgeL].Points.Insert(insertIdx, insertWorld);
                 _p2dSel.Clear(); _p2dSel.Add(P2dKey(edgeL, insertIdx));
                 _p2dSelLoop = edgeL; _p2dSelPt = insertIdx;
@@ -2586,6 +2775,7 @@ namespace Poly_Ling.Player
         private void ApplyP2dTransform()
         {
             if (_p2dLoops == null) return;
+            P2dBegin();
             RefreshP2dAnchorAuto();
             var a = _p2dAnchor.Value;
             float mx = _p2dTfMoveX?.value ?? 0f, my = _p2dTfMoveY?.value ?? 0f;
@@ -2604,20 +2794,6 @@ namespace Poly_Ling.Player
                         sel.Add(_p2dLoops[li].Points[pi]);
                 }
 
-            Vector2 XformW(Vector2 pt, float wt)
-            {
-                float sxw = 1f + (sx - 1f) * wt, syw = 1f + (sy - 1f) * wt;
-                float degw = deg * wt * Mathf.Deg2Rad;
-                float cw = Mathf.Cos(degw), sw = Mathf.Sin(degw);
-                Vector2 d = pt - a;
-                float rx =  d.x * saCos + d.y * saSin;
-                float ry = -d.x * saSin + d.y * saCos;
-                rx *= sxw; ry *= syw;
-                d = new Vector2(rx * saCos - ry * saSin, rx * saSin + ry * saCos);
-                d = new Vector2(d.x * cw - d.y * sw, d.x * sw + d.y * cw);
-                return a + d + new Vector2(mx, my) * wt;
-            }
-
             for (int li = 0; li < _p2dLoops.Count; li++)
             {
                 var lp = _p2dLoops[li];
@@ -2628,10 +2804,95 @@ namespace Poly_Ling.Player
                     else if (_p2dSel.Contains(P2dKey(li, pi))) wt = 1f;
                     else wt = _p2dMagnet.Enabled ? _p2dMagnet.WeightFor(lp.Points[pi], sel) : 0f;
                     if (wt <= 0f) continue;
-                    lp.Points[pi] = XformW(lp.Points[pi], wt);
+                    lp.Points[pi] = Xform2D(lp.Points[pi], a, mx, my, sx, sy, saCos, saSin, deg, wt);
                 }
             }
+            P2dCommit("変換適用");
             D(); RefreshP2dCanvas(); RefreshP2dPointUI();
+        }
+
+        // ── 2D押し出し：ハンドルドラッグ（回転/拡大縮小） ─────────────────
+
+        /// <summary>ハンドルドラッグ開始。影響点（選択=1/マグネット=weight、選択なし=全点1）を記録。</summary>
+        private void BeginP2dHandle(Canvas2DHandle.HandleType type, Vector2 cp, float w, float h)
+        {
+            _p2dHandleDrag = true;
+            _p2dHandleType = type;
+            _p2dHandle.Active = type;
+            RefreshP2dAnchorAuto();
+            P2dBegin();
+
+            _p2dHandleAnchorC   = P2dWorldToCanvas(_p2dAnchor.Value, w, h);
+            _p2dHandlePrevAngle = Canvas2DHandle.AngleDeg(_p2dHandleAnchorC, cp);
+            _p2dHandleTotalDeg  = 0f;
+
+            _p2dHandleStart.Clear(); _p2dHandleW.Clear();
+            if (_p2dLoops == null) return;
+
+            bool useSel = _p2dSel.Count > 0;
+            var sel = new List<Vector2>();
+            if (useSel)
+                foreach (var k in _p2dSel)
+                {
+                    int li = P2dKeyLoop(k), pi = P2dKeyPt(k);
+                    if (li >= 0 && li < _p2dLoops.Count && pi >= 0 && pi < _p2dLoops[li].Points.Count)
+                        sel.Add(_p2dLoops[li].Points[pi]);
+                }
+
+            for (int li = 0; li < _p2dLoops.Count; li++)
+            {
+                var lp = _p2dLoops[li];
+                for (int pi = 0; pi < lp.Points.Count; pi++)
+                {
+                    long key = P2dKey(li, pi);
+                    float wt;
+                    if (!useSel)                    wt = 1f;
+                    else if (_p2dSel.Contains(key)) wt = 1f;
+                    else wt = _p2dMagnet.Enabled ? _p2dMagnet.WeightFor(lp.Points[pi], sel) : 0f;
+                    if (wt <= 0f) continue;
+                    _p2dHandleStart[key] = lp.Points[pi];
+                    _p2dHandleW[key]     = wt;
+                }
+            }
+        }
+
+        /// <summary>ハンドルドラッグ中：開始スナップショットへ変換を適用（ライブプレビュー）。</summary>
+        private void ApplyP2dHandle(Vector2 cp, float w, float h)
+        {
+            if (!_p2dHandleDrag || _p2dLoops == null) return;
+
+            float sx = 1f, sy = 1f, deg = 0f;
+            if (_p2dHandleType == Canvas2DHandle.HandleType.Rotate)
+            {
+                float ang = Canvas2DHandle.AngleDeg(_p2dHandleAnchorC, cp);
+                _p2dHandleTotalDeg += -Mathf.DeltaAngle(_p2dHandlePrevAngle, ang);
+                _p2dHandlePrevAngle = ang;
+                deg = _p2dHandleTotalDeg;
+            }
+            else
+            {
+                _p2dHandle.ScaleFactors(_p2dHandleType, _p2dHandleAnchorC, cp, out sx, out sy);
+            }
+
+            var a = _p2dAnchor.Value;
+            foreach (var kv in _p2dHandleStart)
+            {
+                int li = P2dKeyLoop(kv.Key), pi = P2dKeyPt(kv.Key);
+                if (li < 0 || li >= _p2dLoops.Count) continue;
+                if (pi < 0 || pi >= _p2dLoops[li].Points.Count) continue;
+                _p2dLoops[li].Points[pi] = Xform2D(kv.Value, a, 0f, 0f, sx, sy, 1f, 0f, deg, _p2dHandleW[kv.Key]);
+            }
+            D(); RefreshP2dCanvas(); RefreshP2dPointUI();
+        }
+
+        /// <summary>ハンドルドラッグ終了：コミット。</summary>
+        private void EndP2dHandle()
+        {
+            if (!_p2dHandleDrag) return;
+            _p2dHandleDrag = false;
+            _p2dHandleType = Canvas2DHandle.HandleType.None;
+            _p2dHandle.Active = Canvas2DHandle.HandleType.None;
+            P2dCommit("回転/拡大縮小");
         }
 
         private void OnP2dPointerMove(PointerMoveEvent e)
@@ -2662,6 +2923,13 @@ namespace Poly_Ling.Player
             {
                 _p2dAnchor.Value = P2dCanvasToWorld(cp, w, h);
                 RefreshP2dAnchorFields(); RefreshP2dCanvas();
+                e.StopPropagation(); return;
+            }
+
+            // ハンドルドラッグ（回転/拡大縮小）
+            if (_p2dHandleDrag && _p2dCanvas.HasPointerCapture(e.pointerId))
+            {
+                ApplyP2dHandle(cp, w, h);
                 e.StopPropagation(); return;
             }
 
@@ -2698,6 +2966,11 @@ namespace Poly_Ling.Player
                 }
                 e.StopPropagation(); return;
             }
+
+            // ハンドルホバー更新（非ドラッグ中）
+            var p2dHovType = _p2dAnchor.Mode ? Canvas2DHandle.HandleType.None
+                                             : _p2dHandle.HitTest(cp, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
+            if (p2dHovType != _p2dHandle.Hovered) { _p2dHandle.Hovered = p2dHovType; RefreshP2dCanvas(); }
 
             // ホバーエッジ更新（非ドラッグ中）
             int   prevEL = _p2dHoverEL, prevEI = _p2dHoverEI;
@@ -2736,10 +3009,13 @@ namespace Poly_Ling.Player
             if (!_p2dCanvas.HasPointerCapture(e.pointerId)) return;
             _p2dCanvas.ReleasePointer(e.pointerId);
             if (_p2dMarqueeDrag) { ApplyP2dMarquee(); _p2dMarquee.End(); _p2dMarqueeDrag = false; }
+            if (_p2dHandleDrag) EndP2dHandle();
+            bool wasP2dDrag = _p2dDrag;
             _p2dDrag   = false;
             _p2dBgDrag = false;
             _p2dPanDrag = false;
             _p2dAnchorDrag = false;
+            if (wasP2dDrag) P2dCommit("プロファイル点編集");
             e.StopPropagation();
         }
 
@@ -3022,11 +3298,238 @@ namespace Poly_Ling.Player
             c.Add(TR(T("FlipFaces"),           () => _nohP.FlipFaces,   v => { _nohP.FlipFaces  = v; D(); }));
             c.Add(IR(T("FaceIndex"), 0, 10,    () => _nohP.FaceIndex,   v => { _nohP.FaceIndex  = v; D(); }));
 
+            // ── 既存メッシュを能面JSON形式で保存（能面とは独立の汎用エクスポート） ──
+            c.Add(Sep());
+            c.Add(SL("メッシュをJSON保存"));
+            var exportInfo = new Label("選択中の描画オブジェクトを landmarks/triangles JSON で保存");
+            exportInfo.style.fontSize = 10; exportInfo.style.whiteSpace = WhiteSpace.Normal; exportInfo.style.marginBottom = 2;
+            c.Add(exportInfo);
+            var exportBtn = new Button(ExportSelectedMeshToNohJson) { text = "選択メッシュをJSON保存" };
+            exportBtn.style.marginBottom = 4; c.Add(exportBtn);
+        }
+
+        /// <summary>選択中の描画オブジェクトのメッシュを能面JSON形式(landmarks+triangles)で保存する。生座標。</summary>
+        private void ExportSelectedMeshToNohJson()
+        {
+            var mo = GetSelectedMeshObject?.Invoke();
+            if (mo == null || mo.VertexCount == 0)
+            {
+                Debug.LogWarning("[PolyLing] 保存対象の描画オブジェクトがありません。");
+                return;
+            }
+
+            string basePath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(
+                "メッシュをJSON保存", "", "facemesh.json", "json");
+            if (string.IsNullOrEmpty(basePath)) return;
+
+            string dir  = System.IO.Path.GetDirectoryName(basePath);
+            string stem = System.IO.Path.GetFileNameWithoutExtension(basePath);
+            string lmPath  = System.IO.Path.Combine(dir, stem + "_landmarks.json");
+            string triPath = System.IO.Path.Combine(dir, stem + "_triangles.json");
+
+            try
+            {
+                System.IO.File.WriteAllText(lmPath,  NohMaskMeshExporter.BuildLandmarksJson(mo));
+                System.IO.File.WriteAllText(triPath, NohMaskMeshExporter.BuildTrianglesJson(mo));
+                Debug.Log($"[PolyLing] メッシュをJSON保存: {lmPath} / {triPath}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[PolyLing] JSON保存に失敗: {ex.Message}");
+            }
         }
 
         // ================================================================
         // 生成
         // ================================================================
+
+        // ================================================================
+        // プロファイル編集 Undo（回転体 / 2D押し出し）
+        // ================================================================
+        // MeshUndoController のサブウィンドウスタックにプロファイル全体の
+        // スナップショットを積む。既存の Undo/Redo ボタン（_editOps.PerformUndo）
+        // でそのまま巻き戻る。記録対象は点の移動/挿入/削除・リセット・変換・
+        // プリセット選択・メッシュ取込・CSV読込。選択・アンカー・ビュー・
+        // 連続パラメータスライダー（ドーナツ半径等の形状パラメータ）は対象外。
+
+        private const string RevUndoStackId = "PlayerEdit/RevProfileEdit";
+        private const string P2dUndoStackId = "PlayerEdit/P2dLoopsEdit";
+
+        private sealed class RevProfileUndoContext { public List<Vector2> Profile; }
+        private sealed class P2dLoopsUndoContext   { public List<Loop>     Loops;   }
+
+        private sealed class RevProfileUndoRecord : IUndoRecord<RevProfileUndoContext>
+        {
+            public UndoOperationInfo Info { get; set; }
+            public List<Vector2> Before;
+            public List<Vector2> After;
+            public void Undo(RevProfileUndoContext ctx) => ctx.Profile = CloneRevProfile(Before);
+            public void Redo(RevProfileUndoContext ctx) => ctx.Profile = CloneRevProfile(After);
+        }
+
+        private sealed class P2dLoopsUndoRecord : IUndoRecord<P2dLoopsUndoContext>
+        {
+            public UndoOperationInfo Info { get; set; }
+            public List<Loop> Before;
+            public List<Loop> After;
+            public void Undo(P2dLoopsUndoContext ctx) => ctx.Loops = CloneP2dLoops(Before);
+            public void Redo(P2dLoopsUndoContext ctx) => ctx.Loops = CloneP2dLoops(After);
+        }
+
+        private UndoStack<RevProfileUndoContext> _revUndoStack;
+        private RevProfileUndoContext            _revUndoCtx;
+        private UndoStack<P2dLoopsUndoContext>   _p2dUndoStack;
+        private P2dLoopsUndoContext              _p2dUndoCtx;
+
+        private List<Vector2> _revEditBefore;   // 回転体：編集前スナップショット
+        private List<Loop>    _p2dEditBefore;   // 2D押し出し：編集前スナップショット
+        private bool _revUndoApplying;          // undo/redo 適用中は記録抑止
+        private bool _p2dUndoApplying;
+
+        private static List<Vector2> CloneRevProfile(List<Vector2> src)
+            => src == null ? null : new List<Vector2>(src);
+
+        private static List<Loop> CloneP2dLoops(List<Loop> src)
+        {
+            if (src == null) return null;
+            var r = new List<Loop>(src.Count);
+            for (int i = 0; i < src.Count; i++) r.Add(new Loop(src[i]));
+            return r;
+        }
+
+        private static bool RevProfileEquals(List<Vector2> a, List<Vector2> b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null) return false;
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+                if ((a[i] - b[i]).sqrMagnitude > 1e-12f) return false;
+            return true;
+        }
+
+        private static bool P2dLoopsEquals(List<Loop> a, List<Loop> b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null) return false;
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                Loop la = a[i], lb = b[i];
+                if (la == null || lb == null) return false;
+                if (la.IsHole != lb.IsHole) return false;
+                if (la.Points.Count != lb.Points.Count) return false;
+                for (int j = 0; j < la.Points.Count; j++)
+                    if ((la.Points[j] - lb.Points[j]).sqrMagnitude > 1e-12f) return false;
+            }
+            return true;
+        }
+
+        private void EnsureRevUndoStack()
+        {
+            if (_revUndoStack != null) return;
+            var undo = GetUndoController?.Invoke();
+            if (undo == null) return;
+            undo.RemoveSubWindowStack(RevUndoStackId);   // パネル再生成時の重複ID回避
+            _revUndoCtx   = new RevProfileUndoContext { Profile = CloneRevProfile(_revProfile) };
+            _revUndoStack = undo.CreateSubWindowStack(RevUndoStackId, "回転体プロファイル編集", _revUndoCtx);
+            _revUndoStack.OnUndoPerformed += _ => ApplyRevUndoContext();
+            _revUndoStack.OnRedoPerformed += _ => ApplyRevUndoContext();
+        }
+
+        private void EnsureP2dUndoStack()
+        {
+            if (_p2dUndoStack != null) return;
+            var undo = GetUndoController?.Invoke();
+            if (undo == null) return;
+            undo.RemoveSubWindowStack(P2dUndoStackId);   // パネル再生成時の重複ID回避
+            _p2dUndoCtx   = new P2dLoopsUndoContext { Loops = CloneP2dLoops(_p2dLoops) };
+            _p2dUndoStack = undo.CreateSubWindowStack(P2dUndoStackId, "2D押し出しプロファイル編集", _p2dUndoCtx);
+            _p2dUndoStack.OnUndoPerformed += _ => ApplyP2dUndoContext();
+            _p2dUndoStack.OnRedoPerformed += _ => ApplyP2dUndoContext();
+        }
+
+        /// <summary>回転体：編集前スナップショットを取得（記録の起点）。</summary>
+        private void RevBegin()
+        {
+            if (_revUndoApplying) { _revEditBefore = null; return; }
+            _revEditBefore = GetUndoController?.Invoke() == null ? null : CloneRevProfile(_revProfile);
+        }
+
+        /// <summary>回転体：変化があればサブウィンドウスタックへ記録。</summary>
+        private void RevCommit(string desc)
+        {
+            var before = _revEditBefore;
+            _revEditBefore = null;
+            if (_revUndoApplying || before == null) return;
+            var undo = GetUndoController?.Invoke();
+            if (undo == null) return;
+            var after = CloneRevProfile(_revProfile);
+            if (RevProfileEquals(before, after)) return;
+            EnsureRevUndoStack();
+            if (_revUndoStack == null) return;
+            _revUndoCtx.Profile = CloneRevProfile(after);
+            _revUndoStack.Record(new RevProfileUndoRecord { Before = before, After = after }, desc);
+            undo.FocusSubWindow(RevUndoStackId);
+        }
+
+        /// <summary>回転体：Undo/Redo で復元されたスナップショットをパネルへ反映。</summary>
+        private void ApplyRevUndoContext()
+        {
+            _revUndoApplying = true;
+            try
+            {
+                _revProfile = CloneRevProfile(_revUndoCtx?.Profile);
+                _revSel.Clear();
+                _revSelIdx = -1;
+                _revP.CurrentPreset = ProfilePreset.Custom;
+                D();
+                RefreshRevCanvas();
+                RefreshRevPointUI();
+            }
+            finally { _revUndoApplying = false; }
+        }
+
+        /// <summary>2D押し出し：編集前スナップショットを取得（記録の起点）。</summary>
+        private void P2dBegin()
+        {
+            if (_p2dUndoApplying) { _p2dEditBefore = null; return; }
+            _p2dEditBefore = GetUndoController?.Invoke() == null ? null : CloneP2dLoops(_p2dLoops);
+        }
+
+        /// <summary>2D押し出し：変化があればサブウィンドウスタックへ記録。</summary>
+        private void P2dCommit(string desc)
+        {
+            var before = _p2dEditBefore;
+            _p2dEditBefore = null;
+            if (_p2dUndoApplying || before == null) return;
+            var undo = GetUndoController?.Invoke();
+            if (undo == null) return;
+            var after = CloneP2dLoops(_p2dLoops);
+            if (P2dLoopsEquals(before, after)) return;
+            EnsureP2dUndoStack();
+            if (_p2dUndoStack == null) return;
+            _p2dUndoCtx.Loops = CloneP2dLoops(after);
+            _p2dUndoStack.Record(new P2dLoopsUndoRecord { Before = before, After = after }, desc);
+            undo.FocusSubWindow(P2dUndoStackId);
+        }
+
+        /// <summary>2D押し出し：Undo/Redo で復元されたスナップショットをパネルへ反映。</summary>
+        private void ApplyP2dUndoContext()
+        {
+            _p2dUndoApplying = true;
+            try
+            {
+                _p2dLoops = CloneP2dLoops(_p2dUndoCtx?.Loops);
+                _p2dSel.Clear();
+                _p2dSelPt = -1;
+                _p2dSelLoop = (_p2dLoops == null || _p2dLoops.Count == 0)
+                    ? 0 : Mathf.Clamp(_p2dSelLoop, 0, _p2dLoops.Count - 1);
+                D();
+                RefreshP2dCanvas();
+                RefreshP2dPointUI();
+            }
+            finally { _p2dUndoApplying = false; }
+        }
 
         private MeshObject Generate()
         {
@@ -3105,9 +3608,11 @@ namespace Poly_Ling.Player
             var pts       = LineProfileExtractor.ExtractPolyline(mesh, lineFaces);
             if (pts == null || pts.Count < 2) { _statusLabel.text = T("NoLinesFound"); return; }
 
+            RevBegin();
             _revProfile = new List<Vector2>(pts);
             _revSel.Clear(); _revSelIdx  = -1;
             _revP.CurrentPreset = ProfilePreset.Custom;
+            RevCommit("メッシュ取込");
             _statusLabel.text = T("ImportedPoints", pts.Count);
             D(); RefreshRevCanvas(); RefreshRevPointUI();
         }
@@ -3135,10 +3640,12 @@ namespace Poly_Ling.Player
             var loops     = LineProfileExtractor.ExtractLoops(mesh, lineFaces);
             if (loops == null || loops.Count == 0) { _statusLabel.text = T("NoLinesFound"); return; }
 
+            P2dBegin();
             _p2dLoops   = loops;
             _p2dSelLoop = 0;
             _p2dSel.Clear();
             _p2dSelPt   = -1;
+            P2dCommit("メッシュ取込");
             _statusLabel.text = T("ImportedLoops", loops.Count);
             D(); RebuildSettings();
         }

@@ -29,9 +29,9 @@ namespace Poly_Ling.Core
         {
             // --- Sculpt（スカルプト） ---
             ("Sculpt.BrushRadius.Min",            0.05f,   "スカルプト: ブラシ半径の下限"),
-            ("Sculpt.BrushRadius.Max",            0.1f,    "スカルプト: ブラシ半径の上限"),
-            ("Sculpt.Strength.Min",               0.0005f, "スカルプト: 強度の下限"),
-            ("Sculpt.Strength.Max",               0.001f,  "スカルプト: 強度の上限"),
+            ("Sculpt.BrushRadius.Max",            1.0f,    "スカルプト: ブラシ半径の上限"),
+            ("Sculpt.Strength.Min",               0.01f,   "スカルプト: 強度の下限"),
+            ("Sculpt.Strength.Max",               0.05f,   "スカルプト: 強度の上限"),
 
             // --- SkinWeightPaint（ウェイトペイント） ---
             ("SkinWeight.BrushRadius.Min",        0.001f,  "ウェイトペイント: ブラシ半径の下限"),
@@ -83,8 +83,9 @@ namespace Poly_Ling.Core
         private static List<string> _unknownLines;                 // 既定外の "key,value" 行（保持用）
         private static readonly object _lock = new object();
 
-        private static string Dir     => Path.Combine(Application.persistentDataPath, "PolyLing");
-        private static string FilePath => Path.Combine(Dir, "ParameterLimits.csv");
+        private static string Dir        => Path.Combine(Application.persistentDataPath, "PolyLing");
+        private static string FilePath   => Path.Combine(Dir, "ParameterLimits.csv");
+        private static string BackupPath => Path.Combine(Dir, "ParameterLimits.bak.csv");
 
         // ================================================================
         // 公開API
@@ -100,6 +101,75 @@ namespace Poly_Ling.Core
 
         /// <summary>int値を取得（四捨五入）</summary>
         public static int GetI(string key) => Mathf.RoundToInt(GetF(key));
+
+        /// <summary>
+        /// float値を設定してCSVへ即書き戻す（UI→CSV の逆経路。既知キーのみ受理）。
+        /// これによりUI変更が永続化まで一本の経路で届く。
+        /// </summary>
+        public static void SetF(string key, float value)
+        {
+            EnsureLoaded();
+            if (!IsKnownKey(key)) return; // 未知キーは無視（キー体系を保つ）
+            lock (_lock)
+            {
+                _values[key] = value;
+                Write();
+            }
+        }
+
+        /// <summary>保存先CSVの絶対パス（表示・手動バックアップ用）。</summary>
+        public static string GetFilePath() => FilePath;
+
+        /// <summary>CSVを同フォルダに ParameterLimits.bak.csv として複製する。</summary>
+        public static bool Backup()
+        {
+            try
+            {
+                EnsureLoaded();
+                lock (_lock) { Write(); } // 最新状態を確実にファイル化してから複製
+                if (!File.Exists(FilePath)) return false;
+                File.Copy(FilePath, BackupPath, overwrite: true);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ParameterLimits] バックアップ失敗: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>bakファイルを本体へ戻して再読込する。</summary>
+        public static bool Restore()
+        {
+            try
+            {
+                if (!File.Exists(BackupPath)) return false;
+                File.Copy(BackupPath, FilePath, overwrite: true);
+                Reload();
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ParameterLimits] 復元失敗: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 全値をコード既定(Defaults)へ総入れ替えしてCSVを書き直す。
+        /// 旧値が固着したCSVを一掃する手段。既定外の保持行(_unknownLines)は残す。
+        /// </summary>
+        public static void ResetToDefaults()
+        {
+            lock (_lock)
+            {
+                EnsureLoaded();
+                var values = new Dictionary<string, float>();
+                foreach (var d in Defaults) values[d.Key] = d.Default;
+                _values = values;
+                Write();
+            }
+        }
 
         /// <summary>ファイルを再読込（テキスト編集後に反映したい場合に使用）</summary>
         public static void Reload()

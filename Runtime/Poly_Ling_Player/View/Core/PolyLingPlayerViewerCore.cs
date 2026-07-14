@@ -851,6 +851,12 @@ namespace Poly_Ling.Player
 
                     _viewportManager.EnterVerticesMoved(proj, VerticesMovedPhase.Dragging);
 
+                    // EnterVerticesMoved(Dragging) は syncMc=null のため PresentAll 経路を通り、
+                    // GPU の transform 行列(_transformMatrices=WorldMatrix)を更新しない。
+                    // 頂点移動(syncMc!=null)経路のみが UpdateTransform を呼ぶため、オブジェクト移動では
+                    // WorldMatrix 変更が描画に反映されない。ここで明示的に反映する。
+                    _viewportManager.UpdateTransform();
+
                 }
                 NotifyPanels(ChangeKind.Attributes);
             };
@@ -891,6 +897,11 @@ namespace Poly_Ling.Player
 
                     _viewportManager.EnterVerticesMoved(proj, VerticesMovedPhase.Dragging);
 
+                    // EnterVerticesMoved(Dragging) は syncMc=null で PresentAll 経路を通り GPU の
+                    // transform 行列(_transformMatrices=WorldMatrix)を更新しない。ピボットの原点移動
+                    // (BoneTransform)を描画へ反映するため明示的に UpdateTransform を呼ぶ。
+                    _viewportManager.UpdateTransform();
+
                 }
                 NotifyPanels(ChangeKind.Attributes);
             };
@@ -916,6 +927,8 @@ namespace Poly_Ling.Player
             };
             _sculptHandler.OnUpdateBrushCircle = (center, radius) =>
                 _activePanel?.ShowBrushCircle(center, radius);
+            _sculptHandler.OnUpdateRadiusDragMarker = (center, radius) =>
+                _activePanel?.ShowBrushCircle(center, radius, new Color(1f, 0.6f, 0.1f, 0.9f), showCenter: true);
             _sculptHandler.OnHideBrushCircle = () =>
                 _activePanel?.HideBrushCircle();
             _sculptHandler.GetBrushHit = (pos, r) => _viewportManager.GetBrushHit(pos, r);
@@ -2505,6 +2518,8 @@ namespace Poly_Ling.Player
                 GetHandler = () => _sculptHandler,
             };
             _sculptSubPanel.Build(_layoutRoot.SculptSection);
+            // 起動時にスライダ範囲・値・詳細設定をハンドラ実値へ同期する。
+            _sculptSubPanel.Refresh();
 
             _advancedSelectSubPanel = new PlayerAdvancedSelectSubPanel
             {
@@ -2544,6 +2559,7 @@ namespace Poly_Ling.Player
             _primitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
             _primitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            _primitiveSubPanel.GetUndoController = () => _editOps?.UndoController;
 
             _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
             _layoutRoot.AdvancedPrimitiveBtn.clicked += ShowAdvancedPrimitivePanel;

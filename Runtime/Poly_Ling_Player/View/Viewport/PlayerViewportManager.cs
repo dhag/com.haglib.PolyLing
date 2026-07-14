@@ -513,6 +513,16 @@ namespace Poly_Ling.Player
                         // MoveToolHandler 等の頂点ドラッグ中の軽量同期経路。
                         SyncMeshPositionsAndTransform(syncMc, project?.CurrentModel);
                         UpdateTransform();
+                        // 面は位置バッファ直参照で追随するが、線Mesh(_wireframeMesh*)・
+                        // 点Mesh(_pointMesh*)は焼き込み座標のため取り残される。ここで軽量更新
+                        // （トポロジ不変・座標のみ SetVertices）して同フレームで追随させる。
+                        // フル再構築は 1FPS 地雷のため使わない。
+                        var uniRenderer = _renderer?.GetAdapter(0)?.Renderer;
+                        if (uniRenderer != null)
+                        {
+                            uniRenderer.UpdateWireframePositionsOnly();
+                            uniRenderer.UpdatePointPositionsOnly();
+                        }
                     }
                     else
                     {

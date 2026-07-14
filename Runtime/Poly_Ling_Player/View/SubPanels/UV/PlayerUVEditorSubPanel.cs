@@ -96,7 +96,7 @@ namespace Poly_Ling.Player
         private Vector2 _panOffset = Vector2.zero;
         private float   _zoom      = 1f;
 
-        private enum Interaction { Idle, Panning, PendingAction, MovingVertex, Marquee, AnchorDrag }
+        private enum Interaction { Idle, Panning, PendingAction, MovingVertex, Marquee, AnchorDrag, HandleDrag }
         private Interaction _interaction = Interaction.Idle;
 
         private Vector2 _mouseDownPos;
@@ -150,6 +150,15 @@ namespace Poly_Ling.Player
         private Button        _anchorEnterBtn;
         private VisualElement _anchorPanel;
         private bool          _anchorSuppress; // フィールド更新中の通知抑制
+
+        // 回転/拡大縮小ハンドル（キャンバス上ドラッグ）
+        private readonly Canvas2DHandle _uvHandle = new Canvas2DHandle();
+        private Canvas2DHandle.HandleType _uvHandleType = Canvas2DHandle.HandleType.None;
+        private readonly Dictionary<UVVertexId, Vector2> _uvHandleStart = new Dictionary<UVVertexId, Vector2>();
+        private readonly Dictionary<UVVertexId, float>   _uvHandleW     = new Dictionary<UVVertexId, float>();
+        private Vector2 _uvHandleAnchorC;
+        private float   _uvHandlePrevAngle;
+        private float   _uvHandleTotalDeg;
 
         // 頂点が存在するマテリアルのインデックスリスト（MeshContext.GetMaterial用）
         private readonly List<int> _matsWithVerts = new List<int>();
@@ -484,6 +493,8 @@ namespace Poly_Ling.Player
             DrawGrid(painter, rect);
             DrawUVWireframe(painter, rect);
             DrawAnchorMarker(painter, rect);
+            if (!_anchorMode)
+                _uvHandle.Draw(painter, UVToCanvas(_anchor, rect));  // 回転/拡大縮小ハンドル
             DrawUVMagnetRadius(painter, rect);
             if (_marquee.Active)
                 _marquee.Draw(painter, new Color(1f, 0.85f, 0.2f, 0.9f));
@@ -659,6 +670,18 @@ namespace Poly_Ling.Player
 
             if (evt.button == 0)
             {
+                // ハンドルヒット判定（回転/拡大縮小、頂点編集より優先）
+                var rectH = _canvas.contentRect;
+                var uvHit = _uvHandle.HitTest(evt.localMousePosition, UVToCanvas(_anchor, rectH));
+                if (uvHit != Canvas2DHandle.HandleType.None)
+                {
+                    BeginUVHandle(uvHit, evt.localMousePosition, rectH);
+                    _canvas.CaptureMouse();
+                    _canvas.MarkDirtyRepaint();
+                    evt.StopPropagation();
+                    return;
+                }
+
                 _mouseDownPos = evt.localMousePosition;
                 _hitUV        = HitTestUVVertex(evt.localMousePosition);
 
@@ -741,7 +764,22 @@ namespace Poly_Ling.Player
                     evt.StopPropagation();
                     return;
 
+                case Interaction.HandleDrag:
+                    ApplyUVHandle(mp);
+                    _canvas.MarkDirtyRepaint();
+                    evt.StopPropagation();
+                    return;
+
                 case Interaction.Idle:
+                    // ハンドルホバー
+                    var uvHovType = _anchorMode ? Canvas2DHandle.HandleType.None
+                                                : _uvHandle.HitTest(mp, UVToCanvas(_anchor, _canvas.contentRect));
+                    if (uvHovType != _uvHandle.Hovered) { _uvHandle.Hovered = uvHovType; _canvas.MarkDirtyRepaint(); }
+                    if (uvHovType != Canvas2DHandle.HandleType.None)
+                    {
+                        if (_hovered.HasValue) { _hovered = null; _canvas.MarkDirtyRepaint(); }
+                        return;
+                    }
                     var newHov = HitTestUVVertex(mp);
                     bool changed = (newHov.HasValue != _hovered.HasValue) ||
                                    (newHov.HasValue && _hovered.HasValue && newHov.Value != _hovered.Value);
@@ -754,6 +792,7 @@ namespace Poly_Ling.Player
         {
             if (_interaction == Interaction.MovingVertex) EndUVMove();
             else if (_interaction == Interaction.Marquee) { ApplyMarqueeSelection(); _marquee.End(); }
+            else if (_interaction == Interaction.HandleDrag) EndUVHandle();
             _interaction = Interaction.Idle;
             if (_canvas.HasMouseCapture()) _canvas.ReleaseMouse();
             evt.StopPropagation();
@@ -938,6 +977,170 @@ namespace Poly_Ling.Player
 
             SetStatus($"UV {keys.Count}頂点を移動");
             _dragStartUVs.Clear();
+        }
+
+        // ================================================================
+        // ハンドルドラッグ（回転/拡大縮小）
+        // ================================================================
+
+        /// <summary>ハンドルドラッグ開始。影響UV頂点（選択=1/マグネット=weight、選択なし=全頂点1）を記録。</summary>
+        private void BeginUVHandle(Canvas2DHandle.HandleType type, Vector2 mp, Rect rect)
+        {
+            _interaction      = Interaction.HandleDrag;
+            _uvHandleType     = type;
+            _uvHandle.Active  = type;
+
+            RefreshAnchorAuto();  // 自動モードなら重心へ
+            _uvHandleAnchorC   = UVToCanvas(_anchor, rect);
+            _uvHandlePrevAngle = Canvas2DHandle.AngleDeg(_uvHandleAnchorC, mp);
+            _uvHandleTotalDeg  = 0f;
+
+            _uvHandleStart.Clear(); _uvHandleW.Clear();
+            var mo = GetMeshObject();
+            if (mo == null) return;
+
+            if (_selected.Count > 0)
+            {
+                var selPos = new List<Vector2>();
+                foreach (var id in _selected)
+                {
+                    if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                    var v = mo.Vertices[id.VertexIndex];
+                    if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
+                    _uvHandleStart[id] = v.UVs[id.UVIndex];
+                    _uvHandleW[id]     = 1f;
+                    selPos.Add(v.UVs[id.UVIndex]);
+                }
+                if (_uvMagnet.Enabled && selPos.Count > 0)
+                {
+                    foreach (var id in CollectAllUVVertices(mo))
+                    {
+                        if (_uvHandleStart.ContainsKey(id)) continue;
+                        if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                        var v = mo.Vertices[id.VertexIndex];
+                        if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
+                        float wt = _uvMagnet.WeightFor(v.UVs[id.UVIndex], selPos);
+                        if (wt > 0f) { _uvHandleStart[id] = v.UVs[id.UVIndex]; _uvHandleW[id] = wt; }
+                    }
+                }
+            }
+            else
+            {
+                foreach (var id in CollectAllUVVertices(mo))
+                {
+                    if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                    var v = mo.Vertices[id.VertexIndex];
+                    if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
+                    _uvHandleStart[id] = v.UVs[id.UVIndex];
+                    _uvHandleW[id]     = 1f;
+                }
+            }
+        }
+
+        /// <summary>ハンドルドラッグ中：開始スナップショットへ変換を適用（ライブプレビュー）。</summary>
+        private void ApplyUVHandle(Vector2 mp)
+        {
+            var mo = GetMeshObject();
+            if (mo == null || _uvHandleStart.Count == 0) return;
+
+            float sx = 1f, sy = 1f, deg = 0f;
+            if (_uvHandleType == Canvas2DHandle.HandleType.Rotate)
+            {
+                float ang = Canvas2DHandle.AngleDeg(_uvHandleAnchorC, mp);
+                _uvHandleTotalDeg += -Mathf.DeltaAngle(_uvHandlePrevAngle, ang);
+                _uvHandlePrevAngle = ang;
+                deg = _uvHandleTotalDeg;
+            }
+            else
+            {
+                _uvHandle.ScaleFactors(_uvHandleType, _uvHandleAnchorC, mp, out sx, out sy);
+            }
+
+            foreach (var kv in _uvHandleStart)
+            {
+                var id = kv.Key;
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var v = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex < 0 || id.UVIndex >= v.UVs.Count) continue;
+                // saCos=1, saSin=0（軸整列）、移動なし
+                v.UVs[id.UVIndex] = CalcTransformedUV(kv.Value, _anchor, 0f, 0f, sx, sy, deg, 1f, 0f, _uvHandleW[id]);
+            }
+        }
+
+        /// <summary>ハンドルドラッグ終了：before/after をコマンド（またはUndo記録）でコミット。</summary>
+        private void EndUVHandle()
+        {
+            _uvHandle.Active = Canvas2DHandle.HandleType.None;
+            _uvHandleType    = Canvas2DHandle.HandleType.None;
+
+            var mo = GetMeshObject();
+            if (mo == null || _uvHandleStart.Count == 0) { _uvHandleStart.Clear(); return; }
+
+            bool moved = false;
+            foreach (var kv in _uvHandleStart)
+            {
+                var id = kv.Key;
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var v = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count &&
+                    Vector2.Distance(v.UVs[id.UVIndex], kv.Value) > 0.0001f)
+                { moved = true; break; }
+            }
+            if (!moved) { _uvHandleStart.Clear(); return; }
+
+            var keys     = new List<UVVertexId>(_uvHandleStart.Keys);
+            var afterUVs = new Vector2[keys.Count];
+            for (int i = 0; i < keys.Count; i++)
+            {
+                var id = keys[i];
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) { afterUVs[i] = _uvHandleStart[id]; continue; }
+                var v = mo.Vertices[id.VertexIndex];
+                afterUVs[i] = (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count) ? v.UVs[id.UVIndex] : _uvHandleStart[id];
+            }
+
+            // ドラッグ中の変更を元に戻す（コマンドが after を再適用する）
+            foreach (var kv in _uvHandleStart)
+            {
+                var id = kv.Key;
+                if (id.VertexIndex < 0 || id.VertexIndex >= mo.VertexCount) continue;
+                var v = mo.Vertices[id.VertexIndex];
+                if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count) v.UVs[id.UVIndex] = kv.Value;
+            }
+
+            if (_panelContext != null)
+            {
+                var mc = GetMeshContext();
+                var model = GetModel?.Invoke();
+                int masterIdx = mc != null && model != null ? model.IndexOf(mc) : 0;
+                int modelIdx  = _getModelIndex?.Invoke() ?? 0;
+                var viArr     = new int   [keys.Count];
+                var uiArr     = new int   [keys.Count];
+                var beforeArr = new Vector2[keys.Count];
+                for (int i = 0; i < keys.Count; i++)
+                {
+                    viArr[i]     = keys[i].VertexIndex;
+                    uiArr[i]     = keys[i].UVIndex;
+                    beforeArr[i] = _uvHandleStart[keys[i]];
+                }
+                SendCmd(new ApplyUVChangesCommand(modelIdx, masterIdx,
+                    viArr, uiArr, beforeArr, afterUVs, "UV 回転/拡大縮小"));
+            }
+            else
+            {
+                RecordTopologyChange("UV 回転/拡大縮小", obj =>
+                {
+                    for (int i = 0; i < keys.Count; i++)
+                    {
+                        var id = keys[i];
+                        if (id.VertexIndex < 0 || id.VertexIndex >= obj.VertexCount) continue;
+                        var v = obj.Vertices[id.VertexIndex];
+                        if (id.UVIndex >= 0 && id.UVIndex < v.UVs.Count) v.UVs[id.UVIndex] = afterUVs[i];
+                    }
+                });
+            }
+
+            SetStatus($"UV {keys.Count}頂点を回転/拡大縮小");
+            _uvHandleStart.Clear();
         }
 
         // ================================================================

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -104,9 +105,12 @@ namespace Poly_Ling.Player
             {
                 if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
-                if (h != null) h.BrushRadius = e.newValue;
+                if (h == null) return;
+                h.BrushRadius = e.newValue;
+                float applied = h.BrushRadius; // setter でクランプ済みの実値
                 _suppressSync = true;
-                _brushRadiusField?.SetValueWithoutNotify(e.newValue);
+                _brushRadiusSlider?.SetValueWithoutNotify(applied);
+                _brushRadiusField?.SetValueWithoutNotify(applied);
                 _suppressSync = false;
             });
             radiusRow.Add(_brushRadiusSlider);
@@ -139,9 +143,9 @@ namespace Poly_Ling.Player
                     _brushRadiusField?.SetValueWithoutNotify(r);
                     _suppressSync = false;
                 };
+                // ドラッグ終了・クリック終了時にハンドラーから通知を受けてボタン色を戻す
+                h.OnRadiusDragModeExited = () => UpdateRadiusDragButtonStyle(false);
                 UpdateRadiusDragButtonStyle(true);
-                // ドラッグ終了はハンドラー側で IsRadiusDragMode = false にするため、
-                // 次フレームの Refresh() でボタンスタイルが戻る
             });
             _radiusDragButton.text = "ドラッグで範囲指定";
             _radiusDragButton.style.marginBottom = 3;
@@ -189,9 +193,12 @@ namespace Poly_Ling.Player
             {
                 if (_suppressSync) return;
                 var h = GetHandler?.Invoke();
-                if (h != null) h.Strength = e.newValue;
+                if (h == null) return;
+                h.Strength = e.newValue;
+                float applied = h.Strength; // setter でクランプ済みの実値
                 _suppressSync = true;
-                _strengthField?.SetValueWithoutNotify(e.newValue);
+                _strengthSlider?.SetValueWithoutNotify(applied);
+                _strengthField?.SetValueWithoutNotify(applied);
                 _suppressSync = false;
             });
             strengthRow.Add(_strengthSlider);
@@ -246,10 +253,11 @@ namespace Poly_Ling.Player
             {
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                float v = Mathf.Max(0.001f, e.newValue);
-                h.MinBrushRadius = v;
-                _brushRadiusSlider.lowValue = v;
-                _minRadiusField.SetValueWithoutNotify(v);
+                h.MinBrushRadius = e.newValue;      // setter で 0.001 以上にクランプ
+                float applied = h.MinBrushRadius;
+                _brushRadiusSlider.lowValue = applied;
+                _minRadiusField.SetValueWithoutNotify(applied);
+                ClampRadiusToRange(h);
             });
             minRow.Add(_minRadiusField);
 
@@ -269,10 +277,11 @@ namespace Poly_Ling.Player
             {
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                float v = Mathf.Max(h.MinBrushRadius + 0.001f, e.newValue);
-                h.MaxBrushRadius = v;
-                _brushRadiusSlider.highValue = v;
-                _maxRadiusField.SetValueWithoutNotify(v);
+                h.MaxBrushRadius = e.newValue;      // setter で Min+0.001 以上にクランプ
+                float applied = h.MaxBrushRadius;
+                _brushRadiusSlider.highValue = applied;
+                _maxRadiusField.SetValueWithoutNotify(applied);
+                ClampRadiusToRange(h);
             });
             maxRow.Add(_maxRadiusField);
 
@@ -295,10 +304,11 @@ namespace Poly_Ling.Player
             {
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                float v = Mathf.Max(0.001f, e.newValue);
-                h.MinStrength = v;
-                _strengthSlider.lowValue = v;
-                _minStrengthField.SetValueWithoutNotify(v);
+                h.MinStrength = e.newValue;         // setter で 0.001 以上にクランプ
+                float applied = h.MinStrength;
+                _strengthSlider.lowValue = applied;
+                _minStrengthField.SetValueWithoutNotify(applied);
+                ClampStrengthToRange(h);
             });
             minStrRow.Add(_minStrengthField);
 
@@ -318,12 +328,71 @@ namespace Poly_Ling.Player
             {
                 var h = GetHandler?.Invoke();
                 if (h == null) return;
-                float v = Mathf.Max(h.MinStrength + 0.001f, e.newValue);
-                h.MaxStrength = v;
-                _strengthSlider.highValue = v;
-                _maxStrengthField.SetValueWithoutNotify(v);
+                h.MaxStrength = e.newValue;         // setter で Min+0.001 以上にクランプ
+                float applied = h.MaxStrength;
+                _strengthSlider.highValue = applied;
+                _maxStrengthField.SetValueWithoutNotify(applied);
+                ClampStrengthToRange(h);
             });
             maxStrRow.Add(_maxStrengthField);
+
+            // ── 上下限の保存・バックアップ ────────────────────────────
+            AddSectionLabel("上下限の保存（グローバル共有）", foldout.contentContainer);
+
+            var pathLabel = new Label("保存先: " + ParameterLimits.GetFilePath());
+            pathLabel.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+            pathLabel.style.fontSize   = 9;
+            pathLabel.style.whiteSpace = WhiteSpace.Normal;
+            foldout.contentContainer.Add(pathLabel);
+
+            var limitBtnRow = new VisualElement();
+            limitBtnRow.style.flexDirection = FlexDirection.Row;
+            limitBtnRow.style.marginTop     = 3;
+            foldout.contentContainer.Add(limitBtnRow);
+
+            var backupBtn = new Button(() =>
+            {
+                bool ok = ParameterLimits.Backup();
+                if (_helpBox != null)
+                    _helpBox.text = ok ? "上下限をバックアップしました" : "バックアップに失敗しました";
+            }) { text = "バックアップ" };
+            backupBtn.style.fontSize = 10;
+            limitBtnRow.Add(backupBtn);
+
+            var restoreBtn = new Button(() =>
+            {
+                bool ok = ParameterLimits.Restore();
+                if (ok) Refresh();
+                if (_helpBox != null)
+                    _helpBox.text = ok ? "バックアップから復元しました" : "復元に失敗しました（bak無し等）";
+            }) { text = "復元" };
+            restoreBtn.style.fontSize   = 10;
+            restoreBtn.style.marginLeft = 3;
+            limitBtnRow.Add(restoreBtn);
+
+            var limitBtnRow2 = new VisualElement();
+            limitBtnRow2.style.flexDirection = FlexDirection.Row;
+            limitBtnRow2.style.marginTop     = 2;
+            foldout.contentContainer.Add(limitBtnRow2);
+
+            var resetBtn = new Button(() =>
+            {
+                ParameterLimits.ResetToDefaults();
+                Refresh();
+                if (_helpBox != null) _helpBox.text = "上下限を既定値に戻しました";
+            }) { text = "既定に戻す" };
+            resetBtn.style.fontSize = 10;
+            limitBtnRow2.Add(resetBtn);
+
+            var reloadBtn = new Button(() =>
+            {
+                ParameterLimits.Reload();
+                Refresh();
+                if (_helpBox != null) _helpBox.text = "CSVを再読込しました";
+            }) { text = "再読込" };
+            reloadBtn.style.fontSize   = 10;
+            reloadBtn.style.marginLeft = 3;
+            limitBtnRow2.Add(reloadBtn);
 
             // ── ヘルプ ───────────────────────────────────────────────
             _helpBox = new HelpBox("", HelpBoxMessageType.Info);
@@ -416,6 +485,30 @@ namespace Poly_Ling.Player
                 SculptMode.Flatten => "ドラッグで表面を平らにする",
                 _                  => "",
             };
+        }
+
+        // 半径レンジ変更後、現在のブラシ半径を新レンジ内へ再クランプしてUIへ反映
+        private void ClampRadiusToRange(SculptToolHandler h)
+        {
+            if (h == null) return;
+            float cur = Mathf.Clamp(h.BrushRadius, h.MinBrushRadius, h.MaxBrushRadius);
+            h.BrushRadius = cur;
+            _suppressSync = true;
+            _brushRadiusSlider?.SetValueWithoutNotify(cur);
+            _brushRadiusField?.SetValueWithoutNotify(cur);
+            _suppressSync = false;
+        }
+
+        // 強度レンジ変更後、現在の強度を新レンジ内へ再クランプしてUIへ反映
+        private void ClampStrengthToRange(SculptToolHandler h)
+        {
+            if (h == null) return;
+            float cur = Mathf.Clamp(h.Strength, h.MinStrength, h.MaxStrength);
+            h.Strength = cur;
+            _suppressSync = true;
+            _strengthSlider?.SetValueWithoutNotify(cur);
+            _strengthField?.SetValueWithoutNotify(cur);
+            _suppressSync = false;
         }
 
         private void AddSectionLabel(string text, VisualElement target = null)
