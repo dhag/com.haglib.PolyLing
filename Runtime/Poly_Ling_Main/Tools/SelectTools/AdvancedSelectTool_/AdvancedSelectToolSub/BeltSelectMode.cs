@@ -27,13 +27,9 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            var edge = ctx.GpuStartEdge ?? SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
-            if (!edge.HasValue)
-            {
-                var legacyEdge = SelectionHelper.FindNearestEdgeLegacy(toolCtx, mousePos);
-                if (legacyEdge.Item1 < 0) return false;
-                edge = new VertexPair(legacyEdge.Item1, legacyEdge.Item2);
-            }
+            // 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU フォールバック（FindNearestEdgePair / FindNearestEdgeLegacy）を全撤去。
+            var edge = ctx.GpuStartEdge;
+            if (!edge.HasValue) return false;
 
             var beltData = GetBeltData(toolCtx.FirstSelectedMeshObject, edge.Value);
 
@@ -51,16 +47,8 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            // 【利用禁止。おそらくバグがある】ホバープレビューは GPU ホバー未参照の CPU 探索のまま。
-            // クリック確定は GpuStartEdge を優先するがプレビューは未対応でズレる可能性がある。
-            ctx.HoveredEdgePair = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
-            if (!ctx.HoveredEdgePair.HasValue)
-            {
-                var legacyEdge = SelectionHelper.FindNearestEdgeLegacy(toolCtx, mousePos);
-                if (legacyEdge.Item1 >= 0)
-                    ctx.HoveredEdgePair = new VertexPair(legacyEdge.Item1, legacyEdge.Item2);
-            }
-
+            // GPU ホバー由来の開始辺からプレビューを作る。CPU 探索は使わない。
+            ctx.HoveredEdgePair = ctx.GpuStartEdge;
             if (!ctx.HoveredEdgePair.HasValue) return;
 
             var beltData = GetBeltData(toolCtx.FirstSelectedMeshObject, ctx.HoveredEdgePair.Value);

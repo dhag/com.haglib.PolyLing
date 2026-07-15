@@ -39,6 +39,7 @@ namespace Poly_Ling.Player
 
         public EdgeExtrudeSettings.ExtrudeMode Mode { get => _tool.Mode; set => _tool.Mode = value; }
         public bool SnapToAxis { get => _tool.SnapToAxis; set => _tool.SnapToAxis = value; }
+        public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
 
         // ================================================================
         // 初期化
@@ -60,7 +61,7 @@ namespace Poly_Ling.Player
         }
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            var el = GetHoverElement?.Invoke(MeshSelectMode.Edge) ?? PlayerHoverElement.None;
+            var el = GetHoverElement?.Invoke(MeshSelectMode.Edge | MeshSelectMode.Line) ?? PlayerHoverElement.None;
             var edge = (el.Kind == PlayerHoverKind.Edge) ? new VertexPair(el.EdgeV1, el.EdgeV2) : (VertexPair?)null;
             int  line = (el.Kind == PlayerHoverKind.Line) ? el.FaceIndex : -1;
             _tool.PrepareHit(edge, line);
@@ -81,7 +82,7 @@ namespace Poly_Ling.Player
         }
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
-            var el = GetHoverElement?.Invoke(MeshSelectMode.Edge) ?? PlayerHoverElement.None;
+            var el = GetHoverElement?.Invoke(MeshSelectMode.Edge | MeshSelectMode.Line) ?? PlayerHoverElement.None;
             var edge = (el.Kind == PlayerHoverKind.Edge) ? new VertexPair(el.EdgeV1, el.EdgeV2) : (VertexPair?)null;
             int  line = (el.Kind == PlayerHoverKind.Line) ? el.FaceIndex : -1;
             _tool.SetHoverEdge(edge, line);

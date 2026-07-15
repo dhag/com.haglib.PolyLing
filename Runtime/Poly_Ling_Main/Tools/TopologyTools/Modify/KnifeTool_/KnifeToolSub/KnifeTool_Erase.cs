@@ -83,6 +83,10 @@ namespace Poly_Ling.Tools
                 return _gpuHoverEdge.Value;
             }
 
+            // 【CPUヒットテスト禁止。これもバグあり使用禁止】
+            // 以下の CPU 探索（WorldToScreen 投影＋画面距離）を全撤去。ソースは保持（無効化）。
+            return null;
+            /* ===== 撤去済み CPU 探索（使用禁止・ソース保持） =====
             float best = ERASE_EDGE_THRESHOLD;
             VertexPair? bestEdge = null;
             List<int> bestFaces = null;
@@ -104,6 +108,7 @@ namespace Poly_Ling.Tools
 
             hitFaces = bestFaces;
             return bestEdge;
+            ===== 撤去済み ===== */
         }
 
         /// <summary>共有辺を消して2面を統合する。</summary>

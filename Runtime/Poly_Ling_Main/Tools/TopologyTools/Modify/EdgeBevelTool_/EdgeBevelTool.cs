@@ -45,6 +45,12 @@ namespace Poly_Ling.Tools
             set => _settings.Fillet = value;
         }
 
+        public float DragSensitivity
+        {
+            get => _settings.DragSensitivity;
+            set => _settings.DragSensitivity = value;
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -56,6 +62,11 @@ namespace Poly_Ling.Tools
         private Vector2 _mouseDownScreenPos;
         private VertexPair? _hitEdgeOnMouseDown;
         private const float DragThreshold = 4f;
+
+        // ベベル量の符号付き投影に使う「拡大方向」（スクリーン, ToImgui系）。
+        // StartBevel 時の初期ドラッグ方向で固定する。初期方向へ動かすと拡大、
+        // 戻すと縮小、開始点で0、行き過ぎは0クランプ、という直感的な対応にするため。
+        private Vector2 _startDragDir = Vector2.right;
 
         // ホバー
         private VertexPair? _hoverEdge;
@@ -135,7 +146,7 @@ namespace Poly_Ling.Tools
                     if (dragDistance > DragThreshold)
                     {
                         if (_hitEdgeOnMouseDown.HasValue)
-                            StartBevel(ctx);
+                            StartBevel(ctx, mousePos);
                         else
                         {
                             _state = BevelState.Idle;
@@ -219,9 +230,13 @@ namespace Poly_Ling.Tools
         // ベベル処理
         // ================================================================
 
-        private void StartBevel(ToolContext ctx)
+        private void StartBevel(ToolContext ctx, Vector2 mousePos)
         {
             UnityEngine.Debug.Log($"[BevelDBG] StartBevel: hitEdge={_hitEdgeOnMouseDown}, selectionEdges={ctx.SelectionState?.Edges?.Count}");
+
+            // 初期ドラッグ方向（スクリーン, ToImgui系）を拡大方向として固定する。
+            Vector2 dir0 = mousePos - _mouseDownScreenPos;
+            _startDragDir = dir0.sqrMagnitude > 1e-6f ? dir0.normalized : Vector2.right;
 
             // ヒットエッジを常に単独でセット（選択状態に関わらず）
             if (_hitEdgeOnMouseDown.HasValue)
@@ -252,10 +267,22 @@ namespace Poly_Ling.Tools
             // エッジ/頂点描画が無効化されるため。SyncMeshPositionsOnly で直接更新する。
         }
 
+        private Vector3 ScreenDeltaToWorldDelta(ToolContext ctx, Vector2 sd)
+        {
+            if (ctx.ScreenDeltaToWorldDelta != null)
+                return ctx.ScreenDeltaToWorldDelta(sd, ctx.CameraPosition, ctx.CameraTarget, ctx.CameraDistance, ctx.PreviewRect);
+            float s = ctx.CameraDistance * 0.001f;
+            return new Vector3(sd.x * s, -sd.y * s, 0f);
+        }
+
         private void UpdateBevel(ToolContext ctx, Vector2 mousePos)
         {
             Vector2 totalDelta = mousePos - _mouseDownScreenPos;
-            _dragAmount = Mathf.Max(0.001f, totalDelta.x * 0.002f);
+            // 放射マグニチュード（向き無関係で常に増加）は非直感なので、初期ドラッグ方向への
+            // 符号付き投影に変更。初期方向＝拡大 / 戻す＝縮小 / 開始点で0 / 行き過ぎは0クランプ。
+            float signedDist = Vector2.Dot(totalDelta, _startDragDir);
+            Vector3 worldDelta = ScreenDeltaToWorldDelta(ctx, _startDragDir * signedDist);
+            _dragAmount = Mathf.Max(0f, Mathf.Sign(signedDist) * worldDelta.magnitude * DragSensitivity);
 
             var meshObject = ctx.FirstSelectedMeshObject;
             int updated = 0;
@@ -309,8 +336,9 @@ namespace Poly_Ling.Tools
             public HashSet<int> FaceBOrigVerts; // FaceB の元の頂点集合（方向判定用）
             public int[] RowV0;          // V0 側の row 頂点列 [0=FaceA端 .. segments=FaceB端]
             public int[] RowV1;          // V1 側の row 頂点列 [0=FaceA端 .. segments=FaceB端]
-            public Vector3 OffsetA;      // FaceA 側インワード方向（ベベル面の法線向き判定用）
-            public Vector3 OffsetB;      // FaceB 側インワード方向（ベベル面の法線向き判定用）
+            public Vector3 OffsetA;      // FaceA 側インワード方向（row 座標算出用）
+            public Vector3 OffsetB;      // FaceB 側インワード方向（row 座標算出用）
+            public bool FaceAReverse;    // faceA 内で辺が V0→V1 の並びか（巻き順を隣接面から継承するため）
             public Vector3 P0;           // 元の V0 ワールド座標（ドラッグ更新用）
             public Vector3 P1;           // 元の V1 ワールド座標（ドラッグ更新用）
         }
@@ -358,6 +386,16 @@ namespace Poly_Ling.Tools
                 // FaceA/B それぞれのフェース内側へのオフセット方向
                 Vector3 offsetA = GetInwardOffset(meshObject, faceA, edgeInfo.V0, edgeInfo.V1);
                 Vector3 offsetB = GetInwardOffset(meshObject, faceB, edgeInfo.V0, edgeInfo.V1);
+
+                // 巻き順は幾何法線ではなく隣接する元面 faceA の辺並び順から継承する（押し出しと同型）。
+                // faceA 内で V1 が V0 の直後なら、その辺は V0→V1 の向き。
+                bool faceAReverse = false;
+                {
+                    int i0 = faceA.VertexIndices.IndexOf(edgeInfo.V0);
+                    int i1 = faceA.VertexIndices.IndexOf(edgeInfo.V1);
+                    if (i0 >= 0 && i1 >= 0)
+                        faceAReverse = (i1 == (i0 + 1) % faceA.VertexCount);
+                }
 
                 var rowV0 = new int[segments + 1];
                 var rowV1 = new int[segments + 1];
@@ -408,6 +446,7 @@ namespace Poly_Ling.Tools
                     RowV1 = rowV1,
                     OffsetA = offsetA,
                     OffsetB = offsetB,
+                    FaceAReverse = faceAReverse,
                     P0 = p0,
                     P1 = p1,
                 });
@@ -639,36 +678,19 @@ namespace Poly_Ling.Tools
             //
             // 隣接する row[s] と row[s+1] の間に四角フェースを生成する。
             //
-            // 法線方向の決め方:
-            //   ベベル面の期待アウトワード = -(offsetA + offsetB).normalized
-            //   offsetA/offsetB は両フェースのインワード方向なので、
-            //   その和の逆向きがベベル面の「表側」になる。
-            //
-            //   候補頂点順 [rowV0[s], rowV1[s], rowV1[s+1], rowV0[s+1]] で
-            //   Unity左手系の面法線 = Cross(rowV1[s]-rowV0[s], rowV0[s+1]-rowV0[s]) を計算し、
-            //   期待アウトワードとのドット積が負なら頂点順を逆にする。
+            // 巻き順の決め方:
+            //   幾何法線ではなく、隣接する元面 faceA の辺 (V0,V1) の並び順から継承する
+            //   （押し出しツールと同型）。これによりメッシュの巻き規約（PMX/MQO）に依存せず
+            //   常に隣接面と一貫した向きになる。FaceAReverse は Pass1 で faceA から算出済み。
             // ============================================================
             foreach (var bd in bevelDataList)
             {
-                // ベベル面の期待アウトワード方向
-                // offsetA/offsetB はインワード（フェース内側向き）なので逆符号
-                Vector3 expectedOutward = -(bd.OffsetA + bd.OffsetB).normalized;
-
                 for (int s = 0; s < segments; s++)
                 {
-                    // 候補頂点座標を取得して法線を計算
-                    Vector3 A = meshObject.Vertices[bd.RowV0[s    ]].Position;
-                    Vector3 B = meshObject.Vertices[bd.RowV1[s    ]].Position;
-                    Vector3 C = meshObject.Vertices[bd.RowV1[s + 1]].Position;
-                    Vector3 D = meshObject.Vertices[bd.RowV0[s + 1]].Position;
-
-                    // Unity 左手系: CCW 巻きの法線 = Cross(B-A, D-A)
-                    Vector3 candidateNormal = Vector3.Cross(B - A, D - A);
-
-                    // 期待アウトワードと逆向きなら頂点順を逆にする
-                    int[] verts = Vector3.Dot(candidateNormal, expectedOutward) >= 0
-                        ? new[] { bd.RowV0[s], bd.RowV1[s], bd.RowV1[s + 1], bd.RowV0[s + 1] }
-                        : new[] { bd.RowV0[s + 1], bd.RowV1[s + 1], bd.RowV1[s], bd.RowV0[s] };
+                    // faceA の辺が V0→V1（FaceAReverse）なら押し出しの reverseWinding と同型に並べる。
+                    int[] verts = bd.FaceAReverse
+                        ? new[] { bd.RowV0[s], bd.RowV0[s + 1], bd.RowV1[s + 1], bd.RowV1[s] }
+                        : new[] { bd.RowV0[s], bd.RowV1[s], bd.RowV1[s + 1], bd.RowV0[s + 1] };
 
                     var bevelFace = new Face { MaterialIndex = matIdx };
                     bevelFace.VertexIndices.AddRange(verts);

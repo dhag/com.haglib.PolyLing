@@ -167,6 +167,15 @@ namespace Poly_Ling.Player
 
         private const float DragThreshold = 4f;
         private Vector2  _mouseDownPos;
+
+        /// <summary>
+        /// マウスダウン時のスクリーン座標（パネルローカル, Y=0下）。OnLeftDragBegin で設定される。
+        /// ToolDragging 系ツール（EdgeBevel / EdgeExtrude / FaceExtrude）はドラッグ開始フック
+        /// (OnDragStartExtra) が座標を持たないため、開始原点としてこれを参照する。
+        /// これが無いと _mouseDownScreenPos に画面隅(zero)が入り、量がマウス移動と連動しなくなる。
+        /// </summary>
+        public Vector2 MouseDownPos => _mouseDownPos;
+
         private bool     _shiftHeld;
         private bool     _ctrlHeld;
         private PlayerHoverElement _elemOnMouseDown;

@@ -21,7 +21,7 @@ namespace Poly_Ling.Tools
         // ================================================================
         // ヒットテスト
         //
-        // 【利用禁止。おそらくバグがある】
+        // 【CPUヒットテスト禁止。これもバグあり使用禁止】
         // 以下 FindNearestVertex / FindNearestEdgePair / FindNearestEdgeLegacy /
         // FindNearestFace / FindNearestLine は CPU ヒットテスト（頂点のローカル座標を
         // WorldToScreen で投影し画面距離で最近傍を取る）。深度・遮蔽・WorldMatrix を

@@ -65,8 +65,13 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
         // 生成エントリポイント
         // ================================================================
-        public static MeshObject Generate(CubeParams p) =>
-            (p.CornerRadius <= 0f || p.CornerSegments <= 0) ? GenerateSimple(p) : GenerateRounded(p);
+        public static MeshObject Generate(CubeParams p)
+        {
+            var md = (p.CornerRadius <= 0f || p.CornerSegments <= 0) ? GenerateSimple(p) : GenerateRounded(p);
+            AssignBoxProjectionUV(md);
+            PrimitiveMeshPostProcess.SortVerticesCanonical(md);
+            return md;
+        }
 
         // ================================================================
         // シンプルキューブ
@@ -143,6 +148,51 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
         // 共有ヘルパー（static）
         // ================================================================
+        // ================================================================
+        // 直方体UV：各面 [0,1] のボックス投影（丸め辺/角も含む）
+        //   頂点の法線の支配軸で 6 面のどれかへ割り当て、メッシュ AABB で正規化する。
+        //   Y 軸回りベルト（各側面は正立・同図）。角は最寄り面へ寄せるため多少不自然（許容）。
+        // ================================================================
+        private static void AssignBoxProjectionUV(MeshObject md)
+        {
+            if (md == null || md.Vertices.Count == 0) return;
+
+            Vector3 min = md.Vertices[0].Position, max = min;
+            foreach (var v in md.Vertices)
+            {
+                min = Vector3.Min(min, v.Position);
+                max = Vector3.Max(max, v.Position);
+            }
+            float dx = Mathf.Max(1e-6f, max.x - min.x);
+            float dy = Mathf.Max(1e-6f, max.y - min.y);
+            float dz = Mathf.Max(1e-6f, max.z - min.z);
+            Vector3 center = (min + max) * 0.5f;
+
+            foreach (var v in md.Vertices)
+            {
+                Vector3 n = (v.Normals != null && v.Normals.Count > 0) ? v.Normals[0] : (v.Position - center);
+                float ax = Mathf.Abs(n.x), ay = Mathf.Abs(n.y), az = Mathf.Abs(n.z);
+
+                float nx = (v.Position.x - min.x) / dx;
+                float ny = (v.Position.y - min.y) / dy;
+                float nz = (v.Position.z - min.z) / dz;
+
+                Vector2 uv;
+                if (ay >= ax && ay >= az)
+                    uv = (n.y >= 0f) ? new Vector2(nx, 1f - nz)   // 上 +Y
+                                     : new Vector2(nx, nz);        // 下 -Y
+                else if (ax >= az)
+                    uv = (n.x >= 0f) ? new Vector2(1f - nz, ny)   // 右 +X
+                                     : new Vector2(nz, ny);        // 左 -X
+                else
+                    uv = (n.z >= 0f) ? new Vector2(nx, ny)        // 前 +Z
+                                     : new Vector2(1f - nx, ny);   // 後 -Z
+
+                if (v.UVs.Count == 0) v.UVs.Add(uv);
+                else v.UVs[0] = uv;
+            }
+        }
+
         public static void AddQuadFace(MeshObject md, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 normal, int divU, int divV)
         {
             int start = md.VertexCount;

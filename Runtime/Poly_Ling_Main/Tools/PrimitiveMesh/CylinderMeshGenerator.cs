@@ -67,6 +67,7 @@ namespace Poly_Ling.PrimitiveMesh
                 GenerateRounded(md, p, pivotOffset);
             else
                 GenerateSimple(md, p, pivotOffset);
+            PrimitiveMeshPostProcess.SortVerticesCanonical(md);
             return md;
         }
 

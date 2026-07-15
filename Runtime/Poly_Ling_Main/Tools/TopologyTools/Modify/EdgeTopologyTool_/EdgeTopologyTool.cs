@@ -217,7 +217,7 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// 【重大規約違反: CPU 検索呼出しあり】
+        /// 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU 検索呼出しは全撤去済み。
         /// 呼び出し元なし（dead code）。Phase 6 で関数ごと削除予定。
         /// ハンドラ層の GPU ホバー経路 (EdgeTopologyToolHandler.UpdateHover) へ移行済み。
         /// </summary>
@@ -229,7 +229,8 @@ namespace Poly_Ling.Tools
             {
                 case EdgeTopoMode.Flip:
                 case EdgeTopoMode.Dissolve:
-                    _hoveredEdge = FindNearestEdge(ctx, mousePos);   // 違反: CPU 検索呼出し
+                    // 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU 検索（FindNearestEdge）呼出しを全撤去。
+                    _hoveredEdge = null;
                     break;
 
                 case EdgeTopoMode.Split:
@@ -397,7 +398,7 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
-        /// 【重大規約違反: CPU 検索】マウス位置に最も近い辺を検索。
+        /// 【CPUヒットテスト禁止。これもバグあり使用禁止】マウス位置に最も近い辺を検索。呼出しは全撤去済み・本体はソース保持。
         /// 呼び出し元は OnMouseMove（dead code）のみ。Phase 6 で関数ごと削除予定。
         /// </summary>
         private EdgeInfo? FindNearestEdge(ToolContext ctx, Vector2 mousePos)
@@ -490,7 +491,7 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
-        /// 【重大規約違反: CPU 検索】最も近い四角形面の頂点を検索（距離ベース）。
+        /// 【CPUヒットテスト禁止。これもバグあり使用禁止】最も近い四角形面の頂点を検索（距離ベース）。呼出し元なし・本体はソース保持。
         /// 呼び出し元なし（完全な残骸）。Phase 6 で関数ごと削除予定。
         /// </summary>
         private (int faceIndex, int vertexIndex) FindNearestQuadVertex(ToolContext ctx, Vector2 mousePos, float threshold)
@@ -562,7 +563,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 四角形面内で最も近い頂点を検索（内外判定を使用）
-        /// 【利用禁止。おそらくバグがある】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。
+        /// 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。呼出し元なし・本体はソース保持。
         /// 深度/遮蔽/WorldMatrix 非考慮で Player では誤選択する。GPU ホバー経路を使うこと。
         /// </summary>
         private int FindNearestVertexInQuad(ToolContext ctx, Vector2 mousePos, out int faceIndex)
@@ -618,7 +619,7 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// 特定の面内で最も近い頂点を検索（閾値なし）
-        /// 【利用禁止。おそらくバグがある】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。
+        /// 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。呼出し元は FindNearestVertexInQuad のみ・本体はソース保持。
         /// 深度/遮蔽/WorldMatrix 非考慮で Player では誤選択する。GPU ホバー経路を使うこと。
         /// </summary>
         private int FindNearestVertexInFace(ToolContext ctx, Vector2 mousePos, int faceIndex)

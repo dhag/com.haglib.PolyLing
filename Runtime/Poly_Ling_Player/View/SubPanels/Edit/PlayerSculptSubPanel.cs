@@ -336,63 +336,8 @@ namespace Poly_Ling.Player
             });
             maxStrRow.Add(_maxStrengthField);
 
-            // ── 上下限の保存・バックアップ ────────────────────────────
-            AddSectionLabel("上下限の保存（グローバル共有）", foldout.contentContainer);
-
-            var pathLabel = new Label("保存先: " + ParameterLimits.GetFilePath());
-            pathLabel.style.color      = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
-            pathLabel.style.fontSize   = 9;
-            pathLabel.style.whiteSpace = WhiteSpace.Normal;
-            foldout.contentContainer.Add(pathLabel);
-
-            var limitBtnRow = new VisualElement();
-            limitBtnRow.style.flexDirection = FlexDirection.Row;
-            limitBtnRow.style.marginTop     = 3;
-            foldout.contentContainer.Add(limitBtnRow);
-
-            var backupBtn = new Button(() =>
-            {
-                bool ok = ParameterLimits.Backup();
-                if (_helpBox != null)
-                    _helpBox.text = ok ? "上下限をバックアップしました" : "バックアップに失敗しました";
-            }) { text = "バックアップ" };
-            backupBtn.style.fontSize = 10;
-            limitBtnRow.Add(backupBtn);
-
-            var restoreBtn = new Button(() =>
-            {
-                bool ok = ParameterLimits.Restore();
-                if (ok) Refresh();
-                if (_helpBox != null)
-                    _helpBox.text = ok ? "バックアップから復元しました" : "復元に失敗しました（bak無し等）";
-            }) { text = "復元" };
-            restoreBtn.style.fontSize   = 10;
-            restoreBtn.style.marginLeft = 3;
-            limitBtnRow.Add(restoreBtn);
-
-            var limitBtnRow2 = new VisualElement();
-            limitBtnRow2.style.flexDirection = FlexDirection.Row;
-            limitBtnRow2.style.marginTop     = 2;
-            foldout.contentContainer.Add(limitBtnRow2);
-
-            var resetBtn = new Button(() =>
-            {
-                ParameterLimits.ResetToDefaults();
-                Refresh();
-                if (_helpBox != null) _helpBox.text = "上下限を既定値に戻しました";
-            }) { text = "既定に戻す" };
-            resetBtn.style.fontSize = 10;
-            limitBtnRow2.Add(resetBtn);
-
-            var reloadBtn = new Button(() =>
-            {
-                ParameterLimits.Reload();
-                Refresh();
-                if (_helpBox != null) _helpBox.text = "CSVを再読込しました";
-            }) { text = "再読込" };
-            reloadBtn.style.fontSize   = 10;
-            reloadBtn.style.marginLeft = 3;
-            limitBtnRow2.Add(reloadBtn);
+            // 「上下限の保存」UI（保存先＋バックアップ/復元/既定/再読込）はスカルプト画面から撤去（不自然なため）。
+            // 機能は ParameterLimits.Backup/Restore/ResetToDefaults/Reload に残置。
 
             // ── ヘルプ ───────────────────────────────────────────────
             _helpBox = new HelpBox("", HelpBoxMessageType.Info);

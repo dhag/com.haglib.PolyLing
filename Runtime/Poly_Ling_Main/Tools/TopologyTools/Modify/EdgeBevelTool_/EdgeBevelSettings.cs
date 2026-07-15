@@ -16,6 +16,7 @@ namespace Poly_Ling.Tools
         [SerializeField] private float _amount = 0.1f;
         [SerializeField] private int _segments = 1;
         [SerializeField] private bool _fillet = true;
+        [SerializeField] private float _dragSensitivity = 1f;
 
         public float Amount
         {
@@ -35,6 +36,12 @@ namespace Poly_Ling.Tools
             set => _fillet = value;
         }
 
+        public float DragSensitivity
+        {
+            get => _dragSensitivity;
+            set => _dragSensitivity = Mathf.Max(0.001f, value);
+        }
+
         public EdgeBevelSettings() { }
 
         public EdgeBevelSettings(float amount, int segments, bool fillet)
@@ -46,7 +53,9 @@ namespace Poly_Ling.Tools
 
         public IToolSettings Clone()
         {
-            return new EdgeBevelSettings(_amount, _segments, _fillet);
+            var c = new EdgeBevelSettings(_amount, _segments, _fillet);
+            c._dragSensitivity = _dragSensitivity;
+            return c;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -56,6 +65,7 @@ namespace Poly_Ling.Tools
                 _amount = src._amount;
                 _segments = src._segments;
                 _fillet = src._fillet;
+                _dragSensitivity = src._dragSensitivity;
             }
         }
 
@@ -65,7 +75,8 @@ namespace Poly_Ling.Tools
             {
                 return !Mathf.Approximately(_amount, src._amount)
                     || _segments != src._segments
-                    || _fillet != src._fillet;
+                    || _fillet != src._fillet
+                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity);
             }
             return true;
         }

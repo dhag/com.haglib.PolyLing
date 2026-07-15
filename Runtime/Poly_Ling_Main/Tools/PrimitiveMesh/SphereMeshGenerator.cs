@@ -56,10 +56,14 @@ namespace Poly_Ling.PrimitiveMesh
         // ================================================================
         // 生成
         // ================================================================
-        public static MeshObject Generate(SphereParams p) =>
-            p.CubeSphere
+        public static MeshObject Generate(SphereParams p)
+        {
+            var md = p.CubeSphere
                 ? GenerateCubeSphere(p.Radius, p.CubeSubdivisions, p.Pivot, p.MeshName)
                 : GenerateSphere(p.Radius, p.LongitudeSegments, p.LatitudeSegments, p.Pivot, p.MeshName);
+            PrimitiveMeshPostProcess.SortVerticesCanonical(md);
+            return md;
+        }
 
         private static MeshObject GenerateSphere(float radius, int lonSeg, int latSeg, Vector3 pivot, string name)
         {

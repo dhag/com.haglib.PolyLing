@@ -128,6 +128,7 @@ namespace Poly_Ling.PrimitiveMesh
                 for (int lon = 0; lon < radSeg; lon++)
                 { int i0 = bsi+lat*cols+lon; md.AddQuad(i0, i0+1, i0+cols+1, i0+cols); }
 
+            PrimitiveMeshPostProcess.SortVerticesCanonical(md);
             return md;
         }
     }

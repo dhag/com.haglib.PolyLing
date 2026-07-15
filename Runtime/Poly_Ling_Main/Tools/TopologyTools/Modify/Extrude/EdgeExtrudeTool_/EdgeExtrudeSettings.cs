@@ -24,6 +24,7 @@ namespace Poly_Ling.Tools
 
         [SerializeField] private ExtrudeMode _mode = ExtrudeMode.ViewPlane;
         [SerializeField] private bool _snapToAxis = false;
+        [SerializeField] private float _dragSensitivity = 1f;
 
         public ExtrudeMode Mode
         {
@@ -37,6 +38,12 @@ namespace Poly_Ling.Tools
             set => _snapToAxis = value;
         }
 
+        public float DragSensitivity
+        {
+            get => _dragSensitivity;
+            set => _dragSensitivity = Mathf.Max(0.001f, value);
+        }
+
         public EdgeExtrudeSettings() { }
 
         public EdgeExtrudeSettings(ExtrudeMode mode, bool snapToAxis)
@@ -47,7 +54,9 @@ namespace Poly_Ling.Tools
 
         public IToolSettings Clone()
         {
-            return new EdgeExtrudeSettings(_mode, _snapToAxis);
+            var c = new EdgeExtrudeSettings(_mode, _snapToAxis);
+            c._dragSensitivity = _dragSensitivity;
+            return c;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -56,6 +65,7 @@ namespace Poly_Ling.Tools
             {
                 _mode = src._mode;
                 _snapToAxis = src._snapToAxis;
+                _dragSensitivity = src._dragSensitivity;
             }
         }
 
@@ -64,7 +74,8 @@ namespace Poly_Ling.Tools
             if (other is EdgeExtrudeSettings src)
             {
                 return _mode != src._mode
-                    || _snapToAxis != src._snapToAxis;
+                    || _snapToAxis != src._snapToAxis
+                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity);
             }
             return true;
         }

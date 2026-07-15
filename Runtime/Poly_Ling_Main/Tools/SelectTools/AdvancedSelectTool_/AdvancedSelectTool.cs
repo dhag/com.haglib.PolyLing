@@ -142,6 +142,10 @@ namespace Poly_Ling.Tools
         {
             _ctx.ClearPreview();
             _ctx.ClearHover();
+            _ctx.GpuStartVertex = -1;
+            _ctx.GpuStartEdge   = null;
+            _ctx.GpuStartFace   = -1;
+            _ctx.GpuStartLine   = -1;
             ResetAllModes();
         }
 
@@ -159,14 +163,16 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// 次回クリックの開始要素を GPU ホバー由来のインデックスで指定する。
-        /// Player のハンドラが OnMouseDown 直前に呼ぶ。未ヒット時は vertex=-1, edge=null。
-        /// 各モードはこれが設定されていれば CPU FindNearest より優先する。
+        /// 次回クリック／プレビューの開始要素を GPU ホバー由来のインデックスで指定する。
+        /// Player のハンドラが OnMouseDown / UpdateHover 直前に呼ぶ。未ヒットは -1 / null。
+        /// 各モードは CPU 探索を使わず、この GPU 開始要素のみで解決する。
         /// </summary>
-        public void SetGpuStart(int vertex, VertexPair? edge)
+        public void SetGpuStart(int vertex, VertexPair? edge, int face = -1, int line = -1)
         {
             _ctx.GpuStartVertex = vertex;
             _ctx.GpuStartEdge   = edge;
+            _ctx.GpuStartFace   = face;
+            _ctx.GpuStartLine   = line;
         }
 
         // ================================================================

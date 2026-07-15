@@ -15,6 +15,7 @@ namespace Poly_Ling.Player
 
         private VisualElement _root;
         private FloatField    _amountField;
+        private FloatField    _dragSensField;
         private SliderInt     _segmentsSlider;
         private Toggle        _filletToggle;
         private VisualElement _filletRow;
@@ -62,6 +63,26 @@ namespace Poly_Ling.Player
             }
             _root.Add(presetRow);
 
+            // Drag Sensitivity — テキストボックス（カメラ平面での実ドラッグ距離への比例係数）
+            var sensRow = new VisualElement();
+            sensRow.style.flexDirection = FlexDirection.Row;
+            sensRow.style.marginBottom  = 4;
+            var sensLbl = new Label("Drag Sens.");
+            sensLbl.style.color = new StyleColor(Color.white);
+            sensLbl.style.width = 70; sensLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _dragSensField = new FloatField { value = 1f };
+            _dragSensField.style.color = new StyleColor(Color.black);
+            _dragSensField.style.flexGrow = 1;
+            _dragSensField.RegisterValueChangedCallback(e =>
+            {
+                float v = Mathf.Max(0.001f, e.newValue);
+                _dragSensField.SetValueWithoutNotify(v);
+                var h = GetH(); if (h != null) h.DragSensitivity = v;
+            });
+            sensRow.Add(sensLbl); sensRow.Add(_dragSensField);
+            _root.Add(sensRow);
+
+
             // Segments
             _segmentsSlider = new SliderInt("Segments", 1, 10) { value = 1 };
             _segmentsSlider.style.color = new StyleColor(Color.white);
@@ -88,6 +109,7 @@ namespace Poly_Ling.Player
         {
             var h = GetH(); if (h == null) return;
             _amountField?.SetValueWithoutNotify(h.Amount);
+            _dragSensField?.SetValueWithoutNotify(h.DragSensitivity);
             _segmentsSlider?.SetValueWithoutNotify(h.Segments);
             _filletToggle?.SetValueWithoutNotify(h.Fillet);
             UpdateFilletVisibility(h.Segments);

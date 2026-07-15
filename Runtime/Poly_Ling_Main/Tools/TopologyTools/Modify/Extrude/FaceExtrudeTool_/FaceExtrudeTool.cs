@@ -48,6 +48,12 @@ namespace Poly_Ling.Tools
             set => _settings.IndividualNormals = value;
         }
 
+        public float DragSensitivity
+        {
+            get => _settings.DragSensitivity;
+            set => _settings.DragSensitivity = value;
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -264,16 +270,26 @@ namespace Poly_Ling.Tools
         private void UpdateExtrude(ToolContext ctx, Vector2 mousePos)
         {
             Vector2 totalDelta = mousePos - _mouseDownScreenPos;
+            // カメラ平面（ウインドウ座標系）のワールドデルタ。頂点移動と同じ変換。
+            Vector3 worldDelta = ScreenDeltaToWorldDelta(ctx, totalDelta);
 
             Vector2 dirScreen = WorldDirToScreenDir(ctx, _extrudeDirection);
             if (dirScreen.magnitude > 0.001f)
             {
-                dirScreen.Normalize();
-                _extrudeDistance = Vector2.Dot(totalDelta, dirScreen) * 0.01f;
+                // 押し出し方向がビューに見えている: 「画面投影した平均法線の向き」と
+                // 「マウス移動」の内積で符号を決める。totalDelta も dirScreen も同じ
+                // 画面座標系(Y下)なので符号が正しく出る。world 空間 Dot だと
+                // ScreenDeltaToWorldDelta の Y 系(Y上前提)とズレて上下が反転するため使わない。
+                // 大きさは投影分を world スケールへ換算（大きさは符号非依存）。
+                Vector2 dir    = dirScreen.normalized;
+                float   signed = Vector2.Dot(totalDelta, dir);
+                Vector3 proj   = ScreenDeltaToWorldDelta(ctx, dir * signed);
+                _extrudeDistance = Mathf.Sign(signed) * proj.magnitude * DragSensitivity;
             }
             else
             {
-                _extrudeDistance = -totalDelta.y * 0.01f;
+                // 方向がほぼ視線方向（画面上で潰れる）: 上下ドラッグの見た目距離を係数化。
+                _extrudeDistance = Mathf.Sign(-totalDelta.y) * worldDelta.magnitude * DragSensitivity;
             }
 
             var meshObject = ctx.FirstSelectedMeshObject;
@@ -294,6 +310,14 @@ namespace Poly_Ling.Tools
                 }
             }
             ctx.SyncMeshPositionsOnly?.Invoke();
+        }
+
+        private Vector3 ScreenDeltaToWorldDelta(ToolContext ctx, Vector2 sd)
+        {
+            if (ctx.ScreenDeltaToWorldDelta != null)
+                return ctx.ScreenDeltaToWorldDelta(sd, ctx.CameraPosition, ctx.CameraTarget, ctx.CameraDistance, ctx.PreviewRect);
+            float s = ctx.CameraDistance * 0.001f;
+            return new Vector3(sd.x * s, -sd.y * s, 0f);
         }
 
         private Vector2 WorldDirToScreenDir(ToolContext ctx, Vector3 worldDir)

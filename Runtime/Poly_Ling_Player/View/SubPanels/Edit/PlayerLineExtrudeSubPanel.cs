@@ -49,7 +49,7 @@ namespace Poly_Ling.Player
             _root.style.paddingRight = _root.style.paddingBottom = 4;
             parent.Add(_root);
 
-            _root.Add(Header("Line Extrude / ライン押し出し"));
+            _root.Add(Header("Profile Solidify / プロファイル立体化"));
             _root.Add(new HelpBox(
                 "辺数=2の面（ライン）を選択し、ループを解析して押し出します。",
                 HelpBoxMessageType.Info));

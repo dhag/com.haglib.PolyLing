@@ -707,7 +707,7 @@ namespace Poly_Ling.Player
             // ================================================================
 
             // ── ファイル ───────────────────────────────────────────────
-            var foFile = MakeFoldout("ファイル");
+            var foFile = MakeFoldout("ファイル", "File");
 
             // Load PMX / Load MQO（旧: foldout の外・上）を「ファイル」の先頭に配置する。
             foFile.Add(LocalLoaderSection);
@@ -740,7 +740,7 @@ namespace Poly_Ling.Player
             foFile.Add(ProjectFileBtn);
 
             // ── 図形生成 ───────────────────────────────────────────────
-            var foPrimitive = MakeFoldout("図形生成");
+            var foPrimitive = MakeFoldout("図形生成", "Primitive");
 
             PrimitiveBtn = MakeBtn("基本図形");
             foPrimitive.Add(PrimitiveBtn);
@@ -749,7 +749,7 @@ namespace Poly_Ling.Player
             foPrimitive.Add(AdvancedPrimitiveBtn);
 
             // ── 選択・移動 ─────────────────────────────────────────────
-            var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小");
+            var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小", "SelectMove");
 
             var toolRow = new VisualElement();
             toolRow.style.flexDirection = FlexDirection.Row;
@@ -774,7 +774,7 @@ namespace Poly_Ling.Player
             rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foSelectMove.Add(rowRotScale);
 
             // ── トポロジー編集 ─────────────────────────────────────────
-            var foTopology = MakeFoldout("トポロジー編集");
+            var foTopology = MakeFoldout("トポロジー編集", "Topology");
 
             AddFaceBtn = MakeBtn("面追加"); foTopology.Add(AddFaceBtn);
 
@@ -786,7 +786,7 @@ namespace Poly_Ling.Player
             var rowExtrude = new VisualElement(); rowExtrude.style.flexDirection = FlexDirection.Row; rowExtrude.style.marginBottom = 2;
             EdgeExtrudeBtn = MakeBtn("辺押し出し"); EdgeExtrudeBtn.style.flexGrow = 1; EdgeExtrudeBtn.style.marginRight = 2;
             FaceExtrudeBtn = MakeBtn("面押し出し"); FaceExtrudeBtn.style.flexGrow = 1; FaceExtrudeBtn.style.marginRight = 2;
-            LineExtrudeBtn = MakeBtn("ライン押し出し"); LineExtrudeBtn.style.flexGrow = 1;
+            LineExtrudeBtn = MakeBtn("プロファイル立体化"); LineExtrudeBtn.style.flexGrow = 1;
             rowExtrude.Add(EdgeExtrudeBtn); rowExtrude.Add(FaceExtrudeBtn); rowExtrude.Add(LineExtrudeBtn); foTopology.Add(rowExtrude);
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
@@ -795,7 +795,7 @@ namespace Poly_Ling.Player
             rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); foTopology.Add(rowEdgeKnife);
 
             // ── 選択頂点位置 ───────────────────────────────────────────
-            var foVertexPos = MakeFoldout("選択頂点位置");
+            var foVertexPos = MakeFoldout("選択頂点位置", "VertexPos");
 
             var rowAlignPlanarize = new VisualElement(); rowAlignPlanarize.style.flexDirection = FlexDirection.Row; rowAlignPlanarize.style.marginBottom = 2;
             AlignVerticesBtn       = MakeBtn("頂点整列");   AlignVerticesBtn.style.flexGrow       = 1; AlignVerticesBtn.style.marginRight       = 2;
@@ -803,7 +803,7 @@ namespace Poly_Ling.Player
             rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); foVertexPos.Add(rowAlignPlanarize);
 
             // ── 選択頂点トポロジー ─────────────────────────────────────
-            var foVertexTopo = MakeFoldout("選択頂点トポロジー");
+            var foVertexTopo = MakeFoldout("選択頂点トポロジー", "VertexTopo");
 
             var rowMergeSplit = new VisualElement(); rowMergeSplit.style.flexDirection = FlexDirection.Row; rowMergeSplit.style.marginBottom = 2;
             MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
@@ -815,7 +815,7 @@ namespace Poly_Ling.Player
             rowQuad.Add(QuadDecimatorBtn); foVertexTopo.Add(rowQuad);
 
             // ── ボーン・モーフ ─────────────────────────────────────────
-            var foBoneMorph = MakeFoldout("ボーン・モーフ");
+            var foBoneMorph = MakeFoldout("ボーン・モーフ", "BoneMorph");
 
             BoneEditorBtn = MakeBtn("ボーンエディタ");
             foBoneMorph.Add(BoneEditorBtn);
@@ -839,7 +839,7 @@ namespace Poly_Ling.Player
             foBoneMorph.Add(ToolSkinWeightPaintBtn);
 
             // ── UV・マテリアル ─────────────────────────────────────────
-            var foUvMat = MakeFoldout("UV・マテリアル");
+            var foUvMat = MakeFoldout("UV・マテリアル", "UvMat");
 
             var rowUv = new VisualElement(); rowUv.style.flexDirection = FlexDirection.Row; rowUv.style.marginBottom = 2;
             UVEditorBtn = MakeBtn("UVエディタ"); UVEditorBtn.style.flexGrow = 1; UVEditorBtn.style.marginRight = 2;
@@ -859,7 +859,7 @@ namespace Poly_Ling.Player
             // クライアントモードでのサーバとのやり取り。
             // RemoteSection の表示制御・ボタン配線は core が担う（プロパティ名・
             // インスタンスは不変）。Foldout はコンテナのみを提供する。
-            var foRemote = MakeFoldout("サーバと連携");
+            var foRemote = MakeFoldout("サーバと連携", "Remote");
             RemoteFoldout = foRemote;
 
             RemoteSection = new VisualElement();
@@ -873,7 +873,7 @@ namespace Poly_Ling.Player
             foRemote.Add(RemoteSection);
 
             // ── その他 ─────────────────────────────────────────────────
-            var foOther = MakeFoldout("その他");
+            var foOther = MakeFoldout("その他", "Other");
 
             MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
             foOther.Add(MeshFilterToSkinnedBtn);
@@ -1325,12 +1325,20 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 左ペインのカテゴリ折りたたみを作る。既定は折りたたみ（value=false）。
+        /// 左ペインのカテゴリ折りたたみを作る。既定は折りたたみ（未保存時 value=false）。
+        /// 開閉状態は PlayerUiPrefs（RecentPaths ファイル永続ストア）にキー
+        /// "LeftPane.Fold.&lt;prefKey&gt;" で保存・復元する（選択モード永続化と同方式）。
         /// 見出しフォントを小さめにして縦スペースを節約する。
         /// </summary>
-        private static Foldout MakeFoldout(string title)
+        private static Foldout MakeFoldout(string title, string prefKey)
         {
-            var f = new Foldout { text = title, value = false };
+            string key = "LeftPane.Fold." + prefKey;
+            var f = new Foldout { text = title };
+            // 復元（未保存は既定＝折りたたみ）
+            f.SetValueWithoutNotify(Poly_Ling.Player.PlayerUiPrefs.GetBool(key, false));
+            // 保存（開閉のたびに write-through）
+            f.RegisterValueChangedCallback(evt =>
+                Poly_Ling.Player.PlayerUiPrefs.SetBool(key, evt.newValue));
             f.style.marginTop    = 2;
             f.style.marginBottom = 2;
             // 見出しトグルのフォントサイズを縮小

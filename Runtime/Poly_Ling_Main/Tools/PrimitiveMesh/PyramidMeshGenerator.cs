@@ -97,6 +97,7 @@ namespace Poly_Ling.PrimitiveMesh
                     md.AddTriangle(ci, ci+1+i, ci+1+(i+1)%p.Sides);
             }
 
+            PrimitiveMeshPostProcess.SortVerticesCanonical(md);
             return md;
         }
     }

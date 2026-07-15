@@ -171,6 +171,8 @@ namespace Poly_Ling.Player
         private SplitVerticesToolHandler          _splitVerticesHandler;
         private PlayerAddFaceSubPanel             _addFaceSubPanel;
         private AddFaceToolHandler                _addFaceHandler;
+        private System.Action _applySelectMode;                 // 選択モード適用（トグル→モデル）。永続復元/モデル選択時に再利用。
+        private const string SelectModePrefKey = "LeftPane.SelectMode";
         private PlayerFlipFaceSubPanel            _flipFaceSubPanel;
         private FlipFaceToolHandler               _flipFaceHandler;
         private PlayerRotateSubPanel              _rotateSubPanel;
@@ -2252,6 +2254,7 @@ namespace Poly_Ling.Player
             _addFaceHandler = new AddFaceToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 // Phase 2c-3: 確定点追加時に overlay 再描画を発火する。
                 // 確定点の追加はトポロジを実質変更していないが、UIToolkit overlay の
@@ -2284,6 +2287,7 @@ namespace Poly_Ling.Player
                     if (proj == null) return false;
                     if (proj.CurrentModel == null && proj.ModelCount > 0)
                         proj.SelectModel(0);
+                    _applySelectMode?.Invoke();  // 永続選択モードを新規アクティブモデルへ適用
                     var model = proj.CurrentModel;
                     if (model == null) return false;
 
@@ -2742,7 +2746,7 @@ namespace Poly_Ling.Player
             });
 
             // 選択モード切替（頂点/辺/面/線分・非排他）→ 現モデル各メッシュの Selection.Mode に反映。
-            System.Action applySelectMode = () =>
+            _applySelectMode = () =>
             {
                 var model = ActiveProject?.CurrentModel;
                 if (model?.MeshContextList == null) return;
@@ -2757,10 +2761,34 @@ namespace Poly_Ling.Player
                         mc.Selection.Mode = m;
                 _activePanel?.MarkDirtyRepaint();
             };
-            _layoutRoot.SelModeVertexToggle.RegisterValueChangedCallback(_ => applySelectMode());
-            _layoutRoot.SelModeEdgeToggle  .RegisterValueChangedCallback(_ => applySelectMode());
-            _layoutRoot.SelModeFaceToggle  .RegisterValueChangedCallback(_ => applySelectMode());
-            _layoutRoot.SelModeLineToggle  .RegisterValueChangedCallback(_ => applySelectMode());
+
+            // 選択モードを端末ローカルに保存（V=1/E=2/F=4/L=8 の 4bit）。PTFS 表示と同じ RecentPaths ストア。
+            System.Action saveSelectMode = () =>
+            {
+                int bits = (_layoutRoot.SelModeVertexToggle.value ? 1 : 0)
+                         | (_layoutRoot.SelModeEdgeToggle.value   ? 2 : 0)
+                         | (_layoutRoot.SelModeFaceToggle.value   ? 4 : 0)
+                         | (_layoutRoot.SelModeLineToggle.value   ? 8 : 0);
+                PlayerUiPrefs.SetInt(SelectModePrefKey, bits);
+            };
+
+            _layoutRoot.SelModeVertexToggle.RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
+            _layoutRoot.SelModeEdgeToggle  .RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
+            _layoutRoot.SelModeFaceToggle  .RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
+            _layoutRoot.SelModeLineToggle  .RegisterValueChangedCallback(_ => { saveSelectMode(); _applySelectMode(); });
+
+            // 起動時：保存済み選択モードを復元してトグルへ反映（未保存は既定=頂点のまま）。
+            {
+                int savedBits = PlayerUiPrefs.GetInt(SelectModePrefKey, -1);
+                if (savedBits >= 0)
+                {
+                    _layoutRoot.SelModeVertexToggle.SetValueWithoutNotify((savedBits & 1) != 0);
+                    _layoutRoot.SelModeEdgeToggle  .SetValueWithoutNotify((savedBits & 2) != 0);
+                    _layoutRoot.SelModeFaceToggle  .SetValueWithoutNotify((savedBits & 4) != 0);
+                    _layoutRoot.SelModeLineToggle  .SetValueWithoutNotify((savedBits & 8) != 0);
+                }
+                _applySelectMode();
+            }
 
             _layoutRoot.ModelListBtn.clicked += ShowModelListPanel;
             _layoutRoot.MeshListBtn .clicked += ShowMeshListPanel;
@@ -3577,6 +3605,7 @@ namespace Poly_Ling.Player
             if (project == null) return;
             if (project.CurrentModel == null && project.ModelCount > 0)
                 project.SelectModel(0);
+            _applySelectMode?.Invoke();  // 永続選択モードを新規アクティブモデルへ適用
 
             switch (addMode)
             {
@@ -4326,9 +4355,11 @@ namespace Poly_Ling.Player
                     {
                         // Edge ヒットのみベベル発火。要素なし or 型違いは通常の矩形選択等に任せる
                         if (elem.Kind != PlayerHoverKind.Edge) return false;
+                        // 開始原点は実マウスダウン座標を渡す（zero だと _mouseDownScreenPos が
+                        // 画面隅になり量がマウス移動と連動しない）。Handler 側で ToImgui される。
                         _edgeBevelHandler?.OnLeftDragBegin(
                             new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
-                            Vector2.zero, mods);
+                            _moveToolHandler.MouseDownPos, mods);
                         return true;
                     };
                     _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeBevelHandler?.OnLeftDrag(pos, delta, mods);
@@ -4341,11 +4372,12 @@ namespace Poly_Ling.Player
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeExtrudeHandler?.UpdateHover(pos, ctx));
                     _moveToolHandler.OnDragStartExtra = (elem, mods) =>
                     {
-                        // Edge ヒットのみ押し出し発火。要素なし or 型違いは通常の矩形選択等に任せる
-                        if (elem.Kind != PlayerHoverKind.Edge) return false;
+                        // Edge / Line（2点面）ヒットで押し出し発火。要素なし or 型違いは通常の矩形選択等に任せる
+                        if (elem.Kind != PlayerHoverKind.Edge && elem.Kind != PlayerHoverKind.Line) return false;
+                        // 開始原点は実マウスダウン座標を渡す（zero だと画面隅基準になり非連動）。
                         _edgeExtrudeHandler?.OnLeftDragBegin(
                             new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
-                            Vector2.zero, mods);
+                            _moveToolHandler.MouseDownPos, mods);
                         return true;
                     };
                     _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _edgeExtrudeHandler?.OnLeftDrag(pos, delta, mods);
@@ -4360,9 +4392,10 @@ namespace Poly_Ling.Player
                     {
                         // Face ヒットのみ押し出し発火
                         if (elem.Kind != PlayerHoverKind.Face) return false;
+                        // 開始原点は実マウスダウン座標を渡す（zero だと画面隅基準になり非連動）。
                         _faceExtrudeHandler?.OnLeftDragBegin(
                             new PlayerHitResult { HasHit = true, MeshIndex = elem.MeshIndex, VertexIndex = -1 },
-                            Vector2.zero, mods);
+                            _moveToolHandler.MouseDownPos, mods);
                         return true;
                     };
                     _moveToolHandler.OnToolDragExtra    = (pos, delta, mods) => _faceExtrudeHandler?.OnLeftDrag(pos, delta, mods);
@@ -4391,9 +4424,24 @@ namespace Poly_Ling.Player
                     {
                         _moveToolHandler.SuppressBuiltinGizmo = true;
                         _moveToolHandler.GizmoHitTestOverride  = (pos, c) => _rotateHandler != null && _rotateHandler.GizmoHitTest(pos, c);
-                        _moveToolHandler.OnDragStartExtra      = (elem, mods) => _rotateHandler != null && _rotateHandler.BeginGizmoDrag();
+                        // hover残留対策（頂点移動の EnterTransformDragging 修正と同系）:
+                        // このギズモドラッグは MoveToolHandler の ToolDragging 経路で処理され、
+                        // 組み込み軸ギズモ経路の OnEnterTransformDragging を通らないため、
+                        // 従来はドラッグ中も Normal モードのまま毎フレーム GPU ヒットテストが
+                        // 走り hover ハイライトがカーソルに追従していた。ここで DragBegin/DragEnd
+                        // を明示発火し TransformDragging に入れることで hover を凍結＋開始時クリアする。
+                        _moveToolHandler.OnDragStartExtra      = (elem, mods) =>
+                        {
+                            if (_rotateHandler == null || !_rotateHandler.BeginGizmoDrag()) return false;
+                            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
+                            return true;
+                        };
                         _moveToolHandler.OnToolDragExtra       = (pos, delta, mods) => _rotateHandler?.GizmoDrag(pos);
-                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) => _rotateHandler?.EndGizmoDrag();
+                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) =>
+                        {
+                            _rotateHandler?.EndGizmoDrag();
+                            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
+                        };
                     }
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _rotateHandler?.UpdateHover(pos, ctx));
                     ApplySelectionModeForInteractionMode(InteractionMode.Rotate);
@@ -4406,9 +4454,21 @@ namespace Poly_Ling.Player
                     {
                         _moveToolHandler.SuppressBuiltinGizmo = true;
                         _moveToolHandler.GizmoHitTestOverride  = (pos, c) => _scaleHandler != null && _scaleHandler.GizmoHitTest(pos, c);
-                        _moveToolHandler.OnDragStartExtra      = (elem, mods) => _scaleHandler != null && _scaleHandler.BeginGizmoDrag();
+                        // hover残留対策（Rotate と同系。詳細は Rotate ケースのコメント参照）:
+                        // ToolDragging 経路で TransformDragging に入らず hover が追従するため、
+                        // DragBegin/DragEnd を明示発火して hover を凍結＋開始時クリアする。
+                        _moveToolHandler.OnDragStartExtra      = (elem, mods) =>
+                        {
+                            if (_scaleHandler == null || !_scaleHandler.BeginGizmoDrag()) return false;
+                            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragBegin);
+                            return true;
+                        };
                         _moveToolHandler.OnToolDragExtra       = (pos, delta, mods) => _scaleHandler?.GizmoDrag(pos);
-                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) => _scaleHandler?.EndGizmoDrag();
+                        _moveToolHandler.OnToolDragEndExtra    = (pos, mods) =>
+                        {
+                            _scaleHandler?.EndGizmoDrag();
+                            _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.DragEnd);
+                        };
                     }
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _scaleHandler?.UpdateHover(pos, ctx));
                     ApplySelectionModeForInteractionMode(InteractionMode.Scale);
@@ -4484,7 +4544,7 @@ namespace Poly_Ling.Player
             switch (mode)
             {
                 case InteractionMode.EdgeBevel:    firstMc.Selection.Mode = MeshSelectMode.Edge; break;
-                case InteractionMode.EdgeExtrude:  firstMc.Selection.Mode = MeshSelectMode.Edge; break;
+                case InteractionMode.EdgeExtrude:  firstMc.Selection.Mode = MeshSelectMode.Edge | MeshSelectMode.Line; break;
                 case InteractionMode.FaceExtrude:  firstMc.Selection.Mode = MeshSelectMode.Face; break;
                 case InteractionMode.FlipFace:     firstMc.Selection.Mode = MeshSelectMode.Face; break;
                 case InteractionMode.LineExtrude:  firstMc.Selection.Mode = MeshSelectMode.Line; break;

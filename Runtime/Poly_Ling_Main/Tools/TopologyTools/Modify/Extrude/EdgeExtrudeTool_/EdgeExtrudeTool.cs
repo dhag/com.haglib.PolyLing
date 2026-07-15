@@ -42,6 +42,12 @@ namespace Poly_Ling.Tools
             set => _settings.SnapToAxis = value;
         }
 
+        public float DragSensitivity
+        {
+            get => _settings.DragSensitivity;
+            set => _settings.DragSensitivity = value;
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -67,6 +73,9 @@ namespace Poly_Ling.Tools
         // 押し出し
         private Vector3 _extrudeDirection;
         private float _extrudeDistance;
+
+        // 移動化ドラッグ用の累積ワールド移動量（頂点移動と同一挙動）
+        private Vector3 _accumMove;
 
         // ドラッグ中の頂点位置更新用
         private struct ExtrudeDragVertex { public int Index; public Vector3 BasePos; }
@@ -139,7 +148,7 @@ namespace Poly_Ling.Tools
                     return true;
 
                 case ExtrudeState.Extruding:
-                    UpdateExtrude(ctx, mousePos);
+                    UpdateExtrude(ctx, mousePos, delta);
                     ctx.Repaint?.Invoke();
                     return true;
             }
@@ -195,6 +204,7 @@ namespace Poly_Ling.Tools
             _targetLines.Clear();
             _snapshotBefore = null;
             _extrudeDistance = 0f;
+            _accumMove = Vector3.zero;
         }
 
         public void OnSelectionChanged(ToolContext ctx)
@@ -260,6 +270,7 @@ namespace Poly_Ling.Tools
                 ? CalculateExtrudeDirection(ctx)
                 : Vector3.up;
             _extrudeDistance = 0f;
+            _accumMove = Vector3.zero;
 
             // トポロジーを即時実行し _extrudeDragVertices を確定させる
             ExecuteExtrude(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
@@ -270,49 +281,25 @@ namespace Poly_Ling.Tools
             // エッジ/頂点描画が無効化されるため。SyncMeshPositionsOnly で直接更新する。
         }
 
-        private void UpdateExtrude(ToolContext ctx, Vector2 mousePos)
+        private void UpdateExtrude(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
-            Vector2 totalDelta = mousePos - _mouseDownScreenPos;
-
-            switch (Mode)
-            {
-                case EdgeExtrudeSettings.ExtrudeMode.ViewPlane:
-                    Vector3 worldDelta = ScreenDeltaToWorldDelta(ctx, totalDelta);
-                    if (worldDelta.magnitude > 0.001f)
-                    {
-                        _extrudeDirection = worldDelta.normalized;
-                        _extrudeDistance = worldDelta.magnitude;
-                    }
-                    break;
-
-                case EdgeExtrudeSettings.ExtrudeMode.Normal:
-                    Vector2 normalScreen = WorldDirToScreenDir(ctx, _extrudeDirection);
-                    if (normalScreen.magnitude > 0.001f)
-                    {
-                        normalScreen.Normalize();
-                        _extrudeDistance = Vector2.Dot(totalDelta, normalScreen) * 0.01f;
-                    }
-                    break;
-
-                case EdgeExtrudeSettings.ExtrudeMode.Free:
-                    _extrudeDirection = ScreenDeltaToWorldDelta(ctx, totalDelta);
-                    _extrudeDistance = _extrudeDirection.magnitude;
-                    if (_extrudeDistance > 0.001f)
-                        _extrudeDirection.Normalize();
-                    break;
-            }
-
-            if (SnapToAxis)
-                _extrudeDirection = SnapToAxisDir(_extrudeDirection);
+            // 「移動（自由移動）と同一」の挙動:
+            //   毎フレームの delta（パネル Y上）を world デルタに変換し、DisplayMatrix.inverse を
+            //   適用して累積。複製頂点を 1:1 でカメラ平面移動する（係数倍なし・Y反転なし）。
+            //   MoveToolHandler.ApplyFreeDelta → AxisGizmo.ComputeFreeDelta と同じ計算。
+            //   モード別方向計算(ViewPlane/Normal/Free)と SnapToAxis は移動化に伴い不使用。
+            Vector3 wd = ScreenDeltaToWorldDelta(ctx, delta);
+            if (ctx.DisplayMatrix != Matrix4x4.identity)
+                wd = ctx.DisplayMatrix.inverse.MultiplyVector(wd);
+            _accumMove += wd;
 
             var meshObject = ctx.FirstSelectedMeshObject;
             if (meshObject != null)
             {
-                Vector3 offset = _extrudeDirection * _extrudeDistance;
                 foreach (var dv in _extrudeDragVertices)
                 {
                     if (dv.Index >= 0 && dv.Index < meshObject.VertexCount)
-                        meshObject.Vertices[dv.Index].Position = dv.BasePos + offset;
+                        meshObject.Vertices[dv.Index].Position = dv.BasePos + _accumMove;
                 }
             }
             ctx.SyncMeshPositionsOnly?.Invoke();

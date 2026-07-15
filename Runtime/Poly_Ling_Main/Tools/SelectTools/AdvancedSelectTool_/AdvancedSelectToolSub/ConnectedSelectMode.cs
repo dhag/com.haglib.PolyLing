@@ -14,59 +14,35 @@ namespace Poly_Ling.Tools
     /// <summary>
     /// 接続領域選択モード
     ///
-    /// 【利用禁止。おそらくバグがある】このモードのクリック/プレビューは開始要素の確定に
-    /// SelectionHelper.FindNearestVertex/EdgePair/Face/Line（CPU ヒットテスト）をそのまま
-    /// 使っており、Belt/EdgeLoop/ShortestPath と違い GPU ホバー（ctx.GpuStartVertex/Edge）を
-    /// 参照していない。Player では深度/遮蔽を無視して誤選択する可能性がある。
-    /// GPU ホバー由来の開始要素を使うよう要修正。
+    /// このモードは開始要素の確定に GPU ホバー（ctx.GpuStartVertex/Edge/Face/Line）を優先度
+    /// （頂点>辺>面>線）で解決する。CPU ヒットテスト（SelectionHelper.FindNearest*）は深度/
+    /// 遮蔽/WorldMatrix 非考慮で誤選択するため使用禁止・全撤去済み。
     /// </summary>
     public partial class ConnectedSelectMode : IAdvancedSelectMode
     {
         public bool HandleClick(AdvancedSelectContext ctx, Vector2 mousePos, MeshSelectMode selectMode)
         {
-            var toolCtx = ctx.ToolCtx;
-
-            // Flags優先順位でヒットテスト（Vertex > Edge > Face > Line）
-            if (selectMode.Has(MeshSelectMode.Vertex))
+            // GPU ホバー由来の開始要素を優先度（頂点>辺>面>線）で解決する。CPU ヒットテストは使わない。
+            if (selectMode.Has(MeshSelectMode.Vertex) && ctx.GpuStartVertex >= 0)
             {
-                int hitVertex = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
-                if (hitVertex >= 0)
-                {
-                    ApplyConnectedFromVertex(ctx, hitVertex, selectMode);
-                    return true;
-                }
+                ApplyConnectedFromVertex(ctx, ctx.GpuStartVertex, selectMode);
+                return true;
             }
-
-            if (selectMode.Has(MeshSelectMode.Edge))
+            if (selectMode.Has(MeshSelectMode.Edge) && ctx.GpuStartEdge.HasValue)
             {
-                var hitEdge = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
-                if (hitEdge.HasValue)
-                {
-                    ApplyConnectedFromEdge(ctx, hitEdge.Value, selectMode);
-                    return true;
-                }
+                ApplyConnectedFromEdge(ctx, ctx.GpuStartEdge.Value, selectMode);
+                return true;
             }
-
-            if (selectMode.Has(MeshSelectMode.Face))
+            if (selectMode.Has(MeshSelectMode.Face) && ctx.GpuStartFace >= 0)
             {
-                int hitFace = SelectionHelper.FindNearestFace(toolCtx, mousePos);
-                if (hitFace >= 0)
-                {
-                    ApplyConnectedFromFace(ctx, hitFace, selectMode);
-                    return true;
-                }
+                ApplyConnectedFromFace(ctx, ctx.GpuStartFace, selectMode);
+                return true;
             }
-
-            if (selectMode.Has(MeshSelectMode.Line))
+            if (selectMode.Has(MeshSelectMode.Line) && ctx.GpuStartLine >= 0)
             {
-                int hitLine = SelectionHelper.FindNearestLine(toolCtx, mousePos);
-                if (hitLine >= 0)
-                {
-                    ApplyConnectedFromLine(ctx, hitLine, selectMode);
-                    return true;
-                }
+                ApplyConnectedFromLine(ctx, ctx.GpuStartLine, selectMode);
+                return true;
             }
-
             return false;
         }
 
@@ -74,86 +50,75 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            if (selectMode.Has(MeshSelectMode.Vertex))
+            // GPU ホバー由来の開始要素を優先度（頂点>辺>面>線）で解決してプレビューを作る。CPU 不使用。
+            if (selectMode.Has(MeshSelectMode.Vertex) && ctx.GpuStartVertex >= 0)
             {
-                ctx.HoveredVertex = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
-                if (ctx.HoveredVertex >= 0)
-                {
-                    var connectedVerts = GetConnectedVertices(toolCtx.FirstSelectedMeshObject, ctx.HoveredVertex);
-                    if (selectMode.Has(MeshSelectMode.Vertex))
-                        ctx.PreviewVertices.AddRange(connectedVerts);
-                    if (selectMode.Has(MeshSelectMode.Edge))
-                        ctx.PreviewEdges.AddRange(SelectionHelper.GetEdgesFromVertices(toolCtx, connectedVerts));
-                    if (selectMode.Has(MeshSelectMode.Face))
-                        ctx.PreviewFaces.AddRange(SelectionHelper.GetFacesFromVertices(toolCtx, connectedVerts));
-                    if (selectMode.Has(MeshSelectMode.Line))
-                        ctx.PreviewLines.AddRange(SelectionHelper.GetLinesFromVertices(toolCtx, connectedVerts));
-                    return;
-                }
+                ctx.HoveredVertex = ctx.GpuStartVertex;
+                var connectedVerts = GetConnectedVertices(toolCtx.FirstSelectedMeshObject, ctx.HoveredVertex);
+                if (selectMode.Has(MeshSelectMode.Vertex))
+                    ctx.PreviewVertices.AddRange(connectedVerts);
+                if (selectMode.Has(MeshSelectMode.Edge))
+                    ctx.PreviewEdges.AddRange(SelectionHelper.GetEdgesFromVertices(toolCtx, connectedVerts));
+                if (selectMode.Has(MeshSelectMode.Face))
+                    ctx.PreviewFaces.AddRange(SelectionHelper.GetFacesFromVertices(toolCtx, connectedVerts));
+                if (selectMode.Has(MeshSelectMode.Line))
+                    ctx.PreviewLines.AddRange(SelectionHelper.GetLinesFromVertices(toolCtx, connectedVerts));
+                return;
             }
 
-            if (selectMode.Has(MeshSelectMode.Edge))
+            if (selectMode.Has(MeshSelectMode.Edge) && ctx.GpuStartEdge.HasValue)
             {
-                ctx.HoveredEdgePair = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
-                if (ctx.HoveredEdgePair.HasValue)
-                {
-                    var connectedEdges = GetConnectedEdges(toolCtx, ctx.HoveredEdgePair.Value);
-                    var connectedVerts = new HashSet<int>();
-                    foreach (var e in connectedEdges) { connectedVerts.Add(e.V1); connectedVerts.Add(e.V2); }
+                ctx.HoveredEdgePair = ctx.GpuStartEdge;
+                var connectedEdges = GetConnectedEdges(toolCtx, ctx.HoveredEdgePair.Value);
+                var connectedVerts = new HashSet<int>();
+                foreach (var e in connectedEdges) { connectedVerts.Add(e.V1); connectedVerts.Add(e.V2); }
 
-                    if (selectMode.Has(MeshSelectMode.Vertex))
-                        ctx.PreviewVertices.AddRange(connectedVerts);
-                    if (selectMode.Has(MeshSelectMode.Edge))
-                        ctx.PreviewEdges.AddRange(connectedEdges);
-                    if (selectMode.Has(MeshSelectMode.Face))
-                        ctx.PreviewFaces.AddRange(SelectionHelper.GetFacesFromVertices(toolCtx, connectedVerts.ToList()));
-                    return;
-                }
+                if (selectMode.Has(MeshSelectMode.Vertex))
+                    ctx.PreviewVertices.AddRange(connectedVerts);
+                if (selectMode.Has(MeshSelectMode.Edge))
+                    ctx.PreviewEdges.AddRange(connectedEdges);
+                if (selectMode.Has(MeshSelectMode.Face))
+                    ctx.PreviewFaces.AddRange(SelectionHelper.GetFacesFromVertices(toolCtx, connectedVerts.ToList()));
+                return;
             }
 
-            if (selectMode.Has(MeshSelectMode.Face))
+            if (selectMode.Has(MeshSelectMode.Face) && ctx.GpuStartFace >= 0)
             {
-                ctx.HoveredFace = SelectionHelper.FindNearestFace(toolCtx, mousePos);
-                if (ctx.HoveredFace >= 0)
-                {
-                    var connectedFaces = GetConnectedFaces(toolCtx, ctx.HoveredFace);
-                    var connectedVerts = new HashSet<int>();
-                    foreach (int fIdx in connectedFaces)
-                        foreach (int vIdx in toolCtx.FirstSelectedMeshObject.Faces[fIdx].VertexIndices)
-                            connectedVerts.Add(vIdx);
+                ctx.HoveredFace = ctx.GpuStartFace;
+                var connectedFaces = GetConnectedFaces(toolCtx, ctx.HoveredFace);
+                var connectedVerts = new HashSet<int>();
+                foreach (int fIdx in connectedFaces)
+                    foreach (int vIdx in toolCtx.FirstSelectedMeshObject.Faces[fIdx].VertexIndices)
+                        connectedVerts.Add(vIdx);
 
-                    if (selectMode.Has(MeshSelectMode.Vertex))
-                        ctx.PreviewVertices.AddRange(connectedVerts);
-                    if (selectMode.Has(MeshSelectMode.Edge))
-                        ctx.PreviewEdges.AddRange(SelectionHelper.GetEdgesFromFaces(toolCtx, connectedFaces));
-                    if (selectMode.Has(MeshSelectMode.Face))
-                        ctx.PreviewFaces.AddRange(connectedFaces);
-                    return;
-                }
+                if (selectMode.Has(MeshSelectMode.Vertex))
+                    ctx.PreviewVertices.AddRange(connectedVerts);
+                if (selectMode.Has(MeshSelectMode.Edge))
+                    ctx.PreviewEdges.AddRange(SelectionHelper.GetEdgesFromFaces(toolCtx, connectedFaces));
+                if (selectMode.Has(MeshSelectMode.Face))
+                    ctx.PreviewFaces.AddRange(connectedFaces);
+                return;
             }
 
-            if (selectMode.Has(MeshSelectMode.Line))
+            if (selectMode.Has(MeshSelectMode.Line) && ctx.GpuStartLine >= 0)
             {
-                ctx.HoveredLine = SelectionHelper.FindNearestLine(toolCtx, mousePos);
-                if (ctx.HoveredLine >= 0)
+                ctx.HoveredLine = ctx.GpuStartLine;
+                var connectedLines = GetConnectedLines(toolCtx, ctx.HoveredLine);
+                var connectedVerts = new HashSet<int>();
+                foreach (int lIdx in connectedLines)
                 {
-                    var connectedLines = GetConnectedLines(toolCtx, ctx.HoveredLine);
-                    var connectedVerts = new HashSet<int>();
-                    foreach (int lIdx in connectedLines)
+                    var face = toolCtx.FirstSelectedMeshObject.Faces[lIdx];
+                    if (face.VertexCount == 2)
                     {
-                        var face = toolCtx.FirstSelectedMeshObject.Faces[lIdx];
-                        if (face.VertexCount == 2)
-                        {
-                            connectedVerts.Add(face.VertexIndices[0]);
-                            connectedVerts.Add(face.VertexIndices[1]);
-                        }
+                        connectedVerts.Add(face.VertexIndices[0]);
+                        connectedVerts.Add(face.VertexIndices[1]);
                     }
-
-                    if (selectMode.Has(MeshSelectMode.Vertex))
-                        ctx.PreviewVertices.AddRange(connectedVerts);
-                    if (selectMode.Has(MeshSelectMode.Line))
-                        ctx.PreviewLines.AddRange(connectedLines);
                 }
+
+                if (selectMode.Has(MeshSelectMode.Vertex))
+                    ctx.PreviewVertices.AddRange(connectedVerts);
+                if (selectMode.Has(MeshSelectMode.Line))
+                    ctx.PreviewLines.AddRange(connectedLines);
             }
         }
 

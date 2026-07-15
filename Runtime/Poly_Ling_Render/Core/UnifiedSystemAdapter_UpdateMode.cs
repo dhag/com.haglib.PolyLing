@@ -133,6 +133,21 @@ namespace Poly_Ling.Core
         /// </summary>
         public void EnterTransformDragging()
         {
+            // ドラッグ開始直前フレームに hover パイプライン（OnPointerHover →
+            // NotifyPointerHover）が Normal モードで完走し、掴んだ頂点に GPU内部の
+            // 描画フラグ（hover）がセットされる。TransformDragging 移行後は
+            // RequestNormal() が no-op ＋ UpdateFrame が AllowHitTest=false で
+            // 早期 return するため hover は再計算されないが、フラグは残ったままで
+            // ドラッグ中も PresentAll が描き続ける → 移動中ハイライトが残留する。
+            // ここで一度クリアしておくことで残留を断つ。選択フラグには触れない。
+            //
+            // TODO(hover残留): ドラッグ中も hover 通知が発火し続ける件
+            //   （PlayerViewportPanel.OnPointerMove の OnPointerHover 常時発火）を
+            //   起点にした同種の「操作中に不要な hover/ヒットテスト表示が残る」問題が
+            //   他にも複数ある。本修正はその改善の起点。以降、各操作モード開始時の
+            //   hover クリア／ドラッグ中の hover 通知抑止を順次整理していく。
+            ClearMouseHover();
+
             SetMode(UpdateMode.TransformDragging);
         }
 

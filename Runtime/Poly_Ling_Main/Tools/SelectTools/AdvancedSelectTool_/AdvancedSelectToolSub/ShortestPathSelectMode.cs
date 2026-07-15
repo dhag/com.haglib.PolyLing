@@ -24,9 +24,8 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            int vIdx = ctx.GpuStartVertex >= 0
-                ? ctx.GpuStartVertex
-                : SelectionHelper.FindNearestVertex(toolCtx, mousePos);
+            // 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU フォールバック（FindNearestVertex）を全撤去。
+            int vIdx = ctx.GpuStartVertex;
             if (vIdx < 0) return false;
 
             if (_firstVertex < 0)
@@ -58,9 +57,8 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            // 【利用禁止。おそらくバグがある】ホバープレビューは GPU ホバー未参照の CPU 探索のまま。
-            // クリック確定は GpuStartVertex を優先するがプレビューは未対応でズレる可能性がある。
-            ctx.HoveredVertex = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
+            // GPU ホバー由来の頂点からパスプレビューを作る。CPU 探索は使わない。
+            ctx.HoveredVertex = ctx.GpuStartVertex;
 
             if (_firstVertex >= 0 && ctx.HoveredVertex >= 0 && _firstVertex != ctx.HoveredVertex)
             {

@@ -39,6 +39,9 @@ namespace Poly_Ling.Player
         /// <summary>GLギズモ描画用: 描画対象カメラのツールコンテキストを返す</summary>
         public Func<Camera, ToolContext> GetGizmoContext;
 
+        /// <summary>GPU ホバー要素取得（Viewer から結線）。既存頂点スナップに使う。</summary>
+        public Func<Poly_Ling.Selection.MeshSelectMode, PlayerHoverElement> GetHoverElement;
+
         // ================================================================
         // 設定公開API
         // ================================================================
@@ -66,6 +69,7 @@ namespace Poly_Ling.Player
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
+            ResolveGpuHoverVertex();
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
             OnPointPlaced?.Invoke();
@@ -74,6 +78,7 @@ namespace Poly_Ling.Player
         {
             if (EnsureDrawableMesh != null && !EnsureDrawableMesh()) return;
             var ctx = GetEnrichedCtx(); if (ctx == null) return;
+            ResolveGpuHoverVertex();
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
         }
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods)
@@ -90,6 +95,7 @@ namespace Poly_Ling.Player
         {
             if (ctx == null) return;
             EnrichCtxForHover(ctx);
+            ResolveGpuHoverVertex();
             // UpdateHover に渡される screenPos は UIToolkit Y（Y=0上）= IMGUI Y（Y=0上）。
             // ドラッグ時は GPU Y（Y=0下）→ ToImgui で IMGUI Y に変換するが、
             // ホバー時は既に IMGUI Y なので ToImgui 不要。
@@ -126,6 +132,26 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private MeshUndoController _undoController;
+
+        /// <summary>
+        /// GPU ホバー由来の既存頂点を問い合わせ、操作対象メッシュ（FirstSelected）に一致する
+        /// 頂点のみ tool に渡す。未ヒットは -1（＝スナップせず WorkPlane）。CPU 探索は使わない。
+        /// </summary>
+        private void ResolveGpuHoverVertex()
+        {
+            int gpuVertex = -1;
+            if (GetHoverElement != null)
+            {
+                int firstIdx = _project?.CurrentModel?.FirstSelectedIndex ?? -1;
+                if (firstIdx >= 0)
+                {
+                    var elem = GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex);
+                    if (elem.Kind == PlayerHoverKind.Vertex && elem.MeshIndex == firstIdx)
+                        gpuVertex = elem.VertexIndex;
+                }
+            }
+            _tool.SetGpuHoverVertex(gpuVertex);
+        }
 
         /// <summary>
         /// GetToolContext の戻り値に必要なフィールドを全て補完して返す。

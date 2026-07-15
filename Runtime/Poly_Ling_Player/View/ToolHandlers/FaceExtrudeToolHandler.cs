@@ -42,6 +42,7 @@ namespace Poly_Ling.Player
         public FaceExtrudeSettings.ExtrudeType Type { get => _tool.Type; set => _tool.Type = value; }
         public float BevelScale        { get => _tool.BevelScale;        set => _tool.BevelScale = value; }
         public bool  IndividualNormals { get => _tool.IndividualNormals; set => _tool.IndividualNormals = value; }
+        public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
 
         // ================================================================
         // 初期化

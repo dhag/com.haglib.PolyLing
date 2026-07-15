@@ -14,6 +14,7 @@ namespace Poly_Ling.Player
     {
         public Func<EdgeExtrudeToolHandler> GetH;
         private VisualElement _root;
+        private FloatField _dragSensField;
 
         public void Build(VisualElement parent)
         {
@@ -34,11 +35,31 @@ namespace Poly_Ling.Player
             snapToggle.style.color = new StyleColor(Color.white);
             snapToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().SnapToAxis = e.newValue; });
             _root.Add(snapToggle);
+
+            // Drag Sensitivity — テキストボックス（カメラ平面での実ドラッグ距離への比例係数）
+            var sensRow = new VisualElement();
+            sensRow.style.flexDirection = FlexDirection.Row;
+            sensRow.style.marginBottom  = 4;
+            var sensLbl = new Label("Drag Sens.");
+            sensLbl.style.color = new StyleColor(Color.white);
+            sensLbl.style.width = 70; sensLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _dragSensField = new FloatField { value = 1f };
+            _dragSensField.style.color = new StyleColor(Color.black);
+            _dragSensField.style.flexGrow = 1;
+            _dragSensField.RegisterValueChangedCallback(e =>
+            {
+                float v = Mathf.Max(0.001f, e.newValue);
+                _dragSensField.SetValueWithoutNotify(v);
+                var h = GetH(); if (h != null) h.DragSensitivity = v;
+            });
+            sensRow.Add(sensLbl); sensRow.Add(_dragSensField);
+            _root.Add(sensRow);
         }
 
         public void Refresh()
         {
             var h = GetH(); if (h == null) return;
+            _dragSensField?.SetValueWithoutNotify(h.DragSensitivity);
         }
 
         // ── ヘルパー ──────────────────────────────────────────────────────

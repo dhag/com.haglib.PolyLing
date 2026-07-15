@@ -25,6 +25,7 @@ namespace Poly_Ling.Tools
         [SerializeField] private ExtrudeType _type = ExtrudeType.Normal;
         [SerializeField] private float _bevelScale = 0.8f;
         [SerializeField] private bool _individualNormals = false;
+        [SerializeField] private float _dragSensitivity = 1f;
 
         public ExtrudeType Type
         {
@@ -44,6 +45,12 @@ namespace Poly_Ling.Tools
             set => _individualNormals = value;
         }
 
+        public float DragSensitivity
+        {
+            get => _dragSensitivity;
+            set => _dragSensitivity = Mathf.Max(0.001f, value);
+        }
+
         public FaceExtrudeSettings() { }
 
         public FaceExtrudeSettings(ExtrudeType type, float bevelScale, bool individualNormals)
@@ -55,7 +62,9 @@ namespace Poly_Ling.Tools
 
         public IToolSettings Clone()
         {
-            return new FaceExtrudeSettings(_type, _bevelScale, _individualNormals);
+            var c = new FaceExtrudeSettings(_type, _bevelScale, _individualNormals);
+            c._dragSensitivity = _dragSensitivity;
+            return c;
         }
 
         public void CopyFrom(IToolSettings other)
@@ -65,6 +74,7 @@ namespace Poly_Ling.Tools
                 _type = src._type;
                 _bevelScale = src._bevelScale;
                 _individualNormals = src._individualNormals;
+                _dragSensitivity = src._dragSensitivity;
             }
         }
 
@@ -74,7 +84,8 @@ namespace Poly_Ling.Tools
             {
                 return _type != src._type
                     || !Mathf.Approximately(_bevelScale, src._bevelScale)
-                    || _individualNormals != src._individualNormals;
+                    || _individualNormals != src._individualNormals
+                    || !Mathf.Approximately(_dragSensitivity, src._dragSensitivity);
             }
             return true;
         }

@@ -40,6 +40,7 @@ namespace Poly_Ling.Player
         public float Amount   { get => _tool.Amount;   set => _tool.Amount   = value; }
         public int   Segments { get => _tool.Segments; set => _tool.Segments = value; }
         public bool  Fillet   { get => _tool.Fillet;   set => _tool.Fillet   = value; }
+        public float DragSensitivity { get => _tool.DragSensitivity; set => _tool.DragSensitivity = value; }
 
         // ================================================================
         // 初期化

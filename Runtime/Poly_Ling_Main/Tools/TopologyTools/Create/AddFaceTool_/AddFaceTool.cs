@@ -342,29 +342,37 @@ namespace Poly_Ling.Tools
 
         // === 内部メソッド ===
 
+        // GPU ホバー由来の既存頂点（Player でハンドラが click/hover 毎に設定）。未ヒットは -1。
+        private int _gpuHoverVertex = -1;
+
+        /// <summary>
+        /// 次回クリック／プレビューでスナップ対象にする既存頂点を GPU ホバー由来で指定する。
+        /// Player のハンドラが OnMouseDown / UpdateHover 直前に呼ぶ。未ヒットは -1。
+        /// </summary>
+        public void SetGpuHoverVertex(int vertex) => _gpuHoverVertex = vertex;
+
         /// <summary>
         /// スクリーン位置から点を取得
-        /// 優先順位: 1.既存頂点 2.WorkPlane交点 3.カメラ前方の点
+        /// 優先順位: 1.GPU ホバー既存頂点  2.WorkPlane 交点
         /// </summary>
         private PointInfo GetPointAtScreenPos(ToolContext ctx, Vector2 screenPos)
         {
-            // 1. 既存頂点のヒットテスト
-            int hitVertex = FindNearestVertexAtScreen(ctx, screenPos);
-
-            if (hitVertex >= 0)
+            // GPU ホバー由来の既存頂点があればスナップ。CPU ヒットテスト（FindNearestVertexAtScreen）は使用禁止。
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo != null && _gpuHoverVertex >= 0 && _gpuHoverVertex < mo.VertexCount)
             {
-                Vector3 pos = ctx.FirstSelectedMeshObject.Vertices[hitVertex].Position;
-                return PointInfo.FromExisting(hitVertex, pos);
+                Vector3 pos = mo.Vertices[_gpuHoverVertex].Position;
+                return PointInfo.FromExisting(_gpuHoverVertex, pos);
             }
 
-            // 2. WorkPlaneとの交点
+            // WorkPlane との交点
             Vector3 worldPos = GetWorldPositionFromScreen(ctx, screenPos);
             return PointInfo.FromNew(worldPos);
         }
 
         /// <summary>
         /// スクリーン位置から最も近い頂点を検索
-        /// 【利用禁止。おそらくバグがある】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。
+        /// 【CPUヒットテスト禁止。これもバグあり使用禁止】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。呼出しは全撤去済み・本体はソース保持。
         /// 深度/遮蔽/WorldMatrix 非考慮で Player では誤選択する。GPU ホバー経路を使うこと。
         /// </summary>
         private int FindNearestVertexAtScreen(ToolContext ctx, Vector2 screenPos)
@@ -439,16 +447,17 @@ namespace Poly_Ling.Tools
                 return;
             }
 
-            // 既存頂点のヒットテスト（フォールバック付き）
-            _previewHitVertex = FindNearestVertexAtScreen(ctx, screenPos);
-
-            if (_previewHitVertex >= 0)
+            // GPU ホバー由来の既存頂点があればスナップ。CPU ヒットテスト（FindNearestVertexAtScreen）は使用禁止。
+            var mo = ctx.FirstSelectedMeshObject;
+            if (mo != null && _gpuHoverVertex >= 0 && _gpuHoverVertex < mo.VertexCount)
             {
-                _previewPoint = ctx.FirstSelectedMeshObject.Vertices[_previewHitVertex].Position;
+                _previewHitVertex = _gpuHoverVertex;
+                _previewPoint     = mo.Vertices[_gpuHoverVertex].Position;
             }
             else
             {
-                _previewPoint = GetWorldPositionFromScreen(ctx, screenPos);
+                _previewHitVertex = -1;
+                _previewPoint     = GetWorldPositionFromScreen(ctx, screenPos);
             }
 
             _previewValid = true;

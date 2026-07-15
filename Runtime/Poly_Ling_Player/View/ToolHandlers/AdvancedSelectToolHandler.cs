@@ -149,6 +149,7 @@ namespace Poly_Ling.Player
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null) return;
+            ResolveGpuHover();
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), Vector2.zero);
             OnRepaint?.Invoke();
         }
@@ -168,9 +169,9 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>
-        /// GPU ホバー結果から次回クリックの開始要素（頂点/辺）を確定し、_tool に渡す。
+        /// GPU ホバー結果から次回クリックの開始要素（頂点/辺/面/線）を確定し、_tool に渡す。
         /// 操作対象メッシュ（FirstSelected）と一致するホバーのみ採用する。
-        /// 未ヒット時は vertex=-1 / edge=null（各モードは CPU 探索へフォールバック）。
+        /// 未ヒット時は各インデックス -1 / null。CPU 探索へのフォールバックは行わない。
         /// </summary>
         /// <summary>直近クリックで確定した頂点（辺ヒット時は端点 V1）。未ヒットは -1。クリック強調用。</summary>
         public int LastClickVertex { get; private set; } = -1;
@@ -180,38 +181,64 @@ namespace Poly_Ling.Player
 
         private void ResolveGpuStart()
         {
-            int              gpuVertex = -1;
-            Poly_Ling.Selection.VertexPair? gpuEdge = null;
-
-            if (GetHoverElement != null)
-            {
-                int firstIdx = _project?.CurrentModel?.FirstSelectedIndex ?? -1;
-
-                // モードに応じて頂点／辺を問い合わせる。
-                var queryMode = Mode switch
-                {
-                    AdvancedSelectMode.Belt         => Poly_Ling.Selection.MeshSelectMode.Edge,
-                    AdvancedSelectMode.EdgeLoop     => Poly_Ling.Selection.MeshSelectMode.Edge,
-                    AdvancedSelectMode.ShortestPath => Poly_Ling.Selection.MeshSelectMode.Vertex,
-                    _                               => (_selectionOps?.SelectionState?.Mode
-                                                        ?? Poly_Ling.Selection.MeshSelectMode.Vertex),
-                };
-
-                var elem = GetHoverElement(queryMode);
-                // メッシュローカルインデックスは操作対象メッシュに対してのみ有効。
-                if (firstIdx >= 0 && elem.MeshIndex == firstIdx)
-                {
-                    if (elem.Kind == PlayerHoverKind.Vertex)
-                        gpuVertex = elem.VertexIndex;
-                    else if (elem.Kind == PlayerHoverKind.Edge)
-                        gpuEdge = new Poly_Ling.Selection.VertexPair(elem.EdgeV1, elem.EdgeV2);
-                }
-            }
-
+            QueryGpuStart(out int gpuVertex, out var gpuEdge, out int gpuFace, out int gpuLine);
             LastClickEdge   = gpuEdge;
             LastClickVertex = gpuVertex >= 0 ? gpuVertex
                             : (gpuEdge.HasValue ? gpuEdge.Value.V1 : -1);
-            _tool.SetGpuStart(gpuVertex, gpuEdge);
+            _tool.SetGpuStart(gpuVertex, gpuEdge, gpuFace, gpuLine);
+        }
+
+        /// <summary>
+        /// ホバー用：GPU 開始要素のみ更新する（クリック強調 LastClick* は触らない＝ホバーで
+        /// フラッシュが誤爆しないように）。UpdateHover から毎フレーム呼ぶ。
+        /// </summary>
+        private void ResolveGpuHover()
+        {
+            QueryGpuStart(out int gpuVertex, out var gpuEdge, out int gpuFace, out int gpuLine);
+            _tool.SetGpuStart(gpuVertex, gpuEdge, gpuFace, gpuLine);
+        }
+
+        /// <summary>
+        /// GPU ホバー要素を問い合わせ、操作対象メッシュ（FirstSelected）に一致するもののみ
+        /// 頂点/辺/面/線として返す。未ヒットは vertex=-1 / edge=null / face=-1 / line=-1。
+        /// </summary>
+        private void QueryGpuStart(out int gpuVertex, out Poly_Ling.Selection.VertexPair? gpuEdge,
+                                   out int gpuFace, out int gpuLine)
+        {
+            gpuVertex = -1; gpuEdge = null; gpuFace = -1; gpuLine = -1;
+            if (GetHoverElement == null) return;
+
+            int firstIdx = _project?.CurrentModel?.FirstSelectedIndex ?? -1;
+            if (firstIdx < 0) return;
+
+            // モードに応じて問い合わせ種別を決める。Connected 等は現在の選択モードに従う。
+            var queryMode = Mode switch
+            {
+                AdvancedSelectMode.Belt         => Poly_Ling.Selection.MeshSelectMode.Edge,
+                AdvancedSelectMode.EdgeLoop     => Poly_Ling.Selection.MeshSelectMode.Edge,
+                AdvancedSelectMode.ShortestPath => Poly_Ling.Selection.MeshSelectMode.Vertex,
+                _                               => (_selectionOps?.SelectionState?.Mode
+                                                    ?? Poly_Ling.Selection.MeshSelectMode.Vertex),
+            };
+
+            var elem = GetHoverElement(queryMode);
+            if (elem.MeshIndex != firstIdx) return;
+
+            switch (elem.Kind)
+            {
+                case PlayerHoverKind.Vertex:
+                    gpuVertex = elem.VertexIndex;
+                    break;
+                case PlayerHoverKind.Edge:
+                    gpuEdge = new Poly_Ling.Selection.VertexPair(elem.EdgeV1, elem.EdgeV2);
+                    break;
+                case PlayerHoverKind.Face:
+                    gpuFace = elem.FaceIndex;
+                    break;
+                case PlayerHoverKind.Line:
+                    gpuLine = elem.FaceIndex;
+                    break;
+            }
         }
 
         private ToolContext BuildToolContext(ModifierKeys mods, Vector2 screenPosYDown)

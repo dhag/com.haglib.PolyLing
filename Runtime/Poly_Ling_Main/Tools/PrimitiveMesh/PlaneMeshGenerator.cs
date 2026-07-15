@@ -62,6 +62,7 @@ namespace Poly_Ling.PrimitiveMesh
             Vector3 pivotOffset = new Vector3(p.Pivot.x * p.Width, p.Pivot.y * p.Height, 0);
             AddFace(md, p, pivotOffset, false);
             if (p.DoubleSided) AddFace(md, p, pivotOffset, true);
+            PrimitiveMeshPostProcess.SortVerticesCanonical(md);
             return md;
         }
 

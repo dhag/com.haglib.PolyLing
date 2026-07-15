@@ -122,8 +122,33 @@ namespace Poly_Ling.EditorBridge
         private static string BuildFilter(string extension)
         {
             if (string.IsNullOrEmpty(extension)) return "All Files\0*.*\0\0";
-            string ext = extension.TrimStart('.');
-            return $"{ext.ToUpper()} Files\0*.{ext}\0All Files\0*.*\0\0";
+
+            // カンマ区切りの複数拡張子に対応（例 "png,jpg,jpeg"）。
+            // Win32 のパターンはセミコロン区切り（*.png;*.jpg;…）。大小文字は非依存。
+            var pattern = new System.Text.StringBuilder();
+            var label   = new System.Text.StringBuilder();
+            foreach (var part in extension.Split(','))
+            {
+                string e = part.Trim().TrimStart('.');
+                if (string.IsNullOrEmpty(e)) continue;
+                if (pattern.Length > 0) { pattern.Append(';'); label.Append(", "); }
+                pattern.Append("*.").Append(e);
+                label.Append("*.").Append(e);
+            }
+            if (pattern.Length == 0) return "All Files\0*.*\0\0";
+            return $"{label}\0{pattern}\0All Files\0*.*\0\0";
+        }
+
+        // カンマ区切りの先頭拡張子（既定拡張子用）。null/空は null。
+        private static string FirstExt(string extension)
+        {
+            if (string.IsNullOrEmpty(extension)) return null;
+            foreach (var part in extension.Split(','))
+            {
+                string e = part.Trim().TrimStart('.');
+                if (!string.IsNullOrEmpty(e)) return e;
+            }
+            return null;
         }
 
         public string OpenFilePanel(string title, string directory, string extension)
@@ -134,7 +159,7 @@ namespace Poly_Ling.EditorBridge
             ofn.lpstrFile       = new string('\0', 512);
             ofn.nMaxFile        = ofn.lpstrFile.Length;
             ofn.lpstrInitialDir = directory;
-            ofn.lpstrDefExt     = extension?.TrimStart('.');
+            ofn.lpstrDefExt     = FirstExt(extension);
             ofn.Flags           = 0x00080000 | 0x00001000 | 0x00000800 | 0x00000008; // OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
             return GetOpenFileName(ofn) ? ofn.lpstrFile.TrimEnd('\0') : string.Empty;
         }
@@ -147,7 +172,7 @@ namespace Poly_Ling.EditorBridge
             ofn.lpstrFile       = (defaultName ?? "") + new string('\0', 512);
             ofn.nMaxFile        = 512;
             ofn.lpstrInitialDir = directory;
-            ofn.lpstrDefExt     = extension?.TrimStart('.');
+            ofn.lpstrDefExt     = FirstExt(extension);
             ofn.Flags           = 0x00080000 | 0x00000002 | 0x00000008; // OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR
             return GetSaveFileName(ofn) ? ofn.lpstrFile.TrimEnd('\0') : string.Empty;
         }

@@ -61,15 +61,14 @@ namespace Poly_Ling.Tools
         /// <summary>次のクリックが辺を対象にするか（Erase は常に辺、ラダーは HasStart のみ辺）。</summary>
         public bool NextClickIsEdge => Mode == KnifeMode.Erase || _stage == LadderStage.HasStart;
 
-        // GPU ホバーが有効（Player）なら GPU のみを使う。未ヒットは -1/null＝非ハイライト。
-        // GPU 無効（Editor）のときだけ従来の CPU 探索へフォールバックする。
+        // 【CPUヒットテスト禁止。これもバグあり使用禁止】
+        // Editor 用 CPU フォールバック（SelectionHelper.FindNearestVertex/EdgePair）を全撤去。
+        // GPU ホバー無効時は解決しない（-1/null＝非ハイライト）。
         private int ResolveVertex(ToolContext ctx, Vector2 mousePos)
-            => _gpuHoverActive ? _gpuHoverVertex
-                               : SelectionHelper.FindNearestVertex(ctx, mousePos);
+            => _gpuHoverActive ? _gpuHoverVertex : -1;
 
         private VertexPair? ResolveEdge(ToolContext ctx, Vector2 mousePos)
-            => _gpuHoverActive ? _gpuHoverEdge
-                               : SelectionHelper.FindNearestEdgePair(ctx, mousePos);
+            => _gpuHoverActive ? _gpuHoverEdge : null;
 
         // ================================================================
         // プレビュー（オーバーレイ描画用、ワールド座標）

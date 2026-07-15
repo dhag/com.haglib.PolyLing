@@ -21,8 +21,8 @@ namespace Poly_Ling.Tools
     /// </summary>
     public partial class LineExtrudeTool : IEditTool
     {
-        public string Name => "Line Extrude";
-        public string DisplayName => "Line Extrude";
+        public string Name => "Profile Solidify";
+        public string DisplayName => "Profile Solidify";
         //public ToolCategory Category => ToolCategory.Topology;
         /// <summary>
         /// 設定なし（nullを返す）

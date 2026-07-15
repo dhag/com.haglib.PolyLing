@@ -54,6 +54,8 @@ namespace Poly_Ling.Tools
         // Editor では未設定のまま（CPU 経路）。
         public int GpuStartVertex { get; set; } = -1;
         public VertexPair? GpuStartEdge { get; set; }
+        public int GpuStartFace { get; set; } = -1;
+        public int GpuStartLine { get; set; } = -1;
 
         // 設定（Settings経由でアクセス）
         public bool AddToSelection { get; set; } = true;
@@ -80,8 +82,8 @@ namespace Poly_Ling.Tools
             HoveredEdgePair = null;
             HoveredFace = -1;
             HoveredLine = -1;
-            GpuStartVertex = -1;
-            GpuStartEdge = null;
+            // GpuStart* は tool（AdvancedSelectTool）が click/hover 毎に SetGpuStart で更新し、
+            // Reset で明示クリアする。ここで破棄するとプレビューで GPU 開始要素が消えるため破棄しない。
         }
     }
 }
