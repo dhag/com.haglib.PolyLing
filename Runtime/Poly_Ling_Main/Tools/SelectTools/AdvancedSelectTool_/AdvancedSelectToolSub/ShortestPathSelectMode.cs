@@ -24,7 +24,9 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            int vIdx = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
+            int vIdx = ctx.GpuStartVertex >= 0
+                ? ctx.GpuStartVertex
+                : SelectionHelper.FindNearestVertex(toolCtx, mousePos);
             if (vIdx < 0) return false;
 
             if (_firstVertex < 0)
@@ -39,12 +41,7 @@ namespace Poly_Ling.Tools
                 if (selectMode.Has(MeshSelectMode.Vertex))
                     SelectionHelper.ApplyVertexSelection(toolCtx, path, ctx.AddToSelection);
 
-                if (selectMode.Has(MeshSelectMode.Edge))
-                {
-                    var pathEdges = SelectionHelper.GetEdgesFromPath(path);
-                    SelectionHelper.ApplyEdgeSelection(toolCtx, pathEdges, ctx.AddToSelection);
-                }
-
+                // 辺選択は廃止（頂点主体の機能。辺経路の始点解決が不正な頂点を拾うため）。
                 if (selectMode.Has(MeshSelectMode.Face))
                 {
                     var pathEdges = SelectionHelper.GetEdgesFromPath(path);
@@ -61,15 +58,15 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
+            // 【利用禁止。おそらくバグがある】ホバープレビューは GPU ホバー未参照の CPU 探索のまま。
+            // クリック確定は GpuStartVertex を優先するがプレビューは未対応でズレる可能性がある。
             ctx.HoveredVertex = SelectionHelper.FindNearestVertex(toolCtx, mousePos);
 
             if (_firstVertex >= 0 && ctx.HoveredVertex >= 0 && _firstVertex != ctx.HoveredVertex)
             {
                 ctx.PreviewPath.AddRange(GetShortestPath(toolCtx.FirstSelectedMeshObject, _firstVertex, ctx.HoveredVertex));
 
-                if (selectMode.Has(MeshSelectMode.Edge))
-                    ctx.PreviewEdges.AddRange(SelectionHelper.GetEdgesFromPath(ctx.PreviewPath));
-
+                // 辺選択は廃止。
                 if (selectMode.Has(MeshSelectMode.Face))
                 {
                     var pathEdges = SelectionHelper.GetEdgesFromPath(ctx.PreviewPath);

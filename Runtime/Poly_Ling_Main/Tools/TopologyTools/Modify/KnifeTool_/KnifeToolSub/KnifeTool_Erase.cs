@@ -74,6 +74,15 @@ namespace Poly_Ling.Tools
             hitFaces = null;
             var edgeToFaces = SelectionHelper.BuildEdgeToFacesMap(mo);
 
+            // GPU ホバー辺が共有辺（2面）なら優先（CPU 誤爆回避）。
+            if (_gpuHoverEdge.HasValue
+                && edgeToFaces.TryGetValue(_gpuHoverEdge.Value, out var gpuFaces)
+                && gpuFaces.Count == 2)
+            {
+                hitFaces = gpuFaces;
+                return _gpuHoverEdge.Value;
+            }
+
             float best = ERASE_EDGE_THRESHOLD;
             VertexPair? bestEdge = null;
             List<int> bestFaces = null;

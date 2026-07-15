@@ -39,6 +39,38 @@ namespace Poly_Ling.Tools
         private VertexPair _segment;
         private bool       _hasSegment;
 
+        // GPU ホバー由来の頂点/辺（Player でハンドラが毎回設定）。
+        // Player では SetGpuHover が呼ばれ _gpuHoverActive=true。この場合 CPU 探索へは
+        // フォールバックしない（利用禁止の CPU 経路が遮蔽頂点/辺を拾うのを防ぐ）。
+        // Editor では未設定（_gpuHoverActive=false）＝従来 CPU 経路。
+        private bool        _gpuHoverActive;
+        private int         _gpuHoverVertex = -1;
+        private VertexPair? _gpuHoverEdge;
+
+        /// <summary>
+        /// 次回クリック/ホバーの解決に使う GPU ホバー要素を設定する。
+        /// Player のハンドラが OnMouseDown / OnMouseDrag 直前に呼ぶ。未ヒットは -1 / null。
+        /// </summary>
+        public void SetGpuHover(int vertex, VertexPair? edge)
+        {
+            _gpuHoverActive = true;
+            _gpuHoverVertex = vertex;
+            _gpuHoverEdge   = edge;
+        }
+
+        /// <summary>次のクリックが辺を対象にするか（Erase は常に辺、ラダーは HasStart のみ辺）。</summary>
+        public bool NextClickIsEdge => Mode == KnifeMode.Erase || _stage == LadderStage.HasStart;
+
+        // GPU ホバーが有効（Player）なら GPU のみを使う。未ヒットは -1/null＝非ハイライト。
+        // GPU 無効（Editor）のときだけ従来の CPU 探索へフォールバックする。
+        private int ResolveVertex(ToolContext ctx, Vector2 mousePos)
+            => _gpuHoverActive ? _gpuHoverVertex
+                               : SelectionHelper.FindNearestVertex(ctx, mousePos);
+
+        private VertexPair? ResolveEdge(ToolContext ctx, Vector2 mousePos)
+            => _gpuHoverActive ? _gpuHoverEdge
+                               : SelectionHelper.FindNearestEdgePair(ctx, mousePos);
+
         // ================================================================
         // プレビュー（オーバーレイ描画用、ワールド座標）
         // ================================================================
@@ -144,7 +176,7 @@ namespace Poly_Ling.Tools
             {
                 case LadderStage.Idle:
                 {
-                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    int v = ResolveVertex(ctx, mousePos);
                     if (v < 0) return false;
                     _startVertex = v;
                     _stage = LadderStage.HasStart;
@@ -154,10 +186,12 @@ namespace Poly_Ling.Tools
                 }
                 case LadderStage.HasStart:
                 {
-                    var e = SelectionHelper.FindNearestEdgePair(ctx, mousePos);
+                    var e = ResolveEdge(ctx, mousePos);
                     if (!e.HasValue) return false;
                     // 開始頂点に隣接する辺はセグメントにできない
                     if (e.Value.Contains(_startVertex)) { LastError = T("ErrSegAdjacent"); ctx.Repaint?.Invoke(); return true; }
+                    // ベルトが開始頂点の四角形に届かない辺は代表にできない
+                    if (!LadderCutResolver.IsSegmentReachable(mo, _startVertex, e.Value)) { LastError = T("ErrSegUnreachable"); ctx.Repaint?.Invoke(); return true; }
                     _segment = e.Value;
                     _hasSegment = true;
                     _stage = LadderStage.HasSegment;
@@ -167,7 +201,7 @@ namespace Poly_Ling.Tools
                 }
                 case LadderStage.HasSegment:
                 {
-                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    int v = ResolveVertex(ctx, mousePos);
                     if (v < 0) return false;
 
                     var plan = LadderCutResolver.Resolve(mo, _startVertex, _segment, v);
@@ -201,15 +235,16 @@ namespace Poly_Ling.Tools
             {
                 case LadderStage.Idle:
                 {
-                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    int v = ResolveVertex(ctx, mousePos);
                     if (v >= 0) _preview.DotVertices.Add(v);
                     break;
                 }
                 case LadderStage.HasStart:
                 {
                     _preview.DotVertices.Add(_startVertex);
-                    var e = SelectionHelper.FindNearestEdgePair(ctx, mousePos);
-                    if (e.HasValue && !e.Value.Contains(_startVertex))
+                    var e = ResolveEdge(ctx, mousePos);
+                    if (e.HasValue && !e.Value.Contains(_startVertex)
+                        && LadderCutResolver.IsSegmentReachable(mo, _startVertex, e.Value))
                         _preview.Lines.Add((mo.Vertices[e.Value.V1].Position, mo.Vertices[e.Value.V2].Position));
                     break;
                 }
@@ -219,7 +254,7 @@ namespace Poly_Ling.Tools
                     // セグメントをハイライト
                     _preview.Lines.Add((mo.Vertices[_segment.V1].Position, mo.Vertices[_segment.V2].Position));
 
-                    int v = SelectionHelper.FindNearestVertex(ctx, mousePos);
+                    int v = ResolveVertex(ctx, mousePos);
                     if (v < 0 || v == _startVertex) break;
 
                     var plan = LadderCutResolver.Resolve(mo, _startVertex, _segment, v);

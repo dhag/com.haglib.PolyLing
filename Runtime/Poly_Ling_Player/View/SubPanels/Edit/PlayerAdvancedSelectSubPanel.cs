@@ -36,6 +36,7 @@ namespace Poly_Ling.Player
         private VisualElement _addRemoveRow;
         private Button        _addBtn;
         private Button        _removeBtn;
+        private Button        _clearAllBtn;
         private VisualElement _shortestPathGroup;
         private Label         _firstVertexLabel;
         private Button        _clearFirstBtn;
@@ -139,6 +140,17 @@ namespace Poly_Ling.Player
                 UpdateAddRemoveStyle();
             };
             _addRemoveRow.Add(_removeBtn);
+
+            // ── 全選択解除（全モード共通）─────────────────────────────
+            _clearAllBtn = new Button { text = "全選択解除" };
+            _clearAllBtn.style.marginTop    = 2;
+            _clearAllBtn.style.marginBottom = 4;
+            _clearAllBtn.clicked += () =>
+            {
+                GetHandler?.Invoke()?.ClearAllSelection();
+                Refresh();
+            };
+            _root.Add(_clearAllBtn);
 
             // ── ShortestPath 始点情報（ShortestPath モード時のみ表示）
             _shortestPathGroup = new VisualElement();

@@ -794,22 +794,25 @@ namespace Poly_Ling.Player
             KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1;
             rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); foTopology.Add(rowEdgeKnife);
 
-            // ── 頂点編集 ───────────────────────────────────────────────
-            var foVertex = MakeFoldout("頂点編集");
+            // ── 選択頂点位置 ───────────────────────────────────────────
+            var foVertexPos = MakeFoldout("選択頂点位置");
 
             var rowAlignPlanarize = new VisualElement(); rowAlignPlanarize.style.flexDirection = FlexDirection.Row; rowAlignPlanarize.style.marginBottom = 2;
             AlignVerticesBtn       = MakeBtn("頂点整列");   AlignVerticesBtn.style.flexGrow       = 1; AlignVerticesBtn.style.marginRight       = 2;
             PlanarizeAlongBonesBtn = MakeBtn("ボーン間平面化"); PlanarizeAlongBonesBtn.style.flexGrow = 1;
-            rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); foVertex.Add(rowAlignPlanarize);
+            rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); foVertexPos.Add(rowAlignPlanarize);
+
+            // ── 選択頂点トポロジー ─────────────────────────────────────
+            var foVertexTopo = MakeFoldout("選択頂点トポロジー");
 
             var rowMergeSplit = new VisualElement(); rowMergeSplit.style.flexDirection = FlexDirection.Row; rowMergeSplit.style.marginBottom = 2;
             MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
             SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
-            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); foVertex.Add(rowMergeSplit);
+            rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); foVertexTopo.Add(rowMergeSplit);
 
             var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
             QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
-            rowQuad.Add(QuadDecimatorBtn); foVertex.Add(rowQuad);
+            rowQuad.Add(QuadDecimatorBtn); foVertexTopo.Add(rowQuad);
 
             // ── ボーン・モーフ ─────────────────────────────────────────
             var foBoneMorph = MakeFoldout("ボーン・モーフ");
@@ -894,8 +897,9 @@ namespace Poly_Ling.Player
             scroll.Add(foFile);
             scroll.Add(foPrimitive);
             scroll.Add(foSelectMove);
-            scroll.Add(foVertex);
+            scroll.Add(foVertexPos);
             scroll.Add(foTopology);
+            scroll.Add(foVertexTopo);
             scroll.Add(foUvMat);
             scroll.Add(foBoneMorph);
             scroll.Add(foOther);

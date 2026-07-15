@@ -27,7 +27,7 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            var edge = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
+            var edge = ctx.GpuStartEdge ?? SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
             if (!edge.HasValue)
             {
                 var legacyEdge = SelectionHelper.FindNearestEdgeLegacy(toolCtx, mousePos);
@@ -37,9 +37,7 @@ namespace Poly_Ling.Tools
 
             var beltData = GetBeltData(toolCtx.FirstSelectedMeshObject, edge.Value);
 
-            if (selectMode.Has(MeshSelectMode.Vertex))
-                SelectionHelper.ApplyVertexSelection(toolCtx, beltData.Vertices.ToList(), ctx.AddToSelection);
-
+            // 頂点選択は廃止（辺主体の機能で頂点選択は無駄かつ分かりにくいため）。
             if (selectMode.Has(MeshSelectMode.Edge))
                 SelectionHelper.ApplyEdgeSelection(toolCtx, beltData.LadderEdges, ctx.AddToSelection);
 
@@ -53,6 +51,8 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
+            // 【利用禁止。おそらくバグがある】ホバープレビューは GPU ホバー未参照の CPU 探索のまま。
+            // クリック確定は GpuStartEdge を優先するがプレビューは未対応でズレる可能性がある。
             ctx.HoveredEdgePair = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
             if (!ctx.HoveredEdgePair.HasValue)
             {
@@ -65,8 +65,7 @@ namespace Poly_Ling.Tools
 
             var beltData = GetBeltData(toolCtx.FirstSelectedMeshObject, ctx.HoveredEdgePair.Value);
 
-            if (selectMode.Has(MeshSelectMode.Vertex))
-                ctx.PreviewVertices.AddRange(beltData.Vertices);
+            // 頂点選択は廃止。
             if (selectMode.Has(MeshSelectMode.Edge))
                 ctx.PreviewEdges.AddRange(beltData.LadderEdges);
             if (selectMode.Has(MeshSelectMode.Face))
@@ -91,15 +90,39 @@ namespace Poly_Ling.Tools
             var edgeToFaces = SelectionHelper.BuildEdgeToFacesMap(meshObject);
             var visitedEdges = new HashSet<VertexPair>();
 
-            TraverseBeltData(meshObject, startEdge, edgeToFaces, visitedEdges, result, true);
-            TraverseBeltData(meshObject, startEdge, edgeToFaces, visitedEdges, result, false);
+            // 開始辺を先に登録する（両側の展開が開始辺で衝突しないように）。
+            visitedEdges.Add(startEdge);
+            result.Vertices.Add(startEdge.V1);
+            result.Vertices.Add(startEdge.V2);
+            result.LadderEdges.Add(startEdge);
+
+            // 開始辺に隣接する各四角形（最大2枚）の対辺から、それぞれ独立に展開する。
+            // これにより開始辺を挟んだ双方向のベルトが選択される。
+            if (edgeToFaces.TryGetValue(startEdge, out var startFaces))
+            {
+                foreach (int faceIdx in startFaces)
+                {
+                    var face = meshObject.Faces[faceIdx];
+                    if (face.VertexIndices.Count != 4) continue;
+
+                    if (!result.Faces.Contains(faceIdx))
+                        result.Faces.Add(faceIdx);
+
+                    var opposite = FindOppositeEdge(face, startEdge.V1, startEdge.V2);
+                    if (!opposite.HasValue) continue;
+
+                    var oppPair = new VertexPair(opposite.Value.Item1, opposite.Value.Item2);
+                    if (!visitedEdges.Contains(oppPair))
+                        TraverseBeltData(meshObject, oppPair, edgeToFaces, visitedEdges, result);
+                }
+            }
 
             return result;
         }
 
         private void TraverseBeltData(MeshObject meshObject, VertexPair startEdge,
             Dictionary<VertexPair, List<int>> edgeToFaces, HashSet<VertexPair> visitedEdges,
-            BeltData result, bool forward)
+            BeltData result)
         {
             var currentEdge = startEdge;
 

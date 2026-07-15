@@ -20,6 +20,14 @@ namespace Poly_Ling.Tools
 
         // ================================================================
         // ヒットテスト
+        //
+        // 【利用禁止。おそらくバグがある】
+        // 以下 FindNearestVertex / FindNearestEdgePair / FindNearestEdgeLegacy /
+        // FindNearestFace / FindNearestLine は CPU ヒットテスト（頂点のローカル座標を
+        // WorldToScreen で投影し画面距離で最近傍を取る）。深度・遮蔽・WorldMatrix を
+        // 考慮しないため Player では別の頂点/辺/面を拾う（＝誤選択）。
+        // Player では GPU ホバー経路（GetHoverElement / GPU バッファのヒットテスト）を
+        // 使うこと。ここを新規に呼び出さない。
         // ================================================================
 
         public static int FindNearestVertex(ToolContext ctx, Vector2 screenPos)

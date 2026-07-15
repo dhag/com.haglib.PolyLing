@@ -364,6 +364,8 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// スクリーン位置から最も近い頂点を検索
+        /// 【利用禁止。おそらくバグがある】CPU ヒットテスト（WorldToScreen 投影＋画面距離）。
+        /// 深度/遮蔽/WorldMatrix 非考慮で Player では誤選択する。GPU ホバー経路を使うこと。
         /// </summary>
         private int FindNearestVertexAtScreen(ToolContext ctx, Vector2 screenPos)
         {

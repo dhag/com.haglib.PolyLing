@@ -37,6 +37,9 @@ namespace Poly_Ling.Player
         /// <summary>ポインター移動時（ドラッグ中でなくても毎フレーム通知）。(screenPos, mods)</summary>
         public event Action<Vector2, ModifierKeys> OnPointerMoved;
 
+        /// <summary>Escape キー押下（ツール操作のキャンセル用）。</summary>
+        public event Action OnCancelKey;
+
         /// <summary>
         /// ポインターがこのパネル（RenderTexture領域）内を移動したときに発火する。
         /// 引数は UIToolkit のパネルローカル座標（Y=0が上）のまま渡す。
@@ -79,6 +82,10 @@ namespace Poly_Ling.Player
         private List<Vector2>         _advSelPreviewPts    = new List<Vector2>();
         private List<(Vector2, Vector2)> _advSelPreviewLines = new List<(Vector2, Vector2)>();
         private bool                  _advSelAddMode;
+        // 最短モードの始点強調マーカー（スクリーン座標 Y=0下）。null=非表示。
+        private Vector2?              _advSelFirstPt;
+        // 辺クリックの強調（辺の2端点、スクリーン座標 Y=0下）。null=非表示。
+        private (Vector2, Vector2)?  _advSelFirstEdge;
 
         // 面追加オーバーレイ
         private List<Vector2>            _addFacePts          = new List<Vector2>();
@@ -373,11 +380,14 @@ namespace Poly_Ling.Player
         }
 
         public void UpdateAdvSelPreview(
-            List<Vector2> pts, List<(Vector2, Vector2)> lines, bool addMode)
+            List<Vector2> pts, List<(Vector2, Vector2)> lines, bool addMode,
+            Vector2? firstPt = null, (Vector2, Vector2)? firstEdge = null)
         {
             _advSelPreviewPts   = pts   ?? new List<Vector2>();
             _advSelPreviewLines = lines ?? new List<(Vector2, Vector2)>();
             _advSelAddMode      = addMode;
+            _advSelFirstPt      = firstPt;
+            _advSelFirstEdge    = firstEdge;
             _advSelOverlay?.MarkDirtyRepaint();
         }
 
@@ -386,6 +396,8 @@ namespace Poly_Ling.Player
         {
             _advSelPreviewPts.Clear();
             _advSelPreviewLines.Clear();
+            _advSelFirstPt   = null;
+            _advSelFirstEdge = null;
             _advSelOverlay?.MarkDirtyRepaint();
         }
 
@@ -447,6 +459,11 @@ namespace Poly_Ling.Player
             RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureLost);
             RegisterCallback<WheelEvent>(OnWheel);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
+
+            // キーボード（Escape 等）を受け取れるようにする。
+            // イベント駆動のためポインタ操作時にフォーカスを取得する。
+            focusable = true;
+            RegisterCallback<KeyDownEvent>(OnKeyDown);
 
             // ── 下絵（最背面・既定非表示） ──────────────────────────────
             _underlayImage = new VisualElement();
@@ -638,12 +655,24 @@ namespace Poly_Ling.Player
             if (!anyActive)
                 this.CapturePointer(evt.pointerId);
 
+            // ビューポート操作時にフォーカスを取得し、Escape 等のキー入力を受けられるようにする。
+            Focus();
+
             Vector2 pos  = ToViewportCoord(evt.localPosition);
             var     mods = GetMods(evt);
 
             _state[btn]   = BtnState.Pressed;
             _downPos[btn] = pos;
             OnButtonDown?.Invoke(btn, pos, mods);
+        }
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            if (evt.keyCode == KeyCode.Escape)
+            {
+                OnCancelKey?.Invoke();
+                evt.StopPropagation();
+            }
         }
 
         private void OnPointerMove(PointerMoveEvent evt)
@@ -853,7 +882,8 @@ namespace Poly_Ling.Player
 
         private void OnGenerateAdvSelOverlay(MeshGenerationContext ctx)
         {
-            if (_advSelPreviewPts.Count == 0 && _advSelPreviewLines.Count == 0) return;
+            if (_advSelPreviewPts.Count == 0 && _advSelPreviewLines.Count == 0
+                && !_advSelFirstPt.HasValue && !_advSelFirstEdge.HasValue) return;
             float panelH = resolvedStyle.height;
             Color col = _advSelAddMode ? new Color(0.1f, 1f, 0.3f, 0.85f)
                                        : new Color(1f, 0.3f, 0.2f, 0.85f);
@@ -891,6 +921,45 @@ namespace Poly_Ling.Player
                     painter.ClosePath();
                     painter.Fill();
                 }
+            }
+
+            // 最短モードの始点強調マーカー（黄・外リング＋中心塗り）
+            if (_advSelFirstPt.HasValue)
+            {
+                var fp = new Vector2(_advSelFirstPt.Value.x, panelH - _advSelFirstPt.Value.y);
+                var hi = new Color(1f, 0.85f, 0.1f, 0.95f);
+
+                // 外リング
+                painter.strokeColor = hi;
+                painter.lineWidth   = 2.5f;
+                painter.BeginPath();
+                painter.Arc(fp, 9f, 0f, 360f);
+                painter.Stroke();
+
+                // 中心塗り
+                painter.fillColor = hi;
+                painter.BeginPath();
+                painter.Arc(fp, 4f, 0f, 360f);
+                painter.Fill();
+            }
+
+            // 辺クリックの強調（黄・太線＋端点マーカー）
+            if (_advSelFirstEdge.HasValue)
+            {
+                var hi = new Color(1f, 0.85f, 0.1f, 0.95f);
+                var ea = new Vector2(_advSelFirstEdge.Value.Item1.x, panelH - _advSelFirstEdge.Value.Item1.y);
+                var eb = new Vector2(_advSelFirstEdge.Value.Item2.x, panelH - _advSelFirstEdge.Value.Item2.y);
+
+                painter.strokeColor = hi;
+                painter.lineWidth   = 4f;
+                painter.BeginPath();
+                painter.MoveTo(ea);
+                painter.LineTo(eb);
+                painter.Stroke();
+
+                painter.fillColor = hi;
+                painter.BeginPath(); painter.Arc(ea, 3.5f, 0f, 360f); painter.Fill();
+                painter.BeginPath(); painter.Arc(eb, 3.5f, 0f, 360f); painter.Fill();
             }
         }
 

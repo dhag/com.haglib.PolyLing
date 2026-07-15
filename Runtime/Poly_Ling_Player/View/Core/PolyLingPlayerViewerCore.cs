@@ -127,6 +127,11 @@ namespace Poly_Ling.Player
         private PivotOffsetToolHandler       _pivotOffsetHandler;
         private SculptToolHandler            _sculptHandler;
         private AdvancedSelectToolHandler    _advancedSelectHandler;
+        // 接続モードのクリック点フラッシュ強調（頂点インデックス。-1=非表示）。
+        private int                          _advSelFlashVertex = -1;
+        private int                          _advSelFlashGen    = 0;
+        // 辺クリックのフラッシュ強調（辺。null=非表示。頂点フラッシュより優先）。
+        private Poly_Ling.Selection.VertexPair? _advSelFlashEdge;
         private SkinWeightPaintToolHandler   _skinWeightPaintHandler;
         private PlayerSkinWeightPaintPanel   _skinWeightPaintPanel;
         private int                          _skinWeightUndoMasterIndex = -1;
@@ -943,7 +948,31 @@ namespace Poly_Ling.Player
             {
                 _renderer?.NotifySelectionChanged();
                 _viewportManager.RequestNormal();
+
+                // 接続／ベルト／辺ループ：クリック点を一瞬強調して自動で消す（選択完了直後のフラッシュ）。
+                // 最短は常設始点マーカーを持つため対象外。
+                if (_advancedSelectHandler.Mode != Poly_Ling.Tools.AdvancedSelectMode.ShortestPath)
+                {
+                    _advSelFlashEdge   = _advancedSelectHandler.LastClickEdge;
+                    // 辺クリック時は辺を強調するので頂点フラッシュは出さない。
+                    _advSelFlashVertex = _advSelFlashEdge.HasValue
+                                         ? -1 : _advancedSelectHandler.LastClickVertex;
+                    int gen = ++_advSelFlashGen;
+                    _activePanel?.schedule.Execute(() =>
+                    {
+                        if (_advSelFlashGen == gen)
+                        {
+                            _advSelFlashVertex = -1;
+                            _advSelFlashEdge   = null;
+                            UpdateAdvancedSelectOverlay();
+                        }
+                    }).StartingIn(300);
+                }
+
+                UpdateAdvancedSelectOverlay();   // 始点／フラッシュマーカーを即時反映
             };
+            _advancedSelectHandler.GetHoverElement =
+                mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel);
 
             _skinWeightPaintHandler = new SkinWeightPaintToolHandler();
             _skinWeightPaintHandler.SetProject(ActiveProject);
@@ -1088,6 +1117,24 @@ namespace Poly_Ling.Player
             ConnectIndicatorInput(_layoutRoot?.TopPanel);
             ConnectIndicatorInput(_layoutRoot?.FrontPanel);
             ConnectIndicatorInput(_layoutRoot?.SidePanel);
+
+            // Escape によるツール操作キャンセル（現状 Knife の進行中切断を破棄）。
+            void ConnectCancelKey(PlayerViewportPanel p)
+            {
+                if (p == null) return;
+                p.OnCancelKey += () =>
+                {
+                    if (_interactionMode == InteractionMode.Knife)
+                    {
+                        _knifeHandler?.Cancel();
+                        UpdateAdvancedSelectOverlay();
+                    }
+                };
+            }
+            ConnectCancelKey(_layoutRoot?.PerspectivePanel);
+            ConnectCancelKey(_layoutRoot?.TopPanel);
+            ConnectCancelKey(_layoutRoot?.FrontPanel);
+            ConnectCancelKey(_layoutRoot?.SidePanel);
 
             void ConnectCameraChanged(PlayerViewport vp)
             {
@@ -1660,7 +1707,11 @@ namespace Poly_Ling.Player
             var previewCtx = _advancedSelectHandler.GetPreviewContext();
             if (previewCtx == null) { panel.HideAdvSelPreview(); return; }
 
-            var mo = ctx.FirstSelectedMeshObject;
+            // ctx（ToToolContext 由来）は Model を持たないため FirstSelectedMeshObject が null。
+            // 操作対象メッシュは実モデルから解決する（投影は ctx.WorldToScreen を使用）。
+            var ovModel = ActiveProject?.CurrentModel;
+            var mo = ovModel?.FirstSelectedMeshContext?.MeshObject
+                  ?? ovModel?.FirstDrawableMeshContext?.MeshObject;
             if (mo == null) { panel.HideAdvSelPreview(); return; }
 
             var pts = new System.Collections.Generic.List<Vector2>();
@@ -1703,7 +1754,33 @@ namespace Poly_Ling.Player
                     lines.Add((new Vector2(s1.x, h - s1.y), new Vector2(s2.x, h - s2.y)));
                 }
 
-            panel.UpdateAdvSelPreview(pts, lines, _advancedSelectHandler.AddToSelection);
+            // 強調マーカー：最短＝始点、その他＝クリック点／辺のフラッシュ
+            Vector2? firstPt = null;
+            (Vector2, Vector2)? firstEdge = null;
+            int emphVertex = -1;
+            if (_advancedSelectHandler.Mode == Poly_Ling.Tools.AdvancedSelectMode.ShortestPath)
+                emphVertex = _advancedSelectHandler.GetShortestPathFirstVertex();
+            else if (_advSelFlashEdge.HasValue)
+            {
+                var e = _advSelFlashEdge.Value;
+                if (e.V1 >= 0 && e.V1 < mo.VertexCount && e.V2 >= 0 && e.V2 < mo.VertexCount)
+                {
+                    var s1 = ctx.WorldToScreen(mo.Vertices[e.V1].Position);
+                    var s2 = ctx.WorldToScreen(mo.Vertices[e.V2].Position);
+                    float h = ctx.PreviewRect.height;
+                    firstEdge = (new Vector2(s1.x, h - s1.y), new Vector2(s2.x, h - s2.y));
+                }
+            }
+            else if (_advSelFlashVertex >= 0)
+                emphVertex = _advSelFlashVertex;
+
+            if (emphVertex >= 0 && emphVertex < mo.VertexCount)
+            {
+                var fsp = ctx.WorldToScreen(mo.Vertices[emphVertex].Position);
+                firstPt = new Vector2(fsp.x, ctx.PreviewRect.height - fsp.y);
+            }
+
+            panel.UpdateAdvSelPreview(pts, lines, _advancedSelectHandler.AddToSelection, firstPt, firstEdge);
         }
 
         /// <summary>
@@ -1717,7 +1794,10 @@ namespace Poly_Ling.Player
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx == null) { panel.HideAdvSelPreview(); return; }
 
-            var mo = ctx.FirstSelectedMeshObject;
+            // ctx（ToToolContext 由来）は Model を持たないため、操作対象メッシュは実モデルから解決する。
+            var kfModel = ActiveProject?.CurrentModel;
+            var mo = kfModel?.FirstSelectedMeshContext?.MeshObject
+                  ?? kfModel?.FirstDrawableMeshContext?.MeshObject;
             if (mo == null) { panel.HideAdvSelPreview(); return; }
 
             var prev = _knifeHandler.GetPreview();
@@ -1743,7 +1823,19 @@ namespace Poly_Ling.Player
             foreach (var seg in prev.Lines)
                 lines.Add((toScreen(seg.Item1), toScreen(seg.Item2)));
 
-            panel.UpdateAdvSelPreview(pts, lines, prev.PlanValid);
+            // クリック点フラッシュ強調（AdvSel と共通：辺＝太線／頂点＝リング）
+            Vector2? firstPt = null;
+            (Vector2, Vector2)? firstEdge = null;
+            if (_advSelFlashEdge.HasValue)
+            {
+                var e = _advSelFlashEdge.Value;
+                if (e.V1 >= 0 && e.V1 < mo.VertexCount && e.V2 >= 0 && e.V2 < mo.VertexCount)
+                    firstEdge = (toScreen(mo.Vertices[e.V1].Position), toScreen(mo.Vertices[e.V2].Position));
+            }
+            else if (_advSelFlashVertex >= 0 && _advSelFlashVertex < mo.VertexCount)
+                firstPt = toScreen(mo.Vertices[_advSelFlashVertex].Position);
+
+            panel.UpdateAdvSelPreview(pts, lines, prev.PlanValid, firstPt, firstEdge);
         }
 
         private void UpdateGizmoOverlay()
@@ -2420,6 +2512,23 @@ namespace Poly_Ling.Player
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                OnClicked           = () =>
+                {
+                    // クリック点/辺を一瞬強調して自動で消す（AdvSel と共通のフラッシュ状態）。
+                    _advSelFlashEdge   = _knifeHandler.LastClickEdge;
+                    _advSelFlashVertex = _advSelFlashEdge.HasValue ? -1 : _knifeHandler.LastClickVertex;
+                    int gen = ++_advSelFlashGen;
+                    _activePanel?.schedule.Execute(() =>
+                    {
+                        if (_advSelFlashGen == gen)
+                        {
+                            _advSelFlashVertex = -1;
+                            _advSelFlashEdge   = null;
+                            UpdateAdvancedSelectOverlay();
+                        }
+                    }).StartingIn(300);
+                    UpdateAdvancedSelectOverlay();
+                },
                 OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
  _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
                 NotifyTopologyChanged = () =>
@@ -4113,6 +4222,15 @@ namespace Poly_Ling.Player
                 if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
             }
 
+            // Knife から脱出するとき、Selection.Mode を All に戻す。
+            // ナイフは段に応じて Vertex/Edge に絞っているため、戻さないと
+            // 次のモードでホバー範囲が絞られたままになる。
+            if (_interactionMode == InteractionMode.Knife && mode != InteractionMode.Knife)
+            {
+                var firstMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+                if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
+            }
+
             // ---------------------------------------------------------------
             // カテゴリ 1 ツール (EdgeBevel / EdgeExtrude / FaceExtrude /
             // FlipFace / LineExtrude / Rotate / Scale) は MoveToolHandler の
@@ -4305,6 +4423,7 @@ namespace Poly_Ling.Player
                 case InteractionMode.Knife:
                     _vertexInteractor?.SetToolHandler(_knifeHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _knifeHandler?.UpdateHover(pos, ctx));
+                    _knifeHandler?.ApplyHoverSelectionMode();   // 初期段（開始頂点）＝ Vertex ホバー
                     break;
                 case InteractionMode.SkinWeightPaint:
                     _vertexInteractor?.SetToolHandler(_skinWeightPaintHandler);

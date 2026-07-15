@@ -49,6 +49,12 @@ namespace Poly_Ling.Tools
         public int HoveredFace { get; set; } = -1;
         public int HoveredLine { get; set; } = -1;
 
+        // GPU ホバー由来のクリック開始要素（Player でハンドラが設定）。
+        // 設定時（>=0 / HasValue）は各モードが CPU FindNearest より優先する。
+        // Editor では未設定のまま（CPU 経路）。
+        public int GpuStartVertex { get; set; } = -1;
+        public VertexPair? GpuStartEdge { get; set; }
+
         // 設定（Settings経由でアクセス）
         public bool AddToSelection { get; set; } = true;
         public float EdgeLoopThreshold { get; set; } = 0.7f;
@@ -74,6 +80,8 @@ namespace Poly_Ling.Tools
             HoveredEdgePair = null;
             HoveredFace = -1;
             HoveredLine = -1;
+            GpuStartVertex = -1;
+            GpuStartEdge = null;
         }
     }
 }

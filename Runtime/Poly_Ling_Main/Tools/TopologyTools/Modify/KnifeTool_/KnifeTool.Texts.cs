@@ -18,6 +18,7 @@ namespace Poly_Ling.Tools
             ["PickEnd"]     = new() { ["en"] = "Click end vertex.\nESC: Cancel", ["ja"] = "終了頂点をクリック\nESC: キャンセル", ["hi"] = "おわりのてんをクリック\nESC: やめる" },
 
             ["ErrSegAdjacent"] = new() { ["en"] = "Segment must not touch the start vertex", ["ja"] = "セグメントは開始頂点に隣接しない辺を選んでください", ["hi"] = "はじめのてんにくっつくへりはだめ" },
+            ["ErrSegUnreachable"] = new() { ["en"] = "This edge's belt does not reach the start vertex", ["ja"] = "この辺のベルトが開始頂点に届きません", ["hi"] = "このへりははじめのてんにとどきません" },
 
             ["HelpErase"]  = new() { ["en"] = "Click a shared edge to erase.", ["ja"] = "共有辺をクリックして消去", ["hi"] = "おなじへりをクリックしてけす" },
         };

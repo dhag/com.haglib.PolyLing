@@ -34,6 +34,13 @@ namespace Poly_Ling.Player
         public Action            OnRepaint;
         public Action            OnSelectionChanged;
 
+        /// <summary>
+        /// GPU ホバー要素取得（Viewer から結線）。指定 SelectMode に対する
+        /// 現在ホバー中の頂点/辺（メッシュローカルインデックス）を返す。
+        /// クリック開始要素の確定に使う（CPU 探索の誤爆を避ける）。
+        /// </summary>
+        public Func<Poly_Ling.Selection.MeshSelectMode, PlayerHoverElement> GetHoverElement;
+
         // ================================================================
         // モード設定公開
         // ================================================================
@@ -69,6 +76,18 @@ namespace Poly_Ling.Player
         /// </summary>
         public void ClearShortestPathFirst() => _tool.Reset();
 
+        /// <summary>
+        /// すべての選択（頂点/辺/面/線）を解除する。
+        /// 進行中の ShortestPath 始点等もリセットする。全モード共通のクリアボタン用。
+        /// </summary>
+        public void ClearAllSelection()
+        {
+            _selectionOps?.ClearAll();     // SelectionState 全解除 + 描画通知（内部 OnSelectionChanged）
+            _tool.Reset();                 // ShortestPath 始点など進行中状態も破棄
+            OnSelectionChanged?.Invoke();  // renderer 再通知 + RequestNormal
+            OnRepaint?.Invoke();
+        }
+
         // ================================================================
         // 初期化
         // ================================================================
@@ -86,6 +105,7 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
+            ResolveGpuStart();
             var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
             bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             _tool.OnMouseUp(ctx, ToImgui(screenPos, ctx));
@@ -101,6 +121,7 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildToolContext(mods, screenPos);
             if (ctx == null) return;
+            ResolveGpuStart();
             var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
             bool changed = _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
             if (changed)
@@ -145,6 +166,53 @@ namespace Poly_Ling.Player
         // ================================================================
         // 内部ヘルパー
         // ================================================================
+
+        /// <summary>
+        /// GPU ホバー結果から次回クリックの開始要素（頂点/辺）を確定し、_tool に渡す。
+        /// 操作対象メッシュ（FirstSelected）と一致するホバーのみ採用する。
+        /// 未ヒット時は vertex=-1 / edge=null（各モードは CPU 探索へフォールバック）。
+        /// </summary>
+        /// <summary>直近クリックで確定した頂点（辺ヒット時は端点 V1）。未ヒットは -1。クリック強調用。</summary>
+        public int LastClickVertex { get; private set; } = -1;
+
+        /// <summary>直近クリックで確定した辺（辺ヒット時のみ）。頂点クリック時は null。辺の強調用。</summary>
+        public Poly_Ling.Selection.VertexPair? LastClickEdge { get; private set; }
+
+        private void ResolveGpuStart()
+        {
+            int              gpuVertex = -1;
+            Poly_Ling.Selection.VertexPair? gpuEdge = null;
+
+            if (GetHoverElement != null)
+            {
+                int firstIdx = _project?.CurrentModel?.FirstSelectedIndex ?? -1;
+
+                // モードに応じて頂点／辺を問い合わせる。
+                var queryMode = Mode switch
+                {
+                    AdvancedSelectMode.Belt         => Poly_Ling.Selection.MeshSelectMode.Edge,
+                    AdvancedSelectMode.EdgeLoop     => Poly_Ling.Selection.MeshSelectMode.Edge,
+                    AdvancedSelectMode.ShortestPath => Poly_Ling.Selection.MeshSelectMode.Vertex,
+                    _                               => (_selectionOps?.SelectionState?.Mode
+                                                        ?? Poly_Ling.Selection.MeshSelectMode.Vertex),
+                };
+
+                var elem = GetHoverElement(queryMode);
+                // メッシュローカルインデックスは操作対象メッシュに対してのみ有効。
+                if (firstIdx >= 0 && elem.MeshIndex == firstIdx)
+                {
+                    if (elem.Kind == PlayerHoverKind.Vertex)
+                        gpuVertex = elem.VertexIndex;
+                    else if (elem.Kind == PlayerHoverKind.Edge)
+                        gpuEdge = new Poly_Ling.Selection.VertexPair(elem.EdgeV1, elem.EdgeV2);
+                }
+            }
+
+            LastClickEdge   = gpuEdge;
+            LastClickVertex = gpuVertex >= 0 ? gpuVertex
+                            : (gpuEdge.HasValue ? gpuEdge.Value.V1 : -1);
+            _tool.SetGpuStart(gpuVertex, gpuEdge);
+        }
 
         private ToolContext BuildToolContext(ModifierKeys mods, Vector2 screenPosYDown)
         {

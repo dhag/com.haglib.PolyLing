@@ -36,6 +36,15 @@ namespace Poly_Ling.Player
         /// <summary>GPU ホバー結果取得（互換のため保持。現実装は SelectionHelper を使用）。</summary>
         public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
+        /// <summary>クリック確定時に発火（クリック点強調フラッシュ用）。</summary>
+        public Action OnClicked;
+
+        /// <summary>直近クリックで GPU ホバー確定した頂点（辺ヒット時は端点 V1）。未ヒットは -1。</summary>
+        public int LastClickVertex { get; private set; } = -1;
+
+        /// <summary>直近クリックで GPU ホバー確定した辺（辺ヒット時のみ）。頂点時は null。</summary>
+        public Poly_Ling.Selection.VertexPair? LastClickEdge { get; private set; }
+
         // ================================================================
         // 設定公開 API（サブパネル用）
         // ================================================================
@@ -66,8 +75,11 @@ namespace Poly_Ling.Player
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
             var ctx = BuildCtx(mods, screenPos); if (ctx == null) return;
+            InjectGpuHover();
             _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            ApplyHoverSelectionMode();   // 段遷移後の必要型に合わせて GPU ホバーモードを更新
             OnRepaint?.Invoke();
+            OnClicked?.Invoke();
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
@@ -83,6 +95,7 @@ namespace Poly_Ling.Player
         public void UpdateHover(Vector2 screenPos, ToolContext baseCtx)
         {
             var ctx = EnrichCtx(baseCtx, default, screenPos); if (ctx == null) return;
+            InjectGpuHover();
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), Vector2.zero);
             OnRepaint?.Invoke();
         }
@@ -95,6 +108,29 @@ namespace Poly_Ling.Player
 
         public void Deactivate(ToolContext ctx) => _tool.OnDeactivate(ctx);
 
+        /// <summary>進行中の切断（アンカー/セグメント）を破棄する。Escape キャンセル用。</summary>
+        public void Cancel()
+        {
+            _tool.Reset();
+            ApplyHoverSelectionMode();   // Idle（開始頂点段）＝ Vertex ホバーへ戻す
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// ナイフの現在段に応じてホバー用選択モードを設定する。
+        /// 開始/終了頂点の段は Vertex、セグメント（辺）の段は Edge。
+        /// GPU ホバーが必要な型を返すようにし、CPU フォールバックへ落ちるのを防ぐ。
+        /// 起動時は Viewer が一度呼ぶ。以降はクリック/キャンセルで更新する。
+        /// </summary>
+        public void ApplyHoverSelectionMode()
+        {
+            var sel = _project?.CurrentModel?.FirstSelectedMeshContext?.Selection;
+            if (sel == null) return;
+            sel.Mode = _tool.NextClickIsEdge
+                ? Poly_Ling.Selection.MeshSelectMode.Edge
+                : Poly_Ling.Selection.MeshSelectMode.Vertex;
+        }
+
         // ================================================================
         // 内部ヘルパー
         // ================================================================
@@ -103,6 +139,44 @@ namespace Poly_Ling.Player
         {
             var ctx = GetToolContext?.Invoke();
             return EnrichCtx(ctx, mods, screenPos);
+        }
+
+        /// <summary>
+        /// GPU ホバー由来の頂点・辺（メッシュローカル）を確定し、KnifeTool に注入する。
+        /// 操作対象メッシュ（FirstSelected）と一致するホバーのみ採用。未ヒットは -1/null。
+        /// あわせてフラッシュ強調用の LastClick 情報を現在ステージに応じて設定する。
+        /// </summary>
+        private void InjectGpuHover()
+        {
+            int gpuVertex = -1;
+            Poly_Ling.Selection.VertexPair? gpuEdge = null;
+
+            if (GetHoverElement != null)
+            {
+                int firstIdx = _project?.CurrentModel?.FirstSelectedIndex ?? -1;
+
+                var vElem = GetHoverElement(MeshSelectMode.Vertex);
+                if (firstIdx >= 0 && vElem.MeshIndex == firstIdx && vElem.Kind == PlayerHoverKind.Vertex)
+                    gpuVertex = vElem.VertexIndex;
+
+                var eElem = GetHoverElement(MeshSelectMode.Edge);
+                if (firstIdx >= 0 && eElem.MeshIndex == firstIdx && eElem.Kind == PlayerHoverKind.Edge)
+                    gpuEdge = new Poly_Ling.Selection.VertexPair(eElem.EdgeV1, eElem.EdgeV2);
+            }
+
+            _tool.SetGpuHover(gpuVertex, gpuEdge);
+
+            // フラッシュ強調用：このクリックが辺対象か頂点対象かで見せる要素を決める。
+            if (_tool.NextClickIsEdge)
+            {
+                LastClickEdge   = gpuEdge;
+                LastClickVertex = gpuEdge.HasValue ? gpuEdge.Value.V1 : -1;
+            }
+            else
+            {
+                LastClickEdge   = null;
+                LastClickVertex = gpuVertex;
+            }
         }
 
         private ToolContext EnrichCtx(ToolContext ctx, ModifierKeys mods, Vector2 screenPos)

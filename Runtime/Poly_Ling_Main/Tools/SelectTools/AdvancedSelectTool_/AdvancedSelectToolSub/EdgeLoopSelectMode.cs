@@ -20,7 +20,7 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
-            var edge = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
+            var edge = ctx.GpuStartEdge ?? SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
             if (!edge.HasValue)
             {
                 var legacyEdge = SelectionHelper.FindNearestEdgeLegacy(toolCtx, mousePos);
@@ -30,13 +30,7 @@ namespace Poly_Ling.Tools
 
             var loopEdges = GetEdgeLoopEdges(toolCtx.FirstSelectedMeshObject, edge.Value, ctx.EdgeLoopThreshold);
 
-            if (selectMode.Has(MeshSelectMode.Vertex))
-            {
-                var verts = new HashSet<int>();
-                foreach (var e in loopEdges) { verts.Add(e.V1); verts.Add(e.V2); }
-                SelectionHelper.ApplyVertexSelection(toolCtx, verts.ToList(), ctx.AddToSelection);
-            }
-
+            // 頂点選択は廃止（辺主体の機能で頂点選択は無駄かつ分かりにくいため）。
             if (selectMode.Has(MeshSelectMode.Edge))
                 SelectionHelper.ApplyEdgeSelection(toolCtx, loopEdges, ctx.AddToSelection);
 
@@ -53,6 +47,8 @@ namespace Poly_Ling.Tools
         {
             var toolCtx = ctx.ToolCtx;
 
+            // 【利用禁止。おそらくバグがある】ホバープレビューは GPU ホバー未参照の CPU 探索のまま。
+            // クリック確定は GpuStartEdge を優先するがプレビューは未対応でズレる可能性がある。
             ctx.HoveredEdgePair = SelectionHelper.FindNearestEdgePair(toolCtx, mousePos);
             if (!ctx.HoveredEdgePair.HasValue)
             {
@@ -65,12 +61,7 @@ namespace Poly_Ling.Tools
 
             var loopEdges = GetEdgeLoopEdges(toolCtx.FirstSelectedMeshObject, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
 
-            if (selectMode.Has(MeshSelectMode.Vertex))
-            {
-                var verts = new HashSet<int>();
-                foreach (var e in loopEdges) { verts.Add(e.V1); verts.Add(e.V2); }
-                ctx.PreviewVertices.AddRange(verts);
-            }
+            // 頂点選択は廃止。
             if (selectMode.Has(MeshSelectMode.Edge))
                 ctx.PreviewEdges.AddRange(loopEdges);
             if (selectMode.Has(MeshSelectMode.Face))
@@ -93,26 +84,30 @@ namespace Poly_Ling.Tools
 
             var adjacency = SelectionHelper.BuildVertexAdjacency(meshObject);
 
-            TraverseEdgeLoopEdges(meshObject, startEdge.V1, startEdge.V2, edgeDir, adjacency, visitedEdges, result, threshold);
-            TraverseEdgeLoopEdges(meshObject, startEdge.V2, startEdge.V1, -edgeDir, adjacency, visitedEdges, result, threshold);
+            // 開始辺を先に登録する（両方向探索が先頭で即 break しないように）。
+            visitedEdges.Add(startEdge);
+            result.Add(startEdge);
+
+            // 方向1: V2 を起点に、V1→V2 の向きへ延ばす。
+            TraverseEdgeLoopEdges(meshObject, startEdge.V2, startEdge.V1, edgeDir, adjacency, visitedEdges, result, threshold);
+            // 方向2: V1 を起点に、V2→V1 の向きへ延ばす。
+            TraverseEdgeLoopEdges(meshObject, startEdge.V1, startEdge.V2, -edgeDir, adjacency, visitedEdges, result, threshold);
 
             return result.ToList();
         }
 
-        private void TraverseEdgeLoopEdges(MeshObject meshObject, int fromV, int toV, Vector3 direction,
+        /// <param name="pivot">今いる頂点。ここから次の辺を探す。</param>
+        /// <param name="prev">直前の頂点（戻り防止）。</param>
+        /// <param name="direction">進行方向（pivot へ入ってきた向き）。</param>
+        private void TraverseEdgeLoopEdges(MeshObject meshObject, int pivot, int prev, Vector3 direction,
             Dictionary<int, HashSet<int>> adjacency, HashSet<VertexPair> visitedEdges, HashSet<VertexPair> result, float threshold)
         {
-            int current = toV;
-            int prev = fromV;
+            int current = pivot;
+            int prevV   = prev;
             Vector3 currentDir = direction;
 
             while (true)
             {
-                var edge = new VertexPair(prev, current);
-                if (visitedEdges.Contains(edge)) break;
-                visitedEdges.Add(edge);
-                result.Add(edge);
-
                 if (!adjacency.TryGetValue(current, out var neighbors)) break;
 
                 int bestNext = -1;
@@ -120,7 +115,7 @@ namespace Poly_Ling.Tools
 
                 foreach (int next in neighbors)
                 {
-                    if (next == prev) continue;
+                    if (next == prevV) continue;
 
                     Vector3 nextDir = (meshObject.Vertices[next].Position - meshObject.Vertices[current].Position).normalized;
                     float dot = Vector3.Dot(currentDir, nextDir);
@@ -134,8 +129,13 @@ namespace Poly_Ling.Tools
 
                 if (bestNext < 0) break;
 
+                var edge = new VertexPair(current, bestNext);
+                if (visitedEdges.Contains(edge)) break;
+                visitedEdges.Add(edge);
+                result.Add(edge);
+
                 currentDir = (meshObject.Vertices[bestNext].Position - meshObject.Vertices[current].Position).normalized;
-                prev = current;
+                prevV   = current;
                 current = bestNext;
             }
         }

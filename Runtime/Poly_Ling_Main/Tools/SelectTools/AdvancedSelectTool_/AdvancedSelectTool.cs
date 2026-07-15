@@ -158,6 +158,17 @@ namespace Poly_Ling.Tools
             return -1;
         }
 
+        /// <summary>
+        /// 次回クリックの開始要素を GPU ホバー由来のインデックスで指定する。
+        /// Player のハンドラが OnMouseDown 直前に呼ぶ。未ヒット時は vertex=-1, edge=null。
+        /// 各モードはこれが設定されていれば CPU FindNearest より優先する。
+        /// </summary>
+        public void SetGpuStart(int vertex, VertexPair? edge)
+        {
+            _ctx.GpuStartVertex = vertex;
+            _ctx.GpuStartEdge   = edge;
+        }
+
         // ================================================================
         // ヘルパー
         // ================================================================

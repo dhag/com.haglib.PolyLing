@@ -13,6 +13,12 @@ namespace Poly_Ling.Tools
 {
     /// <summary>
     /// 接続領域選択モード
+    ///
+    /// 【利用禁止。おそらくバグがある】このモードのクリック/プレビューは開始要素の確定に
+    /// SelectionHelper.FindNearestVertex/EdgePair/Face/Line（CPU ヒットテスト）をそのまま
+    /// 使っており、Belt/EdgeLoop/ShortestPath と違い GPU ホバー（ctx.GpuStartVertex/Edge）を
+    /// 参照していない。Player では深度/遮蔽を無視して誤選択する可能性がある。
+    /// GPU ホバー由来の開始要素を使うよう要修正。
     /// </summary>
     public partial class ConnectedSelectMode : IAdvancedSelectMode
     {
