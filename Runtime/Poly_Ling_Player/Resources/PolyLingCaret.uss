@@ -1,0 +1,7 @@
+/* PolyLingCaret.uss
+ * TextField のキャレット(カーソル)色を白にする。
+ * .visible-caret を付与した TextField の内側入力要素に適用される。
+ * キャレット色は --unity-cursor-color でのみ設定可能（C# style.* 不可）。 */
+.visible-caret .unity-base-text-field__input {
+    --unity-cursor-color: rgb(255, 255, 255);
+}

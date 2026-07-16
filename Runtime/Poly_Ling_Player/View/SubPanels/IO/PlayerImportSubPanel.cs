@@ -98,18 +98,23 @@ namespace Poly_Ling.Player
 
             _pathField = new TextField();
             _pathField.style.flexGrow   = 1;
-            _pathField.style.marginRight = 2;
             _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(ImportPathKey(), e.newValue));
+
+            // カーソル(キャレット)色を白にする USS を適用（キャレット色は --unity-cursor-color でのみ設定可）
+            _pathField.AddToClassList("visible-caret");
+            var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
+            if (caretSheet != null) _pathField.styleSheets.Add(caretSheet);
 
             var browseBtn = new Button(OnBrowse) { text = "..." };
             browseBtn.style.width = 28;
+            browseBtn.style.marginRight = 2;
 
-            fileRow.Add(_pathField);
             fileRow.Add(browseBtn);
+            fileRow.Add(_pathField);
             fileSection.Add(fileRow);
 
             // ── Import ボタン（パスフィールド直下）──
-            var importBtn = new Button(OnImportClicked) { text = "リロード" };
+            var importBtn = new Button(OnImportClicked) { text = "開く" };
             importBtn.style.marginTop    = 2;
             importBtn.style.marginBottom = 4;
             importBtn.style.height       = 28;

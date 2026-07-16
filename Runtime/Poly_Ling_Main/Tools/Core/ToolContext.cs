@@ -316,6 +316,12 @@ namespace Poly_Ling.Tools
         /// <summary>指定MeshContextの位置のみ更新（非選択メッシュにも対応）</summary>
         public Action<MeshContext> SyncMeshContextPositionsOnly { get; set; }
 
+        /// <summary>
+        /// スキンウェイトブラシ範囲の頂点(+falloff)を取得する。
+        /// Player 側が GPU hover path（スクリーン座標＋可視判定）で実装する。
+        /// </summary>
+        public Func<System.Collections.Generic.List<(int index, float falloff)>> GetBrushVertices { get; set; }
+
         /// <summary>画面再描画を要求</summary>
         public Action Repaint { get; set; }
 

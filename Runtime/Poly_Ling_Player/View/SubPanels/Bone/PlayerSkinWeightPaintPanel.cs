@@ -39,6 +39,9 @@ namespace Poly_Ling.Player
         /// <summary>パネル操作でウェイト可視化の再描画が必要なとき呼ばれる。</summary>
         public Action OnRepaint;
 
+        /// <summary>ターゲットボーン変更時に呼ばれる（色再計算トリガー用）。</summary>
+        public Action OnTargetBoneChanged;
+
         /// <summary>メッシュドロップダウン変更時に呼ばれる。</summary>
         public Action OnMeshSelectionChanged;
 
@@ -117,6 +120,7 @@ namespace Poly_Ling.Player
             {
                 int sel = _boneDropdown.index;
                 CurrentTargetBone = (sel <= 0) ? -1 : _boneMasterIndices[sel - 1];
+                OnTargetBoneChanged?.Invoke();
                 OnRepaint?.Invoke();
             });
             _root.Add(_boneDropdown);

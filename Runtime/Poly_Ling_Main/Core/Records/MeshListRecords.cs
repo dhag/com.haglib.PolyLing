@@ -1084,10 +1084,8 @@ namespace Poly_Ling.UndoSystem
                 dst.UnityMesh = dst.MeshObject.ToUnityMesh();
                 if (dst.UnityMesh != null) dst.UnityMesh.name = src.Name;
             }
-            // マテリアル
-            if (src.Materials != null)
-                foreach (var m in src.Materials) dst.Materials.Add(m);
-            dst.CurrentMaterialIndex = src.CurrentMaterialIndex;
+            // マテリアルは ModelContext 一元管理（ParentModelContext へ委譲）のため
+            // ここではコピーしない。復元時に RestoreList が ParentModelContext を設定する。
             return dst;
         }
 

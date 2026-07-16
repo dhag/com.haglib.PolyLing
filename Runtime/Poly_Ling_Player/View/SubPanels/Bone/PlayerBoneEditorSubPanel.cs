@@ -66,9 +66,11 @@ namespace Poly_Ling.Player
         private bool          _suppressBoneDropdown;
 
         private Label         _boneNameLabel;
-        private Label         _masterIndexLabel;
+        private IntegerField  _masterIndexField;
         private Label         _boneIndexLabel;
-        private Label         _parentBoneLabel;
+        private DropdownField _parentBoneDropdown;
+        private List<int>     _parentChoiceMasters = new List<int>();
+        private bool          _suppressBoneEdit;
         private Label         _worldPosLabel;
 
         private Toggle        _bonePoseActiveToggle;
@@ -279,9 +281,9 @@ namespace Poly_Ling.Player
             // ボーン詳細情報
             _boneSection.Add(MakeSep());
             AddRow(_boneSection, "ボーン名",    out _boneNameLabel);
-            AddRow(_boneSection, "マスターIdx", out _masterIndexLabel);
+            AddIntRow(_boneSection, "マスターIdx", out _masterIndexField, OnMasterIndexChanged);
             AddRow(_boneSection, "ボーンIdx",   out _boneIndexLabel);
-            AddRow(_boneSection, "親ボーン",    out _parentBoneLabel);
+            AddDropdownRow(_boneSection, "親ボーン", out _parentBoneDropdown, OnParentBoneChanged);
             _boneSection.Add(MakeSecLabel("ワールド座標"));
             AddRow(_boneSection, "位置",        out _worldPosLabel);
 
@@ -516,19 +518,195 @@ namespace Poly_Ling.Player
                 _bonePoseActiveToggle.SetValueWithoutNotify(ctx?.BonePoseData?.IsActive ?? false);
 
             if (_boneNameLabel    != null) _boneNameLabel.text    = ctx?.Name ?? "(no name)";
-            if (_masterIndexLabel != null) _masterIndexLabel.text = first.ToString();
+            _suppressBoneEdit = true;
+            if (_masterIndexField != null) _masterIndexField.SetValueWithoutNotify(first);
             int boneIdx = model.TypedIndices?.MasterToBoneIndex(first) ?? -1;
             if (_boneIndexLabel   != null) _boneIndexLabel.text   = boneIdx >= 0 ? boneIdx.ToString() : "-";
-            int parentIdx = ctx?.ParentIndex ?? -1;
-            if (_parentBoneLabel  != null)
-                _parentBoneLabel.text = parentIdx >= 0 && parentIdx < model.MeshContextCount
-                    ? $"{model.GetMeshContext(parentIdx)?.Name ?? "-"} [{parentIdx}]"
-                    : "(なし)";
+            RefreshParentDropdown(model, first);
+            _suppressBoneEdit = false;
             if (_worldPosLabel != null && ctx != null)
             {
                 var wm = ctx.WorldMatrix;
                 _worldPosLabel.text = $"({wm.m03:F4}, {wm.m13:F4}, {wm.m23:F4})";
             }
+        }
+
+        // ================================================================
+        // ボーン並べ替え / 親変更（既存 ReorderMeshesCommand を発行）
+        // ================================================================
+
+        /// <summary>親ボーン Dropdown の選択肢と現在値を更新する。</summary>
+        private void RefreshParentDropdown(ModelContext model, int targetMaster)
+        {
+            if (_parentBoneDropdown == null) return;
+
+            _parentChoiceMasters.Clear();
+            var choices = new List<string> { "(なし)" };
+            _parentChoiceMasters.Add(-1);
+
+            foreach (var e in model.Bones)
+            {
+                int m = e.MasterIndex;
+                if (m == targetMaster) continue;                    // 自身は親にできない
+                if (IsDescendant(model, targetMaster, m)) continue; // 子孫は親にできない（循環防止）
+                var c = model.GetMeshContext(m);
+                choices.Add($"{c?.Name ?? "-"} [{m}]");
+                _parentChoiceMasters.Add(m);
+            }
+
+            _parentBoneDropdown.choices = choices;
+
+            int curParent = model.GetMeshContext(targetMaster)?.HierarchyParentIndex ?? -1;
+            int sel = _parentChoiceMasters.IndexOf(curParent);
+            if (sel < 0) sel = 0;
+            _parentBoneDropdown.SetValueWithoutNotify(choices[sel]);
+        }
+
+        private void OnMasterIndexChanged(ChangeEvent<int> evt)
+        {
+            if (_suppressBoneEdit) return;
+            var model = GetModel?.Invoke();
+            if (model == null || !model.HasBoneSelection) return;
+            MoveBone(model, model.SelectedBoneIndices[0], newMaster: evt.newValue, newParentMaster: null);
+        }
+
+        private void OnParentBoneChanged(ChangeEvent<string> evt)
+        {
+            if (_suppressBoneEdit) return;
+            var model = GetModel?.Invoke();
+            if (model == null || !model.HasBoneSelection) return;
+            int idx = _parentBoneDropdown.index;
+            if (idx < 0 || idx >= _parentChoiceMasters.Count) return;
+            MoveBone(model, model.SelectedBoneIndices[0], newMaster: null, newParentMaster: _parentChoiceMasters[idx]);
+        }
+
+        /// <summary>nodeMaster が ancestorMaster の子孫かどうか（HierarchyParentIndex を上に辿る）。</summary>
+        private static bool IsDescendant(ModelContext model, int ancestorMaster, int nodeMaster)
+        {
+            int cur = model.GetMeshContext(nodeMaster)?.HierarchyParentIndex ?? -1;
+            int guard = 0;
+            while (cur >= 0 && guard++ < 4096)
+            {
+                if (cur == ancestorMaster) return true;
+                cur = model.GetMeshContext(cur)?.HierarchyParentIndex ?? -1;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 対象ボーン（＋子孫サブツリー）を移動して ReorderMeshesCommand を発行する。
+        /// newMaster 指定時: 親を維持しつつ親の範囲内でマスターIdx位置へ（親は超えない）。
+        /// newParentMaster 指定時: 新親の子末尾へ。各パネル反映は Dispatch 側の通知に委ねる。
+        /// </summary>
+        private void MoveBone(ModelContext model, int target, int? newMaster, int? newParentMaster)
+        {
+            // 現在のボーン順（master index）と depth / parent
+            var order = new List<int>();
+            foreach (var e in model.Bones) order.Add(e.MasterIndex);
+            int n = order.Count;
+            if (n == 0) return;
+
+            var depth  = new Dictionary<int, int>(n);
+            var parent = new Dictionary<int, int>(n);
+            foreach (var m in order)
+            {
+                var c = model.GetMeshContext(m);
+                depth[m]  = c?.Depth ?? 0;
+                parent[m] = c?.HierarchyParentIndex ?? -1;
+            }
+
+            int tPos = order.IndexOf(target);
+            if (tPos < 0) return;
+            int tDepth = depth[target];
+
+            // 対象サブツリー範囲: tPos から subEnd の手前まで（tDepth より深い連続範囲）
+            int subEnd = tPos + 1;
+            while (subEnd < n && depth[order[subEnd]] > tDepth) subEnd++;
+            var subtree = order.GetRange(tPos, subEnd - tPos);
+
+            // 対象サブツリーを除いた残り
+            var rest = new List<int>(order);
+            rest.RemoveRange(tPos, subEnd - tPos);
+
+            int appliedParent = parent[target];
+            int appliedDepth  = tDepth;
+            int insertPos;
+
+            if (newParentMaster.HasValue)
+            {
+                int np = newParentMaster.Value;
+                if (np == target || IsDescendant(model, target, np)) { Refresh(); return; }
+                appliedParent = np;
+                appliedDepth  = np >= 0
+                    ? ((depth.TryGetValue(np, out var dp) ? dp : (model.GetMeshContext(np)?.Depth ?? 0)) + 1)
+                    : 0;
+
+                if (np < 0)
+                {
+                    insertPos = rest.Count;
+                }
+                else
+                {
+                    int npPos = rest.IndexOf(np);
+                    if (npPos < 0) { Refresh(); return; }
+                    int e = npPos + 1;
+                    int npDepth = depth[np];
+                    while (e < rest.Count && depth[rest[e]] > npDepth) e++;
+                    insertPos = e;
+                }
+            }
+            else
+            {
+                // マスターIdx変更: 親（維持）の範囲内にクランプ（親は超えない）
+                int p = parent[target];
+                int lo, hi;
+                if (p < 0) { lo = 0; hi = rest.Count; }
+                else
+                {
+                    int pPos = rest.IndexOf(p);
+                    if (pPos < 0) { Refresh(); return; }
+                    lo = pPos + 1;
+                    int e = pPos + 1;
+                    int pDepth = depth[p];
+                    while (e < rest.Count && depth[rest[e]] > pDepth) e++;
+                    hi = e;
+                }
+                // newMaster を rest 上の挿入位置に変換（newMaster 未満の master 数）
+                int want = 0;
+                foreach (var m in rest) { if (m < newMaster.Value) want++; else break; }
+                insertPos = Mathf.Clamp(want, lo, hi);
+            }
+
+            int depthDelta = appliedDepth - tDepth;
+
+            var newOrder = new List<int>(rest);
+            newOrder.InsertRange(insertPos, subtree);
+
+            var entries = new ReorderMeshesCommand.ReorderEntry[newOrder.Count];
+            for (int i = 0; i < newOrder.Count; i++)
+            {
+                int m   = newOrder[i];
+                int d   = depth[m];
+                int par = parent[m];
+                if (m == target)
+                {
+                    d   = appliedDepth;
+                    par = appliedParent;
+                }
+                else if (subtree.Contains(m))
+                {
+                    d = depth[m] + depthDelta;   // 子孫は相対深さ維持、親は不変
+                }
+                entries[i] = new ReorderMeshesCommand.ReorderEntry
+                {
+                    MasterIndex          = m,
+                    NewDepth             = d,
+                    NewParentMasterIndex = par,
+                };
+            }
+
+            int modelIndex = GetModelIndex?.Invoke() ?? 0;
+            SendCommand(new ReorderMeshesCommand(modelIndex, MeshCategory.Bone, entries));
         }
 
         // ================================================================
@@ -736,6 +914,44 @@ namespace Poly_Ling.Player
             row.Add(key); row.Add(val);
             parent.Add(row);
             valueLabel = val;
+        }
+
+        private void AddIntRow(VisualElement parent, string labelText, out IntegerField field,
+                               EventCallback<ChangeEvent<int>> onChange)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+            var key = new Label(labelText + ": ");
+            key.style.width    = 76;
+            key.style.color    = new StyleColor(Color.white);
+            key.style.fontSize = 10;
+            var f = new IntegerField();
+            f.style.flexGrow = 1;
+            f.style.fontSize = 10;
+            f.RegisterValueChangedCallback(onChange);
+            row.Add(key); row.Add(f);
+            parent.Add(row);
+            field = f;
+        }
+
+        private void AddDropdownRow(VisualElement parent, string labelText, out DropdownField field,
+                                    EventCallback<ChangeEvent<string>> onChange)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 2;
+            var key = new Label(labelText + ": ");
+            key.style.width    = 76;
+            key.style.color    = new StyleColor(Color.white);
+            key.style.fontSize = 10;
+            var d = new DropdownField();
+            d.style.flexGrow = 1;
+            d.style.fontSize = 10;
+            d.RegisterValueChangedCallback(onChange);
+            row.Add(key); row.Add(d);
+            parent.Add(row);
+            field = d;
         }
 
         private static Label MakeSecLabel(string text)

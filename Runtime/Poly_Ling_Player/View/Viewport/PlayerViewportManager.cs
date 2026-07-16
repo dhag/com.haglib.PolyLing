@@ -448,6 +448,12 @@ namespace Poly_Ling.Player
             RefreshToolOverlays();
         }
 
+        /// <summary>スキンウェイト可視化のターゲットボーン変更時: 色再計算＋全 viewport 再描画。</summary>
+        public void EnterWeightTargetChanged(ProjectContext project)
+        {
+            PresentAll(project);
+        }
+
         /// <summary>
         /// カテゴリ 3: 視点・カメラパラメータ変更。トポロジ・頂点位置不変。
         /// 契機: カメラオービット、パン、ズーム、ResetToMesh。

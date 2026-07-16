@@ -183,13 +183,15 @@ namespace Poly_Ling.Player
 
                 // IgnorePose トグル（ローカル変数にキャプチャ）
                 var ctx = entry.Context;
-                var toggle = new Toggle("姿勢無視") { value = ctx.IgnorePoseInArmature };
+                var toggle = new Toggle("変換対象") { value = !ctx.IgnorePoseInArmature };
                 toggle.style.fontSize   = 8;
                 toggle.style.marginLeft = 4;
                 toggle.RegisterValueChangedCallback(e =>
                 {
-                    ctx.IgnorePoseInArmature = e.newValue;
-                    if (e.newValue && ctx.BoneTransform != null)
+                    // チェック=変換対象、チェックを外す=除外(姿勢無視)
+                    bool ignore = !e.newValue;
+                    ctx.IgnorePoseInArmature = ignore;
+                    if (ignore && ctx.BoneTransform != null)
                         ctx.BoneTransform.Rotation = Vector3.zero;
                     RefreshHierarchy();
                 });

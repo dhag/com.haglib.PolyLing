@@ -604,7 +604,10 @@ namespace Poly_Ling.Core
                 if (ctx?.UnityMesh == null || ctx.MeshObject == null || !ctx.IsVisible) continue;
 
                 var mesh = ctx.UnityMesh;
-                var displayMatrix = ctx.WorldMatrix;
+                // 通常描画 SubmitMeshes と同じく identity で描画する。
+                // 頂点はワールド化済み（スキンドメッシュ）/GPU compute 側で処理されるため、
+                // ここで ctx.WorldMatrix を掛けると二重変換になりずれる。
+                var displayMatrix = Matrix4x4.identity;
                 for (int sub = 0; sub < mesh.subMeshCount; sub++)
                     Graphics.DrawMesh(mesh, displayMatrix, visMat, 0, cam, sub);
             }

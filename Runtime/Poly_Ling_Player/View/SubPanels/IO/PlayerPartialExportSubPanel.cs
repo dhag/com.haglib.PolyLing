@@ -84,6 +84,7 @@ namespace Poly_Ling.Player
         private Label         _statusLabel;
         private VisualElement _settingsContainer;
         private VisualElement _listContainer;
+        private TextField     _outPathField;
 
         // ================================================================
         // Build
@@ -99,7 +100,27 @@ namespace Poly_Ling.Player
             _panelNameLabel.style.marginBottom = 4;
             parent.Add(_panelNameLabel);
 
-            var exportBtn = new Button(OnExportClicked) { text = "再エクスポート" };
+            // 出力先パス行（[...] は保存先選択のみ・即実行しない）
+            var fileRow = new VisualElement();
+            fileRow.style.flexDirection = FlexDirection.Row;
+            fileRow.style.marginBottom  = 2;
+
+            var browseBtn = new Button(OnBrowseOut) { text = "..." };
+            browseBtn.style.width       = 28;
+            browseBtn.style.marginRight = 2;
+
+            _outPathField = new TextField();
+            _outPathField.style.flexGrow = 1;
+            _outPathField.RegisterValueChangedCallback(e => RecentPaths.Set(OutPathKey(), e.newValue));
+            _outPathField.AddToClassList("visible-caret");
+            var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
+            if (caretSheet != null) _outPathField.styleSheets.Add(caretSheet);
+
+            fileRow.Add(browseBtn);
+            fileRow.Add(_outPathField);
+            parent.Add(fileRow);
+
+            var exportBtn = new Button(OnExportClicked) { text = "エクスポート" };
             exportBtn.style.marginTop    = 2;
             exportBtn.style.marginBottom = 4;
             exportBtn.style.height       = 28;
@@ -125,6 +146,7 @@ namespace Poly_Ling.Player
             if (_panelNameLabel != null)
                 _panelNameLabel.text = mode == Mode.PMX ? "PMX部分エクスポート" : "MQO部分エクスポート";
 
+            _outPathField?.SetValueWithoutNotify(RecentPaths.Get(OutPathKey()));
             RestoreRefForMode();
             RebuildAll();
         }
@@ -186,10 +208,8 @@ namespace Poly_Ling.Player
             if (!_pmxMappings.Any(m => m.Selected && m.IsMatched))
             { SetStatus("エクスポートするメッシュを選択してください"); return; }
 
-            string defaultName = Path.GetFileNameWithoutExtension(_pmxRefPath) + "_modified.pmx";
-            string savePath    = PLEditorBridge.I.SaveFilePanel(
-                "Export PMX", Path.GetDirectoryName(_pmxRefPath), defaultName, "pmx");
-            if (string.IsNullOrEmpty(savePath)) return;
+            string savePath = _outPathField?.value ?? "";
+            if (string.IsNullOrEmpty(savePath)) { SetStatus("保存先が指定されていません"); return; }
 
             int transferred = _pmxOps.ExecuteExport(
                 _pmxMappings, _pmxDocument,
@@ -214,10 +234,8 @@ namespace Poly_Ling.Player
             if (selectedModels.Count == 0 || selectedMQOs.Count == 0)
             { SetStatus("エクスポートするメッシュを選択してください"); return; }
 
-            string defaultName = Path.GetFileNameWithoutExtension(_mqoRefPath) + "_partial.mqo";
-            string savePath    = PLEditorBridge.I.SaveFilePanel(
-                "Export MQO", Path.GetDirectoryName(_mqoRefPath), defaultName, "mqo");
-            if (string.IsNullOrEmpty(savePath)) return;
+            string savePath = _outPathField?.value ?? "";
+            if (string.IsNullOrEmpty(savePath)) { SetStatus("保存先が指定されていません"); return; }
 
             int transferred = _mqoOps.ExecuteExport(
                 selectedMQOs, selectedModels,
@@ -231,6 +249,27 @@ namespace Poly_Ling.Player
             SetStatus($"完了: {transferred}verts → {Path.GetFileName(savePath)}");
             _mqoHelper.LoadMQO(_mqoRefPath, _mqoFlipZ, visibleOnly: false);
         }
+
+        private void OnBrowseOut()
+        {
+            string ext     = _mode == Mode.PMX ? "pmx" : "mqo";
+            string title   = _mode == Mode.PMX ? "Export PMX" : "Export MQO";
+            string refPath = _mode == Mode.PMX ? _pmxRefPath : _mqoRefPath;
+            string dir     = string.IsNullOrEmpty(refPath)
+                ? Application.dataPath
+                : (Path.GetDirectoryName(refPath) ?? Application.dataPath);
+            string defName = _mode == Mode.PMX
+                ? (Path.GetFileNameWithoutExtension(refPath) + "_modified.pmx")
+                : (Path.GetFileNameWithoutExtension(refPath) + "_partial.mqo");
+
+            string savePath = PLEditorBridge.I.SaveFilePanel(title, dir, defName, ext);
+            if (!string.IsNullOrEmpty(savePath))
+                _outPathField.value = savePath;   // 選択のみ（即実行しない）
+        }
+
+        /// <summary>出力先パスの保存キー（モード別）</summary>
+        private string OutPathKey()
+            => "PartialExport." + (_mode == Mode.PMX ? "PMX" : "MQO") + ".OutPath";
 
         // ================================================================
         // UI 再構築

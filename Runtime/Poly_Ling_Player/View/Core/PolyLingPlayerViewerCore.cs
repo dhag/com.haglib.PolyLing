@@ -998,6 +998,11 @@ namespace Poly_Ling.Player
                 _activePanel?.ShowBrushCircle(center, radius, color);
             _skinWeightPaintHandler.OnHideBrushCircle = () =>
                 _activePanel?.HideBrushCircle();
+            _skinWeightPaintHandler.GetScreenPositions       = () => _viewportManager.GetScreenPositions();
+            _skinWeightPaintHandler.GetVertexOffset          = ctxIdx => _viewportManager.GetVertexOffset(ctxIdx);
+            _skinWeightPaintHandler.IsVertexVisible          = gi => _viewportManager.IsVertexVisible(gi);
+            _skinWeightPaintHandler.GetViewportHeight        = () => _activeViewport?.Cam?.pixelHeight ?? 0f;
+            _skinWeightPaintHandler.IsBackfaceCullingEnabled = () => _renderer?.BackfaceCullingEnabled ?? true;
 
             _vertexInteractor = new PlayerVertexInteractor(_selectionOps)
             {
@@ -1964,6 +1969,7 @@ namespace Poly_Ling.Player
 
             _skinWeightPaintPanel = new PlayerSkinWeightPaintPanel();
             _skinWeightPaintPanel.OnRepaint = () => _activePanel?.MarkDirtyRepaint();
+            _skinWeightPaintPanel.OnTargetBoneChanged = () => _viewportManager.EnterWeightTargetChanged(ActiveProject);
             _skinWeightPaintPanel.OnMeshSelectionChanged = () =>
             {
                 if (_interactionMode == InteractionMode.SkinWeightPaint)
@@ -2654,11 +2660,12 @@ namespace Poly_Ling.Player
 
             _projectFileSubPanel = new PlayerProjectFileSubPanel();
             _projectFileSubPanel.Build(_layoutRoot.ProjectFileSection);
-            _projectFileSubPanel.OnSave     = OnSaveProject;
-            _projectFileSubPanel.OnLoad     = OnLoadProject;
-            _projectFileSubPanel.OnSaveCsv  = OnSaveCsvProject;
-            _projectFileSubPanel.OnLoadCsv  = OnLoadCsvProject;
-            _projectFileSubPanel.OnMergeCsv = OnMergeCsvProject;
+            _projectFileSubPanel.OnLoad      = OnLoadProject;
+            _projectFileSubPanel.OnSave      = OnSaveProject;
+            _projectFileSubPanel.OnSaveAs    = OnSaveAsProject;
+            _projectFileSubPanel.OnLoadCsv   = OnLoadCsvProject;
+            _projectFileSubPanel.OnSaveCsv   = OnSaveCsvProject;
+            _projectFileSubPanel.OnSaveAsCsv = OnSaveAsCsvProject;
 
             _partialImportSubPanel = new PlayerPartialImportSubPanel();
             _partialImportSubPanel.Build(_layoutRoot.PartialImportSection);
@@ -2718,6 +2725,7 @@ namespace Poly_Ling.Player
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
             if (_layoutRoot.UnderlayBtn != null)
                 _layoutRoot.UnderlayBtn.clicked     += ShowUnderlayPanel;
+            _layoutRoot.FullExportPmxBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.PMX);
             _layoutRoot.FullExportMqoBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.MQO);
             _layoutRoot.ProjectFileBtn.clicked      += ShowProjectFilePanel;
             _layoutRoot.PartialImportPmxBtn.clicked += () => ShowPartialImportPanel(PlayerPartialImportSubPanel.Mode.PMX);
@@ -3877,7 +3885,18 @@ namespace Poly_Ling.Player
             catch (Exception ex) { _exportSubPanel?.SetStatus($"例外: {ex.Message}"); }
         }
 
-        private void OnSaveProject()
+        private void OnSaveProject(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { _projectFileSubPanel?.SetStatus("パスが指定されていません"); return; }
+            var project = ActiveProject;
+            if (project == null) { _projectFileSubPanel?.SetStatus("プロジェクトがありません"); return; }
+            var dto = ProjectSerializer.FromProjectContext(project);
+            if (dto == null) { _projectFileSubPanel?.SetStatus("シリアライズ失敗"); return; }
+            bool ok = ProjectSerializer.Export(path, dto);
+            _projectFileSubPanel?.SetStatus(ok ? "保存完了" : "保存失敗");
+        }
+
+        private void OnSaveAsProject()
         {
             var project = ActiveProject;
             if (project == null) { _projectFileSubPanel?.SetStatus("プロジェクトがありません"); return; }
@@ -3887,10 +3906,11 @@ namespace Poly_Ling.Player
             _projectFileSubPanel?.SetStatus(ok ? "保存完了" : "キャンセルまたは失敗");
         }
 
-        private void OnLoadProject()
+        private void OnLoadProject(string path)
         {
-            var dto = ProjectSerializer.ImportWithDialog();
-            if (dto == null) { _projectFileSubPanel?.SetStatus("キャンセルまたは失敗"); return; }
+            if (string.IsNullOrEmpty(path)) { _projectFileSubPanel?.SetStatus("パスが指定されていません"); return; }
+            var dto = ProjectSerializer.Import(path);
+            if (dto == null) { _projectFileSubPanel?.SetStatus("読込失敗"); return; }
             var loadedProject = ProjectSerializer.ToProjectContext(dto);
             if (loadedProject == null) { _projectFileSubPanel?.SetStatus("復元失敗"); return; }
             _localLoader.Clear();
@@ -3899,7 +3919,16 @@ namespace Poly_Ling.Player
             _projectFileSubPanel?.SetStatus($"読込完了: {dto.name}");
         }
 
-        private void OnSaveCsvProject()
+        private void OnSaveCsvProject(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { _projectFileSubPanel?.SetStatus("パスが指定されていません"); return; }
+            var project = ActiveProject;
+            if (project == null) { _projectFileSubPanel?.SetStatus("プロジェクトがありません"); return; }
+            bool ok = CsvProjectSerializer.Export(path, project);
+            _projectFileSubPanel?.SetStatus(ok ? "CSVフォルダ保存完了" : "保存失敗");
+        }
+
+        private void OnSaveAsCsvProject()
         {
             var project = ActiveProject;
             if (project == null) { _projectFileSubPanel?.SetStatus("プロジェクトがありません"); return; }
@@ -3907,10 +3936,13 @@ namespace Poly_Ling.Player
             _projectFileSubPanel?.SetStatus(ok ? "CSVフォルダ保存完了" : "キャンセルまたは失敗");
         }
 
-        private void OnLoadCsvProject()
+        private void OnLoadCsvProject(string path, bool merge)
         {
-            var loadedProject = CsvProjectSerializer.ImportWithDialog(out _, out _);
-            if (loadedProject == null) { _projectFileSubPanel?.SetStatus("キャンセルまたは失敗"); return; }
+            if (string.IsNullOrEmpty(path)) { _projectFileSubPanel?.SetStatus("パスが指定されていません"); return; }
+            if (merge) { MergeCsvFromFolder(path); return; }
+
+            var loadedProject = CsvProjectSerializer.Import(path, out _, out _);
+            if (loadedProject == null) { _projectFileSubPanel?.SetStatus("読込失敗"); return; }
             _localLoader.Clear();
             foreach (var m in loadedProject.Models)
                 _localLoader.LoadModel(m.FilePath ?? loadedProject.Name, m);
@@ -4006,15 +4038,11 @@ namespace Poly_Ling.Player
             _activePanel?.MarkDirtyRepaint();
         }
 
-        private void OnMergeCsvProject()
+        private void MergeCsvFromFolder(string folderPath)
         {
             var model = ActiveProject?.CurrentModel;
             if (model == null) { _projectFileSubPanel?.SetStatus("モデルがありません"); return; }
-
-            string folderPath = PLEditorBridge.I.OpenFolderPanel("Add from CSV Folder",
-                RecentPaths.Get(CsvProjectSerializer.CsvFolderKey, Application.dataPath), "");
-            if (string.IsNullOrEmpty(folderPath)) { _projectFileSubPanel?.SetStatus("キャンセル"); return; }
-            RecentPaths.Set(CsvProjectSerializer.CsvFolderKey, folderPath);
+            if (string.IsNullOrEmpty(folderPath)) { _projectFileSubPanel?.SetStatus("パスが指定されていません"); return; }
 
             var entries = CsvModelSerializer.LoadAllMeshEntriesFromFolder(folderPath);
             if (entries == null || entries.Count == 0) { _projectFileSubPanel?.SetStatus("読み込めるデータがありません"); return; }

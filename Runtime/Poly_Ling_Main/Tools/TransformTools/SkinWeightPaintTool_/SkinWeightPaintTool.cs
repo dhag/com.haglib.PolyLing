@@ -249,7 +249,7 @@ namespace Poly_Ling.Tools
                 BuildAdjacencyCache(meshCtx.MeshObject);
 
             // 最初のストローク適用
-            ApplyBrush(ctx, mousePos);
+            ApplyBrush(ctx);
 
             return true;
         }
@@ -259,7 +259,7 @@ namespace Poly_Ling.Tools
             if (!_isDragging) return false;
 
             _currentScreenPos = mousePos;
-            ApplyBrush(ctx, mousePos);
+            ApplyBrush(ctx);
 
             return true;
         }
@@ -327,7 +327,7 @@ namespace Poly_Ling.Tools
         // ブラシ適用
         // ================================================================
 
-        private void ApplyBrush(ToolContext ctx, Vector2 mousePos)
+        private void ApplyBrush(ToolContext ctx)
         {
             var model = ctx.Model;
             if (model == null) return;
@@ -335,14 +335,8 @@ namespace Poly_Ling.Tools
             var meshCtx = GetTargetMeshContext(model);
             if (meshCtx?.MeshObject == null) return;
 
-            // マウス位置からレイを取得
-            Ray ray = ctx.ScreenPosToRay(mousePos);
-
-            // ブラシ中心のワールド座標を計算
-            Vector3 brushCenter = FindBrushCenter(ctx, meshCtx.MeshObject, ray);
-
-            // ブラシ範囲内の頂点を収集
-            var affected = GetVerticesInBrushRadius(meshCtx.MeshObject, brushCenter);
+            // ブラシ範囲内の頂点を収集（Player の GPU hover path / スクリーン空間ブラシ）
+            var affected = ctx.GetBrushVertices?.Invoke() ?? new List<(int index, float falloff)>();
             if (affected.Count == 0) return;
 
             int targetBone = TargetBone;
@@ -557,58 +551,8 @@ namespace Poly_Ling.Tools
         }
 
         // ================================================================
-        // ブラシ中心・範囲
+        // ブラシ falloff
         // ================================================================
-
-        private Vector3 FindBrushCenter(ToolContext ctx, MeshObject mo, Ray ray)
-        {
-            float closestDist = float.MaxValue;
-            Vector3 closestPoint = ray.origin + ray.direction * 5f;
-
-            foreach (var face in mo.Faces)
-            {
-                if (face.VertexIndices.Count < 3) continue;
-
-                Vector3 v0 = mo.Vertices[face.VertexIndices[0]].Position;
-
-                for (int i = 1; i < face.VertexIndices.Count - 1; i++)
-                {
-                    Vector3 v1 = mo.Vertices[face.VertexIndices[i]].Position;
-                    Vector3 v2 = mo.Vertices[face.VertexIndices[i + 1]].Position;
-
-                    if (RayTriangleIntersection(ray, v0, v1, v2, out float t))
-                    {
-                        if (t < closestDist)
-                        {
-                            closestDist = t;
-                            closestPoint = ray.origin + ray.direction * t;
-                        }
-                    }
-                }
-            }
-
-            return closestPoint;
-        }
-
-        private List<(int index, float falloff)> GetVerticesInBrushRadius(MeshObject mo, Vector3 brushCenter)
-        {
-            var result = new List<(int, float)>();
-            float radius = BrushRadius;
-            var falloffType = Falloff;
-
-            for (int i = 0; i < mo.VertexCount; i++)
-            {
-                float dist = Vector3.Distance(mo.Vertices[i].Position, brushCenter);
-                if (dist <= radius)
-                {
-                    float normalizedDist = dist / radius;
-                    float weight = ComputeFalloff(normalizedDist, falloffType);
-                    result.Add((i, weight));
-                }
-            }
-
-            return result;
-        }
 
         private static float ComputeFalloff(float normalizedDist, BrushFalloff type)
         {
@@ -624,35 +568,6 @@ namespace Poly_Ling.Tools
                 default:
                     return t;
             }
-        }
-
-        // ================================================================
-        // レイキャスト
-        // ================================================================
-
-        private static bool RayTriangleIntersection(Ray ray, Vector3 v0, Vector3 v1, Vector3 v2, out float t)
-        {
-            t = 0;
-            Vector3 edge1 = v1 - v0;
-            Vector3 edge2 = v2 - v0;
-            Vector3 h = Vector3.Cross(ray.direction, edge2);
-            float a = Vector3.Dot(edge1, h);
-
-            if (Mathf.Abs(a) < 1e-6f) return false;
-
-            float f = 1f / a;
-            Vector3 s = ray.origin - v0;
-            float u = f * Vector3.Dot(s, h);
-
-            if (u < 0 || u > 1) return false;
-
-            Vector3 q = Vector3.Cross(s, edge1);
-            float v = f * Vector3.Dot(ray.direction, q);
-
-            if (v < 0 || u + v > 1) return false;
-
-            t = f * Vector3.Dot(edge2, q);
-            return t > 1e-6f;
         }
 
         // ================================================================

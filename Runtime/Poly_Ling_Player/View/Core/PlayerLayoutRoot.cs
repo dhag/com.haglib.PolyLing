@@ -817,6 +817,9 @@ namespace Poly_Ling.Player
             // ── ボーン・モーフ ─────────────────────────────────────────
             var foBoneMorph = MakeFoldout("ボーン・モーフ", "BoneMorph");
 
+            MeshFilterToSkinnedBtn = MakeBtn("メッシュからボーンとスキンの生成");
+            foBoneMorph.Add(MeshFilterToSkinnedBtn);
+
             BoneEditorBtn = MakeBtn("ボーンエディタ");
             foBoneMorph.Add(BoneEditorBtn);
 
@@ -874,9 +877,6 @@ namespace Poly_Ling.Player
 
             // ── その他 ─────────────────────────────────────────────────
             var foOther = MakeFoldout("その他", "Other");
-
-            MeshFilterToSkinnedBtn = MakeBtn("MF→Skinned");
-            foOther.Add(MeshFilterToSkinnedBtn);
 
             var rowMisc = new VisualElement(); rowMisc.style.flexDirection = FlexDirection.Row; rowMisc.style.marginBottom = 2;
             MediaPipeBtn    = MakeBtn("MediaPipe");   MediaPipeBtn.style.flexGrow    = 1; MediaPipeBtn.style.marginRight    = 2;

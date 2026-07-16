@@ -40,6 +40,18 @@ namespace Poly_Ling.Player
         /// <summary>ブラシ円を非表示にする。</summary>
         public Action                         OnHideBrushCircle;
 
+        // --- GPU hover path（ブラシ範囲頂点取得用。MoveToolHandler と同じソース） ---
+        /// <summary>GPU 計算済みの全頂点スクリーン座標（Y=0上）。</summary>
+        public Func<Vector2[]> GetScreenPositions;
+        /// <summary>ctx インデックス→頂点オフセット。</summary>
+        public Func<int, int>  GetVertexOffset;
+        /// <summary>グローバル頂点が可視（表向き）か。</summary>
+        public Func<int, bool> IsVertexVisible;
+        /// <summary>ビューポート高さ（px）。</summary>
+        public Func<float>     GetViewportHeight;
+        /// <summary>背面カリングが有効か（OFF なら裏面頂点も塗る）。</summary>
+        public Func<bool>      IsBackfaceCullingEnabled;
+
         // ================================================================
         // 初期化
         // ================================================================
@@ -211,7 +223,53 @@ namespace Poly_Ling.Player
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
 
+            // ブラシ範囲頂点（GPU hover path / スクリーン空間ブラシ）
+            float worldRadius = SkinWeightPaintTool.ActivePanel?.CurrentBrushRadius ?? 0.3f;
+            float screenR     = EstimateBrushScreenRadius(baseCtx, worldRadius);
+            baseCtx.GetBrushVertices = () => ComputeBrushVertices(screenPosYDown, screenR);
+
             return baseCtx;
+        }
+
+        /// <summary>
+        /// ブラシ範囲（スクリーン円）内の頂点＋falloff を GPU hover path で取得する。
+        /// CommitBoxSelect と同方式：GPU 計算済みスクリーン座標＋可視判定。
+        /// 背面除外はカリング ON のときのみ（OFF なら裏面も塗る）。
+        /// </summary>
+        private System.Collections.Generic.List<(int index, float falloff)> ComputeBrushVertices(
+            Vector2 mouseYDown, float screenRadius)
+        {
+            var result = new System.Collections.Generic.List<(int index, float falloff)>();
+            var model  = _project?.CurrentModel;
+            var meshCtx = model?.FirstDrawableMeshContext ?? model?.FirstSelectedMeshContext;
+            var mo = meshCtx?.MeshObject;
+            if (mo == null || GetScreenPositions == null) return result;
+
+            var screenPos = GetScreenPositions();
+            if (screenPos == null) return result;
+
+            int   ctxIdx       = model.FirstMeshIndex;
+            int   vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
+            float vpH          = GetViewportHeight?.Invoke() ?? 0f;
+            bool  cullOn       = IsBackfaceCullingEnabled?.Invoke() ?? true;
+
+            for (int i = 0; i < mo.VertexCount; i++)
+            {
+                int gi = vertexOffset + i;
+                if (gi < 0 || gi >= screenPos.Length) continue;
+                // 背面除外はカリング ON のときだけ（OFF なら裏面も対象）
+                if (cullOn && IsVertexVisible != null && !IsVertexVisible(gi)) continue;
+
+                // CommitBoxSelect と同じ Y 反転でスクリーン座標(Y=0下)へ揃える
+                Vector2 vs   = new Vector2(screenPos[gi].x, vpH - screenPos[gi].y);
+                float   dist = Vector2.Distance(vs, mouseYDown);
+                if (dist <= screenRadius)
+                {
+                    float falloff = screenRadius > 0f ? 1f - (dist / screenRadius) : 1f;
+                    result.Add((i, falloff));
+                }
+            }
+            return result;
         }
 
         private static Vector2 ToImgui(Vector2 screenPosYDown, ToolContext ctx)
