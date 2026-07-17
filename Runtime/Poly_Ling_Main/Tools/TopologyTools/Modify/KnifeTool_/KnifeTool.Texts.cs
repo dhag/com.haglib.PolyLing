@@ -12,6 +12,12 @@ namespace Poly_Ling.Tools
             ["Title"]      = new() { ["en"] = "Knife Tool", ["ja"] = "ナイフ", ["hi"] = "きるどうぐ" },
             ["LadderCut"]  = new() { ["en"] = "Ladder Cut", ["ja"] = "ラダー切断", ["hi"] = "はしごぎり" },
             ["Erase"]      = new() { ["en"] = "Erase", ["ja"] = "辺消去", ["hi"] = "へりけし" },
+            ["EqualDivide"] = new() { ["en"] = "Equal Divide", ["ja"] = "等分割",             ["hi"] = "とうぶんかつ" },
+            ["BeltLoop"]    = new() { ["en"] = "Belt / Loop",  ["ja"] = "一意分割(ベルト)",     ["hi"] = "ベルトわけ" },
+
+            ["PickBeltEdge"] = new() { ["en"] = "Click an edge to cut its belt/loop.\nESC: Cancel", ["ja"] = "分割する辺をクリック（ベルト/ループ自動）\nESC: キャンセル", ["hi"] = "へりをクリック（ベルト）\nESC: やめる" },
+            ["Divisions"]    = new() { ["en"] = "Divisions", ["ja"] = "分割数", ["hi"] = "わけるかず" },
+            ["ErrBeltUnreachable"] = new() { ["en"] = "Cannot form a belt from this edge", ["ja"] = "この辺からベルトを構成できません", ["hi"] = "このへりではベルトができません" },
 
             ["PickStart"]   = new() { ["en"] = "Click start vertex.\nESC: Cancel", ["ja"] = "開始頂点をクリック\nESC: キャンセル", ["hi"] = "はじめのてんをクリック\nESC: やめる" },
             ["PickSegment"] = new() { ["en"] = "Click a segment edge.\nESC: Cancel", ["ja"] = "セグメント辺をクリック\nESC: キャンセル", ["hi"] = "へりをクリック\nESC: やめる" },

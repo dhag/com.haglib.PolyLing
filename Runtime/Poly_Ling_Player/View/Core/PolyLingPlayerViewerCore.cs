@@ -1135,6 +1135,7 @@ namespace Poly_Ling.Player
                     {
                         _knifeHandler?.Cancel();
                         UpdateAdvancedSelectOverlay();
+                        _knifeSubPanel?.Refresh();
                     }
                 };
             }
@@ -1262,7 +1263,8 @@ namespace Poly_Ling.Player
         {
             if (_interactionMode == InteractionMode.ObjectMove   ||
                 _interactionMode == InteractionMode.PivotOffset  ||
-                _interactionMode == InteractionMode.SkinWeightPaint)
+                _interactionMode == InteractionMode.SkinWeightPaint ||
+                _interactionMode == InteractionMode.None)
             {
                 _activePanel?.HideFaceHover();
                 return;
@@ -1925,7 +1927,8 @@ namespace Poly_Ling.Player
             }
 
             if (_interactionMode == InteractionMode.Sculpt || _interactionMode == InteractionMode.AdvancedSelect ||
-                _interactionMode == InteractionMode.SkinWeightPaint)
+                _interactionMode == InteractionMode.SkinWeightPaint ||
+                _interactionMode == InteractionMode.None)
             {
                 panel.HideGizmo();
                 return;
@@ -2538,6 +2541,7 @@ namespace Poly_Ling.Player
                         }
                     }).StartingIn(300);
                     UpdateAdvancedSelectOverlay();
+                    _knifeSubPanel?.Refresh();
                 },
                 OnSyncMeshPositions = mc => { // Phase 2a-2c: SyncMeshPositionsAndTransform を EnterVerticesMoved(Dragging) に集約。
  _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc); },
@@ -4524,6 +4528,13 @@ namespace Poly_Ling.Player
                     break;
             }
 
+            // ホバー(頂点ヒットテスト)抑止: ボーン・モーフ系(None)・ボーンエディタ(ObjectMove)・
+            // SkinWeightPaint では移動用の頂点ホバーが不要なため抑止する。
+            _viewportManager?.SetSuppressHover(
+                mode == InteractionMode.None ||
+                mode == InteractionMode.ObjectMove ||
+                mode == InteractionMode.SkinWeightPaint);
+
             // InteractionMode ボタンのハイライト (2 系統色の片方)
             UpdateInteractionButtonHighlight();
         }
@@ -4758,6 +4769,8 @@ namespace Poly_Ling.Player
         {
             switch (_interactionMode)
             {
+                case InteractionMode.None:
+                case InteractionMode.ObjectMove:
                 case InteractionMode.SkinWeightPaint:
                 case InteractionMode.Sculpt:
                     return HoverTargetKind.None;

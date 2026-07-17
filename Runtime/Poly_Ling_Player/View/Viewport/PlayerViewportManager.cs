@@ -101,6 +101,10 @@ namespace Poly_Ling.Player
         private MoveToolHandler    _moveToolHandler;
         /// <summary>MoveToolHandler 以外のアクティブツールの UpdateHover コールバック。</summary>
         private Action<Vector2, Poly_Ling.Tools.ToolContext> _activeToolHoverCallback;
+        private bool _suppressHover;
+
+        /// <summary>ホバー更新（頂点ハイライト等）を抑止する。SkinWeightPaint 等が OnActivate で有効化する。</summary>
+        public void SetSuppressHover(bool suppress) => _suppressHover = suppress;
         private PlayerToolContext _toolCtx = new PlayerToolContext();
 
         // ================================================================
@@ -337,7 +341,9 @@ namespace Poly_Ling.Player
             var cam = target?.Cam;
             if (cam == null) return null;
             _toolCtx.UpdateFromViewport(target);
-            return _toolCtx.ToToolContext(cam);
+            var ctx = _toolCtx.ToToolContext(cam);
+            if (ctx != null) ctx.SetSuppressHover = SetSuppressHover;
+            return ctx;
         }
 
         /// <summary>
@@ -1012,10 +1018,11 @@ namespace Poly_Ling.Player
             if (hoverSlot >= 0)
                 adapter.BackfaceCullingEnabled = _displaySettings[hoverSlot].BackfaceCulling;
 
-            if (_moveToolHandler != null)
+            if (_moveToolHandler != null && !_suppressHover)
                 _moveToolHandler.UpdateHover(panelLocalPos, _toolCtx.ToToolContext(cam));
             // アクティブなツールが MoveToolHandler 以外の場合、そちらにも通知する
-            _activeToolHoverCallback?.Invoke(panelLocalPos, _toolCtx.ToToolContext(cam));
+            if (!_suppressHover)
+                _activeToolHoverCallback?.Invoke(panelLocalPos, _toolCtx.ToToolContext(cam));
 
             adapter.RequestNormal();
             adapter.UpdateFrame(cam, rect, panelLocalPos);

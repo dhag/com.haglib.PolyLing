@@ -51,8 +51,21 @@ namespace Poly_Ling.Player
 
         public KnifeMode Mode { get => _tool.Mode; set => _tool.Mode = value; }
 
+        /// <summary>等分割オン（各モードで N 等分。オフは自由比率1本）。</summary>
+        public bool EqualDivide { get => _tool.EqualDivide; set => _tool.EqualDivide = value; }
+
+        /// <summary>等分割の分割ピース数（≥2）。EqualDivide=true のとき使用。</summary>
+        public int Divisions { get => _tool.Divisions; set => _tool.Divisions = value; }
+
         /// <summary>状態説明テキスト（サブパネル用）。</summary>
         public string StageText() => _tool.StageText();
+
+        // ---- 状態パススルー（サブパネル情報表示用） ----
+        public bool  HasStart    => _tool.HasStartVertex;
+        public int   StartVertex => _tool.CurrentStartVertex;
+        public bool  HasSegment  => _tool.HasSegmentEdge;
+        public Poly_Ling.Selection.VertexPair Segment => _tool.CurrentSegment;
+        public float CutRatio    => _tool.CutRatio;
 
         /// <summary>プレビュー（オーバーレイ描画用）。</summary>
         public KnifeTool.KnifePreview GetPreview() => _tool.Preview;

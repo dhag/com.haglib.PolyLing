@@ -709,6 +709,9 @@ namespace Poly_Ling.Player
             // ── ファイル ───────────────────────────────────────────────
             var foFile = MakeFoldout("ファイル", "File");
 
+            ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
+            foFile.Add(ProjectFileBtn);
+
             // Load PMX / Load MQO（旧: foldout の外・上）を「ファイル」の先頭に配置する。
             foFile.Add(LocalLoaderSection);
 
@@ -736,8 +739,6 @@ namespace Poly_Ling.Player
             fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
             foFile.Add(fullExportRow);
 
-            ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
-            foFile.Add(ProjectFileBtn);
 
             // ── 図形生成 ───────────────────────────────────────────────
             var foPrimitive = MakeFoldout("図形生成", "Primitive");

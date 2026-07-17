@@ -16,7 +16,8 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// 開始頂点 → セグメント(1辺) → 終了頂点 でラダー切断計画を解決する。
         /// </summary>
-        public static LadderCutPlan Resolve(MeshObject mo, int startV, VertexPair seg, int endV)
+        public static LadderCutPlan Resolve(MeshObject mo, int startV, VertexPair seg, int endV,
+            float cutRatio = 0.5f, int ratioAnchorVertex = -1)
         {
             if (mo == null) return LadderCutPlan.Fail("メッシュがありません");
             if (startV < 0 || startV >= mo.VertexCount) return LadderCutPlan.Fail("開始頂点が無効です");
@@ -39,6 +40,8 @@ namespace Poly_Ling.Tools
             }
 
             var plan = new LadderCutPlan { Ok = true };
+            // 連続ラング（共有四角形）を結ぶ遷移。比率の側方向伝播に使う。
+            var transitions = new List<(VertexPair from, VertexPair to, int face)>();
 
             // --- 同一四角形内で終了する場合（対角線切断） ---
             if (mo.Faces[quad0].VertexIndices.Contains(endV))
@@ -82,6 +85,7 @@ namespace Poly_Ling.Tools
                     plan.FaceCuts.Add(new LadderFaceCut(nextFace,
                         LadderAnchor.AtRung(current), LadderAnchor.AtVertex(endV)));
                     visited.Add(nextFace);
+                    FillRungParams(mo, plan, transitions, seg, cutRatio, ratioAnchorVertex);
                     return plan;
                 }
 
@@ -97,6 +101,7 @@ namespace Poly_Ling.Tools
                 plan.FaceCuts.Add(new LadderFaceCut(nextFace,
                     LadderAnchor.AtRung(current), LadderAnchor.AtRung(opp.Value)));
                 visited.Add(nextFace);
+                transitions.Add((current, opp.Value, nextFace));
                 current = opp.Value;
             }
 
@@ -246,6 +251,76 @@ namespace Poly_Ling.Tools
                 if ((a == v1 && b == v2) || (a == v2 && b == v1)) return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// クリック比率をセグメント位置から全ラングへ同一側・同一比率で伝播し、
+        /// plan.RungParams に格納する。seg が巡回に含まれなければ何もしない（＝中点扱い）。
+        /// </summary>
+        private static void FillRungParams(MeshObject mo, LadderCutPlan plan,
+            List<(VertexPair from, VertexPair to, int face)> transitions,
+            VertexPair seg, float cutRatio, int ratioAnchorVertex)
+        {
+            int count = plan.Rungs.Count;
+            if (count == 0) return;
+
+            int segIdx = plan.Rungs.IndexOf(seg);
+            if (segIdx < 0) return; // seg 不在（想定外）→ 全ラング中点にフォールバック
+
+            float ratio = cutRatio < 0f ? 0f : (cutRatio > 1f ? 1f : cutRatio);
+            int segAnchor = (ratioAnchorVertex == seg.V1 || ratioAnchorVertex == seg.V2)
+                ? ratioAnchorVertex : seg.V1;
+
+            var anchors = new int[count];
+            for (int i = 0; i < count; i++) anchors[i] = -1;
+            anchors[segIdx] = segAnchor;
+
+            // 下方向: transitions[k] は Rungs[k]→Rungs[k+1]。既知 Rungs[k+1] から Rungs[k] を求める。
+            for (int k = segIdx - 1; k >= 0; k--)
+            {
+                var tr = transitions[k];
+                anchors[k] = OppositeAnchorSafe(mo, tr.face, tr.to, anchors[k + 1], plan.Rungs[k]);
+            }
+            // 上方向: 既知 Rungs[k] から Rungs[k+1] を求める。
+            for (int k = segIdx; k < count - 1; k++)
+            {
+                var tr = transitions[k];
+                anchors[k + 1] = OppositeAnchorSafe(mo, tr.face, tr.from, anchors[k], plan.Rungs[k + 1]);
+            }
+
+            for (int i = 0; i < count; i++)
+                plan.RungParams[plan.Rungs[i]] = new LadderCutPlan.RungCutParam(anchors[i], ratio);
+        }
+
+        /// <summary>
+        /// 四角形 face 内で、既知辺 knownEdge 上の頂点 knownAnchor と側辺で接続する
+        /// 対辺側の頂点を返す。取得不能なら -1。
+        /// </summary>
+        private static int OppositeAnchor(MeshObject mo, int faceIdx, VertexPair knownEdge, int knownAnchor)
+        {
+            if (faceIdx < 0 || faceIdx >= mo.FaceCount) return -1;
+            var verts = mo.Faces[faceIdx].VertexIndices;
+            int n = verts.Count;
+            if (n != 4) return -1;
+            for (int i = 0; i < n; i++)
+            {
+                int a = verts[i];
+                int b = verts[(i + 1) % n];
+                if ((a == knownEdge.V1 && b == knownEdge.V2) || (a == knownEdge.V2 && b == knownEdge.V1))
+                {
+                    // 辺(a,b)=local(i,i+1)。側辺: a↔verts[i+3], b↔verts[i+2]。
+                    if (knownAnchor == a) return verts[(i + 3) % n];
+                    if (knownAnchor == b) return verts[(i + 2) % n];
+                    return -1;
+                }
+            }
+            return -1;
+        }
+
+        private static int OppositeAnchorSafe(MeshObject mo, int faceIdx, VertexPair knownEdge, int knownAnchor, VertexPair targetRung)
+        {
+            int a = OppositeAnchor(mo, faceIdx, knownEdge, knownAnchor);
+            return a >= 0 ? a : targetRung.V1;
         }
     }
 }

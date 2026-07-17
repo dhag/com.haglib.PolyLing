@@ -32,7 +32,10 @@ namespace Poly_Ling.Tools
             foreach (var rung in plan.Rungs)
             {
                 if (rungVertex.ContainsKey(rung)) continue;
-                rungVertex[rung] = CreateMidVertex(mo, rung);
+                int anchor; float ratio;
+                if (plan.RungParams.TryGetValue(rung, out var rp)) { anchor = rp.AnchorVertex; ratio = rp.Ratio; }
+                else { anchor = rung.V1; ratio = MID; }
+                rungVertex[rung] = CreateCutVertex(mo, rung, anchor, ratio);
             }
 
             // 2) 面ごとに分割（面の置換＋追加のみ。既存面の添字はずれない）
@@ -85,18 +88,22 @@ namespace Poly_Ling.Tools
         // 頂点生成
         // ================================================================
 
-        private static int CreateMidVertex(MeshObject mo, VertexPair edge)
+        private static int CreateCutVertex(MeshObject mo, VertexPair edge, int anchorVertex, float ratio)
         {
-            var p1 = mo.Vertices[edge.V1].Position;
-            var p2 = mo.Vertices[edge.V2].Position;
-            var v  = new Vertex(Vector3.Lerp(p1, p2, MID));
+            int v1 = edge.V1, v2 = edge.V2;
+            // anchor 起点の比率を V1 起点の t に正規化（anchor==V2 なら 1-ratio）。
+            float t = (anchorVertex == v2) ? (1f - ratio) : ratio;
 
-            var a = mo.Vertices[edge.V1];
-            var b = mo.Vertices[edge.V2];
+            var p1 = mo.Vertices[v1].Position;
+            var p2 = mo.Vertices[v2].Position;
+            var v  = new Vertex(Vector3.Lerp(p1, p2, t));
+
+            var a = mo.Vertices[v1];
+            var b = mo.Vertices[v2];
             if (a.UVs.Count > 0 && b.UVs.Count > 0)
-                v.UVs.Add(Vector2.Lerp(a.UVs[0], b.UVs[0], MID));
+                v.UVs.Add(Vector2.Lerp(a.UVs[0], b.UVs[0], t));
             if (a.Normals.Count > 0 && b.Normals.Count > 0)
-                v.Normals.Add(Vector3.Lerp(a.Normals[0], b.Normals[0], MID).normalized);
+                v.Normals.Add(Vector3.Lerp(a.Normals[0], b.Normals[0], t).normalized);
 
             int idx = mo.VertexCount;
             mo.Vertices.Add(v);

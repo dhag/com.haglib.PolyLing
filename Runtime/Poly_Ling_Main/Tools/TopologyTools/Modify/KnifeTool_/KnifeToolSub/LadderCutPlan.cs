@@ -68,6 +68,17 @@ namespace Poly_Ling.Tools
         /// <summary>新頂点を作るラング辺（重複なし、各 1 頂点）。</summary>
         public readonly List<VertexPair> Rungs = new List<VertexPair>();
 
+        /// <summary>1ラングの切断位置指定（AnchorVertex 起点で Ratio の位置に新頂点）。</summary>
+        public readonly struct RungCutParam
+        {
+            public readonly int   AnchorVertex;
+            public readonly float Ratio;
+            public RungCutParam(int anchorVertex, float ratio) { AnchorVertex = anchorVertex; Ratio = ratio; }
+        }
+
+        /// <summary>ラングごとの切断パラメータ。未登録ラングは中点(0.5)扱い。</summary>
+        public readonly Dictionary<VertexPair, RungCutParam> RungParams = new Dictionary<VertexPair, RungCutParam>();
+
         public static LadderCutPlan Fail(string reason)
             => new LadderCutPlan { Ok = false, Error = reason };
     }

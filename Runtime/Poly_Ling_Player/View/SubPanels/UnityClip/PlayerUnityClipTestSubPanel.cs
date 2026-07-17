@@ -11,6 +11,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.UnityClip;
 
@@ -37,6 +38,8 @@ namespace Poly_Ling.Player
         private Label         _modelLabel;
         private Label         _fileLabel;
         private Label         _bindPoseLabel;
+        private TextField     _clipPathField;
+        private TextField     _bindPathField;
         private Button        _btnClear, _btnReload;
         private VisualElement _clipSection;
         private Label         _clipInfoLabel;
@@ -48,6 +51,9 @@ namespace Poly_Ling.Player
         private VisualElement _boneListContainer;
         private Foldout       _boneListFoldout;
         private Label         _statusLabel;
+
+        private const string ClipPathKey = "UnityClip.Clip.Path";
+        private const string BindPathKey = "UnityClip.Bind.Path";
 
         private ModelContext Model => GetModel?.Invoke();
         private float FrameRate => _clip != null && _clip.frameRate > 0f ? _clip.frameRate : 30f;
@@ -70,32 +76,44 @@ namespace Poly_Ling.Player
             _modelLabel.style.marginBottom = 3;
             root.Add(_modelLabel);
 
-            // ── ファイル行 ─────────────────────────────────────────────────
-            var fileRow = new VisualElement();
-            fileRow.style.flexDirection = FlexDirection.Row;
-            fileRow.style.marginBottom  = 3;
+            // ── ファイル行（loadPMX デザインに統一）───────────────────────
+            root.Add(PlayerIoUiKit.SectionLabel("Unity Clip (JSON)"));
+            _clipPathField = new TextField();
+            _clipPathField.RegisterValueChangedCallback(e => RecentPaths.Set(ClipPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_clipPathField, OnBrowseClip));
+            _clipPathField.SetValueWithoutNotify(RecentPaths.Get(ClipPathKey));
+
+            var opRow = new VisualElement();
+            opRow.style.flexDirection = FlexDirection.Row;
+            opRow.style.marginBottom  = 3;
+            var btnOpen = PlayerIoUiKit.OpenButton("開く", () => LoadClip(_clipPathField.value));
+            btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
+            _btnClear  = new Button(Clear)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
+            _btnReload = new Button(Reload) { text = "再読込" }; _btnReload.style.width  = 52;
+            opRow.Add(btnOpen); opRow.Add(_btnClear); opRow.Add(_btnReload);
+            root.Add(opRow);
+
             _fileLabel = new Label(); _fileLabel.style.flexGrow = 1; _fileLabel.style.fontSize = 10;
             _fileLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            var btnOpen = new Button(OpenFile) { text = "Open Clip..." }; btnOpen.style.width = 90;
-            _btnClear  = new Button(Clear)  { text = "クリア" };  _btnClear.style.width  = 52;
-            _btnReload = new Button(Reload) { text = "再読込" }; _btnReload.style.width  = 52;
-            fileRow.Add(_fileLabel); fileRow.Add(btnOpen); fileRow.Add(_btnClear); fileRow.Add(_btnReload);
-            root.Add(fileRow);
+            _fileLabel.style.marginBottom = 3;
+            root.Add(_fileLabel);
 
             // ── バインドポーズ行（ソース rest = 外部 UnityBone CSV v2）───────
             //   clip には bind pose が無いため、拡張C の UnityBone CSV v2 を読む。
             //   読込済みなら ApplyFrame が Unity→MMD リターゲット経路になる。
-            var bindRow = new VisualElement();
-            bindRow.style.flexDirection = FlexDirection.Row;
-            bindRow.style.marginBottom  = 3;
-            var btnBindPose = new Button(OpenSourceRestCsv) { text = "Clipのバインドポーズ" };
-            btnBindPose.style.width = 150;
+            root.Add(PlayerIoUiKit.SectionLabel("バインドポーズ CSV（UnityBone v2）"));
+            _bindPathField = new TextField();
+            _bindPathField.RegisterValueChangedCallback(e => RecentPaths.Set(BindPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind));
+            _bindPathField.SetValueWithoutNotify(RecentPaths.Get(BindPathKey));
+
+            var btnBindPose = PlayerIoUiKit.OpenButton("開く", () => LoadBind(_bindPathField.value));
+            root.Add(btnBindPose);
             _bindPoseLabel = new Label("(未読込)");
-            _bindPoseLabel.style.flexGrow = 1; _bindPoseLabel.style.fontSize = 10;
+            _bindPoseLabel.style.fontSize = 10;
             _bindPoseLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            _bindPoseLabel.style.marginLeft = 4;
-            bindRow.Add(btnBindPose); bindRow.Add(_bindPoseLabel);
-            root.Add(bindRow);
+            _bindPoseLabel.style.marginBottom = 3;
+            root.Add(_bindPoseLabel);
 
             // ── クリップセクション（ロード後に表示）──────────────────────
             _clipSection = new VisualElement();
@@ -105,7 +123,7 @@ namespace Poly_Ling.Player
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(Color.white);
+            _statusLabel.style.color    = new StyleColor(PlayerIoUiKit.StatusColor);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
 
@@ -259,10 +277,20 @@ namespace Poly_Ling.Player
         // 操作
         // ================================================================
 
-        private void OpenFile()
+        private void OnBrowseClip()
         {
-            string path = PLEditorBridge.I.OpenFilePanel("Open Unity Clip", "", "json");
+            string dir  = string.IsNullOrEmpty(_clipPathField.value)
+                ? "" : Path.GetDirectoryName(_clipPathField.value);
+            string path = PLEditorBridge.I.OpenFilePanel("Open Unity Clip", dir, "json");
             if (string.IsNullOrEmpty(path)) return;
+            _clipPathField.value = path;
+            LoadClip(path);
+        }
+
+        private void LoadClip(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
+            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
             try
             {
                 _clip         = UnityClipSerializer.LoadJson(path);
@@ -286,10 +314,20 @@ namespace Poly_Ling.Player
 
         // 外部 UnityBone CSV v2（拡張C）を読み、ソース rest（バインドポーズ）を設定する。
         // 読込済みなら以後 ApplyFrame が Unity→MMD リターゲット経路になる。
-        private void OpenSourceRestCsv()
+        private void OnBrowseBind()
         {
-            string path = PLEditorBridge.I.OpenFilePanel("Open UnityBone CSV (bind pose)", "", "csv");
+            string dir  = string.IsNullOrEmpty(_bindPathField.value)
+                ? "" : Path.GetDirectoryName(_bindPathField.value);
+            string path = PLEditorBridge.I.OpenFilePanel("Open UnityBone CSV (bind pose)", dir, "csv");
             if (string.IsNullOrEmpty(path)) return;
+            _bindPathField.value = path;
+            LoadBind(path);
+        }
+
+        private void LoadBind(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
+            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
             try
             {
                 string text = File.ReadAllText(path);

@@ -402,8 +402,8 @@ namespace Poly_Ling.Player
             parent.Add(ToggleRow(TM("ConvertToTPose"),           () => _mqoSettings.ConvertToTPose,          v => _mqoSettings.ConvertToTPose          = v));
 
             parent.Add(SectionLabel(TM("ExternalCSV"), small: true));
-            parent.Add(CsvPathRow(TM("BoneWeightCSV"), () => _mqoSettings.BoneWeightCSVPath, v => _mqoSettings.BoneWeightCSVPath = v, "csv"));
-            parent.Add(CsvPathRow(TM("BoneCSV"),       () => _mqoSettings.BoneCSVPath,       v => _mqoSettings.BoneCSVPath       = v, "csv"));
+            parent.Add(CsvPathRow(TM("BoneWeightCSV"), () => _mqoSettings.BoneWeightCSVPath, v => _mqoSettings.BoneWeightCSVPath = v, "csv", "Import.MQO.BoneWeightCSV"));
+            parent.Add(CsvPathRow(TM("BoneCSV"),       () => _mqoSettings.BoneCSVPath,       v => _mqoSettings.BoneCSVPath       = v, "csv", "Import.MQO.BoneCSV"));
         }
 
         private MQOImportSettings CloneMqoSettings()
@@ -525,10 +525,17 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>CSVパス行（ラベル + パス表示 + Browse + Clear）</summary>
-        private VisualElement CsvPathRow(string label, Func<string> get, Action<string> set, string ext)
+        private VisualElement CsvPathRow(string label, Func<string> get, Action<string> set, string ext, string recentKey = null)
         {
             var container = new VisualElement();
             container.style.marginBottom = 3;
+
+            // 保存済みパスの復元（設定オブジェクトが未設定の場合のみ RecentPaths から seed）
+            if (!string.IsNullOrEmpty(recentKey) && string.IsNullOrEmpty(get()))
+            {
+                string savedCsv = RecentPaths.Get(recentKey);
+                if (!string.IsNullOrEmpty(savedCsv)) set(savedCsv);
+            }
 
             var lbl = new Label(label);
             lbl.style.fontSize = 9;
@@ -550,6 +557,7 @@ namespace Poly_Ling.Player
                 if (!string.IsNullOrEmpty(path))
                 {
                     set(path);
+                    if (!string.IsNullOrEmpty(recentKey)) RecentPaths.Set(recentKey, path);
                     pathLbl.text = Path.GetFileName(path);
                 }
             }) { text = TM("Browse") };
@@ -560,6 +568,7 @@ namespace Poly_Ling.Player
             var clearBtn = new Button(() =>
             {
                 set("");
+                if (!string.IsNullOrEmpty(recentKey)) RecentPaths.Set(recentKey, "");
                 pathLbl.text = TM("CSVNotSet");
             }) { text = TM("Clear") };
             clearBtn.style.width      = 36;

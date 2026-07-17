@@ -11,6 +11,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -21,6 +22,7 @@ namespace Poly_Ling.Player
 
         private DropdownField _dirDropdown;
         private Label         _fileLabel;
+        private TextField     _pathField;
         private Label         _sizeLabel;      // 画像の縦横画素数
         private Slider        _scaleSlider;    // XY同時スケール
         private FloatField    _tlX, _tlY;      // 左上位置
@@ -29,6 +31,7 @@ namespace Poly_Ling.Player
 
         private const float ScaleMin = 0.1f;
         private const float ScaleMax = 10f;
+        private const string PathKey = "Underlay.Path";
 
         private bool _suppress;  // フィールド→設定 反映の一時抑止（ロード時）
 
@@ -61,10 +64,7 @@ namespace Poly_Ling.Player
             if (parent == null) return;
             parent.Clear();
 
-            var title = new Label("下絵（3D背面）");
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 4;
-            parent.Add(title);
+            parent.Add(PlayerIoUiKit.Title("下絵（3D背面）"));
 
             // 方向選択
             _dirDropdown = new DropdownField("方向", DirNames, 0);
@@ -72,13 +72,20 @@ namespace Poly_Ling.Player
             _dirDropdown.RegisterValueChangedCallback(_ => LoadSlotToFields());
             parent.Add(_dirDropdown);
 
-            // ファイル読込 / クリア
+            // ファイル読込 / クリア（loadPMX デザインに統一）
+            parent.Add(PlayerIoUiKit.SectionLabel("画像ファイル"));
+            _pathField = new TextField();
+            _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(PathKey, e.newValue));
+            parent.Add(PlayerIoUiKit.PathRow(_pathField, OnBrowseFile));
+            _pathField.SetValueWithoutNotify(RecentPaths.Get(PathKey));
+
             var fileRow = new VisualElement();
             fileRow.style.flexDirection = FlexDirection.Row;
             fileRow.style.marginBottom  = 2;
-            var loadBtn = new Button(OnLoadFile) { text = "ファイルから読込" };
+            var loadBtn = PlayerIoUiKit.OpenButton("開く", () => LoadFromPath(_pathField.value));
             loadBtn.style.flexGrow = 1; loadBtn.style.marginRight = 2;
             var clearBtn = new Button(OnClearFile) { text = "クリア" };
+            clearBtn.style.width = 60;
             fileRow.Add(loadBtn); fileRow.Add(clearBtn);
             parent.Add(fileRow);
 
@@ -164,6 +171,7 @@ namespace Poly_Ling.Player
             _fileLabel.text = s.HasImage
                 ? (string.IsNullOrEmpty(s.FilePath) ? "(読込済)" : Path.GetFileName(s.FilePath))
                 : "(未設定)";
+            _pathField?.SetValueWithoutNotify(s.FilePath ?? "");
             UpdateSizeLabel(s);
             _suppress = false;
         }
@@ -216,10 +224,18 @@ namespace Poly_Ling.Player
             _onChanged?.Invoke();
         }
 
-        private void OnLoadFile()
+        private void OnBrowseFile()
         {
-            string dir  = Application.dataPath;
+            string dir  = string.IsNullOrEmpty(_pathField.value)
+                ? Application.dataPath : Path.GetDirectoryName(_pathField.value);
             string path = PLEditorBridge.I.OpenFilePanel("下絵画像を選択", dir, "png,jpg,jpeg,tga,bmp");
+            if (string.IsNullOrEmpty(path)) return;
+            _pathField.value = path;
+            LoadFromPath(path);
+        }
+
+        private void LoadFromPath(string path)
+        {
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
 
             try

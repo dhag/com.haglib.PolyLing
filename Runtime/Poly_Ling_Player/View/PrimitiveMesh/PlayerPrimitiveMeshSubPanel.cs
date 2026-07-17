@@ -15,6 +15,7 @@ using Poly_Ling.Profile2DExtrude;
 using Poly_Ling.NohMask;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Core;
 using static Poly_Ling.Player.PrimitiveMeshTexts;
 
 namespace Poly_Ling.Player
@@ -178,6 +179,11 @@ namespace Poly_Ling.Player
         private Slider        _revPtYSlider;
         private FloatField    _revPtYField;
         private string        _revCsvPath   = "";
+        private const string  RevCsvKey  = "Primitive.Revolution.Csv";
+        private const string  P2dCsvKey  = "Primitive.Profile2D.Csv";
+        private const string  NohLmKey   = "Primitive.NohMask.Landmarks";
+        private const string  NohTriKey  = "Primitive.NohMask.Triangles";
+        private const string  NohSaveKey = "Primitive.NohMask.SaveJson";
         // 下絵
         private Texture2D     _revBgTex;
         private VisualElement _revBgEl;
@@ -1090,20 +1096,19 @@ namespace Poly_Ling.Player
             pe.Add(_revPtRow);
 
             // CSV 読み書き
-            pe.Add(SL(T("LoadCSV")));
-            var csvPathField = new TextField { value = _revCsvPath };
-            csvPathField.style.marginBottom = 2;
-            csvPathField.RegisterValueChangedCallback(e => _revCsvPath = e.newValue);
-            pe.Add(csvPathField);
-
-            var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
-            SB(csvRow, T("Browse"), () =>
+            pe.Add(PlayerIoUiKit.SectionLabel(T("LoadCSV")));
+            var csvPathField = new TextField();
+            csvPathField.RegisterValueChangedCallback(e => { _revCsvPath = e.newValue; RecentPaths.Set(RevCsvKey, e.newValue); });
+            pe.Add(PlayerIoUiKit.PathRow(csvPathField, () =>
             {
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
-                if (string.IsNullOrEmpty(path)) return;
-                _revCsvPath = path; csvPathField.SetValueWithoutNotify(path);
-            });
-            SB(csvRow, T("LoadCSV"), () =>
+                string dir  = string.IsNullOrEmpty(_revCsvPath) ? "" : System.IO.Path.GetDirectoryName(_revCsvPath);
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
+                if (!string.IsNullOrEmpty(path)) csvPathField.value = path;
+            }));
+            if (string.IsNullOrEmpty(_revCsvPath)) _revCsvPath = RecentPaths.Get(RevCsvKey);
+            if (!string.IsNullOrEmpty(_revCsvPath)) csvPathField.SetValueWithoutNotify(_revCsvPath);
+
+            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
             {
                 if (string.IsNullOrEmpty(_revCsvPath))
                 {
@@ -1135,8 +1140,8 @@ namespace Poly_Ling.Player
                 {
                     Debug.LogWarning($"[Revolution CSV] {result.ErrorMessage}");
                 }
-            });
-            SB(csvRow, T("SaveCSV"), () =>
+            }));
+            pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
                 if (string.IsNullOrEmpty(_revCsvPath))
                 {
@@ -1146,8 +1151,7 @@ namespace Poly_Ling.Player
                 }
                 EnsureRevProfile();
                 RevolutionCSVIO.Save(_revCsvPath, _revProfile, _revP);
-            });
-            pe.Add(csvRow);
+            }));
 
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
             pe.Add(SL(T("MeshProfileIO")));
@@ -2206,18 +2210,19 @@ namespace Poly_Ling.Player
             pe.Add(_p2dPtRow);
 
             // ── CSV ────────────────────────────────────────────────────────
-            pe.Add(SL(T("LoadCSV")));
-            var csvTf = new TextField { value = _p2dCsvPath }; csvTf.style.marginBottom = 2;
-            csvTf.RegisterValueChangedCallback(e => _p2dCsvPath = e.newValue);
-            pe.Add(csvTf);
-            var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
-            SB(csvRow, T("Browse"), () =>
+            pe.Add(PlayerIoUiKit.SectionLabel(T("LoadCSV")));
+            var csvTf = new TextField();
+            csvTf.RegisterValueChangedCallback(e => { _p2dCsvPath = e.newValue; RecentPaths.Set(P2dCsvKey, e.newValue); });
+            pe.Add(PlayerIoUiKit.PathRow(csvTf, () =>
             {
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
-                if (string.IsNullOrEmpty(path)) return;
-                _p2dCsvPath = path; csvTf.SetValueWithoutNotify(path);
-            });
-            SB(csvRow, T("LoadCSV"), () =>
+                string dir  = string.IsNullOrEmpty(_p2dCsvPath) ? "" : System.IO.Path.GetDirectoryName(_p2dCsvPath);
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
+                if (!string.IsNullOrEmpty(path)) csvTf.value = path;
+            }));
+            if (string.IsNullOrEmpty(_p2dCsvPath)) _p2dCsvPath = RecentPaths.Get(P2dCsvKey);
+            if (!string.IsNullOrEmpty(_p2dCsvPath)) csvTf.SetValueWithoutNotify(_p2dCsvPath);
+
+            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
             {
                 if (string.IsNullOrEmpty(_p2dCsvPath))
                 {
@@ -2232,8 +2237,8 @@ namespace Poly_Ling.Player
                     if (loaded != null) { P2dBegin(); _p2dLoops = loaded; _p2dSelLoop = 0; _p2dSel.Clear(); _p2dSelPt = -1; P2dCommit("CSV読込"); D(); RebuildSettings(); }
                 }
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
-            });
-            SB(csvRow, T("SaveCSV"), () =>
+            }));
+            pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
                 if (_p2dLoops == null) return;
                 if (string.IsNullOrEmpty(_p2dCsvPath))
@@ -2258,8 +2263,7 @@ namespace Poly_Ling.Player
                     System.IO.File.WriteAllText(_p2dCsvPath, sb.ToString());
                 }
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
-            });
-            pe.Add(csvRow);
+            }));
 
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
             pe.Add(SL(T("MeshProfileIO")));
@@ -3036,17 +3040,14 @@ namespace Poly_Ling.Player
         {
             c.Add(SL(sectionLabel));
 
-            // パス入力 + Browseボタン行
-            var pathRow = new VisualElement();
-            pathRow.style.flexDirection = FlexDirection.Row;
-            pathRow.style.marginBottom  = 2;
-
-            var pathField = new TextField { value = getPath() };
-            pathField.style.flexGrow = 1;
-            pathField.style.marginRight = 2;
-            pathField.RegisterValueChangedCallback(e => setPath(e.newValue));
-
-            var browseBtn = new Button(() =>
+            // パス入力（loadPMX デザインに統一：[...] 左＋TextField＋RecentPaths）
+            string bgKey  = "Primitive.Bg." + sectionLabel;
+            string bgInit = string.IsNullOrEmpty(getPath()) ? RecentPaths.Get(bgKey) : getPath();
+            var pathField = new TextField();
+            pathField.SetValueWithoutNotify(bgInit);
+            if (!string.IsNullOrEmpty(bgInit)) setPath(bgInit);
+            pathField.RegisterValueChangedCallback(e => { setPath(e.newValue); RecentPaths.Set(bgKey, e.newValue); });
+            c.Add(PlayerIoUiKit.PathRow(pathField, () =>
             {
                 string dir  = string.IsNullOrEmpty(getPath())
                     ? UnityEngine.Application.dataPath
@@ -3055,15 +3056,9 @@ namespace Poly_Ling.Player
                 if (!string.IsNullOrEmpty(path))
                 {
                     pathField.value = path;
-                    setPath(path);
                     onLoad();
                 }
-            }) { text = "..." };
-            browseBtn.style.width = 28;
-
-            pathRow.Add(pathField);
-            pathRow.Add(browseBtn);
-            c.Add(pathRow);
+            }));
 
             // Load / Clear ボタン行
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
@@ -3256,40 +3251,35 @@ namespace Poly_Ling.Player
             c.Add(SL(T("NohMask")));
             c.Add(NF(() => _nohP.MeshName, v => _nohP.MeshName = v));
 
-            c.Add(SL(T("Landmarks")));
-            var lmLabel = new Label(string.IsNullOrEmpty(_nohP.LandmarksFilePath)
-                ? T("BuiltinDefault") : System.IO.Path.GetFileName(_nohP.LandmarksFilePath));
-            lmLabel.style.fontSize = 10; lmLabel.style.marginBottom = 2;
-            c.Add(lmLabel);
-            var lmBtn = new Button(() =>
+            c.Add(PlayerIoUiKit.SectionLabel(T("Landmarks")));
+            var lmField = new TextField();
+            if (string.IsNullOrEmpty(_nohP.LandmarksFilePath)) _nohP.LandmarksFilePath = RecentPaths.Get(NohLmKey);
+            lmField.SetValueWithoutNotify(_nohP.LandmarksFilePath ?? "");
+            lmField.RegisterValueChangedCallback(e => { _nohP.LandmarksFilePath = e.newValue; RecentPaths.Set(NohLmKey, e.newValue); D(); });
+            c.Add(PlayerIoUiKit.PathRow(lmField, () =>
             {
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Open Landmarks JSON", "", "json");
-                if (string.IsNullOrEmpty(path)) return;
-                _nohP.LandmarksFilePath = path; lmLabel.text = System.IO.Path.GetFileName(path); D();
-            }) { text = "..." };
-            lmBtn.style.marginBottom = 3; c.Add(lmBtn);
+                string dir  = string.IsNullOrEmpty(_nohP.LandmarksFilePath) ? "" : System.IO.Path.GetDirectoryName(_nohP.LandmarksFilePath);
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Open Landmarks JSON", dir, "json");
+                if (!string.IsNullOrEmpty(path)) lmField.value = path;
+            }));
 
-            c.Add(SL(T("TrianglesJson")));
-            var triLabel = new Label(string.IsNullOrEmpty(_nohP.TrianglesFilePath)
-                ? T("BuiltinDefault") : System.IO.Path.GetFileName(_nohP.TrianglesFilePath));
-            triLabel.style.fontSize = 10; triLabel.style.marginBottom = 2;
-            c.Add(triLabel);
-            var triBtn = new Button(() =>
+            c.Add(PlayerIoUiKit.SectionLabel(T("TrianglesJson")));
+            var triField = new TextField();
+            if (string.IsNullOrEmpty(_nohP.TrianglesFilePath)) _nohP.TrianglesFilePath = RecentPaths.Get(NohTriKey);
+            triField.SetValueWithoutNotify(_nohP.TrianglesFilePath ?? "");
+            triField.RegisterValueChangedCallback(e => { _nohP.TrianglesFilePath = e.newValue; RecentPaths.Set(NohTriKey, e.newValue); D(); });
+            c.Add(PlayerIoUiKit.PathRow(triField, () =>
             {
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Open Triangles JSON", "", "json");
-                if (string.IsNullOrEmpty(path)) return;
-                _nohP.TrianglesFilePath = path; triLabel.text = System.IO.Path.GetFileName(path); D();
-            }) { text = "..." };
-            triBtn.style.marginBottom = 3; c.Add(triBtn);
+                string dir  = string.IsNullOrEmpty(_nohP.TrianglesFilePath) ? "" : System.IO.Path.GetDirectoryName(_nohP.TrianglesFilePath);
+                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Open Triangles JSON", dir, "json");
+                if (!string.IsNullOrEmpty(path)) triField.value = path;
+            }));
 
             // 内蔵デフォルト（プリセット）に戻す: パスを空にすると焼き込み済みデータを使用
             var defBtn = new Button(() =>
             {
-                _nohP.LandmarksFilePath = "";
-                _nohP.TrianglesFilePath = "";
-                lmLabel.text  = T("BuiltinDefault");
-                triLabel.text = T("BuiltinDefault");
-                D();
+                lmField.value  = "";
+                triField.value = "";
             }) { text = T("UseBuiltinDefault") };
             defBtn.style.marginBottom = 4; c.Add(defBtn);
 
@@ -3299,13 +3289,12 @@ namespace Poly_Ling.Player
             c.Add(IR(T("FaceIndex"), 0, 10,    () => _nohP.FaceIndex,   v => { _nohP.FaceIndex  = v; D(); }));
 
             // ── 既存メッシュを能面JSON形式で保存（能面とは独立の汎用エクスポート） ──
-            c.Add(Sep());
-            c.Add(SL("メッシュをJSON保存"));
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(PlayerIoUiKit.SectionLabel("メッシュをJSON保存"));
             var exportInfo = new Label("選択中の描画オブジェクトを landmarks/triangles JSON で保存");
             exportInfo.style.fontSize = 10; exportInfo.style.whiteSpace = WhiteSpace.Normal; exportInfo.style.marginBottom = 2;
             c.Add(exportInfo);
-            var exportBtn = new Button(ExportSelectedMeshToNohJson) { text = "選択メッシュをJSON保存" };
-            exportBtn.style.marginBottom = 4; c.Add(exportBtn);
+            c.Add(PlayerIoUiKit.WideBtn("選択メッシュをJSON保存", ExportSelectedMeshToNohJson));
         }
 
         /// <summary>選択中の描画オブジェクトのメッシュを能面JSON形式(landmarks+triangles)で保存する。生座標。</summary>
@@ -3318,9 +3307,11 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            string saveDir  = RecentPaths.Get(NohSaveKey);
             string basePath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(
-                "メッシュをJSON保存", "", "facemesh.json", "json");
+                "メッシュをJSON保存", string.IsNullOrEmpty(saveDir) ? "" : System.IO.Path.GetDirectoryName(saveDir), "facemesh.json", "json");
             if (string.IsNullOrEmpty(basePath)) return;
+            RecentPaths.Set(NohSaveKey, basePath);
 
             string dir  = System.IO.Path.GetDirectoryName(basePath);
             string stem = System.IO.Path.GetFileNameWithoutExtension(basePath);

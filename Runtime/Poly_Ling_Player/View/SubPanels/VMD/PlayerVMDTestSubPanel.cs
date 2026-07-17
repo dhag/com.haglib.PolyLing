@@ -11,6 +11,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.VMD;
 
@@ -36,6 +37,8 @@ namespace Poly_Ling.Player
         // ── UI 要素 ───────────────────────────────────────────────────────
         private Label         _modelLabel;
         private Label         _fileLabel;
+        private TextField     _vmdPathField;
+        private const string  VmdPathKey = "VMD.Path";
         private Button        _btnClear, _btnReload;
         private VisualElement _vmdSection;
         private Label         _vmdInfoLabel;   // Model Name / Frames / Duration
@@ -73,16 +76,26 @@ namespace Poly_Ling.Player
             root.Add(_modelLabel);
 
             // ── ファイル行 ─────────────────────────────────────────────────
-            var fileRow = new VisualElement();
-            fileRow.style.flexDirection = FlexDirection.Row;
-            fileRow.style.marginBottom  = 3;
+            root.Add(PlayerIoUiKit.SectionLabel("VMD ファイル"));
+            _vmdPathField = new TextField();
+            _vmdPathField.RegisterValueChangedCallback(e => RecentPaths.Set(VmdPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_vmdPathField, OnBrowseVmd));
+            _vmdPathField.SetValueWithoutNotify(RecentPaths.Get(VmdPathKey));
+
+            var opRow = new VisualElement();
+            opRow.style.flexDirection = FlexDirection.Row;
+            opRow.style.marginBottom  = 3;
+            var btnOpen = PlayerIoUiKit.OpenButton("開く", () => LoadVMD(_vmdPathField.value));
+            btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
+            _btnClear  = new Button(ClearVMD)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
+            _btnReload = new Button(ReloadVMD) { text = "再読込" }; _btnReload.style.width  = 52;
+            opRow.Add(btnOpen); opRow.Add(_btnClear); opRow.Add(_btnReload);
+            root.Add(opRow);
+
             _fileLabel = new Label(); _fileLabel.style.flexGrow = 1; _fileLabel.style.fontSize = 10;
             _fileLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            var btnOpen = new Button(OpenVMDFile) { text = "Open VMD..." }; btnOpen.style.width = 90;
-            _btnClear  = new Button(ClearVMD)  { text = "クリア" };  _btnClear.style.width  = 52;
-            _btnReload = new Button(ReloadVMD) { text = "再読込" }; _btnReload.style.width  = 52;
-            fileRow.Add(_fileLabel); fileRow.Add(btnOpen); fileRow.Add(_btnClear); fileRow.Add(_btnReload);
-            root.Add(fileRow);
+            _fileLabel.style.marginBottom = 3;
+            root.Add(_fileLabel);
 
             // ── VMD セクション（ロード後に表示）──────────────────────────
             _vmdSection = new VisualElement();
@@ -93,7 +106,7 @@ namespace Poly_Ling.Player
             // ステータス
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(Color.white);
+            _statusLabel.style.color    = new StyleColor(PlayerIoUiKit.StatusColor);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
 
@@ -288,10 +301,20 @@ namespace Poly_Ling.Player
         // 操作
         // ================================================================
 
-        private void OpenVMDFile()
+        private void OnBrowseVmd()
         {
-            string path = PLEditorBridge.I.OpenFilePanel("Open VMD", "", "vmd");
+            string dir  = string.IsNullOrEmpty(_vmdPathField.value)
+                ? "" : Path.GetDirectoryName(_vmdPathField.value);
+            string path = PLEditorBridge.I.OpenFilePanel("Open VMD", dir, "vmd");
             if (string.IsNullOrEmpty(path)) return;
+            _vmdPathField.value = path;
+            LoadVMD(path);
+        }
+
+        private void LoadVMD(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
+            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
             try
             {
                 _vmd          = VMDData.LoadFromFile(path);

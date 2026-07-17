@@ -13,6 +13,7 @@ using Poly_Ling.Tools;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -43,6 +44,7 @@ namespace Poly_Ling.Player
         private Button        _btnApply;
         private Label         _selInfoLabel;
         private Label         _statusLabel;
+        private const string  TexPathKey = "Material.TexPath";
 
         // ── 状態 ──────────────────────────────────────────────────────────
         private int _editingSlot = -1;   // パラメータ展開中のスロット番号（-1=非表示）
@@ -93,7 +95,7 @@ namespace Poly_Ling.Player
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color    = new StyleColor(Color.white);
+            _statusLabel.style.color    = new StyleColor(PlayerIoUiKit.StatusColor);
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
         }
@@ -290,9 +292,10 @@ namespace Poly_Ling.Player
                 string capturedProp = propName;
                 var browseBtn = new Button(() => OnBrowseTexture(mat, capturedProp, texLabel, thumb)) { text = "..." };
                 browseBtn.style.width = 28;
+                browseBtn.style.marginRight = 2;
 
-                texRow.Add(texLabel);
                 texRow.Add(browseBtn);
+                texRow.Add(texLabel);
                 _paramSection.Add(texRow);
             }
 
@@ -433,10 +436,12 @@ namespace Poly_Ling.Player
         // ── テクスチャブラウズ ────────────────────────────────────────────
         private void OnBrowseTexture(Material mat, string propName, Label displayLabel, VisualElement preview)
         {
-            string dir = Application.dataPath;
+            string last = RecentPaths.Get(TexPathKey);
+            string dir  = string.IsNullOrEmpty(last) ? Application.dataPath : Path.GetDirectoryName(last);
             string path = PLEditorBridge.I.OpenFilePanel("テクスチャ選択", dir, "png,jpg,jpeg,tga,bmp");
             if (string.IsNullOrEmpty(path)) return;
             if (!File.Exists(path)) return;
+            RecentPaths.Set(TexPathKey, path);
 
             try
             {

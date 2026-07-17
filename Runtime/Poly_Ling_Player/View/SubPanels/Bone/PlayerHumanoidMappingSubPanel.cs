@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using UnityEngine;
 using Poly_Ling.EditorBridge;
+using Poly_Ling.Core;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
@@ -35,6 +36,7 @@ namespace Poly_Ling.Player
         private Label       _statusLabel;
 
         private string             _csvFilePath   = "";
+        private const string       CsvPathKey     = "HumanoidMapping.CsvPath";
         private HumanoidBoneMapping _previewMapping = null;
 
         private ModelContext Model => GetModel?.Invoke();
@@ -56,11 +58,11 @@ namespace Poly_Ling.Player
 
             // CSV ファイル行
             root.Add(SecLabel("CSV ファイル"));
-            var fileRow = new VisualElement(); fileRow.style.flexDirection = FlexDirection.Row; fileRow.style.marginBottom = 4;
-            _csvPathField = new TextField(); _csvPathField.style.flexGrow = 1; _csvPathField.isReadOnly = true;
-            var btnBrowse = new Button(OnBrowseCSV) { text = "..." }; btnBrowse.style.width = 28;
-            fileRow.Add(_csvPathField); fileRow.Add(btnBrowse);
-            root.Add(fileRow);
+            _csvPathField = new TextField();
+            _csvPathField.RegisterValueChangedCallback(e => { _csvFilePath = e.newValue; RecentPaths.Set(CsvPathKey, e.newValue); });
+            root.Add(PlayerIoUiKit.PathRow(_csvPathField, OnBrowseCSV));
+            _csvFilePath = RecentPaths.Get(CsvPathKey);
+            _csvPathField.SetValueWithoutNotify(_csvFilePath);
 
             _csvHintLabel = new Label("CSVを[...]で選択してください。");
             _csvHintLabel.style.fontSize    = 10;
@@ -99,7 +101,7 @@ namespace Poly_Ling.Player
             root.Add(applyRow);
 
             _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color = new StyleColor(Color.white);
+            _statusLabel.style.color = new StyleColor(PlayerIoUiKit.StatusColor);
             root.Add(_statusLabel);
 
             UpdatePreviewUI();
@@ -135,6 +137,7 @@ namespace Poly_Ling.Player
             {
                 _csvFilePath = path;
                 _csvPathField?.SetValueWithoutNotify(_csvFilePath);
+                RecentPaths.Set(CsvPathKey, _csvFilePath);
                 if (_csvHintLabel != null)
                 {
                     _csvHintLabel.text          = "";

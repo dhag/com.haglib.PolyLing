@@ -293,9 +293,10 @@ namespace Poly_Ling.Player
                     if (t == MeshType.Bone || t == MeshType.Morph ||
                         t == MeshType.RigidBody || t == MeshType.RigidBodyJoint ||
                         t == MeshType.Group) continue;
+                    string baseName = string.IsNullOrEmpty(mc.Name) ? $"Mesh_{i}" : mc.Name;
                     string label = mc.Type == MeshType.MirrorSide
-                        ? $"{mc.Name} [Mirror]"
-                        : mc.Name ?? $"[{i}]";
+                        ? $"{baseName} [{i}][Mirror]"
+                        : $"{baseName} [{i}]";
                     _meshNames.Add(label);
                     _meshMasterIndices.Add(i);
                 }
@@ -333,7 +334,8 @@ namespace Poly_Ling.Player
                 {
                     foreach (var entry in bones)
                     {
-                        _boneNames.Add(entry.Name ?? $"[{entry.MasterIndex}]");
+                        string bname = string.IsNullOrEmpty(entry.Name) ? $"Bone_{entry.MasterIndex}" : entry.Name;
+                        _boneNames.Add($"{bname} [{entry.MasterIndex}]");
                         _boneMasterIndices.Add(entry.MasterIndex);
                     }
                 }
