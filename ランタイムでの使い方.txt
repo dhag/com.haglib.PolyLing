@@ -1,9 +1,0 @@
-
-New Panel Settingsファイルを作る
-　[Create][UIツールキット][パネルセッティング]
-　Assets/New Panel Settings.assetが生成される
-
-new GameObjectを作る
-　UIドキュメントをアタッチ
-　　UIドキュメントにNew Panel Settingsをアタッチ
-　GameObjectにPolyLingPlayerViewerをアタッチ

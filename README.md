@@ -3,16 +3,22 @@
 ・点や線分のカリングを計算シェーダで
 ・ヒットテストの一部を計算シェーダで
 
+-----------------------------------------------
+基本の設定方法（使い方）
 +Install package from git URL...
 https://github.com/dhag/com.haglib.PolyLing.git
 https://github.com/dhag/com.haglib.net_duplexchannel
 
 
 パネルセッティングを新規作成する。
+  (New Panel Settingsファイルを作る)
+　  [Create][UIツールキット][パネルセッティング]
+　  Assets/New Panel Settings.assetが生成される
+
 空のゲームオブジェクトを作る
-　UI Documentをつける。
-　　パネルセッティングをつける。
-　PolyLingPlayerViewerをつける。
+　UI Documentをアタッチ。
+　　パネルセッティングをつける。UIドキュメントにNew Panel Settingsをアタッチ.
+　PolyLingPlayerViewerをアタッチ。
 　　　必要ならサーバモードかクライアントモードかを設定する。
 
 
