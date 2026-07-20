@@ -92,6 +92,7 @@ namespace Poly_Ling.Player
         private PrimitivePreviewViewport _preview;
         private Mesh                     _wireMesh;
         private bool                     _dirty = true;
+        private double                   _nextGenAllowed;   // 適応スロットル：次回再生成を許可する時刻(realtime秒)
 
         // ================================================================
         // UI
@@ -226,7 +227,11 @@ namespace Poly_Ling.Player
         private readonly Canvas2DMarquee _p2dMarquee = new Canvas2DMarquee();
         private bool _p2dLassoMode;
         private bool _p2dMarqueeAdditive;
+        private bool _p2dMarqueeSubtract;
         private bool _p2dMarqueeDrag;
+        // ギズモ/頂点の表示トグル（Profile2D。既定=表示、メモリ保持・非永続）
+        private bool _p2dShowGizmo = true;
+        private bool _p2dShowVerts = true;
 
         // 回転/拡大縮小アンカーと変換（Phase B）
         private readonly Canvas2DAnchor _p2dAnchor = new Canvas2DAnchor();
@@ -468,6 +473,10 @@ namespace Poly_Ling.Player
         {
             if (_preview == null) return;
             if (!_dirty) return;
+            // 適応スロットル：直前の生成コストに応じて再生成頻度を間引く。
+            // スキップ時は _dirty を維持して後続フレームに回すため、最終値は必ず反映される。
+            double t0 = Time.realtimeSinceStartupAsDouble;
+            if (t0 < _nextGenAllowed) return;
             _dirty = false;
             try
             {
@@ -477,6 +486,8 @@ namespace Poly_Ling.Player
                 if (mo != null) _wireMesh = BuildWire(mo);
             }
             catch { }
+            double elapsed = Time.realtimeSinceStartupAsDouble - t0;
+            _nextGenAllowed = Time.realtimeSinceStartupAsDouble + System.Math.Max(0.05, elapsed * 3.0);
         }
 
         /// <summary>
@@ -2000,6 +2011,14 @@ namespace Poly_Ling.Player
             p2dLassoToggle.style.marginLeft = 4;
             p2dLassoToggle.RegisterValueChangedCallback(ev => _p2dLassoMode = ev.newValue);
             p2dViewRow.Add(p2dLassoToggle);
+            var p2dGizmoTog = new Toggle(T("ShowGizmo")) { value = _p2dShowGizmo };
+            p2dGizmoTog.style.marginLeft = 8;
+            p2dGizmoTog.RegisterValueChangedCallback(ev => { _p2dShowGizmo = ev.newValue; RefreshP2dCanvas(); });
+            p2dViewRow.Add(p2dGizmoTog);
+            var p2dVertTog = new Toggle(T("ShowVertices")) { value = _p2dShowVerts };
+            p2dVertTog.style.marginLeft = 8;
+            p2dVertTog.RegisterValueChangedCallback(ev => { _p2dShowVerts = ev.newValue; RefreshP2dCanvas(); });
+            p2dViewRow.Add(p2dVertTog);
             pe.Add(p2dViewRow);
 
             BuildP2dAnchorTransformUI(pe);
@@ -2092,7 +2111,7 @@ namespace Poly_Ling.Player
                     new Vector2(-r2,-r2), new Vector2(r2,-r2),
                     new Vector2(r2, r2),  new Vector2(-r2, r2) });
                 _p2dLoops.Add(lp);
-                _p2dSelLoop = _p2dLoops.Count - 1; _p2dSel.Clear(); _p2dSelPt = -1;
+                _p2dSelLoop = _p2dLoops.Count - 1; P2dSelectAllInLoop(_p2dSelLoop);
                 P2dCommit("ループ追加");
                 D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
@@ -2127,8 +2146,24 @@ namespace Poly_Ling.Player
                 for (int pi = 0; pi < dup.Points.Count; pi++) dup.Points[pi] += ofs;
                 _p2dLoops.Add(dup);
                 _p2dSelLoop = _p2dLoops.Count - 1;          // 複製先を選択
-                _p2dSel.Clear(); _p2dSelPt = -1;
+                P2dSelectAllInLoop(_p2dSelLoop);
                 P2dCommit("ループ複製");
+                D(); RefreshP2dCanvas(); RefreshP2dPointUI();
+            });
+            SB(loopBtnRow2, T("FlipLoopH"), () =>
+            {
+                if (_p2dLoops == null || _p2dSelLoop < 0 || _p2dSelLoop >= _p2dLoops.Count) return;
+                var lp = _p2dLoops[_p2dSelLoop];
+                if (lp.Points.Count < 2) return;
+                P2dBegin();
+                for (int pi = 0; pi < lp.Points.Count; pi++)
+                {
+                    var p = lp.Points[pi];
+                    lp.Points[pi] = new Vector2(-p.x, p.y);   // Y軸(x=0)対称
+                }
+                lp.Points.Reverse();                        // 反転で逆転する巻き順を戻す
+                P2dSelectAllInLoop(_p2dSelLoop);
+                P2dCommit("ループ左右反転");
                 D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
             pe.Add(loopBtnRow2);
@@ -2278,6 +2313,7 @@ namespace Poly_Ling.Player
             c.Add(SR(T("OffsetX"), -5f,   5f,  () => _p2dP.Offset.x, v => { _p2dP.Offset = new Vector2(v, _p2dP.Offset.y); D(); }));
             c.Add(SR(T("OffsetY"), -5f,   5f,  () => _p2dP.Offset.y, v => { _p2dP.Offset = new Vector2(_p2dP.Offset.x, v); D(); }));
             c.Add(TR(T("FlipY"),               () => _p2dP.FlipY,    v => { _p2dP.FlipY    = v; D(); }));
+            c.Add(TR(T("SymmetryMode"),        () => _p2dP.SymmetryMode, v => { _p2dP.SymmetryMode = v; D(); }));
             c.Add(SR(T("Thickness"), 0f, 2f,   () => _p2dP.Thickness, v => { _p2dP.Thickness = v; D(); UpdateP2dEdgeVis(); }));
 
             // 角処理(ベベル)UI は常時生成し、Thickness/Segments に応じて表示切替
@@ -2395,7 +2431,8 @@ namespace Poly_Ling.Player
                     p2d.Stroke();
                 }
 
-                // 頂点ドット
+                // 頂点ドット（頂点表示OFFで抑止）
+                if (_p2dShowVerts)
                 for (int pi = 0; pi < lp.Points.Count; pi++)
                 {
                     bool primary = (li == _p2dSelLoop && pi == _p2dSelPt);
@@ -2413,11 +2450,12 @@ namespace Poly_Ling.Player
             if (_p2dMarquee.Active)
                 _p2dMarquee.Draw(p2d, new Color(1f, 0.85f, 0.2f, 0.9f));
 
-            // アンカー
-            _p2dAnchor.Draw(p2d, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
+            // アンカー（ギズモ表示OFFで抑止。アンカー設定中は常に表示）
+            if (_p2dShowGizmo || _p2dAnchor.Mode)
+                _p2dAnchor.Draw(p2d, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
 
-            // 回転/拡大縮小ハンドル（アンカー設定モード中は非表示）
-            if (!_p2dAnchor.Mode)
+            // 回転/拡大縮小ハンドル（アンカー設定モード中/ギズモ表示OFFで非表示）
+            if (_p2dShowGizmo && !_p2dAnchor.Mode)
                 _p2dHandle.Draw(p2d, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
 
             // マグネット半径（選択点まわり）
@@ -2508,8 +2546,10 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // 0. ハンドルヒット判定（回転/拡大縮小、点編集より優先）
-            var p2dHit = _p2dHandle.HitTest(cp, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
+            // 0. ハンドルヒット判定（回転/拡大縮小、点編集より優先。ギズモ表示OFFで無効）
+            var p2dHit = _p2dShowGizmo
+                ? _p2dHandle.HitTest(cp, P2dWorldToCanvas(_p2dAnchor.Value, w, h))
+                : Canvas2DHandle.HandleType.None;
             if (p2dHit != Canvas2DHandle.HandleType.None)
             {
                 BeginP2dHandle(p2dHit, cp, w, h);
@@ -2533,15 +2573,19 @@ namespace Poly_Ling.Player
             if (bestL >= 0)
             {
                 long key = P2dKey(bestL, bestP);
-                if (e.shiftKey)
+                // Ctrl=除外（本体3Dと同じ。ドラッグしない）
+                if (e.ctrlKey)
                 {
-                    if (!_p2dSel.Add(key)) _p2dSel.Remove(key);
-                    _p2dSelLoop = bestL; _p2dSelPt = bestP;
+                    bool removed = _p2dSel.Remove(key);
+                    if (removed && _p2dSelLoop == bestL && _p2dSelPt == bestP) _p2dSelPt = -1;
                     _p2dCanvas.CapturePointer(e.pointerId);
                     RefreshP2dCanvas(); RefreshP2dPointUI();
                     e.StopPropagation(); return;
                 }
-                if (!_p2dSel.Contains(key)) { _p2dSel.Clear(); _p2dSel.Add(key); }
+                // Shift=追加（トグルではない）／無修飾=別ループなら全点選択・同ループ未選択なら置換
+                if (e.shiftKey) _p2dSel.Add(key);
+                else if (bestL != _p2dSelLoop) P2dSelectAllInLoop(bestL);   // 別ループ → そのループ全点を選択（一度）
+                else if (!_p2dSel.Contains(key)) { _p2dSel.Clear(); _p2dSel.Add(key); }
                 _p2dSelLoop = bestL; _p2dSelPt = bestP;
                 P2dBegin();
                 BeginP2dDrag(cp, w, h);
@@ -2584,8 +2628,9 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // 3. 空領域 → 矩形/投げ縄マーキー選択（Shiftで追加）
+            // 3. 空領域 → 矩形/投げ縄マーキー選択（Shift=追加, Ctrl=除外, 無修飾=置換）
             _p2dMarqueeAdditive = e.shiftKey;
+            _p2dMarqueeSubtract = e.ctrlKey;
             _p2dMarquee.Begin(cp, _p2dLassoMode);
             _p2dMarqueeDrag = true;
             _p2dCanvas.CapturePointer(e.pointerId);
@@ -2596,6 +2641,16 @@ namespace Poly_Ling.Player
         private static long P2dKey(int loop, int pt) => ((long)loop << 32) | (uint)pt;
         private static int  P2dKeyLoop(long k) => (int)(k >> 32);
         private static int  P2dKeyPt(long k)   => (int)(k & 0xffffffff);
+
+        /// <summary>指定ループの全頂点を選択状態にする（主点は先頭）。</summary>
+        private void P2dSelectAllInLoop(int li)
+        {
+            _p2dSel.Clear();
+            if (_p2dLoops == null || li < 0 || li >= _p2dLoops.Count) { _p2dSelPt = -1; return; }
+            var lp = _p2dLoops[li];
+            for (int pi = 0; pi < lp.Points.Count; pi++) _p2dSel.Add(P2dKey(li, pi));
+            _p2dSelPt = lp.Points.Count > 0 ? 0 : -1;
+        }
 
         /// <summary>選択点の一括ドラッグ開始（各点の開始位置とカーソル基準を記録）。</summary>
         private void BeginP2dDrag(Vector2 cp, float w, float h)
@@ -2639,13 +2694,16 @@ namespace Poly_Ling.Player
         private void ApplyP2dMarquee()
         {
             float w = _p2dCanvas.resolvedStyle.width, h = _p2dCanvas.resolvedStyle.height;
-            if (!_p2dMarqueeAdditive) _p2dSel.Clear();
+            if (!_p2dMarqueeAdditive && !_p2dMarqueeSubtract) _p2dSel.Clear();
             for (int li = 0; li < _p2dLoops.Count; li++)
             {
                 var lp = _p2dLoops[li];
                 for (int pi = 0; pi < lp.Points.Count; pi++)
                     if (_p2dMarquee.Contains(P2dWorldToCanvas(lp.Points[pi], w, h)))
-                        _p2dSel.Add(P2dKey(li, pi));
+                    {
+                        if (_p2dMarqueeSubtract) _p2dSel.Remove(P2dKey(li, pi));
+                        else                     _p2dSel.Add(P2dKey(li, pi));
+                    }
             }
             if (!_p2dSel.Contains(P2dKey(_p2dSelLoop, _p2dSelPt)))
             {
@@ -2971,8 +3029,9 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // ハンドルホバー更新（非ドラッグ中）
-            var p2dHovType = _p2dAnchor.Mode ? Canvas2DHandle.HandleType.None
+            // ハンドルホバー更新（非ドラッグ中。ギズモ表示OFF/アンカー設定中は無効）
+            var p2dHovType = (_p2dAnchor.Mode || !_p2dShowGizmo)
+                                             ? Canvas2DHandle.HandleType.None
                                              : _p2dHandle.HitTest(cp, P2dWorldToCanvas(_p2dAnchor.Value, w, h));
             if (p2dHovType != _p2dHandle.Hovered) { _p2dHandle.Hovered = p2dHovType; RefreshP2dCanvas(); }
 
@@ -3551,6 +3610,7 @@ namespace Poly_Ling.Player
                             EdgeSizeFront  = _p2dP.EdgeSizeFront,
                             EdgeSizeBack   = _p2dP.EdgeSizeBack,
                             EdgeInward     = _p2dP.EdgeInward,
+                            SymmetryMode   = _p2dP.SymmetryMode,
                         });
                     break;
                 case ShapeKind.NohMask:

@@ -81,9 +81,8 @@ namespace Poly_Ling.Player
                 p.BeginPath();
                 p.MoveTo(_lassoPts[0]);
                 for (int i = 1; i < _lassoPts.Count; i++) p.LineTo(_lassoPts[i]);
-                p.ClosePath();
-                p.Fill();
-                p.Stroke();
+                p.Fill();      // Fill は領域を自動で閉じる（選択範囲表示は維持）
+                p.Stroke();    // ClosePath しない＝線は閉じず開いたまま描く
             }
             else
             {

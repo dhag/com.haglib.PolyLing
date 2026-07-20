@@ -40,6 +40,7 @@ namespace Poly_Ling.Profile2DExtrude
         public int SegmentsFront, SegmentsBack;
         public float EdgeSizeFront, EdgeSizeBack;
         public bool EdgeInward;
+        public bool SymmetryMode;
         public LoopData[] Loops;
         public int SelectedLoopIndex;
         public int SelectedPointIndex;
@@ -82,6 +83,7 @@ namespace Poly_Ling.Profile2DExtrude
             EdgeSizeFront = 0.1f,
             EdgeSizeBack = 0.1f,
             EdgeInward = false,
+            SymmetryMode = false,
             Loops = null,
             SelectedLoopIndex = 0,
             SelectedPointIndex = -1,
@@ -101,6 +103,7 @@ namespace Poly_Ling.Profile2DExtrude
             if (!Mathf.Approximately(EdgeSizeFront, o.EdgeSizeFront)) return false;
             if (!Mathf.Approximately(EdgeSizeBack, o.EdgeSizeBack)) return false;
             if (EdgeInward != o.EdgeInward) return false;
+            if (SymmetryMode != o.SymmetryMode) return false;
             if (SelectedLoopIndex != o.SelectedLoopIndex) return false;
             if (SelectedPointIndex != o.SelectedPointIndex) return false;
             if (!Mathf.Approximately(RotationX, o.RotationX)) return false;
@@ -179,6 +182,7 @@ namespace Poly_Ling.Profile2DExtrude
         public int SegmentsFront, SegmentsBack;
         public float EdgeSizeFront, EdgeSizeBack;
         public bool EdgeInward;
+        public bool SymmetryMode;
         public LoopWrapper[] Loops;
         public int SelectedLoopIndex;
         public int SelectedPointIndex;
@@ -206,6 +210,7 @@ namespace Poly_Ling.Profile2DExtrude
             EdgeSizeFront = p.EdgeSizeFront;
             EdgeSizeBack = p.EdgeSizeBack;
             EdgeInward = p.EdgeInward;
+            SymmetryMode = p.SymmetryMode;
             SelectedLoopIndex = p.SelectedLoopIndex;
             SelectedPointIndex = p.SelectedPointIndex;
             RotationX = p.RotationX;
@@ -253,6 +258,7 @@ namespace Poly_Ling.Profile2DExtrude
                 EdgeSizeFront = EdgeSizeFront > 0 ? EdgeSizeFront : 0.1f,
                 EdgeSizeBack = EdgeSizeBack > 0 ? EdgeSizeBack : 0.1f,
                 EdgeInward = EdgeInward,
+                SymmetryMode = SymmetryMode,
                 Loops = loopData,
                 SelectedLoopIndex = SelectedLoopIndex,
                 SelectedPointIndex = SelectedPointIndex,
