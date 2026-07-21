@@ -23,7 +23,7 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private enum SubPanelScope { BonesOnly, MeshesOnly, Both }
-        private SubPanelScope _scope = SubPanelScope.Both;
+        private SubPanelScope _scope = SubPanelScope.BonesOnly;
 
         // ================================================================
         // コールバック
@@ -54,7 +54,8 @@ namespace Poly_Ling.Player
         // ================================================================
 
         // スコープタブ
-        private Button _tabBones, _tabMeshes, _tabBoth;
+        private Button _tabBones, _tabMeshes;
+        private VisualElement _moveOptionsSection;
 
         // 共通
         private Label         _warningLabel;
@@ -77,6 +78,7 @@ namespace Poly_Ling.Player
         private Button        _btnInitPose;
         private Button        _btnResetLayers;
         private Button        _btnBakePose;
+        private Button        _btnFreezePose;
         private VisualElement _bonePoseSection;
 
         private Button        _btnReset;
@@ -97,9 +99,9 @@ namespace Poly_Ling.Player
         // BoneInputHandler 廃止に伴い、ObjectMoveTool のピック対象を
         // ここから操作する。GetObjectMoveSettings() 経由で同一インスタンスを共有。
         private Toggle        _toggleMoveWithChildren;
-        private Toggle        _togglePickBones;
-        private Toggle        _togglePickMeshesNoSkin;
-        private Toggle        _togglePickMeshesSkinned;
+        private Toggle        _toggleModeA;
+        private Toggle        _toggleModeB;
+        private Toggle        _toggleModeC;
         private bool          _suppressMoveSettings;
 
         private Label _statusLabel;
@@ -119,11 +121,10 @@ namespace Poly_Ling.Player
             var tabRow = new VisualElement();
             tabRow.style.flexDirection = FlexDirection.Row;
             tabRow.style.marginBottom  = 6;
-            _tabBones  = MakeScopeTab("ボーン",   () => SetScope(SubPanelScope.BonesOnly));
-            _tabMeshes = MakeScopeTab("メッシュ", () => SetScope(SubPanelScope.MeshesOnly));
-            _tabBoth   = MakeScopeTab("両方",     () => SetScope(SubPanelScope.Both));
-            _tabBones.style.flexGrow = _tabMeshes.style.flexGrow = _tabBoth.style.flexGrow = 1;
-            tabRow.Add(_tabBones); tabRow.Add(_tabMeshes); tabRow.Add(_tabBoth);
+            _tabBones  = MakeScopeTab("ボーン",               () => SetScope(SubPanelScope.BonesOnly));
+            _tabMeshes = MakeScopeTab("スキンドでないメッシュ", () => SetScope(SubPanelScope.MeshesOnly));
+            _tabBones.style.flexGrow = _tabMeshes.style.flexGrow = 1;
+            tabRow.Add(_tabBones); tabRow.Add(_tabMeshes);
             root.Add(tabRow);
             UpdateTabHighlight();
 
@@ -131,49 +132,61 @@ namespace Poly_Ling.Player
             // ObjectMoveTool の ObjectMoveSettings と同期するチェックボックス 4 個。
             // BoneInputHandler 廃止後、ボーンエディタ表示中のピック対象を
             // このサブパネルから操作する。
-            var pickSection = new VisualElement();
-            pickSection.style.marginBottom = 6;
-            pickSection.Add(MakeSecLabel("ピック対象 / 挙動"));
+            _moveOptionsSection = new VisualElement();
+            _moveOptionsSection.style.marginBottom = 6;
 
-            _togglePickBones         = new Toggle("ボーン") { value = true };
-            _togglePickMeshesNoSkin  = new Toggle("スキンドでないメッシュ") { value = true };
-            _togglePickMeshesSkinned = new Toggle("スキンドメッシュ") { value = false };
             _toggleMoveWithChildren  = new Toggle("子を一緒に移動") { value = true };
-            _togglePickBones.style.color         = new StyleColor(Color.white);
-            _togglePickMeshesNoSkin.style.color  = new StyleColor(Color.white);
-            _togglePickMeshesSkinned.style.color = new StyleColor(Color.white);
+            _toggleModeA             = new Toggle("ボーンだけ動かす（スキン固定）") { value = true };
+            _toggleModeB             = new Toggle("スキンごと動かして確定（焼き込み）") { value = false };
+            _toggleModeC             = new Toggle("ポーズ（一時）") { value = false };
             _toggleMoveWithChildren.style.color  = new StyleColor(Color.white);
+            _toggleModeA.style.color             = new StyleColor(Color.white);
+            _toggleModeB.style.color             = new StyleColor(Color.white);
+            _toggleModeC.style.color             = new StyleColor(Color.white);
 
-            _togglePickBones.RegisterValueChangedCallback(e =>
-            {
-                if (_suppressMoveSettings) return;
-                var s = GetObjectMoveSettings?.Invoke();
-                if (s != null) s.PickBones = e.newValue;
-            });
-            _togglePickMeshesNoSkin.RegisterValueChangedCallback(e =>
-            {
-                if (_suppressMoveSettings) return;
-                var s = GetObjectMoveSettings?.Invoke();
-                if (s != null) s.PickMeshesNoSkin = e.newValue;
-            });
-            _togglePickMeshesSkinned.RegisterValueChangedCallback(e =>
-            {
-                if (_suppressMoveSettings) return;
-                var s = GetObjectMoveSettings?.Invoke();
-                if (s != null) s.PickMeshesSkinned = e.newValue;
-            });
             _toggleMoveWithChildren.RegisterValueChangedCallback(e =>
             {
                 if (_suppressMoveSettings) return;
                 var s = GetObjectMoveSettings?.Invoke();
                 if (s != null) s.MoveWithChildren = e.newValue;
             });
+            _toggleModeA.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                if (!e.newValue) { _toggleModeA.SetValueWithoutNotify(true); return; }
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.MoveMode = Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind;
+                _toggleModeB.SetValueWithoutNotify(false);
+                _toggleModeC.SetValueWithoutNotify(false);
+                Refresh();
+            });
+            _toggleModeB.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                if (!e.newValue) { _toggleModeB.SetValueWithoutNotify(true); return; }
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.MoveMode = Poly_Ling.Tools.BoneMoveMode.SkinBakeRebind;
+                _toggleModeA.SetValueWithoutNotify(false);
+                _toggleModeC.SetValueWithoutNotify(false);
+                Refresh();
+            });
+            _toggleModeC.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                if (!e.newValue) { _toggleModeC.SetValueWithoutNotify(true); return; }
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.MoveMode = Poly_Ling.Tools.BoneMoveMode.PoseLayer;
+                _toggleModeA.SetValueWithoutNotify(false);
+                _toggleModeB.SetValueWithoutNotify(false);
+                Refresh();
+            });
 
-            pickSection.Add(_togglePickBones);
-            pickSection.Add(_togglePickMeshesNoSkin);
-            pickSection.Add(_togglePickMeshesSkinned);
-            pickSection.Add(_toggleMoveWithChildren);
-            root.Add(pickSection);
+            _moveOptionsSection.Add(_toggleMoveWithChildren);
+            _moveOptionsSection.Add(MakeSecLabel("移動モード"));
+            _moveOptionsSection.Add(_toggleModeA);
+            _moveOptionsSection.Add(_toggleModeB);
+            _moveOptionsSection.Add(_toggleModeC);
+            root.Add(_moveOptionsSection);
 
             // ── 警告・選択カウント ───────────────────────────────────
             _warningLabel = new Label();
@@ -225,13 +238,14 @@ namespace Poly_Ling.Player
             _btnFocus = new Button(OnFocusBone) { text = "フォーカス" };
             _btnFocus.style.flexGrow = 1;
             _btnFocus.style.height   = 22;
-            btnRow.Add(_btnReset); btnRow.Add(_btnFocus);
+            btnRow.Add(_btnFocus);
             _boneSection.Add(btnRow);
 
             // ボーンポーズ
             _bonePoseSection = new VisualElement();
             _bonePoseSection.Add(MakeSep());
             _bonePoseSection.Add(MakeSecLabel("ボーンポーズ"));
+            _bonePoseSection.Add(_btnReset);
 
             _bonePoseActiveToggle = new Toggle("ポーズ有効") { value = false };
             _bonePoseActiveToggle.style.marginBottom = 4;
@@ -276,6 +290,17 @@ namespace Poly_Ling.Player
             };
             poseRow.Add(_btnInitPose); poseRow.Add(_btnResetLayers); poseRow.Add(_btnBakePose);
             _bonePoseSection.Add(poseRow);
+
+            _btnFreezePose = new Button(() =>
+            {
+                var model = GetModel?.Invoke();
+                if (model == null) return;
+                SendCommand(new FreezeCurrentPoseCommand(GetModelIndex?.Invoke() ?? 0));
+            }) { text = "この姿勢で確定（焼き込み）" };
+            _btnFreezePose.style.height    = 22;
+            _btnFreezePose.style.marginTop = 4;
+            _bonePoseSection.Add(_btnFreezePose);
+
             _boneSection.Add(_bonePoseSection);
 
             // ボーン詳細情報
@@ -359,7 +384,6 @@ namespace Poly_Ling.Player
             }
             Style(_tabBones,  _scope == SubPanelScope.BonesOnly);
             Style(_tabMeshes, _scope == SubPanelScope.MeshesOnly);
-            Style(_tabBoth,   _scope == SubPanelScope.Both);
         }
 
         // ================================================================
@@ -411,12 +435,21 @@ namespace Poly_Ling.Player
                 _suppressMoveSettings = true;
                 try
                 {
-                    _togglePickBones?.SetValueWithoutNotify(moveSettings.PickBones);
-                    _togglePickMeshesNoSkin?.SetValueWithoutNotify(moveSettings.PickMeshesNoSkin);
-                    _togglePickMeshesSkinned?.SetValueWithoutNotify(moveSettings.PickMeshesSkinned);
                     _toggleMoveWithChildren?.SetValueWithoutNotify(moveSettings.MoveWithChildren);
+                    _toggleModeA?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind);
+                    _toggleModeB?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.SkinBakeRebind);
+                    _toggleModeC?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer);
                 }
                 finally { _suppressMoveSettings = false; }
+            }
+
+            // スコープからピックフィルタを駆動（チェックボックス廃止に伴い一本化）
+            if (moveSettings != null)
+            {
+                bool boneScope = _scope == SubPanelScope.BonesOnly;
+                moveSettings.PickBones         = boneScope;
+                moveSettings.PickMeshesNoSkin  = !boneScope;
+                moveSettings.PickMeshesSkinned = false;
             }
 
             var model = GetModel?.Invoke();
@@ -426,6 +459,15 @@ namespace Poly_Ling.Player
 
             if (_boneSection    != null) _boneSection.style.display    = showBoneSection ? DisplayStyle.Flex : DisplayStyle.None;
             if (_ignorePoseRow  != null) _ignorePoseRow.style.display  = showIgnorePose  ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // 「ボーンポーズ」セクションはモードC（ポーズ一時）専用。A/Bでは常に非表示（モデル有無に依存しない）。
+            bool poseModeC = (GetObjectMoveSettings?.Invoke())?.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer;
+            if (_bonePoseSection != null)
+                _bonePoseSection.style.display = poseModeC ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // ボーン専用の移動オプション（子を一緒に移動・A/B/Cモード）はメッシュスコープでは非表示
+            if (_moveOptionsSection != null)
+                _moveOptionsSection.style.display = (_scope == SubPanelScope.MeshesOnly) ? DisplayStyle.None : DisplayStyle.Flex;
 
             if (model == null)
             {
@@ -454,8 +496,22 @@ namespace Poly_Ling.Player
 
             // TRS 同期
             _suppressTRS = true;
-            var bt0 = model.GetMeshContext(indices[0])?.BoneTransform;
-            if (bt0 != null)
+            var mc0 = model.GetMeshContext(indices[0]);
+            var bt0 = mc0?.BoneTransform;
+            var mvs = GetObjectMoveSettings?.Invoke();
+            bool poseMode = mvs != null && mvs.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer;
+            if (poseMode)
+            {
+                // モードC: ポーズ層 "Manual" の差分を表示（0＝ポーズ無し）
+                var layer = mc0?.BonePoseData?.GetLayer("Manual");
+                Vector3 pRot = layer != null ? NormEuler180(layer.DeltaRotation.eulerAngles) : Vector3.zero;
+                Vector3 pPos = layer != null ? layer.DeltaPosition : Vector3.zero;
+                SF(_posX, pPos.x); SF(_posY, pPos.y); SF(_posZ, pPos.z);
+                SF(_rotX, pRot.x); SF(_rotY, pRot.y); SF(_rotZ, pRot.z);
+                SS(_rotSliderX, pRot.x); SS(_rotSliderY, pRot.y); SS(_rotSliderZ, pRot.z);
+                SF(_sclX, bt0?.Scale.x ?? 1f); SF(_sclY, bt0?.Scale.y ?? 1f); SF(_sclZ, bt0?.Scale.z ?? 1f);
+            }
+            else if (bt0 != null)
             {
                 SF(_posX, bt0.Position.x); SF(_posY, bt0.Position.y); SF(_posZ, bt0.Position.z);
                 SF(_rotX, bt0.Rotation.x); SF(_rotY, bt0.Rotation.y); SF(_rotZ, bt0.Rotation.z);
@@ -500,8 +556,6 @@ namespace Poly_Ling.Player
             }
 
             bool hasBone = model.HasBoneSelection;
-            if (_bonePoseSection != null)
-                _bonePoseSection.style.display = hasBone ? DisplayStyle.Flex : DisplayStyle.None;
             _btnReset?.SetEnabled(hasBone);
             _btnFocus?.SetEnabled(hasBone);
 
@@ -780,28 +834,56 @@ namespace Poly_Ling.Player
                 var indices = GetTargetIndices();
                 if (indices.Length == 0) return;
                 int modelIdx = GetModelIndex?.Invoke() ?? 0;
-                SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices));
+                SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices) { Mode = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind });
                 SendCommand(new SetBoneTransformValueCommand(modelIdx, indices, field, e.newValue));
                 SendCommand(new EndBoneTransformSliderDragCommand(modelIdx, "TRS変更"));
                 OnRepaint?.Invoke();
             });
         }
 
+        private bool _trsDragOpen;
+
+        private void OpenTrsDrag()
+        {
+            if (_trsDragOpen) return;
+            var indices = GetTargetIndices();
+            if (indices.Length == 0) return;
+            SendCommand(new BeginBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, indices)
+                { Mode = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind });
+            _trsDragOpen = true;
+        }
+
+        private void CloseTrsDrag(string desc)
+        {
+            if (!_trsDragOpen) return;
+            _trsDragOpen = false;
+            SendCommand(new EndBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, desc));
+        }
+
+        private static Vector3 NormEuler180(Vector3 e)
+            => new Vector3(NormAngle180(e.x), NormAngle180(e.y), NormAngle180(e.z));
+
+        private static float NormAngle180(float a)
+        {
+            a %= 360f;
+            if (a > 180f) a -= 360f;
+            else if (a < -180f) a += 360f;
+            return a;
+        }
+
         private void RegRotSlider(Slider s, FloatField f, SetBoneTransformValueCommand.Field field)
         {
-            s.RegisterCallback<PointerDownEvent>(_ =>
-            {
-                var indices = GetTargetIndices();
-                if (indices.Length == 0) return;
-                SendCommand(new BeginBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, indices));
-            });
-            s.RegisterCallback<PointerCaptureOutEvent>(_ =>
-                SendCommand(new EndBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, "回転変更")));
+            // UIToolkit の Slider は内部ドラッガーが bubble 段階の PointerDown を消費するため、
+            // capture 段階(TrickleDown)で拾う。さらに値変更時にも遅延オープンして確実に Begin を送る。
+            s.RegisterCallback<PointerDownEvent>(_ => OpenTrsDrag(), TrickleDown.TrickleDown);
+            s.RegisterCallback<PointerUpEvent>(_ => CloseTrsDrag("回転変更"), TrickleDown.TrickleDown);
+            s.RegisterCallback<PointerCaptureOutEvent>(_ => CloseTrsDrag("回転変更"));
             s.RegisterValueChangedCallback(e =>
             {
                 if (_suppressTRS) return;
                 var indices = GetTargetIndices();
                 if (indices.Length == 0) return;
+                OpenTrsDrag();
                 SendCommand(new SetBoneTransformValueCommand(GetModelIndex?.Invoke() ?? 0, indices, field, e.newValue));
                 if (f != null) { _suppressTRS = true; SF(f, e.newValue); _suppressTRS = false; }
                 OnRepaint?.Invoke();

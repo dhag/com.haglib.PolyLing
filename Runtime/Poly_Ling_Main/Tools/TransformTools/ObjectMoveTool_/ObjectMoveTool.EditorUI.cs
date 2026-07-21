@@ -14,6 +14,7 @@ namespace Poly_Ling.Tools
         {
             EditorGUILayout.LabelField(T("Title"), EditorStyles.miniBoldLabel);
             _settings.MoveWithChildren  = EditorGUILayout.Toggle(T("MoveWithChildren"),  _settings.MoveWithChildren);
+            _settings.MoveMode = (BoneMoveMode)EditorGUILayout.EnumPopup(T("MoveModeLabel"), _settings.MoveMode);
 
             EditorGUILayout.Space(2);
             _settings.PickBones         = EditorGUILayout.Toggle(T("PickBones"),         _settings.PickBones);

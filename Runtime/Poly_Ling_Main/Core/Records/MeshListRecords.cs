@@ -719,6 +719,61 @@ namespace Poly_Ling.UndoSystem
     }
 
     /// <summary>
+    /// バインド連動(スキン固定)ボーン移動の複合 Undo レコード。
+    /// BoneTransform（位置）と BindPose を同時に記録し、Undo/Redo で両方を復元する。
+    /// 各エントリは変化した側のみ値を持つ（HasValue==false はスキップ）。
+    /// </summary>
+    public class MultiBoneMoveRebindRecord : MeshListUndoRecord
+    {
+        public struct Entry
+        {
+            public int MasterIndex;
+            public BoneTransformSnapshot? OldBoneTransform;
+            public BoneTransformSnapshot? NewBoneTransform;
+            public Matrix4x4? OldBindPose;
+            public Matrix4x4? NewBindPose;
+        }
+
+        public List<Entry> Entries = new List<Entry>();
+
+        public override void Undo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            foreach (var e in Entries)
+                ApplyEntry(ctx, e.MasterIndex, e.OldBoneTransform, e.OldBindPose);
+            ctx.ComputeWorldMatrices();
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        public override void Redo(ModelContext ctx)
+        {
+            if (ctx == null) return;
+            foreach (var e in Entries)
+                ApplyEntry(ctx, e.MasterIndex, e.NewBoneTransform, e.NewBindPose);
+            ctx.ComputeWorldMatrices();
+            ctx.OnListChanged?.Invoke();
+            ctx.OnFocusMeshListRequested?.Invoke();
+        }
+
+        private static void ApplyEntry(ModelContext ctx, int masterIndex,
+            BoneTransformSnapshot? boneTransform, Matrix4x4? bindPose)
+        {
+            if (masterIndex < 0 || masterIndex >= ctx.MeshContextCount) return;
+            var mc = ctx.GetMeshContext(masterIndex);
+            if (mc == null) return;
+
+            if (boneTransform.HasValue && mc.BoneTransform != null)
+                mc.BoneTransform.ApplySnapshot(boneTransform.Value);
+
+            if (bindPose.HasValue)
+                mc.BindPose = bindPose.Value;
+        }
+
+        public override string ToString() => $"MultiBoneMoveRebind: {Entries.Count} entries";
+    }
+
+    /// <summary>
     /// ピボット移動の複合 Undo レコード。
     /// 頂点位置（VertexMove）と BoneTransform（BoneTransformSnapshot）を同時に記録する。
     /// Undo/Redo 時は両方を一緒に復元するため、見た目上ピボットだけが動いたように扱える。

@@ -194,6 +194,7 @@ namespace Poly_Ling.Player
         private PlayerMediaPipeFaceDeformSubPanel _mediaPipeSubPanel;
         private PlayerVMDTestSubPanel        _vmdTestSubPanel;
         private PlayerUnityClipTestSubPanel  _unityClipTestSubPanel;
+        private PlayerMotionClipTestSubPanel _motionClipTestSubPanel;
 
         // 下絵（3D背面に敷く参照画像）
         private readonly UnderlayConfig      _underlay = new UnderlayConfig();
@@ -1291,29 +1292,37 @@ namespace Poly_Ling.Player
 
         private void UpdateBoneOverlay()
         {
-            var panel = _activePanel;
             _overlayIndicators.Clear();
-
-            if (panel == null) return;
 
             bool boneEditorOpen = _layoutRoot?.BoneEditorSection?.style.display == DisplayStyle.Flex;
             bool objectMoveMode = _interactionMode == InteractionMode.ObjectMove;
             bool pivotMode      = _interactionMode == InteractionMode.PivotOffset;
-            if (!boneEditorOpen && !objectMoveMode && !pivotMode)
-            {
-                panel.HideBoneWire();
-                return;
-            }
+            bool show = boneEditorOpen || objectMoveMode || pivotMode;
 
             var model = ActiveProject?.CurrentModel;
-            if (model == null || model.MeshContextCount == 0)
-            {
-                panel.HideBoneWire();
-                return;
-            }
+            bool haveModel = model != null && model.MeshContextCount > 0;
 
-            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            // 全ビューポートのボーンオーバーレイを更新（アクティブ以外も追従させる）。
+            // スライダ/TRS 編集ではビューポートに触れないため、従来はアクティブ 1 画面しか
+            // 更新されず、他画面のマーカーが取り残されていた（触れると直る症状の原因）。
+            UpdateBoneOverlayFor(_layoutRoot?.PerspectivePanel, _viewportManager.PerspectiveViewport, model, show && haveModel, boneEditorOpen);
+            UpdateBoneOverlayFor(_layoutRoot?.TopPanel,         _viewportManager.TopViewport,         model, show && haveModel, boneEditorOpen);
+            UpdateBoneOverlayFor(_layoutRoot?.FrontPanel,       _viewportManager.FrontViewport,       model, show && haveModel, boneEditorOpen);
+            UpdateBoneOverlayFor(_layoutRoot?.SidePanel,        _viewportManager.SideViewport,        model, show && haveModel, boneEditorOpen);
+        }
+
+        private void UpdateBoneOverlayFor(
+            PlayerViewportPanel panel, PlayerViewport vp,
+            ModelContext model, bool show, bool boneEditorOpen)
+        {
+            if (panel == null) return;
+            if (!show) { panel.HideBoneWire(); return; }
+
+            var ctx = _viewportManager.GetCurrentToolContext(vp);
             if (ctx == null) { panel.HideBoneWire(); return; }
+
+            // ヒットテスト用インジケーターはアクティブビューポート基準で構築する。
+            bool buildIndicators = ReferenceEquals(vp, _activeViewport);
 
             float panelH    = ctx.PreviewRect.height;
             var positions   = new System.Collections.Generic.List<Vector2>();
@@ -1329,10 +1338,7 @@ namespace Poly_Ling.Player
                                     && mc.MeshObject != null
                                     && !mc.MeshObject.HasBoneWeight;
 
-                bool include = boneEditorOpen
-                    ? isBone
-                    : (isBone || isNonSkinned);
-
+                bool include = boneEditorOpen ? isBone : (isBone || isNonSkinned);
                 if (!include) continue;
 
                 var wm = mc.WorldMatrix;
@@ -1344,12 +1350,13 @@ namespace Poly_Ling.Player
                 positions.Add(sp);
                 selected.Add(isSel);
 
-                _overlayIndicators.Add(new OverlayIndicator
-                {
-                    MeshContextIndex = i,
-                    ScreenPos        = sp,
-                    IsBone           = isBone,
-                });
+                if (buildIndicators)
+                    _overlayIndicators.Add(new OverlayIndicator
+                    {
+                        MeshContextIndex = i,
+                        ScreenPos        = sp,
+                        IsBone           = isBone,
+                    });
             }
 
             if (positions.Count == 0) { panel.HideBoneWire(); return; }
@@ -2616,6 +2623,19 @@ namespace Poly_Ling.Player
             };
             _unityClipTestSubPanel.Build(_layoutRoot.UnityClipTestSection);
 
+            _motionClipTestSubPanel = new PlayerMotionClipTestSubPanel
+            {
+                GetModel          = () => ActiveProject?.CurrentModel,
+                GetToolContext    = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetUndoController = () => _editOps?.UndoController,
+                OnFrameApplied    = () =>
+                {
+                    _viewportManager.UpdateTransform();
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging);
+                },
+            };
+            _motionClipTestSubPanel.Build(_layoutRoot.MotionClipTestSection);
+
             _underlaySubPanel = new PlayerUnderlaySubPanel(_underlay, ApplyAllUnderlays);
             _underlaySubPanel.Build(_layoutRoot.UnderlaySection);
 
@@ -2726,6 +2746,7 @@ namespace Poly_Ling.Player
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
             _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
+            _layoutRoot.MotionClipTestBtn.clicked   += ShowMotionClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
             if (_layoutRoot.UnderlayBtn != null)
                 _layoutRoot.UnderlayBtn.clicked     += ShowUnderlayPanel;
@@ -2926,6 +2947,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.MediaPipeSection,         () => _mediaPipeSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VMDTestSection,           () => _vmdTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
 
             ShowCategory1Panel(InteractionMode.VertexMove);
@@ -3274,6 +3296,13 @@ namespace Poly_Ling.Player
             _unityClipTestSubPanel?.Refresh();
         }
 
+        private void ShowMotionClipTestPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.MotionClipTestSection, _layoutRoot?.MotionClipTestBtn);
+            _motionClipTestSubPanel?.Refresh();
+        }
+
         private void ShowRemoteServerPanel()
         {
             // カテゴリ 3
@@ -3454,6 +3483,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.MediaPipeSection);
             Hide(_layoutRoot.VMDTestSection);
             Hide(_layoutRoot.UnityClipTestSection);
+            Hide(_layoutRoot.MotionClipTestSection);
             Hide(_layoutRoot.RemoteServerSection);
             Hide(_layoutRoot.UnderlaySection);
             _underlayActive = false;   // 別パネルへ切替時は下絵ドラッグを無効化

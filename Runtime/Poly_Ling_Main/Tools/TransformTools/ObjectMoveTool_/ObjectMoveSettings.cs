@@ -6,6 +6,18 @@ using UnityEngine;
 namespace Poly_Ling.Tools
 {
     /// <summary>
+    /// ボーン移動モード。
+    /// A: BoneOnlyRebind = ボーンだけ動かす（確定時リバインドのみ・メッシュ不変）
+    /// B: SkinBakeRebind = スキンごと動かして確定（確定時に頂点焼き込み＋リバインド）
+    /// </summary>
+    public enum BoneMoveMode
+    {
+        BoneOnlyRebind = 0,
+        SkinBakeRebind = 1,
+        PoseLayer      = 2,
+    }
+
+    /// <summary>
     /// ObjectMoveTool用設定クラス
     /// </summary>
     public class ObjectMoveSettings : ToolSettingsBase
@@ -37,6 +49,11 @@ namespace Poly_Ling.Tools
         /// </summary>
         public bool PickMeshesSkinned = false;
 
+        /// <summary>
+        /// ボーン移動モード（A/B）。既定は A（ボーンだけ動かす・スキン固定）。
+        /// </summary>
+        public BoneMoveMode MoveMode = BoneMoveMode.BoneOnlyRebind;
+
         // ================================================================
         // IToolSettings 実装
         // ================================================================
@@ -49,6 +66,7 @@ namespace Poly_Ling.Tools
                 PickBones         = this.PickBones,
                 PickMeshesNoSkin  = this.PickMeshesNoSkin,
                 PickMeshesSkinned = this.PickMeshesSkinned,
+                MoveMode          = this.MoveMode,
             };
         }
 
@@ -58,7 +76,8 @@ namespace Poly_Ling.Tools
             return MoveWithChildren  != o.MoveWithChildren
                 || PickBones         != o.PickBones
                 || PickMeshesNoSkin  != o.PickMeshesNoSkin
-                || PickMeshesSkinned != o.PickMeshesSkinned;
+                || PickMeshesSkinned != o.PickMeshesSkinned
+                || MoveMode          != o.MoveMode;
         }
 
         public override void CopyFrom(IToolSettings other)
@@ -68,6 +87,7 @@ namespace Poly_Ling.Tools
             PickBones         = o.PickBones;
             PickMeshesNoSkin  = o.PickMeshesNoSkin;
             PickMeshesSkinned = o.PickMeshesSkinned;
+            MoveMode          = o.MoveMode;
         }
     }
 }

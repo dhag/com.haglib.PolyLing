@@ -44,5 +44,20 @@ namespace Poly_Ling.Data
         /// メッシュ別の頂点座標バックアップ（MeshContextインデックス→頂点Position配列）
         /// </summary>
         public Dictionary<int, Vector3[]> VertexPositions = new();
+
+        /// <summary>
+        /// ボーン別のローカル位置バックアップ（MeshContextインデックス→Position）
+        /// </summary>
+        public Dictionary<int, Vector3> BonePositions = new();
+
+        /// <summary>
+        /// ボーン別の UseLocalTransform バックアップ
+        /// </summary>
+        public Dictionary<int, bool> BoneUseLocal = new();
+
+        /// <summary>
+        /// ボーン別の BonePoseData バックアップ（Clone。ポーズ層の復元用）
+        /// </summary>
+        public Dictionary<int, BonePoseData> BonePoses = new();
     }
 }

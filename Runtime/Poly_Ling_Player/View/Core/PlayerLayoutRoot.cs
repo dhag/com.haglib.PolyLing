@@ -215,6 +215,8 @@ namespace Poly_Ling.Player
         public Button        VMDTestBtn             { get; private set; }
         public VisualElement UnityClipTestSection    { get; private set; }
         public Button        UnityClipTestBtn        { get; private set; }
+        public VisualElement MotionClipTestSection   { get; private set; }
+        public Button        MotionClipTestBtn        { get; private set; }
         public VisualElement RemoteServerSection    { get; private set; }
         public Button        RemoteServerBtn        { get; private set; }
 
@@ -886,8 +888,9 @@ namespace Poly_Ling.Player
             rowMisc.Add(MediaPipeBtn); rowMisc.Add(VMDTestBtn); rowMisc.Add(RemoteServerBtn); foOther.Add(rowMisc);
 
             var rowMisc2 = new VisualElement(); rowMisc2.style.flexDirection = FlexDirection.Row; rowMisc2.style.marginBottom = 2;
-            UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1;
-            rowMisc2.Add(UnityClipTestBtn); foOther.Add(rowMisc2);
+            UnityClipTestBtn = MakeBtn("Unityクリップ"); UnityClipTestBtn.style.flexGrow = 1; UnityClipTestBtn.style.marginRight = 2;
+            MotionClipTestBtn = MakeBtn("統合モーション"); MotionClipTestBtn.style.flexGrow = 1;
+            rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
 
             UnderlayBtn = MakeBtn("下絵");
             foOther.Add(UnderlayBtn);
@@ -1145,6 +1148,7 @@ namespace Poly_Ling.Player
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
             UnityClipTestSection       = AddSection(visible: false);
+            MotionClipTestSection      = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
 

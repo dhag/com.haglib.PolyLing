@@ -128,9 +128,14 @@ namespace Poly_Ling.Ops
                 if (ctx.Type == MeshType.Bone)
                 {
                     if (ctx.BoneTransform != null)
+                    {
                         backup.BoneRotations[i] = ctx.BoneTransform.Rotation;
+                        backup.BonePositions[i] = ctx.BoneTransform.Position;
+                        backup.BoneUseLocal[i]  = ctx.BoneTransform.UseLocalTransform;
+                    }
                     backup.WorldMatrices[i] = ctx.WorldMatrix;
                     backup.BindPoses[i] = ctx.BindPose;
+                    backup.BonePoses[i] = ctx.BonePoseData?.Clone();
                 }
                 else if (ctx.MeshObject != null)
                 {
@@ -178,6 +183,34 @@ namespace Poly_Ling.Ops
                 int idx = kv.Key;
                 if (idx >= 0 && idx < meshContexts.Count)
                     meshContexts[idx].BindPose = kv.Value;
+            }
+
+            // ボーンのローカル位置・UseLocalTransform を復元
+            foreach (var kv in backup.BonePositions)
+            {
+                int idx = kv.Key;
+                if (idx >= 0 && idx < meshContexts.Count)
+                {
+                    var ctx = meshContexts[idx];
+                    if (ctx?.BoneTransform != null)
+                    {
+                        if (backup.BoneUseLocal.TryGetValue(idx, out var ul))
+                            ctx.BoneTransform.UseLocalTransform = ul;
+                        ctx.BoneTransform.Position = kv.Value;
+                    }
+                }
+            }
+
+            // ボーンの BonePoseData（ポーズ層）を復元
+            foreach (var kv in backup.BonePoses)
+            {
+                int idx = kv.Key;
+                if (idx >= 0 && idx < meshContexts.Count)
+                {
+                    var ctx = meshContexts[idx];
+                    if (ctx == null) continue;
+                    ctx.BonePoseData = kv.Value?.Clone();
+                }
             }
 
             // メッシュ頂点座標を復元

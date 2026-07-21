@@ -695,7 +695,7 @@ namespace Poly_Ling.Player
 
             BuildPivotY(c,
                 () => _cylP.Pivot.y, v => { _cylP.Pivot = new Vector3(0, v, 0); D(); },
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
 
@@ -714,7 +714,7 @@ namespace Poly_Ling.Player
 
             BuildPivotY(c,
                 () => _capsP.Pivot.y, v => { _capsP.Pivot = new Vector3(0, v, 0); D(); },
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out var capsPivotSync);
 
             // 上球・下球の重心ピボット
             var sphereRow = new VisualElement();
@@ -725,14 +725,14 @@ namespace Poly_Ling.Player
                 float halfH     = _capsP.Height * 0.5f;
                 float cylTop    = halfH - _capsP.RadiusTop;
                 float normalized = _capsP.Height > 0f ? cylTop / _capsP.Height : 0f;
-                _capsP.Pivot = new Vector3(0, normalized, 0); D();
+                _capsP.Pivot = new Vector3(0, normalized, 0); D(); capsPivotSync?.Invoke();
             });
             SB(sphereRow, T("LowerSphere"), () =>
             {
                 float halfH      = _capsP.Height * 0.5f;
                 float cylBottom  = -halfH + _capsP.RadiusBottom;
                 float normalized = _capsP.Height > 0f ? cylBottom / _capsP.Height : 0f;
-                _capsP.Pivot = new Vector3(0, normalized, 0); D();
+                _capsP.Pivot = new Vector3(0, normalized, 0); D(); capsPivotSync?.Invoke();
             });
             c.Add(sphereRow);
 
@@ -783,14 +783,17 @@ namespace Poly_Ling.Player
 
         private void BuildPivotY(VisualElement c,
             Func<float> getY, Action<float> setY,
-            Vector3 bottom, Vector3 center, Vector3 top)
+            Vector3 bottom, Vector3 center, Vector3 top,
+            out Action sync)
         {
             c.Add(SL(T("PivotOffset")));
-            c.Add(SR(T("PivotY"), -0.5f, 0.5f, getY, setY));
+            c.Add(SR(T("PivotY"), -0.5f, 0.5f, getY, setY, out var ySl, out var yNf));
+            void SyncY() { float v = getY(); ySl.SetValueWithoutNotify(v); yNf.SetValueWithoutNotify((float)Math.Round(v, 3)); }
+            sync = SyncY;
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 4;
-            SB(row, T("Bottom"), () => setY(bottom.y));
-            SB(row, T("Center"), () => setY(center.y));
-            SB(row, T("Top"),    () => setY(top.y));
+            SB(row, T("Bottom"), () => { setY(bottom.y); SyncY(); });
+            SB(row, T("Center"), () => { setY(center.y); SyncY(); });
+            SB(row, T("Top"),    () => { setY(top.y);    SyncY(); });
             c.Add(row);
         }
 
@@ -800,13 +803,20 @@ namespace Poly_Ling.Player
             Vector3 bottom, Vector3 center, Vector3 top)
         {
             c.Add(SL(T("PivotOffset")));
-            c.Add(SR(T("PivotX"), min, max, () => get().x, v => { var p = get(); set(new Vector3(v, p.y, p.z)); }));
-            c.Add(SR(T("PivotY"), min, max, () => get().y, v => { var p = get(); set(new Vector3(p.x, v, p.z)); }));
-            c.Add(SR(T("PivotZ"), min, max, () => get().z, v => { var p = get(); set(new Vector3(p.x, p.y, v)); }));
+            c.Add(SR(T("PivotX"), min, max, () => get().x, v => { var p = get(); set(new Vector3(v, p.y, p.z)); }, out var xSl, out var xNf));
+            c.Add(SR(T("PivotY"), min, max, () => get().y, v => { var p = get(); set(new Vector3(p.x, v, p.z)); }, out var ySl, out var yNf));
+            c.Add(SR(T("PivotZ"), min, max, () => get().z, v => { var p = get(); set(new Vector3(p.x, p.y, v)); }, out var zSl, out var zNf));
+            void SyncXYZ()
+            {
+                var p = get();
+                xSl.SetValueWithoutNotify(p.x); xNf.SetValueWithoutNotify((float)Math.Round(p.x, 3));
+                ySl.SetValueWithoutNotify(p.y); yNf.SetValueWithoutNotify((float)Math.Round(p.y, 3));
+                zSl.SetValueWithoutNotify(p.z); zNf.SetValueWithoutNotify((float)Math.Round(p.z, 3));
+            }
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 4;
-            SB(row, T("Bottom"), () => set(bottom));
-            SB(row, T("Center"), () => set(center));
-            SB(row, T("Top"),    () => set(top));
+            SB(row, T("Bottom"), () => { set(bottom); SyncXYZ(); });
+            SB(row, T("Center"), () => { set(center); SyncXYZ(); });
+            SB(row, T("Top"),    () => { set(top);    SyncXYZ(); });
             c.Add(row);
         }
 
@@ -844,7 +854,7 @@ namespace Poly_Ling.Player
 
             BuildPivotY(c,
                 () => _revP.Pivot.y, v => { _revP.Pivot = new Vector3(0, v, 0); D(); },
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
             // ── プリセット ──────────────────────────────────────────────
             c.Add(SL(T("Preset")));
@@ -3854,6 +3864,21 @@ namespace Poly_Ling.Player
             sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); set(e.newValue); });
             nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); set(v); });
             row.Add(sl); row.Add(nf); return row;
+        }
+
+        // out 版: 生成したスライダ/数値欄を呼び出し側へ返す（プリセットボタンからの同期用）。
+        private static VisualElement SR(string label, float min, float max, Func<float> get, Action<float> set,
+            out Slider slOut, out FloatField nfOut)
+        {
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
+            row.Add(ML(label));
+            var sl = new Slider(min, max) { value = get() }; sl.style.flexGrow = 1;
+            var nf = new FloatField { value = get() }; nf.style.width = 42;
+            sl.RegisterValueChangedCallback(e => { nf.SetValueWithoutNotify((float)Math.Round(e.newValue, 3)); set(e.newValue); });
+            nf.RegisterValueChangedCallback(e => { float v = Mathf.Clamp(e.newValue, min, max); sl.SetValueWithoutNotify(v); set(v); });
+            row.Add(sl); row.Add(nf);
+            slOut = sl; nfOut = nf;
+            return row;
         }
 
         private static VisualElement IR(string label, int min, int max, Func<int> get, Action<int> set)

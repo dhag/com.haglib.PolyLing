@@ -73,6 +73,15 @@ namespace Poly_Ling.Tools
         private Dictionary<int, BoneTransformSnapshot> _beforeSnapshots
             = new Dictionary<int, BoneTransformSnapshot>();
 
+        // バインド連動(スキン固定)用: ドラッグ開始時の全ボーンの SkinningMatrix / BindPose
+        private readonly Dictionary<int, Matrix4x4> _rebindStartSkinning
+            = new Dictionary<int, Matrix4x4>();
+        private readonly Dictionary<int, Matrix4x4> _rebindStartBindPose
+            = new Dictionary<int, Matrix4x4>();
+
+        // B(スキンごと確定)用: ドラッグ開始時の頂点/ボーン状態バックアップ
+        private Poly_Ling.Data.TPoseBackup _freezeBefore;
+
         // ================================================================
         // IEditTool 実装
         // ================================================================
@@ -557,6 +566,18 @@ namespace Poly_Ling.Tools
                 model.ComputeWorldMatrices();
             }
 
+            // バインド連動(スキン固定): World が変わったボーンの BindPose を更新して
+            // SkinningMatrix を移動前と同一に保つ（メッシュは画面上不変）。
+            if (_settings.MoveMode == BoneMoveMode.BoneOnlyRebind && _rebindStartSkinning.Count > 0)
+            {
+                foreach (var kv in _rebindStartSkinning)
+                {
+                    var mc = model.GetMeshContext(kv.Key);
+                    if (mc == null || mc.Type != MeshType.Bone) continue;
+                    mc.BindPose = mc.WorldMatrix.inverse * kv.Value;
+                }
+            }
+
             ctx.SyncBoneTransforms?.Invoke();
             foreach (int idx in selectedSet)
             {
@@ -599,6 +620,28 @@ namespace Poly_Ling.Tools
                         _beforeSnapshots[i] = mc.BoneTransform.CreateSnapshot();
                 }
             }
+
+            // A(スキン固定): 移動前の全ボーンの SkinningMatrix / BindPose をキャッシュ
+            _rebindStartSkinning.Clear();
+            _rebindStartBindPose.Clear();
+            if (_settings.MoveMode == BoneMoveMode.BoneOnlyRebind)
+            {
+                for (int i = 0; i < model.Count; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null || mc.Type != MeshType.Bone) continue;
+                    _rebindStartSkinning[i] = mc.SkinningMatrix;   // World × BindPose
+                    _rebindStartBindPose[i] = mc.BindPose;
+                }
+            }
+
+            // B(スキンごと確定): 移動前の頂点/ボーン状態をバックアップ（確定時の Undo 用）
+            _freezeBefore = null;
+            if (_settings.MoveMode == BoneMoveMode.SkinBakeRebind)
+            {
+                _freezeBefore = new Poly_Ling.Data.TPoseBackup();
+                Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, _freezeBefore);
+            }
         }
 
         private void CommitUndo(ToolContext ctx)
@@ -609,6 +652,111 @@ namespace Poly_Ling.Tools
 
             var undoCtrl = ctx.UndoController;
             if (undoCtrl == null) return;
+
+            // B(スキンごと確定): 頂点焼き込み＋リバインド。Tポーズ変換と同じ処理。
+            if (_settings.MoveMode == BoneMoveMode.SkinBakeRebind)
+            {
+                model.ComputeWorldMatrices();
+                Poly_Ling.Ops.TPoseConverter.BakeSkinnedVertices(model.MeshContextList);
+                for (int i = 0; i < model.Count; i++)
+                {
+                    var mc = model.GetMeshContext(i);
+                    if (mc == null || mc.Type != MeshType.Bone) continue;
+                    mc.BindPose = mc.WorldMatrix.inverse;
+                }
+
+                if (_freezeBefore != null)
+                {
+                    var afterBackup = new Poly_Ling.Data.TPoseBackup();
+                    Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, afterBackup);
+
+                    undoCtrl.SetModelContext(model);
+                    var freezeRec = new TPoseUndoRecord(_freezeBefore, afterBackup,
+                        model.TPoseBackup, model.TPoseBackup, "スキンごと確定");
+                    {
+                        string __dbgDesc = "スキンごと確定";
+                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((freezeRec)?.GetType().Name ?? "<null>"));
+                        undoCtrl.MeshListStack.Record(freezeRec, __dbgDesc);
+                    }
+                    undoCtrl.FocusMeshList();
+                }
+
+                _freezeBefore = null;
+                model.IsDirty = true;
+                model.OnListChanged?.Invoke();
+                ctx.NotifyTopologyChanged?.Invoke();
+                _beforeSnapshots.Clear();
+                _rebindStartSkinning.Clear();
+                _rebindStartBindPose.Clear();
+                ctx.ExitTransformDragging?.Invoke();
+                return;
+            }
+
+            // A(スキン固定): BoneTransform と BindPose を複合レコードで記録
+            if (_settings.MoveMode == BoneMoveMode.BoneOnlyRebind)
+            {
+                var rebindRecord = new MultiBoneMoveRebindRecord();
+                var handled = new HashSet<int>();
+
+                foreach (var kvp in _beforeSnapshots)
+                {
+                    int idx = kvp.Key;
+                    var mc = model.GetMeshContext(idx);
+                    if (mc?.BoneTransform == null) continue;
+
+                    var afterBT = mc.BoneTransform.CreateSnapshot();
+                    bool btChanged = kvp.Value.IsDifferentFrom(afterBT);
+
+                    Matrix4x4? oldBind = null, newBind = null;
+                    if (_rebindStartBindPose.TryGetValue(idx, out var ob) && ob != mc.BindPose)
+                    {
+                        oldBind = ob; newBind = mc.BindPose;
+                    }
+                    if (!btChanged && oldBind == null) continue;
+
+                    rebindRecord.Entries.Add(new MultiBoneMoveRebindRecord.Entry
+                    {
+                        MasterIndex      = idx,
+                        OldBoneTransform = btChanged ? kvp.Value : (BoneTransformSnapshot?)null,
+                        NewBoneTransform = btChanged ? afterBT   : (BoneTransformSnapshot?)null,
+                        OldBindPose      = oldBind,
+                        NewBindPose      = newBind,
+                    });
+                    handled.Add(idx);
+                }
+
+                foreach (var kv in _rebindStartBindPose)
+                {
+                    int idx = kv.Key;
+                    if (handled.Contains(idx)) continue;
+                    var mc = model.GetMeshContext(idx);
+                    if (mc == null || kv.Value == mc.BindPose) continue;
+                    rebindRecord.Entries.Add(new MultiBoneMoveRebindRecord.Entry
+                    {
+                        MasterIndex = idx,
+                        OldBindPose = kv.Value,
+                        NewBindPose = mc.BindPose,
+                    });
+                }
+
+                if (rebindRecord.Entries.Count > 0)
+                {
+                    undoCtrl.SetModelContext(model);
+                    {
+                        string __dbgDesc = "ボーン移動(バインド連動)";
+                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((rebindRecord)?.GetType().Name ?? "<null>"));
+                        undoCtrl.MeshListStack.Record(rebindRecord, __dbgDesc);
+                    }
+                    undoCtrl.FocusMeshList();
+                }
+
+                model.OnListChanged?.Invoke();
+                _beforeSnapshots.Clear();
+                _rebindStartSkinning.Clear();
+                _rebindStartBindPose.Clear();
+                ctx.ExitTransformDragging?.Invoke();
+                return;
+            }
 
             var record = new MultiBoneTransformChangeRecord();
             foreach (var kvp in _beforeSnapshots)

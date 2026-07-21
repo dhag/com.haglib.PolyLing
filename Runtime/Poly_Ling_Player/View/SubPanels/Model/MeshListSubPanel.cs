@@ -831,6 +831,7 @@ namespace Poly_Ling.MeshListV2
                             // MeshContext.IsFolding の変化 (Undo/Redo 等) を TreeView 展開状態に反映
                             if (_treeRoot != null)
                                 SyncExpandedFromData(_treeRoot.RootItems);
+                            RefreshAllAdapterViews();
                             _treeView?.RefreshItems();
                             SyncTreeViewSelection();
                         }
@@ -1488,6 +1489,22 @@ namespace Poly_Ling.MeshListV2
             foreach (var a in _selectedAdapters)
                 if (freshMap.TryGetValue(a.MasterIndex, out var fresh))
                     a.UpdateView(fresh);
+        }
+
+        // ツリー内の全アダプタのビュー（名前等）を現在のモデルから最新化する。
+        // 名前変更等の属性変更を即座にリストへ反映するため。
+        private void RefreshAllAdapterViews()
+        {
+            if (CurrentModel == null || _treeRoot == null) return;
+            var freshList = _currentTab == TabType.Bone
+                ? CurrentModel.BoneList
+                : CurrentModel.DrawableList;
+            if (freshList == null) return;
+            foreach (var v in freshList)
+            {
+                var a = _treeRoot.GetAdapterByMasterIndex(v.MasterIndex);
+                if (a != null) a.UpdateView(v);
+            }
         }
 
         private string FindDrawableName(int mi)

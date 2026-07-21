@@ -16,6 +16,9 @@ namespace Poly_Ling.Tools
             ["PickBones"]        = new() { ["en"] = "Pick Bones",            ["ja"] = "ボーン",                  ["hi"] = "ほね" },
             ["PickMeshesNoSkin"] = new() { ["en"] = "Pick Meshes (no skin)", ["ja"] = "スキンドでないメッシュ",  ["hi"] = "すきんなしのめっしゅ" },
             ["PickMeshesSkinned"]= new() { ["en"] = "Pick Meshes (skinned)", ["ja"] = "スキンドメッシュ",         ["hi"] = "すきんあめっしゅ" },
+            ["MoveModeA"]        = new() { ["en"] = "Move bone only (skin fixed)", ["ja"] = "ボーンだけ動かす（スキン固定）", ["hi"] = "ほねだけ" },
+            ["MoveModeB"]        = new() { ["en"] = "Move & bake skin",           ["ja"] = "スキンごと動かして確定",       ["hi"] = "すきんごとやく" },
+            ["MoveModeLabel"]    = new() { ["en"] = "Move mode",                  ["ja"] = "移動モード",                 ["hi"] = "うごかしかた" },
         };
 
         private static string T(string key) => L.GetFrom(Texts, key);

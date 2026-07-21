@@ -552,6 +552,8 @@ namespace Poly_Ling.Data
     public class BeginBoneTransformSliderDragCommand : PanelCommand
     {
         public int[] MasterIndices { get; }
+        /// <summary>ボーン編集の確定モード（A/B）。パネルが送信時に刻む。</summary>
+        public BoneMoveMode Mode { get; set; } = BoneMoveMode.BoneOnlyRebind;
         public BeginBoneTransformSliderDragCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
     }
@@ -562,6 +564,15 @@ namespace Poly_Ling.Data
         public string Description { get; }
         public EndBoneTransformSliderDragCommand(int modelIndex, string description)
             : base(modelIndex) { Description = description; }
+    }
+
+    /// <summary>
+    /// 現在表示中のポーズ（BonePoseData 合成）を頂点へ焼き込み、ポーズ層をクリアして
+    /// 焼き込み後の状態を新しいデフォルト・バインドにリセットする（この姿勢で確定）。
+    /// </summary>
+    public class FreezeCurrentPoseCommand : PanelCommand
+    {
+        public FreezeCurrentPoseCommand(int modelIndex) : base(modelIndex) { }
     }
 
     // ================================================================
