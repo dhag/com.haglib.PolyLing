@@ -126,10 +126,6 @@ namespace Poly_Ling.Player
             _filePathField = new TextField();
             _filePathField.style.flexGrow    = 1;
             _filePathField.RegisterValueChangedCallback(e => RecentPaths.Set(PartialImportPathKey(), e.newValue));
-            // カーソル(キャレット)色を白にする USS を適用（Import と同様）
-            _filePathField.AddToClassList("visible-caret");
-            var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
-            if (caretSheet != null) _filePathField.styleSheets.Add(caretSheet);
 
             var browseBtn = new Button(OnBrowse) { text = "..." };
             browseBtn.style.width = 28;

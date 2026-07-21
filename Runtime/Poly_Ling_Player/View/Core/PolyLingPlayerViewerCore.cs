@@ -1962,6 +1962,12 @@ namespace Poly_Ling.Player
         private void BuildLayout(VisualElement root)
         {
             _uiRoot = root;
+
+            // 全 TextField のキャレット色を白で一元化する USS を root に一度だけ付与する。
+            // 子孫の TextField 全てへカスケードするため、各フィールドでの個別適用は不要。
+            var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
+            if (caretSheet != null) root.styleSheets.Add(caretSheet);
+
             _layoutRoot = new PlayerLayoutRoot();
             _layoutRoot.Build(root);
 

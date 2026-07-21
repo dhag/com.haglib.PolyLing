@@ -82,9 +82,6 @@ namespace Poly_Ling.Player
             _pathField = new TextField();
             _pathField.style.flexGrow = 1;
             _pathField.RegisterValueChangedCallback(e => RecentPaths.Set(ExportPathKey(), e.newValue));
-            _pathField.AddToClassList("visible-caret");
-            var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
-            if (caretSheet != null) _pathField.styleSheets.Add(caretSheet);
 
             fileRow.Add(browseBtn);
             fileRow.Add(_pathField);

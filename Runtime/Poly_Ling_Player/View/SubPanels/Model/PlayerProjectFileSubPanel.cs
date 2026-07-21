@@ -160,10 +160,6 @@ namespace Poly_Ling.Player
             browse.style.marginRight = 2;
 
             field.style.flexGrow = 1;
-            // カーソル(キャレット)色を白にする USS を適用（Import と同様）
-            field.AddToClassList("visible-caret");
-            var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
-            if (caretSheet != null) field.styleSheets.Add(caretSheet);
 
             row.Add(browse);
             row.Add(field);

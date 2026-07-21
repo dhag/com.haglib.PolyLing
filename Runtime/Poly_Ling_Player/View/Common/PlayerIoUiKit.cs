@@ -44,15 +44,6 @@ namespace Poly_Ling.Player
             return l;
         }
 
-        /// <summary>キャレット色を可視化するUSSを TextField へ適用する。</summary>
-        public static void ApplyCaret(TextField field)
-        {
-            if (field == null) return;
-            field.AddToClassList("visible-caret");
-            var sheet = Resources.Load<StyleSheet>("PolyLingCaret");
-            if (sheet != null) field.styleSheets.Add(sheet);
-        }
-
         /// <summary>[...]（左・幅28）＋パス用 TextField（右・flexGrow）の行。</summary>
         public static VisualElement PathRow(TextField field, Action onBrowse)
         {
@@ -65,7 +56,6 @@ namespace Poly_Ling.Player
             browse.style.marginRight = 2;
 
             field.style.flexGrow = 1;
-            ApplyCaret(field);
 
             row.Add(browse);
             row.Add(field);
