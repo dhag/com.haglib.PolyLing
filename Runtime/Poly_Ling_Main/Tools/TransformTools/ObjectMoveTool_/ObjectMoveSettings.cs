@@ -54,6 +54,12 @@ namespace Poly_Ling.Tools
         /// </summary>
         public BoneMoveMode MoveMode = BoneMoveMode.BoneOnlyRebind;
 
+        /// <summary>
+        /// 原点だけ移動（MeshFilter の自形状を固定して原点=BoneTransform だけを動かす）。
+        /// 既定 false（=従来のオブジェごと移動）。表示ラベルは「原点だけ移動」。
+        /// </summary>
+        public bool OriginOnly = false;
+
         // ================================================================
         // IToolSettings 実装
         // ================================================================
@@ -67,6 +73,7 @@ namespace Poly_Ling.Tools
                 PickMeshesNoSkin  = this.PickMeshesNoSkin,
                 PickMeshesSkinned = this.PickMeshesSkinned,
                 MoveMode          = this.MoveMode,
+                OriginOnly        = this.OriginOnly,
             };
         }
 
@@ -77,7 +84,8 @@ namespace Poly_Ling.Tools
                 || PickBones         != o.PickBones
                 || PickMeshesNoSkin  != o.PickMeshesNoSkin
                 || PickMeshesSkinned != o.PickMeshesSkinned
-                || MoveMode          != o.MoveMode;
+                || MoveMode          != o.MoveMode
+                || OriginOnly        != o.OriginOnly;
         }
 
         public override void CopyFrom(IToolSettings other)
@@ -88,6 +96,7 @@ namespace Poly_Ling.Tools
             PickMeshesNoSkin  = o.PickMeshesNoSkin;
             PickMeshesSkinned = o.PickMeshesSkinned;
             MoveMode          = o.MoveMode;
+            OriginOnly        = o.OriginOnly;
         }
     }
 }

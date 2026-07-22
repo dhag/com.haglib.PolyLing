@@ -103,20 +103,17 @@ namespace Poly_Ling.Ops
             var ignoredEntries = meshEntries.Where(e =>  e.Context.IgnorePoseInArmature).ToList();
             int boneCount      = boneEntries.Count;
 
-            // ワールド行列を全メッシュ分保存
-            // BoneTransform.Position はプリミティブ作成時の絶対ワールド座標。
-            // model.ComputeWorldMatrices() は HierarchyParentIndex を累積するため、
-            // 親子関係設定済みの場合に二重加算になる。
-            // MeshFilter メッシュは UseLocalTransform=true かつ Position=絶対座標なので
-            // BoneTransform から直接 TRS 行列を作成する。
+            // ワールド行列を全メッシュ分保存。
+            // BoneTransform.Position は親子設定時は親相対（ローカル）になる
+            // （MeshContext.LocalMatrix / ComputeWorldMatrices と同じ意味論）。
+            // フラットな TRS では親のワールド変換が抜け落ち、親子ありの子頂点が
+            // 原点付近に集中する。親を累積した正しいワールド行列を使う。
+            // ルート（親なし）は WorldMatrix = LocalMatrix = TRS(Position,Euler(Rotation),Scale)
+            // となり従来のフラット式と一致するため挙動不変。
+            model.ComputeWorldMatrices();
             var savedWorldMatrices = new Dictionary<int, Matrix4x4>();
             foreach (var e in meshEntries)
-            {
-                var bt = e.Context.BoneTransform;
-                savedWorldMatrices[e.Index] = (bt != null && bt.UseLocalTransform)
-                    ? Matrix4x4.TRS(bt.Position, Quaternion.Euler(bt.Rotation), bt.Scale)
-                    : Matrix4x4.identity;
-            }
+                savedWorldMatrices[e.Index] = e.Context.WorldMatrix;
 
             // ボーン生成対象のみ old index → boneEntries 内インデックス にマップ
             var oldIndexToBoneNum = new Dictionary<int, int>();

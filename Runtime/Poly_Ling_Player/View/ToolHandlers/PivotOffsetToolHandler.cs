@@ -1,6 +1,8 @@
 // PivotOffsetToolHandler.cs
-// PivotOffsetTool を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
-// Runtime/Poly_Ling_Player/View/ に配置
+// 「原点だけ移動」を Player の入力イベントに橋渡しする IPlayerToolHandler 実装。
+// 内部は ObjectMoveTool(OriginOnly=true) へ委譲する（案1: ピボットモードの再ルーティング）。
+// 表示ラベルは「原点だけ移動」。内部識別子(Pivot 系)は据え置き。
+// モード配線(入力/ギズモ/ホバー/パネル/ボタン)は Core 側で不変。
 
 using System;
 using UnityEngine;
@@ -11,40 +13,40 @@ using Poly_Ling.UndoSystem;
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// PivotOffsetTool を Player 入力に橋渡しする。
-    /// ピボット移動（全頂点が逆方向に移動）をビューポートのドラッグ操作で行う。
-    /// ギズモ座標は TryGetGizmoScreenPositions で取得し UIToolkit オーバーレイに渡す。
+    /// 「原点だけ移動」(OriginOnly)。原点(BoneTransform.Position)だけを動かし、
+    /// 対象メッシュの見た目と直接の子は据え置く。内部は ObjectMoveTool へ委譲。
+    /// ギズモ座標/当たり判定は ObjectMoveTool の同一 _axisGizmo を用いるため一致する。
     /// </summary>
     public class PivotOffsetToolHandler : IPlayerToolHandler
     {
-        // ================================================================
-        // 依存
-        // ================================================================
+        // ObjectMoveTool を専用設定(OriginOnly=true, 子は据え置き, ピック無効=ギズモ専用)で保持
+        private readonly ObjectMoveTool _tool = new ObjectMoveTool();
 
-        private readonly PivotOffsetTool _tool = new PivotOffsetTool();
-        private          ProjectContext  _project;
+        private ProjectContext    _project;
+        private MeshUndoController _undoController;
+
+        public PivotOffsetToolHandler()
+        {
+            _tool.SetSettings(new ObjectMoveSettings
+            {
+                OriginOnly        = true,
+                MoveWithChildren  = false,   // 直接の子は据え置き(world 固定でローカル逆算)
+                PickBones         = false,   // ギズモ専用(空クリックでのピックはしない)
+                PickMeshesNoSkin  = false,
+                PickMeshesSkinned = false,
+            });
+        }
 
         // ================================================================
-        // 外部コールバック（Viewer から設定）
+        // 外部コールバック(Viewer から設定) ─ Core は本クラスの公開面に依存するため維持
         // ================================================================
 
         public Func<ToolContext>  GetToolContext;
         public Action             OnRepaint;
         public Action             OnEnterTransformDragging;
         public Action             OnExitTransformDragging;
-
-        /// <summary>BoneTransform / ComputeWorldMatrices / UpdateTransform を呼ぶコールバック。</summary>
-        public Action OnSyncBoneTransforms;
-
-        /// <summary>
-        /// 頂点位置変更後に UnityMesh.vertices + GPU バッファを同期するコールバック。
-        /// 引数は変更された MeshContext。
-        /// </summary>
+        public Action             OnSyncBoneTransforms;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
-
-        // ================================================================
-        // 初期化
-        // ================================================================
 
         public void SetProject(ProjectContext project) => _project = project;
         public void SetUndoController(MeshUndoController ctrl) => _undoController = ctrl;
@@ -89,15 +91,10 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // ギズモスクリーン座標取得
-        // PivotOffsetTool.DrawAxisGizmo と同じ計算をエディタ描画APIなしで行う。
+        // ギズモスクリーン座標: ObjectMoveTool の _axisGizmo をそのまま使う
+        // (表示と当たり判定が同一計算になり、ズレて反応しない不具合を避ける)
         // ================================================================
 
-        /// <summary>
-        /// ギズモの X/Y/Z 軸エンド座標（スクリーン、Y=0 が上）と
-        /// ホバー中の軸種別を返す。
-        /// 選択なし・ctx 無効の場合は false を返す。
-        /// </summary>
         public bool TryGetGizmoScreenPositions(
             ToolContext ctx,
             out Vector2 origin,
@@ -110,43 +107,13 @@ namespace Poly_Ling.Player
             var builtCtx = BuildToolContext(default);
             if (builtCtx == null) return false;
 
-            var mc = builtCtx.FirstSelectedMeshContext;
-            if (mc == null) return false;
-
-            var wm = mc.WorldMatrix;
-            Vector3 pivotWorld = new Vector3(wm.m03, wm.m13, wm.m23);
-            origin = builtCtx.WorldToScreenPos(pivotWorld, builtCtx.PreviewRect,
-                                               builtCtx.CameraPosition, builtCtx.CameraTarget);
-
-            xEnd = CalcAxisEnd(builtCtx, pivotWorld, origin,
-                               new Vector3(wm.m00, wm.m10, wm.m20).normalized);
-            yEnd = CalcAxisEnd(builtCtx, pivotWorld, origin,
-                               new Vector3(wm.m01, wm.m11, wm.m21).normalized);
-            zEnd = CalcAxisEnd(builtCtx, pivotWorld, origin,
-                               new Vector3(wm.m02, wm.m12, wm.m22).normalized);
-
-            // PivotOffsetTool は AxisType を直接公開していないため None を返す
-            // （ホバーはツール内部で管理）
-            hoveredAxis = AxisGizmo.AxisType.None;
-            return true;
+            return _tool.TryGetGizmoScreenPositions(
+                builtCtx, out origin, out xEnd, out yEnd, out zEnd, out hoveredAxis);
         }
 
         // ================================================================
         // 内部ヘルパー
         // ================================================================
-
-        private const float ScreenAxisLength = 60f;
-
-        private Vector2 CalcAxisEnd(ToolContext ctx, Vector3 pivotWorld,
-                                    Vector2 originScreen, Vector3 axisWorldDir)
-        {
-            Vector3 axisEnd = pivotWorld + axisWorldDir * 0.1f;
-            Vector2 axisEndScreen = ctx.WorldToScreenPos(axisEnd, ctx.PreviewRect,
-                                                         ctx.CameraPosition, ctx.CameraTarget);
-            Vector2 dir = (axisEndScreen - originScreen).normalized;
-            if (dir.sqrMagnitude < 0.001f) dir = new Vector2(1, 0);
-            return originScreen + dir * ScreenAxisLength;
-        }
 
         private ToolContext BuildToolContext(ModifierKeys mods)
         {
@@ -155,10 +122,10 @@ namespace Poly_Ling.Player
 
             var baseCtx = GetToolContext?.Invoke() ?? new ToolContext();
 
-            baseCtx.Model              = model;
-            baseCtx.UndoController     = _undoController;
-            baseCtx.SyncBoneTransforms = OnSyncBoneTransforms;
-            baseCtx.Repaint            = OnRepaint;
+            baseCtx.Model                  = model;
+            baseCtx.UndoController         = _undoController;
+            baseCtx.SyncBoneTransforms     = OnSyncBoneTransforms;
+            baseCtx.Repaint                = OnRepaint;
             baseCtx.EnterTransformDragging = OnEnterTransformDragging;
             baseCtx.ExitTransformDragging  = OnExitTransformDragging;
             baseCtx.InputState = new Poly_Ling.Data.ViewportInputState
@@ -167,7 +134,7 @@ namespace Poly_Ling.Player
                 IsControlHeld = mods.Ctrl,
             };
 
-            // 頂点位置変更後に UnityMesh + GPU バッファを同期する
+            // OriginOnly は頂点を書き換えるので GPU 同期が必須
             baseCtx.SyncMesh = () =>
             {
                 var mc = model.FirstSelectedMeshContext;
@@ -176,8 +143,6 @@ namespace Poly_Ling.Player
 
             return baseCtx;
         }
-
-        private MeshUndoController _undoController;
 
         private static Vector2 ToImgui(Vector2 screenPosYDown, ToolContext ctx)
         {

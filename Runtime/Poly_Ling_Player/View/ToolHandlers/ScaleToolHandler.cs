@@ -76,13 +76,26 @@ namespace Poly_Ling.Player
         public void OnLeftDrag(Vector2 screenPos, Vector2 delta, ModifierKeys mods) {}
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods) {}
 
+        /// <summary>
+        /// スケールピボット(_tool.PivotPublic はローカル空間)を対象メッシュの WorldMatrix で
+        /// ワールド変換して返す。WorldToScreenPos はワールド空間を期待するため、この変換が
+        /// 無いと Player（WorldMatrix 非 identity）でギズモが実頂点から離れて描画される。
+        /// 内部のスケール数学が使うローカル _pivot は変更しない。移動/回転ハンドルと同一方式。
+        /// </summary>
+        private Vector3 WorldPivot()
+        {
+            var mc = _project?.CurrentModel?.FirstDrawableMeshContext;
+            var local = _tool.PivotPublic;
+            return mc != null ? mc.LocalToWorld(local) : local;
+        }
+
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0)
             {
                 _gizmoHoverAxis = AxisGizmo.AxisType.None; return;
             }
-            _axisGizmo.Center = _tool.PivotPublic;
+            _axisGizmo.Center = WorldPivot();
             _gizmoHoverAxis = _axisGizmo.FindAxisAtScreenPos(ToImgui(screenPos), ctx);
             OnRepaint?.Invoke();
         }
@@ -97,7 +110,7 @@ namespace Poly_Ling.Player
             origin = xEnd = yEnd = zEnd = Vector2.zero;
             hoveredAxis = AxisGizmo.AxisType.None;
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
-            _axisGizmo.Center       = _tool.PivotPublic;
+            _axisGizmo.Center       = WorldPivot();
             _axisGizmo.HoveredAxis  = _gizmoHoverAxis;
             _axisGizmo.DraggingAxis = _gizmoDragAxis;
             _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
@@ -109,7 +122,7 @@ namespace Poly_Ling.Player
         public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
-            _axisGizmo.Center = _tool.PivotPublic;
+            _axisGizmo.Center = WorldPivot();
             var axis = _axisGizmo.FindAxisAtScreenPos(ToImgui(screenPos), ctx);
             if (axis == AxisGizmo.AxisType.None) return false;
             _gizmoDragAxis        = axis;
@@ -123,7 +136,7 @@ namespace Poly_Ling.Player
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return false;
             var ctx = GetToolContext?.Invoke();
             if (ctx == null) { _gizmoDragAxis = AxisGizmo.AxisType.None; return false; }
-            _axisGizmo.Center = _tool.PivotPublic;
+            _axisGizmo.Center = WorldPivot();
             _axisGizmo.GetScreenPositions(ctx, out var o, out var xe, out var ye, out var ze);
             Vector2 axisEnd = _gizmoDragAxis == AxisGizmo.AxisType.X ? xe
                             : _gizmoDragAxis == AxisGizmo.AxisType.Y ? ye : ze;

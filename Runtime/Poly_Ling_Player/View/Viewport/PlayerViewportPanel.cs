@@ -151,6 +151,8 @@ namespace Poly_Ling.Player
             public Poly_Ling.Tools.AxisGizmo.AxisType DraggingAxis;
             /// <summary>オブジェクト移動用ダイヤ型スタイル。true=ダイヤ、false=矢印（頂点移動）。</summary>
             public bool IsDiamondStyle;
+            /// <summary>スケール用キューブ型スタイル。true=軸線+先端キューブ（Unity準拠）。</summary>
+            public bool IsCubeStyle;
             /// <summary>ピボット位置のダイヤ型ギズモ。</summary>
             public bool HasPivotGizmo;
             public Vector2 PivotOrigin, PivotXEnd, PivotYEnd, PivotZEnd;
@@ -1094,7 +1096,32 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            if (_gizmoData.IsDiamondStyle)
+            if (_gizmoData.IsCubeStyle)
+            {
+                // スケール: 軸線 + 先端キューブ + 中心キューブ（Unity準拠）
+                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.XEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
+                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
+                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.YEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
+                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
+                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
+                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
+                DrawGizmoCenterHandle(ctx, _gizmoData.XEnd, 6f,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
+                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
+                DrawGizmoCenterHandle(ctx, _gizmoData.YEnd, 6f,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
+                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
+                DrawGizmoCenterHandle(ctx, _gizmoData.ZEnd, 6f,
+                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
+                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
+                bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
+                DrawGizmoCenterHandle(ctx, _gizmoData.Origin, 8f,
+                    ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+            }
+            else if (_gizmoData.IsDiamondStyle)
             {
                 // オブジェクト移動: 軸線 + 先端ダイヤ + 中心ダイヤ
                 DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.XEnd,

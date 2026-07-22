@@ -82,6 +82,12 @@ namespace Poly_Ling.Tools
         // B(スキンごと確定)用: ドラッグ開始時の頂点/ボーン状態バックアップ
         private Poly_Ling.Data.TPoseBackup _freezeBefore;
 
+        // 原点だけ移動(OriginOnly, MeshFilter)用: ドラッグ開始時の対象メッシュ頂点位置と開始WorldMatrix
+        private readonly Dictionary<int, UnityEngine.Vector3[]> _originStartPositions
+            = new Dictionary<int, UnityEngine.Vector3[]>();
+        private readonly Dictionary<int, Matrix4x4> _originStartWorld
+            = new Dictionary<int, Matrix4x4>();
+
         // ================================================================
         // IEditTool 実装
         // ================================================================
@@ -578,6 +584,34 @@ namespace Poly_Ling.Tools
                 }
             }
 
+            // 原点だけ移動(OriginOnly): MeshFilter の自頂点を「開始ワールド位置を保つ」よう再局所化する。
+            // 原点(BoneTransform.Position)は動くが対象メッシュの見た目は不変になる（位置のみ）。
+            // ComputeWorldMatrices 済みの現 WorldMatrixInverse を使う。
+            if (_settings.OriginOnly && _originStartWorld.Count > 0)
+            {
+                foreach (int idx in selectedSet)
+                {
+                    if (!_originStartWorld.TryGetValue(idx, out var startWorld)) continue;
+                    if (!_originStartPositions.TryGetValue(idx, out var startPos)) continue;
+                    var mc = model.GetMeshContext(idx);
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+                    Matrix4x4 curInv = mc.WorldMatrixInverse;
+                    int n = Mathf.Min(mo.VertexCount, startPos.Length);
+                    for (int i = 0; i < n; i++)
+                    {
+                        Vector3 worldPos = startWorld.MultiplyPoint3x4(startPos[i]);
+                        var v = mo.Vertices[i];
+                        v.Position = curInv.MultiplyPoint3x4(worldPos);
+                        mo.Vertices[i] = v;
+                    }
+                    mo.InvalidatePositionCache();
+                }
+                // 書き換えた頂点を GPU へ同期する（これが無いと自形状補償が描画されず、
+                // メッシュが原点に追従して動いて見える）。
+                ctx.SyncMesh?.Invoke();
+            }
+
             ctx.SyncBoneTransforms?.Invoke();
             foreach (int idx in selectedSet)
             {
@@ -642,6 +676,21 @@ namespace Poly_Ling.Tools
                 _freezeBefore = new Poly_Ling.Data.TPoseBackup();
                 Poly_Ling.Ops.TPoseConverter.CaptureBackup(model.MeshContextList, _freezeBefore);
             }
+
+            // 原点だけ移動(OriginOnly): MeshFilter(非スキン)の自頂点補償用に開始状態を保存。
+            _originStartPositions.Clear();
+            _originStartWorld.Clear();
+            if (_settings.OriginOnly)
+            {
+                foreach (int idx in AllSelectedIndices(ctx))
+                {
+                    var mc = model.GetMeshContext(idx);
+                    if (mc?.MeshObject == null) continue;
+                    if (mc.Type != MeshType.Mesh || mc.MeshObject.HasBoneWeight) continue; // MeshFilterのみ
+                    _originStartPositions[idx] = (UnityEngine.Vector3[])mc.MeshObject.Positions.Clone();
+                    _originStartWorld[idx]     = mc.WorldMatrix;
+                }
+            }
         }
 
         private void CommitUndo(ToolContext ctx)
@@ -652,6 +701,67 @@ namespace Poly_Ling.Tools
 
             var undoCtrl = ctx.UndoController;
             if (undoCtrl == null) return;
+
+            // 原点だけ移動(OriginOnly): 対象MeshFilterの頂点+BoneTransform、および補償した子のBoneTransformを
+            // 1グループ(1回のUndo)で記録する。MoveMode の記録経路はバイパスする。
+            if (_settings.OriginOnly && _originStartPositions.Count > 0)
+            {
+                undoCtrl.SetModelContext(model);
+                undoCtrl.MeshListStack.BeginGroup("原点だけ移動");
+                var targetSet = new HashSet<int>(_originStartPositions.Keys);
+
+                // 対象メッシュ: 頂点 + BoneTransform
+                foreach (var kv in _originStartPositions)
+                {
+                    int idx = kv.Key;
+                    var mc = model.GetMeshContext(idx);
+                    if (mc?.MeshObject == null || mc.BoneTransform == null) continue;
+                    int vc = mc.MeshObject.VertexCount;
+                    var indices = new int[vc];
+                    var newPos  = new Vector3[vc];
+                    for (int i = 0; i < vc; i++) { indices[i] = i; newPos[i] = mc.MeshObject.Vertices[i].Position; }
+                    undoCtrl.MeshListStack.Record(new Poly_Ling.UndoSystem.PivotMoveRecord
+                    {
+                        MasterIndex        = idx,
+                        VertexIndices      = indices,
+                        OldVertexPositions = kv.Value,
+                        NewVertexPositions = newPos,
+                        OldBoneTransform   = _beforeSnapshots.TryGetValue(idx, out var ob0) ? ob0 : mc.BoneTransform.CreateSnapshot(),
+                        NewBoneTransform   = mc.BoneTransform.CreateSnapshot(),
+                    }, "原点だけ移動");
+                }
+
+                // 補償した子(選択外): BoneTransform のみ（VertexIndices 空）
+                foreach (var kv in _beforeSnapshots)
+                {
+                    int idx = kv.Key;
+                    if (targetSet.Contains(idx)) continue;
+                    var mc = model.GetMeshContext(idx);
+                    if (mc?.BoneTransform == null) continue;
+                    var after = mc.BoneTransform.CreateSnapshot();
+                    if (!kv.Value.IsDifferentFrom(after)) continue;
+                    undoCtrl.MeshListStack.Record(new Poly_Ling.UndoSystem.PivotMoveRecord
+                    {
+                        MasterIndex        = idx,
+                        VertexIndices      = System.Array.Empty<int>(),
+                        OldVertexPositions = System.Array.Empty<Vector3>(),
+                        NewVertexPositions = System.Array.Empty<Vector3>(),
+                        OldBoneTransform   = kv.Value,
+                        NewBoneTransform   = after,
+                    }, "原点だけ移動(子)");
+                }
+
+                undoCtrl.MeshListStack.EndGroup();
+                undoCtrl.FocusMeshList();
+
+                _beforeSnapshots.Clear();
+                _rebindStartSkinning.Clear();
+                _rebindStartBindPose.Clear();
+                _originStartPositions.Clear();
+                _originStartWorld.Clear();
+                ctx.ExitTransformDragging?.Invoke();
+                return;
+            }
 
             // B(スキンごと確定): 頂点焼き込み＋リバインド。Tポーズ変換と同じ処理。
             if (_settings.MoveMode == BoneMoveMode.SkinBakeRebind)

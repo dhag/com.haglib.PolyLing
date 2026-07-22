@@ -1048,10 +1048,15 @@ namespace Poly_Ling.Player
         {
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null) return;
-            adapter.ReadBackVertexFlags();
             // 矩形選択はアクティブビューポートで行うのでそのスロットを読む。
             int slot = ViewportToSlot(ActiveViewport);
             if (slot < 0) slot = 0;
+            // カリング判定を「選択中ビューポートの設定」に固定する。
+            // adapter.BackfaceCullingEnabled は複数ビューポート描画ループで最後のスロット値に
+            // 上書きされるため、これを再設定しないと IsVertexVisible の早期判定
+            // (!BackfaceCullingEnabled) が別ビューポートの設定を読み、カリング解除しても裏が拾えない。
+            adapter.BackfaceCullingEnabled = _displaySettings[slot].BackfaceCulling;
+            adapter.ReadBackVertexFlags();
             adapter.ReadBackVertexCulled(slot);
         }
 

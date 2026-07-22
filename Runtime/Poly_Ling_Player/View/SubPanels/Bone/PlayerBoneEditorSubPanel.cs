@@ -55,7 +55,9 @@ namespace Poly_Ling.Player
 
         // スコープタブ
         private Button _tabBones, _tabMeshes;
-        private VisualElement _moveOptionsSection;
+        private VisualElement _moveOptionsSection;      // ボーン専用: スキンモード A/B/C
+        private VisualElement _commonMoveSection;      // 両タブ共通: 子を一緒に移動
+        private VisualElement _meshMoveOptionsSection; // メッシュ専用: 原点だけ移動
 
         // 共通
         private Label         _warningLabel;
@@ -89,6 +91,7 @@ namespace Poly_Ling.Player
         private FloatField _rotX, _rotY, _rotZ;
         private Slider     _rotSliderX, _rotSliderY, _rotSliderZ;
         private FloatField _sclX, _sclY, _sclZ;
+        private VisualElement _rotSection, _sclSection;
         private bool       _suppressTRS;
 
         // IgnorePose（描画メッシュ含む場合）
@@ -99,6 +102,7 @@ namespace Poly_Ling.Player
         // BoneInputHandler 廃止に伴い、ObjectMoveTool のピック対象を
         // ここから操作する。GetObjectMoveSettings() 経由で同一インスタンスを共有。
         private Toggle        _toggleMoveWithChildren;
+        private Toggle        _toggleOriginOnly;
         private Toggle        _toggleModeA;
         private Toggle        _toggleModeB;
         private Toggle        _toggleModeC;
@@ -122,7 +126,7 @@ namespace Poly_Ling.Player
             tabRow.style.flexDirection = FlexDirection.Row;
             tabRow.style.marginBottom  = 6;
             _tabBones  = MakeScopeTab("ボーン",               () => SetScope(SubPanelScope.BonesOnly));
-            _tabMeshes = MakeScopeTab("スキンドでないメッシュ", () => SetScope(SubPanelScope.MeshesOnly));
+            _tabMeshes = MakeScopeTab("オブジェクト姿勢",       () => SetScope(SubPanelScope.MeshesOnly));
             _tabBones.style.flexGrow = _tabMeshes.style.flexGrow = 1;
             tabRow.Add(_tabBones); tabRow.Add(_tabMeshes);
             root.Add(tabRow);
@@ -136,10 +140,12 @@ namespace Poly_Ling.Player
             _moveOptionsSection.style.marginBottom = 6;
 
             _toggleMoveWithChildren  = new Toggle("子を一緒に移動") { value = true };
+            _toggleOriginOnly        = new Toggle("原点だけ移動") { value = false };
             _toggleModeA             = new Toggle("ボーンだけ動かす（スキン固定）") { value = true };
             _toggleModeB             = new Toggle("スキンごと動かして確定（焼き込み）") { value = false };
             _toggleModeC             = new Toggle("ポーズ（一時）") { value = false };
             _toggleMoveWithChildren.style.color  = new StyleColor(Color.white);
+            _toggleOriginOnly.style.color        = new StyleColor(Color.white);
             _toggleModeA.style.color             = new StyleColor(Color.white);
             _toggleModeB.style.color             = new StyleColor(Color.white);
             _toggleModeC.style.color             = new StyleColor(Color.white);
@@ -149,6 +155,13 @@ namespace Poly_Ling.Player
                 if (_suppressMoveSettings) return;
                 var s = GetObjectMoveSettings?.Invoke();
                 if (s != null) s.MoveWithChildren = e.newValue;
+            });
+            _toggleOriginOnly.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressMoveSettings) return;
+                var s = GetObjectMoveSettings?.Invoke();
+                if (s != null) s.OriginOnly = e.newValue;
+                ApplyOriginOnlyVisibility();
             });
             _toggleModeA.RegisterValueChangedCallback(e =>
             {
@@ -181,7 +194,19 @@ namespace Poly_Ling.Player
                 Refresh();
             });
 
-            _moveOptionsSection.Add(_toggleMoveWithChildren);
+            // 子を一緒に移動: ボーン/メッシュ両方に適用 → 共通（両タブで表示）
+            _commonMoveSection = new VisualElement();
+            _commonMoveSection.style.marginBottom = 6;
+            _commonMoveSection.Add(_toggleMoveWithChildren);
+            root.Add(_commonMoveSection);
+
+            // 原点だけ移動: MeshFilter 対象 → 「オブジェクト姿勢」タブ専用
+            _meshMoveOptionsSection = new VisualElement();
+            _meshMoveOptionsSection.style.marginBottom = 6;
+            _meshMoveOptionsSection.Add(_toggleOriginOnly);
+            root.Add(_meshMoveOptionsSection);
+
+            // スキンモード A/B/C: 「ボーン」タブ専用
             _moveOptionsSection.Add(MakeSecLabel("移動モード"));
             _moveOptionsSection.Add(_toggleModeA);
             _moveOptionsSection.Add(_toggleModeB);
@@ -322,23 +347,27 @@ namespace Poly_Ling.Player
             RegTF(_posY, SetBoneTransformValueCommand.Field.PositionY);
             RegTF(_posZ, SetBoneTransformValueCommand.Field.PositionZ);
 
-            root.Add(MakeSecLabel("回転 (°)"));
-            AddXYZFields(root, "rot", out _rotX, out _rotY, out _rotZ);
+            _rotSection = new VisualElement();
+            _rotSection.Add(MakeSecLabel("回転 (°)"));
+            AddXYZFields(_rotSection, "rot", out _rotX, out _rotY, out _rotZ);
             RegTF(_rotX, SetBoneTransformValueCommand.Field.RotationX);
             RegTF(_rotY, SetBoneTransformValueCommand.Field.RotationY);
             RegTF(_rotZ, SetBoneTransformValueCommand.Field.RotationZ);
-            _rotSliderX = MakeRotSlider(); root.Add(_rotSliderX);
-            _rotSliderY = MakeRotSlider(); root.Add(_rotSliderY);
-            _rotSliderZ = MakeRotSlider(); root.Add(_rotSliderZ);
+            _rotSliderX = MakeRotSlider(); _rotSection.Add(_rotSliderX);
+            _rotSliderY = MakeRotSlider(); _rotSection.Add(_rotSliderY);
+            _rotSliderZ = MakeRotSlider(); _rotSection.Add(_rotSliderZ);
             RegRotSlider(_rotSliderX, _rotX, SetBoneTransformValueCommand.Field.RotationX);
             RegRotSlider(_rotSliderY, _rotY, SetBoneTransformValueCommand.Field.RotationY);
             RegRotSlider(_rotSliderZ, _rotZ, SetBoneTransformValueCommand.Field.RotationZ);
+            root.Add(_rotSection);
 
-            root.Add(MakeSecLabel("スケール"));
-            AddXYZFields(root, "scl", out _sclX, out _sclY, out _sclZ);
+            _sclSection = new VisualElement();
+            _sclSection.Add(MakeSecLabel("スケール"));
+            AddXYZFields(_sclSection, "scl", out _sclX, out _sclY, out _sclZ);
             RegTF(_sclX, SetBoneTransformValueCommand.Field.ScaleX);
             RegTF(_sclY, SetBoneTransformValueCommand.Field.ScaleY);
             RegTF(_sclZ, SetBoneTransformValueCommand.Field.ScaleZ);
+            root.Add(_sclSection);
 
             // IgnorePose
             _ignorePoseRow = new VisualElement();
@@ -365,6 +394,11 @@ namespace Poly_Ling.Player
         // ================================================================
         // スコープ切り替え
         // ================================================================
+
+        /// <summary>外部の入口ボタンから「ボーン」タブを開く。</summary>
+        public void ShowBonesTab()      => SetScope(SubPanelScope.BonesOnly);
+        /// <summary>外部の入口ボタンから「オブジェクト姿勢」タブを開く。</summary>
+        public void ShowObjectPoseTab() => SetScope(SubPanelScope.MeshesOnly);
 
         private void SetScope(SubPanelScope scope)
         {
@@ -436,6 +470,7 @@ namespace Poly_Ling.Player
                 try
                 {
                     _toggleMoveWithChildren?.SetValueWithoutNotify(moveSettings.MoveWithChildren);
+                    _toggleOriginOnly?.SetValueWithoutNotify(moveSettings.OriginOnly);
                     _toggleModeA?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind);
                     _toggleModeB?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.SkinBakeRebind);
                     _toggleModeC?.SetValueWithoutNotify(moveSettings.MoveMode == Poly_Ling.Tools.BoneMoveMode.PoseLayer);
@@ -468,6 +503,9 @@ namespace Poly_Ling.Player
             // ボーン専用の移動オプション（子を一緒に移動・A/B/Cモード）はメッシュスコープでは非表示
             if (_moveOptionsSection != null)
                 _moveOptionsSection.style.display = (_scope == SubPanelScope.MeshesOnly) ? DisplayStyle.None : DisplayStyle.Flex;
+            // 「原点だけ移動」はメッシュ(オブジェクト姿勢)スコープ専用
+            if (_meshMoveOptionsSection != null)
+                _meshMoveOptionsSection.style.display = (_scope == SubPanelScope.MeshesOnly) ? DisplayStyle.Flex : DisplayStyle.None;
 
             if (model == null)
             {
@@ -493,6 +531,7 @@ namespace Poly_Ling.Player
             SetWarning("");
             _selectionCountLabel.text = $"{indices.Length} 項目選択中";
             SetTRSEnabled(true);
+            ApplyOriginOnlyVisibility();
 
             // TRS 同期
             _suppressTRS = true;
@@ -893,6 +932,17 @@ namespace Poly_Ling.Player
         // ================================================================
         // UI ヘルパー
         // ================================================================
+
+        /// <summary>OriginOnly(原点だけ移動)時は回転/スケール区画を隠す（位置のみ有効）。</summary>
+        private void ApplyOriginOnlyVisibility()
+        {
+            // OriginOnly は「オブジェクト姿勢」スコープでのみ回転/スケールを隠す（ボーンタブでは常に表示）。
+            bool originOnly = (_scope == SubPanelScope.MeshesOnly)
+                              && (GetObjectMoveSettings?.Invoke()?.OriginOnly ?? false);
+            var disp = originOnly ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_rotSection != null) _rotSection.style.display = disp;
+            if (_sclSection != null) _sclSection.style.display = disp;
+        }
 
         private void SetTRSEnabled(bool enabled)
         {

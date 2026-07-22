@@ -868,6 +868,11 @@ namespace Poly_Ling.Player
                 }
                 NotifyPanels(ChangeKind.Attributes);
             };
+            _objectMoveHandler.OnSyncMeshPositions = mc =>
+            {
+                // OriginOnly の自頂点補償を GPU へ反映（PivotOffsetHandler と同じ経路）。
+                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+            };
 
             // オブジェ矩形 / 投げ縄選択の UI 描画コールバック。
             // MoveToolHandler (頂点) と同じ panel API を使い、見た目を完全統一する。
@@ -1925,6 +1930,7 @@ namespace Poly_Ling.Player
                     panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
                     {
                         HasGizmo    = true,
+                        IsCubeStyle = true,
                         Origin      = so, XEnd = sxe, YEnd = sye, ZEnd = sze,
                         HoveredAxis = sha,
                     });
@@ -2723,7 +2729,7 @@ namespace Poly_Ling.Player
 
             _layoutRoot.BlendBtn.clicked      += ShowBlendPanel;
             _layoutRoot.ModelBlendBtn.clicked += ShowModelBlendPanel;
-            _layoutRoot.BoneEditorBtn.clicked  += ShowBoneEditorPanel;
+            _layoutRoot.BoneEditorBtn.clicked  += () => { ShowBoneEditorPanel(); _boneEditorSubPanel?.ShowBonesTab(); };
             _layoutRoot.UVEditorBtn.clicked    += ShowUVEditorPanel;
             _layoutRoot.UVUnwrapBtn.clicked    += ShowUVUnwrapPanel;
             _layoutRoot.MaterialListBtn.clicked    += ShowMaterialListPanel;
@@ -2765,8 +2771,11 @@ namespace Poly_Ling.Player
             _layoutRoot.PartialExportMqoBtn.clicked += () => ShowPartialExportPanel(PlayerPartialExportSubPanel.Mode.MQO);
 
             _layoutRoot.ToolVertexMoveBtn.clicked        += () => ShowCategory1Panel(InteractionMode.VertexMove);
-            _layoutRoot.ToolObjectMoveBtn.clicked        += () => ShowCategory1Panel(InteractionMode.ObjectMove);
-            _layoutRoot.ToolPivotOffsetBtn.clicked       += () => ShowCategory1Panel(InteractionMode.PivotOffset);
+            _layoutRoot.ToolObjectMoveBtn.clicked        += () => { ShowCategory1Panel(InteractionMode.ObjectMove); _boneEditorSubPanel?.ShowObjectPoseTab(); };
+            // 「原点だけ移動」は ObjectMove モードのチェックボックスに一本化したため、
+            // ピボット(PivotOffset)ボタンは撤去する（非表示＋クリック無効）。
+            if (_layoutRoot.ToolPivotOffsetBtn != null)
+                _layoutRoot.ToolPivotOffsetBtn.style.display = DisplayStyle.None;
             _layoutRoot.ToolSculptBtn.clicked            += () => ShowCategory1Panel(InteractionMode.Sculpt);
             _layoutRoot.ToolAdvancedSelBtn.clicked       += () => ShowCategory1Panel(InteractionMode.AdvancedSelect);
             _layoutRoot.ToolSkinWeightPaintBtn.clicked   += () => ShowCategory1Panel(InteractionMode.SkinWeightPaint);

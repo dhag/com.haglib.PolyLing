@@ -758,7 +758,7 @@ namespace Poly_Ling.Player
             toolRow.style.flexDirection = FlexDirection.Row;
             toolRow.style.marginBottom  = 2;
             ToolVertexMoveBtn  = MakeBtn("頂点移動");     ToolVertexMoveBtn.style.flexGrow  = 1; ToolVertexMoveBtn.style.marginRight  = 2;
-            ToolObjectMoveBtn  = MakeBtn("オブジェ移動"); ToolObjectMoveBtn.style.flexGrow  = 1;
+            ToolObjectMoveBtn  = MakeBtn("オブジェクト姿勢"); ToolObjectMoveBtn.style.flexGrow  = 1;
             toolRow.Add(ToolVertexMoveBtn); toolRow.Add(ToolObjectMoveBtn);
             foSelectMove.Add(toolRow);
 

@@ -81,13 +81,26 @@ namespace Poly_Ling.Player
         private float   _gizmoAxisSign = 1f;
         private bool    _prevAxisMode;
 
+        /// <summary>
+        /// 回転ピボット(_tool.PivotPublic はローカル空間)を対象メッシュの WorldMatrix で
+        /// ワールド変換して返す。WorldToScreenPos はワールド空間を期待するため、この変換が
+        /// 無いと Player（WorldMatrix 非 identity）でリングが実頂点から離れて描画される。
+        /// 内部の回転数学が使うローカル _pivot は変更しない。
+        /// </summary>
+        private Vector3 WorldPivot()
+        {
+            var mc = _project?.CurrentModel?.FirstDrawableMeshContext;
+            var local = _tool.PivotPublic;
+            return mc != null ? mc.LocalToWorld(local) : local;
+        }
+
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0)
             {
                 _gizmoHoverAxis = AxisGizmo.AxisType.None; return;
             }
-            _ringGizmo.Center = _tool.PivotPublic;
+            _ringGizmo.Center = WorldPivot();
             _gizmoHoverAxis = _ringGizmo.FindRingAtScreenPos(ToImgui(screenPos), ctx);
             OnRepaint?.Invoke();
         }
@@ -100,7 +113,7 @@ namespace Poly_Ling.Player
             ringX = ringY = ringZ = null;
             hoveredAxis = AxisGizmo.AxisType.None;
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
-            _ringGizmo.Center = _tool.PivotPublic;
+            _ringGizmo.Center = WorldPivot();
             ringX = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.X);
             ringY = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Y);
             ringZ = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Z);
@@ -111,7 +124,7 @@ namespace Poly_Ling.Player
         public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
-            _ringGizmo.Center = _tool.PivotPublic;
+            _ringGizmo.Center = WorldPivot();
             var axis = _ringGizmo.FindRingAtScreenPos(ToImgui(screenPos), ctx);
             if (axis == AxisGizmo.AxisType.None) return false;
             _gizmoDragAxis = axis;
@@ -124,7 +137,7 @@ namespace Poly_Ling.Player
             var ctx = GetToolContext?.Invoke();
             if (ctx == null || ctx.WorldToScreenPos == null) { _gizmoDragAxis = AxisGizmo.AxisType.None; return false; }
 
-            Vector3 center = _tool.PivotPublic;
+            Vector3 center = WorldPivot();
             _gizmoPivotScreen = ctx.WorldToScreenPos(center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
             // 開始角（ピボットスクリーン基準、ctx系=Y上）

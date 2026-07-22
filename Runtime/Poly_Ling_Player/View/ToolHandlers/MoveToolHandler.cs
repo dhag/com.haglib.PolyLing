@@ -679,9 +679,12 @@ namespace Poly_Ling.Player
             {
                 var mc = model?.GetMeshContext(kv.Key);
                 if (mc?.MeshObject == null) continue;
+                // ローカル頂点を WorldMatrix でワールド変換してから集計する。
+                // WorldToScreenPos はワールド空間を期待するため、この変換が抜けると
+                // Player（WorldMatrix 非 identity）でギズモが実頂点から離れて描画される。
                 foreach (int vi in kv.Value)
                     if (vi >= 0 && vi < mc.MeshObject.VertexCount)
-                    { sum += mc.MeshObject.Vertices[vi].Position; count++; }
+                    { sum += mc.LocalToWorld(mc.MeshObject.Vertices[vi].Position); count++; }
             }
             _axisGizmo.Center = count > 0 ? sum / count : Vector3.zero;
         }

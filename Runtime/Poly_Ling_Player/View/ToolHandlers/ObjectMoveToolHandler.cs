@@ -55,6 +55,9 @@ namespace Poly_Ling.Player
         /// <summary>ボーン位置変更後に呼ぶ同期コールバック（NotifyPanels 等）。</summary>
         public Action OnSyncBoneTransforms;
 
+        /// <summary>頂点位置変更後に UnityMesh + GPU バッファを同期するコールバック（OriginOnly 用）。</summary>
+        public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
+
         // ギズモ描画用スクリーン座標取得
         public Func<PlayerViewportPanel.GizmoData> TryGetGizmoData;
 
@@ -460,6 +463,12 @@ namespace Poly_Ling.Player
             ctx.Model                  = model;
             ctx.UndoController         = _undoController;
             ctx.SyncBoneTransforms     = OnSyncBoneTransforms;
+            // OriginOnly(原点だけ移動)は頂点を書き換えるため GPU 同期が必要。
+            ctx.SyncMesh               = () =>
+            {
+                var mc = model.FirstSelectedMeshContext;
+                if (mc != null) OnSyncMeshPositions?.Invoke(mc);
+            };
             ctx.Repaint                = OnRepaint;
             ctx.EnterTransformDragging = OnEnterTransformDragging;
             ctx.ExitTransformDragging  = OnExitTransformDragging;
