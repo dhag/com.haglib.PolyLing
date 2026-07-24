@@ -82,6 +82,7 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         private ModelContext   _subscribedModel;
+        private string         _lastSelSig;
         private readonly List<ImageEntry> _capturedImages = new List<ImageEntry>();
         private ushort         _nextImageId;
 
@@ -121,7 +122,7 @@ namespace Poly_Ling.Remote
                     IndexHtmlProvider = () => RemoteHtmlClient.GetHtml(Port),
                 };
                 _wsServer.OnReceived          += OnDuplexReceived;
-                _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); OnRepaint?.Invoke(); });
+                _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); _lastSelSig = null; OnRepaint?.Invoke(); });
                 _wsServer.OnClientDisconnected += _ => RunOnMainThread(() => { Log("クライアント切断"); OnRepaint?.Invoke(); });
 
                 IsRunning = true;
@@ -224,6 +225,10 @@ namespace Poly_Ling.Remote
                 catch (Exception ex) { Log($"メインスレッドエラー: {ex.Message}"); }
                 processed++;
             }
+
+            // 選択変更をスナップショット差分で検知し、変化時に selectionChanged を broadcast。
+            // （選択メソッドにイベントが無いためポーリングで全経路を捕捉。1フレーム1回に自然合流）
+            CheckSelectionChanged();
         }
 
         /// <summary>
@@ -821,6 +826,59 @@ namespace Poly_Ling.Remote
         {
             string data     = RemoteDataProvider.QueryMeshList(Context, null);
             string pushJson = BuildPushMessage("meshListChanged", data);
+            BroadcastAsync(pushJson);
+        }
+
+        // ================================================================
+        // 選択変更 push（サーバ→クライアント選択反映）
+        // 選択メソッドにイベントが無いため Tick でスナップショット差分検知する。
+        // ================================================================
+
+        private void CheckSelectionChanged()
+        {
+            if (_wsServer == null || ClientCount == 0) return;
+            var proj  = Context?.Project;
+            var model = Context?.Model;
+            if (proj == null || model == null) { _lastSelSig = null; return; }
+
+            string sig = BuildSelectionSignature(proj.CurrentModelIndex, model);
+            if (sig == _lastSelSig) return;
+            _lastSelSig = sig;
+            BroadcastSelection(proj.CurrentModelIndex, model);
+        }
+
+        private static string CsvIndices(System.Collections.Generic.List<int> list)
+        {
+            if (list == null || list.Count == 0) return "";
+            var sb = new StringBuilder();
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(list[i]);
+            }
+            return sb.ToString();
+        }
+
+        private static string BuildSelectionSignature(int modelIndex, ModelContext model)
+        {
+            return modelIndex + "|" + (int)model.ActiveCategory + "|"
+                 + CsvIndices(model.SelectedDrawableMeshIndices) + "|"
+                 + CsvIndices(model.SelectedBoneIndices) + "|"
+                 + CsvIndices(model.SelectedMorphIndices);
+        }
+
+        private void BroadcastSelection(int modelIndex, ModelContext model)
+        {
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("modelIndex", modelIndex);
+            jb.KeyValue("category",   (int)model.ActiveCategory);
+            jb.KeyValue("drawable",   CsvIndices(model.SelectedDrawableMeshIndices));
+            jb.KeyValue("bone",       CsvIndices(model.SelectedBoneIndices));
+            jb.KeyValue("morph",      CsvIndices(model.SelectedMorphIndices));
+            jb.EndObject();
+
+            string pushJson = BuildPushMessage("selectionChanged", jb.ToString());
             BroadcastAsync(pushJson);
         }
 

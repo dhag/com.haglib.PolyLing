@@ -10,6 +10,7 @@
 //         MeshListClient) のいずれか1つをアタッチする。UIDocument は自動付与。
 //         PanelSettings は Inspector で割当てるか Resources/PolyLingListClient/PanelSettings を配置。
 
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Player;
@@ -40,6 +41,7 @@ namespace Poly_Ling.ListClient
         private PolyLingPlayerClient  _client;
         private RemoteProjectReceiver _receiver;
         private PanelContext          _panelContext;
+        private PanelCommandRouter    _router;
 
         // ================================================================
         // 状態
@@ -82,13 +84,14 @@ namespace Poly_Ling.ListClient
 
             _receiver = new RemoteProjectReceiver();
 
-            // 表示専用: 編集コマンドはサーバへ送らない(no-op)。
-            _panelContext = new PanelContext(_ => { });
-
             _client = new PolyLingPlayerClient();
             _client.OnConnected    += HandleConnected;
             _client.OnDisconnected += HandleDisconnected;
             _client.OnPushReceived += HandlePush;
+
+            // パネル操作をサーバへ送るルータ。サーバ対応コマンドのみ送信。
+            _router = new PanelCommandRouter(_client);
+            _panelContext = new PanelContext(cmd => _router?.Send(cmd));
         }
 
         protected virtual void OnDestroy()
@@ -169,8 +172,33 @@ namespace Poly_Ling.ListClient
 
         private void HandlePush(string json)
         {
-            // 一覧変更等の push を契機に再取得(project_header はメタのみで軽量)。
-            RefreshData();
+            // selectionChanged はインライン反映（再フェッチ不要・軽量）。
+            // それ以外（meshListChanged 等の構造変更）は project_header 再取得。
+            string ev = ExtractStr(json, "event");
+            if (ev == "selectionChanged")
+                ApplySelectionPush(json);
+            else
+                RefreshData();
+        }
+
+        // サーバの selectionChanged push を受信済み ProjectContext へ反映する。
+        private void ApplySelectionPush(string json)
+        {
+            if (Project == null) return;
+
+            int mi = ExtractInt(json, "modelIndex", -1);
+            if (mi < 0 || mi >= Project.ModelCount) return;
+
+            var model = Project.Models[mi];
+            int cat = ExtractInt(json, "category", 0);
+
+            model.SelectedDrawableMeshIndices = ParseCsv(ExtractStr(json, "drawable"));
+            model.SelectedBoneIndices         = ParseCsv(ExtractStr(json, "bone"));
+            model.SelectedMorphIndices        = ParseCsv(ExtractStr(json, "morph"));
+            model.SetActiveCategory((ModelContext.SelectionCategory)cat);
+
+            Project.CurrentModelIndex = mi;
+            if (_chromeBuilt) PushView();
         }
 
         // ================================================================
@@ -241,6 +269,49 @@ namespace Poly_Ling.ListClient
         private void SetStatus(string text)
         {
             if (_statusLabel != null) _statusLabel.text = text;
+        }
+
+        // ================================================================
+        // 極小 JSON 抽出（push は既知フォーマットのため軽量抽出で足りる）
+        // ================================================================
+
+        private static int ValueStart(string json, string key)
+        {
+            string s = "\"" + key + "\"";
+            int i = json.IndexOf(s, System.StringComparison.Ordinal);
+            if (i < 0) return -1;
+            int c = json.IndexOf(':', i + s.Length);
+            if (c < 0) return -1;
+            int vs = c + 1;
+            while (vs < json.Length && (json[vs] == ' ' || json[vs] == '\t')) vs++;
+            return vs;
+        }
+
+        private static string ExtractStr(string json, string key)
+        {
+            int vs = ValueStart(json, key);
+            if (vs < 0 || vs >= json.Length || json[vs] != '"') return "";
+            int ve = json.IndexOf('"', vs + 1);
+            if (ve < 0) return "";
+            return json.Substring(vs + 1, ve - vs - 1);
+        }
+
+        private static int ExtractInt(string json, string key, int def)
+        {
+            int vs = ValueStart(json, key);
+            if (vs < 0) return def;
+            int e = vs;
+            while (e < json.Length && (char.IsDigit(json[e]) || json[e] == '-')) e++;
+            return e > vs && int.TryParse(json.Substring(vs, e - vs), out int v) ? v : def;
+        }
+
+        private static List<int> ParseCsv(string csv)
+        {
+            var list = new List<int>();
+            if (string.IsNullOrEmpty(csv)) return list;
+            foreach (var part in csv.Split(','))
+                if (int.TryParse(part.Trim(), out int n)) list.Add(n);
+            return list;
         }
 
         // ================================================================

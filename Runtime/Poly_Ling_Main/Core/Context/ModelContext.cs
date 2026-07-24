@@ -299,6 +299,12 @@ namespace Poly_Ling.Context
         /// <summary>頂点モーフ選択をクリア</summary>
         public void ClearMorphSelection() => SelectedMorphIndices.Clear();
 
+        /// <summary>
+        /// アクティブ選択カテゴリを設定する。
+        /// リモート選択反映（軽量クライアント）で選択リストと併せて復元するために使用。
+        /// </summary>
+        public void SetActiveCategory(SelectionCategory category) => ActiveCategory = category;
+
         // ================================================================
         // 後方互換プロパティ（全カテゴリ統合ビュー）
         // ================================================================

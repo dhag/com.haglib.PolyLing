@@ -41,10 +41,20 @@ WebSocket 経由で表示する軽量クライアント。本パッケージ `co
 - 各インスタンスが 1 リスト = 別 OS ウィンドウ。
   全インスタンスが同じ endpoint.json を共有するため個別設定なしで同一サーバへ接続する。
 
+## 選択・操作の同期（双方向）
+
+- クライアント→サーバ：パネル操作を `PanelCommandRouter` がサーバの command プロトコルへ変換して送信。
+  対応コマンド＝選択(selectMesh) / 表示 / ロック / ミラー / 改名 / 追加・削除・複製 /
+  ボーンポーズ(init/active/reset/bake) / モデル(switch/rename/delete)。
+  サーバ未対応（morph変換・プレビュー、bone transform 数値、material 各種、tree折り畳み等）は無視。
+- サーバ→クライアント：サーバ `Tick()` が選択のスナップショット差分を検知し `selectionChanged` を broadcast。
+  クライアントは受信して選択とアクティブカテゴリ・現在モデルを反映（再フェッチ不要）。
+  クライアント接続時は現在の選択が自動配信される。
+- 複数ウィンドウ間も、サーバ経由で選択・カレントモデルが相互同期する。
+
 ## 補足
 
 - 接続先が未検出の間は一定間隔で再探索する（`Retry Seconds`）。
 - `Auto Refresh Seconds` を 0 より大きくすると定期再取得する（既定 0 = push 契機のみ）。
-- **表示専用**。パネル内の編集操作はサーバへ送らない（`SendCommand` は no-op）。
 - 表示対象はサーバの現在モデル（`CurrentModelIndex`）。ジオメトリ本体は非取得
   （MeshObject は空。名前・種別・階層・表示状態は Summary から表示）。
