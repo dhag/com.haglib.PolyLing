@@ -5,9 +5,10 @@
 
 -----------------------------------------------
 基本の設定方法（使い方）
+[window]-[Package Manager]
 +Install package from git URL...
 https://github.com/dhag/com.haglib.PolyLing.git
-https://github.com/dhag/com.haglib.net_duplexchannel
+https://github.com/dhag/com.haglib.net_duplexchannel.git
 
 エディタ拡張 "PolyLing/CreateRuntime/Create Player Viewer"実行。または下記の作業を行う。
 --------
@@ -22,6 +23,8 @@ https://github.com/dhag/com.haglib.net_duplexchannel
 　PolyLingPlayerViewerをアタッチ。
 　　　必要ならサーバモードかクライアントモードかを設定する。
 --------
+
+ModelListClient.cs / MaterialListClient.cs / MeshListClient.cs
 ----------------------------------
 各種パラメータ置き場
 

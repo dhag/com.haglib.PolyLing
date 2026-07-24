@@ -1,54 +1,42 @@
 // MaterialListClient.cs
-// マテリアルリスト表示クライアント。空 GameObject にアタッチして使う。
-// 選択中モデルの MaterialReferences を表示する。
+// マテリアルリスト表示クライアント。現行メインパネルの PlayerMaterialListSubPanel を
+// そのまま再利用する。表示対象はサーバの現在モデル。空 GameObject にアタッチして使う。
 
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Context;
+using Poly_Ling.Player;
 
 namespace Poly_Ling.ListClient
 {
     public sealed class MaterialListClient : ListClientBase
     {
-        protected override string PanelTitle => "Material List";
-        protected override bool UsesModelSelector => true;
+        private PlayerMaterialListSubPanel _panel;
 
-        protected override void BuildRows(VisualElement listRoot)
+        protected override void BuildPanel(VisualElement host, PanelContext ctx)
         {
-            var project = Project;
-            if (SelectedModelIndex < 0 || SelectedModelIndex >= project.ModelCount) return;
-
-            var model = project.Models[SelectedModelIndex];
-            var refs  = model.MaterialReferences;
-            if (refs == null || refs.Count == 0)
+            _panel = new PlayerMaterialListSubPanel();
+            _panel.GetModel = () =>
             {
-                listRoot.Add(new Label("(マテリアルなし)"));
-                return;
-            }
-
-            for (int i = 0; i < refs.Count; i++)
+                var p = Project;
+                if (p == null || p.ModelCount == 0) return null;
+                int i = Mathf.Clamp(p.CurrentModelIndex, 0, p.ModelCount - 1);
+                return p.Models[i];
+            };
+            _panel.GetToolContext = () => null;
+            _panel.OnRepaint = () => { };
+            _panel.SetCommandContext(ctx, () =>
             {
-                var mref = refs[i];
-                var row = MakeRow();
+                var p = Project;
+                return p == null ? 0 : Mathf.Clamp(p.CurrentModelIndex, 0, Mathf.Max(0, p.ModelCount - 1));
+            });
+            _panel.Build(host);
+        }
 
-                row.Add(MakeCell($"[{i}]", 34));
-
-                // カラースウォッチ
-                var swatch = new VisualElement();
-                swatch.style.width = 14; swatch.style.height = 14;
-                swatch.style.flexShrink = 0;
-                swatch.style.marginRight = 6;
-                swatch.style.borderTopWidth = 1; swatch.style.borderBottomWidth = 1;
-                swatch.style.borderLeftWidth = 1; swatch.style.borderRightWidth = 1;
-                swatch.style.borderTopColor = new Color(0, 0, 0, 0.4f);
-                swatch.style.borderBottomColor = new Color(0, 0, 0, 0.4f);
-                swatch.style.borderLeftColor = new Color(0, 0, 0, 0.4f);
-                swatch.style.borderRightColor = new Color(0, 0, 0, 0.4f);
-                swatch.style.backgroundColor = mref?.Data != null ? mref.Data.GetBaseColor() : Color.gray;
-                row.Add(swatch);
-
-                row.Add(MakeCell(mref?.Name ?? "(no name)", 0, grow: true));
-                listRoot.Add(row);
-            }
+        protected override void OnViewPushed()
+        {
+            _panel?.SyncEditingSlotToCurrent();
+            _panel?.Refresh();
         }
     }
 }
