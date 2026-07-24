@@ -1,0 +1,5 @@
+# Command,Key,Ctrl,Shift,Alt   ('#'行・空行は無視)
+tool.vertexMove,V,false,false,false
+edit.undo,Z,true,false,false
+# Command,Key,Ctrl,Shift,Alt,Key2,Ctrl2,Shift2,Alt2
+shape.cube,G,false,false,false,C,false,false,false

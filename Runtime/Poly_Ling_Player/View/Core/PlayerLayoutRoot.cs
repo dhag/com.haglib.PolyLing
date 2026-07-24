@@ -776,6 +776,11 @@ namespace Poly_Ling.Player
             ScaleBtn  = MakeBtn("スケール"); ScaleBtn.style.flexGrow  = 1;
             rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foSelectMove.Add(rowRotScale);
 
+            var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
+            PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
+            MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
+            rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelectMove.Add(rowSelSet);
+
             // ── トポロジー編集 ─────────────────────────────────────────
             var foTopology = MakeFoldout("トポロジー編集", "Topology");
 
@@ -827,9 +832,9 @@ namespace Poly_Ling.Player
             foBoneMorph.Add(BoneEditorBtn);
 
             var rowTPoseHuman = new VisualElement(); rowTPoseHuman.style.flexDirection = FlexDirection.Row; rowTPoseHuman.style.marginBottom = 2;
-            TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1; TPoseBtn.style.marginRight          = 2;
-            HumanoidMappingBtn = MakeBtn("ヒューマノイド"); HumanoidMappingBtn.style.flexGrow = 1;
-            rowTPoseHuman.Add(TPoseBtn); rowTPoseHuman.Add(HumanoidMappingBtn); foBoneMorph.Add(rowTPoseHuman);
+            HumanoidMappingBtn = MakeBtn("ヒューマノイド"); HumanoidMappingBtn.style.flexGrow = 1; HumanoidMappingBtn.style.marginRight = 2;
+            TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1;
+            rowTPoseHuman.Add(HumanoidMappingBtn); rowTPoseHuman.Add(TPoseBtn); foBoneMorph.Add(rowTPoseHuman);
 
             MirrorBtn = MakeBtn("ミラー編集"); foBoneMorph.Add(MirrorBtn);
 
@@ -855,11 +860,6 @@ namespace Poly_Ling.Player
 
             MaterialListBtn = MakeBtn("マテリアル（質感・色）"); foUvMat.Add(MaterialListBtn);
             MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
-
-            var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
-            PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
-            MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
-            rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foUvMat.Add(rowSelSet);
 
             // ── サーバと連携 ───────────────────────────────────────────
             // クライアントモードでのサーバとのやり取り。

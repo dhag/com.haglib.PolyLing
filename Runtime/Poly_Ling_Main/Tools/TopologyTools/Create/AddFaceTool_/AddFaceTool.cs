@@ -552,7 +552,25 @@ namespace Poly_Ling.Tools
                 // 3頂点以上の場合は法線を計算
                 if (newFace.VertexCount >= 3)
                 {
+                    // 面中心を算出
+                    Vector3 faceCenter = Vector3.zero;
+                    for (int vi = 0; vi < newFace.VertexIndices.Count; vi++)
+                        faceCenter += meshObject.Vertices[newFace.VertexIndices[vi]].Position;
+                    faceCenter /= newFace.VertexIndices.Count;
+
+                    // 面法線がカメラ（クリック時の視点）と逆向きなら巻き順を反転し、
+                    // 常に表面がカメラを向くようにする。
+                    // 法線と描画三角形の巻き順は共に VertexIndices 順から算出されるため、
+                    // VertexIndices を反転すると両者が同時に反転して整合が保たれる。
                     Vector3 faceNormal = CalculateFaceNormal(meshObject, newFace);
+                    if (Vector3.Dot(faceNormal, ctx.CameraPosition - faceCenter) < 0f)
+                    {
+                        newFace.VertexIndices.Reverse();
+                        newFace.UVIndices.Reverse();
+                        newFace.NormalIndices.Reverse();
+                        faceNormal = CalculateFaceNormal(meshObject, newFace);
+                    }
+
                     foreach (int vi in newFace.VertexIndices)
                     {
                         var vertex = meshObject.Vertices[vi];

@@ -38,6 +38,13 @@ namespace Poly_Ling.Remote
         /// <summary>MeshSummaryを受信してMeshContextを更新した</summary>
         public event Action<int, int, MeshContext> OnMeshSummaryReceived;
 
+        /// <summary>
+        /// MeshSummary受信時の頂点数/面数（modelIndex, meshIndex, vertexCount, faceCount）。
+        /// MeshContext.VertexCount は MeshObject 由来のため、ジオメトリ未取得のクライアントでは
+        /// このイベントで頂点数/面数を受け取る。
+        /// </summary>
+        public event Action<int, int, int, int> OnMeshSummaryCounts;
+
         /// <summary>MeshDataを受信してMeshContextにMeshObjectを設定した</summary>
         public event Action<int, int, MeshContext> OnMeshDataReceived;
 
@@ -125,6 +132,7 @@ namespace Poly_Ling.Remote
             model.InvalidateTypedIndices();
 
             OnMeshSummaryReceived?.Invoke(mi, si, mc);
+            OnMeshSummaryCounts?.Invoke(mi, si, vc, fc);
         }
 
         private void ReceiveMeshData(byte[] data)

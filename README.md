@@ -9,7 +9,8 @@
 https://github.com/dhag/com.haglib.PolyLing.git
 https://github.com/dhag/com.haglib.net_duplexchannel
 
-
+エディタ拡張 "PolyLing/CreateRuntime/Create Player Viewer"実行。または下記の作業を行う。
+--------
 パネルセッティングを新規作成する。
   (New Panel Settingsファイルを作る)
 　  [Create][UIツールキット][パネルセッティング]
@@ -20,8 +21,11 @@ https://github.com/dhag/com.haglib.net_duplexchannel
 　　パネルセッティングをつける。UIドキュメントにNew Panel Settingsをアタッチ.
 　PolyLingPlayerViewerをアタッチ。
 　　　必要ならサーバモードかクライアントモードかを設定する。
+--------
+----------------------------------
+各種パラメータ置き場
 
-
+C:\Users\<ユーザー名>\AppData\LocalLow\HagiharaLab\PolyLing\PolyLing
 
 ----------------------------------
 サーバーモードでログがコピーできない。copyボタンが欲しい。

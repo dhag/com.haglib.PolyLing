@@ -1,0 +1,64 @@
+﻿UnityHumanoidName,Alias1,Alias2,Alias3
+// 体幹
+Hips,hip,センター,ヒップ
+Spine,上半身,背骨
+Chest,上半身2,背骨2,胸
+UpperChest,上半身3,背骨3,胸2
+Neck,首
+Head,頭
+// 目・顎
+LeftEye,左目
+RightEye,右目
+Jaw
+// 左腕
+LeftShoulder,左肩
+LeftUpperArm,左腕
+LeftLowerArm,左ひじ
+LeftHand,左手首
+// 右腕
+RightShoulder,右肩
+RightUpperArm,右腕
+RightLowerArm,右ひじ
+RightHand,右手首
+// 左脚
+LeftUpperLeg,左足
+LeftLowerLeg,左ひざ
+LeftFoot,左足首
+LeftToes,左つま先
+// 右脚
+RightUpperLeg,右足
+RightLowerLeg,右ひざ
+RightFoot,右足首
+RightToes,右つま先
+// 左手指
+Left Thumb Proximal,左親指１
+Left Thumb Intermediate,左親指２
+Left Thumb Distal
+Left Index Proximal,左人指１
+Left Index Intermediate,左人指２
+Left Index Distal,左人指３
+Left Middle Proximal,左中指１
+Left Middle Intermediate,左中指２
+Left Middle Distal,左中指３
+Left Ring Proximal,左薬指１
+Left Ring Intermediate,左薬指２
+Left Ring Distal,左薬指３
+Left Little Proximal,左小指１
+Left Little Intermediate,左小指２
+Left Little Distal,左小指３
+// 右手指
+Right Thumb Proximal,右親指１
+Right Thumb Intermediate,右親指２
+Right Thumb Distal
+Right Index Proximal,右人指１
+Right Index Intermediate,右人指２
+Right Index Distal,右人指３
+Right Middle Proximal,右中指１
+Right Middle Intermediate,右中指２
+Right Middle Distal,右中指３
+Right Ring Proximal,右薬指１
+Right Ring Intermediate,右薬指２
+Right Ring Distal,右薬指３
+Right Little Proximal,右小指１
+Right Little Intermediate,右小指２
+Right Little Distal,右小指３

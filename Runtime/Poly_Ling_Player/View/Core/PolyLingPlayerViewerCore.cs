@@ -91,6 +91,7 @@ namespace Poly_Ling.Player
         private readonly UndoManager           _undoManager    = UndoManager.CreateNew();
         private          PlayerEditOps         _editOps;
         private VisualElement                  _uiRoot;
+        private PlayerShortcutController       _shortcutController;
 
         private readonly PlayerViewportManager _viewportManager = new PlayerViewportManager();
         private PlayerLayoutRoot               _layoutRoot;
@@ -2921,6 +2922,8 @@ namespace Poly_Ling.Player
 
             _layoutRoot.PostBuildButtonColors(_uiRoot);
 
+            WireShortcuts();
+
             _sectionRefreshPairs.Clear();
             _sectionRefreshPairs.Add((_layoutRoot.BoneEditorSection,        () => _boneEditorSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.UVEditorSection,          () => _uvEditorSubPanel?.Refresh()));
@@ -2969,6 +2972,57 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // キーボードショートカット配線
+        //   対応表: デフォルト (ShortcutMap.CreateDefault) + CSV 上書き
+        //           (<persistentDataPath>/PolyLing/keymap.csv、あれば起動時読込)。
+        //   コマンド実体はここのボタン用処理を流用する (重複させない)。
+        // ================================================================
+
+        private void WireShortcuts()
+        {
+            var map = ShortcutMap.CreateDefault();
+            int applied = map.LoadCsv(ShortcutMap.DefaultCsvPath);
+            if (applied > 0)
+                Debug.Log($"[Shortcut] CSV から {applied} 件を反映: {ShortcutMap.DefaultCsvPath}");
+
+            _shortcutController = new PlayerShortcutController(map);
+
+            // コマンドID → 実行内容。対応するツールボタンと同じ処理を割り当てる。
+            _shortcutController.Register(ShortcutMap.CmdUndo, () => _editOps?.PerformUndo());
+            _shortcutController.Register(ShortcutMap.CmdRedo, () => _editOps?.PerformRedo());
+            _shortcutController.Register(ShortcutMap.CmdToolVertexMove,
+                () => ShowCategory1Panel(InteractionMode.VertexMove));
+            _shortcutController.Register(ShortcutMap.CmdToolObjectMove,
+                () => { ShowCategory1Panel(InteractionMode.ObjectMove); _boneEditorSubPanel?.ShowObjectPoseTab(); });
+            _shortcutController.Register(ShortcutMap.CmdToolSculpt,
+                () => ShowCategory1Panel(InteractionMode.Sculpt));
+            _shortcutController.Register(ShortcutMap.CmdToolAdvSelect,
+                () => ShowCategory1Panel(InteractionMode.AdvancedSelect));
+
+            // 図形生成 (2キー連続 G→形状)。サブメニューを開くだけ (生成はしない)。
+            _shortcutController.Register(ShortcutMap.CmdShapeCube,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Cube));
+            _shortcutController.Register(ShortcutMap.CmdShapeSphere,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Sphere));
+            _shortcutController.Register(ShortcutMap.CmdShapeCylinder,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Cylinder));
+            _shortcutController.Register(ShortcutMap.CmdShapeCapsule,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Capsule));
+            _shortcutController.Register(ShortcutMap.CmdShapePlane,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Plane));
+            _shortcutController.Register(ShortcutMap.CmdShapePyramid,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Pyramid));
+            _shortcutController.Register(ShortcutMap.CmdShapeRevolution,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Revolution));
+            _shortcutController.Register(ShortcutMap.CmdShapeProfile2D,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Profile2D));
+            _shortcutController.Register(ShortcutMap.CmdShapeNohMask,
+                () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.NohMask));
+
+            _shortcutController.Attach(_uiRoot);
+        }
+
+        // ================================================================
         // パネル表示切替
         // ================================================================
 
@@ -2993,6 +3047,19 @@ namespace Poly_Ling.Player
             // 基本図形と同じセクションを開き、カテゴリのみ高度な図形へ切り替える。
             ShowRightPanel(_layoutRoot?.PrimitiveSection, _layoutRoot?.AdvancedPrimitiveBtn);
             _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
+        }
+
+        // ショートカット (2キー連続) 用: 図形パネルを開き、指定形状のサブメニューを表示する。
+        // 形状ボタンのクリック相当で、生成は行わない。
+        private void ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind k)
+        {
+            if (_primitiveSubPanel == null) return;
+            bool advanced =
+                _primitiveSubPanel.CategoryOf(k) == PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced;
+            ShowRightPanel(
+                _layoutRoot?.PrimitiveSection,
+                advanced ? _layoutRoot?.AdvancedPrimitiveBtn : _layoutRoot?.PrimitiveBtn);
+            _primitiveSubPanel.SelectShape(k);
         }
 
         private void ShowMeshFilterToSkinnedPanel()

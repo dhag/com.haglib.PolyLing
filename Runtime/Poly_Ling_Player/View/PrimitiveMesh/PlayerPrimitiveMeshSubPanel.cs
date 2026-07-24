@@ -47,7 +47,7 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        private enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask }
 
         private static readonly string[] ShapeKeys =
             { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask" };
@@ -564,6 +564,27 @@ namespace Poly_Ling.Player
             PopulateShapeGrid();
             var shapes = CurrentCategoryShapes();
             Select(shapes.Length > 0 ? shapes[0] : ShapeKind.Cube);
+        }
+
+        /// <summary>指定形状のカテゴリを返す。</summary>
+        public ShapeCategory CategoryOf(ShapeKind k)
+            => System.Array.IndexOf(AdvancedShapes, k) >= 0
+                ? ShapeCategory.Advanced
+                : ShapeCategory.Basic;
+
+        /// <summary>
+        /// 指定形状のサブメニューを開く (形状ボタンをクリックしたのと同じ)。
+        /// 必要ならカテゴリを切り替えてグリッドを再構築してから選択する。生成はしない。
+        /// </summary>
+        public void SelectShape(ShapeKind k)
+        {
+            var cat = CategoryOf(k);
+            if (_category != cat)
+            {
+                _category = cat;
+                PopulateShapeGrid();
+            }
+            Select(k);
         }
 
         private void Select(ShapeKind k)

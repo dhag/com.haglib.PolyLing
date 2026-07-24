@@ -13,6 +13,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -128,6 +129,8 @@ namespace Poly_Ling.Remote
                 _ = _wsServer.StartAsync($"http://localhost:{Port}/");
 
                 Log($"サーバー起動: http://localhost:{Port}/");
+
+                WriteEndpointFile();
             }
             catch (Exception ex)
             {
@@ -146,7 +149,66 @@ namespace Poly_Ling.Remote
             _wsServer = null;
             IsRunning = false;
 
+            DeleteEndpointFile();
+
             Log("サーバー停止");
+        }
+
+        // ================================================================
+        // エンドポイント公開ファイル（軽量クライアントの接続先発見用）
+        // 保存先: Application.persistentDataPath/PolyLing/endpoint.json
+        // 内容:   {"host","port","pid","startedAt"}
+        // ================================================================
+
+        private string EndpointFilePath =>
+            Path.Combine(Application.persistentDataPath, "PolyLing", "endpoint.json");
+
+        // 自身が書き込んだ内容。Stop 時は自分が書いたファイルのみ削除する。
+        private string _lastEndpointJson;
+
+        private void WriteEndpointFile()
+        {
+            try
+            {
+                var jb = new JsonBuilder();
+                jb.BeginObject();
+                jb.KeyValue("host",      "127.0.0.1");
+                jb.KeyValue("port",      Port);
+                jb.KeyValue("pid",       System.Diagnostics.Process.GetCurrentProcess().Id);
+                jb.KeyValue("startedAt", System.DateTime.UtcNow.ToString("o"));
+                jb.EndObject();
+                string json = jb.ToString();
+
+                string path = EndpointFilePath;
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, json);
+                _lastEndpointJson = json;
+                Log($"endpoint.json 書込: {path}");
+            }
+            catch (Exception ex)
+            {
+                Log($"endpoint.json 書込失敗: {ex.Message}");
+            }
+        }
+
+        private void DeleteEndpointFile()
+        {
+            try
+            {
+                string path = EndpointFilePath;
+                if (_lastEndpointJson != null &&
+                    File.Exists(path) &&
+                    File.ReadAllText(path) == _lastEndpointJson)
+                {
+                    File.Delete(path);
+                    Log("endpoint.json 削除");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"endpoint.json 削除失敗: {ex.Message}");
+            }
+            _lastEndpointJson = null;
         }
 
         /// <summary>

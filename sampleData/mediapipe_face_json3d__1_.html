@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MediaPipe Face Landmarker - JSON 3D</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: #eee;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 1.4rem;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    button, input {
+      font: inherit;
+    }
+    button {
+      padding: 7px 12px;
+      cursor: pointer;
+    }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+    #status {
+      min-height: 1.5em;
+      color: #cfd8dc;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+      gap: 14px;
+    }
+    .panel {
+      min-width: 0;
+      border: 1px solid #555;
+      border-radius: 8px;
+      padding: 10px;
+      background: #181818;
+    }
+    .panel h2 {
+      font-size: 1rem;
+      margin: 0 0 8px;
+    }
+    #imageCanvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #000;
+    }
+    #imageCanvas.mirror {
+      transform: scaleX(-1);
+    }
+    #webcam {
+      display: none;
+    }
+    .toolbar label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #cfd8dc;
+    }
+    .sep {
+      width: 1px;
+      align-self: stretch;
+      background: #444;
+    }
+    #threeContainer {
+      width: 100%;
+      height: 520px;
+      background: #000;
+    }
+    textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 340px;
+      resize: vertical;
+      background: #0b0b0b;
+      color: #d8f5d0;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+    }
+    .note {
+      margin-top: 8px;
+      color: #bbb;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>MediaPipe Face Landmarker：画像 / カメラ → 顔ランドマークJSON + 3D点群</h1>
+
+  <div class="toolbar">
+    <input id="fileInput" type="file" accept="image/*" disabled />
+    <span class="sep"></span>
+    <button id="startCameraButton" disabled>カメラ開始</button>
+    <button id="stopCameraButton" disabled>カメラ停止</button>
+    <label><input id="backCameraCheckbox" type="checkbox" />背面カメラ</label>
+    <label><input id="mirrorCheckbox" type="checkbox" />ミラー表示</label>
+    <span class="sep"></span>
+    <button id="downloadButton" disabled>JSONを保存</button>
+    <button id="resetViewButton" disabled>3D表示をリセット</button>
+  </div>
+
+  <video id="webcam" autoplay playsinline muted></video>
+
+  <div id="status">MediaPipeモデルを読み込んでいる…</div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>入力（画像 / カメラ）と2Dランドマーク</h2>
+      <canvas id="imageCanvas"></canvas>
+      <div class="note">
+        緑点はMediaPipeの顔ランドマークである。座標は正規化座標から復元している。
+        ミラー表示は2Dプレビューの左右反転のみで、JSONと3Dは反転していない生の座標である。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>3D点群</h2>
+      <div id="threeContainer"></div>
+      <div class="note">
+        マウス左ドラッグで回転、ホイールで拡大縮小できる。奥行きは相対値であり、mm単位ではない。
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:14px">
+    <h2>JSON</h2>
+    <textarea id="jsonOutput" spellcheck="false" readonly></textarea>
+  </section>
+
+  <script type="module">
+    import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35";
+    import * as THREE from "https://esm.sh/three@0.180.0";
+    import { OrbitControls } from "https://esm.sh/three@0.180.0/examples/jsm/controls/OrbitControls.js";
+
+    const MODEL_URL =
+      "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+    const WASM_URL =
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+
+    const fileInput = document.getElementById("fileInput");
+    const startCameraButton = document.getElementById("startCameraButton");
+    const stopCameraButton = document.getElementById("stopCameraButton");
+    const backCameraCheckbox = document.getElementById("backCameraCheckbox");
+    const mirrorCheckbox = document.getElementById("mirrorCheckbox");
+    const downloadButton = document.getElementById("downloadButton");
+    const resetViewButton = document.getElementById("resetViewButton");
+    const statusElement = document.getElementById("status");
+    const jsonOutput = document.getElementById("jsonOutput");
+    const imageCanvas = document.getElementById("imageCanvas");
+    const imageContext = imageCanvas.getContext("2d");
+    const threeContainer = document.getElementById("threeContainer");
+    const video = document.getElementById("webcam");
+
+    let faceLandmarker = null;
+    let currentJson = null;
+    let currentObjectUrl = null;
+
+    // 実行モード管理（IMAGE と VIDEO は排他。切替時に setOptions が必要）。
+    let currentRunningMode = "IMAGE";
+    let mediaStream = null;
+    let streaming = false;
+    let lastVideoTime = -1;
+    let lastJsonUpdate = 0;
+    const JSON_UPDATE_INTERVAL_MS = 250;
+
+    // Three.js
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      threeContainer.clientWidth / threeContainer.clientHeight,
+      0.01,
+      100
+    );
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(threeContainer.clientWidth, threeContainer.clientHeight);
+    threeContainer.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const axes = new THREE.AxesHelper(0.5);
+    scene.add(axes);
+
+    let facePoints = null;
+    let facePointCount = 0;
+
+    function resetCamera() {
+      camera.position.set(0, 0, 2.4);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+    resetCamera();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener("resize", () => {
+      const width = threeContainer.clientWidth;
+      const height = threeContainer.clientHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    });
+
+    resetViewButton.addEventListener("click", resetCamera);
+
+    async function initializeMediaPipe() {
+      try {
+        const filesetResolver = await FilesetResolver.forVisionTasks(WASM_URL);
+
+        faceLandmarker = await FaceLandmarker.createFromOptions(
+          filesetResolver,
+          {
+            baseOptions: {
+              modelAssetPath: MODEL_URL,
+              delegate: "GPU"
+            },
+            runningMode: "IMAGE",
+            numFaces: 1,
+            minFaceDetectionConfidence: 0.5,
+            minFacePresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+            outputFaceBlendshapes: true,
+            outputFacialTransformationMatrixes: true
+          }
+        );
+
+        currentRunningMode = "IMAGE";
+        statusElement.textContent = "準備完了。画像を選ぶか、カメラを開始する。";
+        fileInput.disabled = false;
+        resetViewButton.disabled = false;
+        startCameraButton.disabled = false;
+      } catch (error) {
+        console.error(error);
+        statusElement.textContent =
+          "MediaPipeの初期化に失敗した。開発者ツールのConsoleを確認する。";
+      }
+    }
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("画像を読み込めなかった。"));
+        image.src = url;
+      });
+    }
+
+    // source は HTMLImageElement または HTMLVideoElement。
+    function drawSourceAndLandmarks(source, width, height, landmarks) {
+      if (imageCanvas.width !== width) imageCanvas.width = width;
+      if (imageCanvas.height !== height) imageCanvas.height = height;
+
+      imageContext.clearRect(0, 0, width, height);
+      imageContext.drawImage(source, 0, 0, width, height);
+
+      const radius = Math.max(1.5, Math.min(width, height) / 350);
+      imageContext.fillStyle = "#00ff66";
+
+      for (const point of landmarks) {
+        const x = point.x * width;
+        const y = point.y * height;
+        imageContext.beginPath();
+        imageContext.arc(x, y, radius, 0, Math.PI * 2);
+        imageContext.fill();
+      }
+    }
+
+    // 点数が変わったときだけ Points / BufferGeometry を作り直す。
+    // ライブでは同じバッファを毎フレーム書き換えるため、回転操作が維持される。
+    function ensureFacePoints(count) {
+      if (facePoints && facePointCount === count) return;
+
+      if (facePoints) {
+        scene.remove(facePoints);
+        facePoints.geometry.dispose();
+        facePoints.material.dispose();
+        facePoints = null;
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(new Float32Array(count * 3), 3)
+      );
+
+      const material = new THREE.PointsMaterial({
+        size: 0.018,
+        color: 0x66ff99,
+        sizeAttenuation: true
+      });
+
+      facePoints = new THREE.Points(geometry, material);
+      facePointCount = count;
+      scene.add(facePoints);
+    }
+
+    function updateThreePoints(landmarks, { resetView = false } = {}) {
+      const count = landmarks.length;
+      ensureFacePoints(count);
+
+      const attribute = facePoints.geometry.getAttribute("position");
+      const array = attribute.array;
+
+      // MediaPipeの画像正規化座標を、表示用のThree.js座標へ変換する。
+      // x: 画像左→右 / y: 上→下なので符号反転 / z: 手前側が負なので符号反転
+      let cx = 0, cy = 0, cz = 0;
+      for (let i = 0; i < count; i++) {
+        const point = landmarks[i];
+        const x = (point.x - 0.5) * 2.0;
+        const y = -(point.y - 0.5) * 2.0;
+        const z = -point.z * 2.0;
+        array[i * 3 + 0] = x;
+        array[i * 3 + 1] = y;
+        array[i * 3 + 2] = z;
+        cx += x; cy += y; cz += z;
+      }
+
+      // 顔点群の中心を原点に寄せる（geometry.center()の副作用を避け、毎フレーム安定させる）。
+      cx /= count; cy /= count; cz /= count;
+      for (let i = 0; i < count; i++) {
+        array[i * 3 + 0] -= cx;
+        array[i * 3 + 1] -= cy;
+        array[i * 3 + 2] -= cz;
+      }
+
+      attribute.needsUpdate = true;
+      facePoints.geometry.computeBoundingSphere();
+
+      if (resetView) resetCamera();
+    }
+
+    // sourceInfo = { type, name, width, height }
+    // PolyLing(NohMaskMeshGenerator)が読むスキーマに合わせて出力する。
+    function resultToJson(result, sourceInfo) {
+      const width = sourceInfo.width;
+      const height = sourceInfo.height;
+      return {
+        schema: "mediapipe.face_landmarker",
+        num_faces_detected: result.faceLandmarks.length,
+        faces: result.faceLandmarks.map((landmarks, faceIndex) => ({
+          face_index: faceIndex,
+          image: {
+            path: sourceInfo.name,
+            width,
+            height
+          },
+          landmarks: landmarks.map((point, index) => ({
+            index,
+            x: point.x,
+            y: point.y,
+            z: point.z,
+            pixel_x: point.x * width,
+            pixel_y: point.y * height
+          }))
+        }))
+      };
+    }
+
+    fileInput.addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file || !faceLandmarker) return;
+
+      // カメラ動作中なら止めてから画像モードに切り替える。
+      stopCamera();
+
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+      }
+      currentObjectUrl = URL.createObjectURL(file);
+
+      statusElement.textContent = "画像を解析している…";
+      downloadButton.disabled = true;
+      jsonOutput.value = "";
+
+      try {
+        await ensureRunningMode("IMAGE");
+
+        const image = await loadImage(currentObjectUrl);
+        const result = faceLandmarker.detect(image);
+
+        if (!result.faceLandmarks?.length) {
+          drawSourceAndLandmarks(image, image.naturalWidth, image.naturalHeight, []);
+          currentJson = null;
+          statusElement.textContent = "顔を検出できなかった。別の画像を試す。";
+          return;
+        }
+
+        const landmarks = result.faceLandmarks[0];
+        drawSourceAndLandmarks(image, image.naturalWidth, image.naturalHeight, landmarks);
+        updateThreePoints(landmarks, { resetView: true });
+
+        currentJson = resultToJson(result, {
+          type: "image",
+          name: file.name,
+          width: image.naturalWidth,
+          height: image.naturalHeight
+        });
+        jsonOutput.value = JSON.stringify(currentJson, null, 2);
+        downloadButton.disabled = false;
+
+        statusElement.textContent =
+          `検出完了：${result.faceLandmarks.length}顔、` +
+          `${landmarks.length}ランドマーク。`;
+      } catch (error) {
+        console.error(error);
+        currentJson = null;
+        statusElement.textContent =
+          `処理に失敗した：${error instanceof Error ? error.message : String(error)}`;
+      }
+    });
+
+    downloadButton.addEventListener("click", () => {
+      if (!currentJson) return;
+
+      const blob = new Blob(
+        [JSON.stringify(currentJson, null, 2)],
+        { type: "application/json" }
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "mediapipe_face_landmarks_3d.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // ---- カメラ（ライブ）関連 ----
+
+    async function ensureRunningMode(mode) {
+      if (currentRunningMode === mode) return;
+      await faceLandmarker.setOptions({ runningMode: mode });
+      currentRunningMode = mode;
+    }
+
+    async function startCamera() {
+      if (!faceLandmarker || streaming) return;
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        statusElement.textContent =
+          "このブラウザ/環境ではカメラを使えない（HTTPSまたはlocalhostが必要）。";
+        return;
+      }
+
+      try {
+        statusElement.textContent = "カメラを起動している…";
+        const facingMode = backCameraCheckbox.checked ? "environment" : "user";
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: false
+        });
+        video.srcObject = mediaStream;
+        await video.play();
+
+        await ensureRunningMode("VIDEO");
+
+        streaming = true;
+        lastVideoTime = -1;
+        lastJsonUpdate = 0;
+
+        startCameraButton.disabled = true;
+        stopCameraButton.disabled = false;
+        backCameraCheckbox.disabled = true;
+        fileInput.disabled = true;
+
+        statusElement.textContent = "カメラ解析中。顔をカメラに向ける。";
+        predictWebcam();
+      } catch (error) {
+        console.error(error);
+        statusElement.textContent =
+          "カメラを起動できなかった：" +
+          (error instanceof Error ? error.message : String(error)) +
+          "（HTTPS/localhostとカメラ許可が必要）";
+        stopCamera();
+      }
+    }
+
+    function stopCamera() {
+      streaming = false;
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+      video.srcObject = null;
+
+      startCameraButton.disabled = !faceLandmarker;
+      stopCameraButton.disabled = true;
+      backCameraCheckbox.disabled = false;
+      fileInput.disabled = !faceLandmarker;
+    }
+
+    function predictWebcam() {
+      if (!streaming) return;
+
+      // 新しいフレームが来たときだけ推論する。
+      if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+
+        if (width && height) {
+          let result = null;
+          try {
+            // detectForVideo は単調増加のタイムスタンプ(ms)を要求する。
+            result = faceLandmarker.detectForVideo(video, performance.now());
+          } catch (error) {
+            console.error(error);
+          }
+
+          if (result && result.faceLandmarks?.length) {
+            const landmarks = result.faceLandmarks[0];
+            drawSourceAndLandmarks(video, width, height, landmarks);
+            updateThreePoints(landmarks);
+
+            const now = performance.now();
+            if (now - lastJsonUpdate > JSON_UPDATE_INTERVAL_MS) {
+              lastJsonUpdate = now;
+              currentJson = resultToJson(result, {
+                type: "webcam",
+                name: "webcam",
+                width,
+                height
+              });
+              jsonOutput.value = JSON.stringify(currentJson, null, 2);
+              downloadButton.disabled = false;
+            }
+          } else {
+            // 顔が無くても映像プレビューは更新し続ける。
+            drawSourceAndLandmarks(video, width, height, []);
+          }
+        }
+      }
+
+      requestAnimationFrame(predictWebcam);
+    }
+
+    startCameraButton.addEventListener("click", startCamera);
+    stopCameraButton.addEventListener("click", () => {
+      stopCamera();
+      statusElement.textContent = "カメラを停止した。";
+    });
+    mirrorCheckbox.addEventListener("change", () => {
+      imageCanvas.classList.toggle("mirror", mirrorCheckbox.checked);
+    });
+
+    initializeMediaPipe();
+  </script>
+</body>
+</html>
