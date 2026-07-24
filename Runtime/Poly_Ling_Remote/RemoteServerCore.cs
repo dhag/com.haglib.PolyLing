@@ -225,10 +225,6 @@ namespace Poly_Ling.Remote
                 catch (Exception ex) { Log($"メインスレッドエラー: {ex.Message}"); }
                 processed++;
             }
-
-            // 選択変更をスナップショット差分で検知し、変化時に selectionChanged を broadcast。
-            // （選択メソッドにイベントが無いためポーリングで全経路を捕捉。1フレーム1回に自然合流）
-            CheckSelectionChanged();
         }
 
         /// <summary>
@@ -831,7 +827,8 @@ namespace Poly_Ling.Remote
 
         // ================================================================
         // 選択変更 push（サーバ→クライアント選択反映）
-        // 選択メソッドにイベントが無いため Tick でスナップショット差分検知する。
+        // 本体の選択→パネル通知（NotifySelectionChanged）と接続時からイベント駆動で呼ばれる。
+        // ポーリングはしない。実送出は _lastSelSig 差分で抑止する。
         // ================================================================
 
         /// <summary>

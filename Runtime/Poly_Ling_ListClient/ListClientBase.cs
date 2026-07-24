@@ -30,9 +30,6 @@ namespace Poly_Ling.ListClient
         [Tooltip("endpoint.json が見つからない/未接続時の再試行間隔(秒)")]
         [SerializeField] private float _retrySeconds = 1.0f;
 
-        [Tooltip("自動リフレッシュ間隔(秒)。0 で無効(push受信時のみ再取得)")]
-        [SerializeField] private float _autoRefreshSeconds = 0f;
-
         // ================================================================
         // 依存
         // ================================================================
@@ -51,7 +48,6 @@ namespace Poly_Ling.ListClient
         protected ProjectContext Project { get; private set; }
 
         private float _retryTimer;
-        private float _autoTimer;
         private float _awaitTimer;
         private bool  _awaitingConnect;
         private bool  _chromeBuilt;
@@ -109,16 +105,7 @@ namespace Poly_Ling.ListClient
             if (connected)
             {
                 _awaitingConnect = false;
-
-                if (_autoRefreshSeconds > 0f)
-                {
-                    _autoTimer -= dt;
-                    if (_autoTimer <= 0f)
-                    {
-                        _autoTimer = _autoRefreshSeconds;
-                        RefreshData();
-                    }
-                }
+                // 接続中はポーリングしない（更新は push 契機のみ）。
             }
             else if (_awaitingConnect)
             {
@@ -189,6 +176,8 @@ namespace Poly_Ling.ListClient
             int mi = ExtractInt(json, "modelIndex", -1);
             if (mi < 0 || mi >= Project.ModelCount) return;
 
+            bool modelChanged = mi != Project.CurrentModelIndex;
+
             var model = Project.Models[mi];
             int cat = ExtractInt(json, "category", 0);
 
@@ -198,7 +187,11 @@ namespace Poly_Ling.ListClient
             model.SetActiveCategory((ModelContext.SelectionCategory)cat);
 
             Project.CurrentModelIndex = mi;
-            if (_chromeBuilt) PushView();
+
+            // 選択のみの変更は Selection（ツリー再構築・トグルリセットを伴わない）。
+            // モデルが変わった場合のみ ModelSwitch でツリー再構築。
+            if (_chromeBuilt)
+                PushView(modelChanged ? ChangeKind.ModelSwitch : ChangeKind.Selection);
         }
 
         // ================================================================
@@ -222,14 +215,15 @@ namespace Poly_Ling.ListClient
                 if (Project != null)
                     SetStatus($"接続済 : {Project.Name} ({Project.ModelCount} models)");
 
-                if (_chromeBuilt) PushView();
+                // 全体取得はツリー構築を伴う ModelSwitch。
+                if (_chromeBuilt) PushView(ChangeKind.ModelSwitch);
             });
         }
 
-        private void PushView()
+        private void PushView(ChangeKind kind)
         {
             if (Project == null) return;
-            _panelContext.Notify(new PlayerProjectView(Project), ChangeKind.ModelSwitch);
+            _panelContext.Notify(new PlayerProjectView(Project), kind);
             OnViewPushed();
         }
 
@@ -263,7 +257,7 @@ namespace Poly_Ling.ListClient
             BuildPanel(_host, _panelContext);
             _chromeBuilt = true;
 
-            if (Project != null) PushView();
+            if (Project != null) PushView(ChangeKind.ModelSwitch);
         }
 
         private void SetStatus(string text)
