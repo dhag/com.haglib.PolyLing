@@ -1357,5 +1357,11 @@ namespace Poly_Ling.Player
 
         private static StyleColor PaneBg(float v) => new StyleColor(new Color(v, v, v, 1f));
         private static StyleColor Col(float v)    => new StyleColor(new Color(v, v, v, 1f));
+
+        /// <summary>
+        /// 右ペイン背景色。軽量クライアントが同一背景を再現するための共有アクセサ。
+        /// （BuildRightPane の PaneBg(0.15f) と同値）
+        /// </summary>
+        public static Color RightPaneBackgroundColor => new Color(0.15f, 0.15f, 0.15f, 1f);
     }
 }

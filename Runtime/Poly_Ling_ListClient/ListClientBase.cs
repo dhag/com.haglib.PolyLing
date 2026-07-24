@@ -225,6 +225,17 @@ namespace Poly_Ling.ListClient
             if (Project == null) return;
             _panelContext.Notify(new PlayerProjectView(Project), kind);
             OnViewPushed();
+
+            // サーバと同一の意匠を再適用（サブパネル再構築で新規生成された制御に暗テーマを掛ける）。
+            ApplyDarkTheme();
+            _doc?.rootVisualElement?.schedule.Execute(ApplyDarkTheme).ExecuteLater(1);
+        }
+
+        // サーバの共有テーマ機構（PlayerLayoutRoot.ApplyDarkTheme）を再利用する。
+        private void ApplyDarkTheme()
+        {
+            var root = _doc != null ? _doc.rootVisualElement : null;
+            if (root != null) PlayerLayoutRoot.ApplyDarkTheme(root);
         }
 
         // ================================================================
@@ -238,6 +249,8 @@ namespace Poly_Ling.ListClient
 
             root.Clear();
             root.style.flexGrow = 1;
+            // サーバ右ペインと同一の暗背景（スカイボックス透過を防ぐ・単一ソース）。
+            root.style.backgroundColor = PlayerLayoutRoot.RightPaneBackgroundColor;
 
             // 現行パネルと同じキャレット等スタイルを適用(存在すれば)。
             var caret = Resources.Load<StyleSheet>("PolyLingCaret");
@@ -257,6 +270,7 @@ namespace Poly_Ling.ListClient
             BuildPanel(_host, _panelContext);
             _chromeBuilt = true;
 
+            ApplyDarkTheme();
             if (Project != null) PushView(ChangeKind.ModelSwitch);
         }
 
