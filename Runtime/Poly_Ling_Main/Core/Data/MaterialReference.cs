@@ -173,6 +173,17 @@ namespace Poly_Ling.Materials
             _cacheValid = true;
         }
 
+        /// <summary>
+        /// ランタイムで生成済みの Material をキャッシュとして直接付与する。
+        /// SetMaterial と異なり GetAssetPath / FromMaterial（Editor専用）を呼ばない。
+        /// Data は別途 ctor(MaterialData) 等で設定済みであること（Editor外での復元用）。
+        /// </summary>
+        public void AttachRuntimeMaterial(Material material)
+        {
+            _cachedMaterial = material;
+            _cacheValid = material != null;
+        }
+
         // ================================================================
         // キャッシュ管理
         // ================================================================

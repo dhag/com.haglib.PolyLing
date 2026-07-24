@@ -143,20 +143,31 @@ namespace Poly_Ling.Remote
 
 
                 ushort matCount = r.ReadUInt16();
-                var matList = new List<UnityEngine.Material>(matCount);
+                var refList = new List<MaterialReference>(matCount);
                 for (int i = 0; i < matCount; i++)
                 {
                     var (mdata, tex) = ReadMaterialData(r);
-                    var mat = MaterialDataConverter.ToMaterial(mdata);
-                    if (mat != null && tex != null)
+
+                    // wire の MaterialData から直接参照を生成する。
+                    // Unity Material 経由（model.Materials）だと SetMaterial→GetAssetPath/
+                    // FromMaterial が走り、Editor外で EditorBridgeNull がエラーになるため回避。
+                    var mref = new MaterialReference(mdata);
+
+                    // テクスチャがある場合のみ Material を生成して付与（Editor呼び出しなし）。
+                    if (tex != null)
                     {
-                        if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
-                        if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", tex);
+                        var mat = MaterialDataConverter.ToMaterial(mdata);
+                        if (mat != null)
+                        {
+                            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
+                            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", tex);
+                            mref.AttachRuntimeMaterial(mat);
+                        }
                     }
-                    matList.Add(mat);
+                    refList.Add(mref);
                 }
-                if (matList.Count > 0)
-                    model.Materials = matList;
+                if (refList.Count > 0)
+                    model.MaterialReferences = refList;
 
                 ushort exprCount = r.ReadUInt16();
                 for (int i = 0; i < exprCount; i++)
