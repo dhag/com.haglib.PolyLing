@@ -122,7 +122,7 @@ namespace Poly_Ling.Remote
                     IndexHtmlProvider = () => RemoteHtmlClient.GetHtml(Port),
                 };
                 _wsServer.OnReceived          += OnDuplexReceived;
-                _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); _lastSelSig = null; OnRepaint?.Invoke(); });
+                _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); _lastSelSig = null; CheckSelectionChanged(); OnRepaint?.Invoke(); });
                 _wsServer.OnClientDisconnected += _ => RunOnMainThread(() => { Log("クライアント切断"); OnRepaint?.Invoke(); });
 
                 IsRunning = true;
@@ -833,6 +833,13 @@ namespace Poly_Ling.Remote
         // 選択変更 push（サーバ→クライアント選択反映）
         // 選択メソッドにイベントが無いため Tick でスナップショット差分検知する。
         // ================================================================
+
+        /// <summary>
+        /// ホスト（本体）が選択変更を検知した際に呼ぶ公開トリガ。
+        /// エディタは Tick を回さないため、選択→パネル通知の経路からこれを呼んで配信する。
+        /// 実際の送出は差分（_lastSelSig）で抑止される。
+        /// </summary>
+        public void NotifySelectionChanged() => CheckSelectionChanged();
 
         private void CheckSelectionChanged()
         {

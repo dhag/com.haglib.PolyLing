@@ -4898,6 +4898,11 @@ namespace Poly_Ling.Player
             var view = new PlayerProjectView(project);
             _panelContext.Notify(view, kind);
 
+            // リモートサーバ稼働時、本体の選択/モデル変更を接続クライアントへ配信する。
+            // （エディタは Tick を回さないため、この中心経路から通知する）
+            if (_remoteMode == RemoteMode.Server && _playerServer != null)
+                _playerServer.NotifySelectionChanged();
+
             if (_interactionMode == InteractionMode.ObjectMove)
                 _boneEditorSubPanel?.Refresh();
 

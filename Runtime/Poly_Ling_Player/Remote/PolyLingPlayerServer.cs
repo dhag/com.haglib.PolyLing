@@ -89,6 +89,14 @@ namespace Poly_Ling.Player
             _server?.Tick();
         }
 
+        /// <summary>
+        /// 本体が選択変更を検知した際に呼ぶ。接続中クライアントへ selectionChanged を配信する。
+        /// </summary>
+        public void NotifySelectionChanged()
+        {
+            _server?.NotifySelectionChanged();
+        }
+
         // ================================================================
         // サーバー制御
         // ================================================================
