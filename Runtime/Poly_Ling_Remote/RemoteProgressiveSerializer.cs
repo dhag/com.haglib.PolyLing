@@ -199,7 +199,7 @@ namespace Poly_Ling.Remote
         // [4B] Magic  [1B] Version  [1B] Padding  [2B] ModelIndex  [2B] MeshIndex
         // --- メッシュメタデータ（ジオメトリなし） ---
         // [string] Name  [1B] Type  [1B] IsVisible  [1B] IsLocked
-        // [2B] Depth  [2B] ParentIndex  [1B] MirrorType  [1B] MirrorAxis
+        // [2B] Depth  [2B] ParentIndex  [2B] HierarchyParentIndex(v2+)  [1B] MirrorType  [1B] MirrorAxis
         // [4B] MirrorDistance  [1B] ExcludeFromExport
         // [2B] BakedMirrorSourceIndex  [1B] HasBakedMirrorChild
         // [1B] IsMorph  (if) [string] MorphName  [4B] MorphPanel  [2B] MorphParentIndex
@@ -219,7 +219,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)1);
+                w.Write((byte)2);   // version 2: HierarchyParentIndex を追加
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -230,6 +230,7 @@ namespace Poly_Ling.Remote
                 w.Write(mc.IsLocked);
                 w.Write((short)mc.Depth);
                 w.Write((short)mc.ParentIndex);
+                w.Write((short)mc.HierarchyParentIndex);  // v2: ボーン等の階層親(MasterIndex)
                 w.Write((byte)mc.MirrorType);
                 w.Write((byte)mc.MirrorAxis);
                 w.Write(mc.MirrorDistance);
@@ -297,7 +298,7 @@ namespace Poly_Ling.Remote
             using (var r = new BinaryReader(ms))
             {
                 if (r.ReadUInt32() != RemoteMagic.MeshSummary) return null;
-                r.ReadByte(); // version
+                int summaryVersion = r.ReadByte(); // version
                 r.ReadByte(); // padding
                 int modelIndex = r.ReadInt16();
                 int meshIndex = r.ReadInt16();
@@ -310,6 +311,7 @@ namespace Poly_Ling.Remote
                 mc.IsLocked = r.ReadBoolean();
                 mc.Depth = r.ReadInt16();
                 mc.ParentIndex = r.ReadInt16();
+                if (summaryVersion >= 2) mc.HierarchyParentIndex = r.ReadInt16();
                 mc.MirrorType = r.ReadByte();
                 mc.MirrorAxis = r.ReadByte();
                 mc.MirrorDistance = r.ReadSingle();
