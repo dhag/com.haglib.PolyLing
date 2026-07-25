@@ -44,6 +44,8 @@ namespace Poly_Ling.Player
         public Label  TopViewLabel     { get; private set; }
         public Label  FrontViewLabel   { get; private set; }
         public Label  SideViewLabel    { get; private set; }
+        public Toggle TiltToggleFront  { get; private set; }   // Front/Side を水平45°斜めに
+        public Toggle TiltToggleSide   { get; private set; }   // (Front/Side 連動・同じ共有値)
 
         // ================================================================
         // ビューポート表示フラグ（面ごと）
@@ -348,8 +350,9 @@ namespace Poly_Ling.Player
             _splitPerspSide.Add(perspWrap); PerspectivePanel = perspPanel;
             _perspPane = perspWrap;
 
-            SideFlipBtn = MakeFlipBtn("反転");
-            _splitPerspSide.Add(BuildViewportPane("Right", out sidePanel, out var sideLbl, SideFlipBtn));
+            SideFlipBtn    = MakeFlipBtn("反転");
+            TiltToggleSide = MakeTiltToggle("斜め45");
+            _splitPerspSide.Add(BuildViewportPane("Right", out sidePanel, out var sideLbl, MakeHeaderRow(TiltToggleSide, SideFlipBtn)));
             SidePanel = sidePanel; SideViewLabel = sideLbl;
 
             _splitTopFront = new TwoPaneSplitView(0, 300f, TwoPaneSplitViewOrientation.Vertical);
@@ -362,8 +365,9 @@ namespace Poly_Ling.Player
             _splitTopFront.Add(topWrap); TopPanel = topPanel;
             _topPane = topWrap;
 
-            FrontFlipBtn = MakeFlipBtn("反転");
-            _splitTopFront.Add(BuildViewportPane("Front", out frontPanel, out var frontLbl, FrontFlipBtn));
+            FrontFlipBtn    = MakeFlipBtn("反転");
+            TiltToggleFront = MakeTiltToggle("斜め45");
+            _splitTopFront.Add(BuildViewportPane("Front", out frontPanel, out var frontLbl, MakeHeaderRow(TiltToggleFront, FrontFlipBtn)));
             FrontPanel = frontPanel; FrontViewLabel = frontLbl;
 
             var rightPaneEl = BuildRightPane();
@@ -654,12 +658,14 @@ namespace Poly_Ling.Player
             scroll.Add(ModelListContainer);
 
             var listBtnRow = new VisualElement();
-            listBtnRow.style.flexDirection = FlexDirection.Row;
+            listBtnRow.style.flexDirection = FlexDirection.Column;
             listBtnRow.style.marginTop     = 4;
-            ModelListBtn = MakeBtn("モデルリスト"); ModelListBtn.style.flexGrow = 1; ModelListBtn.style.marginRight = 2;
-            MeshListBtn  = MakeBtn("オブジェクトリスト"); MeshListBtn.style.flexGrow = 1;
+            ModelListBtn = MakeBtn("モデルリスト");
+            MeshListBtn  = MakeBtn("オブジェクトリスト");
+            MaterialListBtn = MakeBtn("マテリアル（質感・色）");
             listBtnRow.Add(ModelListBtn);
             listBtnRow.Add(MeshListBtn);
+            listBtnRow.Add(MaterialListBtn);
             scroll.Add(listBtnRow);
 
             scroll.Add(Separator());
@@ -858,7 +864,6 @@ namespace Poly_Ling.Player
             UVZBtn      = MakeBtn("UVZ");        UVZBtn.style.flexGrow      = 1;
             rowUv.Add(UVEditorBtn); rowUv.Add(UVUnwrapBtn); rowUv.Add(UVZBtn); foUvMat.Add(rowUv);
 
-            MaterialListBtn = MakeBtn("マテリアル（質感・色）"); foUvMat.Add(MaterialListBtn);
             MergeMeshesBtn  = MakeBtn("メッシュマージ");   foUvMat.Add(MergeMeshesBtn);
 
             // ── サーバと連携 ───────────────────────────────────────────
@@ -1048,6 +1053,25 @@ namespace Poly_Ling.Player
             b.style.marginTop     = 0;
             b.style.marginBottom  = 0;
             return b;
+        }
+
+        private static Toggle MakeTiltToggle(string label)
+        {
+            var t = new Toggle(label) { value = false };
+            t.style.fontSize     = 10;
+            t.style.marginTop    = 0;
+            t.style.marginBottom = 0;
+            t.style.marginRight  = 4;
+            return t;
+        }
+
+        private static VisualElement MakeHeaderRow(params VisualElement[] children)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems    = Align.Center;
+            foreach (var c in children) if (c != null) row.Add(c);
+            return row;
         }
 
         // ================================================================

@@ -10,17 +10,20 @@ namespace Poly_Ling.Tools
 {
     public partial class KnifeTool : IEditorToolUI
     {
-        private static readonly string[] EditorModeNames = { "Ladder Cut", "Erase" };
-        private static readonly KnifeMode[] EditorModeValues = { KnifeMode.LadderCut, KnifeMode.Erase };
+        private static readonly string[] EditorModeNames = { "Ladder Cut", "Simple Cut", "Erase" };
+        private static readonly KnifeMode[] EditorModeValues = { KnifeMode.LadderCut, KnifeMode.SimpleCut, KnifeMode.Erase };
 
         public void DrawSettingsUI()
         {
             EditorGUILayout.LabelField(T("Title"), EditorStyles.boldLabel);
 
             int cur = Array.IndexOf(EditorModeValues, Mode);
-            int next = GUILayout.SelectionGrid(cur, EditorModeNames, 2);
+            int next = GUILayout.SelectionGrid(cur, EditorModeNames, 3);
             if (next != cur && next >= 0 && next < EditorModeValues.Length)
                 Mode = EditorModeValues[next];
+
+            if (Mode == KnifeMode.SimpleCut)
+                SimpleTriQuad = EditorGUILayout.ToggleLeft("5角以上を三角+四角に分割", SimpleTriQuad);
 
             EditorGUILayout.Space(5);
 

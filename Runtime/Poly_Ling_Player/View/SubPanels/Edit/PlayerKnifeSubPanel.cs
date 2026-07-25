@@ -18,14 +18,15 @@ namespace Poly_Ling.Player
         private VisualElement _root;
         private DropdownField _modeDD;
         private Toggle        _equalToggle;
+        private Toggle        _triQuadToggle;
         private VisualElement _divRow;
         private IntegerField  _divField;
         private Label         _statusLabel;
 
         private static readonly List<string> ModeChoices =
-            new List<string> { "ラダーカット", "一意分割" };
+            new List<string> { "ラダーカット", "シンプル", "一意分割" };
         private static readonly KnifeMode[] ModeValues =
-            { KnifeMode.LadderCut, KnifeMode.BeltLoop };
+            { KnifeMode.LadderCut, KnifeMode.SimpleCut, KnifeMode.BeltLoop };
 
         public void Build(VisualElement parent)
         {
@@ -78,6 +79,17 @@ namespace Poly_Ling.Player
             _divRow.Add(_divField);
             _root.Add(_divRow);
 
+            // SimpleCut 専用: 5角以上を三角形＋四角形に分解（既定 ON）
+            _triQuadToggle = new Toggle("5角以上を三角+四角に分割");
+            _triQuadToggle.style.color = new StyleColor(Color.white);
+            _triQuadToggle.style.marginTop = 2;
+            _triQuadToggle.RegisterValueChangedCallback(e =>
+            {
+                var h = GetH(); if (h == null) return;
+                h.SimpleTriQuad = e.newValue;
+            });
+            _root.Add(_triQuadToggle);
+
             _statusLabel = new Label();
             _statusLabel.style.color = new StyleColor(Color.white);
             _statusLabel.style.fontSize  = 10;
@@ -86,7 +98,7 @@ namespace Poly_Ling.Player
             _root.Add(_statusLabel);
 
             _root.Add(new HelpBox(
-                "ラダーカット: 開始頂点→線分→終了頂点。\n一意分割: 辺を1回クリックでベルト/ループを切断。\n等分割: オンで分割数だけ等分、オフはクリック位置で1本。",
+                "ラダーカット: 開始頂点→線分→終了頂点。\nシンプル: 画面上の2点を結ぶ直線で切断（表面のみ）。\n一意分割: 辺を1回クリックでベルト/ループを切断。\n等分割: オンで分割数だけ等分、オフはクリック位置で1本。",
                 HelpBoxMessageType.Info));
 
             Refresh();
@@ -98,10 +110,18 @@ namespace Poly_Ling.Player
             int modeIdx = Array.IndexOf(ModeValues, h.Mode);
             _modeDD?.SetValueWithoutNotify(modeIdx >= 0 ? ModeChoices[modeIdx] : ModeChoices[0]);
 
+            bool isSimple = h.Mode == KnifeMode.SimpleCut;
+            if (_equalToggle != null)
+                _equalToggle.style.display = isSimple ? DisplayStyle.None : DisplayStyle.Flex;
             _equalToggle?.SetValueWithoutNotify(h.EqualDivide);
             if (_divRow != null)
-                _divRow.style.display = h.EqualDivide ? DisplayStyle.Flex : DisplayStyle.None;
+                _divRow.style.display = (h.EqualDivide && !isSimple) ? DisplayStyle.Flex : DisplayStyle.None;
             _divField?.SetValueWithoutNotify(h.Divisions);
+            if (_triQuadToggle != null)
+            {
+                _triQuadToggle.style.display = isSimple ? DisplayStyle.Flex : DisplayStyle.None;
+                _triQuadToggle.SetValueWithoutNotify(h.SimpleTriQuad);
+            }
 
             if (_statusLabel == null) return;
 
@@ -123,7 +143,7 @@ namespace Poly_Ling.Player
                 info = h.StageText();
             }
 
-            if (h.EqualDivide)
+            if (h.EqualDivide && !isSimple)
                 info += $"\n分割数: {h.Divisions}";
             _statusLabel.text = info;
         }

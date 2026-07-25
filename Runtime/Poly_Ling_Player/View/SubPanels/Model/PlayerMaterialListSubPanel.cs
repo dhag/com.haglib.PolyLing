@@ -39,6 +39,11 @@ namespace Poly_Ling.Player
         // ── UI ────────────────────────────────────────────────────────────
         private Label         _countLabel;
         private ScrollView    _list;
+
+        // リスト高さ（下端ドラッグで手動リサイズ）: MeshListSubPanel と同方式
+        private float _matListHeight = 180f;
+        private const float MatListMinHeight = 60f;
+        private const float MatListMaxHeight = 600f;
         private VisualElement _paramSection;
         private VisualElement _applySection;
         private Button        _btnApply;
@@ -65,10 +70,14 @@ namespace Poly_Ling.Player
             root.Add(_countLabel);
 
             _list = new ScrollView();
-            _list.style.minHeight = 60;
-            _list.style.maxHeight = 180;
+            // 高さを height/minHeight/maxHeight とも同値で厳密固定（ドラッグで変更）。
+            _list.style.height    = _matListHeight;
+            _list.style.minHeight = _matListHeight;
+            _list.style.maxHeight = _matListHeight;
             _list.style.marginBottom = 4;
             root.Add(_list);
+            AddListResizeHandle(root, _list,
+                () => _matListHeight, h => _matListHeight = h, MatListMinHeight, MatListMaxHeight);
 
             // スロット追加ボタン
             var addBtn = new Button(OnAdd) { text = "+ 新規マテリアルを作成" };
@@ -660,6 +669,55 @@ namespace Poly_Ling.Player
         }
 
         private void SetStatus(string s) { if (_statusLabel != null) _statusLabel.text = s; }
+
+        // リスト(ScrollView)の下端ドラッグリサイズ用ハンドル（MeshListSubPanel と同方式）。
+        // 6px バーを PointerDown/Move/Up + CapturePointer でドラッグし、height/minHeight/maxHeight を同値で固定。
+        private static void AddListResizeHandle(
+            VisualElement container, VisualElement target,
+            Func<float> getHeight, Action<float> setHeight,
+            float min, float max)
+        {
+            var handle = new VisualElement();
+            handle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+            handle.style.height          = 6;
+            handle.style.marginTop       = 2;
+            handle.style.marginBottom    = 4;
+            handle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+            handle.pickingMode           = PickingMode.Position;
+
+            bool  dragging    = false;
+            float startY      = 0f;
+            float startHeight = 0f;
+
+            handle.RegisterCallback<PointerDownEvent>(e =>
+            {
+                handle.CapturePointer(e.pointerId);
+                dragging    = true;
+                startY      = e.position.y;
+                startHeight = getHeight();
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (!dragging || !handle.HasPointerCapture(e.pointerId)) return;
+                float delta = e.position.y - startY;
+                float h = Mathf.Clamp(startHeight + delta, min, max);
+                setHeight(h);
+                target.style.height    = h;
+                target.style.minHeight = h;
+                target.style.maxHeight = h;
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!handle.HasPointerCapture(e.pointerId)) return;
+                handle.ReleasePointer(e.pointerId);
+                dragging = false;
+                e.StopPropagation();
+            });
+
+            container.Add(handle);
+        }
 
         private static Label ParamLabel(string t)
         {

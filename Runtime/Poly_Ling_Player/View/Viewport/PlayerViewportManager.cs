@@ -169,9 +169,9 @@ namespace Poly_Ling.Player
             for (int i = 0; i < 4; i++)
             {
                 string s = RecentPaths.Get(DisplaySettingsKey(i), "");
-                arr[i] = int.TryParse(s, out int bits)
+                arr[i] = (int.TryParse(s, out int bits)
                     ? ViewportDisplaySettings.FromBits(bits)
-                    : ViewportDisplaySettings.Default;
+                    : ViewportDisplaySettings.Default).WithMirrorClamped();
             }
             return arr;
         }
@@ -190,6 +190,8 @@ namespace Poly_Ling.Player
             error: false)]
         public void SetDisplaySettings(int slot, ViewportDisplaySettings s)
         {
+            // ミラー表示はメッシュ表示に従属させる（Mesh が OFF ならそのミラーは強制 OFF）。
+            s = s.WithMirrorClamped();
             _displaySettings[slot] = s;
             // 表示設定を起動間で記録（write-through）。
             if (slot >= 0 && slot < 4)
@@ -1058,6 +1060,38 @@ namespace Poly_Ling.Player
             adapter.BackfaceCullingEnabled = _displaySettings[slot].BackfaceCulling;
             adapter.ReadBackVertexFlags();
             adapter.ReadBackVertexCulled(slot);
+        }
+
+        /// <summary>
+        /// シンプルナイフ実行直前に、操作対象メッシュの面カリングマスク(true=切らない)を返す。
+        /// 線ホバーと同一方式: アクティブスロットのカリングバッファを「その場で」新規ディスパッチ
+        /// (Clear→ComputeScreenPositions→FaceVisibility)してから読み戻す。これをしないと
+        /// 前フレーム残留値/不定値で常に全面カリング済みと判定され1枚も切れない。
+        /// カリングOFFなら null(=全面対象)を返す。
+        /// </summary>
+        public bool[] GetFaceCulledMask(int contextMeshIndex, int faceCount, PlayerViewport vp)
+        {
+            if (faceCount <= 0) return null;
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return null;
+
+            // 【重要】自前で再計算しない。
+            // 線分表示・ホバーテストが正しく使っているのと同一の面カリング結果
+            // (_FaceCulledBuffer[slot0]) をそのまま読む。slot0 はホバー/表示パイプラインが
+            // アクティブビューのカメラで毎回算出・維持しているスクラッチスロットであり、
+            // 切断が行われるアクティブビューのカリングと一致する。
+            // （旧実装は DispatchCullingForDisplay で別カメラ/行列/ビューポート矩形で
+            //   再計算しており、表示と食い違って前面が裏面扱いになっていた。）
+            const int slot = 0;
+            adapter.ReadBackFaceCulled(slot);
+
+            int unifiedIdx = adapter.ContextToUnifiedMeshIndex(contextMeshIndex);
+            if (unifiedIdx < 0) return null;
+
+            var mask = new bool[faceCount];
+            for (int f = 0; f < faceCount; f++)
+                mask[f] = adapter.IsFaceBackfaceCulled(unifiedIdx, f);
+            return mask;
         }
 
         [System.Obsolete(

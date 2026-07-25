@@ -1222,6 +1222,34 @@ namespace Poly_Ling.Player
             WireFlip(_layoutRoot?.FrontFlipBtn, _viewportManager.FrontViewport, _layoutRoot?.FrontPanel, _layoutRoot?.FrontViewLabel, "Front", "Back");
             WireFlip(_layoutRoot?.SideFlipBtn,  _viewportManager.SideViewport,  _layoutRoot?.SidePanel,  _layoutRoot?.SideViewLabel,  "Right", "Left");
 
+            // ── 斜め45°トグル（Front/Side を水平傾斜。共有値のため両トグルは同期） ──
+            void WireTilt()
+            {
+                var front = _viewportManager.FrontViewport;
+                var side  = _viewportManager.SideViewport;
+                if (front?.Ortho == null && side?.Ortho == null) return;
+
+                void Apply(bool on)
+                {
+                    float deg = on ? OrthoViewController.DefaultHorizontalTiltDeg : 0f;
+                    // 共有状態なので片方へ設定すれば Front/Side 両方へ反映される。
+                    if (front?.Ortho != null) front.Ortho.HorizontalTilt = deg;
+                    else if (side?.Ortho != null) side.Ortho.HorizontalTilt = deg;
+
+                    // 2つのトグルを同期（通知なしで反対側を合わせる）。
+                    _layoutRoot?.TiltToggleFront?.SetValueWithoutNotify(on);
+                    _layoutRoot?.TiltToggleSide ?.SetValueWithoutNotify(on);
+
+                    // 全ビュー再描画（Front を起点に連動 slot も更新される）。
+                    var vp = front ?? side;
+                    if (vp != null) _viewportManager.EnterCameraChanged(vp, CameraChangePhase.Committed);
+                }
+
+                _layoutRoot?.TiltToggleFront?.RegisterValueChangedCallback(e => Apply(e.newValue));
+                _layoutRoot?.TiltToggleSide ?.RegisterValueChangedCallback(e => Apply(e.newValue));
+            }
+            WireTilt();
+
             // ── 下絵オフセット移動（下絵パネル表示中の左ドラッグ） ─────
             void ConnectUnderlayDrag(PlayerViewport vp, PlayerViewportPanel panel)
             {
@@ -1844,6 +1872,12 @@ namespace Poly_Ling.Player
             var lines = new System.Collections.Generic.List<(UnityEngine.Vector2, UnityEngine.Vector2)>();
             foreach (var seg in prev.Lines)
                 lines.Add((toScreen(seg.Item1), toScreen(seg.Item2)));
+
+            // SimpleCut: 画面座標で指定された点/線はそのまま追加（投影不要）。
+            foreach (var d in prev.ScreenDots)
+                pts.Add(d);
+            foreach (var s in prev.ScreenLines)
+                lines.Add((s.Item1, s.Item2));
 
             // クリック点フラッシュ強調（AdvSel と共通：辺＝太線／頂点＝リング）
             Vector2? firstPt = null;
@@ -2545,6 +2579,7 @@ namespace Poly_Ling.Player
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 GetHoverElement     = mode => _viewportManager.GetHoverElement(mode, ActiveProject?.CurrentModel),
+                GetFaceCulledMask   = (ctxIdx, faceCount) => _viewportManager.GetFaceCulledMask(ctxIdx, faceCount, _activeViewport),
                 OnClicked           = () =>
                 {
                     // クリック点/辺を一瞬強調して自動で消す（AdvSel と共通のフラッシュ状態）。
@@ -2866,6 +2901,25 @@ namespace Poly_Ling.Player
             _layoutRoot.FrontPanel      .SetViewport(_viewportManager.FrontViewport);
             _layoutRoot.SidePanel       .SetViewport(_viewportManager.SideViewport);
 
+            // Mesh トグル（選択/非選）に対する Mirror トグルの従属を UI に反映する。
+            // Mesh が OFF のとき、そのミラートグルは値を OFF に同期し、グレーアウト（無効化）する。
+            void ApplyMirrorToggleGating(int slot)
+            {
+                var d = _viewportManager.GetDisplaySettings(slot); // SetDisplaySettings でクランプ済み
+                var selMirror   = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_SEL_MIRROR];
+                var unselMirror = _layoutRoot.ViewportDisplayToggles[slot, PlayerLayoutRoot.VD_UNSEL_MIRROR];
+                if (selMirror != null)
+                {
+                    selMirror.SetValueWithoutNotify(d.ShowSelectedMirror);
+                    selMirror.SetEnabled(d.ShowSelectedMesh);
+                }
+                if (unselMirror != null)
+                {
+                    unselMirror.SetValueWithoutNotify(d.ShowUnselectedMirror);
+                    unselMirror.SetEnabled(d.ShowUnselectedMesh);
+                }
+            }
+
             // 面ごとの表示設定トグルを接続する。
             // ViewportDisplayToggles[slot, item] → _viewportManager の設定を更新。
             for (int s = 0; s < 4; s++)
@@ -2893,6 +2947,8 @@ namespace Poly_Ling.Player
                             }
                             // Phase 2a-2g-3: SetDisplaySettings → EnterDisplaySettingsChanged に集約。
                             _viewportManager.EnterDisplaySettingsChanged(slot, ds);
+                            // Mesh トグルに応じて Mirror トグルの値・有効状態を更新する。
+                            ApplyMirrorToggleGating(slot);
                         });
                 }
             }
@@ -2915,6 +2971,8 @@ namespace Poly_Ling.Player
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_BONE,   ds.ShowUnselectedBone);
                 SyncTog(PlayerLayoutRoot.VD_SEL_MIRROR,   ds.ShowSelectedMirror);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR, ds.ShowUnselectedMirror);
+                // Mesh トグルに応じて Mirror トグルの値・有効状態を初期同期する。
+                ApplyMirrorToggleGating(s);
             }
 
             _layoutRoot.MorphBtn.clicked       += ShowMorphPanel;

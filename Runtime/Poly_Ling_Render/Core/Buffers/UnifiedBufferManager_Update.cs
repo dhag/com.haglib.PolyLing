@@ -814,6 +814,21 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// メッシュインデックス(unified)とローカル面インデックスからグローバル面インデックスを取得
+        /// </summary>
+        public int LocalToGlobalFaceIndex(int meshIndex, int localFaceIndex)
+        {
+            if (meshIndex < 0 || meshIndex >= _meshCount)
+                return -1;
+
+            var info = _meshInfos[meshIndex];
+            if (localFaceIndex < 0 || localFaceIndex >= info.FaceCount)
+                return -1;
+
+            return (int)info.FaceStart + localFaceIndex;
+        }
+
+        /// <summary>
         /// グローバルラインインデックスからメッシュインデックスとローカルインデックスを取得
         /// </summary>
         public bool GlobalToLocalLineIndex(int globalIndex, out int meshIndex, out int localIndex)
@@ -1120,6 +1135,23 @@ namespace Poly_Ling.Core
                 _vertexCulledCache = new uint[_totalVertexCount];
 
             vCulledBuf.GetData(_vertexCulledCache, 0, 0, _totalVertexCount);
+        }
+
+        /// <summary>
+        /// 指定スロットの GPU 面カリングバッファ (_FaceCulledBuffer) を
+        /// CPU キャッシュ (_faceCulledCache) に読み戻す。ReadBackVertexCulled と同型。
+        /// 呼出前に該当スロットの ComputeScreenPositions + DispatchFaceVisibility を実行しておくこと。
+        /// </summary>
+        public void ReadBackFaceCulled(int slot = 0)
+        {
+            if (_totalFaceCount <= 0) return;
+            var fCulledBuf = GetFaceCulledBuffer(slot);
+            if (fCulledBuf == null) return;
+
+            if (_faceCulledCache == null || _faceCulledCache.Length < _totalFaceCount)
+                _faceCulledCache = new uint[_totalFaceCount];
+
+            fCulledBuf.GetData(_faceCulledCache, 0, 0, _totalFaceCount);
         }
 
         /// <summary>

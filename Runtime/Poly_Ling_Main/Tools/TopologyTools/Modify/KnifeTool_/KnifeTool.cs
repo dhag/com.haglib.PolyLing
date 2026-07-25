@@ -42,6 +42,13 @@ namespace Poly_Ling.Tools
             set => _settings.EqualDivide = value;
         }
 
+        /// <summary>SimpleCut: 5角以上の面を三角形＋四角形へ再分解する（既定 ON）。</summary>
+        public bool SimpleTriQuad
+        {
+            get => _settings.SimpleTriQuad;
+            set => _settings.SimpleTriQuad = value;
+        }
+
         // ================================================================
         // 状態
         // ================================================================
@@ -110,6 +117,10 @@ namespace Poly_Ling.Tools
             public readonly List<Vector3> DotWorld = new List<Vector3>();
             /// <summary>切断線・ハイライト線（ワールド座標の線分列）。</summary>
             public readonly List<(Vector3, Vector3)> Lines = new List<(Vector3, Vector3)>();
+            /// <summary>画面座標(IMGUI Y下)で直接描く点。SimpleCut 用。</summary>
+            public readonly List<Vector2> ScreenDots = new List<Vector2>();
+            /// <summary>画面座標(IMGUI Y下)で直接描く線分。SimpleCut 用。</summary>
+            public readonly List<(Vector2, Vector2)> ScreenLines = new List<(Vector2, Vector2)>();
             /// <summary>解決可能か（終了頂点ホバー時）。</summary>
             public bool PlanValid;
 
@@ -118,6 +129,8 @@ namespace Poly_Ling.Tools
                 DotVertices.Clear();
                 DotWorld.Clear();
                 Lines.Clear();
+                ScreenDots.Clear();
+                ScreenLines.Clear();
                 PlanValid = false;
             }
         }
@@ -133,6 +146,7 @@ namespace Poly_Ling.Tools
         {
             if (Mode == KnifeMode.Erase) return T("HelpErase");
             if (Mode == KnifeMode.BeltLoop) return T("PickBeltEdge");
+            if (Mode == KnifeMode.SimpleCut) return _simpleStage == SimpleStage.HasP0 ? T("PickSecond") : T("PickFirst");
             switch (_stage)
             {
                 case LadderStage.Idle:       return T("PickStart");
@@ -160,9 +174,10 @@ namespace Poly_Ling.Tools
 
             switch (Mode)
             {
-                case KnifeMode.Erase:    return HandleEraseClick(ctx, mousePos);
-                case KnifeMode.BeltLoop: return HandleBeltClick(ctx, mousePos);
-                default:                 return HandleLadderClick(ctx, mo, mousePos);
+                case KnifeMode.Erase:     return HandleEraseClick(ctx, mousePos);
+                case KnifeMode.BeltLoop:  return HandleBeltClick(ctx, mousePos);
+                case KnifeMode.SimpleCut: return HandleSimpleCutClick(ctx, mo, mousePos);
+                default:                  return HandleLadderClick(ctx, mo, mousePos);
             }
         }
 
@@ -173,9 +188,10 @@ namespace Poly_Ling.Tools
 
             switch (Mode)
             {
-                case KnifeMode.Erase:    UpdateEraseHover(ctx, mousePos); break;
-                case KnifeMode.BeltLoop: UpdateBeltHover(ctx, mousePos);  break;
-                default:                 UpdateLadderHover(ctx, mo, mousePos); break;
+                case KnifeMode.Erase:     UpdateEraseHover(ctx, mousePos); break;
+                case KnifeMode.BeltLoop:  UpdateBeltHover(ctx, mousePos);  break;
+                case KnifeMode.SimpleCut: UpdateSimpleCutHover(ctx, mo, mousePos); break;
+                default:                  UpdateLadderHover(ctx, mo, mousePos); break;
             }
 
             ctx.Repaint?.Invoke();
@@ -201,6 +217,7 @@ namespace Poly_Ling.Tools
             _preview.Clear();
             _hoveredEraseEdge = default;
             _hasEraseHover = false;
+            ResetSimpleCut();
         }
 
         // ================================================================

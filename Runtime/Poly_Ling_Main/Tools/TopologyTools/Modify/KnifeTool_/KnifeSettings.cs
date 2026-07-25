@@ -11,6 +11,8 @@ namespace Poly_Ling.Tools
     {
         /// <summary>ラダー切断（開始頂点→セグメント→終了頂点、端点は既存頂点）。</summary>
         LadderCut,
+        /// <summary>シンプル切断（画面上の2点を結ぶ直線で切る。非カリング面のみ）。</summary>
+        SimpleCut,
         /// <summary>一意分割（辺1クリックでベルト/ループ全体を切断）。</summary>
         BeltLoop,
         /// <summary>辺消去（共有辺で2面を統合）。</summary>
@@ -31,16 +33,19 @@ namespace Poly_Ling.Tools
         /// <summary>等分割の分割ピース数（≥2）。EqualDivide=true のとき使用。</summary>
         public int Divisions = 2;
 
-        public IToolSettings Clone() => new KnifeSettings { Mode = this.Mode, EqualDivide = this.EqualDivide, Divisions = this.Divisions };
+        /// <summary>SimpleCut: 分割後に5角以上になった面を三角形＋四角形へ再分解する（既定 ON）。</summary>
+        public bool SimpleTriQuad = true;
+
+        public IToolSettings Clone() => new KnifeSettings { Mode = this.Mode, EqualDivide = this.EqualDivide, Divisions = this.Divisions, SimpleTriQuad = this.SimpleTriQuad };
 
         public void CopyFrom(IToolSettings other)
         {
-            if (other is KnifeSettings src) { Mode = src.Mode; EqualDivide = src.EqualDivide; Divisions = src.Divisions; }
+            if (other is KnifeSettings src) { Mode = src.Mode; EqualDivide = src.EqualDivide; Divisions = src.Divisions; SimpleTriQuad = src.SimpleTriQuad; }
         }
 
         public bool IsDifferentFrom(IToolSettings other)
         {
-            if (other is KnifeSettings src) return Mode != src.Mode || EqualDivide != src.EqualDivide || Divisions != src.Divisions;
+            if (other is KnifeSettings src) return Mode != src.Mode || EqualDivide != src.EqualDivide || Divisions != src.Divisions || SimpleTriQuad != src.SimpleTriQuad;
             return true;
         }
     }

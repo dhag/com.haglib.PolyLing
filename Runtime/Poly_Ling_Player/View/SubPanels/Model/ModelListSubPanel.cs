@@ -33,7 +33,12 @@ namespace Poly_Ling.Player
         private Label         _currentNameLabel;
         private TextField     _renameField;
         private Button        _btnStartRename, _btnConfirmRename, _btnCancelRename;
-        private VisualElement _modelListContainer;
+        private ScrollView    _modelListContainer;
+
+        // リスト高さ（下端ドラッグで手動リサイズ）: MeshListSubPanel/PlayerMaterialListSubPanel と同方式
+        private float _modelListHeight = 180f;
+        private const float ModelListMinHeight = 60f;
+        private const float ModelListMaxHeight = 600f;
         private Label         _statusLabel;
 
         // ================================================================
@@ -134,9 +139,14 @@ namespace Poly_Ling.Player
             root.Add(_renameSection);
 
             // ---- モデルリスト ----
-            _modelListContainer = new VisualElement();
-            _modelListContainer.style.flexGrow = 1;
+            _modelListContainer = new ScrollView();
+            // 高さを height/minHeight/maxHeight とも同値で厳密固定（自箱スクロール・クリップで重なり解消）。
+            _modelListContainer.style.height    = _modelListHeight;
+            _modelListContainer.style.minHeight = _modelListHeight;
+            _modelListContainer.style.maxHeight = _modelListHeight;
             root.Add(_modelListContainer);
+            AddListResizeHandle(root, _modelListContainer,
+                () => _modelListHeight, h => _modelListHeight = h, ModelListMinHeight, ModelListMaxHeight);
 
             // ステータス
             _statusLabel = new Label("");
@@ -309,5 +319,54 @@ namespace Poly_Ling.Player
 
         private void SendCmd(PanelCommand c) => _ctx?.SendCommand(c);
         private void SetStatus(string msg)   { if (_statusLabel != null) _statusLabel.text = msg; }
+
+        // リスト(ScrollView)の下端ドラッグリサイズ用ハンドル（MeshListSubPanel と同方式）。
+        // 6px バーを PointerDown/Move/Up + CapturePointer でドラッグし、height/minHeight/maxHeight を同値で固定。
+        private static void AddListResizeHandle(
+            VisualElement container, VisualElement target,
+            System.Func<float> getHeight, System.Action<float> setHeight,
+            float min, float max)
+        {
+            var handle = new VisualElement();
+            handle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+            handle.style.height          = 6;
+            handle.style.marginTop       = 2;
+            handle.style.marginBottom    = 4;
+            handle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+            handle.pickingMode           = PickingMode.Position;
+
+            bool  dragging    = false;
+            float startY      = 0f;
+            float startHeight = 0f;
+
+            handle.RegisterCallback<PointerDownEvent>(e =>
+            {
+                handle.CapturePointer(e.pointerId);
+                dragging    = true;
+                startY      = e.position.y;
+                startHeight = getHeight();
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (!dragging || !handle.HasPointerCapture(e.pointerId)) return;
+                float delta = e.position.y - startY;
+                float h = Mathf.Clamp(startHeight + delta, min, max);
+                setHeight(h);
+                target.style.height    = h;
+                target.style.minHeight = h;
+                target.style.maxHeight = h;
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!handle.HasPointerCapture(e.pointerId)) return;
+                handle.ReleasePointer(e.pointerId);
+                dragging = false;
+                e.StopPropagation();
+            });
+
+            container.Add(handle);
+        }
     }
 }

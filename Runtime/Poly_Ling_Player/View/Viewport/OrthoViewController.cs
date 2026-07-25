@@ -12,12 +12,19 @@ namespace Poly_Ling.Player
 
     /// <summary>
     /// Top / Side / Front の3正投影ビューで共有する視点状態（連動用）。
-    /// 同一インスタンスを各 <see cref="OrthoViewController"/> に注入すると、
-    /// いずれかのパン／ズーム操作が3ビュー全てに反映される。
+    /// 中心(Target)とズーム倍率(WorldHeightPerPixel)を共有し、いずれかの
+    /// パン／ズーム操作が3ビュー全てに反映される（鏡面連動）。
     /// </summary>
     public sealed class OrthoViewSharedState
     {
         public Vector3 Target = Vector3.zero;
+
+        // Front列のペインが BACK 表示（Front コントローラーが Flipped）か。
+        // たて並びの TOP を BACK と揃えるため、TOP の X連動反転判定に使う。
+        public bool FrontFlipped = false;
+
+        // Front/Side 列の水平傾き（度）。UIトグルで切替。0=正対、45=斜め。Top/Bottomは無視。
+        public float HorizontalTilt = 0f;
 
         // ビューポート高さに依存しない共有ズーム：スクリーン1pxあたりのワールド高さ。
         // 各ビューの orthographicSize = WorldHeightPerPixel × pixelHeight ÷ 2。
@@ -80,8 +87,8 @@ namespace Poly_Ling.Player
         // 状態
         // ================================================================
 
-        // Top/Side/Front で共有する視点状態（連動）。既定は個別インスタンス。
-        // Manager が Top/Side/Front に同一インスタンスを注入することで連動する。
+        // 中心(Target)とズーム倍率を Top/Side/Front で共有する（既定は個別インスタンス）。
+        // Manager が SetSharedState で同一インスタンスを注入すると3面が連動（鏡面）する。
         private OrthoViewSharedState _shared = new OrthoViewSharedState();
 
         public Vector3 Target { get => _shared.Target; private set => _shared.Target = value; }
@@ -93,10 +100,32 @@ namespace Poly_Ling.Player
             private set => _shared.WorldHeightPerPixel = value;
         }
 
-        /// <summary>true のとき反対方向から見る（Top↔Bottom / Front↔Back / Right↔Left）。</summary>
-        public bool Flipped { get; set; } = false;
+        /// <summary>Front/Side 列の水平傾き（度）。共有状態。UIトグルから設定する。</summary>
+        public float HorizontalTilt
+        {
+            get => _shared.HorizontalTilt;
+            set => _shared.HorizontalTilt = value;
+        }
 
-        /// <summary>連動用の共有視点状態を注入する。Top/Side/Front に同一インスタンスを渡す。</summary>
+        /// <summary>true のとき反対方向から見る（Top↔Bottom / Front↔Back / Right↔Left）。</summary>
+        private bool _flipped = false;
+        public bool Flipped
+        {
+            get => _flipped;
+            set
+            {
+                _flipped = value;
+                // Front→Back 反転を共有状態へ伝え、TOP 側の X連動反転を切り替える。
+                if (_direction == OrthoViewDirection.Front) _shared.FrontFlipped = value;
+            }
+        }
+
+        // 例外規則：この面が TOP（非反転）で、かつ Front列が BACK 表示のとき true。
+        // このとき TOP の X連動のみ反転させ、たて並びの BACK と移動方向を揃える。
+        private bool TopXInverted =>
+            _direction == OrthoViewDirection.Top && !_flipped && _shared.FrontFlipped;
+
+        /// <summary>共有ズーム状態を注入する。Top/Side/Front に同一インスタンスを渡すとスケールが揃う。</summary>
         public void SetSharedState(OrthoViewSharedState shared)
         {
             if (shared != null) _shared = shared;
@@ -148,6 +177,37 @@ namespace Poly_Ling.Player
         // カメラ配置
         // ================================================================
 
+        /// <summary>
+        /// 現在の方向 (_direction) と Flipped から視点回転を返す。
+        /// ApplyCameraTransform（カメラ姿勢）と OnDrag（パン方向）が同じ基底を
+        /// 参照することで、Flip 時に表示とパン方向がズレる問題を防ぐ。
+        /// </summary>
+        // Front/Side 列の水平傾き既定角（トグルON時に共有状態へ設定する値）。
+        // Top/Bottom は対象外。符号を反転すると向くコーナーが左右入れ替わる。
+        public const float DefaultHorizontalTiltDeg = 45f;
+
+        private Quaternion ViewRotation()
+        {
+            // 実際の傾きは共有状態（UIトグルで切替）。既定0=正対。
+            float t = _shared.HorizontalTilt;
+            switch (_direction)
+            {
+                case OrthoViewDirection.Top:
+                    // Top(上から見下ろす) / Bottom(下から見上げる)。傾きは付けない。
+                    return Flipped ? Quaternion.Euler(-90f, 0f, 0f)
+                                   : Quaternion.Euler( 90f, 0f, 0f);
+                case OrthoViewDirection.Side:
+                    // Right(+X側→-X方向) / Left(-X側→+X方向) に水平45°を加算。
+                    return Flipped ? Quaternion.Euler(0f,  90f + t, 0f)
+                                   : Quaternion.Euler(0f, -90f + t, 0f);
+                case OrthoViewDirection.Front:
+                default:
+                    // Front(-Z側→+Z方向) / Back(+Z側→-Z方向) に水平45°を加算。
+                    return Flipped ? Quaternion.Euler(0f, 180f + t, 0f)
+                                   : Quaternion.Euler(0f,   0f + t, 0f);
+            }
+        }
+
         public void ApplyCameraTransform(Camera cam)
         {
             if (cam == null) return;
@@ -170,55 +230,16 @@ namespace Poly_Ling.Player
 
             const float camDist = 100f; // 十分遠い位置に置く（クリッピング回避）
 
-            switch (_direction)
-            {
-                case OrthoViewDirection.Top:
-                    if (!Flipped)
-                    {
-                        // Top: 上から見下ろす
-                        cam.transform.position = Target + Vector3.up * camDist;
-                        cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-                    }
-                    else
-                    {
-                        // Bottom: 下から見上げる
-                        cam.transform.position = Target + Vector3.down * camDist;
-                        cam.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
-                    }
-                    break;
-
-                case OrthoViewDirection.Front:
-                    // PMXモデルは-Z向き。正面(Front)ビューはモデルの正面を見るため
-                    // カメラを -Z 側に置き +Z 方向を向く
-                    if (!Flipped)
-                    {
-                        // Front
-                        cam.transform.position = Target + Vector3.back * camDist;
-                        cam.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
-                    }
-                    else
-                    {
-                        // Back: +Z 側に置き -Z 方向を向く
-                        cam.transform.position = Target + Vector3.forward * camDist;
-                        cam.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-                    }
-                    break;
-
-                case OrthoViewDirection.Side:
-                    if (!Flipped)
-                    {
-                        // Right: +X 側に置き -X 方向を向く（右側面ビュー）
-                        cam.transform.position = Target + Vector3.right * camDist;
-                        cam.transform.rotation = Quaternion.Euler(0f, -90f, 0f);
-                    }
-                    else
-                    {
-                        // Left: -X 側に置き +X 方向を向く（左側面ビュー）
-                        cam.transform.position = Target + Vector3.left * camDist;
-                        cam.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
-                    }
-                    break;
-            }
+            // 視点回転は ViewRotation() を唯一の真実として参照する（パンと共通基底）。
+            // position は「カメラ前方の逆」に camDist だけ引いた位置。6方向とも従来の
+            // position/rotation と数値一致する。
+            Quaternion rot = ViewRotation();
+            cam.transform.rotation = rot;
+            // 例外：Front列がBACK表示のとき、TOPは中心のXを反転して配置する。
+            // 像は反転せず（モデル形状のXはそのまま）、パン連動方向だけが反転する。
+            Vector3 center = Target;
+            if (TopXInverted) center.x = -center.x;
+            cam.transform.position = center - rot * Vector3.forward * camDist;
         }
 
         // ================================================================
@@ -237,28 +258,19 @@ namespace Poly_Ling.Player
             // 右ボタン(1) または 中ボタン(2) → パン
             if (btn != 1 && btn != 2) return;
 
-            // 連動一致のため、フリップはパン方向に影響させない（表示のみ反転）。
-            // 移動量は高さ非依存の WorldHeightPerPixel による等倍（カーソル追従）。
+            // パン方向はカメラ基底ベクトル（ViewRotation）から算出する。
+            // Flip（Bottom/Back/Left）でも表示とパン方向が一致し、全方向でカーソル追従になる。
+            // 移動量は高さ非依存の WorldHeightPerPixel 等倍。
+            // delta は viewport 座標（Y=0 下、上方向が正）。
             float wpp = WorldHeightPerPixel;
 
-            Vector3 panDelta;
-            switch (_direction)
-            {
-                case OrthoViewDirection.Top:
-                    // Top: X→X, Y（スクリーン上下）→ Z
-                    panDelta = new Vector3(-delta.x, 0f, -delta.y) * wpp;
-                    break;
-                case OrthoViewDirection.Front:
-                default:
-                    // Front: スクリーン右 → Target.x
-                    panDelta = new Vector3(-delta.x, -delta.y, 0f) * wpp;
-                    break;
-                case OrthoViewDirection.Side:
-                    // Side: スクリーン右 → Target.z
-                    panDelta = new Vector3(0f, -delta.y, -delta.x) * wpp;
-                    break;
-            }
-            Target += panDelta;
+            Quaternion rot = ViewRotation();
+            // Target を「カメラ右／上」の逆へ動かすとコンテンツがカーソルに追従する。
+            Vector3 pan = rot * Vector3.right * delta.x + rot * Vector3.up * delta.y;
+            // 例外：Front列がBACK表示のとき、TOPのX連動は反転（中心X反転と対）。
+            // TOP自身をドラッグしても自カーソル追従を保つため書き込み側Xも反転する。
+            if (TopXInverted) pan.x = -pan.x;
+            Target -= pan * wpp;
 
             // Phase 1: ドラッグ中はフレーム駆動で transform 反映していたが
             // Tick 廃止に伴い、軽量コールバックで event 駆動化する。

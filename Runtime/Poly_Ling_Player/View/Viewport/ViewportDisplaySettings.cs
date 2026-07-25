@@ -44,6 +44,19 @@ namespace Poly_Ling.Player
             ShowUnselectedMirror    = true,
         };
 
+        /// <summary>
+        /// ミラー表示をメッシュ表示に従属させたコピーを返す（元の値は変更しない）。
+        /// 選択Mesh が OFF なら選択Mirror を、非選Mesh が OFF なら非選Mirror を強制的に OFF にする。
+        /// 表示不変条件「Mesh が OFF のとき、そのミラーは ON にならない」を保証する。
+        /// </summary>
+        public ViewportDisplaySettings WithMirrorClamped()
+        {
+            var s = this;
+            if (!s.ShowSelectedMesh)   s.ShowSelectedMirror   = false;
+            if (!s.ShowUnselectedMesh) s.ShowUnselectedMirror = false;
+            return s;
+        }
+
         // ── 永続化（RecentPaths に int ビットマスク文字列で保存する） ──────────
         public int ToBits()
         {

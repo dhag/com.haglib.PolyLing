@@ -1036,6 +1036,35 @@ namespace Poly_Ling.Core
             _unifiedSystem?.BufferManager?.ReadBackVertexCulled(slot);
         }
 
+        /// <summary>
+        /// 指定メッシュ(unified)のローカル面が背面カリング(または非表示)対象かを取得。
+        /// 呼出前に ReadBackFaceCulled(slot) を呼ぶこと。GPU 側 _FaceCulledBuffer 由来。
+        /// </summary>
+        public bool IsFaceBackfaceCulled(int meshIndex, int localFaceIndex)
+        {
+            var bufferManager = _unifiedSystem?.BufferManager;
+            if (!_isInitialized || bufferManager == null)
+                return false;
+
+            int globalIndex = bufferManager.LocalToGlobalFaceIndex(meshIndex, localFaceIndex);
+            if (globalIndex < 0)
+                return false;
+
+            var faceCulled = bufferManager.FaceCulled;
+            if (faceCulled == null || globalIndex >= faceCulled.Length)
+                return false;
+
+            return faceCulled[globalIndex] != 0u;
+        }
+
+        /// <summary>
+        /// 指定スロットの GPU 面カリングバッファを CPU キャッシュに読み戻す。
+        /// </summary>
+        public void ReadBackFaceCulled(int slot = 0)
+        {
+            _unifiedSystem?.BufferManager?.ReadBackFaceCulled(slot);
+        }
+
         // ============================================================
         // デバッグ
         // ============================================================

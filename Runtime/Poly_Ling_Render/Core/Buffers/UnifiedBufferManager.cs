@@ -171,6 +171,9 @@ namespace Poly_Ling.Core
         private uint[] _vertexFlags;
 
         // 頂点カリング結果の CPU キャッシュ (slot 別)
+        // GPU 側 _FaceCulledBuffer (per-slot) を ReadBack したもの。
+        private uint[] _faceCulledCache;
+
         // GPU 側 _VertexCulledBuffer (per-slot) を ReadBack したもの。
         // 矩形/投げ縄選択の CPU ループで「表面の面に属さない頂点」を除外するために使う。
         // _vertexFlags に混ぜると CPU 側からの SetData で消失するため、独立した配列として保持。
@@ -401,6 +404,9 @@ namespace Poly_Ling.Core
         /// 各 uint は 0=可視 / 非 0=カリング済み (表面の面に属さない)。
         /// </summary>
         public uint[] VertexCulled => _vertexCulledCache;
+
+        /// <summary>面カリング結果の CPU キャッシュ。ReadBackFaceCulled(slot) で埋める。</summary>
+        public uint[] FaceCulled => _faceCulledCache;
         public uint[] LineFlags => _lineFlags;
         public UnifiedLine[] Lines => _lines;
         public MeshInfo[] MeshInfos => _meshInfos;

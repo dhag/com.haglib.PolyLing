@@ -36,6 +36,13 @@ namespace Poly_Ling.Player
         /// <summary>GPU ホバー結果取得（互換のため保持。現実装は SelectionHelper を使用）。</summary>
         public Func<MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
+        /// <summary>
+        /// SimpleCut 実行直前の面カリングマスク取得（ctxMeshIndex, faceCount → mask, true=切らない）。
+        /// カリングOFF時は null（＝全面対象）。線ホバーと同一の GPU 経路で生成。
+        /// Player の Viewer が Viewport 経由で配線する。
+        /// </summary>
+        public Func<int, int, bool[]> GetFaceCulledMask;
+
         /// <summary>クリック確定時に発火（クリック点強調フラッシュ用）。</summary>
         public Action OnClicked;
 
@@ -56,6 +63,9 @@ namespace Poly_Ling.Player
 
         /// <summary>等分割の分割ピース数（≥2）。EqualDivide=true のとき使用。</summary>
         public int Divisions { get => _tool.Divisions; set => _tool.Divisions = value; }
+
+        /// <summary>SimpleCut: 5角以上の面を三角形＋四角形へ再分解（既定 ON）。</summary>
+        public bool SimpleTriQuad { get => _tool.SimpleTriQuad; set => _tool.SimpleTriQuad = value; }
 
         /// <summary>状態説明テキスト（サブパネル用）。</summary>
         public string StageText() => _tool.StageText();
@@ -89,7 +99,18 @@ namespace Poly_Ling.Player
         {
             var ctx = BuildCtx(mods, screenPos); if (ctx == null) return;
             InjectGpuHover();
-            _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            if (_tool.Mode == KnifeMode.SimpleCut)
+            {
+                // クリック座標(ToViewportCoord 済み = Y=0 下)は頂点投影と同系。
+                // ToImgui を通すと二重反転で上下が狂うため、生の screenPos を渡す。
+                if (_tool.SimpleCutHasFirstPoint)
+                    InjectSimpleCutMask(ctx);
+                _tool.OnSimpleCutClickScreen(ctx, screenPos);
+            }
+            else
+            {
+                _tool.OnMouseDown(ctx, ToImgui(screenPos, ctx));
+            }
             ApplyHoverSelectionMode();   // 段遷移後の必要型に合わせて GPU ホバーモードを更新
             OnRepaint?.Invoke();
             OnClicked?.Invoke();
@@ -109,8 +130,23 @@ namespace Poly_Ling.Player
         {
             var ctx = EnrichCtx(baseCtx, default, screenPos); if (ctx == null) return;
             InjectGpuHover();
+            // SimpleCut 1点目確定後は、交差辺ハイライトを正しいカリングで表示するため
+            // ホバー中もマスクを注入する（クリック時と同一の slot0 由来カリング）。
+            if (_tool.Mode == KnifeMode.SimpleCut && _tool.SimpleCutHasFirstPoint)
+                InjectSimpleCutMask(ctx);
             _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), Vector2.zero);
             OnRepaint?.Invoke();
+        }
+
+        /// <summary>SimpleCut の操作対象(FirstDrawable)の面カリングマスクを構築して注入する。</summary>
+        private void InjectSimpleCutMask(ToolContext ctx)
+        {
+            var mo = ctx?.FirstDrawableMeshObject ?? ctx?.FirstSelectedMeshObject;
+            int firstIdx = _project?.CurrentModel?.FirstMeshIndex ?? -1;
+            bool[] mask = (mo != null && firstIdx >= 0)
+                ? GetFaceCulledMask?.Invoke(firstIdx, mo.FaceCount)
+                : null;
+            _tool.SetFaceCulledMask(mask);
         }
 
         public void Activate(ToolContext ctx)
