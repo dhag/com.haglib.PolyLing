@@ -251,8 +251,11 @@ namespace Poly_Ling.MeshListV2
 
             _treeView = new TreeView { name = "mesh-tree" };
             _treeView.style.flexGrow  = 0;
-            _treeView.style.minHeight = TreeMinHeight;
+            // TreeView は style.height を無視し minHeight/maxHeight で高さが決まるため、
+            // 3つとも _treeHeight にして高さを厳密固定する（ドラッグ時も同様に設定）。
             _treeView.style.height    = _treeHeight;
+            _treeView.style.minHeight = _treeHeight;
+            _treeView.style.maxHeight = _treeHeight;
             _mainContent.Add(_treeView);
             AddListResizeHandle(_mainContent, _treeView,
                 () => _treeHeight, h => _treeHeight = h, TreeMinHeight, TreeMaxHeight);
@@ -360,7 +363,7 @@ namespace Poly_Ling.MeshListV2
 
             // リスト
             _morphListView = new ListView(_morphFilteredData, 20, MorphMake, MorphBind);
-            _morphListView.style.flexGrow  = 0; _morphListView.style.minHeight = MorphListMinHeight; _morphListView.style.height = _morphListHeight;
+            _morphListView.style.flexGrow  = 0; _morphListView.style.height = _morphListHeight; _morphListView.style.minHeight = _morphListHeight; _morphListView.style.maxHeight = _morphListHeight;
             _morphListView.selectionType   = SelectionType.Multiple;
             _morphListView.selectionChanged += OnMorphSel;
             parent.Add(_morphListView);
@@ -1634,7 +1637,10 @@ namespace Poly_Ling.MeshListV2
                 float delta = e.position.y - startY;
                 float h = Mathf.Clamp(startHeight + delta, min, max);
                 setHeight(h);
-                target.style.height = h;
+                // TreeView は height を無視するため min/max も同値にして高さを厳密固定する。
+                target.style.height    = h;
+                target.style.minHeight = h;
+                target.style.maxHeight = h;
                 e.StopPropagation();
             });
             handle.RegisterCallback<PointerUpEvent>(e =>
