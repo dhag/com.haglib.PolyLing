@@ -263,9 +263,20 @@ namespace Poly_Ling.ListClient
             _statusLabel.style.paddingBottom = 2;
             root.Add(_statusLabel);
 
-            _host = new VisualElement();
-            _host.style.flexGrow = 1;
-            root.Add(_host);
+            // サーバ右ペインと同一構造: ScrollView(高さ非拘束・縦スクロール) → section → subpanel。
+            // これによりサブパネルが自然高さで積まれ、要素の潰れ/重なりを防ぎ、
+            // ツリー(min80/max200)の縦スクロールバーも機能する（BuildRightPane 準拠）。
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.flexGrow     = 1;
+            scroll.style.paddingTop   = 4;
+            scroll.style.paddingLeft  = 4;
+            scroll.style.paddingRight = 4;
+            root.Add(scroll);
+            scroll.contentContainer.style.color = new StyleColor(Color.white);
+
+            _host = new VisualElement();          // = AddSection 相当のセクション
+            _host.style.marginBottom = 4;
+            scroll.contentContainer.Add(_host);
 
             BuildPanel(_host, _panelContext);
             _chromeBuilt = true;
