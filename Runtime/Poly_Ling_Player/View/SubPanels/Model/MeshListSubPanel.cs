@@ -245,7 +245,9 @@ namespace Poly_Ling.MeshListV2
 
             // ── メインコンテンツ（ツリー + 詳細 + BonePose + Transform）
             _mainContent = new VisualElement { name = "main-content" };
-            _mainContent.style.flexGrow = 1;
+            // flexGrow=1 だと親高いっぱいに伸び、内部 flexShrink でツリーの明示 height が縮み効かない。
+            // モーフ側コンテナ(_morphEditor)と同じ自然高にして、ツリーの明示 height をそのまま効かせる。
+            _mainContent.style.flexGrow = 0;
 
             _treeView = new TreeView { name = "mesh-tree" };
             _treeView.style.flexGrow  = 0;
