@@ -39,6 +39,14 @@ namespace Poly_Ling.MeshListV2
         private Button _tabDrawable, _tabBone, _tabMorph, _tabRigidBody, _tabJoint;
         private VisualElement _mainContent, _morphEditor;
         private TreeView _treeView;
+
+        // リスト高さ（下端ドラッグで手動リサイズ）: PlayerPrimitiveMeshSubPanel の AddProfileResizeHandle 準拠
+        private float _treeHeight = 200f;
+        private const float TreeMinHeight = 80f;
+        private const float TreeMaxHeight = 800f;
+        private float _morphListHeight = 140f;
+        private const float MorphListMinHeight = 60f;
+        private const float MorphListMaxHeight = 600f;
         private Label _countLabel, _statusLabel;
         private Toggle _showInfoToggle, _showMirrorSideToggle;
         private TextField _filterField;
@@ -240,10 +248,12 @@ namespace Poly_Ling.MeshListV2
             _mainContent.style.flexGrow = 1;
 
             _treeView = new TreeView { name = "mesh-tree" };
-            _treeView.style.flexGrow  = 1;
-            _treeView.style.minHeight = 80;
-            _treeView.style.maxHeight = 200;
+            _treeView.style.flexGrow  = 0;
+            _treeView.style.minHeight = TreeMinHeight;
+            _treeView.style.height    = _treeHeight;
             _mainContent.Add(_treeView);
+            AddListResizeHandle(_mainContent, _treeView,
+                () => _treeHeight, h => _treeHeight = h, TreeMinHeight, TreeMaxHeight);
 
             // 操作ボタン行
             var btnRow = new VisualElement();
@@ -348,10 +358,12 @@ namespace Poly_Ling.MeshListV2
 
             // リスト
             _morphListView = new ListView(_morphFilteredData, 20, MorphMake, MorphBind);
-            _morphListView.style.flexGrow  = 1; _morphListView.style.minHeight = 60; _morphListView.style.maxHeight = 140;
+            _morphListView.style.flexGrow  = 0; _morphListView.style.minHeight = MorphListMinHeight; _morphListView.style.height = _morphListHeight;
             _morphListView.selectionType   = SelectionType.Multiple;
             _morphListView.selectionChanged += OnMorphSel;
             parent.Add(_morphListView);
+            AddListResizeHandle(parent, _morphListView,
+                () => _morphListHeight, h => _morphListHeight = h, MorphListMinHeight, MorphListMaxHeight);
 
             // テストウェイト
             var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
@@ -1584,6 +1596,54 @@ namespace Poly_Ling.MeshListV2
             v.style.height = 1; v.style.marginTop = 4; v.style.marginBottom = 4;
             v.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.08f));
             return v;
+        }
+
+        // ツリー/リストの下端ドラッグリサイズ用ハンドル。
+        // PlayerPrimitiveMeshSubPanel.AddProfileResizeHandle と同方式:
+        // 6px バーを PointerDown/Move/Up + CapturePointer でドラッグし、Mathf.Clamp で高さ変更。
+        private static void AddListResizeHandle(
+            VisualElement container, VisualElement target,
+            Func<float> getHeight, Action<float> setHeight,
+            float min, float max)
+        {
+            var handle = new VisualElement();
+            handle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
+            handle.style.height          = 6;
+            handle.style.marginTop       = 2;
+            handle.style.marginBottom    = 4;
+            handle.style.backgroundColor = new StyleColor(new Color(0.30f, 0.30f, 0.36f));
+            handle.pickingMode           = PickingMode.Position;
+
+            bool  dragging    = false;
+            float startY      = 0f;
+            float startHeight = 0f;
+
+            handle.RegisterCallback<PointerDownEvent>(e =>
+            {
+                handle.CapturePointer(e.pointerId);
+                dragging    = true;
+                startY      = e.position.y;
+                startHeight = getHeight();
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (!dragging || !handle.HasPointerCapture(e.pointerId)) return;
+                float delta = e.position.y - startY;
+                float h = Mathf.Clamp(startHeight + delta, min, max);
+                setHeight(h);
+                target.style.height = h;
+                e.StopPropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!handle.HasPointerCapture(e.pointerId)) return;
+                handle.ReleasePointer(e.pointerId);
+                dragging = false;
+                e.StopPropagation();
+            });
+
+            container.Add(handle);
         }
 
         private static VisualElement LabeledRow(string label, VisualElement content)
