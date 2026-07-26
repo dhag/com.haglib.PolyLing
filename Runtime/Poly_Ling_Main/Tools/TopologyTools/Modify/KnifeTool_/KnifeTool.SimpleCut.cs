@@ -31,6 +31,16 @@ namespace Poly_Ling.Tools
         // ================================================================
 
         /// <summary>
+        /// SimpleCut の操作対象メッシュ（FirstDrawable 優先）の WorldMatrix を返す。
+        /// Vertices[].Position はローカル座標なので、画面投影の前にこれを適用する。
+        /// </summary>
+        private static Matrix4x4 SimpleCutLocalToWorld(ToolContext ctx)
+        {
+            var mc = ctx?.FirstDrawableMeshContext ?? ctx?.FirstSelectedMeshContext;
+            return mc?.WorldMatrix ?? Matrix4x4.identity;
+        }
+
+        /// <summary>
         /// SimpleCut のクリック入口。screenPoint は「頂点投影と同じ座標系
         /// (Y=0 下・原点左下)」で渡すこと。Player の生クリック座標(ToViewportCoord 済み)は
         /// 既にこの系なので、ToImgui を通さずそのまま渡す。
@@ -56,7 +66,8 @@ namespace Poly_Ling.Tools
                     return true;
 
                 case SimpleStage.HasP0:
-                    SimpleCutExecutor.Execute(ctx, mo, _simpleP0, mousePos, _simpleFaceCulledMask, SimpleTriQuad);
+                    // mo と同じ優先順（FirstDrawable 優先）で WorldMatrix を解決して渡す。
+                    SimpleCutExecutor.Execute(ctx, mo, SimpleCutLocalToWorld(ctx), _simpleP0, mousePos, _simpleFaceCulledMask, SimpleTriQuad);
                     ctx.NotifyTopologyChanged?.Invoke();
                     Reset();
                     ctx.Repaint?.Invoke();
@@ -88,7 +99,7 @@ namespace Poly_Ling.Tools
             var dm = ctx?.FirstDrawableMeshObject ?? mo;
             _crossSegs.Clear();
             _crossPts.Clear();
-            SimpleCutExecutor.CollectCrossedEdges(ctx, dm, _simpleP0, mousePos, _simpleFaceCulledMask, _crossSegs, _crossPts);
+            SimpleCutExecutor.CollectCrossedEdges(ctx, dm, SimpleCutLocalToWorld(ctx), _simpleP0, mousePos, _simpleFaceCulledMask, _crossSegs, _crossPts);
             for (int i = 0; i < _crossSegs.Count; i++) _preview.ScreenLines.Add(_crossSegs[i]);
             for (int i = 0; i < _crossPts.Count; i++)  _preview.ScreenDots.Add(_crossPts[i]);
         }

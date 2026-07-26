@@ -196,6 +196,16 @@ namespace Poly_Ling.Tools
             return total;
         }
 
+        /// <summary>
+        /// _pivot（ローカル座標）のワールド座標。基準メッシュの解決規則は
+        /// RotateToolHandler.WorldPivot() と一致させること。
+        /// </summary>
+        private Vector3 PivotWorld()
+        {
+            var mc = _ctx?.Model?.FirstDrawableMeshContext;
+            return mc != null ? mc.LocalToWorld(_pivot) : _pivot;
+        }
+
         private void UpdatePivot()
         {
             if (_useOriginPivot)
@@ -224,13 +234,23 @@ namespace Poly_Ling.Tools
                 {
                     if (i >= 0 && i < meshObject.VertexCount)
                     {
-                        sum += meshObject.Vertices[i].Position;
+                        // メッシュごとにローカル座標系が異なるため、いったんワールドで平均する。
+                        sum += meshContext.LocalToWorld(meshObject.Vertices[i].Position);
                         totalCount++;
                     }
                 }
             }
 
-            _pivot = totalCount > 0 ? sum / totalCount : Vector3.zero;
+            if (totalCount == 0)
+            {
+                _pivot = Vector3.zero;
+                return;
+            }
+
+            // _pivot は「基準メッシュのローカル座標」で保持する（PivotPublic の契約）。
+            Vector3 pivotWorld = sum / totalCount;
+            var pivotMc = model?.FirstDrawableMeshContext;
+            _pivot = pivotMc != null ? pivotMc.WorldToLocal(pivotWorld) : pivotWorld;
         }
 
         private void UpdatePreview()
@@ -294,6 +314,12 @@ namespace Poly_Ling.Tools
                 rot = Quaternion.Euler(_rotX, _rotY, _rotZ);
             }
 
+            // rot はワールド軸まわりの回転。頂点はローカル座標なので、
+            // 「ローカル→ワールド→回転→ローカル」の往復で適用する。
+            // これによりメッシュの WorldMatrix に回転／スケールがあっても
+            // ギズモの見た目と実際の回転が一致する。
+            Vector3 pivotWorld = PivotWorld();
+
             foreach (var kv in _multiMeshStartPositions)
             {
                 var meshContext = model.GetMeshContext(kv.Key);
@@ -312,10 +338,10 @@ namespace Poly_Ling.Tools
                         if (wmap != null && wmap.TryGetValue(i, out float wt))
                             rq = Quaternion.Slerp(Quaternion.identity, rot, wt);
 
-                        Vector3 offset = posKv.Value - _pivot;
-                        Vector3 rotated = rq * offset;
+                        Vector3 startWorld = meshContext.LocalToWorld(posKv.Value);
+                        Vector3 rotWorld   = pivotWorld + rq * (startWorld - pivotWorld);
                         var v = meshObject.Vertices[i];
-                        v.Position = _pivot + rotated;
+                        v.Position = meshContext.WorldToLocal(rotWorld);
                         meshObject.Vertices[i] = v;
                     }
                     meshObject.InvalidatePositionCache();

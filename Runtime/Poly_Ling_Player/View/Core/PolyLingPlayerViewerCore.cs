@@ -1452,11 +1452,17 @@ namespace Poly_Ling.Player
             var data = _addFaceHandler.GetPreviewData();
             float h = ctx.PreviewRect.height;
 
+            // PointInfo.Position はローカル座標。ctx（ToToolContext 由来）は Model を持たないので
+            // 操作対象メッシュの WorldMatrix は実モデルから解決して適用する。
+            var afModel = ActiveProject?.CurrentModel;
+            var afMc = afModel?.FirstSelectedMeshContext ?? afModel?.FirstDrawableMeshContext;
+            var afL2W = afMc?.WorldMatrix ?? UnityEngine.Matrix4x4.identity;
+
             // AdvSel と完全に同じパターン:
             // ViewerCore側で h - sp.y を行い、Panel側で panelH - pt.y を行う。
-            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (local) =>
             {
-                var sp = ctx.WorldToScreen(world);
+                var sp = ctx.WorldToScreen(afL2W.MultiplyPoint3x4(local));
                 return new UnityEngine.Vector2(sp.x, h - sp.y);
             };
 
@@ -1546,13 +1552,16 @@ namespace Poly_Ling.Player
             if (ctx == null) { panel.HideAddFacePreview(); return; }
 
             // ActiveProject から直接取る (ctx.FirstSelectedMeshObject は上記注意点で null)
-            var mo = ActiveProject?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            var stMc = ActiveProject?.CurrentModel?.FirstSelectedMeshContext;
+            var mo = stMc?.MeshObject;
             if (mo == null) { panel.HideAddFacePreview(); return; }
 
+            // Vertices[].Position はローカル座標なので WorldMatrix を適用してから投影する。
+            var stL2W = stMc.WorldMatrix;
             float h = ctx.PreviewRect.height;
-            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (local) =>
             {
-                var sp = ctx.WorldToScreen(world);
+                var sp = ctx.WorldToScreen(stL2W.MultiplyPoint3x4(local));
                 return new UnityEngine.Vector2(sp.x, h - sp.y);
             };
 
@@ -1648,10 +1657,11 @@ namespace Poly_Ling.Player
             var mo = ctx.FirstSelectedMeshObject;
             float h = ctx.PreviewRect.height;
 
-            // WorldToScreen: AddFaceOverlay と同じ変換 (h - sp.y)
-            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            // Vertices[].Position はローカル座標。ctx の操作対象メッシュの WorldMatrix を適用する。
+            // LocalToScreen: AddFaceOverlay と同じ変換 (h - sp.y)
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (local) =>
             {
-                var sp = ctx.WorldToScreen(world);
+                var sp = ctx.LocalToScreen(local);
                 return new UnityEngine.Vector2(sp.x, h - sp.y);
             };
 
@@ -1760,9 +1770,14 @@ namespace Poly_Ling.Player
             // ctx（ToToolContext 由来）は Model を持たないため FirstSelectedMeshObject が null。
             // 操作対象メッシュは実モデルから解決する（投影は ctx.WorldToScreen を使用）。
             var ovModel = ActiveProject?.CurrentModel;
-            var mo = ovModel?.FirstSelectedMeshContext?.MeshObject
-                  ?? ovModel?.FirstDrawableMeshContext?.MeshObject;
+            var ovMc = ovModel?.FirstSelectedMeshContext ?? ovModel?.FirstDrawableMeshContext;
+            var mo = ovMc?.MeshObject;
             if (mo == null) { panel.HideAdvSelPreview(); return; }
+
+            // Vertices[].Position はローカル座標。WorldMatrix 適用後に投影する。
+            var ovL2W = ovMc.WorldMatrix;
+            System.Func<Vector3, Vector2> ovToScreen =
+                (local) => ctx.WorldToScreen(ovL2W.MultiplyPoint3x4(local));
 
             var pts = new System.Collections.Generic.List<Vector2>();
             var verts = previewCtx.PreviewVertices;
@@ -1770,7 +1785,7 @@ namespace Poly_Ling.Player
                 foreach (int vi in verts)
                 {
                     if (vi < 0 || vi >= mo.VertexCount) continue;
-                    var sp = ctx.WorldToScreen(mo.Vertices[vi].Position);
+                    var sp = ovToScreen(mo.Vertices[vi].Position);
                     pts.Add(new Vector2(sp.x, ctx.PreviewRect.height - sp.y));
                 }
             var path = previewCtx.PreviewPath;
@@ -1778,7 +1793,7 @@ namespace Poly_Ling.Player
                 foreach (int vi in path)
                 {
                     if (vi < 0 || vi >= mo.VertexCount) continue;
-                    var sp = ctx.WorldToScreen(mo.Vertices[vi].Position);
+                    var sp = ovToScreen(mo.Vertices[vi].Position);
                     pts.Add(new Vector2(sp.x, ctx.PreviewRect.height - sp.y));
                 }
 
@@ -1788,8 +1803,8 @@ namespace Poly_Ling.Player
                 foreach (var e in edges)
                 {
                     if (e.V1 < 0 || e.V1 >= mo.VertexCount || e.V2 < 0 || e.V2 >= mo.VertexCount) continue;
-                    var s1 = ctx.WorldToScreen(mo.Vertices[e.V1].Position);
-                    var s2 = ctx.WorldToScreen(mo.Vertices[e.V2].Position);
+                    var s1 = ovToScreen(mo.Vertices[e.V1].Position);
+                    var s2 = ovToScreen(mo.Vertices[e.V2].Position);
                     float h = ctx.PreviewRect.height;
                     lines.Add((new Vector2(s1.x, h - s1.y), new Vector2(s2.x, h - s2.y)));
                 }
@@ -1798,8 +1813,8 @@ namespace Poly_Ling.Player
                 {
                     int v1 = path[i], v2 = path[i + 1];
                     if (v1 < 0 || v1 >= mo.VertexCount || v2 < 0 || v2 >= mo.VertexCount) continue;
-                    var s1 = ctx.WorldToScreen(mo.Vertices[v1].Position);
-                    var s2 = ctx.WorldToScreen(mo.Vertices[v2].Position);
+                    var s1 = ovToScreen(mo.Vertices[v1].Position);
+                    var s2 = ovToScreen(mo.Vertices[v2].Position);
                     float h = ctx.PreviewRect.height;
                     lines.Add((new Vector2(s1.x, h - s1.y), new Vector2(s2.x, h - s2.y)));
                 }
@@ -1815,8 +1830,8 @@ namespace Poly_Ling.Player
                 var e = _advSelFlashEdge.Value;
                 if (e.V1 >= 0 && e.V1 < mo.VertexCount && e.V2 >= 0 && e.V2 < mo.VertexCount)
                 {
-                    var s1 = ctx.WorldToScreen(mo.Vertices[e.V1].Position);
-                    var s2 = ctx.WorldToScreen(mo.Vertices[e.V2].Position);
+                    var s1 = ovToScreen(mo.Vertices[e.V1].Position);
+                    var s2 = ovToScreen(mo.Vertices[e.V2].Position);
                     float h = ctx.PreviewRect.height;
                     firstEdge = (new Vector2(s1.x, h - s1.y), new Vector2(s2.x, h - s2.y));
                 }
@@ -1826,7 +1841,7 @@ namespace Poly_Ling.Player
 
             if (emphVertex >= 0 && emphVertex < mo.VertexCount)
             {
-                var fsp = ctx.WorldToScreen(mo.Vertices[emphVertex].Position);
+                var fsp = ovToScreen(mo.Vertices[emphVertex].Position);
                 firstPt = new Vector2(fsp.x, ctx.PreviewRect.height - fsp.y);
             }
 
@@ -1846,17 +1861,20 @@ namespace Poly_Ling.Player
 
             // ctx（ToToolContext 由来）は Model を持たないため、操作対象メッシュは実モデルから解決する。
             var kfModel = ActiveProject?.CurrentModel;
-            var mo = kfModel?.FirstSelectedMeshContext?.MeshObject
-                  ?? kfModel?.FirstDrawableMeshContext?.MeshObject;
+            var kfMc = kfModel?.FirstSelectedMeshContext ?? kfModel?.FirstDrawableMeshContext;
+            var mo = kfMc?.MeshObject;
             if (mo == null) { panel.HideAdvSelPreview(); return; }
 
             var prev = _knifeHandler.GetPreview();
             if (prev == null) { panel.HideAdvSelPreview(); return; }
 
+            // prev.DotWorld / prev.Lines は名前に反してローカル座標（mo.Vertices から構築）。
+            // WorldMatrix を適用してから投影する。
+            var kfL2W = kfMc.WorldMatrix;
             float h = ctx.PreviewRect.height;
-            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (world) =>
+            System.Func<UnityEngine.Vector3, UnityEngine.Vector2> toScreen = (local) =>
             {
-                var sp = ctx.WorldToScreen(world);
+                var sp = ctx.WorldToScreen(kfL2W.MultiplyPoint3x4(local));
                 return new UnityEngine.Vector2(sp.x, h - sp.y);
             };
 

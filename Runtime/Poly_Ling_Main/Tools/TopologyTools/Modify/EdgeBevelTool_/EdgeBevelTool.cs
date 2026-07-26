@@ -281,8 +281,9 @@ namespace Poly_Ling.Tools
             // 放射マグニチュード（向き無関係で常に増加）は非直感なので、初期ドラッグ方向への
             // 符号付き投影に変更。初期方向＝拡大 / 戻す＝縮小 / 開始点で0 / 行き過ぎは0クランプ。
             float signedDist = Vector2.Dot(totalDelta, _startDragDir);
-            Vector3 worldDelta = ScreenDeltaToWorldDelta(ctx, _startDragDir * signedDist);
-            _dragAmount = Mathf.Max(0f, Mathf.Sign(signedDist) * worldDelta.magnitude * DragSensitivity);
+            // dv.OffsetDir はローカル方向。量もローカル空間の長さに揃える。
+            Vector3 localDelta = ctx.ActiveWorldToLocalVector(ScreenDeltaToWorldDelta(ctx, _startDragDir * signedDist));
+            _dragAmount = Mathf.Max(0f, Mathf.Sign(signedDist) * localDelta.magnitude * DragSensitivity);
 
             var meshObject = ctx.FirstSelectedMeshObject;
             int updated = 0;

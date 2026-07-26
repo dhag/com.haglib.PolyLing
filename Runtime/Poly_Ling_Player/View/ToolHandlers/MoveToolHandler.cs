@@ -722,8 +722,14 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             foreach (var kv in _meshTransforms)
             {
-                kv.Value.Apply(worldDelta);
                 var mc = model?.GetMeshContext(kv.Key);
+                // IVertexTransform.Apply は Vertices[].Position（ローカル座標）に直接加算する。
+                // ワールドデルタをそのまま渡すと、WorldMatrix に回転／スケールがある場合に
+                // ギズモの指す向きと実際の移動方向がずれる。メッシュごとにローカル化する。
+                Vector3 localDelta = mc != null
+                    ? mc.WorldMatrixInverse.MultiplyVector(worldDelta)
+                    : worldDelta;
+                kv.Value.Apply(localDelta);
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             }
             OnRepaint?.Invoke();

@@ -339,9 +339,10 @@ namespace Poly_Ling.Tools
             if (seg.V1 < 0 || seg.V2 < 0 || seg.V1 >= mo.VertexCount || seg.V2 >= mo.VertexCount) return 0.5f;
 
             float h = ctx.PreviewRect.height;
-            // WorldToScreen は Y=0 上（UIToolkit）。mousePos は IMGUI（Y=0 下）なので端点も IMGUI 系へ揃える。
-            Vector2 s1 = ctx.WorldToScreen(mo.Vertices[seg.V1].Position); s1.y = h - s1.y;
-            Vector2 s2 = ctx.WorldToScreen(mo.Vertices[seg.V2].Position); s2.y = h - s2.y;
+            // LocalToScreen は Y=0 上（UIToolkit）。mousePos は IMGUI（Y=0 下）なので端点も IMGUI 系へ揃える。
+            // Vertices[].Position はローカル座標なので WorldMatrix 適用済みの LocalToScreen を使う。
+            Vector2 s1 = ctx.LocalToScreen(mo.Vertices[seg.V1].Position); s1.y = h - s1.y;
+            Vector2 s2 = ctx.LocalToScreen(mo.Vertices[seg.V2].Position); s2.y = h - s2.y;
 
             Vector2 d = s2 - s1;
             float len2 = d.sqrMagnitude;

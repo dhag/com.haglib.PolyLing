@@ -352,7 +352,7 @@ namespace Poly_Ling.Tools
         public void SetGpuHoverVertex(int vertex) => _gpuHoverVertex = vertex;
 
         /// <summary>
-        /// スクリーン位置から点を取得
+        /// スクリーン位置から点を取得（戻り値 Position は常に「ローカル座標」）
         /// 優先順位: 1.GPU ホバー既存頂点  2.WorkPlane 交点
         /// </summary>
         private PointInfo GetPointAtScreenPos(ToolContext ctx, Vector2 screenPos)
@@ -365,9 +365,11 @@ namespace Poly_Ling.Tools
                 return PointInfo.FromExisting(_gpuHoverVertex, pos);
             }
 
-            // WorkPlane との交点
-            Vector3 worldPos = GetWorldPositionFromScreen(ctx, screenPos);
-            return PointInfo.FromNew(worldPos);
+            // WorkPlane との交点（ワールド）をローカルへ変換して保持する。
+            // Vertices[].Position はローカル座標なので、ここでワールドのまま保持すると
+            // 面生成時に WorldMatrix が二重適用され、頂点が別の場所に現れる。
+            Vector3 localPos = GetLocalPositionFromScreen(ctx, screenPos);
+            return PointInfo.FromNew(localPos);
         }
 
         /// <summary>
@@ -406,9 +408,10 @@ namespace Poly_Ling.Tools
         }
 
         /// <summary>
-        /// スクリーン位置からワールド座標を取得
+        /// スクリーン位置から「操作対象メッシュのローカル座標」を取得する。
+        /// レイ／WorkPlane はワールド空間なので、最後に ActiveWorldToLocal で変換する。
         /// </summary>
-        private Vector3 GetWorldPositionFromScreen(ToolContext ctx, Vector2 screenPos)
+        private Vector3 GetLocalPositionFromScreen(ToolContext ctx, Vector2 screenPos)
         {
             // スクリーン座標からレイを作成
             Ray ray;
@@ -423,17 +426,17 @@ namespace Poly_Ling.Tools
                 ray = new Ray(ctx.CameraPosition, forward);
             }
 
-            // WorkPlaneとの交点を試みる
+            // WorkPlaneとの交点を試みる（交点はワールド座標）
             if (ctx.WorkPlane != null)
             {
                 if (ctx.WorkPlane.RayIntersect(ray.origin, ray.direction, out Vector3 hitPoint))
                 {
-                    return hitPoint;
+                    return ctx.ActiveWorldToLocal(hitPoint);
                 }
             }
 
             // 交差しない場合は、カメラから適当な距離の点
-            return ray.origin + ray.direction * DefaultDistance * ctx.CameraDistance;
+            return ctx.ActiveWorldToLocal(ray.origin + ray.direction * DefaultDistance * ctx.CameraDistance);
         }
 
         /// <summary>
@@ -457,7 +460,7 @@ namespace Poly_Ling.Tools
             else
             {
                 _previewHitVertex = -1;
-                _previewPoint     = GetWorldPositionFromScreen(ctx, screenPos);
+                _previewPoint     = GetLocalPositionFromScreen(ctx, screenPos);
             }
 
             _previewValid = true;
@@ -562,8 +565,11 @@ namespace Poly_Ling.Tools
                     // 常に表面がカメラを向くようにする。
                     // 法線と描画三角形の巻き順は共に VertexIndices 順から算出されるため、
                     // VertexIndices を反転すると両者が同時に反転して整合が保たれる。
+                    // faceNormal / faceCenter はローカル空間。ctx.CameraPosition はワールドなので
+                    // カメラ位置をローカルへ変換してから内積を取る。
+                    Vector3 camLocal   = ctx.ActiveWorldToLocal(ctx.CameraPosition);
                     Vector3 faceNormal = CalculateFaceNormal(meshObject, newFace);
-                    if (Vector3.Dot(faceNormal, ctx.CameraPosition - faceCenter) < 0f)
+                    if (Vector3.Dot(faceNormal, camLocal - faceCenter) < 0f)
                     {
                         newFace.VertexIndices.Reverse();
                         newFace.UVIndices.Reverse();

@@ -145,8 +145,15 @@ namespace Poly_Ling.Tools
             if (_settings.BoneIndexA == _settings.BoneIndexB) return;
             if (_settings.Blend <= 0f) return;
 
-            Vector3 posA = GetBoneWorldPosition(_settings.BoneIndexA);
-            Vector3 posB = GetBoneWorldPosition(_settings.BoneIndexB);
+            Vector3 posAWorld = GetBoneWorldPosition(_settings.BoneIndexA);
+            Vector3 posBWorld = GetBoneWorldPosition(_settings.BoneIndexB);
+            if ((posBWorld - posAWorld).magnitude < 1e-8f) return;
+
+            // GetBoneWorldPosition はワールド座標、Vertices[].Position はローカル座標。
+            // 対象メッシュのローカル空間へ揃えてから平面化する。
+            var targetMc = _context.FirstDrawableMeshContext;
+            Vector3 posA = targetMc != null ? targetMc.WorldToLocal(posAWorld) : posAWorld;
+            Vector3 posB = targetMc != null ? targetMc.WorldToLocal(posBWorld) : posBWorld;
             if ((posB - posA).magnitude < 1e-8f) return;
 
             MeshObjectSnapshot before = _context.UndoController != null && _context.FirstDrawableMeshContext != null

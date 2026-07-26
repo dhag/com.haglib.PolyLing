@@ -575,23 +575,29 @@ namespace Poly_Ling.Core
                 }
                 else
                 {
-                    // UnityMeshが存在しないか頂点数が違う場合は再生成
-                    var meshInfos = bufferManager.MeshInfos;
-                    int unifiedMeshIdx = bufferManager.ContextToUnifiedMeshIndex(ctxIdx);
-                    if (unifiedMeshIdx >= 0 && meshInfos != null)
+                    // UnityMeshが存在しないか頂点数が違う場合は再生成する。
+                    //
+                    // 【重要】ここで meshObject.Vertices[].Position に GPU の worldPositions を
+                    // 書き戻してはならない。Vertices はローカル座標であり、ワールド座標を
+                    // 焼き込むと描画時に WorldMatrix が二重適用され、メッシュがずれたまま
+                    // 保存されてデータが永続的に壊れる（面追加で頂点数が変わると必ずこの分岐に入る）。
+                    // 上の if 分岐と同じく、UnityMesh 側にだけ展開済みワールド座標を入れる。
+                    var regenerated = meshObject.ToUnityMesh();
+                    if (regenerated != null && regenerated.vertexCount == expandedVertexCount)
                     {
-                        var meshInfo = meshInfos[unifiedMeshIdx];
-                        int vertexStart = (int)meshInfo.VertexStart;
-                        var worldPositions = bufferManager.GetWorldPositions();
-                        if (worldPositions != null)
-                        {
-                            for (int i = 0; i < meshObject.VertexCount && (vertexStart + i) < worldPositions.Length; i++)
-                            {
-                                meshObject.Vertices[i].Position = worldPositions[vertexStart + i];
-                            }
-                        }
+                        var nativeArray = new Unity.Collections.NativeArray<Vector3>(
+                            expandedVertexCount,
+                            Unity.Collections.Allocator.Temp,
+                            Unity.Collections.NativeArrayOptions.UninitializedMemory);
+
+                        Unity.Collections.NativeArray<Vector3>.Copy(expandedPositions, expandedOffset, nativeArray, 0, expandedVertexCount);
+
+                        regenerated.SetVertices(nativeArray);
+                        regenerated.RecalculateBounds();
+
+                        nativeArray.Dispose();
                     }
-                    ctx.UnityMesh = meshObject.ToUnityMesh();
+                    ctx.UnityMesh = regenerated;
                 }
 
                 expandedOffset += expandedVertexCount;
@@ -635,7 +641,6 @@ namespace Poly_Ling.Core
                     continue;
 
                 var meshInfo = meshInfos[unifiedMeshIdx];
-                int vertexStart = (int)meshInfo.VertexStart;
                 int vertexCount = (int)meshInfo.VertexCount;
 
                 if (vertexCount == 0)
@@ -645,18 +650,14 @@ namespace Poly_Ling.Core
                 if (meshObject.VertexCount != vertexCount)
                     continue;
 
-                // MeshObject.Verticesに書き戻し
-                for (int i = 0; i < vertexCount; i++)
-                {
-                    int globalIdx = vertexStart + i;
-                    if (globalIdx < worldPositions.Length)
-                    {
-                        meshObject.Vertices[i].Position = worldPositions[globalIdx];
-                    }
-                }
-
-                // UnityMeshを再生成
-                ctx.UnityMesh = meshObject.ToUnityMesh();
+                // 【重要】meshObject.Vertices[].Position はローカル座標。
+                // GPU の worldPositions を書き戻すと描画時に WorldMatrix が二重適用され、
+                // データが永続的に壊れる。Vertices は変更せず、変換行列を適用した
+                // UnityMesh を生成する。行列の選択規則は
+                // UnifiedBufferManager.UpdateTransformMatrices と同一にする。
+                bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !meshObject.HasBoneWeight;
+                Matrix4x4 xform = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
+                ctx.UnityMesh = meshObject.ToUnityMesh(xform);
             }
         }
 

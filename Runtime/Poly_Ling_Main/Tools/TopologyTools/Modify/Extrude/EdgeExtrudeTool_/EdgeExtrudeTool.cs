@@ -284,13 +284,13 @@ namespace Poly_Ling.Tools
         private void UpdateExtrude(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
             // 「移動（自由移動）と同一」の挙動:
-            //   毎フレームの delta（パネル Y上）を world デルタに変換し、DisplayMatrix.inverse を
-            //   適用して累積。複製頂点を 1:1 でカメラ平面移動する（係数倍なし・Y反転なし）。
+            //   毎フレームの delta（パネル Y上）を world デルタに変換し、対象メッシュの
+            //   WorldMatrix 逆行列でローカル化して累積。複製頂点を 1:1 でカメラ平面移動する。
             //   MoveToolHandler.ApplyFreeDelta → AxisGizmo.ComputeFreeDelta と同じ計算。
             //   モード別方向計算(ViewPlane/Normal/Free)と SnapToAxis は移動化に伴い不使用。
-            Vector3 wd = ScreenDeltaToWorldDelta(ctx, delta);
-            if (ctx.DisplayMatrix != Matrix4x4.identity)
-                wd = ctx.DisplayMatrix.inverse.MultiplyVector(wd);
+            // Vertices[].Position はローカル座標なので、ワールドデルタを操作対象メッシュの
+            // ローカル空間へ変換してから累積する（DisplayMatrix は常に identity のため使わない）。
+            Vector3 wd = ctx.ActiveWorldToLocalVector(ScreenDeltaToWorldDelta(ctx, delta));
             _accumMove += wd;
 
             var meshObject = ctx.FirstSelectedMeshObject;

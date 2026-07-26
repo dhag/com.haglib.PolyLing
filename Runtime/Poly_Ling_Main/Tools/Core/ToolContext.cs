@@ -413,6 +413,40 @@ namespace Poly_Ling.Tools
             return WorldToScreenPos(worldPos, PreviewRect, CameraPosition, CameraTarget);
         }
 
+        // ================================================================
+        // ローカル⇔ワールド変換（座標系ブリッジ）
+        // ================================================================
+        //
+        // MeshObject.Vertices[].Position は「ローカル座標」。描画時に
+        // MeshContext.WorldMatrix が適用される（UnifiedBufferManager.UpdateTransformMatrices）。
+        // 一方 WorldToScreenPos / ScreenPosToRay / ScreenDeltaToWorldDelta は
+        // 「ワールド座標」を前提とする。両者をまたぐときは必ず以下を経由すること。
+        // ================================================================
+
+        /// <summary>操作対象メッシュ（FirstSelected 優先、無ければ FirstDrawable）</summary>
+        public MeshContext ActiveMeshContext => FirstSelectedMeshContext ?? FirstDrawableMeshContext;
+
+        /// <summary>操作対象メッシュの WorldMatrix（未解決なら identity）</summary>
+        public Matrix4x4 ActiveWorldMatrix => ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+
+        /// <summary>操作対象メッシュの WorldMatrix 逆行列（未解決なら identity）</summary>
+        public Matrix4x4 ActiveWorldMatrixInverse => ActiveMeshContext?.WorldMatrixInverse ?? Matrix4x4.identity;
+
+        /// <summary>ローカル座標 → ワールド座標（操作対象メッシュ基準）</summary>
+        public Vector3 ActiveLocalToWorld(Vector3 localPos) => ActiveWorldMatrix.MultiplyPoint3x4(localPos);
+
+        /// <summary>ワールド座標 → ローカル座標（操作対象メッシュ基準）</summary>
+        public Vector3 ActiveWorldToLocal(Vector3 worldPos) => ActiveWorldMatrixInverse.MultiplyPoint3x4(worldPos);
+
+        /// <summary>ワールド方向 → ローカル方向（正規化しない。移動量の変換に使う）</summary>
+        public Vector3 ActiveWorldToLocalVector(Vector3 worldDir) => ActiveWorldMatrixInverse.MultiplyVector(worldDir);
+
+        /// <summary>ローカル方向 → ワールド方向（正規化しない）</summary>
+        public Vector3 ActiveLocalToWorldVector(Vector3 localDir) => ActiveWorldMatrix.MultiplyVector(localDir);
+
+        /// <summary>ローカル座標をスクリーン座標へ投影（WorldToScreen のローカル版）</summary>
+        public Vector2 LocalToScreen(Vector3 localPos) => WorldToScreen(ActiveLocalToWorld(localPos));
+
         /// <summary>
         /// 現在の選択モードを取得
         /// </summary>

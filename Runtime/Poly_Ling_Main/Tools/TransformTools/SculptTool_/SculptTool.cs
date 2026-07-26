@@ -243,11 +243,11 @@ namespace Poly_Ling.Tools
             var model = ctx.Model;
             if (model == null) return;
 
-            // マウス位置からレイを取得
+            // マウス位置からレイを取得（ワールド空間）
             Ray ray = ctx.ScreenPosToRay(mousePos);
 
             // ブラシ中心のワールド座標を計算（全メッシュでレイキャスト）
-            Vector3 brushCenter = FindBrushCenter(ctx, ray);
+            Vector3 brushCenterWorld = FindBrushCenter(ctx, ray);
 
             // 全選択メッシュにブラシ適用
             bool anyAffected = false;
@@ -257,6 +257,11 @@ namespace Poly_Ling.Tools
                 if (meshContext?.MeshObject == null) continue;
 
                 var meshObject = meshContext.MeshObject;
+
+                // Vertices[].Position はローカル座標。ブラシ中心とレイ方向を
+                // このメッシュのローカル空間に変換してから距離判定・変形を行う。
+                Vector3 brushCenter = meshContext.WorldToLocal(brushCenterWorld);
+                Vector3 rayDirLocal = meshContext.WorldMatrixInverse.MultiplyVector(ray.direction).normalized;
 
                 // キャッシュ取得
                 Dictionary<int, HashSet<int>> adjacencyCache = null;
@@ -272,7 +277,7 @@ namespace Poly_Ling.Tools
                 switch (Mode)
                 {
                     case SculptMode.Draw:
-                        ApplyDraw(meshObject, affectedVertices, brushCenter, ray.direction, vertexNormalsCache);
+                        ApplyDraw(meshObject, affectedVertices, brushCenter, rayDirLocal, vertexNormalsCache);
                         break;
                     case SculptMode.Smooth:
                         ApplySmooth(meshObject, affectedVertices, brushCenter, adjacencyCache);
@@ -296,6 +301,11 @@ namespace Poly_Ling.Tools
             }
         }
 
+        /// <summary>
+        /// ワールド空間のレイと全選択メッシュの交点のうち、カメラに最も近い点を
+        /// 「ワールド座標」で返す。三角形はローカル座標なので、レイをメッシュごとの
+        /// ローカル空間へ変換して交差判定し、ヒット点をワールドへ戻して比較する。
+        /// </summary>
         private Vector3 FindBrushCenter(ToolContext ctx, Ray ray)
         {
             var model = ctx.Model;
@@ -308,6 +318,10 @@ namespace Poly_Ling.Tools
                 if (meshContext?.MeshObject == null) continue;
                 var meshObject = meshContext.MeshObject;
 
+                Matrix4x4 inv = meshContext.WorldMatrixInverse;
+                Ray localRay = new Ray(inv.MultiplyPoint3x4(ray.origin),
+                                       inv.MultiplyVector(ray.direction));
+
                 foreach (var face in meshObject.Faces)
                 {
                     if (face.VertexIndices.Count < 3) continue;
@@ -316,10 +330,15 @@ namespace Poly_Ling.Tools
                         Vector3 v0 = meshObject.Vertices[face.VertexIndices[0]].Position;
                         Vector3 v1 = meshObject.Vertices[face.VertexIndices[i]].Position;
                         Vector3 v2 = meshObject.Vertices[face.VertexIndices[i + 1]].Position;
-                        if (RayTriangleIntersection(ray, v0, v1, v2, out float t) && t > 0 && t < closestDist)
+                        if (RayTriangleIntersection(localRay, v0, v1, v2, out float t) && t > 0)
                         {
-                            closestDist  = t;
-                            closestPoint = ray.origin + ray.direction * t;
+                            Vector3 hitWorld = meshContext.LocalToWorld(localRay.origin + localRay.direction * t);
+                            float distWorld = Vector3.Distance(ray.origin, hitWorld);
+                            if (distWorld < closestDist)
+                            {
+                                closestDist  = distWorld;
+                                closestPoint = hitWorld;
+                            }
                         }
                     }
                 }

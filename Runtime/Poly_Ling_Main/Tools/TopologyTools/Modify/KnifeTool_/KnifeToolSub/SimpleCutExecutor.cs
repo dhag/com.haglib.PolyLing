@@ -33,7 +33,7 @@ namespace Poly_Ling.Tools
             public int UVIndex, NormalIndex; // 頂点のとき、その corner の UV/法線 index
         }
 
-        public static void Execute(ToolContext ctx, MeshObject mo, Vector2 p0, Vector2 p1, bool[] faceCulledMask, bool triQuad)
+        public static void Execute(ToolContext ctx, MeshObject mo, Matrix4x4 localToWorld, Vector2 p0, Vector2 p1, bool[] faceCulledMask, bool triQuad)
         {
             if (ctx == null || mo == null) return;
             if (ctx.WorldToScreenPos == null) return;
@@ -46,11 +46,12 @@ namespace Poly_Ling.Tools
             int origFaceCount   = mo.FaceCount;
             if (origFaceCount == 0) return;
 
+            // Vertices[].Position はローカル座標。localToWorld を適用してから投影する。
             float h = ctx.PreviewRect.height;
             var sp = new Vector2[origVertexCount];
             for (int i = 0; i < origVertexCount; i++)
             {
-                Vector2 s = ctx.WorldToScreen(mo.Vertices[i].Position);
+                Vector2 s = ctx.WorldToScreen(localToWorld.MultiplyPoint3x4(mo.Vertices[i].Position));
                 sp[i] = new Vector2(s.x, h - s.y);
             }
 
@@ -295,7 +296,7 @@ namespace Poly_Ling.Tools
         }
 
         public static void CollectCrossedEdges(
-            ToolContext ctx, MeshObject mo, Vector2 p0, Vector2 p1,
+            ToolContext ctx, MeshObject mo, Matrix4x4 localToWorld, Vector2 p0, Vector2 p1,
             bool[] faceCulledMask,
             List<(Vector2, Vector2)> outSegs, List<Vector2> outPts)
         {
@@ -305,11 +306,12 @@ namespace Poly_Ling.Tools
             int vcount = mo.VertexCount;
             if (vcount == 0) return;
 
+            // Vertices[].Position はローカル座標。localToWorld を適用してから投影する。
             float h = ctx.PreviewRect.height;
             var sp = new Vector2[vcount];
             for (int i = 0; i < vcount; i++)
             {
-                Vector2 s = ctx.WorldToScreen(mo.Vertices[i].Position);
+                Vector2 s = ctx.WorldToScreen(localToWorld.MultiplyPoint3x4(mo.Vertices[i].Position));
                 sp[i] = new Vector2(s.x, h - s.y);
             }
 

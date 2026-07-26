@@ -271,7 +271,9 @@ namespace Poly_Ling.Tools
         {
             Vector2 totalDelta = mousePos - _mouseDownScreenPos;
             // カメラ平面（ウインドウ座標系）のワールドデルタ。頂点移動と同じ変換。
+            // 押し出し量はローカル空間の長さとして使うため、ローカルへ変換してから大きさを取る。
             Vector3 worldDelta = ScreenDeltaToWorldDelta(ctx, totalDelta);
+            Vector3 localDelta = ctx.ActiveWorldToLocalVector(worldDelta);
 
             Vector2 dirScreen = WorldDirToScreenDir(ctx, _extrudeDirection);
             if (dirScreen.magnitude > 0.001f)
@@ -283,13 +285,13 @@ namespace Poly_Ling.Tools
                 // 大きさは投影分を world スケールへ換算（大きさは符号非依存）。
                 Vector2 dir    = dirScreen.normalized;
                 float   signed = Vector2.Dot(totalDelta, dir);
-                Vector3 proj   = ScreenDeltaToWorldDelta(ctx, dir * signed);
+                Vector3 proj   = ctx.ActiveWorldToLocalVector(ScreenDeltaToWorldDelta(ctx, dir * signed));
                 _extrudeDistance = Mathf.Sign(signed) * proj.magnitude * DragSensitivity;
             }
             else
             {
                 // 方向がほぼ視線方向（画面上で潰れる）: 上下ドラッグの見た目距離を係数化。
-                _extrudeDistance = Mathf.Sign(-totalDelta.y) * worldDelta.magnitude * DragSensitivity;
+                _extrudeDistance = Mathf.Sign(-totalDelta.y) * localDelta.magnitude * DragSensitivity;
             }
 
             var meshObject = ctx.FirstSelectedMeshObject;
@@ -320,13 +322,18 @@ namespace Poly_Ling.Tools
             return new Vector3(sd.x * s, -sd.y * s, 0f);
         }
 
-        private Vector2 WorldDirToScreenDir(ToolContext ctx, Vector3 worldDir)
+        /// <summary>
+        /// ローカル方向を画面上の 2D 方向に変換する。
+        /// _targetFaces[].Center と面法線はローカル座標なので、WorldMatrix を適用してから投影する。
+        /// </summary>
+        private Vector2 WorldDirToScreenDir(ToolContext ctx, Vector3 localDir)
         {
             if (_targetFaces.Count == 0) return Vector2.up;
 
-            Vector3 center = _targetFaces[0].Center;
-            Vector2 screenCenter = ctx.WorldToScreen(center);
-            Vector2 screenEnd = ctx.WorldToScreen(center + worldDir);
+            Vector3 centerWorld = ctx.ActiveLocalToWorld(_targetFaces[0].Center);
+            Vector3 dirWorld    = ctx.ActiveLocalToWorldVector(localDir);
+            Vector2 screenCenter = ctx.WorldToScreen(centerWorld);
+            Vector2 screenEnd    = ctx.WorldToScreen(centerWorld + dirWorld);
 
             return screenEnd - screenCenter;
         }

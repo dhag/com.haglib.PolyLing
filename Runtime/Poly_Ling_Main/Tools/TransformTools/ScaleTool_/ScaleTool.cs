@@ -147,6 +147,16 @@ namespace Poly_Ling.Tools
             return total;
         }
 
+        /// <summary>
+        /// _pivot（ローカル座標）のワールド座標。基準メッシュの解決規則は
+        /// ScaleToolHandler.WorldPivot() と一致させること。
+        /// </summary>
+        private Vector3 PivotWorld()
+        {
+            var mc = _ctx?.Model?.FirstDrawableMeshContext;
+            return mc != null ? mc.LocalToWorld(_pivot) : _pivot;
+        }
+
         private void UpdatePivot()
         {
             if (_useOriginPivot) { _pivot = Vector3.zero; return; }
@@ -161,10 +171,16 @@ namespace Poly_Ling.Tools
                 if (meshObject == null) continue;
                 foreach (int i in kv.Value)
                 {
-                    if (i >= 0 && i < meshObject.VertexCount) { sum += meshObject.Vertices[i].Position; totalCount++; }
+                    // メッシュごとにローカル座標系が異なるため、いったんワールドで平均する。
+                    if (i >= 0 && i < meshObject.VertexCount) { sum += meshContext.LocalToWorld(meshObject.Vertices[i].Position); totalCount++; }
                 }
             }
-            _pivot = totalCount > 0 ? sum / totalCount : Vector3.zero;
+            if (totalCount == 0) { _pivot = Vector3.zero; return; }
+
+            // _pivot は「基準メッシュのローカル座標」で保持する（PivotPublic の契約）。
+            Vector3 pivotWorld = sum / totalCount;
+            var pivotMc = model?.FirstDrawableMeshContext;
+            _pivot = pivotMc != null ? pivotMc.WorldToLocal(pivotWorld) : pivotWorld;
         }
 
         private void UpdatePreview()
@@ -211,6 +227,9 @@ namespace Poly_Ling.Tools
             Vector3 scale = new Vector3(_scaleX, _scaleY, _scaleZ);
             Quaternion axisRot = Quaternion.Euler(_scaleAxisX, _scaleAxisY, _scaleAxisZ);
             Quaternion axisInv = Quaternion.Inverse(axisRot);
+            // スケール軸はワールド軸基準。頂点はローカル座標なので
+            // 「ローカル→ワールド→スケール→ローカル」の往復で適用する。
+            Vector3 pivotWorld = PivotWorld();
             foreach (var kv in _multiMeshStartPositions)
             {
                 var meshContext = model.GetMeshContext(kv.Key);
@@ -228,10 +247,11 @@ namespace Poly_Ling.Tools
                             sc = new Vector3(1f + (scale.x - 1f) * wt, 1f + (scale.y - 1f) * wt, 1f + (scale.z - 1f) * wt);
 
                         // スケール軸フレーム: R⁻¹ → スケール → R
-                        Vector3 offset = posKv.Value - _pivot;
+                        Vector3 startWorld = meshContext.LocalToWorld(posKv.Value);
+                        Vector3 offset = startWorld - pivotWorld;
                         Vector3 local  = axisInv * offset;
                         Vector3 scaled = axisRot * Vector3.Scale(local, sc);
-                        var v = meshObject.Vertices[i]; v.Position = _pivot + scaled; meshObject.Vertices[i] = v;
+                        var v = meshObject.Vertices[i]; v.Position = meshContext.WorldToLocal(pivotWorld + scaled); meshObject.Vertices[i] = v;
                     }
                 }
                 meshObject.InvalidatePositionCache();
