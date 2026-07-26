@@ -438,14 +438,58 @@ namespace Poly_Ling.Materials
             if (mat.HasProperty(PROP_CUTOFF))
                 mat.SetFloat(PROP_CUTOFF, data.AlphaCutoff);
             
-            // キーワード設定
+            // AlphaClip（cutout）キーワード
             if (data.AlphaClipEnabled)
                 mat.EnableKeyword("_ALPHATEST_ON");
-            
+            else
+                mat.DisableKeyword("_ALPHATEST_ON");
+
+            // ================================================================
+            // 【重要・再発防止注釈】URP 透明のブレンド状態は必ずここで完結させること。
+            //
+            //   _SURFACE_TYPE_TRANSPARENT キーワードと renderQueue だけでは
+            //   URP の半透明は成立しない。_Surface / RenderType(OverrideTag) /
+            //   _SrcBlend / _DstBlend / _ZWrite まで設定して初めてアルファがブレンドされる。
+            //   これらを省くと材質は不透明ブレンド(SrcBlend=One,DstBlend=Zero,ZWrite=1)の
+            //   ままとなり、「透明が抜けない／半透明面が深度ソートで明滅する」不具合になる
+            //   （リモートクライアントの再生成材質で発生した実障害）。
+            //
+            //   正解の参照実装が同リポジトリに既にある：
+            //     PMXImporter.SetMaterialTransparent（Poly_Ling_Main/PMX/PMXImporter.cs:1716-）
+            //   本メソッドの透明分岐はそれと同一状態を再現する。
+            //   ※ keyword + renderQueue のみの旧実装へ戻さないこと。
+            // ================================================================
             if (data.Surface == SurfaceType.Transparent)
             {
+                if (mat.HasProperty(PROP_SURFACE)) mat.SetFloat(PROP_SURFACE, 1f); // 1=Transparent
+                mat.SetOverrideTag("RenderType", "Transparent");
+                if (mat.HasProperty(PROP_BLEND))       mat.SetFloat(PROP_BLEND, 0f); // 0=Alpha
+                if (mat.HasProperty("_SrcBlend"))      mat.SetFloat("_SrcBlend",      (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                if (mat.HasProperty("_DstBlend"))      mat.SetFloat("_DstBlend",      (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                if (mat.HasProperty("_SrcBlendAlpha")) mat.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+                if (mat.HasProperty("_DstBlendAlpha")) mat.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                if (mat.HasProperty("_ZWrite"))        mat.SetFloat("_ZWrite", 0f);
+                if (mat.HasProperty("_Mode"))          mat.SetFloat("_Mode", 3f); // Standard: 3=Transparent
+                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent; // 3000
                 mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-                mat.renderQueue = 3000;
+                mat.EnableKeyword("_ALPHABLEND_ON");          // Standard 用
+                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            }
+            else
+            {
+                // 不透明を明示的に戻す（材質再生成で前回の透明状態が残らないように）。
+                if (mat.HasProperty(PROP_SURFACE)) mat.SetFloat(PROP_SURFACE, 0f); // 0=Opaque
+                mat.SetOverrideTag("RenderType", data.AlphaClipEnabled ? "TransparentCutout" : "Opaque");
+                if (mat.HasProperty("_SrcBlend")) mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+                if (mat.HasProperty("_DstBlend")) mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.Zero);
+                if (mat.HasProperty("_ZWrite"))   mat.SetFloat("_ZWrite", 1f);
+                if (mat.HasProperty("_Mode"))     mat.SetFloat("_Mode", data.AlphaClipEnabled ? 1f : 0f); // 1=Cutout / 0=Opaque
+                mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                mat.DisableKeyword("_ALPHABLEND_ON");
+                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                mat.renderQueue = data.AlphaClipEnabled
+                    ? (int)UnityEngine.Rendering.RenderQueue.AlphaTest   // 2450（cutout）
+                    : (int)UnityEngine.Rendering.RenderQueue.Geometry;   // 2000
             }
         }
 
