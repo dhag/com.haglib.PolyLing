@@ -13,6 +13,8 @@ namespace Poly_Ling.ListClient
     {
         private MeshListSubPanel _panel;
 
+        protected override string ClientTypeId => "meshList";
+
         protected override void BuildPanel(VisualElement host, PanelContext ctx)
         {
             _panel = new MeshListSubPanel();

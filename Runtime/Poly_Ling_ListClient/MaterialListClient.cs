@@ -13,6 +13,8 @@ namespace Poly_Ling.ListClient
     {
         private PlayerMaterialListSubPanel _panel;
 
+        protected override string ClientTypeId => "materialList";
+
         protected override void BuildPanel(VisualElement host, PanelContext ctx)
         {
             _panel = new PlayerMaterialListSubPanel();

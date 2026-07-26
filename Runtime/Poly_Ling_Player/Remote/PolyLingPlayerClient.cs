@@ -329,6 +329,47 @@ namespace Poly_Ling.Player
             SendText(json);
         }
 
+        /// <summary>
+        /// クライアントタイプ（機能）とユーザー名をサーバへ登録する。接続直後に1回呼ぶ。
+        /// サーバはチャネル→タイプの対応表に記録し、タイプ宛 push を振り分ける。
+        /// userName 既定は空（名前なし）。将来の協働開発向け。
+        /// </summary>
+        public void RegisterClientType(string clientType, string userName = "", Action<string> onAck = null)
+        {
+            var p = new Dictionary<string, string>
+            {
+                ["clientType"] = clientType ?? "",
+                ["userName"]   = userName   ?? "",
+            };
+            SendCommand("register", 0, p, onAck);
+        }
+
+        /// <summary>
+        /// テキスト応答クエリ。project_header 等のバイナリ応答クエリ（SendBinaryQuery）とは別に、
+        /// JSON テキストで結果を受け取る（例: server_info）。
+        /// </summary>
+        public void SendQuery(string target, Dictionary<string, string> parameters, Action<string> onText)
+        {
+            string id = NextId();
+            var sb = new StringBuilder();
+            sb.Append($"{{\"id\":\"{id}\",\"type\":\"query\",\"target\":\"{target}\"");
+            if (parameters != null && parameters.Count > 0)
+            {
+                sb.Append(",\"params\":{");
+                bool first = true;
+                foreach (var kv in parameters)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append($"\"{kv.Key}\":\"{kv.Value}\"");
+                    first = false;
+                }
+                sb.Append('}');
+            }
+            sb.Append('}');
+            if (onText != null) _textCallbacks[id] = onText;
+            SendText(sb.ToString());
+        }
+
         // ================================================================
         // 内部: クエリ送信
         // ================================================================

@@ -12,6 +12,8 @@ namespace Poly_Ling.ListClient
     {
         private ModelListSubPanel _panel;
 
+        protected override string ClientTypeId => "modelList";
+
         protected override void BuildPanel(VisualElement host, PanelContext ctx)
         {
             _panel = new ModelListSubPanel();

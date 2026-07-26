@@ -30,6 +30,9 @@ namespace Poly_Ling.ListClient
         [Tooltip("endpoint.json が見つからない/未接続時の再試行間隔(秒)")]
         [SerializeField] private float _retrySeconds = 1.0f;
 
+        [Tooltip("サーバへ登録するユーザー名。既定は空（名前なし）。将来の協働開発向け。")]
+        [SerializeField] private string _userName = "";
+
         // ================================================================
         // 依存
         // ================================================================
@@ -58,6 +61,9 @@ namespace Poly_Ling.ListClient
         // ================================================================
         // 派生フック
         // ================================================================
+
+        /// <summary>サーバへ登録するクライアントタイプ（機能）識別子。</summary>
+        protected abstract string ClientTypeId { get; }
 
         /// <summary>host に現行サブパネルを構築し、ctx へ結線する。</summary>
         protected abstract void BuildPanel(VisualElement host, PanelContext ctx);
@@ -148,6 +154,8 @@ namespace Poly_Ling.ListClient
         {
             _awaitingConnect = false;
             SetStatus("接続済");
+            // 自分のタイプ（機能）とユーザー名をサーバへ登録してからフェッチする。
+            _client.RegisterClientType(ClientTypeId, _userName);
             RefreshData();
         }
 

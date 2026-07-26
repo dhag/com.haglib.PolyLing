@@ -93,9 +93,9 @@ namespace Poly_Ling.Player
             _paramSection.style.marginBottom      = 4;
             root.Add(_paramSection);
 
-            // 面適用セクション（面選択時のみ表示）
+            // 面適用セクション（常時表示。面未選択時はボタンを無効化してグレーアウト）
             _applySection = new VisualElement();
-            _applySection.style.display = DisplayStyle.None;
+            _applySection.style.display = DisplayStyle.Flex;
             _selInfoLabel = new Label(); _selInfoLabel.style.fontSize = 10;
             _applySection.Add(_selInfoLabel);
             _btnApply = new Button(OnApplyToSelection) { text = "選択面に適用" };
@@ -154,12 +154,15 @@ namespace Poly_Ling.Player
             // GetToolContext().SelectionState は ToToolContext で未設定=null のため使えない）
             var sel = model?.FirstDrawableMeshContext?.Selection;
             bool hasFace = sel != null && sel.Faces.Count > 0;
-            if (_applySection != null) _applySection.style.display = hasFace ? DisplayStyle.Flex : DisplayStyle.None;
-            if (hasFace)
+            // 面未選択でもセクションは表示し、ボタンを無効化(グレーアウト)して存在を示す。
+            if (_applySection != null) _applySection.style.display = DisplayStyle.Flex;
+            if (_btnApply != null)
             {
-                if (_selInfoLabel != null) _selInfoLabel.text = $"{sel.Faces.Count} 面選択中";
-                if (_btnApply    != null) _btnApply.text = $"マテリアル [{model.CurrentMaterialIndex}] を選択面に適用";
+                _btnApply.SetEnabled(hasFace);
+                _btnApply.text = $"マテリアル [{model.CurrentMaterialIndex}] を選択面に適用";
             }
+            if (_selInfoLabel != null)
+                _selInfoLabel.text = hasFace ? $"{sel.Faces.Count} 面選択中" : "面が選択されていません";
 
             PlayerLayoutRoot.ApplyDarkTheme(_list);
         }

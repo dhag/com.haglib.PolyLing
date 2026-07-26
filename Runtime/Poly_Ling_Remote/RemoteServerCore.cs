@@ -90,6 +90,23 @@ namespace Poly_Ling.Remote
         private List<byte[]> _pendingBinaryResponses;
 
         // ================================================================
+        // クライアントタイプ登録簿
+        // register コマンド受信でチャネル→登録情報を追加し、切断で削除する。
+        // タイプ宛 push（BroadcastToType）と将来の協働開発（所有者表示・権限等）の基盤。
+        // アクセスは全てメインスレッド（OnDuplexReceived/OnClientDisconnected は
+        // RunOnMainThread 経由、BroadcastToType は OnModelListChanged 経由）。
+        // ================================================================
+
+        private struct ClientRegistration
+        {
+            public string ClientType;   // 例: "modelList" / "meshList" / "materialList" / "probe"
+            public string UserName;     // 既定は空（名前なし）。将来の協働開発で使用。
+        }
+
+        private readonly Dictionary<IDuplexChannel, ClientRegistration> _clientRegistry
+            = new Dictionary<IDuplexChannel, ClientRegistration>();
+
+        // ================================================================
         // コンストラクタ
         // ================================================================
 
@@ -123,7 +140,7 @@ namespace Poly_Ling.Remote
                 };
                 _wsServer.OnReceived          += OnDuplexReceived;
                 _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); _lastSelSig = null; CheckSelectionChanged(); OnRepaint?.Invoke(); });
-                _wsServer.OnClientDisconnected += _ => RunOnMainThread(() => { Log("クライアント切断"); OnRepaint?.Invoke(); });
+                _wsServer.OnClientDisconnected += ch => RunOnMainThread(() => { _clientRegistry.Remove(ch); Log("クライアント切断"); OnRepaint?.Invoke(); });
 
                 IsRunning = true;
                 SubscribeModel();
@@ -417,6 +434,9 @@ namespace Poly_Ling.Remote
                 case "model_meta":        return ProcessModelMetaQuery(msg);
                 case "mesh_data":         return ProcessMeshDataQuery(msg);
                 case "mesh_data_batch":   return ProcessMeshDataBatchQuery(msg);
+
+                // probe クライアント用（リスト系とは別データ・テキスト応答）。
+                case "server_info":       return BuildSuccessResponse(msg.Id, BuildServerInfoData());
 
                 default:
                     return BuildErrorResponse(msg.Id, $"Unknown target: {msg.Target}");
@@ -823,6 +843,25 @@ namespace Poly_Ling.Remote
             string data     = RemoteDataProvider.QueryMeshList(Context, null);
             string pushJson = BuildPushMessage("meshListChanged", data);
             BroadcastAsync(pushJson);
+
+            // probe タイプにのみ server_info 変化を通知（タイプ振り分けの実証）。
+            // list 系はこの push を受け取らない。
+            BroadcastToType("probe", BuildPushMessage("serverInfoChanged", BuildServerInfoData()));
+        }
+
+        /// <summary>probe クライアント用のサーバ情報 JSON（リスト系が取得しないデータ）。</summary>
+        private string BuildServerInfoData()
+        {
+            var project = GetProjectContext();
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("port",              Port);
+            jb.KeyValue("modelCount",        project?.ModelCount ?? 0);
+            jb.KeyValue("currentModelIndex", project?.CurrentModelIndex ?? -1);
+            jb.KeyValue("clientCount",       ClientCount);
+            jb.KeyValue("serverTime",        DateTime.Now.ToString("HH:mm:ss"));
+            jb.EndObject();
+            return jb.ToString();
         }
 
         // ================================================================
@@ -948,6 +987,10 @@ namespace Poly_Ling.Remote
                         string json = item.DataString ?? "";
                         if (string.IsNullOrEmpty(json)) continue;
 
+                        // クライアントタイプ登録は channel が必要なためここで横取りする
+                        // （ProcessMessage は json のみで channel を持たない）。register 以外は従来経路。
+                        if (TryHandleRegister(channel, message, isRequest, json)) continue;
+
                         _pendingBinaryResponses = null;
                         string response = ProcessMessage(json);
                         var pending = _pendingBinaryResponses;
@@ -1014,6 +1057,61 @@ namespace Poly_Ling.Remote
         }
 
         // ================================================================
+        // クライアントタイプ登録 / タイプ宛 push
+        // ================================================================
+
+        /// <summary>
+        /// register コマンド（{"type":"command","action":"register","params":{"clientType":..,"userName":..}}）
+        /// を横取りしてチャネル→登録情報を記録し、ack を返す。register 以外は false。
+        /// </summary>
+        private bool TryHandleRegister(IDuplexChannel channel, DuplexMessage request, bool isRequest, string json)
+        {
+            if (PeekJsonString(json, "type") != "command") return false;
+            if (PeekJsonString(json, "action") != "register") return false;
+
+            string clientType = PeekJsonString(json, "clientType") ?? "";
+            string userName   = PeekJsonString(json, "userName")   ?? "";
+            string id         = PeekJsonString(json, "id");
+
+            _clientRegistry[channel] = new ClientRegistration { ClientType = clientType, UserName = userName };
+            Log($"register: type=\"{clientType}\" user=\"{userName}\" (clients={_clientRegistry.Count})");
+
+            var data = new JsonBuilder();
+            data.BeginObject();
+            data.KeyValue("registered", true);
+            data.KeyValue("clientType", clientType);
+            data.KeyValue("userName",   userName);
+            data.EndObject();
+
+            var reply = new TypedPayload().AddJson(BuildSuccessResponse(id, data.ToString()));
+            SendReply(channel, request, reply, isRequest);
+            return true;
+        }
+
+        /// <summary>指定タイプのクライアントにのみ JSON push を送る（一斉 BroadcastAsync とは別系統）。</summary>
+        private void BroadcastToType(string clientType, string json)
+        {
+            if (_clientRegistry.Count == 0) return;
+            foreach (var kv in _clientRegistry)
+                if (kv.Value.ClientType == clientType)
+                    SendToChannel(kv.Key, TypedPayload.FromJson(json), WebSocketFrameKind.Text);
+        }
+
+        /// <summary>単一チャネルへ送出（SendReply のチャネル分岐と同一方針）。</summary>
+        private void SendToChannel(IDuplexChannel channel, TypedPayload payload, WebSocketFrameKind kind)
+        {
+            try
+            {
+                var wsChannel  = channel as WebSocketDuplexChannel;
+                var tcpChannel = channel as TcpDuplexServerChannel;
+                if (wsChannel != null)       _ = wsChannel.SendAsync(payload.ToMessage(), kind);
+                else if (tcpChannel != null) _ = tcpChannel.SendAsync(payload.ToMessage(), kind);
+                else                         _ = channel.SendAsync(payload.ToMessage());
+            }
+            catch { }
+        }
+
+        // ================================================================
         // レスポンスビルダー
         // ================================================================
 
@@ -1058,6 +1156,19 @@ namespace Poly_Ling.Remote
         // ================================================================
 
         private ProjectContext GetProjectContext() => Context?.Project;
+
+        /// <summary>register 判定用の軽量文字列抽出（"key":"value" 形式のみ。無ければ null）。</summary>
+        private static string PeekJsonString(string json, string key)
+        {
+            string s = "\"" + key + "\"";
+            int i = json.IndexOf(s, StringComparison.Ordinal); if (i < 0) return null;
+            int c = json.IndexOf(':', i + s.Length);            if (c < 0) return null;
+            int vs = c + 1;
+            while (vs < json.Length && (json[vs] == ' ' || json[vs] == '\t')) vs++;
+            if (vs >= json.Length || json[vs] != '"') return null;
+            int ve = json.IndexOf('"', vs + 1);                 if (ve < 0) return null;
+            return json.Substring(vs + 1, ve - vs - 1);
+        }
 
         private static int GetParamInt(RemoteMessage msg, string key, int def)
         {
