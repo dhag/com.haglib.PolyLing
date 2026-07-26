@@ -112,6 +112,16 @@ namespace Poly_Ling.Remote
 
             var (mi, model) = r.Value;
             EnsureModelSlot(mi);
+
+            // 旧モデル差し替え時のリーク対策：旧メッシュを破棄する。
+            // 【残存リスク】旧 runtime 材質/テクスチャはここでは破棄しない（destroyMaterials:false）。
+            //   ビューワの GPU アダプタ（_pendingMaterialsBySlot）が RebuildAdapter まで旧材質を
+            //   参照し続けるため、ここで破棄すると破棄済み材質で描画してしまう。確実な解放には
+            //   レンダラが旧材質を手放した後（アダプタ Dispose 後）に DestroyRuntimeMaterial() を
+            //   呼ぶ経路が必要（次段の課題）。→ ビューワではフェッチ反復で材質リークが残存する。
+            if (mi >= 0 && mi < _project.Models.Count)
+                DestroyModelRuntimeObjects(_project.Models[mi], destroyMaterials: false);
+
             _project.Models[mi] = model;
 
             Debug.Log($"[RemoteProjectReceiver] PLRM: [{mi}] \"{model.Name}\"");
@@ -176,7 +186,38 @@ namespace Poly_Ling.Remote
 
         public void Reset()
         {
+            // list クライアントのフェッチ前リセット（レンダラ/GPU アダプタを持たない）。
+            // レンダラが材質を参照していないため、ここで runtime 材質・テクスチャ・メッシュを
+            // 破棄しても安全（フェッチ毎の Material/Texture2D/Mesh リークを解消する）。
+            // ※ ビューワ（GPU アダプタ持ち）はこの Reset を呼ばない。呼ぶ場合は破棄安全性の再検討が必要。
+            if (_project?.Models != null)
+                foreach (var m in _project.Models)
+                    DestroyModelRuntimeObjects(m, destroyMaterials: true);
+
             _project = null;
+        }
+
+        /// <summary>
+        /// モデルが保持する runtime Unity Object を破棄する（リーク対策）。
+        /// メッシュ（ToUnityMesh 生成）は常に破棄。ビューワの GPU 描画は GPU バッファから行い
+        /// ctx.UnityMesh は bounds 用のため、置換時の破棄は安全（既存 ReceiveMeshData:156 と同方針）。
+        /// 材質破棄は destroyMaterials=true のときのみ（レンダラが当該材質を参照していない前提）。
+        /// </summary>
+        private static void DestroyModelRuntimeObjects(ModelContext m, bool destroyMaterials)
+        {
+            if (m == null) return;
+
+            if (m.MeshContextList != null)
+                foreach (var mc in m.MeshContextList)
+                    if (mc?.UnityMesh != null)
+                    {
+                        UnityEngine.Object.Destroy(mc.UnityMesh);
+                        mc.UnityMesh = null;
+                    }
+
+            if (destroyMaterials && m.MaterialReferences != null)
+                foreach (var mr in m.MaterialReferences)
+                    mr?.DestroyRuntimeMaterial();
         }
 
         // ================================================================

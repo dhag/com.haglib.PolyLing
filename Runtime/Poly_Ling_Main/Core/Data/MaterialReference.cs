@@ -34,6 +34,12 @@ namespace Poly_Ling.Materials
         
         [NonSerialized]
         private Material _cachedMaterial;
+
+        // ランタイムで本参照が「所有」する Texture2D（リモート復元で生成したもの等）。
+        // AttachRuntimeMaterial(mat, ownedTexture) で登録し、DestroyRuntimeMaterial() で破棄する。
+        // アセットテクスチャはここに入れない（共有アセットを破棄しないため）。
+        [NonSerialized]
+        private Texture2D _ownedTexture;
         
         [NonSerialized]
         private bool _cacheValid;
@@ -184,11 +190,59 @@ namespace Poly_Ling.Materials
             _cacheValid = material != null;
         }
 
+        /// <summary>
+        /// ランタイム生成済みの Material と、その Material が使う「本参照所有」の Texture2D を付与する。
+        /// ownedTexture は DestroyRuntimeMaterial() でまとめて破棄される（リモート復元のリーク対策）。
+        /// アセット由来の Texture は ownedTexture に渡さないこと（共有アセットを破棄しないため）。
+        /// </summary>
+        public void AttachRuntimeMaterial(Material material, Texture2D ownedTexture)
+        {
+            _cachedMaterial = material;
+            _cacheValid = material != null;
+            _ownedTexture = ownedTexture;
+        }
+
+        /// <summary>
+        /// ランタイムで生成した Material / 所有 Texture2D を破棄する。
+        /// アセット材質（HasAssetPath）は共有アセットのため破棄しない（キャッシュ参照を外すのみ）。
+        /// 破棄タイミングは呼び出し側の責任。GPU レンダラ（アダプタの _pendingMaterialsBySlot）が
+        /// 材質を Rebuild まで保持するため、レンダラが当該材質を参照していない時点で呼ぶこと。
+        /// </summary>
+        public void DestroyRuntimeMaterial()
+        {
+            if (_ownedTexture != null)
+            {
+                DestroyObj(_ownedTexture);
+                _ownedTexture = null;
+            }
+            // アセット材質は破棄しない。runtime 生成材質のみ破棄。
+            if (!HasAssetPath && _cachedMaterial != null)
+                DestroyObj(_cachedMaterial);
+
+            _cachedMaterial = null;
+            _cacheValid = false;
+        }
+
+        private static void DestroyObj(UnityEngine.Object o)
+        {
+            if (o == null) return;
+            if (Application.isPlaying) UnityEngine.Object.Destroy(o);
+            else                       UnityEngine.Object.DestroyImmediate(o);
+        }
+
         // ================================================================
         // キャッシュ管理
         // ================================================================
         
-        /// <summary>キャッシュを無効化（再読み込み/再生成させる）</summary>
+        /// <summary>
+        /// キャッシュを無効化（再読み込み/再生成させる）。
+        /// 【注意・残存リスク】ここでは runtime 生成材質/テクスチャを Destroy しない（参照を外すのみ）。
+        ///   理由：GPU レンダラ（アダプタ）が当該 Material を Rebuild まで参照し続けるため、
+        ///   ここで破棄すると破棄済み材質で描画してしまう。よって再生成による旧材質は
+        ///   このメソッド単独では解放されず、リークが残る（例: 材質再生成の反復）。
+        ///   確実に解放するには、レンダラが旧材質を手放した後に DestroyRuntimeMaterial() を呼ぶ経路が必要。
+        ///   （次段の課題。現時点では未実装＝リーク残存を明示）。
+        /// </summary>
         public void InvalidateCache()
         {
             _cachedMaterial = null;

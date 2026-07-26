@@ -219,6 +219,13 @@ namespace Poly_Ling.Core
                 return;
             }
 
+            // Initialize 済み adapter は GPU ComputeBuffer を確保済み。以降の構築で例外が出ると
+            // adapter が Dispose されずリークするため、try/catch で確保済みバッファを必ず解放する。
+            // 【残存リスク】ここでは GPU バッファのリーク防止のみ。例外の根本原因（データ不整合等）は
+            //   未解決で、当該モデルは表示欠落として現れる。他の構築/アップロード経路も同様に
+            //   個別ガードはしていない（呼び出し側での不正データ抑止が本筋。次段の課題）。
+            try
+            {
             adapter.SetSelectionState(_selectionState ?? new SelectionState());
             adapter.SetSymmetrySettings(new SymmetrySettings());
             adapter.SetModelContext(model);
@@ -257,6 +264,14 @@ namespace Poly_Ling.Core
             _adapters[mi] = adapter;
 
             adapter.RequestNormal();
+            }
+            catch (System.Exception ex)
+            {
+                // 構築中の例外：確保済み GPU バッファを解放してリークを防ぐ。
+                Debug.LogError($"[MeshSceneRenderer] RebuildAdapter 例外 [{mi}]: {ex.Message}");
+                if (_adapters[mi] == adapter) _adapters[mi] = null;
+                adapter.Dispose();
+            }
         }
 
         // ================================================================

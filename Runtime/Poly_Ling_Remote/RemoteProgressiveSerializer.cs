@@ -161,7 +161,8 @@ namespace Poly_Ling.Remote
                         {
                             if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
                             if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", tex);
-                            mref.AttachRuntimeMaterial(mat);
+                            // tex は本参照が所有する runtime テクスチャ。破棄追跡のため一緒に渡す。
+                            mref.AttachRuntimeMaterial(mat, tex);
                         }
                     }
                     refList.Add(mref);
