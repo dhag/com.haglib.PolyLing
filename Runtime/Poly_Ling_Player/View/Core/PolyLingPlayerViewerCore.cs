@@ -4987,13 +4987,19 @@ namespace Poly_Ling.Player
         // クライアントイベント
         // ================================================================
 
-        private void OnConnected()    { _status = "接続済み"; }
+        private void OnConnected()
+        {
+            _status = "接続済み";
+            // 自タイプをサーバへ登録（list 系と同じ枠組み）。userName 既定は空（名前なし）。
+            _client?.RegisterClientType("playerViewer", "");
+        }
         private void OnDisconnected() { _status = "切断"; }
 
         private void OnPushReceived(string json)
         {
-            if (json.Contains("\"event\":\"mesh_changed\"") ||
-                json.Contains("\"event\":\"model_changed\""))
+            // サーバの実際の push 名に合わせる（旧 mesh_changed/model_changed は発行元なし）。
+            // 構造変更（一覧変更）を契機に再フェッチする。
+            if (json.Contains("\"event\":\"meshListChanged\""))
                 FetchProject();
         }
 
