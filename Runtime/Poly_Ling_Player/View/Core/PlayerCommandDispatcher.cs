@@ -3492,6 +3492,144 @@ namespace Poly_Ling.Player
         /// 名前一致したメッシュの原点を設定する。
         /// 「原点だけ移動」と同じく、自頂点を再局所化して見た目を保つ。子は動かさない。
         /// </summary>
+        /// <summary>
+        /// 選択中メッシュのローカル拡大縮小を頂点位置へ畳み込み、Scale を (1,1,1) に戻す。
+        ///
+        /// ベイクできない対象はスキップし、その理由を message に列挙して返す。
+        ///   - UseLocalTransform が false: LocalMatrix が identity で Scale が効いていない
+        ///   - Scale が (1,1,1): 変化なし
+        ///   - MeshType.Bone: 頂点を持たない
+        ///   - 子を持つ: 子の world は「親World × 子Local」で決まるため、親のスケールを
+        ///     外すと子がずれる。非一様スケール×子の回転がある場合は子側の TRS で補正できない
+        ///   - スキンドメッシュ: 描画が SkinningMatrix 経由で自身の WorldMatrix を使わないため、
+        ///     ベイクすると見た目が変わる
+        /// </summary>
+        /// <returns>1件でもベイクしたら true。</returns>
+        public bool BakeObjectScale(ModelContext model, out string message)
+        {
+            message = "";
+            if (model == null) { message = "拡大縮小をベイク: モデルがありません"; return false; }
+
+            var selected = model.SelectedDrawableMeshIndices;
+            if (selected == null || selected.Count == 0)
+            {
+                message = "拡大縮小をベイク: 対象が選択されていません";
+                return false;
+            }
+
+            // HierarchyParentIndex で子の有無を判定する（ComputeWorldMatrices が参照する親）。
+            var hasChild = new HashSet<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var c = model.GetMeshContext(i);
+                if (c == null) continue;
+                int hp = c.HierarchyParentIndex;
+                if (hp >= 0) hasChild.Add(hp);
+            }
+
+            var targets     = new List<int>();
+            var skipNoLocal = new List<string>();
+            var skipUnit    = new List<string>();
+            var skipBone    = new List<string>();
+            var skipChild   = new List<string>();
+            var skipSkin    = new List<string>();
+
+            foreach (int idx in selected)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc?.MeshObject == null) continue;
+                string nm = string.IsNullOrEmpty(mc.Name) ? $"#{idx}" : mc.Name;
+
+                if (mc.Type == MeshType.Bone)                        { skipBone.Add(nm);    continue; }
+                if (mc.BoneTransform == null ||
+                    !mc.BoneTransform.UseLocalTransform)             { skipNoLocal.Add(nm); continue; }
+                if (mc.BoneTransform.Scale == Vector3.one)           { skipUnit.Add(nm);    continue; }
+                if (hasChild.Contains(idx))                          { skipChild.Add(nm);   continue; }
+
+                // MeshObject.HasBoneWeight は「1つ以上の頂点が BoneWeight を持つ」判定。
+                if (mc.MeshObject.HasBoneWeight) { skipSkin.Add(nm); continue; }
+
+                targets.Add(idx);
+            }
+
+            var before = new Dictionary<int, ObjectScaleSnapshot>();
+            var after  = new Dictionary<int, ObjectScaleSnapshot>();
+
+            foreach (int idx in targets)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc.MeshObject;
+
+                var oldVerts = new Vector3[mo.Vertices.Count];
+                for (int v = 0; v < mo.Vertices.Count; v++) oldVerts[v] = mo.Vertices[v].Position;
+                before[idx] = new ObjectScaleSnapshot
+                {
+                    Scale           = mc.BoneTransform.Scale,
+                    VertexPositions = oldVerts,
+                };
+
+                Vector3 sc = mc.BoneTransform.Scale;
+                for (int v = 0; v < mo.Vertices.Count; v++)
+                {
+                    var vert = mo.Vertices[v];
+                    vert.Position = Vector3.Scale(vert.Position, sc);
+                    mo.Vertices[v] = vert;
+                }
+                mo.InvalidatePositionCache();
+
+                mc.BoneTransform.Scale = Vector3.one;
+
+                var newVerts = new Vector3[mo.Vertices.Count];
+                for (int v = 0; v < mo.Vertices.Count; v++) newVerts[v] = mo.Vertices[v].Position;
+                after[idx] = new ObjectScaleSnapshot
+                {
+                    Scale           = Vector3.one,
+                    VertexPositions = newVerts,
+                };
+            }
+
+            // 警告メッセージ組み立て（スキップ理由ごとに件数と名前）
+            var warn = new List<string>();
+            void AddWarn(string reason, List<string> names)
+            {
+                if (names.Count == 0) return;
+                warn.Add($"{reason}{names.Count}件({string.Join(",", names)})");
+            }
+            AddWarn("ローカル変換無効:", skipNoLocal);
+            AddWarn("等倍:",             skipUnit);
+            AddWarn("ボーン:",           skipBone);
+            AddWarn("子あり:",           skipChild);
+            AddWarn("スキン済み:",       skipSkin);
+
+            if (targets.Count == 0)
+            {
+                message = "拡大縮小をベイク: 適用0件" +
+                          (warn.Count > 0 ? " / スキップ " + string.Join(" ", warn) : "");
+                if (warn.Count > 0) Debug.LogWarning("[BakeObjectScale] " + message);
+                return false;
+            }
+
+            model.ComputeWorldMatrices();
+
+            if (_undoController != null)
+            {
+                _undoController.SetModelContext(model);
+                _undoController.MeshListStack.Record(
+                    new ObjectScaleBakeRecord(before, after, "拡大縮小をベイク"), "拡大縮小をベイク");
+                _undoController.FocusMeshList();
+            }
+
+            model.IsDirty = true;
+            model.OnListChanged?.Invoke();
+            _viewportManager.EnterTopologyChanged(_getProject());
+            _notifyPanels(ChangeKind.Attributes);
+
+            message = $"拡大縮小をベイク: 適用{targets.Count}件" +
+                      (warn.Count > 0 ? " / スキップ " + string.Join(" ", warn) : "");
+            if (warn.Count > 0) Debug.LogWarning("[BakeObjectScale] " + message);
+            return true;
+        }
+
         private void ApplyObjectOrigins(ModelContext model, ApplyObjectOriginsCommand cmd)
         {
             if (cmd?.Names == null || cmd.Positions == null) return;

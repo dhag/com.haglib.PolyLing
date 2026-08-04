@@ -43,6 +43,12 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<Poly_Ling.Tools.ObjectMoveSettings> GetObjectMoveSettings;
 
+        /// <summary>
+        /// 「拡大縮小をベイク」実行要求。戻り値は結果メッセージ
+        /// （適用件数とスキップ理由）で、そのままパネル内に表示する。
+        /// </summary>
+        public Func<string> RequestBakeObjectScale;
+
         // PanelContext 経由でコマンドを送信
         private PanelContext _panelContext;
 
@@ -120,6 +126,7 @@ namespace Poly_Ling.Player
         private bool          _suppressMoveSettings;
 
         private Label _statusLabel;
+        private Label _bakeScaleMsgLabel;
 
         // ================================================================
         // Build
@@ -370,6 +377,29 @@ namespace Poly_Ling.Player
             RegTF(_sclX, SetBoneTransformValueCommand.Field.ScaleX);
             RegTF(_sclY, SetBoneTransformValueCommand.Field.ScaleY);
             RegTF(_sclZ, SetBoneTransformValueCommand.Field.ScaleZ);
+
+            // ローカル拡大縮小を頂点位置へ畳み込み、スケールを (1,1,1) に戻す。
+            // _sclSection に入れているため「原点だけ移動」時は一緒に隠れる。
+            var bakeScaleBtn = new Button(() =>
+            {
+                string msg = RequestBakeObjectScale?.Invoke() ?? "";
+                if (_bakeScaleMsgLabel != null) _bakeScaleMsgLabel.text = msg;
+                OnRepaint?.Invoke();
+            })
+            { text = "拡大縮小をベイク" };
+            bakeScaleBtn.style.marginTop = 4;
+            bakeScaleBtn.tooltip =
+                "選択中メッシュのローカル拡大縮小を頂点位置へ畳み込み、スケールを 1,1,1 に戻す" +
+                "（子を持つメッシュ・スキンドメッシュは対象外）";
+            _sclSection.Add(bakeScaleBtn);
+
+            _bakeScaleMsgLabel = new Label();
+            _bakeScaleMsgLabel.style.fontSize  = 10;
+            _bakeScaleMsgLabel.style.color     = new StyleColor(new Color(1f, 0.75f, 0.4f));
+            _bakeScaleMsgLabel.style.whiteSpace = WhiteSpace.Normal;
+            _bakeScaleMsgLabel.style.marginTop = 2;
+            _sclSection.Add(_bakeScaleMsgLabel);
+
             root.Add(_sclSection);
 
             // IgnorePose

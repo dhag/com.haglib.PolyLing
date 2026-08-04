@@ -2176,6 +2176,7 @@ namespace Poly_Ling.Player
             // サブパネル側のチェックボックスと ObjectMoveHandler 内部の
             // ObjectMoveSettings を同一インスタンスで結びつける。
             _boneEditorSubPanel.GetObjectMoveSettings = () => _objectMoveHandler?.GetSettings();
+            _boneEditorSubPanel.RequestBakeObjectScale = BakeObjectScale;
             // ObjectMoveツール用セクションとBoneEditorセクションを統合
             // ObjectMoveTRSSectionは廃止し、BoneEditorSectionを共用する
             _boneEditorSubPanel.Build(_layoutRoot.BoneEditorSection);
@@ -5456,6 +5457,24 @@ namespace Poly_Ling.Player
         /// None 判定のみで分岐するため、既存の GPU ホバー優先度 (頂点>辺>面) がそのまま動作する）。
         /// Phase 2b 以降で Edge / Face / Bone / Gizmo の厳密な kind 分岐を実装する。
         /// </summary>
+        /// <summary>
+        /// 選択中メッシュのローカル拡大縮小を頂点位置へ畳み込む（左ペインのボタン）。
+        /// スキップした対象がある場合は理由付きの警告を左ペインの Status に出す。
+        /// </summary>
+        private string BakeObjectScale()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (_commandDispatcher == null)
+            {
+                _status = "拡大縮小をベイク: コマンド未初期化";
+                return _status;
+            }
+
+            _commandDispatcher.BakeObjectScale(model, out string message);
+            _status = message;
+            return message;
+        }
+
         /// <summary>
         /// 頂点ホバーが抑止されるモード (HoverTargetKind.None) でも、ギズモ軸の
         /// ホバーだけは更新する。
