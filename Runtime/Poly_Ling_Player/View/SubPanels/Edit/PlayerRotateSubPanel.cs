@@ -85,7 +85,7 @@ namespace Poly_Ling.Player
             snapRow.Add(_snapToggle); snapRow.Add(_snapField);
             _root.Add(snapRow);
 
-            _originToggle = new Toggle("Origin Pivot") { value = false };
+            _originToggle = new Toggle("オブジェクトの原点を中心に") { value = false };
             _originToggle.style.color = new StyleColor(Color.white);
             _originToggle.RegisterValueChangedCallback(e => { var h = GetH(); if (h != null) h.UseOriginPivot = e.newValue; });
             _root.Add(_originToggle);

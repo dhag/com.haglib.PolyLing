@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.Context;
 using Poly_Ling.Selection;
 
 namespace Poly_Ling.Player
@@ -46,6 +47,24 @@ namespace Poly_Ling.Player
         public bool HasHit => Kind != PlayerHoverKind.None;
         public static readonly PlayerHoverElement None =
             new PlayerHoverElement { Kind = PlayerHoverKind.None, MeshIndex = -1 };
+    }
+
+    /// <summary>
+    /// 「どのメッシュの何番の頂点か」を表す組。
+    /// 矩形／投げ縄選択が複数メッシュにまたがるため、
+    /// 頂点インデックス単独では対象メッシュを特定できないので使う。
+    /// MeshIndex は MeshContextList インデックス（unified インデックスではない）。
+    /// </summary>
+    public struct MeshVertexRef
+    {
+        public int MeshIndex;
+        public int VertexIndex;
+
+        public MeshVertexRef(int meshIndex, int vertexIndex)
+        {
+            MeshIndex   = meshIndex;
+            VertexIndex = vertexIndex;
+        }
     }
 
     /// <summary>
@@ -98,8 +117,80 @@ namespace Poly_Ling.Player
             _selectionState = selectionState ?? throw new ArgumentNullException(nameof(selectionState));
         }
 
-        /// <summary>管理中の SelectionState への参照。ToolHandler が頂点リストを参照する際に使う。</summary>
+        /// <summary>
+        /// 管理中の SelectionState への参照（＝先頭選択メッシュのもの）。
+        /// ToolHandler が選択モードや頂点リストを参照する際に使う。
+        /// 複数メッシュへ書き込む処理はこのプロパティではなく
+        /// ResolveSelection / TargetSelections を経由すること。
+        /// </summary>
         public SelectionState SelectionState => _selectionState;
+
+        // ================================================================
+        // 複数オブジェクト選択対応
+        // ================================================================
+        //
+        // SelectionState は「メッシュ 1 個ぶんの選択」しか表せない
+        // （Vertices などが MeshObject 内ローカル番号のため）。
+        // 複数メッシュを選んだ状態では MeshContext ごとの Selection を
+        // それぞれ操作する必要がある。GPU 側の選択フラグ更新
+        // （UnifiedBufferManager_Update.UpdateAllSelectionFlags 他）は
+        // 既に MeshContext 単位で読んでいるため、こちら側を合わせれば済む。
+        // ================================================================
+
+        /// <summary>
+        /// 現在のモデルを返すコールバック（Viewer から結線）。
+        /// 未設定なら従来どおり単一 SelectionState だけを操作する。
+        /// </summary>
+        public Func<ModelContext> GetModel;
+
+        /// <summary>
+        /// 操作対象メッシュ（ModelContext.SelectedDrawableMeshIndices）の
+        /// SelectionState を列挙する。
+        /// GetModel 未設定・メッシュ未選択の場合は単一 SelectionState を 1 個返す。
+        /// </summary>
+        private IEnumerable<SelectionState> TargetSelections()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0)
+            {
+                if (_selectionState != null) yield return _selectionState;
+                yield break;
+            }
+
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(ctxIdx);
+                if (mc?.Selection != null) yield return mc.Selection;
+            }
+        }
+
+        /// <summary>
+        /// ホバー要素の MeshIndex（MeshContextList インデックス）から
+        /// 書き込み先 SelectionState を解決する。
+        /// 解決できない場合は単一 SelectionState を返す。
+        /// </summary>
+        private SelectionState ResolveSelection(int meshContextIndex)
+        {
+            if (meshContextIndex < 0) return _selectionState;
+            var model = GetModel?.Invoke();
+            if (model == null) return _selectionState;
+            var mc = model.GetMeshContext(meshContextIndex);
+            return mc?.Selection ?? _selectionState;
+        }
+
+        /// <summary>操作対象メッシュ全ての選択をクリアする（OnSelectionChanged は呼ばない）。</summary>
+        private void ClearAllTargetsSilent()
+        {
+            foreach (var sel in TargetSelections())
+                sel.ClearAll();
+        }
+
+        /// <summary>操作対象メッシュ全ての頂点選択のみクリアする（OnSelectionChanged は呼ばない）。</summary>
+        private void ClearAllTargetVerticesSilent()
+        {
+            foreach (var sel in TargetSelections())
+                sel.Vertices.Clear();
+        }
 
         // ================================================================
         // クリック選択
@@ -114,6 +205,13 @@ namespace Poly_Ling.Player
         ///   <item>ヒット有り・Ctrl → トグル選択。</item>
         /// </list>
         /// </summary>
+        /// <remarks>
+        /// PlayerHitResult.MeshIndex は PlayerViewportManager.GetHoverHit が
+        /// GlobalToLocalVertexIndex の戻り値をそのまま入れており unified インデックス。
+        /// PlayerHoverElement.MeshIndex（MeshContextList インデックス）とは別系のため、
+        /// 本メソッドでは書き込み先メッシュの解決に使わない。
+        /// GetHoverElement が結線されている経路では ApplyElementClick が使われる。
+        /// </remarks>
         public void ApplyClick(PlayerHitResult hit, ModifierKeys mods)
         {
             if (!hit.HasHit)
@@ -165,40 +263,49 @@ namespace Poly_Ling.Player
             }
 
             bool additive = mods.Shift || mods.Ctrl;
-            if (!additive) _selectionState.ClearAll();
+            // 非加算クリックは「他メッシュに残った選択」も消す。
+            // 単一 SelectionState だけを消すと、選択中の別メッシュの選択が
+            // 画面に残り続ける（GPU フラグは MeshContext 単位で立つため）。
+            if (!additive) ClearAllTargetsSilent();
+
+            // 書き込み先は「当たったメッシュ」の SelectionState。
+            // elem.VertexIndex / FaceIndex はそのメッシュ内のローカル番号なので、
+            // 別メッシュの SelectionState に入れると別の要素を選ぶことになる。
+            var target = ResolveSelection(elem.MeshIndex);
+            if (target == null) return;
 
             switch (elem.Kind)
             {
                 case PlayerHoverKind.Vertex:
-                    if (mods.Ctrl && _selectionState.Vertices.Contains(elem.VertexIndex))
-                        _selectionState.Vertices.Remove(elem.VertexIndex);
+                    if (mods.Ctrl && target.Vertices.Contains(elem.VertexIndex))
+                        target.Vertices.Remove(elem.VertexIndex);
                     else
-                        _selectionState.SelectVertex(elem.VertexIndex, additive);
+                        target.SelectVertex(elem.VertexIndex, additive);
                     break;
 
                 case PlayerHoverKind.Edge:
                 {
                     var pair = new Poly_Ling.Selection.VertexPair(elem.EdgeV1, elem.EdgeV2);
-                    if (mods.Ctrl && _selectionState.Edges.Contains(pair))
-                        _selectionState.DeselectEdge(pair);
+                    if (mods.Ctrl && target.Edges.Contains(pair))
+                        target.DeselectEdge(pair);
                     else
-                        _selectionState.SelectEdge(pair, additive);
+                        target.SelectEdge(pair, additive);
                     break;
                 }
 
                 case PlayerHoverKind.Line:
                     // 補助線分。FaceIndex が MeshObject.Faces[] の添字（VertexCount==2）
-                    if (mods.Ctrl && _selectionState.Lines.Contains(elem.FaceIndex))
-                        _selectionState.Lines.Remove(elem.FaceIndex);
+                    if (mods.Ctrl && target.Lines.Contains(elem.FaceIndex))
+                        target.Lines.Remove(elem.FaceIndex);
                     else
-                        _selectionState.SelectLine(elem.FaceIndex, additive);
+                        target.SelectLine(elem.FaceIndex, additive);
                     break;
 
                 case PlayerHoverKind.Face:
-                    if (mods.Ctrl && _selectionState.Faces.Contains(elem.FaceIndex))
-                        _selectionState.DeselectFace(elem.FaceIndex);
+                    if (mods.Ctrl && target.Faces.Contains(elem.FaceIndex))
+                        target.DeselectFace(elem.FaceIndex);
                     else
-                        _selectionState.SelectFace(elem.FaceIndex, additive);
+                        target.SelectFace(elem.FaceIndex, additive);
                     break;
             }
 
@@ -230,25 +337,28 @@ namespace Poly_Ling.Player
         /// それ以外 → 既存選択を置き換え。
         /// </para>
         /// </summary>
-        public void EndBoxSelect(IEnumerable<int> boxVertices, ModifierKeys mods)
+        public void EndBoxSelect(IEnumerable<MeshVertexRef> boxVertices, ModifierKeys mods)
         {
             IsBoxSelecting = false;
 
             if (!mods.Shift && !mods.Ctrl)
-                _selectionState.Vertices.Clear();
+                ClearAllTargetVerticesSilent();
 
-            foreach (int v in boxVertices)
+            foreach (var v in boxVertices)
             {
+                var target = ResolveSelection(v.MeshIndex);
+                if (target == null) continue;
+
                 if (mods.Ctrl)
                 {
-                    if (_selectionState.Vertices.Contains(v))
-                        _selectionState.Vertices.Remove(v);
+                    if (target.Vertices.Contains(v.VertexIndex))
+                        target.Vertices.Remove(v.VertexIndex);
                     else
-                        _selectionState.Vertices.Add(v);
+                        target.Vertices.Add(v.VertexIndex);
                 }
                 else
                 {
-                    _selectionState.Vertices.Add(v);
+                    target.Vertices.Add(v.VertexIndex);
                 }
             }
 
@@ -286,26 +396,29 @@ namespace Poly_Ling.Player
         /// <summary>
         /// 投げ縄選択確定。lassoVertices は投げ縄内にある頂点インデックス列。
         /// </summary>
-        public void EndLassoSelect(IEnumerable<int> lassoVertices, ModifierKeys mods)
+        public void EndLassoSelect(IEnumerable<MeshVertexRef> lassoVertices, ModifierKeys mods)
         {
             IsLassoSelecting = false;
             LassoPoints.Clear();
 
             if (!mods.Shift && !mods.Ctrl)
-                _selectionState.Vertices.Clear();
+                ClearAllTargetVerticesSilent();
 
-            foreach (int v in lassoVertices)
+            foreach (var v in lassoVertices)
             {
+                var target = ResolveSelection(v.MeshIndex);
+                if (target == null) continue;
+
                 if (mods.Ctrl)
                 {
-                    if (_selectionState.Vertices.Contains(v))
-                        _selectionState.Vertices.Remove(v);
+                    if (target.Vertices.Contains(v.VertexIndex))
+                        target.Vertices.Remove(v.VertexIndex);
                     else
-                        _selectionState.Vertices.Add(v);
+                        target.Vertices.Add(v.VertexIndex);
                 }
                 else
                 {
-                    _selectionState.Vertices.Add(v);
+                    target.Vertices.Add(v.VertexIndex);
                 }
             }
 
@@ -323,14 +436,22 @@ namespace Poly_Ling.Player
         // ユーティリティ
         // ================================================================
 
+        /// <summary>操作対象メッシュ全ての選択をクリアする。</summary>
         public void ClearAll()
         {
-            bool any = _selectionState.Vertices.Count > 0
-                    || _selectionState.Edges.Count > 0
-                    || _selectionState.Faces.Count > 0
-                    || _selectionState.Lines.Count > 0;
+            bool any = false;
+            foreach (var sel in TargetSelections())
+            {
+                if (sel.Vertices.Count > 0 || sel.Edges.Count > 0
+                    || sel.Faces.Count > 0 || sel.Lines.Count > 0)
+                {
+                    any = true;
+                    break;
+                }
+            }
             if (!any) return;
-            _selectionState.ClearAll();
+
+            ClearAllTargetsSilent();
             OnSelectionChanged?.Invoke();
         }
 

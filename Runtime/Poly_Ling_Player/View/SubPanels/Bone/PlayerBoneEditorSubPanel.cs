@@ -1137,7 +1137,11 @@ namespace Poly_Ling.Player
                 var indices = GetTargetIndices();
                 if (indices.Length == 0) return;
                 int modelIdx = GetModelIndex?.Invoke() ?? 0;
-                SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices) { Mode = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind });
+                SendCommand(new BeginBoneTransformSliderDragCommand(modelIdx, indices)
+                {
+                    Mode       = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                    OriginOnly = IsOriginOnlyActive(),
+                });
                 SendCommand(new SetBoneTransformValueCommand(modelIdx, indices, field, e.newValue));
                 SendCommand(new EndBoneTransformSliderDragCommand(modelIdx, "TRS変更"));
                 OnRepaint?.Invoke();
@@ -1152,7 +1156,10 @@ namespace Poly_Ling.Player
             var indices = GetTargetIndices();
             if (indices.Length == 0) return;
             SendCommand(new BeginBoneTransformSliderDragCommand(GetModelIndex?.Invoke() ?? 0, indices)
-                { Mode = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind });
+            {
+                Mode       = GetObjectMoveSettings?.Invoke()?.MoveMode ?? Poly_Ling.Tools.BoneMoveMode.BoneOnlyRebind,
+                OriginOnly = IsOriginOnlyActive(),
+            });
             _trsDragOpen = true;
         }
 
@@ -1197,15 +1204,25 @@ namespace Poly_Ling.Player
         // UI ヘルパー
         // ================================================================
 
-        /// <summary>OriginOnly(原点だけ移動)時は回転/スケール区画を隠す（位置のみ有効）。</summary>
+        /// <summary>
+        /// 「原点だけ移動」が実際に効いている状態か。
+        /// 「オブジェクト姿勢」スコープ限定（ボーンタブでは常に false）。
+        /// </summary>
+        private bool IsOriginOnlyActive()
+            => (_scope == SubPanelScope.MeshesOnly)
+               && (GetObjectMoveSettings?.Invoke()?.OriginOnly ?? false);
+
+        /// <summary>
+        /// OriginOnly(原点だけ移動)時はスケール区画を隠す。
+        /// 回転は自頂点の再ローカル化で補償されるため表示する。
+        /// スケールは補償経路が無いため引き続き隠す。
+        /// </summary>
         private void ApplyOriginOnlyVisibility()
         {
-            // OriginOnly は「オブジェクト姿勢」スコープでのみ回転/スケールを隠す（ボーンタブでは常に表示）。
-            bool originOnly = (_scope == SubPanelScope.MeshesOnly)
-                              && (GetObjectMoveSettings?.Invoke()?.OriginOnly ?? false);
-            var disp = originOnly ? DisplayStyle.None : DisplayStyle.Flex;
-            if (_rotSection != null) _rotSection.style.display = disp;
-            if (_sclSection != null) _sclSection.style.display = disp;
+            bool originOnly = IsOriginOnlyActive();
+            if (_rotSection != null) _rotSection.style.display = DisplayStyle.Flex;
+            if (_sclSection != null)
+                _sclSection.style.display = originOnly ? DisplayStyle.None : DisplayStyle.Flex;
         }
 
         private void SetTRSEnabled(bool enabled)

@@ -49,6 +49,47 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<int, UnityEngine.Vector3?> GetVertexWorldPosition;
 
+        /// <summary>
+        /// 任意メッシュの頂点について、GPU が計算したワールド座標を返す
+        /// （Viewer から PlayerViewportManager.TryGetVertexWorld を結線）。
+        /// 引数は (MeshContextList インデックス, メッシュ内ローカル頂点番号)。
+        /// GetVertexWorldPosition は操作対象メッシュ固定なので他メッシュには使えない。
+        /// 他オブジェクトの頂点への吸着で使う。
+        /// </summary>
+        public Func<int, int, UnityEngine.Vector3?> GetMeshVertexWorldPosition;
+
+        /// <summary>
+        /// 非選択オブジェクトも対象にした吸着用ホバー要素を返す
+        /// （Viewer から PlayerViewportManager.GetSnapHoverElement を結線）。
+        /// 通常ホバー（GetHoverElement）が選択メッシュしか返さないため、
+        /// 非選択オブジェクトへ吸着したい場合だけこちらを使う。
+        /// Viewer 側で SetSnapHitTestEnabled(true) にしていないと常に未ヒット。
+        /// </summary>
+        public Func<PlayerHoverElement> GetSnapHoverElement;
+
+        /// <summary>
+        /// 吸着用ヒットテストの有効/無効を Viewer へ伝えるコールバック
+        /// （PlayerViewportManager.SetSnapHitTestEnabled を結線）。
+        /// </summary>
+        public Action<bool> OnSnapHitTestEnabledChanged;
+
+        private bool _snapToUnselected;
+
+        /// <summary>
+        /// 非選択オブジェクトの頂点にも吸着するか。既定 false。
+        /// true の間だけ GPU 側で追加のヒットテストと頂点数ぶんの読み戻しが走る。
+        /// </summary>
+        public bool SnapToUnselectedObjects
+        {
+            get => _snapToUnselected;
+            set
+            {
+                if (_snapToUnselected == value) return;
+                _snapToUnselected = value;
+                OnSnapHitTestEnabledChanged?.Invoke(value);
+            }
+        }
+
         // ================================================================
         // 設定公開API
         // ================================================================
@@ -131,8 +172,19 @@ namespace Poly_Ling.Player
             wp.Origin = ctx.CameraTarget;
             ctx.WorkPlane = wp;
         }
-        public void Activate(ToolContext ctx)   { _tool.OnActivate(ctx); }
-        public void Deactivate(ToolContext ctx) { _tool.OnDeactivate(ctx); }
+        public void Activate(ToolContext ctx)
+        {
+            _tool.OnActivate(ctx);
+            OnSnapHitTestEnabledChanged?.Invoke(_snapToUnselected);
+        }
+
+        public void Deactivate(ToolContext ctx)
+        {
+            _tool.OnDeactivate(ctx);
+            // 他モードへ移る際は必ず切る。切り忘れるとポインタ移動ごとに
+            // 頂点数ぶんの読み戻しが走り続ける。
+            OnSnapHitTestEnabledChanged?.Invoke(false);
+        }
 
         // ================================================================
         // 内部ヘルパー
@@ -141,23 +193,75 @@ namespace Poly_Ling.Player
         private MeshUndoController _undoController;
 
         /// <summary>
-        /// GPU ホバー由来の既存頂点を問い合わせ、操作対象メッシュ（FirstSelected）に一致する
-        /// 頂点のみ tool に渡す。未ヒットは -1（＝スナップせず WorkPlane）。CPU 探索は使わない。
+        /// GPU ホバー由来の既存頂点を問い合わせて tool に渡す。CPU 探索は使わない。
+        ///
+        /// 【3 経路の使い分け】
+        ///   操作対象メッシュ（ActiveMeshIndex）にヒット
+        ///     → 頂点番号をそのまま渡す。面の頂点として既存頂点が再利用される。
+        ///   それ以外の選択メッシュにヒット
+        ///     → 頂点番号は意味が違うので使えない。GPU のワールド座標だけを渡し、
+        ///       操作対象メッシュ側には新規頂点が作られる（座標のみ一致）。
+        ///   非選択オブジェクトにヒット（GetSnapHoverElement 経路）
+        ///     → 通常ホバーが未ヒットのときだけ参照する。扱いは上と同じくワールド座標のみ。
+        ///   未ヒット
+        ///     → -1 / null（スナップせず WorkPlane 交点）。
+        ///
+        /// 基準は FirstSelectedIndex ではなく ActiveMeshIndex を使う。
+        /// ツール本体が使う ctx.ActiveMeshObject の取得元が ActiveMeshContext であり、
+        /// ActiveCategory が Bone のとき FirstSelectedIndex はボーンを指してしまうため。
         /// </summary>
         private void ResolveGpuHoverVertex()
         {
             int gpuVertex = -1;
-            if (GetHoverElement != null)
+            UnityEngine.Vector3? snapWorld = null;
+
+            var model = _project?.CurrentModel;
+            if (model != null)
             {
-                int firstIdx = _project?.CurrentModel?.FirstSelectedIndex ?? -1;
-                if (firstIdx >= 0)
+                int activeIdx = model.ActiveMeshIndex;
+
+                if (GetHoverElement != null)
                 {
-                    var elem = GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex);
-                    if (elem.Kind == PlayerHoverKind.Vertex && elem.MeshIndex == firstIdx)
-                        gpuVertex = elem.VertexIndex;
+                    ApplyHoverElement(
+                        GetHoverElement(Poly_Ling.Selection.MeshSelectMode.Vertex),
+                        activeIdx, ref gpuVertex, ref snapWorld);
+                }
+
+                // 通常ホバーが空振りのときだけ非選択オブジェクトを見る。
+                // 選択メッシュへのヒットを優先させるため順序を入れ替えないこと。
+                if (_snapToUnselected && gpuVertex < 0 && !snapWorld.HasValue
+                    && GetSnapHoverElement != null)
+                {
+                    ApplyHoverElement(
+                        GetSnapHoverElement(),
+                        activeIdx, ref gpuVertex, ref snapWorld);
                 }
             }
+
             _tool.SetGpuHoverVertex(gpuVertex);
+            // 同一メッシュヒットが優先。両方を同時に立てない。
+            _tool.SetGpuHoverSnapWorld(gpuVertex >= 0 ? (UnityEngine.Vector3?)null : snapWorld);
+        }
+
+        /// <summary>
+        /// ホバー要素を「操作対象メッシュの頂点番号」または「吸着ワールド座標」に振り分ける。
+        /// </summary>
+        private void ApplyHoverElement(
+            PlayerHoverElement elem,
+            int activeIdx,
+            ref int gpuVertex,
+            ref UnityEngine.Vector3? snapWorld)
+        {
+            if (elem.Kind != PlayerHoverKind.Vertex || elem.MeshIndex < 0) return;
+
+            if (activeIdx >= 0 && elem.MeshIndex == activeIdx)
+            {
+                gpuVertex = elem.VertexIndex;
+            }
+            else if (GetMeshVertexWorldPosition != null)
+            {
+                snapWorld = GetMeshVertexWorldPosition(elem.MeshIndex, elem.VertexIndex);
+            }
         }
 
         /// <summary>

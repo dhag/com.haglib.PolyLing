@@ -131,7 +131,10 @@ namespace Poly_Ling.Tools
                 PlacedPoints       = _points.ToArray(),
                 PreviewValid       = _previewValid,
                 PreviewPoint       = _previewPoint,
-                PreviewSnapped     = _previewHitVertex >= 0,
+                // 他メッシュ頂点への吸着でもスナップ表示にする。
+                // その場合 PreviewVertexIndex は -1 のままで、
+                // オーバーレイ側は PreviewPoint（ローカル座標）を使って描画する。
+                PreviewSnapped     = _previewHitVertex >= 0 || _previewSnappedOther,
                 PreviewVertexIndex = _previewHitVertex,
                 ContinuousLineStart = contStart,
             };
@@ -157,6 +160,7 @@ namespace Poly_Ling.Tools
         private Vector3 _previewPoint;          // 現在のマウス位置での候補点
         private bool _previewValid = false;
         private int _previewHitVertex = -1;     // プレビュー時に既存頂点にヒットしている場合
+        private bool _previewSnappedOther = false;  // プレビューが他メッシュの頂点へ吸着している場合
 
         // === モード名 ===
         private static readonly string[] ModeNames = { "Line (2)", "Triangle (3)", "Quad (4)" };
@@ -333,6 +337,9 @@ namespace Poly_Ling.Tools
             _points.Clear();
             _previewValid = false;
             _lastLinePoint = null;
+            _gpuHoverVertex = -1;
+            _gpuHoverSnapWorld = null;
+            _previewSnappedOther = false;
         }
 
         public void Reset()
@@ -341,6 +348,9 @@ namespace Poly_Ling.Tools
             _previewValid = false;
             _previewHitVertex = -1;
             _lastLinePoint = null;
+            _gpuHoverVertex = -1;
+            _gpuHoverSnapWorld = null;
+            _previewSnappedOther = false;
         }
 
         // === 内部メソッド ===
@@ -351,12 +361,30 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// 次回クリック／プレビューでスナップ対象にする既存頂点を GPU ホバー由来で指定する。
         /// Player のハンドラが OnMouseDown / UpdateHover 直前に呼ぶ。未ヒットは -1。
+        /// ここで指定できるのは「操作対象メッシュ（ctx.ActiveMeshObject）内の頂点」だけ。
+        /// 面の頂点として番号をそのまま再利用するため、他メッシュの番号は渡せない。
         /// </summary>
         public void SetGpuHoverVertex(int vertex) => _gpuHoverVertex = vertex;
 
+        // 操作対象メッシュ以外の頂点へ吸着する場合のワールド座標。未ヒットは null。
+        private Vector3? _gpuHoverSnapWorld = null;
+
+        /// <summary>
+        /// 操作対象メッシュ以外のメッシュの頂点へ「位置だけ」吸着させる指定。
+        /// 頂点番号はメッシュごとに意味が違うため再利用できない。
+        /// よって吸着点は操作対象メッシュ側の新規頂点として作られ、
+        /// 座標のみがホバー先の頂点と一致する（頂点の結合は行わない）。
+        /// Player のハンドラが OnMouseDown / UpdateHover 直前に呼ぶ。未ヒットは null。
+        /// SetGpuHoverVertex が有効なとき（同一メッシュ内ヒット）は必ず null を渡すこと。
+        /// </summary>
+        public void SetGpuHoverSnapWorld(Vector3? world) => _gpuHoverSnapWorld = world;
+
         /// <summary>
         /// スクリーン位置から点を取得（戻り値 Position は常に「ローカル座標」）
-        /// 優先順位: 1.GPU ホバー既存頂点  2.WorkPlane 交点
+        /// 優先順位:
+        ///   1. GPU ホバー既存頂点（操作対象メッシュ内 → 頂点番号を再利用）
+        ///   2. 他メッシュ頂点への吸着（座標のみ一致する新規点）
+        ///   3. WorkPlane 交点
         /// </summary>
         private PointInfo GetPointAtScreenPos(ToolContext ctx, Vector2 screenPos)
         {
@@ -366,6 +394,15 @@ namespace Poly_Ling.Tools
             {
                 Vector3 pos = mo.Vertices[_gpuHoverVertex].Position;
                 return PointInfo.FromExisting(_gpuHoverVertex, pos);
+            }
+
+            // 他メッシュの頂点への吸着。ワールド座標を操作対象メッシュのローカルへ落とす。
+            // ActiveWorldToLocal を通すのは GetLocalPositionFromScreen と同じ基準に
+            // 揃えるため。CreateFace の RebasePositionToSource がこの基準を前提に
+            // ActiveWorldMatrix でワールドへ戻すので、ここでずらすと座標が壊れる。
+            if (_gpuHoverSnapWorld.HasValue)
+            {
+                return PointInfo.FromNew(ctx.ActiveWorldToLocal(_gpuHoverSnapWorld.Value));
             }
 
             // WorkPlane との交点（ワールド）をローカルへ変換して保持する。
@@ -450,20 +487,32 @@ namespace Poly_Ling.Tools
             if (ctx.ActiveMeshObject == null || !ctx.PreviewRect.Contains(screenPos))
             {
                 _previewValid = false;
+                _previewSnappedOther = false;
                 return;
             }
 
-            // GPU ホバー由来の既存頂点があればスナップ。CPU ヒットテスト（FindNearestVertexAtScreen）は使用禁止。
+            // 優先順位は GetPointAtScreenPos と同一にすること。
+            // ずれるとプレビュー位置と実際に置かれる点が食い違う。
             var mo = ctx.ActiveMeshObject;
             if (mo != null && _gpuHoverVertex >= 0 && _gpuHoverVertex < mo.VertexCount)
             {
-                _previewHitVertex = _gpuHoverVertex;
-                _previewPoint     = mo.Vertices[_gpuHoverVertex].Position;
+                // GPU ホバー由来の既存頂点。CPU ヒットテスト（FindNearestVertexAtScreen）は使用禁止。
+                _previewHitVertex    = _gpuHoverVertex;
+                _previewPoint        = mo.Vertices[_gpuHoverVertex].Position;
+                _previewSnappedOther = false;
+            }
+            else if (_gpuHoverSnapWorld.HasValue)
+            {
+                // 他メッシュ頂点への吸着。番号は再利用しないので _previewHitVertex は -1。
+                _previewHitVertex    = -1;
+                _previewPoint        = ctx.ActiveWorldToLocal(_gpuHoverSnapWorld.Value);
+                _previewSnappedOther = true;
             }
             else
             {
-                _previewHitVertex = -1;
-                _previewPoint     = GetLocalPositionFromScreen(ctx, screenPos);
+                _previewHitVertex    = -1;
+                _previewPoint        = GetLocalPositionFromScreen(ctx, screenPos);
+                _previewSnappedOther = false;
             }
 
             _previewValid = true;

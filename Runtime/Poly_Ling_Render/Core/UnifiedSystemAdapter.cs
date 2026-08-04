@@ -85,6 +85,23 @@ namespace Poly_Ling.Core
         public int HoverFaceIndex => _unifiedSystem?.HoveredFaceIndex ?? -1;
 
         /// <summary>
+        /// 吸着用ヒットテスト（メッシュ選択を無視）の有効/無効。既定 false。
+        /// true の間だけ追加のディスパッチと読み戻しが走るため、
+        /// 必要なツールが有効な間だけ true にすること。
+        /// </summary>
+        public bool EnableSnapHitTest
+        {
+            get => _unifiedSystem?.EnableSnapHitTest ?? false;
+            set { if (_unifiedSystem != null) _unifiedSystem.EnableSnapHitTest = value; }
+        }
+
+        /// <summary>
+        /// 吸着用ヒットテストのホバー頂点（グローバルインデックス）。未ヒットは -1。
+        /// 非選択メッシュの頂点も返り得る。通常のホバー表示には反映されない。
+        /// </summary>
+        public int SnapHoverVertexIndex => _unifiedSystem?.SnapHoveredVertexIndex ?? -1;
+
+        /// <summary>
         /// ホバー状態を全てクリアする。
         /// マウスが表示エリア外に出た場合に呼び出す。
         /// </summary>

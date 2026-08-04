@@ -10,7 +10,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
-    public class ScaleToolHandler : IPlayerToolHandler
+    public class ScaleToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
         // 依存
@@ -35,9 +35,7 @@ namespace Poly_Ling.Player
         private AxisGizmo.AxisType _gizmoHoverAxis = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _gizmoDragAxis  = AxisGizmo.AxisType.None;
         private Vector2 _gizmoDragStartScreen;
-        private Vector2 _gizmoAxisScreenDir;
         private float   _gizmoStartScaleX = 1f, _gizmoStartScaleY = 1f, _gizmoStartScaleZ = 1f;
-        private const float GizmoScaleSensitivity = 0.01f;
 
         // ================================================================
         // 設定公開API
@@ -118,6 +116,25 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。スケールはキューブスタイル。
+        /// </summary>
+        public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
+        {
+            data = default;
+            if (!TryGetGizmoScreenPositions(ctx, out var so, out var sxe, out var sye, out var sze, out var sha))
+                return false;
+
+            data = new PlayerViewportPanel.GizmoData
+            {
+                HasGizmo    = true,
+                IsCubeStyle = true,
+                Origin      = so, XEnd = sxe, YEnd = sye, ZEnd = sze,
+                HoveredAxis = sha,
+            };
+            return true;
+        }
+
         /// <summary>ギズモヒットテスト（MoveToolHandler.GizmoHitTestOverride 用）。</summary>
         public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
         {
@@ -136,13 +153,13 @@ namespace Poly_Ling.Player
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return false;
             var ctx = GetToolContext?.Invoke();
             if (ctx == null) { _gizmoDragAxis = AxisGizmo.AxisType.None; return false; }
+            // 軸スクリーン方向の算出は AxisGizmo のスケールドラッグセッションに集約。
             _axisGizmo.Center = WorldPivot();
-            _axisGizmo.GetScreenPositions(ctx, out var o, out var xe, out var ye, out var ze);
-            Vector2 axisEnd = _gizmoDragAxis == AxisGizmo.AxisType.X ? xe
-                            : _gizmoDragAxis == AxisGizmo.AxisType.Y ? ye : ze;
-            Vector2 dir = axisEnd - o;
-            // GetScreenPositions は imgui(Y上)。スクリーン(Y下)基準へ変換して符号を合わせる。
-            _gizmoAxisScreenDir = dir.sqrMagnitude > 1e-4f ? new Vector2(dir.x, -dir.y).normalized : Vector2.right;
+            if (!_axisGizmo.BeginScaleDrag(ctx, _gizmoDragAxis, _gizmoDragStartScreen))
+            {
+                _gizmoDragAxis = AxisGizmo.AxisType.None;
+                return false;
+            }
             _gizmoStartScaleX = _tool.ScaleX; _gizmoStartScaleY = _tool.ScaleY; _gizmoStartScaleZ = _tool.ScaleZ;
             _tool.BeginSliderDrag();
             return true;
@@ -152,11 +169,7 @@ namespace Poly_Ling.Player
         public void GizmoDrag(Vector2 screenPos)
         {
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
-            Vector2 d = screenPos - _gizmoDragStartScreen;
-            float along = _gizmoDragAxis == AxisGizmo.AxisType.Center
-                        ? (d.x - d.y)
-                        : Vector2.Dot(d, _gizmoAxisScreenDir);
-            float factor = Mathf.Max(0.01f, 1f + along * GizmoScaleSensitivity);
+            float factor = _axisGizmo.ComputeScaleFactor(screenPos);
 
             switch (_gizmoDragAxis)
             {
@@ -178,6 +191,7 @@ namespace Poly_Ling.Player
         {
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
             _gizmoDragAxis = AxisGizmo.AxisType.None;
+            _axisGizmo.EndScaleDrag();
             EndSliderDrag();
         }
 

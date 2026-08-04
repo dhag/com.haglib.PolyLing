@@ -73,7 +73,9 @@ namespace Poly_Ling.Player
         public const int VD_UNSEL_BONE = 8;
         public const int VD_SEL_MIRROR   = 9;
         public const int VD_UNSEL_MIRROR = 10;
-        public const int VD_COUNT      = 11;
+        public const int VD_SEL_MESH_ORIGIN   = 11;
+        public const int VD_UNSEL_MESH_ORIGIN = 12;
+        public const int VD_COUNT      = 13;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -116,6 +118,15 @@ namespace Poly_Ling.Player
 
         /// <summary>左ペイン：新図形生成ボタン（新しい高度）。新しい基本と同じ LivePrimitiveSection を開く。</summary>
         public Button LiveAdvancedPrimitiveBtn { get; private set; }
+
+        /// <summary>
+        /// 左ペイン：配置ギズモのサブモード切替ボタン（移動 / 回転 / スケール）。
+        /// PrimitivePlaceToolHandler.Mode を切り替えるだけで、パネル表示や
+        /// InteractionMode には影響しない。
+        /// </summary>
+        public Button PlaceGizmoMoveBtn   { get; private set; }
+        public Button PlaceGizmoRotateBtn { get; private set; }
+        public Button PlaceGizmoScaleBtn  { get; private set; }
 
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
         public Button ToolVertexMoveBtn  { get; private set; }
@@ -788,6 +799,19 @@ namespace Poly_Ling.Player
             LiveAdvancedPrimitiveBtn = MakeBtn("新しい高度");
             foPrimitive.Add(LiveAdvancedPrimitiveBtn);
 
+            // 配置ギズモのサブモード切替。GizmoData は矢印 / リング / キューブを
+            // 排他的にしか描画できないため、3種を同時には出さず切り替える。
+            var placeGizmoRow = new VisualElement();
+            placeGizmoRow.style.flexDirection = FlexDirection.Row;
+            placeGizmoRow.style.marginBottom  = 2;
+            PlaceGizmoMoveBtn   = MakeBtn("配置:移動");     PlaceGizmoMoveBtn.style.flexGrow   = 1; PlaceGizmoMoveBtn.style.marginRight   = 2;
+            PlaceGizmoRotateBtn = MakeBtn("配置:回転");     PlaceGizmoRotateBtn.style.flexGrow = 1; PlaceGizmoRotateBtn.style.marginRight = 2;
+            PlaceGizmoScaleBtn  = MakeBtn("配置:スケール"); PlaceGizmoScaleBtn.style.flexGrow  = 1;
+            placeGizmoRow.Add(PlaceGizmoMoveBtn);
+            placeGizmoRow.Add(PlaceGizmoRotateBtn);
+            placeGizmoRow.Add(PlaceGizmoScaleBtn);
+            foPrimitive.Add(placeGizmoRow);
+
             // ── 選択・移動 ─────────────────────────────────────────────
             var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小", "SelectMove");
 
@@ -967,6 +991,7 @@ namespace Poly_Ling.Player
                 "カリング", "選択Mesh", "選択辺", "選択頂点", "選択Bone",
                 "非選Mesh", "非選辺",  "非選頂点", "非選Bone",
                 "選択Mirror", "非選Mirror",
+                "選択M原点", "非選M原点",
             };
             // ViewportDisplaySettings.Default と一致させる
             var itemDefaults = new bool[]
@@ -982,6 +1007,8 @@ namespace Poly_Ling.Player
                 false, // 非選Bone
                 true,  // 選択Mirror
                 true,  // 非選Mirror
+                true,  // 選択M原点
+                true,  // 非選M原点
             };
 
             // ヘッダ行

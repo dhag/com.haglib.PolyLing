@@ -25,6 +25,8 @@ namespace Poly_Ling.Player
         public bool ShowUnselectedBone;
         public bool ShowSelectedMirror;
         public bool ShowUnselectedMirror;
+        public bool ShowSelectedMeshOrigin;
+        public bool ShowUnselectedMeshOrigin;
 
         /// <summary>
         /// MeshSceneRenderer のデフォルト値と一致するデフォルト設定を返す。
@@ -42,6 +44,8 @@ namespace Poly_Ling.Player
             ShowUnselectedBone      = false,
             ShowSelectedMirror      = true,
             ShowUnselectedMirror    = true,
+            ShowSelectedMeshOrigin   = true,
+            ShowUnselectedMeshOrigin = true,
         };
 
         /// <summary>
@@ -72,6 +76,8 @@ namespace Poly_Ling.Player
             if (ShowUnselectedBone)      b |= 1 << 8;
             if (ShowSelectedMirror)      b |= 1 << 9;
             if (ShowUnselectedMirror)    b |= 1 << 10;
+            if (ShowSelectedMeshOrigin)   b |= 1 << 11;
+            if (ShowUnselectedMeshOrigin) b |= 1 << 12;
             return b;
         }
 
@@ -88,6 +94,8 @@ namespace Poly_Ling.Player
             ShowUnselectedBone      = (b & (1 << 8)) != 0,
             ShowSelectedMirror      = (b & (1 << 9)) != 0,
             ShowUnselectedMirror    = (b & (1 << 10)) != 0,
+            ShowSelectedMeshOrigin   = (b & (1 << 11)) != 0,
+            ShowUnselectedMeshOrigin = (b & (1 << 12)) != 0,
         };
     }
 }

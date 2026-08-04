@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using GizmoAxis = Poly_Ling.Tools.AxisGizmo;
 
 namespace Poly_Ling.Player
 {
@@ -160,6 +161,12 @@ namespace Poly_Ling.Player
             /// <summary>回転リングギズモ。true=3軸リングを描画。</summary>
             public bool IsRingStyle;
             public Vector2[] RingX, RingY, RingZ;
+            /// <summary>
+            /// リングと軸ギズモを併用する。true のとき IsRingStyle のリングを描いた後、
+            /// 続けて軸ギズモ（IsCubeStyle / IsDiamondStyle / 矢印）も描く。
+            /// false（既定）ならリングのみ描いて終了する＝回転ツールの従来挙動。
+            /// </summary>
+            public bool DrawAxisWithRing;
         }
 
         public void UpdateGizmo(GizmoData d)
@@ -1080,86 +1087,131 @@ namespace Poly_Ling.Player
             }
         }
 
+        // ================================================================
+        // ギズモのハイライト表現
+        //
+        // 色だけの変化ではホバー軸が判別しにくいため、線幅・ハンドルサイズ・
+        // 白の縁取りも併せて変える。非ハイライト側は alpha を下げてコントラスト
+        // 差を広げる。
+        // ================================================================
+
+        private const float GizmoAxisHalfWidth   = 1.5f;
+        private const float GizmoAxisHalfWidthHi = 3.0f;
+        private const float GizmoArrowHeadSize   = 10f;
+        private const float GizmoArrowHeadSizeHi = 14f;
+        private const float GizmoHandleScaleHi   = 1.4f;
+        private const float GizmoOutlinePad      = 2f;
+
+        private static readonly Color GizmoOutlineColor = new Color(1f, 1f, 1f, 0.85f);
+
+        /// <summary>軸色。hi=true でホバー/ドラッグ中の強調色。</summary>
+        private static Color GizmoAxisColor(GizmoAxis.AxisType axis, bool hi)
+        {
+            switch (axis)
+            {
+                case GizmoAxis.AxisType.X:
+                    return hi ? new Color(1f, .35f, .35f, 1f) : new Color(.8f, .2f, .2f, .5f);
+                case GizmoAxis.AxisType.Y:
+                    return hi ? new Color(.35f, 1f, .35f, 1f) : new Color(.2f, .8f, .2f, .5f);
+                case GizmoAxis.AxisType.Z:
+                    return hi ? new Color(.35f, .35f, 1f, 1f) : new Color(.2f, .2f, .8f, .5f);
+                default:
+                    return hi ? new Color(1f, 1f, 1f, 1f) : new Color(.8f, .8f, .8f, .45f);
+            }
+        }
+
+        /// <summary>軸線を、ハイライト時は太く・白縁取り付きで描く。</summary>
+        private static void DrawGizmoAxisLineHi(
+            MeshGenerationContext ctx, Vector2 from, Vector2 to, GizmoAxis.AxisType axis, bool hi)
+        {
+            if (hi) DrawGizmoAxisLine(ctx, from, to, GizmoOutlineColor, GizmoAxisHalfWidthHi + GizmoOutlinePad);
+            DrawGizmoAxisLine(ctx, from, to, GizmoAxisColor(axis, hi),
+                hi ? GizmoAxisHalfWidthHi : GizmoAxisHalfWidth);
+        }
+
+        /// <summary>矢印軸を、ハイライト時は太く・矢尻を大きく・白縁取り付きで描く。</summary>
+        private static void DrawGizmoAxisHi(
+            MeshGenerationContext ctx, Vector2 from, Vector2 to, GizmoAxis.AxisType axis, bool hi)
+        {
+            if (hi)
+                DrawGizmoAxis(ctx, from, to, GizmoOutlineColor,
+                    GizmoAxisHalfWidthHi + GizmoOutlinePad, GizmoArrowHeadSizeHi + GizmoOutlinePad);
+            DrawGizmoAxis(ctx, from, to, GizmoAxisColor(axis, hi),
+                hi ? GizmoAxisHalfWidthHi : GizmoAxisHalfWidth,
+                hi ? GizmoArrowHeadSizeHi : GizmoArrowHeadSize);
+        }
+
+        /// <summary>ダイヤハンドルを、ハイライト時は大きく・白縁取り付きで描く。</summary>
+        private static void DrawGizmoDiamondHi(
+            MeshGenerationContext ctx, Vector2 c, float r, GizmoAxis.AxisType axis, bool hi)
+        {
+            float rr = hi ? r * GizmoHandleScaleHi : r;
+            if (hi) DrawGizmoDiamond(ctx, c, rr + GizmoOutlinePad, GizmoOutlineColor);
+            DrawGizmoDiamond(ctx, c, rr, GizmoAxisColor(axis, hi));
+        }
+
+        /// <summary>四角ハンドルを、ハイライト時は大きく・白縁取り付きで描く。</summary>
+        private static void DrawGizmoCenterHandleHi(
+            MeshGenerationContext ctx, Vector2 c, float h, GizmoAxis.AxisType axis, bool hi)
+        {
+            float hh = hi ? h * GizmoHandleScaleHi : h;
+            if (hi) DrawGizmoCenterHandle(ctx, c, hh + GizmoOutlinePad, GizmoOutlineColor);
+            DrawGizmoCenterHandle(ctx, c, hh, GizmoAxisColor(axis, hi));
+        }
+
         private void OnGenerateGizmoOverlay(MeshGenerationContext ctx)
         {
             if (!_gizmoData.HasGizmo) return;
             var at = _gizmoData.HoveredAxis; var dt = _gizmoData.DraggingAxis;
 
+            // ホバー軸かドラッグ軸なら強調する。
+            bool Hi(GizmoAxis.AxisType a)
+                => a != GizmoAxis.AxisType.None && (at == a || dt == a);
+
+            bool hx = Hi(GizmoAxis.AxisType.X);
+            bool hy = Hi(GizmoAxis.AxisType.Y);
+            bool hz = Hi(GizmoAxis.AxisType.Z);
+            bool hc = Hi(GizmoAxis.AxisType.Center);
+
             if (_gizmoData.IsRingStyle)
             {
-                bool hx = (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X);
-                bool hy = (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y);
-                bool hz = (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z);
-                DrawGizmoPolyline(ctx, _gizmoData.RingX, hx?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f), hx?2.5f:1.5f);
-                DrawGizmoPolyline(ctx, _gizmoData.RingY, hy?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f), hy?2.5f:1.5f);
-                DrawGizmoPolyline(ctx, _gizmoData.RingZ, hz?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f), hz?2.5f:1.5f);
-                return;
+                DrawGizmoPolyline(ctx, _gizmoData.RingX, GizmoAxisColor(GizmoAxis.AxisType.X, hx), hx ? 4.0f : 1.2f);
+                DrawGizmoPolyline(ctx, _gizmoData.RingY, GizmoAxisColor(GizmoAxis.AxisType.Y, hy), hy ? 4.0f : 1.2f);
+                DrawGizmoPolyline(ctx, _gizmoData.RingZ, GizmoAxisColor(GizmoAxis.AxisType.Z, hz), hz ? 4.0f : 1.2f);
+                // 軸ギズモを併用しない呼び出し元（回転ツール）は従来どおりここで終了する。
+                // オブジェクト移動はリング＋軸ギズモを同時に描くため下へ抜ける。
+                if (!_gizmoData.DrawAxisWithRing) return;
             }
 
             if (_gizmoData.IsCubeStyle)
             {
                 // スケール: 軸線 + 先端キューブ + 中心キューブ（Unity準拠）
-                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.XEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
-                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
-                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.YEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
-                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
-                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
-                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
-                DrawGizmoCenterHandle(ctx, _gizmoData.XEnd, 6f,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
-                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
-                DrawGizmoCenterHandle(ctx, _gizmoData.YEnd, 6f,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
-                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
-                DrawGizmoCenterHandle(ctx, _gizmoData.ZEnd, 6f,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
-                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
-                bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
-                DrawGizmoCenterHandle(ctx, _gizmoData.Origin, 8f,
-                    ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.XEnd, GizmoAxis.AxisType.X, hx);
+                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.YEnd, GizmoAxis.AxisType.Y, hy);
+                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
+                DrawGizmoCenterHandleHi(ctx, _gizmoData.XEnd, 6f, GizmoAxis.AxisType.X, hx);
+                DrawGizmoCenterHandleHi(ctx, _gizmoData.YEnd, 6f, GizmoAxis.AxisType.Y, hy);
+                DrawGizmoCenterHandleHi(ctx, _gizmoData.ZEnd, 6f, GizmoAxis.AxisType.Z, hz);
+                DrawGizmoCenterHandleHi(ctx, _gizmoData.Origin, 8f, GizmoAxis.AxisType.Center, hc);
             }
             else if (_gizmoData.IsDiamondStyle)
             {
-                // オブジェクト移動: 軸線 + 先端ダイヤ + 中心ダイヤ
-                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.XEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
-                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
-                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.YEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
-                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
-                DrawGizmoAxisLine(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
-                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
-                DrawGizmoDiamond(ctx, _gizmoData.XEnd, 7f,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
-                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
-                DrawGizmoDiamond(ctx, _gizmoData.YEnd, 7f,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
-                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
-                DrawGizmoDiamond(ctx, _gizmoData.ZEnd, 7f,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
-                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
-                bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
-                DrawGizmoDiamond(ctx, _gizmoData.Origin, 9f,
-                    ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+                // 原点だけ移動: 軸線 + 先端ダイヤ + 中心ダイヤ
+                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.XEnd, GizmoAxis.AxisType.X, hx);
+                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.YEnd, GizmoAxis.AxisType.Y, hy);
+                DrawGizmoAxisLineHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
+                DrawGizmoDiamondHi(ctx, _gizmoData.XEnd, 7f, GizmoAxis.AxisType.X, hx);
+                DrawGizmoDiamondHi(ctx, _gizmoData.YEnd, 7f, GizmoAxis.AxisType.Y, hy);
+                DrawGizmoDiamondHi(ctx, _gizmoData.ZEnd, 7f, GizmoAxis.AxisType.Z, hz);
+                DrawGizmoDiamondHi(ctx, _gizmoData.Origin, 9f, GizmoAxis.AxisType.Center, hc);
             }
             else
             {
-                // 頂点移動: 矢印
-                DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.XEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.X||at==Poly_Ling.Tools.AxisGizmo.AxisType.X)
-                    ?new Color(1f,.3f,.3f,1f):new Color(.8f,.2f,.2f,.7f));
-                DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.YEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Y||at==Poly_Ling.Tools.AxisGizmo.AxisType.Y)
-                    ?new Color(.3f,1f,.3f,1f):new Color(.2f,.8f,.2f,.7f));
-                DrawGizmoAxis(ctx, _gizmoData.Origin, _gizmoData.ZEnd,
-                    (dt==Poly_Ling.Tools.AxisGizmo.AxisType.Z||at==Poly_Ling.Tools.AxisGizmo.AxisType.Z)
-                    ?new Color(.3f,.3f,1f,1f):new Color(.2f,.2f,.8f,.7f));
-                bool ch=(at==Poly_Ling.Tools.AxisGizmo.AxisType.Center||dt==Poly_Ling.Tools.AxisGizmo.AxisType.Center);
-                DrawGizmoCenterHandle(ctx,_gizmoData.Origin,8f,ch?new Color(1f,1f,1f,.9f):new Color(.8f,.8f,.8f,.6f));
+                // 頂点移動 / オブジェクト姿勢 / 図形配置(移動): 矢印
+                DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.XEnd, GizmoAxis.AxisType.X, hx);
+                DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.YEnd, GizmoAxis.AxisType.Y, hy);
+                DrawGizmoAxisHi(ctx, _gizmoData.Origin, _gizmoData.ZEnd, GizmoAxis.AxisType.Z, hz);
+                DrawGizmoCenterHandleHi(ctx, _gizmoData.Origin, 8f, GizmoAxis.AxisType.Center, hc);
             }
 
             // ピボット位置のダイヤ型ギズモ
@@ -1191,8 +1243,10 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>軸線のみ描画（ダイヤスタイル用）。</summary>
-        private static void DrawGizmoAxisLine(MeshGenerationContext ctx, Vector2 from, Vector2 to, Color col)        {
-            Vector2 d = (to - from).normalized, p = new Vector2(-d.y, d.x) * 1.5f;
+        private static void DrawGizmoAxisLine(MeshGenerationContext ctx, Vector2 from, Vector2 to, Color col,
+            float halfWidth = GizmoAxisHalfWidth)
+        {
+            Vector2 d = (to - from).normalized, p = new Vector2(-d.y, d.x) * halfWidth;
             var m = ctx.Allocate(4, 6); var v = new Vertex[4];
             v[0]=new Vertex{position=new Vector3(from.x-p.x,from.y-p.y,Vertex.nearZ),tint=col};
             v[1]=new Vertex{position=new Vector3(from.x+p.x,from.y+p.y,Vertex.nearZ),tint=col};
@@ -1212,16 +1266,17 @@ namespace Poly_Ling.Player
             v[3]=new Vertex{position=new Vector3(c.x-r,  c.y,     Vertex.nearZ),tint=col}; // 左
             m.SetAllVertices(v); m.SetAllIndices(new ushort[]{0,1,2,0,2,3});
         }
-        private static void DrawGizmoAxis(MeshGenerationContext ctx,Vector2 from,Vector2 to,Color col)
+        private static void DrawGizmoAxis(MeshGenerationContext ctx,Vector2 from,Vector2 to,Color col,
+            float halfWidth = GizmoAxisHalfWidth, float headSize = GizmoArrowHeadSize)
         {
-            Vector2 d=(to-from).normalized,p=new Vector2(-d.y,d.x)*1.5f;
+            Vector2 d=(to-from).normalized,p=new Vector2(-d.y,d.x)*halfWidth;
             var m=ctx.Allocate(4,6); var v=new Vertex[4];
             v[0]=new Vertex{position=new Vector3(from.x-p.x,from.y-p.y,Vertex.nearZ),tint=col};
             v[1]=new Vertex{position=new Vector3(from.x+p.x,from.y+p.y,Vertex.nearZ),tint=col};
             v[2]=new Vertex{position=new Vector3(to.x+p.x,to.y+p.y,Vertex.nearZ),tint=col};
             v[3]=new Vertex{position=new Vector3(to.x-p.x,to.y-p.y,Vertex.nearZ),tint=col};
             m.SetAllVertices(v);m.SetAllIndices(new ushort[]{0,2,1,0,3,2});
-            float hs=10f; Vector2 p2=new Vector2(-d.y,d.x)*hs*.5f,bc=to-d*hs;
+            float hs=headSize; Vector2 p2=new Vector2(-d.y,d.x)*hs*.5f,bc=to-d*hs;
             var m2=ctx.Allocate(3,3); var v2=new Vertex[3];
             v2[0]=new Vertex{position=new Vector3(to.x,to.y,Vertex.nearZ),tint=col};
             v2[1]=new Vertex{position=new Vector3(bc.x-p2.x,bc.y-p2.y,Vertex.nearZ),tint=col};

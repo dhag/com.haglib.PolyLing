@@ -5,6 +5,7 @@
 
 using UnityEngine;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
 
 namespace Poly_Ling.Player
 {
@@ -20,6 +21,16 @@ namespace Poly_Ling.Player
         public float      CameraDistance  { get; set; }
         public Rect       PreviewRect     { get; set; }
         public Matrix4x4  DisplayMatrix   => Matrix4x4.identity; // Player は常に identity
+
+        /// <summary>
+        /// ToToolContext が生成する ToolContext に載せる編集対象モデル。
+        ///
+        /// 【重要】これを設定しないと ToolContext.Model が null になり、
+        /// ツール側の選択チェック（例: ObjectMoveTool.HasAnySelection）が必ず false を
+        /// 返してホバー更新が丸ごと無視される。押下経路は各 ToolHandler の
+        /// BuildToolContext が Model を入れ直すため気付きにくい。
+        /// </summary>
+        public ModelContext Model { get; set; }
 
         // ================================================================
         // Camera から毎フレーム更新する
@@ -101,6 +112,7 @@ namespace Poly_Ling.Player
         {
             _cam = cam;
             var ctx = new ToolContext();
+            ctx.Model           = Model;
             ctx.CameraPosition  = CameraPosition;
             ctx.CameraTarget    = CameraTarget;
             ctx.CameraDistance  = CameraDistance;

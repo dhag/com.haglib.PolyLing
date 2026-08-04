@@ -44,6 +44,14 @@ namespace Poly_Ling.Player
         private readonly Dictionary<int, Matrix4x4> _boneRebindStartBindPose = new Dictionary<int, Matrix4x4>();
         private TPoseBackup _boneFreezeBefore;
 
+        // 原点だけ移動(OriginOnly)用: Begin～End 間の対象 MeshFilter の開始状態。
+        // ObjectMoveTool の _originStartPositions / _originStartWorld と同じ役割。
+        private bool _boneOriginOnly;
+        private readonly Dictionary<int, Vector3[]> _boneOriginStartPositions
+            = new Dictionary<int, Vector3[]>();
+        private readonly Dictionary<int, Matrix4x4> _boneOriginStartWorld
+            = new Dictionary<int, Matrix4x4>();
+
         // C(ポーズ一時)用: Begin～End 間の BonePoseData スナップショット
         private readonly Dictionary<int, BonePoseDataSnapshot> _bonePoseBeforeSnapshots
             = new Dictionary<int, BonePoseDataSnapshot>();
@@ -239,8 +247,11 @@ namespace Poly_Ling.Player
                             case MeshCategory.Drawable:
                                 model.ClearMeshSelection();
                                 foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
-                                if (sel.Indices.Length > 0)
-                                    model.SelectMesh(sel.Indices[0]);
+                                // ModelContext.SelectMesh() は先頭で ClearMeshSelection() を呼ぶ
+                                // 単一選択メソッド。ここで呼ぶと直前の AddToMeshSelection ループの
+                                // 結果が破棄され、SelectedDrawableMeshIndices が常に 1 個になる。
+                                // メッシュリストの複数選択を受け取る本経路では呼んではならない。
+                                // ActiveCategory は AddToMeshSelection が Mesh に設定する。
                                 var selMc = model.ActiveMeshContext;
                                 if (selMc != null)
                                 {
@@ -905,6 +916,35 @@ namespace Poly_Ling.Player
                         }
                     }
                     model.ComputeWorldMatrices();
+
+                    // 原点だけ移動: 対象 MeshFilter の自頂点を「開始ワールド位置を保つ」よう
+                    // 再ローカル化する。ObjectMoveTool.ApplyWorldDelta / ApplyWorldRotation と同じ式。
+                    if (_boneOriginOnly && _boneOriginStartWorld.Count > 0)
+                    {
+                        foreach (var okv in _boneOriginStartWorld)
+                        {
+                            if (!_boneOriginStartPositions.TryGetValue(okv.Key, out var startPos)) continue;
+                            var omc = model.GetMeshContext(okv.Key);
+                            var omo = omc?.MeshObject;
+                            if (omo == null) continue;
+
+                            Matrix4x4 curInv = omc.WorldMatrixInverse;
+                            int n = Mathf.Min(omo.VertexCount, startPos.Length);
+                            for (int i = 0; i < n; i++)
+                            {
+                                Vector3 wp = okv.Value.MultiplyPoint3x4(startPos[i]);
+                                var v = omo.Vertices[i];
+                                v.Position = curInv.MultiplyPoint3x4(wp);
+                                omo.Vertices[i] = v;
+                            }
+                            omo.InvalidatePositionCache();
+
+                            // 書き換えた頂点を GPU へ送る（PresentAll 経路では位置バッファが更新されない）。
+                            _viewportManager.EnterVerticesMoved(
+                                project, VerticesMovedPhase.Dragging, omc);
+                        }
+                    }
+
                     // A(スキン固定): World が変わったボーンの BindPose を追従更新し、SkinningMatrix を開始時と同一に保つ
                     if (_activeBoneEditMode == BoneMoveMode.BoneOnlyRebind && _boneRebindStartSkinning.Count > 0)
                     {
@@ -1162,6 +1202,23 @@ namespace Poly_Ling.Player
                     _boneRebindStartBindPose.Clear();
                     _boneFreezeBefore = null;
                     _bonePoseBeforeSnapshots.Clear();
+
+                    // 原点だけ移動: 対象 MeshFilter(非スキンド)の頂点と WorldMatrix を保存。
+                    // ObjectMoveTool.SaveSnapshots の OriginOnly 分岐と同じ条件。
+                    _boneOriginOnly = c.OriginOnly;
+                    _boneOriginStartPositions.Clear();
+                    _boneOriginStartWorld.Clear();
+                    if (c.OriginOnly)
+                    {
+                        foreach (int idx in c.MasterIndices)
+                        {
+                            var omc = model.GetMeshContext(idx);
+                            if (omc?.MeshObject == null) continue;
+                            if (omc.Type != MeshType.Mesh || omc.MeshObject.HasBoneWeight) continue;
+                            _boneOriginStartPositions[idx] = (Vector3[])omc.MeshObject.Positions.Clone();
+                            _boneOriginStartWorld[idx]     = omc.WorldMatrix;
+                        }
+                    }
                     if (c.Mode == BoneMoveMode.BoneOnlyRebind)
                     {
                         for (int i = 0; i < model.Count; i++)
@@ -1196,6 +1253,52 @@ namespace Poly_Ling.Player
                 {
                     if (model == null || _undoController == null) { _boneTransformBeforeSnapshots.Clear(); return; }
                     if (_boneTransformBeforeSnapshots.Count == 0) return;
+
+                    // 原点だけ移動: 頂点 + BoneTransform を 1 グループで記録する。
+                    // ObjectMoveTool.CommitUndo の OriginOnly 分岐と同じ構成。
+                    if (_boneOriginOnly && _boneOriginStartPositions.Count > 0)
+                    {
+                        _undoController.SetModelContext(model);
+                        _undoController.MeshListStack.BeginGroup("原点だけ移動");
+
+                        foreach (var okv in _boneOriginStartPositions)
+                        {
+                            int idx = okv.Key;
+                            var omc = model.GetMeshContext(idx);
+                            if (omc?.MeshObject == null || omc.BoneTransform == null) continue;
+
+                            int vc = omc.MeshObject.VertexCount;
+                            var indices = new int[vc];
+                            var newPos  = new Vector3[vc];
+                            for (int i = 0; i < vc; i++)
+                            {
+                                indices[i] = i;
+                                newPos[i]  = omc.MeshObject.Vertices[i].Position;
+                            }
+
+                            _undoController.MeshListStack.Record(new PivotMoveRecord
+                            {
+                                MasterIndex        = idx,
+                                VertexIndices      = indices,
+                                OldVertexPositions = okv.Value,
+                                NewVertexPositions = newPos,
+                                OldBoneTransform   = _boneTransformBeforeSnapshots.TryGetValue(idx, out var ob0)
+                                    ? ob0 : omc.BoneTransform.CreateSnapshot(),
+                                NewBoneTransform   = omc.BoneTransform.CreateSnapshot(),
+                            }, "原点だけ移動");
+                        }
+
+                        _undoController.MeshListStack.EndGroup();
+                        _undoController.FocusMeshList();
+
+                        _boneOriginOnly = false;
+                        _boneOriginStartPositions.Clear();
+                        _boneOriginStartWorld.Clear();
+                        _boneRebindStartSkinning.Clear();
+                        _boneRebindStartBindPose.Clear();
+                        _boneTransformBeforeSnapshots.Clear();
+                        return;
+                    }
 
                     // C(ポーズ一時): BonePoseData の変更を記録
                     if (_activeBoneEditMode == BoneMoveMode.PoseLayer)
@@ -3305,6 +3408,19 @@ namespace Poly_Ling.Player
         // パーツ選択辞書ヘルパー
         // ================================================================
 
+        /// <summary>
+        /// パーツ選択辞書を現在の選択へ適用する。
+        /// </summary>
+        /// <remarks>
+        /// 【単一メッシュ前提 — 変更時の注意】
+        ///
+        /// 対象は model.ActiveMeshContext の Selection のみ。
+        /// SelectionChangeRecord の復元先も ActiveMeshContext 固定なので整合する。
+        ///
+        /// 将来これを複数メッシュへ広げる場合、Undo 記録も
+        /// MultiMeshSelectionChangeRecord へ移すこと。
+        /// 記録側だけ複数メッシュ化すると Undo が先頭メッシュしか戻さなくなる。
+        /// </remarks>
         private void PartsSetApply(ModelContext model, int setIndex, bool additive, bool subtract)
         {
             if (model == null) return;

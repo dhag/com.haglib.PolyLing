@@ -386,12 +386,26 @@ namespace Poly_Ling.Player
             Sync(SideViewport);
         }
 
+        /// <summary>
+        /// _toolCtx をこのビューポート基準へ更新する。
+        ///
+        /// 【重要】カメラ情報だけでなく Model も必ず入れる。Model が null のままだと
+        /// ToToolContext が返す ToolContext.Model も null になり、ツール側の選択チェック
+        /// （例: ObjectMoveTool.HasAnySelection）が false を返してホバー更新が無視される。
+        /// _toolCtx.UpdateFromViewport を直接呼ばず、必ずこのメソッドを経由すること。
+        /// </summary>
+        private void SyncToolCtx(PlayerViewport vp)
+        {
+            _toolCtx.UpdateFromViewport(vp);
+            _toolCtx.Model = _lastProjectForPresent?.CurrentModel;
+        }
+
         public ToolContext GetCurrentToolContext(PlayerViewport vp = null)
         {
             var target = vp ?? PerspectiveViewport;
             var cam = target?.Cam;
             if (cam == null) return null;
-            _toolCtx.UpdateFromViewport(target);
+            SyncToolCtx(target);
             var ctx = _toolCtx.ToToolContext(cam);
             if (ctx != null) ctx.SetSuppressHover = SetSuppressHover;
             return ctx;
@@ -410,7 +424,7 @@ namespace Poly_Ling.Player
             else if (FrontViewport?.Cam       == cam) vp = FrontViewport;
             else if (SideViewport?.Cam        == cam) vp = SideViewport;
             else return null;
-            _toolCtx.UpdateFromViewport(vp);
+            SyncToolCtx(vp);
             return _toolCtx.ToToolContext(cam);
         }
 
@@ -928,6 +942,8 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
             _renderer.ShowSelectedMirror        = ds.ShowSelectedMirror;
             _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
+            _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
+            _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
 
             _renderer.SubmitMeshes(project, cam);
             _renderer.SubmitWireframeAndVertices(cam, slot);
@@ -1001,7 +1017,7 @@ namespace Poly_Ling.Player
             // Top/Side/Front 連動：ortho の場合は他の連動 slot も反映＋dirty。
             ApplyAndDirtyLinkedOrtho(vp);
 
-            _toolCtx.UpdateFromViewport(vp);
+            SyncToolCtx(vp);
 
             adapter.RequestNormal();
             adapter.UpdateFrame(cam, rect, _lastMousePos);
@@ -1044,8 +1060,74 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// ギズモ軸ホバー専用の軽量経路。GPU ヒットテストを一切行わない。
+        ///
+        /// 【この経路で扱ってよいもの】
+        ///   AxisGizmo.FindAxisAtScreenPos / RotateRingGizmo.FindRingAtScreenPos の
+        ///   ようなスクリーン座標だけで完結する当たり判定に限る。
+        ///
+        /// 【禁止事項（重要）】
+        ///   頂点・辺・面のホバー判定をこの経路へ移すことを禁止する。
+        ///   要素のホバーは GPU ヒットテスト（NotifyPointerHover → UpdateFrame）が
+        ///   必須であり、CPU ヒットテスト（SelectionHelper.FindNearest*）へ戻すことも
+        ///   禁止する。軽いからという理由でこちらへ寄せると、GPU 経路が退化して
+        ///   CPU ヒットテストに巻き戻る。
+        ///
+        /// 【_suppressHover を見ない理由】
+        ///   _suppressHover は GPU ヒットテストの負荷回避が目的。この経路は GPU を
+        ///   一切触らないため抑止対象ではない。ボーンエディタ（ObjectMove）のように
+        ///   頂点ホバーを抑止しているモードでも、ギズモ軸のホバーは動作させる。
+        ///
+        /// 【GPU 経路の状態を書き換えない】
+        ///   _lastCamera / _lastMousePos / _lastParamsValid は更新しない。
+        ///   これらは PresentAll / UpdateFrame が参照するため、軽量経路が触ると
+        ///   GPU 側のホバー状態に副作用が出る。
+        /// </summary>
+        public void NotifyGizmoHoverOnly(PlayerViewport vp, Vector2 panelLocalPos)
+        {
+            if (vp == null || !vp.IsReady) return;
+            var cam = vp.Cam;
+            if (cam == null) return;
+
+            SyncToolCtx(vp);
+            var gizmoHoverPos = ToHandlerHoverPos(cam, panelLocalPos);
+            if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
+            {
+                Debug.Log(
+                    $"[GizmoDbg/HoverLight] panelLocal={panelLocalPos} " +
+                    $"toHandler={gizmoHoverPos} pixelH={cam.pixelHeight}");
+            }
+            _activeToolHoverCallback?.Invoke(gizmoHoverPos, _toolCtx.ToToolContext(cam));
+        }
+
+        /// <summary>
+        /// OnPointerHover が渡すパネルローカル座標（Y=0 が上）を、ツールハンドラが
+        /// 期待するビューポート座標（Y=0 が下）へ変換する。
+        ///
+        /// 【なぜ必要か】
+        ///   クリック／ドラッグ系のイベントは PlayerViewportPanel.ToViewportCoord で
+        ///   Y=0 下に変換済みで届き、各ハンドラの ToImgui が h - y で Y=0 上
+        ///   （= WorldToScreenPos の空間）へ戻す。一方 OnPointerHover は GPU
+        ///   ヒットテスト用に Y=0 上のまま渡されるため、そのままハンドラに流すと
+        ///   ToImgui で二重反転して上下が逆になる。
+        ///
+        /// 【なぜ cam.pixelHeight か】
+        ///   ハンドラ側の ToImgui は ctx.PreviewRect.height を使い、PreviewRect は
+        ///   PlayerToolContext で cam.pixelWidth/pixelHeight から作られる。
+        ///   同じ高さを使うことで往復が厳密に一致する。
+        /// </summary>
+        private static Vector2 ToHandlerHoverPos(Camera cam, Vector2 panelLocalPos)
+            => new Vector2(panelLocalPos.x, cam.pixelHeight - panelLocalPos.y);
+
+        /// <summary>
         /// マウスが指定ビューポートのRenderTexture内を移動したときに呼ぶ。
         /// UpdateFrame を実行してカメラパラメータ設定 + GPU ヒットテストを一括実行する。
+        ///
+        /// 【禁止事項（重要）】
+        ///   これが頂点・辺・面ホバーの正規 GPU 経路である。
+        ///   UpdateFrame / PresentAll を削って軽量化してはならない。削ると要素ホバーが
+        ///   GPU フラグバッファへ反映されなくなり、CPU ヒットテストへの巻き戻りを招く。
+        ///   ギズモ軸だけを更新したい場合は NotifyGizmoHoverOnly を使うこと。
         ///
         /// 【いつ呼ぶか】
         ///   PlayerViewportPanel.OnPointerHover（UIToolkit PointerMoveEvent）。
@@ -1085,7 +1167,7 @@ namespace Poly_Ling.Player
             _lastParamsValid = true;
 
             // ポインター移動時は RequestNormal → UpdateFrame でフルパイプライン実行。
-            _toolCtx.UpdateFromViewport(vp);
+            SyncToolCtx(vp);
 
             // ヒットテストに使う BackfaceCullingEnabled をこのビューポートの設定に同期する。
             // DrawViewport は複数ビューポートを順番に処理するため、最後に処理した
@@ -1094,11 +1176,22 @@ namespace Poly_Ling.Player
             if (hoverSlot >= 0)
                 adapter.BackfaceCullingEnabled = _displaySettings[hoverSlot].BackfaceCulling;
 
+            // ツールハンドラへは Y=0 下へ揃えて渡す（理由は ToHandlerHoverPos を参照）。
+            // 後段の adapter.UpdateFrame へは Y=0 上の panelLocalPos をそのまま渡す。
+            Vector2 handlerHoverPos = ToHandlerHoverPos(cam, panelLocalPos);
+            if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
+            {
+                Debug.Log(
+                    $"[GizmoDbg/Hover] panelLocal={panelLocalPos} " +
+                    $"toHandler={handlerHoverPos} pixelH={cam.pixelHeight} " +
+                    $"suppress={_suppressHover}");
+            }
+
             if (_moveToolHandler != null && !_suppressHover)
-                _moveToolHandler.UpdateHover(panelLocalPos, _toolCtx.ToToolContext(cam));
+                _moveToolHandler.UpdateHover(handlerHoverPos, _toolCtx.ToToolContext(cam));
             // アクティブなツールが MoveToolHandler 以外の場合、そちらにも通知する
             if (!_suppressHover)
-                _activeToolHoverCallback?.Invoke(panelLocalPos, _toolCtx.ToToolContext(cam));
+                _activeToolHoverCallback?.Invoke(handlerHoverPos, _toolCtx.ToToolContext(cam));
 
             adapter.RequestNormal();
             adapter.UpdateFrame(cam, rect, panelLocalPos);
@@ -1469,6 +1562,50 @@ namespace Poly_Ling.Player
             }
 
             return PlayerHoverElement.None;
+        }
+
+        /// <summary>
+        /// 吸着用ヒットテスト（メッシュ選択を無視）の有効/無効を切り替える。
+        /// 有効な間だけ追加のディスパッチと頂点数ぶんの読み戻しが走るため、
+        /// 使うツールが有効な間だけ true にすること。
+        /// </summary>
+        public void SetSnapHitTestEnabled(bool enabled)
+        {
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null) return;
+            adapter.EnableSnapHitTest = enabled;
+        }
+
+        /// <summary>
+        /// 吸着用ヒットテストのホバー頂点を PlayerHoverElement として返す。
+        ///
+        /// GetHoverElement と違い、選択されていないメッシュの頂点も返る。
+        /// 面追加ツールが他オブジェクトの頂点へ位置を合わせるために使う。
+        /// SetSnapHitTestEnabled(true) を先に呼んでいないと常に未ヒットになる。
+        /// </summary>
+        public PlayerHoverElement GetSnapHoverElement(
+            Poly_Ling.Context.ModelContext model)
+        {
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized)
+                return PlayerHoverElement.None;
+
+            int gv = adapter.SnapHoverVertexIndex;
+            if (gv < 0) return PlayerHoverElement.None;
+
+            if (adapter.BufferManager?.GlobalToLocalVertexIndex(
+                    gv, out int vm, out int vl) != true)
+                return PlayerHoverElement.None;
+
+            int ctxV = UnifiedToContextIndex(adapter, model, vm);
+            if (ctxV < 0) return PlayerHoverElement.None;
+
+            return new PlayerHoverElement
+            {
+                Kind        = PlayerHoverKind.Vertex,
+                MeshIndex   = ctxV,
+                VertexIndex = vl,
+            };
         }
 
         // unified メッシュインデックス → context インデックス 変換ヘルパー
@@ -2084,6 +2221,8 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedBone        = ds.ShowUnselectedBone;
             _renderer.ShowSelectedMirror        = ds.ShowSelectedMirror;
             _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
+            _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
+            _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
 
             // adapter の BackfaceCullingEnabled もここで同期する
             // （DispatchCullingForDisplay の引数に使用するため）。

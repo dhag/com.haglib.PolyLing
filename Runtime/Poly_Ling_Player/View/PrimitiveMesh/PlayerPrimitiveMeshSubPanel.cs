@@ -60,9 +60,6 @@ namespace Poly_Ling.Player
         /// </summary>
         public Func<Matrix4x4> GetAddTargetWorldMatrix;
 
-        /// <summary>配置ギズモのサブモードが UI で変更されたときに呼ばれる。</summary>
-        public Action<PrimitivePlaceToolHandler.PlaceGizmoMode> OnGizmoModeChanged;
-
         // ---- 配置ギズモから読み書きする TRS ----
 
         /// <summary>生成位置。AddToExisting のときは追加先ローカル空間。</summary>
@@ -512,29 +509,8 @@ namespace Poly_Ling.Player
             });
             parent.Add(trsResetRow);
 
-            // 配置ギズモのサブモード切替。GizmoData は矢印/リング/キューブを
-            // 排他的にしか描画できないため、3種を同時には出さず切り替える。
-            // ライブワイヤ有効時（新サブツール）のみ生成する。
-            if (LiveWireInMainViewport)
-            {
-                var gizmoModeChoices = new List<string>
-                {
-                    T("GizmoModeMove"),
-                    T("GizmoModeRotate"),
-                    T("GizmoModeScale"),
-                };
-                var gizmoModeDd = new DropdownField(gizmoModeChoices, 0);
-                gizmoModeDd.label = T("GizmoMode");
-                gizmoModeDd.style.marginTop    = 4;
-                gizmoModeDd.style.marginBottom = 2;
-                gizmoModeDd.RegisterValueChangedCallback(e =>
-                {
-                    int i = gizmoModeChoices.IndexOf(e.newValue);
-                    if (i < 0) return;
-                    OnGizmoModeChanged?.Invoke((PrimitivePlaceToolHandler.PlaceGizmoMode)i);
-                });
-                parent.Add(gizmoModeDd);
-            }
+            // 配置ギズモのサブモード切替は左ペイン（PlayerLayoutRoot の
+            // PlaceGizmoMoveBtn / PlaceGizmoRotateBtn / PlaceGizmoScaleBtn）へ移設済み。
 
             var ignorePoseToggle = new Toggle(T("IgnorePose")) { value = _ignorePoseInArmature };
             ignorePoseToggle.style.color = new StyleColor(Color.white);

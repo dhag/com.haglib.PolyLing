@@ -158,6 +158,7 @@ namespace Poly_Ling.Core
                 _hoveredVertexIndex = -1;
                 _hoveredLineIndex = -1;
                 _hoveredFaceIndex = -1;
+                _snapHoveredVertexIndex = -1;
                 if (hadHover && !cpuOnly)
                     _bufferManager.ClearHover();
                 return;
@@ -203,6 +204,20 @@ namespace Poly_Ling.Core
                 newHoveredVertex = _bufferManager.FindNearestVertexFromGPU(_hitRadius);
                 newHoveredLine = _bufferManager.FindNearestLineFromGPU(_hitRadius);
                 newHoveredFace = _bufferManager.FindNearestFaceFromGPU();
+
+                // 吸着用ヒットテスト（メッシュ選択を無視）。
+                // スクリーン座標とカリングは上で計算済みのものをそのまま使う。
+                // 有効時のみ実行する。頂点数ぶんの GetData が 1 回増えるため。
+                if (EnableSnapHitTest)
+                {
+                    _bufferManager.DispatchVertexSnapHitTestGPU(
+                        _mousePosition, _hitRadius, _backfaceCullingEnabled);
+                    _snapHoveredVertexIndex = _bufferManager.FindNearestSnapVertexFromGPU(_hitRadius);
+                }
+                else
+                {
+                    _snapHoveredVertexIndex = -1;
+                }
             }
             else
             {
@@ -210,13 +225,19 @@ namespace Poly_Ling.Core
                 newHoveredVertex = _bufferManager.FindNearestVertex(_mousePosition, _hitRadius, _backfaceCullingEnabled);
                 newHoveredLine = _bufferManager.FindNearestLine(_mousePosition, _hitRadius, _backfaceCullingEnabled);
                 newHoveredFace = _bufferManager.FindNearestFace(_mousePosition, _backfaceCullingEnabled);
+
+                // CPU 経路には吸着用の実装を用意しない（GPU 経路専用）。
+                _snapHoveredVertexIndex = -1;
             }
 
             // ================================================================
             // メッシュ選択フィルタリング（統合）
             // 選択されていないメッシュの要素はホバー対象外にする。
-            // これにより描画側（シェーダーのMeshSelectedフラグ）と
+            // これにより描画側（シェーダーのメッシュ選択フラグ）と
             // 入力側（ホバー検出）のフィルタリングが一致する。
+            //
+            // 【注意】_snapHoveredVertexIndex にはこのフィルタを適用しない。
+            // 非選択オブジェクトの頂点を返すことが吸着用ヒットテストの目的のため。
             // ================================================================
             if (newHoveredVertex >= 0)
             {
@@ -392,6 +413,7 @@ namespace Poly_Ling.Core
             _hoveredVertexIndex = -1;
             _hoveredLineIndex = -1;
             _hoveredFaceIndex = -1;
+            _snapHoveredVertexIndex = -1;
             _bufferManager.ClearHover();
         }
 

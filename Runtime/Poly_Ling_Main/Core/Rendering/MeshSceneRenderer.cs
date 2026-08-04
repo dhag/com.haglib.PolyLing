@@ -36,6 +36,10 @@ namespace Poly_Ling.Core
         public bool ShowUnselectedBone        { get; set; } = false;
         public bool ShowSelectedMirror        { get; set; } = true;
         public bool ShowUnselectedMirror      { get; set; } = true;
+        // メッシュ原点マーカー（MeshType.Bone 以外のピック対象に対して、
+        // ボーンと同じ形状のラインメッシュを原点へ描く）。
+        public bool ShowSelectedMeshOrigin    { get; set; } = true;
+        public bool ShowUnselectedMeshOrigin  { get; set; } = true;
         public bool BackfaceCullingEnabled    { get; set; } = true;
 
         // ================================================================
@@ -88,6 +92,9 @@ namespace Poly_Ling.Core
         private const float BoneShapeScale              = 0.04f;
         private static readonly Color BoneWireColor     = new Color(0.2f, 0.8f, 1.0f, 0.8f);
         private static readonly Color BoneWireSelColor  = new Color(1.0f, 0.6f, 0.1f, 0.9f);
+        // メッシュ原点マーカー色（ボーン色と区別するため緑系）。
+        private static readonly Color MeshOriginColor    = new Color(0.4f, 1.0f, 0.4f, 0.8f);
+        private static readonly Color MeshOriginSelColor = new Color(1.0f, 1.0f, 0.3f, 0.9f);
 
         // ================================================================
         // Adapter構築
@@ -467,25 +474,44 @@ namespace Poly_Ling.Core
         public void PrepareBones(ProjectContext project)
         {
             if (project == null) return;
-            if (!ShowSelectedBone && !ShowUnselectedBone) return;
+
+            bool anyBone   = ShowSelectedBone       || ShowUnselectedBone;
+            bool anyOrigin = ShowSelectedMeshOrigin || ShowUnselectedMeshOrigin;
+            if (!anyBone && !anyOrigin) return;
 
             for (int mi = 0; mi < project.ModelCount; mi++)
             {
                 var model = project.Models[mi];
-                var selBones = model.SelectedBoneIndices;
+                var selBones  = model.SelectedBoneIndices;
+                var selMeshes = model.SelectedDrawableMeshIndices;
 
                 for (int ci = 0; ci < model.MeshContextCount; ci++)
                 {
                     var ctx = model.GetMeshContext(ci);
-                    if (ctx == null || ctx.Type != MeshType.Bone) continue;
+                    if (ctx == null) continue;
 
-                    bool isSel = selBones.Contains(ci);
-                    if ( isSel && !ShowSelectedBone)   continue;
-                    if (!isSel && !ShowUnselectedBone) continue;
+                    Color col;
+                    if (ctx.Type == MeshType.Bone)
+                    {
+                        if (!anyBone) continue;
+                        bool isSelBone = selBones.Contains(ci);
+                        if ( isSelBone && !ShowSelectedBone)   continue;
+                        if (!isSelBone && !ShowUnselectedBone) continue;
+                        col = isSelBone ? BoneWireSelColor : BoneWireColor;
+                    }
+                    else
+                    {
+                        // メッシュ原点マーカー（ObjectMoveTool のピック対象と同じ集合）
+                        if (!anyOrigin) continue;
+                        if (!IsMeshOriginTarget(ctx.Type)) continue;
+                        bool isSelMesh = selMeshes.Contains(ci);
+                        if ( isSelMesh && !ShowSelectedMeshOrigin)   continue;
+                        if (!isSelMesh && !ShowUnselectedMeshOrigin) continue;
+                        col = isSelMesh ? MeshOriginSelColor : MeshOriginColor;
+                    }
 
                     if (!ExtractBoneTransform(ctx.WorldMatrix, out Vector3 pos, out Quaternion rot)) continue;
 
-                    Color col = isSel ? BoneWireSelColor : BoneWireColor;
                     var key = (mi, ci);
                     if (!_boneMeshCache.TryGetValue(key, out var boneMesh) || boneMesh == null)
                     {
@@ -501,6 +527,19 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// 原点マーカーを描く対象か（Bone は専用経路で描くため除外）。
+        /// 除外条件は ObjectMoveTool.TryPickObject のピック対象フィルタと一致させる。
+        /// </summary>
+        private static bool IsMeshOriginTarget(MeshType t)
+        {
+            return t != MeshType.Bone
+                && t != MeshType.Morph
+                && t != MeshType.RigidBody
+                && t != MeshType.RigidBodyJoint
+                && t != MeshType.Group;
+        }
+
+        /// <summary>
         /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
         /// 計算処理（BuildBoneLineMesh / UpdateBoneLineMesh / ExtractBoneTransform 等）は
         /// 一切禁止。全ての準備は PrepareBones で完了させておくこと。
@@ -510,7 +549,10 @@ namespace Poly_Ling.Core
         public void SubmitBones(ProjectContext project, Camera cam)
         {
             if (project == null || cam == null) return;
-            if (!ShowSelectedBone && !ShowUnselectedBone) return;
+
+            bool anyBone   = ShowSelectedBone       || ShowUnselectedBone;
+            bool anyOrigin = ShowSelectedMeshOrigin || ShowUnselectedMeshOrigin;
+            if (!anyBone && !anyOrigin) return;
 
             // Phase 2c-2: 選択/非選択で別マテリアル（global alpha が異なる）。
             var matSel   = GetBoneOverlayMaterial(isSelected: true);
@@ -520,16 +562,30 @@ namespace Poly_Ling.Core
             for (int mi = 0; mi < project.ModelCount; mi++)
             {
                 var model = project.Models[mi];
-                var selBones = model.SelectedBoneIndices;
+                var selBones  = model.SelectedBoneIndices;
+                var selMeshes = model.SelectedDrawableMeshIndices;
 
                 for (int ci = 0; ci < model.MeshContextCount; ci++)
                 {
                     var ctx = model.GetMeshContext(ci);
-                    if (ctx == null || ctx.Type != MeshType.Bone) continue;
+                    if (ctx == null) continue;
 
-                    bool isSel = selBones.Contains(ci);
-                    if ( isSel && !ShowSelectedBone)   continue;
-                    if (!isSel && !ShowUnselectedBone) continue;
+                    bool isSel;
+                    if (ctx.Type == MeshType.Bone)
+                    {
+                        if (!anyBone) continue;
+                        isSel = selBones.Contains(ci);
+                        if ( isSel && !ShowSelectedBone)   continue;
+                        if (!isSel && !ShowUnselectedBone) continue;
+                    }
+                    else
+                    {
+                        if (!anyOrigin) continue;
+                        if (!IsMeshOriginTarget(ctx.Type)) continue;
+                        isSel = selMeshes.Contains(ci);
+                        if ( isSel && !ShowSelectedMeshOrigin)   continue;
+                        if (!isSel && !ShowUnselectedMeshOrigin) continue;
+                    }
 
                     var chosenMat = isSel ? matSel : matUnsel;
                     if (chosenMat == null) continue;

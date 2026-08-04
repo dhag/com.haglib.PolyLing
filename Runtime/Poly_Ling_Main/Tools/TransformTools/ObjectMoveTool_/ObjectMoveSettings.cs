@@ -60,6 +60,14 @@ namespace Poly_Ling.Tools
         /// </summary>
         public bool OriginOnly = false;
 
+        /// <summary>
+        /// ビューポートに回転リングギズモを出すか。既定 true。
+        /// PivotOffsetToolHandler は同じ ObjectMoveTool を「原点だけ移動」専用として
+        /// 使い回しており、回転リングを描く経路を持たない。当たり判定だけが存在する
+        /// 状態を避けるため、あちらは false を設定する。
+        /// </summary>
+        public bool AllowRotationGizmo = true;
+
         // ================================================================
         // IToolSettings 実装
         // ================================================================
@@ -74,6 +82,7 @@ namespace Poly_Ling.Tools
                 PickMeshesSkinned = this.PickMeshesSkinned,
                 MoveMode          = this.MoveMode,
                 OriginOnly        = this.OriginOnly,
+                AllowRotationGizmo = this.AllowRotationGizmo,
             };
         }
 
@@ -85,7 +94,8 @@ namespace Poly_Ling.Tools
                 || PickMeshesNoSkin  != o.PickMeshesNoSkin
                 || PickMeshesSkinned != o.PickMeshesSkinned
                 || MoveMode          != o.MoveMode
-                || OriginOnly        != o.OriginOnly;
+                || OriginOnly        != o.OriginOnly
+                || AllowRotationGizmo != o.AllowRotationGizmo;
         }
 
         public override void CopyFrom(IToolSettings other)
@@ -97,6 +107,7 @@ namespace Poly_Ling.Tools
             PickMeshesSkinned = o.PickMeshesSkinned;
             MoveMode          = o.MoveMode;
             OriginOnly        = o.OriginOnly;
+            AllowRotationGizmo = o.AllowRotationGizmo;
         }
     }
 }

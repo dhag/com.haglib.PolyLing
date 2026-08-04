@@ -12,6 +12,7 @@
 #pragma kernel ComputeScreenPositions
 #pragma kernel ComputeCulling
 #pragma kernel ComputeVertexHitTest
+#pragma kernel ComputeVertexSnapHitTest
 #pragma kernel ComputeLineHitTest
 #pragma kernel ComputeFaceHitTest
 #pragma kernel ComputeFaceVisibility
@@ -142,6 +143,9 @@ RWStructuredBuffer<uint> _FaceCulledBuffer;
 RWStructuredBuffer<float4> _ScreenPositionBuffer;      // xy=screen, z=depth, w=valid
 RWStructuredBuffer<float4> _MirrorScreenPositionBuffer;
 RWStructuredBuffer<float> _VertexHitDistanceBuffer;
+// 吸着用ヒットテストの出力（ComputeVertexSnapHitTest 専用）。
+// 通常のホバー結果を壊さないよう _VertexHitDistanceBuffer とは別に持つ。
+RWStructuredBuffer<float> _VertexSnapHitDistanceBuffer;
 RWStructuredBuffer<float> _LineHitDistanceBuffer;
 RWStructuredBuffer<float> _FaceHitBuffer;              // 面ヒット結果（0 or 1）
 RWStructuredBuffer<float> _FaceHitDepthBuffer;         // 面の深度
@@ -453,6 +457,64 @@ void ComputeVertexHitTest(uint3 id : SV_DispatchThreadID)
     else
     {
         _VertexHitDistanceBuffer[index] = 1e10; // ヒット範囲外
+    }
+}
+
+// ============================================================
+// 頂点ヒットテスト（吸着用）
+//
+// ComputeVertexHitTest との違いはメッシュ選択判定を行わないことだけ。
+// 面追加ツールが非選択オブジェクトの頂点へ位置を合わせるために使う。
+// 出力先は _VertexSnapHitDistanceBuffer で、通常のホバー結果には影響しない。
+// 非表示（FLAG_HIDDEN）と裏面カリングの除外は通常版と同じく行う。
+// 全分岐で必ず書き込むため事前クリアは不要（通常版と同じ性質）。
+// ============================================================
+
+[numthreads(64, 1, 1)]
+void ComputeVertexSnapHitTest(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _VertexCount) return;
+
+    uint flags = _VertexFlagsBuffer[index];
+
+    // 非表示はスキップ
+    if (HAS_FLAG(flags, FLAG_HIDDEN))
+    {
+        _VertexSnapHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+
+    // メッシュ選択判定は行わない（本カーネルの目的）
+
+    // カリングチェック（バックフェースカリング有効時のみ）
+    if (_EnableBackfaceCulling != 0 && _VertexCulledBuffer[index] != 0u)
+    {
+        _VertexSnapHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+
+    float4 screenPos = _ScreenPositionBuffer[index];
+
+    if (screenPos.w < 0.5)
+    {
+        _VertexSnapHitDistanceBuffer[index] = 1e10;
+        return;
+    }
+
+    // マウスとの距離
+    float2 diff = screenPos.xy - _MousePosition;
+    float dist = length(diff);
+
+    // 距離がヒット半径内なら深度を、そうでなければ1e10を書き込む
+    // CPU側で最小深度（最も手前）の頂点を選択する
+    if (dist < _HitRadius)
+    {
+        _VertexSnapHitDistanceBuffer[index] = screenPos.z; // 深度値
+    }
+    else
+    {
+        _VertexSnapHitDistanceBuffer[index] = 1e10; // ヒット範囲外
     }
 }
 

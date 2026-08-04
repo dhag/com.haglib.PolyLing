@@ -25,6 +25,32 @@ namespace Poly_Ling.UndoSystem
         // === メッシュコンテキスト解決 ===
 
         /// <summary>現在選択中のメッシュを自動解決（ModelContextの選択リストから）</summary>
+        ///
+        /// <remarks>
+        /// 【複数オブジェクト選択との関係 — 前提条件】
+        ///
+        /// 本プロパティは常にメッシュを 1 個しか返さない。これに依存するのは
+        /// 直下の MeshObject / TargetMesh / OriginalPositions の 3 つだけで、
+        /// それらを使う Record はトポロジー・UV・ボーンウェイト・マテリアル系である。
+        ///
+        /// 現状これで問題が無いのは、対応するツールが例外なく
+        /// ctx.ActiveMeshObject / ActiveMeshContext 経由の単一メッシュ操作だから。
+        /// （Tools/TopologyTools/ 配下の Knife / MergeVertices / EdgeBevel /
+        ///   EdgeExtrude / FaceExtrude / LineExtrude / Solidify / FlipFace /
+        ///   EdgeTopology / DeleteSelection / AddFace 等すべて）
+        /// 操作が単一メッシュなら Undo も単一メッシュで整合する。
+        ///
+        /// 複数メッシュを同時に書き換える操作は、本プロパティを経由してはならない。
+        /// MultiMeshVertexMoveRecord / MultiMeshSelectionChangeRecord のように
+        /// 「Record 内ではメッシュを解決せず、MeshContextIndex 付きのエントリ配列を
+        ///  ctx へ渡し、アプリケーション層（OnUndoRedoPerformed）が解決・適用する」
+        /// 方式を使うこと。ここを崩すと、複数選択時に先頭メッシュだけが復元される。
+        ///
+        /// なお本プロパティは FirstSelectedMeshContext であり、ツール側の
+        /// ActiveMeshContext（= FirstDrawableMeshContext ?? FirstSelectedMeshContext）
+        /// とは ActiveCategory が Bone / Morph のとき指す先が異なる。
+        /// これは複数選択とは独立した既存の差異。
+        /// </remarks>
         public MeshContext ResolvedMeshContext => ParentModelContext?.FirstSelectedMeshContext;
 
         // === メッシュデータ（委譲プロパティ） ===
@@ -222,6 +248,16 @@ namespace Poly_Ling.UndoSystem
         /// 処理後にnullに戻される。
         /// </summary>
         public MeshMoveEntry[] PendingMeshMoveEntries;
+
+        /// <summary>
+        /// MultiMeshSelectionChangeRecord.Undo/Redo時に保留された選択状態エントリ。
+        /// Record内ではメッシュ解決を行わず、OnUndoRedoPerformedで適用される。
+        /// 処理後にnullに戻される。
+        ///
+        /// 単一メッシュの選択変更（SelectionChangeRecord）は従来どおり
+        /// CurrentSelectionSnapshot を使う。両者は独立に処理してよい。
+        /// </summary>
+        public MeshSelectionEntry[] PendingSelectionEntries;
 
         /// <summary>
         /// トポロジー変更後に呼ぶコールバック。

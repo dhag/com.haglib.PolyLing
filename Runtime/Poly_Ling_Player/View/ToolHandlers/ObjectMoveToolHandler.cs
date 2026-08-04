@@ -18,7 +18,7 @@ namespace Poly_Ling.Player
     /// SyncBoneTransforms 等）を PlayerToolContext 経由で補完する。
     /// </para>
     /// </summary>
-    public class ObjectMoveToolHandler : IPlayerToolHandler
+    public class ObjectMoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
         // 依存
@@ -57,9 +57,6 @@ namespace Poly_Ling.Player
 
         /// <summary>頂点位置変更後に UnityMesh + GPU バッファを同期するコールバック（OriginOnly 用）。</summary>
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
-
-        // ギズモ描画用スクリーン座標取得
-        public Func<PlayerViewportPanel.GizmoData> TryGetGizmoData;
 
         /// <summary>
         /// ObjectMoveTool の ObjectMoveSettings を取得する。
@@ -231,6 +228,59 @@ namespace Poly_Ling.Player
             }
             return _tool.TryGetGizmoScreenPositions(
                 builtCtx, out origin, out xEnd, out yEnd, out zEnd, out hoveredAxis);
+        }
+
+        /// <summary>回転リング 3 軸のスクリーン点列を返す（UpdateGizmoOverlay 用）。</summary>
+        public bool TryGetGizmoRings(
+            ToolContext ctx,
+            out Vector2[] ringX, out Vector2[] ringY, out Vector2[] ringZ,
+            out AxisGizmo.AxisType hoveredAxis)
+        {
+            var builtCtx = BuildToolContext(default);
+            if (builtCtx == null)
+            {
+                ringX = ringY = ringZ = null;
+                hoveredAxis = AxisGizmo.AxisType.None;
+                return false;
+            }
+            return _tool.TryGetGizmoRings(
+                builtCtx, out ringX, out ringY, out ringZ, out hoveredAxis);
+        }
+
+        /// <summary>
+        /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。
+        /// 軸ギズモは矢印スタイル、回転リングは設定で有効なときのみ併用し、
+        /// ピボット位置はダイヤで別途表示する。
+        /// </summary>
+        public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
+        {
+            data = default;
+            if (!TryGetGizmoScreenPositions(
+                    ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
+                return false;
+
+            GetPivotScreenPos(out var pivotScreen);
+
+            // 回転リング（設定で無効なときは false が返る）
+            bool hasRing = TryGetGizmoRings(
+                ctx, out var ringX, out var ringY, out var ringZ, out var ringHovAxis);
+
+            // 軸ホバーとリングホバーは ObjectMoveTool 側で排他になっている。
+            // GizmoData の HoveredAxis は 1 つなので、非 None の方を採用する。
+            var shownHover = hovAxis != AxisGizmo.AxisType.None ? hovAxis : ringHovAxis;
+
+            data = new PlayerViewportPanel.GizmoData
+            {
+                HasGizmo       = true,
+                IsDiamondStyle = false,
+                Origin         = origin, XEnd = xEnd, YEnd = yEnd, ZEnd = zEnd,
+                HoveredAxis    = shownHover,
+                HasPivotGizmo  = true, PivotOrigin = pivotScreen,
+                IsRingStyle    = hasRing,
+                RingX = ringX, RingY = ringY, RingZ = ringZ,
+                DrawAxisWithRing = true,
+            };
+            return true;
         }
 
         public bool GetPivotScreenPos(out Vector2 pivotScreen)

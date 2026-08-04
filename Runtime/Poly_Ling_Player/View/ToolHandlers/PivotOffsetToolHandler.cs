@@ -17,7 +17,7 @@ namespace Poly_Ling.Player
     /// 対象メッシュの見た目と直接の子は据え置く。内部は ObjectMoveTool へ委譲。
     /// ギズモ座標/当たり判定は ObjectMoveTool の同一 _axisGizmo を用いるため一致する。
     /// </summary>
-    public class PivotOffsetToolHandler : IPlayerToolHandler
+    public class PivotOffsetToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ObjectMoveTool を専用設定(OriginOnly=true, 子は据え置き, ピック無効=ギズモ専用)で保持
         private readonly ObjectMoveTool _tool = new ObjectMoveTool();
@@ -34,6 +34,7 @@ namespace Poly_Ling.Player
                 PickBones         = false,   // ギズモ専用(空クリックでのピックはしない)
                 PickMeshesNoSkin  = false,
                 PickMeshesSkinned = false,
+                AllowRotationGizmo = false,  // 原点だけ移動: 回転リングは出さない
             });
         }
 
@@ -109,6 +110,27 @@ namespace Poly_Ling.Player
 
             return _tool.TryGetGizmoScreenPositions(
                 builtCtx, out origin, out xEnd, out yEnd, out zEnd, out hoveredAxis);
+        }
+
+        /// <summary>
+        /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。
+        /// 「原点だけ移動」はダイヤスタイルの軸ギズモのみ。
+        /// </summary>
+        public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
+        {
+            data = default;
+            if (!TryGetGizmoScreenPositions(
+                    ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
+                return false;
+
+            data = new PlayerViewportPanel.GizmoData
+            {
+                HasGizmo       = true,
+                IsDiamondStyle = true,
+                Origin         = origin, XEnd = xEnd, YEnd = yEnd, ZEnd = zEnd,
+                HoveredAxis    = hovAxis,
+            };
+            return true;
         }
 
         // ================================================================

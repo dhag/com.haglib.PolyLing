@@ -576,6 +576,12 @@ namespace Poly_Ling.Data
         public int[] MasterIndices { get; }
         /// <summary>ボーン編集の確定モード（A/B）。パネルが送信時に刻む。</summary>
         public BoneMoveMode Mode { get; set; } = BoneMoveMode.BoneOnlyRebind;
+        /// <summary>
+        /// 「原点だけ移動」中か。true のとき、対象 MeshFilter の見た目を固定したまま
+        /// 原点(BoneTransform)だけを動かすよう受信側が自頂点を再ローカル化する。
+        /// パネルが送信時に刻む。
+        /// </summary>
+        public bool OriginOnly { get; set; } = false;
         public BeginBoneTransformSliderDragCommand(int modelIndex, int[] masterIndices)
             : base(modelIndex) { MasterIndices = masterIndices; }
     }

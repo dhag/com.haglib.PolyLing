@@ -44,14 +44,91 @@ namespace Poly_Ling.Tools
         {
             var best = AxisGizmo.AxisType.None;
             float bestDist = HitThreshold;
+            float dX = -1f, dY = -1f, dZ = -1f;
             foreach (var axis in new[] { AxisGizmo.AxisType.X, AxisGizmo.AxisType.Y, AxisGizmo.AxisType.Z })
             {
                 var pts = GetRingScreen(ctx, axis);
                 float d = MinDistToPolyline(screenPos, pts);
+                if (axis == AxisGizmo.AxisType.X) dX = d;
+                else if (axis == AxisGizmo.AxisType.Y) dY = d;
+                else dZ = d;
                 if (d < bestDist) { bestDist = d; best = axis; }
             }
+
+            if (AxisGizmo.GizmoDebugLog)
+            {
+                Vector2 centerScreen = (ctx?.WorldToScreenPos != null)
+                    ? ctx.WorldToScreenPos(Center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget)
+                    : Vector2.zero;
+                Debug.Log(
+                    $"[GizmoDbg/Ring] mouse={screenPos} centerScreen={centerScreen} " +
+                    $"hit={best} d=({dX:F1},{dY:F1},{dZ:F1}) thr={HitThreshold} " +
+                    $"center={Center} rect={ctx?.PreviewRect}");
+            }
+
             return best;
         }
+
+        // ================================================================
+        // 角度ドラッグセッション（共有）
+        //
+        // 「ピボットのスクリーン座標を基準に開始角を記録し、以後カーソル角との
+        // 差を軸符号付きの累計角（度）で返す」手順を、リングを使う全ツールで
+        // 共有する。フレーム差分ではなく毎回「開始角からの絶対角」を返す。
+        // 座標系は ctx.WorldToScreenPos が返す系（AxisGizmo と同一）。
+        // Center は呼び出し前に設定しておくこと。
+        // ================================================================
+
+        private AxisGizmo.AxisType _angleDragAxis = AxisGizmo.AxisType.None;
+        private Vector2 _angleDragPivotScreen;
+        private float   _angleDragStartDeg;
+        private float   _angleDragSign = 1f;
+
+        /// <summary>角度ドラッグ中か。</summary>
+        public bool IsAngleDragging => _angleDragAxis != AxisGizmo.AxisType.None;
+
+        /// <summary>ドラッグ中の回転軸（ワールド）。非ドラッグ時は Vector3.up。</summary>
+        public Vector3 AngleDragAxisVector => AxisVector(_angleDragAxis);
+
+        /// <summary>
+        /// 角度ドラッグを開始する。cursorScreen は ctx 系（WorldToScreenPos と同じ系）。
+        /// </summary>
+        public bool BeginAngleDrag(ToolContext ctx, Vector2 cursorScreen, AxisGizmo.AxisType axis)
+        {
+            _angleDragAxis = AxisGizmo.AxisType.None;
+            if (ctx == null || ctx.WorldToScreenPos == null) return false;
+            if (axis == AxisGizmo.AxisType.None) return false;
+
+            _angleDragPivotScreen = ctx.WorldToScreenPos(
+                Center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            _angleDragStartDeg = ScreenAngleDeg(cursorScreen, _angleDragPivotScreen);
+
+            // 軸がカメラ側を向くとき +1。裏から見たときに回転方向が反転しないようにする。
+            Vector3 worldAxis = AxisVector(axis);
+            Vector3 camDir    = (ctx.CameraPosition - Center).normalized;
+            _angleDragSign    = Vector3.Dot(worldAxis, camDir) >= 0f ? 1f : -1f;
+
+            _angleDragAxis = axis;
+            return true;
+        }
+
+        /// <summary>開始角からの累計角（度）。BeginAngleDrag していなければ 0。</summary>
+        public float ComputeAngleDeltaDeg(Vector2 cursorScreen)
+        {
+            if (_angleDragAxis == AxisGizmo.AxisType.None) return 0f;
+            float cur = ScreenAngleDeg(cursorScreen, _angleDragPivotScreen);
+            return Mathf.DeltaAngle(_angleDragStartDeg, cur) * _angleDragSign;
+        }
+
+        /// <summary>角度ドラッグを終了する。</summary>
+        public void EndAngleDrag()
+        {
+            _angleDragAxis = AxisGizmo.AxisType.None;
+        }
+
+        /// <summary>ピボットスクリーン座標を基準としたカーソル角（度）。</summary>
+        public static float ScreenAngleDeg(Vector2 cursor, Vector2 pivot)
+            => Mathf.Atan2(cursor.y - pivot.y, cursor.x - pivot.x) * Mathf.Rad2Deg;
 
         public static Vector3 AxisVector(AxisGizmo.AxisType axis)
         {
@@ -80,19 +157,11 @@ namespace Poly_Ling.Tools
             float min = float.MaxValue;
             for (int i = 0; i + 1 < pts.Length; i++)
             {
-                float d = DistToSegment(p, pts[i], pts[i + 1]);
+                float d = AxisGizmo.DistanceToSegment(p, pts[i], pts[i + 1]);
                 if (d < min) min = d;
             }
             return min;
         }
 
-        private static float DistToSegment(Vector2 p, Vector2 a, Vector2 b)
-        {
-            Vector2 ab = b - a;
-            float len2 = ab.sqrMagnitude;
-            if (len2 < 1e-6f) return Vector2.Distance(p, a);
-            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2);
-            return Vector2.Distance(p, a + ab * t);
-        }
     }
 }

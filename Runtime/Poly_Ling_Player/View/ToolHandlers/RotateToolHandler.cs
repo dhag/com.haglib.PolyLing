@@ -10,7 +10,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
-    public class RotateToolHandler : IPlayerToolHandler
+    public class RotateToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
         // 依存
@@ -76,9 +76,6 @@ namespace Poly_Ling.Player
         private readonly RotateRingGizmo _ringGizmo = new RotateRingGizmo();
         private AxisGizmo.AxisType _gizmoHoverAxis = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _gizmoDragAxis  = AxisGizmo.AxisType.None;
-        private Vector2 _gizmoPivotScreen;
-        private float   _gizmoStartAngle;
-        private float   _gizmoAxisSign = 1f;
         private bool    _prevAxisMode;
 
         /// <summary>
@@ -121,6 +118,25 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。回転はリングのみ。
+        /// </summary>
+        public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
+        {
+            data = default;
+            if (!TryGetGizmoRings(ctx, out var rx, out var ry, out var rz, out var rha))
+                return false;
+
+            data = new PlayerViewportPanel.GizmoData
+            {
+                HasGizmo    = true,
+                IsRingStyle = true,
+                RingX = rx, RingY = ry, RingZ = rz,
+                HoveredAxis = rha,
+            };
+            return true;
+        }
+
         public bool GizmoHitTest(Vector2 screenPos, ToolContext ctx)
         {
             if (ctx == null || _tool.GetTotalAffectedCountPublic() == 0) return false;
@@ -137,17 +153,15 @@ namespace Poly_Ling.Player
             var ctx = GetToolContext?.Invoke();
             if (ctx == null || ctx.WorldToScreenPos == null) { _gizmoDragAxis = AxisGizmo.AxisType.None; return false; }
 
-            Vector3 center = WorldPivot();
-            _gizmoPivotScreen = ctx.WorldToScreenPos(center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            // 開始角・軸符号の算出は RotateRingGizmo の角度ドラッグセッションに集約。
+            _ringGizmo.Center = WorldPivot();
+            if (!_ringGizmo.BeginAngleDrag(ctx, LastImguiCursor, _gizmoDragAxis))
+            {
+                _gizmoDragAxis = AxisGizmo.AxisType.None;
+                return false;
+            }
 
-            // 開始角（ピボットスクリーン基準、ctx系=Y上）
-            var cursor = LastImguiCursor;
-            _gizmoStartAngle = Mathf.Atan2(cursor.y - _gizmoPivotScreen.y, cursor.x - _gizmoPivotScreen.x);
-
-            // 符号: 軸がカメラ側を向くとき +1
             Vector3 worldAxis = RotateRingGizmo.AxisVector(_gizmoDragAxis);
-            Vector3 camDir = (ctx.CameraPosition - center).normalized;
-            _gizmoAxisSign = Vector3.Dot(worldAxis, camDir) >= 0f ? 1f : -1f;
 
             _prevAxisMode = _tool.AxisMode;
             _tool.AxisMode = true;
@@ -160,10 +174,7 @@ namespace Poly_Ling.Player
         public void GizmoDrag(Vector2 screenPos)
         {
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
-            Vector2 cur = ToImgui(screenPos);
-            float ang = Mathf.Atan2(cur.y - _gizmoPivotScreen.y, cur.x - _gizmoPivotScreen.x);
-            float delta = Mathf.DeltaAngle(_gizmoStartAngle * Mathf.Rad2Deg, ang * Mathf.Rad2Deg);
-            _tool.AxisAngle = delta * _gizmoAxisSign;
+            _tool.AxisAngle = _ringGizmo.ComputeAngleDeltaDeg(ToImgui(screenPos));
             OnRepaint?.Invoke();
         }
 
@@ -171,6 +182,7 @@ namespace Poly_Ling.Player
         {
             if (_gizmoDragAxis == AxisGizmo.AxisType.None) return;
             _gizmoDragAxis = AxisGizmo.AxisType.None;
+            _ringGizmo.EndAngleDrag();
             EndSliderDrag();
             _tool.AxisMode  = _prevAxisMode;
             _tool.AxisAngle = 0f;

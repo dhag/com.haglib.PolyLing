@@ -41,7 +41,7 @@ using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.Player
 {
-    public class MoveToolHandler : IPlayerToolHandler
+    public class MoveToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         // ================================================================
         // 状態機（Editor MoveTool と同等）
@@ -284,7 +284,7 @@ namespace Poly_Ling.Player
         // ================================================================
         public void OnLeftClick(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
         {
-            var before = CaptureSelectionSnapshot();
+            var before = CaptureAllSelectionSnapshots();
 
             var mode = _selectionOps.SelectionState?.Mode
                     ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge |
@@ -302,7 +302,7 @@ namespace Poly_Ling.Player
             ExpandLinkedVertices();
 
             OnRequestNormal?.Invoke();
-            RecordSelectionChange(before, CaptureSelectionSnapshot());
+            RecordSelectionChange(before, CaptureAllSelectionSnapshots());
 
             // ツール流用フック: クリック系ツール (FlipFace 等) がここで発火
             OnLeftClickExtra?.Invoke(clickedElem, mods);
@@ -437,9 +437,9 @@ namespace Poly_Ling.Player
                         // ヒット要素が未選択なら選択
                         if (_elemOnMouseDown.HasHit && !IsElemSelected(_elemOnMouseDown))
                         {
-                            var selBefore = CaptureSelectionSnapshot();
+                            var selBefore = CaptureAllSelectionSnapshots();
                             _selectionOps.ApplyElementClick(_elemOnMouseDown, new ModifierKeys());
-                            RecordSelectionChange(selBefore, CaptureSelectionSnapshot());
+                            RecordSelectionChange(selBefore, CaptureAllSelectionSnapshots());
                         }
 
                         UpdateAffectedVertices();
@@ -590,6 +590,25 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。
+        /// 頂点移動は矢印スタイル（キューブ / ダイヤ / リングのいずれも立てない）。
+        /// </summary>
+        public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
+        {
+            data = default;
+            if (!TryGetGizmoScreenPositions(ctx, out var o, out var xe, out var ye, out var ze, out var ha))
+                return false;
+
+            data = new PlayerViewportPanel.GizmoData
+            {
+                HasGizmo    = true,
+                Origin      = o, XEnd = xe, YEnd = ye, ZEnd = ze,
+                HoveredAxis = ha,
+            };
+            return true;
+        }
+
         /// <summary>ポインター移動時に呼んでホバー軸を更新する。</summary>
         public void UpdateHover(Vector2 screenPos, ToolContext ctx)
         {
@@ -615,36 +634,98 @@ namespace Poly_Ling.Player
         // 選択変更 Undo ヘルパー
         // ================================================================
 
-        private SelectionSnapshot CaptureSelectionSnapshot()
+        /// <summary>
+        /// 選択メッシュ全ての選択状態を、MeshContextList インデックス付きで控える。
+        ///
+        /// SelectionSnapshot はメッシュ内ローカル番号を持つため 1 メッシュしか表せない。
+        /// 本ハンドラのクリック／矩形／投げ縄は複数メッシュにまたがるので、
+        /// メッシュごとに 1 個ずつ控えて MultiMeshSelectionChangeRecord に渡す。
+        /// </summary>
+        private Dictionary<int, SelectionSnapshot> CaptureAllSelectionSnapshots()
         {
-            var sel = _selectionOps.SelectionState;
-            if (sel == null) return null;
+            var result = new Dictionary<int, SelectionSnapshot>();
+            var model  = _project?.CurrentModel;
+            if (model == null) return result;
+
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
+            {
+                var mc  = model.GetMeshContext(ctxIdx);
+                var sel = mc?.Selection;
+                if (sel == null) continue;
+
+                result[ctxIdx] = new SelectionSnapshot
+                {
+                    Mode     = sel.Mode,
+                    Vertices = new HashSet<int>(sel.Vertices),
+                    Edges    = new HashSet<VertexPair>(sel.Edges),
+                    Faces    = new HashSet<int>(sel.Faces),
+                    Lines    = new HashSet<int>(sel.Lines),
+                };
+            }
+            return result;
+        }
+
+        /// <summary>指定モードの空スナップショット（片側にしか存在しないメッシュの補完用）。</summary>
+        private static SelectionSnapshot EmptySelectionSnapshot(MeshSelectMode mode)
+        {
             return new SelectionSnapshot
             {
-                Mode     = sel.Mode,
-                Vertices = new HashSet<int>(sel.Vertices),
-                Edges    = new HashSet<VertexPair>(sel.Edges),
-                Faces    = new HashSet<int>(sel.Faces),
-                Lines    = new HashSet<int>(sel.Lines),
+                Mode     = mode,
+                Vertices = new HashSet<int>(),
+                Edges    = new HashSet<VertexPair>(),
+                Faces    = new HashSet<int>(),
+                Lines    = new HashSet<int>(),
             };
         }
 
-        private void RecordSelectionChange(SelectionSnapshot before, SelectionSnapshot after)
+        /// <summary>
+        /// 選択変更を Undo スタックへ記録する。
+        ///
+        /// 変化のあったメッシュだけをエントリ化し、1 件も無ければ記録しない。
+        /// Record は MultiMeshSelectionChangeRecord を使う。SelectionChangeRecord は
+        /// 復元先が ActiveMeshContext 固定のため、複数メッシュには使えない。
+        /// </summary>
+        private void RecordSelectionChange(
+            Dictionary<int, SelectionSnapshot> before,
+            Dictionary<int, SelectionSnapshot> after)
         {
             if (_undoController == null || before == null || after == null) return;
-            if (!before.IsDifferentFrom(after)) return;
+
             var model = _project?.CurrentModel;
-            if (model != null)
-                _undoController.MeshUndoContext.ParentModelContext = model;
-            var record = new SelectionChangeRecord(before, after);
+            if (model == null) return;
+
+            // before / after の和集合で比較する。
+            // 途中でメッシュ選択自体が変わった場合に片側にしか無いキーが出るため。
+            var keys = new HashSet<int>(before.Keys);
+            keys.UnionWith(after.Keys);
+
+            var entries = new List<MeshSelectionEntry>();
+            foreach (int ctxIdx in keys)
+            {
+                before.TryGetValue(ctxIdx, out var b);
+                after.TryGetValue(ctxIdx, out var a);
+
+                if (b == null) b = EmptySelectionSnapshot(a?.Mode ?? MeshSelectMode.Vertex);
+                if (a == null) a = EmptySelectionSnapshot(b.Mode);
+
+                if (!b.IsDifferentFrom(a)) continue;
+
+                entries.Add(new MeshSelectionEntry
+                {
+                    MeshContextIndex = ctxIdx,
+                    Old              = b,
+                    New              = a,
+                });
+            }
+
+            if (entries.Count == 0) return;
+
+            _undoController.MeshUndoContext.ParentModelContext = model;
+            var record = new MultiMeshSelectionChangeRecord(entries.ToArray());
             _undoController.FocusVertexEdit();
             UnityEngine.Debug.Log(
-                $"[UndoDbg] Push SelectionChangeRecord (model={model?.Name ?? "<null>"}, " +
-                $"beforeV={before.Vertices?.Count ?? 0}, afterV={after.Vertices?.Count ?? 0}, " +
-                $"beforeE={before.Edges?.Count ?? 0}, afterE={after.Edges?.Count ?? 0}, " +
-                $"beforeF={before.Faces?.Count ?? 0}, afterF={after.Faces?.Count ?? 0}, " +
-                $"beforeL={before.Lines?.Count ?? 0}, afterL={after.Lines?.Count ?? 0}, " +
-                $"mode={after.Mode})");
+                $"[UndoDbg] Push MultiMeshSelectionChangeRecord (model={model.Name}, " +
+                $"entries={entries.Count})");
             _undoController.VertexEditStack.Record(record, "選択変更");
             UnityEngine.Debug.Log(
                 $"[UndoDbg]   after Record: VertexEdit.Undo={_undoController.VertexEditStack.UndoCount}, " +
@@ -653,38 +734,50 @@ namespace Poly_Ling.Player
                 $"MeshList.Pending={_undoController.MeshListStack.PendingCount}");
         }
 
+        /// <summary>
+        /// 移動対象頂点を集計する。
+        ///
+        /// 選択メッシュ（ModelContext.SelectedDrawableMeshIndices）を全て走査し、
+        /// 各 MeshContext.Selection から自メッシュぶんの頂点を集める。
+        /// SelectionState の Vertices/Faces/Lines はメッシュ内ローカル番号のため、
+        /// 単一 SelectionState を全メッシュに適用してはならない。
+        ///
+        /// 集計後の _affectedVertices は BeginMove / UpdateGizmoState / ApplyDelta /
+        /// EndMove がそのまま複数メッシュとして扱う（いずれも元から辞書全走査）。
+        /// </summary>
         private void UpdateAffectedVertices()
         {
             _affectedVertices.Clear();
             var model = _project?.CurrentModel;
             if (model == null) return;
 
-            int ctxIdx = model.FirstMeshIndex >= 0
-                ? model.FirstMeshIndex
-                : (model.SelectedDrawableMeshIndices.Count > 0 ? model.SelectedDrawableMeshIndices[0] : -1);
-            if (ctxIdx < 0) return;
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(ctxIdx);
+                if (mc?.MeshObject == null) continue;
 
-            var mc  = model.GetMeshContext(ctxIdx);
-            if (mc?.MeshObject == null) return;
+                var sel = mc.Selection;
+                if (sel == null) continue;
 
-            var sel      = _selectionOps.SelectionState;
-            var affected = new HashSet<int>();
+                var mo       = mc.MeshObject;
+                var affected = new HashSet<int>();
 
-            foreach (var v  in sel.Vertices) affected.Add(v);
-            foreach (var e  in sel.Edges)    { affected.Add(e.V1); affected.Add(e.V2); }
-            foreach (var fi in sel.Faces)
-                if (fi >= 0 && fi < mc.MeshObject.FaceCount)
-                    foreach (var vi in mc.MeshObject.Faces[fi].VertexIndices)
-                        affected.Add(vi);
-            foreach (var li in sel.Lines)
-                if (li >= 0 && li < mc.MeshObject.FaceCount)
-                {
-                    var face = mc.MeshObject.Faces[li];
-                    if (face.VertexCount == 2)
-                    { affected.Add(face.VertexIndices[0]); affected.Add(face.VertexIndices[1]); }
-                }
+                foreach (var v  in sel.Vertices) affected.Add(v);
+                foreach (var e  in sel.Edges)    { affected.Add(e.V1); affected.Add(e.V2); }
+                foreach (var fi in sel.Faces)
+                    if (fi >= 0 && fi < mo.FaceCount)
+                        foreach (var vi in mo.Faces[fi].VertexIndices)
+                            affected.Add(vi);
+                foreach (var li in sel.Lines)
+                    if (li >= 0 && li < mo.FaceCount)
+                    {
+                        var face = mo.Faces[li];
+                        if (face.VertexCount == 2)
+                        { affected.Add(face.VertexIndices[0]); affected.Add(face.VertexIndices[1]); }
+                    }
 
-            if (affected.Count > 0) _affectedVertices[ctxIdx] = affected;
+                if (affected.Count > 0) _affectedVertices[ctxIdx] = affected;
+            }
         }
 
         private bool HasAnyAffected()
@@ -821,41 +914,58 @@ namespace Poly_Ling.Player
             _affectedVertices.Clear();
         }
 
+        /// <summary>
+        /// 辺／面／線分の選択を、対応する頂点選択へ展開する。
+        /// 選択メッシュごとに自分の MeshObject を参照する
+        /// （面インデックスはメッシュ内ローカル番号のため）。
+        /// </summary>
         private void ExpandLinkedVertices()
         {
-            var sel = _selectionOps.SelectionState;
-            if (sel == null) return;
-            var meshObject = _project?.CurrentModel?.ActiveMeshContext?.MeshObject;
-            if (meshObject == null) return;
+            var model = _project?.CurrentModel;
+            if (model == null) return;
 
-            foreach (var edge in sel.Edges)
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
             {
-                sel.Vertices.Add(edge.V1);
-                sel.Vertices.Add(edge.V2);
-            }
-            foreach (var faceIdx in sel.Faces)
-            {
-                if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
-                    foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
-                        sel.Vertices.Add(vIdx);
-            }
-            foreach (var lineIdx in sel.Lines)
-            {
-                if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
+                var mc = model.GetMeshContext(ctxIdx);
+                var meshObject = mc?.MeshObject;
+                var sel = mc?.Selection;
+                if (meshObject == null || sel == null) continue;
+
+                foreach (var edge in sel.Edges)
                 {
-                    var face = meshObject.Faces[lineIdx];
-                    if (face.VertexCount == 2)
+                    sel.Vertices.Add(edge.V1);
+                    sel.Vertices.Add(edge.V2);
+                }
+                foreach (var faceIdx in sel.Faces)
+                {
+                    if (faceIdx >= 0 && faceIdx < meshObject.FaceCount)
+                        foreach (var vIdx in meshObject.Faces[faceIdx].VertexIndices)
+                            sel.Vertices.Add(vIdx);
+                }
+                foreach (var lineIdx in sel.Lines)
+                {
+                    if (lineIdx >= 0 && lineIdx < meshObject.FaceCount)
                     {
-                        sel.Vertices.Add(face.VertexIndices[0]);
-                        sel.Vertices.Add(face.VertexIndices[1]);
+                        var face = meshObject.Faces[lineIdx];
+                        if (face.VertexCount == 2)
+                        {
+                            sel.Vertices.Add(face.VertexIndices[0]);
+                            sel.Vertices.Add(face.VertexIndices[1]);
+                        }
                     }
                 }
             }
         }
 
+        /// <summary>
+        /// ヒット要素が既に選択済みかを判定する。
+        /// 判定先は「当たったメッシュ」の Selection。先頭メッシュの Selection を
+        /// 見ると、別メッシュの同番号要素が選択済みかどうかで判定してしまう。
+        /// </summary>
         private bool IsElemSelected(PlayerHoverElement elem)
         {
-            var sel = _selectionOps.SelectionState;
+            var sel = ResolveMeshSelection(elem.MeshIndex);
+            if (sel == null) return false;
             return elem.Kind switch
             {
                 PlayerHoverKind.Vertex => sel.Vertices.Contains(elem.VertexIndex),
@@ -865,6 +975,21 @@ namespace Poly_Ling.Player
                 PlayerHoverKind.Line   => sel.Lines.Contains(elem.FaceIndex),
                 _                      => false,
             };
+        }
+
+        /// <summary>
+        /// MeshContextList インデックスから SelectionState を解決する。
+        /// 解決できない場合は先頭選択メッシュのものを返す。
+        /// </summary>
+        private Poly_Ling.Selection.SelectionState ResolveMeshSelection(int meshContextIndex)
+        {
+            var model = _project?.CurrentModel;
+            if (model != null && meshContextIndex >= 0)
+            {
+                var mc = model.GetMeshContext(meshContextIndex);
+                if (mc?.Selection != null) return mc.Selection;
+            }
+            return _selectionOps.SelectionState;
         }
 
         private float MoveScreenDistToWorldRadius(float screenDist, ToolContext ctx)
@@ -890,153 +1015,159 @@ namespace Poly_Ling.Player
             return new Vector2(screenPosYDown.x, h - screenPosYDown.y);
         }
 
+        /// <summary>
+        /// 矩形選択を確定する。
+        ///
+        /// 選択メッシュを全て走査する。頂点オフセット（GetVertexOffset）は
+        /// メッシュごとに異なるため、必ずメッシュ単位で取り直すこと。
+        /// GetScreenPositions() は全メッシュぶんを連結したグローバル配列なので
+        /// そのまま使える。
+        /// </summary>
         private void CommitBoxSelect(ModifierKeys mods)
         {
             if (GetScreenPositions == null)
-            { _selectionOps.EndBoxSelect(Enumerable.Empty<int>(), mods); return; }
+            { _selectionOps.EndBoxSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
 
             var model = _project?.CurrentModel;
-            var mc    = model?.ActiveMeshContext;
-            if (mc?.MeshObject == null)
-            { _selectionOps.EndBoxSelect(Enumerable.Empty<int>(), mods); return; }
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0)
+            { _selectionOps.EndBoxSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
 
-            int ctxIdx      = model.FirstMeshIndex >= 0
-                              ? model.FirstMeshIndex : model.FirstMeshIndex;
-            int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
-            var rect         = _selectionOps.BoxRect;
-            var screenPos    = GetScreenPositions();
-            var mo           = mc.MeshObject;
-            float vpH        = GetViewportHeight?.Invoke() ?? 0f;
+            var rect      = _selectionOps.BoxRect;
+            var screenPos = GetScreenPositions();
+            float vpH     = GetViewportHeight?.Invoke() ?? 0f;
 
-            // スクリーン座標取得ヘルパー
-            Func<int, Vector2> vertexScreen = (i) =>
-            {
-                if (screenPos == null || vertexOffset + i >= screenPos.Length)
-                    return new Vector2(-10000, -10000);
-                return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
-            };
-
-            var selBefore = CaptureSelectionSnapshot();
+            var selBefore = CaptureAllSelectionSnapshots();
 
             bool additive = mods.Shift || mods.Ctrl;
-            if (!additive)
-            {
-                mc.Selection.ClearAll();
-            }
 
             var mode = _selectionOps.SelectionState?.Mode
                     ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
 
-            // 頂点選択
-            var inBox = new List<int>();
-            if (mode.Has(MeshSelectMode.Vertex))
-            {
-                for (int i = 0; i < mo.Vertices.Count; i++)
-                {
-                    if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
-                    if (rect.Contains(vertexScreen(i), true)) inBox.Add(i);
-                }
-            }
+            var inBox = new List<MeshVertexRef>();
 
-            // 辺選択
-            // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
-            // 表面の面に属さない頂点から成る辺は除外する。
-            // 厳密には「両端が可視でも辺自体は裏を通る」ケースも稀に拾うが、
-            // GPU 側でも辺単位の可視判定は無く頂点ベースなので同じ挙動で OK。
-            if (mode.Has(MeshSelectMode.Edge))
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
             {
-                for (int fi = 0; fi < mo.FaceCount; fi++)
+                var mc = model.GetMeshContext(ctxIdx);
+                if (mc?.MeshObject == null || mc.Selection == null) continue;
+
+                var mo = mc.MeshObject;
+                int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
+
+                // スクリーン座標取得ヘルパー（このメッシュのローカル頂点番号 → 画面座標）
+                Func<int, Vector2> vertexScreen = (i) =>
                 {
-                    var face = mo.Faces[fi];
-                    if (face.VertexCount < 2) continue;
-                    for (int ei = 0; ei < face.VertexCount; ei++)
+                    if (screenPos == null || vertexOffset + i >= screenPos.Length)
+                        return new Vector2(-10000, -10000);
+                    return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
+                };
+
+                if (!additive)
+                {
+                    mc.Selection.ClearAll();
+                }
+
+                // 頂点選択
+                if (mode.Has(MeshSelectMode.Vertex))
+                {
+                    for (int i = 0; i < mo.Vertices.Count; i++)
                     {
-                        int v1 = face.VertexIndices[ei];
-                        int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
+                        if (rect.Contains(vertexScreen(i), true)) inBox.Add(new MeshVertexRef(ctxIdx, i));
+                    }
+                }
+
+                // 辺選択
+                // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
+                // 表面の面に属さない頂点から成る辺は除外する。
+                // 厳密には「両端が可視でも辺自体は裏を通る」ケースも稀に拾うが、
+                // GPU 側でも辺単位の可視判定は無く頂点ベースなので同じ挙動で OK。
+                if (mode.Has(MeshSelectMode.Edge))
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 2) continue;
+                        for (int ei = 0; ei < face.VertexCount; ei++)
+                        {
+                            int v1 = face.VertexIndices[ei];
+                            int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                            if (IsVertexVisible != null
+                                && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
+                                continue;
+                            if (rect.Contains(vertexScreen(v1), true) &&
+                                rect.Contains(vertexScreen(v2), true))
+                            {
+                                mc.Selection.SelectEdge(v1, v2, true);
+                            }
+                        }
+                    }
+                }
+
+                // 面選択
+                // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
+                if (mode.Has(MeshSelectMode.Face))
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 3) continue;
+                        bool allIn = true;
+                        foreach (int vi in face.VertexIndices)
+                        {
+                            if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
+                            if (!rect.Contains(vertexScreen(vi), true)) { allIn = false; break; }
+                        }
+                        if (allIn) mc.Selection.SelectFace(fi, true);
+                    }
+                }
+
+                // 線分選択
+                // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
+                if (mode.Has(MeshSelectMode.Line))
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount != 2) continue;
+                        int v1 = face.VertexIndices[0];
+                        int v2 = face.VertexIndices[1];
                         if (IsVertexVisible != null
                             && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
                             continue;
                         if (rect.Contains(vertexScreen(v1), true) &&
                             rect.Contains(vertexScreen(v2), true))
                         {
-                            mc.Selection.SelectEdge(v1, v2, true);
+                            mc.Selection.SelectLine(fi, true);
                         }
-                    }
-                }
-            }
-
-            // 面選択
-            // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
-            if (mode.Has(MeshSelectMode.Face))
-            {
-                for (int fi = 0; fi < mo.FaceCount; fi++)
-                {
-                    var face = mo.Faces[fi];
-                    if (face.VertexCount < 3) continue;
-                    bool allIn = true;
-                    foreach (int vi in face.VertexIndices)
-                    {
-                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
-                        if (!rect.Contains(vertexScreen(vi), true)) { allIn = false; break; }
-                    }
-                    if (allIn) mc.Selection.SelectFace(fi, true);
-                }
-            }
-
-            // 線分選択
-            // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
-            if (mode.Has(MeshSelectMode.Line))
-            {
-                for (int fi = 0; fi < mo.FaceCount; fi++)
-                {
-                    var face = mo.Faces[fi];
-                    if (face.VertexCount != 2) continue;
-                    int v1 = face.VertexIndices[0];
-                    int v2 = face.VertexIndices[1];
-                    if (IsVertexVisible != null
-                        && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
-                        continue;
-                    if (rect.Contains(vertexScreen(v1), true) &&
-                        rect.Contains(vertexScreen(v2), true))
-                    {
-                        mc.Selection.SelectLine(fi, true);
                     }
                 }
             }
 
             _selectionOps.EndBoxSelect(inBox, mods);
             ExpandLinkedVertices();
-            RecordSelectionChange(selBefore, CaptureSelectionSnapshot());
+            RecordSelectionChange(selBefore, CaptureAllSelectionSnapshots());
             OnRepaint?.Invoke();
         }
 
+        /// <summary>
+        /// 投げ縄選択を確定する。走査規則は CommitBoxSelect と同じ
+        /// （選択メッシュ全走査・頂点オフセットはメッシュ単位）。
+        /// </summary>
         private void CommitLassoSelect(ModifierKeys mods)
         {
             var lasso = _selectionOps.LassoPoints;
             if (lasso.Count < 3)
-            { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
+            { _selectionOps.EndLassoSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
 
             if (GetScreenPositions == null)
-            { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
+            { _selectionOps.EndLassoSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
 
             var model = _project?.CurrentModel;
-            var mc    = model?.ActiveMeshContext;
-            if (mc?.MeshObject == null)
-            { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
+            if (model == null || model.SelectedDrawableMeshIndices.Count == 0)
+            { _selectionOps.EndLassoSelect(Enumerable.Empty<MeshVertexRef>(), mods); return; }
 
-            int ctxIdx       = model.FirstMeshIndex >= 0
-                               ? model.FirstMeshIndex : model.FirstMeshIndex;
-            int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
-            var screenPos    = GetScreenPositions();
-            var mo           = mc.MeshObject;
-            float vpH        = GetViewportHeight?.Invoke() ?? 0f;
-
-            Func<int, Vector2> vertexScreen = (i) =>
-            {
-                if (screenPos == null || vertexOffset + i >= screenPos.Length)
-                    return new Vector2(-10000, -10000);
-                return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
-            };
+            var screenPos = GetScreenPositions();
+            float vpH     = GetViewportHeight?.Invoke() ?? 0f;
 
             // 座標系の確認：
             // GetScreenPositions() は NDC から screenY = (1 - ndcY) * height で計算 → UIToolkit Y（Y=0上）
@@ -1045,93 +1176,111 @@ namespace Poly_Ling.Player
             // → vertexScreen と LassoPoints は同じ GPU Y。変換不要。
             var lassoGPU = lasso;
 
-            var selBefore = CaptureSelectionSnapshot();
+            var selBefore = CaptureAllSelectionSnapshots();
 
             bool additive = mods.Shift || mods.Ctrl;
-            if (!additive)
-                mc.Selection.ClearAll();
 
             var mode = _selectionOps.SelectionState?.Mode
                     ?? (MeshSelectMode.Vertex | MeshSelectMode.Edge | MeshSelectMode.Face | MeshSelectMode.Line);
 
-            // 頂点選択
-            var inLasso = new List<int>();
-            if (mode.Has(MeshSelectMode.Vertex))
-            {
-                for (int i = 0; i < mo.Vertices.Count; i++)
-                {
-                    if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
-                    if (IsPointInLasso(vertexScreen(i), lassoGPU)) inLasso.Add(i);
-                }
-            }
+            var inLasso = new List<MeshVertexRef>();
 
-            // 辺選択
-            // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
-            // 表面の面に属さない頂点から成る辺は除外する。矩形選択と同じ扱い。
-            if (mode.Has(MeshSelectMode.Edge))
+            foreach (int ctxIdx in model.SelectedDrawableMeshIndices)
             {
-                for (int fi = 0; fi < mo.FaceCount; fi++)
+                var mc = model.GetMeshContext(ctxIdx);
+                if (mc?.MeshObject == null || mc.Selection == null) continue;
+
+                var mo = mc.MeshObject;
+                int vertexOffset = GetVertexOffset?.Invoke(ctxIdx) ?? 0;
+
+                Func<int, Vector2> vertexScreen = (i) =>
                 {
-                    var face = mo.Faces[fi];
-                    if (face.VertexCount < 2) continue;
-                    for (int ei = 0; ei < face.VertexCount; ei++)
+                    if (screenPos == null || vertexOffset + i >= screenPos.Length)
+                        return new Vector2(-10000, -10000);
+                    return new Vector2(screenPos[vertexOffset + i].x, vpH - screenPos[vertexOffset + i].y);
+                };
+
+                if (!additive)
+                    mc.Selection.ClearAll();
+
+                // 頂点選択
+                if (mode.Has(MeshSelectMode.Vertex))
+                {
+                    for (int i = 0; i < mo.Vertices.Count; i++)
                     {
-                        int v1 = face.VertexIndices[ei];
-                        int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + i)) continue;
+                        if (IsPointInLasso(vertexScreen(i), lassoGPU)) inLasso.Add(new MeshVertexRef(ctxIdx, i));
+                    }
+                }
+
+                // 辺選択
+                // GPU 計算済みの頂点可視フラグ (IsVertexVisible) で両端頂点を判定し、
+                // 表面の面に属さない頂点から成る辺は除外する。矩形選択と同じ扱い。
+                if (mode.Has(MeshSelectMode.Edge))
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 2) continue;
+                        for (int ei = 0; ei < face.VertexCount; ei++)
+                        {
+                            int v1 = face.VertexIndices[ei];
+                            int v2 = face.VertexIndices[(ei + 1) % face.VertexCount];
+                            if (IsVertexVisible != null
+                                && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
+                                continue;
+                            if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
+                                IsPointInLasso(vertexScreen(v2), lassoGPU))
+                            {
+                                mc.Selection.SelectEdge(v1, v2, true);
+                            }
+                        }
+                    }
+                }
+
+                // 面選択
+                // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
+                if (mode.Has(MeshSelectMode.Face))
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 3) continue;
+                        bool allIn = true;
+                        foreach (int vi in face.VertexIndices)
+                        {
+                            if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
+                            if (!IsPointInLasso(vertexScreen(vi), lassoGPU)) { allIn = false; break; }
+                        }
+                        if (allIn) mc.Selection.SelectFace(fi, true);
+                    }
+                }
+
+                // 線分選択
+                // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
+                if (mode.Has(MeshSelectMode.Line))
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount != 2) continue;
+                        int v1 = face.VertexIndices[0];
+                        int v2 = face.VertexIndices[1];
                         if (IsVertexVisible != null
                             && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
                             continue;
                         if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
                             IsPointInLasso(vertexScreen(v2), lassoGPU))
                         {
-                            mc.Selection.SelectEdge(v1, v2, true);
+                            mc.Selection.SelectLine(fi, true);
                         }
-                    }
-                }
-            }
-
-            // 面選択
-            // 面の全頂点が IsVertexVisible で可視のとき表面扱い (裏側に属する面は除外)。
-            if (mode.Has(MeshSelectMode.Face))
-            {
-                for (int fi = 0; fi < mo.FaceCount; fi++)
-                {
-                    var face = mo.Faces[fi];
-                    if (face.VertexCount < 3) continue;
-                    bool allIn = true;
-                    foreach (int vi in face.VertexIndices)
-                    {
-                        if (IsVertexVisible != null && !IsVertexVisible(vertexOffset + vi)) { allIn = false; break; }
-                        if (!IsPointInLasso(vertexScreen(vi), lassoGPU)) { allIn = false; break; }
-                    }
-                    if (allIn) mc.Selection.SelectFace(fi, true);
-                }
-            }
-
-            // 線分選択
-            // 両端頂点が可視のときのみ選択対象 (辺と同じ扱い)。
-            if (mode.Has(MeshSelectMode.Line))
-            {
-                for (int fi = 0; fi < mo.FaceCount; fi++)
-                {
-                    var face = mo.Faces[fi];
-                    if (face.VertexCount != 2) continue;
-                    int v1 = face.VertexIndices[0];
-                    int v2 = face.VertexIndices[1];
-                    if (IsVertexVisible != null
-                        && (!IsVertexVisible(vertexOffset + v1) || !IsVertexVisible(vertexOffset + v2)))
-                        continue;
-                    if (IsPointInLasso(vertexScreen(v1), lassoGPU) &&
-                        IsPointInLasso(vertexScreen(v2), lassoGPU))
-                    {
-                        mc.Selection.SelectLine(fi, true);
                     }
                 }
             }
 
             _selectionOps.EndLassoSelect(inLasso, mods);
             ExpandLinkedVertices();
-            RecordSelectionChange(selBefore, CaptureSelectionSnapshot());
+            RecordSelectionChange(selBefore, CaptureAllSelectionSnapshots());
             OnRepaint?.Invoke();
         }
 

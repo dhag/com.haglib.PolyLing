@@ -1022,6 +1022,38 @@ namespace Poly_Ling.Core
         }
 
         /// <summary>
+        /// GPUで頂点ヒットテストを実行（吸着用・メッシュ選択を無視）。
+        ///
+        /// 出力は _snapHitVertexDistBuffer で、通常のホバー結果には影響しない。
+        /// スクリーン座標とカリングフラグは DispatchVertexHitTestGPU と同じものを
+        /// 使うため、必ず ComputeScreenPositionsGPU / DispatchFaceVisibilityGPU の
+        /// 後に呼ぶこと。
+        ///
+        /// 【コスト】頂点数ぶんの GetData が 1 回増える。
+        /// 呼び出し側（UnifiedMeshSystem）は必要なときだけ実行すること。
+        /// </summary>
+        public void DispatchVertexSnapHitTestGPU(Vector2 mousePosition, float hitRadius, bool backfaceCullingEnabled = true)
+        {
+            if (!_gpuComputeAvailable || _computeShader == null || _totalVertexCount <= 0)
+                return;
+
+            _computeShader.SetVector("_MousePosition", mousePosition);
+            _computeShader.SetFloat("_HitRadius", hitRadius);
+            _computeShader.SetInt("_VertexCount", _totalVertexCount);
+            _computeShader.SetInt("_EnableBackfaceCulling", backfaceCullingEnabled ? 1 : 0);
+
+            _computeShader.SetBuffer(_kernelVertexSnapHit, "_ScreenPositionBuffer",       GetSlotScreenPosBuffer(0) ?? _screenPosBuffer4);
+            _computeShader.SetBuffer(_kernelVertexSnapHit, "_VertexFlagsBuffer",           _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelVertexSnapHit, "_VertexCulledBuffer",          GetVertexCulledBuffer(0) ?? _vertexFlagsBuffer);
+            _computeShader.SetBuffer(_kernelVertexSnapHit, "_VertexSnapHitDistanceBuffer", _snapHitVertexDistBuffer);
+
+            _computeShader.Dispatch(_kernelVertexSnapHit, ThreadGroups(_totalVertexCount), 1, 1);
+
+            // 結果を読み戻し
+            _snapHitVertexDistBuffer.GetData(_snapHitVertexDistances, 0, 0, _totalVertexCount);
+        }
+
+        /// <summary>
         /// GPUで線分ヒットテストを実行
         /// </summary>
         public void DispatchLineHitTestGPU(Vector2 mousePosition, float hitRadius, bool backfaceCullingEnabled = true)
@@ -1237,6 +1269,29 @@ namespace Poly_Ling.Core
             {
                 // GPU側でhitRadius外・非選択メッシュは1e10が書き込まれている
                 float depth = _hitVertexDistances[i];
+                if (depth < 1e9f && depth < nearestDepth)
+                {
+                    nearestDepth = depth;
+                    nearestIdx = i;
+                }
+            }
+
+            return nearestIdx;
+        }
+
+        /// <summary>
+        /// GPU版（吸着用）: 最近接頂点を検索（深度バッファから）。
+        /// DispatchVertexSnapHitTestGPU の結果を読む。メッシュ選択で絞られていないため
+        /// 非選択オブジェクトの頂点も返り得る。未ヒットは -1。
+        /// </summary>
+        public int FindNearestSnapVertexFromGPU(float hitRadius)
+        {
+            int nearestIdx = -1;
+            float nearestDepth = float.MaxValue;
+
+            for (int i = 0; i < _totalVertexCount; i++)
+            {
+                float depth = _snapHitVertexDistances[i];
                 if (depth < 1e9f && depth < nearestDepth)
                 {
                     nearestDepth = depth;

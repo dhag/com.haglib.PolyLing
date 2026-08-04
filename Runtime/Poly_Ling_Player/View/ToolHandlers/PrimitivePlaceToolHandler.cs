@@ -20,7 +20,7 @@ namespace Poly_Ling.Player
     /// 描画できないため、3種を同時には出さずサブモードで切り替える設計とする。
     /// </para>
     /// </summary>
-    public class PrimitivePlaceToolHandler : IPlayerToolHandler
+    public class PrimitivePlaceToolHandler : IPlayerToolHandler, IPlayerGizmoProvider
     {
         /// <summary>配置ギズモのサブモード。</summary>
         public enum PlaceGizmoMode { Move, Rotate, Scale }
@@ -74,15 +74,8 @@ namespace Poly_Ling.Player
         private AxisGizmo.AxisType _dragAxis  = AxisGizmo.AxisType.None;
 
         // ドラッグ開始時のスナップショット
-        private Vector2 _dragStartScreen;      // スクリーン系（Y 下）
-        private Vector2 _axisScreenDir;        // スケール用。スクリーン系（Y 下）
         private Vector3 _startRotation;
         private Vector3 _startScale;
-        private Vector2 _gizmoCenterScreen;    // 回転用。ctx 系（Y 上）
-        private float   _startAngleRad;
-        private float   _axisSign = 1f;
-
-        private const float ScaleSensitivity = 0.01f;
 
         // ================================================================
         // 中心座標
@@ -141,21 +134,11 @@ namespace Poly_Ling.Player
                 var axis = _ringGizmo.FindRingAtScreenPos(imgui, ctx);
                 if (axis == AxisGizmo.AxisType.None) return;
 
+                // 開始角・軸符号の算出は RotateRingGizmo の角度ドラッグセッションに集約。
+                if (!_ringGizmo.BeginAngleDrag(ctx, imgui, axis)) return;
+
                 _dragAxis = axis;
                 _startRotation = GetRotation?.Invoke() ?? Vector3.zero;
-
-                if (ctx.WorldToScreenPos != null)
-                {
-                    _gizmoCenterScreen = ctx.WorldToScreenPos(
-                        center, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
-                }
-                _startAngleRad = Mathf.Atan2(
-                    imgui.y - _gizmoCenterScreen.y, imgui.x - _gizmoCenterScreen.x);
-
-                // 軸がカメラ側を向くとき +1（RotateToolHandler と同一方式）
-                Vector3 worldAxis = RotateRingGizmo.AxisVector(axis);
-                Vector3 camDir    = (ctx.CameraPosition - center).normalized;
-                _axisSign = Vector3.Dot(worldAxis, camDir) >= 0f ? 1f : -1f;
                 return;
             }
 
@@ -163,21 +146,13 @@ namespace Poly_Ling.Player
             var hitAxis = _axisGizmo.FindAxisAtScreenPos(imgui, ctx);
             if (hitAxis == AxisGizmo.AxisType.None) return;
 
-            _dragAxis        = hitAxis;
-            _dragStartScreen = screenPos;
+            _dragAxis = hitAxis;
 
             if (Mode == PlaceGizmoMode.Scale)
             {
                 _startScale = GetScale?.Invoke() ?? Vector3.one;
-
-                _axisGizmo.GetScreenPositions(ctx, out var o, out var xe, out var ye, out var ze);
-                Vector2 end = hitAxis == AxisGizmo.AxisType.X ? xe
-                            : hitAxis == AxisGizmo.AxisType.Y ? ye : ze;
-                Vector2 dir = end - o;
-                // GetScreenPositions は ctx 系（Y 上）。スクリーン系（Y 下）へ符号を合わせる。
-                _axisScreenDir = dir.sqrMagnitude > 1e-4f
-                    ? new Vector2(dir.x, -dir.y).normalized
-                    : Vector2.right;
+                // 軸スクリーン方向の算出は AxisGizmo のスケールドラッグセッションに集約。
+                _axisGizmo.BeginScaleDrag(ctx, hitAxis, screenPos);
             }
         }
 
@@ -202,6 +177,8 @@ namespace Poly_Ling.Player
         public void OnLeftDragEnd(Vector2 screenPos, ModifierKeys mods)
         {
             _dragAxis = AxisGizmo.AxisType.None;
+            _ringGizmo.EndAngleDrag();
+            _axisGizmo.EndScaleDrag();
             OnRepaint?.Invoke();
         }
 
@@ -213,9 +190,14 @@ namespace Poly_Ling.Player
         {
             _axisGizmo.Center = GizmoCenter();
 
+            // screenDelta はパネルの ToViewportCoord 系（+Y が画面上）。
+            // ComputeFreeDelta はこの系をそのまま要求するが、ComputeAxisDelta は
+            // WorldToScreenPos 系（+Y が画面下）を要求するため Y を反転して渡す。
+            // 反転しないと軸拘束移動の Y だけマウスと逆向きに動く。
             Vector3 worldDelta = (_dragAxis == AxisGizmo.AxisType.Center)
                 ? _axisGizmo.ComputeFreeDelta(screenDelta, ctx)
-                : _axisGizmo.ComputeAxisDelta(screenDelta, _dragAxis, ctx);
+                : _axisGizmo.ComputeAxisDelta(
+                    new Vector2(screenDelta.x, -screenDelta.y), _dragAxis, ctx);
 
             if (worldDelta == Vector3.zero) return;
 
@@ -231,12 +213,7 @@ namespace Poly_Ling.Player
 
         private void DragRotate(Vector2 screenPos)
         {
-            Vector2 cur = ToImgui(screenPos);
-            float ang = Mathf.Atan2(
-                cur.y - _gizmoCenterScreen.y, cur.x - _gizmoCenterScreen.x);
-
-            float deltaDeg = Mathf.DeltaAngle(
-                _startAngleRad * Mathf.Rad2Deg, ang * Mathf.Rad2Deg) * _axisSign;
+            float deltaDeg = _ringGizmo.ComputeAngleDeltaDeg(ToImgui(screenPos));
 
             Vector3 rot = _startRotation;
             switch (_dragAxis)
@@ -251,12 +228,7 @@ namespace Poly_Ling.Player
 
         private void DragScale(Vector2 screenPos)
         {
-            Vector2 d = screenPos - _dragStartScreen;
-            float along = (_dragAxis == AxisGizmo.AxisType.Center)
-                ? (d.x - d.y)
-                : Vector2.Dot(d, _axisScreenDir);
-
-            float factor = Mathf.Max(0.01f, 1f + along * ScaleSensitivity);
+            float factor = _axisGizmo.ComputeScaleFactor(screenPos);
 
             Vector3 s = _startScale;
             switch (_dragAxis)
@@ -311,6 +283,43 @@ namespace Poly_Ling.Player
             ringY = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Y);
             ringZ = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Z);
             hoveredAxis = _dragAxis != AxisGizmo.AxisType.None ? _dragAxis : _hoverAxis;
+            return true;
+        }
+
+        /// <summary>
+        /// ギズモ表示データを組み立てる（IPlayerGizmoProvider）。
+        /// Rotate はリング、Scale はキューブ、Move はオブジェクト姿勢と同じ矢印。
+        /// </summary>
+        public bool TryBuildGizmoData(ToolContext ctx, out PlayerViewportPanel.GizmoData data)
+        {
+            data = default;
+
+            if (Mode == PlaceGizmoMode.Rotate)
+            {
+                if (!TryGetGizmoRings(ctx, out var prx, out var pry, out var prz, out var pha))
+                    return false;
+
+                data = new PlayerViewportPanel.GizmoData
+                {
+                    HasGizmo    = true,
+                    IsRingStyle = true,
+                    RingX = prx, RingY = pry, RingZ = prz,
+                    HoveredAxis = pha,
+                };
+                return true;
+            }
+
+            if (!TryGetGizmoScreenPositions(ctx, out var po, out var pxe, out var pye, out var pze, out var pah))
+                return false;
+
+            data = new PlayerViewportPanel.GizmoData
+            {
+                HasGizmo       = true,
+                IsCubeStyle    = Mode == PlaceGizmoMode.Scale,
+                IsDiamondStyle = false,
+                Origin         = po, XEnd = pxe, YEnd = pye, ZEnd = pze,
+                HoveredAxis    = pah,
+            };
             return true;
         }
 

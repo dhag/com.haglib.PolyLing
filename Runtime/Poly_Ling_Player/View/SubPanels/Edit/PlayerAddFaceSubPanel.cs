@@ -20,6 +20,7 @@ namespace Poly_Ling.Player
         private VisualElement _placedList;
         private Toggle        _continuousToggle;
         private VisualElement _continuousRow;
+        private Toggle        _snapUnselectedToggle;
 
         public void Build(VisualElement parent)
         {
@@ -53,6 +54,17 @@ namespace Poly_Ling.Player
             _continuousRow.Add(_continuousToggle);
             _root.Add(_continuousRow);
 
+            // 非選択オブジェクトへの吸着
+            // ON の間だけ GPU 側で追加のヒットテストが走る（頂点数ぶんの読み戻しが 1 回増える）。
+            // 既定は OFF。
+            _snapUnselectedToggle = new Toggle("非選択オブジェクトにも吸着") { value = false };
+            _snapUnselectedToggle.style.color = new StyleColor(Color.white);
+            _snapUnselectedToggle.RegisterValueChangedCallback(e =>
+            {
+                var h = GetH(); if (h != null) h.SnapToUnselectedObjects = e.newValue;
+            });
+            _root.Add(_snapUnselectedToggle);
+
             // 進捗
             _progressLabel = InfoLabel(); _root.Add(_progressLabel);
 
@@ -81,6 +93,9 @@ namespace Poly_Ling.Player
         {
             var h = GetH(); if (h == null) return;
             _progressLabel.text = $"Points: {h.PlacedPointCount} / {h.RequiredPointsPublic}";
+            if (_snapUnselectedToggle != null
+                && _snapUnselectedToggle.value != h.SnapToUnselectedObjects)
+                _snapUnselectedToggle.SetValueWithoutNotify(h.SnapToUnselectedObjects);
             UpdateConditionals();
 
             // 配置済み点リスト更新

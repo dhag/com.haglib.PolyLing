@@ -277,6 +277,25 @@ namespace Poly_Ling.Player
             return baseCtx;
         }
 
+        /// <summary>
+        /// 選択変更を Undo スタックへ記録する。
+        /// </summary>
+        /// <remarks>
+        /// 【単一メッシュ前提 — 変更時の注意】
+        ///
+        /// 本ハンドラは BuildToolContext で SelectionState / TopologyCache を
+        /// どちらも ActiveMeshContext 由来で組み立てており、拡張選択は
+        /// 操作対象メッシュ 1 個しか変更しない。
+        /// よって SelectionChangeRecord（復元先が ActiveMeshContext 固定）で整合する。
+        ///
+        /// 将来この操作を複数メッシュへ広げる場合、本メソッドも
+        /// MultiMeshSelectionChangeRecord へ移すこと。
+        /// 記録側だけ複数メッシュ化すると Undo が先頭メッシュしか戻さなくなる。
+        ///
+        /// なお ClearAllSelection() は _selectionOps.ClearAll() で
+        /// 選択メッシュ全ての選択を消すが、元から Undo を記録していない。
+        /// ここに Undo を足す場合も MultiMeshSelectionChangeRecord を使うこと。
+        /// </remarks>
         private void RecordSelectionUndo(ToolContext ctx, SelectionSnapshot oldSnap)
         {
             if (_undoController == null || oldSnap == null) return;

@@ -104,6 +104,8 @@ namespace Poly_Ling.Player
             // GPU が UpdateFrame で計算済みのホバー結果を読み取る。
             // マウスダウン時点の HoverVertexIndex が確定値。
             var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
+            if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
+                Debug.Log($"[GizmoDbg/Click] screenPos={screenPos} handler={_toolHandler.GetType().Name}");
             _toolHandler.OnLeftClick(hit, screenPos, mods);
         }
 
@@ -112,6 +114,8 @@ namespace Poly_Ling.Player
             if (btn != 0 || _toolHandler == null) return;
             // ドラッグ開始時も同様に GPU 計算済みのホバー結果を使う。
             var hit = GetHoverHit?.Invoke() ?? PlayerHitResult.Miss;
+            if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
+                Debug.Log($"[GizmoDbg/DragBegin] screenPos={screenPos} handler={_toolHandler.GetType().Name}");
             _toolHandler.OnLeftDragBegin(hit, screenPos, mods);
         }
 

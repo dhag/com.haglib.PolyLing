@@ -231,6 +231,13 @@ namespace Poly_Ling.Core
         private ComputeBuffer _hitVertexDistBuffer;
         private float[] _hitVertexDistances;
 
+        // ヒット距離（頂点・吸着用）
+        // メッシュ選択を無視するヒットテストの出力。面追加ツールが
+        // 非選択オブジェクトの頂点へ位置を合わせるために使う。
+        // 通常のホバー結果（_hitVertexDistances）とは独立。
+        private ComputeBuffer _snapHitVertexDistBuffer;
+        private float[] _snapHitVertexDistances;
+
         // ヒット距離（ライン）
         private ComputeBuffer _hitLineDistBuffer;
         private float[] _hitLineDistances;
@@ -270,6 +277,7 @@ namespace Poly_Ling.Core
         private int _kernelScreenPos;
         private int _kernelCulling;
         private int _kernelVertexHit;
+        private int _kernelVertexSnapHit;
         private int _kernelLineHit;
         private int _kernelFaceVisibility;
         private int _kernelLineVisibility;
@@ -481,6 +489,7 @@ namespace Poly_Ling.Core
 
             _hitTestInput = new HitTestInput[1];
             _hitVertexDistances = new float[_vertexCapacity];
+            _snapHitVertexDistances = new float[_vertexCapacity];
             _hitLineDistances = new float[_lineCapacity];
             _faceHitResults = new float[_faceCapacity];
             _faceHitDepths = new float[_faceCapacity];
@@ -520,6 +529,7 @@ namespace Poly_Ling.Core
                 _kernelScreenPos = _computeShader.FindKernel("ComputeScreenPositions");
                 _kernelCulling = _computeShader.FindKernel("ComputeCulling");
                 _kernelVertexHit = _computeShader.FindKernel("ComputeVertexHitTest");
+                _kernelVertexSnapHit = _computeShader.FindKernel("ComputeVertexSnapHitTest");
                 _kernelLineHit = _computeShader.FindKernel("ComputeLineHitTest");
                 _kernelFaceVisibility = _computeShader.FindKernel("ComputeFaceVisibility");
                 _kernelLineVisibility = _computeShader.FindKernel("ComputeLineVisibility");
@@ -579,6 +589,7 @@ namespace Poly_Ling.Core
             // Level 1: Mouse
             _hitTestInputBuffer = new ComputeBuffer(1, HitTestInput.Stride);
             _hitVertexDistBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float));
+            _snapHitVertexDistBuffer = new ComputeBuffer(_vertexCapacity, sizeof(float));
             _hitLineDistBuffer = new ComputeBuffer(_lineCapacity, sizeof(float));
             _faceHitBuffer = new ComputeBuffer(_faceCapacity, sizeof(float));
             _faceHitDepthBuffer = new ComputeBuffer(_faceCapacity, sizeof(float));
@@ -697,6 +708,7 @@ namespace Poly_Ling.Core
             Array.Resize(ref _mirrorScreenPositions4, _vertexCapacity);
             Array.Resize(ref _cullingResults, _vertexCapacity);
             Array.Resize(ref _hitVertexDistances, _vertexCapacity);
+            Array.Resize(ref _snapHitVertexDistances, _vertexCapacity);
 
             Array.Resize(ref _lines, _lineCapacity);
             Array.Resize(ref _lineFlags, _lineCapacity);
@@ -760,6 +772,7 @@ namespace Poly_Ling.Core
             ReleaseBuffer(ref _cullingBuffer);
             ReleaseBuffer(ref _hitTestInputBuffer);
             ReleaseBuffer(ref _hitVertexDistBuffer);
+            ReleaseBuffer(ref _snapHitVertexDistBuffer);
             ReleaseBuffer(ref _hitLineDistBuffer);
             ReleaseBuffer(ref _faceHitBuffer);
             ReleaseBuffer(ref _faceHitDepthBuffer);

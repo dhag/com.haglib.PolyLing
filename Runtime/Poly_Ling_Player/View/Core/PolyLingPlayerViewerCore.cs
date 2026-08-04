@@ -428,7 +428,38 @@ namespace Poly_Ling.Player
                     return;
                 }
 
-                // ── 選択状態の復元
+                // ── 選択状態の復元（複数メッシュ）
+                // MultiMeshSelectionChangeRecord は Record 内でメッシュ解決を行わず、
+                // MeshContextIndex 付きのエントリ配列をここへ渡してくる。
+                // 単一メッシュ用の CurrentSelectionSnapshot とは独立に処理する。
+                var selEntries = ctx.PendingSelectionEntries;
+                if (selEntries != null && selEntries.Length > 0)
+                {
+                    UnityEngine.Debug.Log(
+                        $"[UndoDbg]   restore selection (multi): entries={selEntries.Length}");
+                    foreach (var e in selEntries)
+                    {
+                        var mc = targetModel.GetMeshContext(e.MeshContextIndex);
+                        if (mc?.Selection == null || e.New == null) continue;
+                        mc.Selection.RestoreFromSnapshot(e.New);
+                    }
+                    ctx.PendingSelectionEntries = null;
+
+                    // GPU 側の選択フラグは MeshContext ごとに読まれるため、
+                    // 先頭メッシュを渡して全体を更新させる。
+                    var multiFirstMc = targetModel.ActiveMeshContext;
+                    if (multiFirstMc?.Selection != null)
+                    {
+                        _selectionOps?.SetSelectionState(multiFirstMc.Selection);
+                        _renderer?.SetSelectionState(multiFirstMc.Selection);
+                    }
+                    NotifyPanels(ChangeKind.Selection);
+                }
+
+                // ── 選択状態の復元（単一メッシュ）
+                // SelectionChangeRecord 経由。復元先は ActiveMeshContext 固定。
+                // 記録側も ActiveMeshContext だけを変更する処理に限ること
+                // （AdvancedSelectToolHandler / PlayerCommandDispatcher.PartsSetApply）。
                 var snapshot = ctx.CurrentSelectionSnapshot;
                 if (snapshot != null)
                 {
@@ -763,6 +794,13 @@ namespace Poly_Ling.Player
         {
             _selectionOps = new PlayerSelectionOps(_selectionState);
 
+            // 複数オブジェクト選択対応:
+            // PlayerSelectionOps はクリック／矩形／投げ縄の書き込み先を
+            // 「当たったメッシュの MeshContext.Selection」へ振り分ける。
+            // その解決に現在のモデルが要るため結線する。
+            // 未設定だと従来どおり単一 SelectionState だけを操作する。
+            _selectionOps.GetModel = () => ActiveProject?.CurrentModel;
+
             _selectionOps.OnSelectionChanged = () =>
             {
                 _renderer?.NotifySelectionChanged();
@@ -1082,7 +1120,15 @@ namespace Poly_Ling.Player
                     // Phase 2b-1: 正規入口 EnterHoverChanged 経由。
                     // 入口末尾で面ホバー/ギズモ overlay refresh が発火される。
                     // Phase 2b 以降で HoverTargetKind を現行ツールから取得して渡す。
-                    _viewportManager.EnterHoverChanged(vp, localPos, GetCurrentHoverTargetKind());
+                    var hoverKind = GetCurrentHoverTargetKind();
+
+                    // kind == None のモードは EnterHoverChanged が NotifyPointerHover を
+                    // 呼ばないため、ツールの UpdateHover (= ギズモ軸ホバー) が一度も
+                    // 走らない。ギズモを持つモードだけ、ここで軸ホバーのみ先に更新する。
+                    // EnterHoverChanged 末尾の OnRefreshGizmoOverlay が更新後の軸を拾う。
+                    if (hoverKind == HoverTargetKind.None) UpdateGizmoHoverOnly(vp, localPos);
+
+                    _viewportManager.EnterHoverChanged(vp, localPos, hoverKind);
                 };
             }
 
@@ -1999,138 +2045,50 @@ namespace Poly_Ling.Player
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx == null) { panel.HideGizmo(); return; }
 
-            if (_interactionMode == InteractionMode.ObjectMove)
+            // ギズモ形状の決定は各 ToolHandler (IPlayerGizmoProvider) が持つ。
+            // ここはモードに対応するプロバイダを選んで結果を渡すだけ。
+            var provider = GizmoProviderFor(_interactionMode);
+            if (provider == null) { panel.HideGizmo(); return; }
+
+            if (provider.TryBuildGizmoData(ctx, out var data))
             {
-                if (_objectMoveHandler == null) { panel.HideGizmo(); return; }
-                if (_objectMoveHandler.TryGetGizmoScreenPositions(
-                        ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
+                if (Poly_Ling.Tools.AxisGizmo.GizmoDebugLog)
                 {
-                    _objectMoveHandler.GetPivotScreenPos(out var pivotScreen);
-                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                    {
-                        HasGizmo      = true,
-                        IsDiamondStyle = false,
-                        Origin        = origin, XEnd = xEnd, YEnd = yEnd, ZEnd = zEnd,
-                        HoveredAxis   = hovAxis,
-                        HasPivotGizmo = true, PivotOrigin = pivotScreen,
-                    });
+                    Debug.Log(
+                        $"[GizmoDbg/Draw] mode={_interactionMode} provider={provider.GetType().Name} " +
+                        $"origin={data.Origin} xEnd={data.XEnd} yEnd={data.YEnd} zEnd={data.ZEnd} " +
+                        $"hover={data.HoveredAxis} drag={data.DraggingAxis} " +
+                        $"cube={data.IsCubeStyle} diamond={data.IsDiamondStyle} ring={data.IsRingStyle} " +
+                        $"pivot={data.HasPivotGizmo}/{data.PivotOrigin}");
                 }
-                else panel.HideGizmo();
-                return;
-            }
-
-            if (_interactionMode == InteractionMode.PivotOffset)
-            {
-                if (_pivotOffsetHandler == null) { panel.HideGizmo(); return; }
-                if (_pivotOffsetHandler.TryGetGizmoScreenPositions(
-                        ctx, out var origin, out var xEnd, out var yEnd, out var zEnd, out var hovAxis))
-                {
-                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                    {
-                        HasGizmo       = true,
-                        IsDiamondStyle = true,
-                        Origin         = origin, XEnd = xEnd, YEnd = yEnd, ZEnd = zEnd,
-                        HoveredAxis    = hovAxis,
-                    });
-                }
-                else panel.HideGizmo();
-                return;
-            }
-
-            if (_interactionMode == InteractionMode.Rotate)
-            {
-                if (_rotateHandler != null &&
-                    _rotateHandler.TryGetGizmoRings(ctx, out var rx, out var ry, out var rz, out var rha))
-                {
-                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                    {
-                        HasGizmo    = true,
-                        IsRingStyle = true,
-                        RingX = rx, RingY = ry, RingZ = rz,
-                        HoveredAxis = rha,
-                    });
-                }
-                else panel.HideGizmo();
-                return;
-            }
-
-            if (_interactionMode == InteractionMode.Scale)
-            {
-                if (_scaleHandler != null &&
-                    _scaleHandler.TryGetGizmoScreenPositions(
-                        ctx, out var so, out var sxe, out var sye, out var sze, out var sha))
-                {
-                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                    {
-                        HasGizmo    = true,
-                        IsCubeStyle = true,
-                        Origin      = so, XEnd = sxe, YEnd = sye, ZEnd = sze,
-                        HoveredAxis = sha,
-                    });
-                }
-                else panel.HideGizmo();
-                return;
-            }
-
-            if (_interactionMode == InteractionMode.PrimitivePlace)
-            {
-                if (_primitivePlaceHandler == null) { panel.HideGizmo(); return; }
-
-                if (_primitivePlaceHandler.Mode == PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate)
-                {
-                    if (_primitivePlaceHandler.TryGetGizmoRings(
-                            ctx, out var prx, out var pry, out var prz, out var pha))
-                    {
-                        panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                        {
-                            HasGizmo    = true,
-                            IsRingStyle = true,
-                            RingX = prx, RingY = pry, RingZ = prz,
-                            HoveredAxis = pha,
-                        });
-                    }
-                    else panel.HideGizmo();
-                    return;
-                }
-
-                if (_primitivePlaceHandler.TryGetGizmoScreenPositions(
-                        ctx, out var po, out var pxe, out var pye, out var pze, out var pah))
-                {
-                    bool isScale = _primitivePlaceHandler.Mode
-                                 == PrimitivePlaceToolHandler.PlaceGizmoMode.Scale;
-                    panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                    {
-                        HasGizmo       = true,
-                        IsCubeStyle    = isScale,
-                        IsDiamondStyle = !isScale,
-                        Origin         = po, XEnd = pxe, YEnd = pye, ZEnd = pze,
-                        HoveredAxis    = pah,
-                    });
-                }
-                else panel.HideGizmo();
-                return;
-            }
-
-            if (_interactionMode == InteractionMode.Sculpt || _interactionMode == InteractionMode.AdvancedSelect ||
-                _interactionMode == InteractionMode.SkinWeightPaint ||
-                _interactionMode == InteractionMode.None)
-            {
-                panel.HideGizmo();
-                return;
-            }
-
-            if (_moveToolHandler == null) { panel.HideGizmo(); return; }
-            if (_moveToolHandler.TryGetGizmoScreenPositions(
-                    ctx, out var o, out var xe, out var ye, out var ze, out var ha))
-            {
-                panel.UpdateGizmo(new PlayerViewportPanel.GizmoData
-                {
-                    HasGizmo    = true,
-                    Origin      = o, XEnd = xe, YEnd = ye, ZEnd = ze,
-                    HoveredAxis = ha,
-                });
+                panel.UpdateGizmo(data);
             }
             else panel.HideGizmo();
+        }
+
+        /// <summary>
+        /// InteractionMode に対応するギズモ供給元を返す。null はギズモ非表示。
+        /// 既定 (頂点移動・選択専用・トポロジ系ツール等) は MoveToolHandler の
+        /// 組み込み軸ギズモで、SelectOnly / SuppressBuiltinGizmo のときは
+        /// MoveToolHandler 側が false を返して非表示になる。
+        /// </summary>
+        private IPlayerGizmoProvider GizmoProviderFor(InteractionMode mode)
+        {
+            switch (mode)
+            {
+                case InteractionMode.ObjectMove:      return _objectMoveHandler;
+                case InteractionMode.PivotOffset:     return _pivotOffsetHandler;
+                case InteractionMode.Rotate:          return _rotateHandler;
+                case InteractionMode.Scale:           return _scaleHandler;
+                case InteractionMode.PrimitivePlace:  return _primitivePlaceHandler;
+
+                case InteractionMode.Sculpt:
+                case InteractionMode.AdvancedSelect:
+                case InteractionMode.SkinWeightPaint:
+                case InteractionMode.None:            return null;
+
+                default:                              return _moveToolHandler;
+            }
         }
 
         // ================================================================
@@ -2488,6 +2446,26 @@ namespace Poly_Ling.Player
                     return _viewportManager.TryGetVertexWorld(m, mc, vi, out var w)
                         ? (UnityEngine.Vector3?)w : null;
                 },
+                // 他オブジェクトの頂点への吸着用。任意メッシュのワールド座標を返す。
+                // GetVertexWorldPosition は ActiveMeshContext 固定なので他メッシュには使えない。
+                GetMeshVertexWorldPosition = (ctxIdx, vi) =>
+                {
+                    var m  = ActiveProject?.CurrentModel;
+                    if (m == null || ctxIdx < 0) return null;
+                    var mc = m.GetMeshContext(ctxIdx);
+                    if (mc == null) return null;
+                    return _viewportManager.TryGetVertexWorld(m, mc, vi, out var w)
+                        ? (UnityEngine.Vector3?)w : null;
+                },
+                // 非選択オブジェクトも対象にした吸着用ホバー。
+                // 通常ホバー（GetHoverElement）は選択メッシュしか返さない。
+                GetSnapHoverElement = () =>
+                    _viewportManager.GetSnapHoverElement(ActiveProject?.CurrentModel),
+                // 吸着用ヒットテストの有効化。面追加モードでない間は必ず切る
+                // （有効な間はポインタ移動ごとに頂点数ぶんの読み戻しが増えるため）。
+                OnSnapHitTestEnabledChanged = on =>
+                    _viewportManager.SetSnapHitTestEnabled(
+                        on && _interactionMode == InteractionMode.AddFace),
                 OnRepaint           = () => _activePanel?.MarkDirtyRepaint(),
                 // Phase 2c-3: 確定点追加時に overlay 再描画を発火する。
                 // 確定点の追加はトポロジを実質変更していないが、UIToolkit overlay の
@@ -2982,11 +2960,6 @@ namespace Poly_Ling.Player
                 cam => _viewportManager != null && _viewportManager.IsViewportCamera(cam);
             _livePrimitiveSubPanel.GetAddTargetWorldMatrix =
                 () => ActiveProject?.CurrentModel?.ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
-            _livePrimitiveSubPanel.OnGizmoModeChanged = m =>
-            {
-                if (_primitivePlaceHandler != null) _primitivePlaceHandler.Mode = m;
-                UpdateGizmoOverlay();
-            };
 
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
             _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
@@ -3025,6 +2998,17 @@ namespace Poly_Ling.Player
 
             _layoutRoot.LivePrimitiveBtn.clicked += ShowLivePrimitivePanel;
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
+
+            // 配置ギズモのサブモード切替（左ペイン）。
+            if (_layoutRoot.PlaceGizmoMoveBtn != null)
+                _layoutRoot.PlaceGizmoMoveBtn.clicked +=
+                    () => SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
+            if (_layoutRoot.PlaceGizmoRotateBtn != null)
+                _layoutRoot.PlaceGizmoRotateBtn.clicked +=
+                    () => SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
+            if (_layoutRoot.PlaceGizmoScaleBtn != null)
+                _layoutRoot.PlaceGizmoScaleBtn.clicked +=
+                    () => SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
 
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
@@ -3224,6 +3208,8 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_UNSEL_BONE:   ds.ShowUnselectedBone      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_SEL_MIRROR:   ds.ShowSelectedMirror      = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MIRROR: ds.ShowUnselectedMirror    = e.newValue; break;
+                                case PlayerLayoutRoot.VD_SEL_MESH_ORIGIN:   ds.ShowSelectedMeshOrigin   = e.newValue; break;
+                                case PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN: ds.ShowUnselectedMeshOrigin = e.newValue; break;
                             }
                             // Phase 2a-2g-3: SetDisplaySettings → EnterDisplaySettingsChanged に集約。
                             _viewportManager.EnterDisplaySettingsChanged(slot, ds);
@@ -3251,6 +3237,8 @@ namespace Poly_Ling.Player
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_BONE,   ds.ShowUnselectedBone);
                 SyncTog(PlayerLayoutRoot.VD_SEL_MIRROR,   ds.ShowSelectedMirror);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MIRROR, ds.ShowUnselectedMirror);
+                SyncTog(PlayerLayoutRoot.VD_SEL_MESH_ORIGIN,   ds.ShowSelectedMeshOrigin);
+                SyncTog(PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN, ds.ShowUnselectedMeshOrigin);
                 // Mesh トグルに応じて Mirror トグルの値・有効状態を初期同期する。
                 ApplyMirrorToggleGating(s);
             }
@@ -3259,6 +3247,10 @@ namespace Poly_Ling.Player
             _layoutRoot.MorphCreateBtn.clicked += ShowMorphCreatePanel;
 
             _layoutRoot.PostBuildButtonColors(_uiRoot);
+
+            // PostBuildButtonColors（ApplyDarkTheme）は全 Button を既定色へ戻すため、
+            // 配置ギズモボタンの着色はこの後で行う。
+            RepaintPlaceGizmoButtons();
 
             WireShortcuts();
 
@@ -3438,6 +3430,40 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.PrimitivePlace);
             ShowRightPanel(_layoutRoot?.LivePrimitiveSection, _layoutRoot?.LiveAdvancedPrimitiveBtn);
             _livePrimitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
+        }
+
+        /// <summary>
+        /// 配置ギズモのサブモードを切り替える（左ペインの3ボタンから呼ぶ）。
+        /// パネル表示や InteractionMode は変更しない。
+        /// </summary>
+        private void SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode mode)
+        {
+            if (_primitivePlaceHandler != null) _primitivePlaceHandler.Mode = mode;
+            RepaintPlaceGizmoButtons();
+            UpdateGizmoOverlay();
+        }
+
+        /// <summary>
+        /// 配置ギズモのサブモードボタンの背景色を現在のモードに合わせる。
+        /// _activePanelBtn / _activeInteractionBtn の系統とは独立に着色する。
+        /// </summary>
+        private void RepaintPlaceGizmoButtons()
+        {
+            if (_layoutRoot == null) return;
+
+            var cur = _primitivePlaceHandler?.Mode
+                   ?? PrimitivePlaceToolHandler.PlaceGizmoMode.Move;
+
+            void Paint(Button b, PrimitivePlaceToolHandler.PlaceGizmoMode m)
+            {
+                if (b == null) return;
+                b.style.backgroundColor = (m == cur)
+                    ? InteractionActiveBtnColor : InactiveBtnColor;
+            }
+
+            Paint(_layoutRoot.PlaceGizmoMoveBtn,   PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
+            Paint(_layoutRoot.PlaceGizmoRotateBtn, PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
+            Paint(_layoutRoot.PlaceGizmoScaleBtn,  PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
         }
 
         /// <summary>
@@ -4974,6 +5000,13 @@ namespace Poly_Ling.Player
 
             _interactionMode = mode;
 
+            // 吸着用ヒットテスト（メッシュ選択を無視）は面追加モードでトグルが ON の
+            // ときだけ有効。有効な間はポインタ移動ごとに追加ディスパッチと
+            // 頂点数ぶんの読み戻しが走るため、他モードでは必ず切る。
+            _viewportManager?.SetSnapHitTestEnabled(
+                mode == InteractionMode.AddFace
+                && (_addFaceHandler?.SnapToUnselectedObjects ?? false));
+
             // SelectOnly は毎回リセットし、下の SelectOnly case でのみ再有効化する
             // （他モードへ移ったら選択専用を確実に解除）。将来ギズモ用フックも同様にリセット。
             if (_moveToolHandler != null)
@@ -5423,6 +5456,26 @@ namespace Poly_Ling.Player
         /// None 判定のみで分岐するため、既存の GPU ホバー優先度 (頂点>辺>面) がそのまま動作する）。
         /// Phase 2b 以降で Edge / Face / Bone / Gizmo の厳密な kind 分岐を実装する。
         /// </summary>
+        /// <summary>
+        /// 頂点ホバーが抑止されるモード (HoverTargetKind.None) でも、ギズモ軸の
+        /// ホバーだけは更新する。
+        /// <para>
+        /// 対象は現状 ObjectMove のみ。Sculpt / SkinWeightPaint / None は
+        /// GizmoProviderFor が null を返す = ギズモを持たないため何もしない。
+        /// </para>
+        /// <para>
+        /// 実体は PlayerViewportManager.NotifyGizmoHoverOnly で、GPU ヒットテストを
+        /// 伴わないギズモ軸専用の軽量経路。どのハンドラへ渡すかは SetInteractionMode で
+        /// 登録済みの ActiveToolHandler に任せる。
+        /// 要素 (頂点/辺/面) のホバーをこの経路へ移すことは禁止（同メソッドの注記参照）。
+        /// </para>
+        /// </summary>
+        private void UpdateGizmoHoverOnly(PlayerViewport vp, Vector2 localPos)
+        {
+            if (_interactionMode != InteractionMode.ObjectMove) return;
+            _viewportManager.NotifyGizmoHoverOnly(vp, localPos);
+        }
+
         private HoverTargetKind GetCurrentHoverTargetKind()
         {
             switch (_interactionMode)

@@ -1,0 +1,997 @@
+// Editor/AvatarBuilder/ManualHumanoidAvatarWindow.cs
+// ============================================================
+// Humanoid Avatar を手動で組み立てるエディタウインドウ。
+//
+// 追加した主機能
+//   ・Body / Head / Left Hand / Right Hand の表示切替
+//   ・選択中 Humanoid スロットを上部に固定表示
+//   ・Scene View 上に実際の Transform 位置をマーカー表示
+//   ・Scene View の未割当 Transform をクリックして割り当て
+//   ・割当済みボーン間を実階層に沿って線で表示
+//   ・必須ボーンの不足数を常時表示
+//
+// 生成・保存は AvatarBuildCore.BuildAndSaveAvatar に委譲する。
+// ============================================================
+
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.Rendering;
+using Poly_Ling.EditorIO;
+
+public class ManualHumanoidAvatarWindow2 : EditorWindow
+{
+    private GameObject characterRoot;
+    private Avatar sourceAvatar;
+
+    private Transform[] mappedTransforms;
+    private HumanLimit[] humanLimits;
+    private string[] sourceBoneNames;
+    private string[] sourceSkeletonNames = new string[0];
+    private bool[] showLimitEditors;
+
+    private bool showSkeletonList;
+    private AvatarRetargetSettings settings = AvatarRetargetSettings.Default;
+
+    private Vector2 scroll;
+    private string log = "";
+
+    // ── ビジュアル編集状態 ────────────────────────────────────────────────
+    private static readonly string[] GroupNames =
+    {
+        "Body", "Head", "Left Hand", "Right Hand"
+    };
+
+    private int selectedGroup;
+    private int selectedHumanIndex = -1;
+
+    private bool showSceneOverlay = true;
+    private bool showHierarchyLines = true;
+    private bool showUnmappedCandidates = true;
+    private bool showBoneLabels;
+
+    private Transform[] hierarchyTransforms = new Transform[0];
+
+    [MenuItem("PolyLing/Avatar/Avatarを手動作成その2")]
+    public static void Open()
+    {
+        ManualHumanoidAvatarWindow window = GetWindow<ManualHumanoidAvatarWindow>();
+        window.titleContent = new GUIContent("Avatar手動作成");
+        window.minSize = new Vector2(620f, 560f);
+        window.Show();
+    }
+
+    private void OnEnable()
+    {
+        EnsureArrays();
+        RefreshHierarchyCache();
+
+        SceneView.duringSceneGui -= DuringSceneGUI;
+        SceneView.duringSceneGui += DuringSceneGUI;
+
+        EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+        EditorApplication.hierarchyChanged += OnHierarchyChanged;
+    }
+
+    private void OnDisable()
+    {
+        SceneView.duringSceneGui -= DuringSceneGUI;
+        EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+    }
+
+    private void OnHierarchyChanged()
+    {
+        RefreshHierarchyCache();
+        Repaint();
+        SceneView.RepaintAll();
+    }
+
+    private void OnSelectionChange()
+    {
+        if (Selection.activeTransform != null)
+        {
+            for (int i = 0; i < mappedTransforms.Length; i++)
+            {
+                if (mappedTransforms[i] == Selection.activeTransform)
+                {
+                    selectedHumanIndex = i;
+                    selectedGroup = GroupOf(i);
+                    break;
+                }
+            }
+        }
+
+        Repaint();
+    }
+
+    private void EnsureArrays()
+    {
+        int count = HumanTrait.BoneCount;
+
+        if (mappedTransforms == null || mappedTransforms.Length != count)
+            mappedTransforms = new Transform[count];
+
+        if (humanLimits == null || humanLimits.Length != count)
+        {
+            humanLimits = new HumanLimit[count];
+            for (int i = 0; i < count; i++)
+                humanLimits[i] = CreateDefaultLimit();
+        }
+
+        if (sourceBoneNames == null || sourceBoneNames.Length != count)
+        {
+            sourceBoneNames = new string[count];
+            for (int i = 0; i < count; i++)
+                sourceBoneNames[i] = "";
+        }
+
+        if (showLimitEditors == null || showLimitEditors.Length != count)
+            showLimitEditors = new bool[count];
+    }
+
+    private void OnGUI()
+    {
+        EnsureArrays();
+
+        scroll = EditorGUILayout.BeginScrollView(scroll);
+
+        DrawSourceFields();
+        EditorGUILayout.Space(6f);
+        DrawVisualToolbar();
+        DrawStatus();
+        DrawSelectedBonePanel();
+        DrawToolbar();
+        DrawMappings();
+        DrawSkeletonList();
+        DrawRetargetSettings();
+        DrawBuildButton();
+        DrawLog();
+
+        EditorGUILayout.EndScrollView();
+    }
+
+    // ── 入力元 ──────────────────────────────────────────────────────────────
+    private void DrawSourceFields()
+    {
+        EditorGUILayout.LabelField("Humanoid Avatar 手動作成", EditorStyles.boldLabel);
+
+        EditorGUI.BeginChangeCheck();
+        GameObject newRoot = (GameObject)EditorGUILayout.ObjectField(
+            "Character Root", characterRoot, typeof(GameObject), true);
+        if (EditorGUI.EndChangeCheck())
+        {
+            characterRoot = newRoot;
+            RefreshHierarchyCache();
+            ResolveTransformsFromSourceAvatar();
+            SceneView.RepaintAll();
+        }
+
+        EditorGUI.BeginChangeCheck();
+        Avatar newAvatar = (Avatar)EditorGUILayout.ObjectField(
+            "既存Avatar（任意）", sourceAvatar, typeof(Avatar), false);
+        if (EditorGUI.EndChangeCheck())
+        {
+            sourceAvatar = newAvatar;
+            LoadFromSourceAvatar();
+            SceneView.RepaintAll();
+        }
+
+        EditorGUILayout.HelpBox(
+            "Character Root は必須である。既存Avatar を指定すると HumanDescription から対応と可動域を読み込む。\n" +
+            "Humanoid スロットを選び、Scene View 上の灰色マーカーをクリックすると Transform を割り当てられる。",
+            MessageType.None);
+
+        if (characterRoot != null && EditorUtility.IsPersistent(characterRoot))
+        {
+            EditorGUILayout.HelpBox(
+                "Prefab資産そのものではなく、Hierarchyへ配置したシーン上のインスタンスを Character Root に指定する。",
+                MessageType.Warning);
+        }
+    }
+
+    // ── 表示設定 ────────────────────────────────────────────────────────────
+    private void DrawVisualToolbar()
+    {
+        EditorGUILayout.LabelField("ビジュアル編集", EditorStyles.boldLabel);
+
+        using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
+        {
+            showSceneOverlay = GUILayout.Toggle(
+                showSceneOverlay, "Scene表示", EditorStyles.toolbarButton);
+            showHierarchyLines = GUILayout.Toggle(
+                showHierarchyLines, "階層線", EditorStyles.toolbarButton);
+            showUnmappedCandidates = GUILayout.Toggle(
+                showUnmappedCandidates, "未割当候補", EditorStyles.toolbarButton);
+            showBoneLabels = GUILayout.Toggle(
+                showBoneLabels, "名前", EditorStyles.toolbarButton);
+
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Rootを表示", EditorStyles.toolbarButton))
+                FrameCharacterRoot();
+        }
+
+        if (GUI.changed)
+            SceneView.RepaintAll();
+    }
+
+    private void DrawStatus()
+    {
+        int assigned = 0;
+        int missingRequired = 0;
+
+        for (int i = 0; i < HumanTrait.BoneCount; i++)
+        {
+            if (mappedTransforms[i] != null)
+                assigned++;
+            else if (HumanTrait.RequiredBone(i))
+                missingRequired++;
+        }
+
+        MessageType type = missingRequired == 0 ? MessageType.Info : MessageType.Warning;
+        EditorGUILayout.HelpBox(
+            "割当済み: " + assigned + " / " + HumanTrait.BoneCount +
+            "    必須ボーン不足: " + missingRequired,
+            type);
+    }
+
+    // ── 現在選択中の Humanoid スロット ──────────────────────────────────────
+    private void DrawSelectedBonePanel()
+    {
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+        {
+            EditorGUILayout.LabelField("選択中のHumanoidボーン", EditorStyles.boldLabel);
+
+            if (selectedHumanIndex < 0 || selectedHumanIndex >= HumanTrait.BoneCount)
+            {
+                EditorGUILayout.LabelField("下の一覧から割り当て先を選択する。", EditorStyles.wordWrappedMiniLabel);
+                return;
+            }
+
+            string humanName = HumanTrait.BoneName[selectedHumanIndex];
+            bool required = HumanTrait.RequiredBone(selectedHumanIndex);
+
+            EditorGUILayout.LabelField(
+                required ? humanName + "  *必須" : humanName + "  任意",
+                EditorStyles.largeLabel);
+
+            EditorGUI.BeginChangeCheck();
+            Transform newTransform = (Transform)EditorGUILayout.ObjectField(
+                "Transform", mappedTransforms[selectedHumanIndex], typeof(Transform), true);
+            if (EditorGUI.EndChangeCheck())
+            {
+                mappedTransforms[selectedHumanIndex] = newTransform;
+                SceneView.RepaintAll();
+            }
+
+            Transform current = mappedTransforms[selectedHumanIndex];
+            if (current != null && !IsUnderCharacterRoot(current))
+            {
+                EditorGUILayout.HelpBox(
+                    "この Transform は Character Root 配下ではないため、Avatar生成時に解決できない。",
+                    MessageType.Error);
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(
+                           Selection.activeTransform == null ||
+                           !IsUnderCharacterRoot(Selection.activeTransform)))
+                {
+                    if (GUILayout.Button("Hierarchy選択を割り当て"))
+                        AssignTransform(selectedHumanIndex, Selection.activeTransform);
+                }
+
+                using (new EditorGUI.DisabledScope(current == null))
+                {
+                    if (GUILayout.Button("Sceneで表示"))
+                        FrameTransform(current);
+
+                    if (GUILayout.Button("解除"))
+                        AssignTransform(selectedHumanIndex, null);
+                }
+            }
+        }
+    }
+
+    private void DrawToolbar()
+    {
+        using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
+        {
+            if (GUILayout.Button("既存Avatarから再取得", EditorStyles.toolbarButton))
+                LoadFromSourceAvatar();
+
+            if (GUILayout.Button("割り当てをクリア", EditorStyles.toolbarButton))
+            {
+                for (int i = 0; i < mappedTransforms.Length; i++)
+                    mappedTransforms[i] = null;
+                SceneView.RepaintAll();
+            }
+
+            if (GUILayout.Button("可動域を既定へ戻す", EditorStyles.toolbarButton))
+            {
+                for (int i = 0; i < humanLimits.Length; i++)
+                    humanLimits[i] = CreateDefaultLimit();
+            }
+
+            GUILayout.FlexibleSpace();
+        }
+    }
+
+    // ── ボーン割り当て ──────────────────────────────────────────────────────
+    private void DrawMappings()
+    {
+        EditorGUILayout.Space(4f);
+        EditorGUILayout.LabelField("Humanoidボーン割り当て", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("* はHumanoidで必須のボーン", EditorStyles.miniLabel);
+
+        selectedGroup = GUILayout.Toolbar(selectedGroup, GroupNames);
+        EditorGUILayout.Space(3f);
+
+        for (int i = 0; i < HumanTrait.BoneCount; i++)
+        {
+            if (GroupOf(i) != selectedGroup)
+                continue;
+
+            DrawMappingRow(i);
+        }
+    }
+
+    private void DrawMappingRow(int index)
+    {
+        string humanName = HumanTrait.BoneName[index];
+        bool required = HumanTrait.RequiredBone(index);
+        string label = required ? humanName + "  *" : humanName;
+
+        Color oldBackground = GUI.backgroundColor;
+        if (index == selectedHumanIndex)
+            GUI.backgroundColor = new Color(1f, 0.82f, 0.35f, 1f);
+        else if (mappedTransforms[index] != null)
+            GUI.backgroundColor = new Color(0.55f, 1f, 0.60f, 1f);
+        else if (required)
+            GUI.backgroundColor = new Color(1f, 0.58f, 0.58f, 1f);
+
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+        {
+            GUI.backgroundColor = oldBackground;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(label, EditorStyles.miniButtonLeft, GUILayout.Width(190f)))
+                {
+                    selectedHumanIndex = index;
+                    Transform mapped = mappedTransforms[index];
+                    if (mapped != null)
+                        Selection.activeObject = mapped.gameObject;
+                    SceneView.RepaintAll();
+                }
+
+                EditorGUI.BeginChangeCheck();
+                Transform newTransform = (Transform)EditorGUILayout.ObjectField(
+                    mappedTransforms[index], typeof(Transform), true);
+                if (EditorGUI.EndChangeCheck())
+                    AssignTransform(index, newTransform);
+
+                using (new EditorGUI.DisabledScope(mappedTransforms[index] == null))
+                {
+                    if (GUILayout.Button("◎", EditorStyles.miniButtonRight, GUILayout.Width(28f)))
+                        FrameTransform(mappedTransforms[index]);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(sourceBoneNames[index]))
+            {
+                EditorGUILayout.LabelField(
+                    "Avatar内のボーン名", sourceBoneNames[index], EditorStyles.miniLabel);
+            }
+
+            if (mappedTransforms[index] != null && !IsUnderCharacterRoot(mappedTransforms[index]))
+            {
+                EditorGUILayout.HelpBox(
+                    "Character Root 配下ではない Transform が指定されている。",
+                    MessageType.Error);
+            }
+
+            showLimitEditors[index] = EditorGUILayout.Foldout(
+                showLimitEditors[index], "可動域", true);
+            if (showLimitEditors[index])
+                DrawLimitEditor(index);
+        }
+
+        GUI.backgroundColor = oldBackground;
+    }
+
+    private void DrawLimitEditor(int index)
+    {
+        HumanLimit limit = humanLimits[index];
+
+        EditorGUI.indentLevel++;
+        limit.useDefaultValues = EditorGUILayout.Toggle(
+            "Use Default Values", limit.useDefaultValues);
+
+        if (!limit.useDefaultValues)
+        {
+            limit.axisLength = EditorGUILayout.FloatField("Axis Length", limit.axisLength);
+            limit.center = EditorGUILayout.Vector3Field("Center", limit.center);
+            limit.min = EditorGUILayout.Vector3Field("Min", limit.min);
+            limit.max = EditorGUILayout.Vector3Field("Max", limit.max);
+        }
+
+        EditorGUI.indentLevel--;
+        humanLimits[index] = limit;
+    }
+
+    // ── Scene View 表示 ─────────────────────────────────────────────────────
+    private void DuringSceneGUI(SceneView sceneView)
+    {
+        if (!showSceneOverlay || characterRoot == null)
+            return;
+
+        EnsureArrays();
+        if (hierarchyTransforms == null || hierarchyTransforms.Length == 0)
+            RefreshHierarchyCache();
+
+        Dictionary<Transform, int> mappedByTransform = new Dictionary<Transform, int>();
+        for (int i = 0; i < mappedTransforms.Length; i++)
+        {
+            Transform t = mappedTransforms[i];
+            if (t != null && IsUnderCharacterRoot(t) && !mappedByTransform.ContainsKey(t))
+                mappedByTransform.Add(t, i);
+        }
+
+        CompareFunction oldZTest = Handles.zTest;
+        Color oldColor = Handles.color;
+        Handles.zTest = CompareFunction.LessEqual;
+
+        if (showHierarchyLines)
+            DrawHierarchyLines();
+
+        DrawMappedConnections(mappedByTransform);
+
+        if (showUnmappedCandidates)
+            DrawCandidateMarkers(mappedByTransform);
+
+        DrawMappedMarkers();
+        DrawSceneOverlayPanel();
+
+        Handles.color = oldColor;
+        Handles.zTest = oldZTest;
+    }
+
+    private void DrawHierarchyLines()
+    {
+        Handles.color = new Color(0.55f, 0.60f, 0.65f, 0.32f);
+
+        for (int i = 0; i < hierarchyTransforms.Length; i++)
+        {
+            Transform t = hierarchyTransforms[i];
+            if (t == null || t == characterRoot.transform || t.parent == null)
+                continue;
+
+            if (IsUnderCharacterRoot(t.parent))
+                Handles.DrawLine(t.parent.position, t.position, 1f);
+        }
+    }
+
+    private void DrawMappedConnections(Dictionary<Transform, int> mappedByTransform)
+    {
+        Handles.color = new Color(0.15f, 1f, 0.25f, 0.9f);
+
+        foreach (KeyValuePair<Transform, int> pair in mappedByTransform)
+        {
+            Transform child = pair.Key;
+            Transform parent = child.parent;
+
+            while (parent != null && IsUnderCharacterRoot(parent))
+            {
+                if (mappedByTransform.ContainsKey(parent))
+                {
+                    Handles.DrawLine(parent.position, child.position, 3f);
+                    break;
+                }
+                parent = parent.parent;
+            }
+        }
+    }
+
+    private void DrawCandidateMarkers(Dictionary<Transform, int> mappedByTransform)
+    {
+        for (int i = 0; i < hierarchyTransforms.Length; i++)
+        {
+            Transform t = hierarchyTransforms[i];
+            if (t == null || t == characterRoot.transform || mappedByTransform.ContainsKey(t))
+                continue;
+
+            float size = HandleUtility.GetHandleSize(t.position) * 0.028f;
+            Handles.color = new Color(0.72f, 0.76f, 0.82f, 0.62f);
+
+            if (Handles.Button(
+                    t.position,
+                    Quaternion.identity,
+                    size,
+                    size * 1.35f,
+                    Handles.SphereHandleCap))
+            {
+                if (selectedHumanIndex >= 0)
+                    AssignTransform(selectedHumanIndex, t);
+                else
+                    Selection.activeObject = t.gameObject;
+
+                Repaint();
+                SceneView.RepaintAll();
+            }
+        }
+    }
+
+    private void DrawMappedMarkers()
+    {
+        for (int i = 0; i < mappedTransforms.Length; i++)
+        {
+            Transform t = mappedTransforms[i];
+            if (t == null || !IsUnderCharacterRoot(t))
+                continue;
+
+            bool selected = i == selectedHumanIndex;
+            bool required = HumanTrait.RequiredBone(i);
+
+            if (selected)
+                Handles.color = new Color(1f, 0.78f, 0.10f, 1f);
+            else if (required)
+                Handles.color = new Color(0.10f, 1f, 0.20f, 1f);
+            else
+                Handles.color = new Color(0.10f, 0.85f, 1f, 1f);
+
+            float size = HandleUtility.GetHandleSize(t.position) * (selected ? 0.085f : 0.060f);
+
+            if (Handles.Button(
+                    t.position,
+                    Quaternion.identity,
+                    size,
+                    size * 1.30f,
+                    Handles.SphereHandleCap))
+            {
+                selectedHumanIndex = i;
+                selectedGroup = GroupOf(i);
+                Selection.activeObject = t.gameObject;
+                Repaint();
+                SceneView.RepaintAll();
+            }
+
+            if (showBoneLabels || selected)
+            {
+                GUIStyle style = new GUIStyle(EditorStyles.miniBoldLabel);
+                style.normal.textColor = Handles.color;
+                Handles.Label(
+                    t.position + Vector3.up * HandleUtility.GetHandleSize(t.position) * 0.08f,
+                    HumanTrait.BoneName[i] + "\n" + t.name,
+                    style);
+            }
+        }
+    }
+
+    private void DrawSceneOverlayPanel()
+    {
+        Handles.BeginGUI();
+
+        GUILayout.BeginArea(new Rect(10f, 10f, 340f, 92f), GUI.skin.box);
+        GUILayout.Label("Humanoid Avatar 手動割り当て", EditorStyles.boldLabel);
+
+        if (selectedHumanIndex >= 0)
+        {
+            GUILayout.Label("割り当て先: " + HumanTrait.BoneName[selectedHumanIndex]);
+            GUILayout.Label("灰色=候補 / 緑=必須 / 水色=任意 / 黄=選択中",
+                EditorStyles.miniLabel);
+        }
+        else
+        {
+            GUILayout.Label("ウインドウ側で Humanoid ボーンを選択する。",
+                EditorStyles.wordWrappedMiniLabel);
+        }
+
+        GUILayout.EndArea();
+        Handles.EndGUI();
+    }
+
+    private void AssignTransform(int humanIndex, Transform transform)
+    {
+        if (humanIndex < 0 || humanIndex >= HumanTrait.BoneCount)
+            return;
+
+        mappedTransforms[humanIndex] = transform;
+        selectedHumanIndex = humanIndex;
+        selectedGroup = GroupOf(humanIndex);
+
+        if (transform != null)
+            Selection.activeObject = transform.gameObject;
+
+        Repaint();
+        SceneView.RepaintAll();
+    }
+
+    private bool IsUnderCharacterRoot(Transform transform)
+    {
+        if (characterRoot == null || transform == null)
+            return false;
+
+        return transform == characterRoot.transform || transform.IsChildOf(characterRoot.transform);
+    }
+
+    private void RefreshHierarchyCache()
+    {
+        hierarchyTransforms = characterRoot != null
+            ? characterRoot.GetComponentsInChildren<Transform>(true)
+            : new Transform[0];
+    }
+
+    private void FrameCharacterRoot()
+    {
+        if (characterRoot == null)
+            return;
+
+        Bounds bounds = CalculateCharacterBounds();
+        SceneView sceneView = SceneView.lastActiveSceneView;
+        if (sceneView != null)
+        {
+            sceneView.Frame(bounds, false);
+            sceneView.Repaint();
+        }
+    }
+
+    private void FrameTransform(Transform transform)
+    {
+        if (transform == null)
+            return;
+
+        Selection.activeObject = transform.gameObject;
+        SceneView sceneView = SceneView.lastActiveSceneView;
+        if (sceneView != null)
+        {
+            Bounds characterBounds = CalculateCharacterBounds();
+            float size = Mathf.Max(characterBounds.size.magnitude * 0.04f, 0.05f);
+            sceneView.Frame(new Bounds(transform.position, Vector3.one * size), false);
+            sceneView.Repaint();
+        }
+    }
+
+    private Bounds CalculateCharacterBounds()
+    {
+        Renderer[] renderers = characterRoot.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length > 0)
+        {
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+            return bounds;
+        }
+
+        RefreshHierarchyCache();
+        Bounds transformBounds = new Bounds(characterRoot.transform.position, Vector3.one * 0.1f);
+        for (int i = 0; i < hierarchyTransforms.Length; i++)
+        {
+            if (hierarchyTransforms[i] != null)
+                transformBounds.Encapsulate(hierarchyTransforms[i].position);
+        }
+        return transformBounds;
+    }
+
+    // ── 表示グループ判定 ────────────────────────────────────────────────────
+    private static int GroupOf(int humanIndex)
+    {
+        string humanName = HumanTrait.BoneName[humanIndex];
+
+        if (IsFingerBone(humanName, "Left"))
+            return 2;
+        if (IsFingerBone(humanName, "Right"))
+            return 3;
+
+        if (humanName == "Neck" || humanName == "Head" ||
+            humanName == "Left Eye" || humanName == "Right Eye" ||
+            humanName == "Jaw")
+            return 1;
+
+        return 0;
+    }
+
+    private static bool IsFingerBone(string humanName, string side)
+    {
+        return humanName.StartsWith(side + " Thumb") ||
+               humanName.StartsWith(side + " Index") ||
+               humanName.StartsWith(side + " Middle") ||
+               humanName.StartsWith(side + " Ring") ||
+               humanName.StartsWith(side + " Little");
+    }
+
+    // ── リターゲット設定 ────────────────────────────────────────────────────
+    private void DrawRetargetSettings()
+    {
+        EditorGUILayout.Space(4f);
+        EditorGUILayout.LabelField("Retargeting設定", EditorStyles.boldLabel);
+
+        EditorGUI.indentLevel++;
+        settings.upperArmTwist = EditorGUILayout.Slider(
+            "Upper Arm Twist", settings.upperArmTwist, 0f, 1f);
+        settings.lowerArmTwist = EditorGUILayout.Slider(
+            "Lower Arm Twist", settings.lowerArmTwist, 0f, 1f);
+        settings.upperLegTwist = EditorGUILayout.Slider(
+            "Upper Leg Twist", settings.upperLegTwist, 0f, 1f);
+        settings.lowerLegTwist = EditorGUILayout.Slider(
+            "Lower Leg Twist", settings.lowerLegTwist, 0f, 1f);
+        settings.armStretch = EditorGUILayout.Slider(
+            "Arm Stretch", settings.armStretch, 0f, 1f);
+        settings.legStretch = EditorGUILayout.Slider(
+            "Leg Stretch", settings.legStretch, 0f, 1f);
+        settings.feetSpacing = EditorGUILayout.FloatField(
+            "Feet Spacing", settings.feetSpacing);
+        settings.hasTranslationDoF = EditorGUILayout.Toggle(
+            "Translation DoF", settings.hasTranslationDoF);
+
+        if (GUILayout.Button("既定値へ戻す"))
+            settings = AvatarRetargetSettings.Default;
+
+        EditorGUI.indentLevel--;
+    }
+
+    // ── 生成 ────────────────────────────────────────────────────────────────
+    private void DrawBuildButton()
+    {
+        EditorGUILayout.Space(8f);
+
+        using (new EditorGUI.DisabledScope(characterRoot == null))
+        {
+            if (GUILayout.Button("Avatarを生成して保存", GUILayout.Height(30f)))
+                Build();
+        }
+    }
+
+    private void Build()
+    {
+        log = "";
+
+        if (characterRoot == null)
+        {
+            Log("Character Root が未指定。");
+            return;
+        }
+
+        if (EditorUtility.IsPersistent(characterRoot))
+        {
+            Log("Character Root には Prefab資産ではなく、Hierarchy上のインスタンスを指定する。");
+            return;
+        }
+
+        Dictionary<string, string> map = new Dictionary<string, string>();
+        Dictionary<string, HumanLimit> limits = new Dictionary<string, HumanLimit>();
+
+        for (int i = 0; i < HumanTrait.BoneCount; i++)
+        {
+            Transform mapped = mappedTransforms[i];
+            if (mapped == null)
+                continue;
+
+            if (!IsUnderCharacterRoot(mapped))
+            {
+                Log("Character Root 配下ではないため無視: " +
+                    HumanTrait.BoneName[i] + " → " + mapped.name);
+                continue;
+            }
+
+            string humanName = HumanTrait.BoneName[i];
+            map[humanName] = mapped.name;
+
+            if (!humanLimits[i].useDefaultValues)
+                limits[humanName] = humanLimits[i];
+        }
+
+        if (map.Count == 0)
+        {
+            Log("Transform が1つも割り当てられていない。");
+            return;
+        }
+
+        string defaultName = characterRoot.name + "_Avatar";
+        string savePath = EditorUtility.SaveFilePanelInProject(
+            "Avatar 保存先", defaultName, "asset", "保存先を指定する。");
+
+        if (string.IsNullOrEmpty(savePath))
+            return;
+
+        Avatar avatar = AvatarBuildCore.BuildAndSaveAvatar(
+            characterRoot, map, limits, settings, savePath, Log);
+
+        if (avatar == null)
+            return;
+
+        Log("完了。");
+        Selection.activeObject = avatar;
+        EditorGUIUtility.PingObject(avatar);
+    }
+
+    // ── 既存Avatarからの読み込み ────────────────────────────────────────────
+    private void LoadFromSourceAvatar()
+    {
+        EnsureArrays();
+
+        if (sourceAvatar == null)
+        {
+            ClearSourceNames();
+            return;
+        }
+
+        if (!sourceAvatar.isHuman)
+        {
+            Log("選択したAvatarはHumanoidではない。");
+            return;
+        }
+
+        HumanDescription description = sourceAvatar.humanDescription;
+        if (description.human == null || description.human.Length == 0)
+        {
+            Log("このAvatarから HumanDescription.human を取得できない。");
+            return;
+        }
+
+        for (int i = 0; i < HumanTrait.BoneCount; i++)
+        {
+            mappedTransforms[i] = null;
+            humanLimits[i] = CreateDefaultLimit();
+            sourceBoneNames[i] = "";
+        }
+
+        if (description.skeleton != null)
+        {
+            sourceSkeletonNames = new string[description.skeleton.Length];
+            for (int i = 0; i < description.skeleton.Length; i++)
+                sourceSkeletonNames[i] = description.skeleton[i].name;
+        }
+        else
+        {
+            sourceSkeletonNames = new string[0];
+        }
+
+        settings = new AvatarRetargetSettings
+        {
+            upperArmTwist = description.upperArmTwist,
+            lowerArmTwist = description.lowerArmTwist,
+            upperLegTwist = description.upperLegTwist,
+            lowerLegTwist = description.lowerLegTwist,
+            armStretch = description.armStretch,
+            legStretch = description.legStretch,
+            feetSpacing = description.feetSpacing,
+            hasTranslationDoF = description.hasTranslationDoF
+        };
+
+        for (int i = 0; i < description.human.Length; i++)
+        {
+            HumanBone bone = description.human[i];
+            int index = FindHumanBoneIndex(bone.humanName);
+            if (index < 0)
+                continue;
+
+            humanLimits[index] = bone.limit;
+            sourceBoneNames[index] = bone.boneName;
+
+            if (characterRoot != null)
+                mappedTransforms[index] = FindFirstTransformByName(
+                    characterRoot.transform, bone.boneName);
+        }
+
+        Repaint();
+        SceneView.RepaintAll();
+    }
+
+    /// <summary>Character Root だけが後から指定された場合に Transform 欄を埋め直す。</summary>
+    private void ResolveTransformsFromSourceAvatar()
+    {
+        EnsureArrays();
+
+        if (sourceAvatar == null || characterRoot == null || !sourceAvatar.isHuman)
+            return;
+
+        HumanDescription description = sourceAvatar.humanDescription;
+        if (description.human == null)
+            return;
+
+        for (int i = 0; i < description.human.Length; i++)
+        {
+            HumanBone bone = description.human[i];
+            int index = FindHumanBoneIndex(bone.humanName);
+            if (index < 0)
+                continue;
+
+            mappedTransforms[index] = FindFirstTransformByName(
+                characterRoot.transform, bone.boneName);
+        }
+
+        Repaint();
+        SceneView.RepaintAll();
+    }
+
+    // ── 既存Avatarのボーン名一覧 ────────────────────────────────────────────
+    private void DrawSkeletonList()
+    {
+        EditorGUILayout.Space(4f);
+        showSkeletonList = EditorGUILayout.Foldout(
+            showSkeletonList,
+            "既存Avatar内のボーン名一覧（skeleton: " + sourceSkeletonNames.Length + "件）",
+            true);
+
+        if (!showSkeletonList)
+            return;
+
+        if (sourceSkeletonNames.Length == 0)
+        {
+            EditorGUILayout.HelpBox(
+                "既存Avatar が未指定、または skeleton が空である。",
+                MessageType.None);
+            return;
+        }
+
+        EditorGUI.indentLevel++;
+        for (int i = 0; i < sourceSkeletonNames.Length; i++)
+            EditorGUILayout.LabelField(i.ToString(), sourceSkeletonNames[i]);
+        EditorGUI.indentLevel--;
+    }
+
+    private void ClearSourceNames()
+    {
+        for (int i = 0; i < sourceBoneNames.Length; i++)
+            sourceBoneNames[i] = "";
+
+        sourceSkeletonNames = new string[0];
+        Repaint();
+    }
+
+    // ── 補助 ────────────────────────────────────────────────────────────────
+    private static int FindHumanBoneIndex(string humanName)
+    {
+        for (int i = 0; i < HumanTrait.BoneCount; i++)
+        {
+            if (HumanTrait.BoneName[i] == humanName)
+                return i;
+        }
+        return -1;
+    }
+
+    private static Transform FindFirstTransformByName(Transform root, string name)
+    {
+        if (root == null || string.IsNullOrEmpty(name))
+            return null;
+
+        Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i].name == name)
+                return transforms[i];
+        }
+        return null;
+    }
+
+    private static HumanLimit CreateDefaultLimit()
+    {
+        return new HumanLimit
+        {
+            useDefaultValues = true,
+            axisLength = 0f,
+            center = Vector3.zero,
+            min = Vector3.zero,
+            max = Vector3.zero
+        };
+    }
+
+    private void DrawLog()
+    {
+        if (string.IsNullOrEmpty(log))
+            return;
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.LabelField("ログ", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(log, MessageType.None);
+    }
+
+    private void Log(string message)
+    {
+        log += message + "\n";
+        Debug.Log("[ManualHumanoidAvatar] " + message);
+        Repaint();
+    }
+}

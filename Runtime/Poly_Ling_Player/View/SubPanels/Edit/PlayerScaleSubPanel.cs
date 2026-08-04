@@ -39,7 +39,7 @@ namespace Poly_Ling.Player
             foreach (var s in new[] { _sliderXYZ, _sliderX, _sliderY, _sliderZ })
                 s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
             _root.Add(_sliderXYZ); _root.Add(_sliderX); _root.Add(_sliderY); _root.Add(_sliderZ);
-            _originToggle = new Toggle("Origin Pivot") { value = false }; _originToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseOriginPivot = e.newValue; });
+            _originToggle = new Toggle("オブジェクトの原点を中心に") { value = false }; _originToggle.RegisterValueChangedCallback(e => { if (GetH() != null) GetH().UseOriginPivot = e.newValue; });
             _originToggle.style.color = new StyleColor(Color.white);
             _root.Add(_originToggle);
 

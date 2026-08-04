@@ -61,6 +61,9 @@ namespace Poly_Ling.Core
         private int _hoveredLineIndex = -1;
         private int _hoveredFaceIndex = -1;
 
+        // 吸着用ホバー状態（メッシュ選択を無視したヒットテスト結果）
+        private int _snapHoveredVertexIndex = -1;
+
         // GPU計算フラグ
         private bool _useGpuHitTest = true; // GPU版を使用
         
@@ -86,6 +89,21 @@ namespace Poly_Ling.Core
         public int HoveredVertexIndex => _hoveredVertexIndex;
         public int HoveredLineIndex => _hoveredLineIndex;
         public int HoveredFaceIndex => _hoveredFaceIndex;
+
+        /// <summary>
+        /// 吸着用ヒットテストを実行するか。既定 false。
+        /// true のときだけ ProcessMouseUpdate が追加のディスパッチと読み戻しを行う
+        /// （頂点数ぶんの GetData が 1 回増える）。
+        /// 面追加ツールが非選択オブジェクトの頂点へ位置を合わせるために使う。
+        /// </summary>
+        public bool EnableSnapHitTest { get; set; }
+
+        /// <summary>
+        /// 吸着用ヒットテストのホバー頂点（グローバル索引）。未ヒット・無効時は -1。
+        /// メッシュ選択で絞られていないため非選択オブジェクトの頂点も返り得る。
+        /// 通常のホバー表示フラグには一切反映しない。
+        /// </summary>
+        public int SnapHoveredVertexIndex => _snapHoveredVertexIndex;
 
         /// <summary>ホバーハイライトを抑止（ウェイトペイント等のブラシ系ツール用）</summary>
         public bool SuppressHover { get; set; }

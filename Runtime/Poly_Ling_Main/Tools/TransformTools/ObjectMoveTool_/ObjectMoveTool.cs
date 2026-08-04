@@ -54,12 +54,19 @@ namespace Poly_Ling.Tools
         // 状態
         // ================================================================
 
-        private enum DragState { Idle, PendingDrag, AxisDragging, CenterDragging }
+        private enum DragState { Idle, PendingDrag, AxisDragging, CenterDragging, RingDragging }
         private DragState _state = DragState.Idle;
 
         private AxisGizmo _axisGizmo = new AxisGizmo();
         private AxisGizmo.AxisType _draggingAxis = AxisGizmo.AxisType.None;
         private AxisGizmo.AxisType _hoveredAxis  = AxisGizmo.AxisType.None;
+
+        // 回転リングギズモ（RotateToolHandler と同じ RotateRingGizmo を使う）。
+        // 軸ギズモは ScreenOffset(60,-60) だけずらして描かれるのに対し、
+        // リングはピボット位置そのものに描く。
+        private readonly RotateRingGizmo _ringGizmo = new RotateRingGizmo();
+        private AxisGizmo.AxisType _ringDragAxis  = AxisGizmo.AxisType.None;
+        private AxisGizmo.AxisType _ringHoverAxis = AxisGizmo.AxisType.None;
 
         private Vector2 _mouseDownPos;
         private Vector2 _lastDragScreenPos;
@@ -87,6 +94,33 @@ namespace Poly_Ling.Tools
             = new Dictionary<int, UnityEngine.Vector3[]>();
         private readonly Dictionary<int, Matrix4x4> _originStartWorld
             = new Dictionary<int, Matrix4x4>();
+
+        // 回転ドラッグ用: ドラッグ開始時の状態。
+        // 回転はフレーム差分を累積せず「開始状態 + 累計ΔR」で毎フレーム再計算する。
+        // (BoneTransform.Rotation はオイラー保持のため、差分を毎フレーム往復させると
+        //  ジンバル境界で値が崩れる)
+        private readonly Dictionary<int, Quaternion> _rotStartLocalRot
+            = new Dictionary<int, Quaternion>();
+        private readonly Dictionary<int, Vector3> _rotStartWorldPos
+            = new Dictionary<int, Vector3>();
+        // 開始時の親 WorldMatrix。親子を同時選択しても二重回転しないよう、
+        // 適用中は「動く前の親」を基準にする。
+        private readonly Dictionary<int, Matrix4x4> _rotStartParentWorld
+            = new Dictionary<int, Matrix4x4>();
+        // 子補正(MoveWithChildren==false)用: 開始時の直接の子の状態。
+        // 「子のワールド 4x4 を保存して新親の逆行列で分解する」方式は、子自身が
+        // 非一様スケールを持つと分解が正確でなくなる。そこで分解を一切使わずに済むよう、
+        // ローカル回転・ワールド原点・親のワールド行列を分けて保存する。
+        private struct ChildRotStart
+        {
+            public Quaternion LocalRot;     // 子のローカル回転
+            public Vector3    WorldPos;     // 子のワールド原点
+            public Matrix4x4  ParentWorld;  // 親(=選択要素)の開始ワールド行列
+        }
+        private readonly Dictionary<int, ChildRotStart> _rotChildStart
+            = new Dictionary<int, ChildRotStart>();
+        private Vector3 _rotPivotWorld;
+        private bool    _rotWarnedNonUniform;
 
         // ================================================================
         // IEditTool 実装
@@ -116,6 +150,11 @@ namespace Poly_Ling.Tools
                     ctx.EnterTransformDragging?.Invoke();
                     return true;
                 }
+
+                // 1b. 軸ギズモに当たらなかった場合のみ回転リングを判定する。
+                //     この順序により移動側のピック挙動は従来と完全に同一のままになる。
+                if (TryBeginRingDrag(ctx, mousePos))
+                    return true;
             }
 
             // 2. ピッキング
@@ -176,6 +215,13 @@ namespace Poly_Ling.Tools
                     ctx.Repaint?.Invoke();
                     return true;
                 }
+
+                case DragState.RingDragging:
+                {
+                    UpdateRingDrag(ctx, mousePos);
+                    ctx.Repaint?.Invoke();
+                    return true;
+                }
             }
 
             // Idle 時はホバー更新
@@ -189,6 +235,7 @@ namespace Poly_Ling.Tools
                     _axisGizmo.HoveredAxis = _hoveredAxis;
                     ctx.Repaint?.Invoke();
                 }
+                UpdateRingHover(ctx, mousePos);
             }
 
             return false;
@@ -205,6 +252,11 @@ namespace Poly_Ling.Tools
                     CommitUndo(ctx);
                     handled = true;
                     break;
+                case DragState.RingDragging:
+                    CommitUndo(ctx);
+                    ClearRotationStart();
+                    handled = true;
+                    break;
                 case DragState.PendingDrag:
                     // クリックのみ → 選択は済み
                     handled = true;
@@ -214,6 +266,9 @@ namespace Poly_Ling.Tools
             _state = DragState.Idle;
             _draggingAxis = AxisGizmo.AxisType.None;
             _axisGizmo.DraggingAxis = AxisGizmo.AxisType.None;
+            _ringDragAxis = AxisGizmo.AxisType.None;
+            _ringGizmo.DraggingAxis = AxisGizmo.AxisType.None;
+            _ringGizmo.EndAngleDrag();
             ctx.Repaint?.Invoke();
             return handled;
         }
@@ -236,6 +291,7 @@ namespace Poly_Ling.Tools
                 _axisGizmo.HoveredAxis = _hoveredAxis;
                 ctx.Repaint?.Invoke();
             }
+            UpdateRingHover(ctx, mousePos);
         }
 
         public void DrawGizmo(ToolContext ctx)
@@ -249,6 +305,7 @@ namespace Poly_Ling.Tools
             {
                 _hoveredAxis = _axisGizmo.FindAxisAtScreenPos(_lastMousePos, ctx);
                 _axisGizmo.HoveredAxis = _hoveredAxis;
+                UpdateRingHover(ctx, _lastMousePos);
             }
 
             _axisGizmo.Draw(ctx);
@@ -273,6 +330,31 @@ namespace Poly_Ling.Tools
             _axisGizmo.DraggingAxis = _draggingAxis;
             _axisGizmo.GetScreenPositions(ctx, out origin, out xEnd, out yEnd, out zEnd);
             hoveredAxis = _hoveredAxis;
+            return true;
+        }
+
+        /// <summary>
+        /// 回転リング 3 軸のスクリーン点列を返す。Player の UpdateGizmoOverlay から呼ぶ。
+        /// 選択がない場合、および回転を許可しない設定のときは false を返す。
+        /// </summary>
+        public bool TryGetGizmoRings(
+            ToolContext ctx,
+            out Vector2[] ringX, out Vector2[] ringY, out Vector2[] ringZ,
+            out AxisGizmo.AxisType hoveredAxis)
+        {
+            ringX = ringY = ringZ = null;
+            hoveredAxis = AxisGizmo.AxisType.None;
+            if (ctx == null || !HasAnySelection(ctx)) return false;
+            if (!IsRotationEnabled()) return false;
+
+            UpdateGizmoCenter(ctx);
+            _ringGizmo.Center = _axisGizmo.Center;
+            ringX = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.X);
+            ringY = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Y);
+            ringZ = _ringGizmo.GetRingScreen(ctx, AxisGizmo.AxisType.Z);
+            hoveredAxis = _ringDragAxis != AxisGizmo.AxisType.None
+                ? _ringDragAxis
+                : _ringHoverAxis;
             return true;
         }
 
@@ -326,6 +408,12 @@ namespace Poly_Ling.Tools
             _hoveredAxis  = AxisGizmo.AxisType.None;
             _axisGizmo.DraggingAxis = AxisGizmo.AxisType.None;
             _axisGizmo.HoveredAxis  = AxisGizmo.AxisType.None;
+            _ringDragAxis  = AxisGizmo.AxisType.None;
+            _ringHoverAxis = AxisGizmo.AxisType.None;
+            _ringGizmo.DraggingAxis = AxisGizmo.AxisType.None;
+            _ringGizmo.HoveredAxis  = AxisGizmo.AxisType.None;
+            _ringGizmo.EndAngleDrag();
+            ClearRotationStart();
             _beforeSnapshots.Clear();
         }
 
@@ -621,6 +709,330 @@ namespace Poly_Ling.Tools
                 UnityEngine.Debug.Log($"[MoveDbg] AFTER_SYNC idx={idx} useLocal={mc.BoneTransform.UseLocalTransform} local={mc.BoneTransform.Position} world={new UnityEngine.Vector3(__wmS.m03, __wmS.m13, __wmS.m23)}");
             }
             ctx.Repaint?.Invoke();
+        }
+
+        // ================================================================
+        // 回転適用
+        // ================================================================
+        //
+        // 【前提】BoneTransform は Position / Rotation(オイラー) / Scale を分離保持し、
+        // LocalMatrix = Matrix4x4.TRS(...) である (BoneTransform.cs:87)。
+        // したがって「4x4 をそのまま local へ焼き戻す」ことはできず、
+        // 回転成分は純回転のまま合成しなければならない。
+        //
+        // 純回転のまま合成できる条件:
+        //   deltaLocal = Inverse(P.rotation) * deltaWorld * P.rotation
+        // が回転になるのは、親 P のスケールが一様なときに限る。
+        // 祖先チェーンに非一様スケールがあるとシアーが生じ、この式では表現できない。
+        // → HasNonUniformScaleInAncestors() で検出し、その要素は対象から外す。
+        // ================================================================
+
+        /// <summary>
+        /// 回転操作を許可する状態か。
+        /// 「原点だけ移動(OriginOnly)」とは連動しない。OriginOnly 時は
+        /// ApplyWorldRotation 側で自頂点を再ローカル化して見た目を固定する。
+        /// PivotOffsetToolHandler のように回転リングを描かない呼び出し元だけが false にする。
+        /// </summary>
+        private bool IsRotationEnabled() => _settings.AllowRotationGizmo;
+
+        /// <summary>
+        /// 回転リングのヒットテストを行い、当たっていれば回転ドラッグを開始する。
+        /// 軸ギズモのヒットテストが外れた後にのみ呼ぶこと。
+        /// </summary>
+        private bool TryBeginRingDrag(ToolContext ctx, Vector2 mousePos)
+        {
+            if (!IsRotationEnabled()) return false;
+            if (ctx?.WorldToScreenPos == null) return false;
+
+            _ringGizmo.Center = _axisGizmo.Center;
+            var ringAxis = _ringGizmo.FindRingAtScreenPos(mousePos, ctx);
+            if (ringAxis == AxisGizmo.AxisType.None) return false;
+
+            SaveRotationStart(ctx, _axisGizmo.Center);
+            if (_rotStartLocalRot.Count == 0) return false;   // 全要素が除外された
+            SaveSnapshots(ctx);
+
+            // 開始角・軸符号の算出は RotateRingGizmo の角度ドラッグセッションに集約。
+            if (!_ringGizmo.BeginAngleDrag(ctx, mousePos, ringAxis)) return false;
+
+            _ringDragAxis = ringAxis;
+            _ringGizmo.DraggingAxis = ringAxis;
+            _state = DragState.RingDragging;
+            ctx.EnterTransformDragging?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// 回転ドラッグ中の更新。開始角からの累計角を求めて ApplyWorldRotation に渡す。
+        /// フレーム差分ではなく毎回「開始角からの絶対角」を渡す。
+        /// </summary>
+        private void UpdateRingDrag(ToolContext ctx, Vector2 mousePos)
+        {
+            if (_ringDragAxis == AxisGizmo.AxisType.None) return;
+
+            float deltaDeg = _ringGizmo.ComputeAngleDeltaDeg(mousePos);
+            Vector3 worldAxis = RotateRingGizmo.AxisVector(_ringDragAxis);
+            ApplyWorldRotation(Quaternion.AngleAxis(deltaDeg, worldAxis), ctx);
+        }
+
+        /// <summary>Idle 時のリングホバー更新。軸ギズモに当たっている間は評価しない。</summary>
+        private void UpdateRingHover(ToolContext ctx, Vector2 mousePos)
+        {
+            AxisGizmo.AxisType hovered = AxisGizmo.AxisType.None;
+
+            if (IsRotationEnabled() && _hoveredAxis == AxisGizmo.AxisType.None)
+            {
+                _ringGizmo.Center = _axisGizmo.Center;
+                hovered = _ringGizmo.FindRingAtScreenPos(mousePos, ctx);
+            }
+
+            if (hovered != _ringHoverAxis)
+            {
+                _ringHoverAxis = hovered;
+                _ringGizmo.HoveredAxis = hovered;
+                ctx.Repaint?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// 回転ドラッグの開始状態を保存する。
+        /// ピボットはワールド座標で受け取る (通常は _axisGizmo.Center)。
+        /// 祖先チェーンに非一様スケールを持つ要素は対象から除外する。
+        /// </summary>
+        private void SaveRotationStart(ToolContext ctx, Vector3 pivotWorld)
+        {
+            ClearRotationStart();
+
+            var model = ctx?.Model;
+            if (model == null) return;
+
+            _rotPivotWorld = pivotWorld;
+
+            foreach (int idx in AllSelectedIndices(ctx))
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc?.BoneTransform == null) continue;
+
+                if (HasNonUniformScaleInAncestors(model, idx))
+                {
+                    if (!_rotWarnedNonUniform)
+                    {
+                        _rotWarnedNonUniform = true;
+                        UnityEngine.Debug.LogWarning(
+                            "[ObjectMoveTool] 祖先に非一様スケールを持つ要素は回転対象から除外しました。" +
+                            "TRS 分離保持のため、シアーを含む姿勢を表現できません。");
+                    }
+                    continue;
+                }
+
+                int parentIdx = mc.HierarchyParentIndex;
+                var parentMc  = (parentIdx >= 0 && parentIdx < model.Count)
+                    ? model.GetMeshContext(parentIdx)
+                    : null;
+
+                _rotStartLocalRot[idx]    = Quaternion.Euler(mc.BoneTransform.Rotation);
+                _rotStartWorldPos[idx]    = (Vector3)mc.WorldMatrix.GetColumn(3);
+                _rotStartParentWorld[idx] = parentMc != null ? parentMc.WorldMatrix : Matrix4x4.identity;
+            }
+
+            // 子補正モード: 直接の子の開始状態を保存する。
+            // 判定条件は ApplyWorldDelta の子補正と同一 (選択外かつ親が選択中)。
+            if (!_settings.MoveWithChildren && _rotStartLocalRot.Count > 0)
+            {
+                for (int i = 0; i < model.Count; i++)
+                {
+                    if (_rotStartLocalRot.ContainsKey(i)) continue;
+
+                    var childMc = model.GetMeshContext(i);
+                    if (childMc?.BoneTransform == null) continue;
+
+                    int pIdx = childMc.HierarchyParentIndex;
+                    if (!_rotStartLocalRot.ContainsKey(pIdx)) continue;
+
+                    // 親のワールドが一様スケールでないと共役変換が回転にならない。
+                    // この判定は子から上へ遡るので親チェーン全体を覆う。
+                    if (HasNonUniformScaleInAncestors(model, i)) continue;
+
+                    var parentMc = model.GetMeshContext(pIdx);
+                    if (parentMc == null) continue;
+
+                    _rotChildStart[i] = new ChildRotStart
+                    {
+                        LocalRot    = Quaternion.Euler(childMc.BoneTransform.Rotation),
+                        WorldPos    = (Vector3)childMc.WorldMatrix.GetColumn(3),
+                        ParentWorld = parentMc.WorldMatrix,
+                    };
+                }
+            }
+        }
+
+        /// <summary>
+        /// 開始状態からの累計回転 <paramref name="deltaWorld"/> を選択アイテムへ適用する。
+        /// フレーム差分ではなく開始状態からの絶対値を毎回受け取ること。
+        /// SaveRotationStart() を先に呼んでいない場合は何もしない。
+        /// </summary>
+        private void ApplyWorldRotation(Quaternion deltaWorld, ToolContext ctx)
+        {
+            if (_rotStartLocalRot.Count == 0) return;
+            var model = ctx?.Model;
+            if (model == null) return;
+
+            foreach (var kv in _rotStartLocalRot)
+            {
+                int idx = kv.Key;
+                var mc  = model.GetMeshContext(idx);
+                if (mc?.BoneTransform == null) continue;
+
+                if (!_rotStartParentWorld.TryGetValue(idx, out var parentWorld)) continue;
+                if (!_rotStartWorldPos.TryGetValue(idx, out var startWorldPos)) continue;
+
+                // ワールド回転 → 親ローカル回転へ共役変換
+                Quaternion parentRot = parentWorld.rotation;
+                Quaternion deltaLocal = Quaternion.Inverse(parentRot) * deltaWorld * parentRot;
+
+                Quaternion newLocalRot = deltaLocal * kv.Value;
+
+                // ピボット周りの公転をワールドで解いてから親ローカルへ戻す
+                Vector3 newWorldPos = _rotPivotWorld + deltaWorld * (startWorldPos - _rotPivotWorld);
+                Vector3 newLocalPos = parentWorld.inverse.MultiplyPoint3x4(newWorldPos);
+
+                mc.BoneTransform.UseLocalTransform = true;
+                mc.BoneTransform.Rotation = NormEuler180(newLocalRot.eulerAngles);
+                mc.BoneTransform.Position = newLocalPos;
+            }
+
+            model.ComputeWorldMatrices();
+
+            // 子補正(MoveWithChildren==false): 直接の子のワールド姿勢・位置を開始時に戻す。
+            // 4x4 の分解は使わず、親のワールド回転どうしの差分で子のローカル回転を作る。
+            //   R_child_new = Inv(P_new.rotation) * P_old.rotation * R_child_old
+            //   P_new / P_old は一様スケールなので .rotation は厳密。
+            // ローカルスケールは変化しないので書き換えない。
+            if (_rotChildStart.Count > 0)
+            {
+                foreach (var ckv in _rotChildStart)
+                {
+                    var childMc = model.GetMeshContext(ckv.Key);
+                    if (childMc?.BoneTransform == null) continue;
+
+                    var parentMc = model.GetMeshContext(childMc.HierarchyParentIndex);
+                    if (parentMc == null) continue;
+
+                    Matrix4x4 parentNew = parentMc.WorldMatrix;
+                    Quaternion carry = Quaternion.Inverse(parentNew.rotation)
+                                     * ckv.Value.ParentWorld.rotation;
+
+                    childMc.BoneTransform.UseLocalTransform = true;
+                    childMc.BoneTransform.Rotation =
+                        NormEuler180((carry * ckv.Value.LocalRot).eulerAngles);
+                    childMc.BoneTransform.Position =
+                        parentNew.inverse.MultiplyPoint3x4(ckv.Value.WorldPos);
+                }
+
+                // 子補正後に再計算
+                model.ComputeWorldMatrices();
+            }
+
+            // 原点だけ移動(OriginOnly): 対象 MeshFilter の自頂点を「開始ワールド位置を保つ」よう
+            // 再ローカル化する。ApplyWorldDelta と同じ式で、回転でもそのまま成立する。
+            if (_settings.OriginOnly && _originStartWorld.Count > 0)
+            {
+                foreach (var kv in _rotStartLocalRot)
+                {
+                    int idx = kv.Key;
+                    if (!_originStartWorld.TryGetValue(idx, out var startWorld)) continue;
+                    if (!_originStartPositions.TryGetValue(idx, out var startPos)) continue;
+                    var mc = model.GetMeshContext(idx);
+                    var mo = mc?.MeshObject;
+                    if (mo == null) continue;
+
+                    Matrix4x4 curInv = mc.WorldMatrixInverse;
+                    int n = Mathf.Min(mo.VertexCount, startPos.Length);
+                    for (int i = 0; i < n; i++)
+                    {
+                        Vector3 worldPos = startWorld.MultiplyPoint3x4(startPos[i]);
+                        var v = mo.Vertices[i];
+                        v.Position = curInv.MultiplyPoint3x4(worldPos);
+                        mo.Vertices[i] = v;
+                    }
+                    mo.InvalidatePositionCache();
+                }
+                // 書き換えた頂点を GPU へ同期する。
+                ctx.SyncMesh?.Invoke();
+            }
+
+            // バインド連動(スキン固定): ApplyWorldDelta と同じ扱い。
+            // World が変わったボーンの BindPose を更新し SkinningMatrix を開始時と同一に保つ。
+            if (_settings.MoveMode == BoneMoveMode.BoneOnlyRebind && _rebindStartSkinning.Count > 0)
+            {
+                foreach (var kv in _rebindStartSkinning)
+                {
+                    var bmc = model.GetMeshContext(kv.Key);
+                    if (bmc == null || bmc.Type != MeshType.Bone) continue;
+                    bmc.BindPose = bmc.WorldMatrix.inverse * kv.Value;
+                }
+            }
+
+            ctx.SyncBoneTransforms?.Invoke();
+            ctx.Repaint?.Invoke();
+        }
+
+        /// <summary>回転ドラッグの開始状態を破棄する。</summary>
+        private void ClearRotationStart()
+        {
+            _rotStartLocalRot.Clear();
+            _rotStartWorldPos.Clear();
+            _rotStartParentWorld.Clear();
+            _rotChildStart.Clear();
+            _rotPivotWorld = Vector3.zero;
+            _rotWarnedNonUniform = false;
+        }
+
+        /// <summary>
+        /// 自分を除く祖先チェーンに非一様スケール (Scale の x/y/z が不一致) が
+        /// 含まれるかを判定する。循環階層でも止まるよう反復回数に上限を設ける。
+        /// </summary>
+        private static bool HasNonUniformScaleInAncestors(ModelContext model, int index)
+        {
+            if (model == null) return false;
+
+            int count = model.Count;
+            var self = model.GetMeshContext(index);
+            if (self == null) return false;
+
+            int cur = self.HierarchyParentIndex;
+            for (int guard = 0; guard < count && cur >= 0 && cur < count; guard++)
+            {
+                var mc = model.GetMeshContext(cur);
+                if (mc == null) break;
+
+                var bt = mc.BoneTransform;
+                if (bt != null && bt.UseLocalTransform && !IsUniformScale(bt.Scale))
+                    return true;
+
+                int next = mc.HierarchyParentIndex;
+                if (next == cur) break;   // 自己参照
+                cur = next;
+            }
+
+            return false;
+        }
+
+        private static bool IsUniformScale(Vector3 s)
+        {
+            const float Eps = 1e-5f;
+            return Mathf.Abs(s.x - s.y) <= Eps && Mathf.Abs(s.y - s.z) <= Eps;
+        }
+
+        private static Vector3 NormEuler180(Vector3 e)
+            => new Vector3(NormAngle180(e.x), NormAngle180(e.y), NormAngle180(e.z));
+
+        private static float NormAngle180(float a)
+        {
+            a %= 360f;
+            if (a >  180f) a -= 360f;
+            else if (a < -180f) a += 360f;
+            return a;
         }
 
         // ================================================================
