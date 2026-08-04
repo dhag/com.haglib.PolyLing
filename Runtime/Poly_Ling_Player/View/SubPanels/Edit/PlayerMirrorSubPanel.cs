@@ -128,7 +128,7 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルがありません"); return; }
             var tc = GetToolContext?.Invoke();
-            var mc = tc?.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
+            var mc = tc?.ActiveMeshContext;
             if (mc?.MeshObject == null) { SetStatus("メッシュを選択してください"); return; }
 
             int masterIdx = model.IndexOf(mc);
@@ -170,7 +170,7 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルがありません"); return; }
             var tc = GetToolContext?.Invoke();
-            var editedMc = tc?.FirstSelectedMeshContext ?? model.FirstSelectedMeshContext;
+            var editedMc = tc?.ActiveMeshContext ?? model.ActiveMeshContext;
             if (editedMc == null || editedMc.Name != _bakedMeshName)
             { SetStatus($"Bake 済みメッシュ '{_bakedMeshName}' を選択してください"); return; }
 

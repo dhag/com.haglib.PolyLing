@@ -54,7 +54,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         public int GetSplittableCount()
         {
-            var mesh = _context?.FirstDrawableMeshObject;
+            var mesh = _context?.ActiveMeshObject;
             var sel  = _context?.SelectedVertices;
             if (mesh == null || sel == null || sel.Count == 0) return 0;
 
@@ -68,7 +68,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteSplit()
         {
-            var mesh = _context?.FirstDrawableMeshObject;
+            var mesh = _context?.ActiveMeshObject;
             var sel  = _context?.SelectedVertices;
 
             Debug.Log($"[SplitVerticesTool] ExecuteSplit: context={_context != null}, mesh={mesh != null}, sel={sel != null}, selCount={sel?.Count ?? 0}");
@@ -77,8 +77,8 @@ namespace Poly_Ling.Tools
             if (sel == null)  { Debug.LogWarning("[SplitVerticesTool] EARLY RETURN: sel is null"); return; }
             if (sel.Count == 0) { Debug.LogWarning("[SplitVerticesTool] EARLY RETURN: no selected vertices"); return; }
 
-            MeshObjectSnapshot before = _context.UndoController != null && _context.FirstDrawableMeshContext != null
-                ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
+            MeshObjectSnapshot before = _context.UndoController != null && _context.ActiveMeshContext != null
+                ? MeshObjectSnapshot.Capture(_context.ActiveMeshContext, _context.UndoController.MeshUndoContext)
                 : default;
 
             var facesByVertex = BuildFacesByVertex(mesh);
@@ -120,7 +120,7 @@ namespace Poly_Ling.Tools
 
                 if (_context.UndoController != null)
                 {
-                    var after = MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext);
+                    var after = MeshObjectSnapshot.Capture(_context.ActiveMeshContext, _context.UndoController.MeshUndoContext);
                     _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         _context.UndoController, before, after,
                         $"Split {selectedSnapshot.Count} Vertices"));

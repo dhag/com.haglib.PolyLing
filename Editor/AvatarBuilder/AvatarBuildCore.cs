@@ -40,6 +40,22 @@ namespace Poly_Ling.EditorIO
             string savePath,
             Action<string> log)
         {
+            return BuildAndSaveAvatar(
+                root, map, limits, AvatarRetargetSettings.Default, savePath, log);
+        }
+
+        /// <summary>
+        /// root/map/limits/settings から Avatar を生成し savePath(.asset) に保存する。
+        /// 失敗時は null（理由は log で通知）。
+        /// </summary>
+        public static Avatar BuildAndSaveAvatar(
+            GameObject root,
+            Dictionary<string, string> map,
+            Dictionary<string, HumanLimit> limits,
+            AvatarRetargetSettings settings,
+            string savePath,
+            Action<string> log)
+        {
             void L(string m) => log?.Invoke(m);
 
             if (root == null) { L("Avatar: root が null。"); return null; }
@@ -108,14 +124,14 @@ namespace Poly_Ling.EditorIO
             {
                 human = humanBones.ToArray(),
                 skeleton = skeleton.ToArray(),
-                upperArmTwist = 0.5f,
-                lowerArmTwist = 0.5f,
-                upperLegTwist = 0.5f,
-                lowerLegTwist = 0.5f,
-                armStretch = 0.05f,
-                legStretch = 0.05f,
-                feetSpacing = 0.0f,
-                hasTranslationDoF = false
+                upperArmTwist = settings.upperArmTwist,
+                lowerArmTwist = settings.lowerArmTwist,
+                upperLegTwist = settings.upperLegTwist,
+                lowerLegTwist = settings.lowerLegTwist,
+                armStretch = settings.armStretch,
+                legStretch = settings.legStretch,
+                feetSpacing = settings.feetSpacing,
+                hasTranslationDoF = settings.hasTranslationDoF
             };
 
             Avatar avatar = AvatarBuilder.BuildHumanAvatar(root, desc);

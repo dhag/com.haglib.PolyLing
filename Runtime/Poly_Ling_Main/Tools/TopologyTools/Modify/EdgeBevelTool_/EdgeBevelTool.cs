@@ -113,23 +113,23 @@ namespace Poly_Ling.Tools
             if (_state != BevelState.Idle)
                 return false;
 
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
             {
-                UnityEngine.Debug.Log($"[BevelDBG] OnMouseDown: MeshObject={ctx.FirstSelectedMeshObject != null}, SelectionState={ctx.SelectionState != null} → skip");
+                UnityEngine.Debug.Log($"[BevelDBG] OnMouseDown: MeshObject={ctx.ActiveMeshObject != null}, SelectionState={ctx.SelectionState != null} → skip");
                 return false;
             }
 
             _mouseDownScreenPos = mousePos;
             // _hitEdgeOnMouseDown はハンドラーが PrepareHit() で GPU ホバー結果からセットする
 
-            UnityEngine.Debug.Log($"[BevelDBG] OnMouseDown: pos={mousePos}, hitEdge={_hitEdgeOnMouseDown.HasValue}, vertexCount={ctx.FirstSelectedMeshObject.VertexCount}, faceCount={ctx.FirstSelectedMeshObject.FaceCount}");
+            UnityEngine.Debug.Log($"[BevelDBG] OnMouseDown: pos={mousePos}, hitEdge={_hitEdgeOnMouseDown.HasValue}, vertexCount={ctx.ActiveMeshObject.VertexCount}, faceCount={ctx.ActiveMeshObject.FaceCount}");
 
             if (_hitEdgeOnMouseDown.HasValue)
             {
                 _state = BevelState.PendingAction;
                 // マウスダウン時にスナップショット取得
                 if (ctx.UndoController != null)
-                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 return false;
             }
 
@@ -247,7 +247,7 @@ namespace Poly_Ling.Tools
 
             CollectTargetEdges(ctx);
 
-            UnityEngine.Debug.Log($"[BevelDBG] StartBevel: targetEdges={_targetEdges.Count}, Amount={Amount}, vertexCount={ctx.FirstSelectedMeshObject?.VertexCount}");
+            UnityEngine.Debug.Log($"[BevelDBG] StartBevel: targetEdges={_targetEdges.Count}, Amount={Amount}, vertexCount={ctx.ActiveMeshObject?.VertexCount}");
 
             if (_targetEdges.Count == 0)
             {
@@ -259,7 +259,7 @@ namespace Poly_Ling.Tools
             // トポロジーを即時実行し _dragVertices を確定させる
             ExecuteBevel(ctx);  // 内部で ctx.SyncMesh (= NotifyTopologyChanged) を呼ぶ
 
-            UnityEngine.Debug.Log($"[BevelDBG] StartBevel after ExecuteBevel: dragVertices={_dragVertices.Count}, vertexCount={ctx.FirstSelectedMeshObject?.VertexCount}, state→Beveling");
+            UnityEngine.Debug.Log($"[BevelDBG] StartBevel after ExecuteBevel: dragVertices={_dragVertices.Count}, vertexCount={ctx.ActiveMeshObject?.VertexCount}, state→Beveling");
 
             _state = BevelState.Beveling;
             // EnterTransformDragging は使用しない。
@@ -282,10 +282,13 @@ namespace Poly_Ling.Tools
             // 符号付き投影に変更。初期方向＝拡大 / 戻す＝縮小 / 開始点で0 / 行き過ぎは0クランプ。
             float signedDist = Vector2.Dot(totalDelta, _startDragDir);
             // dv.OffsetDir はローカル方向。量もローカル空間の長さに揃える。
-            Vector3 localDelta = ctx.ActiveWorldToLocalVector(ScreenDeltaToWorldDelta(ctx, _startDragDir * signedDist));
+            // 基準はベベル対象頂点の先頭。スキンド頂点はボーンの SkinningMatrix で
+            // 変換されるため、メッシュの WorldMatrixInverse では倍率が合わない。
+            int basis = _dragVertices.Count > 0 ? _dragVertices[0].Index : -1;
+            Vector3 localDelta = ctx.WorldToLocalVectorAt(basis, ScreenDeltaToWorldDelta(ctx, _startDragDir * signedDist));
             _dragAmount = Mathf.Max(0f, Mathf.Sign(signedDist) * localDelta.magnitude * DragSensitivity);
 
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
             int updated = 0;
             if (meshObject != null)
             {
@@ -311,7 +314,7 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                MeshObjectSnapshot snapshotAfter = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 MeshSnapshotRecord record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
                 {
@@ -346,7 +349,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteBevel(ToolContext ctx)
         {
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
             float amount = _dragAmount;
             int segments = Segments;
             int matIdx = ctx.CurrentMaterialIndex;
@@ -414,6 +417,10 @@ namespace Poly_Ling.Tools
                         var nv = new Vertex { Position = p0 + offset };
                         var sv0 = meshObject.Vertices[edgeInfo.V0];
                         if (sv0.UVs.Count > 0) nv.UVs.Add(sv0.UVs[0]);
+                        // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
+                        // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
+                        // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
+                        nv.BoneWeight = sv0.BoneWeight;
                         meshObject.Vertices.Add(nv);
                     }
                     rowV1[s] = meshObject.VertexCount;
@@ -421,6 +428,7 @@ namespace Poly_Ling.Tools
                         var nv = new Vertex { Position = p1 + offset };
                         var sv1 = meshObject.Vertices[edgeInfo.V1];
                         if (sv1.UVs.Count > 0) nv.UVs.Add(sv1.UVs[0]);
+                        nv.BoneWeight = sv1.BoneWeight;
                         meshObject.Vertices.Add(nv);
                     }
                 }
@@ -842,13 +850,13 @@ namespace Poly_Ling.Tools
                 int v0 = edgePair.V1;
                 int v1 = edgePair.V2;
 
-                if (v0 < 0 || v0 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                if (v1 < 0 || v1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
+                if (v0 < 0 || v0 >= ctx.ActiveMeshObject.VertexCount) continue;
+                if (v1 < 0 || v1 >= ctx.ActiveMeshObject.VertexCount) continue;
 
-                Vector3 p0 = ctx.FirstSelectedMeshObject.Vertices[v0].Position;
-                Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
+                Vector3 p0 = ctx.ActiveMeshObject.Vertices[v0].Position;
+                Vector3 p1 = ctx.ActiveMeshObject.Vertices[v1].Position;
 
-                FindAdjacentFacesWithEdgeVertices(ctx.FirstSelectedMeshObject, v0, v1, p0, p1,
+                FindAdjacentFacesWithEdgeVertices(ctx.ActiveMeshObject, v0, v1, p0, p1,
                     out int faceA, out int faceB, out int faceB_V0, out int faceB_V1);
 
                 var info = new BevelEdgeInfo

@@ -388,7 +388,9 @@ namespace Poly_Ling.UndoSystem
                 selectedVertexMorphIndex = source.selectedVertexMorphIndex,
                 // 座標系設定
                 pmxUnityRatio = source.pmxUnityRatio,
+                pmxFlipX = source.pmxFlipX,
                 pmxFlipZ = source.pmxFlipZ,
+                mqoFlipX = source.mqoFlipX,
                 mqoFlipZ = source.mqoFlipZ,
                 mqoUnityRatio = source.mqoUnityRatio
             };

@@ -37,7 +37,9 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public float   RotX     { get; private set; } =  20f;
-        public float   RotY     { get; private set; } =   0f;
+        // 既定は +Z 側からの視点。モデルは Unity 規約（正面 = +Z）で扱うため、
+        // カメラを +Z 側に置いて -Z 方向を見ることで正面が映る。
+        public float   RotY     { get; private set; } = 180f;
         public float   RotZ     { get; private set; } =   0f;   // カメラのロール（Z軸周り・視線軸回転）
         public float   Distance { get; private set; } =   3f;
         public Vector3 Target   { get; private set; } = Vector3.zero;

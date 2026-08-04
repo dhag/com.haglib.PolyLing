@@ -183,6 +183,7 @@ namespace Poly_Ling.Player
         {
             parent.Add(SectionLabel("座標変換"));
             parent.Add(FloatRow("Scale",    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
+            parent.Add(ToggleRow("Flip X",  () => _pmxSettings.FlipX,    v => _pmxSettings.FlipX    = v));
             parent.Add(ToggleRow("Flip Z",  () => _pmxSettings.FlipZ,    v => _pmxSettings.FlipZ    = v));
             parent.Add(ToggleRow("Flip UV V", () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
 
@@ -207,6 +208,7 @@ namespace Poly_Ling.Player
             {
                 ExportMode       = _pmxSettings.ExportMode,
                 Scale            = _pmxSettings.Scale,
+                FlipX            = _pmxSettings.FlipX,
                 FlipZ            = _pmxSettings.FlipZ,
                 FlipUV_V         = _pmxSettings.FlipUV_V,
                 ExportMaterials  = _pmxSettings.ExportMaterials,
@@ -228,6 +230,7 @@ namespace Poly_Ling.Player
         {
             parent.Add(SectionLabel("座標変換"));
             parent.Add(FloatRow("Scale",    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
+            parent.Add(ToggleRow("Flip X",  () => _mqoSettings.FlipX,    v => _mqoSettings.FlipX    = v));
             parent.Add(ToggleRow("Flip Z",  () => _mqoSettings.FlipZ,    v => _mqoSettings.FlipZ    = v));
             parent.Add(ToggleRow("Flip UV V", () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
 

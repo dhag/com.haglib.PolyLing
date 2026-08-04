@@ -202,7 +202,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private Vector3 PivotWorld()
         {
-            var mc = _ctx?.Model?.FirstDrawableMeshContext;
+            var mc = _ctx?.Model?.ActiveMeshContext;
             return mc != null ? mc.LocalToWorld(_pivot) : _pivot;
         }
 
@@ -249,7 +249,7 @@ namespace Poly_Ling.Tools
 
             // _pivot は「基準メッシュのローカル座標」で保持する（PivotPublic の契約）。
             Vector3 pivotWorld = sum / totalCount;
-            var pivotMc = model?.FirstDrawableMeshContext;
+            var pivotMc = model?.ActiveMeshContext;
             _pivot = pivotMc != null ? pivotMc.WorldToLocal(pivotWorld) : pivotWorld;
         }
 
@@ -459,7 +459,7 @@ namespace Poly_Ling.Tools
 
         private void DrawAxis(ToolContext ctx, Rect rect, Vector2 origin, Vector3 dir, Color col)
         {
-            Vector2 end = ctx.WorldToScreenPos(_pivot + dir * 0.1f, rect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector2 end = ctx.LocalToScreen(_pivot + dir * 0.1f);
             Vector2 d = (end - origin).normalized * 40f;
 
             // UnityEditor_Handles 削除済み

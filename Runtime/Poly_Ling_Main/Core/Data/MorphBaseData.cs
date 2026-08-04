@@ -369,6 +369,11 @@ namespace Poly_Ling.Data
 
         /// <summary>
         /// 頂点が削除された場合に基準データを更新
+        ///
+        /// 【デッドコード】Runtime アセンブリ全体を grep して呼び出し元 0 件。
+        /// Editor アセンブリ側からの呼び出しは未確認。
+        /// つまり頂点削除時のモーフ基準データ更新は、現状どこからも行われていない
+        /// (DeleteSelectionTool からも呼んでいない)。
         /// </summary>
         /// <param name="removedIndices">削除された頂点インデックス</param>
         public void RemoveVertices(HashSet<int> removedIndices)

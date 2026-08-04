@@ -325,6 +325,11 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public bool ignorePoseInArmature = false;
 
+        /// <summary>
+        /// ミラー分岐のルートか（ヒエラルキーエクスポートで枝を二分する）
+        /// </summary>
+        public bool isMirrorBranchRoot = false;
+
         // ================================================================
         // 永続化拡張（DTO単一真実源化）：従来CSV直書きでのみ保持していた
         // IK / BindPose / BoneModelRotation と、未保存だった 剛体 / JOINT を
@@ -735,11 +740,17 @@ namespace Poly_Ling.Serialization
         /// <summary>PMX→Unity座標比率（デフォルト0.1、旧0.085）</summary>
         public float pmxUnityRatio = 0.1f;// 0.085f;
 
-        /// <summary>PMX Z軸反転（デフォルトfalse）</summary>
-        public bool pmxFlipZ = false;
+        /// <summary>PMX X軸反転（デフォルトtrue）</summary>
+        public bool pmxFlipX = true;
 
-        /// <summary>MQO Z軸反転（デフォルトtrue）</summary>
-        public bool mqoFlipZ = true;
+        /// <summary>PMX Z軸反転（デフォルトtrue。X と併用で Y軸180°回転）</summary>
+        public bool pmxFlipZ = true;
+
+        /// <summary>MQO X軸反転（デフォルトtrue）</summary>
+        public bool mqoFlipX = true;
+
+        /// <summary>MQO Z軸反転（デフォルトfalse）</summary>
+        public bool mqoFlipZ = false;
 
         /// <summary>MQO→Unity座標比率（デフォルト0.01）</summary>
         public float mqoUnityRatio = 0.01f;
@@ -774,8 +785,10 @@ namespace Poly_Ling.Serialization
                 knifeChainMode = false,
                 // 座標系設定
                 pmxUnityRatio = 0.1f,// 0.085f,
-                pmxFlipZ = false,
-                mqoFlipZ = true,
+                pmxFlipX = true,
+                pmxFlipZ = true,
+                mqoFlipX = true,
+                mqoFlipZ = false,
                 mqoUnityRatio = 0.01f
             };
         }
@@ -1072,6 +1085,7 @@ namespace Poly_Ling.Serialization
         public int    morphParentIndex = -1;
         public bool   excludeFromExport = false;
         public bool   ignorePoseInArmature = false;
+        public bool   isMirrorBranchRoot = false;
         public MorphBaseDataDTO  morphBaseData;
         public BoneTransformDTO  exportSettingsDTO;
         public BonePoseDataDTO   bonePoseData;

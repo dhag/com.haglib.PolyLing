@@ -78,6 +78,28 @@ namespace Poly_Ling.Data
             : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
     }
 
+    /// <summary>
+    /// オブジェクト原点（BoneTransform.Position）を名前指定で一括設定するコマンド。
+    /// 「原点だけ移動 = true / 子を一緒に移動 = false」と同じ挙動で適用する。
+    /// </summary>
+    public class ApplyObjectOriginsCommand : PanelCommand
+    {
+        public string[]  Names     { get; }
+        public Vector3[] Positions { get; }
+
+        public ApplyObjectOriginsCommand(int modelIndex, string[] names, Vector3[] positions)
+            : base(modelIndex) { Names = names; Positions = positions; }
+    }
+
+    /// <summary>ミラー分岐ルートのフラグを設定するコマンド。</summary>
+    public class SetMirrorBranchRootCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public bool  Value         { get; }
+        public SetMirrorBranchRootCommand(int modelIndex, int[] masterIndices, bool value)
+            : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
+    }
+
     public class CycleMirrorTypeCommand : PanelCommand
     {
         public int MasterIndex { get; }

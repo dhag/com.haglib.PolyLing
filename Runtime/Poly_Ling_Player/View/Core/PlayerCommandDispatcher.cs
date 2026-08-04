@@ -241,7 +241,7 @@ namespace Poly_Ling.Player
                                 foreach (int idx in sel.Indices) model.AddToMeshSelection(idx);
                                 if (sel.Indices.Length > 0)
                                     model.SelectMesh(sel.Indices[0]);
-                                var selMc = model.FirstDrawableMeshContext;
+                                var selMc = model.ActiveMeshContext;
                                 if (selMc != null)
                                 {
                                     _selectionOps?.SetSelectionState(selMc.Selection);
@@ -643,6 +643,26 @@ namespace Poly_Ling.Player
                     _notifyPanels(ChangeKind.Attributes);
                     return;
 
+                // ── オブジェクト原点の一括設定（CSV読み込み）
+                case ApplyObjectOriginsCommand c:
+                {
+                    if (model == null) return;
+                    ApplyObjectOrigins(model, c);
+                    return;
+                }
+
+                // ── ミラー分岐ルート設定
+                case SetMirrorBranchRootCommand c:
+                    if (model == null) return;
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var ctx = model.GetMeshContext(idx);
+                        if (ctx == null) continue;
+                        ctx.IsMirrorBranchRoot = c.Value;
+                    }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+
                 // ── ミラータイプ
                 case CycleMirrorTypeCommand c:
                     if (model == null) return;
@@ -932,7 +952,7 @@ namespace Poly_Ling.Player
                 case AddMaterialSlotCommand _:
                 {
                     if (model == null) return;
-                    var addMc = model.FirstDrawableMeshContext;
+                    var addMc = model.ActiveMeshContext;
                     if (addMc?.MeshObject != null && _undoController != null)
                     {
                         _undoController.SetMeshObject(addMc.MeshObject, addMc.UnityMesh);
@@ -961,7 +981,7 @@ namespace Poly_Ling.Player
                 case RemoveMaterialSlotCommand c:
                 {
                     if (model == null || model.MaterialCount <= 1) return;
-                    var remMc = model.FirstDrawableMeshContext;
+                    var remMc = model.ActiveMeshContext;
                     if (remMc?.MeshObject != null && _undoController != null)
                     {
                         _undoController.SetMeshObject(remMc.MeshObject, remMc.UnityMesh);
@@ -2249,7 +2269,7 @@ namespace Poly_Ling.Player
                 case SavePartsSetCommand c:
                 {
                     if (model == null) return;
-                    var psMc = model.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
+                    var psMc = model.ActiveMeshContext;
                     if (psMc == null) return;
                     var psSel = psMc.Selection;
                     if (psSel == null || !psSel.HasAnySelection) return;
@@ -2281,7 +2301,7 @@ namespace Poly_Ling.Player
                 case DeletePartsSetCommand c:
                 {
                     if (model == null) return;
-                    var delMc = model.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
+                    var delMc = model.ActiveMeshContext;
                     var delSets = delMc?.PartsSelectionSetList;
                     if (delSets == null || c.SetIndex < 0 || c.SetIndex >= delSets.Count) return;
                     delSets.RemoveAt(c.SetIndex);
@@ -2292,7 +2312,7 @@ namespace Poly_Ling.Player
                 case RenamePartsSetCommand c:
                 {
                     if (model == null) return;
-                    var rnMc   = model.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
+                    var rnMc   = model.ActiveMeshContext;
                     var rnSets = rnMc?.PartsSelectionSetList;
                     if (rnSets == null || c.SetIndex < 0 || c.SetIndex >= rnSets.Count) return;
                     string rnName = c.NewName;
@@ -3288,7 +3308,7 @@ namespace Poly_Ling.Player
         private void PartsSetApply(ModelContext model, int setIndex, bool additive, bool subtract)
         {
             if (model == null) return;
-            var mc   = model.FirstSelectedMeshContext ?? model.FirstDrawableMeshContext;
+            var mc   = model.ActiveMeshContext;
             var sets = mc?.PartsSelectionSetList;
             if (sets == null || setIndex < 0 || setIndex >= sets.Count) return;
             var sel = mc.Selection;
@@ -3348,5 +3368,147 @@ namespace Poly_Ling.Player
             _renderer?.SetSelectionState(sel);
             _notifyPanels(ChangeKind.Selection);
         }
+        // ================================================================
+        // オブジェクト原点の一括設定
+        // ================================================================
+
+        /// <summary>
+        /// 名前一致したメッシュの原点を設定する。
+        /// 「原点だけ移動」と同じく、自頂点を再局所化して見た目を保つ。子は動かさない。
+        /// </summary>
+        private void ApplyObjectOrigins(ModelContext model, ApplyObjectOriginsCommand cmd)
+        {
+            if (cmd?.Names == null || cmd.Positions == null) return;
+
+            // 名前 → インデックス（重複名は先着）
+            var indexByName = new Dictionary<string, int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type == MeshType.Bone) continue;
+                if (string.IsNullOrEmpty(mc.Name)) continue;
+                if (!indexByName.ContainsKey(mc.Name)) indexByName[mc.Name] = i;
+            }
+
+            // 適用対象を決める
+            var targets = new List<(int index, Vector3 pos)>();
+            var missing = new List<string>();
+
+            int n = Mathf.Min(cmd.Names.Length, cmd.Positions.Length);
+            for (int i = 0; i < n; i++)
+            {
+                string name = cmd.Names[i];
+                if (string.IsNullOrEmpty(name)) continue;
+
+                if (indexByName.TryGetValue(name, out int idx)) targets.Add((idx, cmd.Positions[i]));
+                else missing.Add(name);
+            }
+
+            if (missing.Count > 0)
+                Debug.LogWarning($"[ObjectOrigin] モデルに存在しない名前を無視: {missing.Count} 件 " +
+                                 $"({string.Join(", ", missing.GetRange(0, Mathf.Min(5, missing.Count)))} …)");
+
+            if (targets.Count == 0)
+            {
+                Debug.LogWarning("[ObjectOrigin] 適用対象がありません。");
+                return;
+            }
+
+            // 変更前スナップショット + 現在の頂点ワールド位置
+            var before      = new Dictionary<int, ObjectOriginSnapshot>();
+            var startWorld  = new Dictionary<int, Vector3[]>();
+
+            model.ComputeWorldMatrices();
+
+            foreach (var (idx, _) in targets)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+
+                var verts = new Vector3[mo.Vertices.Count];
+                var world = new Vector3[mo.Vertices.Count];
+                var wm    = mc.WorldMatrix;
+
+                for (int v = 0; v < mo.Vertices.Count; v++)
+                {
+                    verts[v] = mo.Vertices[v].Position;
+                    world[v] = wm.MultiplyPoint3x4(verts[v]);
+                }
+
+                before[idx] = new ObjectOriginSnapshot
+                {
+                    Position          = mc.BoneTransform?.Position ?? Vector3.zero,
+                    UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
+                    VertexPositions   = verts,
+                };
+                startWorld[idx] = world;
+            }
+
+            // 原点を設定
+            foreach (var (idx, pos) in targets)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc?.BoneTransform == null) continue;
+
+                mc.BoneTransform.Position          = pos;
+                mc.BoneTransform.UseLocalTransform = true;
+            }
+
+            model.ComputeWorldMatrices();
+
+            // 自頂点を再局所化して見た目を保つ
+            foreach (var (idx, _) in targets)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null || !startWorld.TryGetValue(idx, out var world)) continue;
+
+                Matrix4x4 inv = mc.WorldMatrixInverse;
+                int cnt = Mathf.Min(mo.Vertices.Count, world.Length);
+                for (int v = 0; v < cnt; v++)
+                {
+                    var vert = mo.Vertices[v];
+                    vert.Position = inv.MultiplyPoint3x4(world[v]);
+                    mo.Vertices[v] = vert;
+                }
+                mo.InvalidatePositionCache();
+            }
+
+            // 変更後スナップショット
+            var after = new Dictionary<int, ObjectOriginSnapshot>();
+            foreach (var (idx, _) in targets)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+
+                var verts = new Vector3[mo.Vertices.Count];
+                for (int v = 0; v < mo.Vertices.Count; v++) verts[v] = mo.Vertices[v].Position;
+
+                after[idx] = new ObjectOriginSnapshot
+                {
+                    Position          = mc.BoneTransform?.Position ?? Vector3.zero,
+                    UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
+                    VertexPositions   = verts,
+                };
+            }
+
+            if (_undoController != null)
+            {
+                _undoController.SetModelContext(model);
+                _undoController.MeshListStack.Record(
+                    new ObjectOriginUndoRecord(before, after, "原点の読み込み"), "原点の読み込み");
+                _undoController.FocusMeshList();
+            }
+
+            model.IsDirty = true;
+            model.OnListChanged?.Invoke();
+            _viewportManager.EnterTopologyChanged(_getProject());
+            _notifyPanels(ChangeKind.Attributes);
+
+            Debug.Log($"[ObjectOrigin] 原点を適用: {targets.Count} 件");
+        }
+
     }
 }

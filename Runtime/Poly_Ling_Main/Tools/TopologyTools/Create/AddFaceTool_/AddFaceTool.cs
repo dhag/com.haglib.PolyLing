@@ -115,6 +115,8 @@ namespace Poly_Ling.Tools
             public Vector3 PreviewPoint;
             /// <summary>プレビューが既存頂点にスナップしているか</summary>
             public bool PreviewSnapped;
+            /// <summary>スナップ先の既存頂点インデックス（未スナップは -1）</summary>
+            public int PreviewVertexIndex;
             /// <summary>連続線分モードの開始点（nullなら不使用）</summary>
             public PointInfo? ContinuousLineStart;
         }
@@ -130,6 +132,7 @@ namespace Poly_Ling.Tools
                 PreviewValid       = _previewValid,
                 PreviewPoint       = _previewPoint,
                 PreviewSnapped     = _previewHitVertex >= 0,
+                PreviewVertexIndex = _previewHitVertex,
                 ContinuousLineStart = contStart,
             };
         }
@@ -212,7 +215,7 @@ namespace Poly_Ling.Tools
                 if (createdIndices.Count >= 2)
                 {
                     int lastIdx = createdIndices[1];
-                    Vector3 lastPos = ctx.FirstSelectedMeshObject.Vertices[lastIdx].Position;
+                    Vector3 lastPos = ctx.ActiveMeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                     Debug.Log($"[AddFaceTool] Continuous line: next start = V{lastIdx}");
                 }
@@ -233,7 +236,7 @@ namespace Poly_Ling.Tools
                 if (Mode == AddFaceMode.Line && ContinuousLine && createdIndices.Count >= 2)
                 {
                     int lastIdx = createdIndices[createdIndices.Count - 1];
-                    Vector3 lastPos = ctx.FirstSelectedMeshObject.Vertices[lastIdx].Position;
+                    Vector3 lastPos = ctx.ActiveMeshObject.Vertices[lastIdx].Position;
                     _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                 }
 
@@ -269,7 +272,7 @@ namespace Poly_Ling.Tools
             _lastLinePoint = null;
 
             // 選択された頂点を最初の点として使用
-            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.FirstSelectedMeshObject != null)
+            if (ctx.SelectedVertices != null && ctx.SelectedVertices.Count > 0 && ctx.ActiveMeshObject != null)
             {
                 var selectedList = new List<int>(ctx.SelectedVertices);
 
@@ -278,9 +281,9 @@ namespace Poly_Ling.Tools
                 {
                     foreach (int idx in selectedList)
                     {
-                        if (idx >= 0 && idx < ctx.FirstSelectedMeshObject.VertexCount)
+                        if (idx >= 0 && idx < ctx.ActiveMeshObject.VertexCount)
                         {
-                            Vector3 pos = ctx.FirstSelectedMeshObject.Vertices[idx].Position;
+                            Vector3 pos = ctx.ActiveMeshObject.Vertices[idx].Position;
                             _points.Add(PointInfo.FromExisting(idx, pos));
                         }
                     }
@@ -293,7 +296,7 @@ namespace Poly_Ling.Tools
                         if (ContinuousLine && createdIndices.Count >= 2)
                         {
                             int lastIdx = createdIndices[1];
-                            Vector3 lastPos = ctx.FirstSelectedMeshObject.Vertices[lastIdx].Position;
+                            Vector3 lastPos = ctx.ActiveMeshObject.Vertices[lastIdx].Position;
                             _lastLinePoint = PointInfo.FromExisting(lastIdx, lastPos);
                         }
                         _points.Clear();
@@ -305,9 +308,9 @@ namespace Poly_Ling.Tools
                 if (selectedList.Count == 1)
                 {
                     int selectedIdx = selectedList[0];
-                    if (selectedIdx >= 0 && selectedIdx < ctx.FirstSelectedMeshObject.VertexCount)
+                    if (selectedIdx >= 0 && selectedIdx < ctx.ActiveMeshObject.VertexCount)
                     {
-                        Vector3 pos = ctx.FirstSelectedMeshObject.Vertices[selectedIdx].Position;
+                        Vector3 pos = ctx.ActiveMeshObject.Vertices[selectedIdx].Position;
                         var startPoint = PointInfo.FromExisting(selectedIdx, pos);
 
                         if (Mode == AddFaceMode.Line && ContinuousLine)
@@ -358,7 +361,7 @@ namespace Poly_Ling.Tools
         private PointInfo GetPointAtScreenPos(ToolContext ctx, Vector2 screenPos)
         {
             // GPU ホバー由来の既存頂点があればスナップ。CPU ヒットテスト（FindNearestVertexAtScreen）は使用禁止。
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo != null && _gpuHoverVertex >= 0 && _gpuHoverVertex < mo.VertexCount)
             {
                 Vector3 pos = mo.Vertices[_gpuHoverVertex].Position;
@@ -379,7 +382,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         private int FindNearestVertexAtScreen(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return -1;
+            if (ctx.ActiveMeshObject == null) return -1;
 
             // ヒット半径（少し大きめに設定）
             float hitRadius = 15f;
@@ -388,10 +391,10 @@ namespace Poly_Ling.Tools
             int nearest = -1;
             float minDist = hitRadius;
 
-            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.ActiveMeshObject.VertexCount; i++)
             {
                 Vector2 vertScreen = ctx.WorldToScreenPos(
-                    ctx.FirstSelectedMeshObject.Vertices[i].Position,
+                    ctx.ActiveMeshObject.Vertices[i].Position,
                     ctx.PreviewRect,
                     ctx.CameraPosition,
                     ctx.CameraTarget);
@@ -444,14 +447,14 @@ namespace Poly_Ling.Tools
         /// </summary>
         private void UpdatePreview(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null || !ctx.PreviewRect.Contains(screenPos))
+            if (ctx.ActiveMeshObject == null || !ctx.PreviewRect.Contains(screenPos))
             {
                 _previewValid = false;
                 return;
             }
 
             // GPU ホバー由来の既存頂点があればスナップ。CPU ヒットテスト（FindNearestVertexAtScreen）は使用禁止。
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo != null && _gpuHoverVertex >= 0 && _gpuHoverVertex < mo.VertexCount)
             {
                 _previewHitVertex = _gpuHoverVertex;
@@ -473,15 +476,60 @@ namespace Poly_Ling.Tools
         {
             var createdIndices = new List<int>();
 
-            if (ctx.FirstSelectedMeshObject == null || _points.Count < 2)
+            if (ctx.ActiveMeshObject == null || _points.Count < 2)
                 return createdIndices;
 
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
             var newVertexIndices = new List<int>();
             var addedVertices = new List<(int Index, Vertex Vertex)>();
 
+            // ============================================================
+            // 【ウェイト継承ルール】
+            // ============================================================
+            // スキンドメッシュに追加する頂点には BoneWeight が必須である。
+            // BoneWeight を持たない頂点は GPU 側でメッシュ自身の context 索引を使い
+            // （UnifiedBufferManager_Build.cs:356-362）、メッシュの SkinningMatrix で
+            // 変換される（UnifiedBufferManager_Update.cs:1513-1515）。周囲の頂点は
+            // ボーンの SkinningMatrix なので、その頂点だけ別の場所に置かれる。
+            // ナイフ等がその頂点を含む辺を扱うと計算が狂う。
+            //
+            // 継承元の決め方は 2 通り。
+            //
+            //   (A) 既存頂点が 1 つ以上選ばれている場合
+            //       生成する多角形の環（_points の並び）に沿った段数が最小の
+            //       既存頂点からコピーする。同数なら _points 中で先に現れる方。
+            //       3D の直線距離ではなく、辺をたどった段数で決める。
+            //
+            //   (B) すべて新規点の場合
+            //       メッシュ内の既存頂点のうち、ワールド空間で最も近いものから
+            //       コピーする。座標は GPU 値（ctx.GetVertexWorldPosition）を使う。
+            //
+            // 併せて座標の基準も継承元に揃える。point.Position は
+            // GetLocalPositionFromScreen が ActiveWorldToLocal（メッシュの
+            // WorldMatrixInverse）で作った値なので、BoneWeight を与えるだけでは
+            // 格納した座標の基準と実際に適用される行列がずれる。
+            // ActiveWorldMatrix で一度ワールドへ戻し、継承元の行列の逆でローカルへ入れ直す。
+            //
+            // 継承元の BoneWeight が null（メッシュがスキンドでない）の場合は
+            // BoneWeight を設定せず座標変換も行わない。従来と同じ挙動になる。
+            // ============================================================
+
+            int pointCount = _points.Count;
+            int originalVertexCount = meshObject.Vertices.Count;
+
+            // ループ中に _points を書き換えるため、入口の状態を控える。
+            var wasExisting = new bool[pointCount];
+            var existingIdx = new int[pointCount];
+            bool anyExisting = false;
+            for (int i = 0; i < pointCount; i++)
+            {
+                wasExisting[i] = _points[i].IsExistingVertex;
+                existingIdx[i] = _points[i].ExistingVertexIndex;
+                if (wasExisting[i]) anyExisting = true;
+            }
+
             // 各点について、既存頂点を使用するか新規作成
-            for (int i = 0; i < _points.Count; i++)
+            for (int i = 0; i < pointCount; i++)
             {
                 var point = _points[i];
                 if (point.IsExistingVertex)
@@ -491,10 +539,19 @@ namespace Poly_Ling.Tools
                 }
                 else
                 {
+                    int srcVertex = anyExisting
+                        ? FindSourceByRingDistance(wasExisting, existingIdx, i)
+                        : FindSourceByWorldDistance(ctx, meshObject, originalVertexCount, point.Position);
+
+                    Vector3 localPos = RebasePositionToSource(ctx, meshObject, srcVertex, point.Position);
+
                     // 新規頂点を作成
-                    var vertex = new Vertex(point.Position);
+                    var vertex = new Vertex(localPos);
                     vertex.UVs.Add(Vector2.zero);  // デフォルトUV
                     vertex.Normals.Add(Vector3.up);  // 仮の法線（後で計算）
+
+                    if (srcVertex >= 0 && srcVertex < meshObject.Vertices.Count)
+                        vertex.BoneWeight = meshObject.Vertices[srcVertex].BoneWeight;
 
                     int newIndex = meshObject.Vertices.Count;
                     meshObject.Vertices.Add(vertex);
@@ -503,7 +560,7 @@ namespace Poly_Ling.Tools
                     createdIndices.Add(newIndex);
 
                     // _pointsの情報も更新（次回使用時のため）
-                    _points[i] = PointInfo.FromExisting(newIndex, point.Position);
+                    _points[i] = PointInfo.FromExisting(newIndex, localPos);
                 }
             }
 
@@ -555,30 +612,46 @@ namespace Poly_Ling.Tools
                 // 3頂点以上の場合は法線を計算
                 if (newFace.VertexCount >= 3)
                 {
-                    // 面中心を算出
-                    Vector3 faceCenter = Vector3.zero;
-                    for (int vi = 0; vi < newFace.VertexIndices.Count; vi++)
-                        faceCenter += meshObject.Vertices[newFace.VertexIndices[vi]].Position;
-                    faceCenter /= newFace.VertexIndices.Count;
-
                     // 面法線がカメラ（クリック時の視点）と逆向きなら巻き順を反転し、
                     // 常に表面がカメラを向くようにする。
                     // 法線と描画三角形の巻き順は共に VertexIndices 順から算出されるため、
                     // VertexIndices を反転すると両者が同時に反転して整合が保たれる。
-                    // faceNormal / faceCenter はローカル空間。ctx.CameraPosition はワールドなので
-                    // カメラ位置をローカルへ変換してから内積を取る。
-                    Vector3 camLocal   = ctx.ActiveWorldToLocal(ctx.CameraPosition);
-                    Vector3 faceNormal = CalculateFaceNormal(meshObject, newFace);
-                    if (Vector3.Dot(faceNormal, camLocal - faceCenter) < 0f)
+                    //
+                    // 判定はワールド空間で行う。カメラ位置をローカルへ変換する方式は
+                    // 逆行列の選択を誤りやすく、スキンド化後に表裏が反転していた。
+                    // 既存頂点のワールド座標は GPU が計算済みのものを
+                    // ctx.GetVertexWorldPosition 経由で受け取る。CPU で計算し直さない。
+                    Vector3 faceCenterWorld = Vector3.zero;
+                    for (int vi = 0; vi < newFace.VertexIndices.Count; vi++)
+                        faceCenterWorld += GetVertexWorld(
+                            ctx, meshObject, addedVertices, newFace.VertexIndices[vi]);
+                    faceCenterWorld /= newFace.VertexIndices.Count;
+
+                    Vector3 faceNormalWorld = CalculateFaceNormalWorld(
+                        ctx, meshObject, addedVertices, newFace);
+
+                    if (Vector3.Dot(faceNormalWorld, ctx.CameraPosition - faceCenterWorld) < 0f)
                     {
                         newFace.VertexIndices.Reverse();
                         newFace.UVIndices.Reverse();
                         newFace.NormalIndices.Reverse();
-                        faceNormal = CalculateFaceNormal(meshObject, newFace);
                     }
 
+                    // Vertex.Normals はローカル空間に格納する（GPU 側で変換される）。
+                    Vector3 faceNormal = CalculateFaceNormal(meshObject, newFace);
+
+                    // 【重要】既存頂点の Normals[0] を書き換えてはならない。
+                    // Face のコンストラクタは NormalIndices を全て 0 で埋めるため
+                    // （MeshObject.cs:329-346）、その頂点を共有する既存の面もすべて
+                    // Normals[0] を参照する。上書きすると周囲の面の陰影が壊れる。
+                    // この呼び出しで新規作成した頂点にだけ法線を設定する。
                     foreach (int vi in newFace.VertexIndices)
                     {
+                        bool isNewlyAdded = false;
+                        for (int ai = 0; ai < addedVertices.Count; ai++)
+                            if (addedVertices[ai].Index == vi) { isNewlyAdded = true; break; }
+                        if (!isNewlyAdded) continue;
+
                         var vertex = meshObject.Vertices[vi];
                         if (vertex.Normals.Count == 0)
                         {
@@ -614,6 +687,134 @@ namespace Poly_Ling.Tools
         /// <summary>
         /// 面の法線を計算
         /// </summary>
+        /// <summary>
+        /// 規則 (A)。生成する多角形の環に沿った段数が最小の既存頂点を返す。
+        /// 段数は min(|i-j|, n-|i-j|)。同数のときは _points 中で先に現れる方を選ぶ。
+        /// 既存頂点が 1 つも無い場合は -1。
+        /// </summary>
+        private static int FindSourceByRingDistance(bool[] wasExisting, int[] existingIdx, int pointIndex)
+        {
+            int n = wasExisting.Length;
+            if (n == 0) return -1;
+
+            int best = -1;
+            int bestStep = int.MaxValue;
+
+            for (int j = 0; j < n; j++)
+            {
+                if (!wasExisting[j]) continue;
+
+                int diff = Mathf.Abs(pointIndex - j);
+                int step = Mathf.Min(diff, n - diff);
+
+                if (step < bestStep)
+                {
+                    bestStep = step;
+                    best = existingIdx[j];
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// 規則 (B)。メッシュ内の既存頂点のうちワールド空間で最も近いものを返す。
+        /// 比較対象は今回の呼び出しで追加する前の頂点のみ（originalVertexCount 未満）。
+        /// 座標は GPU が計算した値（ctx.GetVertexWorldPosition）を優先する。
+        /// 頂点が 1 つも無い場合は -1。
+        /// </summary>
+        private static int FindSourceByWorldDistance(
+            ToolContext ctx, MeshObject meshObject, int originalVertexCount, Vector3 newLocalPos)
+        {
+            if (originalVertexCount <= 0) return -1;
+
+            Matrix4x4 meshMat = ctx.ActiveWorldMatrix;
+            Vector3 targetWorld = meshMat.MultiplyPoint3x4(newLocalPos);
+
+            int best = -1;
+            float bestSqr = float.MaxValue;
+
+            for (int vi = 0; vi < originalVertexCount && vi < meshObject.Vertices.Count; vi++)
+            {
+                Vector3 w;
+                var gpu = ctx.GetVertexWorldPosition?.Invoke(vi);
+                if (gpu.HasValue) w = gpu.Value;
+                else               w = meshMat.MultiplyPoint3x4(meshObject.Vertices[vi].Position);
+
+                float sqr = (w - targetWorld).sqrMagnitude;
+                if (sqr < bestSqr) { bestSqr = sqr; best = vi; }
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// point.Position（メッシュの WorldMatrix 基準のローカル座標）を、
+        /// 継承元頂点と同じ基準のローカル座標へ入れ直す。
+        /// ActiveWorldMatrix で一度ワールドへ戻し、継承元の行列の逆で戻す。
+        /// 継承元が無い、または継承元が BoneWeight を持たない場合は変換しない。
+        /// </summary>
+        private static Vector3 RebasePositionToSource(
+            ToolContext ctx, MeshObject meshObject, int srcVertex, Vector3 localPos)
+        {
+            if (srcVertex < 0 || srcVertex >= meshObject.Vertices.Count) return localPos;
+
+            var srcVtx = meshObject.Vertices[srcVertex];
+            if (srcVtx == null || !srcVtx.HasBoneWeight) return localPos;
+
+            Vector3 world = ctx.ActiveWorldMatrix.MultiplyPoint3x4(localPos);
+            return ctx.ActiveVertexMatrix(srcVertex).inverse.MultiplyPoint3x4(world);
+        }
+
+        /// <summary>
+        /// 面の頂点のワールド座標を返す。
+        /// 既存頂点は GPU が計算済みの値（ctx.GetVertexWorldPosition）を使う。
+        /// この呼び出しで新規作成した頂点は GPU バッファにまだ存在しないため、
+        /// ActiveWorldMatrix を掛ける。新規点の Position は
+        /// GetLocalPositionFromScreen 内の ActiveWorldToLocal で作られており
+        /// （AddFaceTool.cs の該当箇所）、この往復は閉じている。
+        /// </summary>
+        private static Vector3 GetVertexWorld(
+            ToolContext ctx,
+            MeshObject meshObject,
+            List<(int Index, Vertex Vertex)> addedVertices,
+            int vertexIndex)
+        {
+            if (vertexIndex < 0 || vertexIndex >= meshObject.Vertices.Count)
+                return Vector3.zero;
+
+            Vector3 local = meshObject.Vertices[vertexIndex].Position;
+
+            bool isNewlyAdded = false;
+            for (int ai = 0; ai < addedVertices.Count; ai++)
+                if (addedVertices[ai].Index == vertexIndex) { isNewlyAdded = true; break; }
+
+            if (!isNewlyAdded && ctx.GetVertexWorldPosition != null)
+            {
+                var w = ctx.GetVertexWorldPosition(vertexIndex);
+                if (w.HasValue) return w.Value;
+            }
+
+            return ctx.ActiveWorldMatrix.MultiplyPoint3x4(local);
+        }
+
+        /// <summary>面法線をワールド空間で算出する（巻き順の規約は CalculateFaceNormal と同一）。</summary>
+        private static Vector3 CalculateFaceNormalWorld(
+            ToolContext ctx,
+            MeshObject meshObject,
+            List<(int Index, Vertex Vertex)> addedVertices,
+            Face face)
+        {
+            if (face.VertexCount < 3)
+                return Vector3.up;
+
+            Vector3 p0 = GetVertexWorld(ctx, meshObject, addedVertices, face.VertexIndices[0]);
+            Vector3 p1 = GetVertexWorld(ctx, meshObject, addedVertices, face.VertexIndices[1]);
+            Vector3 p2 = GetVertexWorld(ctx, meshObject, addedVertices, face.VertexIndices[2]);
+
+            return NormalHelper.CalculateFaceNormal(p0, p1, p2);
+        }
+
         private Vector3 CalculateFaceNormal(MeshObject meshObject, Face face)
         {
             if (face.VertexCount < 3)

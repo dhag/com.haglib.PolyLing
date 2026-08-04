@@ -105,6 +105,18 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：図形生成ボタン（高度な図形）。基本図形と同じ PrimitiveSection を開く。</summary>
         public Button AdvancedPrimitiveBtn { get; private set; }
 
+        /// <summary>
+        /// 右ペイン：新図形生成セクション（2つ目の PlayerPrimitiveMeshSubPanel を Build する対象）。
+        /// 既存 PrimitiveSection とは別インスタンスで、状態を共有しない。
+        /// </summary>
+        public VisualElement LivePrimitiveSection { get; private set; }
+
+        /// <summary>左ペイン：新図形生成ボタン（新しい基本）。</summary>
+        public Button LivePrimitiveBtn { get; private set; }
+
+        /// <summary>左ペイン：新図形生成ボタン（新しい高度）。新しい基本と同じ LivePrimitiveSection を開く。</summary>
+        public Button LiveAdvancedPrimitiveBtn { get; private set; }
+
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
         public Button ToolVertexMoveBtn  { get; private set; }
         public Button ToolObjectMoveBtn  { get; private set; }
@@ -112,6 +124,11 @@ namespace Poly_Ling.Player
         public Button ToolSculptBtn      { get; private set; }
         public Button ToolAdvancedSelBtn { get; private set; }
         public Button ToolSkinWeightPaintBtn { get; private set; }
+
+        /// <summary>左ペイン：一時選択サブツール呼び出しボタン (デバッグ用。ショートカット R / G と同処理)。</summary>
+        public Button SubToolBoxSelectBtn   { get; private set; }
+        public Button SubToolLassoSelectBtn { get; private set; }
+        public Button SubToolDeleteBtn      { get; private set; }
 
         /// <summary>右ペイン：スキンウェイトペイントセクション（ScrollView内）。</summary>
         public VisualElement SkinWeightPaintSection { get; private set; }
@@ -136,6 +153,12 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：下絵設定セクション（ScrollView内）。</summary>
         public VisualElement UnderlaySection { get; private set; }
+
+        /// <summary>左ペイン：軸/グリッドボタン（その他）。</summary>
+        public Button GridAxisBtn { get; private set; }
+
+        /// <summary>右ペイン：軸/グリッド設定セクション（ScrollView内）。</summary>
+        public VisualElement GridAxisSection { get; private set; }
 
         /// <summary>右ペイン：ブレンドセクション（ScrollView内）。</summary>
         public VisualElement BlendSection { get; private set; }
@@ -209,8 +232,8 @@ namespace Poly_Ling.Player
         public Button        EdgeTopologyBtn            { get; private set; }
         public VisualElement KnifeSection               { get; private set; }
         public Button        KnifeBtn                   { get; private set; }
-        public VisualElement LineExtrudeSection         { get; private set; }
-        public Button        LineExtrudeBtn             { get; private set; }
+        public VisualElement SolidifySection            { get; private set; }
+        public Button        SolidifyBtn                { get; private set; }
         public VisualElement MediaPipeSection       { get; private set; }
         public Button        MediaPipeBtn           { get; private set; }
         public VisualElement VMDTestSection         { get; private set; }
@@ -757,6 +780,14 @@ namespace Poly_Ling.Player
             AdvancedPrimitiveBtn = MakeBtn("高度な図形");
             foPrimitive.Add(AdvancedPrimitiveBtn);
 
+            // 検証用の新サブツール（メイン3Dウインドウ連携版の入口）。
+            // 既存の「基本図形」「高度な図形」とは別インスタンス・別セクション。
+            LivePrimitiveBtn = MakeBtn("新しい基本");
+            foPrimitive.Add(LivePrimitiveBtn);
+
+            LiveAdvancedPrimitiveBtn = MakeBtn("新しい高度");
+            foPrimitive.Add(LiveAdvancedPrimitiveBtn);
+
             // ── 選択・移動 ─────────────────────────────────────────────
             var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小", "SelectMove");
 
@@ -782,6 +813,13 @@ namespace Poly_Ling.Player
             ScaleBtn  = MakeBtn("スケール"); ScaleBtn.style.flexGrow  = 1;
             rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foSelectMove.Add(rowRotScale);
 
+            // 一時選択サブツール (デバッグ用)。ショートカット R / G と同じ処理を呼ぶ。
+            var rowSubTool = new VisualElement(); rowSubTool.style.flexDirection = FlexDirection.Row; rowSubTool.style.marginBottom = 2;
+            SubToolBoxSelectBtn   = MakeBtn("矩形選択(一時) R");   SubToolBoxSelectBtn.style.flexGrow   = 1; SubToolBoxSelectBtn.style.marginRight = 2;
+            SubToolLassoSelectBtn = MakeBtn("投げ縄選択(一時) G"); SubToolLassoSelectBtn.style.flexGrow = 1;
+            SubToolDeleteBtn      = MakeBtn("選択削除 D");         SubToolDeleteBtn.style.flexGrow      = 1; SubToolDeleteBtn.style.marginLeft = 2;
+            rowSubTool.Add(SubToolBoxSelectBtn); rowSubTool.Add(SubToolLassoSelectBtn); rowSubTool.Add(SubToolDeleteBtn); foSelectMove.Add(rowSubTool);
+
             var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
             PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
             MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
@@ -800,8 +838,8 @@ namespace Poly_Ling.Player
             var rowExtrude = new VisualElement(); rowExtrude.style.flexDirection = FlexDirection.Row; rowExtrude.style.marginBottom = 2;
             EdgeExtrudeBtn = MakeBtn("辺押し出し"); EdgeExtrudeBtn.style.flexGrow = 1; EdgeExtrudeBtn.style.marginRight = 2;
             FaceExtrudeBtn = MakeBtn("面押し出し"); FaceExtrudeBtn.style.flexGrow = 1; FaceExtrudeBtn.style.marginRight = 2;
-            LineExtrudeBtn = MakeBtn("プロファイル立体化"); LineExtrudeBtn.style.flexGrow = 1;
-            rowExtrude.Add(EdgeExtrudeBtn); rowExtrude.Add(FaceExtrudeBtn); rowExtrude.Add(LineExtrudeBtn); foTopology.Add(rowExtrude);
+            SolidifyBtn = MakeBtn("厚み付け"); SolidifyBtn.style.flexGrow = 1;
+            rowExtrude.Add(EdgeExtrudeBtn); rowExtrude.Add(FaceExtrudeBtn); rowExtrude.Add(SolidifyBtn); foTopology.Add(rowExtrude);
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
@@ -897,8 +935,10 @@ namespace Poly_Ling.Player
             MotionClipTestBtn = MakeBtn("統合モーション"); MotionClipTestBtn.style.flexGrow = 1;
             rowMisc2.Add(UnityClipTestBtn); rowMisc2.Add(MotionClipTestBtn); foOther.Add(rowMisc2);
 
-            UnderlayBtn = MakeBtn("下絵");
-            foOther.Add(UnderlayBtn);
+            var rowMisc3 = new VisualElement(); rowMisc3.style.flexDirection = FlexDirection.Row; rowMisc3.style.marginBottom = 2;
+            UnderlayBtn = MakeBtn("下絵");        UnderlayBtn.style.flexGrow = 1; UnderlayBtn.style.marginRight = 2;
+            GridAxisBtn = MakeBtn("軸/グリッド"); GridAxisBtn.style.flexGrow = 1;
+            rowMisc3.Add(UnderlayBtn); rowMisc3.Add(GridAxisBtn); foOther.Add(rowMisc3);
 
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
@@ -1168,12 +1208,13 @@ namespace Poly_Ling.Player
             FaceExtrudeSection         = AddSection(visible: false);
             EdgeTopologySection        = AddSection(visible: false);
             KnifeSection               = AddSection(visible: false);
-            LineExtrudeSection         = AddSection(visible: false);
+            SolidifySection            = AddSection(visible: false);
             MediaPipeSection           = AddSection(visible: false);
             VMDTestSection             = AddSection(visible: false);
             UnityClipTestSection       = AddSection(visible: false);
             MotionClipTestSection      = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
+            GridAxisSection            = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
 
             // ── エクスポートセクション
@@ -1199,6 +1240,9 @@ namespace Poly_Ling.Player
             // プレビュー／回転体／プロファイル2D の各キャンバスは WheelEvent を
             // StopPropagation 済みのため、親 ScrollView がホイール操作を奪うことはない。
             PrimitiveSection = AddSection(visible: false);
+
+            // ── 新図形生成セクション（検証用の2つ目のインスタンス）
+            LivePrimitiveSection = AddSection(visible: false);
 
             // ── MeshFilter→Skinnedセクション（ScrollView内へ移動）
             MeshFilterToSkinnedSection = AddSection(visible: false);

@@ -795,14 +795,9 @@ namespace Poly_Ling.PMX
                 //Debug.Log($"[PMX DET] {pmxBone.Name}: PMX(右手系) det={detBefore:F4}  X=({localX.x:F4},{localX.y:F4},{localX.z:F4}) Y=({localY.x:F4},{localY.y:F4},{localY.z:F4}) Z=({localZ.x:F4},{localZ.y:F4},{localZ.z:F4})");
             }
 
-            // 座標系変換（右手系→左手系）: 共役変換 R_unity = S * R_rh * S, S=diag(1,1,-1)
-            // X,Y軸: Z成分のみ反転 / Z軸: XY成分反転、Z成分そのまま
-            if (settings.FlipZ)
-            {
-                localX = new Vector3(localX.x, localX.y, -localX.z);
-                localY = new Vector3(localY.x, localY.y, -localY.z);
-                localZ = new Vector3(-localZ.x, -localZ.y, localZ.z);
-            }
+            // 座標系変換: 共役変換 R_unity = S * R_pmx * S, S=diag(sx,1,sz)
+            // 規則は AxisFlipOps.Basis に集約（FlipZ 単独時は従来と同一結果）。
+            AxisFlipOps.Basis(settings.Flip, ref localX, ref localY, ref localZ);
 
             // デバッグ: Z反転後のdet
             if (isDebugBone || pmxBone.Name.Contains("肩"))
@@ -1043,17 +1038,12 @@ namespace Poly_Ling.PMX
                         linkIdx = link.BoneIndex;
                     }
 
-                    // 角度制限の座標系変換
-                    // FlipZ=true時、position.z = -zでインポートするため、
-                    // X軸回転とY軸回転の符号が反転する。
-                    // Min/Maxを入れ替えて符号反転で対応。
+                    // 角度制限の座標系変換。軸ごとの角度符号 σ_k = s_k · det(S) に従って
+                    // 符号が反転する軸だけ min/max を入れ替える。
+                    // 規則は AxisFlipOps.AngleLimits に集約（FlipZ 単独時は従来と同一結果）。
                     Vector3 limMin = link.LimitMin;
                     Vector3 limMax = link.LimitMax;
-                    if (settings.FlipZ)
-                    {
-                        limMin = new Vector3(-link.LimitMax.x, -link.LimitMax.y, link.LimitMin.z);
-                        limMax = new Vector3(-link.LimitMin.x, -link.LimitMin.y, link.LimitMax.z);
-                    }
+                    AxisFlipOps.AngleLimits(settings.Flip, ref limMin, ref limMax);
 
                     meshContext.IKLinks.Add(new IKLinkInfo
                     {
@@ -1437,8 +1427,9 @@ namespace Poly_Ling.PMX
                     MaterialIndex = materialIndex
                 };
 
-                // Z反転の場合は頂点順序を逆にする（法線反転）
-                if (settings.FlipZ)
+                // 反転軸が奇数個（鏡映）のときだけ頂点順序を逆にする。
+                // X・Z の両反転（Y軸180°回転）では巻き順を変えない。
+                if (AxisFlipOps.ReverseWinding(settings.Flip))
                 {
                     face.VertexIndices.Add(newV1);
                     face.VertexIndices.Add(newV3);
@@ -2007,14 +1998,7 @@ namespace Poly_Ling.PMX
         /// </summary>
         public static Vector3 ConvertPosition(Vector3 pmxPos, PMXImportSettings settings)
         {
-            float x = pmxPos.x * settings.Scale;
-            float y = pmxPos.y * settings.Scale;
-            float z = pmxPos.z * settings.Scale;
-
-            if (settings.FlipZ)
-                z = -z;
-
-            return new Vector3(x, y, z);
+            return AxisFlipOps.Position(settings.Flip, pmxPos, settings.Scale);
         }
 
         /// <summary>
@@ -2022,26 +2006,12 @@ namespace Poly_Ling.PMX
         /// </summary>
         private static Vector3 ConvertPositionUnscaled(Vector3 pmxPos, PMXImportSettings settings)
         {
-            float x = pmxPos.x;
-            float y = pmxPos.y;
-            float z = pmxPos.z;
-
-            if (settings.FlipZ)
-                z = -z;
-
-            return new Vector3(x, y, z);
+            return AxisFlipOps.Position(settings.Flip, pmxPos);
         }
 
         private static Vector3 ConvertNormal(Vector3 pmxNormal, PMXImportSettings settings)
         {
-            float x = pmxNormal.x;
-            float y = pmxNormal.y;
-            float z = pmxNormal.z;
-
-            if (settings.FlipZ)
-                z = -z;
-
-            return new Vector3(x, y, z).normalized;
+            return AxisFlipOps.Normal(settings.Flip, pmxNormal);
         }
 
         private static Vector2 ConvertUV(Vector2 pmxUV, PMXImportSettings settings)
@@ -2636,19 +2606,13 @@ namespace Poly_Ling.PMX
 
         /// <summary>
         /// PMXのオイラー角回転（ラジアン）をモデル空間のオイラー角（ラジアン）へ変換する。
-        /// FlipZ時は右手系→左手系のZ鏡映共役 S·R·S(S=diag(1,1,-1)) を適用する。
-        /// クォータニオン表現では (x,y,z,w) → (-x,-y,z,w)（回転軸のZ鏡映＋角度反転に相当）で、
-        /// これはボーン基底変換 CalculateBoneModelRotation のFlipZ規則と同一。
-        /// 入力/出力ともラジアン（Unity APIは度のため内部で度に変換して扱う）。
+        /// 共役変換 S·R·S を適用する。規則は AxisFlipOps に集約しており、
+        /// ボーン基底変換 CalculateBoneModelRotation（AxisFlipOps.Basis）と同一。
+        /// 入力/出力ともラジアン。
         /// </summary>
         private static Vector3 ConvertEulerRotation(Vector3 pmxEulerRad, PMXImportSettings settings)
         {
-            Quaternion q = Quaternion.Euler(pmxEulerRad * Mathf.Rad2Deg);
-
-            if (settings.FlipZ)
-                q = new Quaternion(-q.x, -q.y, q.z, q.w);
-
-            return q.eulerAngles * Mathf.Deg2Rad;
+            return AxisFlipOps.EulerRad(settings.Flip, pmxEulerRad);
         }
     }
 }

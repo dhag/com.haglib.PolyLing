@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.MQO
 {
@@ -30,7 +31,7 @@ namespace Poly_Ling.MQO
             List<PartialMeshEntry> selectedModels,
             MQODocument            mqoDocument,
             float exportScale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  writeBackPosition,
             bool  writeBackUV,
             bool  writeBackBoneWeight)
@@ -42,7 +43,7 @@ namespace Poly_Ling.MQO
             {
                 int count = TransferToMQO(
                     mqoEntry, selectedModels, mqoDocument,
-                    exportScale, flipZ,
+                    exportScale, flip,
                     writeBackPosition, writeBackUV, writeBackBoneWeight,
                     ref modelVertexOffset);
                 transferred += count;
@@ -60,7 +61,7 @@ namespace Poly_Ling.MQO
             List<PartialMeshEntry> modelMeshes,
             MQODocument            mqoDocument,
             float exportScale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  writeBackPosition,
             bool  writeBackUV,
             bool  writeBackBoneWeight,
@@ -91,8 +92,8 @@ namespace Poly_Ling.MQO
                     Vector3? newPos = GetModelVertexPosition(modelMeshes, modelVertexOffset);
                     if (newPos.HasValue)
                     {
-                        Vector3 pos = newPos.Value;
-                        if (flipZ)  pos.z = -pos.z;
+                        // 軸反転はインポートと同じ規則（自己逆元）。スケールは逆数。
+                        Vector3 pos = AxisFlipOps.Position(flip, newPos.Value);
                         pos /= exportScale;
 
                         mqoVertex.Position = pos;

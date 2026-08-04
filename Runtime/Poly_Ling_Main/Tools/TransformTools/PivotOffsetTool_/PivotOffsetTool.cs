@@ -161,10 +161,10 @@ namespace Poly_Ling.Tools
             _totalOffset = Vector3.zero;
 
             // 全頂点の開始位置を記録
-            _dragStartPositions = (Vector3[])ctx.FirstSelectedMeshObject.Positions.Clone();
+            _dragStartPositions = (Vector3[])ctx.ActiveMeshObject.Positions.Clone();
 
             // BoneTransform の開始状態を記録
-            var mc = ctx.FirstSelectedMeshContext;
+            var mc = ctx.ActiveMeshContext;
             if (mc?.BoneTransform != null)
             {
                 _dragStartBoneSnapshot = mc.BoneTransform.CreateSnapshot();
@@ -229,7 +229,7 @@ namespace Poly_Ling.Tools
 
         private void ApplyAbsolute(Vector3 worldDelta, ToolContext ctx)
         {
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo == null || _dragStartPositions == null) return;
 
             // ピボット(ローカル原点)のワールド移動 worldDelta を、開始WorldMatrixの線形逆変換で
@@ -256,7 +256,7 @@ namespace Poly_Ling.Tools
             }
 
             // ピボット(BoneTransform)はワールドで worldDelta 移動（親なし/identity 前提）。
-            var mc = ctx.FirstSelectedMeshContext;
+            var mc = ctx.ActiveMeshContext;
             if (mc?.BoneTransform != null)
             {
                 mc.BoneTransform.UseLocalTransform = true;
@@ -271,14 +271,14 @@ namespace Poly_Ling.Tools
 
         private void EndDrag(ToolContext ctx)
         {
-            if (_dragStartPositions == null || ctx.FirstSelectedMeshObject == null)
+            if (_dragStartPositions == null || ctx.ActiveMeshObject == null)
             {
                 _dragStartPositions = null;
                 _draggingAxis = AxisType.None;
                 return;
             }
 
-            var mc = ctx.FirstSelectedMeshContext;
+            var mc = ctx.ActiveMeshContext;
             if (mc == null)
             {
                 _dragStartPositions = null;
@@ -291,10 +291,10 @@ namespace Poly_Ling.Tools
             var oldPositions  = new List<Vector3>();
             var newPositions  = new List<Vector3>();
 
-            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.ActiveMeshObject.VertexCount; i++)
             {
                 Vector3 oldPos = _dragStartPositions[i];
-                Vector3 newPos = ctx.FirstSelectedMeshObject.Vertices[i].Position;
+                Vector3 newPos = ctx.ActiveMeshObject.Vertices[i].Position;
                 if (Vector3.Distance(oldPos, newPos) > 0.0001f)
                 {
                     movedIndices.Add(i);
@@ -304,7 +304,7 @@ namespace Poly_Ling.Tools
             }
 
             // OriginalPositions を現在の頂点位置に更新（VertexOffsets の基準をリセット）
-            mc.OriginalPositions = (Vector3[])ctx.FirstSelectedMeshObject.Positions.Clone();
+            mc.OriginalPositions = (Vector3[])ctx.ActiveMeshObject.Positions.Clone();
 
             if (movedIndices.Count > 0 && ctx.UndoController != null)
             {
@@ -338,7 +338,7 @@ namespace Poly_Ling.Tools
         private void DrawAxisGizmo(ToolContext ctx)
         {
             // 選択メッシュのワールド行列からピボット位置とローカル軸方向を取得
-            var worldMatrix = ctx.FirstSelectedMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+            var worldMatrix = ctx.ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
             Vector3 pivotWorld = worldMatrix.GetColumn(3);
             Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 
@@ -442,7 +442,7 @@ namespace Poly_Ling.Tools
 
         private AxisType FindAxisHandleAtScreenPos(Vector2 screenPos, ToolContext ctx)
         {
-            var worldMatrix = ctx.FirstSelectedMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+            var worldMatrix = ctx.ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
             Vector3 pivotWorld = worldMatrix.GetColumn(3);
             Vector2 originScreen = ctx.WorldToScreenPos(pivotWorld, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
 

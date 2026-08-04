@@ -201,6 +201,50 @@ namespace Poly_Ling.Player
                 _slotCameraDirty[slot] = true;
         }
 
+        // ================================================================
+        // 軸 / グリッド平面の表示設定（4面共通）
+        // ================================================================
+
+        private ViewportGridSettings _gridSettings = LoadGridSettings();
+
+        private readonly Poly_Ling.Core.Rendering.GridAxisRenderer _gridAxisRenderer
+            = new Poly_Ling.Core.Rendering.GridAxisRenderer();
+
+        private const string GridSettingsKey = "Viewport.Grid";
+
+        // RecentPaths から軸/グリッド設定を復元（未保存/不正なら Default）。
+        private static ViewportGridSettings LoadGridSettings()
+        {
+            return ViewportGridSettings.FromCsv(RecentPaths.Get(GridSettingsKey, ""));
+        }
+
+        /// <summary>軸/グリッドの表示設定を取得する（4面共通）。</summary>
+        public ViewportGridSettings GetGridSettings() => _gridSettings;
+
+        /// <summary>軸/グリッドの表示設定を更新する（4面共通）。</summary>
+        [System.Obsolete(
+            "【規約違反入口】6つの Enter* 正規入口 (EnterProjectChanged / " +
+            "EnterTopologyChanged / EnterCameraChanged / EnterVerticesMoved / " +
+            "EnterHoverChanged / EnterDisplaySettingsChanged) を使うこと。" +
+            "承認なしで本 API を新規呼出しすることは禁止。",
+            error: false)]
+        public void SetGridSettings(ViewportGridSettings s)
+        {
+            _gridSettings = s.Clamped();
+            // 表示設定を起動間で記録（write-through）。
+            RecentPaths.Set(GridSettingsKey, _gridSettings.ToCsv());
+        }
+
+        /// <summary>
+        /// 軸/グリッドのラインメッシュを現在の設定で構築しておく。
+        /// GridAxisRenderer.Prepare は設定が変化していなければ即 return するため、
+        /// PrepareViewport から毎回呼んでも再構築は起きない。
+        /// </summary>
+        private void EnsureGridPrepared()
+        {
+            _gridAxisRenderer?.Prepare(_gridSettings.ToParams());
+        }
+
         // LateUpdate で UpdateFrame を呼ぶための最後のカメラ参照とマウス位置。
         // NotifyCameraChanged / NotifyPointerHover で更新される。
         private Camera  _lastCamera;
@@ -230,10 +274,15 @@ namespace Poly_Ling.Player
             TopViewport  .Ortho?.SetSharedState(orthoShared);
             FrontViewport.Ortho?.SetSharedState(orthoShared);
             SideViewport .Ortho?.SetSharedState(orthoShared);
+
+            // 軸/グリッドはモデル未ロードでも表示するため、ここで構築しておく。
+            EnsureGridPrepared();
         }
 
         public void Dispose()
         {
+            _gridAxisRenderer?.Dispose();
+
             PerspectiveViewport?.Dispose();
             TopViewport        ?.Dispose();
             FrontViewport      ?.Dispose();
@@ -595,6 +644,20 @@ namespace Poly_Ling.Player
 #pragma warning restore CS0618
         }
 
+        /// <summary>
+        /// カテゴリ 6: 軸/グリッド平面の表示設定変更（4面共通）。
+        /// 契機: 軸/グリッドサブパネルの各項目変更。
+        /// slot 引数を取らない点以外は上のオーバーロードと同じ扱い。
+        /// </summary>
+        public void EnterDisplaySettingsChanged(ViewportGridSettings gs)
+        {
+#pragma warning disable CS0618
+            SetGridSettings(gs);
+            EnsureGridPrepared();
+            PresentAll(_lastProjectForPresent);
+#pragma warning restore CS0618
+        }
+
         // ================================================================
         // 【重量級専用入口】Phase 2a-2b-2 Batch 3 で追加
         //
@@ -627,7 +690,7 @@ namespace Poly_Ling.Player
         ///
         /// 責務:
         ///   1. clearScene=true のとき _renderer.ClearScene()
-        ///   2. model.FirstDrawableMeshContext.Selection を Core と renderer に設定
+        ///   2. model.ActiveMeshContext.Selection を Core と renderer に設定
         ///      (OnSetSelectionState コールバック経由で Core の _selectionOps に届ける)
         ///   3. RebuildAdapter + UpdateSelectedDrawableMesh
         ///   4. PresentAll + overlay refresh
@@ -650,7 +713,7 @@ namespace Poly_Ling.Player
                 _renderer.RebuildAdapter(0, model);
 
                 // first MeshContext の Selection をアクティブ化
-                var firstMc = model.FirstDrawableMeshContext;
+                var firstMc = model.ActiveMeshContext;
                 if (firstMc != null)
                 {
                     OnSetSelectionState?.Invoke(firstMc.Selection);
@@ -842,10 +905,15 @@ namespace Poly_Ling.Player
         /// </summary>
         public void SubmitForCamera(Camera cam, ProjectContext project)
         {
-            if (_renderer == null || cam == null || project == null) return;
+            if (cam == null) return;
 
             int slot = CameraToSlot(cam);
             if (slot < 0) return;
+
+            // 軸/グリッドはモデル・レンダラーの有無に依存しないため先に提出する。
+            _gridAxisRenderer?.Submit(cam);
+
+            if (_renderer == null || project == null) return;
 
             // per-slot 表示設定を renderer に反映（SubmitMeshes が _Cull 判定に使用）
             var ds = _displaySettings[slot];
@@ -866,6 +934,12 @@ namespace Poly_Ling.Player
             _renderer.SubmitBones(project, cam);
             _renderer.SubmitWeightVisualization(project, cam);
         }
+
+        /// <summary>
+        /// このカメラが 4 ビューポートのいずれかのカメラか。
+        /// 判定は <see cref="CameraToSlot"/> に一本化してある。
+        /// </summary>
+        public bool IsViewportCamera(Camera cam) => CameraToSlot(cam) >= 0;
 
         /// <summary>
         /// カメラ → slot index 変換。見つからなければ -1。
@@ -1436,6 +1510,81 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 指定メッシュの指定頂点について、GPU が計算したワールド座標を返す。
+        ///
+        /// 参照するのは GetDisplayPositions()（UnifiedBufferManager.cs:369-376）で、
+        /// これは _worldPositions をそのまま返すだけで GetData を行わない。
+        /// _worldPositions は DispatchTransformVertices の readbackToCPU 分岐
+        /// （UnifiedBufferManager_Update.cs:1609-1616）が座標変化時に更新している。
+        /// したがって本メソッドは GPU 同期を伴わない。
+        ///
+        /// 手順は GetHoverFaceScreenPts / GetSelectedFacesScreenPts と同一。
+        /// スキニング規則を CPU 側で再実装してはならない。
+        /// </summary>
+        public bool TryGetVertexWorld(
+            Poly_Ling.Context.ModelContext model,
+            Poly_Ling.Data.MeshContext mc,
+            int localVertexIndex,
+            out UnityEngine.Vector3 world)
+        {
+            world = UnityEngine.Vector3.zero;
+
+            if (model == null || mc?.MeshObject == null) return false;
+            if (localVertexIndex < 0 || localVertexIndex >= mc.MeshObject.VertexCount) return false;
+
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return false;
+
+            int ctxIdx = model.MeshContextList.IndexOf(mc);
+            if (ctxIdx < 0) return false;
+
+            int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+            if (unifiedIdx < 0) return false;
+
+            var bm = adapter.BufferManager;
+            var meshInfos = bm?.MeshInfos;
+            if (bm == null || meshInfos == null || unifiedIdx >= meshInfos.Length) return false;
+
+            var worldPositions = bm.GetDisplayPositions();
+            if (worldPositions == null) return false;
+
+            int globalIdx = (int)meshInfos[unifiedIdx].VertexStart + localVertexIndex;
+            if (globalIdx < 0 || globalIdx >= worldPositions.Length) return false;
+
+            world = worldPositions[globalIdx];
+            return true;
+        }
+
+        /// <summary>
+        /// 指定頂点のクリップ空間 w を返す。
+        ///
+        /// 透視投影ではスクリーン上の線形パラメータと 3D 上の線形パラメータが一致せず、
+        /// 変換には両端の w が要る。ワールド座標は TryGetVertexWorld と同じく
+        /// GPU が計算した値を使い、投影のみカメラ行列で行う。
+        /// 正投影では w が常に 1 になるため補正は恒等になる。
+        /// </summary>
+        public bool TryGetVertexClipW(
+            Poly_Ling.Context.ModelContext model,
+            Poly_Ling.Data.MeshContext mc,
+            int localVertexIndex,
+            PlayerViewport vp,
+            out float clipW)
+        {
+            clipW = 0f;
+
+            var cam = vp?.Cam;
+            if (cam == null) return false;
+            if (!TryGetVertexWorld(model, mc, localVertexIndex, out var world)) return false;
+
+            Matrix4x4 vpMat = cam.projectionMatrix * cam.worldToCameraMatrix;
+            Vector4 clip = vpMat * new Vector4(world.x, world.y, world.z, 1f);
+            if (clip.w <= 0f) return false;
+
+            clipW = clip.w;
+            return true;
+        }
+
+        /// <summary>
         /// ホバー中の面のスクリーン座標を返す。
         /// 頂点位置は GPU DisplayPositions（GetDisplayPositions）を参照する。
         /// 座標投影は通常面描画パイプラインと同じ cam.pixelWidth/pixelHeight 基準で行う。
@@ -1498,7 +1647,7 @@ namespace Poly_Ling.Player
         {
             var cam = vp?.Cam;
             if (cam == null || model == null) return null;
-            var mc = model.FirstDrawableMeshContext ?? model.FirstSelectedMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc?.MeshObject == null) return null;
             var sel = mc.Selection;
             if (sel.Faces.Count == 0) return null;
@@ -1818,8 +1967,10 @@ namespace Poly_Ling.Player
                         int mi = mirrorPair.VertexMap[i];
                         if (mi < 0 || mi >= mirrorMesh.VertexCount) continue;
                         var offset = (i < mc.WorkingPositions.Length) ? mc.WorkingPositions[i] : UnityEngine.Vector3.zero;
-                        var worldPos = mc.MeshObject.Vertices[i].Position + offset;
-                        mirrorMesh.Vertices[mi].Position = mirrorPair.MirrorPosition(worldPos);
+                        // Vertices[].Position も WorkingPositions もローカル座標。
+                        // ミラーはローカル空間で行う（Real / Mirror は同一の WorldMatrix を共有する）。
+                        var localPos = mc.MeshObject.Vertices[i].Position + offset;
+                        mirrorMesh.Vertices[mi].Position = mirrorPair.MirrorPosition(localPos);
                     }
                 }
                 else
@@ -1910,6 +2061,11 @@ namespace Poly_Ling.Player
         private void PrepareViewport(ProjectContext project, PlayerViewport vp, int slot)
         {
             if (vp == null || !vp.IsReady) return;
+
+            // 軸/グリッドはモデル未ロード時も表示するため adapter 判定より前に行う。
+            // 設定が変化していなければ Prepare 内で即 return する。
+            EnsureGridPrepared();
+
             var cam     = vp.Cam;
             var adapter = _renderer?.GetAdapter(0);
             if (adapter == null || !adapter.IsInitialized) return;

@@ -152,7 +152,7 @@ namespace Poly_Ling.Player
 
             // 面適用セクション（面は描画メッシュの Selection に入るためそこから直接読む。
             // GetToolContext().SelectionState は ToToolContext で未設定=null のため使えない）
-            var sel = model?.FirstDrawableMeshContext?.Selection;
+            var sel = model?.ActiveMeshContext?.Selection;
             bool hasFace = sel != null && sel.Faces.Count > 0;
             // 面未選択でもセクションは表示し、ボタンを無効化(グレーアウト)して存在を示す。
             if (_applySection != null) _applySection.style.display = DisplayStyle.Flex;
@@ -586,7 +586,7 @@ namespace Poly_Ling.Player
             {
                 var tc = GetToolContext?.Invoke();
                 var before = tc?.UndoController?.CaptureMeshObjectSnapshot();
-                var mc = m.FirstDrawableMeshContext;
+                var mc = m.ActiveMeshContext;
                 if (mc?.MeshObject != null)
                     foreach (var face in mc.MeshObject.Faces)
                     {
@@ -607,7 +607,7 @@ namespace Poly_Ling.Player
         {
             var m  = GetModel?.Invoke();     if (m == null) return;
             var tc = GetToolContext?.Invoke();
-            var mc = m.FirstDrawableMeshContext;
+            var mc = m.ActiveMeshContext;
             var sel = mc?.Selection;   // 面は描画メッシュの Selection に入る（tc.SelectionState は null）
             if (mc?.MeshObject == null || sel == null || sel.Faces.Count == 0) return;
             int matIdx   = m.CurrentMaterialIndex;

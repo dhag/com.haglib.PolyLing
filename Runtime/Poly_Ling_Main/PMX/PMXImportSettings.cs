@@ -4,6 +4,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Ops;
 using Poly_Ling.Tools;
 
 namespace Poly_Ling.PMX
@@ -89,9 +90,20 @@ namespace Poly_Ling.PMX
         [Tooltip("PMX座標をUnity座標に変換するスケール（デフォルト: 0.1 = PmxUnityRatio）")]
         public float Scale = 0.1f;
 
+        /// <summary>X軸反転</summary>
+        [Tooltip("X軸を反転する。FlipZ と併用すると Y軸180°回転になる（PMX正面 -Z → Unity正面 +Z）")]
+        public bool FlipX = true;
+
         /// <summary>Z軸反転</summary>
-        [Tooltip("Z軸を反転する（PMXは右手系、Unityは左手系）")]
-        public bool FlipZ = false;
+        [Tooltip("Z軸を反転する。FlipX と併用すると Y軸180°回転になる（PMX正面 -Z → Unity正面 +Z）")]
+        public bool FlipZ = true;
+
+        /// <summary>
+        /// 軸反転指定。PMX と Unity はどちらも左手系だが正面の置き方が逆
+        /// （PMX 正面 -Z / Unity 正面 +Z）のため、既定は X・Z の両反転
+        /// ＝ Y軸180°回転（純粋な回転。面の巻き順は変えない）。
+        /// </summary>
+        public AxisFlip Flip => new AxisFlip(FlipX, FlipZ);
 
         /// <summary>UV V座標反転（PMX→Unity変換で通常必要）</summary>
         [Tooltip("UV座標のV成分を反転する（PMXは上が0、Unityは下が0）")]
@@ -163,17 +175,19 @@ namespace Poly_Ling.PMX
             return new PMXImportSettings
             {
                 Scale = 0.1f,
+                FlipX = true,
                 FlipZ = true,
                 FlipUV_V = true
             };
         }
 
         /// <summary>座標系設定から初期化（pmxUnityRatio = PMX→Unity比率）</summary>
-        public static PMXImportSettings CreateFromCoordinate(float pmxUnityRatio, bool flipZ)
+        public static PMXImportSettings CreateFromCoordinate(float pmxUnityRatio, bool flipZ, bool flipX = true)
         {
             return new PMXImportSettings
             {
                 Scale = pmxUnityRatio,
+                FlipX = flipX,
                 FlipZ = flipZ,
                 FlipUV_V = true
             };
@@ -210,6 +224,7 @@ namespace Poly_Ling.PMX
                 ImportMode = this.ImportMode,
                 ImportTarget = this.ImportTarget,
                 Scale = this.Scale,
+                FlipX = this.FlipX,
                 FlipZ = this.FlipZ,
                 FlipUV_V = this.FlipUV_V,
                 ImportMaterials = this.ImportMaterials,
@@ -232,6 +247,7 @@ namespace Poly_Ling.PMX
             return ImportMode != o.ImportMode ||
                    ImportTarget != o.ImportTarget ||
                    !Mathf.Approximately(Scale, o.Scale) ||
+                   FlipX != o.FlipX ||
                    FlipZ != o.FlipZ ||
                    FlipUV_V != o.FlipUV_V ||
                    ImportMaterials != o.ImportMaterials ||
@@ -253,6 +269,7 @@ namespace Poly_Ling.PMX
             ImportMode = o.ImportMode;
             ImportTarget = o.ImportTarget;
             Scale = o.Scale;
+            FlipX = o.FlipX;
             FlipZ = o.FlipZ;
             FlipUV_V = o.FlipUV_V;
             ImportMaterials = o.ImportMaterials;

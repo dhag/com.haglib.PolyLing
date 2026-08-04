@@ -24,7 +24,7 @@ namespace Poly_Ling.Tools
             var edge = ctx.GpuStartEdge;
             if (!edge.HasValue) return false;
 
-            var loopEdges = GetEdgeLoopEdges(toolCtx.FirstSelectedMeshObject, edge.Value, ctx.EdgeLoopThreshold);
+            var loopEdges = GetEdgeLoopEdges(toolCtx.ActiveMeshObject, edge.Value, ctx.EdgeLoopThreshold);
 
             // 頂点選択は廃止（辺主体の機能で頂点選択は無駄かつ分かりにくいため）。
             if (selectMode.Has(MeshSelectMode.Edge))
@@ -47,7 +47,7 @@ namespace Poly_Ling.Tools
             ctx.HoveredEdgePair = ctx.GpuStartEdge;
             if (!ctx.HoveredEdgePair.HasValue) return;
 
-            var loopEdges = GetEdgeLoopEdges(toolCtx.FirstSelectedMeshObject, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
+            var loopEdges = GetEdgeLoopEdges(toolCtx.ActiveMeshObject, ctx.HoveredEdgePair.Value, ctx.EdgeLoopThreshold);
 
             // 頂点選択は廃止。
             if (selectMode.Has(MeshSelectMode.Edge))

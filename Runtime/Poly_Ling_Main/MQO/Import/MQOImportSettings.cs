@@ -5,6 +5,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Ops;
 using Poly_Ling.Tools;
 using Poly_Ling.PMX; // AlphaConflictMode
 
@@ -58,9 +59,20 @@ namespace Poly_Ling.MQO
         [Tooltip("MQO座標をUnity座標に変換するスケール（デフォルト: 0.01 = MqoUnityRatio）")]
         public float Scale = 0.01f;
 
+        /// <summary>X軸反転</summary>
+        [Tooltip("X軸を反転する（MQOは右手系・正面+Z、Unityは左手系・正面+Z。X反転だけで両者が揃う）")]
+        public bool FlipX = true;
+
         /// <summary>Z軸反転</summary>
-        [Tooltip("Z軸を反転する（MQOは右手系、Unityは左手系）")]
-        public bool FlipZ = true;
+        [Tooltip("Z軸を反転する。FlipX と併用すると正面が反転する")]
+        public bool FlipZ = false;
+
+        /// <summary>
+        /// 軸反転指定。MQO は右手系で正面 +Z、Unity は左手系で正面 +Z。
+        /// 正面を保ったまま手系を変えるには X のみ反転すればよい（既定）。
+        /// 反転軸が奇数個なので鏡映であり、面の巻き順の扱いは従来（FlipZ 単独）と同じ。
+        /// </summary>
+        public AxisFlip Flip => new AxisFlip(FlipX, FlipZ);
 
         /// <summary>UV V座標反転</summary>
         [Tooltip("UV座標のV成分を反転する")]
@@ -85,6 +97,14 @@ namespace Poly_Ling.MQO
         /// <summary>全オブジェクトを統合</summary>
         [Tooltip("全てのオブジェクトを1つのメッシュに統合する")]
         public bool MergeObjects = false;
+
+        /// <summary>メッシュの親子を GameObject 階層（HierarchyParentIndex）にも設定</summary>
+        [Tooltip("MQOのオブジェクト階層を、Transform の親子（HierarchyParentIndex）としても設定する")]
+        public bool SetMeshHierarchyParent = true;
+
+        /// <summary>名前からミラー分岐ルートを自動設定</summary>
+        [Tooltip("接頭句「@@」かつ接尾句「ミラー分岐ルート」を持つオブジェクトに、ミラー分岐ルートフラグを付ける")]
+        public bool AutoDetectMirrorBranchRoot = true;
 
         /// <summary>MQOファイルからボーンインデックスを読み込まない</summary>
         [Tooltip("MQO特殊面からボーンインデックス情報を読み込まない")]
@@ -195,7 +215,8 @@ namespace Poly_Ling.MQO
             return new MQOImportSettings
             {
                 Scale = 0.1f,
-                FlipZ = true,
+                FlipX = true,
+                FlipZ = false,
                 FlipUV_V = false,
                 BoneScale = 1f  // MMD互換MQOはPMXスケール、ボーンも同スケール
             };
@@ -206,11 +227,12 @@ namespace Poly_Ling.MQO
         /// Scale = mqoUnityRatio（MQO→Unity比率）
         /// BoneScale = pmxUnityRatio / mqoUnityRatio（PMXボーン座標→MQO座標の変換）
         /// </summary>
-        public static MQOImportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ, float pmxUnityRatio = 0.1f)
+        public static MQOImportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ, float pmxUnityRatio = 0.1f, bool flipX = true)
         {
             return new MQOImportSettings
             {
                 Scale = mqoUnityRatio,
+                FlipX = flipX,
                 FlipZ = flipZ,
                 FlipUV_V = true,
                 BoneScale = mqoUnityRatio > 0f ? pmxUnityRatio / mqoUnityRatio : 10f  // PMXボーン座標→MQO座標の比率
@@ -223,7 +245,8 @@ namespace Poly_Ling.MQO
             return new MQOImportSettings
             {
                 Scale = 1f,
-                FlipZ = true,
+                FlipX = true,
+                FlipZ = false,
                 FlipUV_V = false
             };
         }
@@ -238,12 +261,15 @@ namespace Poly_Ling.MQO
             {
                 ImportMode = this.ImportMode,
                 Scale = this.Scale,
+                FlipX = this.FlipX,
                 FlipZ = this.FlipZ,
                 FlipUV_V = this.FlipUV_V,
                 ImportMaterials = this.ImportMaterials,
                 SkipHiddenObjects = this.SkipHiddenObjects,
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 MergeObjects = this.MergeObjects,
+                SetMeshHierarchyParent = this.SetMeshHierarchyParent,
+                AutoDetectMirrorBranchRoot = this.AutoDetectMirrorBranchRoot,
                 SkipMqoBoneIndices = this.SkipMqoBoneIndices,
                 SkipMqoBoneWeights = this.SkipMqoBoneWeights,
                 AlphaCutoff = this.AlphaCutoff,
@@ -266,12 +292,15 @@ namespace Poly_Ling.MQO
 
             return ImportMode != o.ImportMode ||
                    !Mathf.Approximately(Scale, o.Scale) ||
+                   FlipX != o.FlipX ||
                    FlipZ != o.FlipZ ||
                    FlipUV_V != o.FlipUV_V ||
                    ImportMaterials != o.ImportMaterials ||
                    SkipHiddenObjects != o.SkipHiddenObjects ||
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    MergeObjects != o.MergeObjects ||
+                   SetMeshHierarchyParent != o.SetMeshHierarchyParent ||
+                   AutoDetectMirrorBranchRoot != o.AutoDetectMirrorBranchRoot ||
                    SkipMqoBoneIndices != o.SkipMqoBoneIndices ||
                    SkipMqoBoneWeights != o.SkipMqoBoneWeights ||
                    !Mathf.Approximately(AlphaCutoff, o.AlphaCutoff) ||
@@ -293,12 +322,15 @@ namespace Poly_Ling.MQO
 
             ImportMode = o.ImportMode;
             Scale = o.Scale;
+            FlipX = o.FlipX;
             FlipZ = o.FlipZ;
             FlipUV_V = o.FlipUV_V;
             ImportMaterials = o.ImportMaterials;
             SkipHiddenObjects = o.SkipHiddenObjects;
             SkipEmptyObjects = o.SkipEmptyObjects;
             MergeObjects = o.MergeObjects;
+            SetMeshHierarchyParent = o.SetMeshHierarchyParent;
+            AutoDetectMirrorBranchRoot = o.AutoDetectMirrorBranchRoot;
             SkipMqoBoneIndices = o.SkipMqoBoneIndices;
             SkipMqoBoneWeights = o.SkipMqoBoneWeights;
             AlphaCutoff = o.AlphaCutoff;

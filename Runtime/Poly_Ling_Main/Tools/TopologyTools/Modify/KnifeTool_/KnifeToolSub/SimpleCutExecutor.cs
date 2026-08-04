@@ -24,16 +24,47 @@ namespace Poly_Ling.Tools
         private const float SegTol = 1e-4f;       // 線分範囲判定の許容
 
         // 境界の切断点（頂点生成前の記述）。
+        // ================================================================
+        // 【禁止事項】GPU 由来の座標を扱うときの拗らせ
+        // ================================================================
+        // 以下は実際に発生させた失敗である。繰り返さないこと。
+        //
+        // 1. 調べずに CPU 側で独自計算しない。
+        //    GPU が _worldPositionBuffer にワールド座標を出しているのに、
+        //    同じ規則を CPU で書き直すと、規則が食い違ったときに表示だけがずれる。
+        //    まず GPU の値を使う経路を探すこと。
+        //    ワールド座標は ToolContext.GetVertexWorldPosition、
+        //    クリップ空間 w は ToolContext.GetVertexClipW を経由する
+        //    （実体は PlayerViewportManager.TryGetVertexWorld / TryGetVertexClipW）。
+        //
+        // 2.「今は呼ばれていないからできない」と決めつけない。
+        //    呼び出し箇所が無いことは、呼び出しを足せない理由にならない。
+        //    足せるかどうかを調べてから結論を出すこと。
+        //
+        // 3. カメラもモデルも動いていないのに読み戻しを毎フレーム呼ばない。
+        //    WritebackTransformedVertices / GetWorldPositions は同期 GetData を伴う。
+        //    ワールド座標が変わる契機（頂点移動・ボーン移動・再構築）でのみ更新し、
+        //    ホバーのようにトポロジ・視点・頂点位置のいずれも変わらない操作では呼ばない。
+        //
+        // 4. スキンドメッシュに追加する頂点には BoneWeight が必須である。
+        //    BoneWeight を持たない頂点は GPU 側でメッシュ自身の context 索引を使い
+        //    （UnifiedBufferManager_Build.cs:356-362）、周囲の頂点と別の行列で
+        //    変換されてその頂点だけ位置がずれる。
+        // ================================================================
+
         private struct CutPoint
         {
             public float Pos;      // コーナーindex + 辺上比率（頂点なら整数）
             public bool IsVertex;  // true=既存頂点、false=辺上の新頂点
             public int A, B;       // 頂点: A=頂点index。辺: A,B=辺端頂点index
-            public float U;        // 辺上比率（辺のとき）
+            public float U;        // 辺上比率（辺のとき・スクリーン空間の線形パラメータ）
+            public float UGeom;    // 同上を 3D 空間の線形パラメータへ透視補正した値
             public int UVIndex, NormalIndex; // 頂点のとき、その corner の UV/法線 index
         }
 
-        public static void Execute(ToolContext ctx, MeshObject mo, Matrix4x4 localToWorld, Vector2 p0, Vector2 p1, bool[] faceCulledMask, bool triQuad)
+        private const string nullName = "null";
+
+        public static void Execute(ToolContext ctx, MeshObject mo, Vector2 p0, Vector2 p1, bool[] faceCulledMask, bool triQuad)
         {
             if (ctx == null || mo == null) return;
             if (ctx.WorldToScreenPos == null) return;
@@ -46,13 +77,28 @@ namespace Poly_Ling.Tools
             int origFaceCount   = mo.FaceCount;
             if (origFaceCount == 0) return;
 
-            // Vertices[].Position はローカル座標。localToWorld を適用してから投影する。
+            // Vertices[].Position はローカル座標。頂点単位の LocalToScreen が
+            // 描画側と同一規則（スキンド頂点はボーンの SkinningMatrix ブレンド、
+            // 非スキンド頂点はメッシュの WorldMatrix）で変換する。
             float h = ctx.PreviewRect.height;
             var sp = new Vector2[origVertexCount];
             for (int i = 0; i < origVertexCount; i++)
             {
-                Vector2 s = ctx.WorldToScreen(localToWorld.MultiplyPoint3x4(mo.Vertices[i].Position));
+                Vector2 s = ctx.LocalToScreen(i, mo.Vertices[i].Position);
                 sp[i] = new Vector2(s.x, h - s.y);
+            }
+
+            // 【一時診断】クリック座標と投影済みメッシュ範囲を突き合わせる。原因特定後に削除する。
+            if (origVertexCount > 0)
+            {
+                Vector2 mn = sp[0], mx = sp[0];
+                for (int i = 1; i < sp.Length; i++) { mn = Vector2.Min(mn, sp[i]); mx = Vector2.Max(mx, sp[i]); }
+                Matrix4x4 wm = ctx.ActiveWorldMatrix;
+                var amc = ctx.ActiveMeshContext;
+                string mcName = amc != null ? amc.Name : nullName;
+                UnityEngine.Debug.Log(
+                    $"[SimpleCut2] p0={p0} p1={p1} spMin={mn} spMax={mx} rect={ctx.PreviewRect}"
+                    + $" wmT=({wm.m03},{wm.m13},{wm.m23}) mesh={mcName} verts={origVertexCount}");
             }
 
             MeshObjectSnapshot before = ctx.UndoController != null
@@ -74,7 +120,7 @@ namespace Poly_Ling.Tools
                 bool culled = faceCulledMask != null && f < faceCulledMask.Length && faceCulledMask[f];
 
                 cps.Clear();
-                bool anyCross = DetectCutPoints(face, sp, origVertexCount, p0, dir, dlen2, cps);
+                bool anyCross = DetectCutPoints(ctx, face, sp, origVertexCount, p0, dir, dlen2, cps);
                 bool cuttable = cps.Count == 2;
 
                 if (culled)
@@ -110,7 +156,7 @@ namespace Poly_Ling.Tools
 
         // 面の境界切断点（最大2）を検出（頂点は生成しない）。戻り値=交差が1つでもあったか。
         private static bool DetectCutPoints(
-            Face face, Vector2[] sp, int vcount, Vector2 p0, Vector2 dir, float dlen2, List<CutPoint> cps)
+            ToolContext ctx, Face face, Vector2[] sp, int vcount, Vector2 p0, Vector2 dir, float dlen2, List<CutPoint> cps)
         {
             int n = face.VertexIndices.Count;
             var d = new float[n];
@@ -152,7 +198,11 @@ namespace Poly_Ling.Tools
                                         UVIndex = face.UVIndices.Count > j ? face.UVIndices[j] : 0,
                                         NormalIndex = face.NormalIndices.Count > j ? face.NormalIndices[j] : 0 };
                 else
-                    cp = new CutPoint { Pos = i + u, IsVertex = false, A = a, B = b, U = u };
+                    cp = new CutPoint
+                    {
+                        Pos = i + u, IsVertex = false, A = a, B = b,
+                        U = u, UGeom = ScreenUToGeomT(ctx, a, b, u)
+                    };
 
                 bool dup = false;
                 for (int k = 0; k < cps.Count; k++)
@@ -166,12 +216,40 @@ namespace Poly_Ling.Tools
             return anyCross;
         }
 
+        /// <summary>
+        /// スクリーン上の線形パラメータ u を 3D 上の線形パラメータ t に変換する。
+        ///
+        /// PlayerToolContext.WorldToScreenPos は clip.x/clip.w で透視除算を行うため、
+        /// スクリーン上で等間隔でも 3D 上では等間隔にならない。両者の関係は
+        ///     u = t*wB / ((1-t)*wA + t*wB)
+        /// であり、t について解くと
+        ///     t = u*wA / (wB + u*(wA - wB))
+        /// となる。wA / wB は両端頂点のクリップ空間 w。
+        ///
+        /// w は GPU が計算したワールド座標をカメラ行列で投影して得る
+        /// （PlayerViewportManager.TryGetVertexClipW）。CPU でスキニングを再計算しない。
+        /// w が取得できない場合と正投影（wA == wB）では u をそのまま返す。
+        /// </summary>
+        public static float ScreenUToGeomT(ToolContext ctx, int a, int b, float u)
+        {
+            if (ctx?.GetVertexClipW == null) return u;
+
+            var wa = ctx.GetVertexClipW(a);
+            var wb = ctx.GetVertexClipW(b);
+            if (!wa.HasValue || !wb.HasValue) return u;
+
+            float denom = wb.Value + u * (wa.Value - wb.Value);
+            if (Mathf.Abs(denom) < 1e-12f) return u;
+
+            return Mathf.Clamp01(u * wa.Value / denom);
+        }
+
         // 切断点の頂点index/UV/法線を解決（辺上は新頂点を生成 or 再利用）。
         private static void Resolve(MeshObject mo, Dictionary<long, int> dict, CutPoint cp,
                                     out int vi, out int uvi, out int nmi)
         {
             if (cp.IsVertex) { vi = cp.A; uvi = cp.UVIndex; nmi = cp.NormalIndex; }
-            else { vi = GetOrCreateEdgeVertex(mo, dict, cp.A, cp.B, cp.U); uvi = 0; nmi = 0; }
+            else { vi = GetOrCreateEdgeVertex(mo, dict, cp.A, cp.B, cp.UGeom); uvi = 0; nmi = 0; }
         }
 
         // 境界2点で面を分割（辺-辺 / 辺-頂点 / 頂点-頂点）。
@@ -267,6 +345,10 @@ namespace Poly_Ling.Tools
             float t = uFromA;
 
             var v = new Vertex(Vector3.Lerp(va.Position, vb.Position, t));
+            // 新頂点に BoneWeight を与えないと、GPU 側で
+            // UnifiedBufferManager_Build.cs:356-362 によりメッシュ自身の context 索引が使われ、
+            // 周囲の頂点（ボーンの SkinningMatrix）と異なる行列で変換されて位置がずれる。
+            v.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(va.BoneWeight, vb.BoneWeight, t);
             if (va.UVs.Count > 0 && vb.UVs.Count > 0)
                 v.UVs.Add(Vector2.Lerp(va.UVs[0], vb.UVs[0], t));
             if (va.Normals.Count > 0 && vb.Normals.Count > 0)
@@ -296,7 +378,7 @@ namespace Poly_Ling.Tools
         }
 
         public static void CollectCrossedEdges(
-            ToolContext ctx, MeshObject mo, Matrix4x4 localToWorld, Vector2 p0, Vector2 p1,
+            ToolContext ctx, MeshObject mo, Vector2 p0, Vector2 p1,
             bool[] faceCulledMask,
             List<(Vector2, Vector2)> outSegs, List<Vector2> outPts)
         {
@@ -306,12 +388,14 @@ namespace Poly_Ling.Tools
             int vcount = mo.VertexCount;
             if (vcount == 0) return;
 
-            // Vertices[].Position はローカル座標。localToWorld を適用してから投影する。
+            // Vertices[].Position はローカル座標。頂点単位の LocalToScreen が
+            // 描画側と同一規則（スキンド頂点はボーンの SkinningMatrix ブレンド、
+            // 非スキンド頂点はメッシュの WorldMatrix）で変換する。
             float h = ctx.PreviewRect.height;
             var sp = new Vector2[vcount];
             for (int i = 0; i < vcount; i++)
             {
-                Vector2 s = ctx.WorldToScreen(localToWorld.MultiplyPoint3x4(mo.Vertices[i].Position));
+                Vector2 s = ctx.LocalToScreen(i, mo.Vertices[i].Position);
                 sp[i] = new Vector2(s.x, h - s.y);
             }
 

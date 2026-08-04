@@ -32,14 +32,14 @@ namespace Poly_Ling.Tools
 
         public static int FindNearestVertex(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return -1;
+            if (ctx.ActiveMeshObject == null) return -1;
 
             float minDist = VERTEX_CLICK_THRESHOLD;
             int nearest = -1;
 
-            for (int i = 0; i < ctx.FirstSelectedMeshObject.VertexCount; i++)
+            for (int i = 0; i < ctx.ActiveMeshObject.VertexCount; i++)
             {
-                Vector2 vScreen = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[i].Position);
+                Vector2 vScreen = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[i].Position);
                 float dist = Vector2.Distance(screenPos, vScreen);
                 if (dist < minDist)
                 {
@@ -53,7 +53,7 @@ namespace Poly_Ling.Tools
 
         public static VertexPair? FindNearestEdgePair(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return null;
+            if (ctx.ActiveMeshObject == null) return null;
 
             if (ctx.TopologyCache != null)
             {
@@ -62,8 +62,8 @@ namespace Poly_Ling.Tools
 
                 foreach (var pair in ctx.TopologyCache.AllEdgePairs)
                 {
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[pair.V1].Position);
-                    Vector2 p2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[pair.V2].Position);
+                    Vector2 p1 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[pair.V1].Position);
+                    Vector2 p2 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[pair.V2].Position);
                     float dist = DistanceToLineSegment(screenPos, p1, p2);
                     if (dist < minDist)
                     {
@@ -84,12 +84,12 @@ namespace Poly_Ling.Tools
 
         public static (int, int) FindNearestEdgeLegacy(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return (-1, -1);
+            if (ctx.ActiveMeshObject == null) return (-1, -1);
 
             float minDist = EDGE_CLICK_THRESHOLD;
             (int, int) nearest = (-1, -1);
 
-            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
+            foreach (var face in ctx.ActiveMeshObject.Faces)
             {
                 int n = face.VertexCount;
                 if (n < 2) continue;
@@ -99,8 +99,8 @@ namespace Poly_Ling.Tools
                     int v1 = face.VertexIndices[i];
                     int v2 = face.VertexIndices[(i + 1) % n];
 
-                    Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-                    Vector2 p2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v2].Position);
+                    Vector2 p1 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[v1].Position);
+                    Vector2 p2 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[v2].Position);
                     float dist = DistanceToLineSegment(screenPos, p1, p2);
                     if (dist < minDist)
                     {
@@ -115,14 +115,14 @@ namespace Poly_Ling.Tools
 
         public static int FindNearestFace(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return -1;
+            if (ctx.ActiveMeshObject == null) return -1;
 
             int nearest = -1;
             float nearestDepth = float.MaxValue;
 
-            for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.ActiveMeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
+                var face = ctx.ActiveMeshObject.Faces[faceIdx];
                 if (face.VertexCount < 3) continue;
 
                 var screenPoints = new Vector2[face.VertexCount];
@@ -130,7 +130,7 @@ namespace Poly_Ling.Tools
 
                 for (int i = 0; i < face.VertexCount; i++)
                 {
-                    var worldPos = ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[i]].Position;
+                    var worldPos = ctx.ActiveMeshObject.Vertices[face.VertexIndices[i]].Position;
                     screenPoints[i] = ctx.WorldToScreen(worldPos);
                     centroid += worldPos;
                 }
@@ -152,18 +152,18 @@ namespace Poly_Ling.Tools
 
         public static int FindNearestLine(ToolContext ctx, Vector2 screenPos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return -1;
+            if (ctx.ActiveMeshObject == null) return -1;
 
             float minDist = EDGE_CLICK_THRESHOLD;
             int nearest = -1;
 
-            for (int faceIdx = 0; faceIdx < ctx.FirstSelectedMeshObject.FaceCount; faceIdx++)
+            for (int faceIdx = 0; faceIdx < ctx.ActiveMeshObject.FaceCount; faceIdx++)
             {
-                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
+                var face = ctx.ActiveMeshObject.Faces[faceIdx];
                 if (face.VertexCount != 2) continue;
 
-                Vector2 p1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[0]].Position);
-                Vector2 p2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[face.VertexIndices[1]].Position);
+                Vector2 p1 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[face.VertexIndices[0]].Position);
+                Vector2 p2 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[face.VertexIndices[1]].Position);
                 float dist = DistanceToLineSegment(screenPos, p1, p2);
                 if (dist < minDist)
                 {
@@ -210,7 +210,7 @@ namespace Poly_Ling.Tools
             var vertexToEdges = new Dictionary<int, List<VertexPair>>();
 
             var allEdges = new HashSet<VertexPair>();
-            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
+            foreach (var face in ctx.ActiveMeshObject.Faces)
             {
                 int n = face.VertexCount;
                 for (int i = 0; i < n; i++)
@@ -367,7 +367,7 @@ namespace Poly_Ling.Tools
             var vertSet = new HashSet<int>(vertices);
             var result = new List<VertexPair>();
 
-            foreach (var face in ctx.FirstSelectedMeshObject.Faces)
+            foreach (var face in ctx.ActiveMeshObject.Faces)
             {
                 int n = face.VertexCount;
                 for (int i = 0; i < n; i++)
@@ -392,9 +392,9 @@ namespace Poly_Ling.Tools
             var vertSet = new HashSet<int>(vertices);
             var result = new List<int>();
 
-            for (int fIdx = 0; fIdx < ctx.FirstSelectedMeshObject.FaceCount; fIdx++)
+            for (int fIdx = 0; fIdx < ctx.ActiveMeshObject.FaceCount; fIdx++)
             {
-                var face = ctx.FirstSelectedMeshObject.Faces[fIdx];
+                var face = ctx.ActiveMeshObject.Faces[fIdx];
                 if (face.VertexCount < 3) continue;
 
                 bool allIn = face.VertexIndices.All(v => vertSet.Contains(v));
@@ -410,9 +410,9 @@ namespace Poly_Ling.Tools
             var vertSet = new HashSet<int>(vertices);
             var result = new List<int>();
 
-            for (int fIdx = 0; fIdx < ctx.FirstSelectedMeshObject.FaceCount; fIdx++)
+            for (int fIdx = 0; fIdx < ctx.ActiveMeshObject.FaceCount; fIdx++)
             {
-                var face = ctx.FirstSelectedMeshObject.Faces[fIdx];
+                var face = ctx.ActiveMeshObject.Faces[fIdx];
                 if (face.VertexCount != 2) continue;
 
                 if (vertSet.Contains(face.VertexIndices[0]) && vertSet.Contains(face.VertexIndices[1]))
@@ -428,7 +428,7 @@ namespace Poly_Ling.Tools
 
             foreach (int fIdx in faces)
             {
-                var face = ctx.FirstSelectedMeshObject.Faces[fIdx];
+                var face = ctx.ActiveMeshObject.Faces[fIdx];
                 int n = face.VertexCount;
                 for (int i = 0; i < n; i++)
                 {
@@ -442,7 +442,7 @@ namespace Poly_Ling.Tools
 
         public static List<int> GetAdjacentFaces(ToolContext ctx, List<VertexPair> edges)
         {
-            var edgeToFaces = BuildEdgeToFacesMap(ctx.FirstSelectedMeshObject);
+            var edgeToFaces = BuildEdgeToFacesMap(ctx.ActiveMeshObject);
             var result = new HashSet<int>();
 
             foreach (var edge in edges)

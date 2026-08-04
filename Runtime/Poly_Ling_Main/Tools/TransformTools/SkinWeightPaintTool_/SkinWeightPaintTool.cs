@@ -62,7 +62,7 @@ namespace Poly_Ling.Tools
                 var mc = model.GetMeshContext(masterIdx);
                 if (mc?.MeshObject != null) return mc;
             }
-            return model.FirstDrawableMeshContext;
+            return model.ActiveMeshContext;
         }
 
         // ================================================================

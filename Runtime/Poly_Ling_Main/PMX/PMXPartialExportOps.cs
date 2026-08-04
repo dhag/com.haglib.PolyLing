@@ -8,6 +8,7 @@ using System.Linq;
 using UnityEngine;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.PMX
 {
@@ -126,7 +127,7 @@ namespace Poly_Ling.PMX
             IEnumerable<MeshMaterialMapping> mappings,
             PMXDocument pmxDocument,
             float scale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  flipUV_V,
             bool  replacePositions,
             bool  replaceNormals,
@@ -141,7 +142,7 @@ namespace Poly_Ling.PMX
 
                 int transferred = TransferMeshToPMX(
                     mapping, pmxDocument,
-                    scale, flipZ, flipUV_V,
+                    scale, flip, flipUV_V,
                     replacePositions, replaceNormals, replaceUVs, replaceBoneWeights);
 
                 totalTransferred += transferred;
@@ -154,7 +155,7 @@ namespace Poly_Ling.PMX
             MeshMaterialMapping mapping,
             PMXDocument         pmxDocument,
             float scale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  flipUV_V,
             bool  replacePositions,
             bool  replaceNormals,
@@ -179,17 +180,13 @@ namespace Poly_Ling.PMX
 
                 if (replacePositions)
                 {
-                    Vector3 pos = vertex.Position;
-                    if (flipZ) pos.z = -pos.z;
-                    pos *= scale;
-                    pmxVertex.Position = pos;
+                    pmxVertex.Position = AxisFlipOps.Position(flip, vertex.Position, scale);
                 }
 
                 if (replaceNormals)
                 {
                     Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
-                    if (flipZ) normal.z = -normal.z;
-                    pmxVertex.Normal = normal;
+                    pmxVertex.Normal = AxisFlipOps.Normal(flip, normal);
                 }
 
                 if (replaceUVs)

@@ -14,6 +14,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.Ops;
 using Poly_Ling.Core;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.UndoSystem;
@@ -39,11 +40,13 @@ namespace Poly_Ling.Player
 
         // PMX ファイル読み込みオプション（PMXImporter に渡す）
         private float _pmxScale  = 0.1f;
-        private bool  _pmxFlipZ  = false;
+        private bool  _pmxFlipX  = true;
+        private bool  _pmxFlipZ  = true;
 
         // MQO ファイルオプション
         private float      _mqoScale         = 0.01f;
-        private bool       _mqoFlipZ         = true;
+        private bool       _mqoFlipX         = true;
+        private bool       _mqoFlipZ         = false;
         private bool       _mqoFlipUV_V      = true;
         private bool       _mqoSkipNamedMirror = true;
         private bool       _mqoBakeMirror    = true;
@@ -203,6 +206,7 @@ namespace Poly_Ling.Player
                     ImportMode            = PMXImportMode.NewModel,
                     ImportTarget          = PMXImportTarget.Mesh,
                     ImportMaterials       = false,
+                    FlipX                 = _pmxFlipX,
                     FlipZ                 = _pmxFlipZ,
                     Scale                 = _pmxScale,
                     RecalculateNormals    = false,
@@ -221,7 +225,7 @@ namespace Poly_Ling.Player
             }
             else
             {
-                _mqoHelper.LoadMQO(path, _mqoFlipZ, visibleOnly: true);
+                _mqoHelper.LoadMQO(path, visibleOnly: true);
                 if (_mqoHelper.ModelMeshes.Count == 0)
                     _mqoHelper.BuildModelList(_model, true, _mqoSkipNamedMirror, pairMirrors: true);
                 if (_mqoHelper.MQODocument != null) _mqoHelper.AutoMatch();
@@ -332,7 +336,7 @@ namespace Poly_Ling.Player
                 var indexMaps = _mqoOps.ExecuteMeshStructureImportWithMap(
                     selectedModels, selectedMQOs,
                     alsoImportPosition: _mqoImportPos,
-                    importScale: _mqoScale, flipZ: _mqoFlipZ, flipUV_V: _mqoFlipUV_V,
+                    importScale: _mqoScale, flip: new AxisFlip(_mqoFlipX, _mqoFlipZ), flipUV_V: _mqoFlipUV_V,
                     bakeMirror: _mqoBakeMirror,
                     recalcNormals: _mqoRecalcNormals, normalMode: _mqoNormalMode,
                     smoothingAngle: _mqoSmoothingAngle);
@@ -348,7 +352,7 @@ namespace Poly_Ling.Player
             else if (_mqoImportPos && selectedModels.Count > 0 && selectedMQOs.Count > 0)
             {
                 int count = _mqoOps.ExecuteVertexPositionImport(
-                    selectedModels, selectedMQOs, _mqoScale, _mqoFlipZ);
+                    selectedModels, selectedMQOs, _mqoScale, new AxisFlip(_mqoFlipX, _mqoFlipZ));
                 results.Add($"Pos:{count}verts");
                 if (_mqoRecalcNormals)
                 {
@@ -427,6 +431,7 @@ namespace Poly_Ling.Player
             parent.Add(Separator());
             parent.Add(SectionLabel("オプション"));
             parent.Add(FloatRow("Scale", () => _pmxScale, v => _pmxScale = v));
+            parent.Add(ToggleRow("Flip X", () => _pmxFlipX, v => { _pmxFlipX = v; }));
             parent.Add(ToggleRow("Flip Z", () => _pmxFlipZ, v => { _pmxFlipZ = v; }));
             parent.Add(ToggleRow("表情移植", () => _pmxRebuildMorphBase, v => { _pmxRebuildMorphBase = v; }));
         }
@@ -496,6 +501,7 @@ namespace Poly_Ling.Player
             parent.Add(Separator());
             parent.Add(SectionLabel("オプション"));
             parent.Add(FloatRow("Scale",    () => _mqoScale,    v => _mqoScale    = v));
+            parent.Add(ToggleRow("Flip X",  () => _mqoFlipX,    v => _mqoFlipX    = v));
             parent.Add(ToggleRow("Flip Z",  () => _mqoFlipZ,    v => _mqoFlipZ    = v));
 
             if (_mqoImportMesh)

@@ -127,7 +127,7 @@ namespace Poly_Ling.Player
         {
             if (_warningLabel == null) return;
             var tc  = GetToolContext?.Invoke();
-            var mc  = tc?.FirstSelectedMeshContext;
+            var mc  = tc?.ActiveMeshContext;
             var obj = mc?.MeshObject;
 
             if (tc == null)  { ShowWarning("ToolContext 未設定"); return; }
@@ -157,7 +157,7 @@ namespace Poly_Ling.Player
         {
             var model = GetModel?.Invoke();
             var tc    = GetToolContext?.Invoke();
-            var mc    = tc?.FirstSelectedMeshContext ?? model?.FirstSelectedMeshContext;
+            var mc    = tc?.ActiveMeshContext ?? model?.ActiveMeshContext;
             if (mc?.MeshObject == null) { ShowWarning("メッシュが選択されていません"); return; }
 
             int modelIdx  = GetModelIndex?.Invoke() ?? 0;

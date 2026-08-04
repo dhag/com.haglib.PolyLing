@@ -479,7 +479,7 @@ namespace Poly_Ling.Tools
             }
 
             // 未選択頂点からドラッグ開始した場合
-            // _hitVertexOnMouseDownはctx.FirstSelectedMeshObject（選択メッシュリストの先頭）のローカル頂点インデックス
+            // _hitVertexOnMouseDownはctx.ActiveMeshObject（選択メッシュリストの先頭）のローカル頂点インデックス
             bool hitVertexIsAffected = false;
             if (_hitVertexOnMouseDown >= 0)
             {
@@ -1057,19 +1057,19 @@ namespace Poly_Ling.Tools
 
         private bool IsClickOnSelectedEdge(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
                 return false;
 
             const float hitDistance = 8f;
 
             foreach (var edge in ctx.SelectionState.Edges)
             {
-                if (edge.V1 < 0 || edge.V1 >= ctx.FirstSelectedMeshObject.VertexCount ||
-                    edge.V2 < 0 || edge.V2 >= ctx.FirstSelectedMeshObject.VertexCount)
+                if (edge.V1 < 0 || edge.V1 >= ctx.ActiveMeshObject.VertexCount ||
+                    edge.V2 < 0 || edge.V2 >= ctx.ActiveMeshObject.VertexCount)
                     continue;
 
-                Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[edge.V1].Position;
-                Vector3 p2 = ctx.FirstSelectedMeshObject.Vertices[edge.V2].Position;
+                Vector3 p1 = ctx.ActiveMeshObject.Vertices[edge.V1].Position;
+                Vector3 p2 = ctx.ActiveMeshObject.Vertices[edge.V2].Position;
 
                 // DisplayMatrixを適用（表示座標系に変換）
                 p1 = ctx.DisplayMatrix.MultiplyPoint3x4(p1);
@@ -1088,24 +1088,24 @@ namespace Poly_Ling.Tools
 
         private bool IsClickOnSelectedFace(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
                 return false;
 
             foreach (int faceIdx in ctx.SelectionState.Faces)
             {
-                if (faceIdx < 0 || faceIdx >= ctx.FirstSelectedMeshObject.FaceCount)
+                if (faceIdx < 0 || faceIdx >= ctx.ActiveMeshObject.FaceCount)
                     continue;
 
-                var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
+                var face = ctx.ActiveMeshObject.Faces[faceIdx];
                 if (face.VertexCount < 3)
                     continue;
 
                 var screenPoints = new List<Vector2>();
                 foreach (int vIdx in face.VertexIndices)
                 {
-                    if (vIdx >= 0 && vIdx < ctx.FirstSelectedMeshObject.VertexCount)
+                    if (vIdx >= 0 && vIdx < ctx.ActiveMeshObject.VertexCount)
                     {
-                        Vector3 p = ctx.FirstSelectedMeshObject.Vertices[vIdx].Position;
+                        Vector3 p = ctx.ActiveMeshObject.Vertices[vIdx].Position;
                         // DisplayMatrixを適用（表示座標系に変換）
                         p = ctx.DisplayMatrix.MultiplyPoint3x4(p);
                         Vector2 sp = ctx.WorldToScreenPos(p, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
@@ -1122,29 +1122,29 @@ namespace Poly_Ling.Tools
 
         private bool IsClickOnSelectedLine(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
                 return false;
 
             const float hitDistance = 8f;
 
             foreach (int lineIdx in ctx.SelectionState.Lines)
             {
-                if (lineIdx < 0 || lineIdx >= ctx.FirstSelectedMeshObject.FaceCount)
+                if (lineIdx < 0 || lineIdx >= ctx.ActiveMeshObject.FaceCount)
                     continue;
 
-                var face = ctx.FirstSelectedMeshObject.Faces[lineIdx];
+                var face = ctx.ActiveMeshObject.Faces[lineIdx];
                 if (face.VertexCount != 2)
                     continue;
 
                 int v1 = face.VertexIndices[0];
                 int v2 = face.VertexIndices[1];
 
-                if (v1 < 0 || v1 >= ctx.FirstSelectedMeshObject.VertexCount ||
-                    v2 < 0 || v2 >= ctx.FirstSelectedMeshObject.VertexCount)
+                if (v1 < 0 || v1 >= ctx.ActiveMeshObject.VertexCount ||
+                    v2 < 0 || v2 >= ctx.ActiveMeshObject.VertexCount)
                     continue;
 
-                Vector3 p1 = ctx.FirstSelectedMeshObject.Vertices[v1].Position;
-                Vector3 p2 = ctx.FirstSelectedMeshObject.Vertices[v2].Position;
+                Vector3 p1 = ctx.ActiveMeshObject.Vertices[v1].Position;
+                Vector3 p2 = ctx.ActiveMeshObject.Vertices[v2].Position;
 
                 // DisplayMatrixを適用（表示座標系に変換）
                 p1 = ctx.DisplayMatrix.MultiplyPoint3x4(p1);

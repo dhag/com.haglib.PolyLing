@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using Poly_Ling.MQO;
+using Poly_Ling.Ops;
 using UnityEngine;
 
 namespace Poly_Ling.PMX
@@ -36,8 +37,16 @@ namespace Poly_Ling.PMX
         /// <summary>出力スケール（1.0 = そのまま）</summary>
         public float Scale = 10f; // Unity→PMX: 1/PmxUnityRatio
 
+        /// <summary>X軸反転（Unity→PMX座標系）</summary>
+        public bool FlipX = true;
+
         /// <summary>Z軸反転（Unity→PMX座標系）</summary>
         public bool FlipZ = true;
+
+        /// <summary>
+        /// 軸反転指定。インポート側と同一（S·R·S は自己逆元のため同じ設定が逆変換になる）。
+        /// </summary>
+        public AxisFlip Flip => new AxisFlip(FlipX, FlipZ);
 
         /// <summary>UV V座標反転</summary>
         public bool FlipUV_V = false;
@@ -113,6 +122,7 @@ namespace Poly_Ling.PMX
             {
                 ExportMode = PMXExportMode.Full,
                 Scale = 10f, // 1/PmxUnityRatio
+                FlipX = true,
                 FlipZ = true,
                 ExportMaterials = true,
                 ExportBones = true,
@@ -122,12 +132,13 @@ namespace Poly_Ling.PMX
         }
 
         /// <summary>座標系設定から初期化（逆変換スケール）</summary>
-        public static PMXExportSettings CreateFromCoordinate(float pmxUnityRatio, bool flipZ)
+        public static PMXExportSettings CreateFromCoordinate(float pmxUnityRatio, bool flipZ, bool flipX = true)
         {
             return new PMXExportSettings
             {
                 ExportMode = PMXExportMode.Full,
                 Scale = pmxUnityRatio > 0f ? 1f / pmxUnityRatio : 10f,
+                FlipX = flipX,
                 FlipZ = flipZ,
                 ExportMaterials = true,
                 ExportBones = true,
@@ -143,6 +154,7 @@ namespace Poly_Ling.PMX
             {
                 ExportMode = PMXExportMode.PartialReplace,
                 Scale = 10f, // 1/PmxUnityRatio
+                FlipX = true,
                 FlipZ = true,
                 ReplacePositions = true,
                 ReplaceNormals = true,

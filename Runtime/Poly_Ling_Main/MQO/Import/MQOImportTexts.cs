@@ -29,6 +29,7 @@ namespace Poly_Ling.MQO
             ["Default"]           = new() { ["en"] = "Default",             ["ja"] = "デフォルト" },
             ["Coordinate"]        = new() { ["en"] = "Coordinate",          ["ja"] = "座標変換" },
             ["Scale"]             = new() { ["en"] = "Scale",               ["ja"] = "スケール" },
+            ["FlipXAxis"]         = new() { ["en"] = "Flip X Axis",         ["ja"] = "X軸反転" },
             ["FlipZAxis"]         = new() { ["en"] = "Flip Z Axis",         ["ja"] = "Z軸反転" },
             ["FlipUV_V"]          = new() { ["en"] = "Flip UV V",           ["ja"] = "UV V反転" },
             ["Options"]           = new() { ["en"] = "Options",             ["ja"] = "オプション" },
@@ -36,6 +37,8 @@ namespace Poly_Ling.MQO
             ["SkipHiddenObjects"] = new() { ["en"] = "Skip Hidden Objects", ["ja"] = "非表示オブジェクトをスキップ" },
             ["SkipEmptyObjects"]  = new() { ["en"] = "Skip Empty Objects",  ["ja"] = "空オブジェクトをスキップ" },
             ["MergeAllObjects"]   = new() { ["en"] = "Merge All Objects",   ["ja"] = "全オブジェクト統合" },
+            ["SetMeshHierarchyParent"] = new() { ["en"] = "Set Mesh Transform Parent", ["ja"] = "メッシュ階層をTransform親子にする" },
+            ["AutoDetectMirrorBranchRoot"] = new() { ["en"] = "Auto-flag Mirror Branch Root", ["ja"] = "ミラー分岐ルートを名前で自動設定" },
             ["SkipMqoBoneIndices"]= new() { ["en"] = "Skip Bone Indices from MQO", ["ja"] = "MQOからボーンインデックスを読込まない" },
             ["SkipMqoBoneWeights"]= new() { ["en"] = "Skip Bone Weights from MQO", ["ja"] = "MQOからウェイトを読込まない" },
 

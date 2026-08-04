@@ -466,7 +466,7 @@ namespace Poly_Ling.Player
             // OriginOnly(原点だけ移動)は頂点を書き換えるため GPU 同期が必要。
             ctx.SyncMesh               = () =>
             {
-                var mc = model.FirstSelectedMeshContext;
+                var mc = model.ActiveMeshContext;
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
             ctx.Repaint                = OnRepaint;

@@ -11,6 +11,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.Materials;
 using Poly_Ling.Ops;
+using Poly_Ling.Ops;
 using Poly_Ling.Symmetry;
 
 namespace Poly_Ling.MQO
@@ -34,13 +35,13 @@ namespace Poly_Ling.MQO
             List<PartialMeshEntry> modelMeshes,
             List<PartialMQOEntry>  mqoObjects,
             float importScale,
-            bool  flipZ)
+            AxisFlip flip)
         {
             int totalUpdated = 0;
             int pairCount    = Math.Min(modelMeshes.Count, mqoObjects.Count);
 
             for (int p = 0; p < pairCount; p++)
-                totalUpdated += TransferVertexPositions(modelMeshes[p], mqoObjects[p], importScale, flipZ);
+                totalUpdated += TransferVertexPositions(modelMeshes[p], mqoObjects[p], importScale, flip);
 
             return totalUpdated;
         }
@@ -49,7 +50,7 @@ namespace Poly_Ling.MQO
             PartialMeshEntry modelEntry,
             PartialMQOEntry  mqoEntry,
             float importScale,
-            bool  flipZ)
+            AxisFlip flip)
         {
             var modelMo = modelEntry.Context?.MeshObject;
             var mqoMo   = mqoEntry.MeshContext?.MeshObject;
@@ -70,7 +71,7 @@ namespace Poly_Ling.MQO
 
                 var    mqoVertex = mqoMo.Vertices[vIdx];
                 int    uvCount   = Math.Max(1, mqoVertex.UVs.Count);
-                Vector3 pos      = TransformPosition(mqoVertex.Position, importScale, flipZ);
+                Vector3 pos      = TransformPosition(mqoVertex.Position, importScale, flip);
 
                 for (int u = 0; u < uvCount; u++)
                 {
@@ -180,7 +181,7 @@ namespace Poly_Ling.MQO
             List<PartialMQOEntry>  mqoObjects,
             bool  alsoImportPosition,
             float importScale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  flipUV_V,
             bool  bakeMirror,
             bool  recalcNormals,
@@ -189,7 +190,7 @@ namespace Poly_Ling.MQO
         {
             return ExecuteMeshStructureImportWithMap(
                 modelMeshes, mqoObjects,
-                alsoImportPosition, importScale, flipZ, flipUV_V,
+                alsoImportPosition, importScale, flip, flipUV_V,
                 bakeMirror, recalcNormals, normalMode, smoothingAngle)
                 .Count(m => m != null);
         }
@@ -199,7 +200,7 @@ namespace Poly_Ling.MQO
             List<PartialMQOEntry>  mqoObjects,
             bool  alsoImportPosition,
             float importScale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  flipUV_V,
             bool  bakeMirror,
             bool  recalcNormals,
@@ -208,7 +209,7 @@ namespace Poly_Ling.MQO
         {
             return ExecuteMeshStructureImportCount(
                 modelMeshes, mqoObjects,
-                alsoImportPosition, importScale, flipZ, flipUV_V,
+                alsoImportPosition, importScale, flip, flipUV_V,
                 bakeMirror, recalcNormals, normalMode, smoothingAngle);
         }
 
@@ -217,7 +218,7 @@ namespace Poly_Ling.MQO
             List<PartialMQOEntry>  mqoObjects,
             bool  alsoImportPosition,
             float importScale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  flipUV_V,
             bool  bakeMirror,
             bool  recalcNormals,
@@ -244,7 +245,7 @@ namespace Poly_Ling.MQO
                 var maps = TransferMeshStructure(
                     modelEntry, mqoEntry,
                     alsoImportPosition,
-                    importScale, flipZ, flipUV_V,
+                    importScale, flip, flipUV_V,
                     bakeMirror, recalcNormals, normalMode, smoothingAngle);
 
                 allMaps.Add(maps.realMap);
@@ -260,7 +261,7 @@ namespace Poly_Ling.MQO
             PartialMQOEntry  mqoEntry,
             bool  alsoImportPosition,
             float importScale,
-            bool  flipZ,
+            AxisFlip flip,
             bool  flipUV_V,
             bool  bakeMirror,
             bool  recalcNormals,
@@ -326,7 +327,7 @@ namespace Poly_Ling.MQO
                     newV.UVs.Add(uv);
 
                     if (alsoImportPosition)
-                        newV.Position = TransformPosition(mqoVertex.Position, importScale, flipZ);
+                        newV.Position = TransformPosition(mqoVertex.Position, importScale, flip);
 
                     if (isMirrored && !bakeMirror)
                     {
@@ -372,7 +373,7 @@ namespace Poly_Ling.MQO
 
                         if (alsoImportPosition)
                         {
-                            Vector3 pos = TransformPosition(mqoVertex.Position, importScale, flipZ);
+                            Vector3 pos = TransformPosition(mqoVertex.Position, importScale, flip);
                             newV.Position = MirrorPosition(pos, mirrorAxis);
                         }
 
@@ -641,11 +642,9 @@ namespace Poly_Ling.MQO
             return used;
         }
 
-        private static Vector3 TransformPosition(Vector3 pos, float scale, bool flipZ)
+        private static Vector3 TransformPosition(Vector3 pos, float scale, AxisFlip flip)
         {
-            pos *= scale;
-            if (flipZ) pos.z = -pos.z;
-            return pos;
+            return AxisFlipOps.Position(flip, pos, scale);
         }
 
         private static Vector3 MirrorPosition(Vector3 pos, SymmetryAxis axis)

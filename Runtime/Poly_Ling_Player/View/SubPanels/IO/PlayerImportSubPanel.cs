@@ -270,6 +270,7 @@ namespace Poly_Ling.Player
             // 座標変換
             parent.Add(SectionLabel(TP("Coordinate")));
             parent.Add(FloatRow(TP("Scale"),    () => _pmxSettings.Scale,    v => _pmxSettings.Scale    = v));
+            parent.Add(ToggleRow(TP("FlipXAxis"), () => _pmxSettings.FlipX,  v => _pmxSettings.FlipX    = v));
             parent.Add(ToggleRow(TP("FlipZAxis"), () => _pmxSettings.FlipZ,  v => _pmxSettings.FlipZ    = v));
             parent.Add(ToggleRow(TP("FlipUV_V"),  () => _pmxSettings.FlipUV_V, v => _pmxSettings.FlipUV_V = v));
             parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
@@ -348,6 +349,7 @@ namespace Poly_Ling.Player
             // 座標変換
             parent.Add(SectionLabel(TM("Coordinate")));
             parent.Add(FloatRow(TM("Scale"),    () => _mqoSettings.Scale,    v => _mqoSettings.Scale    = v));
+            parent.Add(ToggleRow(TM("FlipXAxis"), () => _mqoSettings.FlipX,  v => _mqoSettings.FlipX    = v));
             parent.Add(ToggleRow(TM("FlipZAxis"), () => _mqoSettings.FlipZ,  v => _mqoSettings.FlipZ    = v));
             parent.Add(ToggleRow(TM("FlipUV_V"),  () => _mqoSettings.FlipUV_V, v => _mqoSettings.FlipUV_V = v));
             parent.Add(ToggleRow("3D表示オートスケール", () => _autoScale, v => _autoScale = v));
@@ -360,6 +362,8 @@ namespace Poly_Ling.Player
             parent.Add(ToggleRow(TM("SkipHiddenObjects"),  () => _mqoSettings.SkipHiddenObjects,  v => _mqoSettings.SkipHiddenObjects  = v));
             parent.Add(ToggleRow(TM("SkipEmptyObjects"),   () => _mqoSettings.SkipEmptyObjects,   v => _mqoSettings.SkipEmptyObjects   = v));
             parent.Add(ToggleRow(TM("MergeAllObjects"),    () => _mqoSettings.MergeObjects,       v => _mqoSettings.MergeObjects       = v));
+            parent.Add(ToggleRow(TM("SetMeshHierarchyParent"), () => _mqoSettings.SetMeshHierarchyParent, v => _mqoSettings.SetMeshHierarchyParent = v));
+            parent.Add(ToggleRow(TM("AutoDetectMirrorBranchRoot"), () => _mqoSettings.AutoDetectMirrorBranchRoot, v => _mqoSettings.AutoDetectMirrorBranchRoot = v));
             parent.Add(ToggleRow(TM("BakeMirror"),         () => _mqoSettings.BakeMirror,         v => _mqoSettings.BakeMirror         = v));
 
             parent.Add(Separator());

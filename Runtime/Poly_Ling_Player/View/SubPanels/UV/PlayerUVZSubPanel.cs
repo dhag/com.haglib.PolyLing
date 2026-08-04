@@ -124,7 +124,7 @@ namespace Poly_Ling.Player
             }
             _warningLabel.style.display = DisplayStyle.None;
 
-            var mc = model.FirstDrawableMeshContext;
+            var mc = model.ActiveMeshContext;
             _targetInfo.text = mc != null ? $"対象: {mc.Name ?? "?"}" : "メッシュ未選択";
 
             // 書き戻し候補を再構築
@@ -150,7 +150,7 @@ namespace Poly_Ling.Player
         {
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルなし"); return; }
-            var mc = model.FirstDrawableMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc == null) { SetStatus("メッシュが選択されていません"); return; }
             int masterIdx = model.IndexOf(mc);
             int modelIdx = GetModelIndex?.Invoke() ?? 0;
@@ -164,7 +164,7 @@ namespace Poly_Ling.Player
         {
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルなし"); return; }
-            var mc = model.FirstDrawableMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc == null) { SetStatus("ソースメッシュが選択されていません"); return; }
             int masterIdx = model.IndexOf(mc);
             int targetIdx = GetWritebackTargetIndex();

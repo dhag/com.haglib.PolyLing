@@ -60,7 +60,7 @@ namespace Poly_Ling.Player
             if (ctx != null)
             {
                 var model = _project?.CurrentModel;
-                var mc    = model?.FirstDrawableMeshContext;
+                var mc    = model?.ActiveMeshContext;
                 ctx.Model            = model;
                 ctx.SelectedVertices = mc?.SelectedVertices;
                 ctx.SelectionState   = mc?.Selection;

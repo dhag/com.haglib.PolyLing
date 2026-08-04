@@ -201,7 +201,7 @@ namespace Poly_Ling.Player
         private void RefreshSeamInfo(ModelContext model)
         {
             if (_seamInfo == null) return;
-            int cnt = model.FirstDrawableMeshContext?.SelectedEdges?.Count ?? 0;
+            int cnt = model.ActiveMeshContext?.SelectedEdges?.Count ?? 0;
             _seamInfo.text = $"Seam（選択エッジ）: {cnt} 辺";
         }
 
@@ -218,7 +218,7 @@ namespace Poly_Ling.Player
         {
             var model = GetModel?.Invoke();
             if (model == null || model.SelectedDrawableMeshIndices.Count == 0) { SetStatus("メッシュが未選択です"); return; }
-            var mc = model.FirstDrawableMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc?.MeshObject == null) { SetStatus("メッシュデータがありません"); return; }
 
             int masterIdx = model.IndexOf(mc);

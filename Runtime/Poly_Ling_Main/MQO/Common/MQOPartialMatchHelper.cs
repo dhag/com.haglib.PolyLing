@@ -216,7 +216,9 @@ namespace Poly_Ling.MQO
         // MQOリスト構築
         // ================================================================
 
-        public bool LoadMQO(string filePath, bool flipZ, bool visibleOnly)
+        // 座標変換は Transfer 側で行うため、ここでは軸反転を受け取らない
+        // （生MQO座標のまま保持する）。
+        public bool LoadMQO(string filePath, bool visibleOnly)
         {
             MQODocument = null;
             MQOImportResult = null;
@@ -235,6 +237,7 @@ namespace Poly_Ling.MQO
                     SkipHiddenObjects = visibleOnly,
                     MergeObjects = false,
                     Scale = 1f,    // 座標変換はTransfer側で行うため生MQO座標のまま格納
+                    FlipX = false, // 同上
                     FlipZ = false, // 同上
                     FlipUV_V = false,
                     BakeMirror = false

@@ -23,7 +23,7 @@ namespace Poly_Ling.Tools
 
         private bool HandleEraseClick(ToolContext ctx, Vector2 mousePos)
         {
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo == null) return false;
 
             var edge = FindNearestSharedEdge(ctx, mo, mousePos, out var faces);
@@ -52,7 +52,7 @@ namespace Poly_Ling.Tools
         private void UpdateEraseHover(ToolContext ctx, Vector2 mousePos)
         {
             _preview.Clear();
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo == null) return;
 
             var edge = FindNearestSharedEdge(ctx, mo, mousePos, out _);
@@ -60,8 +60,8 @@ namespace Poly_Ling.Tools
             _hoveredEraseEdge = edge ?? default;
 
             if (_hasEraseHover)
-                _preview.Lines.Add((mo.Vertices[_hoveredEraseEdge.V1].Position,
-                                    mo.Vertices[_hoveredEraseEdge.V2].Position));
+                _preview.Lines.Add((VW(ctx, mo, _hoveredEraseEdge.V1),
+                                    VW(ctx, mo, _hoveredEraseEdge.V2)));
         }
 
         // ================================================================
@@ -95,8 +95,8 @@ namespace Poly_Ling.Tools
             {
                 if (kvp.Value.Count != 2) continue;
                 var e = kvp.Key;
-                Vector2 s1 = ctx.WorldToScreen(mo.Vertices[e.V1].Position);
-                Vector2 s2 = ctx.WorldToScreen(mo.Vertices[e.V2].Position);
+                Vector2 s1 = ctx.LocalToScreen(mo.Vertices[e.V1].Position);
+                Vector2 s2 = ctx.LocalToScreen(mo.Vertices[e.V2].Position);
                 float d = SelectionHelper.DistanceToLineSegment(mousePos, s1, s2);
                 if (d < best)
                 {

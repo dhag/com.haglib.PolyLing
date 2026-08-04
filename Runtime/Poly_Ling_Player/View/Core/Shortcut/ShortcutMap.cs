@@ -1,8 +1,15 @@
 // ShortcutMap.cs
 // ショートカット対応表: 「キー組 (ShortcutBinding) → コマンドID (string)」。
 //
-// - デフォルトはハードコード (CreateDefault)。ここを見れば既定割当が全て分かる。
-// - CSV があれば読み込み、同一キー組は上書き・新規は追加する。
+// 【対応表の優先順位: CSV 優先】
+// - CSV に有効行が 1 行以上あれば、その CSV が唯一の対応表になる。
+//   焼き込みの既定表 (CreateDefault) は LoadCsv 内で Clear() され、一切残らない。
+//   → CSV に書かれていないコマンドはキー割当なし (無効) になる。これは仕様。
+// - CSV が無い / 有効行 0 行 / 読み取り失敗のときだけ、焼き込みの既定表
+//   (CreateDefault) を使う。ここを見れば既定割当が全て分かる。
+// - つまり実効割当は「CSV があれば CSV だけ」「無ければコードだけ」であり、
+//   両方が混ざることはない (マージしていた旧仕様では、CSV で消せない焼き込み
+//   割当が残り、特に 2キー連続のプレフィックスが単発割当を食い潰していた)。
 // - コマンドID の実行内容 (Action) は PlayerShortcutController 側で登録する
 //   (コマンド実体は ViewerCore にあるため、対応表と実行を分離している)。
 //
@@ -27,6 +34,14 @@ namespace Poly_Ling.Player
         public const string CmdToolObjectMove = "tool.objectMove";
         public const string CmdToolSculpt     = "tool.sculpt";
         public const string CmdToolAdvSelect  = "tool.advancedSelect";
+
+        // 一時サブツール (ショートカットで進入し、1 回の操作確定で直前のツールへ戻る)。
+        public const string CmdSubToolBoxSelect   = "subtool.boxSelect";
+        public const string CmdSubToolLassoSelect = "subtool.lassoSelect";
+
+        // 選択削除サブツール。マウス操作を伴わない即時実行なので、矩形/投げ縄と違い
+        // InteractionMode の退避・復元は行わない (ViewerCore 側のコメント参照)。
+        public const string CmdSubToolDelete      = "subtool.delete";
 
         // 図形生成 (サブメニューを開くだけ)。2キー連続で使う。
         public const string CmdShapeCube       = "shape.cube";
@@ -74,19 +89,26 @@ namespace Poly_Ling.Player
             m.Set(KeyCode.B, false, false, false, CmdToolObjectMove); // B            : オブジェクト移動ツール
             m.Set(KeyCode.S, false, false, false, CmdToolSculpt);     // S            : スカルプトツール
             m.Set(KeyCode.A, false, false, false, CmdToolAdvSelect);  // A            : 高度な選択ツール
+            m.Set(KeyCode.R, false, false, false, CmdSubToolBoxSelect);   // R : 矩形選択サブツール (一時)
+            m.Set(KeyCode.G, false, false, false, CmdSubToolLassoSelect); // G : 投げ縄選択サブツール (一時)
+            m.Set(KeyCode.D, false, false, false, CmdSubToolDelete);      // D : 選択削除サブツール
 
-            // 図形生成: プレフィックス G を押してから形状キー (サブメニューを開くだけ)。
-            //   例) G → C = 立方体。G の後の 2キー目は上の単発割当とは独立。
-            var g = NoMod(KeyCode.G);
-            m.SetSequence(g, NoMod(KeyCode.C), CmdShapeCube);       // G C : Cube
-            m.SetSequence(g, NoMod(KeyCode.S), CmdShapeSphere);     // G S : Sphere
-            m.SetSequence(g, NoMod(KeyCode.Y), CmdShapeCylinder);   // G Y : Cylinder
-            m.SetSequence(g, NoMod(KeyCode.A), CmdShapeCapsule);    // G A : Capsule
-            m.SetSequence(g, NoMod(KeyCode.L), CmdShapePlane);      // G L : Plane
-            m.SetSequence(g, NoMod(KeyCode.P), CmdShapePyramid);    // G P : Pyramid
-            m.SetSequence(g, NoMod(KeyCode.R), CmdShapeRevolution); // G R : Revolution
-            m.SetSequence(g, NoMod(KeyCode.F), CmdShapeProfile2D);  // G F : Profile2D
-            m.SetSequence(g, NoMod(KeyCode.N), CmdShapeNohMask);    // G N : NohMask
+            // 図形生成: プレフィックス P を押してから形状キー (サブメニューを開くだけ)。
+            //   例) P → C = 立方体。P の後の 2キー目は上の単発割当とは独立
+            //   (単発 R / G / S / A と P R / P S / P A は衝突しない)。
+            //   プレフィックスは G から P へ変更した。G は投げ縄サブツールの単発割当に使う。
+            //   OnKeyDown はプレフィックス判定を単発判定より先に行うため、同一キーを
+            //   両方へ割り当てると単発側が発火しない。
+            var p = NoMod(KeyCode.P);
+            m.SetSequence(p, NoMod(KeyCode.C), CmdShapeCube);       // P C : Cube
+            m.SetSequence(p, NoMod(KeyCode.S), CmdShapeSphere);     // P S : Sphere
+            m.SetSequence(p, NoMod(KeyCode.Y), CmdShapeCylinder);   // P Y : Cylinder
+            m.SetSequence(p, NoMod(KeyCode.A), CmdShapeCapsule);    // P A : Capsule
+            m.SetSequence(p, NoMod(KeyCode.L), CmdShapePlane);      // P L : Plane
+            m.SetSequence(p, NoMod(KeyCode.P), CmdShapePyramid);    // P P : Pyramid
+            m.SetSequence(p, NoMod(KeyCode.R), CmdShapeRevolution); // P R : Revolution
+            m.SetSequence(p, NoMod(KeyCode.F), CmdShapeProfile2D);  // P F : Profile2D
+            m.SetSequence(p, NoMod(KeyCode.N), CmdShapeNohMask);    // P N : NohMask
             return m;
         }
 
@@ -121,15 +143,23 @@ namespace Poly_Ling.Player
         }
 
         // ----------------------------------------------------------------
-        // CSV 読込
+        // CSV 読込 (CSV 優先。有効行があれば既定表を全て捨てて置き換える)
         //   形式: Command,Key,Ctrl,Shift,Alt[,Key2,Ctrl2,Shift2,Alt2]
         //     - 先頭 '#' の行と空行は無視
         //     - Key   : Unity KeyCode 名 (Z, V, F1 ...)
         //     - Ctrl/Shift/Alt : true / false (省略時は false)
-        //     - Key2 が空/無し   → 従来の単発割当
+        //     - Key2 が空/無し   → 単発割当
         //     - Key2 が指定あり → 2キー連続 (1キー目=Key…, 2キー目=Key2…)
-        //   読み込んだ行は同一キー組を上書き、無ければ追加する。
-        //   戻り値: 反映した行数 (ファイルが無ければ 0)。
+        //
+        //   【反映規則】
+        //     - 有効行が 1 行以上 → Clear() で既定表を全破棄し、CSV の行だけを反映する。
+        //       CSV に書かれていないコマンドはキー割当なし (無効) になる。これは仕様。
+        //     - ファイル無し / 有効行 0 行 / 読み取り失敗 → 何も変更せず既定表を維持する
+        //       (CSV が壊れて全ショートカットが死ぬのを防ぐ)。
+        //     - 反映は全行パース後にまとめて行う。パースしながら Clear すると、
+        //       途中の不正行で割当が半端な状態のまま残るため。
+        //
+        //   戻り値: 反映した行数 (既定表を維持した場合は 0)。
         // ----------------------------------------------------------------
         public int LoadCsv(string path)
         {
@@ -147,7 +177,9 @@ namespace Poly_Ling.Player
                 return 0;
             }
 
-            int applied = 0;
+            // 有効行の退避先。Second が null なら単発、値ありなら 2キー連続。
+            var parsed = new List<(string Cmd, ShortcutBinding First, ShortcutBinding? Second)>();
+
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i].Trim();
@@ -185,19 +217,36 @@ namespace Poly_Ling.Player
                     bool shift2 = cols.Length > 7 && ParseBool(cols[7]);
                     bool alt2   = cols.Length > 8 && ParseBool(cols[8]);
 
-                    SetSequence(
+                    parsed.Add((
+                        cmd,
                         new ShortcutBinding(key, ctrl, shift, alt),
-                        new ShortcutBinding(key2, ctrl2, shift2, alt2),
-                        cmd);
+                        new ShortcutBinding(key2, ctrl2, shift2, alt2)));
                 }
                 else
                 {
-                    Set(key, ctrl, shift, alt, cmd);
+                    parsed.Add((cmd, new ShortcutBinding(key, ctrl, shift, alt), null));
                 }
-                applied++;
             }
 
-            return applied;
+            // 有効行が 1 行も無ければ既定表を維持する (Clear しない)。
+            if (parsed.Count == 0)
+                return 0;
+
+            // ここから CSV 優先。既定表 (CreateDefault の焼き込み) は全て破棄する。
+            // _map / _sequence / _prefixes をまとめて空にするため、旧仕様で問題に
+            // なっていた「CSV で消せない残留プレフィックス」も確実に消える。
+            Clear();
+
+            for (int i = 0; i < parsed.Count; i++)
+            {
+                var e = parsed[i];
+                if (e.Second.HasValue)
+                    SetSequence(e.First, e.Second.Value, e.Cmd);
+                else
+                    Set(e.First.Key, e.First.Ctrl, e.First.Shift, e.First.Alt, e.Cmd);
+            }
+
+            return parsed.Count;
         }
 
         private static bool ParseBool(string s)

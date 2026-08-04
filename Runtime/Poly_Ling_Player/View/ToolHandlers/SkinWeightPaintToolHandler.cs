@@ -119,7 +119,7 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model != null)
             {
-                var mc = model.FirstDrawableMeshContext;
+                var mc = model.ActiveMeshContext;
                 if (mc?.UnityMesh != null)
                     mc.UnityMesh.colors = null;
             }
@@ -142,7 +142,7 @@ namespace Poly_Ling.Player
             var model = _project?.CurrentModel;
             if (model == null) return;
 
-            var mc = model.FirstDrawableMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc?.UnityMesh == null || mc.MeshObject == null) return;
 
             int targetBone = SkinWeightPaintTool.VisualizationTargetBone;
@@ -219,7 +219,7 @@ namespace Poly_Ling.Player
             // SyncMesh: 頂点位置変更後に UnityMesh + GPU バッファを同期
             baseCtx.SyncMesh = () =>
             {
-                var mc = model.FirstDrawableMeshContext;
+                var mc = model.ActiveMeshContext;
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
 
@@ -241,7 +241,7 @@ namespace Poly_Ling.Player
         {
             var result = new System.Collections.Generic.List<(int index, float falloff)>();
             var model  = _project?.CurrentModel;
-            var meshCtx = model?.FirstDrawableMeshContext ?? model?.FirstSelectedMeshContext;
+            var meshCtx = model?.ActiveMeshContext;
             var mo = meshCtx?.MeshObject;
             if (mo == null || GetScreenPositions == null) return result;
 

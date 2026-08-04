@@ -60,8 +60,8 @@ namespace Poly_Ling.Player
             // Update前にctxを補完する（UndoController・SyncMesh等が必要）
             var model = _project?.CurrentModel;
             ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstDrawableMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstDrawableMeshContext?.Selection;
+            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.UndoController   = _undoController;
             ctx.CommandQueue     = _commandQueue;
             ctx.Repaint          = OnRepaint;
@@ -74,7 +74,7 @@ namespace Poly_Ling.Player
             if (ctx != null)
             {
                 var model = _project?.CurrentModel;
-                var mc    = model?.FirstDrawableMeshContext;
+                var mc    = model?.ActiveMeshContext;
                 ctx.Model            = model;
                 ctx.SelectedVertices = mc?.SelectedVertices;
                 ctx.SelectionState   = mc?.Selection;

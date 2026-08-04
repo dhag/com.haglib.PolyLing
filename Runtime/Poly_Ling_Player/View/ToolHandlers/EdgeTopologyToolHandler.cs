@@ -75,8 +75,8 @@ namespace Poly_Ling.Player
         {
             _lastHoverScreenPos = screenPos; // UIToolkit Y（Y=0 上）
             // ToToolContext 由来の ctx には Model が設定されていないため、
-            // ctx.FirstSelectedMeshObject は null を返す。MeshObject は _project から直接取得する。
-            var mo = _project?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            // ctx.ActiveMeshObject は null を返す。MeshObject は _project から直接取得する。
+            var mo = _project?.CurrentModel?.ActiveMeshContext?.MeshObject;
             if (_tool.ModePublic == EdgeTopoMode.Split)
             {
                 // Split モード: GPU 頂点ホバー
@@ -120,8 +120,8 @@ namespace Poly_Ling.Player
             {
                 var model = _project?.CurrentModel;
                 ctx.Model            = model;
-                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+                ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
                 ctx.UndoController   = _undoController;
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;
@@ -145,8 +145,8 @@ namespace Poly_Ling.Player
             if (ctx == null) return null;
             var model = _project?.CurrentModel;
             ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.UndoController   = _undoController;
             ctx.CommandQueue     = _commandQueue;
             ctx.Repaint          = OnRepaint;

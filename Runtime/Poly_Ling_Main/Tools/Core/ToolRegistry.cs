@@ -45,7 +45,7 @@ namespace Poly_Ling.Tools
             //() => new AlignVerticesTool(),
             () => new EdgeExtrudeTool(),
             () => new FaceExtrudeTool(),
-            () => new LineExtrudeTool(),
+            () => new SolidifyTool(),
             () => new EdgeBevelTool(),
             () => new FlipFaceTool(),
 

@@ -69,10 +69,14 @@ namespace Poly_Ling.UndoSystem
         // 座標系設定（インポート/エクスポートのデフォルト値に使用）
         /// <summary>PMX→Unity座標比率（デフォルト0.1、旧0.085）</summary>
         public float PmxUnityRatio = 0.1f;// 0.085f;
-        /// <summary>PMX Z軸反転（PMX=左手系, Unity=左手系 → デフォルトfalse）</summary>
-        public bool PmxFlipZ = false;
-        /// <summary>MQO Z軸反転（MQO=右手系, Unity=左手系 → デフォルトtrue）</summary>
-        public bool MqoFlipZ = true;
+        /// <summary>PMX X軸反転（PMX正面-Z → Unity正面+Z。FlipZ と併用で Y軸180°回転）</summary>
+        public bool PmxFlipX = true;
+        /// <summary>PMX Z軸反転（同上。既定は X と併用）</summary>
+        public bool PmxFlipZ = true;
+        /// <summary>MQO X軸反転（MQO=右手系・正面+Z → Unity=左手系・正面+Z。X反転のみで揃う）</summary>
+        public bool MqoFlipX = true;
+        /// <summary>MQO Z軸反転（既定は不要）</summary>
+        public bool MqoFlipZ = false;
         /// <summary>MQO→Unity座標比率（デフォルト0.01）</summary>
         public float MqoUnityRatio = 0.01f;
 
@@ -146,7 +150,9 @@ namespace Poly_Ling.UndoSystem
                 ShowWorldTransform = ShowWorldTransform,
                 AutoZoomEnabled = AutoZoomEnabled,
                 PmxUnityRatio = PmxUnityRatio,
+                PmxFlipX = PmxFlipX,
                 PmxFlipZ = PmxFlipZ,
+                MqoFlipX = MqoFlipX,
                 MqoFlipZ = MqoFlipZ,
                 MqoUnityRatio = MqoUnityRatio,
                 UndoCameraChanges = UndoCameraChanges,
@@ -198,7 +204,9 @@ namespace Poly_Ling.UndoSystem
             ShowWorldTransform = snapshot.ShowWorldTransform;
             AutoZoomEnabled = snapshot.AutoZoomEnabled;
             PmxUnityRatio = snapshot.PmxUnityRatio;
+            PmxFlipX = snapshot.PmxFlipX;
             PmxFlipZ = snapshot.PmxFlipZ;
+            MqoFlipX = snapshot.MqoFlipX;
             MqoFlipZ = snapshot.MqoFlipZ;
             MqoUnityRatio = snapshot.MqoUnityRatio;
             UndoCameraChanges = snapshot.UndoCameraChanges;
@@ -269,7 +277,9 @@ namespace Poly_Ling.UndoSystem
 
         // 座標系設定
         public float PmxUnityRatio;
+        public bool PmxFlipX;
         public bool PmxFlipZ;
+        public bool MqoFlipX;
         public bool MqoFlipZ;
         public float MqoUnityRatio;
 
@@ -319,7 +329,9 @@ namespace Poly_Ling.UndoSystem
                 ShowWorldTransform != other.ShowWorldTransform ||
                 AutoZoomEnabled != other.AutoZoomEnabled ||
                 !Mathf.Approximately(PmxUnityRatio, other.PmxUnityRatio) ||
+                PmxFlipX != other.PmxFlipX ||
                 PmxFlipZ != other.PmxFlipZ ||
+                MqoFlipX != other.MqoFlipX ||
                 MqoFlipZ != other.MqoFlipZ ||
                 !Mathf.Approximately(MqoUnityRatio, other.MqoUnityRatio) ||
                 RecordFoldoutChanges != other.RecordFoldoutChanges ||

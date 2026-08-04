@@ -2,7 +2,7 @@
 // メッシュの2頂点ライン(補助線)群とプロファイル編集データを相互変換するユーティリティ。
 // 図形生成パネルの「取り込み(メッシュ→プロファイル)」「反映(プロファイル→メッシュ)」用。
 // 方針: Z を破棄し XY をそのまま扱う(座標変換なし)。
-// 連結・ループ解析は LineExtrudeTool と同方式を独立実装(LineExtrudeTool 本体は不変=回帰回避)。
+// 連結・ループ解析はこのクラス内で独立実装している(旧 LineExtrudeTool は廃止済み)。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -65,7 +65,7 @@ namespace Poly_Ling.PrimitiveMesh
 
         /// <summary>
         /// 2頂点ライン群を閉ループ解析し、Profile2D 用の Loop 群として XY を返す。
-        /// hole 判定は Shoelace 符号(Y上向き前提。LineExtrudeTool と同基準)。
+        /// hole 判定は Shoelace 符号(Y上向き前提)。
         /// </summary>
         public static List<Loop> ExtractLoops(MeshObject mesh, IEnumerable<int> lineFaceIndices)
         {
@@ -273,7 +273,7 @@ namespace Poly_Ling.PrimitiveMesh
         }
 
         // ================================================================
-        // 内部: 閉ループ探索(ExtractLoops 用。LineExtrudeTool と同方式)
+        // 内部: 閉ループ探索(ExtractLoops 用)
         // ================================================================
 
         private static List<int> TryBuildLoop(

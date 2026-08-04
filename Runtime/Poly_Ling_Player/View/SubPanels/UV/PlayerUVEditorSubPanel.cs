@@ -1520,7 +1520,7 @@ namespace Poly_Ling.Player
         private void RecordTopologyChange(string opName, Action<MeshObject> action)
         {
             var model = GetModel?.Invoke();
-            var mc    = model?.FirstDrawableMeshContext;
+            var mc    = model?.ActiveMeshContext;
             if (mc?.MeshObject == null) return;
 
             var undo   = GetUndoController?.Invoke();
@@ -1615,10 +1615,10 @@ namespace Poly_Ling.Player
         }
 
         private MeshContext GetMeshContext() =>
-            GetModel?.Invoke()?.FirstDrawableMeshContext;
+            GetModel?.Invoke()?.ActiveMeshContext;
 
         private MeshObject GetMeshObject() =>
-            GetModel?.Invoke()?.FirstDrawableMeshContext?.MeshObject;
+            GetModel?.Invoke()?.ActiveMeshContext?.MeshObject;
 
         private void UpdateInfo(MeshObject mo)
         {

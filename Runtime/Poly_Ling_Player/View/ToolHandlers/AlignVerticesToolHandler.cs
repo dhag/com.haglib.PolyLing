@@ -11,7 +11,7 @@
 //         （FirstSelectedMeshContext は ActiveCategory 依存で null になる）
 //   2. ctx.SelectedVertices = mc?.SelectedVertices
 //      ctx.SelectionState   = mc?.Selection
-//      mc = model?.FirstDrawableMeshContext を使うこと
+//      mc = model?.ActiveMeshContext を使うこと
 //   3. _undoController.MeshUndoContext.ParentModelContext = model
 //      → OnUndoRedoPerformed で targetModel を解決するために必須
 //         これが null だと Undo が無効のまま動かない
@@ -97,7 +97,7 @@ namespace Poly_Ling.Player
             if (ctx != null)
             {
                 var model = _project?.CurrentModel;
-                var mc    = model?.FirstDrawableMeshContext;
+                var mc    = model?.ActiveMeshContext;
                 ctx.Model            = model;
                 ctx.SelectedVertices = mc?.SelectedVertices;
                 ctx.SelectionState   = mc?.Selection;
@@ -108,7 +108,7 @@ namespace Poly_Ling.Player
                     _undoController.MeshUndoContext.ParentModelContext = model;
                 ctx.SyncMesh = () =>
                 {
-                    var target = model?.FirstDrawableMeshContext;
+                    var target = model?.ActiveMeshContext;
                     if (target != null) OnSyncMeshPositions?.Invoke(target);
                 };
             }

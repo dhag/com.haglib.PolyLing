@@ -202,9 +202,12 @@ namespace Poly_Ling.Player
                                    : Quaternion.Euler(0f, -90f + t, 0f);
                 case OrthoViewDirection.Front:
                 default:
-                    // Front(-Z側→+Z方向) / Back(+Z側→-Z方向) に水平45°を加算。
-                    return Flipped ? Quaternion.Euler(0f, 180f + t, 0f)
-                                   : Quaternion.Euler(0f,   0f + t, 0f);
+                    // Front(+Z側→-Z方向) / Back(-Z側→+Z方向) に水平45°を加算。
+                    // モデルは Unity 規約（正面 = +Z）なので、+Z 側から見たものが Front。
+                    // Flipped == true が Back を表す関係は据え置く（FrontFlipped /
+                    // TopXInverted / 下絵の方向対応がこの意味に依存しているため）。
+                    return Flipped ? Quaternion.Euler(0f,   0f + t, 0f)
+                                   : Quaternion.Euler(0f, 180f + t, 0f);
             }
         }
 

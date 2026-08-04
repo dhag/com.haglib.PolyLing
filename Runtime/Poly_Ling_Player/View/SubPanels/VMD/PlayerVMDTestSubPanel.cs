@@ -12,6 +12,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
+using Poly_Ling.Ops;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.VMD;
 
@@ -327,11 +328,15 @@ namespace Poly_Ling.Player
                 var es   = undo?.EditorState;
                 if (es != null)
                 {
+                    // 軸反転が1つでも有効なら座標変換を適用する。
+                    // 使う反転そのものも EditorState の設定から作り、インポートと揃える。
+                    bool applyConv = es.PmxFlipX || es.PmxFlipZ;
                     _applier.PositionScale             = es.PmxUnityRatio;
-                    _applyCoordinateConversion         = es.PmxFlipZ;
-                    _applier.ApplyCoordinateConversion = es.PmxFlipZ;
+                    _applier.CoordinateFlip            = new AxisFlip(es.PmxFlipX, es.PmxFlipZ);
+                    _applyCoordinateConversion         = applyConv;
+                    _applier.ApplyCoordinateConversion = applyConv;
                     _scaleField?.SetValueWithoutNotify(es.PmxUnityRatio);
-                    _coordToggle?.SetValueWithoutNotify(es.PmxFlipZ);
+                    _coordToggle?.SetValueWithoutNotify(applyConv);
                 }
 
                 var model = Model;

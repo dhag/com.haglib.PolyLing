@@ -42,6 +42,13 @@ namespace Poly_Ling.Player
         /// <summary>GPU ホバー要素取得（Viewer から結線）。既存頂点スナップに使う。</summary>
         public Func<Poly_Ling.Selection.MeshSelectMode, PlayerHoverElement> GetHoverElement;
 
+        /// <summary>
+        /// 操作対象メッシュの頂点について、GPU が計算したワールド座標を返す
+        /// （Viewer から PlayerViewportManager.TryGetVertexWorld を結線）。
+        /// 表裏判定でスキニング後の座標が要るため。CPU で計算し直さないこと。
+        /// </summary>
+        public Func<int, UnityEngine.Vector3?> GetVertexWorldPosition;
+
         // ================================================================
         // 設定公開API
         // ================================================================
@@ -115,8 +122,8 @@ namespace Poly_Ling.Player
         {
             var model = _project?.CurrentModel;
             ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.Repaint          = OnRepaint;
             // WorkPlane: カメラ注視点を原点とするカメラ平行平面
             var wp = new Poly_Ling.Context.WorkPlaneContext();
@@ -163,9 +170,10 @@ namespace Poly_Ling.Player
             if (ctx == null) return null;
             var model = _project?.CurrentModel;
             ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.UndoController   = _undoController;
+            ctx.GetVertexWorldPosition = GetVertexWorldPosition;
             if (_undoController?.MeshUndoContext != null)
             {
                 _undoController.MeshUndoContext.OnTopologyChanged = NotifyTopologyChanged;

@@ -96,14 +96,14 @@ namespace Poly_Ling.Tools
         {
             _selectedLineIndices.Clear();
 
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
                 return;
 
             foreach (int lineIdx in ctx.SelectionState.Lines)
             {
-                if (lineIdx >= 0 && lineIdx < ctx.FirstSelectedMeshObject.FaceCount)
+                if (lineIdx >= 0 && lineIdx < ctx.ActiveMeshObject.FaceCount)
                 {
-                    var face = ctx.FirstSelectedMeshObject.Faces[lineIdx];
+                    var face = ctx.ActiveMeshObject.Faces[lineIdx];
                     if (face.VertexCount == 2)
                     {
                         _selectedLineIndices.Add(lineIdx);
@@ -148,10 +148,10 @@ namespace Poly_Ling.Tools
         {
             _detectedLoops.Clear();
 
-            if (_lastContext?.FirstSelectedMeshObject == null || _selectedLineIndices.Count < 3)
+            if (_lastContext?.ActiveMeshObject == null || _selectedLineIndices.Count < 3)
                 return;
 
-            var meshObject = _lastContext.FirstSelectedMeshObject;
+            var meshObject = _lastContext.ActiveMeshObject;
 
             // 使用済みラインを追跡
             var remainingLines = new HashSet<int>(_selectedLineIndices);
@@ -290,7 +290,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         public void SaveAsCSV()
         {
-            if (_lastContext?.FirstSelectedMeshObject == null || _detectedLoops.Count == 0)
+            if (_lastContext?.ActiveMeshObject == null || _detectedLoops.Count == 0)
                 return;
 
             string path = PLEditorBridge.I.SaveFilePanel(
@@ -302,7 +302,7 @@ namespace Poly_Ling.Tools
             if (string.IsNullOrEmpty(path))
                 return;
 
-            var meshObject = _lastContext.FirstSelectedMeshObject;
+            var meshObject = _lastContext.ActiveMeshObject;
             var sb = new StringBuilder();
 
             // ヘッダーコメント
@@ -364,7 +364,7 @@ namespace Poly_Ling.Tools
         /// </summary>
         public List<Poly_Ling.Profile2DExtrude.Loop> GetLoopsForExtrude()
         {
-            var meshObject = _lastContext?.FirstSelectedMeshObject;
+            var meshObject = _lastContext?.ActiveMeshObject;
             if (meshObject == null || _detectedLoops.Count == 0)
                 return null;
 

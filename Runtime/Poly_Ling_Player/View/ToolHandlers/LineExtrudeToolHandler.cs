@@ -152,8 +152,8 @@ namespace Poly_Ling.Player
             {
                 var model = _project?.CurrentModel;
                 ctx.Model            = model;
-                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+                ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
                 ctx.UndoController   = _undoController;
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;

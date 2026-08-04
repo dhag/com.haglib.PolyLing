@@ -11,6 +11,8 @@ using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Tools.MediaPipe;
+using Poly_Ling.Core;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.Player
 {
@@ -21,15 +23,19 @@ namespace Poly_Ling.Player
         public Func<ModelContext>   GetModel;
         public Func<int>            GetModelIndex;
 
-        private const string BasePath       = "Assets/MediaPipe";
-        private const string BeforeFileName = "before.json";
-        private const string AfterFileName  = "after.json";
-        private const string TriFileName    = "triangles.json";
+        // 他のファイル読込パネルと同じく RecentPaths に端末ローカル保存する。
+        private const string BeforePathKey = "MediaPipe.Before";
+        private const string AfterPathKey  = "MediaPipe.After";
+        private const string TriPathKey    = "MediaPipe.Triangles";
 
         private Label         _warningLabel;
         private Label         _fileStatusLabel;
         private Button        _btnExecute;
         private Label         _statusLabel;
+
+        private TextField     _beforeField;
+        private TextField     _afterField;
+        private TextField     _triField;
 
         public void Build(VisualElement parent)
         {
@@ -48,9 +54,15 @@ namespace Poly_Ling.Player
             root.Add(_warningLabel);
 
             root.Add(new HelpBox(
-                $"Assets/MediaPipe/ に before.json / after.json / triangles.json を配置してください。\n" +
-                $"カレントメッシュの頂点XYをMediaPipe変形に基づいて変形し、新メッシュを生成します。",
+                "変形前後のランドマークJSONと、面インデックスJSONを指定してください。\n" +
+                "カレントメッシュの頂点XYをMediaPipe変形に基づいて変形し、新メッシュを生成します。\n" +
+                "面インデックスは4頂点以上の多角形も読み込めます（内部で三角形へ分解します）。",
                 HelpBoxMessageType.None));
+
+            // ── ファイル指定（他のIOパネルと同じ [...] + パス欄 + RecentPaths） ──
+            _beforeField = AddPathRow(root, "変形前ランドマークJSON", BeforePathKey, "変形前ランドマークJSONを選択");
+            _afterField  = AddPathRow(root, "変形後ランドマークJSON", AfterPathKey,  "変形後ランドマークJSONを選択");
+            _triField    = AddPathRow(root, "面インデックスJSON",     TriPathKey,    "面インデックスJSONを選択");
 
             _fileStatusLabel = new Label();
             _fileStatusLabel.style.color = new StyleColor(Color.white);
@@ -76,7 +88,7 @@ namespace Poly_Ling.Player
         {
             if (_warningLabel == null) return;
             var tc = GetToolContext?.Invoke();
-            if (tc?.FirstDrawableMeshContext?.MeshObject == null)
+            if (tc?.ActiveMeshContext?.MeshObject == null)
             {
                 _warningLabel.text          = tc == null ? "ToolContext 未設定" : "メッシュが選択されていません";
                 _warningLabel.style.display = DisplayStyle.Flex;
@@ -84,26 +96,72 @@ namespace Poly_Ling.Player
             }
             _warningLabel.style.display = DisplayStyle.None;
 
-            // ファイル存在確認
-            bool beforeOk  = File.Exists(Path.Combine(BasePath, BeforeFileName));
-            bool afterOk   = File.Exists(Path.Combine(BasePath, AfterFileName));
-            bool triOk     = File.Exists(Path.Combine(BasePath, TriFileName));
+            UpdateFileStatus();
+        }
+
+        /// <summary>指定された3ファイルの存在を表示し、実行ボタンの有効/無効を更新する。</summary>
+        private void UpdateFileStatus()
+        {
+            if (_fileStatusLabel == null || _btnExecute == null) return;
+
+            bool beforeOk = Exists(_beforeField);
+            bool afterOk  = Exists(_afterField);
+            bool triOk    = Exists(_triField);
+
             _fileStatusLabel.text =
-                $"{(beforeOk ? "✓" : "✗")} before.json\n" +
-                $"{(afterOk  ? "✓" : "✗")} after.json\n" +
-                $"{(triOk    ? "✓" : "✗")} triangles.json";
+                $"{Mark(beforeOk)} 変形前ランドマーク\n" +
+                $"{Mark(afterOk)} 変形後ランドマーク\n" +
+                $"{Mark(triOk)} 面インデックス";
             _btnExecute.SetEnabled(beforeOk && afterOk && triOk);
+        }
+
+        private static bool Exists(TextField f) =>
+            f != null && !string.IsNullOrEmpty(f.value) && File.Exists(f.value);
+
+        private static string Mark(bool ok) => ok ? "✓" : "✗";
+
+        /// <summary>
+        /// 他のIOパネルと同じ「セクション見出し + [...] + パス欄」の1組を追加する。
+        /// 値は RecentPaths に write-through し、変更時にファイル存在表示を更新する。
+        /// </summary>
+        private TextField AddPathRow(VisualElement parent, string label, string prefKey, string dialogTitle)
+        {
+            parent.Add(PlayerIoUiKit.SectionLabel(label));
+
+            var field = new TextField();
+            field.RegisterValueChangedCallback(e =>
+            {
+                RecentPaths.Set(prefKey, e.newValue);
+                UpdateFileStatus();
+            });
+
+            parent.Add(PlayerIoUiKit.PathRow(field, () =>
+            {
+                string cur = field.value;
+                string dir = string.IsNullOrEmpty(cur) ? Application.dataPath : Path.GetDirectoryName(cur);
+                string path = PLEditorBridge.I.OpenFilePanel(dialogTitle, dir, "json");
+                if (!string.IsNullOrEmpty(path)) field.value = path;
+            }));
+
+            field.SetValueWithoutNotify(RecentPaths.Get(prefKey));
+            return field;
         }
 
         private void OnExecute()
         {
-            string beforePath = Path.Combine(BasePath, BeforeFileName);
-            string afterPath  = Path.Combine(BasePath, AfterFileName);
-            string triPath    = Path.Combine(BasePath, TriFileName);
+            string beforePath = _beforeField?.value ?? string.Empty;
+            string afterPath  = _afterField?.value  ?? string.Empty;
+            string triPath    = _triField?.value    ?? string.Empty;
+
+            if (!Exists(_beforeField) || !Exists(_afterField) || !Exists(_triField))
+            {
+                SetStatus("ファイルが指定されていません");
+                return;
+            }
 
             var model = GetModel?.Invoke();
             var tc    = GetToolContext?.Invoke();
-            var mc    = tc?.FirstDrawableMeshContext ?? model?.FirstDrawableMeshContext;
+            var mc    = tc?.ActiveMeshContext ?? model?.ActiveMeshContext;
             if (mc?.MeshObject == null) { SetStatus("メッシュが選択されていません"); return; }
 
             int masterIdx = model?.IndexOf(mc) ?? -1;

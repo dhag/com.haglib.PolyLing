@@ -477,6 +477,13 @@ namespace Poly_Ling.MQO
             {
                 int insertedCount = 0;
 
+                // BakedMirrorSourceIndex は CreateBakedMirrorMesh が「生成時点の実体側 index」で
+                // 記録するが、より小さい i への Insert が起きるたびに実体側もミラー側も +1 ずれる。
+                // 後方走査は「これから処理する要素」の index を保つだけで、
+                // 「既に記録済みの index」までは保たない。
+                // ループ中は参照で保持しておき、全挿入完了後に IndexOf で解決し直す。
+                var mirrorSourcePairs = new List<(MeshContext mirror, MeshContext real)>();
+
                 // 後ろから処理することでインデックスのずれを回避
                 for (int i = result.MeshContexts.Count - 1; i >= 0; i--)
                 {
@@ -524,7 +531,18 @@ namespace Poly_Ling.MQO
                                 Debug.LogWarning($"[MQOImporter] MirrorPair build failed: '{ctx.Name}' ↔ '{mirrorMesh.Name}'\n{pair.BuildLog}");
                             }
                         }
+
+                        // どちらの経路でも挿入済み。実体側を参照で覚えておく。
+                        mirrorSourcePairs.Add((mirrorMesh, ctx));
                     }
+                }
+
+                // BakedMirrorSourceIndex を最終的なリスト位置で付け直す。
+                // MeshContext は Equals を上書きしていないため IndexOf は参照一致で引ける。
+                // 実体側が見つからない場合は -1（＝ベイクドミラーではない）に落とす。
+                foreach (var entry in mirrorSourcePairs)
+                {
+                    entry.mirror.BakedMirrorSourceIndex = result.MeshContexts.IndexOf(entry.real);
                 }
 
                 if (insertedCount > 0)
@@ -555,12 +573,15 @@ namespace Poly_Ling.MQO
             {
                 // メッシュ部分のみ親子関係を計算（オフセット=ボーン数）
                 var meshOnlyList = result.MeshContexts.GetRange(boneContextCount, result.MeshContexts.Count - boneContextCount);
-                CalculateParentIndices(meshOnlyList, boneContextCount);
+                CalculateParentIndices(meshOnlyList, boneContextCount, settings.SetMeshHierarchyParent);
             }
             else
             {
-                CalculateParentIndices(result.MeshContexts, 0);
+                CalculateParentIndices(result.MeshContexts, 0, settings.SetMeshHierarchyParent);
             }
+
+            if (settings.AutoDetectMirrorBranchRoot)
+                ApplyMirrorBranchRootByName(result.MeshContexts, boneContextCount);
 
             // Tポーズ変換（オプション）
             if (settings.ConvertToTPose && boneContextCount > 0)
@@ -570,55 +591,53 @@ namespace Poly_Ling.MQO
             }
         }
 
+        // ミラー分岐ルートとみなす名前パターン
+        private const string MirrorBranchNamePrefix = "@@";
+        private const string MirrorBranchNameSuffix = "ミラー分岐ルート";
+
+        /// <summary>
+        /// 名前からミラー分岐ルートフラグを設定する。
+        /// 接頭句「@@」かつ接尾句「ミラー分岐ルート」を持つメッシュが対象。
+        /// ボーンは対象外（先頭 boneContextCount 件をスキップ）。
+        /// </summary>
+        private static void ApplyMirrorBranchRootByName(List<MeshContext> meshContexts, int boneContextCount)
+        {
+            if (meshContexts == null) return;
+
+            int hit = 0;
+            for (int i = boneContextCount; i < meshContexts.Count; i++)
+            {
+                var ctx = meshContexts[i];
+                string name = ctx?.Name;
+                if (string.IsNullOrEmpty(name)) continue;
+
+                if (!name.StartsWith(MirrorBranchNamePrefix) ||
+                    !name.EndsWith(MirrorBranchNameSuffix)) continue;
+
+                ctx.IsMirrorBranchRoot = true;
+                hit++;
+            }
+
+            if (hit > 0)
+                Debug.Log($"[MQOImporter] ミラー分岐ルートを自動設定: {hit} 件");
+        }
+
         /// <summary>
         /// Depth値から親子関係（ParentIndex）を計算
         /// MQOのDepth値はリスト順序に依存するため、インポート時に親子関係を確定させる
+        /// 実装は MeshHierarchyOps.RecalculateParentIndicesFromDepth に集約している。
         /// </summary>
         /// <param name="meshContexts">対象のMeshContextリスト</param>
         /// <param name="indexOffset">グローバルインデックスへのオフセット（ボーン数）</param>
-        private static void CalculateParentIndices(List<MeshContext> meshContexts, int indexOffset = 0)
+        /// <param name="setHierarchyParent">
+        /// true のとき HierarchyParentIndex（GameObject階層の親）にも同じ値を設定する。
+        /// ボーンは ConvertBonesToMeshContexts が既に設定済みで、ここではメッシュのみ扱う。
+        /// </param>
+        private static void CalculateParentIndices(
+            List<MeshContext> meshContexts, int indexOffset = 0, bool setHierarchyParent = true)
         {
-            if (meshContexts == null || meshContexts.Count == 0)
-                return;
-
-            // スタック: (ローカルインデックス, Depth) を保持
-            // 現在のDepth以下の最も近い親を見つけるために使用
-            var parentStack = new Stack<(int index, int depth)>();
-
-            for (int i = 0; i < meshContexts.Count; i++)
-            {
-                var ctx = meshContexts[i];
-                int currentDepth = ctx.Depth;
-
-                if (currentDepth == 0)
-                {
-                    // ルートオブジェクト
-                    ctx.ParentIndex = -1;
-                    parentStack.Clear();
-                    parentStack.Push((i, currentDepth));
-                }
-                else
-                {
-                    // 現在のDepthより小さいDepthを持つ最も近い親を探す
-                    while (parentStack.Count > 0 && parentStack.Peek().depth >= currentDepth)
-                    {
-                        parentStack.Pop();
-                    }
-
-                    if (parentStack.Count > 0)
-                    {
-                        // グローバルインデックスに変換して設定
-                        ctx.ParentIndex = parentStack.Peek().index + indexOffset;
-                    }
-                    else
-                    {
-                        // 親が見つからない場合はルート扱い
-                        ctx.ParentIndex = -1;
-                    }
-
-                    parentStack.Push((i, currentDepth));
-                }
-            }
+            MeshHierarchyOps.RecalculateParentIndicesFromDepth(
+                meshContexts, indexOffset, setHierarchyParent);
         }
 
         // ================================================================
@@ -649,11 +668,8 @@ namespace Poly_Ling.MQO
             for (int i = 0; i < boneDataList.Count; i++)
             {
                 var bone = boneDataList[i];
-                boneWorldPositions[i] = new Vector3(
-                    bone.Position.x * pmxScale * settings.Scale,
-                    bone.Position.y * pmxScale * settings.Scale,
-                    settings.FlipZ ? -bone.Position.z * pmxScale * settings.Scale : bone.Position.z * pmxScale * settings.Scale
-                );
+                boneWorldPositions[i] = AxisFlipOps.Position(
+                    settings.Flip, bone.Position, pmxScale * settings.Scale);
             }
 
             // 各ボーンをMeshContextに変換
@@ -907,12 +923,11 @@ namespace Poly_Ling.MQO
                 Vector3 rotation = obj.Rotation;
                 Vector3 scale = obj.Scale;
 
-                // 位置にスケールとZ反転を適用
-                Vector3 localPosition = new Vector3(
-                    translation.x * settings.Scale,
-                    translation.y * settings.Scale,
-                    settings.FlipZ ? -translation.z * settings.Scale : translation.z * settings.Scale
-                );
+                // 位置にスケールと軸反転を適用
+                Vector3 localPosition = AxisFlipOps.Position(settings.Flip, translation, settings.Scale);
+
+                // 回転にも同じ共役変換を適用する（位置だけ反転すると姿勢がずれるため）
+                rotation = AxisFlipOps.EulerDeg(settings.Flip, rotation);
 
                 // BoneTransformを設定
                 var boneTransform = new BoneTransform
@@ -1195,11 +1210,11 @@ namespace Poly_Ling.MQO
             // （UseLocalTransform=false のまま → LocalMatrix=identity → WorldMatrix=identity）。
             // エディタ側 PolyLing_MeshLoad の MeshFilter 処理と同じ判定ロジック。
             {
-                Vector3 translationScaled = new Vector3(
-                    mqoObj.Translation.x * settings.Scale,
-                    mqoObj.Translation.y * settings.Scale,
-                    settings.FlipZ ? -mqoObj.Translation.z * settings.Scale : mqoObj.Translation.z * settings.Scale
-                );
+                Vector3 translationScaled = AxisFlipOps.Position(settings.Flip, mqoObj.Translation, settings.Scale);
+
+                // 回転にも同じ共役変換を適用する
+                Vector3 rotationConverted = AxisFlipOps.EulerDeg(settings.Flip, mqoObj.Rotation);
+
                 bool isDefaultTransform =
                     translationScaled == Vector3.zero &&
                     mqoObj.Rotation == Vector3.zero &&
@@ -1210,7 +1225,7 @@ namespace Poly_Ling.MQO
                     var meshBoneTransform = new BoneTransform
                     {
                         Position = translationScaled,
-                        Rotation = mqoObj.Rotation,
+                        Rotation = rotationConverted,
                         Scale    = mqoObj.Scale,
                         UseLocalTransform = true,
                     };
@@ -1735,15 +1750,8 @@ namespace Poly_Ling.MQO
 
         private static Vector3 ConvertPosition(Vector3 mqoPos, MQOImportSettings settings)
         {
-            // MQO座標系 → Unity座標系
-            float x = mqoPos.x * settings.Scale;
-            float y = mqoPos.y * settings.Scale;
-            float z = mqoPos.z * settings.Scale;
-
-            if (settings.FlipZ)
-                z = -z;
-
-            return new Vector3(x, y, z);
+            // MQO座標系 → Unity座標系。規則は AxisFlipOps に集約。
+            return AxisFlipOps.Position(settings.Flip, mqoPos, settings.Scale);
         }
 
         private static Vector2 ConvertUV(Vector2 mqoUV, MQOImportSettings settings)

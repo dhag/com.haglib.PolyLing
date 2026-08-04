@@ -258,7 +258,7 @@ namespace Poly_Ling.Player
             };
 
             // TopologyCache（メッシュ変更時に自動再構築）
-            var mc = model.FirstSelectedMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc?.MeshObject != null)
             {
                 int key = mc.MeshObject.GetHashCode();

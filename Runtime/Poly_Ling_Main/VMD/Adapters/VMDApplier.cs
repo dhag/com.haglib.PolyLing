@@ -8,6 +8,7 @@ using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
+using Poly_Ling.Ops;
 using Poly_Ling.UndoSystem;
 
 namespace Poly_Ling.VMD
@@ -40,6 +41,12 @@ namespace Poly_Ling.VMD
         /// 座標変換を適用するかどうか
         /// </summary>
         public bool ApplyCoordinateConversion { get; set; } = false;
+
+        /// <summary>
+        /// 座標変換に使う軸反転。既定は PMX ⇔ Unity（X・Z 両反転 = Y軸180°回転）。
+        /// インポート設定と揃えるため、呼び出し側から差し替えられるようにしている。
+        /// </summary>
+        public AxisFlip CoordinateFlip { get; set; } = AxisFlip.PmxToUnity;
 
         /// <summary>
         /// VMDデルタ位置に適用するスケール（PMX空間→Unity空間）
@@ -215,7 +222,7 @@ namespace Poly_Ling.VMD
                 Quaternion convertedRot = rotation;
                 if (ApplyCoordinateConversion)
                 {
-                    convertedPos = CoordinateConverter.ToUnityPosition(position);
+                    convertedPos = CoordinateConverter.ToUnityPosition(position, CoordinateFlip);
                 }
 
                 // スケール適用（VMDデルタ位置はPMX空間の値なので、Unity空間に合わせる）

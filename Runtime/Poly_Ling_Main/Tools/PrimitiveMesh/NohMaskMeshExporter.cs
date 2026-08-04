@@ -58,40 +58,49 @@ namespace Poly_Ling.NohMask
 
         /// <summary>
         /// triangles JSON（FaceMeshTrianglesJson 形式）を生成する。
-        /// 面は扇形三角形化し [i0, i1, i2] 列として出力する。
+        /// 面は三角分解せず、VertexIndices をそのまま [i0, i1, ...] 列として出力する（N角形対応）。
         /// ネスト int[][] は JsonUtility で出力できないため手動整形（生成側の Regex 形式に一致）。
         /// </summary>
         public static string BuildTrianglesJson(MeshObject mo)
         {
             int vertexCount = mo?.VertexCount ?? 0;
 
-            var tris = new List<int[]>();
+            var polys = new List<int[]>();
             if (mo?.Faces != null)
             {
                 foreach (var face in mo.Faces)
                 {
-                    if (face == null) continue;
-                    foreach (var t in face.Triangulate())
+                    if (face?.VertexIndices == null) continue;
+                    if (face.VertexIndices.Count < 3) continue;
+
+                    bool valid = true;
+                    foreach (int idx in face.VertexIndices)
                     {
-                        if (t.VertexCount != 3) continue;
-                        int a = t.VertexIndices[0], b = t.VertexIndices[1], c = t.VertexIndices[2];
-                        if (a < 0 || b < 0 || c < 0) continue;
-                        tris.Add(new[] { a, b, c });
+                        if (idx < 0) { valid = false; break; }
                     }
+                    if (!valid) continue;
+
+                    polys.Add(face.VertexIndices.ToArray());
                 }
             }
 
             var sb = new StringBuilder();
             sb.Append("{\n");
             sb.Append("  \"source\": \"PolyLing.mesh_export\",\n");
-            sb.Append("  \"triangle_count\": ").Append(tris.Count).Append(",\n");
+            sb.Append("  \"triangle_count\": ").Append(polys.Count).Append(",\n");
             sb.Append("  \"vertex_count\": ").Append(vertexCount).Append(",\n");
             sb.Append("  \"triangles\": [\n");
-            for (int i = 0; i < tris.Count; i++)
+            for (int i = 0; i < polys.Count; i++)
             {
-                var t = tris[i];
-                sb.Append("    [").Append(t[0]).Append(", ").Append(t[1]).Append(", ").Append(t[2]).Append("]");
-                sb.Append(i < tris.Count - 1 ? ",\n" : "\n");
+                var t = polys[i];
+                sb.Append("    [");
+                for (int k = 0; k < t.Length; k++)
+                {
+                    if (k > 0) sb.Append(", ");
+                    sb.Append(t[k]);
+                }
+                sb.Append("]");
+                sb.Append(i < polys.Count - 1 ? ",\n" : "\n");
             }
             sb.Append("  ]\n");
             sb.Append("}\n");

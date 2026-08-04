@@ -89,7 +89,7 @@ namespace Poly_Ling.Player
         /// </summary>
         private Vector3 WorldPivot()
         {
-            var mc = _project?.CurrentModel?.FirstDrawableMeshContext;
+            var mc = _project?.CurrentModel?.ActiveMeshContext;
             var local = _tool.PivotPublic;
             return mc != null ? mc.LocalToWorld(local) : local;
         }
@@ -193,7 +193,7 @@ namespace Poly_Ling.Player
             {
                 var model = _project?.CurrentModel;
                 ctx.Model            = model;
-                var mc0  = model?.FirstDrawableMeshContext;
+                var mc0  = model?.ActiveMeshContext;
                 ctx.SelectedVertices = mc0?.SelectedVertices;
                 ctx.SelectionState   = mc0?.Selection;
                 ctx.UndoController   = _undoController;
@@ -226,8 +226,8 @@ namespace Poly_Ling.Player
             if (ctx == null) return null;
             var model = _project?.CurrentModel;
             ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.UndoController   = _undoController;
             ctx.Repaint          = OnRepaint;
             ctx.SyncMesh = () =>

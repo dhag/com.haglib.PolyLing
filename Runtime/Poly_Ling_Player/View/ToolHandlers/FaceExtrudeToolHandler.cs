@@ -95,9 +95,10 @@ namespace Poly_Ling.Player
             {
                 var model = _project?.CurrentModel;
                 ctx.Model            = model;
-                ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-                ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+                ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+                ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
                 ctx.UndoController   = _undoController;
+            ctx.GetVertexWorldPosition = GetVertexWorldPosition;
                 ctx.CommandQueue     = _commandQueue;
                 ctx.Repaint          = OnRepaint;
                 ctx.NotifyTopologyChanged = NotifyTopologyChanged;
@@ -120,16 +121,17 @@ namespace Poly_Ling.Player
             if (ctx == null) return null;
             var model = _project?.CurrentModel;
             ctx.Model            = model;
-            ctx.SelectedVertices = model?.FirstSelectedMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.FirstSelectedMeshContext?.Selection;
+            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
+            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
             ctx.UndoController   = _undoController;
+            ctx.GetVertexWorldPosition = GetVertexWorldPosition;
             ctx.CommandQueue     = _commandQueue;
             ctx.Repaint          = OnRepaint;
             ctx.NotifyTopologyChanged    = NotifyTopologyChanged;
             ctx.SyncMesh                 = () => NotifyTopologyChanged?.Invoke();
             ctx.SyncMeshPositionsOnly    = () =>
             {
-                var mc = _project?.CurrentModel?.FirstDrawableMeshContext;
+                var mc = _project?.CurrentModel?.ActiveMeshContext;
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
             ctx.EnterTransformDragging   = () => OnEnterTransformDragging?.Invoke();
@@ -138,6 +140,14 @@ namespace Poly_Ling.Player
                 _undoController.MeshUndoContext.ParentModelContext = model;
             return ctx;
         }
+
+
+        /// <summary>
+        /// 操作対象メッシュの頂点について GPU が計算したワールド座標を返す
+        /// （Viewer から PlayerViewportManager.TryGetVertexWorld を結線）。
+        /// CPU でスキニングを計算し直さないこと。
+        /// </summary>
+        public System.Func<int, UnityEngine.Vector3?> GetVertexWorldPosition;
 
         private MeshUndoController _undoController;
         private CommandQueue       _commandQueue;
@@ -149,6 +159,7 @@ namespace Poly_Ling.Player
             var ctx = GetToolContext?.Invoke() ?? new ToolContext();
             ctx.Model          = model;
             ctx.UndoController = _undoController;
+            ctx.GetVertexWorldPosition = GetVertexWorldPosition;
             ctx.Repaint        = OnRepaint;
             ctx.SyncMesh = () =>
             {

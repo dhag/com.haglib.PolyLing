@@ -72,6 +72,64 @@ namespace Poly_Ling.UI
             boneIndex3 = s[3].idx, weight3 = s[3].w,
         };
 
+        /// <summary>
+        /// 2 つの BoneWeight を t で補間する（両端のボーンを集約し上位 4 スロットへ畳み込む）。
+        /// 辺分割などで生成した新頂点に BoneWeight を与えるために使う。
+        /// 新頂点に BoneWeight を与えないと、GPU 側で
+        /// UnifiedBufferManager_Build.cs:356-362 により
+        /// メッシュ自身の context 索引が使われ、周囲の頂点（ボーンの SkinningMatrix）と
+        /// 異なる行列で変換されて位置がずれる。
+        /// 両方 null なら null を返す。片方だけ null ならもう一方をそのまま返す。
+        /// </summary>
+        public static BoneWeight? LerpNullable(BoneWeight? a, BoneWeight? b, float t)
+        {
+            if (!a.HasValue && !b.HasValue) return null;
+            if (!a.HasValue) return b;
+            if (!b.HasValue) return a;
+
+            t = Mathf.Clamp01(t);
+            var sa = Extract(a.Value);
+            var sb = Extract(b.Value);
+
+            var mergedIdx = new int[8];
+            var mergedW   = new float[8];
+            int count = 0;
+
+            for (int i = 0; i < 4; i++) count = AccumulateSlot(mergedIdx, mergedW, count, sa[i].idx, sa[i].w * (1f - t));
+            for (int i = 0; i < 4; i++) count = AccumulateSlot(mergedIdx, mergedW, count, sb[i].idx, sb[i].w * t);
+
+            // 重みの大きい順に 4 つ選ぶ
+            var top = new (int idx, float w)[4];
+            for (int k = 0; k < 4; k++)
+            {
+                int best = -1;
+                for (int i = 0; i < count; i++)
+                    if (mergedW[i] > 0f && (best < 0 || mergedW[i] > mergedW[best])) best = i;
+
+                if (best < 0) { top[k] = (0, 0f); continue; }
+
+                top[k] = (mergedIdx[best], mergedW[best]);
+                mergedW[best] = 0f;
+            }
+
+            return NormalizeBoneWeight(Pack(top));
+        }
+
+        /// <summary>同一ボーンなら加算、未登録なら追加する。戻り値は更新後の件数。</summary>
+        private static int AccumulateSlot(int[] idx, float[] wgt, int count, int bone, float w)
+        {
+            if (w <= 0f) return count;
+
+            for (int i = 0; i < count; i++)
+                if (idx[i] == bone) { wgt[i] += w; return count; }
+
+            if (count >= idx.Length) return count;
+
+            idx[count] = bone;
+            wgt[count] = w;
+            return count + 1;
+        }
+
         public static int FindSlot((int idx, float w)[] slots)
         {
             for (int i = 0; i < 4; i++) if (slots[i].w <= 0f) return i;

@@ -31,6 +31,7 @@ namespace Poly_Ling.PMX
             ["NoScale"]         = new() { ["en"] = "No Scale (1:1)",        ["ja"] = "等倍（1:1）" },
             ["Coordinate"]      = new() { ["en"] = "Coordinate",            ["ja"] = "座標変換" },
             ["Scale"]           = new() { ["en"] = "Scale",                 ["ja"] = "スケール" },
+            ["FlipXAxis"]       = new() { ["en"] = "Flip X Axis",           ["ja"] = "X軸反転" },
             ["FlipZAxis"]       = new() { ["en"] = "Flip Z Axis",           ["ja"] = "Z軸反転" },
             ["FlipUV_V"]        = new() { ["en"] = "Flip UV V",             ["ja"] = "UV V反転" },
             ["Options"]         = new() { ["en"] = "Options",               ["ja"] = "オプション" },

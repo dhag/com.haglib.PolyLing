@@ -25,6 +25,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.MQO
 {
@@ -629,7 +630,7 @@ namespace Poly_Ling.MQO
         /// <param name="bone">ボーンデータ</param>
         /// <param name="depth">MQOオブジェクトのdepth（親子関係に基づく）</param>
         /// <param name="scale">スケール係数（PMX→MQO変換用）</param>
-        /// <param name="flipZ">Z軸反転フラグ</param>
+        /// <param name="flip">軸反転指定</param>
         /// <returns>MQOオブジェクト</returns>
         /// <remarks>
         /// 【暫定実装】
@@ -637,7 +638,7 @@ namespace Poly_Ling.MQO
         /// 将来的には回転・スケールも含む完全なトランスフォームに対応予定。
         /// PMXにはボーンの回転情報がないため、現時点では位置のみ。
         /// </remarks>
-        public static MQOObject CreateBoneObject(BoneData bone, int depth, float scale = 1f, bool flipZ = true)
+        public static MQOObject CreateBoneObject(BoneData bone, int depth, float scale , AxisFlip flip)
         {
             var obj = new MQOObject { Name = bone.Name ?? "Bone" };
 
@@ -654,11 +655,7 @@ namespace Poly_Ling.MQO
 
             // ローカルトランスフォーム（位置のみ）
             // 【暫定】PMXからは位置のみ取得可能。回転・スケールは将来対応。
-            Vector3 pos = bone.Position * scale;
-            if (flipZ)
-            {
-                pos.z = -pos.z;
-            }
+            Vector3 pos = AxisFlipOps.Position(flip, bone.Position, scale);
             obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
 
             // 回転（暫定で0）
@@ -710,9 +707,9 @@ namespace Poly_Ling.MQO
         /// </summary>
         /// <param name="bones">ボーンデータリスト（インデックス順）</param>
         /// <param name="scale">スケール係数</param>
-        /// <param name="flipZ">Z軸反転フラグ</param>
+        /// <param name="flip">軸反転指定</param>
         /// <returns>MQOオブジェクトリスト（__Armature__ + ボーン + __ArmatureName__ + ボーン名）</returns>
-        public static List<MQOObject> CreateBoneObjectsForMQO(IList<BoneData> bones, float scale = 1f, bool flipZ = true)
+        public static List<MQOObject> CreateBoneObjectsForMQO(IList<BoneData> bones, float scale , AxisFlip flip)
         {
             var objects = new List<MQOObject>();
 
@@ -734,8 +731,8 @@ namespace Poly_Ling.MQO
 
             if (hasModelRotation)
             {
-                // 回転を考慮したローカル変換を計算（flipZ変換をここで適用）
-                (localPositions, localRotations) = CalculateLocalTransforms(bones, flipZ);
+                // 回転を考慮したローカル変換を計算（軸反転をここで適用）
+                (localPositions, localRotations) = CalculateLocalTransforms(bones, flip);
             }
             else
             {
@@ -758,8 +755,8 @@ namespace Poly_Ling.MQO
                 int depth = depths[idx];
                 Vector3 localPos = localPositions[idx];
                 Vector3 localRot = localRotations[idx];
-                // hasModelRotation=trueの場合、flipZは既にCalculateLocalTransformsで適用済み
-                objects.Add(CreateBoneObjectWithLocalTransform(bone, localPos, localRot, depth, scale, hasModelRotation ? false : flipZ));
+                // hasModelRotation=trueの場合、軸反転は既にCalculateLocalTransformsで適用済み
+                objects.Add(CreateBoneObjectWithLocalTransform(bone, localPos, localRot, depth, scale, hasModelRotation ? AxisFlip.None : flip));
             }
 
             // 6. __ArmatureName__オブジェクト
@@ -807,9 +804,9 @@ namespace Poly_Ling.MQO
         /// PMXImporter.ConvertBoneと同等のアルゴリズム
         /// </summary>
         /// <param name="bones">ボーンデータリスト（Position=ワールド座標（PMX座標系）、ModelRotation=ワールド回転（FlipZ変換済み））</param>
-        /// <param name="flipZ">Z軸反転フラグ（Positionに適用）</param>
+        /// <param name="flip">軸反転指定（Positionに適用）</param>
         /// <returns>ローカル位置とローカル回転（オイラー角）の配列</returns>
-        private static (Vector3[] localPositions, Vector3[] localRotations) CalculateLocalTransforms(IList<BoneData> bones, bool flipZ)
+        private static (Vector3[] localPositions, Vector3[] localRotations) CalculateLocalTransforms(IList<BoneData> bones, AxisFlip flip)
         {
             var localPositions = new Vector3[bones.Count];
             var localRotations = new Vector3[bones.Count];
@@ -819,12 +816,8 @@ namespace Poly_Ling.MQO
                 var bone = bones[i];
                 Quaternion modelRotation = bone.ModelRotation ?? Quaternion.identity;
 
-                // ワールド位置（flipZ変換）
-                Vector3 worldPosition = bone.Position;
-                if (flipZ)
-                {
-                    worldPosition.z = -worldPosition.z;
-                }
+                // ワールド位置（軸反転）
+                Vector3 worldPosition = AxisFlipOps.Position(flip, bone.Position);
 
                 if (bone.ParentIndex >= 0 && bone.ParentIndex < bones.Count)
                 {
@@ -832,12 +825,8 @@ namespace Poly_Ling.MQO
                     var parent = bones[bone.ParentIndex];
                     Quaternion parentModelRotation = parent.ModelRotation ?? Quaternion.identity;
 
-                    // 親のワールド位置（flipZ変換）
-                    Vector3 parentWorldPos = parent.Position;
-                    if (flipZ)
-                    {
-                        parentWorldPos.z = -parentWorldPos.z;
-                    }
+                    // 親のワールド位置（軸反転）
+                    Vector3 parentWorldPos = AxisFlipOps.Position(flip, parent.Position);
 
                     // MQO: childWorldPos = parentWorldPos + parentRotation * childTranslation
                     // したがって: childTranslation = Inverse(parentRotation) * (childWorldPos - parentWorldPos)
@@ -862,7 +851,7 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// ボーンオブジェクトを作成（ローカル座標指定版）
         /// </summary>
-        private static MQOObject CreateBoneObjectWithLocalPosition(BoneData bone, Vector3 localPosition, int depth, float scale, bool flipZ)
+        private static MQOObject CreateBoneObjectWithLocalPosition(BoneData bone, Vector3 localPosition, int depth, float scale, AxisFlip flip)
         {
             var obj = new MQOObject { Name = bone.Name ?? "Bone" };
 
@@ -878,11 +867,7 @@ namespace Poly_Ling.MQO
             obj.Attributes.Add(new MQOAttribute("color_type", 0));
 
             // ローカルトランスフォーム（親からの相対座標）
-            Vector3 pos = localPosition * scale;
-            if (flipZ)
-            {
-                pos.z = -pos.z;
-            }
+            Vector3 pos = AxisFlipOps.Position(flip, localPosition, scale);
             obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
 
             // 回転（暫定で0）
@@ -902,8 +887,8 @@ namespace Poly_Ling.MQO
         /// <param name="localRotation">ローカル回転（オイラー角、度数法）</param>
         /// <param name="depth">MQOオブジェクトの深さ</param>
         /// <param name="scale">スケール係数</param>
-        /// <param name="flipZ">Z軸反転フラグ（位置に適用、回転には適用しない）</param>
-        private static MQOObject CreateBoneObjectWithLocalTransform(BoneData bone, Vector3 localPosition, Vector3 localRotation, int depth, float scale, bool flipZ)
+        /// <param name="flip">軸反転指定（位置に適用、回転には適用しない）</param>
+        private static MQOObject CreateBoneObjectWithLocalTransform(BoneData bone, Vector3 localPosition, Vector3 localRotation, int depth, float scale, AxisFlip flip)
         {
             var obj = new MQOObject { Name = bone.Name ?? "Bone" };
 
@@ -919,11 +904,7 @@ namespace Poly_Ling.MQO
             obj.Attributes.Add(new MQOAttribute("color_type", 0));
 
             // ローカルトランスフォーム（位置）
-            Vector3 pos = localPosition * scale;
-            if (flipZ)
-            {
-                pos.z = -pos.z;
-            }
+            Vector3 pos = AxisFlipOps.Position(flip, localPosition, scale);
             obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
 
             // ローカル回転（オイラー角）

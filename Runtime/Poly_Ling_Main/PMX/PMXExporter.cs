@@ -12,6 +12,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Context;
 
 namespace Poly_Ling.PMX
@@ -758,8 +759,8 @@ namespace Poly_Ling.PMX
                             MaterialIndex = matIndex,
                             FaceIndex = document.Faces.Count,
                             VertexIndex1 = v0,
-                            VertexIndex2 = settings.FlipZ ? v2 : v1,
-                            VertexIndex3 = settings.FlipZ ? v1 : v2
+                            VertexIndex2 = AxisFlipOps.ReverseWinding(settings.Flip) ? v2 : v1,
+                            VertexIndex3 = AxisFlipOps.ReverseWinding(settings.Flip) ? v1 : v2
                         };
 
                         document.Faces.Add(pmxFace);
@@ -1042,21 +1043,12 @@ namespace Poly_Ling.PMX
 
         private static Vector3 ConvertPosition(Vector3 pos, PMXExportSettings settings)
         {
-            float x = pos.x * settings.Scale;
-            float y = pos.y * settings.Scale;
-            float z = pos.z * settings.Scale;
-
-            if (settings.FlipZ)
-                z = -z;
-
-            return new Vector3(x, y, z);
+            return AxisFlipOps.Position(settings.Flip, pos, settings.Scale);
         }
 
         private static Vector3 ConvertNormal(Vector3 normal, PMXExportSettings settings)
         {
-            if (settings.FlipZ)
-                return new Vector3(normal.x, normal.y, -normal.z).normalized;
-            return normal.normalized;
+            return AxisFlipOps.Normal(settings.Flip, normal);
         }
 
         // ================================================================
@@ -1177,18 +1169,12 @@ namespace Poly_Ling.PMX
 
         /// <summary>
         /// モデル空間のオイラー角回転（ラジアン）を PMX のオイラー角（ラジアン）へ変換する。
-        /// FlipZ時は右手系⇔左手系のZ鏡映共役（クォータニオン (x,y,z,w)→(-x,-y,z,w)）を適用する。
-        /// この共役は自己逆元のため、インポート側 ConvertEulerRotation と同一処理で逆変換になる。
-        /// 入力/出力ともラジアン（Unity APIは度のため内部で度に変換して扱う）。
+        /// 共役変換 S·R·S は自己逆元のため、インポート側と同一処理がそのまま逆変換になる。
+        /// 規則は AxisFlipOps に集約。入力/出力ともラジアン。
         /// </summary>
         private static Vector3 ConvertEulerRotation(Vector3 modelEulerRad, PMXExportSettings settings)
         {
-            Quaternion q = Quaternion.Euler(modelEulerRad * Mathf.Rad2Deg);
-
-            if (settings.FlipZ)
-                q = new Quaternion(-q.x, -q.y, q.z, q.w);
-
-            return q.eulerAngles * Mathf.Deg2Rad;
+            return AxisFlipOps.EulerRad(settings.Flip, modelEulerRad);
         }
     }
 }

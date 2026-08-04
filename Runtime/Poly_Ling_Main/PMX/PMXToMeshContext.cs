@@ -70,6 +70,7 @@ namespace Poly_Ling.PMX
             // デフォルトのインポート設定
             var settings = new PMXImportSettings
             {
+                FlipX = true,
                 FlipZ = true,
                 FlipUV_V = false,
                 Scale = 1f,

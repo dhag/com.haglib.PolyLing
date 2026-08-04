@@ -1022,6 +1022,7 @@ namespace Poly_Ling.Serialization
             // エクスポート除外フラグ
             meshDTO.excludeFromExport = meshContext.ExcludeFromExport;
             meshDTO.ignorePoseInArmature = meshContext.IgnorePoseInArmature;
+            meshDTO.isMirrorBranchRoot   = meshContext.IsMirrorBranchRoot;
         }
 
         /// <summary>
@@ -1047,6 +1048,7 @@ namespace Poly_Ling.Serialization
             // エクスポート除外フラグ
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;
             meshContext.IgnorePoseInArmature = meshDTO.ignorePoseInArmature;
+            meshContext.IsMirrorBranchRoot   = meshDTO.isMirrorBranchRoot;
         }
 
         // ================================================================
@@ -1729,6 +1731,7 @@ namespace Poly_Ling.Serialization
                 morphParentIndex        = mc.MorphParentIndex,
                 excludeFromExport       = mc.ExcludeFromExport,
                 ignorePoseInArmature    = mc.IgnorePoseInArmature,
+                isMirrorBranchRoot      = mc.IsMirrorBranchRoot,
                 exportSettingsDTO       = ToBoneTransformDTO(mc.BoneTransform),
             };
 
@@ -1784,6 +1787,7 @@ namespace Poly_Ling.Serialization
                 MorphParentIndex       = meta.morphParentIndex,
                 ExcludeFromExport      = meta.excludeFromExport,
                 IgnorePoseInArmature   = meta.ignorePoseInArmature,
+                IsMirrorBranchRoot     = meta.isMirrorBranchRoot,
                 BoneTransform          = meta.exportSettingsDTO != null
                                          ? ToBoneTransform(meta.exportSettingsDTO)
                                          : null,

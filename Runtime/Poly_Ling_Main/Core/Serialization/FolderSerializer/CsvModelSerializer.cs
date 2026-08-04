@@ -111,12 +111,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string boneFile = $"{modelName}.bone.csv";
             string morphFile = $"{modelName}.morph.csv";
 
-            if (meshEntries.Count > 0)
-                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, meshFile), meshEntries, "mesh", useNameBased, indexToName);
-            if (boneEntries.Count > 0)
-                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, boneFile), boneEntries, "bone", useNameBased, indexToName);
-            if (morphEntries.Count > 0)
-                CsvMeshSerializer.WriteFile(Path.Combine(modelFolderPath, morphFile), morphEntries, "morph", useNameBased, indexToName);
+            // 空の種別は書き出さないが、以前の保存で作られたファイルが残っていると
+            // 読込時に index 空間が重なって上書きが起きる。書かない種別は削除する。
+            WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, meshFile),  meshEntries,  "mesh",  useNameBased, indexToName);
+            WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, boneFile),  boneEntries,  "bone",  useNameBased, indexToName);
+            WriteOrDeleteMeshCsv(Path.Combine(modelFolderPath, morphFile), morphEntries, "morph", useNameBased, indexToName);
 
             // model.csv (順序マスター)
             WriteModelCsv(modelFolderPath, model, meshEntries, boneEntries, morphEntries, useNameBased);
@@ -259,6 +258,15 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 var lookup = new Dictionary<int, MeshContext>();
                 foreach (var me in allOwnEntries)
                 {
+                    // 同じ index が複数ファイルに現れると後勝ちで上書きされる。
+                    // 古い *.bone.csv / *.morph.csv の残留が典型なので警告を出す。
+                    if (lookup.TryGetValue(me.GlobalIndex, out var prev))
+                    {
+                        Debug.LogWarning(
+                            $"[CsvModelSerializer] index={me.GlobalIndex} が重複している: " +
+                            $"'{prev?.Name}'({prev?.Type}) → '{me.MeshContext?.Name}'({me.MeshContext?.Type}) で上書き。" +
+                            "モデルフォルダに古い *.bone.csv / *.morph.csv が残っていないか確認すること。");
+                    }
                     lookup[me.GlobalIndex] = me.MeshContext;
                 }
 
@@ -338,6 +346,36 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
         // model.csv
         // ================================================================
+
+        /// <summary>
+        /// エントリがあれば書き出し、無ければ既存ファイルを削除する。
+        /// 削除しないと、ボーンやモーフを持たなくなったモデルを同じフォルダへ
+        /// 保存し直したときに古い *.bone.csv / *.morph.csv が残り、
+        /// 読込時に index が重なって片方が黙って上書きされる。
+        /// </summary>
+        private static void WriteOrDeleteMeshCsv(
+            string path, List<CsvMeshEntry> entries, string type,
+            bool useNameBased, Dictionary<int, string> indexToName)
+        {
+            if (entries != null && entries.Count > 0)
+            {
+                CsvMeshSerializer.WriteFile(path, entries, type, useNameBased, indexToName);
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    Debug.Log($"[CsvModelSerializer] 対象が無くなったため削除: {Path.GetFileName(path)}");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[CsvModelSerializer] 削除に失敗: {Path.GetFileName(path)} - {e.Message}");
+            }
+        }
 
         private static void WriteModelCsv(
             string folderPath, ModelContext model,
@@ -1122,7 +1160,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             sb.AppendLine($"pmxUnityRatio,{Fl(es.pmxUnityRatio)}");
+            sb.AppendLine($"pmxFlipX,{es.pmxFlipX}");
             sb.AppendLine($"pmxFlipZ,{es.pmxFlipZ}");
+            sb.AppendLine($"mqoFlipX,{es.mqoFlipX}");
             sb.AppendLine($"mqoFlipZ,{es.mqoFlipZ}");
             sb.AppendLine($"mqoUnityRatio,{Fl(es.mqoUnityRatio)}");
             sb.AppendLine($"showBones,{es.showBones}");
@@ -1141,6 +1181,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string selectedMeshName = null;
             string selectedBoneName = null;
             string selectedVertexMorphName = null;
+
+            // 旧形式（FlipX の記録が無い）判定用。
+            // FlipZ 単独時代の値は現在の規約と意味が違うため、そのまま復元できない。
+            bool sawPmxFlipX = false;
+            bool sawMqoFlipX = false;
 
             foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             {
@@ -1166,8 +1211,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "selectedBoneName": selectedBoneName = Unesc(cols[1]); break;
                     case "selectedVertexMorphName": selectedVertexMorphName = Unesc(cols[1]); break;
                     case "pmxUnityRatio": case "coordinateScale": es.pmxUnityRatio = PFl(cols, 1, 0.1f); break;// 旧coordinateScale互換
-                    case "pmxFlipZ": es.pmxFlipZ = PBool(cols, 1); break;
-                    case "mqoFlipZ": es.mqoFlipZ = PBool(cols, 1, true); break;
+                    case "pmxFlipX": es.pmxFlipX = PBool(cols, 1, true); sawPmxFlipX = true; break;
+                    case "pmxFlipZ": es.pmxFlipZ = PBool(cols, 1, true); break;
+                    case "mqoFlipX": es.mqoFlipX = PBool(cols, 1, true); sawMqoFlipX = true; break;
+                    case "mqoFlipZ": es.mqoFlipZ = PBool(cols, 1); break;
                     case "mqoUnityRatio": es.mqoUnityRatio = PFl(cols, 1, 0.01f); break;
                     case "mqoPmxRatio": float oldRatio = PFl(cols, 1, 10f); es.mqoUnityRatio = oldRatio > 0f ? es.pmxUnityRatio / oldRatio : 0.01f; break; // 旧mqoPmxRatio互換
                     case "showBones": es.showBones = PBool(cols, 1, true); break;
@@ -1175,6 +1222,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "boneDisplayAlongY": es.boneDisplayAlongY = PBool(cols, 1); break;
                 }
             }
+
+            // 旧形式の editorstate.csv には FlipX の記録が無く、FlipZ 単独時代の値
+            // （pmxFlipZ=False / mqoFlipZ=True）が入っている。現在の規約とは意味が違い
+            // そのまま復元すると Unity 規約からずれるため、軸反転設定のみ既定値に戻す。
+            if (!sawPmxFlipX) { es.pmxFlipX = true; es.pmxFlipZ = true; }
+            if (!sawMqoFlipX) { es.mqoFlipX = true; es.mqoFlipZ = false; }
 
             // 名前ベース解決
             if (model != null && (selectedMeshName != null || selectedBoneName != null || selectedVertexMorphName != null))

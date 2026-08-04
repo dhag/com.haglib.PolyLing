@@ -91,7 +91,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseDown(ToolContext ctx, Vector2 mousePos)
         {
-            if (ctx.FirstSelectedMeshObject == null) return false;
+            if (ctx.ActiveMeshObject == null) return false;
 
             UpdateContext(ctx);
 
@@ -105,7 +105,7 @@ namespace Poly_Ling.Tools
 
         public bool OnMouseDrag(ToolContext ctx, Vector2 mousePos, Vector2 delta)
         {
-            if (ctx.FirstSelectedMeshObject == null) return false;
+            if (ctx.ActiveMeshObject == null) return false;
 
             UpdateContext(ctx);
             _ctx.ClearPreview();
@@ -196,8 +196,8 @@ namespace Poly_Ling.Tools
 
         private void DrawFacePreview(ToolContext ctx, int faceIdx, Color color)
         {
-            if (faceIdx < 0 || faceIdx >= ctx.FirstSelectedMeshObject.FaceCount) return;
-            var face = ctx.FirstSelectedMeshObject.Faces[faceIdx];
+            if (faceIdx < 0 || faceIdx >= ctx.ActiveMeshObject.FaceCount) return;
+            var face = ctx.ActiveMeshObject.Faces[faceIdx];
             if (face.VertexCount < 3) return;
 
             // UnityEditor_Handles 削除済み
@@ -205,27 +205,27 @@ namespace Poly_Ling.Tools
             {
                 int v1 = face.VertexIndices[i];
                 int v2 = face.VertexIndices[(i + 1) % face.VertexCount];
-                if (v1 < 0 || v1 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                if (v2 < 0 || v2 >= ctx.FirstSelectedMeshObject.VertexCount) continue;
-                Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-                Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v2].Position);
+                if (v1 < 0 || v1 >= ctx.ActiveMeshObject.VertexCount) continue;
+                if (v2 < 0 || v2 >= ctx.ActiveMeshObject.VertexCount) continue;
+                Vector2 sp1 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[v1].Position);
+                Vector2 sp2 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[v2].Position);
                 // UnityEditor_Handles 削除済み
             }
         }
 
         private void DrawLinePreview(ToolContext ctx, int lineIdx)
         {
-            if (lineIdx < 0 || lineIdx >= ctx.FirstSelectedMeshObject.FaceCount) return;
-            var face = ctx.FirstSelectedMeshObject.Faces[lineIdx];
+            if (lineIdx < 0 || lineIdx >= ctx.ActiveMeshObject.FaceCount) return;
+            var face = ctx.ActiveMeshObject.Faces[lineIdx];
             if (face.VertexCount != 2) return;
 
             int v1 = face.VertexIndices[0];
             int v2 = face.VertexIndices[1];
-            if (v1 < 0 || v1 >= ctx.FirstSelectedMeshObject.VertexCount) return;
-            if (v2 < 0 || v2 >= ctx.FirstSelectedMeshObject.VertexCount) return;
+            if (v1 < 0 || v1 >= ctx.ActiveMeshObject.VertexCount) return;
+            if (v2 < 0 || v2 >= ctx.ActiveMeshObject.VertexCount) return;
 
-            Vector2 sp1 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v1].Position);
-            Vector2 sp2 = ctx.WorldToScreen(ctx.FirstSelectedMeshObject.Vertices[v2].Position);
+            Vector2 sp1 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[v1].Position);
+            Vector2 sp2 = ctx.LocalToScreen(ctx.ActiveMeshObject.Vertices[v2].Position);
             // UnityEditor_Handles 削除済み
         }
     }

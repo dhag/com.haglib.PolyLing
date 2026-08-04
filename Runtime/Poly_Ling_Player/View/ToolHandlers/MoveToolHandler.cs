@@ -7,7 +7,7 @@
 // 【他ツールでの流用について】
 //
 // 本ハンドラは VertexMove モード専用ではなく、カテゴリ 1 の編集ツール
-// (EdgeBevel / FlipFace / FaceExtrude / LineExtrude 等) の「選択・矩形選択・
+// (EdgeBevel / FlipFace / FaceExtrude / Solidify 等) の「選択・矩形選択・
 // Shift/Ctrl 修飾による選択追加・Ctrl 抑止ロジック」の共通基盤としても使う。
 //
 // 各ツールハンドラは内部に MoveToolHandler を 1 つ参照し、以下の 2 種類のフック
@@ -67,7 +67,7 @@ namespace Poly_Ling.Player
         public Action OnClearMouseHover;
 
         // ================================================================
-        // ツール流用フック (EdgeBevel / FlipFace / FaceExtrude / LineExtrude 等)
+        // ツール流用フック (EdgeBevel / FlipFace / FaceExtrude / Solidify 等)
         // 未設定 (null) なら MoveToolHandler は純粋な移動モードとして動作。
         // 各ツール進入時に設定、脱出時に null に戻すこと。
         // ================================================================
@@ -220,6 +220,24 @@ namespace Poly_Ling.Player
         public enum SelectionDragMode { Box, Lasso }
         public SelectionDragMode DragSelectMode { get; set; } = SelectionDragMode.Box;
 
+        // ================================================================
+        // 一時サブツール用「操作 1 回で終了」通知
+        // ================================================================
+
+        /// <summary>
+        /// 矩形確定 / 投げ縄確定 / クリック確定のいずれかで 1 度だけ呼ばれる。
+        /// 発火の直前に自身を null へ戻すため、受け側での解除は不要。
+        /// </summary>
+        public Action OneShotFinished;
+
+        private void FireOneShotFinished()
+        {
+            var cb = OneShotFinished;
+            if (cb == null) return;
+            OneShotFinished = null;
+            cb.Invoke();
+        }
+
         private enum DragMode { None, Moving, BoxSelecting, LassoSelecting }
         private DragMode _dragMode = DragMode.None;
 
@@ -288,6 +306,9 @@ namespace Poly_Ling.Player
 
             // ツール流用フック: クリック系ツール (FlipFace 等) がここで発火
             OnLeftClickExtra?.Invoke(clickedElem, mods);
+
+            // 一時サブツール: ドラッグに至らないクリックでも 1 回で終了させる
+            FireOneShotFinished();
         }
 
         public void OnLeftDragBegin(PlayerHitResult hit, Vector2 screenPos, ModifierKeys mods)
@@ -500,6 +521,7 @@ namespace Poly_Ling.Player
                 _dragMode = DragMode.None;
                 _state    = MoveState.Idle;
                 OnClearMouseHover?.Invoke();
+                FireOneShotFinished();
                 return;
             }
 
@@ -513,6 +535,7 @@ namespace Poly_Ling.Player
                 _dragMode = DragMode.None;
                 _state    = MoveState.Idle;
                 OnClearMouseHover?.Invoke();
+                FireOneShotFinished();
                 return;
             }
 
@@ -679,12 +702,16 @@ namespace Poly_Ling.Player
             {
                 var mc = model?.GetMeshContext(kv.Key);
                 if (mc?.MeshObject == null) continue;
-                // ローカル頂点を WorldMatrix でワールド変換してから集計する。
+                // ローカル頂点をワールド変換してから集計する。
                 // WorldToScreenPos はワールド空間を期待するため、この変換が抜けると
                 // Player（WorldMatrix 非 identity）でギズモが実頂点から離れて描画される。
+                // 変換は頂点単位で行う。スキンド頂点に実際に適用される行列は
+                // メッシュの WorldMatrix ではなくボーンの SkinningMatrix のブレンドであり
+                // （MeshContext.VertexMatrix）、メッシュの行列を使うとギズモが
+                // 親ボーンのワールド移動量ぶんずれる。
                 foreach (int vi in kv.Value)
                     if (vi >= 0 && vi < mc.MeshObject.VertexCount)
-                    { sum += mc.LocalToWorld(mc.MeshObject.Vertices[vi].Position); count++; }
+                    { sum += mc.LocalToWorld(vi, mc.MeshObject.Vertices[vi].Position); count++; }
             }
             _axisGizmo.Center = count > 0 ? sum / count : Vector3.zero;
         }
@@ -798,7 +825,7 @@ namespace Poly_Ling.Player
         {
             var sel = _selectionOps.SelectionState;
             if (sel == null) return;
-            var meshObject = _project?.CurrentModel?.FirstSelectedMeshContext?.MeshObject;
+            var meshObject = _project?.CurrentModel?.ActiveMeshContext?.MeshObject;
             if (meshObject == null) return;
 
             foreach (var edge in sel.Edges)
@@ -869,7 +896,7 @@ namespace Poly_Ling.Player
             { _selectionOps.EndBoxSelect(Enumerable.Empty<int>(), mods); return; }
 
             var model = _project?.CurrentModel;
-            var mc    = model?.FirstDrawableMeshContext ?? model?.FirstSelectedMeshContext;
+            var mc    = model?.ActiveMeshContext;
             if (mc?.MeshObject == null)
             { _selectionOps.EndBoxSelect(Enumerable.Empty<int>(), mods); return; }
 
@@ -993,7 +1020,7 @@ namespace Poly_Ling.Player
             { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
 
             var model = _project?.CurrentModel;
-            var mc    = model?.FirstDrawableMeshContext ?? model?.FirstSelectedMeshContext;
+            var mc    = model?.ActiveMeshContext;
             if (mc?.MeshObject == null)
             { _selectionOps.EndLassoSelect(Enumerable.Empty<int>(), mods); return; }
 

@@ -35,7 +35,7 @@ namespace Poly_Ling.Tools
             }
             else
             {
-                var path = GetShortestPath(toolCtx.FirstSelectedMeshObject, _firstVertex, vIdx);
+                var path = GetShortestPath(toolCtx.ActiveMeshObject, _firstVertex, vIdx);
 
                 if (selectMode.Has(MeshSelectMode.Vertex))
                     SelectionHelper.ApplyVertexSelection(toolCtx, path, ctx.AddToSelection);
@@ -62,7 +62,7 @@ namespace Poly_Ling.Tools
 
             if (_firstVertex >= 0 && ctx.HoveredVertex >= 0 && _firstVertex != ctx.HoveredVertex)
             {
-                ctx.PreviewPath.AddRange(GetShortestPath(toolCtx.FirstSelectedMeshObject, _firstVertex, ctx.HoveredVertex));
+                ctx.PreviewPath.AddRange(GetShortestPath(toolCtx.ActiveMeshObject, _firstVertex, ctx.HoveredVertex));
 
                 // 辺選択は廃止。
                 if (selectMode.Has(MeshSelectMode.Face))

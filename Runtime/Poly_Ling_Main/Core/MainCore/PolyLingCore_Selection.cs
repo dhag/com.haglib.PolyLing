@@ -134,6 +134,19 @@ namespace Poly_Ling.Core
             OnRepaintRequired?.Invoke();
         }
 
+        /// <summary>
+        /// 【デッドコード】選択頂点を削除する。新規に使わないこと。
+        ///
+        /// - Runtime アセンブリ全体を grep して呼び出し元 0 件
+        ///   (PolyLingCore.cs のコメント参照が 1 件あるだけ)。
+        ///   Editor アセンブリ側からの呼び出しは未確認。
+        /// - 実処理の MeshMergeHelper.DeleteVertices は、削除頂点に触れていない
+        ///   線分 (2頂点の面) まで消してしまう既知の問題を抱えている
+        ///   (MeshMergeHelper.DeleteVertices のコメント参照)。
+        /// - Player 側の選択削除は Poly_Ling.Tools.DeleteSelectionTool /
+        ///   Poly_Ling.Player.DeleteSelectionToolHandler が担う。
+        ///   面・線分の削除、孤立頂点の掃除、Edge 選択の除外もそちらで扱う。
+        /// </summary>
         public void DeleteSelectedVertices()
         {
             if (_selectionState.Vertices.Count == 0) return;

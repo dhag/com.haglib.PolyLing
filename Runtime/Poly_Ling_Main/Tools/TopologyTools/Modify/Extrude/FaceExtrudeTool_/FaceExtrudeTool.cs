@@ -114,7 +114,7 @@ namespace Poly_Ling.Tools
             if (_state != ExtrudeState.Idle)
                 return false;
 
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
                 return false;
 
             _mouseDownScreenPos = mousePos;
@@ -126,7 +126,7 @@ namespace Poly_Ling.Tools
                 _state = ExtrudeState.PendingAction;
                 // マウスダウン時にスナップショット取得
                 if (ctx.UndoController != null)
-                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 return false;
             }
 
@@ -267,13 +267,26 @@ namespace Poly_Ling.Tools
             ctx.EnterTransformDragging?.Invoke();
         }
 
+        /// <summary>
+        /// 変換の基準にする頂点。対象面の先頭頂点を使う。
+        /// スキンド頂点はボーンの SkinningMatrix で変換されるため、メッシュの
+        /// WorldMatrix 系（ActiveWorldToLocalVector 等）を使うと倍率と向きが合わない。
+        /// </summary>
+        private int BasisVertex()
+        {
+            if (_targetFaces.Count == 0) return -1;
+            var vs = _targetFaces[0].VertexIndices;
+            return (vs != null && vs.Count > 0) ? vs[0] : -1;
+        }
+
         private void UpdateExtrude(ToolContext ctx, Vector2 mousePos)
         {
             Vector2 totalDelta = mousePos - _mouseDownScreenPos;
             // カメラ平面（ウインドウ座標系）のワールドデルタ。頂点移動と同じ変換。
             // 押し出し量はローカル空間の長さとして使うため、ローカルへ変換してから大きさを取る。
+            int basis = BasisVertex();
             Vector3 worldDelta = ScreenDeltaToWorldDelta(ctx, totalDelta);
-            Vector3 localDelta = ctx.ActiveWorldToLocalVector(worldDelta);
+            Vector3 localDelta = ctx.WorldToLocalVectorAt(basis, worldDelta);
 
             Vector2 dirScreen = WorldDirToScreenDir(ctx, _extrudeDirection);
             if (dirScreen.magnitude > 0.001f)
@@ -285,7 +298,7 @@ namespace Poly_Ling.Tools
                 // 大きさは投影分を world スケールへ換算（大きさは符号非依存）。
                 Vector2 dir    = dirScreen.normalized;
                 float   signed = Vector2.Dot(totalDelta, dir);
-                Vector3 proj   = ctx.ActiveWorldToLocalVector(ScreenDeltaToWorldDelta(ctx, dir * signed));
+                Vector3 proj   = ctx.WorldToLocalVectorAt(basis, ScreenDeltaToWorldDelta(ctx, dir * signed));
                 _extrudeDistance = Mathf.Sign(signed) * proj.magnitude * DragSensitivity;
             }
             else
@@ -294,7 +307,7 @@ namespace Poly_Ling.Tools
                 _extrudeDistance = Mathf.Sign(-totalDelta.y) * localDelta.magnitude * DragSensitivity;
             }
 
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
             if (meshObject != null)
             {
                 foreach (var dv in _faceDragVertices)
@@ -324,14 +337,42 @@ namespace Poly_Ling.Tools
 
         /// <summary>
         /// ローカル方向を画面上の 2D 方向に変換する。
-        /// _targetFaces[].Center と面法線はローカル座標なので、WorldMatrix を適用してから投影する。
+        /// 面中心は面の構成頂点の GPU ワールド座標の平均で求める（CPU で計算し直さない）。
+        /// 方向は基準頂点の行列でワールド化する。
         /// </summary>
+        /// <summary>
+        /// 面中心のワールド座標。構成頂点の GPU ワールド座標（ctx.GetVertexWorldPosition）の平均。
+        /// 取得できない頂点は基準頂点の行列でローカルから変換する。
+        /// </summary>
+        private static Vector3 FaceCenterWorld(ToolContext ctx, FaceExtrudeInfo info)
+        {
+            var mo = ctx.ActiveMeshObject;
+            var vs = info.VertexIndices;
+            if (mo == null || vs == null || vs.Count == 0)
+                return ctx.ActiveWorldMatrix.MultiplyPoint3x4(info.Center);
+
+            Vector3 sum = Vector3.zero;
+            int n = 0;
+            for (int i = 0; i < vs.Count; i++)
+            {
+                int vi = vs[i];
+                if (vi < 0 || vi >= mo.Vertices.Count) continue;
+
+                var w = ctx.GetVertexWorldPosition?.Invoke(vi);
+                sum += w ?? ctx.ActiveVertexMatrix(vi).MultiplyPoint3x4(mo.Vertices[vi].Position);
+                n++;
+            }
+
+            return n > 0 ? sum / n : ctx.ActiveWorldMatrix.MultiplyPoint3x4(info.Center);
+        }
+
         private Vector2 WorldDirToScreenDir(ToolContext ctx, Vector3 localDir)
         {
             if (_targetFaces.Count == 0) return Vector2.up;
 
-            Vector3 centerWorld = ctx.ActiveLocalToWorld(_targetFaces[0].Center);
-            Vector3 dirWorld    = ctx.ActiveLocalToWorldVector(localDir);
+            int basis = BasisVertex();
+            Vector3 centerWorld = FaceCenterWorld(ctx, _targetFaces[0]);
+            Vector3 dirWorld    = ctx.LocalToWorldVectorAt(basis, localDir);
             Vector2 screenCenter = ctx.WorldToScreen(centerWorld);
             Vector2 screenEnd    = ctx.WorldToScreen(centerWorld + dirWorld);
 
@@ -344,7 +385,7 @@ namespace Poly_Ling.Tools
 
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
                 {
@@ -359,7 +400,7 @@ namespace Poly_Ling.Tools
 
         private void ExecuteExtrude(ToolContext ctx)
         {
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
 
             Vector3 avgNormal = Vector3.zero;
             if (!IndividualNormals)
@@ -400,6 +441,10 @@ namespace Poly_Ling.Tools
                     var newVertex = new Vertex { Position = newPos };
                     newVertex.UVs.AddRange(oldVertex.UVs);
                     newVertex.Normals.AddRange(oldVertex.Normals);
+                    // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
+                    // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
+                    // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
+                    newVertex.BoneWeight = oldVertex.BoneWeight;
 
                     meshObject.Vertices.Add(newVertex);
                     vertexMap[oldVIdx] = newIdx;
@@ -472,7 +517,7 @@ namespace Poly_Ling.Tools
 
             foreach (int faceIdx in ctx.SelectionState.Faces)
             {
-                var info = CreateFaceInfo(ctx.FirstSelectedMeshObject, faceIdx);
+                var info = CreateFaceInfo(ctx.ActiveMeshObject, faceIdx);
                 if (info.HasValue)
                     _targetFaces.Add(info.Value);
             }

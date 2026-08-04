@@ -389,6 +389,29 @@ namespace Poly_Ling.Context
             }
         }
 
+        // ================================================================
+        // 編集対象メッシュの取得元（一本化）
+        // ================================================================
+        //
+        // FirstSelectedMeshContext は ActiveCategory が Bone/Morph のとき
+        // メッシュ以外を指し得る。FirstDrawableMeshContext は常に描画メッシュを返す。
+        // メッシュ編集ツール・ハンドラ・オーバーレイは必ず ActiveMeshContext /
+        // ActiveMeshIndex を使うこと。MeshObject と行列の取得元がずれると座標がずれる。
+        // ================================================================
+
+        /// <summary>編集対象メッシュ（描画メッシュ優先）。</summary>
+        public MeshContext ActiveMeshContext => FirstDrawableMeshContext ?? FirstSelectedMeshContext;
+
+        /// <summary>編集対象メッシュの MeshContextList インデックス。未解決は -1。</summary>
+        public int ActiveMeshIndex
+        {
+            get
+            {
+                if (SelectedDrawableMeshIndices.Count > 0) return SelectedDrawableMeshIndices[0];
+                return FirstSelectedIndex;
+            }
+        }
+
         /// <summary>選択リストの先頭インデックス（便宜アクセサ）</summary>
         public int FirstSelectedIndex
         {

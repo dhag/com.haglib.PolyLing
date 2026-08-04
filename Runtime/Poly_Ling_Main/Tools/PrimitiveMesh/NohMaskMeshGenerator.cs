@@ -84,6 +84,24 @@ namespace Poly_Ling.NohMask
         public int FaceIndex;
         public bool FlipFaces;
 
+        /// <summary>X軸反転（頂点位置の x の符号を反転）。</summary>
+        public bool FlipX;
+
+        /// <summary>Y軸反転（頂点位置の y の符号を反転）。</summary>
+        public bool FlipY;
+
+        /// <summary>Z軸反転（頂点位置の z の符号を反転）。</summary>
+        public bool FlipZ;
+
+        /// <summary>内側の穴（目・口）を面で塞ぐ。</summary>
+        public bool FillHoles;
+
+        /// <summary>外縁を外向きに拡張する（餃子の羽根）。</summary>
+        public bool RimEnabled;
+
+        /// <summary>外縁の拡張幅。外周ループの平均半径に対する比率。</summary>
+        public float RimWidth;
+
         public static FaceMeshParams Default => new FaceMeshParams
         {
             MeshName           = "FaceMesh",
@@ -95,6 +113,12 @@ namespace Poly_Ling.NohMask
             RotationY          = 180f,
             FaceIndex          = 0,
             FlipFaces          = false,
+            FlipX              = true,
+            FlipY              = false,
+            FlipZ              = true,
+            FillHoles          = true,
+            RimEnabled         = true,
+            RimWidth           = 0.4f,
         };
 
         public bool Equals(FaceMeshParams o) =>
@@ -106,7 +130,13 @@ namespace Poly_Ling.NohMask
             Mathf.Approximately(RotationX,  o.RotationX)  &&
             Mathf.Approximately(RotationY,  o.RotationY)  &&
             FaceIndex == o.FaceIndex &&
-            FlipFaces == o.FlipFaces;
+            FlipFaces == o.FlipFaces &&
+            FlipX     == o.FlipX     &&
+            FlipY     == o.FlipY     &&
+            FlipZ     == o.FlipZ     &&
+            FillHoles == o.FillHoles &&
+            RimEnabled == o.RimEnabled &&
+            Mathf.Approximately(RimWidth, o.RimWidth);
 
         public override bool Equals(object obj) => obj is FaceMeshParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;
@@ -178,6 +208,11 @@ namespace Poly_Ling.NohMask
             center /= faceData.landmarks.Length;
 
             // 頂点位置を計算（MediaPipe座標系 → Unity座標系）
+            // 変換後に軸反転を適用する。面の巻き順は変更しない（裏表は FlipFaces で手動調整）。
+            float sx = p.FlipX ? -1f : 1f;
+            float sy = p.FlipY ? -1f : 1f;
+            float sz = p.FlipZ ? -1f : 1f;
+
             var positions = new Vector3[faceData.landmarks.Length];
             for (int i = 0; i < faceData.landmarks.Length; i++)
             {
@@ -185,7 +220,7 @@ namespace Poly_Ling.NohMask
                 float x = (lm.x - center.x) * p.Scale;
                 float y = ((1f - lm.y) - (1f - center.y)) * p.Scale;
                 float z = -(lm.z - center.z) * p.Scale * p.DepthScale;
-                positions[i] = new Vector3(x, y, z);
+                positions[i] = new Vector3(x * sx, y * sy, z * sz);
             }
 
             // 頂点追加（結合しない）
@@ -196,22 +231,91 @@ namespace Poly_Ling.NohMask
                 md.Vertices.Add(new Vertex(positions[i], uv, Vector3.forward));
             }
 
-            // 三角形面の生成
+            // 面の生成（N角形対応。3頂点未満のみ除外する）
             foreach (var tri in triangles.triangles)
             {
-                if (tri == null || tri.Length != 3) continue;
-                int i0 = tri[0], i1 = tri[1], i2 = tri[2];
-                if (i0 < 0 || i1 < 0 || i2 < 0) continue;
-                if (i0 >= md.VertexCount || i1 >= md.VertexCount || i2 >= md.VertexCount) continue;
+                if (tri == null || tri.Length < 3) continue;
 
+                // 範囲外インデックスを含む面はスキップする
+                bool valid = true;
+                for (int k = 0; k < tri.Length; k++)
+                {
+                    if (tri[k] < 0 || tri[k] >= md.VertexCount) { valid = false; break; }
+                }
+                if (!valid) continue;
+
+                var vi = new List<int>(tri.Length);
                 if (p.FlipFaces)
-                    md.AddTriangle(i0, i2, i1);
+                {
+                    // 反転は頂点順の逆回りで表現する（三角の (i0,i2,i1) をN角へ一般化）。
+                    for (int k = tri.Length - 1; k >= 0; k--) vi.Add(tri[k]);
+                }
                 else
-                    md.AddTriangle(i0, i1, i2);
+                {
+                    for (int k = 0; k < tri.Length; k++) vi.Add(tri[k]);
+                }
+
+                // UV/法線サブインデックスは従来の AddTriangle と同じく全て 0。
+                var uvi = new List<int>(tri.Length);
+                var ni  = new List<int>(tri.Length);
+                for (int k = 0; k < tri.Length; k++) { uvi.Add(0); ni.Add(0); }
+
+                md.AddFace(new Face
+                {
+                    VertexIndices = vi,
+                    UVIndices     = uvi,
+                    NormalIndices = ni,
+                    MaterialIndex = 0,
+                });
             }
+
+            // 穴埋め → 外縁拡張 の順に適用する。
+            ApplyHolesAndRim(md, p);
 
             md.RecalculateSmoothNormals();
             return md;
+        }
+
+        /// <summary>
+        /// 内側の穴を塞ぎ、外縁を外向きに拡張する。
+        /// 境界ループの抽出・分類は <see cref="Poly_Ling.Tools.BoundaryLoopUtil"/> に委譲する。
+        /// </summary>
+        private static void ApplyHolesAndRim(MeshObject md, FaceMeshParams p)
+        {
+            if (md == null || md.FaceCount == 0) return;
+            if (!p.FillHoles && !p.RimEnabled) return;
+
+            var cache = new Poly_Ling.Selection.TopologyCache(md);
+            var rawLoops = Poly_Ling.Tools.BoundaryLoopUtil.FindBoundaryLoops(md, cache);
+            if (rawLoops.Count == 0) return;
+
+            var isolated = Poly_Ling.Tools.BoundaryLoopUtil.FindIsolatedVertices(md);
+            var loops    = Poly_Ling.Tools.BoundaryLoopUtil.Classify(md, rawLoops, isolated);
+            float sign   = Poly_Ling.Tools.BoundaryLoopUtil.FaceOrientationSignXY(md);
+
+            if (p.FillHoles)
+                Poly_Ling.Tools.MediaPipeFaceHoleFiller.FillAllHoles(md, loops, sign);
+
+            if (p.RimEnabled && p.RimWidth > 0f)
+            {
+                foreach (var l in loops)
+                {
+                    if (l.Kind != Poly_Ling.Tools.BoundaryLoopKind.Outer) continue;
+
+                    // 幅は外周ループの平均半径に対する比率で決める（Scale 非依存）。
+                    Vector3 c = Poly_Ling.Tools.BoundaryLoopUtil.CentroidXY(md, l.Vertices);
+                    float r = 0f;
+                    foreach (int vi in l.Vertices)
+                    {
+                        var q = md.Vertices[vi].Position;
+                        r += new Vector2(q.x - c.x, q.y - c.y).magnitude;
+                    }
+                    r /= Mathf.Max(1, l.Vertices.Count);
+
+                    Poly_Ling.Tools.BoundaryRimExtruder.Extend(md, l.Vertices, r * p.RimWidth, sign);
+                    break;
+                }
+            }
         }
 
         /// <summary>
@@ -266,8 +370,9 @@ namespace Poly_Ling.NohMask
         }
 
         /// <summary>
-        /// 三角形 JSON を手動パース。
+        /// 面インデックス JSON を手動パース（N角形対応）。
         /// JsonUtility はネストした配列を扱えないため Regex を使用する。
+        /// triangles 配列の各要素は要素数固定ではなく、3要素以上なら N 角形として読み込む。
         /// </summary>
         public static FaceMeshTrianglesJson ParseTrianglesJson(string json)
         {
@@ -282,18 +387,20 @@ namespace Poly_Ling.NohMask
             if (vcMatch.Success)
                 int.TryParse(vcMatch.Groups[1].Value, out result.vertex_count);
 
-            var pattern = new Regex(@"\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]");
+            // N角形対応: 要素数を固定せず [a, b, c, ...] を丸ごと拾って分解する。
+            // 外側の "triangles": [ の直後は空白＋'[' が続くため数字が来ず、外側配列には一致しない。
+            var pattern = new Regex(@"\[\s*\d+(?:\s*,\s*\d+)*\s*\]");
             foreach (Match m in pattern.Matches(json))
             {
-                if (m.Groups.Count >= 4)
+                string inner = m.Value.Trim().TrimStart('[').TrimEnd(']');
+                var parts = inner.Split(',');
+                var poly  = new int[parts.Length];
+                bool ok   = true;
+                for (int i = 0; i < parts.Length; i++)
                 {
-                    list.Add(new[]
-                    {
-                        int.Parse(m.Groups[1].Value),
-                        int.Parse(m.Groups[2].Value),
-                        int.Parse(m.Groups[3].Value),
-                    });
+                    if (!int.TryParse(parts[i].Trim(), out poly[i])) { ok = false; break; }
                 }
+                if (ok && poly.Length >= 3) list.Add(poly);
             }
 
             result.triangles = list.ToArray();

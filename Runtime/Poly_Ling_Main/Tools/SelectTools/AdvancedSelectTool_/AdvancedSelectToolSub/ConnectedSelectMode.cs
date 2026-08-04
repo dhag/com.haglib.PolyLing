@@ -54,7 +54,7 @@ namespace Poly_Ling.Tools
             if (selectMode.Has(MeshSelectMode.Vertex) && ctx.GpuStartVertex >= 0)
             {
                 ctx.HoveredVertex = ctx.GpuStartVertex;
-                var connectedVerts = GetConnectedVertices(toolCtx.FirstSelectedMeshObject, ctx.HoveredVertex);
+                var connectedVerts = GetConnectedVertices(toolCtx.ActiveMeshObject, ctx.HoveredVertex);
                 if (selectMode.Has(MeshSelectMode.Vertex))
                     ctx.PreviewVertices.AddRange(connectedVerts);
                 if (selectMode.Has(MeshSelectMode.Edge))
@@ -88,7 +88,7 @@ namespace Poly_Ling.Tools
                 var connectedFaces = GetConnectedFaces(toolCtx, ctx.HoveredFace);
                 var connectedVerts = new HashSet<int>();
                 foreach (int fIdx in connectedFaces)
-                    foreach (int vIdx in toolCtx.FirstSelectedMeshObject.Faces[fIdx].VertexIndices)
+                    foreach (int vIdx in toolCtx.ActiveMeshObject.Faces[fIdx].VertexIndices)
                         connectedVerts.Add(vIdx);
 
                 if (selectMode.Has(MeshSelectMode.Vertex))
@@ -107,7 +107,7 @@ namespace Poly_Ling.Tools
                 var connectedVerts = new HashSet<int>();
                 foreach (int lIdx in connectedLines)
                 {
-                    var face = toolCtx.FirstSelectedMeshObject.Faces[lIdx];
+                    var face = toolCtx.ActiveMeshObject.Faces[lIdx];
                     if (face.VertexCount == 2)
                     {
                         connectedVerts.Add(face.VertexIndices[0]);
@@ -131,7 +131,7 @@ namespace Poly_Ling.Tools
         private void ApplyConnectedFromVertex(AdvancedSelectContext ctx, int startVertex, MeshSelectMode selectMode)
         {
             var toolCtx = ctx.ToolCtx;
-            var connectedVerts = GetConnectedVertices(toolCtx.FirstSelectedMeshObject, startVertex);
+            var connectedVerts = GetConnectedVertices(toolCtx.ActiveMeshObject, startVertex);
 
             if (selectMode.Has(MeshSelectMode.Vertex))
                 SelectionHelper.ApplyVertexSelection(toolCtx, connectedVerts, ctx.AddToSelection);
@@ -186,7 +186,7 @@ namespace Poly_Ling.Tools
             var connectedVerts = new HashSet<int>();
             foreach (int fIdx in connectedFaces)
             {
-                foreach (int vIdx in toolCtx.FirstSelectedMeshObject.Faces[fIdx].VertexIndices)
+                foreach (int vIdx in toolCtx.ActiveMeshObject.Faces[fIdx].VertexIndices)
                     connectedVerts.Add(vIdx);
             }
 
@@ -210,7 +210,7 @@ namespace Poly_Ling.Tools
             var connectedVerts = new HashSet<int>();
             foreach (int lIdx in connectedLines)
             {
-                var face = toolCtx.FirstSelectedMeshObject.Faces[lIdx];
+                var face = toolCtx.ActiveMeshObject.Faces[lIdx];
                 if (face.VertexCount == 2)
                 {
                     connectedVerts.Add(face.VertexIndices[0]);
@@ -281,7 +281,7 @@ namespace Poly_Ling.Tools
         {
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var faceAdjacency = SelectionHelper.BuildFaceAdjacency(ctx.FirstSelectedMeshObject);
+            var faceAdjacency = SelectionHelper.BuildFaceAdjacency(ctx.ActiveMeshObject);
 
             queue.Enqueue(startFace);
             result.Add(startFace);
@@ -303,11 +303,11 @@ namespace Poly_Ling.Tools
 
         private List<int> GetConnectedLines(ToolContext ctx, int startLine)
         {
-            if (ctx.FirstSelectedMeshObject == null) return new List<int> { startLine };
+            if (ctx.ActiveMeshObject == null) return new List<int> { startLine };
 
             var result = new HashSet<int>();
             var queue = new Queue<int>();
-            var lineAdjacency = SelectionHelper.BuildLineAdjacency(ctx.FirstSelectedMeshObject);
+            var lineAdjacency = SelectionHelper.BuildLineAdjacency(ctx.ActiveMeshObject);
 
             queue.Enqueue(startLine);
             result.Add(startLine);

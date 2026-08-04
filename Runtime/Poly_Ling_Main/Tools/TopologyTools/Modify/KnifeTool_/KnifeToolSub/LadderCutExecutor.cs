@@ -13,6 +13,34 @@ namespace Poly_Ling.Tools
 {
     public static class LadderCutExecutor
     {
+        // ================================================================
+        // 【禁止事項】GPU 由来の座標を扱うときの拗らせ
+        // ================================================================
+        // 以下は実際に発生させた失敗である。繰り返さないこと。
+        //
+        // 1. 調べずに CPU 側で独自計算しない。
+        //    GPU が _worldPositionBuffer にワールド座標を出しているのに、
+        //    同じ規則を CPU で書き直すと、規則が食い違ったときに表示だけがずれる。
+        //    まず GPU の値を使う経路を探すこと。
+        //    ワールド座標は ToolContext.GetVertexWorldPosition、
+        //    クリップ空間 w は ToolContext.GetVertexClipW を経由する
+        //    （実体は PlayerViewportManager.TryGetVertexWorld / TryGetVertexClipW）。
+        //
+        // 2.「今は呼ばれていないからできない」と決めつけない。
+        //    呼び出し箇所が無いことは、呼び出しを足せない理由にならない。
+        //    足せるかどうかを調べてから結論を出すこと。
+        //
+        // 3. カメラもモデルも動いていないのに読み戻しを毎フレーム呼ばない。
+        //    WritebackTransformedVertices / GetWorldPositions は同期 GetData を伴う。
+        //    ワールド座標が変わる契機（頂点移動・ボーン移動・再構築）でのみ更新し、
+        //    ホバーのようにトポロジ・視点・頂点位置のいずれも変わらない操作では呼ばない。
+        //
+        // 4. スキンドメッシュに追加する頂点には BoneWeight が必須である。
+        //    BoneWeight を持たない頂点は GPU 側でメッシュ自身の context 索引を使い
+        //    （UnifiedBufferManager_Build.cs:356-362）、周囲の頂点と別の行列で
+        //    変換されてその頂点だけ位置がずれる。
+        // ================================================================
+
         private const float MID = 0.5f;
 
         /// <summary>
@@ -100,6 +128,9 @@ namespace Poly_Ling.Tools
 
             var a = mo.Vertices[v1];
             var b = mo.Vertices[v2];
+
+            // スキンドメッシュに追加する頂点には BoneWeight が必須（上記 4）。
+            v.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(a.BoneWeight, b.BoneWeight, t);
             if (a.UVs.Count > 0 && b.UVs.Count > 0)
                 v.UVs.Add(Vector2.Lerp(a.UVs[0], b.UVs[0], t));
             if (a.Normals.Count > 0 && b.Normals.Count > 0)

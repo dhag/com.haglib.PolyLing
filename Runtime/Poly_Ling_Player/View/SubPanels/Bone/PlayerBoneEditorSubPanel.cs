@@ -12,6 +12,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Commands;
+using Poly_Ling.EditorBridge;
 using Poly_Ling.View;
 
 namespace Poly_Ling.Player
@@ -63,10 +64,17 @@ namespace Poly_Ling.Player
         private Label         _warningLabel;
         private Label         _selectionCountLabel;
 
+        // ── 対象選択（スコープ追従・全タブ共通）────────────────────
+        //   3D 上でピックしにくい対象をリストから選ぶための入口。
+        //   選択は 3D ピックやメッシュリストと同じ SelectMeshCommand 経由で行う。
+        private VisualElement _targetSection;
+        private DropdownField _boneDropdown;             // 対象選択ドロップダウン
+        private bool          _suppressBoneDropdown;
+        private readonly List<int>          _targetChoiceMasters    = new List<int>();
+        private readonly List<MeshCategory> _targetChoiceCategories = new List<MeshCategory>();
+
         // ── ボーン専用 ──────────────────────────────────────────────
         private VisualElement _boneSection;
-        private DropdownField _boneDropdown;
-        private bool          _suppressBoneDropdown;
 
         private Label         _boneNameLabel;
         private IntegerField  _masterIndexField;
@@ -97,6 +105,9 @@ namespace Poly_Ling.Player
         // IgnorePose（描画メッシュ含む場合）
         private Toggle        _ignorePoseToggle;
         private VisualElement _ignorePoseRow;
+
+        // ミラー分岐ルート（オブジェクト姿勢タブ専用）
+        private Toggle        _mirrorBranchToggle;
 
         // ── ObjectMoveSettings 連動チェックボックス ───────────────
         // BoneInputHandler 廃止に伴い、ObjectMoveTool のピック対象を
@@ -227,30 +238,22 @@ namespace Poly_Ling.Player
             _selectionCountLabel.style.fontSize     = 10;
             root.Add(_selectionCountLabel);
 
-            // ── ボーン専用セクション ─────────────────────────────────
-            _boneSection = new VisualElement();
+            // ── 対象選択（全タブ共通）───────────────────────────────
+            _targetSection = new VisualElement();
 
-            var dropLabel = new Label("ボーン選択:");
+            var dropLabel = new Label("対象選択:");
             dropLabel.style.color    = new StyleColor(Color.white);
             dropLabel.style.fontSize = 10;
-            _boneSection.Add(dropLabel);
+            _targetSection.Add(dropLabel);
 
             _boneDropdown = new DropdownField();
             _boneDropdown.style.marginBottom = 4;
-            _boneDropdown.RegisterValueChangedCallback(_ =>
-            {
-                if (_suppressBoneDropdown) return;
-                var model = GetModel?.Invoke();
-                if (model == null) return;
-                int idx   = _boneDropdown.index;
-                var bones = model.Bones;
-                if (idx < 0 || bones == null || idx >= bones.Count) return;
-                int masterIdx = bones[idx].MasterIndex;
-                model.SelectBone(masterIdx);
-                OnRepaint?.Invoke();
-                Refresh();
-            });
-            _boneSection.Add(_boneDropdown);
+            _boneDropdown.RegisterValueChangedCallback(_ => OnTargetDropdownChanged());
+            _targetSection.Add(_boneDropdown);
+            root.Add(_targetSection);
+
+            // ── ボーン専用セクション ─────────────────────────────────
+            _boneSection = new VisualElement();
 
             // リセット / フォーカス
             var btnRow = new VisualElement();
@@ -382,6 +385,37 @@ namespace Poly_Ling.Player
                     SendCommand(new SetIgnorePoseCommand(GetModelIndex?.Invoke() ?? 0, indices, e.newValue));
             });
             _ignorePoseRow.Add(_ignorePoseToggle);
+
+            _mirrorBranchToggle = new Toggle("ミラー分岐ルート");
+            _mirrorBranchToggle.style.color = new StyleColor(Color.white);
+            _mirrorBranchToggle.tooltip =
+                "エクスポート時、この配下を実体側とミラー側の2本の枝に分割する（非スキンド専用）";
+            _mirrorBranchToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressTRS) return;
+                var indices = GetTargetIndices();
+                if (indices.Length > 0)
+                    SendCommand(new SetMirrorBranchRootCommand(
+                        GetModelIndex?.Invoke() ?? 0, indices, e.newValue));
+            });
+            _ignorePoseRow.Add(_mirrorBranchToggle);
+
+            // 原点の途中経過を CSV で退避・復元する（オブジェクト姿勢タブ専用）
+            var originIoRow = new VisualElement();
+            originIoRow.style.flexDirection = FlexDirection.Row;
+            originIoRow.style.marginTop     = 2;
+
+            var originExportBtn = new Button(ExportObjectOriginsCsv) { text = "原点CSV書出" };
+            var originImportBtn = new Button(ImportObjectOriginsCsv) { text = "原点CSV読込" };
+            originExportBtn.style.flexGrow = 1;
+            originImportBtn.style.flexGrow = 1;
+            originExportBtn.tooltip = "全メッシュの原点(位置)を CSV に書き出す";
+            originImportBtn.tooltip = "CSV の原点(位置)を名前一致で適用する（原点だけ移動・子は動かさない）";
+
+            originIoRow.Add(originExportBtn);
+            originIoRow.Add(originImportBtn);
+            _ignorePoseRow.Add(originIoRow);
+
             root.Add(_ignorePoseRow);
 
             _statusLabel = new Label();
@@ -514,6 +548,8 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            RefreshTargetDropdown(model);
+
             if (showBoneSection)
                 RefreshBoneSection(model);
 
@@ -569,31 +605,16 @@ namespace Poly_Ling.Player
                 _ignorePoseToggle.SetValueWithoutNotify(
                     model.GetMeshContext(indices[0])?.IgnorePoseInArmature ?? false);
 
+            if (_mirrorBranchToggle != null && showIgnorePose)
+                _mirrorBranchToggle.SetValueWithoutNotify(
+                    model.GetMeshContext(indices[0])?.IsMirrorBranchRoot ?? false);
+
             _suppressTRS = false;
             _statusLabel.text = StatusText(model);
         }
 
         private void RefreshBoneSection(ModelContext model)
         {
-            if (_boneDropdown != null)
-            {
-                _suppressBoneDropdown = true;
-                var bones = model.Bones;
-                var choices = new List<string>();
-                if (bones != null) foreach (var e in bones) choices.Add(e.Name);
-                _boneDropdown.choices = choices;
-
-                int dropIdx = -1;
-                if (model.HasBoneSelection && bones != null)
-                {
-                    int dropFirst = model.SelectedBoneIndices[0];
-                    for (int i = 0; i < bones.Count; i++)
-                        if (bones[i].MasterIndex == dropFirst) { dropIdx = i; break; }
-                }
-                _boneDropdown.index = dropIdx;
-                _suppressBoneDropdown = false;
-            }
-
             bool hasBone = model.HasBoneSelection;
             _btnReset?.SetEnabled(hasBone);
             _btnFocus?.SetEnabled(hasBone);
@@ -653,6 +674,249 @@ namespace Poly_Ling.Player
             int sel = _parentChoiceMasters.IndexOf(curParent);
             if (sel < 0) sel = 0;
             _parentBoneDropdown.SetValueWithoutNotify(choices[sel]);
+        }
+
+        // ================================================================
+        // オブジェクト原点の CSV 入出力
+        // ================================================================
+
+        private const string OriginCsvHeader = "#PolyLing_ObjectOrigin,version,1.0";
+
+        /// <summary>全メッシュの原点(位置)を CSV へ書き出す。</summary>
+        private void ExportObjectOriginsCsv()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) return;
+
+            string path = PLEditorBridge.I.SaveFilePanel(
+                "原点CSVの書き出し", "", SanitizeFileName(model.Name) + "_origin", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(OriginCsvHeader);
+            sb.AppendLine("name,posX,posY,posZ");
+
+            int count = 0;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type == MeshType.Bone) continue;
+                if (string.IsNullOrEmpty(mc.Name)) continue;
+
+                Vector3 p = mc.BoneTransform != null && mc.BoneTransform.UseLocalTransform
+                    ? mc.BoneTransform.Position
+                    : Vector3.zero;
+
+                sb.AppendLine($"{EscapeCsvField(mc.Name)},{p.x:R},{p.y:R},{p.z:R}");
+                count++;
+            }
+
+            try
+            {
+                System.IO.File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(true));
+                Debug.Log($"[ObjectOrigin] 原点を書き出し: {count} 件 → {path}");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[ObjectOrigin] 書き出しに失敗: {e.Message}");
+            }
+        }
+
+        /// <summary>CSV から原点(位置)を読み込み、名前一致で適用する。</summary>
+        private void ImportObjectOriginsCsv()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) return;
+
+            string path = PLEditorBridge.I.OpenFilePanel("原点CSVの読み込み", "", "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            string[] lines;
+            try
+            {
+                lines = System.IO.File.ReadAllLines(path);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[ObjectOrigin] 読み込みに失敗: {e.Message}");
+                return;
+            }
+
+            var names     = new List<string>();
+            var positions = new List<Vector3>();
+
+            foreach (string raw in lines)
+            {
+                string line = raw?.Trim('\uFEFF', ' ', '\t');
+                if (string.IsNullOrEmpty(line)) continue;
+                if (line.StartsWith("#")) continue;
+                if (line.StartsWith("name,")) continue;   // 見出し行
+
+                var cols = SplitCsvLine(line);
+                if (cols.Count < 4) continue;
+
+                if (!float.TryParse(cols[1], out float x)) continue;
+                if (!float.TryParse(cols[2], out float y)) continue;
+                if (!float.TryParse(cols[3], out float z)) continue;
+
+                names.Add(cols[0]);
+                positions.Add(new Vector3(x, y, z));
+            }
+
+            if (names.Count == 0)
+            {
+                Debug.LogWarning("[ObjectOrigin] 有効な行がありません: " + path);
+                return;
+            }
+
+            SendCommand(new ApplyObjectOriginsCommand(
+                GetModelIndex?.Invoke() ?? 0, names.ToArray(), positions.ToArray()));
+
+            OnRepaint?.Invoke();
+        }
+
+        private static string EscapeCsvField(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            if (s.IndexOf(',') < 0 && s.IndexOf('"') < 0) return s;
+            return "\"" + s.Replace("\"", "\"\"") + "\"";
+        }
+
+        private static List<string> SplitCsvLine(string line)
+        {
+            var result = new List<string>();
+            var sb     = new System.Text.StringBuilder();
+            bool inQuote = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (inQuote)
+                {
+                    if (c == '"')
+                    {
+                        if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                        else inQuote = false;
+                    }
+                    else sb.Append(c);
+                }
+                else if (c == '"') inQuote = true;
+                else if (c == ',') { result.Add(sb.ToString()); sb.Clear(); }
+                else sb.Append(c);
+            }
+
+            result.Add(sb.ToString());
+            return result;
+        }
+
+        private static string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "model";
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name;
+        }
+
+        // ================================================================
+        // 対象選択ドロップダウン
+        // ================================================================
+
+        /// <summary>
+        /// 現在のタブに応じて選択候補を作り直し、先頭選択に合わせて表示を同期する。
+        ///   ボーンタブ  : ボーン
+        ///   メッシュタブ: 描画メッシュ（MirrorSide 除外）
+        ///   両方タブ    : ボーン → メッシュ の順で連結
+        /// 複数選択中は「(複数選択: n)」を先頭に置き、選ばれるまでコマンドを送らない。
+        /// </summary>
+        private void RefreshTargetDropdown(ModelContext model)
+        {
+            if (_boneDropdown == null) return;
+
+            _suppressBoneDropdown = true;
+            try
+            {
+                _targetChoiceMasters.Clear();
+                _targetChoiceCategories.Clear();
+                var choices = new List<string>();
+
+                bool bothScope = _scope == SubPanelScope.Both;
+
+                if (_scope != SubPanelScope.MeshesOnly)
+                {
+                    var bones = model.Bones;
+                    if (bones != null)
+                    {
+                        foreach (var e in bones)
+                        {
+                            choices.Add(bothScope ? $"B: {e.Name}" : e.Name);
+                            _targetChoiceMasters.Add(e.MasterIndex);
+                            _targetChoiceCategories.Add(MeshCategory.Bone);
+                        }
+                    }
+                }
+
+                if (_scope != SubPanelScope.BonesOnly)
+                {
+                    var drawables = model.DrawableMeshes;
+                    if (drawables != null)
+                    {
+                        foreach (var e in drawables)
+                        {
+                            if (e.Context == null || e.Context.Type == MeshType.MirrorSide) continue;
+                            choices.Add(bothScope ? $"M: {e.Name}" : e.Name);
+                            _targetChoiceMasters.Add(e.MasterIndex);
+                            _targetChoiceCategories.Add(MeshCategory.Drawable);
+                        }
+                    }
+                }
+
+                // 現在の選択（GetTargetIndices と同じ集合）に合わせて表示位置を決める
+                var selected = GetTargetIndices();
+
+                if (selected.Length > 1)
+                {
+                    // 複数選択中はコマンドを送らせない。先頭にプレースホルダを置く。
+                    choices.Insert(0, $"(複数選択: {selected.Length})");
+                    _targetChoiceMasters.Insert(0, -1);
+                    _targetChoiceCategories.Insert(0, MeshCategory.Bone);
+
+                    _boneDropdown.choices = choices;
+                    _boneDropdown.index   = 0;
+                    return;
+                }
+
+                _boneDropdown.choices = choices;
+
+                int dropIdx = -1;
+                if (selected.Length == 1)
+                    dropIdx = _targetChoiceMasters.IndexOf(selected[0]);
+
+                _boneDropdown.index = dropIdx;
+            }
+            finally
+            {
+                _suppressBoneDropdown = false;
+            }
+        }
+
+        /// <summary>ドロップダウンで対象が選ばれた時。3D ピックと同じ選択コマンドを送る。</summary>
+        private void OnTargetDropdownChanged()
+        {
+            if (_suppressBoneDropdown) return;
+
+            int idx = _boneDropdown?.index ?? -1;
+            if (idx < 0 || idx >= _targetChoiceMasters.Count) return;
+
+            int master = _targetChoiceMasters[idx];
+            if (master < 0) return;   // 「(複数選択: n)」プレースホルダ
+
+            SendCommand(new SelectMeshCommand(
+                GetModelIndex?.Invoke() ?? 0,
+                _targetChoiceCategories[idx],
+                new[] { master }));
+
+            OnRepaint?.Invoke();
         }
 
         private void OnMasterIndexChanged(ChangeEvent<int> evt)

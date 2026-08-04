@@ -366,7 +366,9 @@ namespace Poly_Ling.Localization
             // ============================================================
             ["CoordinateSettings"] = new() { ["en"] = "Coordinate", ["ja"] = "座標系", ["hi"] = "ざひょう" },
             ["PmxUnityRatio"] = new() { ["en"] = "PMX→Unity Ratio", ["ja"] = "PMX→Unity比率", ["hi"] = "PMX→Unityひりつ" },
+            ["PmxFlipX"] = new() { ["en"] = "PMX Flip X", ["ja"] = "PMX X反転", ["hi"] = "PMX Xはんてん" },
             ["PmxFlipZ"] = new() { ["en"] = "PMX Flip Z", ["ja"] = "PMX Z反転", ["hi"] = "PMX Zはんてん" },
+            ["MqoFlipX"] = new() { ["en"] = "MQO Flip X", ["ja"] = "MQO X反転", ["hi"] = "MQO Xはんてん" },
             ["MqoFlipZ"] = new() { ["en"] = "MQO Flip Z", ["ja"] = "MQO Z反転", ["hi"] = "MQO Zはんてん" },
             ["MqoUnityRatio"] = new() { ["en"] = "MQO→Unity Ratio", ["ja"] = "MQO→Unity比率", ["hi"] = "MQO→Unityひりつ" },
         };

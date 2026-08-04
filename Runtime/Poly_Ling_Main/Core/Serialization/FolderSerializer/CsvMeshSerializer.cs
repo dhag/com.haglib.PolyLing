@@ -115,6 +115,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     WriteMorphData(sb, mc, useNameBased, indexToName);
                 }
 
+                // Humanoid 割当・可動域（Bone 以外）
+                //   Bone の場合は WriteBoneData 内で出力済み（従来の行位置を維持するため）。
+                if (mc.Type != MeshType.Bone)
+                {
+                    WriteHumanoidPerBone(sb, mc);
+                }
+
                 // 選択セット
                 WriteSelectionSets(sb, mc);
 
@@ -228,6 +235,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             sb.AppendLine($"hasBakedMirrorChild,{mc.HasBakedMirrorChild}");
             sb.AppendLine($"excludeFromExport,{mc.ExcludeFromExport}");
+            sb.AppendLine($"mirrorBranchRoot,{mc.IsMirrorBranchRoot}");
 
             // ミラーペア情報（Real側のみ出力）
             if (!string.IsNullOrEmpty(mirrorPeerName))
@@ -252,6 +260,37 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
         // Write: ボーン固有
         // ================================================================
+
+        /// <summary>
+        /// Humanoid の per-bone データ（割当と可動域）を出力する。
+        ///
+        /// 正本は per-bone の HumanBodyBone であり、humanoid.csv は書き出し専用
+        /// （CsvModelSerializer の読込は RebuildMappingFromPerBone で per-bone から復元する）。
+        /// ボーンを持たない MeshFilter ツリーをそのまま骨格として扱う場合、
+        /// 割当先は MeshType.Mesh のコンテキストになるため、型で絞らずに出力する。
+        /// 値が空なら何も書かないので、割当の無いコンテキストでは出力が増えない。
+        /// </summary>
+        private static void WriteHumanoidPerBone(StringBuilder sb, MeshContext mc)
+        {
+            // Humanoid 割当（per-bone・name主・#5b）
+            var human = mc.MeshObject?.HumanBodyBone;
+            if (!string.IsNullOrEmpty(human))
+            {
+                sb.AppendLine($"humanBodyBone,{EscapeCsv(human)}");
+            }
+
+            // Humanoid マッスル可動域（per-bone・#5d-1）
+            //   humanLimit,useDefault,minXYZ,maxXYZ,centerXYZ,axisLength（ラジアン）
+            var hl = mc.MeshObject?.HumanLimit;
+            if (hl != null)
+            {
+                sb.AppendLine(
+                    $"humanLimit,{hl.UseDefaultValues}," +
+                    $"{F(hl.Min.x)},{F(hl.Min.y)},{F(hl.Min.z)}," +
+                    $"{F(hl.Max.x)},{F(hl.Max.y)},{F(hl.Max.z)}," +
+                    $"{F(hl.Center.x)},{F(hl.Center.y)},{F(hl.Center.z)},{F(hl.AxisLength)}");
+            }
+        }
 
         private static void WriteBoneData(StringBuilder sb, MeshContext mc,
             bool useNameBased = false, Dictionary<int, string> indexToName = null)
@@ -296,24 +335,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"ikLinkBone,{moLink.HasLimit},{F(moLink.LimitMin.x)},{F(moLink.LimitMin.y)},{F(moLink.LimitMin.z)},{F(moLink.LimitMax.x)},{F(moLink.LimitMax.y)},{F(moLink.LimitMax.z)}");
             }
 
-            // Humanoid 割当（per-bone・name主・#5b）
-            var human = mc.MeshObject?.HumanBodyBone;
-            if (!string.IsNullOrEmpty(human))
-            {
-                sb.AppendLine($"humanBodyBone,{EscapeCsv(human)}");
-            }
-
-            // Humanoid マッスル可動域（per-bone・#5d-1）
-            //   humanLimit,useDefault,minXYZ,maxXYZ,centerXYZ,axisLength（ラジアン）
-            var hl = mc.MeshObject?.HumanLimit;
-            if (hl != null)
-            {
-                sb.AppendLine(
-                    $"humanLimit,{hl.UseDefaultValues}," +
-                    $"{F(hl.Min.x)},{F(hl.Min.y)},{F(hl.Min.z)}," +
-                    $"{F(hl.Max.x)},{F(hl.Max.y)},{F(hl.Max.z)}," +
-                    $"{F(hl.Center.x)},{F(hl.Center.y)},{F(hl.Center.z)},{F(hl.AxisLength)}");
-            }
+            // Humanoid 割当・可動域（per-bone）
+            //   Type=Bone 以外でも出力するため WriteHumanoidPerBone に切り出してある。
+            //   ボーンの場合の出力位置は従来どおりここ。
+            WriteHumanoidPerBone(sb, mc);
 
             // BindPose (4x4 matrix, 16 values, row-major)
             var bp2 = mc.BindPose;
@@ -686,6 +711,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "excludeFromExport":
                         mc.ExcludeFromExport = ParseBool(cols, 1);
+                        break;
+                    case "mirrorBranchRoot":
+                        mc.IsMirrorBranchRoot = ParseBool(cols, 1);
                         break;
                     case "boneTransform":
                         mc.BoneTransform = ReadBoneTransform(cols);

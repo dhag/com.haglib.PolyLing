@@ -28,7 +28,7 @@ namespace Poly_Ling.Player
         NewModel,       // 新しいモデルを作って描画オブジェクトを追加
     }
 
-    public class PlayerPrimitiveMeshSubPanel
+    public partial class PlayerPrimitiveMeshSubPanel
     {
         // ================================================================
         // コールバック
@@ -44,13 +44,57 @@ namespace Poly_Ling.Player
         public Func<MeshUndoController> GetUndoController;
 
         // ================================================================
+        // メイン3Dウインドウへのライブワイヤ描画（新サブツール用）
+        // 既定 false。既存の図形生成インスタンスは何も変わらない。
+        // ================================================================
+
+        /// <summary>true のとき、生成予定形状の黄色ワイヤをメイン3Dウインドウへ描画する。</summary>
+        public bool LiveWireInMainViewport { get; set; }
+
+        /// <summary>メイン3Dウインドウ（4ビューポート）のカメラかを判定する。未設定ならライブワイヤは描画しない。</summary>
+        public Func<Camera, bool> IsMainViewportCamera;
+
+        /// <summary>
+        /// 追加先モードが AddToExisting のときの、追加先 MeshContext のワールド行列。
+        /// 未設定なら単位行列として扱う。
+        /// </summary>
+        public Func<Matrix4x4> GetAddTargetWorldMatrix;
+
+        /// <summary>配置ギズモのサブモードが UI で変更されたときに呼ばれる。</summary>
+        public Action<PrimitivePlaceToolHandler.PlaceGizmoMode> OnGizmoModeChanged;
+
+        // ---- 配置ギズモから読み書きする TRS ----
+
+        /// <summary>生成位置。AddToExisting のときは追加先ローカル空間。</summary>
+        public Vector3 PlacePosition { get => _worldPos; set { _worldPos = value; } }
+
+        /// <summary>生成時の回転（オイラー角・度）。</summary>
+        public Vector3 PlaceRotation { get => _rotEuler; set { _rotEuler = value; } }
+
+        /// <summary>生成時のスケール。</summary>
+        public Vector3 PlaceScale { get => _scale; set { _scale = value; } }
+
+        /// <summary>現在の追加先モード。ギズモ中心の座標系判定に使う。</summary>
+        public PrimitiveAddMode CurrentAddMode => _addMode;
+
+        /// <summary>
+        /// 外部（配置ギズモ）から TRS を変更した後に呼ぶ。
+        /// 数値欄へ書き戻し、プレビューを再生成対象にする。
+        /// </summary>
+        public void NotifyPlaceTrsChanged()
+        {
+            RefreshTrsFields();
+            D();
+        }
+
+        // ================================================================
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject }
 
         private static readonly string[] ShapeKeys =
-            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask" };
+            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
@@ -59,7 +103,7 @@ namespace Poly_Ling.Player
         private static readonly ShapeKind[] BasicShapes =
             { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid };
         private static readonly ShapeKind[] AdvancedShapes =
-            { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask };
+            { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.PlaceObject };
 
         // ================================================================
         // パラメータ
@@ -85,11 +129,30 @@ namespace Poly_Ling.Player
         private PrimitiveAddMode _addMode             = PrimitiveAddMode.NewObject;
         private bool            _mergeDuplicateVertices = true;
 
+        // 生成時の回転(度) / スケール。頂点へ焼き込む（平行移動は従来どおり呼出し側が扱う）。
+        private Vector3         _rotEuler            = Vector3.zero;
+        private Vector3         _scale               = Vector3.one;
+
+        // TRS 行の FloatField 参照。外部（将来のギズモ）から値を書き戻すために保持する。
+        private readonly FloatField[] _posFields = new FloatField[3];
+        private readonly FloatField[] _rotFields = new FloatField[3];
+        private readonly FloatField[] _sclFields = new FloatField[3];
+
         // ================================================================
         // プレビュー
         // ================================================================
 
         private PrimitivePreviewViewport _preview;
+
+        /// <summary>
+        /// Build に渡された右ペインセクション。表示中かどうかの判定にのみ使う。
+        /// 複数インスタンスが同時に存在しても、表示中のものだけがプレビューを描画する。
+        /// </summary>
+        private VisualElement _sectionEl;
+
+        /// <summary>メイン3Dウインドウへ描く黄色ワイヤ用マテリアル。初回描画時に遅延生成する。</summary>
+        private Material _liveWireMat;
+
         private Mesh                     _wireMesh;
         private bool                     _dirty = true;
         private double                   _nextGenAllowed;   // 適応スロットル：次回再生成を許可する時刻(realtime秒)
@@ -98,7 +161,7 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private readonly Button[]  _shapeBtns = new Button[9];
+        private readonly Button[]  _shapeBtns = new Button[12];
         private VisualElement      _shapeGrid;
         private VisualElement      _settingsContainer;
         private VisualElement      _profileEditorContainer;
@@ -292,6 +355,7 @@ namespace Poly_Ling.Player
         public void Build(VisualElement parent, Transform sceneRoot)
         {
             _cubeP.LinkTopBottom = true;
+            _sectionEl = parent;
             parent.Clear();
 
             parent.Add(SL(T("PanelTitle"), bold: true));
@@ -411,12 +475,66 @@ namespace Poly_Ling.Player
             _profileEditorContainer = new VisualElement();
             parent.Add(_profileEditorContainer);
 
-            // ワールド生成位置 ほか
+            // ワールド生成位置 / 回転 / スケール ほか
+            // 平行移動は従来どおり呼出し側 (MeshContext.BoneTransform / 頂点加算) が扱う。
+            // 回転・スケールのみ Generate() 内で頂点へ焼き込む。
             parent.Add(SL(T("WorldPos")));
-            parent.Add(V3F(T("WorldPosX"), T("WorldPosY"), T("WorldPosZ"),
-                () => _worldPos.x, v => _worldPos.x = v,
-                () => _worldPos.y, v => _worldPos.y = v,
-                () => _worldPos.z, v => _worldPos.z = v));
+            parent.Add(V3FRef(T("WorldPosX"), T("WorldPosY"), T("WorldPosZ"),
+                () => _worldPos.x, v => { _worldPos.x = v; D(); },
+                () => _worldPos.y, v => { _worldPos.y = v; D(); },
+                () => _worldPos.z, v => { _worldPos.z = v; D(); },
+                _posFields));
+
+            parent.Add(SL(T("Rotation")));
+            parent.Add(V3FRef(T("RotX"), T("RotY"), T("RotZ"),
+                () => _rotEuler.x, v => { _rotEuler.x = v; D(); },
+                () => _rotEuler.y, v => { _rotEuler.y = v; D(); },
+                () => _rotEuler.z, v => { _rotEuler.z = v; D(); },
+                _rotFields));
+
+            parent.Add(SL(T("ScaleLabel")));
+            parent.Add(V3FRef(T("ScaleX"), T("ScaleY"), T("ScaleZ"),
+                () => _scale.x, v => { _scale.x = v; D(); },
+                () => _scale.y, v => { _scale.y = v; D(); },
+                () => _scale.z, v => { _scale.z = v; D(); },
+                _sclFields));
+
+            var trsResetRow = new VisualElement();
+            trsResetRow.style.flexDirection = FlexDirection.Row;
+            trsResetRow.style.marginBottom  = 2;
+            SB(trsResetRow, T("TrsReset"), () =>
+            {
+                _worldPos = Vector3.zero;
+                _rotEuler = Vector3.zero;
+                _scale    = Vector3.one;
+                RefreshTrsFields();
+                D();
+            });
+            parent.Add(trsResetRow);
+
+            // 配置ギズモのサブモード切替。GizmoData は矢印/リング/キューブを
+            // 排他的にしか描画できないため、3種を同時には出さず切り替える。
+            // ライブワイヤ有効時（新サブツール）のみ生成する。
+            if (LiveWireInMainViewport)
+            {
+                var gizmoModeChoices = new List<string>
+                {
+                    T("GizmoModeMove"),
+                    T("GizmoModeRotate"),
+                    T("GizmoModeScale"),
+                };
+                var gizmoModeDd = new DropdownField(gizmoModeChoices, 0);
+                gizmoModeDd.label = T("GizmoMode");
+                gizmoModeDd.style.marginTop    = 4;
+                gizmoModeDd.style.marginBottom = 2;
+                gizmoModeDd.RegisterValueChangedCallback(e =>
+                {
+                    int i = gizmoModeChoices.IndexOf(e.newValue);
+                    if (i < 0) return;
+                    OnGizmoModeChanged?.Invoke((PrimitivePlaceToolHandler.PlaceGizmoMode)i);
+                });
+                parent.Add(gizmoModeDd);
+            }
 
             var ignorePoseToggle = new Toggle(T("IgnorePose")) { value = _ignorePoseInArmature };
             ignorePoseToggle.style.color = new StyleColor(Color.white);
@@ -516,7 +634,77 @@ namespace Poly_Ling.Player
             if (cam == null) return;
             if (cam.cameraType != CameraType.Game) return;
             if (_preview != null && cam == _preview.Cam) return;
+            // 非表示のパネルは RT を誰も見ていないので Render しない。
+            // 再表示時は _dirty が保持されているため、次の描画で最新値に追いつく。
+            if (!IsSectionVisible()) return;
+
+            // 先に再生成して _wireMesh を最新化し、そのうえで提出する。
+            // この順序により、SubmitLiveWire は Graphics.DrawMesh 提出のみを行えばよい。
             TickPreview();
+            SubmitLiveWire(cam);
+        }
+
+        /// <summary>このパネルのセクションが右ペインに表示されているか。</summary>
+        private bool IsSectionVisible()
+        {
+            if (_sectionEl == null) return true;   // 判定材料が無い場合は従来どおり描画する
+            return _sectionEl.resolvedStyle.display != DisplayStyle.None;
+        }
+
+        // ================================================================
+        // メイン3Dウインドウへのライブワイヤ提出
+        // ================================================================
+
+        /// <summary>
+        /// 生成予定形状の黄色ワイヤをメイン3Dウインドウのカメラへ提出する。
+        /// ここでは Graphics.DrawMesh 提出のみを行い、メッシュ再構築は行わない
+        /// （呼出し前の TickPreview で _wireMesh は最新化済み）。
+        /// </summary>
+        private void SubmitLiveWire(Camera cam)
+        {
+            if (!LiveWireInMainViewport) return;
+            if (cam == null || _wireMesh == null) return;
+            if (IsMainViewportCamera == null || !IsMainViewportCamera(cam)) return;
+
+            EnsureLiveWireMaterial();
+            if (_liveWireMat == null) return;
+
+            Graphics.DrawMesh(_wireMesh, LiveWireMatrix(), _liveWireMat, 0, cam);
+        }
+
+        /// <summary>
+        /// ライブワイヤの配置行列。回転・スケールは Generate() で頂点へ焼き込み済みのため、
+        /// ここで扱うのは生成位置のみ。
+        /// <para>
+        /// NewObject / NewModel: 生成物は親を持たないルートとして WorldMatrix = Translate(_worldPos)
+        /// になる（BuildPrimitiveMeshContext が BoneTransform.Position へ入れる）。
+        /// </para>
+        /// <para>
+        /// AddToExisting: 追加先メッシュのローカル空間で頂点へ加算されるため、
+        /// 追加先の WorldMatrix を左から掛ける。
+        /// </para>
+        /// </summary>
+        private Matrix4x4 LiveWireMatrix()
+        {
+            var local = Matrix4x4.Translate(_worldPos);
+            if (_addMode != PrimitiveAddMode.AddToExisting) return local;
+            var parent = GetAddTargetWorldMatrix?.Invoke() ?? Matrix4x4.identity;
+            return parent * local;
+        }
+
+        private void EnsureLiveWireMaterial()
+        {
+            if (_liveWireMat != null) return;
+
+            var sh = Shader.Find("Hidden/Internal-Colored")
+                  ?? Shader.Find("Unlit/Color");
+            if (sh == null) return;
+
+            _liveWireMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            _liveWireMat.SetColor("_Color", new Color(1f, 0.92f, 0.2f, 1f));
+            // 常に手前に描く。モデルに埋まっても生成位置が見えるようにする。
+            _liveWireMat.SetInt("_ZTest",  (int)CompareFunction.Always);
+            _liveWireMat.SetInt("_ZWrite", 0);
         }
 
         public void Dispose()
@@ -525,6 +713,11 @@ namespace Poly_Ling.Player
             _preview?.Dispose();
             _preview = null;
             DestroyWire();
+            if (_liveWireMat != null)
+            {
+                UnityEngine.Object.Destroy(_liveWireMat);
+                _liveWireMat = null;
+            }
         }
 
         // ================================================================
@@ -590,7 +783,7 @@ namespace Poly_Ling.Player
         private void Select(ShapeKind k)
         {
             _current = k;
-            for (int i = 0; i < 9; i++)
+            for (int i = 0; i < _shapeBtns.Length; i++)
             {
                 if (_shapeBtns[i] == null) continue;
                 _shapeBtns[i].style.backgroundColor = (int)k == i
@@ -620,6 +813,9 @@ namespace Poly_Ling.Player
                 case ShapeKind.Revolution: BuildRevolutionUI(_settingsContainer); break;
                 case ShapeKind.Profile2D:  BuildProfile2DUI(_settingsContainer);  break;
                 case ShapeKind.NohMask:    BuildNohMaskUI(_settingsContainer);    break;
+                case ShapeKind.Frill:      BuildFrillUI(_settingsContainer);      break;
+                case ShapeKind.Pipe:       BuildPipeUI(_settingsContainer);       break;
+                case ShapeKind.PlaceObject: BuildPlaceObjectUI(_settingsContainer); break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -3376,6 +3572,12 @@ namespace Poly_Ling.Player
             c.Add(SR(T("Scale"),      1f,  10f, () => _nohP.Scale,      v => { _nohP.Scale      = v; D(); }));
             c.Add(SR(T("DepthScale"), 0.1f, 5f, () => _nohP.DepthScale, v => { _nohP.DepthScale = v; D(); }));
             c.Add(TR(T("FlipFaces"),           () => _nohP.FlipFaces,   v => { _nohP.FlipFaces  = v; D(); }));
+            c.Add(TR(T("FlipX"),               () => _nohP.FlipX,       v => { _nohP.FlipX      = v; D(); }));
+            c.Add(TR(T("FlipY"),               () => _nohP.FlipY,       v => { _nohP.FlipY      = v; D(); }));
+            c.Add(TR(T("FlipZ"),               () => _nohP.FlipZ,       v => { _nohP.FlipZ      = v; D(); }));
+            c.Add(TR(T("FillHoles"),           () => _nohP.FillHoles,   v => { _nohP.FillHoles  = v; D(); }));
+            c.Add(TR(T("RimEnabled"),          () => _nohP.RimEnabled,  v => { _nohP.RimEnabled = v; D(); }));
+            c.Add(SR(T("RimWidth"), 0f, 1.5f,  () => _nohP.RimWidth,    v => { _nohP.RimWidth   = v; D(); }));
             c.Add(IR(T("FaceIndex"), 0, 10,    () => _nohP.FaceIndex,   v => { _nohP.FaceIndex  = v; D(); }));
 
             // ── 既存メッシュを能面JSON形式で保存（能面とは独立の汎用エクスポート） ──
@@ -3647,11 +3849,25 @@ namespace Poly_Ling.Player
                 case ShapeKind.NohMask:
                     mo = NohMaskMeshGenerator.GenerateFromFiles(_nohP);
                     break;
+                case ShapeKind.Frill:
+                    mo = GenerateFrillMesh();
+                    break;
+                case ShapeKind.Pipe:
+                    mo = GeneratePipeMesh();
+                    break;
+                case ShapeKind.PlaceObject:
+                    mo = GeneratePlaceObjectMesh();
+                    break;
                 default: return null;
             }
 
             if (_mergeDuplicateVertices && mo != null && mo.VertexCount >= 2)
                 MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, 0.001f);
+
+            // 回転・スケールを頂点へ焼き込む。
+            // マージ許容値 (0.001) はローカル空間で評価させたいので、必ずマージの後に行う。
+            // 平行移動は焼き込まない (呼出し側の AddMode 別処理が従来どおり _worldPos を扱う)。
+            PrimitiveMeshTransform.ApplyRotationScale(mo, _rotEuler, _scale);
 
             return mo;
         }
@@ -3669,6 +3885,9 @@ namespace Poly_Ling.Player
                 case ShapeKind.Revolution: return _revP.MeshName;
                 case ShapeKind.Profile2D:  return _p2dP.MeshName;
                 case ShapeKind.NohMask:    return _nohP.MeshName;
+                case ShapeKind.Frill:      return _frillP.MeshName;
+                case ShapeKind.Pipe:       return _pipeP.MeshName;
+                case ShapeKind.PlaceObject: return _placeP.MeshName;
                 default:                   return _current.ToString();
             }
         }
@@ -3919,23 +4138,60 @@ namespace Poly_Ling.Player
             t.RegisterValueChangedCallback(e => set(e.newValue)); return t;
         }
 
+        /// <summary>
+        /// FloatField 3 連の行。参照を保持しない従来版。
+        /// 実装は <see cref="V3FRef"/> に一本化してある（outFields = null）。
+        /// </summary>
         private static VisualElement V3F(
             string lx, string ly, string lz,
             Func<float> gx, Action<float> sx,
             Func<float> gy, Action<float> sy,
             Func<float> gz, Action<float> sz)
+            => V3FRef(lx, ly, lz, gx, sx, gy, sy, gz, sz, null);
+
+        /// <summary>
+        /// <see cref="V3F"/> と同一構造で、生成した FloatField を <paramref name="outFields"/>
+        /// (長さ3) に保持する版。外部から <see cref="RefreshTrsFields"/> で値を書き戻すために使う。
+        /// </summary>
+        private static VisualElement V3FRef(
+            string lx, string ly, string lz,
+            Func<float> gx, Action<float> sx,
+            Func<float> gy, Action<float> sy,
+            Func<float> gz, Action<float> sz,
+            FloatField[] outFields)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 2;
-            void AddFF(string lbl, Func<float> g, Action<float> s)
+            void AddFF(int slot, string lbl, Func<float> g, Action<float> s)
             {
                 var sub = new VisualElement(); sub.style.flexDirection = FlexDirection.Row; sub.style.flexGrow = 1;
                 var l = new Label(lbl); l.style.width = 14; l.style.unityTextAlign = TextAnchor.MiddleLeft;
                 var f = new FloatField { value = g() }; f.style.flexGrow = 1;
                 f.RegisterValueChangedCallback(e => s(e.newValue));
                 sub.Add(l); sub.Add(f); row.Add(sub);
+                if (outFields != null && slot >= 0 && slot < outFields.Length) outFields[slot] = f;
             }
-            AddFF(lx, gx, sx); AddFF(ly, gy, sy); AddFF(lz, gz, sz);
+            AddFF(0, lx, gx, sx); AddFF(1, ly, gy, sy); AddFF(2, lz, gz, sz);
             return row;
+        }
+
+        /// <summary>
+        /// 座標 / 回転 / スケールの数値欄を現在値で更新する。
+        /// SetValueWithoutNotify を使うため setter は再発火しない（無限ループ防止）。
+        /// 再生成が必要な場合は呼出し側で <c>D()</c> を呼ぶこと。
+        /// </summary>
+        public void RefreshTrsFields()
+        {
+            SetFF(_posFields, _worldPos);
+            SetFF(_rotFields, _rotEuler);
+            SetFF(_sclFields, _scale);
+        }
+
+        private static void SetFF(FloatField[] fields, Vector3 v)
+        {
+            if (fields == null) return;
+            if (fields.Length > 0) fields[0]?.SetValueWithoutNotify(v.x);
+            if (fields.Length > 1) fields[1]?.SetValueWithoutNotify(v.y);
+            if (fields.Length > 2) fields[2]?.SetValueWithoutNotify(v.z);
         }
 
         private static Label ML(string t)

@@ -116,13 +116,13 @@ namespace Poly_Ling.Tools
             _lastContext = ctx;
 
             // プレビュー更新（毎フレーム再計算 - 選択変更を検出するため）
-            if (ctx.FirstDrawableMeshObject != null && ctx.SelectedVertices != null)
+            if (ctx.ActiveMeshObject != null && ctx.SelectedVertices != null)
             {
-                _preview = CalculatePreview(ctx.FirstDrawableMeshObject, ctx.SelectedVertices, Threshold);
+                _preview = CalculatePreview(ctx.ActiveMeshObject, ctx.SelectedVertices, Threshold);
             }
 
             // マージ実行
-            if (_pendingMerge && ctx.FirstDrawableMeshObject != null)
+            if (_pendingMerge && ctx.ActiveMeshObject != null)
             {
                 ExecuteMerge(ctx);
                 _pendingMerge = false;
@@ -143,16 +143,16 @@ namespace Poly_Ling.Tools
 
         private void ExecuteMerge(ToolContext ctx)
         {
-            if (ctx.FirstDrawableMeshObject == null || ctx.SelectedVertices == null) return;
+            if (ctx.ActiveMeshObject == null || ctx.SelectedVertices == null) return;
             if (ctx.SelectedVertices.Count < 2) return;
 
             // Undo用スナップショット
-            MeshObjectSnapshot before = ctx.UndoController?.VertexEditStack != null && ctx.FirstDrawableMeshContext != null
-                ? MeshObjectSnapshot.Capture(ctx.FirstDrawableMeshContext, ctx.UndoController.MeshUndoContext)
+            MeshObjectSnapshot before = ctx.UndoController?.VertexEditStack != null && ctx.ActiveMeshContext != null
+                ? MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext)
                 : default;
 
             // MeshMergeHelper使用
-            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.FirstDrawableMeshObject, ctx.SelectedVertices, Threshold);
+            var result = MeshMergeHelper.MergeVerticesAtSamePosition(ctx.ActiveMeshObject, ctx.SelectedVertices, Threshold);
 
             if (result.Success)
             {
@@ -162,7 +162,7 @@ namespace Poly_Ling.Tools
                 // Undo記録（キュー経由）
                 if (ctx.UndoController != null && ctx.CommandQueue != null)
                 {
-                    MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.FirstDrawableMeshContext, ctx.UndoController.MeshUndoContext);
+                    MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext);
                     ctx.CommandQueue.Enqueue(new RecordTopologyChangeCommand(
                         ctx.UndoController, before, after, "Merge Vertices"));
                 }

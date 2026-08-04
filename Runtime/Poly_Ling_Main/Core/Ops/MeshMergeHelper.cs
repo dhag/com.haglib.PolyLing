@@ -308,6 +308,17 @@ namespace Poly_Ling.Ops
 
         /// <summary>
         /// 指定された頂点を削除し、面のインデックスを更新する
+        ///
+        /// 【デッドコード】新規に使わないこと。
+        /// - 呼び出し元は PolyLingCore_Selection.DeleteSelectedVertices のみで、
+        ///   そちらも Runtime アセンブリ内に呼び出し元が 0 件 (grep 済み)。
+        ///   Editor アセンブリ側からの呼び出しは未確認。
+        ///
+        /// 【既知の問題】下の面ループは残存頂点数が 3 未満の面を一律削除する。
+        /// 線分 (2頂点の面) は削除頂点に触れていなくても残存 2 になるため、
+        /// メッシュ内の線分が全て消える。
+        /// 選択削除には使わないこと。Poly_Ling.Tools.DeleteSelectionTool は
+        /// 「削除頂点を参照する面は丸ごと削除する」方式でこの問題を回避している。
         /// </summary>
         /// <param name="meshObject">対象メッシュ</param>
         /// <param name="verticesToDelete">削除する頂点インデックス</param>

@@ -275,7 +275,8 @@ namespace Poly_Ling.Ops
             Vector3 currentDirection = (lowerArmPos - upperArmPos).normalized;
 
             // 目標方向（水平・外向き）
-            Vector3 targetDirection = isLeft ? Vector3.right : Vector3.left;
+            // Unity 規約ではキャラクタ正面が +Z、右が +X。よって左腕は -X 方向へ伸ばす。
+            Vector3 targetDirection = isLeft ? Vector3.left : Vector3.right;
 
             // 現在の方向と目標方向が近い場合はスキップ
             float angle = Vector3.Angle(currentDirection, targetDirection);
@@ -354,9 +355,34 @@ namespace Poly_Ling.Ops
                     int vertexStart = (int)meshInfo.VertexStart;
                     int vertexCount = ctx.MeshObject.VertexCount;
 
+                    // worldPositions は GPU が「頂点ごとに選んだ行列」を適用したワールド座標。
+                    //   UnifiedCompute.compute:905-916  skinMatrix = Σ _TransformMatrixBuffer[boneIds.k] * weights.k
+                    //
+                    // 【BoneWeight を持つ頂点】
+                    // 焼き込みの後、呼び出し元は必ずボーンをリバインドする（BindPose = WorldMatrix⁻¹）。
+                    //   ConvertToTPose 64-67 /
+                    //   ObjectMoveTool「スキンごと確定」/ PlayerCommandDispatcher「スキンごと確定」「この姿勢で確定」
+                    // これでボーンの SkinningMatrix は単位になるため、頂点は
+                    // 「変形後のワールド座標そのもの」を保持していなければならない。
+                    // ここで GPU と同じ行列の逆を掛けると往復して打ち消し合い、焼き込みが無効になる。
+                    //
+                    // 【BoneWeight を持たない頂点】
+                    // GPU 側は自メッシュの context 索引を使う（UnifiedBufferManager_Build.cs:358-362）。
+                    // リバインドでは変わらないため、従来通り逆行列でローカルへ戻す（結果は恒等）。
+                    // 行列の選択規則は UnifiedBufferManager.UpdateTransformMatrices:1513-1515 と同一。
+                    bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !ctx.MeshObject.HasBoneWeight;
+                    Matrix4x4 unskinnedInv = (usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix).inverse;
+
+                    var verts = ctx.MeshObject.Vertices;
                     for (int i = 0; i < vertexCount && (vertexStart + i) < worldPositions.Length; i++)
                     {
-                        ctx.MeshObject.Vertices[i].Position = worldPositions[vertexStart + i];
+                        var vtx = verts[i];
+                        if (vtx == null) continue;
+
+                        Vector3 worldPos = worldPositions[vertexStart + i];
+                        vtx.Position = vtx.HasBoneWeight
+                            ? worldPos
+                            : unskinnedInv.MultiplyPoint3x4(worldPos);
                     }
 
                     // UnityMeshを再生成して表示を更新

@@ -98,7 +98,9 @@ namespace Poly_Ling.Tools
         // === メッシュデータ ===
 
         /// <summary>選択先頭メッシュのMeshObject（単一メッシュ操作用便宜アクセサ）</summary>
+        /// <summary>【tool/handler/overlay では使用禁止】ActiveMeshObject を使うこと。</summary>
         public MeshObject FirstSelectedMeshObject => FirstSelectedMeshContext?.MeshObject;
+        /// <summary>【tool/handler/overlay では使用禁止】ActiveMeshObject を使うこと。</summary>
         public MeshObject FirstDrawableMeshObject  => FirstDrawableMeshContext?.MeshObject;
 
         /// <summary>元の頂点位置</summary>
@@ -375,6 +377,24 @@ namespace Poly_Ling.Tools
         /// </summary>
         public Func<Vector3?> GetHoverWorldPosition { get; set; }
 
+        /// <summary>
+        /// 操作対象メッシュの指定頂点について、GPU が計算したワールド座標を返す。
+        /// 未配線・未解決は null。
+        ///
+        /// スキニング後のワールド座標は GPU の _worldPositionBuffer が持っている。
+        /// これを CPU 側で計算し直すと規則が食い違って表示だけがずれるため、
+        /// 必ずこのフックを経由すること
+        /// （配線は PlayerViewportManager.TryGetVertexWorld）。
+        /// </summary>
+        public Func<int, Vector3?> GetVertexWorldPosition { get; set; }
+
+        /// <summary>
+        /// 操作対象メッシュの指定頂点のクリップ空間 w を返す。未配線・未解決は null。
+        /// スクリーン上の線形パラメータを 3D 上の線形パラメータへ変換するのに使う。
+        /// 配線は PlayerViewportManager.TryGetVertexClipW。
+        /// </summary>
+        public Func<int, float?> GetVertexClipW { get; set; }
+
 
         /// <summary>
         /// カメラのFOV（度）
@@ -423,8 +443,18 @@ namespace Poly_Ling.Tools
         // 「ワールド座標」を前提とする。両者をまたぐときは必ず以下を経由すること。
         // ================================================================
 
-        /// <summary>操作対象メッシュ（FirstSelected 優先、無ければ FirstDrawable）</summary>
-        public MeshContext ActiveMeshContext => FirstSelectedMeshContext ?? FirstDrawableMeshContext;
+        /// <summary>
+        /// 編集対象メッシュ。取得元は ModelContext.ActiveMeshContext に一本化してある。
+        /// FirstSelectedMeshObject / FirstDrawableMeshObject を直接使ってはならない
+        /// （MeshObject と行列で取得元がずれると座標がずれる）。
+        /// </summary>
+        public MeshContext ActiveMeshContext => Model?.ActiveMeshContext;
+
+        /// <summary>編集対象メッシュの MeshObject。</summary>
+        public MeshObject ActiveMeshObject => ActiveMeshContext?.MeshObject;
+
+        /// <summary>編集対象メッシュの MeshContextList インデックス。未解決は -1。</summary>
+        public int ActiveMeshIndex => Model?.ActiveMeshIndex ?? -1;
 
         /// <summary>操作対象メッシュの WorldMatrix（未解決なら identity）</summary>
         public Matrix4x4 ActiveWorldMatrix => ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
@@ -446,6 +476,54 @@ namespace Poly_Ling.Tools
 
         /// <summary>ローカル座標をスクリーン座標へ投影（WorldToScreen のローカル版）</summary>
         public Vector2 LocalToScreen(Vector3 localPos) => WorldToScreen(ActiveLocalToWorld(localPos));
+
+        // ----------------------------------------------------------------
+        // 頂点単位のローカル→ワールド変換（描画側と同一規則）
+        // ----------------------------------------------------------------
+        // ActiveWorldMatrix は「メッシュ自身の WorldMatrix」しか見ない。
+        // しかし GPU は頂点ごとに以下の規則で行列を選ぶ。
+        //   UnifiedBufferManager_Build.cs:344-363
+        //     BoneWeight あり → _boneIndices = 頂点の boneIndex（ボーンの context 索引）
+        //     BoneWeight なし → _boneIndices = メッシュ自身の context 索引
+        //   UnifiedCompute.compute:911-918
+        //     skinMatrix = Σ _TransformMatrixBuffer[boneIds.k] * weights.k
+        //   UnifiedBufferManager_Update.cs:1513-1515
+        //     ボーン／スキンドメッシュ → SkinningMatrix、非スキンドメッシュ → WorldMatrix
+        // したがってスキンド頂点は「ボーンの SkinningMatrix のブレンド」で変換される。
+        // メッシュ自身の行列を掛けると二重変換になる。
+        // ----------------------------------------------------------------
+
+        /// <summary>
+        /// 指定頂点に GPU が実際に適用する変換行列を返す（描画側と同一規則）。
+        /// 規則の定義は MeshContext.VertexMatrix にあり、ここは委譲のみ。
+        /// 解決できない場合は ActiveWorldMatrix を返す。
+        /// </summary>
+        public Matrix4x4 ActiveVertexMatrix(int vertexIndex)
+        {
+            var mc = ActiveMeshContext;
+            if (mc == null) return Matrix4x4.identity;
+            return mc.VertexMatrix(vertexIndex);
+        }
+
+        /// <summary>
+        /// ワールド方向 → ローカル方向（頂点単位・描画側と同一規則）。
+        /// ドラッグ量のように「方向と長さ」を扱う場合に使う。平行移動は無視される。
+        /// 逆変換は GPU 側に値が無いため ActiveVertexMatrix の逆行列で求める。
+        /// </summary>
+        public Vector3 WorldToLocalVectorAt(int vertexIndex, Vector3 worldDir)
+            => ActiveVertexMatrix(vertexIndex).inverse.MultiplyVector(worldDir);
+
+        /// <summary>ローカル方向 → ワールド方向（頂点単位・描画側と同一規則）。</summary>
+        public Vector3 LocalToWorldVectorAt(int vertexIndex, Vector3 localDir)
+            => ActiveVertexMatrix(vertexIndex).MultiplyVector(localDir);
+
+        /// <summary>ローカル座標 → ワールド座標（頂点単位・描画側と同一規則）</summary>
+        public Vector3 ActiveLocalToWorld(int vertexIndex, Vector3 localPos)
+            => ActiveVertexMatrix(vertexIndex).MultiplyPoint3x4(localPos);
+
+        /// <summary>ローカル座標をスクリーン座標へ投影（頂点単位・描画側と同一規則）</summary>
+        public Vector2 LocalToScreen(int vertexIndex, Vector3 localPos)
+            => WorldToScreen(ActiveLocalToWorld(vertexIndex, localPos));
 
         /// <summary>
         /// 現在の選択モードを取得

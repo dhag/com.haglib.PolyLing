@@ -137,7 +137,7 @@ namespace Poly_Ling.Tools
 
         private void ExecutePlanarize()
         {
-            if (_context?.FirstDrawableMeshObject == null
+            if (_context?.ActiveMeshObject == null
                 || _context.SelectedVertices == null
                 || _context.SelectedVertices.Count < 1)
                 return;
@@ -151,16 +151,16 @@ namespace Poly_Ling.Tools
 
             // GetBoneWorldPosition はワールド座標、Vertices[].Position はローカル座標。
             // 対象メッシュのローカル空間へ揃えてから平面化する。
-            var targetMc = _context.FirstDrawableMeshContext;
+            var targetMc = _context.ActiveMeshContext;
             Vector3 posA = targetMc != null ? targetMc.WorldToLocal(posAWorld) : posAWorld;
             Vector3 posB = targetMc != null ? targetMc.WorldToLocal(posBWorld) : posBWorld;
             if ((posB - posA).magnitude < 1e-8f) return;
 
-            MeshObjectSnapshot before = _context.UndoController != null && _context.FirstDrawableMeshContext != null
-                ? MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext)
+            MeshObjectSnapshot before = _context.UndoController != null && _context.ActiveMeshContext != null
+                ? MeshObjectSnapshot.Capture(_context.ActiveMeshContext, _context.UndoController.MeshUndoContext)
                 : default;
 
-            MeshObject meshObj         = _context.FirstDrawableMeshObject;
+            MeshObject meshObj         = _context.ActiveMeshObject;
             float      blend           = _settings.Blend;
             var        selectedIndices = _context.SelectedVertices.ToList();
 
@@ -199,7 +199,7 @@ namespace Poly_Ling.Tools
 
                 if (_context.UndoController != null)
                 {
-                    var after = MeshObjectSnapshot.Capture(_context.FirstDrawableMeshContext, _context.UndoController.MeshUndoContext);
+                    var after = MeshObjectSnapshot.Capture(_context.ActiveMeshContext, _context.UndoController.MeshUndoContext);
                     _context.CommandQueue?.Enqueue(new RecordTopologyChangeCommand(
                         _context.UndoController, before, after, "Planarize Along Bones"));
                 }

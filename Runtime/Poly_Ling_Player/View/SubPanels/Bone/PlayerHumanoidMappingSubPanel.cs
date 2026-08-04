@@ -39,6 +39,13 @@ namespace Poly_Ling.Player
         private const string       CsvPathKey     = "HumanoidMapping.CsvPath";
         private HumanoidBoneMapping _previewMapping = null;
 
+        /// <summary>
+        /// 割当候補にボーン以外のコンテキストも含めるか。
+        /// 通常はボーンのみ（false）。ボーンを持たない MeshFilter ツリーを
+        /// そのまま骨格として扱いたい実験用途のときだけ有効にする。
+        /// </summary>
+        private bool _includeNonBoneContexts = false;
+
         private ModelContext Model => GetModel?.Invoke();
 
         public void Build(VisualElement parent)
@@ -69,6 +76,23 @@ namespace Poly_Ling.Player
             _csvHintLabel.style.color       = new StyleColor(Color.white);
             _csvHintLabel.style.marginBottom = 4;
             root.Add(_csvHintLabel);
+
+            // 割当候補の範囲
+            var scopeToggle = new Toggle("ボーン以外も候補に含める (MeshFilter用)")
+            {
+                value = _includeNonBoneContexts
+            };
+            scopeToggle.style.fontSize     = 10;
+            scopeToggle.style.marginBottom = 2;
+            scopeToggle.RegisterValueChangedCallback(e => _includeNonBoneContexts = e.newValue);
+            root.Add(scopeToggle);
+
+            var scopeHint = new Label("通常はオフ。ボーンが無いモデルで階層をそのまま骨格に使うとき用。");
+            scopeHint.style.fontSize     = 9;
+            scopeHint.style.whiteSpace   = WhiteSpace.Normal;
+            scopeHint.style.marginBottom = 4;
+            scopeHint.style.color        = new StyleColor(PlayerIoUiKit.StatusColor);
+            root.Add(scopeHint);
 
             // AutoMap / Load CSV ボタン
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginBottom = 6;
@@ -152,7 +176,15 @@ namespace Poly_Ling.Player
             var boneNames = GetBoneNames();
             _previewMapping = new HumanoidBoneMapping();
             int count = _previewMapping.AutoMapFromEmbeddedCSV(boneNames);
-            UnityEngine.Debug.Log($"[PlayerHumanoidMappingSubPanel] Auto-mapped {count} bones");
+            int candidates = 0;
+            foreach (var n in boneNames) if (!string.IsNullOrEmpty(n)) candidates++;
+            UnityEngine.Debug.Log(
+                $"[PlayerHumanoidMappingSubPanel] Auto-mapped {count} bones " +
+                $"(候補 {candidates} / ボーン以外も含める={_includeNonBoneContexts})");
+            if (count == 0)
+                SetStatus(candidates == 0
+                    ? "割当候補がありません。ボーンが無いモデルでは「ボーン以外も候補に含める」を有効にすること。"
+                    : "一致するボーン名がありませんでした。");
             UpdatePreviewUI();
         }
 
@@ -241,15 +273,39 @@ namespace Poly_Ling.Player
             UpdatePreviewUI();
         }
 
+        /// <summary>
+        /// 割当候補の名前リストを返す。
+        ///
+        /// _includeNonBoneContexts = false（既定）:
+        ///   従来どおりボーンのみを詰めたリスト。位置が MeshContextList の索引と
+        ///   一致するのはボーンが先頭に連続して並ぶ場合に限られる。
+        ///
+        /// _includeNonBoneContexts = true:
+        ///   長さ MeshContextCount で、各名前を自分の索引位置に置いたリスト。
+        ///   HumanoidBoneMapping が期待する「索引 = MeshContextList の索引」を満たす。
+        ///   候補外の位置は空文字。FindBoneByAliases は完全一致・部分一致とも
+        ///   空文字にはヒットしない。
+        /// </summary>
         private List<string> GetBoneNames()
         {
             var names = new List<string>();
             var model = Model;
             if (model == null) return names;
-            foreach (var entry in model.Bones)
+
+            if (!_includeNonBoneContexts)
             {
-                var mc = model.GetMeshContext(entry.MasterIndex);
-                if (mc != null && !string.IsNullOrEmpty(mc.Name)) names.Add(mc.Name);
+                foreach (var entry in model.Bones)
+                {
+                    var mc = model.GetMeshContext(entry.MasterIndex);
+                    if (mc != null && !string.IsNullOrEmpty(mc.Name)) names.Add(mc.Name);
+                }
+                return names;
+            }
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                names.Add(mc != null && !string.IsNullOrEmpty(mc.Name) ? mc.Name : "");
             }
             return names;
         }

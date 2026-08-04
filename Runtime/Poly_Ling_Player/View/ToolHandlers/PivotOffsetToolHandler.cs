@@ -137,7 +137,7 @@ namespace Poly_Ling.Player
             // OriginOnly は頂点を書き換えるので GPU 同期が必須
             baseCtx.SyncMesh = () =>
             {
-                var mc = model.FirstSelectedMeshContext;
+                var mc = model.ActiveMeshContext;
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
 

@@ -265,6 +265,12 @@ namespace Poly_Ling.Data
         /// <summary>
         /// アーマチャ生成時にボーンを生成しない（MeshObject に委譲）
         /// </summary>
+        public bool IsMirrorBranchRoot
+        {
+            get => MeshObject?.IsMirrorBranchRoot ?? false;
+            set { if (MeshObject != null) MeshObject.IsMirrorBranchRoot = value; }
+        }
+
         public bool IgnorePoseInArmature
         {
             get => MeshObject?.IgnorePoseInArmature ?? false;
@@ -450,6 +456,117 @@ namespace Poly_Ling.Data
         public Vector3 LocalToWorld(Vector3 localPos)
         {
             return WorldMatrix.MultiplyPoint3x4(localPos);
+        }
+
+        // ================================================================
+        // 頂点単位のローカル→ワールド変換（描画側と同一規則）
+        // ================================================================
+        //
+        // WorldMatrix は「メッシュ 1 個につき行列 1 個」を前提にしている。
+        // スキンドメッシュではこの前提が成立しない。GPU は頂点ごとに次の規則で
+        // 行列を選ぶため、ツール・オーバーレイ側も同じ規則に従う必要がある。
+        //
+        //   UnifiedBufferManager_Build.cs:344-363
+        //     BoneWeight あり → _boneIndices = 頂点の boneIndex（ボーンの context 索引）
+        //     BoneWeight なし → _boneIndices = メッシュ自身の context 索引
+        //   UnifiedCompute.compute:911-918
+        //     skinMatrix = Σ _TransformMatrixBuffer[boneIds.k] * weights.k
+        //   UnifiedBufferManager_Update.cs:1513-1515
+        //     ボーン／スキンドメッシュ → SkinningMatrix、非スキンドメッシュ → WorldMatrix
+        //
+        // 規則の定義はこの 1 箇所だけに置く。ToolContext.ActiveVertexMatrix は
+        // ここへ委譲する。
+        // ================================================================
+
+        // ================================================================
+        // 【禁止事項】GPU 由来の座標を扱うときの拗らせ
+        // ================================================================
+        // 以下は実際に発生させた失敗である。繰り返さないこと。
+        //
+        // 1. 調べずに CPU 側で独自計算しない。
+        //    GPU が _worldPositionBuffer にワールド座標を出しているのに、
+        //    同じ規則を CPU で書き直すと、規則が食い違ったときに表示だけがずれる。
+        //    まず GPU の値を使う経路を探すこと。
+        //
+        // 2.「今は呼ばれていないからできない」と決めつけない。
+        //    呼び出し箇所が無いことは、呼び出しを足せない理由にならない。
+        //    足せるかどうかを調べてから結論を出すこと。
+        //
+        // 3. カメラもモデルも動いていないのに読み戻しを毎フレーム呼ばない。
+        //    WritebackTransformedVertices / GetWorldPositions は同期 GetData を伴う。
+        //    ワールド座標が変わる契機（頂点移動・ボーン移動・再構築）でのみ更新し、
+        //    ホバーのようにトポロジ・視点・頂点位置のいずれも変わらない操作では呼ばない。
+        // ================================================================
+
+        // 【このメソッドは上記 1 に該当する CPU 独自計算である】
+        // GPU が _worldPositionBuffer に出した値を使う経路
+        // （UnifiedBufferManager.GetWorldPositions + LocalToGlobalVertexIndex）へ
+        // 置き換えるべき対象。新規の呼び出しを増やさないこと。
+
+        /// <summary>
+        /// 指定頂点に GPU が実際に適用する変換行列を返す。
+        /// BoneWeight を持たない頂点、および解決できない場合は WorldMatrix を返す。
+        /// </summary>
+        public Matrix4x4 VertexMatrix(int vertexIndex)
+        {
+            var mo = MeshObject;
+            if (mo == null || vertexIndex < 0 || vertexIndex >= mo.Vertices.Count)
+                return WorldMatrix;
+
+            var vtx = mo.Vertices[vertexIndex];
+            if (vtx == null || !vtx.HasBoneWeight)
+                return WorldMatrix;
+
+            var list = ParentModelContext?.MeshContextList;
+            if (list == null || list.Count == 0)
+                return WorldMatrix;
+
+            var bw = vtx.BoneWeight.Value;
+            Matrix4x4 acc = new Matrix4x4();
+            float total = 0f;
+
+            total += AccumulateBoneMatrix(ref acc, list, bw.boneIndex0, bw.weight0);
+            total += AccumulateBoneMatrix(ref acc, list, bw.boneIndex1, bw.weight1);
+            total += AccumulateBoneMatrix(ref acc, list, bw.boneIndex2, bw.weight2);
+            total += AccumulateBoneMatrix(ref acc, list, bw.boneIndex3, bw.weight3);
+
+            if (total <= 0f)
+                return WorldMatrix;
+
+            return acc;
+        }
+
+        /// <summary>
+        /// acc に list[boneIndex].SkinningMatrix を weight 倍して加算する。
+        /// 加算できたときだけ weight を返す（範囲外・weight 0 は 0）。
+        /// </summary>
+        private static float AccumulateBoneMatrix(
+            ref Matrix4x4 acc, List<MeshContext> list, int boneIndex, float weight)
+        {
+            if (weight == 0f) return 0f;
+            if (boneIndex < 0 || boneIndex >= list.Count) return 0f;
+
+            var boneCtx = list[boneIndex];
+            if (boneCtx == null) return 0f;
+
+            Matrix4x4 m = boneCtx.SkinningMatrix;
+            acc.m00 += m.m00 * weight; acc.m01 += m.m01 * weight; acc.m02 += m.m02 * weight; acc.m03 += m.m03 * weight;
+            acc.m10 += m.m10 * weight; acc.m11 += m.m11 * weight; acc.m12 += m.m12 * weight; acc.m13 += m.m13 * weight;
+            acc.m20 += m.m20 * weight; acc.m21 += m.m21 * weight; acc.m22 += m.m22 * weight; acc.m23 += m.m23 * weight;
+            acc.m30 += m.m30 * weight; acc.m31 += m.m31 * weight; acc.m32 += m.m32 * weight; acc.m33 += m.m33 * weight;
+            return weight;
+        }
+
+        /// <summary>ローカル座標をワールド座標に変換（頂点単位・描画側と同一規則）</summary>
+        public Vector3 LocalToWorld(int vertexIndex, Vector3 localPos)
+        {
+            return VertexMatrix(vertexIndex).MultiplyPoint3x4(localPos);
+        }
+
+        /// <summary>ワールド座標をローカル座標に変換（頂点単位・描画側と同一規則）</summary>
+        public Vector3 WorldToLocal(int vertexIndex, Vector3 worldPos)
+        {
+            return VertexMatrix(vertexIndex).inverse.MultiplyPoint3x4(worldPos);
         }
 
         /// <summary>

@@ -70,6 +70,14 @@ namespace Poly_Ling.Core
             ("FaceExtrude.BevelScale.Min",        0.01f,   "面押し出し: ベベルスケールの下限"),
             ("FaceExtrude.BevelScale.Max",        1.0f,    "面押し出し: ベベルスケールの上限"),
 
+            // --- Solidify（厚み付け） ---
+            ("Solidify.Thickness.Min",             0.0001f, "厚み付け: 厚みの下限"),
+            ("Solidify.Thickness.Max",             100.0f,  "厚み付け: 厚みの上限"),
+            ("Solidify.EdgeSize.Min",              0.0001f, "厚み付け: エッジサイズの下限"),
+            ("Solidify.EdgeSize.Max",              100.0f,  "厚み付け: エッジサイズの上限"),
+            ("Solidify.Segments.Min",              0f,      "厚み付け: エッジ分割数の下限（整数）"),
+            ("Solidify.Segments.Max",              8f,      "厚み付け: エッジ分割数の上限（整数）"),
+
             // --- AdvancedSelect（高度な選択） ---
             ("AdvancedSelect.EdgeLoopThreshold.Min", 0.0f, "高度な選択: エッジループ閾値の下限"),
             ("AdvancedSelect.EdgeLoopThreshold.Max", 1.0f, "高度な選択: エッジループ閾値の上限"),

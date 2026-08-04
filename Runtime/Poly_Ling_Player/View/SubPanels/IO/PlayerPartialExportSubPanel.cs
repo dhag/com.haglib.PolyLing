@@ -12,6 +12,7 @@ using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.PMX;
 using Poly_Ling.MQO;
+using Poly_Ling.Ops;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
 
@@ -39,6 +40,7 @@ namespace Poly_Ling.Player
         private PMXDocument _pmxDocument;
         private List<MeshMaterialMapping> _pmxMappings = new List<MeshMaterialMapping>();
         private float _pmxScale              = 10f;
+        private bool  _pmxFlipX              = true;
         private bool  _pmxFlipZ              = true;
         private bool  _pmxFlipUV_V           = true;
         private bool  _pmxReplacePositions   = true;
@@ -50,7 +52,8 @@ namespace Poly_Ling.Player
         // MQO 部分エクスポートオプション
         private string _mqoRefPath       = "";
         private float  _mqoExportScale   = 0.01f;
-        private bool   _mqoFlipZ         = true;
+        private bool   _mqoFlipX         = true;
+        private bool   _mqoFlipZ         = false;
         private bool   _mqoSkipBaked     = true;
         private bool   _mqoSkipNamed     = true;
         private bool   _mqoWritePos      = true;
@@ -210,7 +213,7 @@ namespace Poly_Ling.Player
 
             int transferred = _pmxOps.ExecuteExport(
                 _pmxMappings, _pmxDocument,
-                _pmxScale, _pmxFlipZ, _pmxFlipUV_V,
+                _pmxScale, new AxisFlip(_pmxFlipX, _pmxFlipZ), _pmxFlipUV_V,
                 _pmxReplacePositions, _pmxReplaceNormals, _pmxReplaceUVs, _pmxReplaceBoneWeights);
 
             PMXWriter.Save(_pmxDocument, savePath);
@@ -237,14 +240,14 @@ namespace Poly_Ling.Player
             int transferred = _mqoOps.ExecuteExport(
                 selectedMQOs, selectedModels,
                 _mqoHelper.MQODocument,
-                _mqoExportScale, _mqoFlipZ,
+                _mqoExportScale, new AxisFlip(_mqoFlipX, _mqoFlipZ),
                 _mqoWritePos, _mqoWriteUV, _mqoWriteBW);
 
             var writeResult = MQODocumentIO.WriteDocumentToFile(_mqoHelper.MQODocument, savePath);
             if (!writeResult.Success) throw new Exception(writeResult.ErrorMessage);
 
             SetStatus($"完了: {transferred}verts → {Path.GetFileName(savePath)}");
-            _mqoHelper.LoadMQO(_mqoRefPath, _mqoFlipZ, visibleOnly: false);
+            _mqoHelper.LoadMQO(_mqoRefPath, visibleOnly: false);
         }
 
         private void OnBrowseOut()
@@ -317,6 +320,7 @@ namespace Poly_Ling.Player
             parent.Add(Separator());
             parent.Add(SectionLabel("座標変換"));
             parent.Add(FloatRow("Scale",    () => _pmxScale,    v => _pmxScale    = v));
+            parent.Add(ToggleRow("Flip X",  () => _pmxFlipX,    v => _pmxFlipX    = v));
             parent.Add(ToggleRow("Flip Z",  () => _pmxFlipZ,    v => _pmxFlipZ    = v));
             parent.Add(ToggleRow("Flip UV V", () => _pmxFlipUV_V, v => _pmxFlipUV_V = v));
 
@@ -422,6 +426,7 @@ namespace Poly_Ling.Player
             parent.Add(Separator());
             parent.Add(SectionLabel("オプション"));
             parent.Add(FloatRow("Export Scale", () => _mqoExportScale, v => _mqoExportScale = v));
+            parent.Add(ToggleRow("Flip X",       () => _mqoFlipX,       v => _mqoFlipX       = v));
             parent.Add(ToggleRow("Flip Z",       () => _mqoFlipZ,       v => _mqoFlipZ       = v));
 
             bool prevBaked = _mqoSkipBaked;
@@ -502,7 +507,7 @@ namespace Poly_Ling.Player
         private void LoadMQORef(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
-            _mqoHelper.LoadMQO(path, _mqoFlipZ, visibleOnly: false);
+            _mqoHelper.LoadMQO(path, visibleOnly: false);
             if (_mqoHelper.ModelMeshes.Count == 0)
                 _mqoHelper.BuildModelList(_model, _mqoSkipBaked, _mqoSkipNamed);
             if (_mqoHelper.MQODocument != null)

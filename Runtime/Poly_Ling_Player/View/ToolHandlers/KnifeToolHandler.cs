@@ -30,6 +30,13 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<ToolContext> GetToolContext;
+
+        /// <summary>
+        /// 操作対象メッシュの頂点のクリップ空間 w を返す
+        /// （Viewer から PlayerViewportManager.TryGetVertexClipW を結線）。
+        /// 透視投影で切断点の比率を 3D 空間へ補正するのに使う。
+        /// </summary>
+        public Func<int, float?> GetVertexClipW;
         public Action            OnRepaint;
         public Action<Poly_Ling.Data.MeshContext> OnSyncMeshPositions;
         public Action            NotifyTopologyChanged;
@@ -141,7 +148,7 @@ namespace Poly_Ling.Player
         /// <summary>SimpleCut の操作対象(FirstDrawable)の面カリングマスクを構築して注入する。</summary>
         private void InjectSimpleCutMask(ToolContext ctx)
         {
-            var mo = ctx?.FirstDrawableMeshObject ?? ctx?.FirstSelectedMeshObject;
+            var mo = ctx?.ActiveMeshObject;
             int firstIdx = _project?.CurrentModel?.FirstMeshIndex ?? -1;
             bool[] mask = (mo != null && firstIdx >= 0)
                 ? GetFaceCulledMask?.Invoke(firstIdx, mo.FaceCount)
@@ -173,7 +180,7 @@ namespace Poly_Ling.Player
         /// </summary>
         public void ApplyHoverSelectionMode()
         {
-            var sel = _project?.CurrentModel?.FirstSelectedMeshContext?.Selection;
+            var sel = _project?.CurrentModel?.ActiveMeshContext?.Selection;
             if (sel == null) return;
             sel.Mode = _tool.NextClickIsEdge
                 ? Poly_Ling.Selection.MeshSelectMode.Edge
@@ -235,9 +242,10 @@ namespace Poly_Ling.Player
             if (model == null) return null;
 
             ctx.Model          = model;
-            ctx.SelectionState = model.FirstSelectedMeshContext?.Selection;
-            ctx.SelectedVertices = model.FirstSelectedMeshContext?.SelectedVertices;
+            ctx.SelectionState = model.ActiveMeshContext?.Selection;
+            ctx.SelectedVertices = model.ActiveMeshContext?.SelectedVertices;
             ctx.UndoController = _undoController;
+            ctx.GetVertexClipW = GetVertexClipW;
             ctx.CommandQueue   = _commandQueue;
             ctx.Repaint        = OnRepaint;
             ctx.NotifyTopologyChanged = NotifyTopologyChanged;
@@ -253,7 +261,7 @@ namespace Poly_Ling.Player
                 _undoController.MeshUndoContext.ParentModelContext = model;
 
             // TopologyCache（メッシュ変更時に自動再構築）— AdvancedSelectToolHandler と同方式
-            var mc = model.FirstSelectedMeshContext;
+            var mc = model.ActiveMeshContext;
             if (mc?.MeshObject != null)
             {
                 int key = mc.MeshObject.GetHashCode();

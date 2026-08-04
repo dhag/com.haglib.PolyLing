@@ -23,7 +23,7 @@ namespace Poly_Ling.Tools
 
         private bool HandleBeltClick(ToolContext ctx, Vector2 mousePos)
         {
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo == null) return false;
 
             var e = ResolveEdge(ctx, mousePos);
@@ -55,7 +55,7 @@ namespace Poly_Ling.Tools
         private void UpdateBeltHover(ToolContext ctx, Vector2 mousePos)
         {
             _preview.Clear();
-            var mo = ctx.FirstSelectedMeshObject;
+            var mo = ctx.ActiveMeshObject;
             if (mo == null) return;
 
             var e = ResolveEdge(ctx, mousePos);
@@ -71,7 +71,7 @@ namespace Poly_Ling.Tools
             {
                 // ベルト範囲（rung 群）を強調してプレビュー。
                 foreach (var rung in plan.Rungs)
-                    _preview.Lines.Add((mo.Vertices[rung.V1].Position, mo.Vertices[rung.V2].Position));
+                    _preview.Lines.Add((VW(ctx, mo, rung.V1), VW(ctx, mo, rung.V2)));
             }
             else
             {
@@ -80,20 +80,20 @@ namespace Poly_Ling.Tools
                 {
                     bool aV = cut.A.Kind == LadderAnchorKind.Vertex;
                     bool bV = cut.B.Kind == LadderAnchorKind.Vertex;
-                    Vector3 pa = aV ? mo.Vertices[cut.A.VertexIndex].Position : RungCutPoint(mo, plan, cut.A.RungEdge);
-                    Vector3 pb = bV ? mo.Vertices[cut.B.VertexIndex].Position : RungCutPoint(mo, plan, cut.B.RungEdge);
+                    Vector3 pa = aV ? VW(ctx, mo, cut.A.VertexIndex) : RungCutPoint(ctx, mo, plan, cut.A.RungEdge);
+                    Vector3 pb = bV ? VW(ctx, mo, cut.B.VertexIndex) : RungCutPoint(ctx, mo, plan, cut.B.RungEdge);
                     _preview.Lines.Add((pa, pb));
                 }
             }
         }
 
         /// <summary>rung 上の切断点（RungParams のアンカー＋比率）を返す。</summary>
-        private Vector3 RungCutPoint(MeshObject mo, LadderCutPlan plan, VertexPair rung)
+        private Vector3 RungCutPoint(ToolContext ctx, MeshObject mo, LadderCutPlan plan, VertexPair rung)
         {
             float t = 0.5f;
             if (plan.RungParams.TryGetValue(rung, out var rp))
                 t = (rp.AnchorVertex == rung.V2) ? (1f - rp.Ratio) : rp.Ratio;
-            return Vector3.Lerp(mo.Vertices[rung.V1].Position, mo.Vertices[rung.V2].Position, t);
+            return Vector3.Lerp(VW(ctx, mo, rung.V1), VW(ctx, mo, rung.V2), t);
         }
     }
 }

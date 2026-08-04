@@ -37,7 +37,11 @@ namespace Poly_Ling.Editor.Player
         private void OnEnable()
         {
             Instance = this;
-            PLEditorBridge.Register(new PolyLingPlayerBridge());
+
+            // ここで PolyLingPlayerBridge を登録すると、AssetDatabase 系が空実装の
+            // ブリッジで上書きされ、Hierarchy Export のアセット化が無言で失敗する。
+            // Editor 実装（PolyLingEditorBridgeImpl）をそのまま使う。
+
             EditorApplication.update += OnEditorUpdate;
         }
 

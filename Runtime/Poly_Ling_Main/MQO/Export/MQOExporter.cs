@@ -9,6 +9,7 @@ using System.IO;
 using System.Text;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Context;
 
 namespace Poly_Ling.MQO
@@ -593,16 +594,12 @@ namespace Poly_Ling.MQO
                 var bt = boneContext.BoneTransform;
                 if (bt.UseLocalTransform)
                 {
-                    // 位置（スケールを適用）
-                    Vector3 pos = bt.Position * settings.Scale;
-                    if (settings.FlipZ)
-                    {
-                        pos.z = -pos.z;
-                    }
+                    // 位置（スケールと軸反転を適用）
+                    Vector3 pos = AxisFlipOps.Position(settings.Flip, bt.Position, settings.Scale);
                     mqoObj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
                     
-                    // 回転（度数法）
-                    Vector3 rot = bt.Rotation;
+                    // 回転（度数法）。位置と同じ共役変換を適用する
+                    Vector3 rot = AxisFlipOps.EulerDeg(settings.Flip, bt.Rotation);
                     mqoObj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
                     
                     // スケール
@@ -949,16 +946,12 @@ namespace Poly_Ling.MQO
                 var bt = meshContext.BoneTransform;
                 if (bt.UseLocalTransform)
                 {
-                    // 位置（スケールを適用）
-                    Vector3 pos = bt.Position * settings.Scale;
-                    if (settings.FlipZ)
-                    {
-                        pos.z = -pos.z;
-                    }
+                    // 位置（スケールと軸反転を適用）
+                    Vector3 pos = AxisFlipOps.Position(settings.Flip, bt.Position, settings.Scale);
                     mqoObj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
                     
-                    // 回転（度数法）
-                    Vector3 rot = bt.Rotation;
+                    // 回転（度数法）。位置と同じ共役変換を適用する
+                    Vector3 rot = AxisFlipOps.EulerDeg(settings.Flip, bt.Rotation);
                     mqoObj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
                     
                     // スケール
@@ -1300,11 +1293,8 @@ namespace Poly_Ling.MQO
                 pos = new Vector3(pos.x, pos.z, pos.y);
             }
 
-            // Z反転
-            if (settings.FlipZ)
-            {
-                pos.z = -pos.z;
-            }
+            // 軸反転
+            pos = AxisFlipOps.Position(settings.Flip, pos);
 
             return pos;
         }

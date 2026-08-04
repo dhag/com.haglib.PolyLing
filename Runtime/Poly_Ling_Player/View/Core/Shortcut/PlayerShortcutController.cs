@@ -23,6 +23,12 @@ namespace Poly_Ling.Player
         private readonly Dictionary<string, Action> _commands = new();
         private readonly ShortcutMap _map;
 
+        /// <summary>
+        /// Escape 押下時に呼ばれる。一時サブツールからの復帰に使う。
+        /// サブツール中でなくても呼ばれるため、受け側で「サブツール中か」を判定すること。
+        /// </summary>
+        public Action OnEscape;
+
         private VisualElement _root;
         private bool          _attached;
 
@@ -75,7 +81,8 @@ namespace Poly_Ling.Player
             // 修飾のみ (キー本体なし) は無視。
             if (evt.keyCode == KeyCode.None) return;
 
-            // Escape はプレフィックス待ちの解除のみ行う (他へは干渉しない)。
+            // Escape はプレフィックス待ちの解除と、一時サブツールの復帰通知のみ行う
+            // (他へは干渉しない)。
             if (evt.keyCode == KeyCode.Escape)
             {
                 if (_pendingFirst.HasValue)
@@ -83,6 +90,7 @@ namespace Poly_Ling.Player
                     _pendingFirst = null;
                     Debug.Log("[Shortcut/diag] prefix canceled"); // ★一時
                 }
+                OnEscape?.Invoke();
                 return;
             }
 

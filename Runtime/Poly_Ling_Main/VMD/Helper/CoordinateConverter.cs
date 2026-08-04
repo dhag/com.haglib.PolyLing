@@ -1,20 +1,26 @@
 // CoordinateConverter.cs
-// PMX/VMD (右手系) ⇔ Unity (左手系) 座標変換ユーティリティ
+// PMX/VMD ⇔ Unity 座標変換ユーティリティ
 
 using UnityEngine;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.VMD
 {
     /// <summary>
     /// PMX/VMD座標系とUnity座標系の変換
-    /// 
-    /// PMX/VMD: 右手系 (Y-up, Z-forward)
-    /// Unity:   左手系 (Y-up, Z-forward)
-    /// 
-    /// 変換: Z軸を反転
+    ///
+    /// PMX/VMD: 左手系・キャラクタ正面 -Z
+    /// Unity:   左手系・キャラクタ正面 +Z
+    ///
+    /// 変換: X と Z の両方を反転（Y軸180°回転。純粋な回転で手系は変わらない）。
+    /// 規則は AxisFlipOps に集約しており、PMX インポータ/エクスポータと同一。
+    /// 明示的に AxisFlip を渡す版も用意している。
     /// </summary>
     public static class CoordinateConverter
     {
+        /// <summary>既定の軸反転（PMX ⇔ Unity）。</summary>
+        public static AxisFlip DefaultFlip => AxisFlip.PmxToUnity;
+
         // ================================================================
         // Position (位置)
         // ================================================================
@@ -24,18 +30,20 @@ namespace Poly_Ling.VMD
         /// Z軸を反転
         /// </summary>
         public static Vector3 ToUnityPosition(Vector3 pmxPosition)
-        {
-            return new Vector3(pmxPosition.x, pmxPosition.y, -pmxPosition.z);
-        }
+            => ToUnityPosition(pmxPosition, DefaultFlip);
+
+        public static Vector3 ToUnityPosition(Vector3 pmxPosition, AxisFlip flip)
+            => AxisFlipOps.Position(flip, pmxPosition);
 
         /// <summary>
         /// Unity位置 → PMX/VMD位置
         /// Z軸を反転
         /// </summary>
         public static Vector3 ToPMXPosition(Vector3 unityPosition)
-        {
-            return new Vector3(unityPosition.x, unityPosition.y, -unityPosition.z);
-        }
+            => ToPMXPosition(unityPosition, DefaultFlip);
+
+        public static Vector3 ToPMXPosition(Vector3 unityPosition, AxisFlip flip)
+            => AxisFlipOps.Position(flip, unityPosition);
 
         // ================================================================
         // Rotation (回転)
@@ -46,35 +54,37 @@ namespace Poly_Ling.VMD
         /// 左手系⇔右手系: X,Y成分を反転
         /// </summary>
         public static Quaternion ToUnityRotation(Quaternion pmxRotation)
-        {
-            // 右手系→左手系: X,Y成分を反転、Z,W はそのまま
-            return new Quaternion(-pmxRotation.x, -pmxRotation.y, pmxRotation.z, pmxRotation.w);
-        }
+            => ToUnityRotation(pmxRotation, DefaultFlip);
+
+        public static Quaternion ToUnityRotation(Quaternion pmxRotation, AxisFlip flip)
+            => AxisFlipOps.Rotation(flip, pmxRotation);
 
         /// <summary>
         /// Unity回転 → PMX/VMD回転
         /// </summary>
         public static Quaternion ToPMXRotation(Quaternion unityRotation)
-        {
-            return new Quaternion(-unityRotation.x, -unityRotation.y, unityRotation.z, unityRotation.w);
-        }
+            => ToPMXRotation(unityRotation, DefaultFlip);
+
+        public static Quaternion ToPMXRotation(Quaternion unityRotation, AxisFlip flip)
+            => AxisFlipOps.Rotation(flip, unityRotation);
 
         /// <summary>
         /// PMX/VMDオイラー角 → Unityオイラー角
         /// </summary>
         public static Vector3 ToUnityEuler(Vector3 pmxEuler)
-        {
-            // X回転とY回転の符号を反転
-            return new Vector3(-pmxEuler.x, -pmxEuler.y, pmxEuler.z);
-        }
+            => ToUnityEuler(pmxEuler, DefaultFlip);
+
+        public static Vector3 ToUnityEuler(Vector3 pmxEuler, AxisFlip flip)
+            => AxisFlipOps.EulerDeg(flip, pmxEuler);
 
         /// <summary>
         /// Unityオイラー角 → PMX/VMDオイラー角
         /// </summary>
         public static Vector3 ToPMXEuler(Vector3 unityEuler)
-        {
-            return new Vector3(-unityEuler.x, -unityEuler.y, unityEuler.z);
-        }
+            => ToPMXEuler(unityEuler, DefaultFlip);
+
+        public static Vector3 ToPMXEuler(Vector3 unityEuler, AxisFlip flip)
+            => AxisFlipOps.EulerDeg(flip, unityEuler);
 
         // ================================================================
         // Scale (スケール)
@@ -104,21 +114,25 @@ namespace Poly_Ling.VMD
         /// PMX/VMD行列 → Unity行列
         /// </summary>
         public static Matrix4x4 ToUnityMatrix(Matrix4x4 pmxMatrix)
-        {
-            // Z軸反転行列
-            Matrix4x4 flipZ = Matrix4x4.Scale(new Vector3(1, 1, -1));
+            => ToUnityMatrix(pmxMatrix, DefaultFlip);
 
-            // flipZ * pmxMatrix * flipZ
-            return flipZ * pmxMatrix * flipZ;
+        public static Matrix4x4 ToUnityMatrix(Matrix4x4 pmxMatrix, AxisFlip flip)
+        {
+            // S * M * S（S は符号ベクトルの対角行列。自己逆元）
+            Matrix4x4 s = Matrix4x4.Scale(new Vector3(flip.Sx, 1f, flip.Sz));
+            return s * pmxMatrix * s;
         }
 
         /// <summary>
         /// Unity行列 → PMX/VMD行列
         /// </summary>
         public static Matrix4x4 ToPMXMatrix(Matrix4x4 unityMatrix)
+            => ToPMXMatrix(unityMatrix, DefaultFlip);
+
+        public static Matrix4x4 ToPMXMatrix(Matrix4x4 unityMatrix, AxisFlip flip)
         {
-            Matrix4x4 flipZ = Matrix4x4.Scale(new Vector3(1, 1, -1));
-            return flipZ * unityMatrix * flipZ;
+            Matrix4x4 s = Matrix4x4.Scale(new Vector3(flip.Sx, 1f, flip.Sz));
+            return s * unityMatrix * s;
         }
 
         // ================================================================
@@ -129,17 +143,19 @@ namespace Poly_Ling.VMD
         /// PMX/VMD法線 → Unity法線
         /// </summary>
         public static Vector3 ToUnityNormal(Vector3 pmxNormal)
-        {
-            return new Vector3(pmxNormal.x, pmxNormal.y, -pmxNormal.z);
-        }
+            => ToUnityNormal(pmxNormal, DefaultFlip);
+
+        public static Vector3 ToUnityNormal(Vector3 pmxNormal, AxisFlip flip)
+            => AxisFlipOps.Normal(flip, pmxNormal);
 
         /// <summary>
         /// Unity法線 → PMX/VMD法線
         /// </summary>
         public static Vector3 ToPMXNormal(Vector3 unityNormal)
-        {
-            return new Vector3(unityNormal.x, unityNormal.y, -unityNormal.z);
-        }
+            => ToPMXNormal(unityNormal, DefaultFlip);
+
+        public static Vector3 ToPMXNormal(Vector3 unityNormal, AxisFlip flip)
+            => AxisFlipOps.Normal(flip, unityNormal);
 
         // ================================================================
         // UV (テクスチャ座標)
@@ -192,7 +208,9 @@ namespace Poly_Ling.VMD
         // ================================================================
 
         /// <summary>
-        /// 右手系の面インデックスを左手系に変換（巻き方向反転）
+        /// 面インデックスの巻き方向を反転する。
+        /// 既定の変換（X・Z 両反転）は純粋な回転なので巻き順を変える必要はない。
+        /// 反転軸が奇数個のときだけ呼ぶこと（AxisFlipOps.ReverseWinding で判定できる）。
         /// </summary>
         public static void FlipTriangleWinding(int[] indices)
         {

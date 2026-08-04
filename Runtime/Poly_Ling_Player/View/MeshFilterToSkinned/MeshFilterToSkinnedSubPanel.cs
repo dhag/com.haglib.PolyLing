@@ -118,6 +118,24 @@ namespace Poly_Ling.Player
             RefreshHierarchy();
         }
 
+        /// <summary>コマンド経由の変換を要求済みで、完了メッセージ未表示か。</summary>
+        private bool _conversionPending;
+
+        /// <summary>
+        /// NotifyPanels から呼ばれる。階層プレビューを作り直し、コマンド経由の
+        /// 変換が完了していれば実際のボーン本数で完了メッセージを表示する。
+        /// </summary>
+        public void Refresh()
+        {
+            RefreshHierarchy();
+
+            if (!_conversionPending) return;
+            int boneCount = _model?.MeshContextList.Count(ctx => ctx?.Type == MeshType.Bone) ?? 0;
+            if (boneCount <= 0) return;
+            _conversionPending = false;
+            SetStatus(T("ConvertSuccess", boneCount));
+        }
+
         // ================================================================
         // 階層プレビュー更新
         // ================================================================
@@ -181,21 +199,33 @@ namespace Poly_Ling.Player
                 nameLabel.style.flexGrow = 1;
                 row.Add(nameLabel);
 
-                // IgnorePose トグル（ローカル変数にキャプチャ）
-                var ctx = entry.Context;
-                var toggle = new Toggle("変換対象") { value = !ctx.IgnorePoseInArmature };
-                toggle.style.fontSize   = 8;
-                toggle.style.marginLeft = 4;
-                toggle.RegisterValueChangedCallback(e =>
+                if (entry.IsMirrorSide)
                 {
-                    // チェック=変換対象、チェックを外す=除外(姿勢無視)
-                    bool ignore = !e.newValue;
-                    ctx.IgnorePoseInArmature = ignore;
-                    if (ignore && ctx.BoneTransform != null)
-                        ctx.BoneTransform.Rotation = Vector3.zero;
-                    RefreshHierarchy();
-                });
-                row.Add(toggle);
+                    // ミラー側は実体側相方の IgnorePose 設定に従うためトグルを出さない。
+                    var mirrorLabel = new Label(T("MirrorSideRow"));
+                    mirrorLabel.style.fontSize   = 8;
+                    mirrorLabel.style.marginLeft = 4;
+                    mirrorLabel.style.color      = new StyleColor(new Color(0.65f, 0.8f, 1f));
+                    row.Add(mirrorLabel);
+                }
+                else
+                {
+                    // IgnorePose トグル（ローカル変数にキャプチャ）
+                    var ctx = entry.Context;
+                    var toggle = new Toggle("変換対象") { value = !ctx.IgnorePoseInArmature };
+                    toggle.style.fontSize   = 8;
+                    toggle.style.marginLeft = 4;
+                    toggle.RegisterValueChangedCallback(e =>
+                    {
+                        // チェック=変換対象、チェックを外す=除外(姿勢無視)
+                        bool ignore = !e.newValue;
+                        ctx.IgnorePoseInArmature = ignore;
+                        if (ignore && ctx.BoneTransform != null)
+                            ctx.BoneTransform.Rotation = Vector3.zero;
+                        RefreshHierarchy();
+                    });
+                    row.Add(toggle);
+                }
 
                 _hierarchyContainer.Add(row);
             }
@@ -230,9 +260,12 @@ namespace Poly_Ling.Player
             if (_panelContext != null)
             {
                 int modelIdx = _getModelIndex?.Invoke() ?? 0;
+                // コマンドは非同期に処理されるため、この時点ではボーン本数が確定していない。
+                // リテラル "?" を書式引数に渡すと「変換完了: ?個のボーンを作成」と表示されてしまう。
+                // 完了メッセージは NotifyPanels → Refresh() 側で実本数を使って出す。
+                _conversionPending = true;
                 _panelContext.SendCommand(new ConvertMeshFilterToSkinnedCommand(
                     modelIdx, _swapAxisForRotated, _setAxisForIdentity));
-                SetStatus(T("ConvertSuccess", "?"));  // 完了はNotifyPanels経由でRefreshされる
             }
             else
             {

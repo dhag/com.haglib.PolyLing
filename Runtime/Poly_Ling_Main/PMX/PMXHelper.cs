@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.Data;
+using Poly_Ling.Ops;
 using Poly_Ling.Context;
 
 namespace Poly_Ling.PMX
@@ -552,8 +553,8 @@ namespace Poly_Ling.PMX
                         MaterialIndex = matInfo.MaterialIndex
                     };
 
-                    // Z反転の場合は頂点順序を逆にする
-                    if (settings.FlipZ)
+                    // 反転軸が奇数個（鏡映）のときだけ頂点順序を逆にする。
+                    if (AxisFlipOps.ReverseWinding(settings.Flip))
                     {
                         face.VertexIndices.Add(localV1);
                         face.VertexIndices.Add(localV3);
@@ -719,8 +720,8 @@ namespace Poly_Ling.PMX
                             MaterialIndex = matIndex,
                             FaceIndex = document.Faces.Count,
                             VertexIndex1 = v0,
-                            VertexIndex2 = settings.FlipZ ? v2 : v1,
-                            VertexIndex3 = settings.FlipZ ? v1 : v2
+                            VertexIndex2 = AxisFlipOps.ReverseWinding(settings.Flip) ? v2 : v1,
+                            VertexIndex3 = AxisFlipOps.ReverseWinding(settings.Flip) ? v1 : v2
                         };
 
                         document.Faces.Add(pmxFace);
@@ -791,15 +792,10 @@ namespace Poly_Ling.PMX
             PMXExportSettings settings)
         {
             // 座標変換
-            Vector3 pos = vertex.Position;
-            if (settings.FlipZ)
-                pos = new Vector3(pos.x * settings.Scale, pos.y * settings.Scale, -pos.z * settings.Scale);
-            else
-                pos = pos * settings.Scale;
+            Vector3 pos = AxisFlipOps.Position(settings.Flip, vertex.Position, settings.Scale);
 
             Vector3 normal = vertex.Normals.Count > 0 ? vertex.Normals[0] : Vector3.up;
-            if (settings.FlipZ)
-                normal = new Vector3(normal.x, normal.y, -normal.z).normalized;
+            normal = AxisFlipOps.Normal(settings.Flip, normal);
 
             Vector2 uv = vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero;
             if (settings.FlipUV_V)
@@ -867,16 +863,12 @@ namespace Poly_Ling.PMX
         private static Vector3 ConvertPosition(Vector3 pmxPos, PMXImportSettings settings, bool applyScale = true)
         {
             float scale = applyScale ? settings.Scale : 1f;
-            if (settings.FlipZ)
-                return new Vector3(pmxPos.x * scale, pmxPos.y * scale, -pmxPos.z * scale);
-            return pmxPos * scale;
+            return AxisFlipOps.Position(settings.Flip, pmxPos, scale);
         }
 
         private static Vector3 ConvertNormal(Vector3 pmxNormal, PMXImportSettings settings)
         {
-            if (settings.FlipZ)
-                return new Vector3(pmxNormal.x, pmxNormal.y, -pmxNormal.z).normalized;
-            return pmxNormal.normalized;
+            return AxisFlipOps.Normal(settings.Flip, pmxNormal);
         }
 
         private static Vector2 ConvertUV(Vector2 pmxUV, PMXImportSettings settings)

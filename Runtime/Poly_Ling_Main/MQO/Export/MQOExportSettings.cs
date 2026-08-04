@@ -3,6 +3,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.MQO
 {
@@ -24,9 +25,16 @@ namespace Poly_Ling.MQO
         [Tooltip("Y軸とZ軸を入れ替え")]
         public bool SwapYZ = false;
 
+        /// <summary>X軸反転</summary>
+        [Tooltip("X軸を反転")]
+        public bool FlipX = true;
+
         /// <summary>Z軸反転</summary>
         [Tooltip("Z軸を反転")]
-        public bool FlipZ = true;
+        public bool FlipZ = false;
+
+        /// <summary>軸反転指定。インポート側と同一（自己逆元のため同じ設定が逆変換になる）。</summary>
+        public AxisFlip Flip => new AxisFlip(FlipX, FlipZ);
 
         /// <summary>UV V座標反転</summary>
         [Tooltip("UV V座標を反転（1-V）")]
@@ -112,11 +120,12 @@ namespace Poly_Ling.MQO
         /// 座標系設定から初期化（逆変換スケール）
         /// Unity→MQO = 1 / mqoUnityRatio
         /// </summary>
-        public static MQOExportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ)
+        public static MQOExportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ, bool flipX = true)
         {
             return new MQOExportSettings
             {
                 Scale = mqoUnityRatio > 0f ? 1f / mqoUnityRatio : 100f,
+                FlipX = flipX,
                 FlipZ = flipZ
             };
         }
@@ -131,6 +140,7 @@ namespace Poly_Ling.MQO
             {
                 Scale = this.Scale,
                 SwapYZ = this.SwapYZ,
+                FlipX = this.FlipX,
                 FlipZ = this.FlipZ,
                 FlipUV_V = this.FlipUV_V,
                 ExportMaterials = this.ExportMaterials,
@@ -155,6 +165,7 @@ namespace Poly_Ling.MQO
             if (o == null) return true;
             return !Mathf.Approximately(Scale, o.Scale) ||
                    SwapYZ != o.SwapYZ ||
+                   FlipX != o.FlipX ||
                    FlipZ != o.FlipZ ||
                    FlipUV_V != o.FlipUV_V ||
                    ExportMaterials != o.ExportMaterials ||
@@ -178,6 +189,7 @@ namespace Poly_Ling.MQO
             if (o == null) return;
             Scale = o.Scale;
             SwapYZ = o.SwapYZ;
+            FlipX = o.FlipX;
             FlipZ = o.FlipZ;
             FlipUV_V = o.FlipUV_V;
             ExportMaterials = o.ExportMaterials;

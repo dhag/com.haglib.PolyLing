@@ -106,7 +106,7 @@ namespace Poly_Ling.Tools
             if (_state != ExtrudeState.Idle)
                 return false;
 
-            if (ctx.FirstSelectedMeshObject == null || ctx.SelectionState == null)
+            if (ctx.ActiveMeshObject == null || ctx.SelectionState == null)
                 return false;
 
             _mouseDownScreenPos = mousePos;
@@ -119,7 +119,7 @@ namespace Poly_Ling.Tools
                 _state = ExtrudeState.PendingAction;
                 // マウスダウン時にスナップショット取得
                 if (ctx.UndoController != null)
-                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                    _snapshotBefore = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 return false;
             }
 
@@ -290,10 +290,13 @@ namespace Poly_Ling.Tools
             //   モード別方向計算(ViewPlane/Normal/Free)と SnapToAxis は移動化に伴い不使用。
             // Vertices[].Position はローカル座標なので、ワールドデルタを操作対象メッシュの
             // ローカル空間へ変換してから累積する（DisplayMatrix は常に identity のため使わない）。
-            Vector3 wd = ctx.ActiveWorldToLocalVector(ScreenDeltaToWorldDelta(ctx, delta));
+            // 基準は複製頂点の先頭。スキンド頂点はボーンの SkinningMatrix で変換されるため、
+            // メッシュの WorldMatrixInverse（ActiveWorldToLocalVector）では倍率と向きが合わない。
+            int basis = _extrudeDragVertices.Count > 0 ? _extrudeDragVertices[0].Index : -1;
+            Vector3 wd = ctx.WorldToLocalVectorAt(basis, ScreenDeltaToWorldDelta(ctx, delta));
             _accumMove += wd;
 
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
             if (meshObject != null)
             {
                 foreach (var dv in _extrudeDragVertices)
@@ -309,7 +312,7 @@ namespace Poly_Ling.Tools
         {
             if (ctx.UndoController != null && _snapshotBefore != null)
             {
-                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.FirstSelectedMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
+                var snapshotAfter = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext, ctx.SelectionState);
                 var record = new MeshSnapshotRecord(_snapshotBefore, snapshotAfter, ctx.SelectionState);
                 ctx.UndoController.FocusVertexEdit();
                 {
@@ -325,7 +328,7 @@ namespace Poly_Ling.Tools
         private void ExecuteExtrude(ToolContext ctx)
         {
             Vector3 offset = _extrudeDirection * _extrudeDistance;
-            var meshObject = ctx.FirstSelectedMeshObject;
+            var meshObject = ctx.ActiveMeshObject;
             var vertexRemap = new Dictionary<int, int>();
 
             var allVertices = new HashSet<int>();
@@ -353,6 +356,10 @@ namespace Poly_Ling.Tools
                 var newV = new Vertex { Position = oldV.Position + offset };
                 newV.UVs.AddRange(oldV.UVs);
                 newV.Normals.AddRange(oldV.Normals);
+                // 複製元の BoneWeight をコピーする。設定しないと GPU 側で
+                // メッシュ自身の context 索引が使われ（UnifiedBufferManager_Build.cs:356-362）、
+                // 周囲の頂点と別の行列で変換されてこの頂点だけ離れた位置に置かれる。
+                newV.BoneWeight = oldV.BoneWeight;
                 vertexRemap[vIdx] = newIdx;
                 meshObject.Vertices.Add(newV);
                 _extrudeDragVertices.Add(new ExtrudeDragVertex { Index = newIdx, BasePos = oldV.Position });
@@ -442,14 +449,14 @@ namespace Poly_Ling.Tools
                 {
                     V0 = ep.V1,
                     V1 = ep.V2,
-                    AdjacentFace = FindAdjacentFace(ctx.FirstSelectedMeshObject, ep.V1, ep.V2)
+                    AdjacentFace = FindAdjacentFace(ctx.ActiveMeshObject, ep.V1, ep.V2)
                 });
             }
 
             foreach (int idx in ctx.SelectionState.Lines)
             {
-                if (idx >= 0 && idx < ctx.FirstSelectedMeshObject.FaceCount &&
-                    ctx.FirstSelectedMeshObject.Faces[idx].VertexCount == 2)
+                if (idx >= 0 && idx < ctx.ActiveMeshObject.FaceCount &&
+                    ctx.ActiveMeshObject.Faces[idx].VertexCount == 2)
                 {
                     _targetLines.Add(idx);
                 }
@@ -486,7 +493,7 @@ namespace Poly_Ling.Tools
             {
                 if (e.AdjacentFace.HasValue)
                 {
-                    avgNormal += CalculateFaceNormal(ctx.FirstSelectedMeshObject, e.AdjacentFace.Value);
+                    avgNormal += CalculateFaceNormal(ctx.ActiveMeshObject, e.AdjacentFace.Value);
                     count++;
                 }
             }
@@ -496,7 +503,7 @@ namespace Poly_Ling.Tools
             if (_targetEdges.Count > 0)
             {
                 var e = _targetEdges[0];
-                Vector3 edgeDir = (ctx.FirstSelectedMeshObject.Vertices[e.V1].Position - ctx.FirstSelectedMeshObject.Vertices[e.V0].Position).normalized;
+                Vector3 edgeDir = (ctx.ActiveMeshObject.Vertices[e.V1].Position - ctx.ActiveMeshObject.Vertices[e.V0].Position).normalized;
                 Vector3 perp = Vector3.Cross(edgeDir, Vector3.up);
                 if (perp.magnitude < 0.001f) perp = Vector3.Cross(edgeDir, Vector3.forward);
                 return perp.normalized;
@@ -520,7 +527,7 @@ namespace Poly_Ling.Tools
             int n = 0;
             foreach (var e in _targetEdges)
             {
-                c += ctx.FirstSelectedMeshObject.Vertices[e.V0].Position + ctx.FirstSelectedMeshObject.Vertices[e.V1].Position;
+                c += ctx.ActiveMeshObject.Vertices[e.V0].Position + ctx.ActiveMeshObject.Vertices[e.V1].Position;
                 n += 2;
             }
             return n > 0 ? c / n : Vector3.zero;

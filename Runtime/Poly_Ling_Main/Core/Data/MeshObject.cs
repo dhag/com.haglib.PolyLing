@@ -880,6 +880,14 @@ namespace Poly_Ling.Data
         public bool IgnorePoseInArmature { get; set; } = false;
 
         /// <summary>
+        /// ミラー分岐のルートか。
+        /// true の場合、ヒエラルキーエクスポート時にこのノード配下を
+        /// 実体側とミラー側（MirrorSide を祖先に持つノード）の2本の枝に分割する。
+        /// 非スキンドメッシュ専用。
+        /// </summary>
+        public bool IsMirrorBranchRoot { get; set; } = false;
+
+        /// <summary>
         /// エクスポート時のローカルトランスフォーム
         /// </summary>
         public BoneTransform BoneTransform { get; set; } = new BoneTransform();
@@ -1351,6 +1359,7 @@ namespace Poly_Ling.Data
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
             copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
+            copy.IsMirrorBranchRoot   = this.IsMirrorBranchRoot;
 
             if(this.BoneTransform != null)
             {
@@ -1389,6 +1398,7 @@ namespace Poly_Ling.Data
             copy.Depth = this.Depth;
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
             copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
+            copy.IsMirrorBranchRoot   = this.IsMirrorBranchRoot;
 
             if (this.BoneTransform != null)
             {

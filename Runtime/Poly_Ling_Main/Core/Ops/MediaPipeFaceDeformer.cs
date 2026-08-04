@@ -46,13 +46,14 @@ namespace Poly_Ling.Tools.MediaPipe
         // ================================================================
 
         /// <summary>
-        /// ランドマークJSONからXY座標配列を読み込む（468頂点）
+        /// ランドマークJSONからXY座標配列を読み込む（468頂点）。
+        /// JSON スキーマ定義は <see cref="Poly_Ling.NohMask.FaceLandmarksJson"/> と共通。
         /// </summary>
         public static Vector2[] LoadLandmarks(string jsonPath)
         {
             string json = File.ReadAllText(jsonPath);
-            var data = JsonUtility.FromJson<LandmarkFile>(json);
-            if (data.faces == null || data.faces.Length == 0)
+            var data = JsonUtility.FromJson<Poly_Ling.NohMask.FaceLandmarksJson>(json);
+            if (data?.faces == null || data.faces.Length == 0)
                 throw new InvalidOperationException($"No faces in {jsonPath}");
 
             var landmarks = data.faces[0].landmarks;
@@ -66,27 +67,47 @@ namespace Poly_Ling.Tools.MediaPipe
             return result;
         }
 
-        /// <summary>
-        /// 三角形JSONから三角形インデックス配列を読み込む
-        /// </summary>
-        public static int[][] LoadTriangles(string jsonPath)
-        {
-            string json = File.ReadAllText(jsonPath);
-            var data = JsonUtility.FromJson<TriangleFile>(json);
-            return data.GetTriangles();
-        }
-
         // ================================================================
         // 基準メッシュ設定
         // ================================================================
 
         /// <summary>
         /// MediaPipe基準メッシュを設定する。
+        /// 4頂点以上の多角形は内部で三角形へ分解して保持する
+        /// （分解は <see cref="Poly_Ling.Data.Face.ToTriangleIndices"/> の扇形分割に委譲）。
+        /// Bind / Apply は3頂点前提で参照するため、ここで必ず三角形化しておくこと。
         /// </summary>
         public void SetBaseMesh(Vector2[] landmarks, int[][] triangles)
         {
             _baseLandmarks = landmarks;
-            _triangles = triangles;
+            _triangles     = Triangulate(triangles);
+        }
+
+        /// <summary>
+        /// 多角形インデックス列を三角形のみの配列へ分解する。
+        /// 3頂点はそのまま通し、4頂点以上のみ Face の扇形分割を利用する。
+        /// </summary>
+        private static int[][] Triangulate(int[][] polygons)
+        {
+            if (polygons == null) return new int[0][];
+
+            var result = new List<int[]>(polygons.Length);
+            foreach (var poly in polygons)
+            {
+                if (poly == null || poly.Length < 3) continue;
+
+                if (poly.Length == 3)
+                {
+                    result.Add(poly);
+                    continue;
+                }
+
+                var face = new Poly_Ling.Data.Face { VertexIndices = new List<int>(poly) };
+                int[] flat = face.ToTriangleIndices();
+                for (int i = 0; i + 2 < flat.Length; i += 3)
+                    result.Add(new[] { flat[i], flat[i + 1], flat[i + 2] });
+            }
+            return result.ToArray();
         }
 
         // ================================================================
@@ -205,113 +226,19 @@ namespace Poly_Ling.Tools.MediaPipe
         }
 
         // ================================================================
-        // JSONシリアライズ用クラス
+        // 面インデックスJSONパース
         // ================================================================
 
-        [Serializable]
-        private class LandmarkFile
-        {
-            public string schema;
-            public int num_faces_detected;
-            public FaceData[] faces;
-        }
-
-        [Serializable]
-        private class FaceData
-        {
-            public int face_index;
-            public ImageData image;
-            public LandmarkData[] landmarks;
-        }
-
-        [Serializable]
-        private class ImageData
-        {
-            public string path;
-            public int width;
-            public int height;
-        }
-
-        [Serializable]
-        private class LandmarkData
-        {
-            public int index;
-            public float x;
-            public float y;
-            public float z;
-            public float pixel_x;
-            public float pixel_y;
-        }
-
-        [Serializable]
-        private class TriangleFile
-        {
-            public string source;
-            public int triangle_count;
-            public int vertex_count;
-            // JsonUtilityではジャグ配列をデシリアライズできないため手動パース
-            [NonSerialized] public int[][] _triangles;
-
-            public int[][] GetTriangles()
-            {
-                return _triangles;
-            }
-        }
-
         /// <summary>
-        /// 三角形JSONを手動パースする（JsonUtilityはジャグ配列非対応のため）
+        /// 面インデックスJSONをパースする（N角形対応）。
+        /// 実装は <see cref="Poly_Ling.NohMask.NohMaskMeshGenerator.ParseTrianglesJson"/> に
+        /// 一本化してあり、本メソッドはその薄いラッパー。
+        /// 4頂点以上の多角形は SetBaseMesh 側で三角形へ分解される。
         /// </summary>
         public static int[][] ParseTrianglesJson(string json)
         {
-            // "triangles" 配列を手動抽出
-            // 形式: "triangles": [[a,b,c],[d,e,f],...]
-            int idx = json.IndexOf("\"triangles\"", StringComparison.Ordinal);
-            if (idx < 0)
-                throw new InvalidOperationException("triangles field not found");
-
-            // 最初の '[' を2つ見つける（"triangles": [ [ ... ）
-            int bracketStart = json.IndexOf('[', idx);
-            if (bracketStart < 0)
-                throw new InvalidOperationException("triangles array not found");
-
-            var triangles = new List<int[]>();
-            int pos = bracketStart + 1; // 外側 '[' の次
-
-            while (pos < json.Length)
-            {
-                // 次の '[' を探す
-                int subStart = json.IndexOf('[', pos);
-                if (subStart < 0) break;
-
-                int subEnd = json.IndexOf(']', subStart);
-                if (subEnd < 0) break;
-
-                // [a, b, c] の中身をパース
-                string inner = json.Substring(subStart + 1, subEnd - subStart - 1);
-                string[] parts = inner.Split(',');
-                if (parts.Length == 3)
-                {
-                    triangles.Add(new int[]
-                    {
-                        int.Parse(parts[0].Trim()),
-                        int.Parse(parts[1].Trim()),
-                        int.Parse(parts[2].Trim())
-                    });
-                }
-
-                pos = subEnd + 1;
-
-                // 外側 ']' に達したら終了
-                // 次の非空白文字が ']' なら終了
-                while (pos < json.Length && (json[pos] == ' ' || json[pos] == '\n' ||
-                       json[pos] == '\r' || json[pos] == '\t' || json[pos] == ','))
-                    pos++;
-
-                if (pos < json.Length && json[pos] == ']')
-                    break;
-            }
-
-            return triangles.ToArray();
+            var parsed = Poly_Ling.NohMask.NohMaskMeshGenerator.ParseTrianglesJson(json);
+            return parsed?.triangles ?? new int[0][];
         }
     }
 }
