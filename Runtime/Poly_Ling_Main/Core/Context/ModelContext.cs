@@ -555,6 +555,16 @@ namespace Poly_Ling.Context
         public WorkPlaneContext WorkPlane { get; set; }
 
         // ================================================================
+        // WorkAxisContext（作業用ローカル軸）
+        // ================================================================
+
+        /// <summary>
+        /// 作業用ローカル軸。回転 / 曲げの基準フレーム。Origin はワールド座標。
+        /// null にはせず常にインスタンスを持たせる（呼び出し側の null 判定を減らすため）。
+        /// </summary>
+        public WorkAxisContext WorkAxis { get; set; } = new WorkAxisContext();
+
+        // ================================================================
         // MorphExpressions（モーフグループ管理）
         // ================================================================
 
@@ -1326,6 +1336,7 @@ namespace Poly_Ling.Context
             FilePath = null;
             IsDirty = false;
             WorkPlane?.Reset();
+            WorkAxis?.Reset();
             SymmetrySettings?.Reset();
             _humanoidMapping?.ClearAll();
         }

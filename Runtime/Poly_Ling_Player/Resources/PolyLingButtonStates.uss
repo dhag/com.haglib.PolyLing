@@ -1,0 +1,39 @@
+/* PolyLingButtonStates.uss
+ * 全 Button の操作フィードバック（ホバー / 押下中 / 押下確定 / 無効）を一元定義する。
+ * root(UIDocument.rootVisualElement) に一度だけ付与し、全子孫のボタンへカスケードさせる。
+ *
+ * 【重要】背景色・文字色は使わない。
+ * PlayerLayoutRoot.ApplyDarkTheme が全 Button へ background-color / color を
+ * インラインスタイルで設定しており、UIToolkit ではインラインが StyleSheet より
+ * 優先されるため、ここで background-color / color を書いても効かない。
+ * したがってインライン未設定のプロパティ（border-color / scale / opacity）だけで
+ * 4状態を表現する。既存のアクティブ着色ロジック（インライン背景）とも競合しない。
+ */
+
+.unity-button {
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.10);
+    transition-property: border-color, scale, opacity;
+    transition-duration: 0.08s, 0.08s, 0.08s;
+}
+
+/* ホバー: 押せる場所であることを枠線で示す */
+.unity-button:hover {
+    border-color: rgb(225, 225, 225);
+}
+
+/* 押下中: 縮小＋アクセント枠 */
+.unity-button:active {
+    scale: 0.94 0.94;
+    border-color: rgb(255, 176, 64);
+}
+
+/* 押下確定フラッシュ: ClickEvent 受信後に一時付与されるクラス */
+.pl-btn-flash {
+    border-color: rgb(255, 176, 64);
+}
+
+/* 無効: 押せないことを明示 */
+.unity-button:disabled {
+    opacity: 0.35;
+}

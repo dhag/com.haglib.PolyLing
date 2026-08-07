@@ -30,6 +30,9 @@ namespace Poly_Ling.PrimitiveMesh
         public int  StartPoint = -1;
         public int  EndPoint   = -1;
 
+        /// <summary>一周してつながっている（閉じた梯子）なら true。</summary>
+        public bool Closed;
+
         public int RungCount => Left.Count;
     }
 

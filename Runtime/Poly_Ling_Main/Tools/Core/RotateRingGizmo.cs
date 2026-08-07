@@ -20,6 +20,17 @@ namespace Poly_Ling.Tools
         public AxisGizmo.AxisType HoveredAxis  = AxisGizmo.AxisType.None;
         public AxisGizmo.AxisType DraggingAxis = AxisGizmo.AxisType.None;
 
+        /// <summary>
+        /// リングの向き。既定 identity のときは従来どおりワールド軸まわりのリング。
+        /// 作業用ローカル軸など任意フレームで回したい場合にここへ回転を設定する。
+        /// 描画・ヒットテスト・角度ドラッグのすべてがこの向きに従う。
+        /// </summary>
+        public Quaternion Orientation = Quaternion.identity;
+
+        /// <summary>Orientation を適用した軸方向（ワールド）。</summary>
+        public Vector3 GetOrientedAxisVector(AxisGizmo.AxisType axis)
+            => Orientation * AxisVector(axis);
+
         /// <summary>指定軸リングのスクリーン点列を返す（閉ループ、末尾=先頭）。</summary>
         public Vector2[] GetRingScreen(ToolContext ctx, AxisGizmo.AxisType axis)
         {
@@ -28,6 +39,8 @@ namespace Poly_Ling.Tools
 
             float r = Mathf.Max(0.001f, ctx.CameraDistance * RadiusFactor);
             GetPlaneBasis(axis, out Vector3 u, out Vector3 v);
+            u = Orientation * u;
+            v = Orientation * v;
 
             for (int i = 0; i < Segments; i++)
             {
@@ -87,8 +100,8 @@ namespace Poly_Ling.Tools
         /// <summary>角度ドラッグ中か。</summary>
         public bool IsAngleDragging => _angleDragAxis != AxisGizmo.AxisType.None;
 
-        /// <summary>ドラッグ中の回転軸（ワールド）。非ドラッグ時は Vector3.up。</summary>
-        public Vector3 AngleDragAxisVector => AxisVector(_angleDragAxis);
+        /// <summary>ドラッグ中の回転軸（ワールド。Orientation 適用済み）。非ドラッグ時は Orientation * up。</summary>
+        public Vector3 AngleDragAxisVector => GetOrientedAxisVector(_angleDragAxis);
 
         /// <summary>
         /// 角度ドラッグを開始する。cursorScreen は ctx 系（WorldToScreenPos と同じ系）。
@@ -104,7 +117,9 @@ namespace Poly_Ling.Tools
             _angleDragStartDeg = ScreenAngleDeg(cursorScreen, _angleDragPivotScreen);
 
             // 軸がカメラ側を向くとき +1。裏から見たときに回転方向が反転しないようにする。
-            Vector3 worldAxis = AxisVector(axis);
+            // Orientation を適用した実際のリング法線で判定しないと、ローカル軸表示のとき
+            // 符号が合わずドラッグ方向が反転する。
+            Vector3 worldAxis = GetOrientedAxisVector(axis);
             Vector3 camDir    = (ctx.CameraPosition - Center).normalized;
             _angleDragSign    = Vector3.Dot(worldAxis, camDir) >= 0f ? 1f : -1f;
 
@@ -130,6 +145,10 @@ namespace Poly_Ling.Tools
         public static float ScreenAngleDeg(Vector2 cursor, Vector2 pivot)
             => Mathf.Atan2(cursor.y - pivot.y, cursor.x - pivot.x) * Mathf.Rad2Deg;
 
+        /// <summary>
+        /// ワールド軸方向。Orientation は反映しない。
+        /// 向きを反映したいときはインスタンスメソッド GetOrientedAxisVector を使うこと。
+        /// </summary>
         public static Vector3 AxisVector(AxisGizmo.AxisType axis)
         {
             switch (axis)

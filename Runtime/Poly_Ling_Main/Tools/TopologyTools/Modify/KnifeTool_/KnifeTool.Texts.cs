@@ -10,7 +10,7 @@ namespace Poly_Ling.Tools
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new()
         {
             ["Title"]      = new() { ["en"] = "Knife Tool", ["ja"] = "ナイフ", ["hi"] = "きるどうぐ" },
-            ["LadderCut"]  = new() { ["en"] = "Ladder Cut", ["ja"] = "ラダー切断", ["hi"] = "はしごぎり" },
+            ["LadderCut"]  = new() { ["en"] = "Ladder Cut", ["ja"] = "はしご切断", ["hi"] = "はしごぎり" },
             ["Erase"]      = new() { ["en"] = "Erase", ["ja"] = "辺消去", ["hi"] = "へりけし" },
             ["SimpleCut"]  = new() { ["en"] = "Simple Cut", ["ja"] = "シンプル", ["hi"] = "かんたんぎり" },
             ["PickFirst"]  = new() { ["en"] = "Click first point.\nESC: Cancel", ["ja"] = "1点目をクリック\nESC: キャンセル", ["hi"] = "1つめのてんをクリック\nESC: やめる" },

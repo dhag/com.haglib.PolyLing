@@ -102,6 +102,18 @@ namespace Poly_Ling.Player
         public System.Collections.Generic.List<string> GetPointLabels() => _tool.GetPointLabels();
         public AddFaceTool.AddFacePreviewData GetPreviewData() => _tool.GetPreviewData();
 
+        /// <summary>
+        /// Quad モードで3点配置済みのとき、その3点で三角形を確定する。
+        /// 右クリック／Escape から呼ぶ。確定したら true。
+        /// </summary>
+        public bool FinishAsTriangle()
+        {
+            var ctx = GetEnrichedCtx(); if (ctx == null) return false;
+            if (!_tool.FinishAsTriangle(ctx)) return false;
+            OnPointPlaced?.Invoke();
+            return true;
+        }
+
         // ================================================================
         // 初期化
         // ================================================================
@@ -144,10 +156,12 @@ namespace Poly_Ling.Player
             if (ctx == null) return;
             EnrichCtxForHover(ctx);
             ResolveGpuHoverVertex();
-            // UpdateHover に渡される screenPos は UIToolkit Y（Y=0上）= IMGUI Y（Y=0上）。
-            // ドラッグ時は GPU Y（Y=0下）→ ToImgui で IMGUI Y に変換するが、
-            // ホバー時は既に IMGUI Y なので ToImgui 不要。
-            _tool.OnMouseDrag(ctx, screenPos, Vector2.zero);
+            // UpdateHover に渡される screenPos は GPU Y（Y=0下）。
+            // PlayerViewportManager.NotifyPointerHover が ToHandlerHoverPos で
+            // パネルローカル（Y=0上）から反転してから渡してくるため、
+            // クリック／ドラッグ経路と同じく ToImgui で IMGUI Y（Y=0上）へ戻す。
+            // ここを素通しにすると ScreenPosToRay で二重反転し、候補点が上下逆に動く。
+            _tool.OnMouseDrag(ctx, ToImgui(screenPos, ctx), Vector2.zero);
         }
 
         /// <summary>Camera.onPostRenderから呼ぶ: GLギズモをRenderTextureに描画</summary>

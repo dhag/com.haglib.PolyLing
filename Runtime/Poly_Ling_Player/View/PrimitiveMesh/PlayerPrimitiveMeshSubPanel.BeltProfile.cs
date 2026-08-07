@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.PrimitiveMesh;
 using Poly_Ling.Revolution;
@@ -55,6 +56,15 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>スプライン分割の設定。</summary>
+        /// <summary>梯子の向き補正オプション。</summary>
+        private sealed class BeltOrientOption
+        {
+            public bool SwapSides;
+            public bool ReverseOrder;
+
+            public bool IsIdentity => !SwapSides && !ReverseOrder;
+        }
+
         private sealed class BeltSplineOption
         {
             public bool Enabled;
@@ -73,6 +83,11 @@ namespace Poly_Ling.Player
             public string UndoStackId = "PlayerEdit/BeltProfileEdit";
             public string UndoTitle   = "断面編集";
             public string BgSectionLabel = "下絵";
+
+            /// <summary>断面プロファイルCSVのパス。RecentPaths のキーと既定ファイル名も生成側から与える。</summary>
+            public string CsvPath       = "";
+            public string CsvRecentKey  = "Primitive.BeltProfile.Csv";
+            public string CsvDefaultName = "profile.csv";
 
             /// <summary>終点と始点をつないだ閉じた断面として扱うか。</summary>
             public bool ClosedLoop;
@@ -123,6 +138,8 @@ namespace Poly_Ling.Player
             // ── アンカー／ハンドル ──
             public readonly Canvas2DAnchor Anchor = new Canvas2DAnchor();
             public readonly Canvas2DHandle Handle = new Canvas2DHandle();
+            // ギズモ表示トグル（既定=非表示、メモリ保持・非永続）
+            public bool          ShowGizmo;
             public bool          AnchorDrag;
             public bool          AnchorSuppress;
             public Button        AnchorEnterBtn;
@@ -239,7 +256,7 @@ namespace Poly_Ling.Player
                 {
                     Left        = new List<Vector3>(st.RungCount),
                     Right       = new List<Vector3>(st.RungCount),
-                    Closed      = false,
+                    Closed      = st.Closed,
                     FlipWinding = st.FlipWinding,
                 };
                 for (int i = 0; i < st.RungCount; i++)
@@ -249,6 +266,36 @@ namespace Poly_Ling.Player
                 }
                 if (st.StartPoint >= 0) snap.StartPoint = mesh.Vertices[st.StartPoint].Position;
                 if (st.EndPoint   >= 0) snap.EndPoint   = mesh.Vertices[st.EndPoint].Position;
+                dst.Add(snap);
+            }
+
+            SetBeltStatus(message);
+            D();
+        }
+
+        /// <summary>指定オブジェクト全体から円環状の梯子を検出して差し替える。</summary>
+        private void AutoDetectRings(List<BeltSnapshot> dst, MeshObject mesh)
+        {
+            if (dst == null) return;
+            if (mesh == null) { SetBeltStatus(T("NoSourceObject")); return; }
+
+            var rings = BeltRingDetector.Detect(mesh, out string message);
+
+            dst.Clear();
+            foreach (var st in rings)
+            {
+                var snap = new BeltSnapshot
+                {
+                    Left        = new List<Vector3>(st.RungCount),
+                    Right       = new List<Vector3>(st.RungCount),
+                    Closed      = st.Closed,
+                    FlipWinding = st.FlipWinding,
+                };
+                for (int i = 0; i < st.RungCount; i++)
+                {
+                    snap.Left .Add(mesh.Vertices[st.Left[i]].Position);
+                    snap.Right.Add(mesh.Vertices[st.Right[i]].Position);
+                }
                 dst.Add(snap);
             }
 
@@ -270,6 +317,124 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 梯子CSV（フリル／パイプ／接地で共用）
+        // ================================================================
+
+        /// <summary>BeltSnapshot → CSV用DTO。</summary>
+        private static List<BeltCsvEntry> BeltsToCsv(List<BeltSnapshot> belts)
+        {
+            var list = new List<BeltCsvEntry>();
+            if (belts == null) return list;
+
+            foreach (var b in belts)
+            {
+                if (b == null || !b.HasData) continue;
+                list.Add(new BeltCsvEntry
+                {
+                    Left        = new List<Vector3>(b.Left),
+                    Right       = new List<Vector3>(b.Right),
+                    Closed      = b.Closed,
+                    FlipWinding = b.FlipWinding,
+                    StartPoint  = b.StartPoint,
+                    EndPoint    = b.EndPoint,
+                });
+            }
+            return list;
+        }
+
+        /// <summary>CSV用DTO → BeltSnapshot。</summary>
+        private static List<BeltSnapshot> BeltsFromCsv(List<BeltCsvEntry> entries)
+        {
+            var list = new List<BeltSnapshot>();
+            if (entries == null) return list;
+
+            foreach (var e in entries)
+            {
+                if (e == null || !e.HasData) continue;
+                list.Add(new BeltSnapshot
+                {
+                    Left        = new List<Vector3>(e.Left),
+                    Right       = new List<Vector3>(e.Right),
+                    Closed      = e.Closed,
+                    FlipWinding = e.FlipWinding,
+                    StartPoint  = e.StartPoint,
+                    EndPoint    = e.EndPoint,
+                });
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 梯子CSVの読み書きUIを組み立てる。読込は梯子リストを全置換する。
+        /// </summary>
+        private void BuildBeltCsvUI(VisualElement c, List<BeltSnapshot> belts,
+                                    string recentKey, string defaultName, Action onChanged)
+        {
+            if (c == null || belts == null) return;
+
+            c.Add(PlayerIoUiKit.SectionLabel(T("BeltCsv")));
+
+            string path = RecentPaths.Get(recentKey);
+
+            var pathField = new TextField();
+            pathField.RegisterValueChangedCallback(e =>
+            {
+                path = e.newValue;
+                RecentPaths.Set(recentKey, e.newValue);
+            });
+            c.Add(PlayerIoUiKit.PathRow(pathField, () =>
+            {
+                string dir  = string.IsNullOrEmpty(path) ? "" : System.IO.Path.GetDirectoryName(path);
+                string sel  = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
+                if (!string.IsNullOrEmpty(sel)) pathField.value = sel;
+            }));
+            if (!string.IsNullOrEmpty(path)) pathField.SetValueWithoutNotify(path);
+
+            c.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
+            {
+                if (string.IsNullOrEmpty(path))
+                {
+                    path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
+                    if (string.IsNullOrEmpty(path)) return;
+                    pathField.value = path;
+                }
+
+                var result = BeltCsvIO.Load(path);
+                if (!result.Success) { SetBeltStatus(result.ErrorMessage); return; }
+
+                var loaded = BeltsFromCsv(result.Belts);
+                belts.Clear();
+                belts.AddRange(loaded);
+
+                int total = 0;
+                foreach (var b in belts) total += b.RungCount;
+                SetBeltStatus(T("BeltsInfo", belts.Count, total));
+
+                onChanged?.Invoke();
+                D();
+            }));
+
+            c.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            {
+                if (belts.Count == 0) { SetBeltStatus(T("FrillNoBase")); return; }
+
+                if (string.IsNullOrEmpty(path))
+                {
+                    path = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(T("SaveCSV"), "", defaultName, "csv");
+                    if (string.IsNullOrEmpty(path)) return;
+                    pathField.value = path;
+                }
+
+                if (BeltCsvIO.Save(path, BeltsToCsv(belts)))
+                {
+                    int total = 0;
+                    foreach (var b in belts) total += b.RungCount;
+                    SetBeltStatus(T("BeltsInfo", belts.Count, total));
+                }
+            }));
+        }
+
+        // ================================================================
         // 断面プロファイルエディタ
         // ================================================================
 
@@ -280,6 +445,71 @@ namespace Poly_Ling.Player
                 ed.Points = ed.DefaultProfile != null
                     ? ed.DefaultProfile()
                     : new List<Vector2> { new Vector2(0f, 0f), new Vector2(1f, 0f) };
+        }
+
+        /// <summary>
+        /// 断面プロファイルCSVの読み書きUIを組み立てる。
+        /// $closedLoop は書き出すのみで、読込時に ed.ClosedLoop へは反映しない
+        /// （フリル=開ループ／パイプ=閉ループが生成器側の前提のため）。
+        /// </summary>
+        private void BuildBeltProfileCsvUI(VisualElement pe, BeltProfileEdit ed)
+        {
+            if (pe == null || ed == null) return;
+
+            pe.Add(PlayerIoUiKit.SectionLabel(T("ProfileCsv")));
+
+            if (string.IsNullOrEmpty(ed.CsvPath)) ed.CsvPath = RecentPaths.Get(ed.CsvRecentKey);
+
+            var pathField = new TextField();
+            pathField.RegisterValueChangedCallback(e =>
+            {
+                ed.CsvPath = e.newValue;
+                RecentPaths.Set(ed.CsvRecentKey, e.newValue);
+            });
+            pe.Add(PlayerIoUiKit.PathRow(pathField, () =>
+            {
+                string dir = string.IsNullOrEmpty(ed.CsvPath) ? "" : System.IO.Path.GetDirectoryName(ed.CsvPath);
+                string sel = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
+                if (!string.IsNullOrEmpty(sel)) pathField.value = sel;
+            }));
+            if (!string.IsNullOrEmpty(ed.CsvPath)) pathField.SetValueWithoutNotify(ed.CsvPath);
+
+            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
+            {
+                if (string.IsNullOrEmpty(ed.CsvPath))
+                {
+                    ed.CsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
+                    if (string.IsNullOrEmpty(ed.CsvPath)) return;
+                    pathField.value = ed.CsvPath;
+                }
+
+                var result = ProfilePointsCsvIO.Load(ed.CsvPath, ed.ClosedLoop);
+                if (!result.Success) { SetBeltStatus(result.ErrorMessage); return; }
+
+                BeltBegin(ed);
+                ed.Points = result.Points;
+                ed.Sel.Clear(); ed.SelectedIndex = -1;
+                BeltCommit(ed, "CSV読込");
+
+                SetBeltStatus(T("ImportedPoints", ed.Points.Count));
+                D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
+            }));
+
+            pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            {
+                EnsureBeltProfile(ed);
+
+                if (string.IsNullOrEmpty(ed.CsvPath))
+                {
+                    ed.CsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(
+                        T("SaveCSV"), "", ed.CsvDefaultName, "csv");
+                    if (string.IsNullOrEmpty(ed.CsvPath)) return;
+                    pathField.value = ed.CsvPath;
+                }
+
+                if (ProfilePointsCsvIO.Save(ed.CsvPath, ed.Points, ed.ClosedLoop))
+                    SetBeltStatus(T("ImportedPoints", ed.Points.Count));
+            }));
         }
 
         /// <summary>断面プロファイルエディタを組み立てる。</summary>
@@ -407,11 +637,20 @@ namespace Poly_Ling.Player
             });
             pe.Add(btnRow);
 
+            // ── 断面プロファイルCSV ───────────────────────────────────────
+            BuildBeltProfileCsvUI(pe, ed);
+
             // 矩形/投げ縄トグル
             var lassoToggle = new Toggle(T("LassoMode")) { value = ed.LassoMode };
             lassoToggle.style.marginBottom = 4;
             lassoToggle.RegisterValueChangedCallback(ev => ed.LassoMode = ev.newValue);
             pe.Add(lassoToggle);
+
+            // ギズモ表示トグル（既定=非表示）
+            var gizmoToggle = new Toggle(T("ShowGizmo")) { value = ed.ShowGizmo };
+            gizmoToggle.style.marginBottom = 4;
+            gizmoToggle.RegisterValueChangedCallback(ev => { ed.ShowGizmo = ev.newValue; RefreshBeltCanvas(ed); });
+            pe.Add(gizmoToggle);
 
             BuildBeltTransformUI(pe, ed);
 
@@ -816,9 +1055,10 @@ namespace Poly_Ling.Player
             if (ed.Marquee.Active)
                 ed.Marquee.Draw(p2d, new Color(1f, 0.85f, 0.2f, 0.9f));
 
-            // アンカー／ハンドル
-            ed.Anchor.Draw(p2d, BeltP2C(ed, ed.Anchor.Value, w, h));
-            if (!ed.Anchor.Mode)
+            // アンカー／ハンドル（ギズモ表示OFFで抑止。アンカー設定中は常に表示）
+            if (ed.ShowGizmo || ed.Anchor.Mode)
+                ed.Anchor.Draw(p2d, BeltP2C(ed, ed.Anchor.Value, w, h));
+            if (ed.ShowGizmo && !ed.Anchor.Mode)
                 ed.Handle.Draw(p2d, BeltP2C(ed, ed.Anchor.Value, w, h));
 
             // マグネット半径
@@ -884,8 +1124,10 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // 0. ハンドル（回転/拡大縮小）
-            var hit = ed.Handle.HitTest(cp, BeltP2C(ed, ed.Anchor.Value, w, h));
+            // 0. ハンドル（回転/拡大縮小。ギズモ表示OFFで無効）
+            var hit = ed.ShowGizmo
+                ? ed.Handle.HitTest(cp, BeltP2C(ed, ed.Anchor.Value, w, h))
+                : Canvas2DHandle.HandleType.None;
             if (hit != Canvas2DHandle.HandleType.None)
             {
                 BeginBeltHandle(ed, hit, cp, w, h);
@@ -1022,8 +1264,9 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // ハンドルホバー
-            var hovType = ed.Anchor.Mode ? Canvas2DHandle.HandleType.None
+            // ハンドルホバー（ギズモ表示OFF/アンカー設定中は無効）
+            var hovType = (ed.Anchor.Mode || !ed.ShowGizmo)
+                                         ? Canvas2DHandle.HandleType.None
                                          : ed.Handle.HitTest(cp, BeltP2C(ed, ed.Anchor.Value, w, h));
             if (hovType != ed.Handle.Hovered) { ed.Handle.Hovered = hovType; RefreshBeltCanvas(ed); }
 
@@ -1222,6 +1465,65 @@ namespace Poly_Ling.Player
         // ================================================================
 
         /// <summary>スプライン分割の設定UIを組み立てる。</summary>
+        /// <summary>梯子の向き補正UIを組み立てる。</summary>
+        private void BuildBeltOrientUI(VisualElement c, BeltOrientOption opt)
+        {
+            if (c == null || opt == null) return;
+
+            c.Add(PlayerIoUiKit.SectionLabel(T("BeltOrient")));
+
+            var hint = new Label(T("BeltOrientHint"));
+            hint.style.fontSize     = 10;
+            hint.style.whiteSpace   = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            c.Add(hint);
+
+            c.Add(TR(T("BeltSwapSides"),    () => opt.SwapSides,    v => { opt.SwapSides    = v; D(); }));
+            c.Add(TR(T("BeltReverseOrder"), () => opt.ReverseOrder, v => { opt.ReverseOrder = v; D(); }));
+        }
+
+        /// <summary>
+        /// 梯子の向き補正を適用したベルトを返す。取り込み済みデータは変更しない。
+        /// 左右入替・rung順反転はどちらも巻き順の意味を反転させるため、
+        /// ステップ法線を元メッシュと同じ向きに保つには FlipWinding も同時に反転する必要がある。
+        /// 両方ONなら2回反転して元に戻る。
+        /// </summary>
+        private static BeltSnapshot ApplyBeltOrient(BeltSnapshot belt, BeltOrientOption opt)
+        {
+            if (belt == null || !belt.HasData) return belt;
+            if (opt == null || opt.IsIdentity) return belt;
+
+            var left  = new List<Vector3>(belt.Left);
+            var right = new List<Vector3>(belt.Right);
+            var start = belt.StartPoint;
+            var end   = belt.EndPoint;
+            bool flip = belt.FlipWinding;
+
+            if (opt.SwapSides)
+            {
+                var tmp = left; left = right; right = tmp;
+                flip = !flip;
+            }
+
+            if (opt.ReverseOrder)
+            {
+                left.Reverse();
+                right.Reverse();
+                var tmp = start; start = end; end = tmp;
+                flip = !flip;
+            }
+
+            return new BeltSnapshot
+            {
+                Left        = left,
+                Right       = right,
+                Closed      = belt.Closed,
+                FlipWinding = flip,
+                StartPoint  = start,
+                EndPoint    = end,
+            };
+        }
+
         private void BuildBeltSplineUI(VisualElement c, BeltSplineOption opt)
         {
             c.Add(PlayerIoUiKit.Divider());
@@ -1306,6 +1608,55 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 厚み付け（ソリッド化）共通部：フリル／パイプで共用
+        // ================================================================
+
+        /// <summary>角処理(ベベル)UI 要素。厚み/分割数に応じて表示切替するため保持する。</summary>
+        private sealed class SolidifyUI
+        {
+            public VisualElement EdgeLabel, FrontSeg, FrontSize, BackSeg, BackSize, Inward;
+        }
+
+        /// <summary>角処理(ベベル)UI の表示を厚み/分割数に応じて更新する。</summary>
+        private static void UpdateSolidifyVis(SolidifyUI ui, float thickness, int segFront, int segBack)
+        {
+            if (ui == null || ui.EdgeLabel == null) return;
+            bool thick = thickness > 0.001f;
+            ui.EdgeLabel.style.display = thick ? DisplayStyle.Flex : DisplayStyle.None;
+            ui.FrontSeg.style.display  = thick ? DisplayStyle.Flex : DisplayStyle.None;
+            ui.FrontSize.style.display = (thick && segFront > 0) ? DisplayStyle.Flex : DisplayStyle.None;
+            ui.BackSeg.style.display   = thick ? DisplayStyle.Flex : DisplayStyle.None;
+            ui.BackSize.style.display  = (thick && segBack > 0) ? DisplayStyle.Flex : DisplayStyle.None;
+            ui.Inward.style.display    = (thick && (segFront > 0 || segBack > 0)) ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        /// <summary>
+        /// 面群全体を厚み付けした立体へ差し替える。厚みが 0 または生成失敗時は part をそのまま返す。
+        /// 面群が閉じている場合は孤立エッジが無いため側面は生成されず、外殻と内殻の中空になる。
+        /// </summary>
+        private static MeshObject ApplySolidify(
+            MeshObject part, float thickness, int segFront, int segBack,
+            float edgeFront, float edgeBack, bool edgeInward, string meshName)
+        {
+            if (part == null || part.FaceCount == 0 || thickness <= 0.0001f) return part;
+
+            var faces = new List<int>(part.FaceCount);
+            for (int i = 0; i < part.FaceCount; i++) faces.Add(i);
+
+            var r = FaceGroupSolidifier.Build(part, faces, new FaceGroupSolidifier.Params
+            {
+                Thickness     = thickness,
+                SegmentsFront = segFront,
+                SegmentsBack  = segBack,
+                EdgeSizeFront = edgeFront,
+                EdgeSizeBack  = edgeBack,
+                EdgeInward    = edgeInward,
+            }, meshName);
+
+            return r.Ok ? r.Mesh : part;
+        }
+
+        // ================================================================
         // 対象オブジェクト選択（自動検索・配置元で共用）
         // ================================================================
 
@@ -1357,6 +1708,93 @@ namespace Poly_Ling.Player
                 pick.Dropdown.choices = choices;
                 pick.Dropdown.index   = pick.Index + 1;
             }
+        }
+
+        // ================================================================
+        // 対象オブジェクト複数選択（接地の配置元で使用）
+        // ================================================================
+
+        /// <summary>描画オブジェクトの複数選択状態。選択はラベルで保持し、一覧再取得後も復元する。</summary>
+        private sealed class MeshSourceMultiPick
+        {
+            public List<(string Label, MeshObject Mesh)> Candidates = new List<(string, MeshObject)>();
+            public readonly HashSet<string> SelectedLabels = new HashSet<string>();
+            public VisualElement ListContainer;
+
+            /// <summary>候補の並び順で、選択されているメッシュを返す。</summary>
+            public List<MeshObject> CurrentList()
+            {
+                var list = new List<MeshObject>();
+                foreach (var e in Candidates)
+                    if (e.Mesh != null && SelectedLabels.Contains(e.Label)) list.Add(e.Mesh);
+                return list;
+            }
+        }
+
+        /// <summary>描画オブジェクトのチェックボックス一覧と再取得ボタンを組み立てる。</summary>
+        private void BuildMeshSourceMultiRow(VisualElement c, MeshSourceMultiPick pick, string sectionLabel)
+        {
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(PlayerIoUiKit.SectionLabel(sectionLabel));
+
+            pick.ListContainer = new VisualElement();
+            pick.ListContainer.style.marginBottom = 2;
+            c.Add(pick.ListContainer);
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 4;
+            SB(row, T("PlaceRefresh"), () => RefreshMeshSourceMultiPick(pick));
+            c.Add(row);
+
+            RefreshMeshSourceMultiPick(pick);
+        }
+
+        private void RefreshMeshSourceMultiPick(MeshSourceMultiPick pick)
+        {
+            pick.Candidates = GetDrawableMeshList?.Invoke() ?? new List<(string, MeshObject)>();
+
+            // 一覧から消えたラベルの選択は捨てる。
+            var alive = new HashSet<string>();
+            foreach (var e in pick.Candidates) alive.Add(e.Label);
+            pick.SelectedLabels.RemoveWhere(l => !alive.Contains(l));
+
+            if (pick.ListContainer == null) return;
+            pick.ListContainer.Clear();
+
+            if (pick.Candidates.Count == 0)
+            {
+                var empty = new Label(T("PlaceNoSource"));
+                empty.style.fontSize = 10;
+                pick.ListContainer.Add(empty);
+                return;
+            }
+
+            foreach (var e in pick.Candidates)
+            {
+                string label = e.Label;
+                var tog = new Toggle(label) { value = pick.SelectedLabels.Contains(label) };
+                tog.style.fontSize = 10;
+                tog.RegisterValueChangedCallback(ev =>
+                {
+                    if (ev.newValue) pick.SelectedLabels.Add(label);
+                    else             pick.SelectedLabels.Remove(label);
+                    D();
+                });
+                pick.ListContainer.Add(tog);
+            }
+        }
+
+        /// <summary>
+        /// 複数メッシュを1つへ連結する。頂点ローカル座標をそのまま連結する
+        /// （既存の接地が source.Vertices[v].Position を直接使うのと同じ扱いで、BoneTransform は考慮しない）。
+        /// </summary>
+        private static MeshObject CombineMeshes(IReadOnlyList<MeshObject> sources, string meshName)
+        {
+            var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Combined" : meshName);
+            if (sources == null) return mo;
+            foreach (var s in sources) AppendMesh(mo, s);
+            return mo;
         }
 
         /// <summary>Undo/Redo で復元されたスナップショットをパネルへ反映。</summary>

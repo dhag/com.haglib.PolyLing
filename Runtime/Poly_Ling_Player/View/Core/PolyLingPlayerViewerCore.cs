@@ -112,7 +112,7 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
 
         // ================================================================
@@ -143,6 +143,14 @@ namespace Poly_Ling.Player
         private ObjectMoveToolHandler        _objectMoveHandler;
         private PivotOffsetToolHandler       _pivotOffsetHandler;
         private PrimitivePlaceToolHandler    _primitivePlaceHandler;
+        // 作業用ローカル軸サブツール。モデルには触れず ModelContext.WorkAxis だけを操作する。
+        private WorkAxisToolHandler          _workAxisHandler;
+        private PlayerWorkAxisSubPanel       _workAxisSubPanel;
+        // デフォーマ（回転 / 曲げ）。基準は ModelContext.WorkAxis を作業軸パネルと共有する。
+        private DeformToolHandler            _deformHandler;
+        private PlayerDeformSubPanel         _deformSubPanel;
+        private LatticeToolHandler           _latticeHandler;
+        private PlayerLatticeSubPanel        _latticeSubPanel;
         private SculptToolHandler            _sculptHandler;
         private AdvancedSelectToolHandler    _advancedSelectHandler;
         // 接続モードのクリック点フラッシュ強調（頂点インデックス。-1=非表示）。
@@ -155,6 +163,7 @@ namespace Poly_Ling.Player
         private int                          _skinWeightUndoMasterIndex = -1;
         private int                          _uvUndoMasterIndex         = -1;
         private PlayerBlendSubPanel          _blendSubPanel;
+        private PlayerShrinkSubPanel         _shrinkSubPanel;
         private PlayerModelBlendSubPanel     _modelBlendSubPanel;
         private PlayerBoneEditorSubPanel     _boneEditorSubPanel;
         private PlayerUVEditorSubPanel       _uvEditorSubPanel;
@@ -225,6 +234,7 @@ namespace Poly_Ling.Player
         private PlayerGridAxisSubPanel       _gridAxisSubPanel;
 
         private PlayerRemoteServerSubPanel   _remoteServerSubPanel;
+        private PlayerLogSubPanel            _logSubPanel;
         private PlayerVertexMoveSubPanel     _vertexMoveSubPanel;
         private PlayerPivotSubPanel          _pivotSubPanel;
         private PlayerSculptSubPanel         _sculptSubPanel;
@@ -256,6 +266,10 @@ namespace Poly_Ling.Player
         /// </summary>
         public void Initialize(VisualElement uiRoot, Transform sceneRoot, RemoteConfig config)
         {
+            // 統合ログを設置する（メインスレッド捕捉＋Unity ログ取り込み開始）。
+            // 以降の Debug.Log/LogWarning/LogError はログパネルへ集約される。
+            PlayerLog.Install();
+
             _sceneRoot          = sceneRoot;
             _remoteMode         = config.Mode;
             _clientHost         = config.ClientHost;
@@ -784,6 +798,10 @@ namespace Poly_Ling.Player
             _editOps = null;
             _renderer?.Dispose();
             _renderer = null;
+
+            _logSubPanel?.Dispose();
+            _logSubPanel = null;
+            PlayerLog.Uninstall();
         }
 
         // ================================================================
@@ -1216,12 +1234,42 @@ namespace Poly_Ling.Player
                         UpdateAdvancedSelectOverlay();
                         _knifeSubPanel?.Refresh();
                     }
+                    // 面追加（四角形）で3点配置済みなら三角形として確定する。
+                    else if (_interactionMode == InteractionMode.AddFace)
+                    {
+                        if (_addFaceHandler != null && _addFaceHandler.FinishAsTriangle())
+                            _addFaceSubPanel?.Refresh();
+                    }
+                    // 格子変形は進行中のセッションを取消して開始前へ戻す。
+                    else if (_interactionMode == InteractionMode.Lattice)
+                    {
+                        _latticeHandler?.Cancel();
+                        UpdateTopologyToolsOverlay();
+                    }
                 };
             }
             ConnectCancelKey(_layoutRoot?.PerspectivePanel);
             ConnectCancelKey(_layoutRoot?.TopPanel);
             ConnectCancelKey(_layoutRoot?.FrontPanel);
             ConnectCancelKey(_layoutRoot?.SidePanel);
+
+            // 面追加（四角形）で3点配置済みのとき、右クリックで三角形として確定する。
+            // 右ドラッグはカメラ回転だが、OnClick はドラッグ閾値未満のときだけ発火するため競合しない。
+            void ConnectAddFaceRightClick(PlayerViewportPanel p)
+            {
+                if (p == null) return;
+                p.OnClick += (btn, pos, mods) =>
+                {
+                    if (btn != 1) return;
+                    if (_interactionMode != InteractionMode.AddFace) return;
+                    if (_addFaceHandler != null && _addFaceHandler.FinishAsTriangle())
+                        _addFaceSubPanel?.Refresh();
+                };
+            }
+            ConnectAddFaceRightClick(_layoutRoot?.PerspectivePanel);
+            ConnectAddFaceRightClick(_layoutRoot?.TopPanel);
+            ConnectAddFaceRightClick(_layoutRoot?.FrontPanel);
+            ConnectAddFaceRightClick(_layoutRoot?.SidePanel);
 
             void ConnectCameraChanged(PlayerViewport vp)
             {
@@ -1611,7 +1659,10 @@ namespace Poly_Ling.Player
                 previewSnap.Add(data.PreviewSnapped);
             }
 
-            panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines);
+            // Quad で3点配置済み、ホバーが1点目の既存頂点のときは開始点を強調する。
+            int afHighlight = (data.CloseToStart && pts.Count > 0) ? 0 : -1;
+
+            panel.UpdateAddFacePreview(pts, previewPts, previewSnap, lines, afHighlight);
         }
 
         /// <summary>
@@ -1769,6 +1820,26 @@ namespace Poly_Ling.Player
             if (ctx == null)
             {
                 panel.HideTopoToolOverlay();
+                return;
+            }
+
+            // ── 格子変形 ─────────────────────────────────────────────
+            // 格子の線と制御点はメッシュ頂点ではなく作業軸ローカルの制御点を
+            // 投影したもの。組み立ては LatticeToolHandler が持つ。
+            // 作業軸モードでもセッションが生きている間は描き続ける
+            // （格子フレームを動かしている最中に格子が消えないようにする）。
+            bool latticeOpen = _latticeHandler != null
+                && _latticeHandler.State != LatticeToolHandler.LatticeState.Idle
+                && (_interactionMode == InteractionMode.Lattice
+                 || _interactionMode == InteractionMode.WorkAxis);
+
+            if (latticeOpen || _interactionMode == InteractionMode.Lattice)
+            {
+                if (latticeOpen
+                    && _latticeHandler.TryBuildOverlay(ctx, out var latLines, out var latPoints))
+                    panel.UpdateTopoToolOverlay(latLines, latPoints, null);
+                else
+                    panel.HideTopoToolOverlay();
                 return;
             }
 
@@ -2081,6 +2152,9 @@ namespace Poly_Ling.Player
                 case InteractionMode.Rotate:          return _rotateHandler;
                 case InteractionMode.Scale:           return _scaleHandler;
                 case InteractionMode.PrimitivePlace:  return _primitivePlaceHandler;
+                case InteractionMode.WorkAxis:        return _workAxisHandler;
+                case InteractionMode.Deform:          return _deformHandler;
+                case InteractionMode.Lattice:         return _latticeHandler;
 
                 case InteractionMode.Sculpt:
                 case InteractionMode.AdvancedSelect:
@@ -2103,6 +2177,10 @@ namespace Poly_Ling.Player
             // 子孫の TextField 全てへカスケードするため、各フィールドでの個別適用は不要。
             var caretSheet = Resources.Load<StyleSheet>("PolyLingCaret");
             if (caretSheet != null) root.styleSheets.Add(caretSheet);
+
+            // 全ボタンの操作フィードバック（ホバー/押下中/押下確定/無効）を root に一括導入する。
+            // 個々のボタン生成箇所やサブパネル側の変更は不要。
+            PlayerLayoutRoot.InstallButtonFeedback(root);
 
             _layoutRoot = new PlayerLayoutRoot();
             _layoutRoot.Build(root);
@@ -2154,6 +2232,33 @@ namespace Poly_Ling.Player
             _blendSubPanel.GetCommandQueue    = () => _editOps?.CommandQueue;
             _blendSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
             _blendSubPanel.Build(_layoutRoot.BlendSection);
+
+            _shrinkSubPanel = new PlayerShrinkSubPanel();
+            _shrinkSubPanel.OnSyncMeshPositions = mc =>
+            {
+                _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+            };
+            _shrinkSubPanel.OnNotifyTopologyChanged = () =>
+            {
+                var proj = ActiveProject;
+                if (proj?.CurrentModel == null) return;
+                _viewportManager.EnterTopologyChanged(proj);
+                NotifyPanels(ChangeKind.ListStructure);
+            };
+            _shrinkSubPanel.OnRepaint         = () => _activePanel?.MarkDirtyRepaint();
+            _shrinkSubPanel.GetUndoController = () => _editOps?.UndoController;
+            _shrinkSubPanel.GetCommandQueue   = () => _editOps?.CommandQueue;
+            // 衝突判定に使うワールド座標は GPU が計算したものだけを参照する。
+            _shrinkSubPanel.GetWorldPositions = mc =>
+            {
+                var model = ActiveProject?.CurrentModel;
+                if (model == null) return null;
+                return _viewportManager.TryGetMeshWorldPositions(model, mc, out var world) ? world : null;
+            };
+            // ワールド座標が要るのは衝突計算の直前だけ。毎フレームは呼ばない。
+            _shrinkSubPanel.OnRequestUpdateTransform = () => _viewportManager.UpdateTransform();
+            _shrinkSubPanel.SetCommandContext(_panelContext, () => ActiveProject?.CurrentModelIndex ?? 0);
+            _shrinkSubPanel.Build(_layoutRoot.ShrinkSection);
 
             _modelBlendSubPanel = new PlayerModelBlendSubPanel();
             _modelBlendSubPanel.SendCommand    = cmd => _commandDispatcher?.Dispatch(cmd);
@@ -2602,6 +2707,75 @@ namespace Poly_Ling.Player
             _rotateHandler.SetUndoController(_editOps?.UndoController);
             _rotateSubPanel = new PlayerRotateSubPanel { GetH = () => _rotateHandler };
             _rotateSubPanel.Build(_layoutRoot.RotateSection);
+
+            // 作業用ローカル軸。ModelContext.WorkAxis だけを読み書きし、頂点には触れない。
+            _workAxisHandler = new WorkAxisToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+                GetWorkAxis    = () => CurrentWorkAxis(),
+                OnValueChanged = () =>
+                {
+                    _workAxisSubPanel?.Refresh();
+                    UpdateGizmoOverlay();
+                    // 格子変形の格子フレームは作業軸そのもの。開いていれば追従させる。
+                    _latticeHandler?.OnFrameChanged();
+                },
+            };
+            _workAxisSubPanel = new PlayerWorkAxisSubPanel
+            {
+                GetWorkAxis               = () => CurrentWorkAxis(),
+                GetH                      = () => _workAxisHandler,
+                OnValueChanged            = () =>
+                {
+                    UpdateGizmoOverlay();
+                    // 格子変形の格子フレームは作業軸そのもの。開いていれば追従させる。
+                    _latticeHandler?.OnFrameChanged();
+                },
+                GetSelectionCentroidWorld = () => SelectedVerticesCentroidWorld(),
+            };
+            _workAxisSubPanel.Build(_layoutRoot.WorkAxisSection);
+
+            // デフォーマ。作業軸を基準に選択頂点を変形する。数値 / スライダのみ。
+            _deformHandler = new DeformToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+                GetWorkAxis    = () => CurrentWorkAxis(),
+                GetModel       = () => ActiveProject?.CurrentModel,
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                },
+                OnApplyCompleted = () => NotifyPanels(ChangeKind.Attributes),
+            };
+            _deformHandler.SetUndoController(_editOps?.UndoController);
+            _deformSubPanel = new PlayerDeformSubPanel { GetH = () => _deformHandler };
+            _deformSubPanel.Build(_layoutRoot.DeformSection);
+
+            // 格子変形。格子フレームは作業軸。制御点の選択・移動はビューポートで行う。
+            _latticeHandler = new LatticeToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                GetPanelHeight = () => _activeViewport?.Cam?.pixelHeight ?? 0f,
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+                GetWorkAxis    = () => CurrentWorkAxis(),
+                GetModel       = () => ActiveProject?.CurrentModel,
+                OnSyncMeshPositions = mc =>
+                {
+                    _viewportManager.EnterVerticesMoved(ActiveProject, VerticesMovedPhase.Dragging, mc);
+                },
+                OnStateChanged    = () => _latticeSubPanel?.Refresh(),
+                OnRefreshOverlay  = () => { UpdateTopologyToolsOverlay(); UpdateGizmoOverlay(); },
+                OnBoxSelectUpdate = (start, end) => _activePanel?.ShowBoxSelect(start, end),
+                OnBoxSelectEnd    = () => _activePanel?.HideBoxSelect(),
+                OnApplyCompleted  = () => NotifyPanels(ChangeKind.Attributes),
+            };
+            _latticeHandler.SetUndoController(_editOps?.UndoController);
+            _latticeSubPanel = new PlayerLatticeSubPanel { GetH = () => _latticeHandler };
+            _latticeSubPanel.Build(_layoutRoot.LatticeSection);
             _scaleHandler = new ScaleToolHandler
             {
                 GetToolContext      = () => _viewportManager.GetCurrentToolContext(_activeViewport),
@@ -2884,6 +3058,9 @@ namespace Poly_Ling.Player
             };
             _remoteServerSubPanel.Build(_layoutRoot.RemoteServerSection);
 
+            _logSubPanel = new PlayerLogSubPanel();
+            _logSubPanel.Build(_layoutRoot.LogSection);
+
             _vertexMoveSubPanel = new PlayerVertexMoveSubPanel
             {
                 GetHandler = () => _moveToolHandler,
@@ -3019,6 +3196,7 @@ namespace Poly_Ling.Player
             _layoutRoot.MeshFilterToSkinnedBtn.clicked += ShowMeshFilterToSkinnedPanel;
 
             _layoutRoot.BlendBtn.clicked      += ShowBlendPanel;
+            _layoutRoot.ShrinkBtn.clicked     += ShowShrinkPanel;
             _layoutRoot.ModelBlendBtn.clicked += ShowModelBlendPanel;
             _layoutRoot.BoneEditorBtn.clicked  += () => { ShowBoneEditorPanel(); _boneEditorSubPanel?.ShowBonesTab(); };
             _layoutRoot.UVEditorBtn.clicked    += ShowUVEditorPanel;
@@ -3039,6 +3217,12 @@ namespace Poly_Ling.Player
             _layoutRoot.AddFaceBtn.clicked               += ShowAddFacePanel;
             _layoutRoot.FlipFaceBtn.clicked              += ShowFlipFacePanel;
             _layoutRoot.RotateBtn.clicked                += ShowRotatePanel;
+            if (_layoutRoot.WorkAxisBtn != null)
+                _layoutRoot.WorkAxisBtn.clicked          += ShowWorkAxisPanel;
+            if (_layoutRoot.DeformBtn != null)
+                _layoutRoot.DeformBtn.clicked            += ShowDeformPanel;
+            if (_layoutRoot.LatticeBtn != null)
+                _layoutRoot.LatticeBtn.clicked           += ShowLatticePanel;
             _layoutRoot.ScaleBtn.clicked                 += ShowScalePanel;
             _layoutRoot.EdgeBevelBtn.clicked             += ShowEdgeBevelPanel;
             _layoutRoot.EdgeExtrudeBtn.clicked           += ShowEdgeExtrudePanel;
@@ -3051,6 +3235,8 @@ namespace Poly_Ling.Player
             _layoutRoot.UnityClipTestBtn.clicked    += ShowUnityClipTestPanel;
             _layoutRoot.MotionClipTestBtn.clicked   += ShowMotionClipTestPanel;
             _layoutRoot.RemoteServerBtn.clicked     += ShowRemoteServerPanel;
+            if (_layoutRoot.LogBtn != null)
+                _layoutRoot.LogBtn.clicked          += ShowLogPanel;
             if (_layoutRoot.UnderlayBtn != null)
                 _layoutRoot.UnderlayBtn.clicked     += ShowUnderlayPanel;
             if (_layoutRoot.GridAxisBtn != null)
@@ -3299,6 +3485,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.UnityClipTestSection,     () => _unityClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.LogSection,               () => _logSubPanel?.Refresh()));
 
             ShowCategory1Panel(InteractionMode.VertexMove);
         }
@@ -3528,6 +3715,14 @@ namespace Poly_Ling.Player
             _blendSubPanel?.SetModel(ActiveProject?.CurrentModel);
         }
 
+        private void ShowShrinkPanel()
+        {
+            // カテゴリ 3
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.ShrinkSection, _layoutRoot?.ShrinkBtn);
+            _shrinkSubPanel?.SetModel(ActiveProject?.CurrentModel);
+        }
+
         private void ShowModelBlendPanel()
         {
             // カテゴリ 3
@@ -3720,6 +3915,124 @@ namespace Poly_Ling.Player
             if (ctx != null) _flipFaceHandler?.Activate(ctx);
         }
 
+        // ================================================================
+        // 作業用ローカル軸（WorkAxis）
+        // ================================================================
+
+        /// <summary>
+        /// 現在のモデルの作業軸。モデル未選択なら null。
+        /// ModelContext.WorkAxis は既定でインスタンスを持つが、
+        /// 旧データから復元した ModelContext は null のことがあるためここで補う。
+        /// </summary>
+        private Poly_Ling.Context.WorkAxisContext CurrentWorkAxis()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return null;
+            if (model.WorkAxis == null) model.WorkAxis = new Poly_Ling.Context.WorkAxisContext();
+            return model.WorkAxis;
+        }
+
+        /// <summary>
+        /// 選択中の全ドローアブルメッシュにまたがる選択頂点の重心（ワールド座標）。
+        /// 選択が無ければ null。
+        ///
+        /// 座標は GPU が計算した表示位置（PlayerViewportManager.TryGetVertexWorld →
+        /// GetDisplayPositions）から取る。CPU 側で WorldMatrix を掛け直すと
+        /// スキニング済みメッシュで GPU 表示とずれるため、独自計算はしない。
+        /// </summary>
+        private Vector3? SelectedVerticesCentroidWorld()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return null;
+
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+
+            foreach (int meshIdx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(meshIdx);
+                var mo = mc?.MeshObject;
+                if (mo == null || !mc.HasSelection) continue;
+
+                foreach (int vi in EnumerateSelectedVertexIndices(mc, mo))
+                {
+                    if (_viewportManager.TryGetVertexWorld(model, mc, vi, out var w))
+                    {
+                        sum += w;
+                        count++;
+                    }
+                }
+            }
+
+            return count > 0 ? (Vector3?)(sum / count) : null;
+        }
+
+        /// <summary>
+        /// MeshContext の選択（頂点 / 辺 / 面 / 線分）から影響頂点インデックスを列挙する。
+        /// 重複は呼び出し側で気にしなくてよいよう HashSet で畳む。
+        /// </summary>
+        private static HashSet<int> EnumerateSelectedVertexIndices(
+            Poly_Ling.Data.MeshContext mc, Poly_Ling.Data.MeshObject mo)
+        {
+            var set = new HashSet<int>();
+            if (mc == null || mo == null) return set;
+
+            if (mc.SelectedVertices != null)
+                foreach (int v in mc.SelectedVertices) set.Add(v);
+
+            if (mc.SelectedEdges != null)
+                foreach (var e in mc.SelectedEdges) { set.Add(e.V1); set.Add(e.V2); }
+
+            if (mc.SelectedFaces != null)
+                foreach (int fi in mc.SelectedFaces)
+                    if (fi >= 0 && fi < mo.FaceCount)
+                        foreach (int v in mo.Faces[fi].VertexIndices) set.Add(v);
+
+            if (mc.SelectedLines != null)
+                foreach (int li in mc.SelectedLines)
+                    if (li >= 0 && li < mo.FaceCount)
+                    {
+                        var f = mo.Faces[li];
+                        if (f.VertexCount == 2)
+                        {
+                            set.Add(f.VertexIndices[0]);
+                            set.Add(f.VertexIndices[1]);
+                        }
+                    }
+
+            return set;
+        }
+
+        /// <summary>
+        /// 作業軸パネルを開く。カテゴリ 1（3D 操作と右ペインが一体）。
+        /// </summary>
+        private void ShowWorkAxisPanel()
+        {
+            ShowCategory1Panel(InteractionMode.WorkAxis);
+            UpdateGizmoOverlay();
+        }
+
+        /// <summary>
+        /// デフォーマパネルを開く。カテゴリ 1（3D 操作と右ペインが一体）。
+        /// 作業軸は「作業軸」パネルと共有するため、ここでは編集しない。
+        /// </summary>
+        private void ShowDeformPanel()
+        {
+            ShowCategory1Panel(InteractionMode.Deform);
+            UpdateGizmoOverlay();
+        }
+
+        /// <summary>
+        /// 格子変形パネルを開く。カテゴリ 1（3D 操作と右ペインが一体）。
+        /// 格子フレームは「作業軸」パネルと共有するため、ここでは編集しない。
+        /// </summary>
+        private void ShowLatticePanel()
+        {
+            ShowCategory1Panel(InteractionMode.Lattice);
+            UpdateTopologyToolsOverlay();
+            UpdateGizmoOverlay();
+        }
+
         private void ShowRotatePanel()
         {
             // カテゴリ 1 化: MoveToolHandler の選択/矩形選択を流用。
@@ -3841,6 +4154,13 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.RemoteServerSection, _layoutRoot?.RemoteServerBtn);
             _remoteServerSubPanel?.Refresh();
+        }
+
+        private void ShowLogPanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.LogSection, _layoutRoot?.LogBtn);
+            _logSubPanel?.Refresh();
         }
 
         private void ShowUnderlayPanel()
@@ -3991,6 +4311,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.LivePrimitiveSection);
             Hide(_layoutRoot.MeshFilterToSkinnedSection);
             Hide(_layoutRoot.BlendSection);
+            Hide(_layoutRoot.ShrinkSection);
             Hide(_layoutRoot.ModelBlendSection);
             Hide(_layoutRoot.BoneEditorSection);
             Hide(_layoutRoot.UVEditorSection);
@@ -4013,6 +4334,9 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.AddFaceSection);
             Hide(_layoutRoot.FlipFaceSection);
             Hide(_layoutRoot.RotateSection);
+            Hide(_layoutRoot.WorkAxisSection);
+            Hide(_layoutRoot.DeformSection);
+            Hide(_layoutRoot.LatticeSection);
             Hide(_layoutRoot.ScaleSection);
             Hide(_layoutRoot.EdgeBevelSection);
             Hide(_layoutRoot.EdgeExtrudeSection);
@@ -4025,6 +4349,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.UnityClipTestSection);
             Hide(_layoutRoot.MotionClipTestSection);
             Hide(_layoutRoot.RemoteServerSection);
+            Hide(_layoutRoot.LogSection);
             Hide(_layoutRoot.UnderlaySection);
             Hide(_layoutRoot.GridAxisSection);
             _underlayActive = false;   // 別パネルへ切替時は下絵ドラッグを無効化
@@ -4805,6 +5130,21 @@ namespace Poly_Ling.Player
                     btn     = _layoutRoot?.RotateBtn;
                     refresh = () => _rotateSubPanel?.Refresh();
                     break;
+                case InteractionMode.WorkAxis:
+                    section = _layoutRoot?.WorkAxisSection;
+                    btn     = _layoutRoot?.WorkAxisBtn;
+                    refresh = () => _workAxisSubPanel?.Refresh();
+                    break;
+                case InteractionMode.Deform:
+                    section = _layoutRoot?.DeformSection;
+                    btn     = _layoutRoot?.DeformBtn;
+                    refresh = () => _deformSubPanel?.Refresh();
+                    break;
+                case InteractionMode.Lattice:
+                    section = _layoutRoot?.LatticeSection;
+                    btn     = _layoutRoot?.LatticeBtn;
+                    refresh = () => _latticeSubPanel?.Refresh();
+                    break;
                 case InteractionMode.Scale:
                     section = _layoutRoot?.ScaleSection;
                     btn     = _layoutRoot?.ScaleBtn;
@@ -4963,6 +5303,20 @@ namespace Poly_Ling.Player
                 if (firstMc != null) firstMc.Selection.Mode = MeshSelectMode.All;
             }
 
+            // 格子変形から脱出するとき、進行中のセッションは取消する。
+            // 黙って確定すると、ユーザが意図しない変形が Undo 履歴に残るため。
+            //
+            // 作業軸へ移るときだけは取消さない。格子フレームは作業軸そのものなので、
+            // 「格子全体を動かす」には一度作業軸パネルへ行く必要がある。
+            if (_interactionMode == InteractionMode.Lattice
+                && mode != InteractionMode.Lattice
+                && mode != InteractionMode.WorkAxis)
+            {
+                _latticeHandler?.Cancel();
+                _activePanel?.HideTopoToolOverlay();
+                _activePanel?.HideBoxSelect();
+            }
+
             // ---------------------------------------------------------------
             // カテゴリ 1 ツール (EdgeBevel / EdgeExtrude / FaceExtrude /
             // FlipFace / Solidify / Rotate / Scale) は MoveToolHandler の
@@ -5047,6 +5401,24 @@ namespace Poly_Ling.Player
                     // 配置ギズモ専用。モデルの選択・頂点操作は行わない。
                     _vertexInteractor?.SetToolHandler(_primitivePlaceHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _primitivePlaceHandler?.UpdateHover(pos, ctx));
+                    break;
+                case InteractionMode.WorkAxis:
+                    // 作業軸ギズモ専用。モデルの選択・頂点操作は行わない。
+                    _vertexInteractor?.SetToolHandler(_workAxisHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _workAxisHandler?.UpdateHover(pos, ctx));
+                    break;
+                case InteractionMode.Deform:
+                    // 数値 / スライダのみで操作する。ビューポートでは
+                    // MoveToolHandler の選択・矩形選択を流用し、組み込み移動ギズモは出さない。
+                    if (_moveToolHandler != null) _moveToolHandler.SelectOnly = true;
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    break;
+                case InteractionMode.Lattice:
+                    // 格子点の選択・移動専用。メッシュ頂点の選択は行わない
+                    // （選び直したいときは取消して未開始へ戻す）。
+                    _vertexInteractor?.SetToolHandler(_latticeHandler);
+                    _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _latticeHandler?.UpdateHover(pos, ctx));
                     break;
                 case InteractionMode.Sculpt:
                     _vertexInteractor?.SetToolHandler(_sculptHandler);
@@ -5526,6 +5898,11 @@ namespace Poly_Ling.Player
 
             if (kind == ChangeKind.Selection || kind == ChangeKind.ModelSwitch)
                 _blendSubPanel?.OnSelectionChanged();
+
+            // シュリンカーは選択状態を使わないため ModelSwitch だけに追随する
+            // （Selection で作り直すとプレビュー中の状態が失われる）。
+            if (kind == ChangeKind.ModelSwitch)
+                _shrinkSubPanel?.SetModel(ActiveProject?.CurrentModel);
 
             foreach (var (section, refresh) in _sectionRefreshPairs)
                 if (section?.style.display == DisplayStyle.Flex) refresh();

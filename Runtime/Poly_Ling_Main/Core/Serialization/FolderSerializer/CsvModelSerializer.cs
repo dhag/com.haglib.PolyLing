@@ -147,6 +147,10 @@ namespace Poly_Ling.Serialization.FolderSerializer
             if (workPlane != null)
                 WriteWorkPlaneCsv(modelFolderPath, workPlane);
 
+            // workaxis.csv（作業用ローカル軸。引数ではなく model から直接読む）
+            if (model.WorkAxis != null)
+                WriteWorkAxisCsv(modelFolderPath, model.WorkAxis);
+
             // tposebackup.csv
             if (model.TPoseBackup != null)
                 WriteTPoseBackupCsv(modelFolderPath, model.TPoseBackup, useNameBased, indexToName);
@@ -323,6 +327,14 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string wpPath = Path.Combine(modelFolderPath, "workplane.csv");
             if (File.Exists(wpPath))
                 workPlane = ReadWorkPlaneCsv(wpPath);
+
+            // workaxis.csv（作業用ローカル軸。out 引数ではなく model へ直接入れる）
+            if (model.WorkAxis == null) model.WorkAxis = new WorkAxisContext();
+            string waPath = Path.Combine(modelFolderPath, "workaxis.csv");
+            if (File.Exists(waPath))
+                ReadWorkAxisCsv(waPath, model.WorkAxis);
+            else
+                model.WorkAxis.Reset();
 
             // tposebackup.csv
             string tpPath = Path.Combine(modelFolderPath, "tposebackup.csv");
@@ -1301,6 +1313,54 @@ namespace Poly_Ling.Serialization.FolderSerializer
             }
 
             return wp;
+        }
+
+        // ================================================================
+        // workaxis.csv（作業用ローカル軸）
+        //
+        // 値はすべて Unity ワールド座標系のまま書き出す（座標系変換なし）。
+        // 回転はクォータニオン x,y,z,w。
+        // ================================================================
+
+        private static void WriteWorkAxisCsv(string folderPath, WorkAxisContext wa)
+        {
+            var o = wa.Origin;
+            var r = wa.Rotation;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("#PolyLing_WorkAxis,version,1.0");
+            sb.AppendLine($"origin,{Fl(o.x)},{Fl(o.y)},{Fl(o.z)}");
+            sb.AppendLine($"rotation,{Fl(r.x)},{Fl(r.y)},{Fl(r.z)},{Fl(r.w)}");
+            sb.AppendLine($"isVisible,{wa.IsVisible}");
+
+            File.WriteAllText(Path.Combine(folderPath, "workaxis.csv"), sb.ToString(), Encoding.UTF8);
+        }
+
+        private static void ReadWorkAxisCsv(string path, WorkAxisContext wa)
+        {
+            if (wa == null) return;
+            wa.Reset();
+            if (!File.Exists(path)) return;
+
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                var cols = Split(line);
+                if (cols.Length < 2 || cols[0].StartsWith("#")) continue;
+
+                switch (cols[0])
+                {
+                    case "origin":
+                        wa.Origin = new Vector3(PFl(cols, 1), PFl(cols, 2), PFl(cols, 3));
+                        break;
+                    case "rotation":
+                        wa.Rotation = new Quaternion(
+                            PFl(cols, 1), PFl(cols, 2), PFl(cols, 3), PFl(cols, 4, 1f));
+                        break;
+                    case "isVisible":
+                        wa.IsVisible = PBool(cols, 1, true);
+                        break;
+                }
+            }
         }
 
         // ================================================================

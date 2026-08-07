@@ -93,6 +93,7 @@ namespace Poly_Ling.Player
         private List<Vector2>            _addFacePreviewPts   = new List<Vector2>(); // スナップ/通常プレビュー点
         private List<bool>               _addFacePreviewSnap  = new List<bool>();
         private List<(Vector2, Vector2)> _addFaceLines        = new List<(Vector2, Vector2)>();
+        private int                      _addFaceHighlightIdx = -1;  // 強調する確定点の索引。-1 で無し
         private bool                     _addFaceVisible;
 
         // トポロジーツール（辺ベベル/押し出し/トポロジー/面押し出し）ホバーオーバーレイ
@@ -314,12 +315,14 @@ namespace Poly_Ling.Player
             List<Vector2> pts,
             List<Vector2> previewPts,
             List<bool>    previewSnapped,
-            List<(Vector2, Vector2)> lines)
+            List<(Vector2, Vector2)> lines,
+            int highlightPtIndex = -1)
         {
             _addFacePts         = pts         ?? new List<Vector2>();
             _addFacePreviewPts  = previewPts  ?? new List<Vector2>();
             _addFacePreviewSnap = previewSnapped ?? new List<bool>();
             _addFaceLines       = lines       ?? new List<(Vector2, Vector2)>();
+            _addFaceHighlightIdx = highlightPtIndex;
             _addFaceVisible     = true;
             _addFaceOverlay?.MarkDirtyRepaint();
         }
@@ -331,6 +334,7 @@ namespace Poly_Ling.Player
             _addFacePreviewPts.Clear();
             _addFacePreviewSnap.Clear();
             _addFaceLines.Clear();
+            _addFaceHighlightIdx = -1;
             _addFaceOverlay?.MarkDirtyRepaint();
         }
 
@@ -995,19 +999,31 @@ namespace Poly_Ling.Player
                 }
             }
 
-            // 確定済み点（シアン）
+            // 確定済み点（シアン）。強調指定の点だけ大きく描いてリングを重ねる。
             const float halfSz = 5f;
-            foreach (var pt in _addFacePts)
+            for (int i = 0; i < _addFacePts.Count; i++)
             {
-                var p = cv(pt);
-                painter.fillColor = new Color(0f, 1f, 1f, 0.95f);
+                var  p  = cv(_addFacePts[i]);
+                bool hi = (i == _addFaceHighlightIdx);
+                float sz = hi ? 8f : halfSz;
+                painter.fillColor = hi
+                    ? new Color(1f, 0.4f, 0.1f, 0.95f)
+                    : new Color(0f, 1f, 1f, 0.95f);
                 painter.BeginPath();
-                painter.MoveTo(p + new Vector2(-halfSz, -halfSz));
-                painter.LineTo(p + new Vector2( halfSz, -halfSz));
-                painter.LineTo(p + new Vector2( halfSz,  halfSz));
-                painter.LineTo(p + new Vector2(-halfSz,  halfSz));
+                painter.MoveTo(p + new Vector2(-sz, -sz));
+                painter.LineTo(p + new Vector2( sz, -sz));
+                painter.LineTo(p + new Vector2( sz,  sz));
+                painter.LineTo(p + new Vector2(-sz,  sz));
                 painter.ClosePath();
                 painter.Fill();
+                if (hi)
+                {
+                    painter.strokeColor = new Color(1f, 0.4f, 0.1f, 0.8f);
+                    painter.lineWidth = 2f;
+                    painter.BeginPath();
+                    painter.Arc(p, 14f, 0f, 360f);
+                    painter.Stroke();
+                }
             }
 
             // プレビュー点（スナップ=シアン大、通常=黄半透明）

@@ -34,6 +34,9 @@ namespace Poly_Ling.Serialization
         /// <summary>WorkPlane設定</summary>
         public WorkPlaneDTO workPlane;
 
+        /// <summary>作業用ローカル軸（回転 / 曲げの基準フレーム）。null=既定値。</summary>
+        public WorkAxisDTO workAxis;
+
         /// <summary>エディタ状態</summary>
         public EditorStateDTO editorStateDTO;
 

@@ -100,6 +100,19 @@ namespace Poly_Ling.Tools
         public int  RequiredPointsPublic => RequiredPoints;
         public void ClearPointsPublic()  { _points.Clear(); _lastLinePoint = null; }
 
+        /// <summary>
+        /// Quad モードで3点配置済みのとき、その3点で三角形を作って確定する。
+        /// 条件を満たさないときは何もせず false を返す。右クリック／Escape から呼ぶ。
+        /// </summary>
+        public bool FinishAsTriangle(ToolContext ctx)
+        {
+            if (ctx == null || Mode != AddFaceMode.Quad || _points.Count != 3) return false;
+            CreateFace(ctx);
+            _points.Clear();
+            ctx.Repaint?.Invoke();
+            return true;
+        }
+
         // ================================================================
         // Player オーバーレイ描画用プレビューデータ
         // ================================================================
@@ -119,6 +132,8 @@ namespace Poly_Ling.Tools
             public int PreviewVertexIndex;
             /// <summary>連続線分モードの開始点（nullなら不使用）</summary>
             public PointInfo? ContinuousLineStart;
+            /// <summary>Quad モードで3点配置済み、かつホバー中の既存頂点が1点目と同じ</summary>
+            public bool CloseToStart;
         }
 
         public AddFacePreviewData GetPreviewData()
@@ -137,7 +152,21 @@ namespace Poly_Ling.Tools
                 PreviewSnapped     = _previewHitVertex >= 0 || _previewSnappedOther,
                 PreviewVertexIndex = _previewHitVertex,
                 ContinuousLineStart = contStart,
+                CloseToStart       = IsQuadCloseToStart(),
             };
+        }
+
+        /// <summary>
+        /// Quad モードで3点配置済み、かつホバー中の既存頂点が1点目と同じかを返す。
+        /// この状態で左クリックすると4点目を置かずに三角形を作る。
+        /// 1点目が新規点のときはまだメッシュに頂点が無く番号で一致させられないため false。
+        /// </summary>
+        private bool IsQuadCloseToStart()
+        {
+            if (Mode != AddFaceMode.Quad || _points.Count != 3) return false;
+            var start = _points[0];
+            if (!start.IsExistingVertex) return false;
+            return _previewHitVertex >= 0 && _previewHitVertex == start.ExistingVertexIndex;
         }
 
         /// <summary>配置済み点のラベルリストを返す（SubPanel 表示用）</summary>
@@ -204,6 +233,18 @@ namespace Poly_Ling.Tools
             else
             {
                 Debug.Log($"[AddFaceTool] Point added: NEW vertex at {point.Position}");
+            }
+
+            // Quad モードで3点配置済み、4点目が1点目と同じ既存頂点なら三角形として確定する。
+            // 1点目が新規点のときはまだ頂点番号が無いので、この判定には入らない。
+            if (Mode == AddFaceMode.Quad && _points.Count == 3 &&
+                point.IsExistingVertex && _points[0].IsExistingVertex &&
+                point.ExistingVertexIndex == _points[0].ExistingVertexIndex)
+            {
+                CreateFace(ctx);
+                _points.Clear();
+                ctx.Repaint?.Invoke();
+                return true;
             }
 
             // 連続線分モードの場合
@@ -651,6 +692,15 @@ namespace Poly_Ling.Tools
                             newVertexIndices[1],
                             newVertexIndices[2],
                             newVertexIndices[3],
+                            ctx.CurrentMaterialIndex);
+                    }
+                    else if (newVertexIndices.Count == 3)
+                    {
+                        // 3点で確定した場合（4点目に1点目をクリック／右クリック／Escape）は三角形にする。
+                        newFace = new Face(
+                            newVertexIndices[0],
+                            newVertexIndices[1],
+                            newVertexIndices[2],
                             ctx.CurrentMaterialIndex);
                     }
                     break;

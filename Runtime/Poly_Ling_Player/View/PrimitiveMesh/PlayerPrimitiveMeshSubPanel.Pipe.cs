@@ -23,6 +23,7 @@ namespace Poly_Ling.Player
         private List<BeltSnapshot> _pipeBelts = new List<BeltSnapshot>();
         private MeshSourcePick     _pipePick  = new MeshSourcePick();
         private BeltSplineOption   _pipeSpline = new BeltSplineOption();
+        private BeltOrientOption   _pipeOrient = new BeltOrientOption();
 
         private BeltProfileEdit _pipeEdit = new BeltProfileEdit
         {
@@ -31,9 +32,14 @@ namespace Poly_Ling.Player
             UndoStackId    = "PlayerEdit/PipeProfileEdit",
             UndoTitle      = "パイプ断面編集",
             BgSectionLabel = "パイプ下絵",
+            CsvRecentKey   = "Primitive.Pipe.ProfileCsv",
+            CsvDefaultName = "pipe_profile.csv",
         };
 
         private Label _pipeInfoLabel;
+
+        /// <summary>厚み付けの角処理(ベベル)UI 要素。</summary>
+        private SolidifyUI _pipeSolidUI;
 
         /// <summary>パイプの既定断面。rung 長で正規化した正方形の閉ループ。</summary>
         private static List<Vector2> DefaultPipeProfile()
@@ -91,7 +97,39 @@ namespace Poly_Ling.Player
             _pipeInfoLabel.style.marginTop  = 2;
             c.Add(_pipeInfoLabel);
 
+            // ── 梯子CSV ──
+            BuildBeltCsvUI(c, _pipeBelts,
+                "Primitive.Pipe.BeltCsv", "pipe_belt.csv", RefreshPipeInfo);
+
+            // ── 梯子の向き ──
+            BuildBeltOrientUI(c, _pipeOrient);
+
             c.Add(TR(T("PipeCapEnds"), () => _pipeP.CapEnds, v => { _pipeP.CapEnds = v; D(); }));
+
+            // ── 厚み付け ──
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(SR(T("Thickness"), 0f, 0.5f, () => _pipeP.Thickness,
+                v => { _pipeP.Thickness = v; D(); RefreshPipeSolidVis(); }));
+
+            // 角処理(ベベル)UI は常時生成し、厚み/分割数に応じて表示切替する。
+            var pipeSolid = new SolidifyUI
+            {
+                EdgeLabel = SL(T("EdgeSettings")),
+                FrontSeg  = IR(T("FrontSegments"), 0, 16, () => _pipeP.SegmentsFront,
+                               v => { _pipeP.SegmentsFront = v; D(); RefreshPipeSolidVis(); }),
+                FrontSize = SR(T("EdgeSize"), 0.001f, 0.25f, () => _pipeP.EdgeSizeFront,
+                               v => { _pipeP.EdgeSizeFront = v; D(); }),
+                BackSeg   = IR(T("BackSegments"), 0, 16, () => _pipeP.SegmentsBack,
+                               v => { _pipeP.SegmentsBack = v; D(); RefreshPipeSolidVis(); }),
+                BackSize  = SR(T("EdgeSize"), 0.001f, 0.25f, () => _pipeP.EdgeSizeBack,
+                               v => { _pipeP.EdgeSizeBack = v; D(); }),
+                Inward    = TR(T("EdgeInward"), () => _pipeP.EdgeInward,
+                               v => { _pipeP.EdgeInward = v; D(); }),
+            };
+            _pipeSolidUI = pipeSolid;
+            c.Add(pipeSolid.EdgeLabel); c.Add(pipeSolid.FrontSeg); c.Add(pipeSolid.FrontSize);
+            c.Add(pipeSolid.BackSeg);   c.Add(pipeSolid.BackSize); c.Add(pipeSolid.Inward);
+            RefreshPipeSolidVis();
 
             BuildBeltSplineUI(c, _pipeSpline);
 
@@ -102,6 +140,9 @@ namespace Poly_Ling.Player
         {
             if (_pipeInfoLabel != null) _pipeInfoLabel.text = BeltsInfoText(_pipeBelts);
         }
+
+        private void RefreshPipeSolidVis()
+            => UpdateSolidifyVis(_pipeSolidUI, _pipeP.Thickness, _pipeP.SegmentsFront, _pipeP.SegmentsBack);
 
         // ================================================================
         // 生成
@@ -116,11 +157,15 @@ namespace Poly_Ling.Player
             foreach (var belt in _pipeBelts)
             {
                 if (belt == null || !belt.HasData) continue;
-                var b = ApplyBeltSpline(belt, _pipeSpline);
+                var b = ApplyBeltSpline(ApplyBeltOrient(belt, _pipeOrient), _pipeSpline);
                 var part = PipeMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
                     _pipeEdit.Points, _pipeEdit.ClosedLoop, _pipeP.CapEnds,
                     b.StartPoint, b.EndPoint,
+                    _pipeP.MeshName);
+                part = ApplySolidify(part,
+                    _pipeP.Thickness, _pipeP.SegmentsFront, _pipeP.SegmentsBack,
+                    _pipeP.EdgeSizeFront, _pipeP.EdgeSizeBack, _pipeP.EdgeInward,
                     _pipeP.MeshName);
                 AppendMesh(mo, part);
             }

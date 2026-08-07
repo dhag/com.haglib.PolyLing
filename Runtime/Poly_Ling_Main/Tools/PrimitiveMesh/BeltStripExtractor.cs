@@ -150,7 +150,7 @@ namespace Poly_Ling.PrimitiveMesh
 
             if (strip.RungCount < 2 || strip.Faces.Count < 1)
             {
-                strip.Message = "梯子状ベルトを構成できません";
+                strip.Message = "はしご状ベルトを構成できません";
                 return strip;
             }
 

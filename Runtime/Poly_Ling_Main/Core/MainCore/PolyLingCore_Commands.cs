@@ -169,11 +169,18 @@ namespace Poly_Ling.Core
                 HandleRenamePartsSet(c);
                 NotifyPanels(ChangeKind.Attributes);
                 return;
-            case ExportPartsSetsCsvCommand _:
-                HandleExportPartsSetsCsv();
+            case ExportPartsSetsCsvCommand c:
+                HandleExportPartsSetsCsv(c.FolderPath);
                 return;
-            case ImportPartsSetCsvCommand _:
-                HandleImportPartsSetCsv();
+            case ImportPartsSetCsvCommand c:
+                HandleImportPartsSetCsv(c.FolderPath, c.ByObjectName);
+                NotifyPanels(ChangeKind.Attributes);
+                return;
+            case SaveMeshSelSetsCsvCommand c:
+                Poly_Ling.UI.MeshSelSetCsvHelper.SaveToFile(_model, c.FilePath);
+                return;
+            case LoadMeshSelSetsCsvCommand c:
+                Poly_Ling.UI.MeshSelSetCsvHelper.LoadFromFile(_model, c.FilePath);
                 NotifyPanels(ChangeKind.Attributes);
                 return;
 
@@ -1028,18 +1035,52 @@ namespace Poly_Ling.Core
             set.Name = newName;
         }
 
-        private void HandleExportPartsSetsCsv()
+        private void HandleExportPartsSetsCsv(string folderPath)
         {
-            var meshCtx = _model?.FirstSelectedMeshContext;
-            if (meshCtx == null || meshCtx.PartsSelectionSetList.Count == 0) return;
-            Poly_Ling.UI.PartsSetCsvHelper.ExportSets(meshCtx);
+            if (_model == null) return;
+            if (string.IsNullOrEmpty(folderPath))
+            {
+                var meshCtx = _model.FirstSelectedMeshContext;
+                if (meshCtx == null || meshCtx.PartsSelectionSetList.Count == 0) return;
+                Poly_Ling.UI.PartsSetCsvHelper.ExportSets(meshCtx);
+                return;
+            }
+            var targets = CollectSelectedMeshContexts();
+            if (targets.Count == 0) return;
+            Poly_Ling.UI.PartsSetCsvHelper.ExportSetsToFolder(targets, folderPath);
         }
 
-        private void HandleImportPartsSetCsv()
+        private void HandleImportPartsSetCsv(string folderPath, bool byObjectName)
         {
-            var meshCtx = _model?.FirstSelectedMeshContext;
-            if (meshCtx == null) return;
-            Poly_Ling.UI.PartsSetCsvHelper.ImportSet(meshCtx);
+            if (_model == null) return;
+            if (string.IsNullOrEmpty(folderPath))
+            {
+                var meshCtx = _model.FirstSelectedMeshContext;
+                if (meshCtx == null) return;
+                Poly_Ling.UI.PartsSetCsvHelper.ImportSet(meshCtx);
+                return;
+            }
+            var targets = byObjectName ? null : CollectSelectedMeshContexts();
+            Poly_Ling.UI.PartsSetCsvHelper.ImportSetsFromFolder(_model, folderPath, byObjectName, targets);
+        }
+
+        /// <summary>選択中の描画メッシュを列挙する。未選択時は編集対象メッシュ単体。</summary>
+        private List<MeshContext> CollectSelectedMeshContexts()
+        {
+            var list = new List<MeshContext>();
+            if (_model == null) return list;
+
+            foreach (int idx in _model.SelectedDrawableMeshIndices)
+            {
+                var mc = _model.GetMeshContext(idx);
+                if (mc != null) list.Add(mc);
+            }
+            if (list.Count == 0)
+            {
+                var mc = _model.ActiveMeshContext;
+                if (mc != null) list.Add(mc);
+            }
+            return list;
         }
 
         // ================================================================

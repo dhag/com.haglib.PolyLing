@@ -1693,6 +1693,52 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// 指定メッシュの全頂点について、GPU が計算したワールド座標を配列で返す。
+        ///
+        /// 参照経路は TryGetVertexWorld と同一（GetDisplayPositions は _worldPositions を
+        /// 返すだけで GetData を行わない）。1頂点ずつ呼ぶ代わりに一括で取り出すための版で、
+        /// シュリンカーの衝突計算のように「そのときだけ全頂点が要る」用途に使う。
+        /// スキニング規則を CPU 側で再実装してはならない。
+        ///
+        /// ワールド座標の鮮度が必要な場合は、呼び出し前に UpdateTransform() を1回だけ呼ぶこと。
+        /// 毎フレーム呼んではならない。
+        /// </summary>
+        public bool TryGetMeshWorldPositions(
+            Poly_Ling.Context.ModelContext model,
+            Poly_Ling.Data.MeshContext mc,
+            out UnityEngine.Vector3[] world)
+        {
+            world = null;
+
+            if (model == null || mc?.MeshObject == null) return false;
+            int vertexCount = mc.MeshObject.VertexCount;
+            if (vertexCount <= 0) return false;
+
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return false;
+
+            int ctxIdx = model.MeshContextList.IndexOf(mc);
+            if (ctxIdx < 0) return false;
+
+            int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+            if (unifiedIdx < 0) return false;
+
+            var bm = adapter.BufferManager;
+            var meshInfos = bm?.MeshInfos;
+            if (bm == null || meshInfos == null || unifiedIdx >= meshInfos.Length) return false;
+
+            var worldPositions = bm.GetDisplayPositions();
+            if (worldPositions == null) return false;
+
+            int start = (int)meshInfos[unifiedIdx].VertexStart;
+            if (start < 0 || start + vertexCount > worldPositions.Length) return false;
+
+            world = new UnityEngine.Vector3[vertexCount];
+            System.Array.Copy(worldPositions, start, world, 0, vertexCount);
+            return true;
+        }
+
+        /// <summary>
         /// 指定頂点のクリップ空間 w を返す。
         ///
         /// 透視投影ではスクリーン上の線形パラメータと 3D 上の線形パラメータが一致せず、

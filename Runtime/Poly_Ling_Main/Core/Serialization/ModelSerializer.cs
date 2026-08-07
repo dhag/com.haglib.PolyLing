@@ -140,6 +140,44 @@ namespace Poly_Ling.Serialization
             };
         }
 
+        /// <summary>
+        /// WorkAxisContextをWorkAxisDTOに変換。
+        /// Origin はワールド座標のまま保存する（座標系変換は行わない）。
+        /// </summary>
+        public static WorkAxisDTO ToWorkAxisData(WorkAxisContext workAxis)
+        {
+            if (workAxis == null)
+                return WorkAxisDTO.CreateDefault();
+
+            var o = workAxis.Origin;
+            var r = workAxis.Rotation;
+
+            return new WorkAxisDTO
+            {
+                origin    = new float[] { o.x, o.y, o.z },
+                rotation  = new float[] { r.x, r.y, r.z, r.w },
+                isVisible = workAxis.IsVisible
+            };
+        }
+
+        /// <summary>
+        /// WorkAxisDTOをWorkAxisContextに適用。
+        /// </summary>
+        public static void ApplyToWorkAxis(WorkAxisDTO data, WorkAxisContext workAxis)
+        {
+            if (data == null || workAxis == null)
+                return;
+
+            if (data.origin != null && data.origin.Length >= 3)
+                workAxis.Origin = new Vector3(data.origin[0], data.origin[1], data.origin[2]);
+
+            if (data.rotation != null && data.rotation.Length >= 4)
+                workAxis.Rotation = new Quaternion(
+                    data.rotation[0], data.rotation[1], data.rotation[2], data.rotation[3]);
+
+            workAxis.IsVisible = data.isVisible;
+        }
+
         // ================================================================
         // 変換: MeshDTO → MeshObject
         // ================================================================
@@ -315,6 +353,11 @@ namespace Poly_Ling.Serialization
             {
                 modelDTO.workPlane = ToWorkPlaneData(workPlaneContext);
             }
+
+            // WorkAxisContext（作業用ローカル軸）
+            //   WorkPlane と違い引数では受け取らず model から直接読む。
+            //   引数渡しにすると呼び出し側が null を渡したときに黙って失われるため。
+            modelDTO.workAxis = ToWorkAxisData(model.WorkAxis);
 
             // EditorState
             modelDTO.editorStateDTO = editorStateDTO;
@@ -563,6 +606,16 @@ namespace Poly_Ling.Serialization
 
             if (modelDTO.tPoseBackup != null)
                 model.TPoseBackup = FromTPoseBackupDTO(modelDTO.tPoseBackup);
+
+            // ================================================================
+            // WorkAxis復元（作業用ローカル軸。規約4：CSV/JSON 対称）
+            // ================================================================
+
+            if (model.WorkAxis == null) model.WorkAxis = new WorkAxisContext();
+            if (modelDTO.workAxis != null)
+                ApplyToWorkAxis(modelDTO.workAxis, model.WorkAxis);
+            else
+                model.WorkAxis.Reset();
 
             // IK: per-bone → 集約 Links / TargetIndex を再構築（消費側は集約を読む）
             Poly_Ling.Ops.IKChainResolver.RebuildLinksFromPerBone(model);

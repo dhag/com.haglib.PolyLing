@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.EditorBridge;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 
 namespace Poly_Ling.Player
@@ -23,7 +24,12 @@ namespace Poly_Ling.Player
         private TextField   _setNameField;
         private ListView    _setListView;
         private Button      _btnLoad, _btnAdd, _btnSubtract, _btnDelete;
+        private TextField   _csvFolderField;
+        private TextField   _csvLoadFolderField;
         private Label       _statusLabel;
+
+        private const string CsvFolderKey     = "PartsSet.CsvFolder";
+        private const string CsvLoadFolderKey = "PartsSet.CsvLoadFolder";
 
         private int _selectedSetIndex = -1;
         private readonly List<string> _setNames = new List<string>();
@@ -85,16 +91,28 @@ namespace Poly_Ling.Player
             foreach (var b in new[] { _btnLoad, _btnAdd, _btnSubtract, _btnDelete }) { b.style.flexGrow = 1; opRow.Add(b); }
             root.Add(opRow);
 
-            // CSV行
-            var csvRow = new VisualElement(); csvRow.style.flexDirection = FlexDirection.Row; csvRow.style.marginBottom = 4;
-            var btnExport = MkBtn("CSV保存",  OnExport);
-            var btnImport = MkBtn("CSV読込み", OnImport);
-            btnExport.style.flexGrow = 1; btnImport.style.flexGrow = 1;
-            csvRow.Add(btnExport); csvRow.Add(btnImport);
-            root.Add(csvRow);
+            // CSV（保存 / 読込）— PlayerIoUiKit 準拠
+            root.Add(PlayerIoUiKit.Divider());
+            root.Add(PlayerIoUiKit.SectionLabel("CSV"));
 
-            _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color = new StyleColor(Color.white);
+            _csvFolderField = new TextField();
+            _csvFolderField.tooltip = "辞書を書き出すフォルダ";
+            _csvFolderField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvFolderKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_csvFolderField, OnBrowseCsvFolder));
+            _csvFolderField.SetValueWithoutNotify(RecentPaths.Get(CsvFolderKey));
+            root.Add(PlayerIoUiKit.WideBtn("保存", OnExport));
+
+            root.Add(PlayerIoUiKit.Spacer());
+
+            _csvLoadFolderField = new TextField();
+            _csvLoadFolderField.tooltip = "読み込む Selected_*.csv があるフォルダ";
+            _csvLoadFolderField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvLoadFolderKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_csvLoadFolderField, OnBrowseCsvLoadFolder));
+            _csvLoadFolderField.SetValueWithoutNotify(RecentPaths.Get(CsvLoadFolderKey));
+            root.Add(PlayerIoUiKit.WideBtn("現在のオブジェクトに読込",   () => OnImport(false)));
+            root.Add(PlayerIoUiKit.WideBtn("書込時のオブジェクトに読込", () => OnImport(true)));
+
+            _statusLabel = PlayerIoUiKit.StatusLabel();
             root.Add(_statusLabel);
 
             UpdateButtonStates();
@@ -204,8 +222,128 @@ namespace Poly_Ling.Player
             _setNameField?.SetValueWithoutNotify(""); SetStatus($"名前変更 → {newName}");
         }
 
-        private void OnExport() => SendCmd(new ExportPartsSetsCsvCommand(ModelIndex));
-        private void OnImport() => SendCmd(new ImportPartsSetCsvCommand(ModelIndex));
+        // ── CSV 保存 / 読込 ──────────────────────────────────────────────
+        private void OnBrowseCsvFolder()
+        {
+            string cur = _csvFolderField?.value ?? "";
+            string dir = string.IsNullOrEmpty(cur) ? Application.persistentDataPath : cur;
+            var targets = CollectTargets();
+            string def = targets.Count == 1
+                ? $"SelectionSets_{targets[0].Name}"
+                : "SelectionSets";
+            string path = PLEditorBridge.I.SaveFolderPanel("CSV 保存先フォルダ", dir, def);
+            if (!string.IsNullOrEmpty(path)) _csvFolderField.value = path;
+        }
+
+        private void OnBrowseCsvLoadFolder()
+        {
+            string cur = _csvLoadFolderField?.value ?? "";
+            string dir = string.IsNullOrEmpty(cur) ? Application.persistentDataPath : cur;
+            string path = PLEditorBridge.I.OpenFolderPanel("CSV 読込元フォルダ", dir, "");
+            if (!string.IsNullOrEmpty(path)) _csvLoadFolderField.value = path;
+        }
+
+        private void OnExport()
+        {
+            var targets = CollectTargets();
+            if (targets.Count == 0) { SetStatus("オブジェクトが選択されていません"); return; }
+
+            int setCount = 0;
+            foreach (var t in targets) setCount += t.PartsSelectionSetList?.Count ?? 0;
+            if (setCount == 0) { SetStatus("辞書が空です"); return; }
+
+            string folder = _csvFolderField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(folder)) { SetStatus("保存先フォルダを指定してください"); return; }
+
+            var since = DateTime.Now.AddSeconds(-2);
+            SendCmd(new ExportPartsSetsCsvCommand(ModelIndex, folder));
+
+            // Dispatch は同期のため、書き出し結果をここで確認する。
+            // 既存ファイルを数えないよう、更新時刻が実行直前以降のものだけを対象にする。
+            if (!System.IO.Directory.Exists(folder)) { SetStatus("保存失敗（ログを参照）"); return; }
+            int written = 0;
+            foreach (var f in System.IO.Directory.GetFiles(folder, "Selected_*.csv"))
+                if (System.IO.File.GetLastWriteTime(f) >= since) written++;
+            SetStatus(written > 0
+                ? $"保存しました: {targets.Count} オブジェクト / {written} 件 → {folder}"
+                : "保存失敗（ログを参照）");
+        }
+
+        /// <param name="byObjectName">
+        /// true: ファイル内の書込元オブジェクト名と一致するオブジェクトへ読み込む。
+        /// false: オブジェクト名を無視し、選択中の全オブジェクトへ同じ辞書を読み込む。
+        /// </param>
+        private void OnImport(bool byObjectName)
+        {
+            string folder = _csvLoadFolderField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(folder)) { SetStatus("読込元フォルダを指定してください"); return; }
+            if (!System.IO.Directory.Exists(folder)) { SetStatus("フォルダが見つかりません"); return; }
+
+            int fileCount = System.IO.Directory.GetFiles(folder, "Selected_*.csv").Length;
+            if (fileCount == 0) { SetStatus("Selected_*.csv がありません"); return; }
+
+            var targets = byObjectName ? new List<MeshContext>() : CollectTargets();
+            if (!byObjectName && targets.Count == 0) { SetStatus("オブジェクトが選択されていません"); return; }
+
+            // 同名辞書は上書きのため件数では判定できない。内容の署名で変化を見る。
+            string before = BuildSetsSignature();
+            SendCmd(new ImportPartsSetCsvCommand(ModelIndex, folder, byObjectName));
+            string after = BuildSetsSignature();
+
+            if (after != before)
+            {
+                Refresh();
+                SetStatus(byObjectName
+                    ? $"読込みました: {fileCount} ファイル（オブジェクト名一致分）"
+                    : $"読込みました: {fileCount} ファイル → {targets.Count} オブジェクト");
+            }
+            else
+            {
+                SetStatus("適用対象がありませんでした（ログを参照）");
+            }
+        }
+
+        /// <summary>選択中の描画メッシュを列挙する。未選択時は編集対象メッシュ単体。</summary>
+        private List<MeshContext> CollectTargets()
+        {
+            var list = new List<MeshContext>();
+            var model = GetView?.Invoke()?.CurrentModel;
+            if (model == null) return list;
+
+            foreach (int idx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc != null) list.Add(mc);
+            }
+            if (list.Count == 0)
+            {
+                var mc = model.ActiveMeshContext;
+                if (mc != null) list.Add(mc);
+            }
+            return list;
+        }
+
+        /// <summary>モデル全体の辞書内容から比較用の署名を作る。</summary>
+        private string BuildSetsSignature()
+        {
+            var model = GetView?.Invoke()?.CurrentModel;
+            if (model?.MeshContextList == null) return string.Empty;
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var mc in model.MeshContextList)
+            {
+                if (mc?.PartsSelectionSetList == null) continue;
+                sb.Append(mc.Name).Append(':');
+                foreach (var s in mc.PartsSelectionSetList)
+                    sb.Append(s.Name).Append('/')
+                      .Append(s.Vertices.Count).Append(',')
+                      .Append(s.Edges.Count).Append(',')
+                      .Append(s.Faces.Count).Append(',')
+                      .Append(s.Lines.Count).Append(';');
+                sb.Append('|');
+            }
+            return sb.ToString();
+        }
 
         private void UpdateButtonStates()
         {

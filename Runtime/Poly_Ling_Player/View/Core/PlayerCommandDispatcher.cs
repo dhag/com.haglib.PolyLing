@@ -1565,6 +1565,55 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── シュリンカー適用
+                case ApplyShrinkCommand c:
+                {
+                    if (model == null) return;
+                    var beforeCtx = model.GetMeshContext(c.BeforeMasterIndex);
+                    if (beforeCtx?.MeshObject == null) return;
+
+                    // 衝突計算に使うワールド座標をこの時点で1回だけ更新する。
+                    _viewportManager.UpdateTransform();
+
+                    var stops = ShrinkOperation.ComputeStopParams(
+                        model, c.BeforeMasterIndex, c.AfterMasterIndex, c.ColliderMasterIndices,
+                        c.SurfaceOffset, c.FrontFaceOnly,
+                        mc => _viewportManager.TryGetMeshWorldPositions(model, mc, out var w) ? w : null,
+                        out string shrinkError);
+
+                    if (stops == null)
+                    {
+                        Debug.LogWarning($"[Shrink] 停止パラメータを算出できません: {shrinkError}");
+                        return;
+                    }
+
+                    // 上書きモードのみ、ビフォーの変更を Undo に記録する。
+                    // 新規モードではビフォーを変更しないため、スナップショットは取らない。
+                    if (!c.CreateNewObject && _undoController != null)
+                    {
+                        _undoController.SetMeshObject(beforeCtx.MeshObject, beforeCtx.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = model;
+                    }
+
+                    var shrinkCtx = BuildSkinWeightToolCtx(model);
+
+                    // パネル側はコマンド送信前にプレビューを破棄して元座標へ戻している。
+                    // ここでは可視状態を変更しない（hideAfter: false）。
+                    var shrinkPreview = new ShrinkPreviewState();
+                    if (!shrinkPreview.Start(
+                            model, c.BeforeMasterIndex, c.AfterMasterIndex, stops, hideAfter: false))
+                        return;
+
+                    shrinkPreview.Apply(model, c.Slider, shrinkCtx);
+                    ShrinkOperation.Apply(
+                        model, shrinkPreview, c.ColliderMasterIndices,
+                        c.CreateNewObject, c.RecalculateNormals, shrinkCtx);
+
+                    _viewportManager.EnterTopologyChanged(project);
+                    _notifyPanels(ChangeKind.ListStructure);
+                    return;
+                }
+
                 // ── UV 変更（移動・一括変換）
                 case ApplyUVChangesCommand c:
                 {
@@ -2426,10 +2475,43 @@ namespace Poly_Ling.Player
                     return;
                 }
 
-                case ExportPartsSetsCsvCommand _:
-                case ImportPartsSetCsvCommand _:
-                    // Player では CSV I/O 未対応
+                case ExportPartsSetsCsvCommand c:
+                {
+                    if (model == null) return;
+                    if (string.IsNullOrEmpty(c.FolderPath)) return;
+                    var exTargets = CollectSelectedMeshContexts(model);
+                    if (exTargets.Count == 0) return;
+                    PartsSetCsvHelper.ExportSetsToFolder(exTargets, c.FolderPath);
                     return;
+                }
+
+                case ImportPartsSetCsvCommand c:
+                {
+                    if (model == null) return;
+                    if (string.IsNullOrEmpty(c.FolderPath)) return;
+                    var imTargets = c.ByObjectName ? null : CollectSelectedMeshContexts(model);
+                    if (!c.ByObjectName && imTargets.Count == 0) return;
+                    if (PartsSetCsvHelper.ImportSetsFromFolder(model, c.FolderPath, c.ByObjectName, imTargets) > 0)
+                        _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                case SaveMeshSelSetsCsvCommand c:
+                {
+                    if (model == null) return;
+                    if (string.IsNullOrEmpty(c.FilePath)) return;
+                    MeshSelSetCsvHelper.SaveToFile(model, c.FilePath);
+                    return;
+                }
+
+                case LoadMeshSelSetsCsvCommand c:
+                {
+                    if (model == null) return;
+                    if (string.IsNullOrEmpty(c.FilePath)) return;
+                    if (MeshSelSetCsvHelper.LoadFromFile(model, c.FilePath) > 0)
+                        _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
 
                 // ── メッシュ選択辞書 ───────────────────────────────────────────
                 case SaveSelectionDictionaryCommand c:
@@ -3762,6 +3844,29 @@ namespace Poly_Ling.Player
             _notifyPanels(ChangeKind.Attributes);
 
             Debug.Log($"[ObjectOrigin] 原点を適用: {targets.Count} 件");
+        }
+
+        // ================================================================
+        // 共通ヘルパー
+        // ================================================================
+
+        /// <summary>選択中の描画メッシュを列挙する。未選択時は編集対象メッシュ単体。</summary>
+        private static List<MeshContext> CollectSelectedMeshContexts(ModelContext model)
+        {
+            var list = new List<MeshContext>();
+            if (model == null) return list;
+
+            foreach (int idx in model.SelectedDrawableMeshIndices)
+            {
+                var mc = model.GetMeshContext(idx);
+                if (mc != null) list.Add(mc);
+            }
+            if (list.Count == 0)
+            {
+                var mc = model.ActiveMeshContext;
+                if (mc != null) list.Add(mc);
+            }
+            return list;
         }
 
     }

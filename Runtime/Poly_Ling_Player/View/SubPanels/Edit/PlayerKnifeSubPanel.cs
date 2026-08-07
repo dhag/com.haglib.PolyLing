@@ -24,7 +24,7 @@ namespace Poly_Ling.Player
         private Label         _statusLabel;
 
         private static readonly List<string> ModeChoices =
-            new List<string> { "ラダーカット", "シンプル", "一意分割" };
+            new List<string> { "はしごカット", "シンプル", "一意分割" };
         private static readonly KnifeMode[] ModeValues =
             { KnifeMode.LadderCut, KnifeMode.SimpleCut, KnifeMode.BeltLoop };
 
@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
             _root.Add(_statusLabel);
 
             _root.Add(new HelpBox(
-                "ラダーカット: 開始頂点→線分→終了頂点。\nシンプル: 画面上の2点を結ぶ直線で切断（表面のみ）。\n一意分割: 辺を1回クリックでベルト/ループを切断。\n等分割: オンで分割数だけ等分、オフはクリック位置で1本。",
+                "はしごカット: 開始頂点→線分→終了頂点。\nシンプル: 画面上の2点を結ぶ直線で切断（表面のみ）。\n一意分割: 辺を1回クリックでベルト/ループを切断。\n等分割: オンで分割数だけ等分、オフはクリック位置で1本。",
                 HelpBoxMessageType.Info));
 
             Refresh();

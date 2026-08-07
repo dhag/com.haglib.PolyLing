@@ -50,6 +50,17 @@ namespace Poly_Ling.Tools
         /// <summary>ギズモ中心のワールド座標</summary>
         public Vector3 Center { get; set; }
 
+        /// <summary>
+        /// 軸の向き。既定 identity のときは従来どおりワールド軸（X=right / Y=up / Z=forward）。
+        /// 作業用ローカル軸など任意フレームで操作したい場合にここへ回転を設定する。
+        /// 描画・ヒットテスト・移動量計算のすべてがこの向きに従う。
+        /// </summary>
+        public Quaternion Orientation { get; set; } = Quaternion.identity;
+
+        /// <summary>Orientation を適用した軸方向。静的な GetAxisDirection と違い向きを反映する。</summary>
+        public Vector3 GetOrientedAxisDirection(AxisType axis)
+            => Orientation * GetAxisDirection(axis);
+
         // ================================================================
         // 描画（Repaintイベント中に呼び出す）
         // ================================================================
@@ -63,9 +74,9 @@ namespace Poly_Ling.Tools
             out Vector2 xEnd, out Vector2 yEnd, out Vector2 zEnd)
         {
             origin = GetOriginScreen(ctx);
-            xEnd   = GetAxisScreenEnd(ctx, Vector3.right,   origin);
-            yEnd   = GetAxisScreenEnd(ctx, Vector3.up,      origin);
-            zEnd   = GetAxisScreenEnd(ctx, Vector3.forward, origin);
+            xEnd   = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.X), origin);
+            yEnd   = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Y), origin);
+            zEnd   = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Z), origin);
         }
 
         public void Draw(ToolContext ctx)
@@ -85,9 +96,9 @@ namespace Poly_Ling.Tools
                 ? new Color(0.3f, 0.3f, 1f, 1f)
                 : new Color(0.2f, 0.2f, 0.8f, 0.7f);
 
-            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
-            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
-            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
+            Vector2 xEnd = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.X), originScreen);
+            Vector2 yEnd = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Y), originScreen);
+            Vector2 zEnd = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Z), originScreen);
 
             // 軸線
             float lineWidth = 2f;
@@ -127,9 +138,9 @@ namespace Poly_Ling.Tools
         public AxisType FindAxisAtScreenPos(Vector2 screenPos, ToolContext ctx)
         {
             Vector2 originScreen = GetOriginScreen(ctx);
-            Vector2 xEnd = GetAxisScreenEnd(ctx, Vector3.right, originScreen);
-            Vector2 yEnd = GetAxisScreenEnd(ctx, Vector3.up, originScreen);
-            Vector2 zEnd = GetAxisScreenEnd(ctx, Vector3.forward, originScreen);
+            Vector2 xEnd = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.X), originScreen);
+            Vector2 yEnd = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Y), originScreen);
+            Vector2 zEnd = GetAxisScreenEnd(ctx, GetOrientedAxisDirection(AxisType.Z), originScreen);
 
             // 中央四角（優先）
             float halfCenter = CenterSize / 2 + 2;
@@ -207,7 +218,7 @@ namespace Poly_Ling.Tools
             if (screenDeltaYDown.sqrMagnitude < 0.001f || axis == AxisType.None || axis == AxisType.Center)
                 return Vector3.zero;
 
-            Vector3 axisDir = GetAxisDirection(axis);
+            Vector3 axisDir = GetOrientedAxisDirection(axis);
             Vector3 screenDir3 = GetAxisScreenDirection(ctx, axisDir);
             Vector2 axisScreenDir2D = new Vector2(screenDir3.x, screenDir3.y);
 
@@ -319,6 +330,10 @@ namespace Poly_Ling.Tools
         // 静的ユーティリティ
         // ================================================================
 
+        /// <summary>
+        /// ワールド軸方向。Orientation は反映しない。
+        /// 向きを反映したいときはインスタンスメソッド GetOrientedAxisDirection を使うこと。
+        /// </summary>
         public static Vector3 GetAxisDirection(AxisType axis)
         {
             switch (axis)

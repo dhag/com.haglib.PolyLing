@@ -225,6 +225,8 @@ namespace Poly_Ling.Player
         private Vector2 _revHandleAnchorC;   // ドラッグ開始時のアンカー(キャンバス座標)
         private float   _revHandlePrevAngle; // 回転累積用の直前角度
         private float   _revHandleTotalDeg;  // 累積回転角(データ空間deg)
+        // ギズモ表示トグル（回転体。既定=非表示、メモリ保持・非永続）
+        private bool    _revShowGizmo = false;
 
         // マグネット（比例編集、Phase）
         private readonly Canvas2DMagnet _revMagnet = new Canvas2DMagnet();
@@ -289,8 +291,8 @@ namespace Poly_Ling.Player
         private bool _p2dMarqueeAdditive;
         private bool _p2dMarqueeSubtract;
         private bool _p2dMarqueeDrag;
-        // ギズモ/頂点の表示トグル（Profile2D。既定=表示、メモリ保持・非永続）
-        private bool _p2dShowGizmo = true;
+        // ギズモ/頂点の表示トグル（Profile2D。ギズモ既定=非表示／頂点既定=表示、メモリ保持・非永続）
+        private bool _p2dShowGizmo = false;
         private bool _p2dShowVerts = true;
 
         // 回転/拡大縮小アンカーと変換（Phase B）
@@ -1214,6 +1216,12 @@ namespace Poly_Ling.Player
             revLassoToggle.RegisterValueChangedCallback(ev => _revLassoMode = ev.newValue);
             pe.Add(revLassoToggle);
 
+            // ギズモ表示トグル（既定=非表示）
+            var revGizmoToggle = new Toggle(T("ShowGizmo")) { value = _revShowGizmo };
+            revGizmoToggle.style.marginBottom = 4;
+            revGizmoToggle.RegisterValueChangedCallback(ev => { _revShowGizmo = ev.newValue; RefreshRevCanvas(); });
+            pe.Add(revGizmoToggle);
+
             BuildRevAnchorTransformUI(pe);
 
             // ── 下絵セクション ─────────────────────────────────────────────
@@ -1479,11 +1487,12 @@ namespace Poly_Ling.Player
             if (_revMarquee.Active)
                 _revMarquee.Draw(p2d, new Color(1f, 0.85f, 0.2f, 0.9f));
 
-            // アンカー
-            _revAnchor.Draw(p2d, RevP2C(_revAnchor.Value, w, h));
+            // アンカー（ギズモ表示OFFで抑止。アンカー設定中は常に表示）
+            if (_revShowGizmo || _revAnchor.Mode)
+                _revAnchor.Draw(p2d, RevP2C(_revAnchor.Value, w, h));
 
-            // 回転/拡大縮小ハンドル（アンカー設定モード中は非表示）
-            if (!_revAnchor.Mode)
+            // 回転/拡大縮小ハンドル（アンカー設定モード中/ギズモ表示OFFで非表示）
+            if (_revShowGizmo && !_revAnchor.Mode)
                 _revHandle.Draw(p2d, RevP2C(_revAnchor.Value, w, h));
 
             // マグネット半径（選択点まわり）
@@ -1577,8 +1586,10 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // 0. ハンドルヒット判定（回転/拡大縮小、点編集より優先）
-            var revHit = _revHandle.HitTest(cp, RevP2C(_revAnchor.Value, w, h));
+            // 0. ハンドルヒット判定（回転/拡大縮小、点編集より優先。ギズモ表示OFFで無効）
+            var revHit = _revShowGizmo
+                ? _revHandle.HitTest(cp, RevP2C(_revAnchor.Value, w, h))
+                : Canvas2DHandle.HandleType.None;
             if (revHit != Canvas2DHandle.HandleType.None)
             {
                 BeginRevHandle(revHit, cp, w, h);
@@ -2055,8 +2066,9 @@ namespace Poly_Ling.Player
                 e.StopPropagation(); return;
             }
 
-            // ハンドルホバー更新（非ドラッグ中）
-            var revHovType = _revAnchor.Mode ? Canvas2DHandle.HandleType.None
+            // ハンドルホバー更新（非ドラッグ中。ギズモ表示OFF/アンカー設定中は無効）
+            var revHovType = (_revAnchor.Mode || !_revShowGizmo)
+                                             ? Canvas2DHandle.HandleType.None
                                              : _revHandle.HitTest(cp, RevP2C(_revAnchor.Value, w, h));
             if (revHovType != _revHandle.Hovered) { _revHandle.Hovered = revHovType; RefreshRevCanvas(); }
 

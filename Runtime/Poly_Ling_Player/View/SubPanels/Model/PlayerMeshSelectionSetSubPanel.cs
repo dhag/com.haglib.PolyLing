@@ -9,6 +9,7 @@ using UnityEngine;
 using Poly_Ling.EditorBridge;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
+using Poly_Ling.Core;
 using Poly_Ling.View;
 using Poly_Ling.Data;
 
@@ -30,7 +31,10 @@ namespace Poly_Ling.Player
         private ListView    _setListView;
         private Button      _btnApply, _btnAddSet, _btnRename, _btnDelete;
         private Button      _btnSaveDic, _btnLoadDic;
+        private TextField   _dicPathField;
         private Label       _statusLabel;
+
+        private const string DicPathKey = "MeshSet.DicPath";
 
         private int _selectedSetIndex = -1;
         private readonly List<string> _setNames = new List<string>();
@@ -54,7 +58,7 @@ namespace Poly_Ling.Player
             root.style.paddingTop  = root.style.paddingBottom = 4;
             parent.Add(root);
 
-            root.Add(SecLabel("メッシュ選択辞書"));
+            root.Add(SecLabel("オブジェクト選択辞書"));
 
             // タブ行
             var tabRow = new VisualElement(); tabRow.style.flexDirection = FlexDirection.Row; tabRow.style.marginBottom = 4;
@@ -110,14 +114,20 @@ namespace Poly_Ling.Player
             _btnDelete = MkBtn("削除",    OnDeleteSet); _btnDelete.style.flexGrow = 1; op1.Add(_btnDelete);
             root.Add(op1);
 
-            // ファイル保存/読込
-            var op2 = new VisualElement(); op2.style.flexDirection = FlexDirection.Row; op2.style.marginBottom = 4;
-            _btnSaveDic = MkBtn("辞書ファイル保存", OnSaveDicFile); _btnSaveDic.style.flexGrow = 1; op2.Add(_btnSaveDic);
-            _btnLoadDic = MkBtn("辞書ファイル読込", OnLoadDicFile); _btnLoadDic.style.flexGrow = 1; op2.Add(_btnLoadDic);
-            root.Add(op2);
+            // 辞書ファイル（保存 / 読込）— PlayerIoUiKit 準拠
+            root.Add(PlayerIoUiKit.Divider());
+            root.Add(PlayerIoUiKit.SectionLabel("辞書ファイル"));
 
-            _statusLabel = new Label(); _statusLabel.style.fontSize = 10;
-            _statusLabel.style.color = new StyleColor(Color.white);
+            _dicPathField = new TextField();
+            _dicPathField.tooltip = "オブジェクト選択辞書の CSV ファイル";
+            _dicPathField.RegisterValueChangedCallback(e => RecentPaths.Set(DicPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_dicPathField, OnBrowseDicFile));
+            _dicPathField.SetValueWithoutNotify(RecentPaths.Get(DicPathKey));
+
+            _btnSaveDic = PlayerIoUiKit.WideBtn("保存", OnSaveDicFile); root.Add(_btnSaveDic);
+            _btnLoadDic = PlayerIoUiKit.WideBtn("読込", OnLoadDicFile); root.Add(_btnLoadDic);
+
+            _statusLabel = PlayerIoUiKit.StatusLabel();
             root.Add(_statusLabel);
 
             UpdateButtonStates();
@@ -233,16 +243,62 @@ namespace Poly_Ling.Player
             _setNameField?.SetValueWithoutNotify(""); SetStatus($"名前変更 → {newName}");
         }
 
+        private void OnBrowseDicFile()
+        {
+            string cur = _dicPathField?.value ?? "";
+            string dir = string.IsNullOrEmpty(cur)
+                ? Application.persistentDataPath
+                : (System.IO.Path.GetDirectoryName(cur) ?? Application.persistentDataPath);
+            string name = string.IsNullOrEmpty(cur) ? "meshselsets.csv" : System.IO.Path.GetFileName(cur);
+            string path = PLEditorBridge.I.SaveFilePanel("辞書ファイル", dir, name, "csv");
+            if (!string.IsNullOrEmpty(path)) _dicPathField.value = path;
+        }
+
         private void OnSaveDicFile()
         {
-            // MeshDictionaryIOHelper は Editor アセンブリのため未対応
-            SetStatus("辞書ファイル保存は Editor 版を使用してください");
+            var model = CurrentModel;
+            if (model == null) { SetStatus("モデルがありません"); return; }
+
+            int setCount = model.MeshSelectionSets?.Count ?? 0;
+            if (setCount == 0) { SetStatus("辞書が空です"); return; }
+
+            string path = _dicPathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(path)) { SetStatus("保存先を指定してください"); return; }
+
+            var since = DateTime.Now.AddSeconds(-2);
+            SendCmd(new SaveMeshSelSetsCsvCommand(ModelIndex, path));
+
+            // Dispatch は同期のため、書き出し結果をここで確認する。
+            bool ok = System.IO.File.Exists(path) && System.IO.File.GetLastWriteTime(path) >= since;
+            SetStatus(ok ? $"保存しました: {setCount} 件 → {path}" : "保存失敗（ログを参照）");
         }
 
         private void OnLoadDicFile()
         {
-            // MeshDictionaryIOHelper は Editor アセンブリのため未対応
-            SetStatus("辞書ファイル読込は Editor 版を使用してください");
+            var model = CurrentModel;
+            if (model == null) { SetStatus("モデルがありません"); return; }
+
+            string path = _dicPathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(path)) { SetStatus("読み込むファイルを指定してください"); return; }
+            if (!System.IO.File.Exists(path))
+            {
+                SetStatus($"ファイルが見つかりません: {System.IO.Path.GetFileName(path)}");
+                return;
+            }
+
+            int before = model.MeshSelectionSets?.Count ?? 0;
+            SendCmd(new LoadMeshSelSetsCsvCommand(ModelIndex, path));
+            int after = CurrentModel?.MeshSelectionSets?.Count ?? before;
+
+            if (after > before)
+            {
+                Refresh();
+                SetStatus($"読込みました: {after - before} 件追加");
+            }
+            else
+            {
+                SetStatus("読込失敗（ログを参照）");
+            }
         }
 
         // ── Helpers ──────────────────────────────────────────────────────

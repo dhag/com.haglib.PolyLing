@@ -28,11 +28,8 @@ namespace Poly_Ling.Player
         private Button        _btnStart, _btnStop;
         private Label         _capturedInfo;
         private Button        _btnSendImages, _btnClearImages, _btnSendHeader;
-        private ScrollView    _logScroll;
-        private VisualElement _logContainer;
-        private Button        _btnCopyLog;
 
-        // ログ更新イベントの購読先（多重購読防止）
+        // 表示更新イベントの購読先（多重購読防止）
         private PolyLingPlayerServer _subscribedServer;
 
         public void Build(VisualElement parent)
@@ -112,25 +109,12 @@ namespace Poly_Ling.Player
             root.Add(MakeSep());
 
             // ── ログ ──────────────────────────────────────────────────────
-            root.Add(SecLabel("Log"));
-            _logScroll = new ScrollView(ScrollViewMode.Vertical);
-            _logScroll.style.maxHeight  = 150;
-            _logScroll.style.minHeight  = 60;
-            _logScroll.style.marginBottom = 3;
-            _logScroll.style.borderTopWidth = _logScroll.style.borderBottomWidth =
-            _logScroll.style.borderLeftWidth = _logScroll.style.borderRightWidth = 1;
-            _logScroll.style.borderTopColor = _logScroll.style.borderBottomColor =
-            _logScroll.style.borderLeftColor = _logScroll.style.borderRightColor =
-                new StyleColor(Color.white);
-            _logContainer = new VisualElement();
-            _logScroll.Add(_logContainer);
-            root.Add(_logScroll);
-
-            var logBtnRow = new VisualElement(); logBtnRow.style.flexDirection = FlexDirection.Row; logBtnRow.style.marginBottom = 4;
-            _btnCopyLog = new Button(OnCopyLog) { text = "Copy" };            _btnCopyLog.style.flexGrow = 1; _btnCopyLog.style.marginRight = 4;
-            var btnClearLog = new Button(OnClearLog) { text = "Clear Log" };  btnClearLog.style.flexGrow = 1;
-            logBtnRow.Add(_btnCopyLog); logBtnRow.Add(btnClearLog);
-            root.Add(logBtnRow);
+            // サーバログは統合ログ（PlayerLog）へ移した。
+            // 表示・コピー・保存は「ログ」パネル（PlayerLogSubPanel）が担う。
+            var logNote = new Label("ログは「ログ」パネルに表示されます。");
+            logNote.style.fontSize   = 10;
+            logNote.style.whiteSpace = WhiteSpace.Normal;
+            root.Add(logNote);
         }
 
         // ================================================================
@@ -183,27 +167,6 @@ namespace Poly_Ling.Player
             _btnSendImages?.SetEnabled(running && hasImages);
             _btnClearImages?.SetEnabled(hasImages);
             _btnSendHeader?.SetEnabled(running);
-
-            // ログ
-            RefreshLog(server);
-        }
-
-        private void RefreshLog(PolyLingPlayerServer server)
-        {
-            if (_logContainer == null) return;
-            _logContainer.Clear();
-            var msgs = server.LogMessages;
-            if (msgs == null) return;
-            foreach (var msg in msgs)
-            {
-                var lbl = new Label(msg);
-                lbl.style.fontSize = 9;
-                lbl.style.whiteSpace = WhiteSpace.Normal;
-                _logContainer.Add(lbl);
-            }
-            // 最下部にスクロール
-            _logScroll?.ScrollTo(_logContainer.Children().LastOrDefault() as VisualElement ?? _logContainer);
-            PlayerLayoutRoot.ApplyDarkTheme(_logContainer);
         }
 
         // ================================================================
@@ -240,27 +203,8 @@ namespace Poly_Ling.Player
             Refresh();
         }
 
-        private void OnClearLog()
-        {
-            var server = GetServer?.Invoke();
-            if (server == null) return;
-            // サーバ側のログ本体を消去してから表示を更新する。
-            // （表示だけ消しても RefreshLog で LogMessages から復活するため）
-            server.ClearLog();
-            RefreshLog(server);
-        }
-
-        private void OnCopyLog()
-        {
-            var server = GetServer?.Invoke();
-            if (server == null) return;
-            var msgs = server.LogMessages;
-            if (msgs == null || msgs.Count == 0) return;
-            GUIUtility.systemCopyBuffer = string.Join("\n", msgs);
-        }
-
         // ================================================================
-        // ログ更新イベント購読（リアルタイム反映）
+        // 表示更新イベント購読（リアルタイム反映）
         // ================================================================
 
         private void EnsureLogSubscription(PolyLingPlayerServer server)
@@ -275,8 +219,8 @@ namespace Poly_Ling.Player
 
         private void OnServerLogChanged()
         {
-            var server = GetServer?.Invoke();
-            if (server != null) RefreshLog(server);
+            // 接続数・キャプチャ枚数などの状態表示を更新する。
+            Refresh();
         }
 
         // ================================================================
@@ -303,12 +247,5 @@ namespace Poly_Ling.Player
     {
         internal static T Apply<T>(this T element, Action<T> configure) where T : VisualElement
         { configure(element); return element; }
-
-        internal static VisualElement LastOrDefault(this System.Collections.Generic.IEnumerable<VisualElement> source)
-        {
-            VisualElement last = null;
-            foreach (var e in source) last = e;
-            return last;
-        }
     }
 }

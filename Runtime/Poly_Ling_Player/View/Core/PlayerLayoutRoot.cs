@@ -180,6 +180,12 @@ namespace Poly_Ling.Player
         /// <summary>右ペイン：モデルブレンドセクション（ScrollView内）。</summary>
         public VisualElement ModelBlendSection { get; private set; }
 
+        /// <summary>シュリンカーセクション</summary>
+        public VisualElement ShrinkSection { get; private set; }
+
+        /// <summary>シュリンカーボタン</summary>
+        public Button ShrinkBtn { get; private set; }
+
         /// <summary>左ペイン：モデルブレンドボタン。</summary>
         public Button ModelBlendBtn { get; private set; }
 
@@ -231,6 +237,15 @@ namespace Poly_Ling.Player
         public Button        FlipFaceBtn                { get; private set; }
         public VisualElement RotateSection              { get; private set; }
         public Button        RotateBtn                  { get; private set; }
+        /// <summary>作業用ローカル軸（回転 / 曲げの基準フレーム）のセクションとボタン。</summary>
+        public VisualElement WorkAxisSection            { get; private set; }
+        public Button        WorkAxisBtn                { get; private set; }
+        /// <summary>デフォーマ（回転 / 曲げ）のセクションとボタン。基準は作業軸。</summary>
+        public VisualElement DeformSection              { get; private set; }
+        public Button        DeformBtn                  { get; private set; }
+        /// <summary>格子変形のセクションとボタン。格子フレームは作業軸。</summary>
+        public VisualElement LatticeSection             { get; private set; }
+        public Button        LatticeBtn                 { get; private set; }
         public VisualElement ScaleSection               { get; private set; }
         public Button        ScaleBtn                   { get; private set; }
         public VisualElement EdgeBevelSection           { get; private set; }
@@ -255,6 +270,8 @@ namespace Poly_Ling.Player
         public Button        MotionClipTestBtn        { get; private set; }
         public VisualElement RemoteServerSection    { get; private set; }
         public Button        RemoteServerBtn        { get; private set; }
+        public VisualElement LogSection             { get; private set; }
+        public Button        LogBtn                 { get; private set; }
 
         /// <summary>右ペイン：エクスポートセクション（ScrollView内）。</summary>
         public VisualElement ExportSection { get; private set; }
@@ -837,6 +854,17 @@ namespace Poly_Ling.Player
             ScaleBtn  = MakeBtn("スケール"); ScaleBtn.style.flexGrow  = 1;
             rowRotScale.Add(RotateBtn); rowRotScale.Add(ScaleBtn); foSelectMove.Add(rowRotScale);
 
+            // 作業用ローカル軸。回転 / 曲げの基準フレームを操作するサブツール。
+            var rowWorkAxis = new VisualElement(); rowWorkAxis.style.flexDirection = FlexDirection.Row; rowWorkAxis.style.marginBottom = 2;
+            WorkAxisBtn = MakeBtn("作業軸"); WorkAxisBtn.style.flexGrow = 1; WorkAxisBtn.style.marginRight = 2;
+            DeformBtn   = MakeBtn("変形");   DeformBtn.style.flexGrow   = 1;
+            rowWorkAxis.Add(WorkAxisBtn); rowWorkAxis.Add(DeformBtn); foSelectMove.Add(rowWorkAxis);
+
+            // 格子変形。作業軸を格子フレームとして使う。
+            var rowLattice = new VisualElement(); rowLattice.style.flexDirection = FlexDirection.Row; rowLattice.style.marginBottom = 2;
+            LatticeBtn = MakeBtn("格子変形"); LatticeBtn.style.flexGrow = 1;
+            rowLattice.Add(LatticeBtn); foSelectMove.Add(rowLattice);
+
             // 一時選択サブツール (デバッグ用)。ショートカット R / G と同じ処理を呼ぶ。
             var rowSubTool = new VisualElement(); rowSubTool.style.flexDirection = FlexDirection.Row; rowSubTool.style.marginBottom = 2;
             SubToolBoxSelectBtn   = MakeBtn("矩形選択(一時) R");   SubToolBoxSelectBtn.style.flexGrow   = 1; SubToolBoxSelectBtn.style.marginRight = 2;
@@ -846,7 +874,7 @@ namespace Poly_Ling.Player
 
             var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
             PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
-            MeshSelectionSetBtn  = MakeBtn("メッシュ選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
+            MeshSelectionSetBtn  = MakeBtn("オブジェクト選択辞書"); MeshSelectionSetBtn.style.flexGrow  = 1;
             rowSelSet.Add(PartsSelectionSetBtn); rowSelSet.Add(MeshSelectionSetBtn); foSelectMove.Add(rowSelSet);
 
             // ── トポロジー編集 ─────────────────────────────────────────
@@ -911,6 +939,8 @@ namespace Poly_Ling.Player
             ModelBlendBtn = MakeBtn("モデルブレンド");   ModelBlendBtn.style.flexGrow = 1;
             rowBlend.Add(BlendBtn); rowBlend.Add(ModelBlendBtn); foBoneMorph.Add(rowBlend);
 
+            ShrinkBtn = MakeBtn("シュリンカー"); foBoneMorph.Add(ShrinkBtn);
+
             MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
             MorphCreateBtn = MakeBtn("差分からモーフ生成");         foBoneMorph.Add(MorphCreateBtn);
 
@@ -961,8 +991,9 @@ namespace Poly_Ling.Player
 
             var rowMisc3 = new VisualElement(); rowMisc3.style.flexDirection = FlexDirection.Row; rowMisc3.style.marginBottom = 2;
             UnderlayBtn = MakeBtn("下絵");        UnderlayBtn.style.flexGrow = 1; UnderlayBtn.style.marginRight = 2;
-            GridAxisBtn = MakeBtn("軸/グリッド"); GridAxisBtn.style.flexGrow = 1;
-            rowMisc3.Add(UnderlayBtn); rowMisc3.Add(GridAxisBtn); foOther.Add(rowMisc3);
+            GridAxisBtn = MakeBtn("軸/グリッド"); GridAxisBtn.style.flexGrow = 1; GridAxisBtn.style.marginRight = 2;
+            LogBtn      = MakeBtn("ログ");        LogBtn.style.flexGrow      = 1;
+            rowMisc3.Add(UnderlayBtn); rowMisc3.Add(GridAxisBtn); rowMisc3.Add(LogBtn); foOther.Add(rowMisc3);
 
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
@@ -1200,6 +1231,9 @@ namespace Poly_Ling.Player
             // ── モデルブレンドセクション
             ModelBlendSection = AddSection(visible: false);
 
+            // ── シュリンカーセクション
+            ShrinkSection = AddSection(visible: false);
+
             // ── ボーンエディタセクション
             BoneEditorSection = AddSection(visible: false);
 
@@ -1229,6 +1263,9 @@ namespace Poly_Ling.Player
             AddFaceSection             = AddSection(visible: false);
             FlipFaceSection            = AddSection(visible: false);
             RotateSection              = AddSection(visible: false);
+            WorkAxisSection            = AddSection(visible: false);
+            DeformSection              = AddSection(visible: false);
+            LatticeSection             = AddSection(visible: false);
             ScaleSection               = AddSection(visible: false);
             EdgeBevelSection           = AddSection(visible: false);
             EdgeExtrudeSection         = AddSection(visible: false);
@@ -1243,6 +1280,7 @@ namespace Poly_Ling.Player
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
+            LogSection                 = AddSection(visible: false);
 
             // ── エクスポートセクション
             ExportSection = AddSection(visible: false);
@@ -1385,6 +1423,53 @@ namespace Poly_Ling.Player
 
             root.Query<VisualElement>(className: "unity-base-slider__tracker").ForEach(e =>
                 e.style.backgroundColor = fieldBg);
+        }
+
+        // ================================================================
+        // ボタン操作フィードバック
+        // ================================================================
+
+        /// <summary>押下確定フラッシュ用の一時クラス名。PolyLingButtonStates.uss と対応。</summary>
+        private const string BtnFlashClass = "pl-btn-flash";
+
+        /// <summary>InstallButtonFeedback の二重適用防止マーカ。</summary>
+        private const string BtnFeedbackHostClass = "pl-btn-feedback-host";
+
+        /// <summary>
+        /// ボタンの操作フィードバック（ホバー / 押下中 / 押下確定 / 無効）を root へ一括導入する。
+        /// ApplyDarkTheme が background-color / color をインライン設定しており、UIToolkit では
+        /// インラインが StyleSheet より優先されるため、USS 側は border-color / scale / opacity
+        /// のみで状態を表現する（PolyLingButtonStates.uss）。
+        /// 押下確定は ClickEvent（バブリング）を root で1度だけ受け、対象ボタンへ BtnFlashClass を
+        /// 一時付与して短時間だけ枠線を強調する。個々のボタンへの登録は不要。
+        /// </summary>
+        public static void InstallButtonFeedback(VisualElement root)
+        {
+            if (root == null) return;
+            if (root.ClassListContains(BtnFeedbackHostClass)) return;
+            root.AddToClassList(BtnFeedbackHostClass);
+
+            var sheet = Resources.Load<StyleSheet>("PolyLingButtonStates");
+            if (sheet != null && !root.styleSheets.Contains(sheet))
+                root.styleSheets.Add(sheet);
+
+            root.RegisterCallback<ClickEvent>(OnAnyButtonClicked);
+        }
+
+        /// <summary>
+        /// root で受けたクリックを最寄りの Button へ遡り、押下確定フラッシュを掛ける。
+        /// 無効(SetEnabled(false))の要素にはイベントが届かないため、押せなかった場合は発火しない。
+        /// </summary>
+        private static void OnAnyButtonClicked(ClickEvent evt)
+        {
+            var ve = evt.target as VisualElement;
+            while (ve != null && !(ve is Button)) ve = ve.parent;
+            if (ve == null) return;
+            if (ve.ClassListContains(BtnFlashClass)) return;
+
+            var btn = ve;
+            btn.AddToClassList(BtnFlashClass);
+            btn.schedule.Execute(() => btn.RemoveFromClassList(BtnFlashClass)).ExecuteLater(180);
         }
 
         private static Button MakeBtn(string text)

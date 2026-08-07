@@ -264,6 +264,9 @@ namespace Poly_Ling.ListClient
             var caret = Resources.Load<StyleSheet>("PolyLingCaret");
             if (caret != null) root.styleSheets.Add(caret);
 
+            // サーバと同一のボタン操作フィードバック（ホバー/押下中/押下確定/無効）。
+            PlayerLayoutRoot.InstallButtonFeedback(root);
+
             _statusLabel = new Label("未接続");
             _statusLabel.style.fontSize = 10;
             _statusLabel.style.paddingLeft = 4;

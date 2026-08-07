@@ -9,9 +9,23 @@
 // 【プロファイルの座標系】ステップ s（rung s → rung s+1）ごとに次の系で解釈する。
 //   X = 進行方向（x=0 が rung s、x=1 が rung s+1）
 //   Y = 基準ベルトの面法線方向（そのレール区間長で正規化。y=1 が区間長）
+//   位置は p0 + dir * x + nrm * (y * len)。x も y も同じ len で拡大されるため、
+//   区間が長いほど波形は相似形のまま大きくなる。
 //
 // 【巻き順】取り込み時に判定した基準ベルトの巻き順に従う。
 //   断面が 2 点 (0,0)-(1,0) のときは基準ベルトと同一の面になる。
+//
+// 【共有レールの接続】connectShared = true のとき、同一のレール線分
+//   （縦置きなら左右、横置きなら上下）を共有する梯子どうしを溶接する。
+//   レール線分ごとに面法線を加算し、正規化和を使って頂点を1度だけ生成する。
+//   レール線分は始点→終点の向きまで一致した場合のみ共有する
+//   （逆向きではプロファイル x=0 の位置が入れ替わり、生成点が一致しないため）。
+//
+// 【rung 境界の段差】ステップ s の終端（プロファイル index m-1）と
+//   ステップ s+1 の始端（index 0）は、プロファイル両端の y が違う／梯子が曲がっている／
+//   rung 間隔が不均一、のいずれかでずれる。
+//   FrillRungSeam.Merge は両者の生成位置を平均して1頂点にまとめ、段差を消す。
+//   FrillRungSeam.Split は別頂点のまま残し、段差をそのまま出す。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,8 +34,24 @@ using Poly_Ling.Ops;
 
 namespace Poly_Ling.Frill
 {
+    /// <summary>複数梯子をまとめて生成するときの梯子1本ぶんの入力。</summary>
+    public sealed class FrillBeltInput
+    {
+        public IReadOnlyList<Vector3> Left;
+        public IReadOnlyList<Vector3> Right;
+        public bool Closed;
+        public bool FlipWinding;
+    }
+
     public static class FrillMeshGenerator
     {
+        /// <summary>位置キーの量子化幅。</summary>
+        private const float PosEps = 1e-5f;
+
+        // ================================================================
+        // 単一梯子（既存API・挙動そのまま）
+        // ================================================================
+
         /// <summary>
         /// フリルメッシュを生成する。基準ベルトまたは断面が不足していれば空メッシュを返す。
         /// </summary>
@@ -30,55 +60,120 @@ namespace Poly_Ling.Frill
             bool closed, bool flipWinding,
             IReadOnlyList<Vector2> profile, string meshName)
         {
+            var one = new List<FrillBeltInput>(1)
+            {
+                new FrillBeltInput { Left = left, Right = right, Closed = closed, FlipWinding = flipWinding }
+            };
+            return Generate(one, profile, false, FrillRungSeam.Split, meshName);
+        }
+
+        // ================================================================
+        // 複数梯子
+        // ================================================================
+
+        /// <summary>
+        /// 複数の基準ベルトからフリルメッシュを1つ生成する。
+        /// connectShared = true のとき、同一向きのレール線分を共有する梯子どうしを溶接する。
+        /// seam = Merge のとき、rung 境界の頂点を平均位置で1つにまとめる。
+        /// </summary>
+        public static MeshObject Generate(
+            IReadOnlyList<FrillBeltInput> belts,
+            IReadOnlyList<Vector2> profile,
+            bool connectShared,
+            FrillRungSeam seam,
+            string meshName)
+        {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "Frill" : meshName);
 
-            int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
             int m = (profile == null) ? 0 : profile.Count;
-            if (n < 2 || m < 2) return mo;
+            if (belts == null || belts.Count == 0 || m < 2) return mo;
 
-            int steps = closed ? n : n - 1;
-            if (steps < 1) return mo;
+            var steps = BuildSteps(belts);
+            if (steps.Count == 0) return mo;
 
-            for (int s = 0; s < steps; s++)
+            // ── パス1: レール記録を作り、面法線を合成する ──
+            var rails     = new List<RailRec>();
+            var railIndex = connectShared ? new Dictionary<RailKey, int>() : null;
+            var stepRailL = new int[steps.Count];
+            var stepRailR = new int[steps.Count];
+
+            for (int i = 0; i < steps.Count; i++)
             {
-                int j = (s + 1) % n;
+                var st = steps[i];
+                stepRailL[i] = GetOrAddRail(rails, railIndex, connectShared, st.A0, st.A1, st, 0f);
+                stepRailR[i] = GetOrAddRail(rails, railIndex, connectShared, st.B0, st.B1, st, 1f);
+            }
 
-                Vector3 a0 = left[s],  a1 = left[j];
-                Vector3 b0 = right[s], b1 = right[j];
+            foreach (var r in rails)
+                r.Normal = r.NormalSum.sqrMagnitude > 1e-12f ? r.NormalSum.normalized : r.FirstNormal;
 
-                Vector3 dirA = a1 - a0;
-                Vector3 dirB = b1 - b0;
-                float   lenA = dirA.magnitude;
-                float   lenB = dirB.magnitude;
+            // ── パス2: rung 境界の平均位置を求める ──
+            Dictionary<PosKey, Vector3> boundarySum   = null;
+            Dictionary<PosKey, int>     boundaryCount = null;
 
-                Vector3 nrm = StepNormal(a0, b0, b1, a1, flipWinding);
+            if (seam == FrillRungSeam.Merge)
+            {
+                boundarySum   = new Dictionary<PosKey, Vector3>();
+                boundaryCount = new Dictionary<PosKey, int>();
 
-                // このステップの頂点: 左レール m 点 → 右レール m 点
-                int baseIdx = mo.VertexCount;
+                foreach (var r in rails)
+                {
+                    Vector3 dir = r.P1 - r.P0;
+                    float   len = dir.magnitude;
+
+                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P0, r.Scope),
+                                  ProfilePos(r.P0, dir, len, r.Normal, profile[0]));
+                    AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P1, r.Scope),
+                                  ProfilePos(r.P0, dir, len, r.Normal, profile[m - 1]));
+                }
+            }
+
+            // ── パス3: 頂点生成 ──
+            var boundaryVert = (seam == FrillRungSeam.Merge) ? new Dictionary<PosKey, int>() : null;
+
+            foreach (var r in rails)
+            {
+                r.Verts = new int[m];
+
+                Vector3 dir = r.P1 - r.P0;
+                float   len = dir.magnitude;
 
                 for (int k = 0; k < m; k++)
                 {
-                    Vector2 p = profile[k];
-                    Vector3 pos = a0 + dirA * p.x + nrm * (p.y * lenA);
-                    mo.Vertices.Add(new Vertex(pos, new Vector2((s + p.x) / steps, 0f)));
-                }
-                for (int k = 0; k < m; k++)
-                {
-                    Vector2 p = profile[k];
-                    Vector3 pos = b0 + dirB * p.x + nrm * (p.y * lenB);
-                    mo.Vertices.Add(new Vertex(pos, new Vector2((s + p.x) / steps, 1f)));
-                }
+                    Vector2 p  = profile[k];
+                    Vector2 uv = new Vector2(r.U0 + p.x * r.UStep, r.V);
 
-                // 面: 波形に沿って左右をつなぐ
+                    bool isStart = (k == 0);
+                    bool isEnd   = (k == m - 1);
+
+                    if (seam == FrillRungSeam.Merge && (isStart || isEnd))
+                    {
+                        var bk = new PosKey(isStart ? r.P0 : r.P1, r.Scope);
+                        if (boundaryVert.TryGetValue(bk, out int reuse)) { r.Verts[k] = reuse; continue; }
+
+                        Vector3 avg = boundarySum[bk] / boundaryCount[bk];
+                        r.Verts[k] = mo.VertexCount;
+                        mo.Vertices.Add(new Vertex(avg, uv));
+                        boundaryVert[bk] = r.Verts[k];
+                        continue;
+                    }
+
+                    r.Verts[k] = mo.VertexCount;
+                    mo.Vertices.Add(new Vertex(ProfilePos(r.P0, dir, len, r.Normal, p), uv));
+                }
+            }
+
+            // ── 面 ──
+            for (int i = 0; i < steps.Count; i++)
+            {
+                var li = rails[stepRailL[i]].Verts;
+                var ri = rails[stepRailR[i]].Verts;
+                bool flip = steps[i].FlipWinding;
+
                 for (int k = 0; k < m - 1; k++)
                 {
-                    int l0 = baseIdx + k;
-                    int l1 = baseIdx + k + 1;
-                    int r0 = baseIdx + m + k;
-                    int r1 = baseIdx + m + k + 1;
-
-                    if (flipWinding) mo.AddQuad(l0, l1, r1, r0);
-                    else             mo.AddQuad(l0, r0, r1, l1);
+                    if (flip) mo.AddQuad(li[k], li[k + 1], ri[k + 1], ri[k]);
+                    else      mo.AddQuad(li[k], ri[k], ri[k + 1], li[k + 1]);
                 }
             }
 
@@ -90,6 +185,123 @@ namespace Poly_Ling.Frill
         // ヘルパー
         // ================================================================
 
+        private static Vector3 ProfilePos(Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector2 p)
+            => p0 + dir * p.x + nrm * (p.y * len);
+
+        /// <summary>1ステップぶんの生成情報。</summary>
+        private struct StepInfo
+        {
+            public Vector3 A0, A1;   // 左レール線分
+            public Vector3 B0, B1;   // 右レール線分
+            public Vector3 Normal;   // このステップの基準面法線
+            public bool    FlipWinding;
+            public float   U0;       // UV の u（プロファイル x=0 のとき）
+            public float   UStep;    // UV の u の1ステップぶん
+            public int     BeltIndex;
+        }
+
+        /// <summary>レール線分1本ぶんの生成記録。</summary>
+        private sealed class RailRec
+        {
+            public Vector3 P0, P1;
+            public Vector3 NormalSum;
+            public Vector3 FirstNormal;
+            public Vector3 Normal;
+            public float   U0, UStep, V;
+            public int     Scope;    // 境界溶接のスコープ（共有あり=0 / 共有なし=梯子index）
+            public int[]   Verts;
+        }
+
+        /// <summary>全梯子のステップを1本のリストに展開する。</summary>
+        private static List<StepInfo> BuildSteps(IReadOnlyList<FrillBeltInput> belts)
+        {
+            var list = new List<StepInfo>();
+
+            for (int bi = 0; bi < belts.Count; bi++)
+            {
+                var belt = belts[bi];
+                if (belt == null || belt.Left == null || belt.Right == null) continue;
+
+                int n = Mathf.Min(belt.Left.Count, belt.Right.Count);
+                if (n < 2) continue;
+
+                int stepCount = belt.Closed ? n : n - 1;
+                if (stepCount < 1) continue;
+
+                for (int s = 0; s < stepCount; s++)
+                {
+                    int j = (s + 1) % n;
+
+                    Vector3 a0 = belt.Left[s],  a1 = belt.Left[j];
+                    Vector3 b0 = belt.Right[s], b1 = belt.Right[j];
+
+                    list.Add(new StepInfo
+                    {
+                        A0          = a0,
+                        A1          = a1,
+                        B0          = b0,
+                        B1          = b1,
+                        Normal      = StepNormal(a0, b0, b1, a1, belt.FlipWinding),
+                        FlipWinding = belt.FlipWinding,
+                        U0          = (float)s / stepCount,
+                        UStep       = 1f / stepCount,
+                        BeltIndex   = bi,
+                    });
+                }
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// レール記録を取得または追加する。
+        /// 共有ありのときは同一キーへ法線を加算し、既存の記録を使い回す。
+        /// </summary>
+        private static int GetOrAddRail(
+            List<RailRec> rails, Dictionary<RailKey, int> railIndex, bool connectShared,
+            Vector3 p0, Vector3 p1, StepInfo st, float v)
+        {
+            if (connectShared)
+            {
+                var key = new RailKey(p0, p1);
+                if (railIndex.TryGetValue(key, out int idx))
+                {
+                    rails[idx].NormalSum += st.Normal;
+                    return idx;
+                }
+
+                idx = rails.Count;
+                rails.Add(NewRail(p0, p1, st, v, 0));
+                railIndex[key] = idx;
+                return idx;
+            }
+
+            rails.Add(NewRail(p0, p1, st, v, st.BeltIndex));
+            return rails.Count - 1;
+        }
+
+        private static RailRec NewRail(Vector3 p0, Vector3 p1, StepInfo st, float v, int scope)
+            => new RailRec
+            {
+                P0          = p0,
+                P1          = p1,
+                NormalSum   = st.Normal,
+                FirstNormal = st.Normal,
+                U0          = st.U0,
+                UStep       = st.UStep,
+                V           = v,
+                Scope       = scope,
+            };
+
+        private static void AccumBoundary(
+            Dictionary<PosKey, Vector3> sum, Dictionary<PosKey, int> count, PosKey key, Vector3 pos)
+        {
+            if (sum.TryGetValue(key, out Vector3 cur)) sum[key] = cur + pos;
+            else                                       sum[key] = pos;
+
+            count[key] = count.TryGetValue(key, out int c) ? c + 1 : 1;
+        }
+
         /// <summary>
         /// ステップの基準面法線。基準ベルトの巻き順 (a0, b0, b1, a1) / 反転時 (a0, a1, b1, b0) で算出する。
         /// </summary>
@@ -98,6 +310,74 @@ namespace Poly_Ling.Frill
             return flipWinding
                 ? NormalHelper.CalculateFaceNormal(a0, a1, b1)
                 : NormalHelper.CalculateFaceNormal(a0, b0, b1);
+        }
+
+        private static long Q(float f) => (long)Mathf.Round(f / PosEps);
+
+        // ================================================================
+        // キー
+        // ================================================================
+
+        /// <summary>量子化した始点→終点の順序付きペア。向きが逆なら別キーになる。</summary>
+        private readonly struct RailKey : System.IEquatable<RailKey>
+        {
+            private readonly long _x0, _y0, _z0, _x1, _y1, _z1;
+
+            public RailKey(Vector3 p0, Vector3 p1)
+            {
+                _x0 = Q(p0.x); _y0 = Q(p0.y); _z0 = Q(p0.z);
+                _x1 = Q(p1.x); _y1 = Q(p1.y); _z1 = Q(p1.z);
+            }
+
+            public bool Equals(RailKey o)
+                => _x0 == o._x0 && _y0 == o._y0 && _z0 == o._z0
+                && _x1 == o._x1 && _y1 == o._y1 && _z1 == o._z1;
+
+            public override bool Equals(object obj) => obj is RailKey k && Equals(k);
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    long h = _x0;
+                    h = h * 31 + _y0;
+                    h = h * 31 + _z0;
+                    h = h * 31 + _x1;
+                    h = h * 31 + _y1;
+                    h = h * 31 + _z1;
+                    return (int)(h ^ (h >> 32));
+                }
+            }
+        }
+
+        /// <summary>量子化したレール頂点位置 + 溶接スコープ。</summary>
+        private readonly struct PosKey : System.IEquatable<PosKey>
+        {
+            private readonly long _x, _y, _z;
+            private readonly int  _scope;
+
+            public PosKey(Vector3 p, int scope)
+            {
+                _x = Q(p.x); _y = Q(p.y); _z = Q(p.z);
+                _scope = scope;
+            }
+
+            public bool Equals(PosKey o)
+                => _x == o._x && _y == o._y && _z == o._z && _scope == o._scope;
+
+            public override bool Equals(object obj) => obj is PosKey k && Equals(k);
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    long h = _x;
+                    h = h * 31 + _y;
+                    h = h * 31 + _z;
+                    h = h * 31 + _scope;
+                    return (int)(h ^ (h >> 32));
+                }
+            }
         }
     }
 }

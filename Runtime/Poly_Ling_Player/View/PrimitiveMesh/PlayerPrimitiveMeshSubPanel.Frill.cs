@@ -23,6 +23,7 @@ namespace Poly_Ling.Player
         private List<BeltSnapshot> _frillBelts = new List<BeltSnapshot>();
         private MeshSourcePick     _frillPick  = new MeshSourcePick();
         private BeltSplineOption   _frillSpline = new BeltSplineOption();
+        private BeltOrientOption   _frillOrient = new BeltOrientOption();
 
         private BeltProfileEdit _frillEdit = new BeltProfileEdit
         {
@@ -31,9 +32,14 @@ namespace Poly_Ling.Player
             UndoStackId    = "PlayerEdit/FrillProfileEdit",
             UndoTitle      = "フリル断面編集",
             BgSectionLabel = "フリル下絵",
+            CsvRecentKey   = "Primitive.Frill.ProfileCsv",
+            CsvDefaultName = "frill_profile.csv",
         };
 
         private Label _frillInfoLabel;
+
+        /// <summary>厚み付けの角処理(ベベル)UI 要素。</summary>
+        private SolidifyUI _frillSolidUI;
 
         /// <summary>フリルの既定断面。1ステップぶんの平坦な区間（＝基準ベルトと同一形状）。</summary>
         private static List<Vector2> DefaultFrillProfile()
@@ -79,11 +85,77 @@ namespace Poly_Ling.Player
                 RefreshFrillInfo();
             }));
 
+            // ── 円環の自動検索 ──
+            var ringHint = new Label(T("AutoDetectRingsHint"));
+            ringHint.style.fontSize     = 10;
+            ringHint.style.whiteSpace   = WhiteSpace.Normal;
+            ringHint.style.marginBottom = 2;
+            c.Add(ringHint);
+
+            c.Add(PlayerIoUiKit.WideBtn(T("AutoDetectRings"), () =>
+            {
+                AutoDetectRings(_frillBelts, _frillPick.Current);
+                RefreshFrillInfo();
+            }));
+
             _frillInfoLabel = new Label(BeltsInfoText(_frillBelts));
             _frillInfoLabel.style.fontSize   = 10;
             _frillInfoLabel.style.whiteSpace = WhiteSpace.Normal;
             _frillInfoLabel.style.marginTop  = 2;
             c.Add(_frillInfoLabel);
+
+            // ── 梯子CSV ──
+            BuildBeltCsvUI(c, _frillBelts,
+                "Primitive.Frill.BeltCsv", "frill_belt.csv", RefreshFrillInfo);
+
+            // ── 梯子の向き ──
+            BuildBeltOrientUI(c, _frillOrient);
+
+            // ── 共有レールの接続 ──
+            c.Add(TR(T("FrillConnect"), () => _frillP.ConnectShared,
+                v => { _frillP.ConnectShared = v; D(); }));
+
+            var connectHint = new Label(T("FrillConnectHint"));
+            connectHint.style.fontSize     = 10;
+            connectHint.style.whiteSpace   = WhiteSpace.Normal;
+            connectHint.style.marginBottom = 2;
+            c.Add(connectHint);
+
+            // ── rung 境界の段差 ──
+            c.Add(TR(T("FrillRungSeam"),
+                () => _frillP.RungSeam == FrillRungSeam.Split,
+                v => { _frillP.RungSeam = v ? FrillRungSeam.Split : FrillRungSeam.Merge; D(); }));
+
+            var seamHint = new Label(T("FrillRungSeamHint"));
+            seamHint.style.fontSize     = 10;
+            seamHint.style.whiteSpace   = WhiteSpace.Normal;
+            seamHint.style.marginBottom = 2;
+            c.Add(seamHint);
+
+            // ── 厚み付け ──
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(SR(T("Thickness"), 0f, 0.5f, () => _frillP.Thickness,
+                v => { _frillP.Thickness = v; D(); RefreshFrillSolidVis(); }));
+
+            // 角処理(ベベル)UI は常時生成し、厚み/分割数に応じて表示切替する。
+            var frillSolid = new SolidifyUI
+            {
+                EdgeLabel = SL(T("EdgeSettings")),
+                FrontSeg  = IR(T("FrontSegments"), 0, 16, () => _frillP.SegmentsFront,
+                               v => { _frillP.SegmentsFront = v; D(); RefreshFrillSolidVis(); }),
+                FrontSize = SR(T("EdgeSize"), 0.001f, 0.25f, () => _frillP.EdgeSizeFront,
+                               v => { _frillP.EdgeSizeFront = v; D(); }),
+                BackSeg   = IR(T("BackSegments"), 0, 16, () => _frillP.SegmentsBack,
+                               v => { _frillP.SegmentsBack = v; D(); RefreshFrillSolidVis(); }),
+                BackSize  = SR(T("EdgeSize"), 0.001f, 0.25f, () => _frillP.EdgeSizeBack,
+                               v => { _frillP.EdgeSizeBack = v; D(); }),
+                Inward    = TR(T("EdgeInward"), () => _frillP.EdgeInward,
+                               v => { _frillP.EdgeInward = v; D(); }),
+            };
+            _frillSolidUI = frillSolid;
+            c.Add(frillSolid.EdgeLabel); c.Add(frillSolid.FrontSeg); c.Add(frillSolid.FrontSize);
+            c.Add(frillSolid.BackSeg);   c.Add(frillSolid.BackSize); c.Add(frillSolid.Inward);
+            RefreshFrillSolidVis();
 
             BuildBeltSplineUI(c, _frillSpline);
 
@@ -95,26 +167,66 @@ namespace Poly_Ling.Player
             if (_frillInfoLabel != null) _frillInfoLabel.text = BeltsInfoText(_frillBelts);
         }
 
+        private void RefreshFrillSolidVis()
+            => UpdateSolidifyVis(_frillSolidUI, _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack);
+
         // ================================================================
         // 生成
         // ================================================================
 
-        /// <summary>各基準ベルトのステップに同じ波形を繰り返す。未取込なら空メッシュ。</summary>
+        /// <summary>
+        /// 各基準ベルトのステップに同じ波形を繰り返す。未取込なら空メッシュ。
+        /// ConnectShared のときは全梯子を1回で生成して共有レールを溶接し、厚み付けも1回だけ適用する。
+        /// </summary>
         private MeshObject GenerateFrillMesh()
         {
             EnsureBeltProfile(_frillEdit);
 
+            if (_frillP.ConnectShared)
+            {
+                var inputs = new List<FrillBeltInput>();
+                foreach (var belt in _frillBelts)
+                {
+                    if (belt == null || !belt.HasData) continue;
+                    inputs.Add(ToFrillInput(
+                        ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline)));
+                }
+
+                var joined = FrillMeshGenerator.Generate(
+                    inputs, _frillEdit.Points, true, _frillP.RungSeam, _frillP.MeshName);
+
+                return ApplySolidify(joined,
+                    _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
+                    _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,
+                    _frillP.MeshName);
+            }
+
+            var single = new List<FrillBeltInput>(1) { null };
             var mo = new MeshObject(_frillP.MeshName);
             foreach (var belt in _frillBelts)
             {
                 if (belt == null || !belt.HasData) continue;
-                var b = ApplyBeltSpline(belt, _frillSpline);
+                single[0] = ToFrillInput(
+                    ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline));
+
                 var part = FrillMeshGenerator.Generate(
-                    b.Left, b.Right, b.Closed, b.FlipWinding,
-                    _frillEdit.Points, _frillP.MeshName);
+                    single, _frillEdit.Points, false, _frillP.RungSeam, _frillP.MeshName);
+                part = ApplySolidify(part,
+                    _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
+                    _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,
+                    _frillP.MeshName);
                 AppendMesh(mo, part);
             }
             return mo;
         }
+
+        private static FrillBeltInput ToFrillInput(BeltSnapshot b)
+            => new FrillBeltInput
+            {
+                Left        = b.Left,
+                Right       = b.Right,
+                Closed      = b.Closed,
+                FlipWinding = b.FlipWinding,
+            };
     }
 }

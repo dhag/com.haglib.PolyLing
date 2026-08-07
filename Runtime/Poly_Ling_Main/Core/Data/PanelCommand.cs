@@ -339,16 +339,47 @@ namespace Poly_Ling.Data
             : base(modelIndex) { SetIndex = setIndex; NewName = newName; }
     }
 
-    /// <summary>選択辞書をCSVフォルダへエクスポート（ダイアログはメインエディタ側）</summary>
+    /// <summary>
+    /// 選択辞書をCSVフォルダへエクスポート。
+    /// FolderPath が空のときは実行側でダイアログを開く（メインエディタ経路）。
+    /// </summary>
     public class ExportPartsSetsCsvCommand : PanelCommand
     {
-        public ExportPartsSetsCsvCommand(int modelIndex) : base(modelIndex) { }
+        public string FolderPath { get; }
+        public ExportPartsSetsCsvCommand(int modelIndex) : base(modelIndex) { FolderPath = null; }
+        public ExportPartsSetsCsvCommand(int modelIndex, string folderPath)
+            : base(modelIndex) { FolderPath = folderPath; }
     }
 
-    /// <summary>CSVファイルから選択辞書をインポート（ダイアログはメインエディタ側）</summary>
+    /// <summary>
+    /// CSVフォルダから選択辞書をインポート。
+    /// FolderPath が空のときは実行側でダイアログを開く（メインエディタ経路・単一ファイル）。
+    /// ByObjectName が true のときはファイル内の "# object" 名と一致するオブジェクトへ読み込む。
+    /// </summary>
     public class ImportPartsSetCsvCommand : PanelCommand
     {
-        public ImportPartsSetCsvCommand(int modelIndex) : base(modelIndex) { }
+        public string FolderPath   { get; }
+        public bool   ByObjectName { get; }
+        public ImportPartsSetCsvCommand(int modelIndex)
+            : base(modelIndex) { FolderPath = null; ByObjectName = false; }
+        public ImportPartsSetCsvCommand(int modelIndex, string folderPath, bool byObjectName)
+            : base(modelIndex) { FolderPath = folderPath; ByObjectName = byObjectName; }
+    }
+
+    /// <summary>メッシュ選択辞書をCSVファイルへ保存</summary>
+    public class SaveMeshSelSetsCsvCommand : PanelCommand
+    {
+        public string FilePath { get; }
+        public SaveMeshSelSetsCsvCommand(int modelIndex, string filePath)
+            : base(modelIndex) { FilePath = filePath; }
+    }
+
+    /// <summary>メッシュ選択辞書をCSVファイルから読込み、既存リストへ追加</summary>
+    public class LoadMeshSelSetsCsvCommand : PanelCommand
+    {
+        public string FilePath { get; }
+        public LoadMeshSelSetsCsvCommand(int modelIndex, string filePath)
+            : base(modelIndex) { FilePath = filePath; }
     }
 
     // ================================================================
@@ -952,6 +983,62 @@ namespace Poly_Ling.Data
             RecalculateNormals   = recalculateNormals;
             SelectedVerticesOnly = selectedVerticesOnly;
             MatchByVertexId      = matchByVertexId;
+        }
+    }
+
+    // ================================================================
+    // シュリンカー
+    // ================================================================
+
+    /// <summary>
+    /// ビフォーオブジェクトの頂点をアフターオブジェクトへ向けて移動する。
+    /// 衝突対象オブジェクト群と交差した頂点はその位置で停止する。
+    /// バックアップ作成 + Undo 記録付き。
+    /// </summary>
+    public class ApplyShrinkCommand : PanelCommand
+    {
+        /// <summary>ビフォー（変形対象）MeshContext の MasterIndex</summary>
+        public int   BeforeMasterIndex     { get; }
+        /// <summary>アフター（目標形状）MeshContext の MasterIndex</summary>
+        public int   AfterMasterIndex      { get; }
+        /// <summary>衝突対象 MeshContext の MasterIndex 配列</summary>
+        public int[] ColliderMasterIndices { get; }
+        /// <summary>シュリンク量 [0, 1]</summary>
+        public float Slider                { get; }
+        /// <summary>コライダー面から手前に残す距離（ワールド単位）</summary>
+        public float SurfaceOffset         { get; }
+        /// <summary>
+        /// true : 進行方向に対して表を向いた面のみを衝突とみなす（裏面は素通り）
+        /// false: 表裏を問わず衝突とみなす（既定）
+        /// </summary>
+        public bool  FrontFaceOnly         { get; }
+        /// <summary>適用後に法線を再計算するか</summary>
+        public bool  RecalculateNormals    { get; }
+        /// <summary>
+        /// true : 結果を新規オブジェクトとして追加し、ビフォー／アフターを非表示にする（既定）
+        /// false: ビフォーを上書きし、元形状を &lt;名前&gt;_backup として追加する
+        /// </summary>
+        public bool  CreateNewObject       { get; }
+
+        public ApplyShrinkCommand(
+            int modelIndex,
+            int beforeMasterIndex, int afterMasterIndex,
+            int[] colliderMasterIndices,
+            float slider,
+            float surfaceOffset      = 0f,
+            bool  frontFaceOnly      = false,
+            bool  recalculateNormals = true,
+            bool  createNewObject    = true)
+            : base(modelIndex)
+        {
+            BeforeMasterIndex     = beforeMasterIndex;
+            AfterMasterIndex      = afterMasterIndex;
+            ColliderMasterIndices = colliderMasterIndices;
+            Slider                = slider;
+            SurfaceOffset         = surfaceOffset;
+            FrontFaceOnly         = frontFaceOnly;
+            RecalculateNormals    = recalculateNormals;
+            CreateNewObject       = createNewObject;
         }
     }
 

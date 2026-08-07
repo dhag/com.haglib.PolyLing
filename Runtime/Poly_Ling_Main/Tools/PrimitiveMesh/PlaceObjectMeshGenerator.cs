@@ -23,22 +23,41 @@ namespace Poly_Ling.PlaceObject
     {
         /// <summary>
         /// rung ごとに source を複製配置する。基準ベルトまたは配置元が無ければ空メッシュを返す。
+        /// 全 rung に同じ source を使う従来版。rung ごとに差し替える版へ委譲する。
         /// </summary>
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
             MeshObject source, string meshName)
         {
+            int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
+            var sources = new MeshObject[n];
+            for (int i = 0; i < n; i++) sources[i] = source;
+            return Generate(left, right, beltClosed, flipWinding, sources, meshName);
+        }
+
+        /// <summary>
+        /// rung ごとに配置元を差し替えて複製配置する。
+        /// sourcesPerRung[i] が null または空メッシュの rung には何も置かない。
+        /// </summary>
+        public static MeshObject Generate(
+            IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
+            bool beltClosed, bool flipWinding,
+            IReadOnlyList<MeshObject> sourcesPerRung, string meshName)
+        {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "PlaceObject" : meshName);
 
             int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
             if (n < 2) return mo;
-            if (source == null || source.VertexCount == 0) return mo;
+            if (sourcesPerRung == null || sourcesPerRung.Count == 0) return mo;
 
             int segments = beltClosed ? n : n - 1;
 
             for (int i = 0; i < n; i++)
             {
+                var source = (i < sourcesPerRung.Count) ? sourcesPerRung[i] : null;
+                if (source == null || source.VertexCount == 0) continue;
+
                 Vector3 center = (left[i] + right[i]) * 0.5f;
 
                 Vector3 axis  = right[i] - left[i];

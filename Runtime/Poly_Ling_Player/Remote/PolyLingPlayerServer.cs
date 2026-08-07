@@ -33,12 +33,10 @@ namespace Poly_Ling.Player
         public void BroadcastPositions(MeshObject mesh)    => _server?.BroadcastPositions(mesh);
         public void ClearCapturedImages()                  => _server?.ClearCapturedImages();
 
-        private readonly List<string> _logMessages = new List<string>();
-        private const int MaxLogLines = 100;
-        public IReadOnlyList<string> LogMessages => _logMessages;
-        public void ClearLog() => _logMessages.Clear();
-
-        /// <summary>ログ表示更新の通知（メインスレッドで発火。UI 側が購読してログ欄を再描画する）。</summary>
+        /// <summary>
+        /// 表示更新の通知（メインスレッドで発火。UI 側が購読して状態表示を更新する）。
+        /// ログ本文は PlayerLog（統合ログ）へ集約したため、ここでは扱わない。
+        /// </summary>
         public System.Action OnLogChanged;
 
         // ================================================================
@@ -62,11 +60,9 @@ namespace Poly_Ling.Player
             {
                 DispatchCommand = dispatchCommand,
                 OnRepaint       = () => OnLogChanged?.Invoke(),
-                OnLog           = msg =>
-                {
-                    _logMessages.Add(msg);
-                    while (_logMessages.Count > MaxLogLines) _logMessages.RemoveAt(0);
-                },
+                // RemoteServerCore.Log は "[HH:mm:ss] 本文" 形式で渡してくる。
+                // PlayerLog 側でも時刻を付けるため、先頭の時刻を取り除いてから投入する。
+                OnLog           = msg => PlayerLog.Add("Server", StripTimeStamp(msg)),
             };
 
             if (autoStart) StartServer();
@@ -113,6 +109,21 @@ namespace Poly_Ling.Player
             if (_server == null || !_server.IsRunning) return;
             _server.Stop();
             Debug.Log("[PolyLingPlayerServer] Stopped.");
+        }
+
+        // ================================================================
+        // ヘルパー
+        // ================================================================
+
+        /// <summary>
+        /// 先頭の "[HH:mm:ss] " を取り除く。該当しない場合は原文をそのまま返す。
+        /// </summary>
+        private static string StripTimeStamp(string msg)
+        {
+            if (string.IsNullOrEmpty(msg) || msg.Length < 11) return msg;
+            if (msg[0] != '[' || msg[3] != ':' || msg[6] != ':' || msg[9] != ']' || msg[10] != ' ')
+                return msg;
+            return msg.Substring(11);
         }
     }
 }
