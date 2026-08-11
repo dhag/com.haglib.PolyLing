@@ -35,8 +35,46 @@ namespace Poly_Ling.Player
 
         public float Threshold   { get => _tool.Threshold;   set => _tool.Threshold   = value; }
         public bool  ShowPreview { get => _tool.ShowPreview; set => _tool.ShowPreview = value; }
-        public void  TriggerMerge() => _tool.TriggerMerge();
         public MergePreviewInfo PreviewInfo => _tool.PreviewInfo;
+
+        /// <summary>
+        /// 旧経路（遅延実行）。_lastContext が無ければ _pendingMerge を立て、
+        /// 次の Update(ctx) で実行される。頂点マージパネルを開いている間しか
+        /// Update が回らないため、パネル外からは Trigger*Now を使うこと。
+        /// </summary>
+        public void  TriggerMerge() => _tool.TriggerMerge();
+
+        // ================================================================
+        // 即時実行 API（ショートカット / ボタンから）
+        //   ツールをアクティブにせず、その場で ToolContext を組み立てて実行する。
+        //   DeleteSelectionToolHandler.TriggerDelete と同じ方針。
+        // ================================================================
+
+        /// <summary>距離を見ず、選択頂点を 1 点（重心）へ結合する。</summary>
+        public void TriggerMergeToCentroidNow()
+        {
+            var ctx = BuildImmediateCtx();
+            if (ctx == null)
+            {
+                Debug.LogWarning("[MergeVerticesToolHandler] EARLY RETURN: "
+                               + $"project={_project != null}, currentModel={_project?.CurrentModel != null}");
+                return;
+            }
+            _tool.ExecuteMergeToCentroid(ctx);
+        }
+
+        /// <summary>選択頂点のうち、しきい値以下の距離にあるものを結合する。</summary>
+        public void TriggerMergeByThresholdNow()
+        {
+            var ctx = BuildImmediateCtx();
+            if (ctx == null)
+            {
+                Debug.LogWarning("[MergeVerticesToolHandler] EARLY RETURN: "
+                               + $"project={_project != null}, currentModel={_project?.CurrentModel != null}");
+                return;
+            }
+            _tool.ExecuteMergeByThreshold(ctx);
+        }
 
         // ================================================================
         // 初期化
@@ -58,34 +96,12 @@ namespace Poly_Ling.Player
         {
             if (ctx == null) return;
             // Update前にctxを補完する（UndoController・SyncMesh等が必要）
-            var model = _project?.CurrentModel;
-            ctx.Model            = model;
-            ctx.SelectedVertices = model?.ActiveMeshContext?.SelectedVertices;
-            ctx.SelectionState   = model?.ActiveMeshContext?.Selection;
-            ctx.UndoController   = _undoController;
-            ctx.CommandQueue     = _commandQueue;
-            ctx.Repaint          = OnRepaint;
-            ctx.NotifyTopologyChanged = NotifyTopologyChanged;
-            ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            FillCtx(ctx);
             _tool.Update(ctx);
         }
         public void Activate(ToolContext ctx)
         {
-            if (ctx != null)
-            {
-                var model = _project?.CurrentModel;
-                var mc    = model?.ActiveMeshContext;
-                ctx.Model            = model;
-                ctx.SelectedVertices = mc?.SelectedVertices;
-                ctx.SelectionState   = mc?.Selection;
-                ctx.UndoController   = _undoController;
-                ctx.CommandQueue     = _commandQueue;
-                ctx.Repaint          = OnRepaint;
-                ctx.NotifyTopologyChanged = NotifyTopologyChanged;
-                ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
-                if (_undoController?.MeshUndoContext != null && model != null)
-                    _undoController.MeshUndoContext.ParentModelContext = model;
-            }
+            FillCtx(ctx);
             _tool.OnActivate(ctx);
         }
         public void Deactivate(ToolContext ctx) { _tool.OnDeactivate(ctx); }
@@ -96,6 +112,40 @@ namespace Poly_Ling.Player
 
         private MeshUndoController _undoController;
         private CommandQueue       _commandQueue;
+
+        /// <summary>
+        /// ツール実行に必要な参照を ToolContext へ流し込む。
+        /// Activate と即時実行の両方から使う（内容が食い違わないよう一本化）。
+        /// </summary>
+        private void FillCtx(ToolContext ctx)
+        {
+            if (ctx == null) return;
+
+            var model = _project?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            ctx.Model            = model;
+            ctx.SelectedVertices = mc?.SelectedVertices;
+            ctx.SelectionState   = mc?.Selection;
+            ctx.UndoController   = _undoController;
+            ctx.CommandQueue     = _commandQueue;
+            ctx.Repaint          = OnRepaint;
+            ctx.NotifyTopologyChanged = NotifyTopologyChanged;
+            ctx.SyncMesh              = () => NotifyTopologyChanged?.Invoke();
+            if (_undoController?.MeshUndoContext != null && model != null)
+                _undoController.MeshUndoContext.ParentModelContext = model;
+        }
+
+        /// <summary>
+        /// 即時実行用の ToolContext をその場で組み立てる。
+        /// プロジェクト / モデルが無ければ null。
+        /// </summary>
+        private ToolContext BuildImmediateCtx()
+        {
+            if (_project?.CurrentModel == null) return null;
+            var ctx = GetToolContext?.Invoke() ?? new ToolContext();
+            FillCtx(ctx);
+            return ctx;
+        }
 
         private ToolContext BuildCtx(ModifierKeys mods, Vector2 sp)
         {

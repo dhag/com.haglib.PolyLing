@@ -15,6 +15,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -211,7 +212,7 @@ namespace Poly_Ling.Player
             {
                 var __rec = new HumanoidMappingChangedRecord(before, after, "Apply Humanoid Mapping");
                 string __dbgDesc = "Apply Humanoid Mapping";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (__rec?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, __rec);
                 undo.MeshListStack.Record(__rec, __dbgDesc);
             }
             Model.IsDirty = true;
@@ -241,7 +242,7 @@ namespace Poly_Ling.Player
             {
                 var __rec = new HumanoidMappingChangedRecord(before, after, "Clear Humanoid Mapping");
                 string __dbgDesc = "Clear Humanoid Mapping";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (__rec?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, __rec);
                 undo.MeshListStack.Record(__rec, __dbgDesc);
             }
             Model.IsDirty   = true;

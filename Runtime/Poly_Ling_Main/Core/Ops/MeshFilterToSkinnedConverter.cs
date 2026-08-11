@@ -528,6 +528,25 @@ namespace Poly_Ling.Ops
                 meshCtx.BoneTransform.Scale             = Vector3.one;
                 meshCtx.BoneTransform.UseLocalTransform = false;
 
+                // 生成ミラー（MeshFilter 系）ではなくなったことを明示する。
+                //
+                // ここまでで、ミラー側メッシュは
+                //   ・頂点を originalWorld でワールドへ焼き
+                //   ・BoneTransform を単位に潰し
+                //   ・自分専用のボーンで動く
+                // 状態になり、PMX 系ミラーとまったく同じ持ち方になる。
+                //
+                // MirrorGeometryDerived を立てたままにすると、
+                //   ComputeWorldMatrices        … ワールド行列を S·H·S で解く
+                //   SyncDerivedMirrorTransforms … 姿勢を実体側から引き写す
+                //   RebakeDerivedMirrorVertices … 頂点を実体側のローカル鏡像で作り直す
+                // が生成ミラーとして働き続ける。特に最後のひとつは、
+                // オブジェクト姿勢の確定時にワールドへ焼いた頂点を上書きして形を壊す。
+                //
+                // Type / MirrorPairs / BakedMirrorSourceIndex はそのまま残すので、
+                // ミラーとしての関係は保たれる。
+                meshCtx.MirrorGeometryDerived = false;
+
                 int assignBone = boneMasterIdx >= 0 ? boneMasterIdx : 0;
 
                 // 実体側メッシュには相方のミラー側ボーンを MirrorBoneWeight として持たせる

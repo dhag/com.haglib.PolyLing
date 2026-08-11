@@ -8,6 +8,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Tools
 {
@@ -323,7 +324,7 @@ namespace Poly_Ling.Tools
                 ctx.UndoController.SetModelContext(ctx.Model);
                 {
                     string __dbgDesc = $"Pivot Move ({axisName})";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     ctx.UndoController.MeshListStack.Record(record, __dbgDesc);
                 }
                 ctx.UndoController.FocusMeshList();

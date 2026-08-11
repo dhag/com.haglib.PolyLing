@@ -27,6 +27,8 @@ namespace Poly_Ling.Player
         public bool ShowUnselectedMirror;
         public bool ShowSelectedMeshOrigin;
         public bool ShowUnselectedMeshOrigin;
+        /// <summary>ミラー側の原点マーカーを描くか。既定 false。</summary>
+        public bool ShowMirrorMeshOrigin;
 
         /// <summary>
         /// MeshSceneRenderer のデフォルト値と一致するデフォルト設定を返す。
@@ -46,6 +48,7 @@ namespace Poly_Ling.Player
             ShowUnselectedMirror    = true,
             ShowSelectedMeshOrigin   = true,
             ShowUnselectedMeshOrigin = true,
+            ShowMirrorMeshOrigin     = false,
         };
 
         /// <summary>
@@ -78,6 +81,7 @@ namespace Poly_Ling.Player
             if (ShowUnselectedMirror)    b |= 1 << 10;
             if (ShowSelectedMeshOrigin)   b |= 1 << 11;
             if (ShowUnselectedMeshOrigin) b |= 1 << 12;
+            if (ShowMirrorMeshOrigin)     b |= 1 << 13;
             return b;
         }
 
@@ -92,10 +96,15 @@ namespace Poly_Ling.Player
             ShowUnselectedWireframe = (b & (1 << 6)) != 0,
             ShowUnselectedVertices  = (b & (1 << 7)) != 0,
             ShowUnselectedBone      = (b & (1 << 8)) != 0,
-            ShowSelectedMirror      = (b & (1 << 9)) != 0,
+            // 選択Mirror は UI トグルを廃止したため復元しない（常に true）。
+            // 選択Mesh が OFF のときは WithMirrorClamped() が OFF に落とす。
+            // ToBits のビット9は旧データ互換のため書き出しのみ維持する。
+            ShowSelectedMirror      = true,
             ShowUnselectedMirror    = (b & (1 << 10)) != 0,
             ShowSelectedMeshOrigin   = (b & (1 << 11)) != 0,
             ShowUnselectedMeshOrigin = (b & (1 << 12)) != 0,
+            // 旧データにはビット13が無いので false になる。新既定と一致する。
+            ShowMirrorMeshOrigin     = (b & (1 << 13)) != 0,
         };
     }
 }

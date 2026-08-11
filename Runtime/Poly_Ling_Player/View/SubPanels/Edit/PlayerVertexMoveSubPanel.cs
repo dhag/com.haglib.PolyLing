@@ -39,6 +39,11 @@ namespace Poly_Ling.Player
         private FloatField _minRadiusField;
         private FloatField _maxRadiusField;
 
+        // 数値移動 (ワールド空間の増分)
+        private FloatField _moveXField;
+        private FloatField _moveYField;
+        private FloatField _moveZField;
+
         private bool _suppressSync;
 
         // フォールオフ選択肢（リニア/ガウス/円/シャープ に統一）
@@ -233,6 +238,48 @@ namespace Poly_Ling.Player
 
             SetMagnetParamsVisible(false);
 
+            // ── 数値移動 ─────────────────────────────────────────────
+            // ワールド空間の「増分」を入力して選択要素を移動する（絶対座標ではない）。
+            // 適用は MoveToolHandler.ApplyNumericMove。Undo は 1 件にまとまる。
+            AddHeader("数値移動 (ワールド増分)");
+
+            var moveRow = new VisualElement();
+            moveRow.style.flexDirection = FlexDirection.Row;
+            moveRow.style.marginBottom  = 3;
+            _root.Add(moveRow);
+
+            _moveXField = MakeMoveField("X");
+            _moveYField = MakeMoveField("Y");
+            _moveZField = MakeMoveField("Z");
+            moveRow.Add(_moveXField); moveRow.Add(_moveYField); moveRow.Add(_moveZField);
+
+            var moveBtnRow = new VisualElement();
+            moveBtnRow.style.flexDirection = FlexDirection.Row;
+            moveBtnRow.style.marginBottom  = 3;
+            _root.Add(moveBtnRow);
+
+            var applyMoveBtn = new Button(() =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h == null) return;
+                h.ApplyNumericMove(new Vector3(
+                    _moveXField?.value ?? 0f,
+                    _moveYField?.value ?? 0f,
+                    _moveZField?.value ?? 0f));
+            }) { text = "移動" };
+            applyMoveBtn.style.flexGrow = 1; applyMoveBtn.style.marginRight = 2;
+            moveBtnRow.Add(applyMoveBtn);
+
+            // 入力欄を 0 に戻すだけ。適用済みの移動は取り消さない（Undo を使うこと）。
+            var clearMoveBtn = new Button(() =>
+            {
+                _moveXField?.SetValueWithoutNotify(0f);
+                _moveYField?.SetValueWithoutNotify(0f);
+                _moveZField?.SetValueWithoutNotify(0f);
+            }) { text = "クリア" };
+            clearMoveBtn.style.flexGrow = 1;
+            moveBtnRow.Add(clearMoveBtn);
+
             // ── ギズモ ───────────────────────────────────────────────
             AddHeader("Gizmo");
 
@@ -358,6 +405,16 @@ namespace Poly_Ling.Player
             s.style.marginBottom = 3;
             s.RegisterValueChangedCallback(e => onChange(e.newValue));
             return s;
+        }
+
+        /// <summary>数値移動用の入力欄。値の適用は「移動」ボタン押下時のみ行う。</summary>
+        private static FloatField MakeMoveField(string label)
+        {
+            var f = new FloatField(label) { value = 0f };
+            f.style.flexGrow    = 1;
+            f.style.marginRight = 2;
+            f.style.color       = new StyleColor(Color.white);
+            return f;
         }
     }
 }

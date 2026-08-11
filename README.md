@@ -29,10 +29,9 @@ ModelListClient.cs / MaterialListClient.cs / MeshListClient.cs
 各種パラメータ置き場
 
 C:\Users\<ユーザー名>\AppData\LocalLow\HagiharaLab\PolyLing\PolyLing
-
+例えばユーザー名がdhagなら
+C:\Users\dhag\AppData\LocalLow\HagiharaLab\PolyLing\PolyLing
 ----------------------------------
-サーバーモードでログがコピーできない。copyボタンが欲しい。
-サーバーモードでログがクリアできない。見かけはクリアできるが、他のボタンを押したあと戻ると全部残ってる。
-サーバーモードでログリアルタイムで反映されないような気がする。
+
 
 

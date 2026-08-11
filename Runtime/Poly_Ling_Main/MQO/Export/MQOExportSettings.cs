@@ -84,6 +84,17 @@ namespace Poly_Ling.MQO
         [Tooltip("オブジェクトのローカルトランスフォーム（位置・回転・スケール）を出力")]
         public bool ExportLocalTransform = true;
 
+        /// <summary>
+        /// 頂点をワールド座標で出力する。
+        /// メタセコイアはローカル座標（translation/rotation/scale）を「ピボット」として扱い、
+        /// 形状そのものは動かさない。頂点は常に絶対座標として解釈される。
+        /// PolyLing は world = 親のworld × ローカル で頂点を動かすため、
+        /// ローカルのまま書くと階層を持つモデルの形状がずれる。
+        /// ローカル変換が単位のオブジェクトでは world == local なので出力は変わらない。
+        /// </summary>
+        [Tooltip("頂点をワールド座標で出力（メタセコイアのローカル座標はピボット扱いのため）")]
+        public bool ExportVerticesInWorldSpace = true;
+
         /// <summary>ボーンウェイトをMQOに埋め込む</summary>
         [Tooltip("ボーンウェイト情報を四角形特殊面としてMQOに埋め込む")]
         public bool EmbedBoneWeightsInMQO = true;
@@ -119,6 +130,11 @@ namespace Poly_Ling.MQO
         /// <summary>
         /// 座標系設定から初期化（逆変換スケール）
         /// Unity→MQO = 1 / mqoUnityRatio
+        ///
+        /// flipZ は MQO では false が正しい（MQO⇔Unity は X のみ反転。
+        /// AxisFlip.MqoToUnity, AxisFlipOps.cs:49）。PMX 版と引数の並びが同じなので、
+        /// PMX の値（true）をそのまま渡さないこと。インポート側の既定
+        /// （MQOImportSettings.FlipZ = false）と食い違うと往復で Z 反転が残る。
         /// </summary>
         public static MQOExportSettings CreateFromCoordinate(float mqoUnityRatio, bool flipZ, bool flipX = true)
         {
@@ -153,6 +169,7 @@ namespace Poly_Ling.MQO
                 SkipNamedMirror = this.SkipNamedMirror,
                 ExportBones = this.ExportBones,
                 ExportLocalTransform = this.ExportLocalTransform,
+                ExportVerticesInWorldSpace = this.ExportVerticesInWorldSpace,
                 EmbedBoneWeightsInMQO = this.EmbedBoneWeightsInMQO,
                 TextureFolder = this.TextureFolder,
                 DecimalPrecision = this.DecimalPrecision,
@@ -178,6 +195,7 @@ namespace Poly_Ling.MQO
                    SkipNamedMirror != o.SkipNamedMirror ||
                    ExportBones != o.ExportBones ||
                    ExportLocalTransform != o.ExportLocalTransform ||
+                   ExportVerticesInWorldSpace != o.ExportVerticesInWorldSpace ||
                    EmbedBoneWeightsInMQO != o.EmbedBoneWeightsInMQO ||
                    TextureFolder != o.TextureFolder ||
                    DecimalPrecision != o.DecimalPrecision ||
@@ -202,6 +220,7 @@ namespace Poly_Ling.MQO
             SkipNamedMirror = o.SkipNamedMirror;
             ExportBones = o.ExportBones;
             ExportLocalTransform = o.ExportLocalTransform;
+            ExportVerticesInWorldSpace = o.ExportVerticesInWorldSpace;
             EmbedBoneWeightsInMQO = o.EmbedBoneWeightsInMQO;
             TextureFolder = o.TextureFolder;
             DecimalPrecision = o.DecimalPrecision;

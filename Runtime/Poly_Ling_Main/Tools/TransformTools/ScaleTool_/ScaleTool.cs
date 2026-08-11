@@ -8,6 +8,7 @@ using Poly_Ling.Data;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Localization;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Tools
 {
@@ -298,7 +299,7 @@ namespace Poly_Ling.Tools
                 var record = new MultiMeshVertexMoveRecord(allEntries.ToArray());
                 {
                     string __dbgDesc = T("UndoScale");
-                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                     ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
                 }
             }

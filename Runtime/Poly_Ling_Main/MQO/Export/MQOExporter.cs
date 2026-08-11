@@ -174,6 +174,25 @@ namespace Poly_Ling.MQO
         // ================================================================
 
         /// <summary>
+        /// 頂点をワールド座標で出す前に、階層のワールド行列を最新化する。
+        /// モデルに属していないコンテキスト（部分エクスポート用の一時リスト等）では
+        /// 何もしない。その場合 WorldMatrix は単位のままなので従来どおりの出力になる。
+        /// </summary>
+        private static void EnsureWorldMatrices(IList<MeshContext> meshContexts)
+        {
+            if (meshContexts == null) return;
+
+            Poly_Ling.Context.ModelContext model = null;
+            foreach (var mc in meshContexts)
+            {
+                if (mc?.ParentModelContext == null) continue;
+                model = mc.ParentModelContext;
+                break;
+            }
+            model?.ComputeWorldMatrices();
+        }
+
+        /// <summary>
         /// MQOドキュメント変換（Phase 5: グローバルマテリアルリスト対応）
         /// </summary>
         private static MQODocument ConvertToDocument(
@@ -183,6 +202,8 @@ namespace Poly_Ling.MQO
             MQOExportStats stats,
             IList<Poly_Ling.Materials.MaterialReference> materialRefs = null)
         {
+            EnsureWorldMatrices(meshContexts);
+
             var document = new MQODocument
             {
                 Version = 1.1m,
@@ -598,8 +619,8 @@ namespace Poly_Ling.MQO
                     Vector3 pos = AxisFlipOps.Position(settings.Flip, bt.Position, settings.Scale);
                     mqoObj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
                     
-                    // 回転（度数法）。位置と同じ共役変換を適用する
-                    Vector3 rot = AxisFlipOps.EulerDeg(settings.Flip, bt.Rotation);
+                    // 回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+                    Vector3 rot = MQOLocalRotationOps.ToMqoRotation(bt.Rotation, settings.Flip);
                     mqoObj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
                     
                     // スケール
@@ -619,6 +640,8 @@ namespace Poly_Ling.MQO
             MQOExportSettings settings,
             MQOExportStats stats)
         {
+            EnsureWorldMatrices(meshContexts);
+
             var document = new MQODocument
             {
                 Version = 1.1m,
@@ -950,8 +973,8 @@ namespace Poly_Ling.MQO
                     Vector3 pos = AxisFlipOps.Position(settings.Flip, bt.Position, settings.Scale);
                     mqoObj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
                     
-                    // 回転（度数法）。位置と同じ共役変換を適用する
-                    Vector3 rot = AxisFlipOps.EulerDeg(settings.Flip, bt.Rotation);
+                    // 回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+                    Vector3 rot = MQOLocalRotationOps.ToMqoRotation(bt.Rotation, settings.Flip);
                     mqoObj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
                     
                     // スケール
@@ -964,11 +987,21 @@ namespace Poly_Ling.MQO
             if (meshObject != null)
             {
                 // 頂点変換
+                // メタセコイアはローカル座標（translation/rotation/scale）をピボットとして扱い、
+                // 形状は動かさない。頂点は常に絶対座標として解釈されるので、
+                // PolyLing の階層で累積したワールド行列を頂点へ畳み込んでから出す。
+                // ローカル変換が単位なら WorldMatrix も単位で、従来と同じ出力になる。
+                Matrix4x4 toWorld = settings.ExportVerticesInWorldSpace
+                    ? meshContext.WorldMatrix
+                    : Matrix4x4.identity;
+                bool bakeWorld = !toWorld.isIdentity;
+
                 foreach (var v in meshObject.Vertices)
                 {
+                    Vector3 pos = bakeWorld ? toWorld.MultiplyPoint3x4(v.Position) : v.Position;
                     var mqoVert = new MQOVertex
                     {
-                        Position = ConvertPosition(v.Position, settings),
+                        Position = ConvertPosition(pos, settings),
                         Index = mqoObj.Vertices.Count,
                     };
                     mqoObj.Vertices.Add(mqoVert);

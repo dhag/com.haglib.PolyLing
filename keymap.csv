@@ -1,0 +1,118 @@
+# keymap.csv -- PolyLing Player keyboard shortcut map
+# Place at: <persistentDataPath>/PolyLing/keymap.csv
+# Encoding: UTF-8 (no BOM). Save as UTF-8 or the '#' comment lines may break.
+#
+# CSV priority: if this file has 1 or more valid rows, it REPLACES the built-in
+# default table entirely (ShortcutMap.CreateDefault is discarded). Any command
+# not listed here has no key binding. Delete this file to fall back to defaults.
+#
+# Single binding      : Command,Key,Ctrl,Shift,Alt
+# Two-key sequence    : Command,Key,Ctrl,Shift,Alt,Key2,Ctrl2,Shift2,Alt2
+# Key / Key2          : Unity KeyCode name (Z, V, F1 ...)
+# Ctrl/Shift/Alt      : true / false (omitted = false). Ctrl also matches Cmd on Mac.
+#
+# NOTE: a key used as the 1st key of a sequence becomes a prefix, and a single
+#       binding on that same key will never fire (prefix is checked first).
+#       P is a prefix below, so do not assign a single binding to P.
+#       Only the 1st key is checked as a prefix, so a key used as a 2nd key
+#       (C, S, A, R, O ...) is still free for a single binding.
+# ---- 単発 (16 件) ---------------------------------------------------------
+# Command,Key,Ctrl,Shift,Alt
+# Ctrl+Z       : 元に戻す
+edit.undo,Z,true,false,false
+# Ctrl+Y       : やり直し
+edit.redo,Y,true,false,false
+# Ctrl+Shift+Z : やり直し
+edit.redo,Z,true,true,false
+# V : 頂点移動ツール
+tool.vertexMove,V,false,false,false
+# B : オブジェクト姿勢ツール
+tool.objectMove,B,false,false,false
+# S : スカルプトツール
+tool.sculpt,S,false,false,false
+# A : 詳細選択ツール
+tool.advancedSelect,A,false,false,false
+# C : 回転ツール
+tool.rotate,C,false,false,false
+# Q : 拡大縮小ツール
+tool.scale,Q,false,false,false
+# R : 矩形選択サブツール (一時)
+subtool.boxSelect,R,false,false,false
+# G : 投げ縄選択サブツール (一時)
+subtool.lassoSelect,G,false,false,false
+# Delete : 選択削除サブツール (選択中の頂点/面/線分をまとめて削除)
+subtool.delete,Delete,false,false,false
+# D : 面削除モード (面クリックで即削除。矩形/投げ縄と面以外のホバーは無効。Esc で復帰)
+tool.deleteFace,D,false,false,false
+# Ctrl+J       : 選択頂点を 1 点(重心)へ結合 (距離を見ない。押した瞬間に完了)
+edit.mergeVerticesCentroid,J,true,false,false
+# Ctrl+Shift+J : 選択頂点のうちしきい値以内のものを結合
+edit.mergeVerticesThreshold,J,true,true,false
+# O (Ctrl+Oはユニティがつかんでる）       : オブジェクトリストを開く
+panel.meshList,O,false,false,false
+# ---- 2キー連続 (13 件。プレフィックス P) ---------------------------------
+# Command,Key,Ctrl,Shift,Alt,Key2,Ctrl2,Shift2,Alt2
+# 2キー目は「英名の先頭から、P 配下で未使用の最初の文字」で決めている。
+# P C : Cube
+shape.cube,P,false,false,false,C,false,false,false
+# P S : Sphere
+shape.sphere,P,false,false,false,S,false,false,false
+# P Y : Cylinder
+shape.cylinder,P,false,false,false,Y,false,false,false
+# P A : Capsule
+shape.capsule,P,false,false,false,A,false,false,false
+# P L : Plane
+shape.plane,P,false,false,false,L,false,false,false
+# P P : Pyramid
+shape.pyramid,P,false,false,false,P,false,false,false
+# P R : Revolution
+shape.revolution,P,false,false,false,R,false,false,false
+# P F : Profile2D
+shape.profile2d,P,false,false,false,F,false,false,false
+# P N : NohMask
+shape.nohmask,P,false,false,false,N,false,false,false
+# P I : Frill (F=Profile2D / R=Revolution が使用済のため I)
+shape.frill,P,false,false,false,I,false,false,false
+# P E : Pipe (P=Pyramid / I=Frill が使用済のため E)
+shape.pipe,P,false,false,false,E,false,false,false
+# P O : PlaceObject 接地 (P,L,A,C,E が使用済のため O)
+shape.placeObject,P,false,false,false,O,false,false,false
+# P B : ObjectArray 歪み複製 (O=PlaceObject が使用済のため B)
+shape.objectArray,P,false,false,false,B,false,false,false
+# ==========================================================================
+# 設定できるコマンドID 一覧 (全 28 件。これ以外は書いても何も起きない)
+# 上に書かれていないものは「キー割当なし」。使うときはコメントを外して行を足す。
+# --------------------------------------------------------------------------
+# ---- 編集 ----
+##edit.undo                     元に戻す
+##edit.redo                     やり直し
+##edit.mergeVerticesCentroid    選択頂点を 1 点(重心)へ結合
+##edit.mergeVerticesThreshold   選択頂点をしきい値で結合
+# ---- ツール (モード切替) ----
+##tool.vertexMove               頂点移動ツール
+##tool.objectMove               オブジェクト姿勢ツール
+##tool.sculpt                   スカルプトツール
+##tool.advancedSelect           詳細選択ツール
+##tool.rotate                   回転ツール
+##tool.scale                    拡大縮小ツール
+##tool.deleteFace               面削除モード
+# ---- 一時サブツール ----
+##subtool.boxSelect             矩形選択 (一時)
+##subtool.lassoSelect           投げ縄選択 (一時)
+##subtool.delete                選択削除 (即時実行)
+# ---- パネル ----
+##panel.meshList                オブジェクトリストを開く
+# ---- 図形生成 (パネルを開くだけ。生成はしない) ----
+##shape.cube                    基本図形: Cube
+##shape.sphere                  基本図形: Sphere
+##shape.cylinder                基本図形: Cylinder
+##shape.capsule                 基本図形: Capsule
+##shape.plane                   基本図形: Plane
+##shape.pyramid                 基本図形: Pyramid
+##shape.revolution              高度な図形: Revolution 回転体
+##shape.profile2d               高度な図形: Profile2D 断面
+##shape.nohmask                 高度な図形: NohMask 能面
+##shape.frill                   高度な図形: Frill フリル
+##shape.pipe                    高度な図形: Pipe パイプ
+##shape.placeObject             高度な図形: PlaceObject 接地
+##shape.objectArray             高度な図形: ObjectArray 歪み複製

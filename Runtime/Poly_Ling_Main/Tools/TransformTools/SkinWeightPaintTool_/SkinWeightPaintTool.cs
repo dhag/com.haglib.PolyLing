@@ -53,7 +53,12 @@ namespace Poly_Ling.Tools
         /// パネルで選択中のメッシュコンテキストを返す。
         /// CurrentTargetMesh が有効なら GetMeshContext、そうでなければ FirstDrawableMeshContext。
         /// </summary>
-        private static MeshContext GetTargetMeshContext(ModelContext model)
+        /// <summary>
+        /// ペイント対象メッシュを解決する。パネルの対象メッシュを優先し、未指定なら ActiveMeshContext。
+        /// GPU バッファの部分更新側（SkinWeightPaintToolHandler の SyncMesh）が
+        /// 同じメッシュを指せるように公開する。
+        /// </summary>
+        public static MeshContext GetTargetMeshContext(ModelContext model)
         {
             if (model == null) return null;
             int masterIdx = ActivePanel?.CurrentTargetMesh ?? -1;

@@ -53,6 +53,7 @@ namespace Poly_Ling.MQO
             ["Normals"]         = new() { ["en"] = "Normals",               ["ja"] = "法線" },
             ["NormalMode"]      = new() { ["en"] = "Normal Mode",           ["ja"] = "法線モード" },
             ["SmoothingAngle"]  = new() { ["en"] = "Smoothing Angle",       ["ja"] = "スムージング角度" },
+            ["UseMqoFacet"]     = new() { ["en"] = "Use MQO facet/shading", ["ja"] = "MQOのfacet/shadingを使う" },
 
             // インポートモード
             ["ImportMode"]      = new() { ["en"] = "Import Mode",           ["ja"] = "インポートモード" },

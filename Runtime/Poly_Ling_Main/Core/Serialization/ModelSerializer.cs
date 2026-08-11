@@ -498,6 +498,8 @@ namespace Poly_Ling.Serialization
                     MirrorMaterialOffset = meshContextData.mirrorMaterialOffset,
                     // ベイクミラー
                     BakedMirrorSourceIndex = meshContextData.bakedMirrorSourceIndex,
+                    MirrorGeometryDerived  = meshContextData.mirrorGeometryDerived,
+                    DetachedMirrorObjectId = meshContextData.detachedMirrorObjectId,
                     HasBakedMirrorChild = meshContextData.hasBakedMirrorChild
                 };
 
@@ -662,6 +664,8 @@ namespace Poly_Ling.Serialization
 
                 // ベイクミラー
                 contextData.bakedMirrorSourceIndex = meshContext.BakedMirrorSourceIndex;
+                contextData.mirrorGeometryDerived  = meshContext.MirrorGeometryDerived;
+                contextData.detachedMirrorObjectId = meshContext.DetachedMirrorObjectId;
                 contextData.hasBakedMirrorChild = meshContext.HasBakedMirrorChild;
 
                 // 選択セット
@@ -743,6 +747,8 @@ namespace Poly_Ling.Serialization
                 MirrorMaterialOffset = meshDTO.mirrorMaterialOffset,
                 // ベイクミラー
                 BakedMirrorSourceIndex = meshDTO.bakedMirrorSourceIndex,
+                MirrorGeometryDerived  = meshDTO.mirrorGeometryDerived,
+                DetachedMirrorObjectId = meshDTO.detachedMirrorObjectId,
                 HasBakedMirrorChild = meshDTO.hasBakedMirrorChild
             };
 
@@ -964,6 +970,21 @@ namespace Poly_Ling.Serialization
                     }
                 }
             }
+
+            // 法線再計算 除外セット
+            meshDTO.normalExcludeSets = new List<SelectionSetDTO>();
+
+            if (meshContext.NormalRecalcExcludeList != null)
+            {
+                foreach (var set in meshContext.NormalRecalcExcludeList)
+                {
+                    var dto = SelectionSetDTO.FromSelectionSet(set);
+                    if (dto != null)
+                    {
+                        meshDTO.normalExcludeSets.Add(dto);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -983,6 +1004,24 @@ namespace Poly_Ling.Serialization
                     if (set != null)
                     {
                         meshContext.PartsSelectionSetList.Add(set);
+                    }
+                }
+            }
+
+            // 法線再計算 除外セット（実体は MeshObject 側）
+            if (meshContext.MeshObject != null)
+            {
+                meshContext.MeshObject.NormalRecalcExcludeList = new List<Selection.PartsSelectionSet>();
+
+                if (meshDTO.normalExcludeSets != null)
+                {
+                    foreach (var dto in meshDTO.normalExcludeSets)
+                    {
+                        var set = dto?.ToSelectionSet();
+                        if (set != null)
+                        {
+                            meshContext.MeshObject.NormalRecalcExcludeList.Add(set);
+                        }
                     }
                 }
             }
@@ -1076,6 +1115,7 @@ namespace Poly_Ling.Serialization
             meshDTO.excludeFromExport = meshContext.ExcludeFromExport;
             meshDTO.ignorePoseInArmature = meshContext.IgnorePoseInArmature;
             meshDTO.isMirrorBranchRoot   = meshContext.IsMirrorBranchRoot;
+            meshDTO.preserveNormals      = meshContext.PreserveNormals;
         }
 
         /// <summary>
@@ -1102,6 +1142,7 @@ namespace Poly_Ling.Serialization
             meshContext.ExcludeFromExport = meshDTO.excludeFromExport;
             meshContext.IgnorePoseInArmature = meshDTO.ignorePoseInArmature;
             meshContext.IsMirrorBranchRoot   = meshDTO.isMirrorBranchRoot;
+            meshContext.PreserveNormals      = meshDTO.preserveNormals;
         }
 
         // ================================================================
@@ -1780,11 +1821,14 @@ namespace Poly_Ling.Serialization
                 mirrorDistance          = mc.MirrorDistance,
                 mirrorMaterialOffset    = mc.MirrorMaterialOffset,
                 bakedMirrorSourceIndex  = mc.BakedMirrorSourceIndex,
+                mirrorGeometryDerived   = mc.MirrorGeometryDerived,
+                detachedMirrorObjectId  = mc.DetachedMirrorObjectId,
                 hasBakedMirrorChild     = mc.HasBakedMirrorChild,
                 morphParentIndex        = mc.MorphParentIndex,
                 excludeFromExport       = mc.ExcludeFromExport,
                 ignorePoseInArmature    = mc.IgnorePoseInArmature,
                 isMirrorBranchRoot      = mc.IsMirrorBranchRoot,
+                preserveNormals         = mc.PreserveNormals,
                 exportSettingsDTO       = ToBoneTransformDTO(mc.BoneTransform),
             };
 
@@ -1836,11 +1880,14 @@ namespace Poly_Ling.Serialization
                 MirrorDistance         = meta.mirrorDistance,
                 MirrorMaterialOffset   = meta.mirrorMaterialOffset,
                 BakedMirrorSourceIndex = meta.bakedMirrorSourceIndex,
+                MirrorGeometryDerived  = meta.mirrorGeometryDerived,
+                DetachedMirrorObjectId = meta.detachedMirrorObjectId,
                 HasBakedMirrorChild    = meta.hasBakedMirrorChild,
                 MorphParentIndex       = meta.morphParentIndex,
                 ExcludeFromExport      = meta.excludeFromExport,
                 IgnorePoseInArmature   = meta.ignorePoseInArmature,
                 IsMirrorBranchRoot     = meta.isMirrorBranchRoot,
+                PreserveNormals        = meta.preserveNormals,
                 BoneTransform          = meta.exportSettingsDTO != null
                                          ? ToBoneTransform(meta.exportSettingsDTO)
                                          : null,

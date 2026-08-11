@@ -35,6 +35,12 @@ namespace Poly_Ling.MQO
         Smooth,
         /// <summary>Unity標準のRecalculateNormalsを使用</summary>
         Unity,
+        /// <summary>
+        /// スムージング角で法線を分割（辺を共有する隣接面のみを連結）。
+        /// ハードエッジを表現できるが、その分だけUV/法線スロットが増える。
+        /// 従来と同じ結果が必要な場合は Smooth を選ぶこと。
+        /// </summary>
+        SmoothFacet,
     }
 
     /// <summary>
@@ -102,6 +108,16 @@ namespace Poly_Ling.MQO
         [Tooltip("MQOのオブジェクト階層を、Transform の親子（HierarchyParentIndex）としても設定する")]
         public bool SetMeshHierarchyParent = true;
 
+        /// <summary>
+        /// MQO の頂点を絶対座標として読み込む。
+        /// メタセコイアはローカル座標（translation/rotation/scale）をピボットとして扱い、
+        /// 形状は動かさない。PolyLing は world = 親のworld × ローカル で頂点を動かすため、
+        /// 読み込んだ頂点をワールド行列で割り戻してローカル化する必要がある。
+        /// ローカル変換が単位のオブジェクトでは何も変わらない。
+        /// </summary>
+        [Tooltip("MQOの頂点を絶対座標として読み込む（メタセコイアのローカル座標はピボット扱いのため）")]
+        public bool ImportVerticesAsWorldSpace = true;
+
         /// <summary>名前からミラー分岐ルートを自動設定</summary>
         [Tooltip("接頭句「@@」かつ接尾句「ミラー分岐ルート」を持つオブジェクトに、ミラー分岐ルートフラグを付ける")]
         public bool AutoDetectMirrorBranchRoot = true;
@@ -139,6 +155,10 @@ namespace Poly_Ling.MQO
         [Tooltip("法線スムージングの閾値角度（NormalMode=Smoothの時のみ有効）")]
         [Range(0f, 180f)]
         public float SmoothingAngle = 60f;
+
+        /// <summary>MQOオブジェクトの facet / shading 属性を使うか（NormalMode=SmoothFacetの時のみ有効）</summary>
+        [Tooltip("ON: オブジェクト毎の facet 角と shading を使う / OFF: SmoothingAngle を全オブジェクトに適用")]
+        public bool UseMqoFacet = true;
 
         // ================================================================
         // ボーンウェイト設定（オプション）
@@ -269,6 +289,7 @@ namespace Poly_Ling.MQO
                 SkipEmptyObjects = this.SkipEmptyObjects,
                 MergeObjects = this.MergeObjects,
                 SetMeshHierarchyParent = this.SetMeshHierarchyParent,
+                ImportVerticesAsWorldSpace = this.ImportVerticesAsWorldSpace,
                 AutoDetectMirrorBranchRoot = this.AutoDetectMirrorBranchRoot,
                 SkipMqoBoneIndices = this.SkipMqoBoneIndices,
                 SkipMqoBoneWeights = this.SkipMqoBoneWeights,
@@ -276,6 +297,7 @@ namespace Poly_Ling.MQO
                 AlphaConflict = this.AlphaConflict,
                 NormalMode = this.NormalMode,
                 SmoothingAngle = this.SmoothingAngle,
+                UseMqoFacet = this.UseMqoFacet,
                 BoneWeightCSVPath = this.BoneWeightCSVPath,
                 BakeMirror = this.BakeMirror,
                 ImportBonesFromArmature = this.ImportBonesFromArmature,
@@ -300,6 +322,7 @@ namespace Poly_Ling.MQO
                    SkipEmptyObjects != o.SkipEmptyObjects ||
                    MergeObjects != o.MergeObjects ||
                    SetMeshHierarchyParent != o.SetMeshHierarchyParent ||
+                   ImportVerticesAsWorldSpace != o.ImportVerticesAsWorldSpace ||
                    AutoDetectMirrorBranchRoot != o.AutoDetectMirrorBranchRoot ||
                    SkipMqoBoneIndices != o.SkipMqoBoneIndices ||
                    SkipMqoBoneWeights != o.SkipMqoBoneWeights ||
@@ -307,6 +330,7 @@ namespace Poly_Ling.MQO
                    AlphaConflict != o.AlphaConflict ||
                    NormalMode != o.NormalMode ||
                    !Mathf.Approximately(SmoothingAngle, o.SmoothingAngle) ||
+                   UseMqoFacet != o.UseMqoFacet ||
                    BoneWeightCSVPath != o.BoneWeightCSVPath ||
                    BakeMirror != o.BakeMirror ||
                    ImportBonesFromArmature != o.ImportBonesFromArmature ||
@@ -330,6 +354,7 @@ namespace Poly_Ling.MQO
             SkipEmptyObjects = o.SkipEmptyObjects;
             MergeObjects = o.MergeObjects;
             SetMeshHierarchyParent = o.SetMeshHierarchyParent;
+            ImportVerticesAsWorldSpace = o.ImportVerticesAsWorldSpace;
             AutoDetectMirrorBranchRoot = o.AutoDetectMirrorBranchRoot;
             SkipMqoBoneIndices = o.SkipMqoBoneIndices;
             SkipMqoBoneWeights = o.SkipMqoBoneWeights;
@@ -337,6 +362,7 @@ namespace Poly_Ling.MQO
             AlphaConflict = o.AlphaConflict;
             NormalMode = o.NormalMode;
             SmoothingAngle = o.SmoothingAngle;
+            UseMqoFacet = o.UseMqoFacet;
             BoneWeightCSVPath = o.BoneWeightCSVPath;
             BakeMirror = o.BakeMirror;
             ImportBonesFromArmature = o.ImportBonesFromArmature;

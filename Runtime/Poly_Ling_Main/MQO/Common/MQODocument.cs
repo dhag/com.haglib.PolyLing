@@ -263,6 +263,35 @@ namespace Poly_Ling.MQO
                 return attr.GetVector3();
             }
         }
+
+        /// <summary>
+        /// シェーディング指定（0=フラット, 1=スムーズ）。
+        /// 属性が無い場合は 1（スムーズ）を返す。
+        /// PolyLing のエクスポータも shading 1 を書き出す（MQOExporter）。
+        /// </summary>
+        public int Shading
+        {
+            get
+            {
+                var attr = Attributes.Find(a => a.Name == "shading");
+                if (attr == null) return 1;
+                return attr.GetInt();
+            }
+        }
+
+        /// <summary>
+        /// スムージング角（度）。属性が無い場合は 59.5 を返す。
+        /// PolyLing のエクスポータも facet 59.5 を書き出す（MQOExporter）。
+        /// </summary>
+        public float Facet
+        {
+            get
+            {
+                var attr = Attributes.Find(a => a.Name == "facet");
+                if (attr == null) return 59.5f;
+                return attr.GetFloat();
+            }
+        }
     }
 
     /// <summary>

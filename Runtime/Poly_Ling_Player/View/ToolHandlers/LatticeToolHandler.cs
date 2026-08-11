@@ -3,11 +3,14 @@
 // IPlayerToolHandler 実装。
 //
 // 【状態機】
-//   Idle ──「格子変形開始」──▶ Placement ──「変形開始」──▶ Deform
+//   Idle ──「格子の姿勢設定」──▶ Placement ──「変形開始」──▶ Deform
 //     ▲                            │                        │
 //     └────── 取消 / 適用 ──────────┴────────────────────────┘
 //
 //   Placement では格子の位置・大きさ・分割数だけを決める。メッシュは変形しない。
+//   Placement 中はビューポートの入力が MoveToolHandler(SelectOnly) へ回るため、
+//   メッシュ頂点を選び直せる。選び直したら FitToSelection で格子を合わせ直す。
+//   合わせ直さずに BeginDeform しても、対象頂点はそのとき選択されているものになる。
 //   Deform では格子制御点を選択し、移動 / 拡大縮小 / 回転してメッシュを再計算する。
 //
 // 【Deform 中のギズモはサブモードで切り替える】
@@ -220,7 +223,9 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 選択フィット。対象頂点を取り直し、その AABB へ格子を合わせ直す。
-        /// 作業軸を動かした後はこれを押して合わせ直す。
+        /// 作業軸を動かした後や、配置中に頂点を選び直した後はこれを押して合わせ直す。
+        /// 選択が空のときは配置中のまま何も変えない（頂点はまだ触っていないため、
+        /// 選び直しの途中でセッションを畳まない）。
         /// </summary>
         public bool FitToSelection()
         {
@@ -233,8 +238,7 @@ namespace Poly_Ling.Player
             _applier.Reset();
             if (!_applier.Begin(model, axis))
             {
-                // 選択が無くなった。配置を続けられないので Idle へ戻す。
-                EndSession();
+                NotifyChanged();
                 return false;
             }
 
@@ -280,10 +284,24 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 格子変形へ移る。この瞬間の格子が基準格子になる。
+        /// 配置中に頂点を選び直せるため、対象頂点はここで取り直す。
+        /// 格子の範囲と分割数は触らない（合わせ直しは FitToSelection の役目）。
+        /// 選択が空になっていたら移らずに false を返す。
         /// </summary>
         public bool BeginDeform()
         {
             if (State != LatticeState.Placement || !Grid.IsBuilt) return false;
+
+            var model = GetModel?.Invoke();
+            var axis  = GetWorkAxis?.Invoke();
+            if (model == null || axis == null) return false;
+
+            _applier.Reset();
+            if (!_applier.Begin(model, axis))
+            {
+                NotifyChanged();
+                return false;
+            }
 
             State = LatticeState.Deform;
             GetToolContext?.Invoke()?.EnterTransformDragging?.Invoke();

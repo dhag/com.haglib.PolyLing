@@ -664,6 +664,31 @@ namespace Poly_Ling.Context
             return name;
         }
 
+        /// <summary>名前で描画オブジェクト(MeshContext)を検索。見つからなければ null。</summary>
+        public MeshContext FindMeshContextByName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            return MeshContextList.Find(mc => mc != null && mc.Name == name);
+        }
+
+        /// <summary>
+        /// 一意な描画オブジェクト名を生成する。
+        /// 既存名と衝突する場合のみ _1, _2 ... を付ける（規則は選択セット名と同じ）。
+        /// </summary>
+        public string GenerateUniqueMeshName(string baseName = "Mesh")
+        {
+            if (string.IsNullOrEmpty(baseName)) baseName = "Mesh";
+
+            string name = baseName;
+            int counter = 1;
+            while (FindMeshContextByName(name) != null)
+            {
+                name = $"{baseName}_{counter}";
+                counter++;
+            }
+            return name;
+        }
+
         // ================================================================
         // Materials（モデル単位で実データを保持）
         // MaterialReference によるパラメータ＋キャッシュ管理
@@ -1146,6 +1171,11 @@ namespace Poly_Ling.Context
             if (meshContext == null)
                 throw new ArgumentNullException(nameof(meshContext));
 
+            // 協働編集用の安定ID。未割当(0)のときだけ発行する。
+            // Undo/Redo の復元は既にIDを持った実体を挿し戻すので、ここでは変化しない。
+            if (meshContext.ObjectId == Poly_Ling.Data.ObjectIdAllocator.Unassigned)
+                meshContext.ObjectId = Poly_Ling.Data.ObjectIdAllocator.Next();
+
             meshContext.ParentModelContext = this;
             MeshContextList.Add(meshContext);
             InvalidateTypedIndices();
@@ -1161,6 +1191,11 @@ namespace Poly_Ling.Context
                 throw new ArgumentNullException(nameof(meshContext));
             if (index < 0 || index > MeshContextList.Count)
                 throw new ArgumentOutOfRangeException(nameof(index));
+
+            // 複製で作られた新規 MeshContext は ObjectId==0 なのでここで新IDを得る。
+            // Undo/Redo の挿し戻しは既存IDを保つ（＝担当や参照が維持される）。
+            if (meshContext.ObjectId == Poly_Ling.Data.ObjectIdAllocator.Unassigned)
+                meshContext.ObjectId = Poly_Ling.Data.ObjectIdAllocator.Next();
 
             meshContext.ParentModelContext = this;
             MeshContextList.Insert(index, meshContext);
@@ -1419,6 +1454,17 @@ namespace Poly_Ling.Context
             if (MeshContextList == null || MeshContextList.Count == 0)
                 return;
 
+            // 生成ミラーは自前の姿勢を持たない。実体側から必ず引き写しておく。
+            // 値コピーなので、実体側だけを動かす操作（原点CSV読込・姿勢くさび取込・
+            // オブジェクト姿勢ツール等）のあとは放っておくとずれる。
+            // ワールド行列を組む直前にここで一括同期しておけば、どの経路から
+            // 変更されても H_M = H_R が保たれる。
+            SyncDerivedMirrorTransforms(MeshContextList);
+
+            // 階層ワールド（鏡像を掛ける前）。子はこちらを親として積む。
+            var hierarchyWorld = new Matrix4x4[MeshContextList.Count];
+            for (int i = 0; i < hierarchyWorld.Length; i++) hierarchyWorld[i] = Matrix4x4.identity;
+
             // トポロジカルソートして親から順に処理
             var sortedIndices = TopologicalSortByHierarchy();
 
@@ -1430,21 +1476,84 @@ namespace Poly_Ling.Context
                 Matrix4x4 localMatrix = ctx.LocalMatrix;
                 int parentIndex = ctx.HierarchyParentIndex;
 
-                if (parentIndex >= 0 && parentIndex < MeshContextList.Count)
-                {
-                    // 親がある場合：親のワールド行列 × 自身のローカル行列
-                    var parent = MeshContextList[parentIndex];
-                    ctx.WorldMatrix = parent.WorldMatrix * localMatrix;
-                }
-                else
-                {
-                    // ルートの場合：ローカル行列 = ワールド行列
-                    ctx.WorldMatrix = localMatrix;
-                }
+                Matrix4x4 h = (parentIndex >= 0 && parentIndex < MeshContextList.Count)
+                    ? hierarchyWorld[parentIndex] * localMatrix   // 親のワールド × 自身のローカル
+                    : localMatrix;                                // ルート
+
+                hierarchyWorld[index] = h;
+
+                // ミラー側は実効ワールドを共役 S·H·S にする。
+                //
+                // ミラー側メッシュの頂点は実体側の素直な鏡像（v_M = S·v_R）として
+                // 焼き込まれており、姿勢は持たない（実体側と同じ階層ワールドを取る）。
+                // このとき
+                //   M_world = (S·H·S)·v_M = (S·H·S)·(S·v_R) = S·H·v_R = S·(R_world)
+                // となり、階層のどこを動かしても鏡像関係が保たれる。
+                // S の共役なのでミラー面が原点を通るかどうかに依存せず、
+                // det(S·H·S) = det(H) > 0 なので面の向きも変わらない。
+                //
+                // ここで WorldMatrix に入れておくことで、描画・エクスポート・
+                // ピッキング・各ツールが無改修で正しい行列を見る。
+                ctx.WorldMatrix = (ctx.MirrorGeometryDerived && MirrorBranchOps.IsMirrorSideContext(ctx))
+                    ? ApplyMirrorConjugate(h, ctx)
+                    : h;
 
                 // 逆行列をキャッシュ
                 ctx.WorldMatrixInverse = ctx.WorldMatrix.inverse;
             }
+        }
+
+        /// <summary>
+        /// 生成ミラー（MirrorGeometryDerived）の姿勢と親を、実体側から引き写す。
+        ///
+        /// ミラー側は姿勢を持たない設計（実効ワールドは S·H·S で解く）なので、
+        /// H_M = H_R でなければならない。BoneTransform は値コピーで作られており
+        /// 参照共有ではないため、実体側だけが変わるとずれる。
+        /// ワールド行列の算出前に毎回そろえる。
+        /// </summary>
+        public static void SyncDerivedMirrorTransforms(List<MeshContext> meshContexts)
+        {
+            if (meshContexts == null) return;
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var mc = meshContexts[i];
+                if (mc == null || !mc.MirrorGeometryDerived) continue;
+
+                int src = mc.BakedMirrorSourceIndex;
+                if (src < 0 || src >= meshContexts.Count) continue;
+
+                var real = meshContexts[src];
+                if (real?.BoneTransform == null || mc.BoneTransform == null) continue;
+
+                mc.BoneTransform.Position          = real.BoneTransform.Position;
+                mc.BoneTransform.Rotation          = real.BoneTransform.Rotation;
+                mc.BoneTransform.Scale             = real.BoneTransform.Scale;
+                mc.BoneTransform.UseLocalTransform = real.BoneTransform.UseLocalTransform;
+
+                // 親が違うと H そのものが変わる。実体側の兄弟であるべきなので合わせる。
+                mc.HierarchyParentIndex = real.HierarchyParentIndex;
+            }
+        }
+
+        /// <summary>
+        /// ミラー側の実効ワールド行列 S·H·S を返す。
+        /// ミラー軸は自身の設定、無ければ焼き込み元（BakedMirrorSourceIndex）の設定を使う。
+        /// </summary>
+        private Matrix4x4 ApplyMirrorConjugate(Matrix4x4 h, MeshContext ctx)
+        {
+            int   axis = ctx.MirrorAxis;
+            float dist = ctx.MirrorDistance;
+
+            int src = ctx.BakedMirrorSourceIndex;
+            if (src >= 0 && src < MeshContextList.Count && MeshContextList[src] != null)
+            {
+                axis = MeshContextList[src].MirrorAxis;
+                dist = MeshContextList[src].MirrorDistance;
+            }
+
+            Matrix4x4 s = MirrorBranchOps.MirrorMatrix(axis, dist);
+            return s * h * s;
         }
 
         /// <summary>
@@ -1513,7 +1622,11 @@ namespace Poly_Ling.Context
         /// </summary>
         public static Dictionary<int, Matrix4x4> CalculateWorldMatrices(List<MeshContext> meshContexts)
         {
-            var worldMatrices = new Dictionary<int, Matrix4x4>();
+            // ComputeWorldMatrices と同様、生成ミラーの姿勢を実体側からそろえる
+            SyncDerivedMirrorTransforms(meshContexts);
+
+            var worldMatrices  = new Dictionary<int, Matrix4x4>();
+            var hierarchyWorld = new Dictionary<int, Matrix4x4>();
 
             int maxIterations = meshContexts.Count;
             for (int iteration = 0; iteration < maxIterations; iteration++)
@@ -1536,9 +1649,9 @@ namespace Poly_Ling.Context
                     {
                         parentWorld = Matrix4x4.identity;
                     }
-                    else if (worldMatrices.TryGetValue(parentIndex, out parentWorld))
+                    else if (hierarchyWorld.TryGetValue(parentIndex, out parentWorld))
                     {
-                        // 親が計算済み
+                        // 親が計算済み（鏡像を掛ける前の階層ワールドを積む）
                     }
                     else
                     {
@@ -1551,7 +1664,14 @@ namespace Poly_Ling.Context
                         ctx.BoneTransform.Scale
                     );
 
-                    worldMatrices[i] = parentWorld * localMatrix;
+                    // ComputeWorldMatrices と同じ規則。階層ワールドは hierarchyWorld に、
+                    // ミラー側の実効ワールド S·H·S は戻り値に入れる。
+                    Matrix4x4 h = parentWorld * localMatrix;
+                    hierarchyWorld[i] = h;
+
+                    worldMatrices[i] = (ctx.MirrorGeometryDerived && MirrorBranchOps.IsMirrorSideContext(ctx))
+                        ? MirrorConjugate(h, ctx, meshContexts)
+                        : h;
                     anyAdded = true;
                 }
 
@@ -1560,6 +1680,24 @@ namespace Poly_Ling.Context
             }
 
             return worldMatrices;
+        }
+
+        /// <summary>静的版の S·H·S。ApplyMirrorConjugate と同じ規則。</summary>
+        private static Matrix4x4 MirrorConjugate(
+            Matrix4x4 h, MeshContext ctx, List<MeshContext> meshContexts)
+        {
+            int   axis = ctx.MirrorAxis;
+            float dist = ctx.MirrorDistance;
+
+            int src = ctx.BakedMirrorSourceIndex;
+            if (src >= 0 && src < meshContexts.Count && meshContexts[src] != null)
+            {
+                axis = meshContexts[src].MirrorAxis;
+                dist = meshContexts[src].MirrorDistance;
+            }
+
+            Matrix4x4 s = MirrorBranchOps.MirrorMatrix(axis, dist);
+            return s * h * s;
         }
 
         /// <summary>

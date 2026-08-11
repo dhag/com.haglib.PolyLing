@@ -138,7 +138,8 @@ namespace Poly_Ling.Symmetry
             if (expandedPositions.Length == _mirrorMesh.vertexCount)
             {
                 _mirrorMesh.vertices = expandedPositions;
-                _mirrorMesh.RecalculateNormals();
+                if (!meshObject.PreserveNormals)
+                    _mirrorMesh.RecalculateNormals();
                 _mirrorMesh.RecalculateBounds();
             }
             else
@@ -211,7 +212,8 @@ namespace Poly_Ling.Symmetry
             if (expandedPositions.Length == _mirrorMesh.vertexCount)
             {
                 _mirrorMesh.vertices = expandedPositions;
-                _mirrorMesh.RecalculateNormals();
+                if (!meshObject.PreserveNormals)
+                    _mirrorMesh.RecalculateNormals();
                 _mirrorMesh.RecalculateBounds();
 
                 // デバッグ：無条件出力

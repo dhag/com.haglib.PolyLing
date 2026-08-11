@@ -35,6 +35,16 @@ namespace Poly_Ling.View
         public int[] SelectedBoneIndices { get; }
         public int[] SelectedMorphIndices { get; }
 
+        // 選択辞書名（コンストラクタ引数を増やさずに済むよう set 可能にする）
+        private IReadOnlyList<string> _meshSelectionSetNames = _emptyNames;
+
+        /// <summary>選択辞書の名前一覧。未設定なら空配列。</summary>
+        public IReadOnlyList<string> MeshSelectionSetNames
+        {
+            get => _meshSelectionSetNames;
+            set => _meshSelectionSetNames = value ?? _emptyNames;
+        }
+
         // フルコンストラクタ
         public ModelSummary(
             string name, string filePath, bool isDirty,
@@ -71,5 +81,6 @@ namespace Poly_Ling.View
 
         private static readonly IMeshView[] _empty = new IMeshView[0];
         private static readonly int[] _emptyIndices = new int[0];
+        private static readonly string[] _emptyNames = new string[0];
     }
 }

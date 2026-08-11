@@ -89,6 +89,12 @@ namespace Poly_Ling.Remote
         /// <summary>バッチ送信用：テキスト応答直後に送るバイナリフレーム（1回使い切り）</summary>
         private List<byte[]> _pendingBinaryResponses;
 
+        /// <summary>
+        /// 応答送出の直後に selectionChanged を送り直す対象ユーザー（1回使い切り）。
+        /// project_header 等がホストの選択を含むため、本人の選択で上書きし直す。
+        /// </summary>
+        private string _pendingSelectionUser;
+
         // ================================================================
         // クライアントタイプ登録簿
         // register コマンド受信でチャネル→登録情報を追加し、切断で削除する。
@@ -105,6 +111,30 @@ namespace Poly_Ling.Remote
 
         private readonly Dictionary<IDuplexChannel, ClientRegistration> _clientRegistry
             = new Dictionary<IDuplexChannel, ClientRegistration>();
+
+        // ================================================================
+        // 協働編集: ユーザーごとの選択（案B）
+        // 選択は共有 ModelContext ではなくユーザー名ごとのスロットに持つ。
+        // コマンド実行の直前だけ SelectionScope で ModelContext へ流し込み、
+        // 実行後にホストの選択へ戻す。
+        // ================================================================
+
+        private readonly RemoteSelectionStore _selectionStore = new RemoteSelectionStore();
+
+        /// <summary>
+        /// ホスト（サーバ本体を操作している人）のユーザー名。
+        /// クライアントが同名で register するとホストと選択を共有してしまうため、
+        /// 運用上は重複しない名前にすること。
+        /// </summary>
+        public string HostUserName { get; set; } = "(host)";
+
+        /// <summary>
+        /// ホスト側パネルの再同期要求。
+        /// 選択スコープの差し替え中に実行されたコマンドが NotifyPanels を呼ぶと
+        /// ホストUIが一時的に他ユーザーの選択で描画されるため、復帰後にこれを呼ぶ。
+        /// 未設定なら OnRepaint にフォールバックする。
+        /// </summary>
+        public Action RequestPanelRefresh;
 
         // ================================================================
         // コンストラクタ
@@ -140,6 +170,9 @@ namespace Poly_Ling.Remote
                 };
                 _wsServer.OnReceived          += OnDuplexReceived;
                 _wsServer.OnClientConnected    += _ => RunOnMainThread(() => { Log("クライアント接続"); _lastSelSig = null; CheckSelectionChanged(); OnRepaint?.Invoke(); });
+                // 切断時、選択スロット(_selectionStore)は消さない。
+                // 再接続したときに作業対象が消えていると使い勝手が悪いため、
+                // ユーザー名をキーに保持し続ける（担当 EditorName と同じ扱い）。
                 _wsServer.OnClientDisconnected += ch => RunOnMainThread(() => { _clientRegistry.Remove(ch); Log("クライアント切断"); OnRepaint?.Invoke(); });
 
                 IsRunning = true;
@@ -330,7 +363,7 @@ namespace Poly_Ling.Remote
             Log("キャプチャリストクリア");
         }
 
-        private byte[] ProcessBinaryMessage(byte[] data)
+        private byte[] ProcessBinaryMessage(byte[] data, string requesterName = "")
         {
             UnityEngine.Debug.Log($"[EditSync] ProcessBinaryMessage enter data={data?.Length ?? 0}");
             Poly_Ling.Remote.BinaryHeader? header;
@@ -364,13 +397,35 @@ namespace Poly_Ling.Remote
                 }
                 case BinaryMessageType.PositionsOnly:
                 {
-                    if (Context?.FirstDrawableMeshObject != null)
+                    // v2 ヘッダの ObjectId で対象を確定する。
+                    // v1（ObjectId=0）は後方互換として先頭描画メッシュへ適用する。
+                    var targetCtx = ResolveBinaryTarget(h, out string resolveNote);
+                    if (targetCtx?.MeshObject == null)
                     {
-                        RemoteBinarySerializer.Deserialize(data, Context.FirstDrawableMeshObject);
-                        Context.SyncMesh?.Invoke();
-                        Context.Repaint?.Invoke();
-                        Log("位置更新適用");
+                        Log($"位置更新: 対象を解決できません（{resolveNote}）");
+                        return null;
                     }
+
+                    if (!targetCtx.IsEditableBy(requesterName))
+                    {
+                        Log($"位置更新を拒否: {targetCtx.Name} は {targetCtx.EditorName} が担当中"
+                            + $"（要求者=\"{requesterName}\"）");
+                        return null;
+                    }
+
+                    // 頂点数が食い違う場合は適用しない。
+                    // 他ユーザーがトポロジを変えた後の古い編集が届くと壊れるため。
+                    if (h.VertexCount != (uint)targetCtx.MeshObject.VertexCount)
+                    {
+                        Log($"位置更新を拒否: 頂点数不一致 {targetCtx.Name} "
+                            + $"受信={h.VertexCount} 現在={targetCtx.MeshObject.VertexCount}");
+                        return null;
+                    }
+
+                    RemoteBinarySerializer.Deserialize(data, targetCtx.MeshObject);
+                    Context.SyncMesh?.Invoke();
+                    Context.Repaint?.Invoke();
+                    Log($"位置更新適用: {targetCtx.Name} ({resolveNote})");
                     return null;
                 }
                 case BinaryMessageType.RawFile:
@@ -386,11 +441,62 @@ namespace Poly_Ling.Remote
             }
         }
 
+        /// <summary>
+        /// バイナリヘッダから適用対象の MeshContext を解決する。
+        ///
+        /// v2 かつ ObjectId!=0 → 安定IDで検索（ModelIndex を優先し、外れたら全モデル走査）。
+        /// それ以外              → 先頭描画メッシュ（v1 クライアント互換のフォールバック）。
+        ///
+        /// 全モデル走査まで行うのは、送信側と受信側で CurrentModelIndex がずれていても
+        /// オブジェクトさえ一致すれば正しく当てられるようにするため。
+        /// </summary>
+        private MeshContext ResolveBinaryTarget(BinaryHeader h, out string note)
+        {
+            if (!h.HasTarget)
+            {
+                note = h.Version >= 2 ? "対象未指定→先頭描画メッシュ" : "v1ヘッダ→先頭描画メッシュ";
+                return Context?.FirstDrawableMeshContext;
+            }
+
+            var proj = GetProjectContext();
+            if (proj == null) { note = "プロジェクトなし"; return null; }
+
+            // 指定モデルを先に見る
+            if (h.ModelIndex >= 0 && h.ModelIndex < proj.ModelCount)
+            {
+                var mc = FindByObjectId(proj.Models[h.ModelIndex], h.ObjectId);
+                if (mc != null) { note = $"id={h.ObjectId} model={h.ModelIndex}"; return mc; }
+            }
+
+            // 外れたら全モデルを走査
+            for (int mi = 0; mi < proj.ModelCount; mi++)
+            {
+                if (mi == h.ModelIndex) continue;
+                var mc = FindByObjectId(proj.Models[mi], h.ObjectId);
+                if (mc != null) { note = $"id={h.ObjectId} model={mi}(走査)"; return mc; }
+            }
+
+            note = $"id={h.ObjectId} 該当なし";
+            return null;
+        }
+
+        private static MeshContext FindByObjectId(ModelContext model, ulong objectId)
+        {
+            if (model == null || objectId == 0UL) return null;
+            int count = model.MeshContextCount;
+            for (int i = 0; i < count; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc != null && mc.ObjectId == objectId) return mc;
+            }
+            return null;
+        }
+
         // ================================================================
         // メッセージ処理（クエリ・コマンド）
         // ================================================================
 
-        private string ProcessMessage(string json)
+        private string ProcessMessage(string json, IDuplexChannel channel = null)
         {
             if (string.IsNullOrEmpty(json)) return null;
 
@@ -405,13 +511,36 @@ namespace Poly_Ling.Remote
             Log($"受信: type={msg.Type} target={msg.Target} action={msg.Action}");
             Debug.Log($"受信: type={msg.Type} target={msg.Target} action={msg.Action}");
 
-            if (msg.Type == "query")   return ProcessQuery(msg);
-            if (msg.Type == "command") return ProcessCommand(msg);
+            if (msg.Type == "query")   return ProcessQuery(msg, channel);
+            if (msg.Type == "command") return ProcessCommand(msg, channel);
             return BuildErrorResponse(msg.Id, $"Unknown type: {msg.Type}");
         }
 
-        private string ProcessQuery(RemoteMessage msg)
+        /// <summary>
+        /// チャネルに紐づく register 済みユーザー名を返す。未登録なら空文字。
+        /// 所有権判定（RemoteOwnership）の要求者名として使う。
+        /// </summary>
+        private string ResolveUserName(IDuplexChannel channel)
         {
+            if (channel == null) return "";
+            return _clientRegistry.TryGetValue(channel, out var reg) ? (reg.UserName ?? "") : "";
+        }
+
+        private string ProcessQuery(RemoteMessage msg, IDuplexChannel channel = null)
+        {
+            // project_header / model_meta は ModelMeta にホストの選択を載せてしまう。
+            // そのままだとクライアントの選択がホストのもので上書きされるため、
+            // 応答送出の「後」に本人の選択を送り直す予約を立てる。
+            // （先に送ると応答が後着して上書きされる。FIFO なので順序が重要。）
+            switch (msg.Target)
+            {
+                case "project_header":
+                case "model_meta":
+                case "mesh_data_batch":
+                    _pendingSelectionUser = ResolveUserName(channel);
+                    break;
+            }
+
             switch (msg.Target)
             {
                 case "meshList":
@@ -437,6 +566,16 @@ namespace Poly_Ling.Remote
 
                 // probe クライアント用（リスト系とは別データ・テキスト応答）。
                 case "server_info":       return BuildSuccessResponse(msg.Id, BuildServerInfoData());
+
+                // 協働編集: 現在の担当状況（接続直後の初期同期用）
+                case "ownership":
+                {
+                    var proj = GetProjectContext();
+                    int mi   = GetParamInt(msg, "modelIndex", proj?.CurrentModelIndex ?? 0);
+                    var model = (proj != null && mi >= 0 && mi < proj.ModelCount) ? proj.Models[mi] : null;
+                    return BuildSuccessResponse(msg.Id,
+                        RemoteOwnership.BuildOwnershipJson(model, mi));
+                }
 
                 default:
                     return BuildErrorResponse(msg.Id, $"Unknown target: {msg.Target}");
@@ -612,13 +751,13 @@ namespace Poly_Ling.Remote
             return BuildSuccessResponse(msg.Id, jb.ToString());
         }
 
-        private string ProcessCommand(RemoteMessage msg)
+        private string ProcessCommand(RemoteMessage msg, IDuplexChannel channel = null)
         {
             try
             {
                 // DispatchCommandが設定されている場合はPanelCommand経由で全処理
                 if (DispatchCommand != null)
-                    return ProcessCommandViaPanelCommand(msg);
+                    return ProcessCommandViaPanelCommand(msg, channel);
 
                 // フォールバック: ToolContext直接操作（後方互換）
                 if (Context == null) return BuildErrorResponse(msg.Id, "No ToolContext");
@@ -633,19 +772,154 @@ namespace Poly_Ling.Remote
 
         /// <summary>
         /// PanelCommand経由のコマンド処理。
-        /// JSON → PanelCommand に変換してDispatchCommandに流す。
+        /// JSON → PanelCommand に変換し、所有権判定を通してから DispatchCommand に流す。
         /// DispatchPanelCommand（SummaryNotify）が実処理を担う。
+        ///
+        /// ここが唯一の書き込み入口なので、協働編集の認可ゲートもここ1箇所に置く。
         /// </summary>
-        private string ProcessCommandViaPanelCommand(RemoteMessage msg)
+        private string ProcessCommandViaPanelCommand(RemoteMessage msg, IDuplexChannel channel)
         {
             int modelIndex = GetParamInt(msg, "modelIndex", 0);
             PanelCommand cmd = BuildPanelCommand(msg, modelIndex);
             if (cmd == null)
                 return BuildErrorResponse(msg.Id, $"Unknown action: {msg.Action}");
 
-            DispatchCommand(cmd);
-            Log($"cmd: {msg.Action} model={modelIndex}");
+            string requester = ResolveUserName(channel);
+
+            // ── 選択はユーザーごとに持つ（共有 ModelContext を書き換えない） ──
+            // selectMesh をここで横取りし、本体へは流さない。
+            // これをやらないと A の選択が B の画面まで飛び、担当を分けても
+            // 同時作業ができなくなる。
+            if (cmd is SelectMeshCommand sel)
+                return HandleRemoteSelect(msg, channel, requester, sel);
+
+            // ── 所有権ゲート ────────────────────────────────────────
+            ulong[] objectIds = RemoteOwnership.ParseIdCsv(GetParamString(msg, "objectIds", null));
+
+            var verdict = RemoteOwnership.TryAuthorize(GetProjectContext(), cmd, requester, objectIds);
+            if (!verdict.Allowed)
+            {
+                Log($"拒否: {msg.Action} user=\"{requester}\" → {verdict.Reason}");
+
+                // 構造ズレの場合は当該クライアントへ再取得を促す
+                if (verdict.StaleView)
+                    SendToChannel(channel,
+                        TypedPayload.FromJson(BuildPushMessage("refreshRequired", "{}")),
+                        WebSocketFrameKind.Text);
+
+                return BuildErrorResponse(msg.Id, verdict.Reason);
+            }
+
+            // ── 選択スコープを差し替えてから実行 ────────────────────
+            // MasterIndex を持たないコマンド（PartsSet系・SkinWeight系など）は
+            // 「今の選択」を見て動くため、要求者の選択を一時的に流し込む。
+            DispatchWithSelectionOf(requester, cmd);
+
+            Log($"cmd: {msg.Action} model={modelIndex} user=\"{requester}\"");
+
+            // 担当が動いた可能性があるので差分があれば全体へ通知
+            CheckOwnershipChanged();
+
             return BuildSuccessResponse(msg.Id, "true");
+        }
+
+        /// <summary>
+        /// 要求者の選択を ModelContext へ一時適用してコマンドを実行し、
+        /// 実行後にホストの選択へ戻す。
+        /// 差し替えが起きた場合はホストUIが他ユーザーの選択で描画されているため、
+        /// 復帰後に再同期を要求する。
+        /// </summary>
+        private void DispatchWithSelectionOf(string userName, PanelCommand cmd)
+        {
+            var model = Context?.Model;
+            var slot  = _selectionStore.Find(userName);
+
+            if (model == null || slot == null)
+            {
+                DispatchCommand(cmd);
+                return;
+            }
+
+            var proj = Context?.Project;
+            int mi = proj?.CurrentModelIndex ?? 0;
+
+            bool swapped;
+            using (var scope = SelectionScope.Apply(model, mi, slot))
+            {
+                swapped = scope.Swapped;
+                DispatchCommand(cmd);
+            }
+
+            if (swapped)
+                (RequestPanelRefresh ?? OnRepaint)?.Invoke();
+        }
+
+        /// <summary>
+        /// クライアントからの selectMesh を、そのユーザーのスロットへ記録する。
+        /// 本体（共有 ModelContext）は書き換えず、全体 push も行わない。
+        /// 応答は本人のチャネルにのみ返す（同名で複数パネルを開いていれば全部に届く）。
+        /// </summary>
+        private string HandleRemoteSelect(
+            RemoteMessage msg, IDuplexChannel channel, string requester, SelectMeshCommand sel)
+        {
+            if (string.IsNullOrEmpty(requester))
+                return BuildErrorResponse(msg.Id,
+                    "ユーザー名が未登録のため選択を保持できません。名前を設定して接続し直してください。");
+
+            var model = Context?.Model;
+            int mi    = Context?.Project?.CurrentModelIndex ?? 0;
+
+            var slot = _selectionStore.GetOrCreate(requester, UserSelection.Capture(model, mi));
+            slot.ModelIndex = sel.ModelIndex;
+
+            var indices = new List<int>(sel.Indices ?? Array.Empty<int>());
+            switch (sel.Category)
+            {
+                case MeshCategory.Bone:
+                    slot.Bone = indices;
+                    slot.Category = ModelContext.SelectionCategory.Bone;
+                    break;
+                case MeshCategory.Morph:
+                    slot.Morph = indices;
+                    slot.Category = ModelContext.SelectionCategory.Morph;
+                    break;
+                default:
+                    slot.Drawable = indices;
+                    slot.Category = ModelContext.SelectionCategory.Mesh;
+                    break;
+            }
+
+            SendSelectionToUser(requester, slot);
+            Log($"select: user=\"{requester}\" cat={sel.Category} n={indices.Count}");
+            return BuildSuccessResponse(msg.Id, "true");
+        }
+
+        /// <summary>予約されていた selectionChanged を送出する（無ければ何もしない）。</summary>
+        private void FlushPendingSelection(string userName)
+        {
+            if (string.IsNullOrEmpty(userName)) return;
+            var slot = _selectionStore.Find(userName);
+            if (slot != null) SendSelectionToUser(userName, slot);
+        }
+
+        /// <summary>指定ユーザーの全チャネルへ selectionChanged を送る。</summary>
+        private void SendSelectionToUser(string userName, UserSelection sel)
+        {
+            if (_clientRegistry.Count == 0 || sel == null) return;
+
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("modelIndex", sel.ModelIndex);
+            jb.KeyValue("category",   (int)sel.Category);
+            jb.KeyValue("drawable",   UserSelection.Csv(sel.Drawable));
+            jb.KeyValue("bone",       UserSelection.Csv(sel.Bone));
+            jb.KeyValue("morph",      UserSelection.Csv(sel.Morph));
+            jb.EndObject();
+
+            string json = BuildPushMessage("selectionChanged", jb.ToString());
+            foreach (var kv in _clientRegistry)
+                if (kv.Value.UserName == userName)
+                    SendToChannel(kv.Key, TypedPayload.FromJson(json), WebSocketFrameKind.Text);
         }
 
         /// <summary>
@@ -664,6 +938,15 @@ namespace Poly_Ling.Remote
                 for (int i = 0; i < parts.Length; i++)
                     int.TryParse(parts[i].Trim(), out result[i]);
                 return result;
+            }
+
+            // string[]パラメータ取得ヘルパー。カンマ区切りで、名前自体がカンマ・
+            // 引用符・改行を含む場合は二重引用符で包まれている（PanelCommandRouter.EscName）。
+            string[] GetNames(string key)
+            {
+                if (msg.Params == null || !msg.Params.TryGetValue(key, out var s) || string.IsNullOrEmpty(s))
+                    return System.Array.Empty<string>();
+                return SplitQuotedCsv(s);
             }
 
             switch (msg.Action)
@@ -696,6 +979,36 @@ namespace Poly_Ling.Remote
                     return new ToggleLockCommand(
                         modelIndex, GetParamInt(msg, "masterIndex", 0));
 
+                case "setBatchLock":
+                    return new SetBatchLockCommand(
+                        modelIndex,
+                        GetIndices("masterIndices"),
+                        GetParamString(msg, "locked", "true") == "true");
+
+                case "setMirrorEnabled":
+                    return new SetMirrorEnabledCommand(
+                        modelIndex,
+                        GetIndices("masterIndices"),
+                        GetParamString(msg, "enabled", "true") == "true");
+
+                case "setBatchMirrorType":
+                    return new SetBatchMirrorTypeCommand(
+                        modelIndex,
+                        GetIndices("masterIndices"),
+                        GetParamInt(msg, "mirrorType", 0));
+
+                // ── 編集者（担当）の取得・解放 ────────────────────────
+                // editorName が空文字なら解放。
+                // 「自分以外の名前を設定していないか」「他人の担当を奪っていないか」は
+                // RemoteOwnership.TryAuthorize が判定する。
+                case "setObjectEditor":
+                    return new SetObjectEditorCommand(
+                        modelIndex,
+                        GetIndices("masterIndices"),
+                        GetParamString(msg, "editorName", ""),
+                        RemoteOwnership.ParseIdCsv(GetParamString(msg, "objectIds", null)),
+                        force: false);
+
                 case "cycleMirrorType":
                     return new CycleMirrorTypeCommand(
                         modelIndex, GetParamInt(msg, "masterIndex", 0));
@@ -705,6 +1018,20 @@ namespace Poly_Ling.Remote
                         modelIndex,
                         GetParamInt(msg, "masterIndex", 0),
                         GetParamString(msg, "name", ""));
+
+                // 名称一括変更。名前の重複回避は PlayerCommandDispatcher 側で行う。
+                case "renameMeshes":
+                    return new RenameMeshesCommand(
+                        modelIndex,
+                        GetIndices("masterIndices"),
+                        GetNames("names"));
+
+                // ── 選択辞書 ──────────────────────────────────────────
+                case "applySelectionDictionary":
+                    return new ApplySelectionDictionaryCommand(
+                        modelIndex,
+                        GetParamInt(msg, "setIndex", -1),
+                        GetParamString(msg, "addToExisting", "false") == "true");
 
                 // ── リスト操作 ────────────────────────────────────────
                 case "addMesh":
@@ -747,6 +1074,43 @@ namespace Poly_Ling.Remote
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// 二重引用符に対応したカンマ区切り分割。
+        /// エスケープ規則は MeshSelSetCsvHelper / PanelCommandRouter.EscName と同一。
+        /// </summary>
+        private static string[] SplitQuotedCsv(string line)
+        {
+            var result = new List<string>();
+            int i = 0;
+            while (i < line.Length)
+            {
+                if (line[i] == '"')
+                {
+                    i++;
+                    var sb = new System.Text.StringBuilder();
+                    while (i < line.Length)
+                    {
+                        if (line[i] == '"')
+                        {
+                            if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i += 2; }
+                            else { i++; break; }
+                        }
+                        else { sb.Append(line[i]); i++; }
+                    }
+                    result.Add(sb.ToString());
+                    if (i < line.Length && line[i] == ',') i++;
+                }
+                else
+                {
+                    int start = i;
+                    while (i < line.Length && line[i] != ',') i++;
+                    result.Add(line.Substring(start, i - start));
+                    if (i < line.Length) i++;
+                }
+            }
+            return result.ToArray();
         }
 
         /// <summary>後方互換: ToolContext直接操作（DispatchCommandなし時）</summary>
@@ -838,11 +1202,42 @@ namespace Poly_Ling.Remote
             }
         }
 
+        // ================================================================
+        // 担当（編集者）変更 push
+        // 一覧の再フェッチを伴わない軽量通知。差分がある時だけ送出する。
+        // ================================================================
+
+        private string _lastOwnerSig;
+
+        /// <summary>ホスト側で担当を変更した際に呼ぶ公開トリガ。</summary>
+        public void NotifyOwnershipChanged() => CheckOwnershipChanged();
+
+        private void CheckOwnershipChanged()
+        {
+            if (_wsServer == null || ClientCount == 0) return;
+
+            var proj = Context?.Project;
+            if (proj == null) { _lastOwnerSig = null; return; }
+
+            int mi = proj.CurrentModelIndex;
+            var model = (mi >= 0 && mi < proj.ModelCount) ? proj.Models[mi] : null;
+
+            string sig = RemoteOwnership.BuildOwnershipSignature(model, mi);
+            if (sig == _lastOwnerSig) return;
+            _lastOwnerSig = sig;
+
+            BroadcastAsync(BuildPushMessage(
+                "ownershipChanged", RemoteOwnership.BuildOwnershipJson(model, mi)));
+        }
+
         private void OnModelListChanged()
         {
             string data     = RemoteDataProvider.QueryMeshList(Context, null);
             string pushJson = BuildPushMessage("meshListChanged", data);
             BroadcastAsync(pushJson);
+
+            // 削除・並べ替えで担当の並びも変わるため合わせて確認する
+            CheckOwnershipChanged();
 
             // probe タイプにのみ server_info 変化を通知（タイプ振り分けの実証）。
             // list 系はこの push を受け取らない。
@@ -872,14 +1267,15 @@ namespace Poly_Ling.Remote
 
         /// <summary>
         /// ホスト（本体）が選択変更を検知した際に呼ぶ公開トリガ。
-        /// エディタは Tick を回さないため、選択→パネル通知の経路からこれを呼んで配信する。
-        /// 実際の送出は差分（_lastSelSig）で抑止される。
+        ///
+        /// 【変更】以前は全クライアントへ配信していたが、選択をユーザーごとに持つ
+        /// 方式（案B）に変えたため、ここではホスト自身のスロットを更新するだけにする。
+        /// ホストの選択を他ユーザーへ押し付けない。
         /// </summary>
         public void NotifySelectionChanged() => CheckSelectionChanged();
 
         private void CheckSelectionChanged()
         {
-            if (_wsServer == null || ClientCount == 0) return;
             var proj  = Context?.Project;
             var model = Context?.Model;
             if (proj == null || model == null) { _lastSelSig = null; return; }
@@ -887,7 +1283,11 @@ namespace Poly_Ling.Remote
             string sig = BuildSelectionSignature(proj.CurrentModelIndex, model);
             if (sig == _lastSelSig) return;
             _lastSelSig = sig;
-            BroadcastSelection(proj.CurrentModelIndex, model);
+
+            // ホストの選択スロットを最新化する。
+            // 差し替えスコープの復帰値もここが基準になる。
+            _selectionStore.Set(HostUserName,
+                UserSelection.Capture(model, proj.CurrentModelIndex));
         }
 
         private static string CsvIndices(System.Collections.Generic.List<int> list)
@@ -908,6 +1308,21 @@ namespace Poly_Ling.Remote
                  + CsvIndices(model.SelectedDrawableMeshIndices) + "|"
                  + CsvIndices(model.SelectedBoneIndices) + "|"
                  + CsvIndices(model.SelectedMorphIndices);
+        }
+
+        /// <summary>
+        /// 【非推奨・単独利用時のみ】現在の選択を全クライアントへ一斉配信する。
+        ///
+        /// 協働編集では使わない。選択はユーザーごとのスロットで管理し、
+        /// SendSelectionToUser で本人にだけ返す（他人の画面を動かさないため）。
+        /// 1人で複数パネルを開くだけの旧来の使い方に戻したい場合のみ呼ぶこと。
+        /// </summary>
+        public void BroadcastSelectionToAll()
+        {
+            var proj  = Context?.Project;
+            var model = Context?.Model;
+            if (proj == null || model == null) return;
+            BroadcastSelection(proj.CurrentModelIndex, model);
         }
 
         private void BroadcastSelection(int modelIndex, ModelContext model)
@@ -941,12 +1356,30 @@ namespace Poly_Ling.Remote
             _ = server.BroadcastAsync(TypedPayload.FromBinary(data).ToMessage(), WebSocketFrameKind.Binary);
         }
 
-        /// <summary>選択メッシュの位置（PositionsOnly）を全クライアントへ配信する（サーバ→クライアント連動用）。</summary>
+        /// <summary>
+        /// 【非推奨】対象未指定で位置を配信する。受信側は先頭描画メッシュへ当ててしまう。
+        /// 協働編集では MeshContext を取る方のオーバーロードを使うこと。
+        /// </summary>
         public void BroadcastPositions(Poly_Ling.Data.MeshObject mesh)
         {
             if (mesh == null) return;
             var data = RemoteBinarySerializer.SerializePositionsOnly(mesh);
-            UnityEngine.Debug.Log($"[EditSync] BroadcastPositions V={mesh.VertexCount} bytes={data?.Length ?? 0} clients={ClientCount}");
+            UnityEngine.Debug.Log($"[EditSync] BroadcastPositions(対象未指定) V={mesh.VertexCount} bytes={data?.Length ?? 0} clients={ClientCount}");
+            if (data != null) BroadcastBinaryAsync(data);
+        }
+
+        /// <summary>
+        /// 対象を明示して位置（PositionsOnly）を全クライアントへ配信する。
+        /// ヘッダに ObjectId が載るため、受信側は正しいメッシュへ適用できる。
+        /// </summary>
+        public void BroadcastPositions(Poly_Ling.Data.MeshContext mc, int modelIndex = -1)
+        {
+            if (mc?.MeshObject == null) return;
+            if (modelIndex < 0) modelIndex = Context?.Project?.CurrentModelIndex ?? 0;
+
+            var data = RemoteBinarySerializer.SerializePositionsOnly(mc, modelIndex);
+            UnityEngine.Debug.Log($"[EditSync] BroadcastPositions \"{mc.Name}\" id={mc.ObjectId} "
+                + $"V={mc.MeshObject.VertexCount} bytes={data?.Length ?? 0} clients={ClientCount}");
             if (data != null) BroadcastBinaryAsync(data);
         }
 
@@ -992,11 +1425,19 @@ namespace Poly_Ling.Remote
                         if (TryHandleRegister(channel, message, isRequest, json)) continue;
 
                         _pendingBinaryResponses = null;
-                        string response = ProcessMessage(json);
-                        var pending = _pendingBinaryResponses;
+                        _pendingSelectionUser   = null;
+                        // channel を渡すのは所有権判定に要求者名が要るため。
+                        string response = ProcessMessage(json, channel);
+                        var pending      = _pendingBinaryResponses;
+                        var selUser      = _pendingSelectionUser;
                         _pendingBinaryResponses = null;
+                        _pendingSelectionUser   = null;
 
-                        if (response == null) continue;
+                        if (response == null)
+                        {
+                            FlushPendingSelection(selUser);
+                            continue;
+                        }
 
                         var reply = new TypedPayload().AddJson(response);
                         if (pending != null)
@@ -1004,12 +1445,15 @@ namespace Poly_Ling.Remote
                                 if (bin != null) reply.AddBinary(bin);
 
                         SendReply(channel, message, reply, isRequest);
+
+                        // 応答（＝ホスト選択入りの ModelMeta）の後に本人の選択を送り直す
+                        FlushPendingSelection(selUser);
                     }
                     else if (item.Type == ContentType.Binary || item.Type == ContentType.Image
                              || item.Type == ContentType.Custom)
                     {
                         UnityEngine.Debug.Log($"[EditSync] OnDup binary-branch enter type={item.Type} data={item.Data?.Length ?? 0}");
-                        byte[] response = ProcessBinaryMessage(item.Data);
+                        byte[] response = ProcessBinaryMessage(item.Data, ResolveUserName(channel));
                         if (response == null) continue;
 
                         var reply = new TypedPayload().AddBinary(response);
@@ -1076,6 +1520,17 @@ namespace Poly_Ling.Remote
             _clientRegistry[channel] = new ClientRegistration { ClientType = clientType, UserName = userName };
             Log($"register: type=\"{clientType}\" user=\"{userName}\" (clients={_clientRegistry.Count})");
 
+            // 協働編集: このユーザーの選択スロットを用意する。
+            // 初回はホストの現在選択を種にして、いきなり無選択にならないようにする。
+            // 2枚目以降のパネルは既存スロットを共有する（同じ人の画面は連動）。
+            UserSelection slot = null;
+            if (!string.IsNullOrEmpty(userName))
+            {
+                var model = Context?.Model;
+                int mi    = Context?.Project?.CurrentModelIndex ?? 0;
+                slot = _selectionStore.GetOrCreate(userName, UserSelection.Capture(model, mi));
+            }
+
             var data = new JsonBuilder();
             data.BeginObject();
             data.KeyValue("registered", true);
@@ -1085,6 +1540,11 @@ namespace Poly_Ling.Remote
 
             var reply = new TypedPayload().AddJson(BuildSuccessResponse(id, data.ToString()));
             SendReply(channel, request, reply, isRequest);
+
+            // ack の直後に、このユーザー自身の選択を返して画面を合わせる。
+            // 全体 push ではないので他ユーザーの画面は動かない。
+            if (slot != null) SendSelectionToUser(userName, slot);
+
             return true;
         }
 

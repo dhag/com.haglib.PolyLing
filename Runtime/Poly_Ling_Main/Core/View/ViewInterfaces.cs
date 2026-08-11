@@ -34,6 +34,12 @@ namespace Poly_Ling.View
         string Name { get; }
         MeshType Type { get; }
 
+        // 協働編集
+        /// <summary>位置非依存の安定オブジェクトID（0=未割当）</summary>
+        ulong ObjectId { get; }
+        /// <summary>現在の編集者名（空文字＝担当者なし）</summary>
+        string EditorName { get; }
+
         // ジオメトリ
         int VertexCount { get; }
         int FaceCount { get; }
@@ -57,7 +63,10 @@ namespace Poly_Ling.View
         int HierarchyParentIndex { get; }
 
         // ミラー
+        /// <summary>ミラーモード (0:なし, 1:分離, 2:結合)。MQO の mirror 属性と同値。</summary>
         int MirrorType { get; }
+        /// <summary>ミラー軸 (1:X, 2:Y, 4:Z)。MQO の mirror_axis 属性と同値。</summary>
+        int MirrorAxis { get; }
         bool IsBakedMirror { get; }
         bool IsMirrorSide { get; }
         bool IsRealSide { get; }
@@ -73,6 +82,7 @@ namespace Poly_Ling.View
         string MorphName { get; }
         bool ExcludeFromExport { get; }
         bool IgnorePoseInArmature { get; }
+        bool PreserveNormals { get; }
 
         // 表示用（計算プロパティ）
         string InfoString { get; }
@@ -126,6 +136,14 @@ namespace Poly_Ling.View
         int[] SelectedDrawableIndices { get; }
         int[] SelectedBoneIndices { get; }
         int[] SelectedMorphIndices { get; }
+
+        /// <summary>
+        /// オブジェクト選択辞書（ModelContext.MeshSelectionSets）の名前一覧。
+        /// 並びは MeshSelectionSets と同じで、要素位置が
+        /// ApplySelectionDictionaryCommand.SetIndex に対応する。
+        /// 辞書が無ければ空配列（null は返さない）。
+        /// </summary>
+        IReadOnlyList<string> MeshSelectionSetNames { get; }
     }
 
     // ================================================================

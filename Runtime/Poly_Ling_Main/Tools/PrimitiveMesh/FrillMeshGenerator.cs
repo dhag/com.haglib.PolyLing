@@ -26,6 +26,11 @@
 //   rung 間隔が不均一、のいずれかでずれる。
 //   FrillRungSeam.Merge は両者の生成位置を平均して1頂点にまとめ、段差を消す。
 //   FrillRungSeam.Split は別頂点のまま残し、段差をそのまま出す。
+//
+// 【高さ倍率】FrillBeltInput.HeightScale は法線方向成分 (y * len) だけに掛ける。
+//   進行方向成分 (x) には掛けないため、レール上の位置は変えずに波の高さだけが変わる。
+//   connectShared で梯子どうしがレール線分を共有した場合、法線を合成するのと同じく
+//   倍率も寄与した梯子ぶんを平均する（1本のレールに1つの高さしか持てないため）。
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -41,6 +46,9 @@ namespace Poly_Ling.Frill
         public IReadOnlyList<Vector3> Right;
         public bool Closed;
         public bool FlipWinding;
+
+        /// <summary>この梯子の高さ倍率（法線方向成分に掛ける）。1 で従来どおり。</summary>
+        public float HeightScale = 1f;
     }
 
     public static class FrillMeshGenerator
@@ -105,7 +113,10 @@ namespace Poly_Ling.Frill
             }
 
             foreach (var r in rails)
+            {
                 r.Normal = r.NormalSum.sqrMagnitude > 1e-12f ? r.NormalSum.normalized : r.FirstNormal;
+                r.HeightScale = r.HeightCount > 0 ? r.HeightSum / r.HeightCount : 1f;
+            }
 
             // ── パス2: rung 境界の平均位置を求める ──
             Dictionary<PosKey, Vector3> boundarySum   = null;
@@ -122,9 +133,9 @@ namespace Poly_Ling.Frill
                     float   len = dir.magnitude;
 
                     AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P0, r.Scope),
-                                  ProfilePos(r.P0, dir, len, r.Normal, profile[0]));
+                                  ProfilePos(r.P0, dir, len, r.Normal, profile[0], r.HeightScale));
                     AccumBoundary(boundarySum, boundaryCount, new PosKey(r.P1, r.Scope),
-                                  ProfilePos(r.P0, dir, len, r.Normal, profile[m - 1]));
+                                  ProfilePos(r.P0, dir, len, r.Normal, profile[m - 1], r.HeightScale));
                 }
             }
 
@@ -159,7 +170,7 @@ namespace Poly_Ling.Frill
                     }
 
                     r.Verts[k] = mo.VertexCount;
-                    mo.Vertices.Add(new Vertex(ProfilePos(r.P0, dir, len, r.Normal, p), uv));
+                    mo.Vertices.Add(new Vertex(ProfilePos(r.P0, dir, len, r.Normal, p, r.HeightScale), uv));
                 }
             }
 
@@ -185,8 +196,13 @@ namespace Poly_Ling.Frill
         // ヘルパー
         // ================================================================
 
-        private static Vector3 ProfilePos(Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector2 p)
-            => p0 + dir * p.x + nrm * (p.y * len);
+        /// <summary>
+        /// 断面プロファイル点 p を実座標へ写す。
+        /// heightScale は法線方向成分だけに掛ける（進行方向はレール上の位置なので変えない）。
+        /// </summary>
+        private static Vector3 ProfilePos(
+            Vector3 p0, Vector3 dir, float len, Vector3 nrm, Vector2 p, float heightScale)
+            => p0 + dir * p.x + nrm * (p.y * len * heightScale);
 
         /// <summary>1ステップぶんの生成情報。</summary>
         private struct StepInfo
@@ -194,6 +210,7 @@ namespace Poly_Ling.Frill
             public Vector3 A0, A1;   // 左レール線分
             public Vector3 B0, B1;   // 右レール線分
             public Vector3 Normal;   // このステップの基準面法線
+            public float   HeightScale; // この梯子の高さ倍率
             public bool    FlipWinding;
             public float   U0;       // UV の u（プロファイル x=0 のとき）
             public float   UStep;    // UV の u の1ステップぶん
@@ -207,6 +224,9 @@ namespace Poly_Ling.Frill
             public Vector3 NormalSum;
             public Vector3 FirstNormal;
             public Vector3 Normal;
+            public float   HeightSum;    // 寄与した各ステップの高さ倍率の和
+            public int     HeightCount;  // 寄与したステップ数
+            public float   HeightScale;  // 確定値（HeightSum / HeightCount）
             public float   U0, UStep, V;
             public int     Scope;    // 境界溶接のスコープ（共有あり=0 / 共有なし=梯子index）
             public int[]   Verts;
@@ -242,6 +262,7 @@ namespace Poly_Ling.Frill
                         B0          = b0,
                         B1          = b1,
                         Normal      = StepNormal(a0, b0, b1, a1, belt.FlipWinding),
+                        HeightScale = belt.HeightScale,
                         FlipWinding = belt.FlipWinding,
                         U0          = (float)s / stepCount,
                         UStep       = 1f / stepCount,
@@ -266,7 +287,9 @@ namespace Poly_Ling.Frill
                 var key = new RailKey(p0, p1);
                 if (railIndex.TryGetValue(key, out int idx))
                 {
-                    rails[idx].NormalSum += st.Normal;
+                    rails[idx].NormalSum   += st.Normal;
+                    rails[idx].HeightSum   += st.HeightScale;
+                    rails[idx].HeightCount += 1;
                     return idx;
                 }
 
@@ -287,6 +310,8 @@ namespace Poly_Ling.Frill
                 P1          = p1,
                 NormalSum   = st.Normal,
                 FirstNormal = st.Normal,
+                HeightSum   = st.HeightScale,
+                HeightCount = 1,
                 U0          = st.U0,
                 UStep       = st.UStep,
                 V           = v,

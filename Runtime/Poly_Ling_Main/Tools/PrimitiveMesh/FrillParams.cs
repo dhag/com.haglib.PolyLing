@@ -25,6 +25,14 @@ namespace Poly_Ling.Frill
     {
         public string MeshName;
 
+        // ── 高さ倍率 ──
+        /// <summary>
+        /// フリルの高さ（断面プロファイルの Y ＝ 基準ベルト面の法線方向）の倍率。
+        /// 1 で従来どおり。0 にすると基準ベルトと同じ平坦なリボンになる。
+        /// 梯子ごとの倍率とは掛け算で合成する。
+        /// </summary>
+        public float HeightScale;
+
         // ── 共有レールの接続 ──
         /// <summary>
         /// 同一のレール線分（縦置きなら左右、横置きなら上下）を共有する梯子どうしを
@@ -56,6 +64,7 @@ namespace Poly_Ling.Frill
         public static FrillParams Default => new FrillParams
         {
             MeshName      = "Frill",
+            HeightScale   = 1f,
             ConnectShared = true,
             RungSeam      = FrillRungSeam.Merge,
             Thickness     = 0f,
@@ -68,6 +77,7 @@ namespace Poly_Ling.Frill
 
         public bool Equals(FrillParams o)
             => MeshName == o.MeshName
+            && Mathf.Approximately(HeightScale, o.HeightScale)
             && ConnectShared == o.ConnectShared
             && RungSeam == o.RungSeam
             && Mathf.Approximately(Thickness, o.Thickness)

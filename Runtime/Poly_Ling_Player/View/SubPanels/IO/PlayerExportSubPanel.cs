@@ -35,7 +35,12 @@ namespace Poly_Ling.Player
         // ================================================================
 
         private PMXExportSettings _pmxSettings = PMXExportSettings.CreateFullExport();
-        private MQOExportSettings _mqoSettings = MQOExportSettings.CreateFromCoordinate(0.01f, true);
+        // MQO⇔Unity は X のみ反転（AxisFlip.MqoToUnity, AxisFlipOps.cs:49）。
+        // 第2引数は flipZ。PMX は true が正しいが MQO は false。
+        // ここを true にするとインポート（MQOImportSettings の既定 FlipZ = false）と
+        // 食い違い、読んで書くだけで Z 反転が1回残る。
+        private MQOExportSettings _mqoSettings = MQOExportSettings.CreateFromCoordinate(
+            0.01f, flipZ: false, flipX: true);
 
         // ================================================================
         // コールバック

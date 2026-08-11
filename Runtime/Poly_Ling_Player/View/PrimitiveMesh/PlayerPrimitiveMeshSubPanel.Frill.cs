@@ -38,6 +38,9 @@ namespace Poly_Ling.Player
 
         private Label _frillInfoLabel;
 
+        /// <summary>梯子1本ごとの高さ倍率スライダを並べるコンテナ。梯子リストの変化で作り直す。</summary>
+        private VisualElement _frillBeltScaleContainer;
+
         /// <summary>厚み付けの角処理(ベベル)UI 要素。</summary>
         private SolidifyUI _frillSolidUI;
 
@@ -104,6 +107,12 @@ namespace Poly_Ling.Player
             _frillInfoLabel.style.marginTop  = 2;
             c.Add(_frillInfoLabel);
 
+            // ── 梯子ごとの高さ倍率 ──
+            // 全体倍率とは掛け算で合成する。梯子が2本以上あるときだけ出す。
+            _frillBeltScaleContainer = new VisualElement();
+            c.Add(_frillBeltScaleContainer);
+            RebuildFrillBeltScales();
+
             // ── 梯子CSV ──
             BuildBeltCsvUI(c, _frillBelts,
                 "Primitive.Frill.BeltCsv", "frill_belt.csv", RefreshFrillInfo);
@@ -131,6 +140,17 @@ namespace Poly_Ling.Player
             seamHint.style.whiteSpace   = WhiteSpace.Normal;
             seamHint.style.marginBottom = 2;
             c.Add(seamHint);
+
+            // ── 高さ倍率（全体） ──
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(SR(T("FrillHeightScale"), 0f, 5f, () => _frillP.HeightScale,
+                v => { _frillP.HeightScale = v; D(); }));
+
+            var heightHint = new Label(T("FrillHeightScaleHint"));
+            heightHint.style.fontSize     = 10;
+            heightHint.style.whiteSpace   = WhiteSpace.Normal;
+            heightHint.style.marginBottom = 2;
+            c.Add(heightHint);
 
             // ── 厚み付け ──
             c.Add(PlayerIoUiKit.Divider());
@@ -165,6 +185,52 @@ namespace Poly_Ling.Player
         private void RefreshFrillInfo()
         {
             if (_frillInfoLabel != null) _frillInfoLabel.text = BeltsInfoText(_frillBelts);
+            RebuildFrillBeltScales();
+        }
+
+        /// <summary>
+        /// 梯子1本ごとの高さ倍率スライダを作り直す。
+        /// 梯子の取込・自動検索・CSV読込はすべて RefreshFrillInfo を通るため、ここから呼ばれる。
+        /// 梯子が1本以下のときは全体倍率だけで足りるので何も出さない。
+        /// </summary>
+        private void RebuildFrillBeltScales()
+        {
+            var box = _frillBeltScaleContainer;
+            if (box == null) return;
+
+            box.Clear();
+
+            int count = 0;
+            foreach (var b in _frillBelts) if (b != null && b.HasData) count++;
+            if (count < 2) return;
+
+            box.Add(PlayerIoUiKit.SectionLabel(T("FrillBeltScales")));
+
+            var hint = new Label(T("FrillBeltScalesHint"));
+            hint.style.fontSize     = 10;
+            hint.style.whiteSpace   = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            box.Add(hint);
+
+            // ラベル欄は 80px 固定でベルト名が入らないため、見出し行とスライダ行に分ける。
+            for (int i = 0; i < _frillBelts.Count; i++)
+            {
+                var belt = _frillBelts[i];
+                if (belt == null || !belt.HasData) continue;
+
+                var target = belt;   // クロージャがループ変数を掴まないように控える
+
+                var rowLabel = new Label(T("FrillBeltScaleRow", i + 1, target.RungCount));
+                rowLabel.style.fontSize  = 10;
+                rowLabel.style.marginTop = 3;
+                box.Add(rowLabel);
+
+                box.Add(SR(T("FrillHeightScale"), 0f, 5f,
+                    () => target.HeightScale,
+                    v => { target.HeightScale = v; D(); }));
+            }
+
+            PlayerLayoutRoot.ApplyDarkTheme(box);
         }
 
         private void RefreshFrillSolidVis()
@@ -189,7 +255,8 @@ namespace Poly_Ling.Player
                 {
                     if (belt == null || !belt.HasData) continue;
                     inputs.Add(ToFrillInput(
-                        ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline)));
+                        ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
+                        _frillP.HeightScale));
                 }
 
                 var joined = FrillMeshGenerator.Generate(
@@ -207,7 +274,8 @@ namespace Poly_Ling.Player
             {
                 if (belt == null || !belt.HasData) continue;
                 single[0] = ToFrillInput(
-                    ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline));
+                    ApplyBeltSpline(ApplyBeltOrient(belt, _frillOrient), _frillSpline),
+                    _frillP.HeightScale);
 
                 var part = FrillMeshGenerator.Generate(
                     single, _frillEdit.Points, false, _frillP.RungSeam, _frillP.MeshName);
@@ -220,13 +288,17 @@ namespace Poly_Ling.Player
             return mo;
         }
 
-        private static FrillBeltInput ToFrillInput(BeltSnapshot b)
+        /// <summary>
+        /// 生成入力へ変換する。高さ倍率は「全体 × 梯子ごと」の掛け算で合成する。
+        /// </summary>
+        private static FrillBeltInput ToFrillInput(BeltSnapshot b, float globalHeightScale)
             => new FrillBeltInput
             {
                 Left        = b.Left,
                 Right       = b.Right,
                 Closed      = b.Closed,
                 FlipWinding = b.FlipWinding,
+                HeightScale = globalHeightScale * b.HeightScale,
             };
     }
 }

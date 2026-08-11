@@ -27,6 +27,12 @@ namespace Poly_Ling.Player
         private Label         _targetLabel;
         private Label         _pivotLabel;
 
+        // スライダー併設の数値入力欄。スライダーと双方向同期する。
+        private FloatField    _fieldX, _fieldY, _fieldZ, _fieldAngle;
+
+        // スライダー ⇔ 数値欄の相互更新による再入を防ぐ。
+        private bool          _suppressSync;
+
         public void Build(VisualElement parent)
         {
             _root = new VisualElement();
@@ -51,10 +57,15 @@ namespace Poly_Ling.Player
             _sliderY = MakeSlider("Y", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotY = Snap(v); });
             _sliderZ = MakeSlider("Z", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.RotZ = Snap(v); });
             foreach (var s in new[] { _sliderX, _sliderY, _sliderZ })
-            {
                 s.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
-                _eulerGroup.Add(s);
-            }
+
+            _fieldX = new FloatField(); _fieldY = new FloatField(); _fieldZ = new FloatField();
+            _eulerGroup.Add(SliderWithField(_sliderX, _fieldX, -180f, 180f,
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotX = Snap(v); h.EndSliderDrag(); }));
+            _eulerGroup.Add(SliderWithField(_sliderY, _fieldY, -180f, 180f,
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotY = Snap(v); h.EndSliderDrag(); }));
+            _eulerGroup.Add(SliderWithField(_sliderZ, _fieldZ, -180f, 180f,
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.RotZ = Snap(v); h.EndSliderDrag(); }));
             _root.Add(_eulerGroup);
 
             // 軸-角度 グループ
@@ -68,7 +79,9 @@ namespace Poly_Ling.Player
             _axisGroup.Add(axisRow);
             _axisAngle = MakeSlider("Angle", -180f, 180f, 0f, v => { GetH()?.BeginSliderDrag(); var h = GetH(); if (h != null) h.AxisAngle = Snap(v); });
             _axisAngle.RegisterCallback<PointerUpEvent>(_ => GetH()?.EndSliderDrag());
-            _axisGroup.Add(_axisAngle);
+            _fieldAngle = new FloatField();
+            _axisGroup.Add(SliderWithField(_axisAngle, _fieldAngle, -180f, 180f,
+                v => { var h = GetH(); if (h == null) return; h.BeginSliderDrag(); h.AxisAngle = Snap(v); h.EndSliderDrag(); }));
             _root.Add(_axisGroup);
             UpdateModeVisibility(false);
 
@@ -114,10 +127,16 @@ namespace Poly_Ling.Player
             var revertBtn = new Button(() =>
             {
                 GetH()?.Revert();
+                _suppressSync = true;
                 _sliderX?.SetValueWithoutNotify(0);
                 _sliderY?.SetValueWithoutNotify(0);
                 _sliderZ?.SetValueWithoutNotify(0);
                 _axisAngle?.SetValueWithoutNotify(0);
+                _fieldX?.SetValueWithoutNotify(0);
+                _fieldY?.SetValueWithoutNotify(0);
+                _fieldZ?.SetValueWithoutNotify(0);
+                _fieldAngle?.SetValueWithoutNotify(0);
+                _suppressSync = false;
             }) { text = "Reset" };
             revertBtn.style.flexGrow = 1;
             btnRow.Add(applyBtn); btnRow.Add(revertBtn);
@@ -130,9 +149,14 @@ namespace Poly_Ling.Player
             _targetLabel.text = $"Target: {h.GetTotalAffectedCount()} vertices";
             var p = h.PivotPublic;
             _pivotLabel.text  = $"Pivot: ({p.x:F2}, {p.y:F2}, {p.z:F2})";
+            _suppressSync = true;
             _sliderX?.SetValueWithoutNotify(h.RotX);
             _sliderY?.SetValueWithoutNotify(h.RotY);
             _sliderZ?.SetValueWithoutNotify(h.RotZ);
+            _fieldX?.SetValueWithoutNotify(h.RotX);
+            _fieldY?.SetValueWithoutNotify(h.RotY);
+            _fieldZ?.SetValueWithoutNotify(h.RotZ);
+            _suppressSync = false;
             _snapToggle?.SetValueWithoutNotify(h.UseSnap);
             _snapField?.SetValueWithoutNotify(h.SnapAngle);
             _originToggle?.SetValueWithoutNotify(h.UseOriginPivot);
@@ -146,7 +170,10 @@ namespace Poly_Ling.Player
             _axisX?.SetValueWithoutNotify(h.AxisVecX);
             _axisY?.SetValueWithoutNotify(h.AxisVecY);
             _axisZ?.SetValueWithoutNotify(h.AxisVecZ);
+            _suppressSync = true;
             _axisAngle?.SetValueWithoutNotify(h.AxisAngle);
+            _fieldAngle?.SetValueWithoutNotify(h.AxisAngle);
+            _suppressSync = false;
         }
 
         private float Snap(float v) { var h = GetH(); if (h == null || !h.UseSnap) return v; return Mathf.Round(v / h.SnapAngle) * h.SnapAngle; }
@@ -164,6 +191,49 @@ namespace Poly_Ling.Player
             f.style.color = new StyleColor(Color.black);
             f.RegisterValueChangedCallback(e => onChange(e.newValue));
             return f;
+        }
+
+        /// <summary>
+        /// スライダーと数値入力欄を 1 行に並べる。
+        /// スライダー操作は数値欄へ表示同期するだけ（適用は既存の PointerUp → EndSliderDrag）。
+        /// 数値欄の確定は min..max へクランプしたうえで onCommit を呼ぶ。
+        /// onCommit 側で BeginSliderDrag → 値設定 → EndSliderDrag を行い、Undo 1 件にまとめる。
+        /// </summary>
+        private VisualElement SliderWithField(Slider slider, FloatField field, float min, float max, Action<float> onCommit)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems    = Align.Center;
+            row.style.marginBottom  = 3;
+
+            slider.style.flexGrow     = 1;
+            slider.style.marginBottom = 0;
+
+            field.style.width      = 56;
+            field.style.marginLeft = 4;
+            field.style.color      = new StyleColor(Color.black);
+
+            slider.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressSync) return;
+                _suppressSync = true;
+                field.SetValueWithoutNotify(e.newValue);
+                _suppressSync = false;
+            });
+
+            field.RegisterValueChangedCallback(e =>
+            {
+                if (_suppressSync) return;
+                float v = Mathf.Clamp(e.newValue, min, max);
+                _suppressSync = true;
+                field.SetValueWithoutNotify(v);
+                slider.SetValueWithoutNotify(v);
+                _suppressSync = false;
+                onCommit(v);
+            });
+
+            row.Add(slider); row.Add(field);
+            return row;
         }
 
         private static Slider MakeSlider(string label, float min, float max, float init, Action<float> onChange) { var s = new Slider(label, min, max) { value = init }; s.style.marginBottom = 3; s.RegisterValueChangedCallback(e => onChange(e.newValue)); return s; }

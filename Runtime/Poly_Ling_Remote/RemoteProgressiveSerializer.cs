@@ -220,7 +220,7 @@ namespace Poly_Ling.Remote
             using (var w = new BinaryWriter(ms))
             {
                 w.Write(RemoteMagic.MeshSummary);
-                w.Write((byte)2);   // version 2: HierarchyParentIndex を追加
+                w.Write((byte)3);   // version 2: HierarchyParentIndex / version 3: ObjectId + EditorName
                 w.Write((byte)0); // padding
                 w.Write((short)modelIndex);
                 w.Write((short)meshIndex);
@@ -229,6 +229,10 @@ namespace Poly_Ling.Remote
                 w.Write((byte)mc.Type);
                 w.Write(mc.IsVisible);
                 w.Write(mc.IsLocked);
+
+                // v3: 協働編集（安定ID + 担当者名）
+                w.Write(mc.ObjectId);
+                WriteString(w, mc.EditorName ?? "");
                 w.Write((short)mc.Depth);
                 w.Write((short)mc.ParentIndex);
                 w.Write((short)mc.HierarchyParentIndex);  // v2: ボーン等の階層親(MasterIndex)
@@ -310,6 +314,13 @@ namespace Poly_Ling.Remote
                 mc.Type = (MeshType)r.ReadByte();
                 mc.IsVisible = r.ReadBoolean();
                 mc.IsLocked = r.ReadBoolean();
+                if (summaryVersion >= 3)
+                {
+                    // v3: 協働編集（安定ID + 担当者名）
+                    mc.ObjectId   = r.ReadUInt64();
+                    mc.EditorName = ReadString(r);
+                    Poly_Ling.Data.ObjectIdAllocator.Observe(mc.ObjectId);
+                }
                 mc.Depth = r.ReadInt16();
                 mc.ParentIndex = r.ReadInt16();
                 if (summaryVersion >= 2) mc.HierarchyParentIndex = r.ReadInt16();

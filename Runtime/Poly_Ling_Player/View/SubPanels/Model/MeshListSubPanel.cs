@@ -16,7 +16,13 @@ using UnityEngine.UIElements;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.View;
+using Poly_Ling.Diagnostics;
 using UIList.UIToolkitExtensions;
+using PlayerIoUiKit        = Poly_Ling.Player.PlayerIoUiKit;
+using RecentPaths          = Poly_Ling.Core.RecentPaths;
+using PartsDictionaryPath  = Poly_Ling.Core.PartsDictionaryPath;
+using PLEditorBridge       = Poly_Ling.EditorBridge.PLEditorBridge;
+using MeshRenameCsvHelper  = Poly_Ling.UI.MeshRenameCsvHelper;
 
 namespace Poly_Ling.MeshListV2
 {
@@ -41,12 +47,14 @@ namespace Poly_Ling.MeshListV2
         private TreeView _treeView;
 
         // リスト高さ（下端ドラッグで手動リサイズ）: PlayerPrimitiveMeshSubPanel の AddProfileResizeHandle 準拠
-        private float _treeHeight = 200f;
+        // 上限は設けない。下限のみ。
+        private const float TreeBaseHeight   = 200f;   // 従来の初期値
+        private const float TreeInitialScale = 4f;     // 初期は基準の4倍を上限に、可視行が収まる高さへ
+        private float _treeHeight = TreeBaseHeight;
         private const float TreeMinHeight = 80f;
-        private const float TreeMaxHeight = 800f;
+        private bool  _treeHeightUserAdjusted;         // 手動リサイズ後は自動調整しない
         private float _morphListHeight = 140f;
         private const float MorphListMinHeight = 60f;
-        private const float MorphListMaxHeight = 600f;
         private Label _countLabel, _statusLabel;
         private Toggle _showInfoToggle, _showMirrorSideToggle;
         private TextField _filterField;
@@ -55,6 +63,12 @@ namespace Poly_Ling.MeshListV2
         private TextField _meshNameField;
         private Label _vertexCountLabel, _faceCountLabel, _triCountLabel, _quadCountLabel, _ngonCountLabel;
         private Toggle _ignorePoseToggle;
+        private Toggle _preserveNormalsToggle;
+        // ミラーモード（なし/分離/結合）。⇆ ボタンは有無だけを切り替えるので、
+        // 結合(2) の指定はここで行う。
+        private DropdownField _mirrorModeDropdown;
+        private static readonly List<string> MirrorModeChoices =
+            new List<string> { "なし", "分離", "結合" };
         private VisualElement _indexInfo;
         private Label _boneIndexLabel, _masterIndexLabel;
 
@@ -76,6 +90,31 @@ namespace Poly_Ling.MeshListV2
         // 詳細モード切り替え（エディタ版「detail-mode-toggle」＝「スキンドメッシュ」に名称変更）
         private Toggle _detailModeToggle;
         private VisualElement _tabHeader;
+
+        // ツリーのインデント幅。Unity 既定のままだと深い階層で名前が右へ寄りすぎるため、
+        // 既定値を狭めに取り、スライダーで調整できるようにする。
+        private const float TreeIndentDefault = 8f;
+        private const float TreeIndentMin     = 0f;
+        private const float TreeIndentMax     = 24f;
+        private float  _treeIndentWidth = TreeIndentDefault;
+        private Slider _indentSlider;
+        private Label  _indentValueLabel;
+
+        // 行内ボタンを押した瞬間の Ctrl 状態（MakeTreeItem で登録した PointerDown が更新する）
+        private bool _rowCtrlDown;
+
+        // 選択辞書（オブジェクト選択辞書）の適用
+        private DropdownField _selDicDropdown;
+        private Button _btnSelDicApply, _btnSelDicAdd;
+        private readonly List<string> _selDicNames = new List<string>();
+
+        // 名称一括変更（旧名→新名 CSV）
+        private Foldout   _renameFoldout;
+        private TextField _renamePathField;
+        private Label     _renameStatusLabel;
+        private Button    _btnRenameTemplate, _btnRenameLoad, _btnRenameApply;
+        private int[]    _renameTargetIndices;
+        private string[] _renameTargetNames;
 
         private Foldout _transformFoldout;
         private FloatField _localPosX, _localPosY, _localPosZ;
@@ -111,6 +150,13 @@ namespace Poly_Ling.MeshListV2
         private List<SummaryTreeAdapter> _selectedAdapters = new List<SummaryTreeAdapter>();
         private bool _refreshScheduled;
 
+        // ApplyTreeToView() の実行回数。SummaryTreeRoot.OnTreeChanged() は
+        // SendCommand → OnChanged の順に呼ぶため、SendCommand が同期で
+        // ChangeKind.ListStructure を通知してツリーを作り直したかどうかを
+        // この世代番号の変化で判定し、OnChanged 側の二重リビルドを避ける。
+        private int _applyTreeGeneration;
+        private int _genBeforeReorder = -1;
+
         private List<IMeshView> _morphListData     = new List<IMeshView>();
         private List<IMeshView> _morphFilteredData = new List<IMeshView>();
         private bool _isSyncingMorphSelection;
@@ -120,6 +166,33 @@ namespace Poly_Ling.MeshListV2
         {
             public Label NameLabel, InfoLabel;
             public Button VisBtn, LockBtn, SymBtn;
+            // 協働編集: 担当者バッジ と 取得/解放ボタン
+            public Label  EditorBadge;
+            public Button EditorBtn;
+            // D&D 用: この行が今どのアイテムを表示しているか。
+            // BindTreeItem で毎回更新する。行要素からアイテムを直接引くために使う。
+            public SummaryTreeAdapter Adapter;
+        }
+
+        // ================================================================
+        // 協働編集（担当者）
+        // ================================================================
+
+        /// <summary>
+        /// 自分のユーザー名。サーバへ register したものと一致させる必要がある。
+        /// ListClientBase.UserName / PolyLingPlayerViewer 側から設定する。
+        /// 空のままだと取得ボタンは無効化される。
+        /// </summary>
+        public string LocalUserName { get; set; } = "";
+
+        /// <summary>担当者名ごとに安定した色を返す（誰の担当か一目で分かるように）。</summary>
+        private static Color EditorColor(string editorName)
+        {
+            if (string.IsNullOrEmpty(editorName)) return new Color(1f, 1f, 1f, 0.35f);
+            int h = 0;
+            foreach (char ch in editorName) h = unchecked(h * 31 + ch);
+            float hue = ((h & 0x7FFFFFFF) % 360) / 360f;
+            return Color.HSVToRGB(hue, 0.45f, 1f);
         }
 
         // ================================================================
@@ -232,6 +305,32 @@ namespace Poly_Ling.MeshListV2
             topRow.Add(_showMirrorSideToggle);
             root.Add(topRow);
 
+            // ── インデント幅
+            var indentRow = new VisualElement();
+            indentRow.style.flexDirection = FlexDirection.Row;
+            indentRow.style.alignItems    = Align.Center;
+            indentRow.style.marginBottom  = 3;
+
+            var indentLabel = new Label("インデント:");
+            indentLabel.style.color    = new StyleColor(Color.white);
+            indentLabel.style.fontSize = 10;
+            indentRow.Add(indentLabel);
+
+            _indentSlider = new Slider(TreeIndentMin, TreeIndentMax)
+            { name = "indent-slider", value = _treeIndentWidth };
+            _indentSlider.style.flexGrow   = 1;
+            _indentSlider.style.marginLeft = 4;
+            _indentSlider.style.color      = new StyleColor(Color.white);
+            indentRow.Add(_indentSlider);
+
+            _indentValueLabel = new Label($"{(int)_treeIndentWidth}px") { name = "indent-value-label" };
+            _indentValueLabel.style.color    = new StyleColor(Color.white);
+            _indentValueLabel.style.fontSize = 10;
+            _indentValueLabel.style.width    = 30;
+            _indentValueLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+            indentRow.Add(_indentValueLabel);
+            root.Add(indentRow);
+
             var filterLabel = new Label("フィルタ:");
             filterLabel.style.color    = new StyleColor(Color.white);
             filterLabel.style.fontSize = 10;
@@ -258,7 +357,7 @@ namespace Poly_Ling.MeshListV2
             _treeView.style.maxHeight = _treeHeight;
             _mainContent.Add(_treeView);
             AddListResizeHandle(_mainContent, _treeView,
-                () => _treeHeight, h => _treeHeight = h, TreeMinHeight, TreeMaxHeight);
+                () => _treeHeight, h => { _treeHeight = h; _treeHeightUserAdjusted = true; }, TreeMinHeight);
 
             // 操作ボタン行
             var btnRow = new VisualElement();
@@ -272,9 +371,44 @@ namespace Poly_Ling.MeshListV2
             btnRow.Add(MakeSmallBtn("→",  "btn-indent"));
             btnRow.Add(MakeSmallBtn("Dup", "btn-duplicate"));
             btnRow.Add(MakeSmallBtn("Del", "btn-delete"));
-            btnRow.Add(MakeSmallBtn("👁",  "btn-show"));
-            btnRow.Add(MakeSmallBtn("−",   "btn-hide"));
+            // 一括操作。対象は「選択されている行すべて」。
+            // 行内のボタンは押した行 1 件だけなので、押す場所で対象が分かれる。
+            btnRow.Add(MakeSmallBtn("👁",  "btn-show",        "選択を可視にする"));
+            btnRow.Add(MakeSmallBtn("−",   "btn-hide",        "選択を不可視にする"));
+            btnRow.Add(MakeSmallBtn("🔒",  "btn-lock",        "選択をロックする"));
+            btnRow.Add(MakeSmallBtn("🔓",  "btn-unlock",      "選択のロックを解除する"));
+            btnRow.Add(MakeSmallBtn("⇆",   "btn-mirror-on",   "選択のミラーを有効にする"));
+            btnRow.Add(MakeSmallBtn("⇆̸",   "btn-mirror-off",  "選択のミラーを無効にする"));
             _mainContent.Add(btnRow);
+
+            // ── 選択辞書（オブジェクト選択辞書）からの読み込み
+            var selDicRow = new VisualElement();
+            selDicRow.style.flexDirection = FlexDirection.Row;
+            selDicRow.style.alignItems    = Align.Center;
+            selDicRow.style.marginTop     = 2;
+            selDicRow.style.marginBottom  = 2;
+
+            var selDicLabel = new Label("選択辞書:");
+            selDicLabel.style.color    = new StyleColor(Color.white);
+            selDicLabel.style.fontSize = 10;
+            selDicRow.Add(selDicLabel);
+
+            _selDicDropdown = new DropdownField { name = "seldic-dropdown" };
+            _selDicDropdown.style.flexGrow   = 1;
+            _selDicDropdown.style.marginLeft = 4;
+            _selDicDropdown.style.marginRight = 2;
+            selDicRow.Add(_selDicDropdown);
+
+            _btnSelDicApply = MakeSmallBtn("適用", "btn-seldic-apply");
+            _btnSelDicAdd   = MakeSmallBtn("追加", "btn-seldic-add");
+            selDicRow.Add(_btnSelDicApply); selDicRow.Add(_btnSelDicAdd);
+            _mainContent.Add(selDicRow);
+
+            // ── 名称一括変更（旧名→新名 CSV）
+            _renameFoldout = new Foldout { text = "名称一括変更", value = false, name = "rename-foldout" };
+            _renameFoldout.style.marginTop = 2;
+            BuildRenameSection(_renameFoldout.contentContainer);
+            _mainContent.Add(_renameFoldout);
 
             // 詳細Foldout
             _detailFoldout = new Foldout { text = "詳細", value = true, name = "detail-foldout" };
@@ -348,12 +482,87 @@ namespace Poly_Ling.MeshListV2
                     SendCmd(new SetIgnorePoseCommand(ModelIndex, indices, e.newValue));
             });
             c.Add(_ignorePoseToggle);
+
+            _mirrorModeDropdown = new DropdownField { name = "mirror-mode-dropdown" };
+            _mirrorModeDropdown.choices = MirrorModeChoices;
+            _mirrorModeDropdown.RegisterValueChangedCallback(e =>
+            {
+                if (_isReceiving || _ctx == null) return;
+                int mode = MirrorModeChoices.IndexOf(e.newValue);
+                if (mode < 0) return;
+                var indices = _selectedAdapters
+                    .Where(a => !IsMirrorLocked(a))
+                    .Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
+                if (indices.Length == 0) return;
+
+                // 「なし」への切り替えはミラー側メッシュの始末を伴う。
+                // 「なし」からの切り替えも同様に生成が要る。
+                // 分離(1) ↔ 結合(2) は MQO の属性が変わるだけなので属性コマンドで足りる。
+                int prev = _selectedAdapters[0].MirrorType;
+                if (mode == 0 || prev == 0)
+                    SendCmd(new SetMirrorEnabledCommand(ModelIndex, indices, mode != 0));
+                if (mode != 0)
+                    SendCmd(new SetBatchMirrorTypeCommand(ModelIndex, indices, mode));
+            });
+            c.Add(LabeledRow("ミラー", _mirrorModeDropdown));
+
+            _preserveNormalsToggle = new Toggle("法線を保持(再計算しない)") { name = "preserve-normals-toggle" };
+            _preserveNormalsToggle.style.color     = new StyleColor(Color.white);
+            _preserveNormalsToggle.style.marginTop = 2;
+            _preserveNormalsToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isReceiving || _ctx == null) return;
+                var indices = SelIndices();
+                if (indices.Length > 0)
+                    SendCmd(new SetPreserveNormalsCommand(ModelIndex, indices, e.newValue));
+            });
+            c.Add(_preserveNormalsToggle);
+        }
+
+        // ================================================================
+        // 名称一括変更（旧名→新名 CSV）
+        // ================================================================
+
+        private void BuildRenameSection(VisualElement c)
+        {
+            var hint = new Label("CSV は「旧名,新名」の2列。'#' 始まりはコメント。");
+            hint.style.color      = new StyleColor(Color.white);
+            hint.style.fontSize   = 9;
+            hint.style.whiteSpace = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            c.Add(hint);
+
+            _renamePathField = new TextField { name = "rename-path-field" };
+            _renamePathField.style.color = new StyleColor(Color.black);
+            _renamePathField.RegisterValueChangedCallback(e => RecentPaths.Set(RenamePathKey(), e.newValue));
+            c.Add(PlayerIoUiKit.PathRow(_renamePathField, OnRenameBrowse));
+            _renamePathField.SetValueWithoutNotify(ResolveRenamePath());
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginTop     = 2;
+            _btnRenameTemplate = MakeSmallBtn("雛形書出", "btn-rename-template");
+            _btnRenameLoad     = MakeSmallBtn("読込",     "btn-rename-load");
+            _btnRenameApply    = MakeSmallBtn("適用",     "btn-rename-apply");
+            _btnRenameTemplate.style.flexGrow = 1;
+            _btnRenameLoad.style.flexGrow     = 1;
+            _btnRenameApply.style.flexGrow    = 1;
+            row.Add(_btnRenameTemplate); row.Add(_btnRenameLoad); row.Add(_btnRenameApply);
+            c.Add(row);
+
+            _renameStatusLabel = PlayerIoUiKit.StatusLabel();
+            c.Add(_renameStatusLabel);
+
+            UpdateRenameButtonStates();
         }
 
         private void BuildMorphEditor(VisualElement parent)
         {
             // カウント・フィルター
             var topRow = new VisualElement(); topRow.style.flexDirection = FlexDirection.Row;
+            _morphCountLabel = new Label("モーフ: 0") { name = "morph-count-label" };
+            _morphCountLabel.style.color    = new StyleColor(Color.white);
+            _morphCountLabel.style.fontSize = 11;
             topRow.Add(_morphCountLabel);
             parent.Add(topRow);
 
@@ -368,7 +577,7 @@ namespace Poly_Ling.MeshListV2
             _morphListView.selectionChanged += OnMorphSel;
             parent.Add(_morphListView);
             AddListResizeHandle(parent, _morphListView,
-                () => _morphListHeight, h => _morphListHeight = h, MorphListMinHeight, MorphListMaxHeight);
+                () => _morphListHeight, h => _morphListHeight = h, MorphListMinHeight);
 
             // テストウェイト
             var wRow = new VisualElement(); wRow.style.flexDirection = FlexDirection.Row; wRow.style.marginTop = 4; wRow.style.alignItems = Align.Center;
@@ -435,11 +644,62 @@ namespace Poly_Ling.MeshListV2
             if (_treeView == null) return;
             _treeView.fixedItemHeight    = 20;
             _treeView.horizontalScrollingEnabled = true;
+            SetupScrollerStability();
             _treeView.makeItem           = MakeTreeItem;
             _treeView.bindItem           = BindTreeItem;
             _treeView.selectionType      = SelectionType.Multiple;
             _treeView.selectionChanged   += OnSelectionChanged;
             _treeView.itemExpandedChanged += OnItemExpandedChanged;
+        }
+
+        // ================================================================
+        // 横スクロールバーのちらつき対策
+        // ================================================================
+
+        // 縦操作中は横スクロールバーの出入りを止める。
+        // 既定の Auto は内容幅の変化で出たり消えたりし、そのたびに
+        // 表示領域の高さが変わってリストが揺れる。
+        private ScrollView _treeScroll;
+        private bool _hScrollerLocked;
+        private IVisualElementScheduledItem _hScrollerUnlock;
+
+        private void SetupScrollerStability()
+        {
+            _treeScroll = _treeView?.Q<ScrollView>();
+            if (_treeScroll == null) return;
+
+            var vs = _treeScroll.verticalScroller;
+            if (vs != null)
+            {
+                vs.RegisterCallback<PointerDownEvent>(_ => LockHorizontalScroller(), TrickleDown.TrickleDown);
+                vs.RegisterCallback<PointerUpEvent>(_ => UnlockHorizontalScroller(), TrickleDown.TrickleDown);
+                vs.RegisterCallback<PointerCaptureOutEvent>(_ => UnlockHorizontalScroller());
+            }
+
+            // ホイールは終端イベントが無いので、途切れてから解除する。
+            _treeScroll.RegisterCallback<WheelEvent>(_ =>
+            {
+                LockHorizontalScroller();
+                _hScrollerUnlock?.Pause();
+                _hScrollerUnlock = _treeScroll.schedule.Execute(UnlockHorizontalScroller).StartingIn(200);
+            }, TrickleDown.TrickleDown);
+        }
+
+        private void LockHorizontalScroller()
+        {
+            if (_hScrollerLocked || _treeScroll == null) return;
+            var hs = _treeScroll.horizontalScroller;
+            bool shown = hs != null && hs.resolvedStyle.display == DisplayStyle.Flex;
+            _treeScroll.horizontalScrollerVisibility =
+                shown ? ScrollerVisibility.AlwaysVisible : ScrollerVisibility.Hidden;
+            _hScrollerLocked = true;
+        }
+
+        private void UnlockHorizontalScroller()
+        {
+            if (!_hScrollerLocked || _treeScroll == null) return;
+            _treeScroll.horizontalScrollerVisibility = ScrollerVisibility.Auto;
+            _hScrollerLocked = false;
         }
 
         // ================================================================
@@ -482,6 +742,9 @@ namespace Poly_Ling.MeshListV2
             if (!showMorph) CreateTreeRoot();
             if (showMorph) RefreshMorphEditor();
             RefreshAllImmediate();
+            // 名称一括変更はタブ（メッシュ／ボーン／モーフ…）ごとに独立させる
+            ResetRenameState();
+            RefreshSelectionDictionary();
             Log($"{tab} タブ");
         }
 
@@ -534,11 +797,23 @@ namespace Poly_Ling.MeshListV2
 
             _treeRoot = new SummaryTreeRoot();
             _treeRoot.ModelIndex   = ModelIndex;
-            _treeRoot.SendCommand  = cmd => _ctx?.SendCommand(cmd);
+            _treeRoot.SendCommand  = cmd =>
+            {
+                _genBeforeReorder = _applyTreeGeneration;
+                _ctx?.SendCommand(cmd);
+            };
             _treeRoot.OnChanged    = () =>
             {
+                // SendCommand の同期通知で既にツリーを作り直していれば再構築しない。
+                bool alreadyRebuilt = _genBeforeReorder >= 0 && _applyTreeGeneration != _genBeforeReorder;
+                _genBeforeReorder = -1;
                 _isReceiving = true;
-                try { RefreshTreeImmediate(); SyncTreeViewSelection(); UpdateDetailPanel(); }
+                try
+                {
+                    if (!alreadyRebuilt) RefreshTreeImmediate();
+                    SyncTreeViewSelection();
+                    UpdateDetailPanel();
+                }
                 finally { _isReceiving = false; }
             };
             _treeRoot.Build(sourceList, category, excludeMirror, filter);
@@ -549,9 +824,12 @@ namespace Poly_Ling.MeshListV2
         // MakeItem / BindItem（エディタ版と同一）
         // ================================================================
 
+        /// <summary>D&D が行要素からアイテムを引くための目印名。</summary>
+        private const string TreeItemName = "pl-tree-item";
+
         private VisualElement MakeTreeItem()
         {
-            var c = new VisualElement();
+            var c = new VisualElement { name = TreeItemName };
             c.style.flexDirection = FlexDirection.Row;
             c.style.flexGrow = 1; c.style.alignItems = Align.Center;
             c.style.paddingLeft = 2; c.style.paddingRight = 4;
@@ -569,14 +847,39 @@ namespace Poly_Ling.MeshListV2
             infoLabel.style.fontSize = 11; infoLabel.style.marginRight = 4;
             c.Add(infoLabel);
 
+            // 担当者バッジ（名前の直後・情報ラベルの手前）
+            var editorBadge = new Label { name = "editor-badge" };
+            editorBadge.style.flexShrink = 0;
+            editorBadge.style.fontSize = 10;
+            editorBadge.style.marginRight = 4;
+            editorBadge.style.paddingLeft = 4; editorBadge.style.paddingRight = 4;
+            editorBadge.style.unityTextAlign = TextAnchor.MiddleCenter;
+            editorBadge.style.display = DisplayStyle.None;
+            c.Insert(1, editorBadge);
+
+            // 行内ボタンを押した瞬間の Ctrl 状態を控える。
+            // Clickable はクリックを消費するので行の選択は起きない。Ctrl のときだけ
+            // ボタンの機能を無視して選択の反転に振り替える（下の RunRowButton）。
+            // MakeTreeItem は行要素の生成時に1回だけ呼ばれるので、ここで登録する
+            // （BindTreeItem で登録するとハンドラが行の再利用のたびに積み重なる）。
+            c.RegisterCallback<PointerDownEvent>(
+                e => _rowCtrlDown = e.ctrlKey || e.commandKey, TrickleDown.TrickleDown);
+
             var attr = new VisualElement(); attr.style.flexDirection = FlexDirection.Row; attr.style.flexShrink = 0;
+            var editorBtn = MkAttrBtn("editor-btn", "\u270B", "編集者の取得／解放");
+            attr.Add(editorBtn);
             var visBtn = MkAttrBtn("vis-btn", "👁", "可視性切り替え");
             var lockBtn = MkAttrBtn("lock-btn", "🔒", "ロック切り替え");
             var symBtn  = MkAttrBtn("sym-btn", "⇆", "対称切り替え");
             attr.Add(visBtn); attr.Add(lockBtn); attr.Add(symBtn);
             c.Add(attr);
 
-            c.userData = new TreeItemCache { NameLabel = nameLabel, InfoLabel = infoLabel, VisBtn = visBtn, LockBtn = lockBtn, SymBtn = symBtn };
+            c.userData = new TreeItemCache
+            {
+                NameLabel = nameLabel, InfoLabel = infoLabel,
+                VisBtn = visBtn, LockBtn = lockBtn, SymBtn = symBtn,
+                EditorBadge = editorBadge, EditorBtn = editorBtn,
+            };
             return c;
         }
 
@@ -598,6 +901,7 @@ namespace Poly_Ling.MeshListV2
             if (adapter == null) return;
             var cache = element.userData as TreeItemCache;
             if (cache == null) return;
+            cache.Adapter = adapter;
 
             if (cache.NameLabel != null)
             {
@@ -620,33 +924,333 @@ namespace Poly_Ling.MeshListV2
                 cache.InfoLabel.style.display = showInfo ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
-            BindAttrBtn(cache.VisBtn, adapter.IsVisible, "👁", "−",
-                () => SendCmd(new ToggleVisibilityCommand(ModelIndex, adapter.MasterIndex)));
-            BindAttrBtn(cache.LockBtn, adapter.IsLocked, "🔒", "🔓",
-                () => SendCmd(new ToggleLockCommand(ModelIndex, adapter.MasterIndex)));
+            BindEditor(cache, adapter);
+            ApplyIndentWidth(element);
+
+            BindAttrBtn(cache.VisBtn, adapter, adapter.IsVisible, "👁", "−",
+                () => ToggleVisibilityFromRow(adapter));
+            BindAttrBtn(cache.LockBtn, adapter, adapter.IsLocked, "🔒", "🔓",
+                () => ToggleLockFromRow(adapter));
 
             if (cache.SymBtn != null)
             {
                 bool show = _currentTab == TabType.Drawable;
                 cache.SymBtn.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
-                if (show)
-                {
-                    string icon = adapter.GetMirrorTypeDisplay();
-                    if      (adapter.IsMirrorSide)        icon = "\U0001FA9E";
-                    else if (adapter.IsRealSide)          icon = "\u21C6";
-                    else if (adapter.HasBakedMirrorChild) icon = "\u21C6B";
-                    BindAttrBtn(cache.SymBtn, adapter.HasMirrorIcon, icon, "",
-                        () => SendCmd(new CycleMirrorTypeCommand(ModelIndex, adapter.MasterIndex)));
-                }
+                if (show) BindMirrorBtn(cache.SymBtn, adapter);
             }
         }
 
-        private void BindAttrBtn(Button btn, bool active, string onIcon, string offIcon, Action click)
+        // ================================================================
+        // 行内ボタン
+        //
+        // 【役割の分離】
+        //   行内のボタン  … 押した行の反転値を対象全件へ揃える。
+        //                   押した行が選択に含まれれば選択全件、含まれなければその行だけ。
+        //                   どちらの場合も選択そのものは変えない。
+        //   ボタン行の一括 … 選択されている行すべてに、決まった値を設定する。
+        //
+        // 【Ctrl の例外】
+        //   Ctrl を押しながら行内ボタンを押した場合、ボタンの機能は実行せず、
+        //   その行の選択だけを反転する。行のどこを押しても Ctrl の意味が同じになる。
+        // ================================================================
+
+        /// <summary>
+        /// 行内ボタンの共通入口。Ctrl 押下時は action を捨てて選択の反転に振り替える。
+        /// action が null のボタン（ロック中）は、クリックを消費するだけで何もしない。
+        /// </summary>
+        private void RunRowButton(SummaryTreeAdapter adapter, Action action)
+        {
+            if (adapter == null) return;
+            if (_rowCtrlDown) { FlipRowSelection(adapter); return; }
+            action?.Invoke();
+        }
+
+        /// <summary>
+        /// その行の選択状態だけを反転する。他の行の選択はそのまま残す。
+        /// TreeView 側の表示は Attributes/Selection 通知後の SyncTreeViewSelection が追従する。
+        /// </summary>
+        private void FlipRowSelection(SummaryTreeAdapter adapter)
+        {
+            if (adapter == null || adapter.MasterIndex < 0) return;
+
+            var indices = new List<int>(SelIndices());
+            if (!indices.Remove(adapter.MasterIndex))
+                indices.Add(adapter.MasterIndex);
+
+            SendCmd(new SelectMeshCommand(ModelIndex, CurrentCategory, indices.ToArray()));
+        }
+
+        /// <summary>
+        /// 行内ボタンの適用対象を決める。
+        ///   押した行が選択に含まれる → 選択されている行すべて
+        ///   含まれない             → 押した行だけ
+        /// exclude を渡すと、その条件に合う行を対象から外す（ミラーのロック行など）。
+        /// </summary>
+        private int[] RowTargets(SummaryTreeAdapter adapter, Func<SummaryTreeAdapter, bool> exclude = null)
+        {
+            if (adapter == null || adapter.MasterIndex < 0) return Array.Empty<int>();
+
+            bool inSelection = _selectedAdapters.Any(a => a.MasterIndex == adapter.MasterIndex);
+            if (!inSelection)
+                return (exclude != null && exclude(adapter))
+                    ? Array.Empty<int>()
+                    : new[] { adapter.MasterIndex };
+
+            return _selectedAdapters
+                .Where(a => a.MasterIndex >= 0 && (exclude == null || !exclude(a)))
+                .Select(a => a.MasterIndex)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// 可視性。押した行の反転値を対象全件へ揃える。
+        /// 「見えている行の目を押したら、選択全部の目を閉じる」という動きになる。
+        /// </summary>
+        private void ToggleVisibilityFromRow(SummaryTreeAdapter adapter)
+        {
+            if (adapter == null) return;
+            var targets = RowTargets(adapter);
+            if (targets.Length == 0) return;
+            SendCmd(new SetBatchVisibilityCommand(ModelIndex, targets, !adapter.IsVisible));
+        }
+
+        /// <summary>ロック。押した行の反転値を対象全件へ揃える。</summary>
+        private void ToggleLockFromRow(SummaryTreeAdapter adapter)
+        {
+            if (adapter == null) return;
+            var targets = RowTargets(adapter);
+            if (targets.Length == 0) return;
+            SendCmd(new SetBatchLockCommand(ModelIndex, targets, !adapter.IsLocked));
+        }
+
+        /// <summary>
+        /// ミラーの有無。押した行の反転値を対象全件へ揃える。
+        /// 0 → 1（分離）、1 または 2 → 0。結合(2) はここでは作らない。
+        /// ロック行（ミラー側・PMX 由来）は対象から外す。
+        /// </summary>
+        private void SetMirrorFromRow(SummaryTreeAdapter adapter)
+        {
+            if (adapter == null || IsMirrorLocked(adapter)) return;
+            var targets = RowTargets(adapter, IsMirrorLocked);
+            if (targets.Length == 0) return;
+            // 属性を書くだけでなく、ミラー側メッシュの生成・始末まで行う。
+            SendCmd(new SetMirrorEnabledCommand(ModelIndex, targets, adapter.MirrorType == 0));
+        }
+
+        // ================================================================
+        // ミラー欄の表示
+        // ================================================================
+
+        /// <summary>
+        /// ミラーボタンの表示と操作を組み立てる。
+        ///
+        /// このボタンは「ミラーの有無」だけを扱うフラグとする。
+        ///   ⇆    : MirrorType が 1（分離）または 2（結合）
+        ///   空欄 : MirrorType が 0（なし）
+        ///   🪞   : ミラー側そのもの。実体側の従属なので操作させない
+        ///
+        /// 押すと 0 → 1、1 または 2 → 0。結合(2) にするのは詳細欄のモード選択で行う。
+        /// モード・軸・ミラー側メッシュの有無はツールチップで確認できる。
+        ///
+        /// 【操作できる範囲】
+        /// ミラー側メッシュが実在する行（MirrorPair の実体側 / ベイクミラーの実体側 /
+        /// ミラー側そのもの）はロックする。これらは MirrorType を変えても
+        /// ミラー実体との対応が変わらず、属性だけが実体と食い違うため。
+        /// 操作できるのは「MQO 由来の実体なしミラー」＝ミラー側メッシュを持たない行だけ。
+        /// </summary>
+        private void BindMirrorBtn(Button btn, SummaryTreeAdapter adapter)
+        {
+            if (btn == null || adapter == null) return;
+
+            bool locked = IsMirrorLocked(adapter);
+            bool on     = adapter.MirrorType > 0;
+
+            btn.text = adapter.IsMirrorSide ? "\U0001FA9E" : (on ? "\u21C6" : "");
+            btn.style.opacity = locked ? 0.5f : (on ? 1f : 0.3f);
+            btn.tooltip = adapter.IsMirrorSide
+                ? "ミラー側メッシュ。実体側の従属なのでここでは変更できません。"
+                : MirrorTooltip(adapter);
+
+            // ロック中も SetEnabled(false) にはしない。無効な要素はクリックを処理しないため、
+            // イベントが行へ渡って選択が差し替わってしまう。
+            // 有効なままクリックだけ消費し、何もしないようにする。
+            btn.SetEnabled(true);
+            btn.clickable = new Clickable(
+                () => RunRowButton(adapter, locked ? (Action)null : () => SetMirrorFromRow(adapter)));
+        }
+
+        /// <summary>
+        /// ミラーの変更をロックする行か。
+        ///
+        /// ・ミラー側そのもの（IsMirrorSide）は常にロック。実体側の従属のため。
+        /// ・PMX 由来のミラーはロック。ミラー側メッシュがファイル上の実データで、
+        ///   MirrorType を落とすと実体との対応が食い違うため。
+        /// ・MQO 由来はロックしない。ミラー側メッシュはインポータが実体側から生成したもので、
+        ///   MQO の mirror 属性を切り替えるのが本来の操作であるため。
+        ///
+        /// PMX か MQO かは ModelContext.FilePath の拡張子で判定する
+        /// （読込時にファイルパスがそのまま入る）。メッシュ単位で由来を記録した
+        /// フィールドは存在しないため、現状これが唯一の判別材料になる。
+        /// </summary>
+        private bool IsMirrorLocked(SummaryTreeAdapter adapter)
+        {
+            if (adapter == null) return true;
+            // ミラー側そのものだけロックする。実体側の従属で、
+            // ここで切り替えても実体側との対応が変わらないため。
+            //
+            // 以前は PMX 由来の実体側もロックしていたが、解消時にミラー側を
+            // 破棄せず独立メッシュとして残すようにしたので、その必要はなくなった。
+            return adapter.IsMirrorSide;
+        }
+
+        private string MirrorTooltip(SummaryTreeAdapter adapter)
+        {
+            string entity =
+                adapter.IsRealSide          ? "ミラー側メッシュあり（ペア同期）" :
+                adapter.HasBakedMirrorChild ? "ミラー側メッシュあり（ベイク済み）" :
+                                              "ミラー側メッシュなし";
+            string howto = IsMirrorLocked(adapter)
+                ? "ミラー側メッシュ。実体側の従属なので変更できません"
+                : "クリックでミラーの有無を切り替え（結合は詳細欄で設定）";
+            return $"ミラー: {MirrorViewUtil.TypeName(adapter.MirrorType)}"
+                 + $" / 軸: {MirrorViewUtil.AxisLetter(adapter.MirrorAxis)}"
+                 + $"\n{entity}"
+                 + $"\n{howto}";
+        }
+
+        // ================================================================
+        // インデント幅
+        // ================================================================
+
+        /// <summary>
+        /// 行のインデントを現在値に合わせる。
+        ///
+        /// TreeView 既定のインデント段組みは、段数と要素幅の対応が実装依存で、
+        /// 要素ごとに幅を上書きしても段数を保てない。そこで既定の段組みは
+        /// 幅0＋非表示にして無効化し、インデントは自分が生成した行要素
+        /// （MakeTreeItem の pl-tree-item）の marginLeft で与える。
+        /// この要素は自前で作っているので、必ず反映される。
+        ///
+        /// 深さは SummaryTreeAdapter.GetDepth()（Parent 連鎖）から取る。
+        /// フィルタで親が落ちた場合もツリー実体に従うため、表示とずれない。
+        ///
+        /// なお既定の段組みを消したぶん、開閉トグルの矢印は深さによらず
+        /// 左端に揃う。名前だけが深さぶん右へずれる。
+        /// </summary>
+        private void ApplyIndentWidth(VisualElement rowContent)
+        {
+            if (rowContent == null) return;
+            var adapter = (rowContent.userData as TreeItemCache)?.Adapter;
+            if (adapter == null) return;
+
+            // 既定の段組みを無効化する。祖先を遡って最初に見つかった階層で打ち切る
+            // （兄弟行は子孫に含まれないので、他行を巻き込むことはない）。
+            var e = rowContent.parent;
+            for (int up = 0; e != null && up < 4; up++, e = e.parent)
+            {
+                bool found = false;
+                e.Query(className: BaseTreeView.itemIndentUssClassName)
+                 .ForEach(x => { x.style.width = 0f; x.style.display = DisplayStyle.None; found = true; });
+                if (found) break;
+            }
+
+            rowContent.style.marginLeft = adapter.GetDepth() * _treeIndentWidth;
+        }
+
+        /// <summary>表示中の全行のインデントを更新する（スライダー操作時）。</summary>
+        private void ApplyIndentWidthToVisibleRows()
+        {
+            if (_treeView == null) return;
+            _treeView.Query(name: TreeItemName).ForEach(ApplyIndentWidth);
+        }
+
+        /// <summary>
+        /// 担当者バッジと取得／解放ボタンを行に反映する。
+        ///
+        /// 表示規則:
+        ///   担当者なし → バッジ非表示 / ボタン「✋」（押すと取得）
+        ///   自分が担当 → バッジ着色   / ボタン「✔」（押すと解放）
+        ///   他人が担当 → バッジ着色   / ボタン無効・行を淡色化
+        /// </summary>
+        private void BindEditor(TreeItemCache cache, SummaryTreeAdapter adapter)
+        {
+            string editor = adapter.EditorName ?? "";
+            bool hasEditor = editor.Length > 0;
+            bool isMine    = hasEditor && editor == LocalUserName;
+            bool isOthers  = hasEditor && !isMine;
+
+            if (cache.EditorBadge != null)
+            {
+                cache.EditorBadge.style.display = hasEditor ? DisplayStyle.Flex : DisplayStyle.None;
+                if (hasEditor)
+                {
+                    cache.EditorBadge.text = editor;
+                    var col = EditorColor(editor);
+                    cache.EditorBadge.style.color = new StyleColor(col);
+                    cache.EditorBadge.style.backgroundColor =
+                        new StyleColor(new Color(col.r, col.g, col.b, 0.15f));
+                }
+            }
+
+            // 他人の担当は編集できないので行を淡くして触れないことを示す
+            if (cache.NameLabel != null && isOthers)
+                cache.NameLabel.style.opacity = 0.55f;
+
+            if (cache.EditorBtn == null) return;
+
+            bool canOperate = !string.IsNullOrEmpty(LocalUserName) && !isOthers;
+            // SetEnabled(false) にはしない。無効な要素はクリックを処理しないため、
+            // イベントが行へ渡って選択が差し替わってしまう。
+            // 有効なままクリックを消費し、下のハンドラが canOperate で弾く。
+            cache.EditorBtn.SetEnabled(true);
+            cache.EditorBtn.tooltip = isOthers
+                ? $"{editor} が編集中です"
+                : (isMine ? "編集者を解放する" : "自分を編集者に設定する");
+            cache.EditorBtn.style.opacity = canOperate ? 1f : 0.35f;
+
+            // 取得なら自分の名前、解放なら空文字を送る。
+            // ObjectIds を添えることでサーバ側がリスト構造のズレを検出できる。
+            string icon = isMine ? "\u2714" : "\u270B";
+            string next = isMine ? "" : LocalUserName;
+            BindAttrBtn(cache.EditorBtn, adapter, true, icon, icon,
+                () =>
+                {
+                    if (!canOperate) return;
+                    SendCmd(new SetObjectEditorCommand(
+                        ModelIndex, new[] { adapter.MasterIndex }, next,
+                        new[] { adapter.ObjectId }));
+                });
+        }
+
+        /// <summary>選択中のオブジェクトをまとめて取得／解放する（パネルの一括操作用）。</summary>
+        public void ClaimSelected(bool claim)
+        {
+            if (string.IsNullOrEmpty(LocalUserName)) return;
+            var indices = SelIndices();
+            if (indices.Length == 0) return;
+
+            var ids = new ulong[indices.Length];
+            for (int i = 0; i < indices.Length; i++)
+            {
+                var a = _selectedAdapters.FirstOrDefault(x => x.MasterIndex == indices[i]);
+                ids[i] = a?.ObjectId ?? 0UL;
+            }
+
+            SendCmd(new SetObjectEditorCommand(
+                ModelIndex, indices, claim ? LocalUserName : "", ids));
+        }
+
+        /// <summary>
+        /// 行内ボタンの見た目とクリック処理を設定する。
+        /// クリックは必ず RunRowButton を通し、Ctrl 押下時は選択の反転に振り替える。
+        /// </summary>
+        private void BindAttrBtn(Button btn, SummaryTreeAdapter adapter,
+                                 bool active, string onIcon, string offIcon, Action click)
         {
             if (btn == null) return;
             btn.text = active ? onIcon : offIcon;
             btn.style.opacity = active ? 1f : 0.3f;
-            btn.clickable = new Clickable(click);
+            btn.clickable = new Clickable(() => RunRowButton(adapter, click));
         }
 
         // ================================================================
@@ -665,7 +1269,11 @@ namespace Poly_Ling.MeshListV2
             try
             {
                 var indices = _selectedAdapters.Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
-                SendCmd(new SelectMeshCommand(ModelIndex, CurrentCategory, indices));
+                // 現在のモデルの選択と同じなら送らない。
+                // 送ると PlayerCommandDispatcher が EnterTopologyChanged を呼び、
+                // GPU バッファの全再構築が走る。
+                if (!SameAsCurrentSelection(indices))
+                    SendCmd(new SelectMeshCommand(ModelIndex, CurrentCategory, indices));
             }
             finally { _isReceiving = false; }
 
@@ -688,6 +1296,29 @@ namespace Poly_Ling.MeshListV2
             // IsFolding は IsExpanded の反転値 (folding = true で折りたたみ)
             if (a.MasterIndex >= 0)
                 SendCmd(new SetMeshFoldingCommand(ModelIndex, a.MasterIndex, !newExpanded));
+        }
+
+        /// <summary>
+        /// indices が現在のモデルの選択と同一か（順序は問わない）。
+        /// </summary>
+        private bool SameAsCurrentSelection(int[] indices)
+        {
+            if (CurrentModel == null) return false;
+            int[] cur = CurrentCategory switch
+            {
+                MeshCategory.Drawable => CurrentModel.SelectedDrawableIndices,
+                MeshCategory.Bone     => CurrentModel.SelectedBoneIndices,
+                MeshCategory.Morph    => CurrentModel.SelectedMorphIndices,
+                _                     => null,
+            };
+            if (cur == null || indices == null) return false;
+            if (cur.Length != indices.Length) return false;
+            if (indices.Length == 0) return true;
+
+            var set = new HashSet<int>(cur);
+            foreach (int i in indices)
+                if (!set.Contains(i)) return false;
+            return true;
         }
 
         private void SyncTreeViewSelection()
@@ -721,8 +1352,27 @@ namespace Poly_Ling.MeshListV2
         {
             CleanupDragDrop();
             if (_treeView == null || _treeRoot == null) return;
-            _dragDropHelper = new TreeViewDragDropHelper<SummaryTreeAdapter>(_treeView, _treeRoot, new SummaryDragValidator());
+            _dragDropHelper = new TreeViewDragDropHelper<SummaryTreeAdapter>(
+                _treeView, _treeRoot, new SummaryDragValidator(), new MeshListRowResolver());
             _dragDropHelper.Setup();
+        }
+
+        /// <summary>
+        /// 行要素 → アダプタ / 内容要素 の解決器。
+        /// 行の並び順から index を数える方法は仮想化リストでずれるため、
+        /// BindTreeItem が書き込んだ値を直接読む。
+        /// </summary>
+        private class MeshListRowResolver : ITreeRowResolver<SummaryTreeAdapter>
+        {
+            public SummaryTreeAdapter ResolveItem(VisualElement rowElement)
+                => (ResolveContent(rowElement)?.userData as TreeItemCache)?.Adapter;
+
+            public VisualElement ResolveContent(VisualElement rowElement)
+            {
+                if (rowElement == null) return null;
+                if (rowElement.userData is TreeItemCache) return rowElement;
+                return rowElement.Q<VisualElement>(TreeItemName);
+            }
         }
 
         private void CleanupDragDrop() { _dragDropHelper?.Cleanup(); _dragDropHelper = null; }
@@ -749,6 +1399,25 @@ namespace Poly_Ling.MeshListV2
             Q<Button>("btn-show")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(true));
             Q<Button>("btn-hide")     ?.RegisterCallback<ClickEvent>(_ => SetSelectedVisibility(false));
 
+            Q<Button>("btn-lock")      ?.RegisterCallback<ClickEvent>(_ => SetSelectedLock(true));
+            Q<Button>("btn-unlock")    ?.RegisterCallback<ClickEvent>(_ => SetSelectedLock(false));
+            Q<Button>("btn-mirror-on") ?.RegisterCallback<ClickEvent>(_ => SetSelectedMirror(1));
+            Q<Button>("btn-mirror-off")?.RegisterCallback<ClickEvent>(_ => SetSelectedMirror(0));
+
+            Q<Button>("btn-seldic-apply")?.RegisterCallback<ClickEvent>(_ => ApplySelectionDictionary(false));
+            Q<Button>("btn-seldic-add")  ?.RegisterCallback<ClickEvent>(_ => ApplySelectionDictionary(true));
+
+            Q<Button>("btn-rename-template")?.RegisterCallback<ClickEvent>(_ => OnRenameSaveTemplate());
+            Q<Button>("btn-rename-load")    ?.RegisterCallback<ClickEvent>(_ => OnRenameLoad());
+            Q<Button>("btn-rename-apply")   ?.RegisterCallback<ClickEvent>(_ => OnRenameApply());
+
+            _indentSlider?.RegisterValueChangedCallback(e =>
+            {
+                _treeIndentWidth = Mathf.Round(e.newValue);
+                if (_indentValueLabel != null) _indentValueLabel.text = $"{(int)_treeIndentWidth}px";
+                ApplyIndentWidthToVisibleRows();
+            });
+
             _detailModeToggle?.RegisterValueChangedCallback(_ => OnDetailModeChanged());
             _showInfoToggle?.RegisterValueChangedCallback(_ => RefreshTree());
             _showMirrorSideToggle?.RegisterValueChangedCallback(_ => RefreshTreeImmediate());
@@ -773,6 +1442,207 @@ namespace Poly_Ling.MeshListV2
         }
 
         private void OnAdd() => SendCmd(new AddMeshCommand(ModelIndex));
+
+        // ================================================================
+        // 選択辞書（オブジェクト選択辞書）
+        // ================================================================
+
+        /// <summary>
+        /// 辞書名の一覧をドロップダウンへ反映する。並びは
+        /// ModelContext.MeshSelectionSets と同じで、位置がそのまま SetIndex になる。
+        /// </summary>
+        private void RefreshSelectionDictionary()
+        {
+            if (_selDicDropdown == null) return;
+
+            string prev = _selDicDropdown.value;
+            _selDicNames.Clear();
+            var names = CurrentModel?.MeshSelectionSetNames;
+            if (names != null)
+                foreach (var n in names) _selDicNames.Add(n ?? "");
+
+            _selDicDropdown.choices = _selDicNames;
+            if (_selDicNames.Count == 0)
+            {
+                _selDicDropdown.SetValueWithoutNotify("");
+                _selDicDropdown.index = -1;
+            }
+            else
+            {
+                int idx = prev != null ? _selDicNames.IndexOf(prev) : -1;
+                _selDicDropdown.index = idx >= 0 ? idx : 0;
+            }
+
+            bool has = _selDicNames.Count > 0;
+            _btnSelDicApply?.SetEnabled(has);
+            _btnSelDicAdd?.SetEnabled(has);
+        }
+
+        /// <summary>辞書を選択へ適用する。addToExisting=true なら現在の選択へ追加。</summary>
+        private void ApplySelectionDictionary(bool addToExisting)
+        {
+            if (_selDicDropdown == null) return;
+            int idx = _selDicDropdown.index;
+            if (idx < 0 || idx >= _selDicNames.Count) { Log("選択辞書が選ばれていません"); return; }
+            SendCmd(new ApplySelectionDictionaryCommand(ModelIndex, idx, addToExisting));
+            Log(addToExisting ? $"辞書を選択に追加: {_selDicNames[idx]}" : $"辞書を選択に適用: {_selDicNames[idx]}");
+        }
+
+        // ================================================================
+        // 名称一括変更
+        // ================================================================
+
+        /// <summary>タブごとに辞書を分けるためのキー要素。</summary>
+        private string RenameCategoryKey() => IsSimpleMode ? "mesh" : _currentTab switch
+        {
+            TabType.Bone      => "bone",
+            TabType.Morph     => "morph",
+            TabType.RigidBody => "rigidbody",
+            TabType.Joint     => "joint",
+            _                 => "mesh",
+        };
+
+        private string RenamePathKey()         => $"MeshRename.{RenameCategoryKey()}.CsvPath";
+        private string RenameDefaultFileName() => $"rename_{RenameCategoryKey()}.csv";
+
+        /// <summary>
+        /// 対応表 CSV のパス。手入力があればそれを使い、無ければ
+        /// partsDictionary/rename_<カテゴリ>.csv を既定にする。
+        /// </summary>
+        private string ResolveRenamePath()
+        {
+            string saved = RecentPaths.Get(RenamePathKey());
+            if (!string.IsNullOrEmpty(saved)) return saved;
+            return System.IO.Path.Combine(PartsDictionaryPath.Resolve(), RenameDefaultFileName());
+        }
+
+        /// <summary>現在のタブが対象にするビュー一覧。</summary>
+        private IReadOnlyList<IMeshView> RenameSourceList()
+        {
+            var model = CurrentModel;
+            if (model == null) return null;
+            if (IsSimpleMode) return model.DrawableList;
+            return _currentTab switch
+            {
+                TabType.Drawable  => model.DrawableList,
+                TabType.Bone      => model.BoneList,
+                TabType.Morph     => model.MorphList,
+                TabType.RigidBody => model.RigidBodyList,
+                TabType.Joint     => model.RigidBodyJointList,
+                _                 => null,
+            };
+        }
+
+        private void OnRenameBrowse()
+        {
+            string cur = _renamePathField?.value ?? "";
+            if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
+            string dir = System.IO.Path.GetDirectoryName(cur);
+            if (string.IsNullOrEmpty(dir)) dir = PartsDictionaryPath.Resolve();
+            string name = System.IO.Path.GetFileName(cur);
+            if (string.IsNullOrEmpty(name)) name = RenameDefaultFileName();
+            string path = PLEditorBridge.I.SaveFilePanel("名称一括変更 対応表", dir, name, "csv");
+            if (!string.IsNullOrEmpty(path)) _renamePathField.value = path;
+        }
+
+        /// <summary>現在のタブの名前を「旧名,新名（同じ）」で書き出す。</summary>
+        private void OnRenameSaveTemplate()
+        {
+            var source = RenameSourceList();
+            if (source == null || source.Count == 0) { RenameStatus("対象がありません"); return; }
+
+            string path = _renamePathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(path)) path = ResolveRenamePath();
+            if (string.IsNullOrEmpty(path)) { RenameStatus("出力先を指定してください"); return; }
+
+            // 既定の受け渡しフォルダを使う場合は作成しておく
+            PartsDictionaryPath.ResolveForWrite();
+
+            var names = new List<string>(source.Count);
+            foreach (var v in source)
+                if (v != null && !string.IsNullOrEmpty(v.Name)) names.Add(v.Name);
+
+            int written = MeshRenameCsvHelper.SaveTemplate(names, path);
+            RenameStatus(written >= 0
+                ? $"雛形を書き出しました: {written} 行 → {path}"
+                : "雛形の書き出しに失敗しました（ログを参照）");
+        }
+
+        /// <summary>
+        /// 対応表を読み込み、現在のタブの名前と突き合わせて適用対象を決める。
+        /// 実際の重複回避は適用時に受け側で行う。
+        /// </summary>
+        private void OnRenameLoad()
+        {
+            _renameTargetIndices = null;
+            _renameTargetNames   = null;
+
+            string path = _renamePathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(path)) path = ResolveRenamePath();
+
+            var pairs = MeshRenameCsvHelper.LoadPairs(path);
+            if (pairs == null) { RenameStatus("読込に失敗しました（ログを参照）"); UpdateRenameButtonStates(); return; }
+            if (pairs.Count == 0) { RenameStatus("有効な行がありません"); UpdateRenameButtonStates(); return; }
+
+            var source = RenameSourceList();
+            if (source == null) { RenameStatus("対象がありません"); UpdateRenameButtonStates(); return; }
+
+            var indices  = new List<int>();
+            var newNames = new List<string>();
+            var used     = new HashSet<int>();
+            int unmatched = 0, skipped = 0;
+
+            foreach (var pair in pairs)
+            {
+                bool hit = false;
+                foreach (var v in source)
+                {
+                    if (v == null || v.Name != pair.OldName) continue;
+                    hit = true;
+                    if (!used.Add(v.MasterIndex)) { skipped++; continue; }
+                    indices.Add(v.MasterIndex);
+                    newNames.Add(pair.NewName);
+                }
+                if (!hit) unmatched++;
+            }
+
+            _renameTargetIndices = indices.ToArray();
+            _renameTargetNames   = newNames.ToArray();
+
+            string msg = $"対象 {indices.Count} 件 / 未一致 {unmatched} 件";
+            if (skipped > 0) msg += $" / 重複指定 {skipped} 件";
+            RenameStatus(msg);
+            UpdateRenameButtonStates();
+        }
+
+        private void OnRenameApply()
+        {
+            if (_renameTargetIndices == null || _renameTargetIndices.Length == 0)
+            {
+                RenameStatus("先に読込を実行してください");
+                return;
+            }
+            SendCmd(new RenameMeshesCommand(ModelIndex, _renameTargetIndices, _renameTargetNames));
+            RenameStatus($"適用しました: {_renameTargetIndices.Length} 件（重複名は自動回避）");
+        }
+
+        /// <summary>タブ切り替え時など、読込済みの対応表を捨ててパスを引き直す。</summary>
+        private void ResetRenameState()
+        {
+            _renameTargetIndices = null;
+            _renameTargetNames   = null;
+            _renamePathField?.SetValueWithoutNotify(ResolveRenamePath());
+            RenameStatus("");
+            UpdateRenameButtonStates();
+        }
+
+        private void UpdateRenameButtonStates()
+        {
+            bool hasTarget = _renameTargetIndices != null && _renameTargetIndices.Length > 0;
+            _btnRenameApply?.SetEnabled(hasTarget);
+        }
+
+        private void RenameStatus(string m) { if (_renameStatusLabel != null) _renameStatusLabel.text = m; }
 
         private void MoveSelected(int dir)
         {
@@ -816,6 +1686,26 @@ namespace Poly_Ling.MeshListV2
             SendCmd(new SetBatchVisibilityCommand(ModelIndex, SelIndices(), visible));
         }
 
+        /// <summary>選択されている行すべてのロックを設定する。</summary>
+        private void SetSelectedLock(bool locked)
+        {
+            if (_selectedAdapters.Count == 0) return;
+            SendCmd(new SetBatchLockCommand(ModelIndex, SelIndices(), locked));
+        }
+
+        /// <summary>
+        /// 選択されている行すべてのミラーを設定する。
+        /// ロック対象（ミラー側・PMX 由来）は除外する。
+        /// </summary>
+        private void SetSelectedMirror(int mirrorType)
+        {
+            var targets = _selectedAdapters
+                .Where(a => !IsMirrorLocked(a))
+                .Select(a => a.MasterIndex).Where(i => i >= 0).ToArray();
+            if (targets.Length == 0) { Log("ミラーを変更できる行が選択されていません"); return; }
+            SendCmd(new SetMirrorEnabledCommand(ModelIndex, targets, mirrorType != 0));
+        }
+
         private void MoveToEdge(bool toTop)
         {
             if (_selectedAdapters.Count == 0 || _treeRoot == null) return;
@@ -856,6 +1746,8 @@ namespace Poly_Ling.MeshListV2
                         // Bone タブは BonePoseData 等が変化した可能性があるため
                         // _selectedAdapters のビューを最新スナップショットで更新する
                         if (_currentTab == TabType.Bone) RefreshSelectedAdapterViews();
+                        // 辞書の追加・削除・改名は Attributes で通知される
+                        RefreshSelectionDictionary();
                         UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
                     case ChangeKind.ListStructure:
@@ -871,6 +1763,8 @@ namespace Poly_Ling.MeshListV2
                         }
                         if (_currentTab != TabType.Morph) { CreateTreeRoot(); RefreshAllImmediate(); SyncTreeViewSelection(); }
                         if (_currentTab == TabType.Morph) RefreshMorphEditor();
+                        RefreshSelectionDictionary();
+                        UpdateRenameButtonStates();
                         UpdateDetailPanel(); UpdateBonePosePanel(); UpdateTransformPanel();
                         break;
                 }
@@ -881,6 +1775,46 @@ namespace Poly_Ling.MeshListV2
         // ================================================================
         // 更新（RefreshTree の delayCall → schedule.Execute）
         // ================================================================
+
+        /// <summary>
+        /// 初期高さ = min(基準の4倍, 現在の展開状態で見える行がすべて収まる高さ)。
+        /// 下端ドラッグで手動調整された後は何もしない。
+        /// </summary>
+        private void ApplyAutoTreeHeight()
+        {
+            if (_treeView == null || _treeRoot == null) return;
+            if (_treeHeightUserAdjusted) return;
+
+            int visibleRows = CountVisibleRows(_treeRoot.RootItems);
+            if (visibleRows <= 0) return;
+
+            float rowH   = _treeView.fixedItemHeight > 0f ? _treeView.fixedItemHeight : 20f;
+            float needed = visibleRows * rowH + 4f;                 // 4f = 上下の枠ぶん
+            float h      = Mathf.Max(TreeMinHeight,
+                                     Mathf.Min(TreeBaseHeight * TreeInitialScale, needed));
+            if (Mathf.Approximately(h, _treeHeight)) return;
+
+            _treeHeight = h;
+            // TreeView は height を無視するため min/max も同値にする。
+            _treeView.style.height    = h;
+            _treeView.style.minHeight = h;
+            _treeView.style.maxHeight = h;
+        }
+
+        /// <summary>展開状態を加味した可視行数。畳まれた子は数えない。</summary>
+        private int CountVisibleRows(List<SummaryTreeAdapter> items)
+        {
+            if (items == null) return 0;
+            int n = 0;
+            foreach (var it in items)
+            {
+                if (it == null) continue;
+                n++;
+                if (it.Children != null && it.Children.Count > 0 && _treeView.IsExpanded(it.Id))
+                    n += CountVisibleRows(it.Children);
+            }
+            return n;
+        }
 
         private void RefreshAllImmediate() { RefreshTreeImmediate(); UpdateHeader(); UpdateDetailPanel(); }
 
@@ -901,9 +1835,41 @@ namespace Poly_Ling.MeshListV2
         private void ApplyTreeToView()
         {
             if (_treeView == null || _treeRoot == null) return;
-            _treeView.SetRootItems(TreeViewHelper.BuildTreeData(_treeRoot.RootItems));
-            _treeView.Rebuild();
-            RestoreExpanded(_treeRoot.RootItems);
+
+            // Rebuild() の前後でスクロール位置を保持する。
+            // 保持処理を入れないと、▲▼移動 / Indent / Outdent / D&D のたびに
+            // リストが先頭まで戻ってしまう。
+            var scroll = _treeView.Q<ScrollView>();
+            Vector2 keep = scroll != null ? scroll.scrollOffset : Vector2.zero;
+
+            // 表示の作り直しは「操作」ではない。Rebuild() は selectionChanged を、
+            // RestoreExpanded() は itemExpandedChanged を発火させるため、囲わないと
+            // OnSelectionChanged が SelectMeshCommand を送ってしまい、
+            // GPU バッファの全再構築が走る。選択の再同期は SyncTreeViewSelection が行う。
+            bool prevReceiving = _isReceiving;
+            _isReceiving = true;
+            try
+            {
+                _treeView.SetRootItems(TreeViewHelper.BuildTreeData(_treeRoot.RootItems));
+                _treeView.Rebuild();
+                RestoreExpanded(_treeRoot.RootItems);
+            }
+            finally { _isReceiving = prevReceiving; }
+
+            _applyTreeGeneration++;
+            ApplyAutoTreeHeight();
+
+            if (scroll != null && (keep.x > 0f || keep.y > 0f))
+            {
+                scroll.scrollOffset = keep;
+                // Rebuild 直後はコンテンツ高がまだ確定しておらず、代入値が
+                // クランプされることがある。レイアウト確定後に再度セットする。
+                _root?.schedule.Execute(() =>
+                {
+                    var s = _treeView?.Q<ScrollView>();
+                    if (s != null) s.scrollOffset = keep;
+                });
+            }
         }
 
         private void RestoreExpanded(List<SummaryTreeAdapter> items)
@@ -948,6 +1914,19 @@ namespace Poly_Ling.MeshListV2
         // 詳細パネル（エディタ版と同一）
         // ================================================================
 
+        /// <summary>
+        /// 詳細欄のミラーモード表示を更新する。
+        /// mixed=true は選択内で値が揃っていないことを示す。
+        /// </summary>
+        private void SetMirrorMode(int mirrorType, bool enabled, bool mixed = false)
+        {
+            if (_mirrorModeDropdown == null) return;
+            int idx = MirrorViewUtil.ClampType(mirrorType);
+            _mirrorModeDropdown.SetValueWithoutNotify(MirrorModeChoices[idx]);
+            _mirrorModeDropdown.showMixedValue = mixed;
+            _mirrorModeDropdown.SetEnabled(enabled);
+        }
+
         private void UpdateDetailPanel()
         {
             if (_currentTab == TabType.Morph) return;
@@ -958,6 +1937,8 @@ namespace Poly_Ling.MeshListV2
                 SL(_triCountLabel, "三角形: -"); SL(_quadCountLabel, "四角形: -"); SL(_ngonCountLabel, "多角形: -");
                 SL(_boneIndexLabel, "ボーンIdx: -"); SL(_masterIndexLabel, "マスターIdx: -");
                 _ignorePoseToggle?.SetValueWithoutNotify(false);
+                _preserveNormalsToggle?.SetValueWithoutNotify(false);
+                SetMirrorMode(0, false);
                 _detailFoldout?.SetEnabled(false);
                 return;
             }
@@ -971,6 +1952,10 @@ namespace Poly_Ling.MeshListV2
                 SL(_boneIndexLabel, $"ボーンIdx: {s.BoneIndex}"); SL(_masterIndexLabel, $"マスターIdx: {s.MasterIndex}");
                 _ignorePoseToggle?.SetValueWithoutNotify(s.IgnorePoseInArmature);
                 _ignorePoseToggle?.SetEnabled(true);
+                _preserveNormalsToggle?.SetValueWithoutNotify(s.PreserveNormals);
+                _preserveNormalsToggle?.SetEnabled(true);
+                // ミラー側と PMX 由来のミラーは変更させない
+                SetMirrorMode(s.MirrorType, !IsMirrorLocked(_selectedAdapters[0]));
             }
             else
             {
@@ -981,6 +1966,12 @@ namespace Poly_Ling.MeshListV2
                 bool allSame = _selectedAdapters.All(a => a.MeshView.IgnorePoseInArmature == _selectedAdapters[0].MeshView.IgnorePoseInArmature);
                 _ignorePoseToggle?.SetValueWithoutNotify(allSame && _selectedAdapters[0].MeshView.IgnorePoseInArmature);
                 _ignorePoseToggle?.SetEnabled(true);
+                bool pnAllSame = _selectedAdapters.All(a => a.MeshView.PreserveNormals == _selectedAdapters[0].MeshView.PreserveNormals);
+                _preserveNormalsToggle?.SetValueWithoutNotify(pnAllSame && _selectedAdapters[0].MeshView.PreserveNormals);
+                _preserveNormalsToggle?.SetEnabled(true);
+                bool mtAllSame = _selectedAdapters.All(a => a.MirrorType == _selectedAdapters[0].MirrorType);
+                bool anyEditable = _selectedAdapters.Any(a => !IsMirrorLocked(a));
+                SetMirrorMode(_selectedAdapters[0].MirrorType, anyEditable, mixed: !mtAllSame);
             }
         }
 
@@ -1205,12 +2196,32 @@ namespace Poly_Ling.MeshListV2
             _btnCreateMorphSet?.RegisterCallback<ClickEvent>(_ => OnCreateMorphSet());
         }
 
+        // USS クラス名はエディタ版と揃えてあるが、Player は USS を読み込まないため
+        // 行の並び・色・寸法はここでインラインに指定する。
+        // 指定しないと既定の Column 並びで名前と情報が縦積みになり、
+        // fixedItemHeight = 20 に収まらず表示が崩れる。
         private VisualElement MorphMake()
         {
             var r = new VisualElement(); r.AddToClassList("morph-list-row");
-            r.Add(new Label { name = "n" }); r.Q<Label>("n").AddToClassList("morph-list-name");
-            var il = new Label { name = "i" }; il.AddToClassList("morph-list-info"); r.Add(il);
-            il.style.color = new StyleColor(Color.white);
+            r.style.flexDirection = FlexDirection.Row;
+            r.style.alignItems    = Align.Center;
+            r.style.paddingLeft   = 2; r.style.paddingRight = 4;
+
+            var nl = new Label { name = "n" }; nl.AddToClassList("morph-list-name");
+            nl.style.color         = new StyleColor(Color.white);
+            nl.style.flexGrow      = 1;
+            nl.style.flexShrink    = 1;
+            nl.style.marginRight   = 4;
+            nl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            r.Add(nl);
+
+            var il = new Label { name = "i" }; il.AddToClassList("morph-list-info");
+            il.style.color         = new StyleColor(Color.white);
+            il.style.width         = 90;
+            il.style.flexShrink    = 0;
+            il.style.fontSize      = 11;
+            il.style.unityTextAlign = TextAnchor.MiddleRight;
+            r.Add(il);
             return r;
         }
 
@@ -1571,11 +2582,12 @@ namespace Poly_Ling.MeshListV2
             return b;
         }
 
-        private static Button MakeSmallBtn(string label, string name)
+        private static Button MakeSmallBtn(string label, string name, string tooltip = null)
         {
             var b = new Button { text = label, name = name };
             b.style.height = 18; b.style.marginRight = 2; b.style.marginBottom = 2; b.style.fontSize = 10;
             b.style.paddingLeft = 4; b.style.paddingRight = 4; b.style.paddingTop = 0; b.style.paddingBottom = 0;
+            if (!string.IsNullOrEmpty(tooltip)) b.tooltip = tooltip;
             return b;
         }
 
@@ -1609,7 +2621,7 @@ namespace Poly_Ling.MeshListV2
         private static void AddListResizeHandle(
             VisualElement container, VisualElement target,
             Func<float> getHeight, Action<float> setHeight,
-            float min, float max)
+            float min)
         {
             var handle = new VisualElement();
             handle.style.width           = new StyleLength(new Length(100, LengthUnit.Percent));
@@ -1635,7 +2647,7 @@ namespace Poly_Ling.MeshListV2
             {
                 if (!dragging || !handle.HasPointerCapture(e.pointerId)) return;
                 float delta = e.position.y - startY;
-                float h = Mathf.Clamp(startHeight + delta, min, max);
+                float h = Mathf.Max(min, startHeight + delta);   // 上限なし
                 setHeight(h);
                 // TreeView は height を無視するため min/max も同値にして高さを厳密固定する。
                 target.style.height    = h;

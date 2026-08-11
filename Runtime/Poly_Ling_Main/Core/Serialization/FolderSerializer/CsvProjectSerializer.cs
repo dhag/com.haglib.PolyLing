@@ -26,10 +26,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
     /// </summary>
     public static class CsvProjectSerializer
     {
+        /// <summary>プロジェクトファイルの既定名。任意名で保存された場合はこの限りではない。</summary>
         public const string ProjectFileName = "project.csv";
+
+        /// <summary>プロジェクトファイルの拡張子（ファイルダイアログ用）。</summary>
+        public const string ProjectFileExtension = "csv";
+
+        /// <summary>単一モデルフォルダのモデルファイル名。</summary>
+        public const string ModelFileName = "model.csv";
+
         public const string CurrentVersion = "1.0";
 
-        // RecentPaths のキー（CSVフォルダの保存/読込先を起動間で記録する）
+        // RecentPaths のキー（CSVプロジェクトの保存/読込先ディレクトリを起動間で記録する）
         public const string CsvFolderKey = "Project.CsvFolder";
 
         // ================================================================
@@ -37,7 +45,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
 
         /// <summary>
-        /// フォルダ選択ダイアログを表示してプロジェクトをエクスポート
+        /// ファイル保存ダイアログを表示してプロジェクトをエクスポート。
+        /// 選択したファイルがプロジェクトファイル本体となり、
+        /// モデルフォルダはその親ディレクトリ直下に作成される。
         /// </summary>
         public static bool ExportWithDialog(
             ProjectContext project,
@@ -46,21 +56,22 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string folderPath = PLEditorBridge.I.SaveFolderPanel(
-                "Export Project Folder",
+            string filePath = PLEditorBridge.I.SaveFilePanel(
+                "Export Project File",
                 RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                defaultName
+                defaultName,
+                ProjectFileExtension
             );
 
-            if (string.IsNullOrEmpty(folderPath))
+            if (string.IsNullOrEmpty(filePath))
                 return false;
 
-            RecentPaths.Set(CsvFolderKey, folderPath);
-            return Export(folderPath, project, workPlanes, editorStates, useNameBased);
+            RecentPaths.Set(CsvFolderKey, Path.GetDirectoryName(filePath));
+            return ExportToFile(filePath, project, workPlanes, editorStates, useNameBased);
         }
 
         /// <summary>
-        /// 単一ModelContextをフォルダ選択ダイアログ付きでエクスポート
+        /// 単一ModelContextをファイル保存ダイアログ付きでエクスポート
         /// </summary>
         public static bool ExportModelWithDialog(
             ModelContext model,
@@ -69,16 +80,17 @@ namespace Poly_Ling.Serialization.FolderSerializer
             string defaultName = "Project",
             bool useNameBased = false)
         {
-            string folderPath = PLEditorBridge.I.SaveFolderPanel(
-                "Export Project Folder",
+            string filePath = PLEditorBridge.I.SaveFilePanel(
+                "Export Project File",
                 RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                defaultName
+                defaultName,
+                ProjectFileExtension
             );
 
-            if (string.IsNullOrEmpty(folderPath))
+            if (string.IsNullOrEmpty(filePath))
                 return false;
 
-            RecentPaths.Set(CsvFolderKey, folderPath);
+            RecentPaths.Set(CsvFolderKey, Path.GetDirectoryName(filePath));
 
             // 単一モデルのProjectContextを構築
             var project = new ProjectContext(model.Name ?? defaultName);
@@ -88,7 +100,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
             var workPlanes = workPlane != null ? new List<WorkPlaneContext> { workPlane } : null;
             var editorStates = editorState != null ? new List<EditorStateDTO> { editorState } : null;
 
-            return Export(folderPath, project, workPlanes, editorStates, useNameBased);
+            return ExportToFile(filePath, project, workPlanes, editorStates, useNameBased);
         }
 
         // ================================================================
@@ -96,30 +108,31 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
 
         /// <summary>
-        /// フォルダ選択ダイアログを表示してプロジェクトをインポート
+        /// ファイル選択ダイアログを表示してプロジェクトをインポート。
+        /// 選択するのはプロジェクトファイル（任意名の .csv）。
         /// </summary>
         public static ProjectContext ImportWithDialog(
             out List<EditorStateDTO> editorStates,
             out List<WorkPlaneContext> workPlanes)
         {
-            string folderPath = PLEditorBridge.I.OpenFolderPanel(
-                "Import Project Folder",
+            string filePath = PLEditorBridge.I.OpenFilePanel(
+                "Import Project File",
                 RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                ""
+                ProjectFileExtension
             );
 
             editorStates = null;
             workPlanes = null;
 
-            if (string.IsNullOrEmpty(folderPath))
+            if (string.IsNullOrEmpty(filePath))
                 return null;
 
-            RecentPaths.Set(CsvFolderKey, folderPath);
-            return Import(folderPath, out editorStates, out workPlanes);
+            RecentPaths.Set(CsvFolderKey, Path.GetDirectoryName(filePath));
+            return ImportFromFile(filePath, out editorStates, out workPlanes);
         }
 
         /// <summary>
-        /// フォルダ選択ダイアログで単一ModelContextをインポート
+        /// ファイル選択ダイアログで単一ModelContextをインポート
         /// </summary>
         public static ModelContext ImportModelWithDialog(
             out EditorStateDTO editorState,
@@ -130,40 +143,34 @@ namespace Poly_Ling.Serialization.FolderSerializer
             workPlane = null;
             additionalEntries = new List<CsvMeshEntry>();
 
-            string folderPath = PLEditorBridge.I.OpenFolderPanel(
-                "Import Project Folder",
+            string filePath = PLEditorBridge.I.OpenFilePanel(
+                "Import Project File",
                 RecentPaths.Get(CsvFolderKey, Application.dataPath),
-                ""
+                ProjectFileExtension
             );
 
-            if (string.IsNullOrEmpty(folderPath))
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                 return null;
 
-            RecentPaths.Set(CsvFolderKey, folderPath);
+            RecentPaths.Set(CsvFolderKey, Path.GetDirectoryName(filePath));
 
-            // project.csv があればプロジェクトとして読み込み（追加エントリは無視）
-            string projectCsvPath = Path.Combine(folderPath, ProjectFileName);
-            if (File.Exists(projectCsvPath))
-            {
-                var project = Import(folderPath, out var editorStates, out var workPlanes);
-                if (project == null || project.ModelCount == 0)
-                    return null;
+            string folderPath = Path.GetDirectoryName(filePath);
 
-                editorState = editorStates != null && editorStates.Count > 0 ? editorStates[0] : null;
-                workPlane = workPlanes != null && workPlanes.Count > 0 ? workPlanes[0] : null;
-                return project.Models[0];
-            }
-
-            // model.csv があれば単一モデルフォルダとして読み込み（追加エントリあり）
-            string modelCsvPath = Path.Combine(folderPath, "model.csv");
-            if (File.Exists(modelCsvPath))
+            // model.csv を直接選択した場合は単一モデルフォルダとして読み込み（追加エントリあり）
+            if (IsModelFile(filePath))
             {
                 var model = CsvModelSerializer.LoadModel(folderPath, out editorState, out workPlane, out additionalEntries);
                 return model;
             }
 
-            Debug.LogError($"[CsvProjectSerializer] No project.csv or model.csv found in: {folderPath}");
-            return null;
+            // それ以外はプロジェクトファイルとして読み込み（追加エントリは無視）
+            var project = ImportFromFile(filePath, out var editorStates, out var workPlanes);
+            if (project == null || project.ModelCount == 0)
+                return null;
+
+            editorState = editorStates != null && editorStates.Count > 0 ? editorStates[0] : null;
+            workPlane = workPlanes != null && workPlanes.Count > 0 ? workPlanes[0] : null;
+            return project.Models[0];
         }
 
         // ================================================================
@@ -171,14 +178,41 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
 
         /// <summary>
+        /// プロジェクトファイルのパスを指定して保存。
+        /// ファイル名は任意。モデルフォルダはこのファイルと同じディレクトリ直下に作成される。
+        /// </summary>
+        public static bool ExportToFile(
+            string projectFilePath,
+            ProjectContext project,
+            List<WorkPlaneContext> workPlanes = null,
+            List<EditorStateDTO> editorStates = null,
+            bool useNameBased = false)
+        {
+            if (string.IsNullOrEmpty(projectFilePath) || project == null)
+                return false;
+
+            string folderPath = Path.GetDirectoryName(projectFilePath);
+            if (string.IsNullOrEmpty(folderPath))
+            {
+                Debug.LogError($"[CsvProjectSerializer] Invalid project file path: {projectFilePath}");
+                return false;
+            }
+
+            return Export(folderPath, project, workPlanes, editorStates, useNameBased,
+                          Path.GetFileName(projectFilePath));
+        }
+
+        /// <summary>
         /// プロジェクトをフォルダに保存
         /// </summary>
+        /// <param name="projectFileName">プロジェクトファイル名。null/空なら project.csv。</param>
         public static bool Export(
             string projectFolderPath,
             ProjectContext project,
             List<WorkPlaneContext> workPlanes = null,
             List<EditorStateDTO> editorStates = null,
-            bool useNameBased = false)
+            bool useNameBased = false,
+            string projectFileName = null)
         {
             if (string.IsNullOrEmpty(projectFolderPath) || project == null)
                 return false;
@@ -187,8 +221,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
             {
                 Directory.CreateDirectory(projectFolderPath);
 
-                // project.csv
-                WriteProjectCsv(projectFolderPath, project);
+                // プロジェクトファイル（既定 project.csv）
+                WriteProjectCsv(projectFolderPath, project, projectFileName);
 
                 // 各モデルフォルダ
                 for (int i = 0; i < project.ModelCount; i++)
@@ -220,12 +254,46 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
 
         /// <summary>
+        /// プロジェクトファイルのパスを指定して読み込み。
+        /// ファイル名は任意。モデルフォルダはこのファイルと同じディレクトリ直下から解決する。
+        /// model.csv を直接指定した場合は単一モデルフォルダとして扱う。
+        /// </summary>
+        public static ProjectContext ImportFromFile(
+            string projectFilePath,
+            out List<EditorStateDTO> editorStates,
+            out List<WorkPlaneContext> workPlanes)
+        {
+            editorStates = new List<EditorStateDTO>();
+            workPlanes = new List<WorkPlaneContext>();
+
+            if (string.IsNullOrEmpty(projectFilePath) || !File.Exists(projectFilePath))
+            {
+                Debug.LogError($"[CsvProjectSerializer] Project file not found: {projectFilePath}");
+                return null;
+            }
+
+            string folderPath = Path.GetDirectoryName(projectFilePath);
+            if (string.IsNullOrEmpty(folderPath))
+            {
+                Debug.LogError($"[CsvProjectSerializer] Invalid project file path: {projectFilePath}");
+                return null;
+            }
+
+            if (IsModelFile(projectFilePath))
+                return ImportSingleModelFolder(folderPath, out editorStates, out workPlanes);
+
+            return Import(folderPath, out editorStates, out workPlanes, Path.GetFileName(projectFilePath));
+        }
+
+        /// <summary>
         /// フォルダからプロジェクトを読み込み
         /// </summary>
+        /// <param name="projectFileName">プロジェクトファイル名。null/空なら project.csv。</param>
         public static ProjectContext Import(
             string projectFolderPath,
             out List<EditorStateDTO> editorStates,
-            out List<WorkPlaneContext> workPlanes)
+            out List<WorkPlaneContext> workPlanes,
+            string projectFileName = null)
         {
             editorStates = new List<EditorStateDTO>();
             workPlanes = new List<WorkPlaneContext>();
@@ -238,19 +306,20 @@ namespace Poly_Ling.Serialization.FolderSerializer
 
             try
             {
-                // project.csv 読み込み
-                string projectCsvPath = Path.Combine(projectFolderPath, ProjectFileName);
+                // プロジェクトファイル読み込み（既定 project.csv）
+                string projectCsvName = string.IsNullOrEmpty(projectFileName) ? ProjectFileName : projectFileName;
+                string projectCsvPath = Path.Combine(projectFolderPath, projectCsvName);
                 if (!File.Exists(projectCsvPath))
                 {
-                    // project.csv がない場合、フォルダ直下に model.csv があるか試みる
+                    // プロジェクトファイルがない場合、フォルダ直下に model.csv があるか試みる
                     // （単一モデルフォルダを直接指定した場合のフォールバック）
-                    string modelCsv = Path.Combine(projectFolderPath, "model.csv");
+                    string modelCsv = Path.Combine(projectFolderPath, ModelFileName);
                     if (File.Exists(modelCsv))
                     {
                         return ImportSingleModelFolder(projectFolderPath, out editorStates, out workPlanes);
                     }
 
-                    Debug.LogError($"[CsvProjectSerializer] project.csv not found in: {projectFolderPath}");
+                    Debug.LogError($"[CsvProjectSerializer] {projectCsvName} not found in: {projectFolderPath}");
                     return null;
                 }
 
@@ -328,7 +397,7 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // project.csv 読み書き
         // ================================================================
 
-        private static void WriteProjectCsv(string folderPath, ProjectContext project)
+        private static void WriteProjectCsv(string folderPath, ProjectContext project, string projectFileName = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#PolyLing,version,1.0");
@@ -345,7 +414,8 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 sb.AppendLine($"model,{i},{Esc(folderName)}");
             }
 
-            File.WriteAllText(Path.Combine(folderPath, ProjectFileName), sb.ToString(), Encoding.UTF8);
+            string fileName = string.IsNullOrEmpty(projectFileName) ? ProjectFileName : projectFileName;
+            File.WriteAllText(Path.Combine(folderPath, fileName), sb.ToString(), Encoding.UTF8);
         }
 
         private static (string projectName, int currentModelIndex, List<string> modelFolders) ReadProjectCsv(string path)
@@ -386,6 +456,11 @@ namespace Poly_Ling.Serialization.FolderSerializer
         // ================================================================
         // ユーティリティ
         // ================================================================
+
+        /// <summary>選択されたファイルが単一モデルフォルダの model.csv かどうか。</summary>
+        private static bool IsModelFile(string filePath)
+            => !string.IsNullOrEmpty(filePath)
+               && string.Equals(Path.GetFileName(filePath), ModelFileName, StringComparison.OrdinalIgnoreCase);
 
         private static string SanitizeFileName(string name)
         {

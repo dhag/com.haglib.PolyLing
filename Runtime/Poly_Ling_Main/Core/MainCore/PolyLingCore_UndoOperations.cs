@@ -10,6 +10,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Materials;
 using Poly_Ling.Context;
 using Poly_Ling.Tools;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Core
 {
@@ -240,6 +241,7 @@ namespace Poly_Ling.Core
                 if (change.IsLocked.HasValue)   { old.IsLocked   = ctx.IsLocked;   ctx.IsLocked   = change.IsLocked.Value; }
                 if (change.MirrorType.HasValue) { old.MirrorType = ctx.MirrorType; ctx.MirrorType = change.MirrorType.Value; }
                 if (change.Name != null)        { old.Name       = ctx.Name;       ctx.Name       = change.Name; }
+                if (change.EditorName != null)  { old.EditorName = ctx.EditorName ?? ""; ctx.EditorName = change.EditorName; }
                 oldValues.Add(old);
             }
 
@@ -248,7 +250,7 @@ namespace Poly_Ling.Core
                 var record = new MeshAttributesBatchChangeRecord(oldValues, changes.ToList());
                 {
                     string __dbgDesc = "属性変更";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     _undoController.MeshListStack.Record(record, __dbgDesc);
                 }
             }

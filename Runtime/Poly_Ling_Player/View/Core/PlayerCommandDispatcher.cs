@@ -14,8 +14,10 @@ using Poly_Ling.Commands;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Selection;
 using Poly_Ling.Tools;
+using Poly_Ling.Tools.ObjectPose;
 using Poly_Ling.Ops;
 using Poly_Ling.UI;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -153,6 +155,8 @@ namespace Poly_Ling.Player
             if (project == null) return;
             var model   = project.CurrentModel;
 
+            PLDiag.Cmd(DescribeCommand(cmd));
+
             switch (cmd)
             {
                 // ── モデル選択
@@ -162,9 +166,8 @@ namespace Poly_Ling.Player
                     int __oldIdx = project.CurrentModelIndex;
                     project.SelectModel(c.TargetModelIndex);
                     int __newIdx = project.CurrentModelIndex;
-                    UnityEngine.Debug.Log(
-                        $"[UndoDbg] SwitchModelCommand oldIdx={__oldIdx} newIdx={__newIdx} " +
-                        $"CurrentModel={project.CurrentModel?.Name ?? "<null>"}");
+                    PLDiag.Cmd($"SwitchModel {__oldIdx} -> {__newIdx} " +
+                               $"current=\"{project.CurrentModel?.Name ?? "<null>"}\"");
 
                     var switchedModel = project.CurrentModel;
                     if (switchedModel != null)
@@ -224,7 +227,7 @@ namespace Poly_Ling.Player
                         var addRecord = new MeshFilterToSkinnedRecord { BeforeList = addBefore, AfterList = addAfter };
                         {
                             string __dbgDesc = "Add Mesh";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((addRecord)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, addRecord);
                             _undoController.MeshListStack.Record(addRecord, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -274,9 +277,8 @@ namespace Poly_Ling.Player
                         // Undo 記録: 3 カテゴリ全部 CaptureAllSelectedIndices で一元管理。
                         // SequenceEqual で差分なしなら記録されない (RecordMeshSelectionChange 内部で判定)。
                         var __newSelected = model.CaptureAllSelectedIndices();
-                        UnityEngine.Debug.Log(
-                            $"[UndoDbg] SelectMesh {sel.Category}: old=[{string.Join(",", __oldSelected)}] " +
-                            $"new=[{string.Join(",", __newSelected)}]");
+                        PLDiag.Cmd($"SelectMesh {sel.Category} old={PLDiag.Ids(__oldSelected)} " +
+                                   $"new={PLDiag.Ids(__newSelected)}");
                         _undoController?.SetModelContext(model);
                         _undoController?.RecordMeshSelectionChange(__oldSelected, __newSelected);
                     }
@@ -352,7 +354,7 @@ namespace Poly_Ling.Player
                         _undoController.FocusVertexEdit();
                         {
                             string __dbgDesc = $"Move {selectedVerts.Count} Vertices";
-                            UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                             _undoController.VertexEditStack.Record(record, __dbgDesc);
                         }
                     }
@@ -430,7 +432,7 @@ namespace Poly_Ling.Player
                         };
                         {
                             string __dbgDesc = "Pivot Move";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -520,7 +522,7 @@ namespace Poly_Ling.Player
                             _undoController.FocusVertexEdit();
                             {
                                 string __dbgDesc = $"Sculpt ({c.Mode}) {movedIdx.Count} Vertices";
-                                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                                 _undoController.VertexEditStack.Record(record, __dbgDesc);
                             }
                         }
@@ -615,30 +617,41 @@ namespace Poly_Ling.Player
 
                 // ── 可視性トグル
                 case ToggleVisibilityCommand c:
+                {
                     if (model == null) return;
                     var visCtx = model.GetMeshContext(c.MasterIndex);
-                    if (visCtx != null) visCtx.IsVisible = !visCtx.IsVisible;
-                    _notifyPanels(ChangeKind.Attributes);
+                    if (visCtx == null) return;
+                    ApplyVisibility(model, new[] { c.MasterIndex }, !visCtx.IsVisible, "Toggle Visibility");
                     return;
+                }
 
                 // ── 一括可視性
                 case SetBatchVisibilityCommand c:
+                {
                     if (model == null) return;
-                    foreach (int mi in c.MasterIndices)
-                    {
-                        var ctx = model.GetMeshContext(mi);
-                        if (ctx != null) ctx.IsVisible = c.Visible;
-                    }
-                    _notifyPanels(ChangeKind.Attributes);
+                    ApplyVisibility(model, c.MasterIndices, c.Visible,
+                        $"Set Visibility: {(c.Visible ? "on" : "off")}");
                     return;
+                }
 
                 // ── ロックトグル
                 case ToggleLockCommand c:
+                {
                     if (model == null) return;
                     var lckCtx = model.GetMeshContext(c.MasterIndex);
-                    if (lckCtx != null) lckCtx.IsLocked = !lckCtx.IsLocked;
-                    _notifyPanels(ChangeKind.Attributes);
+                    if (lckCtx == null) return;
+                    ApplyLock(model, new[] { c.MasterIndex }, !lckCtx.IsLocked, "Toggle Lock");
                     return;
+                }
+
+                // ── 一括ロック
+                case SetBatchLockCommand c:
+                {
+                    if (model == null) return;
+                    ApplyLock(model, c.MasterIndices, c.Locked,
+                        $"Set Lock: {(c.Locked ? "on" : "off")}");
+                    return;
+                }
 
                 // ── IgnorePoseInArmature 設定
                 case SetIgnorePoseCommand c:
@@ -662,6 +675,34 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── 姿勢くさびの生成
+                case GenerateObjectPoseWedgesCommand c:
+                {
+                    if (model == null) return;
+                    GenerateObjectPoseWedges(project, model, c);
+                    return;
+                }
+
+                // ── 姿勢くさびの取り込み
+                case ApplyObjectPoseWedgesCommand c:
+                {
+                    if (model == null) return;
+                    ApplyObjectPoseWedges(model, c);
+                    return;
+                }
+
+                // ── PreserveNormals 設定
+                case SetPreserveNormalsCommand c:
+                    if (model == null) return;
+                    foreach (int idx in c.MasterIndices)
+                    {
+                        var pnCtx = model.GetMeshContext(idx);
+                        if (pnCtx == null) continue;
+                        pnCtx.PreserveNormals = c.Value;
+                    }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+
                 // ── ミラー分岐ルート設定
                 case SetMirrorBranchRootCommand c:
                     if (model == null) return;
@@ -676,12 +717,55 @@ namespace Poly_Ling.Player
 
                 // ── ミラータイプ
                 case CycleMirrorTypeCommand c:
+                {
                     if (model == null) return;
                     var mirCtx = model.GetMeshContext(c.MasterIndex);
-                    if (mirCtx != null)
-                        mirCtx.MirrorType = (mirCtx.MirrorType + 1) % 4;
+                    if (mirCtx == null) return;
+                    int mirOld = mirCtx.MirrorType;
+                    // なし→分離→結合→なし。3 以上は MeshContext.MirrorType の定義に無く、
+                    // MQO の mirror 属性へそのまま書き出されてしまうため作らない。
+                    mirCtx.MirrorType = Poly_Ling.View.MirrorViewUtil.NextType(mirOld);
+                    PLDiag.AttrChange("MirrorType", c.MasterIndex, mirCtx.Name,
+                        mirOld.ToString(), mirCtx.MirrorType.ToString());
+                    RecordAttributeChange(
+                        new MeshAttributeChange { Index = c.MasterIndex, MirrorType = mirOld },
+                        new MeshAttributeChange { Index = c.MasterIndex, MirrorType = mirCtx.MirrorType },
+                        "Cycle Mirror Type");
                     _notifyPanels(ChangeKind.Attributes);
                     return;
+                }
+
+                // ── ミラーの有無そのものを切り替える
+                case SetMirrorEnabledCommand c:
+                {
+                    if (model == null) return;
+                    if (c.MasterIndices == null || c.MasterIndices.Length == 0) return;
+                    ApplyMirrorEnabled(model, c.MasterIndices, c.Enabled);
+                    return;
+                }
+
+                // ── 一括ミラータイプ
+                case SetBatchMirrorTypeCommand c:
+                {
+                    if (model == null) return;
+                    int mirValue = Poly_Ling.View.MirrorViewUtil.ClampType(c.MirrorType);
+                    var mirOldList = new List<MeshAttributeChange>();
+                    var mirNewList = new List<MeshAttributeChange>();
+                    foreach (int mi in c.MasterIndices)
+                    {
+                        var ctx = model.GetMeshContext(mi);
+                        if (ctx == null || ctx.MirrorType == mirValue) continue;
+                        PLDiag.AttrChange("MirrorType", mi, ctx.Name, ctx.MirrorType.ToString(), mirValue.ToString());
+                        mirOldList.Add(new MeshAttributeChange { Index = mi, MirrorType = ctx.MirrorType });
+                        ctx.MirrorType = mirValue;
+                        mirNewList.Add(new MeshAttributeChange { Index = mi, MirrorType = mirValue });
+                    }
+                    if (mirOldList.Count == 0) return;
+                    RecordAttributeChanges(mirOldList, mirNewList,
+                        $"Set Mirror Type: {mirValue} x{mirOldList.Count}");
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
 
                 // ── メッシュ名前変更
                 case RenameMeshCommand c:
@@ -704,10 +788,43 @@ namespace Poly_Ling.Player
                         };
                         var __record = new MeshAttributesBatchChangeRecord(__oldList, __newList);
                         string __desc = $"Rename Mesh: {__oldName} -> {c.NewName}";
-                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __desc + " type=" + (__record?.GetType().Name ?? "<null>"));
+                        PLDiag.UndoRecord("MeshList", __desc, __record);
                         _undoController.MeshListStack.Record(__record, __desc);
                         _undoController.FocusMeshList();
                     }
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── メッシュ名の一括変更（名称一括変更 CSV）
+                // 希望名は MeshRenameCsvHelper.ResolveUniqueNames でモデル全体に対して
+                // 一意化してから適用する。Undo は1レコードにまとめる。
+                case RenameMeshesCommand c:
+                {
+                    if (model == null) return;
+                    if (c.MasterIndices == null || c.NewNames == null) return;
+
+                    var rnsResolved = MeshRenameCsvHelper.ResolveUniqueNames(
+                        model, c.MasterIndices, c.NewNames);
+
+                    var rnsOldList = new List<MeshAttributeChange>();
+                    var rnsNewList = new List<MeshAttributeChange>();
+                    for (int i = 0; i < rnsResolved.Length; i++)
+                    {
+                        string rnsName = rnsResolved[i];
+                        if (string.IsNullOrEmpty(rnsName)) continue;
+                        int rnsIndex = c.MasterIndices[i];
+                        var rnsCtx = model.GetMeshContext(rnsIndex);
+                        if (rnsCtx == null) continue;
+                        if (rnsCtx.Name == rnsName) continue;
+                        PLDiag.AttrChange("Name", rnsIndex, rnsCtx.Name, rnsCtx.Name, rnsName);
+                        rnsOldList.Add(new MeshAttributeChange { Index = rnsIndex, Name = rnsCtx.Name });
+                        rnsCtx.Name = rnsName;
+                        rnsNewList.Add(new MeshAttributeChange { Index = rnsIndex, Name = rnsName });
+                    }
+                    if (rnsOldList.Count == 0) return;
+                    RecordAttributeChanges(rnsOldList, rnsNewList,
+                        $"Rename Meshes: x{rnsOldList.Count}");
                     _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
@@ -733,7 +850,7 @@ namespace Poly_Ling.Player
                         };
                         var __record = new MeshAttributesBatchChangeRecord(__oldList, __newList);
                         string __desc = $"Set Folding [{c.MasterIndex}]: {__oldFolding} -> {c.IsFolding}";
-                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __desc + " type=" + (__record?.GetType().Name ?? "<null>"));
+                        PLDiag.UndoRecord("MeshList", __desc, __record);
                         _undoController.MeshListStack.Record(__record, __desc);
                         _undoController.FocusMeshList();
                     }
@@ -1153,7 +1270,7 @@ namespace Poly_Ling.Player
                         };
                         {
                             string __dbgDesc = "UV→XYZ メッシュ生成";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((uvzRecord)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, uvzRecord);
                             _undoController.MeshListStack.Record(uvzRecord, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -1319,7 +1436,7 @@ namespace Poly_Ling.Player
                         {
                             {
                                 string __dbgDesc = c.Description ?? "ボーンポーズ変更";
-                                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((prec)?.GetType().Name ?? "<null>"));
+                                PLDiag.UndoRecord("MeshList", __dbgDesc, prec);
                                 _undoController.MeshListStack.Record(prec, __dbgDesc);
                             }
                             _undoController.FocusMeshList();
@@ -1348,7 +1465,7 @@ namespace Poly_Ling.Player
                             model.TPoseBackup, model.TPoseBackup, c.Description ?? "スキンごと確定");
                         {
                             string __dbgDesc = c.Description ?? "スキンごと確定";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((frec)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, frec);
                             _undoController.MeshListStack.Record(frec, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -1410,7 +1527,7 @@ namespace Poly_Ling.Player
                         _undoController.SetModelContext(model);
                         {
                             string __dbgDesc = c.Description ?? "BoneTransform変更";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -1504,7 +1621,7 @@ namespace Poly_Ling.Player
                         };
                         {
                             string __dbgDesc = "モデルブレンド適用";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -1664,7 +1781,7 @@ namespace Poly_Ling.Player
                 case FloodSkinWeightCommand c:
                 {
                     if (model == null) return;
-                    var swCtx = BuildSkinWeightToolCtx(model);
+                    var swCtx = BuildSkinWeightAttrToolCtx(model);
                     SkinWeightOperations.ExecuteFlood(
                         model, swCtx,
                         c.TargetBoneMaster, c.PaintMode,
@@ -1678,7 +1795,7 @@ namespace Poly_Ling.Player
                 case NormalizeSkinWeightCommand _:
                 {
                     if (model == null) return;
-                    var swCtx = BuildSkinWeightToolCtx(model);
+                    var swCtx = BuildSkinWeightAttrToolCtx(model);
                     SkinWeightOperations.ExecuteNormalize(model, swCtx,
                         err => Debug.LogWarning($"[Normalize] {err}"));
                     _notifyPanels(ChangeKind.Attributes);
@@ -1689,7 +1806,7 @@ namespace Poly_Ling.Player
                 case PruneSkinWeightCommand c:
                 {
                     if (model == null) return;
-                    var swCtx = BuildSkinWeightToolCtx(model);
+                    var swCtx = BuildSkinWeightAttrToolCtx(model);
                     SkinWeightOperations.ExecutePrune(model, swCtx, c.Threshold,
                         err => Debug.LogWarning($"[Prune] {err}"));
                     _notifyPanels(ChangeKind.Attributes);
@@ -1724,7 +1841,7 @@ namespace Poly_Ling.Player
                         };
                         {
                             string __dbgDesc = "MeshFilter → Skinned 変換";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -1787,7 +1904,7 @@ namespace Poly_Ling.Player
                             var mpRecord = new MeshFilterToSkinnedRecord { BeforeList = mpBefore, AfterList = mpAfter };
                             {
                                 string __dbgDesc = "MediaPipe変形";
-                                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((mpRecord)?.GetType().Name ?? "<null>"));
+                                PLDiag.UndoRecord("MeshList", __dbgDesc, mpRecord);
                                 _undoController.MeshListStack.Record(mpRecord, __dbgDesc);
                             }
                             _undoController.FocusMeshList();
@@ -1845,7 +1962,7 @@ namespace Poly_Ling.Player
                         var qdRecord = new MeshFilterToSkinnedRecord { BeforeList = qdBefore, AfterList = qdAfter };
                         {
                             string __dbgDesc = "Quad減面";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((qdRecord)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, qdRecord);
                             _undoController.MeshListStack.Record(qdRecord, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -1861,148 +1978,171 @@ namespace Poly_Ling.Player
                 {
                     if (model == null) return;
                     var srcMc = model.GetMeshContext(c.SourceMasterIndex);
-                    if (srcMc?.MeshObject == null) return;
-
-                    var bakeBefore = MeshFilterToSkinnedRecord.CaptureList(model);
-
-                    var (bakedMesh, bakeResult) = MirrorBaker.BakeMirror(
-                        srcMc.MeshObject, c.MirrorAxis, 0f, c.Threshold, c.FlipU);
-                    if (bakedMesh == null || bakeResult == null) return;
-
-                    var newMc = new MeshContext
+                    if (srcMc?.MeshObject == null)
                     {
-                        Name       = bakedMesh.Name,
-                        MeshObject = bakedMesh,
-                        Materials  = new System.Collections.Generic.List<Material>(
-                            srcMc.Materials ?? new System.Collections.Generic.List<Material>()),
-                    };
-                    newMc.UnityMesh           = bakedMesh.ToUnityMesh();
-                    newMc.UnityMesh.name      = bakedMesh.Name;
-                    newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-                    newMc.ParentModelContext  = model;
-                    model.Add(newMc);
-                    model.OnListChanged?.Invoke();
+                        Debug.LogWarning($"[MirrorBake] 対象メッシュが見つかりません masterIndex={c.SourceMasterIndex}");
+                        return;
+                    }
+
+                    var bakeMo = srcMc.MeshObject;
+
+                    if (bakeMo.MirrorBakeState != null)
+                    {
+                        Debug.LogWarning($"[MirrorBake] \"{srcMc.Name}\" は既に実体化済みです。先に解除してください");
+                        return;
+                    }
+
+                    // ミラー平面の決定。
+                    // メッシュが見た目・エクスポート用のミラーモード（MirrorType > 0）なら
+                    // メッシュ自身の軸・距離を使う。そうでなければパネル指定を使う。
+                    int   bakeAxis      = c.MirrorAxis;
+                    float bakeOffset    = c.PlaneOffset;
+                    float bakeThreshold = c.Threshold;
+
+                    if (srcMc.MirrorType > 0)
+                    {
+                        bakeAxis   = srcMc.MirrorAxis == 2 ? 1 : (srcMc.MirrorAxis == 4 ? 2 : 0);
+                        bakeOffset = 0f;
+                        // MQO の結合ミラー(2)は mirror_dis が溶接距離。分離ミラー(1)は溶接しない。
+                        bakeThreshold = srcMc.MirrorType == 2 ? srcMc.MirrorDistance : 0f;
+                    }
+
+                    // 境界頂点（選択頂点モードのときだけ渡す。メッシュ設定より優先）
+                    System.Collections.Generic.List<int> bakeBoundary = null;
+                    if (c.BoundaryMode == MirrorBoundaryMode.SelectedVertices)
+                    {
+                        var bakeSel = srcMc.Selection;
+                        if (bakeSel == null || bakeSel.Vertices.Count == 0)
+                        {
+                            Debug.LogWarning("[MirrorBake] 選択頂点モードですが頂点が選択されていません");
+                            return;
+                        }
+                        bakeBoundary = new System.Collections.Generic.List<int>(bakeSel.Vertices);
+                    }
+
+                    int bakeVertsBefore = bakeMo.VertexCount;
+                    int bakeFacesBefore = bakeMo.FaceCount;
 
                     if (_undoController != null)
                     {
-                        var bakeAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
-                        var bakeRecord = new MeshFilterToSkinnedRecord { BeforeList = bakeBefore, AfterList = bakeAfter };
-                        {
-                            string __dbgDesc = "Bake Mirror";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((bakeRecord)?.GetType().Name ?? "<null>"));
-                            _undoController.MeshListStack.Record(bakeRecord, __dbgDesc);
-                        }
-                        _undoController.FocusMeshList();
+                        _undoController.SetMeshObject(bakeMo, srcMc.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+                    var bakeBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                    var bakeResult = MirrorBaker.BakeInPlace(
+                        bakeMo, bakeAxis, bakeOffset, bakeThreshold, c.FlipU,
+                        bakeBoundary, c.ProjectBoundaryToPlane);
+
+                    if (bakeResult == null)
+                    {
+                        Debug.LogWarning($"[MirrorBake] 実体化に失敗しました src=\"{srcMc.Name}\"");
+                        return;
+                    }
+
+                    // 見た目・エクスポート用のミラーモードは解除する（実体を持ったため）。
+                    // 解除に備えて元の設定を退避しておく。
+                    bakeResult.SavedMirrorType           = srcMc.MirrorType;
+                    bakeResult.SavedMirrorAxis           = srcMc.MirrorAxis;
+                    bakeResult.SavedMirrorDistance       = srcMc.MirrorDistance;
+                    bakeResult.SavedMirrorMaterialOffset = srcMc.MirrorMaterialOffset;
+
+                    srcMc.MirrorType = 0;
+                    srcMc.InvalidateSymmetryCache();
+
+                    bakeMo.MirrorBakeState = bakeResult;
+
+                    SyncMeshContextAfterMirrorEdit(srcMc);
+
+                    if (_undoController != null && bakeBefore != null)
+                    {
+                        var bakeAfter = _undoController.CaptureMeshObjectSnapshot();
+                        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                            _undoController, bakeBefore, bakeAfter, "ミラー実体化"));
+                    }
+
+                    int bakeMergedCount = 0;
+                    if (bakeResult.NewVertexOrigin != null)
+                        foreach (var o in bakeResult.NewVertexOrigin)
+                            if (o == VertexOrigin.Merged) bakeMergedCount++;
+
+                    Debug.Log(
+                        $"[MirrorBake] \"{srcMc.Name}\" 実体化 " +
+                        $"verts {bakeVertsBefore} → {bakeMo.VertexCount} " +
+                        $"faces {bakeFacesBefore} → {bakeMo.FaceCount} " +
+                        $"merged={bakeMergedCount} axis={bakeAxis} threshold={bakeThreshold} " +
+                        $"boundary={c.BoundaryMode} project={c.ProjectBoundaryToPlane} " +
+                        $"savedMirrorType={bakeResult.SavedMirrorType} → 0 " +
+                        $"unityMeshVerts={(srcMc.UnityMesh != null ? srcMc.UnityMesh.vertexCount : -1)}");
+
                     _viewportManager.EnterTopologyChanged(project);
-                    _notifyPanels(ChangeKind.ListStructure);
+                    _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
-                // ── Mirror WriteBack
-                case WriteBackMirrorCommand c:
+                // ── Mirror 実体化の解除（半身へ戻す）
+                case UnbakeMirrorCommand c:
                 {
                     if (model == null) return;
-                    var wbEditedMc   = model.GetMeshContext(c.EditedMasterIndex);
-                    var wbOriginalMc = model.GetMeshContext(c.OriginalMasterIndex);
-                    if (wbEditedMc?.MeshObject == null || wbOriginalMc?.MeshObject == null) return;
-                    if (c.BakeResult == null) return;
+                    var ubMc = model.GetMeshContext(c.SourceMasterIndex);
+                    if (ubMc?.MeshObject == null) return;
 
-                    var wbBefore = MeshFilterToSkinnedRecord.CaptureList(model);
-
-                    var resultMesh = MirrorBaker.WriteBack(
-                        wbEditedMc.MeshObject, wbOriginalMc.MeshObject, c.BakeResult, c.WriteBackMode);
-                    if (resultMesh == null) return;
-
-                    string wbName    = wbOriginalMc.Name + "_WriteBack";
-                    resultMesh.Name  = wbName;
-                    var wbNewMc = new MeshContext
+                    var ubMo = ubMc.MeshObject;
+                    var ubState = ubMo.MirrorBakeState;
+                    if (ubState == null)
                     {
-                        Name           = wbName,
-                        MeshObject     = resultMesh,
-                        Materials      = new System.Collections.Generic.List<Material>(
-                            wbOriginalMc.Materials ?? new System.Collections.Generic.List<Material>()),
-                        MirrorType     = wbOriginalMc.MirrorType,
-                        MirrorAxis     = wbOriginalMc.MirrorAxis,
-                        MirrorDistance = wbOriginalMc.MirrorDistance,
-                    };
-                    wbNewMc.UnityMesh           = resultMesh.ToUnityMesh();
-                    wbNewMc.UnityMesh.name      = wbName;
-                    wbNewMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-                    wbNewMc.ParentModelContext  = model;
-                    model.Add(wbNewMc);
-                    model.OnListChanged?.Invoke();
+                        Debug.LogWarning($"[MirrorBake] \"{ubMc.Name}\" は実体化されていません");
+                        return;
+                    }
+
+                    int ubVertsBefore = ubMo.VertexCount;
+                    int ubFacesBefore = ubMo.FaceCount;
 
                     if (_undoController != null)
                     {
-                        var wbAfter   = MeshFilterToSkinnedRecord.CaptureList(model);
-                        var wbRecord  = new MeshFilterToSkinnedRecord { BeforeList = wbBefore, AfterList = wbAfter };
-                        {
-                            string __dbgDesc = "Mirror WriteBack";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((wbRecord)?.GetType().Name ?? "<null>"));
-                            _undoController.MeshListStack.Record(wbRecord, __dbgDesc);
-                        }
-                        _undoController.FocusMeshList();
+                        _undoController.SetMeshObject(ubMo, ubMc.UnityMesh);
+                        _undoController.MeshUndoContext.ParentModelContext = model;
                     }
-                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
-                    _viewportManager.EnterTopologyChanged(project);
-                    _notifyPanels(ChangeKind.ListStructure);
-                    return;
-                }
+                    var ubBefore = _undoController?.CaptureMeshObjectSnapshot();
 
-                // ── Mirror Blend
-                case BlendMirrorCommand c:
-                {
-                    if (model == null) return;
-                    var blSrcMc = model.GetMeshContext(c.SourceMasterIndex);
-                    var blWbMc  = model.GetMeshContext(c.WriteBackMasterIndex);
-                    if (blSrcMc?.MeshObject == null || blWbMc?.MeshObject == null) return;
-                    var srcMesh = blSrcMc.MeshObject;
-                    var wbMesh  = blWbMc.MeshObject;
-                    if (srcMesh.VertexCount != wbMesh.VertexCount) return;
-
-                    var blBefore = MeshFilterToSkinnedRecord.CaptureList(model);
-
-                    var blended   = srcMesh.Clone();
-                    string blName = $"{blSrcMc.Name}_Blend{Mathf.RoundToInt(c.BlendWeight * 100)}";
-                    blended.Name  = blName;
-                    for (int i = 0; i < blended.VertexCount; i++)
-                        blended.Vertices[i].Position = Vector3.Lerp(
-                            srcMesh.Vertices[i].Position, wbMesh.Vertices[i].Position, c.BlendWeight);
-                    blended.RecalculateSmoothNormals();
-
-                    var blNewMc = new MeshContext
+                    if (!MirrorBaker.UnbakeInPlace(ubMo, ubState, c.Mode))
                     {
-                        Name           = blName,
-                        MeshObject     = blended,
-                        Materials      = new System.Collections.Generic.List<Material>(
-                            blSrcMc.Materials ?? new System.Collections.Generic.List<Material>()),
-                        MirrorType     = blSrcMc.MirrorType,
-                        MirrorAxis     = blSrcMc.MirrorAxis,
-                        MirrorDistance = blSrcMc.MirrorDistance,
-                    };
-                    blNewMc.UnityMesh           = blended.ToUnityMesh();
-                    blNewMc.UnityMesh.name      = blName;
-                    blNewMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-                    blNewMc.ParentModelContext  = model;
-                    model.Add(blNewMc);
-                    model.OnListChanged?.Invoke();
-
-                    if (_undoController != null)
-                    {
-                        var blAfter  = MeshFilterToSkinnedRecord.CaptureList(model);
-                        var blRecord = new MeshFilterToSkinnedRecord { BeforeList = blBefore, AfterList = blAfter };
-                        {
-                            string __dbgDesc = "Mirror Blend";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((blRecord)?.GetType().Name ?? "<null>"));
-                            _undoController.MeshListStack.Record(blRecord, __dbgDesc);
-                        }
-                        _undoController.FocusMeshList();
+                        Debug.LogWarning($"[MirrorBake] 解除に失敗しました src=\"{ubMc.Name}\"");
+                        return;
                     }
-                    // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
+
+                    // 半身に戻したので、見た目・エクスポート用のミラーモードを強制的に付ける。
+                    // 軸は実体化に使った軸から決める（0:X→1, 1:Y→2, 2:Z→4）。
+                    ubMc.MirrorType = 2; // 結合
+                    ubMc.MirrorAxis = ubState.BakeAxis == 1 ? 2 : (ubState.BakeAxis == 2 ? 4 : 1);
+                    ubMc.MirrorDistance = ubState.SavedMirrorType == 2
+                        ? ubState.SavedMirrorDistance
+                        : ubState.Threshold;
+                    ubMc.MirrorMaterialOffset = ubState.SavedMirrorMaterialOffset;
+                    ubMc.InvalidateSymmetryCache();
+
+                    ubMo.MirrorBakeState = null;
+
+                    // 実体化中に増えていた頂点・面の選択を捨てる
+                    ubMc.Selection?.ClearAll();
+
+                    SyncMeshContextAfterMirrorEdit(ubMc);
+
+                    if (_undoController != null && ubBefore != null)
+                    {
+                        var ubAfter = _undoController.CaptureMeshObjectSnapshot();
+                        _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                            _undoController, ubBefore, ubAfter, "ミラー実体化の解除"));
+                    }
+
+                    Debug.Log(
+                        $"[MirrorBake] \"{ubMc.Name}\" 解除 " +
+                        $"verts {ubVertsBefore} → {ubMo.VertexCount} " +
+                        $"faces {ubFacesBefore} → {ubMo.FaceCount} " +
+                        $"mode={c.Mode} mirrorType=2 axis={ubMc.MirrorAxis} dist={ubMc.MirrorDistance}");
+
                     _viewportManager.EnterTopologyChanged(project);
-                    _notifyPanels(ChangeKind.ListStructure);
+                    _notifyPanels(ChangeKind.Attributes);
                     return;
                 }
 
@@ -2019,7 +2159,7 @@ namespace Poly_Ling.Player
                         var record = new HumanoidMappingChangedRecord(hmBefore, hmAfter, "Apply Humanoid Mapping");
                         {
                             string __dbgDesc = "Apply Humanoid Mapping";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2042,7 +2182,7 @@ namespace Poly_Ling.Player
                         var record = new HumanoidMappingChangedRecord(hmcBefore, hmcAfter, "Clear Humanoid Mapping");
                         {
                             string __dbgDesc = "Clear Humanoid Mapping";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2078,7 +2218,7 @@ namespace Poly_Ling.Player
                         var record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose");
                         {
                             string __dbgDesc = "Apply T-Pose";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2131,7 +2271,7 @@ namespace Poly_Ling.Player
                             model.TPoseBackup, model.TPoseBackup, "この姿勢で確定");
                         {
                             string __dbgDesc = "この姿勢で確定";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2165,7 +2305,7 @@ namespace Poly_Ling.Player
                         var record = new TPoseUndoRecord(restoreBefore, restoreAfter, oldTPoseBackup, null, "Restore Original Pose");
                         {
                             string __dbgDesc = "Restore Original Pose";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2307,7 +2447,7 @@ namespace Poly_Ling.Player
                         };
                         {
                             string __dbgDesc = "メッシュマージ";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((mergeRecord)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, mergeRecord);
                             _undoController.MeshListStack.Record(mergeRecord, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2405,7 +2545,7 @@ namespace Poly_Ling.Player
                         };
                         {
                             string __dbgDesc = $"モーフ作成: {c.MorphName}";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                             _undoController.MeshListStack.Record(record, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2475,6 +2615,56 @@ namespace Poly_Ling.Player
                     return;
                 }
 
+                // ── 法線再計算 除外辞書 ─────────────────────────────────────────
+                case SaveNormalExcludeSetCommand c:
+                {
+                    if (model == null) return;
+                    var nxMc = model.ActiveMeshContext;
+                    var nxMo = nxMc?.MeshObject;
+                    if (nxMo == null) return;
+                    var nxSel = nxMc.Selection;
+                    if (nxSel == null || !nxSel.HasAnySelection) return;
+                    if (nxMo.NormalRecalcExcludeList == null)
+                        nxMo.NormalRecalcExcludeList = new List<PartsSelectionSet>();
+                    string nxName = GenerateUniqueNormalExcludeName(
+                        nxMo, string.IsNullOrEmpty(c.SetName) ? "NormalExclude" : c.SetName);
+                    var nxSnap = nxSel.CreateSnapshot();
+                    var nxSet  = PartsSelectionSet.FromCurrentSelection(
+                        nxName, nxSnap.Vertices, nxSnap.Edges, nxSnap.Faces, nxSnap.Lines, nxSnap.Mode);
+                    nxMo.NormalRecalcExcludeList.Add(nxSet);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                case LoadNormalExcludeSetCommand c:
+                    NormalExcludeSetApply(model, c.SetIndex);
+                    return;
+
+                case DeleteNormalExcludeSetCommand c:
+                {
+                    if (model == null) return;
+                    var nxdList = model.ActiveMeshContext?.MeshObject?.NormalRecalcExcludeList;
+                    if (nxdList == null || c.SetIndex < 0 || c.SetIndex >= nxdList.Count) return;
+                    nxdList.RemoveAt(c.SetIndex);
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                case RenameNormalExcludeSetCommand c:
+                {
+                    if (model == null) return;
+                    var nxrMo   = model.ActiveMeshContext?.MeshObject;
+                    var nxrList = nxrMo?.NormalRecalcExcludeList;
+                    if (nxrList == null || c.SetIndex < 0 || c.SetIndex >= nxrList.Count) return;
+                    if (string.IsNullOrEmpty(c.NewName)) return;
+                    string nxrName = c.NewName;
+                    if (nxrName != nxrList[c.SetIndex].Name)
+                        nxrName = GenerateUniqueNormalExcludeName(nxrMo, nxrName);
+                    nxrList[c.SetIndex].Name = nxrName;
+                    _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
                 case ExportPartsSetsCsvCommand c:
                 {
                     if (model == null) return;
@@ -2493,6 +2683,293 @@ namespace Poly_Ling.Player
                     if (!c.ByObjectName && imTargets.Count == 0) return;
                     if (PartsSetCsvHelper.ImportSetsFromFolder(model, c.FolderPath, c.ByObjectName, imTargets) > 0)
                         _notifyPanels(ChangeKind.Attributes);
+                    return;
+                }
+
+                // ── 面の表示・非表示 ───────────────────────────────────────────
+                case SetFaceHiddenCommand c:
+                {
+                    if (model == null) return;
+                    var fhTargets = CollectSelectedMeshContexts(model);
+                    if (fhTargets.Count == 0) return;
+
+                    int fhTotal = 0;
+                    var fhChanged = new List<MeshContext>();
+
+                    foreach (var mc in fhTargets)
+                    {
+                        var mo = mc?.MeshObject;
+                        if (mo == null) continue;
+
+                        // Undo は MeshObject 丸ごとのスナップショットで戻す
+                        // （面フラグは MeshObject.Clone が引き継ぐ）。
+                        if (_undoController != null)
+                        {
+                            _undoController.SetMeshObject(mo, mc.UnityMesh);
+                            _undoController.MeshUndoContext.ParentModelContext = model;
+                        }
+                        var fhBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                        int changed = ApplyFaceHidden(mc, c.Operation);
+                        if (changed <= 0) continue;
+
+                        fhTotal += changed;
+                        fhChanged.Add(mc);
+
+                        if (_undoController != null && fhBefore != null)
+                        {
+                            var fhAfter = _undoController.CaptureMeshObjectSnapshot();
+                            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                                _undoController, fhBefore, fhAfter, $"Face Hide ({c.Operation})"));
+                        }
+                    }
+
+                    if (fhTotal > 0)
+                    {
+                        // 面ポリゴンの取捨は Unity Mesh の三角形、
+                        // 辺・頂点・ヒットテストは GPU バッファ側で決まる。
+                        // 前者は三角形だけ張り直し、後者は EnterTopologyChanged で再構築する。
+                        foreach (var mc in fhChanged)
+                        {
+                            if (mc.UnityMesh == null) continue;
+                            mc.MeshObject.ApplyTrianglesToUnityMesh(mc.UnityMesh, model.MaterialCount);
+                        }
+
+                        _viewportManager.EnterTopologyChanged(project);
+                        _notifyPanels(ChangeKind.Attributes);
+                    }
+
+                    Debug.Log($"[FaceHide] {c.Operation}: {fhTargets.Count} オブジェクト / {fhTotal} 面");
+                    return;
+                }
+
+                // ── 法線編集 ───────────────────────────────────────────────────
+                case NormalEditCommand c:
+                {
+                    if (model == null) return;
+                    var neTargets = CollectSelectedMeshContexts(model);
+                    if (neTargets.Count == 0) return;
+
+                    // RecalcByAngle / Break はスロット数が変わり得る。その場合は
+                    // Unity Mesh を作り直す必要があるので描画更新の段を分ける。
+                    bool slotCountMayChange =
+                        c.Operation == NormalEditCommand.Op.RecalcByAngle ||
+                        c.Operation == NormalEditCommand.Op.Break;
+
+                    int neTotal = 0;
+                    var neSynced = new List<MeshContext>();
+
+                    foreach (var mc in neTargets)
+                    {
+                        var mo = mc?.MeshObject;
+                        if (mo == null) continue;
+
+                        // Undo は MeshObject 丸ごとのスナップショットで戻す。
+                        // スロット（UV/法線）の増減も含めて復元する必要があるため。
+                        if (_undoController != null)
+                        {
+                            _undoController.SetMeshObject(mo, mc.UnityMesh);
+                            _undoController.MeshUndoContext.ParentModelContext = model;
+                        }
+                        var neBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                        int changed = ApplyNormalEdit(mc, c);
+                        if (changed <= 0) continue;
+
+                        neTotal += changed;
+                        neSynced.Add(mc);
+
+                        // 手で編集した法線は、頂点移動時の自動再計算で消えてしまう
+                        // （MeshUndoContext.ApplyVertexPositionsToMesh）。維持フラグを立てる。
+                        mo.PreserveNormals = true;
+
+                        if (_undoController != null && neBefore != null)
+                        {
+                            var neAfter = _undoController.CaptureMeshObjectSnapshot();
+                            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                                _undoController, neBefore, neAfter, $"Normal Edit ({c.Operation})"));
+                        }
+                    }
+
+                    if (neTotal > 0)
+                    {
+                        bool neRebuild = slotCountMayChange;
+
+                        // スロット数が変わらない操作でも、Unity Mesh の法線だけは
+                        // 差し替える必要がある。差し替えられなければ作り直す。
+                        if (!neRebuild)
+                        {
+                            foreach (var mc in neSynced)
+                            {
+                                if (mc.UnityMesh == null) { neRebuild = true; break; }
+                                if (!mc.MeshObject.ApplyNormalsToUnityMesh(mc.UnityMesh))
+                                {
+                                    neRebuild = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (neRebuild)
+                        {
+                            _viewportManager.EnterTopologyChanged(project);
+                        }
+                        else
+                        {
+                            foreach (var mc in neSynced)
+                                _viewportManager.EnterVertexAttributesChanged(
+                                    project, mc, weights: false, uvs: false);
+                        }
+
+                        _notifyPanels(ChangeKind.Attributes);
+                    }
+
+                    Debug.Log($"[NormalEdit] {c.Operation}: {neTargets.Count} オブジェクト / {neTotal} コーナー");
+                    return;
+                }
+
+                case RepairVertexIdsCommand c:
+                {
+                    if (model == null) return;
+                    var idTargets = CollectSelectedMeshContexts(model);
+                    if (idTargets.Count == 0) return;
+
+                    int totalChanged = 0;
+                    foreach (var mc in idTargets)
+                    {
+                        if (mc?.MeshObject == null) continue;
+
+                        // Undo はメッシュごとに記録する。MeshObjectSnapshot は
+                        // MeshObject.Clone() を保持し、Vertex.Clone() が Id を
+                        // 引き継ぐため、ID の変更もそのまま復元できる。
+                        if (_undoController != null)
+                        {
+                            _undoController.SetMeshObject(mc.MeshObject, mc.UnityMesh);
+                            _undoController.MeshUndoContext.ParentModelContext = model;
+                        }
+                        var idBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                        int changed = c.Mode switch
+                        {
+                            RepairVertexIdsCommand.RepairMode.AssignMissing      => VertexIdOps.AssignMissing(mc),
+                            RepairVertexIdsCommand.RepairMode.ResolveDuplicates  => VertexIdOps.ResolveDuplicates(mc),
+                            RepairVertexIdsCommand.RepairMode.ReassignSequential => VertexIdOps.ReassignSequential(mc),
+                            RepairVertexIdsCommand.RepairMode.ClearAll           => VertexIdOps.ClearAll(mc),
+                            _ => 0,
+                        };
+                        totalChanged += changed;
+
+                        if (changed > 0 && _undoController != null && idBefore != null)
+                        {
+                            var idAfter = _undoController.CaptureMeshObjectSnapshot();
+                            _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                                _undoController, idBefore, idAfter, $"Repair Vertex Ids ({c.Mode})"));
+                        }
+                    }
+
+                    // 頂点IDは描画に影響しないので GPU 再構築は不要。
+                    // パネル表示（診断結果）だけ更新させる。
+                    if (totalChanged > 0) _notifyPanels(ChangeKind.Attributes);
+                    Debug.Log($"[VertexId] {c.Mode}: {idTargets.Count} オブジェクト / {totalChanged} 頂点");
+                    return;
+                }
+
+                case TransferVertexDataCommand c:
+                {
+                    var srcModel = project?.GetModel(c.SourceModelIndex);
+                    var dstModel = project?.GetModel(c.TargetModelIndex);
+                    if (srcModel == null || dstModel == null) return;
+                    if (c.SourceMeshIndices == null || c.TargetMeshIndices == null) return;
+
+                    int pairCount = Math.Min(c.SourceMeshIndices.Length, c.TargetMeshIndices.Length);
+                    if (pairCount == 0) return;
+
+                    int totalWritten = 0;
+                    var syncedTargets = new List<MeshContext>();
+                    for (int p = 0; p < pairCount; p++)
+                    {
+                        var srcMc = srcModel.GetMeshContext(c.SourceMeshIndices[p]);
+                        var dstMc = dstModel.GetMeshContext(c.TargetMeshIndices[p]);
+                        if (srcMc?.MeshObject == null || dstMc?.MeshObject == null) continue;
+
+                        // Undo は転送先メッシュごとに記録する。頂点数・面数は変えないが、
+                        // 位置 / UV / ウェイト / ID などを書き換えるため MeshObject
+                        // 丸ごとのスナップショットで戻せるようにする。
+                        if (_undoController != null)
+                        {
+                            _undoController.SetMeshObject(dstMc.MeshObject, dstMc.UnityMesh);
+                            _undoController.MeshUndoContext.ParentModelContext = dstModel;
+                        }
+                        var tvBefore = _undoController?.CaptureMeshObjectSnapshot();
+
+                        var r = VertexDataTransferOps.Transfer(
+                            srcModel, srcMc, dstModel, dstMc, c.MatchMode, c.Kinds);
+                        totalWritten += r.Written;
+
+                        foreach (var w in r.Warnings)
+                            Debug.LogWarning($"[VertexTransfer] {r.SourceName} → {r.TargetName}: {w}");
+                        Debug.Log($"[VertexTransfer] {r.Summary}");
+
+                        if (r.Written > 0)
+                        {
+                            syncedTargets.Add(dstMc);
+                            if (_undoController != null && tvBefore != null)
+                            {
+                                var tvAfter = _undoController.CaptureMeshObjectSnapshot();
+                                _commandQueue?.Enqueue(new RecordTopologyChangeCommand(
+                                    _undoController, tvBefore, tvAfter, "Transfer Vertex Data"));
+                            }
+                        }
+                    }
+
+                    if (totalWritten > 0)
+                    {
+                        // ------------------------------------------------------------
+                        // 描画更新は転送した項目に応じて段階を選ぶ。
+                        // 以前は常に EnterTopologyChanged を呼んでいたが、これは
+                        // RebuildAdapter（UnifiedSystemAdapter を Dispose して GPU
+                        // ComputeBuffer を全再確保）を伴い、頂点数が変わらない転送には
+                        // 過剰で実機で重かった。
+                        //
+                        //   UV / 法線 / ウェイト / フラグ … バッファ構築時に焼き込まれる
+                        //     (UnifiedBufferManager_Build 参照)。差分更新の口が無いため
+                        //     再構築が要る。
+                        //   位置 … SyncMeshPositionsAndTransform で差分同期できる。
+                        //   頂点ID / モーフ基準 / 選択辞書 … 描画に出ないので更新不要。
+                        //
+                        // また、転送先が CurrentModel でない場合は今の adapter が
+                        // 別モデルのものなので更新しても無駄（かつ誤り）。モデル切替時に
+                        // EnterSceneReset で作り直されるため、ここでは何もしない。
+                        // ------------------------------------------------------------
+                        bool targetIsCurrent = project != null
+                            && project.CurrentModelIndex == c.TargetModelIndex;
+
+                        const VertexDataKind rebuildKinds =
+                              VertexDataKind.UVs
+                            | VertexDataKind.Normals
+                            | VertexDataKind.Flags
+                            | VertexDataKind.BoneWeight
+                            | VertexDataKind.MirrorBoneWeight;
+
+                        bool needsRebuild  = (c.Kinds & rebuildKinds) != 0;
+                        bool positionOnly  = !needsRebuild && c.Kinds.HasFlag(VertexDataKind.Position);
+
+                        if (targetIsCurrent && needsRebuild)
+                        {
+                            _viewportManager.EnterTopologyChanged(project);
+                        }
+                        else if (targetIsCurrent && positionOnly)
+                        {
+                            // 書き換えたメッシュだけ位置を同期し、最後に一度だけ
+                            // カリング再計算と再描画を行う。
+                            foreach (var mc in syncedTargets)
+                                _viewportManager.EnterVerticesMoved(
+                                    project, VerticesMovedPhase.Dragging, mc);
+                            _viewportManager.EnterVerticesMoved(project, VerticesMovedPhase.DragEnd);
+                        }
+
+                        _notifyPanels(ChangeKind.Attributes);
+                    }
                     return;
                 }
 
@@ -2555,7 +3032,7 @@ namespace Poly_Ling.Player
                         var sdRecord = new MeshSelectionChangeRecord(sdOldSel, sdNewSel);
                         {
                             string __dbgDesc = "メッシュ選択辞書適用";
-                            UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((sdRecord)?.GetType().Name ?? "<null>"));
+                            PLDiag.UndoRecord("MeshList", __dbgDesc, sdRecord);
                             _undoController.MeshListStack.Record(sdRecord, __dbgDesc);
                         }
                         _undoController.FocusMeshList();
@@ -2594,6 +3071,323 @@ namespace Poly_Ling.Player
                     Debug.LogWarning($"[PlayerCommandDispatcher] Unhandled PanelCommand: {cmd.GetType().Name}");
                     return;
             }
+        }
+
+        // ================================================================
+        // 診断
+        // ================================================================
+
+        /// <summary>
+        /// 診断ログ用にコマンドを1行で表す。
+        /// 型名だけでは追えないもの（対象インデックス・設定値）を型ごとに補う。
+        /// ここに無い型は型名のみを出す。
+        /// </summary>
+        private static string DescribeCommand(PanelCommand cmd)
+        {
+            switch (cmd)
+            {
+                case null: return "<null>";
+                case ToggleVisibilityCommand c:
+                    return $"ToggleVisibility model={c.ModelIndex} idx={c.MasterIndex}";
+                case SetBatchVisibilityCommand c:
+                    return $"SetBatchVisibility model={c.ModelIndex} visible={c.Visible} targets={PLDiag.Ids(c.MasterIndices)}";
+                case ToggleLockCommand c:
+                    return $"ToggleLock model={c.ModelIndex} idx={c.MasterIndex}";
+                case SetBatchLockCommand c:
+                    return $"SetBatchLock model={c.ModelIndex} locked={c.Locked} targets={PLDiag.Ids(c.MasterIndices)}";
+                case CycleMirrorTypeCommand c:
+                    return $"CycleMirrorType model={c.ModelIndex} idx={c.MasterIndex}";
+                case SetBatchMirrorTypeCommand c:
+                    return $"SetBatchMirrorType model={c.ModelIndex} mirrorType={c.MirrorType} targets={PLDiag.Ids(c.MasterIndices)}";
+                case SetMirrorEnabledCommand c:
+                    return $"SetMirrorEnabled model={c.ModelIndex} enabled={c.Enabled} targets={PLDiag.Ids(c.MasterIndices)}";
+                case RenameMeshCommand c:
+                    return $"RenameMesh model={c.ModelIndex} idx={c.MasterIndex}";
+                case RenameMeshesCommand c:
+                    return $"RenameMeshes model={c.ModelIndex} count={(c.MasterIndices?.Length ?? 0)}";
+                case ApplySelectionDictionaryCommand c:
+                    return $"ApplySelectionDictionary model={c.ModelIndex} setIndex={c.SetIndex} add={c.AddToExisting}";
+                case SwitchModelCommand c:
+                    return $"SwitchModel target={c.TargetModelIndex}";
+                default:
+                    return cmd.GetType().Name + $" model={cmd.ModelIndex}";
+            }
+        }
+
+        // ================================================================
+        // 可視・ロックの適用
+        // ================================================================
+
+        /// <summary>
+        /// 可視性を設定する。ミラー側メッシュへも同じ値を広げる。
+        ///
+        /// ミラー側は実体側の従属だが、IsVisible / IsLocked を追随させる経路が
+        /// 元々存在せず、実体を消してもミラーだけ残っていた。
+        /// 姿勢（SyncDerivedMirrorTransforms）と同じ「実体側が正」の方針に合わせる。
+        /// Undo にはミラー側の変更も含める。含めないと戻したときに片側だけ残る。
+        /// </summary>
+        private void ApplyVisibility(ModelContext model, IReadOnlyList<int> masterIndices, bool visible, string desc)
+        {
+            if (model == null || masterIndices == null) return;
+
+            var targets = ExpandToMirrorPeers(model, masterIndices);
+            var oldList = new List<MeshAttributeChange>();
+            var newList = new List<MeshAttributeChange>();
+
+            foreach (int mi in targets)
+            {
+                var ctx = model.GetMeshContext(mi);
+                if (ctx == null || ctx.IsVisible == visible) continue;
+                PLDiag.AttrChange("IsVisible", mi, ctx.Name, ctx.IsVisible.ToString(), visible.ToString());
+                oldList.Add(new MeshAttributeChange { Index = mi, IsVisible = ctx.IsVisible });
+                ctx.IsVisible = visible;
+                newList.Add(new MeshAttributeChange { Index = mi, IsVisible = visible });
+            }
+
+            if (oldList.Count == 0) return;
+            RecordAttributeChanges(oldList, newList, $"{desc} x{oldList.Count}");
+            _notifyPanels(ChangeKind.Attributes);
+        }
+
+        /// <summary>ロックを設定する。ミラー側メッシュへも同じ値を広げる。</summary>
+        private void ApplyLock(ModelContext model, IReadOnlyList<int> masterIndices, bool locked, string desc)
+        {
+            if (model == null || masterIndices == null) return;
+
+            var targets = ExpandToMirrorPeers(model, masterIndices);
+            var oldList = new List<MeshAttributeChange>();
+            var newList = new List<MeshAttributeChange>();
+
+            foreach (int mi in targets)
+            {
+                var ctx = model.GetMeshContext(mi);
+                if (ctx == null || ctx.IsLocked == locked) continue;
+                PLDiag.AttrChange("IsLocked", mi, ctx.Name, ctx.IsLocked.ToString(), locked.ToString());
+                oldList.Add(new MeshAttributeChange { Index = mi, IsLocked = ctx.IsLocked });
+                ctx.IsLocked = locked;
+                newList.Add(new MeshAttributeChange { Index = mi, IsLocked = locked });
+            }
+
+            if (oldList.Count == 0) return;
+            RecordAttributeChanges(oldList, newList, $"{desc} x{oldList.Count}");
+            _notifyPanels(ChangeKind.Attributes);
+        }
+
+        /// <summary>指定インデックスに、対応するミラー側インデックスを足した一覧を返す。</summary>
+        private static List<int> ExpandToMirrorPeers(ModelContext model, IReadOnlyList<int> masterIndices)
+        {
+            var targets = new List<int>(masterIndices.Count * 2);
+            foreach (int mi in masterIndices)
+            {
+                if (mi < 0) continue;
+                if (!targets.Contains(mi)) targets.Add(mi);
+                MirrorBranchOps.CollectMirrorPeers(model, mi, targets);
+            }
+            return targets;
+        }
+
+        // ================================================================
+        // ミラーの有無
+        // ================================================================
+
+        /// <summary>
+        /// ミラーの有無を切り替える。ミラー側 MeshContext を作る／始末する。
+        ///
+        /// 解消の扱いを MirrorGeometryDerived で分ける。
+        ///   true （MQO 系）… 実体側から再生成できるので破棄する。
+        ///                     ミラーの付け外しを繰り返す使い方で、残すとゴミが増える。
+        ///   false（PMX 系）… ボーンウェイト等を持つので独立メッシュとして残す。
+        ///                     実体側に ObjectId を控え、再ミラー化で引き当てる。
+        ///
+        /// リスト構造が変わるため ChangeKind.ListStructure で通知する。
+        /// </summary>
+        private void ApplyMirrorEnabled(ModelContext model, int[] masterIndices, bool enabled)
+        {
+            var oldSel = model.CaptureAllSelectedIndices();
+
+            var removed = new List<(int, MeshContext)>();
+            var added   = new List<(int Index, MeshContext MeshContext)>();
+            int changed = 0;
+
+            // 破棄・挿入で index がずれるため降順に処理する
+            foreach (int realIdx in masterIndices.OrderByDescending(i => i))
+            {
+                var realCtx = model.GetMeshContext(realIdx);
+                if (realCtx == null) continue;
+
+                if (enabled)
+                {
+                    if (EnableMirror(model, realIdx, realCtx, added)) changed++;
+                }
+                else
+                {
+                    if (DisableMirror(model, realIdx, realCtx, removed)) changed++;
+                }
+            }
+
+            if (changed == 0) return;
+
+            if (_undoController != null)
+            {
+                var newSel = model.CaptureAllSelectedIndices();
+                _undoController.SetModelContext(model);
+                if (removed.Count > 0) _undoController.RecordMeshContextsRemove(removed, oldSel, newSel);
+                if (added.Count   > 0) _undoController.RecordMeshContextsAdd(added, oldSel, newSel);
+            }
+
+            _notifyPanels(ChangeKind.ListStructure);
+        }
+
+        /// <summary>ミラーを解消する。戻り値は変化があったか。</summary>
+        private bool DisableMirror(ModelContext model, int realIdx, MeshContext realCtx,
+                                   List<(int, MeshContext)> removed)
+        {
+            var peers = new List<int>();
+            MirrorBranchOps.CollectMirrorPeers(model, realIdx, peers);
+
+            bool touched = false;
+
+            foreach (int mirrorIdx in peers.OrderByDescending(i => i))
+            {
+                var mirrorCtx = model.GetMeshContext(mirrorIdx);
+                if (mirrorCtx == null) continue;
+
+                // ペアの登録は先に外す（破棄・独立化のどちらでも不要になる）
+                model.MirrorPairs?.RemoveAll(pr => pr.Mirror == mirrorCtx || pr.Real == realCtx);
+
+                if (mirrorCtx.MirrorGeometryDerived)
+                {
+                    PLDiag.AttrChange("MirrorDiscard", mirrorIdx, mirrorCtx.Name, "mirror", "removed");
+                    removed.Add((mirrorIdx, mirrorCtx));
+                    model.RemoveAt(mirrorIdx);
+                }
+                else
+                {
+                    PLDiag.AttrChange("MirrorDetach", mirrorIdx, mirrorCtx.Name, "mirror", "mesh");
+                    mirrorCtx.Type = MeshType.Mesh;
+                    if (mirrorCtx.MeshObject != null) mirrorCtx.MeshObject.Type = MeshType.Mesh;
+                    mirrorCtx.BakedMirrorSourceIndex = -1;
+                    realCtx.DetachedMirrorObjectId = mirrorCtx.ObjectId;
+                }
+                touched = true;
+            }
+
+            if (realCtx.MirrorType != 0 || realCtx.HasBakedMirrorChild) touched = true;
+            realCtx.MirrorType = 0;
+            realCtx.HasBakedMirrorChild = false;
+            realCtx.InvalidateSymmetryCache();
+
+            return touched;
+        }
+
+        /// <summary>ミラーを有効にする。戻り値は変化があったか。</summary>
+        private bool EnableMirror(ModelContext model, int realIdx, MeshContext realCtx,
+                                  List<(int Index, MeshContext MeshContext)> added)
+        {
+            // 既にミラー側を持っているなら属性だけ戻す
+            var existing = new List<int>();
+            MirrorBranchOps.CollectMirrorPeers(model, realIdx, existing);
+            if (existing.Count > 0)
+            {
+                if (realCtx.MirrorType != 0) return false;
+                realCtx.MirrorType = 1;
+                return true;
+            }
+
+            if (realCtx.MirrorAxis == 0) realCtx.MirrorAxis = 1;
+            realCtx.MirrorType = 1;
+
+            // 切り離してあった PMX 系ミラーを引き当てる
+            int detachedIdx = ObjectIdAllocator.IndexOfId(model.MeshContextList, realCtx.DetachedMirrorObjectId);
+            if (detachedIdx >= 0)
+            {
+                var mirrorCtx = model.GetMeshContext(detachedIdx);
+                if (mirrorCtx != null)
+                {
+                    mirrorCtx.Type = MeshType.MirrorSide;
+                    if (mirrorCtx.MeshObject != null) mirrorCtx.MeshObject.Type = MeshType.MirrorSide;
+
+                    var pair = new MirrorPair
+                    {
+                        Real   = realCtx,
+                        Mirror = mirrorCtx,
+                        Axis   = realCtx.GetMirrorSymmetryAxis()
+                    };
+                    if (pair.Build())
+                    {
+                        model.MirrorPairs.Add(pair);
+                        realCtx.DetachedMirrorObjectId = 0;
+                        PLDiag.AttrChange("MirrorReattach", detachedIdx, mirrorCtx.Name, "mesh", "mirror");
+                        return true;
+                    }
+
+                    // 頂点数が合わないなど張れない場合は元へ戻す
+                    Debug.LogWarning($"[Mirror] 再ペアに失敗しました real=\"{realCtx.Name}\" mirror=\"{mirrorCtx.Name}\"\n{pair.BuildLog}");
+                    mirrorCtx.Type = MeshType.Mesh;
+                    if (mirrorCtx.MeshObject != null) mirrorCtx.MeshObject.Type = MeshType.Mesh;
+                    realCtx.MirrorType = 0;
+                    return false;
+                }
+            }
+
+            // 生成ミラーを作る
+            var generated = MirrorBranchOps.CreateDerivedMirrorContext(realCtx, realIdx);
+            if (generated == null)
+            {
+                // 頂点を持たないメッシュなど。属性だけ立てて終わる。
+                return true;
+            }
+
+            generated.Type = MeshType.MirrorSide;
+            if (generated.MeshObject != null) generated.MeshObject.Type = MeshType.MirrorSide;
+            generated.Name = realCtx.Name + "+";
+
+            int insertAt = realIdx + 1;
+            model.Insert(insertAt, generated);
+
+            var genPair = new MirrorPair
+            {
+                Real   = realCtx,
+                Mirror = generated,
+                Axis   = realCtx.GetMirrorSymmetryAxis()
+            };
+            if (genPair.Build()) model.MirrorPairs.Add(genPair);
+
+            added.Add((insertAt, generated));
+            PLDiag.AttrChange("MirrorGenerate", insertAt, generated.Name, "none", "mirror");
+            return true;
+        }
+
+        // ================================================================
+        // メッシュ属性 Undo 記録ヘルパー
+        // ================================================================
+
+        /// <summary>
+        /// 属性変更1件を MeshAttributesBatchChangeRecord で記録する。
+        /// </summary>
+        private void RecordAttributeChange(
+            MeshAttributeChange before, MeshAttributeChange after, string desc)
+        {
+            RecordAttributeChanges(
+                new List<MeshAttributeChange> { before },
+                new List<MeshAttributeChange> { after },
+                desc);
+        }
+
+        /// <summary>
+        /// 属性変更をまとめて1レコードとして記録する。Undo/Redo は一度で戻る。
+        /// oldList / newList は同じ並び・同じ長さであること。
+        /// </summary>
+        private void RecordAttributeChanges(
+            List<MeshAttributeChange> oldList, List<MeshAttributeChange> newList, string desc)
+        {
+            if (_undoController == null) return;
+            if (oldList == null || newList == null || oldList.Count == 0) return;
+
+            var __record = new MeshAttributesBatchChangeRecord(oldList, newList);
+            PLDiag.UndoRecord("MeshList", desc, __record);
+            _undoController.MeshListStack.Record(__record, desc);
+            _undoController.FocusMeshList();
         }
 
         // ================================================================
@@ -2894,6 +3688,7 @@ namespace Poly_Ling.Player
                     MirrorMaterialOffset   = s.MirrorMaterialOffset,
                     BakedMirrorSourceIndex = s.BakedMirrorSourceIndex,
                     HasBakedMirrorChild    = s.HasBakedMirrorChild,
+                    MirrorGeometryDerived  = s.MirrorGeometryDerived,
                     MorphParentIndex       = s.MorphParentIndex,
                     BindPose               = s.BindPose,
                     BonePoseData           = s.BonePoseData?.Clone(),
@@ -2974,6 +3769,25 @@ namespace Poly_Ling.Player
             {
                 // Phase 2a-2g-1: RebuildAdapter + UpdateSelectedDrawableMesh の連鎖を EnterTopologyChanged に集約。
                 _viewportManager.EnterTopologyChanged(_getProject());
+            };
+            ctx.Repaint        = () => { };
+            return ctx;
+        }
+
+        /// <summary>
+        /// スキンウェイト値のみを変える一括操作（Flood / Normalize / Prune）用の ToolContext を構築する。
+        /// これらは頂点数・面構成を変えないため、RebuildAdapter を伴う EnterTopologyChanged ではなく
+        /// ウェイトの部分転送のみを行う EnterVertexAttributesChanged を通す。
+        /// SkinWeightOperations は model.FirstDrawableMeshContext のみを書き換える。
+        /// </summary>
+        private ToolContext BuildSkinWeightAttrToolCtx(ModelContext model)
+        {
+            var ctx            = BuildMinimalToolCtx(model);
+            ctx.CommandQueue   = _commandQueue;
+            ctx.SyncMesh       = () =>
+            {
+                _viewportManager.EnterVertexAttributesChanged(
+                    _getProject(), model?.FirstDrawableMeshContext, weights: true, uvs: false);
             };
             ctx.Repaint        = () => { };
             return ctx;
@@ -3556,7 +4370,7 @@ namespace Poly_Ling.Player
                 var record = new SelectionChangeRecord(oldSnap, newSnap);
                 {
                     string __dbgDesc = "パーツ選択辞書 適用";
-                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                     _undoController.VertexEditStack.Record(record, __dbgDesc);
                 }
                 _undoController.FocusVertexEdit();
@@ -3566,6 +4380,71 @@ namespace Poly_Ling.Player
             _renderer?.SetSelectionState(sel);
             _notifyPanels(ChangeKind.Selection);
         }
+
+        // ================================================================
+        // 法線再計算 除外辞書ヘルパー
+        // ================================================================
+
+        /// <summary>除外辞書内で重複しない名前を返す。</summary>
+        private static string GenerateUniqueNormalExcludeName(MeshObject meshObject, string baseName)
+        {
+            var list = meshObject?.NormalRecalcExcludeList;
+            if (list == null) return baseName;
+
+            var used = new HashSet<string>();
+            foreach (var set in list)
+                if (set != null) used.Add(set.Name);
+
+            if (!used.Contains(baseName)) return baseName;
+
+            int suffix = 1;
+            string name;
+            do
+            {
+                name = baseName + "_" + suffix;
+                suffix++;
+            } while (used.Contains(name));
+            return name;
+        }
+
+        /// <summary>
+        /// 除外辞書エントリを現在の選択へ適用する（置き換え）。
+        /// 対象は model.ActiveMeshContext の Selection のみ（PartsSetApply と同じ前提）。
+        /// </summary>
+        private void NormalExcludeSetApply(ModelContext model, int setIndex)
+        {
+            if (model == null) return;
+            var mc   = model.ActiveMeshContext;
+            var list = mc?.MeshObject?.NormalRecalcExcludeList;
+            if (list == null || setIndex < 0 || setIndex >= list.Count) return;
+            var sel = mc.Selection;
+            if (sel == null) return;
+
+            SelectionSnapshot oldSnap = sel.CreateSnapshot();
+
+            var set = list[setIndex];
+            var newSnap = new SelectionSnapshot
+            {
+                Mode     = set.Mode,
+                Vertices = new HashSet<int>(set.Vertices),
+                Edges    = new HashSet<VertexPair>(set.Edges),
+                Faces    = new HashSet<int>(set.Faces),
+                Lines    = new HashSet<int>(set.Lines),
+            };
+            sel.RestoreFromSnapshot(newSnap);
+
+            if (_undoController != null)
+            {
+                _undoController.VertexEditStack.Record(
+                    new SelectionChangeRecord(oldSnap, newSnap), "法線再計算 除外辞書 適用");
+                _undoController.FocusVertexEdit();
+            }
+
+            _selectionOps?.SetSelectionState(sel);
+            _renderer?.SetSelectionState(sel);
+            _notifyPanels(ChangeKind.Selection);
+        }
+
         // ================================================================
         // オブジェクト原点の一括設定
         // ================================================================
@@ -3717,17 +4596,27 @@ namespace Poly_Ling.Player
             if (cmd?.Names == null || cmd.Positions == null) return;
 
             // 名前 → インデックス（重複名は先着）
+            // 姿勢くさびは書出側で除外しているので、読込側でも適用先にしない。
+            // 既存の（くさび行を含む）CSV を読んでも巻き込まないようにする。
+            var wedgeIndices = ObjectPoseWedgeReader.CollectWedgeIndices(model);
+
             var indexByName = new Dictionary<string, int>();
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
                 if (mc == null || mc.Type == MeshType.Bone) continue;
+                // ミラー側は実体側と BoneTransform を共有するので適用先にしない
+                // （別の原点を持たせると v_M = S·v_R が崩れる）
+                if (mc.Type == MeshType.MirrorSide || mc.Type == MeshType.BakedMirror) continue;
+                if (wedgeIndices.Contains(i)) continue;
                 if (string.IsNullOrEmpty(mc.Name)) continue;
                 if (!indexByName.ContainsKey(mc.Name)) indexByName[mc.Name] = i;
             }
 
-            // 適用対象を決める
-            var targets = new List<(int index, Vector3 pos)>();
+            // 適用対象を決める。
+            // CSV に載っていないオブジェクトは targets に入らないので触らない。
+            // 逆にモデルに無い名前も黙って飛ばす（どちらもエラーにしない）。
+            var targets = new List<(int index, Vector3 pos, Vector3? rot)>();
             var missing = new List<string>();
 
             int n = Mathf.Min(cmd.Names.Length, cmd.Positions.Length);
@@ -3736,13 +4625,18 @@ namespace Poly_Ling.Player
                 string name = cmd.Names[i];
                 if (string.IsNullOrEmpty(name)) continue;
 
-                if (indexByName.TryGetValue(name, out int idx)) targets.Add((idx, cmd.Positions[i]));
+                // 回転は任意。配列が無い / 行に指定が無い場合は元の回転を保つ。
+                Vector3? rot = (cmd.Rotations != null && i < cmd.Rotations.Length)
+                    ? cmd.Rotations[i]
+                    : null;
+
+                if (indexByName.TryGetValue(name, out int idx)) targets.Add((idx, cmd.Positions[i], rot));
                 else missing.Add(name);
             }
 
             if (missing.Count > 0)
-                Debug.LogWarning($"[ObjectOrigin] モデルに存在しない名前を無視: {missing.Count} 件 " +
-                                 $"({string.Join(", ", missing.GetRange(0, Mathf.Min(5, missing.Count)))} …)");
+                Debug.Log($"[ObjectOrigin] モデルに存在しない名前を無視: {missing.Count} 件 " +
+                          $"({string.Join(", ", missing.GetRange(0, Mathf.Min(5, missing.Count)))} …)");
 
             if (targets.Count == 0)
             {
@@ -3751,12 +4645,15 @@ namespace Poly_Ling.Player
             }
 
             // 変更前スナップショット + 現在の頂点ワールド位置
-            var before      = new Dictionary<int, ObjectOriginSnapshot>();
+            // 回転も動かし得るので、位置だけの ObjectOriginUndoRecord ではなく
+            // 回転込みの ObjectPoseUndoRecord に記録する（回転を変えない場合も
+            // 変更前後の実値をそのまま入れるため挙動は変わらない）。
+            var before      = new Dictionary<int, ObjectPoseSnapshot>();
             var startWorld  = new Dictionary<int, Vector3[]>();
 
             model.ComputeWorldMatrices();
 
-            foreach (var (idx, _) in targets)
+            foreach (var (idx, _, _) in targets)
             {
                 var mc = model.GetMeshContext(idx);
                 var mo = mc?.MeshObject;
@@ -3772,29 +4669,31 @@ namespace Poly_Ling.Player
                     world[v] = wm.MultiplyPoint3x4(verts[v]);
                 }
 
-                before[idx] = new ObjectOriginSnapshot
+                before[idx] = new ObjectPoseSnapshot
                 {
                     Position          = mc.BoneTransform?.Position ?? Vector3.zero,
+                    Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
                 };
                 startWorld[idx] = world;
             }
 
-            // 原点を設定
-            foreach (var (idx, pos) in targets)
+            // 原点（と、指定があれば回転）を設定
+            foreach (var (idx, pos, rot) in targets)
             {
                 var mc = model.GetMeshContext(idx);
                 if (mc?.BoneTransform == null) continue;
 
                 mc.BoneTransform.Position          = pos;
+                if (rot.HasValue) mc.BoneTransform.Rotation = rot.Value;
                 mc.BoneTransform.UseLocalTransform = true;
             }
 
             model.ComputeWorldMatrices();
 
             // 自頂点を再局所化して見た目を保つ
-            foreach (var (idx, _) in targets)
+            foreach (var (idx, _, _) in targets)
             {
                 var mc = model.GetMeshContext(idx);
                 var mo = mc?.MeshObject;
@@ -3811,9 +4710,13 @@ namespace Poly_Ling.Player
                 mo.InvalidatePositionCache();
             }
 
+            // 実体側のローカル頂点が変わったので、生成ミラーを作り直して
+            // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
+            MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
+
             // 変更後スナップショット
-            var after = new Dictionary<int, ObjectOriginSnapshot>();
-            foreach (var (idx, _) in targets)
+            var after = new Dictionary<int, ObjectPoseSnapshot>();
+            foreach (var (idx, _, _) in targets)
             {
                 var mc = model.GetMeshContext(idx);
                 var mo = mc?.MeshObject;
@@ -3822,9 +4725,10 @@ namespace Poly_Ling.Player
                 var verts = new Vector3[mo.Vertices.Count];
                 for (int v = 0; v < mo.Vertices.Count; v++) verts[v] = mo.Vertices[v].Position;
 
-                after[idx] = new ObjectOriginSnapshot
+                after[idx] = new ObjectPoseSnapshot
                 {
                     Position          = mc.BoneTransform?.Position ?? Vector3.zero,
+                    Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
                     UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
                     VertexPositions   = verts,
                 };
@@ -3834,7 +4738,7 @@ namespace Poly_Ling.Player
             {
                 _undoController.SetModelContext(model);
                 _undoController.MeshListStack.Record(
-                    new ObjectOriginUndoRecord(before, after, "原点の読み込み"), "原点の読み込み");
+                    new ObjectPoseUndoRecord(before, after, "原点の読み込み"), "原点の読み込み");
                 _undoController.FocusMeshList();
             }
 
@@ -3847,10 +4751,445 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 姿勢くさび（オブジェクト姿勢の可視化オブジェクト）
+        // ================================================================
+
+        /// <summary>
+        /// メッシュオブジェクトの姿勢をくさびオブジェクト列としてモデル末尾へ生成する。
+        /// 生成そのものは ObjectPoseWedgeGenerator、挿入は ObjectPoseWedgeInserter が持つ。
+        /// ここは Undo 記録とビュー更新だけを担う。
+        /// </summary>
+        private void GenerateObjectPoseWedges(
+            ProjectContext project, ModelContext model, GenerateObjectPoseWedgesCommand cmd)
+        {
+            float length = cmd.WedgeLength > 0f
+                ? cmd.WedgeLength
+                : ObjectPoseWedgeGenerator.DefaultWedgeLength;
+
+            var pieces = ObjectPoseWedgeGenerator.Generate(model, length);
+            if (pieces.Count == 0)
+            {
+                Debug.LogWarning("[ObjectPose] 対象のメッシュオブジェクトがありません。");
+                return;
+            }
+
+            var oldSelected = model.CaptureAllSelectedIndices();
+
+            var added = ObjectPoseWedgeInserter.Insert(model, pieces, cmd.ContainerName);
+            if (added.Count == 0)
+            {
+                Debug.LogWarning("[ObjectPose] 生成できませんでした。");
+                return;
+            }
+
+            // 選択はコンテナだけにする（取り込み時にそのまま対象として使えるように）。
+            model.ClearMeshSelection();
+            model.AddToMeshSelection(added[0].Index);
+            var newSelected = model.CaptureAllSelectedIndices();
+
+            if (_undoController != null)
+            {
+                _undoController.SetModelContext(model);
+                _undoController.RecordMeshContextsAdd(added, oldSelected, newSelected);
+            }
+
+            model.IsDirty = true;
+            model.OnListChanged?.Invoke();
+
+            _viewportManager.EnterSceneReset(project);
+            _viewportManager.EnterCameraChanged(
+                _viewportManager.PerspectiveViewport, CameraChangePhase.Committed);
+            _rebuildModelList();
+            _notifyPanels(ChangeKind.ListStructure);
+
+            int wedgeCount = 0;
+            foreach (var p in pieces) if (p != null && p.HasWedge) wedgeCount++;
+            Debug.Log($"[ObjectPose] 姿勢くさびを生成: {added[0].MeshContext.Name} / " +
+                      $"くさび {wedgeCount} 件・空のオブジェクト {pieces.Count - wedgeCount} 件");
+        }
+
+        /// <summary>
+        /// くさびオブジェクト列を読み、名前一致でメッシュオブジェクトの姿勢へ戻す。
+        /// 見た目は保つ（原点CSV読込と同じく、自頂点をワールド基準で再局所化する）。
+        /// </summary>
+        private void ApplyObjectPoseWedges(ModelContext model, ApplyObjectPoseWedgesCommand cmd)
+        {
+            // ── コンテナの決定 ───────────────────────────────────────
+            // 選択 → 名前 → 中身（くさびを最も多く持つノード）の順に見る。
+            // 選択が的外れでも自動検出に落ちるので、無関係なものを選んだまま
+            // 押しても取り込める。
+            int containerIndex = ObjectPoseWedgeReader.ResolveContainer(
+                model, cmd.ContainerMasterIndex, cmd.ContainerName, out string reason);
+
+            Debug.Log($"[ObjectPose] コンテナ判定: {reason}");
+
+            if (containerIndex < 0)
+            {
+                Debug.LogWarning("[ObjectPose] くさびのコンテナが見つかりません。" +
+                                 "先に「姿勢くさび生成」で作るか、くさびを含むモデルを読み込んでください。");
+                return;
+            }
+
+            var subtree = ObjectPoseWedgeReader.CollectSubtree(model, containerIndex);
+            var entries = ObjectPoseWedgeReader.Read(model, containerIndex);
+            if (entries.Count == 0)
+            {
+                Debug.LogWarning("[ObjectPose] 読み取れるくさびがありません: " +
+                                 (model.GetMeshContext(containerIndex)?.Name ?? "?"));
+                return;
+            }
+
+            // ── 適用先を名前で引く（コンテナ配下は除外）─────────────
+            var indexByName = new Dictionary<string, int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                if (subtree.Contains(i)) continue;
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.Type != MeshType.Mesh) continue;
+                if (string.IsNullOrEmpty(mc.Name)) continue;
+                if (!indexByName.ContainsKey(mc.Name)) indexByName[mc.Name] = i;
+            }
+
+            var targets = new List<(int Index, ObjectPoseEntry Entry)>();
+            var missing = new List<string>();
+            foreach (var e in entries)
+            {
+                // e.Name は くさび名から "_bone" を外した元メッシュ名。
+                if (indexByName.TryGetValue(e.Name, out int idx)) targets.Add((idx, e));
+                else missing.Add(e.WedgeName ?? e.Name);
+            }
+
+            if (missing.Count > 0)
+                Debug.Log($"[ObjectPose] 適用先が見つからないくさびを無視: {missing.Count} 件 " +
+                          $"({string.Join(", ", missing.GetRange(0, Mathf.Min(5, missing.Count)))} …)");
+
+            if (targets.Count == 0)
+            {
+                Debug.LogWarning("[ObjectPose] 適用対象がありません。");
+                return;
+            }
+
+            // ── 再局所化の対象を決める ───────────────────────────────
+            // 姿勢を書き換えるのはくさびを持つオブジェクトだけだが、見た目を保つ
+            // 対象はそれでは足りない。くさびを持たないオブジェクト（＝生成時に
+            // ローカル姿勢が単位だったもの）は姿勢こそ変わらないが、祖先が動けば
+            // 一緒に動く。頂点を補正しないとそれらが四散する。
+            // 原点CSV読込が全行を対象にするのと同じ範囲にそろえる。
+            var relocalize = new List<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                if (subtree.Contains(i)) continue;              // くさび自身は除く
+                var mc = model.GetMeshContext(i);
+                if (mc?.MeshObject == null) continue;
+                if (mc.Type != MeshType.Mesh) continue;         // ミラー側は後で実体側から作り直す
+                relocalize.Add(i);
+            }
+
+            // ── 変更前スナップショット + 現在の頂点ワールド位置 ──────
+            var before     = new Dictionary<int, ObjectPoseSnapshot>();
+            var startWorld = new Dictionary<int, Vector3[]>();
+
+            model.ComputeWorldMatrices();
+
+            foreach (int idx in relocalize)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+
+                var verts = new Vector3[mo.Vertices.Count];
+                var world = new Vector3[mo.Vertices.Count];
+                var wm    = mc.WorldMatrix;
+
+                for (int v = 0; v < mo.Vertices.Count; v++)
+                {
+                    verts[v] = mo.Vertices[v].Position;
+                    world[v] = wm.MultiplyPoint3x4(verts[v]);
+                }
+
+                before[idx] = new ObjectPoseSnapshot
+                {
+                    Position          = mc.BoneTransform?.Position ?? Vector3.zero,
+                    Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
+                    UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
+                    VertexPositions   = verts,
+                };
+                startWorld[idx] = world;
+            }
+
+            // ── 姿勢を適用（親から順に）─────────────────────────────
+            // 親のローカル姿勢が変わると子のワールド行列も変わる。子のローカルは
+            // 「更新後の親のワールド」を基準に出す必要があるので、浅い方から処理する。
+            targets.Sort((a, b) =>
+                MeshFilterToSkinnedConverter.CalculateDepth(a.Index, model)
+                    .CompareTo(MeshFilterToSkinnedConverter.CalculateDepth(b.Index, model)));
+
+            foreach (var (idx, entry) in targets)
+            {
+                model.ComputeWorldMatrices();
+
+                var mc = model.GetMeshContext(idx);
+                if (mc?.BoneTransform == null) continue;
+
+                int p = mc.HierarchyParentIndex;
+                Matrix4x4 parentWorld = (p >= 0 && p < model.MeshContextCount)
+                    ? (model.GetMeshContext(p)?.WorldMatrix ?? Matrix4x4.identity)
+                    : Matrix4x4.identity;
+
+                Matrix4x4 local = parentWorld.inverse *
+                    Matrix4x4.TRS(entry.WorldPosition, entry.WorldRotation, Vector3.one);
+
+                mc.BoneTransform.Position          = ObjectPoseWedgeShape.PositionOf(local);
+                mc.BoneTransform.Rotation          = ObjectPoseWedgeShape.RotationOf(local).eulerAngles;
+                mc.BoneTransform.UseLocalTransform = true;
+            }
+
+            model.ComputeWorldMatrices();
+
+            // ── 自頂点を再局所化して見た目を保つ ─────────────────────
+            foreach (int idx in relocalize)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null || !startWorld.TryGetValue(idx, out var world)) continue;
+
+                Matrix4x4 inv = mc.WorldMatrixInverse;
+                int cnt = Mathf.Min(mo.Vertices.Count, world.Length);
+                for (int v = 0; v < cnt; v++)
+                {
+                    var vert = mo.Vertices[v];
+                    vert.Position = inv.MultiplyPoint3x4(world[v]);
+                    mo.Vertices[v] = vert;
+                }
+                mo.InvalidatePositionCache();
+            }
+
+            // 実体側のローカル頂点が変わったので、生成ミラーを作り直して
+            // v_M = S·v_R を保つ（実効ワールド S·H·S の前提）。
+            MirrorBranchOps.RebakeDerivedMirrorVertices(model.MeshContextList);
+
+            // ── 変更後スナップショット ───────────────────────────────
+            var after = new Dictionary<int, ObjectPoseSnapshot>();
+            foreach (int idx in relocalize)
+            {
+                var mc = model.GetMeshContext(idx);
+                var mo = mc?.MeshObject;
+                if (mo == null) continue;
+
+                var verts = new Vector3[mo.Vertices.Count];
+                for (int v = 0; v < mo.Vertices.Count; v++) verts[v] = mo.Vertices[v].Position;
+
+                after[idx] = new ObjectPoseSnapshot
+                {
+                    Position          = mc.BoneTransform?.Position ?? Vector3.zero,
+                    Rotation          = mc.BoneTransform?.Rotation ?? Vector3.zero,
+                    UseLocalTransform = mc.BoneTransform?.UseLocalTransform ?? false,
+                    VertexPositions   = verts,
+                };
+            }
+
+            if (_undoController != null)
+            {
+                _undoController.SetModelContext(model);
+                _undoController.MeshListStack.Record(
+                    new ObjectPoseUndoRecord(before, after, "姿勢くさびの取り込み"), "姿勢くさびの取り込み");
+                _undoController.FocusMeshList();
+            }
+
+            model.IsDirty = true;
+            model.OnListChanged?.Invoke();
+            _viewportManager.EnterTopologyChanged(_getProject());
+            _notifyPanels(ChangeKind.Attributes);
+
+            Debug.Log($"[ObjectPose] 姿勢を適用: {targets.Count} 件 / " +
+                      $"見た目を保つため再局所化: {relocalize.Count} 件");
+        }
+
+        // ================================================================
         // 共通ヘルパー
         // ================================================================
 
         /// <summary>選択中の描画メッシュを列挙する。未選択時は編集対象メッシュ単体。</summary>
+        // ================================================================
+        // ミラー実体化 / 解除の後処理
+        // ================================================================
+        // 頂点数が変わるので Unity Mesh を作り直す必要がある。
+        // RebuildAdapter は ctx.UnityMesh を作らないため、ここで明示的に差し替える。
+        private static void SyncMeshContextAfterMirrorEdit(MeshContext mc)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null) return;
+
+            mc.OriginalPositions = new Vector3[mo.VertexCount];
+            for (int i = 0; i < mo.VertexCount; i++)
+                mc.OriginalPositions[i] = mo.Vertices[i].Position;
+
+            var newMesh = mo.ToUnityMesh();
+            newMesh.name      = mo.Name;
+            newMesh.hideFlags = HideFlags.HideAndDontSave;
+            mc.UnityMesh = newMesh;
+
+            mc.InvalidateSymmetryCache();
+        }
+
+        // ================================================================
+        // 面の非表示フラグ操作
+        // ================================================================
+        // HideSelected / HideUnselected は面選択が必須（面選択が無ければ何もしない）。
+        // メッシュ丸ごとの非表示は既存のオブジェクト可視性で行う。
+        // 隠した面は選択から外す（選択が残ると移動系ツールが動かしてしまうため）。
+        private static int ApplyFaceHidden(MeshContext mc, SetFaceHiddenCommand.Mode mode)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null) return 0;
+
+            var sel = mc.Selection;
+            int changed = 0;
+
+            switch (mode)
+            {
+                case SetFaceHiddenCommand.Mode.HideSelected:
+                {
+                    if (sel == null || sel.Faces.Count == 0) return 0;
+                    foreach (int fi in sel.Faces)
+                    {
+                        if (fi < 0 || fi >= mo.FaceCount) continue;
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 3 || face.IsHidden) continue;
+                        face.SetFlag(FaceFlags.Hidden);
+                        changed++;
+                    }
+                    break;
+                }
+
+                case SetFaceHiddenCommand.Mode.HideUnselected:
+                {
+                    if (sel == null || sel.Faces.Count == 0) return 0;
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 3 || face.IsHidden) continue;
+                        if (sel.Faces.Contains(fi)) continue;
+                        face.SetFlag(FaceFlags.Hidden);
+                        changed++;
+                    }
+                    break;
+                }
+
+                case SetFaceHiddenCommand.Mode.ShowAll:
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (!face.IsHidden) continue;
+                        face.ClearFlag(FaceFlags.Hidden);
+                        changed++;
+                    }
+                    break;
+                }
+
+                case SetFaceHiddenCommand.Mode.InvertHidden:
+                {
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var face = mo.Faces[fi];
+                        if (face.VertexCount < 3) continue;
+                        face.ToggleFlag(FaceFlags.Hidden);
+                        changed++;
+                    }
+                    break;
+                }
+            }
+
+            if (changed > 0 && sel != null && sel.Faces.Count > 0)
+            {
+                var stillHidden = new List<int>();
+                foreach (int fi in sel.Faces)
+                {
+                    if (fi >= 0 && fi < mo.FaceCount && mo.Faces[fi].IsHidden)
+                        stillHidden.Add(fi);
+                }
+                foreach (int fi in stillHidden)
+                    sel.DeselectFace(fi);
+            }
+
+            return changed;
+        }
+
+        // ================================================================
+        // 法線編集の実行
+        // ================================================================
+        // 対象範囲は NormalEditOps.CollectTargetCorners のルールに従う
+        //   面選択がある → その面のコーナー / 頂点選択のみ → その頂点の全スロット
+        //   選択が無い   → メッシュ全体
+        // RecalcByAngle だけはスロットを作り直すのでメッシュ全体が対象。
+        private static int ApplyNormalEdit(MeshContext mc, NormalEditCommand c)
+        {
+            var mo = mc?.MeshObject;
+            if (mo == null) return 0;
+
+            if (c.Operation == NormalEditCommand.Op.RecalcByAngle)
+            {
+                NormalEditOps.RecalcByAngle(mo, c.AngleDeg, c.WeightMode);
+                return mo.FaceCount;
+            }
+
+            var sel = mc.Selection;
+            var corners = NormalEditOps.CollectTargetCorners(
+                mo, sel?.Faces, sel?.Vertices);
+            if (corners.Count == 0) return 0;
+
+            switch (c.Operation)
+            {
+                case NormalEditCommand.Op.SetFromFaces:
+                    return NormalEditOps.SetFromFaces(mo, corners);
+
+                case NormalEditCommand.Op.Unify:
+                    return NormalEditOps.Unify(mo, corners, c.WeightMode);
+
+                case NormalEditCommand.Op.Break:
+                    return NormalEditOps.Break(mo, corners);
+
+                case NormalEditCommand.Op.AverageAll:
+                    return NormalEditOps.AverageAll(mo, corners);
+
+                case NormalEditCommand.Op.Smooth:
+                    return NormalEditOps.Smooth(mo, corners, c.Strength);
+
+                case NormalEditCommand.Op.Sphereize:
+                {
+                    Vector3 center = c.UseSelectionCenter
+                        ? NormalEditOps.CenterOf(mo, corners)
+                        : c.Target;
+                    return NormalEditOps.Sphereize(mo, corners, center);
+                }
+
+                case NormalEditCommand.Op.PointToTarget:
+                    return NormalEditOps.PointToTarget(mo, corners, c.Target, c.AlignVectors);
+
+                case NormalEditCommand.Op.AlignToAxis:
+                {
+                    Vector3 dir = c.Axis switch
+                    {
+                        0 => Vector3.right,
+                        1 => Vector3.up,
+                        _ => Vector3.forward,
+                    };
+                    if (c.Negative) dir = -dir;
+                    return NormalEditOps.SetDirection(mo, corners, dir);
+                }
+
+                case NormalEditCommand.Op.FlattenOnAxis:
+                    return NormalEditOps.FlattenOnAxis(mo, corners, c.Axis);
+
+                case NormalEditCommand.Op.Flip:
+                    return NormalEditOps.Flip(mo, corners);
+
+                default:
+                    return 0;
+            }
+        }
+
         private static List<MeshContext> CollectSelectedMeshContexts(ModelContext model)
         {
             var list = new List<MeshContext>();

@@ -125,6 +125,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 // 選択セット
                 WriteSelectionSets(sb, mc);
 
+                // 法線再計算 除外セット
+                WriteNormalExcludeSets(sb, mc);
+
                 // 剛体 / JOINT（Type=RigidBody/RigidBodyJoint の頂点ゼロ・メタデータ）
                 WriteRigidJointData(sb, mc);
 
@@ -218,7 +221,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
             sb.AppendLine($"isVisible,{mc.IsVisible}");
             sb.AppendLine($"isLocked,{mc.IsLocked}");
             sb.AppendLine($"isFolding,{mc.IsFolding}");
+            // 協働編集: 安定オブジェクトID と 担当者名
+            // objectId は位置非依存の識別子。保存/読込を跨いで同一オブジェクトを指す。
+            sb.AppendLine($"objectId,{mc.ObjectId}");
+            sb.AppendLine($"editorName,{EscapeCsv(mc.EditorName ?? "")}");
             sb.AppendLine($"isTriangulated,{mc.MeshObject?.IsTriangulated ?? false}");
+            sb.AppendLine($"preserveNormals,{mc.MeshObject?.PreserveNormals ?? false}");
             sb.AppendLine($"mirrorType,{mc.MirrorType}");
             sb.AppendLine($"mirrorAxis,{mc.MirrorAxis}");
             sb.AppendLine($"mirrorDistance,{F(mc.MirrorDistance)}");
@@ -231,9 +239,12 @@ namespace Poly_Ling.Serialization.FolderSerializer
             else
             {
                 sb.AppendLine($"bakedMirrorSourceIndex,{mc.BakedMirrorSourceIndex}");
+                sb.AppendLine($"mirrorGeometryDerived,{mc.MirrorGeometryDerived}");
             }
 
             sb.AppendLine($"hasBakedMirrorChild,{mc.HasBakedMirrorChild}");
+            if (mc.DetachedMirrorObjectId != 0)
+                sb.AppendLine($"detachedMirrorObjectId,{mc.DetachedMirrorObjectId}");
             sb.AppendLine($"excludeFromExport,{mc.ExcludeFromExport}");
             sb.AppendLine($"mirrorBranchRoot,{mc.IsMirrorBranchRoot}");
 
@@ -498,6 +509,38 @@ namespace Poly_Ling.Serialization.FolderSerializer
         }
 
         // ================================================================
+        // Write: 法線再計算 除外セット
+        // ================================================================
+
+        private static void WriteNormalExcludeSets(StringBuilder sb, MeshContext mc)
+        {
+            var list = mc.MeshObject?.NormalRecalcExcludeList;
+            if (list == null || list.Count == 0) return;
+
+            foreach (var ss in list)
+            {
+                if (ss == null) continue;
+
+                // nx,name,mode,vertexCount,v0,...,edgeCount,e0v1,e0v2,...,faceCount,f0,...,lineCount,l0,...
+                sb.Append($"nx,{EscapeCsv(ss.Name)},{ss.Mode}");
+
+                sb.Append($",{ss.Vertices.Count}");
+                foreach (var v in ss.Vertices) sb.Append($",{v}");
+
+                sb.Append($",{ss.Edges.Count}");
+                foreach (var e in ss.Edges) sb.Append($",{e.V1},{e.V2}");
+
+                sb.Append($",{ss.Faces.Count}");
+                foreach (var f in ss.Faces) sb.Append($",{f}");
+
+                sb.Append($",{ss.Lines.Count}");
+                foreach (var l in ss.Lines) sb.Append($",{l}");
+
+                sb.AppendLine();
+            }
+        }
+
+        // ================================================================
         // Write: 頂点
         // ================================================================
 
@@ -681,8 +724,23 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "isFolding":
                         mc.IsFolding = ParseBool(cols, 1);
                         break;
+                    case "objectId":
+                        // 旧形式のファイルにはこの行が無い。その場合 0 のままで、
+                        // ModelContext.Add/Insert または ObjectIdAllocator.EnsureIds が新IDを振る。
+                        if (cols.Length > 1 && ulong.TryParse(cols[1], out var __oid))
+                        {
+                            mc.ObjectId = __oid;
+                            Poly_Ling.Data.ObjectIdAllocator.Observe(__oid);
+                        }
+                        break;
+                    case "editorName":
+                        mc.EditorName = cols.Length > 1 ? UnescapeCsv(cols[1]) : "";
+                        break;
                     case "isTriangulated":
                         meshObject.IsTriangulated = ParseBool(cols, 1);
+                        break;
+                    case "preserveNormals":
+                        meshObject.PreserveNormals = ParseBool(cols, 1);
                         break;
                     case "mirrorType":
                         mc.MirrorType = ParseInt(cols, 1);
@@ -696,11 +754,18 @@ namespace Poly_Ling.Serialization.FolderSerializer
                     case "mirrorMaterialOffset":
                         mc.MirrorMaterialOffset = ParseInt(cols, 1);
                         break;
+                    case "mirrorGeometryDerived":
+                        mc.MirrorGeometryDerived = ParseBool(cols, 1);
+                        break;
                     case "bakedMirrorSourceIndex":
                         mc.BakedMirrorSourceIndex = ParseInt(cols, 1, -1);
                         break;
                     case "hasBakedMirrorChild":
                         mc.HasBakedMirrorChild = ParseBool(cols, 1);
+                        break;
+                    case "detachedMirrorObjectId":
+                        if (cols.Length >= 2 && ulong.TryParse(cols[1], out ulong __dmoid))
+                            mc.DetachedMirrorObjectId = __dmoid;
                         break;
                     case "mirrorPeer":
                         // mirrorPeer,peerName,axis
@@ -799,6 +864,9 @@ namespace Poly_Ling.Serialization.FolderSerializer
                         break;
                     case "ss":
                         ReadSelectionSet(cols, mc);
+                        break;
+                    case "nx":
+                        ReadNormalExcludeSet(cols, meshObject);
                         break;
                     case "v":
                         meshObject.Vertices.Add(ReadVertex(cols));
@@ -1293,6 +1361,48 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 ss.Lines.Add(ParseInt(cols, idx++));
 
             mc.PartsSelectionSetList.Add(ss);
+        }
+
+        // ================================================================
+        // Read: 法線再計算 除外セット
+        // ================================================================
+
+        private static void ReadNormalExcludeSet(string[] cols, MeshObject meshObject)
+        {
+            // nx,name,mode,vCount,v...,eCount,e1,e2,...,fCount,f...,lCount,l...
+            if (meshObject == null) return;
+            if (meshObject.NormalRecalcExcludeList == null)
+                meshObject.NormalRecalcExcludeList = new List<PartsSelectionSet>();
+
+            int idx = 1;
+            string name = UnescapeCsv(cols.Length > idx ? cols[idx] : "Set"); idx++;
+            string modeStr = cols.Length > idx ? cols[idx] : "Vertex"; idx++;
+
+            var ss = new PartsSelectionSet(name);
+            if (Enum.TryParse<MeshSelectMode>(modeStr, out var mode))
+                ss.Mode = mode;
+
+            int vCount = ParseInt(cols, idx++);
+            for (int v = 0; v < vCount; v++)
+                ss.Vertices.Add(ParseInt(cols, idx++));
+
+            int eCount = ParseInt(cols, idx++);
+            for (int e = 0; e < eCount; e++)
+            {
+                int v1 = ParseInt(cols, idx++);
+                int v2 = ParseInt(cols, idx++);
+                ss.Edges.Add(new VertexPair(v1, v2));
+            }
+
+            int fCount = ParseInt(cols, idx++);
+            for (int f = 0; f < fCount; f++)
+                ss.Faces.Add(ParseInt(cols, idx++));
+
+            int lCount = ParseInt(cols, idx++);
+            for (int l = 0; l < lCount; l++)
+                ss.Lines.Add(ParseInt(cols, idx++));
+
+            meshObject.NormalRecalcExcludeList.Add(ss);
         }
 
         // ================================================================

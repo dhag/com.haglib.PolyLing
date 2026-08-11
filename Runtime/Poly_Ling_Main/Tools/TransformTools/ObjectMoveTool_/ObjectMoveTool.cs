@@ -13,6 +13,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Localization;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Tools
 {
@@ -479,7 +480,12 @@ namespace Poly_Ling.Tools
                 //   PickBones         : MeshType.Bone
                 //   PickMeshesNoSkin  : MeshType.Mesh かつ HasBoneWeight == false
                 //   PickMeshesSkinned : MeshType.Mesh かつ HasBoneWeight == true
-                // Helper / BakedMirror / MirrorSide は従来互換で常にピック対象。
+                //   PickMirrorSides   : MirrorSide / BakedMirror（既定 OFF）
+                // Helper は従来互換で常にピック対象。
+                if ((t == MeshType.MirrorSide || t == MeshType.BakedMirror) &&
+                    !_settings.PickMirrorSides)
+                    continue;
+
                 if (t == MeshType.Bone)
                 {
                     if (!_settings.PickBones) continue;
@@ -1197,7 +1203,7 @@ namespace Poly_Ling.Tools
                         model.TPoseBackup, model.TPoseBackup, "スキンごと確定");
                     {
                         string __dbgDesc = "スキンごと確定";
-                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((freezeRec)?.GetType().Name ?? "<null>"));
+                        PLDiag.UndoRecord("MeshList", __dbgDesc, freezeRec);
                         undoCtrl.MeshListStack.Record(freezeRec, __dbgDesc);
                     }
                     undoCtrl.FocusMeshList();
@@ -1266,7 +1272,7 @@ namespace Poly_Ling.Tools
                     undoCtrl.SetModelContext(model);
                     {
                         string __dbgDesc = "ボーン移動(バインド連動)";
-                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((rebindRecord)?.GetType().Name ?? "<null>"));
+                        PLDiag.UndoRecord("MeshList", __dbgDesc, rebindRecord);
                         undoCtrl.MeshListStack.Record(rebindRecord, __dbgDesc);
                     }
                     undoCtrl.FocusMeshList();
@@ -1303,7 +1309,7 @@ namespace Poly_Ling.Tools
                 undoCtrl.SetModelContext(model);
                 {
                     string __dbgDesc = "オブジェクト移動";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     undoCtrl.MeshListStack.Record(record, __dbgDesc);
                 }
                 undoCtrl.FocusMeshList();

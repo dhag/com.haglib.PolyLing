@@ -545,6 +545,21 @@ namespace Poly_Ling.Data
         /// <param name="csvLines">CSVの行リスト</param>
         /// <param name="boneNames">ボーン名リスト（インデックス = MeshContextListのインデックス）</param>
         /// <returns>マッピングされたボーン数</returns>
+        /// <summary>Unity Humanoid のボーン名か（大小・空白を無視して照合）。</summary>
+        public static bool IsHumanoidBoneName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+
+            string n = name.Replace(" ", "").Replace("_", "");
+            foreach (var b in AllHumanoidBones)
+            {
+                if (string.Equals(b.Replace(" ", "").Replace("_", ""), n,
+                                  StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
         public int LoadFromCSV(IList<string> csvLines, IList<string> boneNames)
         {
             if (csvLines == null || boneNames == null)
@@ -553,6 +568,7 @@ namespace Poly_Ling.Data
             int mappedCount = 0;
             bool isHeader = true;
             var unmapped = new List<string>();
+            var invalidNames = new List<string>();
 
             foreach (var line in csvLines)
             {
@@ -571,6 +587,16 @@ namespace Poly_Ling.Data
 
                 string unityName = parts[0].Trim();
                 if (string.IsNullOrEmpty(unityName)) continue;
+
+                // 1列目は Humanoid ボーン名でなければならない。
+                // ここを検証しないと、原点CSV のような「オブジェクト名の一覧」を
+                // 渡したときに全行が自分自身へ完全一致して「成功」してしまい、
+                // LeftUpperArm 等のキーが1つも無いマッピングが出来上がる。
+                if (!IsHumanoidBoneName(unityName))
+                {
+                    invalidNames.Add(unityName);
+                    continue;
+                }
 
                 // 1列目（Unity名）を最優先エイリアスとし、2列目以降を追加エイリアス
                 var aliases = new List<string> { unityName };
@@ -598,6 +624,16 @@ namespace Poly_Ling.Data
             {
                 Debug.LogWarning($"[HumanoidBoneMapping] LoadFromCSV: {unmapped.Count} unmatched:\n  " +
                                  string.Join("\n  ", unmapped));
+            }
+
+            if (invalidNames.Count > 0)
+            {
+                int show = Mathf.Min(5, invalidNames.Count);
+                Debug.LogWarning(
+                    $"[HumanoidBoneMapping] LoadFromCSV: 1列目が Humanoid ボーン名でない行を無視: " +
+                    $"{invalidNames.Count} 行 ({string.Join(", ", invalidNames.GetRange(0, show))} …)\n" +
+                    "Humanoidマッピング用のCSVではない可能性があります" +
+                    "（1列目は Hips / LeftUpperArm などの Unity Humanoid 名）。");
             }
 
             return mappedCount;

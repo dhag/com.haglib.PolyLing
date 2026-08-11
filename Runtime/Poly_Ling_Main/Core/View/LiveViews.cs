@@ -117,6 +117,10 @@ namespace Poly_Ling.View
         public string Name => _ctx.Name ?? "Untitled";
         public MeshType Type => _ctx.Type;
 
+        // 協働編集
+        public ulong ObjectId => _ctx.ObjectId;
+        public string EditorName => _ctx.EditorName ?? "";
+
         // ジオメトリ（VertexCount/FaceCountはMeshObject.Countで高速）
         public int VertexCount => _ctx.VertexCount;
         public int FaceCount => _ctx.FaceCount;
@@ -142,6 +146,7 @@ namespace Poly_Ling.View
         // ミラー
         public int MirrorType => _ctx.MirrorType;
         public bool IsBakedMirror => _ctx.IsBakedMirror;
+        public int MirrorAxis => _ctx.MirrorAxis;
         public bool IsMirrorSide => _model != null && _model.IsMirrorSide(_ctx);
         public bool IsRealSide => _model != null && _model.IsRealSide(_ctx);
         public bool HasBakedMirrorChild => _ctx.HasBakedMirrorChild;
@@ -169,16 +174,19 @@ namespace Poly_Ling.View
         public string MorphName => _ctx.MorphName;
         public bool ExcludeFromExport => _ctx.ExcludeFromExport;
         public bool IgnorePoseInArmature => _ctx.IgnorePoseInArmature;
+        public bool PreserveNormals => _ctx.PreserveNormals;
 
         // 表示用計算プロパティ
         public string InfoString => $"V:{VertexCount} F:{FaceCount}";
 
+        // アイコンはミラーの有無だけを示す。
+        // モード(0:なし/1:分離/2:結合)と軸(1:X/2:Y/4:Z)はツールチップと詳細欄で扱う。
         public string MirrorTypeDisplay
         {
             get
             {
                 if (IsBakedMirror) return "\U0001FA9E";
-                return MirrorType switch { 1 => "\u21C6X", 2 => "\u21C6Y", 3 => "\u21C6Z", _ => "" };
+                return MirrorType > 0 ? "\u21C6" : "";
             }
         }
 
@@ -261,6 +269,19 @@ namespace Poly_Ling.View
         public int[] SelectedDrawableIndices => _model.SelectedDrawableMeshIndices.ToArray();
         public int[] SelectedBoneIndices => _model.SelectedBoneIndices.ToArray();
         public int[] SelectedMorphIndices => _model.SelectedMorphIndices.ToArray();
+
+        // 選択辞書名（毎回ライブで返す。辞書は数個〜数十個で件数が小さいためキャッシュしない）
+        public IReadOnlyList<string> MeshSelectionSetNames
+        {
+            get
+            {
+                var sets = _model.MeshSelectionSets;
+                if (sets == null || sets.Count == 0) return Array.Empty<string>();
+                var names = new string[sets.Count];
+                for (int i = 0; i < sets.Count; i++) names[i] = sets[i]?.Name ?? "";
+                return names;
+            }
+        }
 
         // メッシュリスト（キャッシュ。ListStructure変更時のみ再構築）
         public IReadOnlyList<IMeshView> DrawableList { get { EnsureLists(); return _drawableList; } }

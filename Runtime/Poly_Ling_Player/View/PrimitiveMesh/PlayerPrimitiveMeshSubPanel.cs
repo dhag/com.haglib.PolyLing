@@ -34,6 +34,15 @@ namespace Poly_Ling.Player
         // コールバック
         // ================================================================
 
+        /// <summary>
+        /// 現在のモデルにある描画オブジェクト名の一覧を返す。
+        /// 名前欄へ入れる非重複候補の算出に使う。未配線なら重複チェックをしない。
+        /// </summary>
+        public Func<List<string>> GetExistingMeshNames;
+
+        /// <summary>現在表示中の名前欄。RebuildSettings のたびに NF が差し替える。</summary>
+        private TextField _nameField;
+
         /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition, ignorePoseInArmature, addMode)</summary>
         public Action<MeshObject, string, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
 
@@ -88,10 +97,10 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text }
 
         private static readonly string[] ShapeKeys =
-            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject" };
+            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
@@ -100,7 +109,8 @@ namespace Poly_Ling.Player
         private static readonly ShapeKind[] BasicShapes =
             { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid };
         private static readonly ShapeKind[] AdvancedShapes =
-            { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.PlaceObject };
+            { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.PlaceObject,
+              ShapeKind.ObjectArray, ShapeKind.Text };
 
         // ================================================================
         // パラメータ
@@ -158,7 +168,7 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private readonly Button[]  _shapeBtns = new Button[12];
+        private readonly Button[]  _shapeBtns = new Button[14];
         private VisualElement      _shapeGrid;
         private VisualElement      _settingsContainer;
         private VisualElement      _profileEditorContainer;
@@ -576,7 +586,7 @@ namespace Poly_Ling.Player
             _dirty = false;
             try
             {
-                var mo = Generate();
+                var mo = Generate(true);
                 _preview.SetMesh(mo);
                 DestroyWire();
                 if (mo != null) _wireMesh = BuildWire(mo);
@@ -768,6 +778,8 @@ namespace Poly_Ling.Player
                     ? new StyleColor(new Color(0.25f, 0.45f, 0.65f))
                     : new StyleColor(new Color(0.25f, 0.25f, 0.25f));
             }
+            // 名前欄を組み立てる前に非重複候補へ更新する。
+            RefreshMeshNameCandidate();
             RebuildSettings();
             _dirty = true;
         }
@@ -778,6 +790,9 @@ namespace Poly_Ling.Player
 
         private void RebuildSettings()
         {
+            // 旧 UI の TextField は破棄される。NF が呼ばれれば新しいものが入る。
+            _nameField = null;
+
             _profileEditorContainer?.Clear();
             _settingsContainer?.Clear();
             switch (_current)
@@ -794,6 +809,8 @@ namespace Poly_Ling.Player
                 case ShapeKind.Frill:      BuildFrillUI(_settingsContainer);      break;
                 case ShapeKind.Pipe:       BuildPipeUI(_settingsContainer);       break;
                 case ShapeKind.PlaceObject: BuildPlaceObjectUI(_settingsContainer); break;
+                case ShapeKind.ObjectArray: BuildObjectArrayUI(_settingsContainer); break;
+                case ShapeKind.Text:        BuildTextUI(_settingsContainer);        break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -3802,7 +3819,15 @@ namespace Poly_Ling.Player
             finally { _p2dUndoApplying = false; }
         }
 
-        private MeshObject Generate()
+        /// <summary>
+        /// 現在の図形種別に応じて MeshObject を生成する。
+        /// </summary>
+        /// <param name="forPreview">
+        /// true のときプレビュー用。重複頂点の結合 (MergeAllVerticesAtSamePosition) を行わない。
+        /// 結合は全頂点の二重ループ (O(N^2)) のため、頂点数が多い形状ではプレビュー再生成のたびに停止する。
+        /// 生成ボタン経路は false を渡し、従来どおり結合する。
+        /// </param>
+        private MeshObject Generate(bool forPreview)
         {
             MeshObject mo;
             switch (_current)
@@ -3846,10 +3871,18 @@ namespace Poly_Ling.Player
                 case ShapeKind.PlaceObject:
                     mo = GeneratePlaceObjectMesh();
                     break;
+                case ShapeKind.Text:
+                    mo = GenerateTextMesh();
+                    break;
+                // 歪み複製は1つのメッシュを返さない（モデルへ直接オブジェクトを挿入する）。
+                // プレビュー / ライブワイヤは出さないので null を返す。
+                case ShapeKind.ObjectArray: return null;
                 default: return null;
             }
 
-            if (_mergeDuplicateVertices && mo != null && mo.VertexCount >= 2)
+            // プレビューでは結合しない。結合は O(N^2) で、
+            // 接地の「全部を結合して配置」のように頂点数が膨らむ形状ではプレビューが停止する。
+            if (!forPreview && _mergeDuplicateVertices && mo != null && mo.VertexCount >= 2)
                 MeshMergeHelper.MergeAllVerticesAtSamePosition(mo, 0.001f);
 
             // 回転・スケールを頂点へ焼き込む。
@@ -3876,8 +3909,95 @@ namespace Poly_Ling.Player
                 case ShapeKind.Frill:      return _frillP.MeshName;
                 case ShapeKind.Pipe:       return _pipeP.MeshName;
                 case ShapeKind.PlaceObject: return _placeP.MeshName;
+                case ShapeKind.Text:       return _textP.MeshName;
+                // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
+                case ShapeKind.ObjectArray: return "ObjectArray";
                 default:                   return _current.ToString();
             }
+        }
+
+        /// <summary>現在の形状の名前を書き換える。</summary>
+        private void SetName(string name)
+        {
+            switch (_current)
+            {
+                case ShapeKind.Cube:        _cubeP.MeshName    = name; break;
+                case ShapeKind.Sphere:      _sphereP.MeshName  = name; break;
+                case ShapeKind.Cylinder:    _cylP.MeshName     = name; break;
+                case ShapeKind.Capsule:     _capsP.MeshName    = name; break;
+                case ShapeKind.Plane:       _planeP.MeshName   = name; break;
+                case ShapeKind.Pyramid:     _pyramidP.MeshName = name; break;
+                case ShapeKind.Revolution:  _revP.MeshName     = name; break;
+                case ShapeKind.Profile2D:   _p2dP.MeshName     = name; break;
+                case ShapeKind.NohMask:     _nohP.MeshName     = name; break;
+                case ShapeKind.Frill:       _frillP.MeshName   = name; break;
+                case ShapeKind.Pipe:        _pipeP.MeshName    = name; break;
+                case ShapeKind.PlaceObject: _placeP.MeshName   = name; break;
+                case ShapeKind.Text:        _textP.MeshName    = name; break;
+            }
+        }
+
+        /// <summary>
+        /// 末尾の "_数字" を落とした基底名を返す。"Frill_3" → "Frill"。
+        /// 候補を作り直すたびに桁が伸びる（Frill_1_1 …）のを防ぐ。
+        /// </summary>
+        private static string StripNameSuffix(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name;
+
+            int us = name.LastIndexOf('_');
+            if (us <= 0 || us == name.Length - 1) return name;
+
+            for (int i = us + 1; i < name.Length; i++)
+                if (!char.IsDigit(name[i])) return name;
+
+            return name.Substring(0, us);
+        }
+
+        /// <summary>
+        /// 既存の描画オブジェクト名と衝突しない候補を返す。
+        /// 衝突していなければ入力をそのまま返す（利用者が付けた名前を勝手に削らない）。
+        /// 衝突したときだけ末尾の "_数字" を落とし、_1, _2 ... を付け直す
+        /// （ModelContext.GenerateUniqueMeshName と同じ規則。桁が伸び続けるのを防ぐ）。
+        /// </summary>
+        private string MakeUniqueMeshNameCandidate(string current)
+        {
+            if (string.IsNullOrEmpty(current)) return current;
+
+            var existing = GetExistingMeshNames?.Invoke();
+            if (existing == null || existing.Count == 0) return current;
+
+            var used = new HashSet<string>(existing);
+            if (!used.Contains(current)) return current;
+
+            string baseName = StripNameSuffix(current);
+            if (string.IsNullOrEmpty(baseName)) baseName = current;
+            if (!used.Contains(baseName)) return baseName;
+
+            int counter = 1;
+            string name;
+            do
+            {
+                name = $"{baseName}_{counter}";
+                counter++;
+            } while (used.Contains(name));
+
+            return name;
+        }
+
+        /// <summary>
+        /// 現在の形状の名前を、既存オブジェクトと重複しない候補へ更新する。
+        /// 形状を選び直したときと、生成に成功した直後に呼ぶ。
+        /// </summary>
+        private void RefreshMeshNameCandidate()
+        {
+            string cur  = Name();
+            string next = MakeUniqueMeshNameCandidate(cur);
+            if (next == cur) return;
+
+            SetName(next);
+            // 表示中の名前欄があれば書き戻す（無ければ次の RebuildSettings が拾う）。
+            _nameField?.SetValueWithoutNotify(next);
         }
 
         // ================================================================
@@ -3995,10 +4115,19 @@ namespace Poly_Ling.Player
             {
                 try
                 {
-                    var mo = Generate();
+                    // 歪み複製はモデルへ直接オブジェクトを挿入するため、
+                    // OnMeshCreated（単一 MeshObject）経路は通らない。
+                    if (_current == ShapeKind.ObjectArray) { InvokeObjectArrayGenerate(); return; }
+
+                    var mo = Generate(false);
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
                     _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
                     OnMeshCreated?.Invoke(mo, Name(), _worldPos, _ignorePoseInArmature, _addMode);
+
+                    // 次の生成に備えて名前欄を非重複候補へ更新する。
+                    // AddToExisting は既存オブジェクトへの統合なので新しい名前は要らない。
+                    if (_addMode != PrimitiveAddMode.AddToExisting)
+                        RefreshMeshNameCandidate();
                 }
                 catch (Exception ex)
                 {
@@ -4074,12 +4203,17 @@ namespace Poly_Ling.Player
             return v;
         }
 
-        private static VisualElement NF(Func<string> get, Action<string> set)
+        /// <summary>
+        /// 名前欄。生成した TextField を控えておき、非重複候補への更新で書き戻す
+        /// （設定UI 全体を作り直さずに名前だけ差し替えるため）。
+        /// </summary>
+        private VisualElement NF(Func<string> get, Action<string> set)
         {
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
             row.Add(ML(T("Name")));
             var f = new TextField { value = get() }; f.style.flexGrow = 1;
             f.RegisterValueChangedCallback(e => set(e.newValue));
+            _nameField = f;
             row.Add(f); return row;
         }
 

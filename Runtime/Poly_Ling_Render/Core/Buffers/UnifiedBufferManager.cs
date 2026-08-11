@@ -442,8 +442,7 @@ namespace Poly_Ling.Core
             _faceCapacity = DEFAULT_FACE_CAPACITY;
             _indexCapacity = DEFAULT_INDEX_CAPACITY;
 
-            int live = System.Threading.Interlocked.Increment(ref _liveCount);
-            UnityEngine.Debug.Log($"[BufMgrLive] +1 live={live}");
+            System.Threading.Interlocked.Increment(ref _liveCount);
         }
 
         // ============================================================
@@ -845,8 +844,7 @@ namespace Poly_Ling.Core
                     _modelInfos = null;
                 }
 
-                int live = System.Threading.Interlocked.Decrement(ref _liveCount);
-                UnityEngine.Debug.Log($"[BufMgrLive] -1 live={live}");
+                System.Threading.Interlocked.Decrement(ref _liveCount);
 
                 _disposed = true;
                 _isInitialized = false;

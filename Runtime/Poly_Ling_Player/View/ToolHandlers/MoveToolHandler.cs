@@ -198,6 +198,13 @@ namespace Poly_Ling.Player
         public bool SuppressBuiltinGizmo;
 
         /// <summary>
+        /// 矩形 / 投げ縄によるドラッグ選択を抑止する。
+        /// true のとき、要素に当たらない位置からのドラッグは何も開始せず無反応になる。
+        /// SelectOnly と併用すると「クリック選択のみ許すモード」になる（面削除モード等）。
+        /// </summary>
+        public bool SuppressDragSelect;
+
+        /// <summary>
         /// 将来ギズモ用のヒットテスト差し替え。設定されている場合、組み込み移動ギズモの代わりに
         /// これを呼び、true（＝自前ギズモに当たった）ならツール操作フック（OnDragStartExtra 経由）へ入る。
         /// SelectOnly 時は呼ばれない（選択専用のためツール操作を一切行わない）。
@@ -380,6 +387,16 @@ namespace Poly_Ling.Player
             }
 
             // 矩形/投げ縄選択開始
+            // SuppressDragSelect 時は開始しない。_dragMode/_state を Idle のまま残すので
+            // 以降の OnLeftDrag は switch のどの case にも入らず、OnLeftDragEnd も
+            // 末尾のリセットへ落ちるだけになる（＝ドラッグ全体が無反応）。
+            if (SuppressDragSelect)
+            {
+                _dragMode = DragMode.None;
+                _state    = MoveState.Idle;
+                return;
+            }
+
             if (DragSelectMode == SelectionDragMode.Lasso)
             {
                 _dragMode = DragMode.LassoSelecting;
@@ -912,6 +929,35 @@ namespace Poly_Ling.Player
             foreach (var kv in _meshTransforms) kv.Value.End();
             _meshTransforms.Clear();
             _affectedVertices.Clear();
+        }
+
+        /// <summary>
+        /// ワールド空間の移動量を数値指定で適用し、Undo 1 件として確定する。
+        /// サブパネルの数値入力から呼ぶ。ドラッグ状態機 (_state) には入らない。
+        ///
+        /// 対象は選択メッシュの選択要素 (UpdateAffectedVertices と同じ規則)。
+        /// ワールドデルタは ApplyDelta 内でメッシュごとに WorldMatrixInverse で
+        /// ローカル化されるため、ここではワールド量をそのまま渡す。
+        /// </summary>
+        public void ApplyNumericMove(Vector3 worldDelta)
+        {
+            if (worldDelta == Vector3.zero) return;
+
+            OnEnterTransformDragging?.Invoke();
+
+            UpdateAffectedVertices();
+            if (!HasAnyAffected())
+            {
+                OnExitTransformDragging?.Invoke();
+                return;
+            }
+
+            BeginMove();
+            ApplyDelta(worldDelta);
+            EndMove();
+
+            OnExitTransformDragging?.Invoke();
+            OnRepaint?.Invoke();
         }
 
         /// <summary>

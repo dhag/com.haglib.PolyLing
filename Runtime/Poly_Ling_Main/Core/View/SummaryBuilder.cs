@@ -65,7 +65,7 @@ namespace Poly_Ling.View
             var boneList = BuildMeshList(model.Bones, model);
             var morphList = BuildMeshList(model.Morphs, model);
 
-            return new ModelSummary(
+            var summary = new ModelSummary(
                 model.Name, model.FilePath, model.IsDirty,
                 indices.DrawableCount, indices.BoneCount, model.Morphs?.Count ?? 0,
                 model.MeshContextCount,
@@ -74,6 +74,18 @@ namespace Poly_Ling.View
                 model.SelectedDrawableMeshIndices.ToArray(),
                 model.SelectedBoneIndices.ToArray(),
                 model.SelectedMorphIndices.ToArray());
+            summary.MeshSelectionSetNames = BuildSelectionSetNames(model);
+            return summary;
+        }
+
+        /// <summary>選択辞書の名前一覧。並びは MeshSelectionSets と同じ。</summary>
+        private static string[] BuildSelectionSetNames(ModelContext model)
+        {
+            var sets = model?.MeshSelectionSets;
+            if (sets == null || sets.Count == 0) return System.Array.Empty<string>();
+            var names = new string[sets.Count];
+            for (int i = 0; i < sets.Count; i++) names[i] = sets[i]?.Name ?? "";
+            return names;
         }
 
         private static ModelSummary BuildLightweight(ModelContext model)

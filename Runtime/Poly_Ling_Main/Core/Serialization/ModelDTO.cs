@@ -222,6 +222,9 @@ namespace Poly_Ling.Serialization
         /// <summary>保存された選択セット</summary>
         public List<SelectionSetDTO> selectionSets = new List<SelectionSetDTO>();
 
+        /// <summary>法線の自動再計算から除外するセット</summary>
+        public List<SelectionSetDTO> normalExcludeSets = new List<SelectionSetDTO>();
+
         // ================================================================
         // マテリアル [廃止セクション]
         // マテリアルはModelDTO.materialReferencesで一元管理されます
@@ -267,6 +270,11 @@ namespace Poly_Ling.Serialization
         /// </summary>
         public bool isTriangulated = false;
 
+        /// <summary>
+        /// 頂点法線を保持する（自動再計算を行わない）
+        /// </summary>
+        public bool preserveNormals = false;
+
         // ================================================================
         // ミラー設定
         // ================================================================
@@ -288,6 +296,18 @@ namespace Poly_Ling.Serialization
         /// -1 = ベイクミラーではない
         /// </summary>
         public int bakedMirrorSourceIndex = -1;
+
+        /// <summary>
+        /// ミラー形状が実体側から生成されたものか（MeshContext.MirrorGeometryDerived）。
+        /// 既定 false。旧データを読んだ場合は false になり、従来どおりの扱いになる。
+        /// </summary>
+        public bool mirrorGeometryDerived = false;
+
+        /// <summary>
+        /// 切り離したミラー側の ObjectId（MeshContext.DetachedMirrorObjectId）。
+        /// 0 = なし。再ミラー化のときに相手を引き当てる。
+        /// </summary>
+        public ulong detachedMirrorObjectId = 0;
 
         /// <summary>
         /// ベイクドミラーの子を持つか（ソース側で設定）
@@ -1085,10 +1105,21 @@ namespace Poly_Ling.Serialization
         public int    mirrorMaterialOffset = 0;
         public int    bakedMirrorSourceIndex = -1;
         public bool   hasBakedMirrorChild = false;
+        /// <summary>
+        /// ミラー形状が実体側から生成されたものか（MeshContext.MirrorGeometryDerived）。
+        /// 既定 false。旧データを読んだ場合は false になり、従来どおりの扱いになる。
+        /// </summary>
+        public bool   mirrorGeometryDerived = false;
+        /// <summary>
+        /// 切り離したミラー側の ObjectId（MeshContext.DetachedMirrorObjectId）。
+        /// 0 = なし。再ミラー化のときに相手を引き当てる。
+        /// </summary>
+        public ulong  detachedMirrorObjectId = 0;
         public int    morphParentIndex = -1;
         public bool   excludeFromExport = false;
         public bool   ignorePoseInArmature = false;
         public bool   isMirrorBranchRoot = false;
+        public bool   preserveNormals = false;
         public MorphBaseDataDTO  morphBaseData;
         public BoneTransformDTO  exportSettingsDTO;
         public BonePoseDataDTO   bonePoseData;

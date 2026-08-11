@@ -40,6 +40,9 @@ namespace Poly_Ling.Player
             Cam.fieldOfView     = 40f;
 
             Orbit = new OrbitCameraController();
+            // ApplyCameraTransform が Camera.fieldOfView を Orbit.Fov で上書きするため、
+            // このプレビュー固有の画角はコントローラー側にも入れておく。
+            Orbit.Fov = 40f;
             Orbit.ResetToMesh(new Bounds(Vector3.zero, Vector3.one));
 
             CreateRT(256, 256);

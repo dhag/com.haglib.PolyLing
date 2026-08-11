@@ -31,17 +31,33 @@ namespace Poly_Ling.PlaceObject
         /// <summary>Random 時の乱数シード。同じシード・同じ入力なら同一結果になる。</summary>
         public int RandomSeed;
 
+        /// <summary>
+        /// 配置物の倍率。rung 長による等倍（PlaceObjectMeshGenerator の scale）へさらに掛ける。
+        /// X/Y/Z 連動の1値。1 で従来どおり。
+        /// </summary>
+        public float Scale;
+
+        /// <summary>
+        /// 配置元にチェックを入れたオブジェクトの子孫も一緒に配置する。
+        /// 子孫の頂点は配置元（ルート）のローカル空間へ移してから結合する。
+        /// </summary>
+        public bool IncludeChildren;
+
         public static PlaceObjectParams Default => new PlaceObjectParams
         {
-            MeshName   = "PlaceObject",
-            Mode       = PlaceSourceMode.Combine,
-            RandomSeed = 0,
+            MeshName        = "PlaceObject",
+            Mode            = PlaceSourceMode.Combine,
+            RandomSeed      = 0,
+            Scale           = 1f,
+            IncludeChildren = true,
         };
 
         public bool Equals(PlaceObjectParams o)
             => MeshName == o.MeshName
             && Mode     == o.Mode
-            && RandomSeed == o.RandomSeed;
+            && RandomSeed == o.RandomSeed
+            && Scale      == o.Scale
+            && IncludeChildren == o.IncludeChildren;
 
         public override bool Equals(object obj) => obj is PlaceObjectParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;

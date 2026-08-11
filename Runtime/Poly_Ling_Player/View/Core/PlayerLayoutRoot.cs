@@ -62,20 +62,22 @@ namespace Poly_Ling.Player
         public Toggle[,] ViewportDisplayToggles { get; private set; }
 
         // itemIndex 定数
-        public const int VD_CULLING    = 0;
-        public const int VD_SEL_MESH   = 1;
-        public const int VD_SEL_WIRE   = 2;
-        public const int VD_SEL_VERT   = 3;
-        public const int VD_SEL_BONE   = 4;
-        public const int VD_UNSEL_MESH = 5;
-        public const int VD_UNSEL_WIRE = 6;
-        public const int VD_UNSEL_VERT = 7;
-        public const int VD_UNSEL_BONE = 8;
-        public const int VD_SEL_MIRROR   = 9;
-        public const int VD_UNSEL_MIRROR = 10;
-        public const int VD_SEL_MESH_ORIGIN   = 11;
-        public const int VD_UNSEL_MESH_ORIGIN = 12;
-        public const int VD_COUNT      = 13;
+        // 「選択Mirror」トグルは廃止。選択メッシュのミラー表示は選択Mesh に従属する
+        // （ViewportDisplaySettings.WithMirrorClamped）。
+        public const int VD_CULLING      = 0;
+        public const int VD_SEL_MESH     = 1;
+        public const int VD_UNSEL_MESH   = 2;
+        public const int VD_UNSEL_MIRROR = 3;
+        public const int VD_SEL_WIRE     = 4;
+        public const int VD_UNSEL_WIRE   = 5;
+        public const int VD_SEL_VERT     = 6;
+        public const int VD_UNSEL_VERT   = 7;
+        public const int VD_SEL_BONE     = 8;
+        public const int VD_UNSEL_BONE   = 9;
+        public const int VD_SEL_MESH_ORIGIN   = 10;
+        public const int VD_UNSEL_MESH_ORIGIN = 11;
+        public const int VD_MIRROR_MESH_ORIGIN = 12;
+        public const int VD_COUNT        = 13;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
@@ -140,6 +142,7 @@ namespace Poly_Ling.Player
         public Button SubToolBoxSelectBtn   { get; private set; }
         public Button SubToolLassoSelectBtn { get; private set; }
         public Button SubToolDeleteBtn      { get; private set; }
+        public Button ToolDeleteFaceBtn     { get; private set; }
 
         /// <summary>右ペイン：スキンウェイトペイントセクション（ScrollView内）。</summary>
         public VisualElement SkinWeightPaintSection { get; private set; }
@@ -170,6 +173,12 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：軸/グリッド設定セクション（ScrollView内）。</summary>
         public VisualElement GridAxisSection { get; private set; }
+
+        /// <summary>左ペイン：カメラ調整ボタン（その他）。</summary>
+        public Button CameraBtn { get; private set; }
+
+        /// <summary>右ペイン：カメラ調整セクション（ScrollView内）。</summary>
+        public VisualElement CameraSection { get; private set; }
 
         /// <summary>右ペイン：ブレンドセクション（ScrollView内）。</summary>
         public VisualElement BlendSection { get; private set; }
@@ -207,6 +216,12 @@ namespace Poly_Ling.Player
         public Button        PartsSelectionSetBtn  { get; private set; }
         public VisualElement MeshSelectionSetSection  { get; private set; }
         public Button        MeshSelectionSetBtn   { get; private set; }
+        public VisualElement NormalExcludeSetSection { get; private set; }
+        public Button        NormalExcludeSetBtn   { get; private set; }
+        public VisualElement NormalEditSection     { get; private set; }
+        public Button        NormalEditBtn         { get; private set; }
+        public VisualElement FaceHideSection       { get; private set; }
+        public Button        FaceHideBtn           { get; private set; }
         public VisualElement MergeMeshesSection    { get; private set; }
         public Button        MergeMeshesBtn        { get; private set; }
         public VisualElement MorphSection          { get; private set; }
@@ -227,10 +242,20 @@ namespace Poly_Ling.Player
         public Button        AlignVerticesBtn           { get; private set; }
         public VisualElement PlanarizeAlongBonesSection { get; private set; }
         public Button        PlanarizeAlongBonesBtn     { get; private set; }
+        public VisualElement SmoothEdgesSection         { get; private set; }
+        public Button        SmoothEdgesBtn             { get; private set; }
         public VisualElement MergeVerticesSection       { get; private set; }
         public Button        MergeVerticesBtn           { get; private set; }
         public VisualElement SplitVerticesSection       { get; private set; }
         public Button        SplitVerticesBtn           { get; private set; }
+
+        /// <summary>右ペイン：頂点IDユーティリティ（診断 / 修復）セクション。</summary>
+        public VisualElement VertexIdSection            { get; private set; }
+        public Button        VertexIdBtn                { get; private set; }
+
+        /// <summary>右ペイン：モデル間頂点データ転送セクション。</summary>
+        public VisualElement VertexTransferSection      { get; private set; }
+        public Button        VertexTransferBtn          { get; private set; }
         public VisualElement AddFaceSection             { get; private set; }
         public Button        AddFaceBtn                 { get; private set; }
         public VisualElement FlipFaceSection            { get; private set; }
@@ -282,11 +307,14 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：MQOフルエクスポートボタン。</summary>
         public Button FullExportMqoBtn { get; private set; }
 
-        /// <summary>右ペイン：プロジェクトファイルセクション（ScrollView内）。</summary>
-        public VisualElement ProjectFileSection { get; private set; }
+        /// <summary>右ペイン：プロジェクト保存 / 読込セクション（ScrollView内）。
+        /// 押し間違いでデータを壊さないよう、保存と読込は別セクションに分けている。</summary>
+        public VisualElement ProjectSaveSection { get; private set; }
+        public VisualElement ProjectLoadSection { get; private set; }
 
-        /// <summary>左ペイン：プロジェクトファイルボタン。</summary>
-        public Button ProjectFileBtn { get; private set; }
+        /// <summary>左ペイン：プロジェクト保存 / 読込ボタン（それぞれ別セクションを開く）。</summary>
+        public Button ProjectSaveBtn { get; private set; }
+        public Button ProjectLoadBtn { get; private set; }
 
         /// <summary>右ペイン：部分インポートセクション（ScrollView内）。</summary>
         public VisualElement PartialImportSection { get; private set; }
@@ -768,8 +796,11 @@ namespace Poly_Ling.Player
             // ── ファイル ───────────────────────────────────────────────
             var foFile = MakeFoldout("ファイル", "File");
 
-            ProjectFileBtn = MakeBtn("プロジェクト保存/読込");
-            foFile.Add(ProjectFileBtn);
+            // プロジェクト保存 / 読込は別ボタンにする（押し間違い防止のため 1 行に並べない）。
+            ProjectSaveBtn = MakeBtn("プロジェクト保存");
+            foFile.Add(ProjectSaveBtn);
+            ProjectLoadBtn = MakeBtn("プロジェクト読込");
+            foFile.Add(ProjectLoadBtn);
 
             // Load PMX / Load MQO（旧: foldout の外・上）を「ファイル」の先頭に配置する。
             foFile.Add(LocalLoaderSection);
@@ -805,6 +836,7 @@ namespace Poly_Ling.Player
             PrimitiveBtn = MakeBtn("基本図形");
             foPrimitive.Add(PrimitiveBtn);
 
+            // 高度な図形には歪み複製も並ぶ（PlayerPrimitiveMeshSubPanel.ObjectArray.cs）。
             AdvancedPrimitiveBtn = MakeBtn("高度な図形");
             foPrimitive.Add(AdvancedPrimitiveBtn);
 
@@ -869,8 +901,7 @@ namespace Poly_Ling.Player
             var rowSubTool = new VisualElement(); rowSubTool.style.flexDirection = FlexDirection.Row; rowSubTool.style.marginBottom = 2;
             SubToolBoxSelectBtn   = MakeBtn("矩形選択(一時) R");   SubToolBoxSelectBtn.style.flexGrow   = 1; SubToolBoxSelectBtn.style.marginRight = 2;
             SubToolLassoSelectBtn = MakeBtn("投げ縄選択(一時) G"); SubToolLassoSelectBtn.style.flexGrow = 1;
-            SubToolDeleteBtn      = MakeBtn("選択削除 D");         SubToolDeleteBtn.style.flexGrow      = 1; SubToolDeleteBtn.style.marginLeft = 2;
-            rowSubTool.Add(SubToolBoxSelectBtn); rowSubTool.Add(SubToolLassoSelectBtn); rowSubTool.Add(SubToolDeleteBtn); foSelectMove.Add(rowSubTool);
+            rowSubTool.Add(SubToolBoxSelectBtn); rowSubTool.Add(SubToolLassoSelectBtn); foSelectMove.Add(rowSubTool);
 
             var rowSelSet = new VisualElement(); rowSelSet.style.flexDirection = FlexDirection.Row; rowSelSet.style.marginBottom = 2;
             PartsSelectionSetBtn = MakeBtn("パーツ選択辞書"); PartsSelectionSetBtn.style.flexGrow = 1; PartsSelectionSetBtn.style.marginRight = 2;
@@ -898,6 +929,22 @@ namespace Poly_Ling.Player
             KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1;
             rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); foTopology.Add(rowEdgeKnife);
 
+            // 削除系。面削除モードは進入中にボタンがハイライトされる
+            // (破壊的モードなので表示は必須)。
+            var rowDelete = new VisualElement(); rowDelete.style.flexDirection = FlexDirection.Row; rowDelete.style.marginBottom = 2;
+            SubToolDeleteBtn  = MakeBtn("選択削除 Del");   SubToolDeleteBtn.style.flexGrow  = 1; SubToolDeleteBtn.style.marginRight = 2;
+            ToolDeleteFaceBtn = MakeBtn("面削除モード D"); ToolDeleteFaceBtn.style.flexGrow = 1;
+            rowDelete.Add(SubToolDeleteBtn); rowDelete.Add(ToolDeleteFaceBtn); foTopology.Add(rowDelete);
+
+            var rowNormalExclude = new VisualElement(); rowNormalExclude.style.flexDirection = FlexDirection.Row; rowNormalExclude.style.marginBottom = 2;
+            NormalEditBtn = MakeBtn("法線編集"); NormalEditBtn.style.flexGrow = 1; NormalEditBtn.style.marginRight = 2;
+            NormalExcludeSetBtn = MakeBtn("法線再計算 除外辞書"); NormalExcludeSetBtn.style.flexGrow = 1;
+            rowNormalExclude.Add(NormalEditBtn); rowNormalExclude.Add(NormalExcludeSetBtn); foTopology.Add(rowNormalExclude);
+
+            var rowFaceHide = new VisualElement(); rowFaceHide.style.flexDirection = FlexDirection.Row; rowFaceHide.style.marginBottom = 2;
+            FaceHideBtn = MakeBtn("面の表示・非表示"); FaceHideBtn.style.flexGrow = 1;
+            rowFaceHide.Add(FaceHideBtn); foTopology.Add(rowFaceHide);
+
             // ── 選択頂点位置 ───────────────────────────────────────────
             var foVertexPos = MakeFoldout("選択頂点位置", "VertexPos");
 
@@ -906,6 +953,10 @@ namespace Poly_Ling.Player
             PlanarizeAlongBonesBtn = MakeBtn("ボーン間平面化"); PlanarizeAlongBonesBtn.style.flexGrow = 1;
             rowAlignPlanarize.Add(AlignVerticesBtn); rowAlignPlanarize.Add(PlanarizeAlongBonesBtn); foVertexPos.Add(rowAlignPlanarize);
 
+            var rowSmoothEdges = new VisualElement(); rowSmoothEdges.style.flexDirection = FlexDirection.Row; rowSmoothEdges.style.marginBottom = 2;
+            SmoothEdgesBtn = MakeBtn("辺を滑らかに"); SmoothEdgesBtn.style.flexGrow = 1;
+            rowSmoothEdges.Add(SmoothEdgesBtn); foVertexPos.Add(rowSmoothEdges);
+
             // ── 選択頂点トポロジー ─────────────────────────────────────
             var foVertexTopo = MakeFoldout("選択頂点トポロジー", "VertexTopo");
 
@@ -913,6 +964,13 @@ namespace Poly_Ling.Player
             MergeVerticesBtn = MakeBtn("頂点マージ");  MergeVerticesBtn.style.flexGrow = 1; MergeVerticesBtn.style.marginRight = 2;
             SplitVerticesBtn = MakeBtn("頂点分割");    SplitVerticesBtn.style.flexGrow = 1;
             rowMergeSplit.Add(MergeVerticesBtn); rowMergeSplit.Add(SplitVerticesBtn); foVertexTopo.Add(rowMergeSplit);
+
+            // 頂点IDユーティリティ。モデル間・オブジェクト間の突き合わせに使う ID を
+            // 診断・修復する。ID を使う操作の前段に置く。
+            var rowVertexId = new VisualElement(); rowVertexId.style.flexDirection = FlexDirection.Row; rowVertexId.style.marginBottom = 2;
+            VertexIdBtn = MakeBtn("頂点ID"); VertexIdBtn.style.flexGrow = 1; VertexIdBtn.style.marginRight = 2;
+            VertexTransferBtn = MakeBtn("頂点データ転送"); VertexTransferBtn.style.flexGrow = 1;
+            rowVertexId.Add(VertexIdBtn); rowVertexId.Add(VertexTransferBtn); foVertexTopo.Add(rowVertexId);
 
             var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
             QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
@@ -995,6 +1053,10 @@ namespace Poly_Ling.Player
             LogBtn      = MakeBtn("ログ");        LogBtn.style.flexGrow      = 1;
             rowMisc3.Add(UnderlayBtn); rowMisc3.Add(GridAxisBtn); rowMisc3.Add(LogBtn); foOther.Add(rowMisc3);
 
+            var rowMisc4 = new VisualElement(); rowMisc4.style.flexDirection = FlexDirection.Row; rowMisc4.style.marginBottom = 2;
+            CameraBtn = MakeBtn("カメラ調整"); CameraBtn.style.flexGrow = 1;
+            rowMisc4.Add(CameraBtn); foOther.Add(rowMisc4);
+
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
             scroll.Add(foRemote);
@@ -1012,34 +1074,35 @@ namespace Poly_Ling.Player
 
             scroll.Add(Header("Display (P/T/F/S)"));
 
-            // 4ビューポート × 9項目のグリッド
+            // 4ビューポート × VD_COUNT 項目のグリッド
             // 列: P=Perspective(slot0), T=Top(slot1), F=Front(slot2), S=Side(slot3)
-            // 行: カリング / 選択Mesh / 選択辺 / 選択頂点 / 選択Bone
-            //      非選Mesh / 非選辺 / 非選頂点 / 非選Bone
+            // 行: VD_* 定数の順序と一致させること。
             var vpHeaders  = new string[] { "P", "T", "F", "S" };
             var itemLabels = new string[]
             {
-                "カリング", "選択Mesh", "選択辺", "選択頂点", "選択Bone",
-                "非選Mesh", "非選辺",  "非選頂点", "非選Bone",
-                "選択Mirror", "非選Mirror",
-                "選択M原点", "非選M原点",
+                "カリング",
+                "選択Mesh",  "非選Mesh", "非選Mirror",
+                "選択辺",    "非選辺",
+                "選択頂点",  "非選頂点",
+                "選択Bone",  "非選Bone",
+                "選択M原点", "非選M原点", "ミラーM原点",
             };
             // ViewportDisplaySettings.Default と一致させる
             var itemDefaults = new bool[]
             {
                 true,  // カリング
                 true,  // 選択Mesh
-                true,  // 選択辺
-                true,  // 選択頂点
-                true,  // 選択Bone
                 true,  // 非選Mesh
-                true,  // 非選辺
-                true,  // 非選頂点
-                false, // 非選Bone
-                true,  // 選択Mirror
                 true,  // 非選Mirror
+                true,  // 選択辺
+                true,  // 非選辺
+                true,  // 選択頂点
+                true,  // 非選頂点
+                true,  // 選択Bone
+                false, // 非選Bone
                 true,  // 選択M原点
                 true,  // 非選M原点
+                false, // ミラーM原点（実体側と重なるため既定 OFF）
             };
 
             // ヘッダ行
@@ -1249,6 +1312,9 @@ namespace Poly_Ling.Player
             UVZSection                 = AddSection(visible: false);
             PartsSelectionSetSection   = AddSection(visible: false);
             MeshSelectionSetSection    = AddSection(visible: false);
+            NormalExcludeSetSection    = AddSection(visible: false);
+            NormalEditSection          = AddSection(visible: false);
+            FaceHideSection            = AddSection(visible: false);
             MergeMeshesSection         = AddSection(visible: false);
             MorphSection               = AddSection(visible: false);
             MorphCreateSection         = AddSection(visible: false);
@@ -1258,8 +1324,11 @@ namespace Poly_Ling.Player
             QuadDecimatorSection       = AddSection(visible: false);
             AlignVerticesSection       = AddSection(visible: false);
             PlanarizeAlongBonesSection = AddSection(visible: false);
+            SmoothEdgesSection         = AddSection(visible: false);
             MergeVerticesSection       = AddSection(visible: false);
             SplitVerticesSection       = AddSection(visible: false);
+            VertexIdSection            = AddSection(visible: false);
+            VertexTransferSection      = AddSection(visible: false);
             AddFaceSection             = AddSection(visible: false);
             FlipFaceSection            = AddSection(visible: false);
             RotateSection              = AddSection(visible: false);
@@ -1279,14 +1348,16 @@ namespace Poly_Ling.Player
             MotionClipTestSection      = AddSection(visible: false);
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
+            CameraSection              = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
             LogSection                 = AddSection(visible: false);
 
             // ── エクスポートセクション
             ExportSection = AddSection(visible: false);
 
-            // ── プロジェクトファイルセクション
-            ProjectFileSection = AddSection(visible: false);
+            // ── プロジェクト保存 / 読込セクション（別々に持つ）
+            ProjectSaveSection = AddSection(visible: false);
+            ProjectLoadSection = AddSection(visible: false);
 
             // ── 部分インポートセクション
             PartialImportSection = AddSection(visible: false);

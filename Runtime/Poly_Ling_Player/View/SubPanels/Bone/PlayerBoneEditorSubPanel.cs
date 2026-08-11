@@ -14,6 +14,7 @@ using Poly_Ling.UndoSystem;
 using Poly_Ling.Commands;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.View;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -114,6 +115,12 @@ namespace Poly_Ling.Player
 
         // ミラー分岐ルート（オブジェクト姿勢タブ専用）
         private Toggle        _mirrorBranchToggle;
+
+        // 原点CSV（オブジェクト姿勢タブ専用）
+        private Toggle        _originIncludeRotToggle;
+
+        // 姿勢くさび（オブジェクト姿勢タブ専用）
+        private FloatField    _wedgeLengthField;
 
         // ── ObjectMoveSettings 連動チェックボックス ───────────────
         // BoneInputHandler 廃止に伴い、ObjectMoveTool のピック対象を
@@ -439,12 +446,55 @@ namespace Poly_Ling.Player
             var originImportBtn = new Button(ImportObjectOriginsCsv) { text = "原点CSV読込" };
             originExportBtn.style.flexGrow = 1;
             originImportBtn.style.flexGrow = 1;
-            originExportBtn.tooltip = "全メッシュの原点(位置)を CSV に書き出す";
-            originImportBtn.tooltip = "CSV の原点(位置)を名前一致で適用する（原点だけ移動・子は動かさない）";
+            originExportBtn.tooltip = "全メッシュの原点(位置)を CSV に書き出す（回転は下のチェックで任意）";
+            originImportBtn.tooltip = "CSV の原点(位置)を名前一致で適用する（原点だけ移動・子は動かさない）\n" +
+                                      "CSV に載っていないオブジェクトと、モデルに無い名前はどちらも無視する";
 
             originIoRow.Add(originExportBtn);
             originIoRow.Add(originImportBtn);
+
+            // 回転列（rotX,rotY,rotZ）を書出・読込の対象にするか。
+            // 位置だけの旧 CSV も読めるよう、行ごとに列があるかを見て判断する。
+            _originIncludeRotToggle = new Toggle("回転(°)も対象") { value = false };
+            _originIncludeRotToggle.style.color = new StyleColor(Color.white);
+            _originIncludeRotToggle.tooltip =
+                "書出: rotX,rotY,rotZ 列を足す / 読込: 回転列がある行だけ回転も適用する" +
+                "（列が無い行・オフのときは位置だけ）";
+
+            _ignorePoseRow.Add(_originIncludeRotToggle);
             _ignorePoseRow.Add(originIoRow);
+
+            // ── 姿勢くさび（オブジェクト姿勢タブ専用）────────────────
+            // オブジェクト姿勢を、モデル内の表示用オブジェクトとして出し入れする。
+            _ignorePoseRow.Add(MakeSecLabel("姿勢くさび"));
+
+            _wedgeLengthField = new FloatField("長さ")
+            {
+                value = Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultWedgeLength
+            };
+            _wedgeLengthField.tooltip =
+                "くさびの全長。実際の大きさは、これに各オブジェクトの拡大率平均を掛けたものになる";
+            _wedgeLengthField.style.marginBottom = 2;
+            _ignorePoseRow.Add(_wedgeLengthField);
+
+            var wedgeIoRow = new VisualElement();
+            wedgeIoRow.style.flexDirection = FlexDirection.Row;
+
+            var wedgeGenBtn = new Button(GenerateObjectPoseWedges) { text = "姿勢くさび生成" };
+            var wedgeGetBtn = new Button(ImportObjectPoseWedges)   { text = "姿勢くさび取込" };
+            wedgeGenBtn.style.flexGrow = 1;
+            wedgeGetBtn.style.flexGrow = 1;
+            wedgeGenBtn.tooltip =
+                "全メッシュオブジェクトの姿勢を、新しい空オブジェクトの配下にくさびとして生成する\n" +
+                "名前は「元メッシュ名_bone」。階層はメッシュのまま・グローバル原点・" +
+                "位置0回転なしのものは空のオブジェクト";
+            wedgeGetBtn.tooltip =
+                "くさびのコンテナを選んで実行すると、名前（_bone を外したもの）一致で" +
+                "メッシュオブジェクトの姿勢に戻す\n未選択なら生成時の名前で自動検出・見た目は保つ";
+
+            wedgeIoRow.Add(wedgeGenBtn);
+            wedgeIoRow.Add(wedgeGetBtn);
+            _ignorePoseRow.Add(wedgeIoRow);
 
             root.Add(_ignorePoseRow);
 
@@ -712,6 +762,13 @@ namespace Poly_Ling.Player
 
         private const string OriginCsvHeader = "#PolyLing_ObjectOrigin,version,1.0";
 
+        // 列見出し。回転列は後ろに足すだけなので、位置だけの旧 CSV もそのまま読める。
+        private const string OriginCsvColumns    = "name,posX,posY,posZ";
+        private const string OriginCsvColumnsRot = "name,posX,posY,posZ,rotX,rotY,rotZ";
+
+        /// <summary>回転(°)も書き出し・読み込みの対象にするか。</summary>
+        private bool IncludeRotationInCsv => _originIncludeRotToggle?.value ?? false;
+
         /// <summary>全メッシュの原点(位置)を CSV へ書き出す。</summary>
         private void ExportObjectOriginsCsv()
         {
@@ -722,29 +779,46 @@ namespace Poly_Ling.Player
                 "原点CSVの書き出し", "", SanitizeFileName(model.Name) + "_origin", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
+            bool withRot = IncludeRotationInCsv;
+
+            // 姿勢くさびは表示用の生成物で、原点は常に単位。本体の原点一覧に混ぜない。
+            var wedgeIndices = Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeReader
+                .CollectWedgeIndices(model);
+
             var sb = new System.Text.StringBuilder();
             sb.AppendLine(OriginCsvHeader);
-            sb.AppendLine("name,posX,posY,posZ");
+            sb.AppendLine(withRot ? OriginCsvColumnsRot : OriginCsvColumns);
 
             int count = 0;
+            int skippedWedge = 0;
+            int skippedMirror = 0;
             for (int i = 0; i < model.MeshContextCount; i++)
             {
                 var mc = model.GetMeshContext(i);
                 if (mc == null || mc.Type == MeshType.Bone) continue;
+                // ミラー側は実体側と BoneTransform を共有する前提（H_M = H_R）。
+                // 別の原点を持てないので書き出さない。読み込み側も同じ扱い。
+                if (mc.Type == MeshType.MirrorSide || mc.Type == MeshType.BakedMirror)
+                { skippedMirror++; continue; }
+                if (wedgeIndices.Contains(i)) { skippedWedge++; continue; }
                 if (string.IsNullOrEmpty(mc.Name)) continue;
 
-                Vector3 p = mc.BoneTransform != null && mc.BoneTransform.UseLocalTransform
-                    ? mc.BoneTransform.Position
-                    : Vector3.zero;
+                bool useLocal = mc.BoneTransform != null && mc.BoneTransform.UseLocalTransform;
+                Vector3 p = useLocal ? mc.BoneTransform.Position : Vector3.zero;
+                Vector3 r = useLocal ? mc.BoneTransform.Rotation : Vector3.zero;
 
-                sb.AppendLine($"{EscapeCsvField(mc.Name)},{p.x:R},{p.y:R},{p.z:R}");
+                sb.Append(EscapeCsvField(mc.Name));
+                sb.Append($",{p.x:R},{p.y:R},{p.z:R}");
+                if (withRot) sb.Append($",{r.x:R},{r.y:R},{r.z:R}");
+                sb.AppendLine();
                 count++;
             }
 
             try
             {
                 System.IO.File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(true));
-                Debug.Log($"[ObjectOrigin] 原点を書き出し: {count} 件 → {path}");
+                Debug.Log($"[ObjectOrigin] 原点を書き出し: {count} 件 → {path}" +
+                          $"（除外: ミラー {skippedMirror} 件 / 姿勢くさび {skippedWedge} 件）");
             }
             catch (System.Exception e)
             {
@@ -772,8 +846,12 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            bool withRot = IncludeRotationInCsv;
+
             var names     = new List<string>();
             var positions = new List<Vector3>();
+            var rotations = new List<Vector3?>();
+            int rotRows   = 0;
 
             foreach (string raw in lines)
             {
@@ -789,8 +867,20 @@ namespace Poly_Ling.Player
                 if (!float.TryParse(cols[2], out float y)) continue;
                 if (!float.TryParse(cols[3], out float z)) continue;
 
+                // 回転列は任意。無い行・読めない行は「回転の指定なし」として位置だけ適用する。
+                Vector3? rot = null;
+                if (withRot && cols.Count >= 7 &&
+                    float.TryParse(cols[4], out float rx) &&
+                    float.TryParse(cols[5], out float ry) &&
+                    float.TryParse(cols[6], out float rz))
+                {
+                    rot = new Vector3(rx, ry, rz);
+                    rotRows++;
+                }
+
                 names.Add(cols[0]);
                 positions.Add(new Vector3(x, y, z));
+                rotations.Add(rot);
             }
 
             if (names.Count == 0)
@@ -799,8 +889,53 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            Debug.Log($"[ObjectOrigin] CSV を読み込み: {names.Count} 行" +
+                      (withRot ? $"（うち回転あり {rotRows} 行）" : "（回転は対象外）"));
+
             SendCommand(new ApplyObjectOriginsCommand(
-                GetModelIndex?.Invoke() ?? 0, names.ToArray(), positions.ToArray()));
+                GetModelIndex?.Invoke() ?? 0, names.ToArray(), positions.ToArray(),
+                withRot ? rotations.ToArray() : null));
+
+            OnRepaint?.Invoke();
+        }
+
+        // ================================================================
+        // 姿勢くさびの生成・取り込み
+        // ================================================================
+
+        /// <summary>メッシュオブジェクトの姿勢をくさびオブジェクト列として生成する。</summary>
+        private void GenerateObjectPoseWedges()
+        {
+            float length = _wedgeLengthField?.value
+                ?? Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultWedgeLength;
+            if (length <= 0f)
+                length = Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultWedgeLength;
+
+            SendCommand(new GenerateObjectPoseWedgesCommand(
+                GetModelIndex?.Invoke() ?? 0, length,
+                Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultContainerName));
+
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// くさびオブジェクト列を姿勢として取り込む。
+        /// 描画メッシュを1つだけ選んでいればそれをコンテナとみなし、
+        /// そうでなければ生成時の既定名で自動検出させる。
+        /// </summary>
+        private void ImportObjectPoseWedges()
+        {
+            var model = GetModel?.Invoke();
+
+            // 1つだけ選ばれていれば候補として渡す。的外れならディスパッチ側が
+            // 名前・中身での自動検出に切り替えるので、ここでは絞り込まない。
+            int container = -1;
+            if (model != null && model.SelectedDrawableMeshIndices.Count == 1)
+                container = model.SelectedDrawableMeshIndices[0];
+
+            SendCommand(new ApplyObjectPoseWedgesCommand(
+                GetModelIndex?.Invoke() ?? 0, container,
+                Poly_Ling.Tools.ObjectPose.ObjectPoseWedgeGenerator.DefaultContainerName));
 
             OnRepaint?.Invoke();
         }
@@ -1134,7 +1269,7 @@ namespace Poly_Ling.Player
                     });
                 {
                     string __dbgDesc = "ボーンポーズリセット";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     undo.MeshListStack.Record(record, __dbgDesc);
                 }
                 undo.FocusMeshList();

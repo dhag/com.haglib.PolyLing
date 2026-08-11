@@ -30,7 +30,10 @@ namespace Poly_Ling.Player
             parent.Add(_root);
 
             _root.Add(Header("Merge Vertices"));
-            _root.Add(new HelpBox("しきい値以内の頂点を結合します", HelpBoxMessageType.Info));
+            _root.Add(new HelpBox(
+                "しきい値で結合: 選択頂点のうち距離がしきい値以内のものをグループごとに結合します。\n"
+              + "結合（距離無視）: 距離を見ず、選択頂点をまとめて 1 点（重心）へ結合します。",
+                HelpBoxMessageType.Info));
 
             // Threshold FloatField
             var threshRow = new VisualElement();
@@ -77,10 +80,19 @@ namespace Poly_Ling.Player
             _detailList = new VisualElement();
             _root.Add(_detailList);
 
-            var mergeBtn = new Button(() => GetH()?.TriggerMerge()) { text = "Merge" };
-            mergeBtn.style.height    = 30;
-            mergeBtn.style.marginTop = 6;
-            _root.Add(mergeBtn);
+            // どちらも即時実行 API を使う。パネル外のショートカットと同じ経路にすることで
+            // 「パネルを開いている間しか動かない」旧経路 (TriggerMerge) への依存を無くす。
+            var mergeThreshBtn = new Button(() => GetH()?.TriggerMergeByThresholdNow())
+                { text = "しきい値で結合 Ctrl+Shift+J" };
+            mergeThreshBtn.style.height    = 30;
+            mergeThreshBtn.style.marginTop = 6;
+            _root.Add(mergeThreshBtn);
+
+            var mergeCentroidBtn = new Button(() => GetH()?.TriggerMergeToCentroidNow())
+                { text = "結合（距離無視） Ctrl+J" };
+            mergeCentroidBtn.style.height    = 30;
+            mergeCentroidBtn.style.marginTop = 4;
+            _root.Add(mergeCentroidBtn);
         }
 
         public void Refresh()

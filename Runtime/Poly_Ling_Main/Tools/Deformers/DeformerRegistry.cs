@@ -28,6 +28,7 @@ namespace Poly_Ling.Tools.Deformers
             () => new RotateDeformer(),
             () => new BendDeformer(),
             () => new TwistDeformer(),
+            () => new WaveDeformer(),
         };
 
         // ================================================================

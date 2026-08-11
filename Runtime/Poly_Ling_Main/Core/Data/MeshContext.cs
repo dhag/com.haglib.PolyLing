@@ -277,6 +277,28 @@ namespace Poly_Ling.Data
             set { if (MeshObject != null) MeshObject.IgnorePoseInArmature = value; }
         }
 
+        /// <summary>
+        /// 頂点法線を保持する（自動再計算を行わない）。実体は MeshObject 側。
+        /// </summary>
+        public bool PreserveNormals
+        {
+            get => MeshObject?.PreserveNormals ?? false;
+            set { if (MeshObject != null) MeshObject.PreserveNormals = value; }
+        }
+
+        /// <summary>
+        /// 法線の自動再計算から除外するセット一覧。実体は MeshObject 側。
+        /// </summary>
+        public List<PartsSelectionSet> NormalRecalcExcludeList
+        {
+            get => MeshObject?.NormalRecalcExcludeList;
+            set
+            {
+                if (MeshObject != null)
+                    MeshObject.NormalRecalcExcludeList = value ?? new List<PartsSelectionSet>();
+            }
+        }
+
         /// <summary>エクスポート設定</summary>
         public BoneTransform BoneTransform
         {
@@ -322,6 +344,31 @@ namespace Poly_Ling.Data
         /// ワールド変換行列（親子関係を考慮した累積行列）
         /// ComputeWorldMatrices()で計算される
         /// </summary>
+        /// <summary>
+        /// ミラー側の形状が、実体側の頂点を素直に鏡像化して「生成された」ものか。
+        ///
+        /// true のとき v_M = S·v_R が成り立ち、実効ワールドは S·H·S で求まる
+        /// （ComputeWorldMatrices が適用する）。姿勢は実体側と共有する。
+        ///
+        /// false のミラー（PMX のように、ファイル内に実在する独立メッシュを
+        /// MirrorSide/BakedMirror に再タイプしただけのもの）は自前の正しい頂点を
+        /// 持つため、共役を掛けてはならない。
+        /// </summary>
+        public bool MirrorGeometryDerived { get; set; } = false;
+
+        /// <summary>
+        /// ミラーを解消したときに切り離したミラー側の ObjectId（0 = なし）。
+        ///
+        /// PMX 系（MirrorGeometryDerived = false）のミラー側はボーンウェイトなど
+        /// 実体側から復元できない情報を持つため、解消時に破棄せず独立メッシュとして残す。
+        /// 再びミラー化するときに相手を引き当てるための参照がこれ。
+        /// インデックスは並べ替え・追加・削除でずれるため、位置非依存の ObjectId を持つ。
+        ///
+        /// MQO 系（同 true）のミラー側は実体側から再生成できるので解消時に破棄する。
+        /// この値は使わない。
+        /// </summary>
+        public ulong DetachedMirrorObjectId { get; set; } = 0;
+
         public Matrix4x4 WorldMatrix { get; set; } = Matrix4x4.identity;
 
         /// <summary>
@@ -627,6 +674,40 @@ namespace Poly_Ling.Data
         /// <summary>編集禁止（ロック）</summary>
         public bool IsLocked { get; set; } = false;
 
+        // ================================================================
+        // 協働編集（グループワーク）用の識別と担当
+        // ----------------------------------------------------------------
+        // ObjectId  : リスト内の位置（MasterIndex）に依存しない安定識別子。
+        //             追加・削除・並べ替えを跨いで同一オブジェクトを指す。
+        //             0 は「未割当」。ObjectIdAllocator.EnsureIds で遅延割当される。
+        //             複製（Duplicate）は別オブジェクトなので新IDを振る。
+        //             Undo/Redo のスナップショット復元は同一オブジェクトなのでIDを保つ。
+        // EditorName: 現在の編集者名。空文字は「担当者なし（誰でも編集可）」。
+        //             サーバはこの値と register 済みユーザー名を突き合わせて
+        //             リモートコマンドの可否を判定する（RemoteOwnership）。
+        //             手動 claim / release のみで変化し、切断では解放しない。
+        //             プロジェクト保存に含まれる。
+        // ================================================================
+
+        /// <summary>位置非依存の安定オブジェクトID（0=未割当）</summary>
+        public ulong ObjectId { get; set; } = 0;
+
+        /// <summary>現在の編集者名（空文字＝担当者なし）</summary>
+        public string EditorName { get; set; } = "";
+
+        /// <summary>編集者が設定されているか</summary>
+        public bool HasEditor => !string.IsNullOrEmpty(EditorName);
+
+        /// <summary>
+        /// 指定ユーザーがこのオブジェクトを編集できるか。
+        /// 担当者なし、または自分が担当者のときに true。
+        /// </summary>
+        public bool IsEditableBy(string userName)
+        {
+            if (string.IsNullOrEmpty(EditorName)) return true;
+            return string.Equals(EditorName, userName, StringComparison.Ordinal);
+        }
+
         /// <summary>折りたたみ状態（MQO互換）</summary>
         public bool IsFolding { get; set; } = false;
 
@@ -688,6 +769,28 @@ namespace Poly_Ling.Data
         /// -1 = 未指定（名前規則ベースで検索）
         /// </summary>
         public int MorphParentIndex { get; set; } = -1;
+
+        /// <summary>
+        /// モーフに関わるメッシュか。
+        /// true のとき法線再計算でUVスロットを増やしてはならない。
+        /// 親子で UVs.Count が食い違うと展開index空間がずれ、
+        /// PMXエクスポート時のモーフ頂点参照が崩れるため。
+        /// </summary>
+        public bool IsMorphRelated(Poly_Ling.Context.ModelContext model)
+        {
+            if (IsMorph) return true;
+            if (Type == MeshType.Morph) return true;
+            if (model == null) return false;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || ReferenceEquals(mc, this)) continue;
+                if (mc.MorphParentIndex < 0) continue;
+                if (ReferenceEquals(model.GetMeshContext(mc.MorphParentIndex), this)) return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// モーフ基準データを設定（現在のメッシュ状態を基準として保存）

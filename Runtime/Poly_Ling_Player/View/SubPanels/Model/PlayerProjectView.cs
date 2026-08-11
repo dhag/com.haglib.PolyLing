@@ -52,6 +52,7 @@ namespace Poly_Ling.Player
         private int[] _selectedDrawableIndices;
         private int[] _selectedBoneIndices;
         private int[] _selectedMorphIndices;
+        private IReadOnlyList<string> _meshSelectionSetNames;
 
         public PlayerModelView(ModelContext model, int modelIndex)
         {
@@ -84,6 +85,19 @@ namespace Poly_Ling.Player
             => _selectedBoneIndices     ??= _model.SelectedBoneIndices.ToArray();
         public int[] SelectedMorphIndices
             => _selectedMorphIndices    ??= _model.SelectedMorphIndices.ToArray();
+
+        /// <summary>選択辞書の名前一覧。並びは MeshSelectionSets と同じ。</summary>
+        public IReadOnlyList<string> MeshSelectionSetNames
+            => _meshSelectionSetNames ??= BuildSelectionSetNames();
+
+        private string[] BuildSelectionSetNames()
+        {
+            var sets = _model.MeshSelectionSets;
+            if (sets == null || sets.Count == 0) return Array.Empty<string>();
+            var names = new string[sets.Count];
+            for (int i = 0; i < sets.Count; i++) names[i] = sets[i]?.Name ?? "";
+            return names;
+        }
 
         private IReadOnlyList<IMeshView> BuildList(MeshCategory category)
         {

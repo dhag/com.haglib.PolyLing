@@ -124,7 +124,9 @@ namespace Poly_Ling.Tools
             }
 
             // 法線を再計算
-            _context.ActiveMeshObject.RecalculateNormals();
+            // モーフ関連メッシュはUVスロットを増やしてはならない（展開index空間の一致が必要）。
+            _context.ActiveMeshObject.RecalculateNormals(
+                splitSlots: !(_context.ActiveMeshContext?.IsMorphRelated(_context.Model) ?? false));
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();
@@ -180,7 +182,9 @@ namespace Poly_Ling.Tools
             }
 
             // 法線を再計算
-            _context.ActiveMeshObject.RecalculateNormals();
+            // モーフ関連メッシュはUVスロットを増やしてはならない（展開index空間の一致が必要）。
+            _context.ActiveMeshObject.RecalculateNormals(
+                splitSlots: !(_context.ActiveMeshContext?.IsMorphRelated(_context.Model) ?? false));
 
             // メッシュを更新
             _context.SyncMesh?.Invoke();

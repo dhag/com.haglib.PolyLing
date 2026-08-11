@@ -27,7 +27,13 @@ namespace Poly_Ling.MeshListV2
         public int FaceCount => _view.FaceCount;
         public bool IsVisible => _view.IsVisible;
         public bool IsLocked => _view.IsLocked;
+
+        // 協働編集
+        public ulong ObjectId => _view.ObjectId;
+        public string EditorName => _view.EditorName ?? "";
+        public bool HasEditor => !string.IsNullOrEmpty(EditorName);
         public int MirrorType => _view.MirrorType;
+        public int MirrorAxis => _view.MirrorAxis;
         public bool IsBakedMirror => _view.IsBakedMirror;
         public bool IsMirrorSide => _view.IsMirrorSide;
         public bool IsRealSide => _view.IsRealSide;

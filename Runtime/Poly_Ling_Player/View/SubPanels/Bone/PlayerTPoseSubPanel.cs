@@ -4,6 +4,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnityEngine;
 using Poly_Ling.EditorBridge;
 using UnityEngine.UIElements;
@@ -12,6 +14,7 @@ using Poly_Ling.Data;
 using Poly_Ling.Ops;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -36,6 +39,11 @@ namespace Poly_Ling.Player
         private Label         _noBackupLabel;
         private Label         _statusLabel;
 
+        // ボーンを持たないモデル（MeshFilter 相当）用のマッピング読み込み
+        private VisualElement _csvSection;
+        private Label         _csvStatusLabel;
+        private string        _csvFilePath = "";
+
         public void Build(VisualElement parent)
         {
             var root = new VisualElement();
@@ -51,6 +59,32 @@ namespace Poly_Ling.Player
             _warningLabel.style.whiteSpace = WhiteSpace.Normal;
             _warningLabel.style.marginBottom = 4;
             root.Add(_warningLabel);
+
+            // ── マッピングCSV（ボーンが無いモデル用）────────────────────
+            // スキンド化していない MeshFilter 相当の階層でも、CSV でマッピングを
+            // 与えれば Tポーズ化できるようにする。候補はボーンに限らず
+            // MeshContextList 全件（索引 = マスター索引）を対象にする。
+            _csvSection = new VisualElement();
+            _csvSection.style.marginBottom = 6;
+
+            _csvSection.Add(SecLabel("マッピングCSV（ボーンが無いモデルでも可）"));
+
+            var btnLoadCsv = new Button(OnLoadMappingCsv) { text = "CSVを読み込んでマッピング" };
+            btnLoadCsv.style.height = 24;
+            btnLoadCsv.tooltip =
+                "UnityHumanoidName,Alias1,... 形式のCSVを読み込み、モデル内の全オブジェクト名と\n" +
+                "名前一致でマッピングする（ボーン・メッシュを問わない）";
+            _csvSection.Add(btnLoadCsv);
+
+            _csvStatusLabel = new Label();
+            _csvStatusLabel.style.fontSize   = 10;
+            _csvStatusLabel.style.color      = new StyleColor(Color.white);
+            _csvStatusLabel.style.whiteSpace = WhiteSpace.Normal;
+            _csvStatusLabel.style.marginTop  = 2;
+            _csvSection.Add(_csvStatusLabel);
+
+            root.Add(_csvSection);
+            root.Add(MakeSep());
 
             _mainContent = new VisualElement();
             _mainContent.style.display = DisplayStyle.None;
@@ -97,6 +131,7 @@ namespace Poly_Ling.Player
             _mainContent.Add(_noBackupLabel);
 
             _statusLabel = new Label();
+            _statusLabel.style.whiteSpace = WhiteSpace.Normal;
             _statusLabel.style.fontSize   = 10;
             _statusLabel.style.color      = new StyleColor(Color.white);
             _statusLabel.style.marginTop  = 4;
@@ -108,14 +143,32 @@ namespace Poly_Ling.Player
         {
             if (_warningLabel == null) return;
             var model = GetModel?.Invoke();
-            if (model == null) { ShowWarning("モデルがありません"); return; }
+            if (model == null)
+            {
+                if (_csvSection != null) _csvSection.style.display = DisplayStyle.None;
+                ShowWarning("モデルがありません");
+                return;
+            }
+
+            // CSV セクションはマッピングの有無に関わらず出す（ここから設定できるようにする）
+            if (_csvSection != null) _csvSection.style.display = DisplayStyle.Flex;
+
             var mapping = model.HumanoidMapping;
             if (mapping == null || mapping.IsEmpty)
-            { ShowWarning("Humanoidボーンマッピングが未設定です。\nHumanoid Mappingパネルで設定してください。"); return; }
+            {
+                ShowWarning("Humanoidボーンマッピングが未設定です。\n" +
+                            "上のCSV読み込み、または Humanoid Mapping パネルで設定してください。");
+                return;
+            }
 
             _warningLabel.style.display = DisplayStyle.None;
             _mainContent.style.display  = DisplayStyle.Flex;
-            _mappingInfoLabel.text      = $"マッピング済: {mapping.Count} ボーン";
+
+            bool hasSkin = TPoseConverter.HasAnySkinWeight(model.MeshContextList);
+            _mappingInfoLabel.text = $"マッピング済: {mapping.Count} 件" +
+                (hasSkin ? "（スキンド：頂点を焼き込みます）"
+                         : "（スキンなし：階層の姿勢だけを変えます）");
+
             RefreshBackupSection(model);
         }
 
@@ -124,10 +177,16 @@ namespace Poly_Ling.Player
         {
             var model = GetModel?.Invoke(); if (model == null) return;
             int modelIdx = GetModelIndex?.Invoke() ?? 0;
+
+            // 変換前に何が起きるかを確定させておく。
+            // 「押しても反応がない」ときに、どこで止まったかがそのまま残る。
+            string diag = TPoseConverter.Diagnose(model.MeshContextList, model.HumanoidMapping);
+            Debug.Log("[TPose診断]\n" + diag);
+
             if (SendCommand != null)
             {
                 SendCommand.Invoke(new ApplyTPoseCommand(modelIdx));
-                SetStatus("Tポーズを適用しました。");
+                SetStatus(diag);
                 Refresh();
                 return;
             }
@@ -148,8 +207,9 @@ namespace Poly_Ling.Player
             {
                 {
                     string __dbgDesc = "Apply T-Pose";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose"))?.GetType().Name ?? "<null>"));
-                    undo.MeshListStack.Record(new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose"), __dbgDesc);
+                    var __record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, backup, "Apply T-Pose");
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, __record);
+                    undo.MeshListStack.Record(__record, __dbgDesc);
                 }
             }
             model.IsDirty = true;
@@ -184,8 +244,9 @@ namespace Poly_Ling.Player
             {
                 {
                     string __dbgDesc = "Restore Original Pose";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose"))?.GetType().Name ?? "<null>"));
-                    undo.MeshListStack.Record(new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose"), __dbgDesc);
+                    var __record = new TPoseUndoRecord(beforeState, afterState, oldTPoseBackup, null, "Restore Original Pose");
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, __record);
+                    undo.MeshListStack.Record(__record, __dbgDesc);
                 }
             }
             model.IsDirty = true;
@@ -208,6 +269,78 @@ namespace Poly_Ling.Player
             SetStatus("バックアップを破棄しました。現在の姿勢がベース姿勢になります。");
             Refresh();
         }
+
+        /// <summary>
+        /// マッピングCSVを読み込み、モデル全体の名前と突き合わせて適用する。
+        ///
+        /// 候補はボーンに限らず MeshContextList 全件で、名前をその索引位置に置く
+        /// （索引 = マスター索引）。HumanoidBoneMapping が期待する索引規約と一致し、
+        /// スキンド化していない MeshFilter 相当の階層でもそのまま骨格として扱える。
+        /// 名前の無い位置は空文字にしておく。FindBoneByAliases は空文字にヒットしない。
+        /// </summary>
+        private void OnLoadMappingCsv()
+        {
+            var model = GetModel?.Invoke();
+            if (model == null) { SetCsvStatus("モデルがありません"); return; }
+
+            string dir  = string.IsNullOrEmpty(_csvFilePath)
+                ? UnityEngine.Application.dataPath
+                : Path.GetDirectoryName(_csvFilePath);
+
+            string path = PLEditorBridge.I.OpenFilePanel("Humanoidマッピング CSV の読み込み", dir, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            _csvFilePath = path;
+
+            List<string> csvLines;
+            try
+            {
+                csvLines = new List<string>(File.ReadAllLines(path, Encoding.UTF8));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PlayerTPoseSubPanel] CSV 読み込みに失敗: {ex.Message}");
+                SetCsvStatus("CSV の読み込みに失敗しました");
+                return;
+            }
+
+            // 索引 = マスター索引 になるよう、全コンテキストぶんの名前リストを作る
+            var names = new List<string>(model.MeshContextCount);
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                names.Add(mc != null && !string.IsNullOrEmpty(mc.Name) ? mc.Name : "");
+            }
+
+            var mapping = new HumanoidBoneMapping();
+            int count = mapping.LoadFromCSV(csvLines, names);
+
+            if (count == 0)
+            {
+                SetCsvStatus("マッピングできませんでした。1列目が Humanoid 名（Hips / LeftUpperArm など）の\n" +
+                             "CSVかどうか、別名列がモデルのオブジェクト名と一致するかを確認してください。");
+                return;
+            }
+
+            // 腕が取れないと Tポーズ変換は何もできないので、その場で伝える
+            bool hasLeft  = mapping.GetArmBoneIndices(true,  out _, out _);
+            bool hasRight = mapping.GetArmBoneIndices(false, out _, out _);
+
+            SendCommand?.Invoke(new ApplyHumanoidMappingCommand(
+                GetModelIndex?.Invoke() ?? 0, mapping.Clone()));
+
+            string armInfo = (hasLeft && hasRight) ? ""
+                : $"（腕の解決: 左={(hasLeft ? "OK" : "不足")} / 右={(hasRight ? "OK" : "不足")}）";
+            SetCsvStatus($"マッピングを適用しました: {count} 件 {armInfo}");
+
+            if (!hasLeft && !hasRight)
+                Debug.LogWarning("[PlayerTPoseSubPanel] 左右とも腕が解決していません。" +
+                                 "Tポーズ変換は何も行いません。読み込んだCSVが" +
+                                 "Humanoidマッピング用か確認してください。");
+
+            Refresh();
+        }
+
+        private void SetCsvStatus(string s) { if (_csvStatusLabel != null) _csvStatusLabel.text = s; }
 
         // ── Helpers ──────────────────────────────────────────────────────
         private void ShowWarning(string msg)

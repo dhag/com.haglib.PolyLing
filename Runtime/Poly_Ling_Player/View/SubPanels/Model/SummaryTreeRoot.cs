@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using Poly_Ling.Data;
 using Poly_Ling.View;
+using Poly_Ling.Diagnostics;
 using UIList.UIToolkitExtensions;
 
 namespace Poly_Ling.MeshListV2
@@ -42,6 +43,8 @@ namespace Poly_Ling.MeshListV2
                     NewParentMasterIndex = parentMaster
                 };
             }
+            PLDiag.Cmd($"ReorderMeshes category={Category} modelIndex={ModelIndex} count={entries.Length}");
+
             SendCommand?.Invoke(new ReorderMeshesCommand(ModelIndex, Category, entries));
             OnChanged?.Invoke();
         }

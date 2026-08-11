@@ -30,8 +30,25 @@ namespace Poly_Ling.ListClient
         [Tooltip("endpoint.json が見つからない/未接続時の再試行間隔(秒)")]
         [SerializeField] private float _retrySeconds = 1.0f;
 
-        [Tooltip("サーバへ登録するユーザー名。既定は空（名前なし）。将来の協働開発向け。")]
+        [Tooltip("サーバへ登録するユーザー名。空欄なら端末名を使う。協働編集の担当者名になる。")]
         [SerializeField] private string _userName = "";
+
+        /// <summary>
+        /// サーバへ登録する実効ユーザー名。
+        /// 空欄のまま接続すると誰が編集したか追跡できず、サーバ側の
+        /// RemoteOwnership.AllowAnonymousEdit=false では書き込みが全て拒否される。
+        /// そのため未設定時は端末名を既定値として使う。
+        /// </summary>
+        public string UserName
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_userName)) return _userName.Trim();
+                string device = SystemInfo.deviceName;
+                return string.IsNullOrWhiteSpace(device) ? "user" : device;
+            }
+            set { _userName = value ?? ""; }
+        }
 
         // ================================================================
         // 依存
@@ -93,6 +110,9 @@ namespace Poly_Ling.ListClient
 
             // パネル操作をサーバへ送るルータ。サーバ対応コマンドのみ送信。
             _router = new PanelCommandRouter(_client);
+            // 送信コマンドに安定ObjectIdを添えるための解決子。
+            // サーバはこれで「古いビュー由来のインデックス」を検出して弾く。
+            _router.ResolveObjectId = ResolveObjectId;
             _panelContext = new PanelContext(cmd => _router?.Send(cmd));
         }
 
@@ -155,7 +175,7 @@ namespace Poly_Ling.ListClient
             _awaitingConnect = false;
             SetStatus("接続済");
             // 自分のタイプ（機能）とユーザー名をサーバへ登録してからフェッチする。
-            _client.RegisterClientType(ClientTypeId, _userName);
+            _client.RegisterClientType(ClientTypeId, UserName);
             RefreshData();
         }
 
@@ -170,10 +190,30 @@ namespace Poly_Ling.ListClient
             // selectionChanged はインライン反映（再フェッチ不要・軽量）。
             // それ以外（meshListChanged 等の構造変更）は project_header 再取得。
             string ev = ExtractStr(json, "event");
-            if (ev == "selectionChanged")
-                ApplySelectionPush(json);
-            else
-                RefreshData();
+            switch (ev)
+            {
+                // 選択は自分宛にしか飛んでこない（サーバがユーザー単位で送り分ける）
+                case "selectionChanged":
+                    ApplySelectionPush(json);
+                    break;
+
+                // 担当の変化はバッジ更新のみ。全体再取得は不要。
+                case "ownershipChanged":
+                    ApplyOwnershipPush(json);
+                    break;
+
+                // 構造変更・再取得要求
+                case "meshListChanged":
+                case "refreshRequired":
+                    RefreshData();
+                    break;
+
+                // 未知のイベントは無視する。
+                // ここで再取得すると、将来 push を追加するたびに
+                // 全クライアントが project_header を引き直して重くなる。
+                default:
+                    break;
+            }
         }
 
         // サーバの selectionChanged push を受信済み ProjectContext へ反映する。
@@ -200,6 +240,99 @@ namespace Poly_Ling.ListClient
             // モデルが変わった場合のみ ModelSwitch でツリー再構築。
             if (_chromeBuilt)
                 PushView(modelChanged ? ChangeKind.ModelSwitch : ChangeKind.Selection);
+        }
+
+        // ================================================================
+        // 協働編集（担当者）
+        // ================================================================
+
+        /// <summary>
+        /// (modelIndex, masterIndex) → 安定ObjectId。
+        /// 受信済み ProjectContext から引く。未解決は 0（サーバ側で照合スキップ）。
+        /// </summary>
+        private ulong ResolveObjectId(int modelIndex, int masterIndex)
+        {
+            if (Project == null) return 0UL;
+            if (modelIndex < 0 || modelIndex >= Project.ModelCount) return 0UL;
+            var model = Project.Models[modelIndex];
+            if (model == null) return 0UL;
+            if (masterIndex < 0 || masterIndex >= model.MeshContextCount) return 0UL;
+            return model.GetMeshContext(masterIndex)?.ObjectId ?? 0UL;
+        }
+
+        /// <summary>
+        /// ownershipChanged push を受信済み ProjectContext へ反映する。
+        /// 全体再フェッチをせずに担当表示だけを更新する軽量経路。
+        ///
+        /// push は「担当者がいるオブジェクトのみ」を送るため、
+        /// 反映前に対象モデルの EditorName を一度クリアしてから入れ直す
+        /// （そうしないと解放が反映されない）。
+        /// </summary>
+        private void ApplyOwnershipPush(string json)
+        {
+            if (Project == null) return;
+
+            int mi = ExtractInt(json, "modelIndex", -1);
+            if (mi < 0 || mi >= Project.ModelCount) return;
+            var model = Project.Models[mi];
+            if (model == null) return;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc != null) mc.EditorName = "";
+            }
+
+            // owners 配列: {"id":"...","index":n,"name":"...","editor":"..."}
+            foreach (var entry in SplitObjects(json, "owners"))
+            {
+                int idx = ExtractInt(entry, "index", -1);
+                string editor = ExtractStr(entry, "editor");
+                string idStr = ExtractStr(entry, "id");
+                ulong.TryParse(idStr, out ulong oid);
+
+                // ID一致を優先し、無ければ index にフォールバックする
+                int target = -1;
+                if (oid != 0UL)
+                {
+                    for (int i = 0; i < model.MeshContextCount; i++)
+                        if (model.GetMeshContext(i)?.ObjectId == oid) { target = i; break; }
+                }
+                if (target < 0 && idx >= 0 && idx < model.MeshContextCount) target = idx;
+                if (target < 0) continue;
+
+                var mc = model.GetMeshContext(target);
+                if (mc != null) mc.EditorName = editor ?? "";
+            }
+
+            if (_chromeBuilt) PushView(ChangeKind.Attributes);
+        }
+
+        /// <summary>
+        /// 配列キー内のオブジェクトを { } 単位で切り出す（ネストなしの既知フォーマット前提）。
+        /// </summary>
+        private static List<string> SplitObjects(string json, string arrayKey)
+        {
+            var result = new List<string>();
+            string s = "\"" + arrayKey + "\"";
+            int k = json.IndexOf(s, System.StringComparison.Ordinal);
+            if (k < 0) return result;
+            int open = json.IndexOf('[', k + s.Length);
+            if (open < 0) return result;
+            int close = json.IndexOf(']', open);
+            if (close < 0) return result;
+
+            int i = open + 1;
+            while (i < close)
+            {
+                int b = json.IndexOf('{', i);
+                if (b < 0 || b > close) break;
+                int e = json.IndexOf('}', b);
+                if (e < 0 || e > close) break;
+                result.Add(json.Substring(b, e - b + 1));
+                i = e + 1;
+            }
+            return result;
         }
 
         // ================================================================

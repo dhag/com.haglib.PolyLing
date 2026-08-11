@@ -134,6 +134,13 @@ namespace Poly_Ling.Core
             // ライン・面フラグも更新
             UpdateAllLineSelectionFlags();
             UpdateAllFaceSelectionFlags();
+
+            // Hidden / Locked も同じ場で立て直す。
+            // この関数は PrepareWireframeAndVertices（MeshSceneRenderer）からも呼ばれ、
+            // 各フラグ配列を GPU へ再転送する。可視性を別経路で書いてからここを通ると、
+            // カリング済みの結果と転送順がずれて反映が1フレーム遅れる。
+            // 順序に依存しないよう、選択と可視性を必ずひと組で確定させる。
+            UpdateAllVisibilityFlags();
         }
 
         /// <summary>
@@ -1565,8 +1572,15 @@ namespace Poly_Ling.Core
                     // ボーン（Type=Bone）: SkinningMatrix を使用
                     //   → スキンドメッシュ頂点の boneIndex がボーンを指すため、
                     //     SkinningMatrix = BoneWorldMatrix × BoneBindPose が必要
-                    bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh &&
-                                                 !(ctx.MeshObject?.HasBoneWeight ?? false);
+                    // ミラー側（MirrorSide / BakedMirror）も、スキンを持たなければ
+                    // MeshFilter と同じ実体である。Type だけで弾くと SkinningMatrix 経路に
+                    // 落ち、BindPose が WorldMatrix⁻¹ に更新された瞬間（Tポーズ変換など）
+                    // SkinningMatrix = W·W⁻¹ = 単位 となって変換が丸ごと消える。
+                    bool usesWorldMatrixDirect =
+                        (ctx.Type == MeshType.Mesh ||
+                         ctx.Type == MeshType.MirrorSide ||
+                         ctx.Type == MeshType.BakedMirror) &&
+                        !(ctx.MeshObject?.HasBoneWeight ?? false);
                     _transformMatrices[i] = usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix;
                 }
                 else

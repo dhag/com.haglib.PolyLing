@@ -90,5 +90,20 @@ namespace Poly_Ling.MeshBridge
         /// 三角形/UV は触らず、法線とバウンディングボックスのみ再計算する。
         /// </summary>
         void ApplyVertexPositionsInPlace(Mesh target, MeshObject source);
+
+        /// <summary>
+        /// MeshObject の三角形のみを既存の Unity Mesh へ張り直す。
+        /// 頂点位置・UV・法線は触らない。面の表示/非表示（Face.IsHidden）切替に使う。
+        /// 展開頂点数が一致しない場合は何もせず false を返す。
+        /// </summary>
+        bool ApplyTrianglesInPlace(Mesh target, MeshObject source, int materialCount = -1);
+
+        /// <summary>
+        /// MeshObject の法線のみを既存の Unity Mesh へ上書きする。
+        /// 頂点位置・三角形・UV は触らない。展開頂点数が一致しない場合は何もしない
+        /// （スロット数が変わった直後はメッシュを作り直す必要があるため）。
+        /// 上書きできた場合のみ true を返す。
+        /// </summary>
+        bool ApplyNormalsInPlace(Mesh target, MeshObject source);
     }
 }

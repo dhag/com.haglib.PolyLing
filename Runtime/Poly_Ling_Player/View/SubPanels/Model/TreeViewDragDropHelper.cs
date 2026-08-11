@@ -1,3 +1,25 @@
+// TreeViewDragDropHelper.cs
+// TreeView 用の汎用ドラッグ&ドロップ。Unity のヒエラルキーと同じ操作感。
+//
+// ── 転用手順（この3ファイルをコピーする: Types / Helper / TreeViewHelper）
+//  1. データクラスに ITreeItem<T> を実装する（Id / DisplayName / Parent / Children）
+//  2. ルート管理クラスに ITreeRoot<T> を実装する（RootItems / OnTreeChanged）
+//  3. makeItem が作る要素に名前を付ける
+//         var content = new VisualElement { name = "my-row-content" };
+//     bindItem でその要素の userData に「今表示しているアイテム」を控える
+//  4. ITreeRowResolver<T> を実装し、行要素からその要素とアイテムを引けるようにする
+//  5. new TreeViewDragDropHelper<T>(treeView, treeRoot, validator, resolver).Setup();
+//     破棄時は Cleanup();
+//
+// ── 落ちる位置の規則（Unity のヒエラルキー準拠）
+//   行の中央50%   : その行の子として末尾に追加（畳まれていれば開く）
+//   行の上下25%   : 行と行の境目。線のすぐ下に来る行の直前に、その行と同じ深さで挿入
+//   最終行より下  : ルートの末尾
+//
+// ── 依存
+//   UnityEngine / UnityEngine.UIElements のみ。アプリ固有の型は参照しない。
+//   ログが要る場合は DiagLine に差し込む。
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,95 +29,12 @@ using UnityEngine.UIElements;
 namespace UIList.UIToolkitExtensions
 {
     // ============================================================
-    // インターフェース定義
-    // ============================================================
-
-    /// <summary>
-    /// TreeViewで表示・D&D可能なアイテムのインターフェース。
-    /// 自分のデータクラスにこれを実装すればTreeViewDragDropHelperが使える。
-    /// 
-    /// 【実装例】
-    /// public class MyNode : ITreeItem&lt;MyNode&gt;
-    /// {
-    ///     public int Id =&gt; id;
-    ///     public string DisplayName =&gt; name;
-    ///     public MyNode Parent { get; set; }
-    ///     public List&lt;MyNode&gt; Children =&gt; children;
-    /// }
-    /// </summary>
-    public interface ITreeItem<T> where T : class, ITreeItem<T>
-    {
-        /// <summary>一意なID（TreeViewのitemIdに使用）</summary>
-        int Id { get; }
-
-        /// <summary>表示名（ドラッグラベル等に使用）</summary>
-        string DisplayName { get; }
-
-        /// <summary>親アイテム（ルートならnull）</summary>
-        T Parent { get; set; }
-
-        /// <summary>子アイテムのリスト</summary>
-        List<T> Children { get; }
-    }
-
-    /// <summary>
-    /// ツリーのルートを提供するインターフェース。
-    /// D&D完了時の通知も受け取る。
-    /// 
-    /// 【実装例】
-    /// public class MyTreeRoot : ITreeRoot&lt;MyNode&gt;
-    /// {
-    ///     public List&lt;MyNode&gt; RootItems =&gt; rootNodes;
-    ///     public void OnTreeChanged() { Save(); RefreshUI(); }
-    /// }
-    /// </summary>
-    public interface ITreeRoot<T> where T : class, ITreeItem<T>
-    {
-        /// <summary>ルートレベルのアイテムリスト</summary>
-        List<T> RootItems { get; }
-
-        /// <summary>ツリー構造が変更された時に呼ばれる</summary>
-        void OnTreeChanged();
-    }
-
-    /// <summary>
-    /// D&D可否を判定するインターフェース（オプション）。
-    /// nullなら全てのD&Dが許可される。
-    /// </summary>
-    public interface IDragDropValidator<T> where T : class, ITreeItem<T>
-    {
-        /// <summary>アイテムをドラッグ開始できるか</summary>
-        bool CanDrag(T item);
-
-        /// <summary>指定位置にドロップできるか</summary>
-        bool CanDrop(T dragged, T target, DropPosition position);
-    }
-
-    /// <summary>ドロップ位置</summary>
-    public enum DropPosition
-    {
-        Before,  // ターゲットの前（兄として挿入）
-        After,   // ターゲットの後（弟として挿入）
-        Inside   // ターゲットの子として追加
-    }
-
-    // ============================================================
     // TreeViewDragDropHelper
     // ============================================================
 
     /// <summary>
     /// TreeView用の汎用ドラッグ&amp;ドロップヘルパー。
-    /// 
-    /// 【使い方】
-    /// 1. データクラスに ITreeItem&lt;T&gt; を実装
-    /// 2. ルート管理クラスに ITreeRoot&lt;T&gt; を実装
-    /// 3. ヘルパーを作成してSetup()を呼ぶ
-    /// 
-    /// var helper = new TreeViewDragDropHelper&lt;MyNode&gt;(treeView, treeRoot);
-    /// helper.Setup();
-    /// 
-    /// // 破棄時（OnDisable等）
-    /// helper.Cleanup();
+    /// 導入手順と落下位置の規則はファイル先頭のコメントを参照。
     /// </summary>
     public class TreeViewDragDropHelper<T> where T : class, ITreeItem<T>
     {
@@ -103,6 +42,17 @@ namespace UIList.UIToolkitExtensions
         private readonly TreeView treeView;
         private readonly ITreeRoot<T> treeRoot;
         private readonly IDragDropValidator<T> validator;  // null可
+
+        // 行要素 → アイテム / 内容要素 の解決器（null可）。
+        // 仮想化リストではコンテナの子の並び順が絶対 index と一致しないため、
+        // index を数えて GetItemDataForIndex に渡すとドロップ先がずれる。
+        private readonly ITreeRowResolver<T> rowResolver;  // null可
+
+        /// <summary>
+        /// 診断ログの差し込み口（null可）。アプリ側のロガーへ流す用。
+        /// ここに依存を持たせないため、ヘルパー自身は何も出力しない。
+        /// </summary>
+        public Action<string> DiagLine;
 
         // --- ドラッグ状態 ---
         private List<T> draggedItems = new();
@@ -127,11 +77,14 @@ namespace UIList.UIToolkitExtensions
         /// <param name="treeView">対象のTreeView</param>
         /// <param name="treeRoot">ルートアイテムを提供するオブジェクト</param>
         /// <param name="validator">D&D可否判定（nullなら全て許可）</param>
-        public TreeViewDragDropHelper(TreeView treeView, ITreeRoot<T> treeRoot, IDragDropValidator<T> validator = null)
+        public TreeViewDragDropHelper(TreeView treeView, ITreeRoot<T> treeRoot,
+                                      IDragDropValidator<T> validator = null,
+                                      ITreeRowResolver<T> rowResolver = null)
         {
             this.treeView = treeView ?? throw new ArgumentNullException(nameof(treeView));
             this.treeRoot = treeRoot ?? throw new ArgumentNullException(nameof(treeRoot));
             this.validator = validator;
+            this.rowResolver = rowResolver;
         }
 
         // ============================================================
@@ -300,6 +253,11 @@ namespace UIList.UIToolkitExtensions
             isDragging = true;
             treeView.CapturePointer(pointerId);
 
+            // 他のドラッグ対象の子孫を先に落とす。親を動かせば子は Children ごと
+            // 付いてくるため、両方を個別に動かすと子が親から切り離される。
+            // 判定と実行で同じ集合を使うため、ここで1回だけ行う。
+            RemoveDraggedDescendants();
+
             // ドラッグラベルを表示
             if (dragLabel != null)
             {
@@ -330,11 +288,27 @@ namespace UIList.UIToolkitExtensions
         // ドロップ先の判定とインジケータ表示
         // ============================================================
 
+        /// <summary>
+        /// ドロップ先。Unity のヒエラルキーと同じ3種。
+        ///   Inside  : Reference の子として末尾に追加
+        ///   Boundary: Reference の直前に、Reference と同じ深さで挿入
+        ///   RootEnd : ルートの末尾に追加
+        /// </summary>
+        private struct DropTarget
+        {
+            public bool Valid;
+            public bool Inside;
+            public bool RootEnd;
+            public T    Reference;      // Inside: 親 / Boundary: 直後に来る行
+            public VisualElement Row;   // 線を描く基準の行
+            public bool LineAtRowBottom; // 線を Row の下端に描くか（false = 上端）
+        }
+
         private void UpdateDropIndicator(Vector2 screenPos)
         {
-            var (target, dropPos, element) = HitTestDropTarget(screenPos);
+            var dt = HitTestDropTarget(screenPos);
 
-            if (target == null || !IsDropAllowed(target, dropPos))
+            if (!dt.Valid || !IsDropAllowed(dt))
             {
                 if (dragIndicator != null) dragIndicator.style.display = DisplayStyle.None;
                 return;
@@ -342,105 +316,195 @@ namespace UIList.UIToolkitExtensions
 
             if (dragIndicator == null) return;
             dragIndicator.style.display = DisplayStyle.Flex;
-            PositionIndicator(element, dropPos);
+            PositionIndicator(dt);
         }
 
         /// <summary>
-        /// マウス位置からドロップ先を判定
+        /// 展開状態を加味した可視順リスト。畳まれた子はたどらない。
         /// </summary>
-        private (T item, DropPosition pos, VisualElement elem) HitTestDropTarget(Vector2 screenPos)
+        private List<T> BuildVisibleList()
         {
-            var container = treeView.Q("unity-content-container");
-            if (container == null) return (null, DropPosition.Inside, null);
+            var result = new List<T>();
+            AppendVisible(treeRoot.RootItems, result);
+            return result;
+        }
 
+        private void AppendVisible(List<T> items, List<T> result)
+        {
+            if (items == null) return;
+            foreach (var it in items)
+            {
+                if (it == null) continue;
+                result.Add(it);
+                if (it.Children != null && it.Children.Count > 0 && treeView.IsExpanded(it.Id))
+                    AppendVisible(it.Children, result);
+            }
+        }
+
+        /// <summary>
+        /// マウス位置からドロップ先を判定する。
+        /// 行の中央50%は Inside、上下25%は「行と行の境目」として扱う。
+        /// 境目は「線のすぐ下に来る行の直前」に正規化するので、
+        /// 展開中の親のすぐ下の境目は第一子の直前になる。
+        /// </summary>
+        private DropTarget HitTestDropTarget(Vector2 screenPos)
+        {
+            var none = new DropTarget { Valid = false };
+
+            var container = treeView.Q("unity-content-container");
+            if (container == null) return none;
+
+            VisualElement hoveredRow = null;
+            T hoveredItem = null;
             int index = 0;
             foreach (var rowElement in container.Children())
             {
-                if (!rowElement.worldBound.Contains(screenPos))
+                if (rowElement.worldBound.Contains(screenPos))
                 {
-                    index++;
-                    continue;
+                    // コンテナの子の並び順は絶対 index と一致しない（仮想化・要素の使い回し）。
+                    hoveredItem = rowResolver != null
+                        ? rowResolver.ResolveItem(rowElement)
+                        : treeView.GetItemDataForIndex<T>(index);
+                    hoveredRow = rowElement;
+                    break;
                 }
-
-                var item = treeView.GetItemDataForIndex<T>(index);
-                if (item == null) return (null, DropPosition.Inside, null);
-
-                // 行内の相対Y位置でドロップ位置を決定
-                float relativeY = (screenPos.y - rowElement.worldBound.y) / rowElement.worldBound.height;
-                DropPosition pos;
-                if (relativeY < DropZoneRatio)
-                    pos = DropPosition.Before;      // 上部25%
-                else if (relativeY > 1 - DropZoneRatio)
-                    pos = DropPosition.After;       // 下部25%
-                else
-                    pos = DropPosition.Inside;      // 中央50%
-
-                return (item, pos, rowElement);
+                index++;
             }
 
-            return (null, DropPosition.Inside, null);
+            // どの行にも当たらない = 最終行より下の空白。ルート末尾。
+            if (hoveredRow == null || hoveredItem == null)
+                return new DropTarget { Valid = true, RootEnd = true, Row = LastVisibleRow(container), LineAtRowBottom = true };
+
+            var rect = hoveredRow.worldBound;
+            float relativeY = rect.height > 0f ? (screenPos.y - rect.y) / rect.height : 0.5f;
+
+            // 中央50%: 子として追加
+            if (relativeY >= DropZoneRatio && relativeY <= 1f - DropZoneRatio)
+                return new DropTarget { Valid = true, Inside = true, Reference = hoveredItem, Row = hoveredRow };
+
+            var visible = BuildVisibleList();
+            int at = IndexOfRef(visible, hoveredItem);
+            if (at < 0)
+                return new DropTarget { Valid = true, Inside = true, Reference = hoveredItem, Row = hoveredRow };
+
+            // 上25% = この行の直前 / 下25% = 次の可視行の直前
+            int refIndex = relativeY < DropZoneRatio ? at : at + 1;
+
+            // ドラッグ対象そのもの（とその子孫）は挿入基準にできないので次へ送る。
+            while (refIndex < visible.Count && IsDraggedOrDescendant(visible[refIndex]))
+                refIndex++;
+
+            if (refIndex >= visible.Count)
+                return new DropTarget { Valid = true, RootEnd = true, Row = LastVisibleRow(container), LineAtRowBottom = true };
+
+            var reference = visible[refIndex];
+            var refRow = FindRow(container, reference);
+            if (refRow != null)
+                return new DropTarget { Valid = true, Reference = reference, Row = refRow, LineAtRowBottom = false };
+
+            // 基準行が画面外（仮想化で未生成）のときは、幾何的に同じ位置になる
+            // 「ホバー行の下端」に描く。
+            return new DropTarget { Valid = true, Reference = reference, Row = hoveredRow, LineAtRowBottom = true };
+        }
+
+        private static int IndexOfRef(List<T> list, T item)
+        {
+            for (int i = 0; i < list.Count; i++)
+                if (ReferenceEquals(list[i], item)) return i;
+            return -1;
+        }
+
+        private VisualElement FindRow(VisualElement container, T item)
+        {
+            if (rowResolver == null) return null;
+            foreach (var row in container.Children())
+                if (ReferenceEquals(rowResolver.ResolveItem(row), item)) return row;
+            return null;
+        }
+
+        private VisualElement LastVisibleRow(VisualElement container)
+        {
+            VisualElement last = null;
+            foreach (var row in container.Children())
+                if (last == null || row.worldBound.y > last.worldBound.y) last = row;
+            return last;
+        }
+
+        /// <summary>行の内容要素の左端（ワールド）。取れなければ行の左端。</summary>
+        private float ContentLeftOf(VisualElement row)
+        {
+            if (row == null) return 0f;
+            var content = rowResolver?.ResolveContent(row);
+            return content != null ? content.worldBound.x : row.worldBound.x;
         }
 
         /// <summary>
-        /// インジケータの位置とスタイルを設定
+        /// インジケータの位置とスタイルを設定する。
+        /// 境目のときは「入る深さ」に合わせて線の左端をずらす。
         /// </summary>
-        private void PositionIndicator(VisualElement rowElement, DropPosition dropPos)
+        private void PositionIndicator(DropTarget dt)
         {
-            if (dragIndicator == null || rowElement == null || treeView?.parent == null) return;
-            var rowRect = rowElement.worldBound;
+            if (dragIndicator == null || dt.Row == null || treeView?.parent == null) return;
+            var rowRect = dt.Row.worldBound;
             var parentRect = treeView.parent.worldBound;
 
-            float left = rowRect.x - parentRect.x;
-            float width = rowRect.width;
-
-            switch (dropPos)
+            if (dt.Inside)
             {
-                case DropPosition.Before:
-                    dragIndicator.style.top = rowRect.y - parentRect.y;
-                    dragIndicator.style.left = left;
-                    dragIndicator.style.width = width;
-                    dragIndicator.style.height = 2;
-                    dragIndicator.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 0.8f);
-                    break;
-
-                case DropPosition.After:
-                    dragIndicator.style.top = rowRect.y - parentRect.y + rowRect.height;
-                    dragIndicator.style.left = left;
-                    dragIndicator.style.width = width;
-                    dragIndicator.style.height = 2;
-                    dragIndicator.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 0.8f);
-                    break;
-
-                case DropPosition.Inside:
-                    dragIndicator.style.top = rowRect.y - parentRect.y;
-                    dragIndicator.style.left = left;
-                    dragIndicator.style.width = width;
-                    dragIndicator.style.height = rowRect.height;
-                    dragIndicator.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 0.2f);
-                    break;
+                dragIndicator.style.top    = rowRect.y - parentRect.y;
+                dragIndicator.style.left   = rowRect.x - parentRect.x;
+                dragIndicator.style.width  = rowRect.width;
+                dragIndicator.style.height = rowRect.height;
+                dragIndicator.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 0.2f);
+                return;
             }
+
+            float y = dt.LineAtRowBottom ? rowRect.y + rowRect.height : rowRect.y;
+            // RootEnd はルート直下なので行の左端。境目は基準行の内容左端に合わせる。
+            float leftWorld = dt.RootEnd ? rowRect.x : ContentLeftOf(dt.Row);
+
+            dragIndicator.style.top    = y - parentRect.y;
+            dragIndicator.style.left   = leftWorld - parentRect.x;
+            dragIndicator.style.width  = Mathf.Max(8f, rowRect.xMax - leftWorld);
+            dragIndicator.style.height = 2;
+            dragIndicator.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 0.8f);
         }
 
-        /// <summary>
-        /// ドロップが許可されているか判定
-        /// </summary>
-        private bool IsDropAllowed(T target, DropPosition dropPos)
+        /// <summary>ドロップが許可されているか判定</summary>
+        private bool IsDropAllowed(DropTarget dt)
         {
+            if (!dt.Valid) return false;
+            if (draggedItems.Count == 0) return false;
+            if (dt.RootEnd) return true;
+            if (dt.Reference == null) return false;
+
+            // 自分自身や自分の子孫を基準にはできない。
+            if (IsDraggedOrDescendant(dt.Reference)) return false;
+
+            var pos = dt.Inside ? DropPosition.Inside : DropPosition.Before;
+            foreach (var dragged in draggedItems)
+                if (validator != null && !validator.CanDrop(dragged, dt.Reference, pos)) return false;
+
+            return true;
+        }
+
+        /// <summary>item がドラッグ対象そのもの、またはその子孫か。</summary>
+        private bool IsDraggedOrDescendant(T item)
+        {
+            if (item == null) return false;
             foreach (var dragged in draggedItems)
             {
-                if (dragged.Equals(target)) return false;
-                if (IsDescendantOf(dragged, target)) return false;
-                if (validator != null && !validator.CanDrop(dragged, target, dropPos))
-                    return false;
+                if (ReferenceEquals(dragged, item)) return true;
+                if (IsDescendantOf(dragged, item)) return true;
             }
-            return true;
+            return false;
         }
 
         private bool IsDescendantOf(T ancestor, T target)
         {
+            if (ancestor.Children == null) return false;
             foreach (var child in ancestor.Children)
             {
-                if (child.Equals(target)) return true;
+                if (ReferenceEquals(child, target)) return true;
                 if (IsDescendantOf(child, target)) return true;
             }
             return false;
@@ -452,39 +516,57 @@ namespace UIList.UIToolkitExtensions
 
         private void ExecuteDrop(Vector2 screenPos)
         {
-            var (target, dropPos, _) = HitTestDropTarget(screenPos);
+            var dt = HitTestDropTarget(screenPos);
+            if (!dt.Valid || !IsDropAllowed(dt)) return;
+            if (draggedItems.Count == 0) return;
 
-            if (target == null || !IsDropAllowed(target, dropPos))
-                return;
+            // 診断: 何を掴んで、どこへ落としたか。出力先はアプリ側。
+            if (DiagLine != null)
+            {
+                DiagLine("mode = " + (dt.Inside ? "Inside(子として追加)"
+                                    : dt.RootEnd ? "RootEnd(ルート末尾)"
+                                                 : "Boundary(この行の直前)"));
+                DiagLine("reference = " + (dt.Reference != null ? dt.Reference.DisplayName : "<root-end>"));
+                DiagLine("dragged count = " + draggedItems.Count);
+                for (int di = 0; di < draggedItems.Count; di++)
+                {
+                    var d = draggedItems[di];
+                    DiagLine($"  [{di}] {d.DisplayName} (parent={(d.Parent != null ? d.Parent.DisplayName : "<root>")})");
+                }
+            }
 
             // 1. ドラッグ元から削除
             foreach (var item in draggedItems)
-            {
                 TreeViewHelper.GetSiblings(item, treeRoot.RootItems).Remove(item);
-            }
 
-            // 2. ドロップ先に挿入
-            var targetSiblings = TreeViewHelper.GetSiblings(target, treeRoot.RootItems);
-            int targetIndex = targetSiblings.IndexOf(target);
-
-            foreach (var item in draggedItems)
+            // 2. 挿入
+            if (dt.Inside)
             {
-                switch (dropPos)
+                foreach (var item in draggedItems)
                 {
-                    case DropPosition.Before:
-                        targetSiblings.Insert(targetIndex++, item);
-                        item.Parent = target.Parent;
-                        break;
-
-                    case DropPosition.After:
-                        targetSiblings.Insert(++targetIndex, item);
-                        item.Parent = target.Parent;
-                        break;
-
-                    case DropPosition.Inside:
-                        target.Children.Add(item);
-                        item.Parent = target;
-                        break;
+                    dt.Reference.Children.Add(item);
+                    item.Parent = dt.Reference;
+                }
+                // 畳まれたまま子を足すと消えたように見えるので開く。
+                treeView.ExpandItem(dt.Reference.Id, false);
+            }
+            else if (dt.RootEnd)
+            {
+                foreach (var item in draggedItems)
+                {
+                    treeRoot.RootItems.Add(item);
+                    item.Parent = null;
+                }
+            }
+            else
+            {
+                var siblings = TreeViewHelper.GetSiblings(dt.Reference, treeRoot.RootItems);
+                int at = siblings.IndexOf(dt.Reference);
+                if (at < 0) at = siblings.Count;
+                foreach (var item in draggedItems)
+                {
+                    siblings.Insert(at++, item);
+                    item.Parent = dt.Reference.Parent;
                 }
             }
 
@@ -498,301 +580,47 @@ namespace UIList.UIToolkitExtensions
 
         private List<T> GetSelectedItems()
         {
-            var result = new List<T>();
+            var picked = new HashSet<T>();
             foreach (var index in treeView.selectedIndices)
             {
                 var item = treeView.GetItemDataForIndex<T>(index);
-                if (item != null) result.Add(item);
+                if (item != null) picked.Add(item);
             }
-            return result;
-        }
-    }
+            if (picked.Count == 0) return new List<T>();
 
-    // ============================================================
-    // TreeViewHelper（静的ユーティリティ）
-    // ============================================================
-
-    /// <summary>
-    /// TreeView操作の汎用ヘルパーメソッド集。
-    /// ITreeItem&lt;T&gt;を実装したデータに対して使える。
-    /// 
-    /// 【使用例】
-    /// // TreeViewデータ構築
-    /// var treeData = TreeViewHelper.BuildTreeData(model.rootObjects);
-    /// treeView.SetRootItems(treeData);
-    /// 
-    /// // アイテム移動
-    /// TreeViewHelper.MoveItems(selectedItems, rootList, direction: -1);  // 上へ
-    /// TreeViewHelper.Outdent(item, rootList);  // 階層を上げる
-    /// TreeViewHelper.Indent(item, rootList);   // 階層を下げる
-    /// </summary>
-    public static class TreeViewHelper
-    {
-        // ============================================================
-        // データ構築
-        // ============================================================
-
-        /// <summary>
-        /// TreeViewItemDataのリストを構築（再帰）。
-        /// treeView.SetRootItems() に渡す用。
-        /// </summary>
-        public static List<TreeViewItemData<T>> BuildTreeData<T>(List<T> items) where T : class, ITreeItem<T>
-        {
-            var result = new List<TreeViewItemData<T>>();
-            if (items == null) return result;
-
-            foreach (var item in items)
-            {
-                var children = BuildTreeData(item.Children);
-                result.Add(new TreeViewItemData<T>(item.Id, item, children));
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// 親参照を再構築。
-        /// CSVロード後など、Parentが設定されていない時に呼ぶ。
-        /// </summary>
-        public static void RebuildParentReferences<T>(List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            if (rootItems == null) return;
-            foreach (var root in rootItems)
-            {
-                RebuildParentReferencesRecursive(root, null);
-            }
-        }
-
-        private static void RebuildParentReferencesRecursive<T>(T item, T parent) where T : class, ITreeItem<T>
-        {
-            item.Parent = parent;
-            if (item.Children == null) return;
-            foreach (var child in item.Children)
-            {
-                RebuildParentReferencesRecursive(child, item);
-            }
-        }
-
-        // ============================================================
-        // 構造操作
-        // ============================================================
-
-        /// <summary>
-        /// アイテムの兄弟リストを取得
-        /// </summary>
-        public static List<T> GetSiblings<T>(T item, List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            return item.Parent != null ? item.Parent.Children : rootItems;
-        }
-
-        /// <summary>
-        /// アイテムを上下に移動
-        /// </summary>
-        /// <param name="items">移動するアイテム（同じ親を持つこと）</param>
-        /// <param name="rootItems">ルートリスト</param>
-        /// <param name="direction">負:上、正:下</param>
-        /// <returns>成功したらtrue</returns>
-        public static bool MoveItems<T>(List<T> items, List<T> rootItems, int direction) where T : class, ITreeItem<T>
-        {
-            if (items == null || items.Count == 0) return false;
-
-            // 同じ親かチェック
-            var firstParent = items[0].Parent;
-            if (!items.All(i => Equals(i.Parent, firstParent))) return false;
-
-            var siblings = GetSiblings(items[0], rootItems);
-
-            // インデックス順にソート
-            var sorted = items.OrderBy(i => siblings.IndexOf(i)).ToList();
-
-            if (direction < 0)
-            {
-                // 上へ移動：先頭が0番目なら移動不可
-                int firstIndex = siblings.IndexOf(sorted[0]);
-                if (firstIndex <= 0) return false;
-
-                foreach (var item in sorted)
-                {
-                    int idx = siblings.IndexOf(item);
-                    (siblings[idx], siblings[idx - 1]) = (siblings[idx - 1], siblings[idx]);
-                }
-            }
-            else
-            {
-                // 下へ移動：末尾が最後なら移動不可
-                int lastIndex = siblings.IndexOf(sorted.Last());
-                if (lastIndex >= siblings.Count - 1) return false;
-
-                // 後ろから処理しないと位置がずれる
-                for (int i = sorted.Count - 1; i >= 0; i--)
-                {
-                    int idx = siblings.IndexOf(sorted[i]);
-                    (siblings[idx], siblings[idx + 1]) = (siblings[idx + 1], siblings[idx]);
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// 階層を上げる（親の兄弟になる）
-        /// </summary>
-        /// <returns>成功したらtrue</returns>
-        public static bool Outdent<T>(T item, List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            // ルートアイテムはこれ以上上げられない
-            if (item == null || item.Parent == null) return false;
-
-            var oldParent = item.Parent;
-            var grandParent = oldParent.Parent;
-
-            // 元の親から削除
-            oldParent.Children.Remove(item);
-
-            // 挿入先を決定（祖父の子 or ルート）
-            var targetList = grandParent != null ? grandParent.Children : rootItems;
-            int insertIndex = targetList.IndexOf(oldParent) + 1;
-
-            targetList.Insert(insertIndex, item);
-            item.Parent = grandParent;
-
-            return true;
-        }
-
-        /// <summary>
-        /// 階層を下げる（直上の兄の子になる）
-        /// </summary>
-        /// <returns>成功したらtrue</returns>
-        public static bool Indent<T>(T item, List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            if (item == null) return false;
-
-            var siblings = GetSiblings(item, rootItems);
-            int index = siblings.IndexOf(item);
-
-            // 上に兄弟がいなければ不可
-            if (index <= 0) return false;
-
-            // 直上の兄を新しい親にする
-            var newParent = siblings[index - 1];
-            siblings.Remove(item);
-            newParent.Children.Add(item);
-            item.Parent = newParent;
-
-            return true;
-        }
-
-        // ============================================================
-        // CRUD操作
-        // ============================================================
-
-        /// <summary>
-        /// アイテムを削除
-        /// </summary>
-        public static bool Delete<T>(T item, List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            if (item == null) return false;
-            return GetSiblings(item, rootItems).Remove(item);
-        }
-
-        /// <summary>
-        /// 複数アイテムを削除
-        /// </summary>
-        /// <returns>削除した件数</returns>
-        public static int DeleteMany<T>(List<T> items, List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            if (items == null) return 0;
-            int count = 0;
-            foreach (var item in items)
-            {
-                if (Delete(item, rootItems)) count++;
-            }
-            return count;
-        }
-
-        // ============================================================
-        // ID管理
-        // ============================================================
-
-        /// <summary>
-        /// ツリー全体から最大IDを取得。
-        /// 新規アイテム作成時に GetMaxId() + 1 で新IDを生成できる。
-        /// </summary>
-        public static int GetMaxId<T>(List<T> rootItems) where T : class, ITreeItem<T>
-        {
-            if (rootItems == null) return 0;
-            int max = 0;
-            foreach (var root in rootItems)
-            {
-                max = Math.Max(max, GetMaxIdRecursive(root));
-            }
-            return max;
-        }
-
-        private static int GetMaxIdRecursive<T>(T item) where T : class, ITreeItem<T>
-        {
-            int max = item.Id;
-            if (item.Children != null)
-            {
-                foreach (var child in item.Children)
-                {
-                    max = Math.Max(max, GetMaxIdRecursive(child));
-                }
-            }
-            return max;
-        }
-
-        // ============================================================
-        // 検索
-        // ============================================================
-
-        /// <summary>
-        /// IDでアイテムを検索
-        /// </summary>
-        public static T FindById<T>(List<T> rootItems, int id) where T : class, ITreeItem<T>
-        {
-            if (rootItems == null) return null;
-            foreach (var root in rootItems)
-            {
-                var found = FindByIdRecursive(root, id);
-                if (found != null) return found;
-            }
-            return null;
-        }
-
-        private static T FindByIdRecursive<T>(T item, int id) where T : class, ITreeItem<T>
-        {
-            if (item.Id == id) return item;
-            if (item.Children == null) return null;
-            foreach (var child in item.Children)
-            {
-                var found = FindByIdRecursive(child, id);
-                if (found != null) return found;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// 全アイテムをフラットなリストで取得
-        /// </summary>
-        public static List<T> Flatten<T>(List<T> rootItems) where T : class, ITreeItem<T>
-        {
+            // selectedIndices は選択した順に返るため、そのまま挿入すると
+            // クリック順で並ぶ。ツリーの表示順（深さ優先）に揃える。
             var result = new List<T>();
-            if (rootItems == null) return result;
-            foreach (var root in rootItems)
-            {
-                FlattenRecursive(root, result);
-            }
+            foreach (var item in TreeViewHelper.Flatten(treeRoot.RootItems))
+                if (picked.Contains(item)) result.Add(item);
+
+            // ツリーに見つからなかったものは末尾へ回す（取りこぼし防止）。
+            foreach (var item in picked)
+                if (!result.Contains(item)) result.Add(item);
+
             return result;
         }
 
-        private static void FlattenRecursive<T>(T item, List<T> result) where T : class, ITreeItem<T>
+        /// <summary>
+        /// draggedItems から「他の draggedItem の子孫」を取り除く。
+        /// </summary>
+        private void RemoveDraggedDescendants()
         {
-            result.Add(item);
-            if (item.Children == null) return;
-            foreach (var child in item.Children)
+            if (draggedItems.Count <= 1) return;
+            var set = new HashSet<T>(draggedItems);
+            var kept = new List<T>();
+            foreach (var item in draggedItems)
             {
-                FlattenRecursive(child, result);
+                bool hasSelectedAncestor = false;
+                var p = item.Parent;
+                while (p != null)
+                {
+                    if (set.Contains(p)) { hasSelectedAncestor = true; break; }
+                    p = p.Parent;
+                }
+                if (!hasSelectedAncestor) kept.Add(item);
             }
+            draggedItems = kept;
         }
     }
 }

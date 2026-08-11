@@ -114,18 +114,25 @@ namespace Poly_Ling.Player
             _btnDelete = MkBtn("削除",    OnDeleteSet); _btnDelete.style.flexGrow = 1; op1.Add(_btnDelete);
             root.Add(op1);
 
-            // 辞書ファイル（保存 / 読込）— PlayerIoUiKit 準拠
+            // 辞書ファイル（エクスポート / 追加インポート）— PlayerIoUiKit 準拠
+            //
+            // 辞書そのものはプロジェクト側に保存済みなので、ここは保存/読込ではなく
+            // モデル間で辞書を持ち回るための受け渡し操作。既定の場所は
+            // partsDictionary/meshselsets.csv（パーツ選択辞書と同じフォルダ）。
+            //
+            // 取り込みは MeshSelSetCsvHelper.LoadFromFile が常に追記（同名は
+            // ユニーク名を生成）するため、置換ではなく「追加インポート」と表記する。
             root.Add(PlayerIoUiKit.Divider());
-            root.Add(PlayerIoUiKit.SectionLabel("辞書ファイル"));
+            root.Add(PlayerIoUiKit.SectionLabel("辞書ファイル (CSV)"));
 
             _dicPathField = new TextField();
             _dicPathField.tooltip = "オブジェクト選択辞書の CSV ファイル";
             _dicPathField.RegisterValueChangedCallback(e => RecentPaths.Set(DicPathKey, e.newValue));
             root.Add(PlayerIoUiKit.PathRow(_dicPathField, OnBrowseDicFile));
-            _dicPathField.SetValueWithoutNotify(RecentPaths.Get(DicPathKey));
+            _dicPathField.SetValueWithoutNotify(ResolveDicPath());
 
-            _btnSaveDic = PlayerIoUiKit.WideBtn("保存", OnSaveDicFile); root.Add(_btnSaveDic);
-            _btnLoadDic = PlayerIoUiKit.WideBtn("読込", OnLoadDicFile); root.Add(_btnLoadDic);
+            _btnSaveDic = PlayerIoUiKit.WideBtn("エクスポート",   OnSaveDicFile); root.Add(_btnSaveDic);
+            _btnLoadDic = PlayerIoUiKit.WideBtn("追加インポート", OnLoadDicFile); root.Add(_btnLoadDic);
 
             _statusLabel = PlayerIoUiKit.StatusLabel();
             root.Add(_statusLabel);
@@ -243,13 +250,25 @@ namespace Poly_Ling.Player
             _setNameField?.SetValueWithoutNotify(""); SetStatus($"名前変更 → {newName}");
         }
 
+        /// <summary>
+        /// 辞書ファイルのパス。手入力があればそれを使い、無ければ
+        /// partsDictionary/meshselsets.csv を既定にする。
+        /// </summary>
+        private string ResolveDicPath()
+        {
+            string saved = RecentPaths.Get(DicPathKey);
+            if (!string.IsNullOrEmpty(saved)) return saved;
+            return PartsDictionaryPath.ResolveMeshSelSetsFile();
+        }
+
         private void OnBrowseDicFile()
         {
             string cur = _dicPathField?.value ?? "";
-            string dir = string.IsNullOrEmpty(cur)
-                ? Application.persistentDataPath
-                : (System.IO.Path.GetDirectoryName(cur) ?? Application.persistentDataPath);
-            string name = string.IsNullOrEmpty(cur) ? "meshselsets.csv" : System.IO.Path.GetFileName(cur);
+            if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
+            string dir = System.IO.Path.GetDirectoryName(cur);
+            if (string.IsNullOrEmpty(dir)) dir = PartsDictionaryPath.Resolve();
+            string name = System.IO.Path.GetFileName(cur);
+            if (string.IsNullOrEmpty(name)) name = PartsDictionaryPath.MeshSelSetsFileName;
             string path = PLEditorBridge.I.SaveFilePanel("辞書ファイル", dir, name, "csv");
             if (!string.IsNullOrEmpty(path)) _dicPathField.value = path;
         }
@@ -263,14 +282,15 @@ namespace Poly_Ling.Player
             if (setCount == 0) { SetStatus("辞書が空です"); return; }
 
             string path = _dicPathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(path)) { SetStatus("保存先を指定してください"); return; }
+            if (string.IsNullOrEmpty(path)) path = ResolveDicPath();
+            if (string.IsNullOrEmpty(path)) { SetStatus("出力先を指定してください"); return; }
 
             var since = DateTime.Now.AddSeconds(-2);
             SendCmd(new SaveMeshSelSetsCsvCommand(ModelIndex, path));
 
             // Dispatch は同期のため、書き出し結果をここで確認する。
             bool ok = System.IO.File.Exists(path) && System.IO.File.GetLastWriteTime(path) >= since;
-            SetStatus(ok ? $"保存しました: {setCount} 件 → {path}" : "保存失敗（ログを参照）");
+            SetStatus(ok ? $"エクスポートしました: {setCount} 件 → {path}" : "エクスポート失敗（ログを参照）");
         }
 
         private void OnLoadDicFile()
@@ -279,7 +299,8 @@ namespace Poly_Ling.Player
             if (model == null) { SetStatus("モデルがありません"); return; }
 
             string path = _dicPathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(path)) { SetStatus("読み込むファイルを指定してください"); return; }
+            if (string.IsNullOrEmpty(path)) path = ResolveDicPath();
+            if (string.IsNullOrEmpty(path)) { SetStatus("取り込むファイルを指定してください"); return; }
             if (!System.IO.File.Exists(path))
             {
                 SetStatus($"ファイルが見つかりません: {System.IO.Path.GetFileName(path)}");
@@ -293,11 +314,11 @@ namespace Poly_Ling.Player
             if (after > before)
             {
                 Refresh();
-                SetStatus($"読込みました: {after - before} 件追加");
+                SetStatus($"追加インポートしました: {after - before} 件");
             }
             else
             {
-                SetStatus("読込失敗（ログを参照）");
+                SetStatus("追加インポート失敗（ログを参照）");
             }
         }
 

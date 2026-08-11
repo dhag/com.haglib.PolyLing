@@ -622,6 +622,9 @@ namespace Poly_Ling.Tools
         /// <summary>TreeView 折りたたみ状態（nullで変更なし）</summary>
         public bool? IsFolding;
 
+        /// <summary>編集者名（nullで変更なし、""で担当者なしに解放）</summary>
+        public string EditorName;
+
         public override string ToString()
         {
             var parts = new List<string> { $"[{Index}]" };
@@ -631,6 +634,7 @@ namespace Poly_Ling.Tools
             if (Name != null) parts.Add($"Name={Name}");
             if (IgnorePoseInArmature.HasValue) parts.Add($"IgnorePose={IgnorePoseInArmature.Value}");
             if (IsFolding.HasValue) parts.Add($"Folding={IsFolding.Value}");
+            if (EditorName != null) parts.Add($"Editor={(EditorName.Length == 0 ? "<none>" : EditorName)}");
             return string.Join(" ", parts);
         }
     }

@@ -40,6 +40,10 @@ namespace Poly_Ling.Core
         // ボーンと同じ形状のラインメッシュを原点へ描く）。
         public bool ShowSelectedMeshOrigin    { get; set; } = true;
         public bool ShowUnselectedMeshOrigin  { get; set; } = true;
+        // ミラー側（MirrorSide / BakedMirror）の原点マーカー。
+        // ミラーは実体側と同じ原点に重なって出るため、既定では描かない。
+        // ObjectMoveSettings.PickMirrorSides とセットで運用すること。
+        public bool ShowMirrorMeshOrigin      { get; set; } = false;
         public bool BackfaceCullingEnabled    { get; set; } = true;
 
         // ================================================================
@@ -504,6 +508,7 @@ namespace Poly_Ling.Core
                         // メッシュ原点マーカー（ObjectMoveTool のピック対象と同じ集合）
                         if (!anyOrigin) continue;
                         if (!IsMeshOriginTarget(ctx.Type)) continue;
+                        if (!ShowMirrorMeshOrigin && IsMirrorSideType(ctx.Type)) continue;
                         bool isSelMesh = selMeshes.Contains(ci);
                         if ( isSelMesh && !ShowSelectedMeshOrigin)   continue;
                         if (!isSelMesh && !ShowUnselectedMeshOrigin) continue;
@@ -530,6 +535,9 @@ namespace Poly_Ling.Core
         /// 原点マーカーを描く対象か（Bone は専用経路で描くため除外）。
         /// 除外条件は ObjectMoveTool.TryPickObject のピック対象フィルタと一致させる。
         /// </summary>
+        private static bool IsMirrorSideType(MeshType t)
+            => t == MeshType.MirrorSide || t == MeshType.BakedMirror;
+
         private static bool IsMeshOriginTarget(MeshType t)
         {
             return t != MeshType.Bone
@@ -582,6 +590,7 @@ namespace Poly_Ling.Core
                     {
                         if (!anyOrigin) continue;
                         if (!IsMeshOriginTarget(ctx.Type)) continue;
+                        if (!ShowMirrorMeshOrigin && IsMirrorSideType(ctx.Type)) continue;
                         isSel = selMeshes.Contains(ci);
                         if ( isSel && !ShowSelectedMeshOrigin)   continue;
                         if (!isSel && !ShowUnselectedMeshOrigin) continue;

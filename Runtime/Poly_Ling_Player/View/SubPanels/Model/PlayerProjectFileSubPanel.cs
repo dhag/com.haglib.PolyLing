@@ -1,6 +1,14 @@
 // PlayerProjectFileSubPanel.cs
-// プレイビュー右ペイン用 プロジェクトファイル保存/読み込みパネル（UIToolkit）。
-// .mfproj（JSON）とCSVフォルダ形式の両方に対応する。
+// プレイビュー右ペイン用 プロジェクト保存 / 読込パネル（UIToolkit）。
+// .mfproj（JSON）とCSV形式の両方に対応する。
+// CSV側はプロジェクトファイル（任意名の .csv）を指定し、モデルフォルダは同じディレクトリ直下に置く。
+//
+// 【保存と読込を別インスタンスに分ける理由】
+//   同一パネルに「開く」と「保存」を並べていたため、押し間違いで
+//   編集中のデータを失う / 上書きする事故が起きやすかった。
+//   Mode を指定して 2 つ生成し、左ペインのボタンと右ペインのセクションも
+//   保存用 / 読込用で別々にすることで、誤操作の経路自体を無くす。
+//
 // Runtime/Poly_Ling_Player/View/ に配置
 
 using System;
@@ -9,36 +17,53 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Core;
+using Poly_Ling.Serialization.FolderSerializer;
 
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// 右ペインに表示するプロジェクトファイル UI。
-    /// .mfproj(JSON) / CSVフォルダ それぞれで 開く / 保存 / 名前を付けて保存 を提供する。
+    /// 右ペインに表示するプロジェクト保存 / 読込 UI。
+    /// Mode によって保存側 / 読込側のどちらかだけを構築する。
     /// 各操作の実行は Viewer 側コールバックに委譲する。
     /// </summary>
     public class PlayerProjectFileSubPanel
     {
         // ================================================================
-        // コールバック
+        // モード
         // ================================================================
 
-        /// <summary>.mfproj 開く（指定パスから読込）。</summary>
+        public enum PanelMode
+        {
+            /// <summary>保存専用（上書き保存 / 名前を付けて保存）。</summary>
+            Save,
+            /// <summary>読込専用（開く）。</summary>
+            Load,
+        }
+
+        /// <summary>Build() より前に設定すること。</summary>
+        public PanelMode Mode = PanelMode.Save;
+
+        // ================================================================
+        // コールバック
+        //   Mode に応じて使う組が決まる。使わない側は結線されない。
+        // ================================================================
+
+        /// <summary>.mfproj 開く（指定パスから読込）。Load のみ。</summary>
         public Action<string> OnLoad;
 
-        /// <summary>.mfproj 保存（指定パスへ上書き保存）。</summary>
+        /// <summary>.mfproj 保存（指定パスへ上書き保存）。Save のみ。</summary>
         public Action<string> OnSave;
 
-        /// <summary>.mfproj 名前を付けて保存（ダイアログ）。</summary>
+        /// <summary>.mfproj 名前を付けて保存（ダイアログ）。Save のみ。</summary>
         public Action OnSaveAs;
 
-        /// <summary>CSVフォルダ 開く（指定パスから読込。merge=true で既存モデルにマージ）。</summary>
+        /// <summary>CSVプロジェクトファイル 開く（merge=true で既存モデルにマージ）。Load のみ。</summary>
         public Action<string, bool> OnLoadCsv;
 
-        /// <summary>CSVフォルダ 保存（指定パスへ保存）。</summary>
+        /// <summary>CSVプロジェクトファイル 保存（指定ファイルへ保存）。Save のみ。</summary>
         public Action<string> OnSaveCsv;
 
-        /// <summary>CSVフォルダ 名前を付けて保存（ダイアログ）。</summary>
+        /// <summary>CSVプロジェクトファイル 名前を付けて保存（ダイアログ）。Save のみ。</summary>
         public Action OnSaveAsCsv;
 
         // ================================================================
@@ -50,8 +75,14 @@ namespace Poly_Ling.Player
         private TextField _csvPathField;
         private Toggle    _csvMergeToggle;
 
+        // パス欄は保存側 / 読込側で同じキーを共有する。
+        // 「読み込んだファイルへそのまま上書き保存する」が最も多い操作なので、
+        // 別キーにすると保存側が別のファイルを指したまま残り、かえって危険になる。
+        // 表示同期は Refresh()（パネル表示時に Viewer から呼ぶ）で行う。
         private const string JsonPathKey = "Project.JsonPath";
         private const string CsvPathKey  = "Project.CsvPath";
+
+        private bool IsSave => Mode == PanelMode.Save;
 
         // ================================================================
         // Build
@@ -61,12 +92,18 @@ namespace Poly_Ling.Player
         {
             parent.Clear();
 
-            var title = new Label("プロジェクトファイル");
-            title.style.color = new StyleColor(Color.white);
+            var title = new Label(IsSave ? "プロジェクト保存" : "プロジェクト読込");
+            title.style.color = new StyleColor(IsSave
+                ? new Color(0.65f, 0.9f, 0.65f)    // 保存 = 緑系
+                : new Color(1f, 0.8f, 0.5f));      // 読込 = 橙系
             title.style.fontSize = 12;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.marginBottom = 6;
+            title.style.marginBottom = 4;
             parent.Add(title);
+
+            parent.Add(Caution(IsSave
+                ? "既存ファイルを指定すると上書きされます。"
+                : "読込は現在編集中のプロジェクトを置き換えます。"));
 
             // ── .mfproj(JSON) セクション ──────────────────────────────
             parent.Add(SectionLabel(".mfproj (JSON)"));
@@ -76,31 +113,43 @@ namespace Poly_Ling.Player
             parent.Add(MakePathRow(_jsonPathField, OnBrowseJson));
             _jsonPathField.SetValueWithoutNotify(RecentPaths.Get(JsonPathKey));
 
-            parent.Add(MakeWideBtn("開く", () => OnLoad?.Invoke(_jsonPathField.value)));
-            parent.Add(MakeSpacer());
-            parent.Add(MakeWideBtn("保存", () => OnSave?.Invoke(_jsonPathField.value)));
-            parent.Add(MakeWideBtn("名前を付けて保存", () => OnSaveAs?.Invoke()));
+            if (IsSave)
+            {
+                parent.Add(MakeWideBtn("上書き保存", () => OnSave?.Invoke(_jsonPathField.value)));
+                parent.Add(MakeWideBtn("名前を付けて保存", () => OnSaveAs?.Invoke()));
+            }
+            else
+            {
+                parent.Add(MakeWideBtn("開く", () => OnLoad?.Invoke(_jsonPathField.value)));
+            }
 
             // ── 区切り線 ──────────────────────────────────────────────
             parent.Add(Divider());
 
             // ── CSV セクション ────────────────────────────────────────
-            parent.Add(SectionLabel("CSV"));
+            parent.Add(SectionLabel("CSV (プロジェクトファイル)"));
 
             _csvPathField = new TextField();
+            _csvPathField.tooltip = "プロジェクトCSVのファイルパス（任意名）。モデルフォルダは同じディレクトリ直下に置かれる。";
             _csvPathField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvPathKey, e.newValue));
             parent.Add(MakePathRow(_csvPathField, OnBrowseCsv));
             _csvPathField.SetValueWithoutNotify(RecentPaths.Get(CsvPathKey));
 
-            _csvMergeToggle = new Toggle("追加マージ");
-            _csvMergeToggle.tooltip = "CSVフォルダからメッシュを追加（名前重複時は置き換え）";
-            _csvMergeToggle.style.marginBottom = 2;
-            parent.Add(_csvMergeToggle);
+            if (IsSave)
+            {
+                parent.Add(MakeWideBtn("上書き保存", () => OnSaveCsv?.Invoke(_csvPathField.value)));
+                parent.Add(MakeWideBtn("名前を付けて保存", () => OnSaveAsCsv?.Invoke()));
+            }
+            else
+            {
+                _csvMergeToggle = new Toggle("追加マージ");
+                _csvMergeToggle.tooltip = "指定ファイルと同じフォルダからメッシュを追加（名前重複時は置き換え）。"
+                                        + "OFF のときは現在のプロジェクトを置き換える。";
+                _csvMergeToggle.style.marginBottom = 2;
+                parent.Add(_csvMergeToggle);
 
-            parent.Add(MakeWideBtn("開く", () => OnLoadCsv?.Invoke(_csvPathField.value, _csvMergeToggle.value)));
-            parent.Add(MakeSpacer());
-            parent.Add(MakeWideBtn("保存", () => OnSaveCsv?.Invoke(_csvPathField.value)));
-            parent.Add(MakeWideBtn("名前を付けて保存", () => OnSaveAsCsv?.Invoke()));
+                parent.Add(MakeWideBtn("開く", () => OnLoadCsv?.Invoke(_csvPathField.value, _csvMergeToggle.value)));
+            }
 
             // ── ステータス ───────────────────────────────────────────
             _statusLabel = new Label("");
@@ -111,8 +160,19 @@ namespace Poly_Ling.Player
             parent.Add(_statusLabel);
         }
 
+        /// <summary>
+        /// パス欄を RecentPaths の最新値へ同期する。
+        /// パネル表示時に呼ぶことで、もう一方のパネル（保存 ⇔ 読込）で
+        /// 変更されたパスがこちらにも反映される。
+        /// </summary>
+        public void Refresh()
+        {
+            _jsonPathField?.SetValueWithoutNotify(RecentPaths.Get(JsonPathKey));
+            _csvPathField?.SetValueWithoutNotify(RecentPaths.Get(CsvPathKey));
+        }
+
         // ================================================================
-        // browse（[...] = 指定して開く）
+        // browse（[...] = ファイル選択）
         // ================================================================
 
         private void OnBrowseJson()
@@ -120,7 +180,9 @@ namespace Poly_Ling.Player
             string dir = string.IsNullOrEmpty(_jsonPathField.value)
                 ? Application.dataPath
                 : Path.GetDirectoryName(_jsonPathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("プロジェクトを開く", dir, "mfproj");
+            string path = IsSave
+                ? PLEditorBridge.I.SaveFilePanel("プロジェクトの保存先", dir, "Project", "mfproj")
+                : PLEditorBridge.I.OpenFilePanel("プロジェクトを開く", dir, "mfproj");
             if (!string.IsNullOrEmpty(path))
                 _jsonPathField.value = path;
         }
@@ -129,8 +191,12 @@ namespace Poly_Ling.Player
         {
             string dir = string.IsNullOrEmpty(_csvPathField.value)
                 ? Application.dataPath
-                : _csvPathField.value;
-            string path = PLEditorBridge.I.OpenFolderPanel("CSVフォルダを開く", dir, "");
+                : Path.GetDirectoryName(_csvPathField.value);
+            string path = IsSave
+                ? PLEditorBridge.I.SaveFilePanel(
+                      "プロジェクトCSVの保存先", dir, "Project", CsvProjectSerializer.ProjectFileExtension)
+                : PLEditorBridge.I.OpenFilePanel(
+                      "プロジェクトCSVを開く", dir, CsvProjectSerializer.ProjectFileExtension);
             if (!string.IsNullOrEmpty(path))
                 _csvPathField.value = path;
         }
@@ -175,13 +241,6 @@ namespace Poly_Ling.Player
             return b;
         }
 
-        private static VisualElement MakeSpacer()
-        {
-            var s = new VisualElement();
-            s.style.height = 8;
-            return s;
-        }
-
         private static VisualElement Divider()
         {
             var v = new VisualElement();
@@ -199,6 +258,16 @@ namespace Poly_Ling.Player
             l.style.color        = new StyleColor(new Color(0.6f, 0.8f, 1f));
             l.style.marginTop    = 4;
             l.style.marginBottom = 2;
+            return l;
+        }
+
+        private static Label Caution(string text)
+        {
+            var l = new Label(text);
+            l.style.fontSize     = 9;
+            l.style.whiteSpace   = WhiteSpace.Normal;
+            l.style.color        = new StyleColor(new Color(0.8f, 0.8f, 0.8f));
+            l.style.marginBottom = 4;
             return l;
         }
     }

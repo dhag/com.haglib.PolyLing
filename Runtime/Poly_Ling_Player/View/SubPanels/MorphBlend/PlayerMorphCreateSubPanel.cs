@@ -12,6 +12,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -289,7 +290,7 @@ namespace Poly_Ling.Player
                     BeforeExpressions = beforeExpr, AfterExpressions = afterExpr,
                 };
                 string __dbgDesc = $"モーフ作成: {morphName}";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (__rec?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, __rec);
                 undo.MeshListStack.Record(__rec, __dbgDesc);
                 undo.FocusMeshList();
             }

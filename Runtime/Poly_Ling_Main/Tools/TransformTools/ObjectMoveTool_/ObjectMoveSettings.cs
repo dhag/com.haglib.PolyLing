@@ -50,6 +50,14 @@ namespace Poly_Ling.Tools
         public bool PickMeshesSkinned = false;
 
         /// <summary>
+        /// ピック対象: ミラー側 (MeshType.MirrorSide / BakedMirror)
+        /// ミラーは実体側と同じ原点に重なるため、既定 false（＝実体側を掴む）。
+        /// MeshSceneRenderer.ShowMirrorMeshOrigin と揃えて運用すること
+        /// （見えないのに掴めると余計に紛らわしいため）。
+        /// </summary>
+        public bool PickMirrorSides = false;
+
+        /// <summary>
         /// ボーン移動モード（A/B）。既定は A（ボーンだけ動かす・スキン固定）。
         /// </summary>
         public BoneMoveMode MoveMode = BoneMoveMode.BoneOnlyRebind;

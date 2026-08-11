@@ -10,6 +10,7 @@ using Poly_Ling.Ops;
 using Poly_Ling.Selection;
 using Poly_Ling.UndoSystem;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Tools
 {
@@ -319,7 +320,7 @@ namespace Poly_Ling.Tools
                 ctx.UndoController.FocusVertexEdit();
                 {
                     string __dbgDesc = "Bevel Edges";
-                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                     ctx.UndoController.VertexEditStack.Record(record, __dbgDesc);
                 }
             }

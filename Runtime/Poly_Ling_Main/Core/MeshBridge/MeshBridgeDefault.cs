@@ -39,7 +39,8 @@ namespace Poly_Ling.MeshBridge
         // 展開順序: 「頂点順 -> UV順」。
         //   外側ループ = 論理頂点インデックス昇順、内側ループ = その頂点のUVスロット順。
         //   この順序は AppendExpandedVertices と一致させる必要がある（外部連携の頂点対応）。
-        // 名寄せキー: (頂点index, UVサブindex)。法線は「最初の法線」を採用する簡易版。
+        // 名寄せキー: (頂点index, UVサブindex)。法線は同じサブindexのスロットを使う
+        // （UVs.Count == Normals.Count / UVIndices[j] == NormalIndices[j] の不変条件）。
         public Mesh ToUnityMesh(MeshObject source, int materialCount = -1)
         {
             var mesh = new Mesh();
@@ -60,11 +61,16 @@ namespace Poly_Ling.MeshBridge
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = source.HasBoneWeight;
 
-            // 孤立頂点除外: いずれかの可視面に参照される頂点のみを展開対象にする。
+            // 孤立頂点除外: いずれかの面（3頂点以上）に参照される頂点を展開対象にする。
+            // 【重要】ここで face.IsHidden を見てはならない。面の非表示は編集補助であり、
+            // 見るかどうかで展開頂点数が変わると GPU 展開バッファ
+            // （UnifiedBufferManager_Build.BuildExpandedVertexMapping）や書き戻し
+            // （UnifiedSystemAdapter.WritebackTransformedVertices）が数える頂点数と
+            // 食い違い、頂点位置が反映されなくなる。非表示は下の三角形生成で行う。
             var nonIsolatedVerts = new HashSet<int>();
             foreach (var face in source.Faces)
             {
-                if (face.VertexCount < 3 || face.IsHidden) continue;
+                if (face.VertexCount < 3) continue;
                 foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
             }
 
@@ -89,8 +95,10 @@ namespace Poly_Ling.MeshBridge
                     else
                         unityUVs.Add(Vector2.zero);
 
-                    // 法線（最初の法線を使用、なければ上向き）
-                    if (vertex.Normals.Count > 0)
+                    // 法線（UVサブindexと同じスロット。無ければ先頭、それも無ければ上向き）
+                    if (uvIdx < vertex.Normals.Count)
+                        unityNormals.Add(vertex.Normals[uvIdx]);
+                    else if (vertex.Normals.Count > 0)
                         unityNormals.Add(vertex.Normals[0]);
                     else
                         unityNormals.Add(Vector3.up);
@@ -149,8 +157,9 @@ namespace Poly_Ling.MeshBridge
 
             mesh.RecalculateBounds();
 
-            // 法線が無い/全て既定値なら自動計算
-            if (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up))
+            // 法線が無い/全て既定値なら自動計算（PreserveNormals 時は行わない）
+            if (!source.PreserveNormals &&
+                (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up)))
                 mesh.RecalculateNormals();
 
             return mesh;
@@ -269,7 +278,9 @@ namespace Poly_Ling.MeshBridge
 
             mesh.RecalculateBounds();
 
-            if (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up))
+            // PreserveNormals のメッシュは MeshObject の法線をそのまま使う
+            if (!source.PreserveNormals &&
+                (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up)))
                 mesh.RecalculateNormals();
 
             return mesh;
@@ -299,11 +310,11 @@ namespace Poly_Ling.MeshBridge
             var unityBoneWeights = new List<BoneWeight>();
             bool hasBoneWeights = source.HasBoneWeight;
 
-            // 孤立頂点除外
+            // 孤立頂点除外（face.IsHidden を見ない理由は ToUnityMesh 側のコメント参照）
             var nonIsolatedVerts = new HashSet<int>();
             foreach (var face in source.Faces)
             {
-                if (face.VertexCount < 3 || face.IsHidden) continue;
+                if (face.VertexCount < 3) continue;
                 foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
             }
 
@@ -326,7 +337,10 @@ namespace Poly_Ling.MeshBridge
                     else
                         unityUVs.Add(Vector2.zero);
 
-                    if (vertex.Normals.Count > 0)
+                    // 法線はUVサブindexと同じスロットを使う
+                    if (uvIdx < vertex.Normals.Count)
+                        unityNormals.Add(vertex.Normals[uvIdx]);
+                    else if (vertex.Normals.Count > 0)
                         unityNormals.Add(vertex.Normals[0]);
                     else
                         unityNormals.Add(Vector3.up);
@@ -383,7 +397,9 @@ namespace Poly_Ling.MeshBridge
 
             mesh.RecalculateBounds();
 
-            if (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up))
+            // PreserveNormals のメッシュは MeshObject の法線をそのまま使う
+            if (!source.PreserveNormals &&
+                (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up)))
                 mesh.RecalculateNormals();
 
             return mesh;
@@ -493,7 +509,9 @@ namespace Poly_Ling.MeshBridge
 
             mesh.RecalculateBounds();
 
-            if (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up))
+            // PreserveNormals のメッシュは MeshObject の法線をそのまま使う
+            if (!source.PreserveNormals &&
+                (unityNormals.Count == 0 || unityNormals.All(n => n == Vector3.up)))
                 mesh.RecalculateNormals();
 
             return mesh;
@@ -571,19 +589,16 @@ namespace Poly_Ling.MeshBridge
                         oldToNewIndex[i] = existingIdx;
 
                         var vertex = target.Vertices[existingIdx];
-                        if (srcUVs != null && i < srcUVs.Length)
-                            vertex.GetOrAddUV(srcUVs[i]);
-                        if (srcNormals != null && i < srcNormals.Length)
-                            vertex.GetOrAddNormal(srcNormals[i]);
+                        Vector2 addUV  = (srcUVs     != null && i < srcUVs.Length)     ? srcUVs[i]     : Vector2.zero;
+                        Vector3 addNrm = (srcNormals != null && i < srcNormals.Length) ? srcNormals[i] : Vector3.up;
+                        vertex.GetOrAddUVNormal(addUV, addNrm);
                     }
                     else
                     {
-                        // 新規論理頂点
+                        // 新規論理頂点（UV/法線は必ず1スロットずつ対で持たせる）
                         var vertex = new Vertex(pos);
-                        if (srcUVs != null && i < srcUVs.Length)
-                            vertex.UVs.Add(srcUVs[i]);
-                        if (srcNormals != null && i < srcNormals.Length)
-                            vertex.Normals.Add(srcNormals[i]);
+                        vertex.UVs.Add((srcUVs != null && i < srcUVs.Length) ? srcUVs[i] : Vector2.zero);
+                        vertex.Normals.Add((srcNormals != null && i < srcNormals.Length) ? srcNormals[i] : Vector3.up);
 
                         if (includeBoneWeights && srcBoneWeights != null && i < srcBoneWeights.Length)
                             vertex.BoneWeight = srcBoneWeights[i];
@@ -611,15 +626,18 @@ namespace Poly_Ling.MeshBridge
                         int v1 = oldToNewIndex[oldV1];
                         int v2 = oldToNewIndex[oldV2];
 
-                        int uv0 = FindUVIndex(target.Vertices[v0], srcUVs != null && oldV0 < srcUVs.Length ? srcUVs[oldV0] : Vector2.zero);
-                        int uv1 = FindUVIndex(target.Vertices[v1], srcUVs != null && oldV1 < srcUVs.Length ? srcUVs[oldV1] : Vector2.zero);
-                        int uv2 = FindUVIndex(target.Vertices[v2], srcUVs != null && oldV2 < srcUVs.Length ? srcUVs[oldV2] : Vector2.zero);
+                        // UVと法線は同一スロットを指す（不変条件）。
+                        int s0 = FindUVNormalIndex(target.Vertices[v0],
+                            srcUVs     != null && oldV0 < srcUVs.Length     ? srcUVs[oldV0]     : Vector2.zero,
+                            srcNormals != null && oldV0 < srcNormals.Length ? srcNormals[oldV0] : Vector3.up);
+                        int s1 = FindUVNormalIndex(target.Vertices[v1],
+                            srcUVs     != null && oldV1 < srcUVs.Length     ? srcUVs[oldV1]     : Vector2.zero,
+                            srcNormals != null && oldV1 < srcNormals.Length ? srcNormals[oldV1] : Vector3.up);
+                        int s2 = FindUVNormalIndex(target.Vertices[v2],
+                            srcUVs     != null && oldV2 < srcUVs.Length     ? srcUVs[oldV2]     : Vector2.zero,
+                            srcNormals != null && oldV2 < srcNormals.Length ? srcNormals[oldV2] : Vector3.up);
 
-                        int n0 = FindNormalIndex(target.Vertices[v0], srcNormals != null && oldV0 < srcNormals.Length ? srcNormals[oldV0] : Vector3.up);
-                        int n1 = FindNormalIndex(target.Vertices[v1], srcNormals != null && oldV1 < srcNormals.Length ? srcNormals[oldV1] : Vector3.up);
-                        int n2 = FindNormalIndex(target.Vertices[v2], srcNormals != null && oldV2 < srcNormals.Length ? srcNormals[oldV2] : Vector3.up);
-
-                        target.Faces.Add(Face.CreateTriangle(v0, v1, v2, uv0, uv1, uv2, n0, n1, n2, subMesh));
+                        target.Faces.Add(Face.CreateTriangle(v0, v1, v2, s0, s1, s2, s0, s1, s2, subMesh));
                     }
                 }
             }
@@ -630,13 +648,8 @@ namespace Poly_Ling.MeshBridge
                 {
                     var vertex = new Vertex(srcVerts[i]);
 
-                    if (srcUVs != null && i < srcUVs.Length)
-                        vertex.UVs.Add(srcUVs[i]);
-                    else
-                        vertex.UVs.Add(Vector2.zero);
-
-                    if (srcNormals != null && i < srcNormals.Length)
-                        vertex.Normals.Add(srcNormals[i]);
+                    vertex.UVs.Add((srcUVs != null && i < srcUVs.Length) ? srcUVs[i] : Vector2.zero);
+                    vertex.Normals.Add((srcNormals != null && i < srcNormals.Length) ? srcNormals[i] : Vector3.up);
 
                     if (includeBoneWeights && srcBoneWeights != null && i < srcBoneWeights.Length)
                         vertex.BoneWeight = srcBoneWeights[i];
@@ -690,32 +703,135 @@ namespace Poly_Ling.MeshBridge
 
             var src = ToUnityMeshShared(source);
             target.vertices = src.vertices;
-            target.RecalculateNormals();
+            if (source.PreserveNormals)
+            {
+                target.normals = src.normals;   // MeshObject 側の法線を維持
+            }
+            else
+            {
+                target.RecalculateNormals();
+
+                // 法線再計算 除外セットの分だけ MeshObject 側の法線へ戻す
+                var recalculated = target.normals;
+                if (Poly_Ling.Ops.NormalHelper.RestoreExcludedNormals(
+                        recalculated, src.normals, source))
+                {
+                    target.normals = recalculated;
+                }
+            }
             target.RecalculateBounds();
 
             UnityEngine.Object.DestroyImmediate(src);
+        }
+
+        // 三角形のみ差し替える高速パス（位置/UV/法線は触らない）。
+        // 面の表示・非表示（Face.IsHidden）を切り替えたときに使う。
+        // Mesh インスタンスを作り直さないのは、MeshUndoController.SetMeshObject が
+        // 掴んでいる TargetMesh 参照を切らないため。
+        // 展開頂点数が想定と違う場合は何もせず false を返す（呼び出し側で作り直すこと）。
+        public bool ApplyTrianglesInPlace(Mesh target, MeshObject source, int materialCount = -1)
+        {
+            if (target == null || source == null) return false;
+            if (source.Vertices.Count == 0) return false;
+
+            int subMeshCount = materialCount > 0 ? materialCount : source.SubMeshCount;
+
+            // ToUnityMeshShared と同一の名寄せ（頂点順 -> UV順）。頂点は作らず対応表だけ作る。
+            var vertexMapping = new Dictionary<(int vertexIdx, int uvIdx), int>();
+
+            var nonIsolatedVerts = new HashSet<int>();
+            foreach (var face in source.Faces)
+            {
+                if (face.VertexCount < 3) continue;
+                foreach (int vi in face.VertexIndices) nonIsolatedVerts.Add(vi);
+            }
+
+            int expandedCount = 0;
+            for (int vIdx = 0; vIdx < source.Vertices.Count; vIdx++)
+            {
+                if (!nonIsolatedVerts.Contains(vIdx)) continue;
+                var vertex = source.Vertices[vIdx];
+                int uvCount = vertex.UVs.Count > 0 ? vertex.UVs.Count : 1;
+
+                for (int uvIdx = 0; uvIdx < uvCount; uvIdx++)
+                    vertexMapping[(vIdx, uvIdx)] = expandedCount++;
+            }
+
+            // 頂点構成が変わっている場合はここでは扱えない
+            if (expandedCount != target.vertexCount) return false;
+
+            var subMeshTriangles = new List<int>[subMeshCount];
+            for (int i = 0; i < subMeshCount; i++)
+                subMeshTriangles[i] = new List<int>();
+
+            foreach (var face in source.Faces)
+            {
+                if (face.VertexCount < 3 || face.IsHidden)
+                    continue;
+
+                var triangles = face.Triangulate();
+                foreach (var tri in triangles)
+                {
+                    int subMesh = Mathf.Clamp(tri.MaterialIndex, 0, subMeshCount - 1);
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        int vIdx = tri.VertexIndices[i];
+                        if (vIdx < 0 || vIdx >= source.Vertices.Count)
+                            continue;
+
+                        int uvSubIdx = i < tri.UVIndices.Count ? tri.UVIndices[i] : 0;
+                        var vertex = source.Vertices[vIdx];
+                        if (uvSubIdx < 0 || uvSubIdx >= vertex.UVs.Count)
+                            uvSubIdx = 0;
+
+                        if (vertexMapping.TryGetValue((vIdx, uvSubIdx), out int unityIdx))
+                            subMeshTriangles[subMesh].Add(unityIdx);
+                    }
+                }
+            }
+
+            target.subMeshCount = subMeshCount;
+            for (int i = 0; i < subMeshCount; i++)
+                target.SetTriangles(subMeshTriangles[i], i);
+
+            target.RecalculateBounds();
+            return true;
+        }
+
+        // 法線のみ差し替える高速パス（位置/三角形/UVは触らない）。
+        // 展開頂点数が変わっているときは Unity Mesh 側を作り直さないと
+        // 対応が取れないため、何もせず false を返す。
+        public bool ApplyNormalsInPlace(Mesh target, MeshObject source)
+        {
+            if (target == null || source == null) return false;
+
+            var src = ToUnityMeshShared(source);
+            bool applied = false;
+
+            if (src.vertexCount == target.vertexCount)
+            {
+                target.normals = src.normals;
+                applied = true;
+            }
+
+            UnityEngine.Object.DestroyImmediate(src);
+            return applied;
         }
 
         // ============================================================
         // 内部ヘルパー（プラットフォーム非依存）
         // ============================================================
         // 指定UVが頂点のどのUVスロットに一致するかを返す（完全一致、無ければ0）。
-        private int FindUVIndex(Vertex vertex, Vector2 uv, float tolerance = 0.0001f)
+        // 指定の (UV, 法線) の組が頂点のどのスロットに一致するかを返す（無ければ0）。
+        // UVs.Count == Normals.Count の不変条件下では両者は同一スロットを指す。
+        private int FindUVNormalIndex(Vertex vertex, Vector2 uv, Vector3 normal, float tolerance = 0.0001f)
         {
-            for (int i = 0; i < vertex.UVs.Count; i++)
+            int count = Mathf.Min(vertex.UVs.Count, vertex.Normals.Count);
+            for (int i = 0; i < count; i++)
             {
-                if (vertex.UVs[i] == uv)  // 完全一致
-                    return i;
-            }
-            return 0;
-        }
-
-        // 指定法線が頂点のどの法線スロットに一致するかを返す（許容誤差内、無ければ0）。
-        private int FindNormalIndex(Vertex vertex, Vector3 normal, float tolerance = 0.0001f)
-        {
-            for (int i = 0; i < vertex.Normals.Count; i++)
-            {
-                if (Vector3.Distance(vertex.Normals[i], normal) < tolerance)
+                if (Vector2.Distance(vertex.UVs[i], uv) < tolerance &&
+                    Vector3.Distance(vertex.Normals[i], normal) < tolerance)
                     return i;
             }
             return 0;

@@ -52,7 +52,7 @@ namespace Poly_Ling.Tools
         public void TriggerMerge()
         {
             if (_lastContext != null)
-                ExecuteMerge(_lastContext);
+                ExecuteMergeByThreshold(_lastContext);
             else
                 _pendingMerge = true;
         }
@@ -124,7 +124,7 @@ namespace Poly_Ling.Tools
             // マージ実行
             if (_pendingMerge && ctx.ActiveMeshObject != null)
             {
-                ExecuteMerge(ctx);
+                ExecuteMergeByThreshold(ctx);
                 _pendingMerge = false;
             }
         }
@@ -138,11 +138,24 @@ namespace Poly_Ling.Tools
         }
 
         // ================================================================
-        // マージ実行（UIボタンから）
+        // マージ実行（UIボタン / ショートカットから）
+        //
+        // 2 種類ある:
+        //   ExecuteMergeByThreshold … 選択頂点のうち距離が Threshold 以下のものだけを
+        //                             グループごとに結合する（従来の「頂点マージ」）。
+        //   ExecuteMergeToCentroid  … 距離を一切見ず、選択頂点を 1 点（重心）へ結合する。
+        //
+        // どちらも ctx を引数で受け取り、ツールをアクティブにしなくても呼べる。
+        // ショートカット単発コマンドから使うため、_pendingMerge 経由の遅延実行
+        // （Update() 待ち）には依存しない。
         // ================================================================
 
-        private void ExecuteMerge(ToolContext ctx)
+        /// <summary>
+        /// 選択頂点のうち、距離が Threshold 以下のものを結合する。
+        /// </summary>
+        public void ExecuteMergeByThreshold(ToolContext ctx)
         {
+            if (ctx == null) return;
             if (ctx.ActiveMeshObject == null || ctx.SelectedVertices == null) return;
             if (ctx.SelectedVertices.Count < 2) return;
 
@@ -169,6 +182,59 @@ namespace Poly_Ling.Tools
 
                 Debug.Log($"[MergeTool] {result.Message}");
             }
+        }
+
+        /// <summary>
+        /// 距離を見ず、選択頂点をまとめて 1 点（重心）へ結合する。
+        ///
+        /// 結合後は OnTopologyChanged() が全選択をクリアするので、
+        /// 連続操作しやすいよう、生成された頂点だけを選択し直す。
+        /// この再選択は Undo スナップショット after を撮った後に行うため、
+        /// Undo/Redo で復元される選択状態には含まれない。
+        /// </summary>
+        public void ExecuteMergeToCentroid(ToolContext ctx)
+        {
+            if (ctx == null) return;
+            if (ctx.ActiveMeshObject == null || ctx.SelectedVertices == null) return;
+            if (ctx.SelectedVertices.Count < 2)
+            {
+                Debug.LogWarning("[MergeTool] EARLY RETURN: 結合には 2 頂点以上の選択が必要です "
+                               + $"(selected={ctx.SelectedVertices?.Count ?? 0})");
+                return;
+            }
+
+            // Undo用スナップショット
+            MeshObjectSnapshot before = ctx.UndoController?.VertexEditStack != null && ctx.ActiveMeshContext != null
+                ? MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext)
+                : default;
+
+            int selectedCount = ctx.SelectedVertices.Count;
+            int mergedVertex  = MeshMergeHelper.MergeVerticesToCentroid(
+                ctx.ActiveMeshObject, new HashSet<int>(ctx.SelectedVertices));
+
+            if (mergedVertex < 0)
+            {
+                Debug.LogWarning("[MergeTool] 結合に失敗しました（有効な選択頂点が 2 未満）");
+                return;
+            }
+
+            // トポロジカル変更後の標準処理（削除を伴うため選択クリア）
+            ctx.OnTopologyChanged();
+
+            // Undo記録（キュー経由）
+            if (ctx.UndoController != null && ctx.CommandQueue != null)
+            {
+                MeshObjectSnapshot after = MeshObjectSnapshot.Capture(ctx.ActiveMeshContext, ctx.UndoController.MeshUndoContext);
+                ctx.CommandQueue.Enqueue(new RecordTopologyChangeCommand(
+                    ctx.UndoController, before, after, "Merge Vertices (Centroid)"));
+            }
+
+            // 結合後の頂点を選択し直す（連続操作用）
+            var sel = ctx.SelectionState;
+            if (sel != null && mergedVertex < ctx.ActiveMeshObject.VertexCount)
+                sel.SelectVertex(mergedVertex, false);
+
+            Debug.Log($"[MergeTool] Merged {selectedCount} vertices into 1 (centroid), result index = {mergedVertex}");
         }
 
         // ================================================================

@@ -383,10 +383,11 @@ namespace Poly_Ling.Player
             parent.Add(SectionLabel(TM("Normals")));
             parent.Add(EnumRow(
                 TM("NormalMode"),
-                new[] { "FaceNormal", "Smooth", "Unity" },
+                new[] { "FaceNormal", "Smooth", "Unity", "SmoothFacet" },
                 () => (int)_mqoSettings.NormalMode,
                 v  => _mqoSettings.NormalMode = (MQO.NormalMode)v));
             parent.Add(SliderRow(TM("SmoothingAngle"), 0f, 180f, () => _mqoSettings.SmoothingAngle, v => _mqoSettings.SmoothingAngle = v));
+            parent.Add(ToggleRow(TM("UseMqoFacet"), () => _mqoSettings.UseMqoFacet, v => _mqoSettings.UseMqoFacet = v));
 
             parent.Add(Separator());
 

@@ -139,12 +139,21 @@ namespace Poly_Ling.UI
             }
         }
 
+        /// <summary>
+        /// 頂点ID → 頂点インデックスの辞書を作る。
+        ///
+        /// 未設定ID（0 / -1。MeshObject.IsUnsetId 参照）はキーに入れない。
+        /// 入れてしまうと、ID 未設定の頂点が多数あるメッシュで先頭 1 個だけが
+        /// 辞書に載り、残りが黙って無視されたまま「一致した」ように振る舞う。
+        /// 重複IDも先勝ちなので、呼び出し側は事前に検証しておくこと。
+        /// </summary>
         public static Dictionary<int, int> BuildVertexIdMap(MeshObject mo)
         {
             var map = new Dictionary<int, int>();
             for (int i = 0; i < mo.VertexCount; i++)
             {
                 int id = mo.Vertices[i].Id;
+                if (MeshObject.IsUnsetId(id)) continue;
                 if (!map.ContainsKey(id)) map[id] = i;
             }
             return map;

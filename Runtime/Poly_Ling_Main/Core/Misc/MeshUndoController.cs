@@ -14,6 +14,7 @@ using static Poly_Ling.UndoSystem.KnifeCutOperationRecord;
 using Poly_Ling.Selection;
 using Poly_Ling.Commands;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.UndoSystem
 {
@@ -355,7 +356,7 @@ namespace Poly_Ling.UndoSystem
             EditorStateChangeRecord record = new EditorStateChangeRecord(before, after);
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] EditorState.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("EditorState", __dbgDesc, record);
                 _editorStateStack.Record(record, __dbgDesc);
             }
             FocusEditorState();
@@ -411,7 +412,7 @@ namespace Poly_Ling.UndoSystem
                 WorkPlaneChangeRecord record = new WorkPlaneChangeRecord(_workPlaneStartSnapshot, currentSnapshot, description);
                 {
                     string __dbgDesc = description;
-                    UnityEngine.Debug.Log("[UndoDbg] WorkPlane.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("WorkPlane", __dbgDesc, record);
                     _workPlaneStack.Record(record, __dbgDesc);
                 }
                 FocusWorkPlane();
@@ -440,7 +441,7 @@ namespace Poly_Ling.UndoSystem
             var record = new WorkPlaneChangeRecord(before, after, description);
             {
                 string __dbgDesc = record.Description;
-                UnityEngine.Debug.Log("[UndoDbg] WorkPlane.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("WorkPlane", __dbgDesc, record);
                 _workPlaneStack.Record(record, __dbgDesc);
             }
             FocusWorkPlane();
@@ -527,7 +528,7 @@ namespace Poly_Ling.UndoSystem
                 var record = new VertexMoveRecord(movedIndices, oldPositions, newPos);
                 {
                     string __dbgDesc = "Move Vertices";
-                    UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                     _vertexEditStack.Record(record, __dbgDesc);
                 }
                 FocusVertexEdit();
@@ -586,7 +587,7 @@ namespace Poly_Ling.UndoSystem
             );
             {
                 string __dbgDesc = "Move Vertex Group";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -617,7 +618,7 @@ namespace Poly_Ling.UndoSystem
             var record = new SelectionChangeRecord(oldVertices, newVertices, oldFaces, newFaces);
             {
                 string __dbgDesc = "Change Selection";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -656,7 +657,7 @@ namespace Poly_Ling.UndoSystem
                 oldFaces, newFaces);
             {
                 string __dbgDesc = "Change Selection";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -688,7 +689,7 @@ namespace Poly_Ling.UndoSystem
             string desc = newSnapshot?.Mode.ToString() ?? "Selection";
             {
                 string __dbgDesc = $"Change {desc} Selection";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -748,7 +749,7 @@ namespace Poly_Ling.UndoSystem
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -800,7 +801,7 @@ namespace Poly_Ling.UndoSystem
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after, selectionState);
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -826,7 +827,7 @@ namespace Poly_Ling.UndoSystem
             MeshSnapshotRecord record = new MeshSnapshotRecord(beforeData, afterData);
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -843,7 +844,7 @@ namespace Poly_Ling.UndoSystem
             var record = new FaceAddRecord(face, index);
             {
                 string __dbgDesc = "Add Face";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -858,7 +859,7 @@ namespace Poly_Ling.UndoSystem
             var record = new FaceDeleteRecord(face, index);
             {
                 string __dbgDesc = "Delete Face";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -873,7 +874,7 @@ namespace Poly_Ling.UndoSystem
             var record = new VertexAddRecord(vertex, index);
             {
                 string __dbgDesc = "Add Vertex";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -900,7 +901,7 @@ namespace Poly_Ling.UndoSystem
             }
             {
                 string __dbgDesc = desc;
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -929,7 +930,7 @@ namespace Poly_Ling.UndoSystem
             );
             {
                 string __dbgDesc = "Knife Cut";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -945,7 +946,7 @@ namespace Poly_Ling.UndoSystem
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             {
                 string __dbgDesc = "Delete Vertices";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -962,7 +963,7 @@ namespace Poly_Ling.UndoSystem
             MeshSnapshotRecord record = new MeshSnapshotRecord(before, after);
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _vertexEditStack.Record(record, __dbgDesc);
             }
             FocusVertexEdit();
@@ -1017,7 +1018,7 @@ namespace Poly_Ling.UndoSystem
             var record = new EditorStateChangeRecord(before, after);
             {
                 string __dbgDesc = "Change View";
-                UnityEngine.Debug.Log("[UndoDbg] EditorState.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("EditorState", __dbgDesc, record);
                 _editorStateStack.Record(record, __dbgDesc);
             }
             FocusEditorState();
@@ -1071,7 +1072,7 @@ namespace Poly_Ling.UndoSystem
             var record = new EditorStateChangeRecord(before, after, oldWorkPlane, newWorkPlane);
             {
                 string __dbgDesc = "Change View";
-                UnityEngine.Debug.Log("[UndoDbg] EditorState.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("EditorState", __dbgDesc, record);
                 _editorStateStack.Record(record, __dbgDesc);
             }
             FocusEditorState();
@@ -1260,7 +1261,7 @@ namespace Poly_Ling.UndoSystem
                 null, null);
             {
                 string __dbgDesc = $"Switch Model {oldIndex} -> {newIndex}";
-                UnityEngine.Debug.Log("[UndoDbg] Project.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("Project", __dbgDesc, record);
                 _projectStack.Record(record, __dbgDesc);
             }
             FocusProjectStack();
@@ -1282,7 +1283,7 @@ namespace Poly_Ling.UndoSystem
                 default(CameraSnapshot), default(CameraSnapshot));
             {
                 string __dbgDesc = $"Add Model: {addedModel.Name} (idx={addedIndex}, meshes={addedModel.MeshContextCount})";
-                UnityEngine.Debug.Log("[UndoDbg] Project.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("Project", __dbgDesc, record);
                 _projectStack.Record(record, __dbgDesc);
             }
             FocusProjectStack();
@@ -1355,7 +1356,7 @@ namespace Poly_Ling.UndoSystem
 
             {
                 string __dbgDesc = $"Add UnityMesh: {meshContext.Name}";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             FocusMeshList();
@@ -1392,7 +1393,7 @@ namespace Poly_Ling.UndoSystem
 
             {
                 string __dbgDesc = desc;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             _lastMeshListRecord = record;
@@ -1427,7 +1428,7 @@ namespace Poly_Ling.UndoSystem
             record.OldCurrentMaterialIndex = oldMaterialIndex;
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             _lastMeshListRecord = record;
@@ -1461,7 +1462,7 @@ namespace Poly_Ling.UndoSystem
 
             {
                 string __dbgDesc = desc;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             FocusMeshList();
@@ -1500,7 +1501,7 @@ namespace Poly_Ling.UndoSystem
 
             {
                 string __dbgDesc = $"Reorder UnityMesh: {meshContext.Name}";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             FocusMeshList();
@@ -1525,7 +1526,7 @@ namespace Poly_Ling.UndoSystem
                 newIndices ?? new List<int>());
             {
                 string __dbgDesc = "Select Mesh";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             FocusMeshList();
@@ -1559,7 +1560,7 @@ namespace Poly_Ling.UndoSystem
                 oldCamera, newCamera);
             {
                 string __dbgDesc = "Select Mesh";
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + (record?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _meshListStack.Record(record, __dbgDesc);
             }
             FocusMeshList();

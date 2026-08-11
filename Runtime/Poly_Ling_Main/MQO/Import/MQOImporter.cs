@@ -580,6 +580,11 @@ namespace Poly_Ling.MQO
                 CalculateParentIndices(result.MeshContexts, 0, settings.SetMeshHierarchyParent);
             }
 
+            // MQO の頂点は絶対座標なので、階層のワールド行列で割り戻してローカル化する。
+            // 親子関係が確定した後、姿勢を書き換える処理（Tポーズ等）の前に行う。
+            if (settings.ImportVerticesAsWorldSpace)
+                LocalizeVerticesFromWorld(result.MeshContexts, boneContextCount);
+
             if (settings.AutoDetectMirrorBranchRoot)
                 ApplyMirrorBranchRootByName(result.MeshContexts, boneContextCount);
 
@@ -589,6 +594,100 @@ namespace Poly_Ling.MQO
                 Debug.Log($"[MQOImporter] Converting to T-Pose...");
                 TPoseConverter.ConvertToTPoseByBoneNames(result.MeshContexts);
             }
+        }
+
+        /// <summary>
+        /// MQO の絶対座標の頂点を、PolyLing のローカル座標へ変換する。
+        ///
+        /// メタセコイアのローカル座標（translation/rotation/scale）はピボットであって、
+        /// 形状も子オブジェクトも動かさない（頂点は常に絶対座標）。
+        /// 一方 PolyLing は world = 親のworld × ローカル で頂点を動かすため、
+        /// 読んだままの頂点を入れると階層の深さぶんだけ位置がずれる。
+        /// ここで各オブジェクトのワールド行列の逆を掛けて辻褄を合わせる。
+        ///
+        /// ローカル変換が単位のオブジェクトではワールド行列も単位なので何も起きない。
+        /// ボーンは頂点を持たないため対象外。
+        /// </summary>
+        private static void LocalizeVerticesFromWorld(List<MeshContext> meshContexts, int boneContextCount)
+        {
+            if (meshContexts == null) return;
+
+            int n = meshContexts.Count;
+            var world = new Matrix4x4[n];
+            var done  = new bool[n];
+
+            // 親から順に解決する。リスト順が前後どちらでも拾えるよう収束するまで回す。
+            for (int pass = 0; pass < n; pass++)
+            {
+                bool progressed = false;
+                for (int i = 0; i < n; i++)
+                {
+                    if (done[i]) continue;
+
+                    var mc = meshContexts[i];
+                    if (mc == null)
+                    {
+                        world[i] = Matrix4x4.identity;
+                        done[i]  = true;
+                        progressed = true;
+                        continue;
+                    }
+
+                    // ここで組むのは「鏡像を掛ける前」の階層ワールド。
+                    // ミラー側の頂点は実体側の素直な鏡像 v_M = S·v_R として焼かれており、
+                    // 実体側と同じ階層ワールドで割らないとこの関係が崩れる。
+                    // 実効ワールド S·H·S を使うのは描画側だけ。
+                    int p = mc.HierarchyParentIndex;
+                    if (p >= 0 && p < n && p != i)
+                    {
+                        if (!done[p]) continue;
+                        world[i] = world[p] * mc.LocalMatrix;
+                    }
+                    else
+                    {
+                        world[i] = mc.LocalMatrix;
+                    }
+
+                    done[i]    = true;
+                    progressed = true;
+                }
+                if (!progressed) break;
+            }
+
+            int changed = 0;
+            for (int i = boneContextCount; i < n; i++)
+            {
+                var mc = meshContexts[i];
+                var mo = mc?.MeshObject;
+                if (mo?.Vertices == null || mo.Vertices.Count == 0) continue;
+                if (!done[i] || world[i].isIdentity) continue;
+
+                Matrix4x4 inv = world[i].inverse;
+                for (int v = 0; v < mo.Vertices.Count; v++)
+                {
+                    var vert = mo.Vertices[v];
+                    if (vert == null) continue;
+                    vert.Position = inv.MultiplyPoint3x4(vert.Position);
+                }
+                mo.InvalidatePositionCache();
+
+                // OriginalPositions と UnityMesh を作り直した頂点に合わせる
+                mc.OriginalPositions = (Vector3[])mo.Positions.Clone();
+                mc.ApplyVertexPositionsToMesh();
+
+                changed++;
+            }
+
+            if (changed > 0)
+                Debug.Log($"[MQOImporter] 頂点をローカル化: {changed} オブジェクト" +
+                          "（メタセコイアの頂点は絶対座標のため）");
+
+            // 生成ミラーの頂点は実体側のローカル頂点から取り直す。
+            // 絶対座標のまま鏡像を焼くと、鏡映 S と階層ワールド H が可換なとき
+            // （ピボット x=0・回転なし）しか v_M = S·v_R が成り立たない。
+            int rebaked = MirrorBranchOps.RebakeDerivedMirrorVertices(meshContexts);
+            if (rebaked > 0)
+                Debug.Log($"[MQOImporter] 生成ミラーの頂点をローカル座標で取り直し: {rebaked} オブジェクト");
         }
 
         // ミラー分岐ルートとみなす名前パターン
@@ -926,8 +1025,8 @@ namespace Poly_Ling.MQO
                 // 位置にスケールと軸反転を適用
                 Vector3 localPosition = AxisFlipOps.Position(settings.Flip, translation, settings.Scale);
 
-                // 回転にも同じ共役変換を適用する（位置だけ反転すると姿勢がずれるため）
-                rotation = AxisFlipOps.EulerDeg(settings.Flip, rotation);
+                // 回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+                rotation = MQOLocalRotationOps.ToUnityEuler(rotation, settings.Flip);
 
                 // BoneTransformを設定
                 var boneTransform = new BoneTransform
@@ -1159,6 +1258,11 @@ namespace Poly_Ling.MQO
             }
 
             // 面変換
+            // SmoothFacet モードではスロット確保を後段（NormalSmoothingOps）へ委ねるため、
+            // ここでは面コーナーのUVだけを保持しておく（faceCornerUVs は Faces と同じ添字）。
+            bool useFacetPath = settings.NormalMode == NormalMode.SmoothFacet;
+            List<Vector2[]> faceCornerUVs = useFacetPath ? new List<Vector2[]>() : null;
+
             foreach (var mqoFace in mqoObj.Faces)
             {
                 // 特殊面（メタデータ）はスキップ（既に処理済み）
@@ -1169,12 +1273,35 @@ namespace Poly_Ling.MQO
                 if (mqoFace.VertexCount < 3)
                 {
                     ConvertLine(mqoFace, meshObject, settings);
+                    if (useFacetPath)
+                    {
+                        while (faceCornerUVs.Count < meshObject.FaceCount)
+                            faceCornerUVs.Add(null);
+                    }
                     continue;
                 }
 
                 // 3頂点以上は面として変換
-                ConvertFace(mqoFace, meshObject, settings);
+                if (useFacetPath)
+                {
+                    var cornerUVs = ConvertFaceDeferred(mqoFace, meshObject, settings);
+                    while (faceCornerUVs.Count < meshObject.FaceCount - 1)
+                        faceCornerUVs.Add(null);
+                    faceCornerUVs.Add(cornerUVs);
+                }
+                else
+                {
+                    ConvertFace(mqoFace, meshObject, settings);
+                }
                 stats.TotalFaces++;
+            }
+
+            if (useFacetPath && faceCornerUVs.Count != meshObject.FaceCount)
+            {
+                Debug.LogError($"[MQOImporter] faceCornerUVs 不整合 obj=\"{mqoObj.Name}\" " +
+                               $"cornerUVs={faceCornerUVs.Count} faces={meshObject.FaceCount}");
+                while (faceCornerUVs.Count < meshObject.FaceCount)
+                    faceCornerUVs.Add(null);
             }
 
             // IDが未設定（-1）の頂点はそのまま（外部からIDが与えられていない）
@@ -1212,8 +1339,8 @@ namespace Poly_Ling.MQO
             {
                 Vector3 translationScaled = AxisFlipOps.Position(settings.Flip, mqoObj.Translation, settings.Scale);
 
-                // 回転にも同じ共役変換を適用する
-                Vector3 rotationConverted = AxisFlipOps.EulerDeg(settings.Flip, mqoObj.Rotation);
+                // 回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+                Vector3 rotationConverted = MQOLocalRotationOps.ToUnityEuler(mqoObj.Rotation, settings.Flip);
 
                 bool isDefaultTransform =
                     translationScaled == Vector3.zero &&
@@ -1252,8 +1379,17 @@ namespace Poly_Ling.MQO
             // メッシュ名を設定
             meshObject.Name = mqoObj.Name;
 
-            // 法線スムージング（NormalMode.Smoothの場合のみ）
-            if (settings.NormalMode == NormalMode.Smooth)
+            // 法線スムージング
+            if (settings.NormalMode == NormalMode.SmoothFacet)
+            {
+                // オブジェクト単位の shading / facet を使う（UseMqoFacet=false なら設定値で上書き）
+                bool  flatShading = settings.UseMqoFacet && mqoObj.Shading == 0;
+                float facetAngle  = settings.UseMqoFacet ? mqoObj.Facet : settings.SmoothingAngle;
+
+                NormalSmoothingOps.ApplyFacetSmoothing(
+                    meshObject, faceCornerUVs, facetAngle, flatShading, mqoObj.Name);
+            }
+            else if (settings.NormalMode == NormalMode.Smooth)
             {
                 CalculateSmoothNormals(meshObject, settings.SmoothingAngle);
             }
@@ -1327,13 +1463,51 @@ namespace Poly_Ling.MQO
             {
                 face.VertexIndices.Add(vertexIndices[i]);
                 face.UVIndices.Add(uvSubIndices[i]);
-                face.NormalIndices.Add(0);
+                // 法線サブindexはUVサブindexと同値に保つ（不変条件）。
+                // 0固定にすると、AddOrGetUVIndex が確保したスロット1以降へ法線が書かれない。
+                face.NormalIndices.Add(uvSubIndices[i]);
             }
 
             meshObject.Faces.Add(face);
 
             // 法線計算
             CalculateFaceNormal(face, meshObject);
+        }
+
+        /// <summary>
+        /// SmoothFacet モード用の面変換。
+        /// UV/法線スロットはまだ確保せず（AddOrGetUVIndex を呼ばない）、
+        /// 面コーナーのUVだけを返す。スロット確保は NormalSmoothingOps が行う。
+        /// </summary>
+        private static Vector2[] ConvertFaceDeferred(
+            MQOFace mqoFace, MeshObject meshObject, MQOImportSettings settings)
+        {
+            int vertexCount = mqoFace.VertexCount;
+
+            var cornerUVs = new Vector2[vertexCount];
+            for (int i = 0; i < vertexCount; i++)
+            {
+                cornerUVs[i] = (mqoFace.UVs != null && i < mqoFace.UVs.Length)
+                    ? ConvertUV(mqoFace.UVs[i], settings)
+                    : Vector2.zero;
+            }
+
+            var face = new Face
+            {
+                MaterialIndex = mqoFace.MaterialIndex >= 0 ? mqoFace.MaterialIndex : 0
+            };
+
+            for (int i = 0; i < vertexCount; i++)
+            {
+                face.VertexIndices.Add(mqoFace.VertexIndices[i]);
+                // スロット番号は後段で確定させる。ここでは仮に 0 を入れておく。
+                face.UVIndices.Add(0);
+                face.NormalIndices.Add(0);
+            }
+
+            meshObject.Faces.Add(face);
+
+            return cornerUVs;
         }
 
         private static void ConvertLine(MQOFace mqoFace, MeshObject meshObject, MQOImportSettings settings)
@@ -2045,130 +2219,15 @@ namespace Poly_Ling.MQO
         /// <param name="sourceIndex">ソースのインデックス</param>
         /// <param name="settings">インポート設定</param>
         /// <returns>ベイクミラーメッシュコンテキスト</returns>
+        /// <summary>
+        /// ミラー属性を持つメッシュからミラー側 MeshContext を生成する。
+        /// 実装は MirrorBranchOps.CreateDerivedMirrorContext にある
+        /// （ミラーの有効化からも呼ぶため Ops へ移した）。
+        /// </summary>
         private static MeshContext CreateBakedMirrorMesh(MeshContext source, int sourceIndex, MQOImportSettings settings)
         {
-            if (source == null || source.MeshObject == null || !source.IsMirrored)
-                return null;
-
-            var srcMeshObj = source.MeshObject;
-
-            if (srcMeshObj.Vertices.Count == 0)
-                return null;
-            var axis = source.GetMirrorSymmetryAxis();
-
-            // 新しいMeshObjectを作成
-            var mirrorMeshObj = new MeshObject
-            {
-                Name = source.Name + "_BakedMirror",
-                Type = MeshType.BakedMirror  // 明示的に設定
-            };
-
-            // 頂点をミラー変換してコピー
-            foreach (var srcVertex in srcMeshObj.Vertices)
-            {
-                var mirrorVertex = new Vertex
-                {
-                    Id = srcVertex.Id,
-                    Position = MirrorPosition(srcVertex.Position, axis)
-                };
-
-                // UVをコピー
-                foreach (var uv in srcVertex.UVs)
-                {
-                    mirrorVertex.UVs.Add(uv);
-                }
-
-                // 法線をミラー変換してコピー
-                foreach (var normal in srcVertex.Normals)
-                {
-                    mirrorVertex.Normals.Add(MirrorNormal(normal, axis));
-                }
-
-                // ボーンウェイト: ミラー側があればミラー側、なければ実体側
-                if (srcVertex.HasMirrorBoneWeight)
-                {
-                    mirrorVertex.BoneWeight = srcVertex.MirrorBoneWeight;
-                }
-                else if (srcVertex.HasBoneWeight)
-                {
-                    mirrorVertex.BoneWeight = srcVertex.BoneWeight;
-                }
-
-                mirrorMeshObj.Vertices.Add(mirrorVertex);
-            }
-
-            // 面をコピー（頂点順序を反転して法線方向を維持）
-            foreach (var srcFace in srcMeshObj.Faces)
-            {
-                var mirrorFace = new Face
-                {
-                    MaterialIndex = srcFace.MaterialIndex + source.MirrorMaterialOffset,
-                };
-                if (srcFace.IsHidden)
-                    mirrorFace.SetFlag(FaceFlags.Hidden);
-
-                // 頂点順序を反転（法線方向維持のため）
-                for (int i = srcFace.VertexCount - 1; i >= 0; i--)
-                {
-                    mirrorFace.VertexIndices.Add(srcFace.VertexIndices[i]);
-                    mirrorFace.UVIndices.Add(srcFace.UVIndices[i]);
-                    mirrorFace.NormalIndices.Add(srcFace.NormalIndices[i]);
-                }
-
-                mirrorMeshObj.Faces.Add(mirrorFace);
-            }
-
-            // MeshContextを作成
-            var mirrorContext = new MeshContext
-            {
-                MeshObject = mirrorMeshObj,
-                Name = mirrorMeshObj.Name,
-                Type = MeshType.BakedMirror,
-                BakedMirrorSourceIndex = sourceIndex,
-                // 階層情報は元メッシュに合わせる
-                ParentIndex = source.ParentIndex,
-                Depth = source.Depth,
-                IsVisible = source.IsVisible,
-                // ミラー属性はなし（実体化されているため）
-                MirrorType = 0,
-                MirrorAxis = 1,
-                MirrorDistance = 0,
-                MirrorMaterialOffset = 0
-            };
-
-            // UnityMesh生成
-            mirrorContext.UnityMesh = mirrorMeshObj.ToUnityMesh();
-            mirrorContext.OriginalPositions = (Vector3[])mirrorMeshObj.Positions.Clone();
-
-            return mirrorContext;
+            return Poly_Ling.Ops.MirrorBranchOps.CreateDerivedMirrorContext(source, sourceIndex);
         }
 
-        /// <summary>
-        /// 位置をミラー変換
-        /// </summary>
-        private static Vector3 MirrorPosition(Vector3 pos, Poly_Ling.Symmetry.SymmetryAxis axis)
-        {
-            switch (axis)
-            {
-                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-pos.x, pos.y, pos.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(pos.x, -pos.y, pos.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(pos.x, pos.y, -pos.z);
-                default: return new Vector3(-pos.x, pos.y, pos.z);
-            }
-        }
-
-        /// <summary>
-        /// 法線をミラー変換
-        /// </summary>
-        private static Vector3 MirrorNormal(Vector3 normal, Poly_Ling.Symmetry.SymmetryAxis axis)
-        {
-            switch (axis)
-            {
-                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-normal.x, normal.y, normal.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(normal.x, -normal.y, normal.z);
-                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(normal.x, normal.y, -normal.z);
-                default: return new Vector3(-normal.x, normal.y, normal.z);
-            }
-        }
     }
 }

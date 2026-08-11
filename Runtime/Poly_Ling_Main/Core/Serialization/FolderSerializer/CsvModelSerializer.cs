@@ -294,6 +294,13 @@ namespace Poly_Ling.Serialization.FolderSerializer
                 CsvMeshSerializer.ResolveNameReferences(allOwnEntries, nameToIndex);
             }
 
+            // 協働編集: 安定オブジェクトIDの整合
+            //   - objectId 行が無い旧形式ファイル → ここで新規発行
+            //   - 別々に保存されたモデルを取り込んで衝突 → 後勝ちで振り直し
+            //   ID が確定していないと担当（editorName）の追跡ができないため、
+            //   参照解決の直後・利用開始前に必ず通す。
+            Poly_Ling.Data.ObjectIdAllocator.ResolveDuplicates(model.MeshContextList);
+
             // materials.csv
             ReadMaterialsCsv(modelFolderPath, model);
 

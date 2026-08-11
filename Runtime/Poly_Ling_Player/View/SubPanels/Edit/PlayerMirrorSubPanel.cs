@@ -23,19 +23,24 @@ namespace Poly_Ling.Player
         // ── 設定値 ────────────────────────────────────────────────────────
         private int           _mirrorAxis    = 0;    // 0=X, 1=Y, 2=Z
         private float         _threshold     = 0.0001f;
+        private float         _planeOffset   = 0f;
         private bool          _flipU         = false;
+        private MirrorBoundaryMode _boundaryMode = MirrorBoundaryMode.Threshold;
+        private bool          _projectBoundary = true;
         private WriteBackMode _writeBackMode = WriteBackMode.OriginalSideOnly;
-        private float         _blendWeight   = 0.5f;
-
-        // ── 実行状態 ──────────────────────────────────────────────────────
-        private MirrorBakeResult _lastBakeResult   = null;
-        private string           _sourceMeshName   = null;
-        private string           _bakedMeshName    = null;
-        private string           _writeBackMeshName = null;
 
         // ── UI ────────────────────────────────────────────────────────────
         private Label         _statusLabel;
-        private Button        _btnWriteBack, _btnBlend;
+        private Label         _infoLabel;
+        private Button        _btnBake, _btnUnbake;
+        private VisualElement _threshRow;
+        private Toggle        _projectToggle;
+
+        private MeshContext ActiveMeshContext
+            => GetToolContext?.Invoke()?.ActiveMeshContext ?? GetModel?.Invoke()?.ActiveMeshContext;
+
+        /// <summary>実体化中なら現在の状態、未実体化なら null。</summary>
+        private MirrorBakeResult BakeState => ActiveMeshContext?.MeshObject?.MirrorBakeState;
 
         public void Build(VisualElement parent)
         {
@@ -45,10 +50,14 @@ namespace Poly_Ling.Player
             parent.Add(root);
 
             root.Add(SecLabel("Mirror Edit"));
-            root.Add(new HelpBox("選択メッシュのミラーを実体化し、編集後に元メッシュへ書き戻します。", HelpBoxMessageType.Info));
+            root.Add(new HelpBox(
+                "選択メッシュ自身に反対側の実体を一時的に生やします。対称面をまたぐ処理"
+                + "（法線スムージング等）を正しく効かせるための作業用機能で、別オブジェクトは作りません。"
+                + "メッシュが見た目用のミラーモードだった場合は実体化と同時に解除されます。",
+                HelpBoxMessageType.Info));
 
             // ── Step 1: Bake Mirror ───────────────────────────────────────
-            root.Add(MakeSep("Step 1: Bake Mirror"));
+            root.Add(MakeSep("Step 1: ミラー実体化"));
 
             var axisChoices = new List<string> { "X", "Y", "Z" };
             var axisDd = new DropdownField("ミラー軸", axisChoices, _mirrorAxis);
@@ -56,61 +65,98 @@ namespace Poly_Ling.Player
             axisDd.RegisterValueChangedCallback(e => _mirrorAxis = axisChoices.IndexOf(e.newValue));
             root.Add(axisDd);
 
-            var threshRow = new VisualElement(); threshRow.style.flexDirection = FlexDirection.Row; threshRow.style.marginBottom = 3;
-            var threshLbl = new Label("境界閾値"); threshLbl.style.width = 70; threshLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            var offsetRow = new VisualElement(); offsetRow.style.flexDirection = FlexDirection.Row; offsetRow.style.marginBottom = 3;
+            var offsetLbl = new Label("平面オフセット"); offsetLbl.style.width = 90; offsetLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            offsetLbl.style.color = new StyleColor(Color.white);
+            var offsetField = new FloatField { value = _planeOffset }; offsetField.style.flexGrow = 1;
+            offsetField.style.color = new StyleColor(Color.black);
+            offsetField.tooltip = "ミラー平面をローカル座標でずらす。オブジェクト原点が対称面上に無いときに使う。";
+            offsetField.RegisterValueChangedCallback(e => _planeOffset = e.newValue);
+            offsetRow.Add(offsetLbl); offsetRow.Add(offsetField);
+            root.Add(offsetRow);
+
+            var bmChoices = new List<string> { "しきい値", "選択頂点" };
+            var bmValues  = new[] { MirrorBoundaryMode.Threshold, MirrorBoundaryMode.SelectedVertices };
+            var bmDd = new DropdownField("境界の決め方", bmChoices, 0);
+            bmDd.style.color = new StyleColor(Color.white);
+            bmDd.tooltip = "しきい値: ミラー平面からの距離で境界を判定 / 選択頂点: 選択している頂点を境界とみなす";
+            bmDd.RegisterValueChangedCallback(e =>
+            {
+                int i = bmChoices.IndexOf(e.newValue);
+                if (i < 0) return;
+                _boundaryMode = bmValues[i];
+                // しきい値モードは境界が平面上に居るので射影が既定、選択頂点モードは形が変わるため既定 OFF。
+                _projectBoundary = _boundaryMode == MirrorBoundaryMode.Threshold;
+                _projectToggle?.SetValueWithoutNotify(_projectBoundary);
+                UpdateBoundaryRows();
+                Refresh();
+            });
+            root.Add(bmDd);
+
+            _threshRow = new VisualElement(); _threshRow.style.flexDirection = FlexDirection.Row; _threshRow.style.marginBottom = 3;
+            var threshLbl = new Label("境界閾値"); threshLbl.style.width = 90; threshLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
             threshLbl.style.color = new StyleColor(Color.white);
             var threshField = new FloatField { value = _threshold }; threshField.style.flexGrow = 1;
             threshField.style.color = new StyleColor(Color.black);
             threshField.RegisterValueChangedCallback(e => _threshold = Mathf.Max(0.00001f, e.newValue));
-            threshRow.Add(threshLbl); threshRow.Add(threshField);
-            root.Add(threshRow);
+            _threshRow.Add(threshLbl); _threshRow.Add(threshField);
+            root.Add(_threshRow);
+
+            _projectToggle = new Toggle("境界頂点をミラー平面へ寄せる") { value = _projectBoundary };
+            _projectToggle.style.color = new StyleColor(Color.white);
+            _projectToggle.tooltip = "OFF にすると境界頂点の位置を動かさない。選択頂点が平面上に無いときは OFF が安全。";
+            _projectToggle.RegisterValueChangedCallback(e => _projectBoundary = e.newValue);
+            root.Add(_projectToggle);
 
             var flipUToggle = new Toggle("UV の U を反転") { value = _flipU };
             flipUToggle.style.color = new StyleColor(Color.white);
             flipUToggle.RegisterValueChangedCallback(e => _flipU = e.newValue);
             root.Add(flipUToggle);
 
-            var bakeBtn = new Button(OnBakeMirror) { text = "Bake Mirror" };
-            bakeBtn.style.height = 28; bakeBtn.style.marginTop = 4; bakeBtn.style.marginBottom = 8;
-            root.Add(bakeBtn);
+            _btnBake = new Button(OnBakeMirror) { text = "ミラー実体化" };
+            _btnBake.style.height = 28; _btnBake.style.marginTop = 4; _btnBake.style.marginBottom = 8;
+            root.Add(_btnBake);
 
-            // ── Step 2: Edit ───────────────────────────────────────────────
-            root.Add(MakeSep("Step 2: Edit"));
-            var editHelp = new HelpBox("Bake後のメッシュをメッシュリストで選択して編集してください。", HelpBoxMessageType.None);
+            // ── Step 2: 編集 ──────────────────────────────────────────────
+            root.Add(MakeSep("Step 2: 編集"));
+            var editHelp = new HelpBox(
+                "実体化中は同じメッシュの中に反対側の頂点・面が入っています。"
+                + "対称面をまたぐ処理（法線スムージング等）はこの状態で実行してください。",
+                HelpBoxMessageType.None);
             editHelp.style.color = new StyleColor(Color.white);
             editHelp.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
             editHelp.style.marginBottom = 8;
             root.Add(editHelp);
 
-            // ── Step 3: Write Back ────────────────────────────────────────
-            root.Add(MakeSep("Step 3: Write Back"));
+            // ── Step 3: 解除 ──────────────────────────────────────────────
+            root.Add(MakeSep("Step 3: 解除（半身に戻す）"));
 
-            var wbChoices = new List<string> { "OriginalSideOnly", "MirroredSideOnly", "Average" };
+            var wbChoices = new List<string> { "元側を採用", "ミラー側を採用", "両側の平均" };
             var wbValues  = new[] { WriteBackMode.OriginalSideOnly, WriteBackMode.MirroredSideOnly, WriteBackMode.Average };
-            var wbDd = new DropdownField("書き戻しモード", wbChoices, 0);
+            var wbDd = new DropdownField("残す編集結果", wbChoices, 0);
             wbDd.style.color = new StyleColor(Color.white);
+            wbDd.tooltip = "解除して半身に戻すとき、どちら側で行った編集を採用するか。";
             wbDd.RegisterValueChangedCallback(e => { int i = wbChoices.IndexOf(e.newValue); if (i >= 0) _writeBackMode = wbValues[i]; });
             root.Add(wbDd);
 
-            _btnWriteBack = new Button(OnWriteBack) { text = "Write Back" };
-            _btnWriteBack.style.height = 28; _btnWriteBack.style.marginTop = 4; _btnWriteBack.style.marginBottom = 8;
-            root.Add(_btnWriteBack);
+            var unbakeHelp = new HelpBox(
+                "解除すると強制的に見た目・エクスポート用のミラーモード（結合）になります。",
+                HelpBoxMessageType.None);
+            unbakeHelp.style.color = new StyleColor(Color.white);
+            unbakeHelp.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.22f));
+            unbakeHelp.style.marginBottom = 4;
+            root.Add(unbakeHelp);
 
-            // ── Step 4: Blend ─────────────────────────────────────────────
-            root.Add(MakeSep("Step 4: Blend"));
+            _btnUnbake = new Button(OnUnbake) { text = "解除（半身に戻す）" };
+            _btnUnbake.style.height = 28; _btnUnbake.style.marginTop = 4; _btnUnbake.style.marginBottom = 8;
+            root.Add(_btnUnbake);
 
-            var blendRow = new VisualElement(); blendRow.style.flexDirection = FlexDirection.Row; blendRow.style.marginBottom = 4;
-            var blendLbl = new Label("Blend"); blendLbl.style.width = 50; blendLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
-            blendLbl.style.color = new StyleColor(Color.white);
-            var blendSlider = new Slider(0f, 1f) { value = _blendWeight }; blendSlider.style.flexGrow = 1;
-            blendSlider.style.color = new StyleColor(Color.white);
-            blendSlider.RegisterValueChangedCallback(e => _blendWeight = e.newValue);
-            blendRow.Add(blendLbl); blendRow.Add(blendSlider);
-            root.Add(blendRow);
-
-            _btnBlend = new Button(OnBlend) { text = "Blend" };
-            _btnBlend.style.height = 28; _btnBlend.style.marginBottom = 4;
-            root.Add(_btnBlend);
+            _infoLabel = new Label();
+            _infoLabel.style.fontSize   = 10;
+            _infoLabel.style.whiteSpace = WhiteSpace.Normal;
+            _infoLabel.style.color      = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
+            _infoLabel.style.marginTop  = 4;
+            root.Add(_infoLabel);
 
             _statusLabel = new Label();
             _statusLabel.style.fontSize  = 10;
@@ -118,145 +164,107 @@ namespace Poly_Ling.Player
             _statusLabel.style.whiteSpace = WhiteSpace.Normal;
             _statusLabel.style.marginTop = 4;
             root.Add(_statusLabel);
+
+            UpdateBoundaryRows();
+            Refresh();
         }
 
-        public void Refresh() { }
+        private void UpdateBoundaryRows()
+        {
+            bool useThreshold = _boundaryMode == MirrorBoundaryMode.Threshold;
+            if (_threshRow != null)
+                _threshRow.style.display = useThreshold ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        public void Refresh()
+        {
+            if (_infoLabel == null) return;
+
+            var mc = ActiveMeshContext;
+            string meshName = mc?.Name ?? "(メッシュ未選択)";
+            int selVerts    = mc?.Selection?.Vertices.Count ?? 0;
+            var mo          = mc?.MeshObject;
+
+            var bake = mo?.MirrorBakeState;
+
+            string stateLine;
+            if (mo == null)
+            {
+                stateLine = "状態: -";
+            }
+            else if (bake == null)
+            {
+                stateLine = $"状態: 未実体化   MirrorType={mc.MirrorType}   V:{mo.VertexCount} F:{mo.FaceCount}";
+            }
+            else
+            {
+                string boundaryDesc = bake.BoundaryVertices == null
+                    ? "しきい値 " + bake.Threshold
+                    : "選択頂点 " + bake.BoundaryVertices.Length + " 点";
+                stateLine =
+                    $"状態: 実体化中   MirrorType={mc.MirrorType}   V:{mo.VertexCount} F:{mo.FaceCount}\n" +
+                    $"元 {bake.OriginalVertexCount} 頂点 / 元 {bake.OriginalFaceCount} 面 / 境界 {boundaryDesc}";
+            }
+
+            _infoLabel.text = $"対象: {meshName}   選択頂点: {selVerts}\n{stateLine}";
+
+            bool baked = bake != null;
+            _btnBake?.SetEnabled(mo != null && !baked);
+            _btnUnbake?.SetEnabled(baked);
+        }
 
         // ── Operations ───────────────────────────────────────────────────
         private void OnBakeMirror()
         {
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルがありません"); return; }
-            var tc = GetToolContext?.Invoke();
-            var mc = tc?.ActiveMeshContext;
+
+            var mc = ActiveMeshContext;
             if (mc?.MeshObject == null) { SetStatus("メッシュを選択してください"); return; }
 
-            int masterIdx = model.IndexOf(mc);
-            int modelIdx  = GetModelIndex?.Invoke() ?? 0;
+            if (mc.MeshObject.MirrorBakeState != null)
+            { SetStatus("既に実体化されています"); return; }
 
-            // BakeResult は Dispatcher 側で生成されるため、パネルには保存しない
-            // _lastBakeResult / _bakedMeshName は WriteBack 用に Dispatcher から返せないため、
-            // 暫定的にパネル側でも BakeMirror を実行して結果を保持する
-            _sourceMeshName = mc.Name;
-            var (bakedMesh, bakeResult) = MirrorBaker.BakeMirror(mc.MeshObject, _mirrorAxis, 0f, _threshold, _flipU);
-            if (bakedMesh == null || bakeResult == null) { SetStatus("Bake に失敗しました"); return; }
-            _lastBakeResult = bakeResult;
-            _bakedMeshName  = bakedMesh.Name;
+            if (_boundaryMode == MirrorBoundaryMode.SelectedVertices
+                && (mc.Selection?.Vertices.Count ?? 0) == 0)
+            { SetStatus("境界にする頂点を選択してください"); return; }
 
-            if (SendCommand != null)
-            {
-                SendCommand.Invoke(new BakeMirrorCommand(modelIdx, masterIdx, _mirrorAxis, _threshold, _flipU));
-                SetStatus($"Bake 完了: {mc.MeshObject.VertexCount} → {bakedMesh.VertexCount} 頂点");
-                return;
-            }
-            // フォールバック
-            if (tc == null) { SetStatus("ToolContext 未設定"); return; }
-            var newMc = new MeshContext
-            {
-                Name = bakedMesh.Name, MeshObject = bakedMesh,
-                Materials = new List<Material>(mc.Materials ?? new List<Material>()),
-            };
-            newMc.UnityMesh           = bakedMesh.ToUnityMesh();
-            newMc.UnityMesh.name      = bakedMesh.Name;
-            newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            tc.AddMeshContext?.Invoke(newMc);
-            SetStatus($"Bake 完了: {mc.MeshObject.VertexCount} → {bakedMesh.VertexCount} 頂点");
-            tc.Repaint?.Invoke();
+            if (SendCommand == null) { SetStatus("コマンド送信先が未設定です"); return; }
+
+            SendCommand.Invoke(new BakeMirrorCommand(
+                GetModelIndex?.Invoke() ?? 0, model.IndexOf(mc),
+                _mirrorAxis, _threshold, _flipU,
+                _planeOffset, _boundaryMode, _projectBoundary));
+
+            var bake = mc.MeshObject.MirrorBakeState;
+            SetStatus(bake == null
+                ? "実体化に失敗しました（コンソールの [MirrorBake] ログを確認）"
+                : $"実体化: {bake.OriginalVertexCount} → {mc.MeshObject.VertexCount} 頂点");
+            Refresh();
         }
 
-        private void OnWriteBack()
-        {
-            if (_lastBakeResult == null) { SetStatus("先に Bake を実行してください"); return; }
-            var model = GetModel?.Invoke();
-            if (model == null) { SetStatus("モデルがありません"); return; }
-            var tc = GetToolContext?.Invoke();
-            var editedMc = tc?.ActiveMeshContext ?? model.ActiveMeshContext;
-            if (editedMc == null || editedMc.Name != _bakedMeshName)
-            { SetStatus($"Bake 済みメッシュ '{_bakedMeshName}' を選択してください"); return; }
-
-            MeshContext originalMc = null;
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var m = model.GetMeshContext(i);
-                if (m?.Name == _sourceMeshName) { originalMc = m; break; }
-            }
-            if (originalMc?.MeshObject == null) { SetStatus($"元メッシュ '{_sourceMeshName}' が見つかりません"); return; }
-
-            int editedIdx   = model.IndexOf(editedMc);
-            int originalIdx = model.IndexOf(originalMc);
-            int modelIdx    = GetModelIndex?.Invoke() ?? 0;
-
-            if (SendCommand != null)
-            {
-                SendCommand.Invoke(new WriteBackMirrorCommand(
-                    modelIdx, editedIdx, originalIdx, _writeBackMode, _lastBakeResult));
-                _writeBackMeshName = originalMc.Name + "_WriteBack";
-                SetStatus($"WriteBack 完了: '{_writeBackMeshName}'");
-                return;
-            }
-            // フォールバック
-            if (tc == null) { SetStatus("ToolContext 未設定"); return; }
-            var resultMesh = MirrorBaker.WriteBack(editedMc.MeshObject, originalMc.MeshObject, _lastBakeResult, _writeBackMode);
-            if (resultMesh == null) { SetStatus("WriteBack に失敗しました"); return; }
-            string newName    = _sourceMeshName + "_WriteBack";
-            resultMesh.Name   = newName; _writeBackMeshName = newName;
-            var newMc = new MeshContext
-            {
-                Name = newName, MeshObject = resultMesh,
-                Materials = new List<Material>(originalMc.Materials ?? new List<Material>()),
-                MirrorType = originalMc.MirrorType, MirrorAxis = originalMc.MirrorAxis, MirrorDistance = originalMc.MirrorDistance,
-            };
-            newMc.UnityMesh = resultMesh.ToUnityMesh(); newMc.UnityMesh.name = newName; newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            tc.AddMeshContext?.Invoke(newMc);
-            SetStatus($"WriteBack 完了: '{newName}'");
-            tc.Repaint?.Invoke();
-        }
-
-        private void OnBlend()
+        private void OnUnbake()
         {
             var model = GetModel?.Invoke();
             if (model == null) { SetStatus("モデルがありません"); return; }
 
-            MeshContext sourceMc = null, writeBackMc = null;
-            for (int i = 0; i < model.MeshContextCount; i++)
-            {
-                var m = model.GetMeshContext(i);
-                if (m?.Name == _sourceMeshName)    sourceMc    = m;
-                if (m?.Name == _writeBackMeshName) writeBackMc = m;
-            }
-            if (sourceMc?.MeshObject == null || writeBackMc?.MeshObject == null)
-            { SetStatus("ソースと WriteBack のメッシュが必要です"); return; }
-            if (sourceMc.MeshObject.VertexCount != writeBackMc.MeshObject.VertexCount)
-            { SetStatus($"頂点数不一致: {sourceMc.MeshObject.VertexCount} vs {writeBackMc.MeshObject.VertexCount}"); return; }
+            var mc = ActiveMeshContext;
+            if (mc?.MeshObject == null) { SetStatus("メッシュを選択してください"); return; }
 
-            int srcIdx  = model.IndexOf(sourceMc);
-            int wbIdx   = model.IndexOf(writeBackMc);
-            int modelIdx = GetModelIndex?.Invoke() ?? 0;
+            if (mc.MeshObject.MirrorBakeState == null)
+            { SetStatus("このメッシュは実体化されていません"); return; }
 
-            if (SendCommand != null)
-            {
-                SendCommand.Invoke(new BlendMirrorCommand(modelIdx, srcIdx, wbIdx, _blendWeight));
-                SetStatus($"Blend 完了 (weight={_blendWeight:F2})");
-                return;
-            }
-            // フォールバック
-            var tc = GetToolContext?.Invoke();
-            var srcMesh = sourceMc.MeshObject; var wbMesh = writeBackMc.MeshObject;
-            var blended = srcMesh.Clone();
-            string blendName = $"{_sourceMeshName}_Blend{Mathf.RoundToInt(_blendWeight * 100)}"; blended.Name = blendName;
-            for (int i = 0; i < blended.VertexCount; i++)
-                blended.Vertices[i].Position = Vector3.Lerp(srcMesh.Vertices[i].Position, wbMesh.Vertices[i].Position, _blendWeight);
-            blended.RecalculateSmoothNormals();
-            var newMc = new MeshContext
-            {
-                Name = blendName, MeshObject = blended,
-                Materials = new List<Material>(sourceMc.Materials ?? new List<Material>()),
-                MirrorType = sourceMc.MirrorType, MirrorAxis = sourceMc.MirrorAxis, MirrorDistance = sourceMc.MirrorDistance,
-            };
-            newMc.UnityMesh = blended.ToUnityMesh(); newMc.UnityMesh.name = blendName; newMc.UnityMesh.hideFlags = HideFlags.HideAndDontSave;
-            tc?.AddMeshContext?.Invoke(newMc);
-            SetStatus($"Blend 完了: '{blendName}'");
-            tc?.Repaint?.Invoke();
+            if (SendCommand == null) { SetStatus("コマンド送信先が未設定です"); return; }
+
+            int vertsBefore = mc.MeshObject.VertexCount;
+
+            SendCommand.Invoke(new UnbakeMirrorCommand(
+                GetModelIndex?.Invoke() ?? 0, model.IndexOf(mc), _writeBackMode));
+
+            SetStatus(mc.MeshObject.MirrorBakeState != null
+                ? "解除に失敗しました（コンソールの [MirrorBake] ログを確認）"
+                : $"解除: {vertsBefore} → {mc.MeshObject.VertexCount} 頂点");
+            Refresh();
         }
 
         // ── Helpers ──────────────────────────────────────────────────────

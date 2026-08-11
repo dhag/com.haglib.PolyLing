@@ -633,10 +633,9 @@ namespace Poly_Ling.MQO
         /// <param name="flip">軸反転指定</param>
         /// <returns>MQOオブジェクト</returns>
         /// <remarks>
-        /// 【暫定実装】
-        /// 現在はボーン「位置」のみをtranslationとして出力。
-        /// 将来的には回転・スケールも含む完全なトランスフォームに対応予定。
-        /// PMXにはボーンの回転情報がないため、現時点では位置のみ。
+        /// translation / rotation / scale を出力する。
+        /// rotation は MQO 仕様どおり HPB 順（MQOLocalRotationOps が変換）。
+        /// PMX にはボーンの回転情報が無いため、PMX 由来では 0 になる。
         /// </remarks>
         public static MQOObject CreateBoneObject(BoneData bone, int depth, float scale , AxisFlip flip)
         {
@@ -653,13 +652,13 @@ namespace Poly_Ling.MQO
             obj.Attributes.Add(new MQOAttribute("color", 1f, 1f, 1f));
             obj.Attributes.Add(new MQOAttribute("color_type", 0));
 
-            // ローカルトランスフォーム（位置のみ）
-            // 【暫定】PMXからは位置のみ取得可能。回転・スケールは将来対応。
+            // ローカルトランスフォーム
             Vector3 pos = AxisFlipOps.Position(flip, bone.Position, scale);
             obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
 
-            // 回転（暫定で0）
-            obj.Attributes.Add(new MQOAttribute("rotation", bone.Rotation.x, bone.Rotation.y, bone.Rotation.z));
+            // 回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+            Vector3 rot = MQOLocalRotationOps.ToMqoRotation(bone.Rotation, flip);
+            obj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
 
             // スケール（暫定で1,1,1）
             obj.Attributes.Add(new MQOAttribute("scale", bone.Scale.x, bone.Scale.y, bone.Scale.z));
@@ -870,8 +869,9 @@ namespace Poly_Ling.MQO
             Vector3 pos = AxisFlipOps.Position(flip, localPosition, scale);
             obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
 
-            // 回転（暫定で0）
-            obj.Attributes.Add(new MQOAttribute("rotation", bone.Rotation.x, bone.Rotation.y, bone.Rotation.z));
+            // 回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+            Vector3 rot = MQOLocalRotationOps.ToMqoRotation(bone.Rotation, flip);
+            obj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
 
             // スケール（暫定で1,1,1）
             obj.Attributes.Add(new MQOAttribute("scale", bone.Scale.x, bone.Scale.y, bone.Scale.z));
@@ -907,8 +907,9 @@ namespace Poly_Ling.MQO
             Vector3 pos = AxisFlipOps.Position(flip, localPosition, scale);
             obj.Attributes.Add(new MQOAttribute("translation", pos.x, pos.y, pos.z));
 
-            // ローカル回転（オイラー角）
-            obj.Attributes.Add(new MQOAttribute("rotation", localRotation.x, localRotation.y, localRotation.z));
+            // ローカル回転。MQO の rotation は XYZ ではなく HPB なので並べ替える
+            Vector3 rot = MQOLocalRotationOps.ToMqoRotation(localRotation, flip);
+            obj.Attributes.Add(new MQOAttribute("rotation", rot.x, rot.y, rot.z));
 
             // スケール
             obj.Attributes.Add(new MQOAttribute("scale", bone.Scale.x, bone.Scale.y, bone.Scale.z));

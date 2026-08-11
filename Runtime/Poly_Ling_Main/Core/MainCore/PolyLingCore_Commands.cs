@@ -47,6 +47,15 @@ namespace Poly_Ling.Core
                 _meshListOps.ToggleLock(c.MasterIndex);
                 NotifyPanels(ChangeKind.Attributes);
                 return;
+            case SetObjectEditorCommand c:
+                // 到達時点で権限判定は完了している:
+                //   リモート発  → RemoteOwnership.TryAuthorize が可否を決めて弾く
+                //   ローカル発  → ホスト自身の操作なので無条件に許可
+                // よってここは確定適用（force）。ObjectIds の照合だけは残す。
+                _meshListOps.SetObjectEditor(
+                    c.MasterIndices, c.EditorName, c.ObjectIds, requesterName: null, force: true);
+                NotifyPanels(ChangeKind.Attributes);
+                return;
             case CycleMirrorTypeCommand c:
                 _meshListOps.CycleMirrorType(c.MasterIndex);
                 NotifyPanels(ChangeKind.Attributes);
@@ -893,6 +902,7 @@ namespace Poly_Ling.Core
                     // ベイクミラー
                     BakedMirrorSourceIndex = s.BakedMirrorSourceIndex,
                     HasBakedMirrorChild    = s.HasBakedMirrorChild,
+                    MirrorGeometryDerived  = s.MirrorGeometryDerived,
                     // モーフ
                     MorphParentIndex       = s.MorphParentIndex,
                     // BindPose（DTOに保存されないため直接コピー必須）

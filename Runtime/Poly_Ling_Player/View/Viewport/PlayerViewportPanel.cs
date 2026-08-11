@@ -145,6 +145,18 @@ namespace Poly_Ling.Player
         private readonly VisualElement _gizmoOverlay;
         private GizmoData _gizmoData;
 
+        /// <summary>
+        /// 軸・リングとは独立に描く色付きスクリーン折れ線。
+        /// カメラ調整ツールのカメラ向き表示（直方体＋円錐台/円筒）に使う。
+        /// 座標系はリングと同じ ctx 系（Y=0 が上）。
+        /// </summary>
+        public struct ScreenPolyline
+        {
+            public Vector2[] Points;
+            public Color     Color;
+            public float     Width;
+        }
+
         public struct GizmoData
         {
             public bool HasGizmo;
@@ -168,6 +180,12 @@ namespace Poly_Ling.Player
             /// false（既定）ならリングのみ描いて終了する＝回転ツールの従来挙動。
             /// </summary>
             public bool DrawAxisWithRing;
+
+            /// <summary>
+            /// 追加の色付き折れ線。軸・リングの描画分岐に関係なく必ず描く。
+            /// null / 空なら何もしない。
+            /// </summary>
+            public ScreenPolyline[] ExtraLines;
         }
 
         public void UpdateGizmo(GizmoData d)
@@ -1178,6 +1196,19 @@ namespace Poly_Ling.Player
         private void OnGenerateGizmoOverlay(MeshGenerationContext ctx)
         {
             if (!_gizmoData.HasGizmo) return;
+
+            // 追加折れ線（カメラ向き表示など）は軸/リングの描画分岐より前に描く。
+            // リングのみの呼び出し元は下で早期 return するため、ここで処理しないと
+            // 描画されない。
+            if (_gizmoData.ExtraLines != null)
+            {
+                for (int i = 0; i < _gizmoData.ExtraLines.Length; i++)
+                {
+                    var pl = _gizmoData.ExtraLines[i];
+                    DrawGizmoPolyline(ctx, pl.Points, pl.Color, pl.Width > 0f ? pl.Width : 1.2f);
+                }
+            }
+
             var at = _gizmoData.HoveredAxis; var dt = _gizmoData.DraggingAxis;
 
             // ホバー軸かドラッグ軸なら強調する。

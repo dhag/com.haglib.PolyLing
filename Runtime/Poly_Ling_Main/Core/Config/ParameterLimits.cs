@@ -81,6 +81,15 @@ namespace Poly_Ling.Core
             // --- AdvancedSelect（高度な選択） ---
             ("AdvancedSelect.EdgeLoopThreshold.Min", 0.0f, "高度な選択: エッジループ閾値の下限"),
             ("AdvancedSelect.EdgeLoopThreshold.Max", 1.0f, "高度な選択: エッジループ閾値の上限"),
+            ("AdvancedSelect.UvNormalCount.Max",     64f,  "高度な選択: UV/法線数しきい値の上限（整数）"),
+            ("AdvancedSelect.AxisDistance.Min",      0.0f, "高度な選択: 軸平面距離しきい値の下限"),
+            ("AdvancedSelect.AxisDistance.Max",      1.0f, "高度な選択: 軸平面距離しきい値の上限"),
+
+            // --- SmoothEdges（辺を滑らかに） ---
+            ("SmoothEdges.Strength.Min",           0.0f,  "辺を滑らかに: 強度の下限"),
+            ("SmoothEdges.Strength.Max",           1.0f,  "辺を滑らかに: 強度の上限"),
+            ("SmoothEdges.Iterations.Min",         1f,    "辺を滑らかに: 反復回数の下限（整数）"),
+            ("SmoothEdges.Iterations.Max",         50f,   "辺を滑らかに: 反復回数の上限（整数）"),
         };
 
         // ================================================================

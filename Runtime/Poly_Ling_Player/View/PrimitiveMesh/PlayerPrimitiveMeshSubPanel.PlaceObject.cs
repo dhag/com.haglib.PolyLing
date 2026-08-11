@@ -1,5 +1,12 @@
 // PlayerPrimitiveMeshSubPanel.PlaceObject.cs
 // 図形生成サブパネル：オブジェクト接地（高度な図形）。
+//
+// 【配置元の子孫】チェックしたオブジェクトをルートとみなし、その子孫も配置元に加える。
+//   結合はせず、子孫を1つずつ別の配置元として並べる（GetSubtreeMeshList）。
+//   これで「rung ごとに巡回／抽選」が子孫に対して効く。
+//   面を持たないオブジェクト（グループ用の空オブジェクト等）は数に入れない。
+//
+// 【配置スケール】rung 長による等倍へさらに掛ける倍率。X/Y/Z 連動の1値。
 // 基準ベルトの取り込み・自動検索は PlayerPrimitiveMeshSubPanel.BeltProfile.cs の共通部を使う。
 // Runtime/Poly_Ling_Player/View/PrimitiveMesh/ に配置
 
@@ -42,6 +49,17 @@ namespace Poly_Ling.Player
             // ── 配置元オブジェクト（複数選択可） ──
             BuildMeshSourceMultiRow(c, _placeSrcPick, T("PlaceSource"));
 
+            // チェックしたオブジェクトをルートとみなし、その子孫も一緒に配置する。
+            c.Add(TR(T("PlaceIncludeChildren"),
+                () => _placeP.IncludeChildren,
+                v => { _placeP.IncludeChildren = v; D(); }));
+
+            var childHint = new Label(T("PlaceIncludeChildrenHint"));
+            childHint.style.fontSize     = 10;
+            childHint.style.whiteSpace   = WhiteSpace.Normal;
+            childHint.style.marginBottom = 2;
+            c.Add(childHint);
+
             // ── 割り当て方式 ──
             c.Add(SL(T("PlaceMode")));
             var modeChoices = new List<string>
@@ -67,6 +85,11 @@ namespace Poly_Ling.Player
             _placeSeedRow.Add(seedField);
             c.Add(_placeSeedRow);
             RefreshPlaceSeedVis();
+
+            // ── 配置スケール（X/Y/Z 連動。rung 長による等倍へさらに掛ける） ──
+            c.Add(SR(T("PlaceScale"), 0.1f, 10f,
+                () => _placeP.Scale <= 0f ? 1f : _placeP.Scale,
+                v  => { _placeP.Scale = v; D(); }));
 
             // ── 基準ベルト（手動取り込み） ──
             c.Add(PlayerIoUiKit.Divider());
@@ -139,8 +162,10 @@ namespace Poly_Ling.Player
         private MeshObject GeneratePlaceObjectMesh()
         {
             var mo   = new MeshObject(_placeP.MeshName);
-            var srcs = _placeSrcPick.CurrentList();
+            var srcs = _placeSrcPick.CurrentList(_placeP.IncludeChildren, GetSubtreeMeshList);
             if (srcs.Count == 0) return mo;
+
+            float userScale = _placeP.Scale <= 0f ? 1f : _placeP.Scale;
 
             // Combine は全 rung 共通の1メッシュ。連結は生成ごとに1回だけ行う。
             MeshObject combined = (_placeP.Mode == PlaceSourceMode.Combine)
@@ -182,7 +207,7 @@ namespace Poly_Ling.Player
 
                 var part = PlaceObjectMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
-                    perRung, _placeP.MeshName);
+                    perRung, _placeP.MeshName, userScale);
                 AppendMesh(mo, part);
             }
             return mo;

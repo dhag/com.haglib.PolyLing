@@ -15,6 +15,7 @@ using Poly_Ling.Context;
 using Poly_Ling.UI;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -338,7 +339,7 @@ namespace Poly_Ling.Player
             var undo = tc?.UndoController; if (undo == null) return;
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 undo.MeshListStack.Record(record, __dbgDesc);
             }
             undo.FocusMeshList();

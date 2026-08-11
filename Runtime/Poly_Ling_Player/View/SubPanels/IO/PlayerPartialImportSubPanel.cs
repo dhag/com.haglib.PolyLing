@@ -18,6 +18,7 @@ using Poly_Ling.Ops;
 using Poly_Ling.Core;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -267,7 +268,7 @@ namespace Poly_Ling.Player
                     var record = new MultiMeshVertexSnapshotRecord(beforeSnapshot, afterSnapshot, label);
                     {
                         string __dbgDesc = label;
-                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                        PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                         _undoController.MeshListStack.Record(record, __dbgDesc);
                     }
                 }
@@ -516,10 +517,10 @@ namespace Poly_Ling.Player
                 if (_mqoRecalcNormals)
                 {
                     parent.Add(EnumRow("法線モード",
-                        new[] { "FaceNormal", "Smooth", "Unity" },
+                        new[] { "FaceNormal", "Smooth", "Unity", "SmoothFacet" },
                         () => (int)_mqoNormalMode,
                         v  => { _mqoNormalMode = (NormalMode)v; RebuildSettings(); }));
-                    if (_mqoNormalMode == NormalMode.Smooth)
+                    if (_mqoNormalMode == NormalMode.Smooth || _mqoNormalMode == NormalMode.SmoothFacet)
                         parent.Add(SliderRow("スムージング角度", 0f, 180f, () => _mqoSmoothingAngle, v => _mqoSmoothingAngle = v));
                 }
             }

@@ -8,7 +8,7 @@
 //           それぞれ 2 三角に割った法線の平均（2 または 4 枚）
 //   X 軸  = normalize(Right[i] - Left[i]) を Z と直交化
 //   Y 軸  = Cross(Z, X)
-//   倍率  = rung 長（等倍）
+//   倍率  = rung 長 × userScale（userScale = 1 で従来どおりの等倍）
 //
 // 元オブジェクトの面構成・UV・マテリアルインデックスはそのまま複製する。
 
@@ -28,12 +28,12 @@ namespace Poly_Ling.PlaceObject
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            MeshObject source, string meshName)
+            MeshObject source, string meshName, float userScale = 1f)
         {
             int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
             var sources = new MeshObject[n];
             for (int i = 0; i < n; i++) sources[i] = source;
-            return Generate(left, right, beltClosed, flipWinding, sources, meshName);
+            return Generate(left, right, beltClosed, flipWinding, sources, meshName, userScale);
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace Poly_Ling.PlaceObject
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            IReadOnlyList<MeshObject> sourcesPerRung, string meshName)
+            IReadOnlyList<MeshObject> sourcesPerRung, string meshName, float userScale = 1f)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "PlaceObject" : meshName);
 
@@ -73,7 +73,7 @@ namespace Poly_Ling.PlaceObject
                 x = x.normalized;
                 Vector3 y = Vector3.Cross(zDir, x);
 
-                AppendInstance(mo, source, center, x, y, zDir, scale);
+                AppendInstance(mo, source, center, x, y, zDir, scale * userScale);
             }
 
             mo.RecalculateNormals();

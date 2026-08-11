@@ -15,6 +15,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -68,16 +69,6 @@ namespace Poly_Ling.Player
 
         private void OnKeyDown(KeyDownEvent evt)
         {
-            // ★★★ 一時診断ログ（切り分け用。確定後に削除する）★★★
-            // この行が出ない → KeyDownEvent がパネルへ配送されていない
-            //                  （ランタイムのキー配送 / フォーカスの問題）。
-            var focused = _root?.panel?.focusController?.focusedElement as VisualElement;
-            Debug.Log(
-                $"[Shortcut/diag] OnKeyDown key={evt.keyCode} " +
-                $"ctrl={(evt.ctrlKey || evt.commandKey)} shift={evt.shiftKey} alt={evt.altKey} " +
-                $"focused={(focused == null ? "null" : focused.GetType().Name)} " +
-                $"target={((evt.target as VisualElement)?.GetType().Name ?? "null")}");
-
             // 修飾のみ (キー本体なし) は無視。
             if (evt.keyCode == KeyCode.None) return;
 
@@ -88,7 +79,6 @@ namespace Poly_Ling.Player
                 if (_pendingFirst.HasValue)
                 {
                     _pendingFirst = null;
-                    Debug.Log("[Shortcut/diag] prefix canceled"); // ★一時
                 }
                 OnEscape?.Invoke();
                 return;
@@ -98,7 +88,6 @@ namespace Poly_Ling.Player
             if (IsTextEditing(_root))
             {
                 _pendingFirst = null;
-                Debug.Log("[Shortcut/diag] blocked: IsTextEditing"); // ★一時
                 return;
             }
 
@@ -120,14 +109,12 @@ namespace Poly_Ling.Player
                     return;
                 }
                 // 連続が無ければ待ちを捨て、今回キーを単発として再判定する。
-                Debug.Log($"[Shortcut/diag] no sequence for {first} {binding}, fall back to single"); // ★一時
             }
 
             // (2) 今回キーが連続の 1キー目なら保持して次キーを待つ。
             if (_map.IsPrefix(binding))
             {
                 _pendingFirst = binding;
-                Debug.Log($"[Shortcut/diag] prefix pending: {binding}"); // ★一時
                 evt.StopPropagation();
                 return;
             }
@@ -139,17 +126,16 @@ namespace Poly_Ling.Player
                 return;
             }
 
-            Debug.Log($"[Shortcut/diag] no map entry for {binding}"); // ★一時
         }
 
         private void InvokeCommand(string commandId, string label, KeyDownEvent evt)
         {
             if (!_commands.TryGetValue(commandId, out var action))
             {
-                Debug.Log($"[Shortcut/diag] no command registered: {commandId}"); // ★一時
+                Debug.LogWarning($"[Shortcut] コマンド未登録: {commandId}");
                 return;
             }
-            Debug.Log($"[Shortcut/diag] invoke {label} -> {commandId}"); // ★一時
+            PLDiag.Cmd($"Shortcut {label} -> {commandId}");
             action.Invoke();
             evt.StopPropagation();
         }

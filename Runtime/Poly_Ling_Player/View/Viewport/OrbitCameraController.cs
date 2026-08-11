@@ -7,6 +7,7 @@
 
 using System;
 using UnityEngine;
+using Poly_Ling.Core;
 
 namespace Poly_Ling.Player
 {
@@ -22,6 +23,15 @@ namespace Poly_Ling.Player
         public const float DefaultZoomMin          = 0.05f;
         public const float DefaultZoomMax          = 100f;
 
+        /// <summary>
+        /// 正投影時にカメラを Target から引く固定距離。
+        /// 正投影では投影 XY がカメラの前後位置に依存しないため、
+        /// 近クリップ面（nearClipPlane）による手前側の切り落としを避ける目的で
+        /// Distance とは切り離した固定値を使う。
+        /// OrthoViewController の camDist と同値。
+        /// </summary>
+        public const float OrthoCameraPullback     = 100f;
+
         // ================================================================
         // 公開パラメータ
         // ================================================================
@@ -36,13 +46,55 @@ namespace Poly_Ling.Player
         // カメラパラメータ
         // ================================================================
 
-        public float   RotX     { get; private set; } =  20f;
+        // カメラ調整ツール（CameraToolHandler / PlayerCameraSubPanel）から
+        // 数値・ギズモで直接書き込むため公開セッタを持つ。範囲制限は
+        // ドラッグ経路と同じ値をセッタ側に集約する。
+        private float   _rotX     =  20f;
+        private float   _rotY     = 180f;
+        private float   _rotZ     =   0f;
+        private float   _distance =   3f;
+
+        public float RotX
+        {
+            get => _rotX;
+            set => _rotX = Mathf.Clamp(value, -89f, 89f);
+        }
+
         // 既定は +Z 側からの視点。モデルは Unity 規約（正面 = +Z）で扱うため、
         // カメラを +Z 側に置いて -Z 方向を見ることで正面が映る。
-        public float   RotY     { get; private set; } = 180f;
-        public float   RotZ     { get; private set; } =   0f;   // カメラのロール（Z軸周り・視線軸回転）
-        public float   Distance { get; private set; } =   3f;
-        public Vector3 Target   { get; private set; } = Vector3.zero;
+        public float RotY
+        {
+            get => _rotY;
+            set => _rotY = NormalizeDeg(value);
+        }
+
+        /// <summary>カメラのロール（Z軸周り・視線軸回転）。</summary>
+        public float RotZ
+        {
+            get => _rotZ;
+            set => _rotZ = NormalizeDeg(value);
+        }
+
+        public float Distance
+        {
+            get => _distance;
+            set => _distance = Mathf.Clamp(value, ZoomMin, ZoomMax);
+        }
+
+        public Vector3 Target { get; set; } = Vector3.zero;
+
+        /// <summary>
+        /// 透視投影時の画角（度）。ApplyCameraTransform で Camera.fieldOfView に反映する。
+        /// 正投影時の orthographicSize もこの値から算出される。
+        /// </summary>
+        public float Fov = 60f;
+
+        /// <summary>角度を (-180, 180] へ正規化する。回転そのものは変化しない。</summary>
+        private static float NormalizeDeg(float deg)
+        {
+            deg -= 360f * Mathf.Floor((deg + 180f) / 360f);
+            return deg <= -180f ? deg + 360f : deg;
+        }
 
         /// <summary>
         /// true のとき透視カメラを正投影(orthographic)で描画する。
@@ -85,6 +137,16 @@ namespace Poly_Ling.Player
         private bool    _isPanning;
 
         // ================================================================
+        // 初期化
+        // ================================================================
+
+        public OrbitCameraController()
+        {
+            // 拡大限界は外部CSV（DisplaySettings.csv）から取得する。
+            ZoomMin = DisplaySettings.GetF(DisplaySettings.KeyCameraZoomDistanceMin);
+        }
+
+        // ================================================================
         // 公開 API
         // ================================================================
 
@@ -104,6 +166,16 @@ namespace Poly_Ling.Player
         {
             Target = target;
             OnCameraChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// 視線を反転する（Target を挟んで反対側へ回り込む）。
+        /// Distance / Target / RotZ は変えない。
+        /// </summary>
+        public void FlipView()
+        {
+            RotX = -RotX;
+            RotY = RotY + 180f;
         }
 
         // ================================================================
@@ -141,7 +213,11 @@ namespace Poly_Ling.Player
         {
             if (cam == null) return;
             Quaternion camRot = Quaternion.Euler(RotX, RotY, 0f);
-            cam.transform.position = Target + camRot * (Vector3.back * Distance);
+            // 正投影時はカメラを固定距離だけ引く。正投影では投影 XY が前後位置に
+            // 依存しないため見かけは変わらず、近クリップ面による手前側の
+            // 切り落とし（拡大時に形状が消える）だけが解消する。
+            float posDistance = Orthographic ? OrthoCameraPullback : Distance;
+            cam.transform.position = Target + camRot * (Vector3.back * posDistance);
             // ロール（RotZ）は視線軸周りの up ベクトル回転で反映する。
             //   Euler(RotX,RotY,RotZ) = Euler(RotX,RotY,0) * Rz(RotZ) なので、
             //   その up は「視線軸周りに RotZ 回した up」に一致する。
@@ -152,6 +228,7 @@ namespace Poly_Ling.Player
             // 正投影時は、現在の Distance と fov から見かけのスケールが
             // 一致する orthographicSize を算出する（Target 平面での半画面高）。
             cam.orthographic = Orthographic;
+            cam.fieldOfView  = Mathf.Clamp(Fov, 1f, 179f);
             if (Orthographic)
             {
                 float halfFovRad = cam.fieldOfView * 0.5f * Mathf.Deg2Rad;

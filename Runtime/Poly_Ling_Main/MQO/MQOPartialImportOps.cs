@@ -542,29 +542,45 @@ namespace Poly_Ling.MQO
         // 法線再計算
         // ================================================================
 
+        // 【不変条件】
+        //   Vertex.UVs.Count == Vertex.Normals.Count
+        //   Face.UVIndices[j] == Face.NormalIndices[j]
+        // 以前の実装は GetOrAddNormal で法線スロットだけを増やしていたため、
+        // この不変条件を壊していた（UVスロット数を超えた法線は表示に反映されない）。
+        // FaceNormal / Smooth は角度判定のロジックを変えずに、書き込み先を
+        // 「UVスロットと同じ添字」に変更してある。スロット数は増減しないので
+        // 展開頂点数（MQOVertexExpandHelper.CalculateExpandedVertexCount）も従来どおり。
         public void RecalculateNormals(MeshObject mo, NormalMode normalMode, float smoothingAngle)
         {
+            if (mo == null) return;
+
+            if (normalMode == NormalMode.SmoothFacet)
+            {
+                // 辺共有の隣接面のみを連結する新方式。スロットを割り当て直すため
+                // ハードエッジ分だけ展開頂点数が増える。
+                NormalSmoothingOps.ApplyFacetSmoothing(mo, smoothingAngle, false, mo.Name);
+                return;
+            }
+
             if (normalMode == NormalMode.FaceNormal)
             {
-                foreach (var vertex in mo.Vertices)
-                    vertex.Normals.Clear();
+                NormalSmoothingOps.NormalizeSlotCounts(mo);
 
                 foreach (var face in mo.Faces)
                 {
-                    if (face.VertexCount < 3) continue;
+                    if (face == null) continue;
+                    if (face.VertexCount < 3) { SyncNormalIndices(face); continue; }
+
                     var v0     = mo.Vertices[face.VertexIndices[0]].Position;
                     var v1     = mo.Vertices[face.VertexIndices[1]].Position;
                     var v2     = mo.Vertices[face.VertexIndices[2]].Position;
                     var normal = NormalHelper.CalculateFaceNormal(v0, v1, v2);
 
-                    face.NormalIndices.Clear();
                     for (int i = 0; i < face.VertexCount; i++)
-                    {
-                        int vIdx = face.VertexIndices[i];
-                        int nIdx = mo.Vertices[vIdx].GetOrAddNormal(normal, 0.0001f);
-                        face.NormalIndices.Add(nIdx);
-                    }
+                        WriteCornerNormal(mo, face, i, normal);
                 }
+
+                NormalSmoothingOps.ValidateSlotInvariant(mo, mo.Name);
             }
             else if (normalMode == NormalMode.Smooth)
             {
@@ -598,13 +614,14 @@ namespace Poly_Ling.MQO
                 }
             }
 
-            foreach (var vertex in mo.Vertices) vertex.Normals.Clear();
+            NormalSmoothingOps.NormalizeSlotCounts(mo);
 
             for (int fIdx = 0; fIdx < mo.Faces.Count; fIdx++)
             {
                 var face = mo.Faces[fIdx];
                 var fn   = faceNormals[fIdx];
-                face.NormalIndices.Clear();
+
+                if (face.VertexCount < 3) { SyncNormalIndices(face); continue; }
 
                 for (int i = 0; i < face.VertexCount; i++)
                 {
@@ -623,10 +640,42 @@ namespace Poly_Ling.MQO
                         if (smoothed == Vector3.zero) smoothed = fn;
                     }
 
-                    int nIdx = mo.Vertices[vIdx].GetOrAddNormal(smoothed, 0.001f);
-                    face.NormalIndices.Add(nIdx);
+                    WriteCornerNormal(mo, face, i, smoothed);
                 }
             }
+
+            NormalSmoothingOps.ValidateSlotInvariant(mo, mo.Name);
+        }
+
+        /// <summary>
+        /// 面コーナーの法線を、そのコーナーのUVスロットと同じ添字へ書き込む。
+        /// 法線スロットは増やさない（不変条件維持）。
+        /// </summary>
+        private static void WriteCornerNormal(MeshObject mo, Face face, int corner, Vector3 normal)
+        {
+            int slot = (corner < face.UVIndices.Count) ? face.UVIndices[corner] : 0;
+
+            int vIdx = face.VertexIndices[corner];
+            if (vIdx >= 0 && vIdx < mo.Vertices.Count)
+            {
+                var vertex = mo.Vertices[vIdx];
+                if (slot >= 0 && slot < vertex.Normals.Count)
+                    vertex.Normals[slot] = normal;
+            }
+
+            while (face.NormalIndices.Count <= corner) face.NormalIndices.Add(0);
+            face.NormalIndices[corner] = slot;
+        }
+
+        /// <summary>法線サブindexをUVサブindexへ揃える（補助線など計算対象外の面用）。</summary>
+        private static void SyncNormalIndices(Face face)
+        {
+            while (face.NormalIndices.Count < face.UVIndices.Count) face.NormalIndices.Add(0);
+            while (face.NormalIndices.Count > face.UVIndices.Count)
+                face.NormalIndices.RemoveAt(face.NormalIndices.Count - 1);
+
+            for (int i = 0; i < face.UVIndices.Count; i++)
+                face.NormalIndices[i] = face.UVIndices[i];
         }
 
         // ================================================================

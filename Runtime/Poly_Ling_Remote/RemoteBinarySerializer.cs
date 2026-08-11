@@ -25,33 +25,51 @@ namespace Poly_Ling.Remote
         // Serialize: MeshContext → byte[]
         // ================================================================
 
+        // ================================================================
+        // ヘッダ書き出し（v2 固定）
+        // ================================================================
+
         /// <summary>
-        /// MeshContextから指定フィールドをバイナリにシリアライズ
+        /// PLRM ヘッダ v2 を書き出す（28B）。
+        /// objectId==0 は「対象未指定」を意味し、受信側は従来動作へフォールバックする。
         /// </summary>
-        public static byte[] Serialize(MeshContext mc, MeshFieldFlags flags)
+        private static void WriteHeaderV2(
+            BinaryWriter w, BinaryMessageType type, MeshFieldFlags flags,
+            uint vertexCount, uint faceCount, int modelIndex, ulong objectId)
+        {
+            w.Write(RemoteMagic.Mesh);                 // 4B
+            w.Write(BinaryHeader.CurrentVersion);      // 1B Version = 2
+            w.Write((byte)type);                       // 1B MessageType
+            w.Write((uint)flags);                      // 4B FieldFlags
+            w.Write(vertexCount);                      // 4B VertexCount
+            w.Write(faceCount);                        // 4B FaceCount
+            w.Write((short)modelIndex);                // 2B ModelIndex（v1 の Reserved を転用）
+            w.Write(objectId);                         // 8B ObjectId
+        }
+
+        /// <summary>
+        /// MeshContextから指定フィールドをバイナリにシリアライズ。
+        /// MeshContext を渡す経路では ObjectId を自動で載せる（対象が確定する）。
+        /// </summary>
+        public static byte[] Serialize(MeshContext mc, MeshFieldFlags flags, int modelIndex = 0)
         {
             if (mc?.MeshObject == null) return null;
-            return Serialize(mc.MeshObject, flags);
+            return Serialize(mc.MeshObject, flags, modelIndex, mc.ObjectId);
         }
 
         /// <summary>
         /// MeshObjectから指定フィールドをバイナリにシリアライズ
         /// </summary>
-        public static byte[] Serialize(MeshObject mesh, MeshFieldFlags flags)
+        public static byte[] Serialize(
+            MeshObject mesh, MeshFieldFlags flags, int modelIndex = 0, ulong objectId = 0UL)
         {
             if (mesh == null) return null;
 
             using (var ms = new MemoryStream())
             using (var w = new BinaryWriter(ms))
             {
-                // ヘッダ
-                w.Write(RemoteMagic.Mesh);                    // 4B
-                w.Write((byte)1);                               // Version
-                w.Write((byte)BinaryMessageType.MeshData);      // MessageType
-                w.Write((uint)flags);                           // FieldFlags
-                w.Write((uint)mesh.VertexCount);                // VertexCount
-                w.Write((uint)mesh.FaceCount);                  // FaceCount
-                w.Write((ushort)0);                             // Reserved
+                WriteHeaderV2(w, BinaryMessageType.MeshData, flags,
+                    (uint)mesh.VertexCount, (uint)mesh.FaceCount, modelIndex, objectId);
 
                 // 頂点系フィールド
                 if (flags.HasFlag(MeshFieldFlags.Positions))
@@ -96,27 +114,38 @@ namespace Poly_Ling.Remote
         }
 
         /// <summary>
-        /// 位置のみの軽量シリアライズ（PositionsOnlyメッセージ）
+        /// 位置のみの軽量シリアライズ（PositionsOnlyメッセージ）。
+        ///
+        /// ⚠ objectId を省略すると対象未指定（0）になり、受信側は
+        ///   「先頭の描画メッシュ」へ適用するフォールバック動作になる。
+        ///   協働編集では必ず MeshContext を渡す方のオーバーロードを使うこと。
         /// </summary>
-        public static byte[] SerializePositionsOnly(MeshObject mesh)
+        public static byte[] SerializePositionsOnly(
+            MeshObject mesh, int modelIndex = 0, ulong objectId = 0UL)
         {
             if (mesh == null) return null;
 
             using (var ms = new MemoryStream())
             using (var w = new BinaryWriter(ms))
             {
-                w.Write(RemoteMagic.Mesh);
-                w.Write((byte)1);
-                w.Write((byte)BinaryMessageType.PositionsOnly);
-                w.Write((uint)MeshFieldFlags.Positions);
-                w.Write((uint)mesh.VertexCount);
-                w.Write((uint)0); // FaceCount = 0
-                w.Write((ushort)0);
+                WriteHeaderV2(w, BinaryMessageType.PositionsOnly, MeshFieldFlags.Positions,
+                    (uint)mesh.VertexCount, 0u, modelIndex, objectId);
 
                 WritePositions(w, mesh);
 
                 return ms.ToArray();
             }
+        }
+
+        /// <summary>
+        /// 位置のみの軽量シリアライズ（対象付き）。
+        /// MeshContext.ObjectId をヘッダに載せるので、受信側が対象を確定できる。
+        /// 協働編集ではこちらを使う。
+        /// </summary>
+        public static byte[] SerializePositionsOnly(MeshContext mc, int modelIndex = 0)
+        {
+            if (mc?.MeshObject == null) return null;
+            return SerializePositionsOnly(mc.MeshObject, modelIndex, mc.ObjectId);
         }
 
         /// <summary>
@@ -127,12 +156,11 @@ namespace Poly_Ling.Remote
             using (var ms = new MemoryStream())
             using (var w = new BinaryWriter(ms))
             {
-                w.Write(RemoteMagic.Mesh);
-                w.Write((byte)1);
-                w.Write((byte)BinaryMessageType.RawFile);
-                w.Write((uint)0); // FieldFlags unused
-                w.Write((uint)fileData.Length); // VertexCountフィールドをファイルサイズに流用
-                w.Write((uint)0);
+                // RawFile も v2 ヘッダに揃える（ヘッダ長判定を一本化するため）。
+                // ObjectId は使わないので 0。
+                WriteHeaderV2(w, BinaryMessageType.RawFile, MeshFieldFlags.None,
+                    (uint)fileData.Length,   // VertexCountフィールドをファイルサイズに流用
+                    0u, 0, 0UL);
                 w.Write((ushort)0);
 
                 // 拡張子（固定8バイト、パディング）
@@ -180,7 +208,10 @@ namespace Poly_Ling.Remote
                 var flags = (MeshFieldFlags)r.ReadUInt32();
                 uint vertexCount = r.ReadUInt32();
                 uint faceCount = r.ReadUInt32();
-                ushort reserved = r.ReadUInt16();
+
+                // v1: Reserved 2B / v2: ModelIndex 2B + ObjectId 8B
+                r.ReadUInt16();                       // ModelIndex（本文復元では未使用）
+                if (version >= 2) r.ReadUInt64();     // ObjectId（対象解決は呼び出し側の責務）
 
                 // RawFileの場合はデシリアライズ対象外
                 if (msgType == BinaryMessageType.RawFile)
@@ -257,14 +288,15 @@ namespace Poly_Ling.Remote
                 uint magic = r.ReadUInt32();
                 if (magic != RemoteMagic.Mesh) return (null, "");
 
-                r.ReadByte(); // version
+                byte version = r.ReadByte();
                 var msgType = (BinaryMessageType)r.ReadByte();
                 if (msgType != BinaryMessageType.RawFile) return (null, "");
 
                 r.ReadUInt32(); // flags
                 uint fileSize = r.ReadUInt32();
                 r.ReadUInt32(); // faceCount
-                r.ReadUInt16(); // reserved
+                r.ReadUInt16(); // v1:Reserved / v2:ModelIndex
+                if (version >= 2) r.ReadUInt64(); // v2: ObjectId
 
                 byte[] extBytes = r.ReadBytes(8);
                 string ext = System.Text.Encoding.ASCII.GetString(extBytes).TrimEnd('\0');
@@ -287,7 +319,7 @@ namespace Poly_Ling.Remote
                 uint magic = r.ReadUInt32();
                 if (magic != RemoteMagic.Mesh) return null;
 
-                return new BinaryHeader
+                var h = new BinaryHeader
                 {
                     Version = r.ReadByte(),
                     MessageType = (BinaryMessageType)r.ReadByte(),
@@ -295,6 +327,21 @@ namespace Poly_Ling.Remote
                     VertexCount = r.ReadUInt32(),
                     FaceCount = r.ReadUInt32(),
                 };
+
+                // v1 は Reserved。v2 は ModelIndex + ObjectId。
+                if (h.Version >= 2)
+                {
+                    if (data.Length < BinaryHeader.SizeV2) return null;
+                    h.ModelIndex = r.ReadInt16();
+                    h.ObjectId   = r.ReadUInt64();
+                }
+                else
+                {
+                    h.ModelIndex = 0;
+                    h.ObjectId   = 0UL;
+                }
+
+                return h;
             }
         }
 

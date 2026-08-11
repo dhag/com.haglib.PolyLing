@@ -35,13 +35,32 @@ namespace Poly_Ling.Player
         public const string CmdToolSculpt     = "tool.sculpt";
         public const string CmdToolAdvSelect  = "tool.advancedSelect";
 
+        // 回転 / 拡大縮小。ShowRotatePanel / ShowScalePanel と同じ処理
+        // (ShowCategory1Panel + ハンドラ Activate) を割り当てる。
+        public const string CmdToolRotate     = "tool.rotate";
+        public const string CmdToolScale      = "tool.scale";
+
         // 一時サブツール (ショートカットで進入し、1 回の操作確定で直前のツールへ戻る)。
         public const string CmdSubToolBoxSelect   = "subtool.boxSelect";
         public const string CmdSubToolLassoSelect = "subtool.lassoSelect";
 
         // 選択削除サブツール。マウス操作を伴わない即時実行なので、矩形/投げ縄と違い
         // InteractionMode の退避・復元は行わない (ViewerCore 側のコメント参照)。
+        // 既定割当は Delete キー (D は面削除モードに使う)。
         public const string CmdSubToolDelete      = "subtool.delete";
+
+        // 面削除モード。進入後は面のクリックのみを受け付け、クリックされた面を即削除する。
+        // 矩形/投げ縄選択と面以外のホバーは無効。Escape または他ツール選択で抜ける。
+        public const string CmdToolDeleteFace     = "tool.deleteFace";
+
+        // 選択頂点の結合。どちらもモードを変えない即時実行の単発コマンド。
+        //   Centroid  … 距離を見ず、選択頂点を 1 点（重心）へ結合
+        //   Threshold … 選択頂点のうち、しきい値以下の距離にあるものだけを結合
+        public const string CmdMergeVerticesCentroid  = "edit.mergeVerticesCentroid";
+        public const string CmdMergeVerticesThreshold = "edit.mergeVerticesThreshold";
+
+        // 右ペインのオブジェクトリストを開く。
+        public const string CmdPanelMeshList      = "panel.meshList";
 
         // 図形生成 (サブメニューを開くだけ)。2キー連続で使う。
         public const string CmdShapeCube       = "shape.cube";
@@ -53,6 +72,10 @@ namespace Poly_Ling.Player
         public const string CmdShapeRevolution = "shape.revolution";
         public const string CmdShapeProfile2D  = "shape.profile2d";
         public const string CmdShapeNohMask    = "shape.nohmask";
+        public const string CmdShapeFrill       = "shape.frill";
+        public const string CmdShapePipe        = "shape.pipe";
+        public const string CmdShapePlaceObject = "shape.placeObject";
+        public const string CmdShapeObjectArray = "shape.objectArray";
 
         // 単発割当: キー組 → コマンドID
         private readonly Dictionary<ShortcutBinding, string> _map = new();
@@ -89,9 +112,15 @@ namespace Poly_Ling.Player
             m.Set(KeyCode.B, false, false, false, CmdToolObjectMove); // B            : オブジェクト移動ツール
             m.Set(KeyCode.S, false, false, false, CmdToolSculpt);     // S            : スカルプトツール
             m.Set(KeyCode.A, false, false, false, CmdToolAdvSelect);  // A            : 高度な選択ツール
+            m.Set(KeyCode.C, false, false, false, CmdToolRotate);     // C            : 回転ツール
+            m.Set(KeyCode.Q, false, false, false, CmdToolScale);      // Q            : 拡大縮小ツール
             m.Set(KeyCode.R, false, false, false, CmdSubToolBoxSelect);   // R : 矩形選択サブツール (一時)
             m.Set(KeyCode.G, false, false, false, CmdSubToolLassoSelect); // G : 投げ縄選択サブツール (一時)
-            m.Set(KeyCode.D, false, false, false, CmdSubToolDelete);      // D : 選択削除サブツール
+            m.Set(KeyCode.Delete, false, false, false, CmdSubToolDelete); // Delete : 選択削除サブツール
+            m.Set(KeyCode.D, false, false, false, CmdToolDeleteFace);     // D      : 面削除モード
+            m.Set(KeyCode.J, true,  false, false, CmdMergeVerticesCentroid);  // Ctrl+J       : 選択頂点を重心へ結合
+            m.Set(KeyCode.J, true,  true,  false, CmdMergeVerticesThreshold); // Ctrl+Shift+J : しきい値で結合
+            m.Set(KeyCode.O, true,  false, false, CmdPanelMeshList);          // Ctrl+O       : オブジェクトリスト
 
             // 図形生成: プレフィックス P を押してから形状キー (サブメニューを開くだけ)。
             //   例) P → C = 立方体。P の後の 2キー目は上の単発割当とは独立
@@ -109,6 +138,15 @@ namespace Poly_Ling.Player
             m.SetSequence(p, NoMod(KeyCode.R), CmdShapeRevolution); // P R : Revolution
             m.SetSequence(p, NoMod(KeyCode.F), CmdShapeProfile2D);  // P F : Profile2D
             m.SetSequence(p, NoMod(KeyCode.N), CmdShapeNohMask);    // P N : NohMask
+            // 2キー目は「英名の先頭から、P 配下で未使用の最初の文字」で決めている。
+            //   Frill       : F(Profile2D) / R(Revolution) 使用済 → I
+            //   Pipe        : P(Pyramid) / I(Frill) 使用済       → E
+            //   PlaceObject : P,L,A,C,E 使用済                   → O
+            //   ObjectArray : O(PlaceObject) 使用済              → B
+            m.SetSequence(p, NoMod(KeyCode.I), CmdShapeFrill);       // P I : Frill
+            m.SetSequence(p, NoMod(KeyCode.E), CmdShapePipe);        // P E : Pipe
+            m.SetSequence(p, NoMod(KeyCode.O), CmdShapePlaceObject); // P O : PlaceObject (接地)
+            m.SetSequence(p, NoMod(KeyCode.B), CmdShapeObjectArray); // P B : ObjectArray (歪み複製)
             return m;
         }
 

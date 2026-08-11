@@ -20,6 +20,15 @@ namespace Poly_Ling.ListClient
             _panel = new MeshListSubPanel();
             _panel.Build(host);
             _panel.SetContext(ctx);
+            // 協働編集: 担当者の取得／解放は「自分の名前」が要る。
+            // register で送るものと同一の実効名を渡す（不一致だと自分の担当を解放できない）。
+            _panel.LocalUserName = UserName;
+        }
+
+        protected override void OnViewPushed()
+        {
+            // 再接続や名前変更に追随させる
+            if (_panel != null) _panel.LocalUserName = UserName;
         }
 
         protected override void OnTeardown()

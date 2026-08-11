@@ -28,8 +28,21 @@ namespace Poly_Ling.Player
         /// <summary>選択中の描画オブジェクトの選択面インデックスを返す（なければ null）。基準ベルトの取り込みで使用。</summary>
         public Func<IReadOnlyCollection<int>> GetSelectedFaceIndices;
 
-        /// <summary>モデル内の描画オブジェクト一覧（表示名, MeshObject）を返す。自動検索と配置元の選択に使用。</summary>
+        /// <summary>モデル内の描画オブジェクト一覧（表示名, MeshObject）を返す。自動検索の対象選択に使用。</summary>
         public Func<List<(string Label, MeshObject Mesh)>> GetDrawableMeshList;
+
+        /// <summary>
+        /// モデル内の描画オブジェクト一覧（表示名, MasterIndex, MeshObject）を返す。
+        /// 接地の配置元で使う。子孫の解決に MasterIndex が要るため、上とは別に持つ。
+        /// </summary>
+        public Func<List<(string Label, int MasterIndex, MeshObject Mesh)>> GetDrawableMeshEntryList;
+
+        /// <summary>
+        /// 指定した MasterIndex のオブジェクトと、その子孫を (MasterIndex, MeshObject) で列挙する。
+        /// リスト順。面を持たないもの（グループ用の空オブジェクト等）は含めない。
+        /// 各メッシュは自分のローカル座標のまま返す（一覧で直接チェックしたときと同じ扱い）。
+        /// </summary>
+        public Func<int, List<(int MasterIndex, MeshObject Mesh)>> GetSubtreeMeshList;
 
         // ================================================================
         // データ
@@ -45,6 +58,12 @@ namespace Poly_Ling.Player
             public List<Vector3> Right;
             public bool          Closed;
             public bool          FlipWinding;
+
+            /// <summary>
+            /// フリルの高さ倍率（断面プロファイル Y ＝ 法線方向成分に掛ける）。既定 1。
+            /// フリル以外（パイプ・接地）では読み書きするだけで使わない。
+            /// </summary>
+            public float HeightScale = 1f;
 
             /// <summary>自動検索で得た先端（rung には含めない）。手動取り込み時は null。</summary>
             public Vector3? StartPoint;
@@ -335,6 +354,7 @@ namespace Poly_Ling.Player
                     Right       = new List<Vector3>(b.Right),
                     Closed      = b.Closed,
                     FlipWinding = b.FlipWinding,
+                    HeightScale = b.HeightScale,
                     StartPoint  = b.StartPoint,
                     EndPoint    = b.EndPoint,
                 });
@@ -357,6 +377,7 @@ namespace Poly_Ling.Player
                     Right       = new List<Vector3>(e.Right),
                     Closed      = e.Closed,
                     FlipWinding = e.FlipWinding,
+                    HeightScale = e.HeightScale,
                     StartPoint  = e.StartPoint,
                     EndPoint    = e.EndPoint,
                 });
@@ -1519,6 +1540,7 @@ namespace Poly_Ling.Player
                 Right       = right,
                 Closed      = belt.Closed,
                 FlipWinding = flip,
+                HeightScale = belt.HeightScale,
                 StartPoint  = start,
                 EndPoint    = end,
             };
@@ -1565,6 +1587,7 @@ namespace Poly_Ling.Player
                 Right       = right,
                 Closed      = false,
                 FlipWinding = belt.FlipWinding,
+                HeightScale = belt.HeightScale,
                 StartPoint  = belt.StartPoint,
                 EndPoint    = belt.EndPoint,
             };
@@ -1717,18 +1740,60 @@ namespace Poly_Ling.Player
         /// <summary>描画オブジェクトの複数選択状態。選択はラベルで保持し、一覧再取得後も復元する。</summary>
         private sealed class MeshSourceMultiPick
         {
-            public List<(string Label, MeshObject Mesh)> Candidates = new List<(string, MeshObject)>();
+            public List<(string Label, int MasterIndex, MeshObject Mesh)> Candidates
+                = new List<(string, int, MeshObject)>();
             public readonly HashSet<string> SelectedLabels = new HashSet<string>();
             public VisualElement ListContainer;
 
-            /// <summary>候補の並び順で、選択されているメッシュを返す。</summary>
+            /// <summary>
+            /// 候補の並び順で、選択されているメッシュを返す。
+            /// 面を持たないもの（グループ用の空オブジェクト等）は数に入れない。
+            /// </summary>
             public List<MeshObject> CurrentList()
+                => CurrentList(false, null);
+
+            /// <summary>
+            /// 候補の並び順で、選択されているメッシュを返す。
+            /// includeChildren が true のときは、チェックした項目を「本体＋子孫」へ展開し、
+            /// それぞれを別々の配置元として並べる（結合しない）。これで rung ごとの
+            /// 巡回・抽選が子孫に対して効く。
+            /// 展開結果は MasterIndex で重複排除するため、ルートと子の両方をチェックしても
+            /// 二重には入らない。面を持たないものは数に入れない。
+            /// </summary>
+            public List<MeshObject> CurrentList(
+                bool includeChildren, Func<int, List<(int MasterIndex, MeshObject Mesh)>> expand)
             {
-                var list = new List<MeshObject>();
+                var list  = new List<MeshObject>();
+                var added = new HashSet<int>();
+
                 foreach (var e in Candidates)
-                    if (e.Mesh != null && SelectedLabels.Contains(e.Label)) list.Add(e.Mesh);
+                {
+                    if (!SelectedLabels.Contains(e.Label)) continue;
+
+                    if (includeChildren && expand != null)
+                    {
+                        var sub = expand(e.MasterIndex);
+                        if (sub != null)
+                        {
+                            foreach (var s in sub)
+                            {
+                                if (!HasFace(s.Mesh)) continue;
+                                if (!added.Add(s.MasterIndex)) continue;
+                                list.Add(s.Mesh);
+                            }
+                            continue;
+                        }
+                    }
+
+                    if (!HasFace(e.Mesh)) continue;
+                    if (!added.Add(e.MasterIndex)) continue;
+                    list.Add(e.Mesh);
+                }
                 return list;
             }
+
+            /// <summary>面を1枚以上持つか。頂点だけのオブジェクトは配置しても何も出ないため除く。</summary>
+            private static bool HasFace(MeshObject mo) => mo != null && mo.FaceCount > 0;
         }
 
         /// <summary>描画オブジェクトのチェックボックス一覧と再取得ボタンを組み立てる。</summary>
@@ -1752,7 +1817,8 @@ namespace Poly_Ling.Player
 
         private void RefreshMeshSourceMultiPick(MeshSourceMultiPick pick)
         {
-            pick.Candidates = GetDrawableMeshList?.Invoke() ?? new List<(string, MeshObject)>();
+            pick.Candidates = GetDrawableMeshEntryList?.Invoke()
+                              ?? new List<(string, int, MeshObject)>();
 
             // 一覧から消えたラベルの選択は捨てる。
             var alive = new HashSet<string>();

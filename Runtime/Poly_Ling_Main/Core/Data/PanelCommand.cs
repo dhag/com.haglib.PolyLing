@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.Data
 {
@@ -67,6 +68,84 @@ namespace Poly_Ling.Data
     }
 
     /// <summary>
+    /// 複数オブジェクトのロック状態を一括設定する。
+    /// オブジェクトリストの行内ロックボタンを、選択が複数あるときに使う。
+    /// </summary>
+    public class SetBatchLockCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public bool  Locked        { get; }
+        public SetBatchLockCommand(int modelIndex, int[] masterIndices, bool locked)
+            : base(modelIndex) { MasterIndices = masterIndices; Locked = locked; }
+    }
+
+    /// <summary>
+    /// ミラーの有無そのものを切り替える。属性を書くだけの
+    /// SetBatchMirrorTypeCommand と違い、ミラー側 MeshContext を作る／始末する。
+    ///
+    /// 【解消（Enabled = false）】
+    ///   MirrorGeometryDerived = true （MQO 系）… ミラー側を破棄する。
+    ///       実体側から再生成できるため、残しても情報が増えない。
+    ///   同 false （PMX 系）… ミラー側を独立メッシュにする（Type = Mesh）。
+    ///       ボーンウェイトなど実体側から復元できない情報を持つため破棄しない。
+    ///       実体側の DetachedMirrorObjectId に相手を控える。
+    ///
+    /// 【有効化（Enabled = true）】
+    ///   DetachedMirrorObjectId が有効 … その相手を引き当てて再ペアする。
+    ///   無い場合                      … 実体側から生成ミラーを作る。
+    /// </summary>
+    public class SetMirrorEnabledCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public bool  Enabled       { get; }
+        public SetMirrorEnabledCommand(int modelIndex, int[] masterIndices, bool enabled)
+            : base(modelIndex) { MasterIndices = masterIndices; Enabled = enabled; }
+    }
+
+    /// <summary>
+    /// 複数オブジェクトのミラータイプを一括設定する。
+    /// 値は CycleMirrorTypeCommand と同じ 0..3 の範囲。
+    /// </summary>
+    public class SetBatchMirrorTypeCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public int   MirrorType    { get; }
+        public SetBatchMirrorTypeCommand(int modelIndex, int[] masterIndices, int mirrorType)
+            : base(modelIndex) { MasterIndices = masterIndices; MirrorType = mirrorType; }
+    }
+
+    /// <summary>
+    /// オブジェクトの編集者（担当者）を設定・解放するコマンド。
+    ///
+    /// EditorName == ""     : 解放（担当者なしに戻す）
+    /// EditorName == 自分の名前: 取得（claim）
+    /// Force == true        : 他人が担当中でも上書きする（ホスト権限）
+    ///
+    /// ObjectIds は MasterIndices と同じ並び・同じ長さの安定ID。
+    /// リモート経由の場合、サーバ側で「その位置に本当にそのIDのオブジェクトが
+    /// あるか」を照合してから適用する（リスト構造変更によるズレの検出）。
+    /// ローカル発行時は null / 空でよい（照合をスキップする）。
+    /// </summary>
+    public class SetObjectEditorCommand : PanelCommand
+    {
+        public int[]   MasterIndices { get; }
+        public ulong[] ObjectIds     { get; }
+        public string  EditorName    { get; }
+        public bool    Force         { get; }
+
+        public SetObjectEditorCommand(
+            int modelIndex, int[] masterIndices, string editorName,
+            ulong[] objectIds = null, bool force = false)
+            : base(modelIndex)
+        {
+            MasterIndices = masterIndices ?? System.Array.Empty<int>();
+            ObjectIds     = objectIds;
+            EditorName    = editorName ?? "";
+            Force         = force;
+        }
+    }
+
+    /// <summary>
     /// IgnorePoseInArmature フラグを設定するコマンド。
     /// true の場合、BoneTransform.Rotation を 0 にリセットする。
     /// </summary>
@@ -81,14 +160,64 @@ namespace Poly_Ling.Data
     /// <summary>
     /// オブジェクト原点（BoneTransform.Position）を名前指定で一括設定するコマンド。
     /// 「原点だけ移動 = true / 子を一緒に移動 = false」と同じ挙動で適用する。
+    ///
+    /// Rotations は任意。null なら回転を触らない。要素が null の行も同じく触らない
+    /// （CSV に回転列が無い行を「指定なし」として扱うため）。
     /// </summary>
     public class ApplyObjectOriginsCommand : PanelCommand
     {
         public string[]  Names     { get; }
         public Vector3[] Positions { get; }
 
-        public ApplyObjectOriginsCommand(int modelIndex, string[] names, Vector3[] positions)
-            : base(modelIndex) { Names = names; Positions = positions; }
+        /// <summary>行ごとの回転(°)。null = 回転を適用しない。</summary>
+        public Vector3?[] Rotations { get; }
+
+        public ApplyObjectOriginsCommand(
+            int modelIndex, string[] names, Vector3[] positions, Vector3?[] rotations = null)
+            : base(modelIndex) { Names = names; Positions = positions; Rotations = rotations; }
+    }
+
+    /// <summary>
+    /// メッシュオブジェクトの姿勢を、表示用のくさびオブジェクト列としてモデル内に生成する。
+    /// くさびは新規の空オブジェクト（コンテナ）の配下に、メッシュの階層を保って並ぶ。
+    /// </summary>
+    public class GenerateObjectPoseWedgesCommand : PanelCommand
+    {
+        /// <summary>くさびの全長（オブジェクトの拡大率平均を掛ける前の基準値）。</summary>
+        public float WedgeLength { get; }
+
+        /// <summary>コンテナの名前。空なら既定名。</summary>
+        public string ContainerName { get; }
+
+        public GenerateObjectPoseWedgesCommand(int modelIndex, float wedgeLength, string containerName)
+            : base(modelIndex) { WedgeLength = wedgeLength; ContainerName = containerName; }
+    }
+
+    /// <summary>
+    /// くさびオブジェクト列を読み、名前一致でメッシュオブジェクトの姿勢へ適用する。
+    /// 適用は「原点だけ移動」と同じく、自頂点を再局所化して見た目を保つ。
+    /// </summary>
+    public class ApplyObjectPoseWedgesCommand : PanelCommand
+    {
+        /// <summary>コンテナの MeshContextList 索引。-1 なら名前で自動検出。</summary>
+        public int ContainerMasterIndex { get; }
+
+        /// <summary>自動検出に使うコンテナ名。空なら既定名。</summary>
+        public string ContainerName { get; }
+
+        public ApplyObjectPoseWedgesCommand(int modelIndex, int containerMasterIndex, string containerName)
+            : base(modelIndex) { ContainerMasterIndex = containerMasterIndex; ContainerName = containerName; }
+    }
+
+    /// <summary>
+    /// PreserveNormals フラグ（頂点法線を自動再計算しない）を設定するコマンド。
+    /// </summary>
+    public class SetPreserveNormalsCommand : PanelCommand
+    {
+        public int[] MasterIndices { get; }
+        public bool  Value         { get; }
+        public SetPreserveNormalsCommand(int modelIndex, int[] masterIndices, bool value)
+            : base(modelIndex) { MasterIndices = masterIndices; Value = value; }
     }
 
     /// <summary>ミラー分岐ルートのフラグを設定するコマンド。</summary>
@@ -113,6 +242,22 @@ namespace Poly_Ling.Data
         public string NewName { get; }
         public RenameMeshCommand(int modelIndex, int masterIndex, string newName)
             : base(modelIndex) { MasterIndex = masterIndex; NewName = newName; }
+    }
+
+    /// <summary>
+    /// 複数オブジェクトの名前を一括変更する（名称一括変更 CSV 用）。
+    ///
+    /// MasterIndices と NewNames は同じ並び・同じ長さ。
+    /// 名前の重複は受け側（PlayerCommandDispatcher）が
+    /// MeshRenameCsvHelper.ResolveUniqueNames で自動回避するため、
+    /// 送信側は CSV に書かれた希望名をそのまま渡してよい。
+    /// </summary>
+    public class RenameMeshesCommand : PanelCommand
+    {
+        public int[]    MasterIndices { get; }
+        public string[] NewNames      { get; }
+        public RenameMeshesCommand(int modelIndex, int[] masterIndices, string[] newNames)
+            : base(modelIndex) { MasterIndices = masterIndices; NewNames = newNames; }
     }
 
     /// <summary>
@@ -364,6 +509,217 @@ namespace Poly_Ling.Data
             : base(modelIndex) { FolderPath = null; ByObjectName = false; }
         public ImportPartsSetCsvCommand(int modelIndex, string folderPath, bool byObjectName)
             : base(modelIndex) { FolderPath = folderPath; ByObjectName = byObjectName; }
+    }
+
+    // ================================================================
+    // 法線再計算 除外辞書（実体は MeshObject.NormalRecalcExcludeList）
+    // ================================================================
+
+    /// <summary>現在の選択を法線再計算の除外セットとして保存</summary>
+    public class SaveNormalExcludeSetCommand : PanelCommand
+    {
+        public string SetName { get; }
+        public SaveNormalExcludeSetCommand(int modelIndex, string setName)
+            : base(modelIndex) { SetName = setName; }
+    }
+
+    /// <summary>除外セットを現在の選択に適用（置き換え）</summary>
+    public class LoadNormalExcludeSetCommand : PanelCommand
+    {
+        public int SetIndex { get; }
+        public LoadNormalExcludeSetCommand(int modelIndex, int setIndex)
+            : base(modelIndex) { SetIndex = setIndex; }
+    }
+
+    /// <summary>除外セットを削除</summary>
+    public class DeleteNormalExcludeSetCommand : PanelCommand
+    {
+        public int SetIndex { get; }
+        public DeleteNormalExcludeSetCommand(int modelIndex, int setIndex)
+            : base(modelIndex) { SetIndex = setIndex; }
+    }
+
+    /// <summary>除外セットの名前を変更</summary>
+    public class RenameNormalExcludeSetCommand : PanelCommand
+    {
+        public int SetIndex { get; }
+        public string NewName { get; }
+        public RenameNormalExcludeSetCommand(int modelIndex, int setIndex, string newName)
+            : base(modelIndex) { SetIndex = setIndex; NewName = newName; }
+    }
+
+    // ================================================================
+    // 面の表示・非表示
+    // ================================================================
+
+    /// <summary>
+    /// 面の非表示フラグ（Face.IsHidden）を操作する。
+    /// 対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。
+    ///
+    /// 非表示は編集補助であり、面データは残る（エクスポートにも出る）。
+    /// メッシュ丸ごとの非表示は ToggleVisibilityCommand / SetBatchVisibilityCommand を使うこと。
+    /// </summary>
+    public class SetFaceHiddenCommand : PanelCommand
+    {
+        public enum Mode
+        {
+            /// <summary>選択面を隠す（面選択が無い場合は何もしない）</summary>
+            HideSelected,
+            /// <summary>選択面以外を隠す（面選択が無い場合は何もしない）</summary>
+            HideUnselected,
+            /// <summary>すべての面を表示に戻す</summary>
+            ShowAll,
+            /// <summary>表示・非表示を反転する</summary>
+            InvertHidden,
+        }
+
+        public Mode Operation { get; }
+
+        public SetFaceHiddenCommand(int modelIndex, Mode operation)
+            : base(modelIndex) { Operation = operation; }
+    }
+
+    // ================================================================
+    // 法線編集
+    // ================================================================
+
+    /// <summary>
+    /// 選択範囲の法線を編集する。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。
+    ///
+    /// 各メッシュ内の対象範囲は次のルールで決まる（NormalEditOps.CollectTargetCorners）。
+    ///   面選択がある     → その面のコーナーのみ
+    ///   頂点選択のみある → その頂点が参照する全スロット
+    ///   選択が無い       → メッシュ全体
+    /// ただし RecalcByAngle だけはメッシュ全体が対象（スロットを作り直すため）。
+    /// </summary>
+    public class NormalEditCommand : PanelCommand
+    {
+        public enum Op
+        {
+            /// <summary>スムージング角で法線を作り直す（メッシュ全体・スロット再構築）</summary>
+            RecalcByAngle,
+            /// <summary>面法線にする（フラット化）</summary>
+            SetFromFaces,
+            /// <summary>統合（頂点上のスロット法線を同一値にする）</summary>
+            Unify,
+            /// <summary>分離（面ごとに別スロットへ分け、面法線を入れる）</summary>
+            Break,
+            /// <summary>対象法線を1方向（全体の平均）に揃える</summary>
+            AverageAll,
+            /// <summary>隣接頂点の法線と補間して平滑化</summary>
+            Smooth,
+            /// <summary>球状化（中心から外向き）</summary>
+            Sphereize,
+            /// <summary>ターゲットへ向ける</summary>
+            PointToTarget,
+            /// <summary>指定軸方向へ向ける</summary>
+            AlignToAxis,
+            /// <summary>指定軸の成分をゼロにする</summary>
+            FlattenOnAxis,
+            /// <summary>反転</summary>
+            Flip,
+        }
+
+        public Op    Operation  { get; }
+        /// <summary>RecalcByAngle のスムージング角（度）</summary>
+        public float AngleDeg   { get; }
+        /// <summary>Smooth の強度（0-1）</summary>
+        public float Strength   { get; }
+        /// <summary>AlignToAxis / FlattenOnAxis の軸（0=X, 1=Y, 2=Z）</summary>
+        public int   Axis       { get; }
+        /// <summary>AlignToAxis の符号（true で負方向）</summary>
+        public bool  Negative   { get; }
+        /// <summary>Sphereize / PointToTarget の座標</summary>
+        public Vector3 Target   { get; }
+        /// <summary>Sphereize の中心に選択の重心を使うか</summary>
+        public bool  UseSelectionCenter { get; }
+        /// <summary>PointToTarget で 1 本のベクトルに揃えるか</summary>
+        public bool  AlignVectors { get; }
+        /// <summary>平均時の重み付け方式</summary>
+        public NormalWeightMode WeightMode { get; }
+
+        public NormalEditCommand(
+            int modelIndex,
+            Op operation,
+            float angleDeg = 59.5f,
+            float strength = 0.5f,
+            int axis = 0,
+            bool negative = false,
+            Vector3 target = default,
+            bool useSelectionCenter = true,
+            bool alignVectors = false,
+            NormalWeightMode weightMode = NormalWeightMode.Uniform)
+            : base(modelIndex)
+        {
+            Operation          = operation;
+            AngleDeg           = angleDeg;
+            Strength           = strength;
+            Axis               = axis;
+            Negative           = negative;
+            Target             = target;
+            UseSelectionCenter = useSelectionCenter;
+            AlignVectors       = alignVectors;
+            WeightMode         = weightMode;
+        }
+    }
+
+    /// <summary>
+    /// 頂点IDの修復。対象は選択中の描画メッシュ（未選択なら編集対象メッシュ単体）。
+    ///
+    /// 頂点IDはモデル間・オブジェクト間の突き合わせに使う唯一の手掛かりだが、
+    /// 未設定・重複・誤付与が混在しやすい。ID を使う操作の前に整えるための操作。
+    /// </summary>
+    public class RepairVertexIdsCommand : PanelCommand
+    {
+        public enum RepairMode
+        {
+            /// <summary>未設定（0 / -1）の頂点にだけ新規IDを割り当てる。既存IDは変更しない。</summary>
+            AssignMissing,
+            /// <summary>重複IDの 2 個目以降を振り直す。先頭は元のIDを保持する。</summary>
+            ResolveDuplicates,
+            /// <summary>全頂点に 1 からの連番を振り直す。既存の対応付けは失われる。</summary>
+            ReassignSequential,
+            /// <summary>全頂点のIDを未設定に戻す。</summary>
+            ClearAll,
+        }
+
+        public RepairMode Mode { get; }
+        public RepairVertexIdsCommand(int modelIndex, RepairMode mode)
+            : base(modelIndex) { Mode = mode; }
+    }
+
+    /// <summary>
+    /// モデル間・オブジェクト間で頂点データを転送する。
+    ///
+    /// メッシュのペアは SourceMeshIndices[i] ↔ TargetMeshIndices[i] で明示する
+    /// （リスト順に暗黙で対応させない）。両配列は同じ長さであること。
+    /// インデックスは各モデルの MeshContextList のインデックス。
+    /// </summary>
+    public class TransferVertexDataCommand : PanelCommand
+    {
+        /// <summary>転送元モデル（PanelCommand.ModelIndex）。</summary>
+        public int SourceModelIndex => ModelIndex;
+
+        /// <summary>転送先モデル。</summary>
+        public int   TargetModelIndex  { get; }
+        public int[] SourceMeshIndices { get; }
+        public int[] TargetMeshIndices { get; }
+
+        public VertexMatchMode MatchMode { get; }
+        public VertexDataKind  Kinds     { get; }
+
+        public TransferVertexDataCommand(
+            int sourceModelIndex, int targetModelIndex,
+            int[] sourceMeshIndices, int[] targetMeshIndices,
+            VertexMatchMode matchMode, VertexDataKind kinds)
+            : base(sourceModelIndex)
+        {
+            TargetModelIndex  = targetModelIndex;
+            SourceMeshIndices = sourceMeshIndices;
+            TargetMeshIndices = targetMeshIndices;
+            MatchMode         = matchMode;
+            Kinds             = kinds;
+        }
     }
 
     /// <summary>メッシュ選択辞書をCSVファイルへ保存</summary>
@@ -1232,53 +1588,83 @@ namespace Poly_Ling.Data
     // Mirror編集
     // ================================================================
 
-    /// <summary>選択メッシュのミラーを実体化した新メッシュをモデルに追加する（Bake Mirror）</summary>
+    /// <summary>ミラーベイクで境界をどう決めるか</summary>
+    public enum MirrorBoundaryMode
+    {
+        /// <summary>ミラー平面からの距離がしきい値未満の頂点を境界とする（従来）</summary>
+        Threshold,
+        /// <summary>選択頂点を境界とする</summary>
+        SelectedVertices,
+    }
+
+    /// <summary>
+    /// 選択メッシュ自身にミラーの実体を生やす（ミラー実体化 / in-place）。
+    ///
+    /// 対称面をまたぐ処理（法線スムージング等）を正しく効かせるための作業用機能であり、
+    /// 見た目・エクスポート用の別オブジェクトは作らない。頂点も面も選択メッシュの中に増える。
+    /// メッシュが見た目用のミラーモード（MirrorType > 0）だった場合は、実体化と同時に解除する。
+    /// </summary>
     public class BakeMirrorCommand : PanelCommand
     {
         public int   SourceMasterIndex { get; }
+
+        /// <summary>ミラー軸（0:X, 1:Y, 2:Z）。メッシュが MirrorType > 0 のときはメッシュ側の設定が優先される。</summary>
         public int   MirrorAxis        { get; }
         public float Threshold         { get; }
         public bool  FlipU             { get; }
+
+        /// <summary>ミラー平面のオフセット（ローカル座標）</summary>
+        public float PlaneOffset { get; }
+
+        /// <summary>境界の決め方</summary>
+        public MirrorBoundaryMode BoundaryMode { get; }
+
+        /// <summary>境界頂点をミラー平面へ射影するか</summary>
+        public bool ProjectBoundaryToPlane { get; }
+
         public BakeMirrorCommand(int modelIndex, int sourceMasterIndex, int mirrorAxis, float threshold, bool flipU)
+            : this(modelIndex, sourceMasterIndex, mirrorAxis, threshold, flipU,
+                   0f, MirrorBoundaryMode.Threshold, true)
+        {
+        }
+
+        public BakeMirrorCommand(
+            int modelIndex,
+            int sourceMasterIndex,
+            int mirrorAxis,
+            float threshold,
+            bool flipU,
+            float planeOffset,
+            MirrorBoundaryMode boundaryMode,
+            bool projectBoundaryToPlane)
+            : base(modelIndex)
+        {
+            SourceMasterIndex      = sourceMasterIndex;
+            MirrorAxis             = mirrorAxis;
+            Threshold              = threshold;
+            FlipU                  = flipU;
+            PlaneOffset            = planeOffset;
+            BoundaryMode           = boundaryMode;
+            ProjectBoundaryToPlane = projectBoundaryToPlane;
+        }
+    }
+
+    /// <summary>
+    /// ミラー実体化を解除して半身へ戻す（in-place）。
+    /// 解除後は強制的に見た目・エクスポート用のミラーモード（MirrorType = 2 / 結合）にする。
+    /// </summary>
+    public class UnbakeMirrorCommand : PanelCommand
+    {
+        public int SourceMasterIndex { get; }
+
+        /// <summary>どちら側の編集結果を残すか</summary>
+        public Poly_Ling.Tools.WriteBackMode Mode { get; }
+
+        public UnbakeMirrorCommand(int modelIndex, int sourceMasterIndex, Poly_Ling.Tools.WriteBackMode mode)
             : base(modelIndex)
         {
             SourceMasterIndex = sourceMasterIndex;
-            MirrorAxis        = mirrorAxis;
-            Threshold         = threshold;
-            FlipU             = flipU;
-        }
-    }
-
-    /// <summary>Bake済みメッシュの編集結果を元メッシュに書き戻した新メッシュをモデルに追加する（Write Back）</summary>
-    public class WriteBackMirrorCommand : PanelCommand
-    {
-        public int           EditedMasterIndex   { get; }
-        public int           OriginalMasterIndex { get; }
-        public Poly_Ling.Tools.WriteBackMode    WriteBackMode { get; }
-        public Poly_Ling.Tools.MirrorBakeResult BakeResult    { get; }
-        public WriteBackMirrorCommand(int modelIndex, int editedMasterIndex, int originalMasterIndex,
-            Poly_Ling.Tools.WriteBackMode writeBackMode, Poly_Ling.Tools.MirrorBakeResult bakeResult)
-            : base(modelIndex)
-        {
-            EditedMasterIndex   = editedMasterIndex;
-            OriginalMasterIndex = originalMasterIndex;
-            WriteBackMode       = writeBackMode;
-            BakeResult          = bakeResult;
-        }
-    }
-
-    /// <summary>ソースとWriteBack結果をブレンドした新メッシュをモデルに追加する（Blend）</summary>
-    public class BlendMirrorCommand : PanelCommand
-    {
-        public int   SourceMasterIndex    { get; }
-        public int   WriteBackMasterIndex { get; }
-        public float BlendWeight          { get; }
-        public BlendMirrorCommand(int modelIndex, int sourceMasterIndex, int writeBackMasterIndex, float blendWeight)
-            : base(modelIndex)
-        {
-            SourceMasterIndex    = sourceMasterIndex;
-            WriteBackMasterIndex = writeBackMasterIndex;
-            BlendWeight          = blendWeight;
+            Mode              = mode;
         }
     }
 

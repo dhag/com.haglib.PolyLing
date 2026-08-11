@@ -6,7 +6,9 @@
 //   1. メッシュ頂点を選ぶ
 //   2. 「格子変形開始」→ 選択範囲へ格子が生成される（Placement）
 //   3. 分割数・中心・サイズを決め、必要なら「選択フィット」で合わせ直す
+//      配置中はビューポートでメッシュ頂点を選び直せる。選び直したら「選択フィット」を押す
 //   4. 「変形開始」→ 格子点をビューポートで選び、移動 / 拡大縮小 / 回転する（Deform）
+//      対象頂点は「変形開始」の時点の選択で確定する
 //   5. 「適用」で確定、「取消」で開始前へ戻す
 //
 // 分割数の変更を Placement 中だけに限るのは仕様どおり。変形してから分割数を
@@ -72,7 +74,9 @@ namespace Poly_Ling.Player
             _root.Add(Header("格子変形 (Lattice)"));
 
             var help = new HelpBox(
-                "頂点を選んでから「格子変形開始」を押します。\n" +
+                "頂点を選んでから「格子の姿勢設定」を押します。\n" +
+                "配置中はビューポートでメッシュ頂点を選び直せます。\n" +
+                "選び直したら「選択フィット」で格子を合わせ直してください。\n" +
                 "格子全体の移動・回転は「作業軸」パネルで行います\n" +
                 "（作業軸へ移っても格子は保持されます）。\n" +
                 "「変形開始」後はビューポートで格子点をクリック / 矩形選択し、\n" +
@@ -131,7 +135,7 @@ namespace Poly_Ling.Player
 
             // ── 状態遷移 ──────────────────────────────────────────────
             _beginBtn = new Button(() => { GetH?.Invoke()?.BeginPlacement(); Refresh(); })
-            { text = "格子変形開始" };
+            { text = "格子の姿勢設定" };
             _beginBtn.style.marginTop = 6;
             _root.Add(_beginBtn);
 
@@ -298,7 +302,7 @@ namespace Poly_Ling.Player
             {
                 _stateLabel.text =
                     idle      ? "状態: 未開始" :
-                    placement ? "状態: 格子配置中（メッシュは変形しません）"
+                    placement ? "状態: 格子配置中（頂点を選び直せます / メッシュは変形しません）"
                               : "状態: 格子変形中";
             }
 
@@ -312,7 +316,9 @@ namespace Poly_Ling.Player
                 {
                     _infoLabel.text =
                         $"対象 {h.AffectedCount} 頂点 / 格子点 {h.ControlPointCount} 個"
-                        + (deform ? $" / 選択 {h.SelectedPointCount} 個" : string.Empty);
+                        + (deform
+                            ? $" / 選択 {h.SelectedPointCount} 個"
+                            : "（対象頂点は「選択フィット」か「変形開始」で取り直します）");
                 }
             }
         }

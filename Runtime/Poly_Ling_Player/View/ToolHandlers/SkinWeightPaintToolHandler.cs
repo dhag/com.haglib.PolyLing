@@ -216,10 +216,14 @@ namespace Poly_Ling.Player
                 CurrentMousePosition = ToImgui(screenPosYDown, baseCtx),
             };
 
-            // SyncMesh: 頂点位置変更後に UnityMesh + GPU バッファを同期
+            // SyncMesh: ウェイト確定後に GPU バッファを同期。
+            // 対象メッシュは SkinWeightPaintTool.GetTargetMeshContext と同じ規則で解決する
+            // （パネルの対象メッシュ優先、未指定なら ActiveMeshContext）。
+            // ActiveMeshContext を直に使うと、パネルで別メッシュを対象にしている場合に
+            // 塗ったメッシュと転送するメッシュがずれる。
             baseCtx.SyncMesh = () =>
             {
-                var mc = model.ActiveMeshContext;
+                var mc = SkinWeightPaintTool.GetTargetMeshContext(model);
                 if (mc != null) OnSyncMeshPositions?.Invoke(mc);
             };
 

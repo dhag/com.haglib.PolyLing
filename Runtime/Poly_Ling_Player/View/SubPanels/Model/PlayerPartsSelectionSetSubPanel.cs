@@ -25,11 +25,14 @@ namespace Poly_Ling.Player
         private ListView    _setListView;
         private Button      _btnLoad, _btnAdd, _btnSubtract, _btnDelete;
         private TextField   _csvFolderField;
-        private TextField   _csvLoadFolderField;
+        private Label       _dicFolderLabel;
+        private Toggle      _useCustomFolderToggle;
+        private VisualElement _customFolderRow;
         private Label       _statusLabel;
 
+        // 「フォルダを直接指定」ON のときだけ使う手動パス。
+        // OFF のときは PartsDictionaryPath が解決する partsDictionary を使う。
         private const string CsvFolderKey     = "PartsSet.CsvFolder";
-        private const string CsvLoadFolderKey = "PartsSet.CsvLoadFolder";
 
         private int _selectedSetIndex = -1;
         private readonly List<string> _setNames = new List<string>();
@@ -91,26 +94,45 @@ namespace Poly_Ling.Player
             foreach (var b in new[] { _btnLoad, _btnAdd, _btnSubtract, _btnDelete }) { b.style.flexGrow = 1; opRow.Add(b); }
             root.Add(opRow);
 
-            // CSV（保存 / 読込）— PlayerIoUiKit 準拠
+            // 辞書ファイル（エクスポート / インポート）— PlayerIoUiKit 準拠
+            //
+            // 辞書そのものはプロジェクト側に保存済みなので、ここは保存/読込ではなく
+            // オブジェクト間・モデル間で辞書を持ち回るための受け渡し操作。
+            // 受け渡し先はプロジェクトフォルダ直下の partsDictionary に固定し、
+            // フォルダ選択ダイアログを不要にする。
             root.Add(PlayerIoUiKit.Divider());
-            root.Add(PlayerIoUiKit.SectionLabel("CSV"));
+            root.Add(PlayerIoUiKit.SectionLabel("辞書ファイル (CSV)"));
 
+            _dicFolderLabel = new Label();
+            _dicFolderLabel.style.fontSize   = 9;
+            _dicFolderLabel.style.whiteSpace = WhiteSpace.Normal;
+            _dicFolderLabel.style.color      = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
+            _dicFolderLabel.style.marginBottom = 3;
+            root.Add(_dicFolderLabel);
+
+            // 別プロジェクトの辞書を取り込むときの退避路。既定は非表示。
+            _useCustomFolderToggle = new Toggle("フォルダを直接指定");
+            _useCustomFolderToggle.tooltip = "別プロジェクトの辞書を取り込む場合などに使う。"
+                                           + "OFF のときは partsDictionary フォルダを使う。";
+            _useCustomFolderToggle.style.marginBottom = 2;
+            _useCustomFolderToggle.RegisterValueChangedCallback(e => ApplyCustomFolderVisibility(e.newValue));
+            root.Add(_useCustomFolderToggle);
+
+            _customFolderRow = new VisualElement();
             _csvFolderField = new TextField();
-            _csvFolderField.tooltip = "辞書を書き出すフォルダ";
+            _csvFolderField.tooltip = "Selected_*.csv を入出力するフォルダ";
             _csvFolderField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvFolderKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_csvFolderField, OnBrowseCsvFolder));
+            _customFolderRow.Add(PlayerIoUiKit.PathRow(_csvFolderField, OnBrowseCsvFolder));
             _csvFolderField.SetValueWithoutNotify(RecentPaths.Get(CsvFolderKey));
-            root.Add(PlayerIoUiKit.WideBtn("保存", OnExport));
+            root.Add(_customFolderRow);
 
+            root.Add(PlayerIoUiKit.WideBtn("エクスポート", OnExport));
             root.Add(PlayerIoUiKit.Spacer());
+            root.Add(PlayerIoUiKit.WideBtn("インポート（現在のオブジェクトへ）",   () => OnImport(false)));
+            root.Add(PlayerIoUiKit.WideBtn("インポート（書込元のオブジェクトへ）", () => OnImport(true)));
 
-            _csvLoadFolderField = new TextField();
-            _csvLoadFolderField.tooltip = "読み込む Selected_*.csv があるフォルダ";
-            _csvLoadFolderField.RegisterValueChangedCallback(e => RecentPaths.Set(CsvLoadFolderKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_csvLoadFolderField, OnBrowseCsvLoadFolder));
-            _csvLoadFolderField.SetValueWithoutNotify(RecentPaths.Get(CsvLoadFolderKey));
-            root.Add(PlayerIoUiKit.WideBtn("現在のオブジェクトに読込",   () => OnImport(false)));
-            root.Add(PlayerIoUiKit.WideBtn("書込時のオブジェクトに読込", () => OnImport(true)));
+            ApplyCustomFolderVisibility(false);
+            UpdateDicFolderLabel();
 
             _statusLabel = PlayerIoUiKit.StatusLabel();
             root.Add(_statusLabel);
@@ -149,6 +171,9 @@ namespace Poly_Ling.Player
             _selectedSetIndex = Mathf.Clamp(_selectedSetIndex, -1, _setNames.Count - 1);
             if (_selectedSetIndex >= 0) _setListView.SetSelection(_selectedSetIndex);
             UpdateButtonStates();
+
+            // プロジェクトを保存 / 読込した直後は解決先が変わるので追従させる。
+            UpdateDicFolderLabel();
         }
 
         // ── ListView helpers ─────────────────────────────────────────────
@@ -222,25 +247,45 @@ namespace Poly_Ling.Player
             _setNameField?.SetValueWithoutNotify(""); SetStatus($"名前変更 → {newName}");
         }
 
-        // ── CSV 保存 / 読込 ──────────────────────────────────────────────
+        // ── 辞書ファイル（エクスポート / インポート）────────────────────────
+
+        /// <summary>
+        /// 実際に使うフォルダ。トグル ON なら手動指定、OFF なら partsDictionary。
+        /// </summary>
+        /// <param name="forWrite">true なら書き出し前提でフォルダを作成する。</param>
+        private string ResolveDicFolder(bool forWrite)
+        {
+            if (_useCustomFolderToggle != null && _useCustomFolderToggle.value)
+                return _csvFolderField?.value?.Trim() ?? "";
+
+            return forWrite ? PartsDictionaryPath.ResolveForWrite() : PartsDictionaryPath.Resolve();
+        }
+
+        private void ApplyCustomFolderVisibility(bool useCustom)
+        {
+            if (_customFolderRow != null)
+                _customFolderRow.style.display = useCustom ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_dicFolderLabel != null)
+                _dicFolderLabel.style.display = useCustom ? DisplayStyle.None : DisplayStyle.Flex;
+            UpdateDicFolderLabel();
+        }
+
+        /// <summary>解決結果のフォルダ表示を更新する。プロジェクト保存後などに呼ぶ。</summary>
+        private void UpdateDicFolderLabel()
+        {
+            if (_dicFolderLabel == null) return;
+            string folder = PartsDictionaryPath.Resolve();
+            _dicFolderLabel.text = PartsDictionaryPath.IsFallback()
+                ? $"{folder}\n（プロジェクト未保存のため既定の場所を使用）"
+                : folder;
+        }
+
         private void OnBrowseCsvFolder()
         {
             string cur = _csvFolderField?.value ?? "";
-            string dir = string.IsNullOrEmpty(cur) ? Application.persistentDataPath : cur;
-            var targets = CollectTargets();
-            string def = targets.Count == 1
-                ? $"SelectionSets_{targets[0].Name}"
-                : "SelectionSets";
-            string path = PLEditorBridge.I.SaveFolderPanel("CSV 保存先フォルダ", dir, def);
+            string dir = string.IsNullOrEmpty(cur) ? PartsDictionaryPath.Resolve() : cur;
+            string path = PLEditorBridge.I.OpenFolderPanel("辞書フォルダ", dir, "");
             if (!string.IsNullOrEmpty(path)) _csvFolderField.value = path;
-        }
-
-        private void OnBrowseCsvLoadFolder()
-        {
-            string cur = _csvLoadFolderField?.value ?? "";
-            string dir = string.IsNullOrEmpty(cur) ? Application.persistentDataPath : cur;
-            string path = PLEditorBridge.I.OpenFolderPanel("CSV 読込元フォルダ", dir, "");
-            if (!string.IsNullOrEmpty(path)) _csvLoadFolderField.value = path;
         }
 
         private void OnExport()
@@ -252,32 +297,32 @@ namespace Poly_Ling.Player
             foreach (var t in targets) setCount += t.PartsSelectionSetList?.Count ?? 0;
             if (setCount == 0) { SetStatus("辞書が空です"); return; }
 
-            string folder = _csvFolderField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(folder)) { SetStatus("保存先フォルダを指定してください"); return; }
+            string folder = ResolveDicFolder(forWrite: true);
+            if (string.IsNullOrEmpty(folder)) { SetStatus("出力先フォルダを指定してください"); return; }
 
             var since = DateTime.Now.AddSeconds(-2);
             SendCmd(new ExportPartsSetsCsvCommand(ModelIndex, folder));
 
             // Dispatch は同期のため、書き出し結果をここで確認する。
             // 既存ファイルを数えないよう、更新時刻が実行直前以降のものだけを対象にする。
-            if (!System.IO.Directory.Exists(folder)) { SetStatus("保存失敗（ログを参照）"); return; }
+            if (!System.IO.Directory.Exists(folder)) { SetStatus("エクスポート失敗（ログを参照）"); return; }
             int written = 0;
             foreach (var f in System.IO.Directory.GetFiles(folder, "Selected_*.csv"))
                 if (System.IO.File.GetLastWriteTime(f) >= since) written++;
             SetStatus(written > 0
-                ? $"保存しました: {targets.Count} オブジェクト / {written} 件 → {folder}"
-                : "保存失敗（ログを参照）");
+                ? $"エクスポートしました: {targets.Count} オブジェクト / {written} 件 → {folder}"
+                : "エクスポート失敗（ログを参照）");
         }
 
         /// <param name="byObjectName">
-        /// true: ファイル内の書込元オブジェクト名と一致するオブジェクトへ読み込む。
-        /// false: オブジェクト名を無視し、選択中の全オブジェクトへ同じ辞書を読み込む。
+        /// true: ファイル内の書込元オブジェクト名と一致するオブジェクトへ取り込む。
+        /// false: オブジェクト名を無視し、選択中の全オブジェクトへ同じ辞書を取り込む。
         /// </param>
         private void OnImport(bool byObjectName)
         {
-            string folder = _csvLoadFolderField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(folder)) { SetStatus("読込元フォルダを指定してください"); return; }
-            if (!System.IO.Directory.Exists(folder)) { SetStatus("フォルダが見つかりません"); return; }
+            string folder = ResolveDicFolder(forWrite: false);
+            if (string.IsNullOrEmpty(folder)) { SetStatus("取込元フォルダを指定してください"); return; }
+            if (!System.IO.Directory.Exists(folder)) { SetStatus($"フォルダがありません: {folder}"); return; }
 
             int fileCount = System.IO.Directory.GetFiles(folder, "Selected_*.csv").Length;
             if (fileCount == 0) { SetStatus("Selected_*.csv がありません"); return; }
@@ -294,8 +339,8 @@ namespace Poly_Ling.Player
             {
                 Refresh();
                 SetStatus(byObjectName
-                    ? $"読込みました: {fileCount} ファイル（オブジェクト名一致分）"
-                    : $"読込みました: {fileCount} ファイル → {targets.Count} オブジェクト");
+                    ? $"インポートしました: {fileCount} ファイル（オブジェクト名一致分）"
+                    : $"インポートしました: {fileCount} ファイル → {targets.Count} オブジェクト");
             }
             else
             {

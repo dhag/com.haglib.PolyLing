@@ -47,6 +47,10 @@ namespace Poly_Ling.View
         public string Name { get; }
         public MeshType Type { get; }
 
+        // 協働編集
+        public ulong ObjectId { get; }
+        public string EditorName { get; }
+
         // 統計情報
         public int VertexCount { get; }
         public int FaceCount { get; }
@@ -69,6 +73,7 @@ namespace Poly_Ling.View
 
         // ミラー情報
         public int MirrorType { get; }
+        public int MirrorAxis { get; }
         public bool IsBakedMirror { get; }
         public bool IsMirrorSide { get; }
         public bool IsRealSide { get; }
@@ -84,6 +89,7 @@ namespace Poly_Ling.View
         public string MorphName { get; }
         public bool ExcludeFromExport { get; }
         public bool IgnorePoseInArmature { get; }
+        public bool PreserveNormals { get; }
 
         // IMeshView.BonePose（IBonePoseViewとして返す）
         IBonePoseView IMeshView.BonePose => BonePoseData;
@@ -97,12 +103,14 @@ namespace Poly_Ling.View
         int IMeshView.SelectedLineCount   => 0;
 
         // 表示用プロパティ
+        // アイコンはミラーの有無だけを示す。
+        // モード(0:なし/1:分離/2:結合)と軸(1:X/2:Y/4:Z)はツールチップと詳細欄で扱う。
         public string MirrorTypeDisplay
         {
             get
             {
                 if (IsBakedMirror) return "\U0001FA9E";
-                return MirrorType switch { 1 => "\u21C6X", 2 => "\u21C6Y", 3 => "\u21C6Z", _ => "" };
+                return MirrorType > 0 ? "\u21C6" : "";
             }
         }
 
@@ -117,9 +125,11 @@ namespace Poly_Ling.View
             IsVisible = true; IsLocked = false; HasBoneWeight = false; IsFolding = false;
             LocalPosition = Vector3.zero; LocalRotationEuler = Vector3.zero; LocalScale = Vector3.one;
             Depth = 0; HierarchyParentIndex = -1;
-            MirrorType = 0; IsBakedMirror = false; IsMirrorSide = false; IsRealSide = false; HasBakedMirrorChild = false;
+            MirrorType = 0; MirrorAxis = 1; IsBakedMirror = false; IsMirrorSide = false; IsRealSide = false; HasBakedMirrorChild = false;
             BoneIndex = -1; BonePoseData = BonePoseSummary.Empty;
             IsMorph = false; MorphParentIndex = -1; MorphName = ""; ExcludeFromExport = false; IgnorePoseInArmature = false;
+            PreserveNormals = false;
+            ObjectId = 0UL; EditorName = "";
         }
 
         // フルコンストラクタ
@@ -132,7 +142,11 @@ namespace Poly_Ling.View
             int mirrorType, bool isBakedMirror, bool isMirrorSide, bool isRealSide, bool hasBakedMirrorChild,
             int boneIndex, BonePoseSummary bonePose,
             bool isMorph, int morphParentIndex, string morphName, bool excludeFromExport,
-            bool ignorePoseInArmature = false)
+            bool ignorePoseInArmature = false,
+            bool preserveNormals = false,
+            ulong objectId = 0UL,
+            string editorName = null,
+            int mirrorAxis = 1)
         {
             MasterIndex = masterIndex; Name = name ?? "Untitled"; Type = type;
             VertexCount = vertexCount; FaceCount = faceCount;
@@ -140,12 +154,14 @@ namespace Poly_Ling.View
             IsVisible = isVisible; IsLocked = isLocked; HasBoneWeight = isSkinned; IsFolding = isFolding;
             LocalPosition = localPosition; LocalRotationEuler = localRotationEuler; LocalScale = localScale;
             Depth = depth; HierarchyParentIndex = hierarchyParentIndex;
-            MirrorType = mirrorType; IsBakedMirror = isBakedMirror;
+            MirrorType = mirrorType; MirrorAxis = mirrorAxis; IsBakedMirror = isBakedMirror;
             IsMirrorSide = isMirrorSide; IsRealSide = isRealSide; HasBakedMirrorChild = hasBakedMirrorChild;
             BoneIndex = boneIndex; BonePoseData = bonePose;
             IsMorph = isMorph; MorphParentIndex = morphParentIndex;
             MorphName = morphName ?? ""; ExcludeFromExport = excludeFromExport;
             IgnorePoseInArmature = ignorePoseInArmature;
+            PreserveNormals = preserveNormals;
+            ObjectId = objectId; EditorName = editorName ?? "";
         }
 
         // 移行期互換用ファクトリ
@@ -197,7 +213,11 @@ namespace Poly_Ling.View
                 ctx.MirrorType, ctx.IsBakedMirror, isMirrorSide, isRealSide, ctx.HasBakedMirrorChild,
                 boneIndex, bonePose,
                 ctx.IsMorph, ctx.MorphParentIndex, ctx.MorphName, ctx.ExcludeFromExport,
-                ctx.IgnorePoseInArmature);
+                ctx.IgnorePoseInArmature,
+                ctx.PreserveNormals,
+                ctx.ObjectId,
+                ctx.EditorName,
+                ctx.MirrorAxis);
         }
 
         public override string ToString() => $"[{MasterIndex}] {Name} ({Type}) V:{VertexCount} F:{FaceCount}";

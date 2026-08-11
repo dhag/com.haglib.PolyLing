@@ -281,6 +281,376 @@ namespace Poly_Ling.Ops
             }
         }
 
+        // ================================================================
+        // ミラー側の姿勢補正
+        // ================================================================
+
+        /// <summary>
+        /// ミラー軸の面での鏡映行列を作る（p → 面に対する鏡像）。
+        /// </summary>
+        public static Matrix4x4 MirrorMatrix(int mirrorAxis, float mirrorDistance)
+        {
+            float d2 = 2f * mirrorDistance;
+            switch (mirrorAxis)
+            {
+                case 2:  // Y
+                    return Matrix4x4.Translate(new Vector3(0f, d2, 0f)) *
+                           Matrix4x4.Scale(new Vector3(1f, -1f, 1f));
+                case 4:  // Z
+                    return Matrix4x4.Translate(new Vector3(0f, 0f, d2)) *
+                           Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
+                default: // X
+                    return Matrix4x4.Translate(new Vector3(d2, 0f, 0f)) *
+                           Matrix4x4.Scale(new Vector3(-1f, 1f, 1f));
+            }
+        }
+
+        /// <summary>
+        /// 姿勢変更のあと、ミラー側コンテキストの局所姿勢を鏡像側へ直す。
+        ///
+        /// 【なぜ要るか】
+        ///   このモデル形式では、ミラー側メッシュは実体側と同じ関節の下に
+        ///   同じ局所原点でぶら下がり、鏡像は頂点側にだけ入っている。
+        ///   関節に回転が無いうちは成立するが、鏡映 S と回転 R は可換でないため
+        ///   （S·Ry(θ)·S = Ry(-θ)、S·Rz(θ)·S = Rz(-θ)、S·Rx(θ)·S = Rx(θ)）、
+        ///   関節を回した瞬間にミラー側は Y・Z まわりが逆符号のまま動いてしまう。
+        ///
+        /// 【補正】
+        ///   実体側が受けたワールドデルタを Δ = W_after · W_before⁻¹ とすると、
+        ///   ミラー側が受けるべきデルタは S·Δ·S。よって目標は
+        ///     W_target = S · Δ · S · W_before
+        ///   ミラー側は実体側と同じ親の下にいるので、Δ はミラー側自身の
+        ///   （誤って乗ってしまった）デルタと同じ値になる。相方を引かずに済む。
+        ///   det(S·Δ·S) = det(Δ) > 0 なので、結果は普通の回転として分解できる。
+        ///
+        /// 【入れ子】
+        ///   ミラー側の子は親を直せば付いてくる（W_child = W_parent · L_child は不変）。
+        ///   よって祖先にミラー側を持たない「ミラー側の根」だけを対象にする。
+        /// </summary>
+        /// <param name="meshContexts">対象リスト</param>
+        /// <param name="worldBefore">姿勢変更前のワールド行列（索引→行列）</param>
+        /// <param name="worldAfter">姿勢変更後のワールド行列（索引→行列）</param>
+        /// <returns>補正したコンテキスト数</returns>
+        public static int CompensateMirrorSideTransforms(
+            List<MeshContext> meshContexts,
+            Dictionary<int, Matrix4x4> worldBefore,
+            Dictionary<int, Matrix4x4> worldAfter)
+        {
+            if (meshContexts == null || worldBefore == null || worldAfter == null) return 0;
+
+            int fixedCount = 0;
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var mc = meshContexts[i];
+                if (!IsMirrorSideContext(mc)) continue;
+                if (HasMirrorSideAncestor(meshContexts, i)) continue;   // 根だけ直す
+                if (mc.BoneTransform == null) continue;
+
+                if (!worldBefore.TryGetValue(i, out var wBefore)) continue;
+                if (!worldAfter.TryGetValue(i, out var wAfter)) continue;
+
+                Matrix4x4 delta = wAfter * wBefore.inverse;
+                if (IsNearlyIdentity(delta)) continue;                   // 動いていない
+
+                // ミラー軸は相方（実体側）の設定を優先する
+                int   axis = mc.MirrorAxis;
+                float dist = mc.MirrorDistance;
+                int   src  = mc.BakedMirrorSourceIndex;
+                if (src >= 0 && src < meshContexts.Count && meshContexts[src] != null)
+                {
+                    axis = meshContexts[src].MirrorAxis;
+                    dist = meshContexts[src].MirrorDistance;
+                }
+
+                Matrix4x4 s        = MirrorMatrix(axis, dist);
+                Matrix4x4 target   = s * delta * s * wBefore;
+
+                // 親のワールド（変更後）で割ってローカルへ戻す
+                Matrix4x4 parentWorld = Matrix4x4.identity;
+                int p = mc.HierarchyParentIndex;
+                if (p >= 0 && p < meshContexts.Count && worldAfter.TryGetValue(p, out var pw))
+                    parentWorld = pw;
+
+                Matrix4x4 local = parentWorld.inverse * target;
+
+                mc.BoneTransform.Position          = new Vector3(local.m03, local.m13, local.m23);
+                mc.BoneTransform.Rotation          = local.rotation.eulerAngles;
+                mc.BoneTransform.Scale             = local.lossyScale;
+                mc.BoneTransform.UseLocalTransform = true;
+
+                fixedCount++;
+            }
+
+            if (fixedCount > 0)
+                Debug.Log($"[MirrorBranchOps] ミラー側の姿勢を鏡像化して補正: {fixedCount} 件");
+
+            return fixedCount;
+        }
+
+        /// <summary>祖先（自分は含まない）にミラー側がいるか。</summary>
+        private static bool HasMirrorSideAncestor(List<MeshContext> meshContexts, int index)
+        {
+            int cur    = meshContexts[index]?.HierarchyParentIndex ?? -1;
+            int safety = meshContexts.Count + 1;
+
+            while (cur >= 0 && cur < meshContexts.Count && safety-- > 0)
+            {
+                var mc = meshContexts[cur];
+                if (mc == null) return false;
+                if (IsMirrorSideContext(mc)) return true;
+                cur = mc.HierarchyParentIndex;
+            }
+            return false;
+        }
+
+        private static bool IsNearlyIdentity(Matrix4x4 m, float eps = 1e-5f)
+        {
+            for (int c = 0; c < 4; c++)
+                for (int r = 0; r < 4; r++)
+                    if (Mathf.Abs(m[r, c] - Matrix4x4.identity[r, c]) > eps) return false;
+            return true;
+        }
+
+        // ================================================================
+        // 生成ミラーの作成
+        //
+        // MQO のミラーはファイルにミラー側の頂点が無く、実体側から作るしかない。
+        // 生成物であることを MirrorGeometryDerived = true で示し、
+        // 実効ワールドは S·H·S で解く（ModelContext.ComputeWorldMatrices）。
+        //
+        // ミラーを解消するときは破棄し、再びミラー化するときはここで作り直す。
+        // 元は MQOImporter.CreateBakedMirrorMesh にあったが、
+        // 読込時以外（ミラーの有効化）からも呼ぶため Ops へ移した。
+        // ================================================================
+
+        public static MeshContext CreateDerivedMirrorContext(MeshContext source, int sourceIndex)
+        {
+            if (source == null || source.MeshObject == null || !source.IsMirrored)
+                return null;
+
+            var srcMeshObj = source.MeshObject;
+
+            if (srcMeshObj.Vertices.Count == 0)
+                return null;
+            var axis = source.GetMirrorSymmetryAxis();
+
+            // 新しいMeshObjectを作成
+            var mirrorMeshObj = new MeshObject
+            {
+                Name = source.Name + "_BakedMirror",
+                Type = MeshType.BakedMirror  // 明示的に設定
+            };
+
+            // 頂点をミラー変換してコピー
+            foreach (var srcVertex in srcMeshObj.Vertices)
+            {
+                var mirrorVertex = new Vertex
+                {
+                    Id = srcVertex.Id,
+                    Position = MirrorLocalPosition(srcVertex.Position, axis)
+                };
+
+                // UVをコピー
+                foreach (var uv in srcVertex.UVs)
+                {
+                    mirrorVertex.UVs.Add(uv);
+                }
+
+                // 法線をミラー変換してコピー
+                foreach (var normal in srcVertex.Normals)
+                {
+                    mirrorVertex.Normals.Add(MirrorLocalNormal(normal, axis));
+                }
+
+                // ボーンウェイト: ミラー側があればミラー側、なければ実体側
+                if (srcVertex.HasMirrorBoneWeight)
+                {
+                    mirrorVertex.BoneWeight = srcVertex.MirrorBoneWeight;
+                }
+                else if (srcVertex.HasBoneWeight)
+                {
+                    mirrorVertex.BoneWeight = srcVertex.BoneWeight;
+                }
+
+                mirrorMeshObj.Vertices.Add(mirrorVertex);
+            }
+
+            // 面をコピー（頂点順序を反転して法線方向を維持）
+            foreach (var srcFace in srcMeshObj.Faces)
+            {
+                var mirrorFace = new Face
+                {
+                    MaterialIndex = srcFace.MaterialIndex + source.MirrorMaterialOffset,
+                };
+                if (srcFace.IsHidden)
+                    mirrorFace.SetFlag(FaceFlags.Hidden);
+
+                // 頂点順序を反転（法線方向維持のため）
+                for (int i = srcFace.VertexCount - 1; i >= 0; i--)
+                {
+                    mirrorFace.VertexIndices.Add(srcFace.VertexIndices[i]);
+                    mirrorFace.UVIndices.Add(srcFace.UVIndices[i]);
+                    mirrorFace.NormalIndices.Add(srcFace.NormalIndices[i]);
+                }
+
+                mirrorMeshObj.Faces.Add(mirrorFace);
+            }
+
+            // 姿勢は実体側と同一にする。
+            // ミラー側は自前の姿勢を持たず、実効ワールドは ComputeWorldMatrices が
+            // S·H·S として算出する。ここで H を実体側と揃えておかないと
+            // v_M = S·v_R の不変条件が崩れる。
+            if (mirrorMeshObj.BoneTransform == null)
+                mirrorMeshObj.BoneTransform = new BoneTransform();
+            if (source.BoneTransform != null)
+            {
+                mirrorMeshObj.BoneTransform.Position          = source.BoneTransform.Position;
+                mirrorMeshObj.BoneTransform.Rotation          = source.BoneTransform.Rotation;
+                mirrorMeshObj.BoneTransform.Scale             = source.BoneTransform.Scale;
+                mirrorMeshObj.BoneTransform.UseLocalTransform = source.BoneTransform.UseLocalTransform;
+            }
+
+            // MeshContextを作成
+            var mirrorContext = new MeshContext
+            {
+                MeshObject = mirrorMeshObj,
+                Name = mirrorMeshObj.Name,
+                Type = MeshType.BakedMirror,
+                BakedMirrorSourceIndex = sourceIndex,
+                // 実体側の頂点から生成した鏡像。実効ワールドは S·H·S で解決する。
+                MirrorGeometryDerived = true,
+                // 階層情報は元メッシュに合わせる
+                ParentIndex = source.ParentIndex,
+                Depth = source.Depth,
+                IsVisible = source.IsVisible,
+                // ミラー属性はなし（実体化されているため）
+                MirrorType = 0,
+                MirrorAxis = 1,
+                MirrorDistance = 0,
+                MirrorMaterialOffset = 0
+            };
+
+            // UnityMesh生成
+            mirrorContext.UnityMesh = mirrorMeshObj.ToUnityMesh();
+            mirrorContext.OriginalPositions = (Vector3[])mirrorMeshObj.Positions.Clone();
+
+            return mirrorContext;
+        }
+
+        /// <summary>ローカル位置を軸で鏡像化する。</summary>
+        private static Vector3 MirrorLocalPosition(Vector3 pos, Poly_Ling.Symmetry.SymmetryAxis axis)
+        {
+            switch (axis)
+            {
+                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-pos.x, pos.y, pos.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(pos.x, -pos.y, pos.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(pos.x, pos.y, -pos.z);
+                default: return new Vector3(-pos.x, pos.y, pos.z);
+            }
+        }
+
+        /// <summary>ローカル法線を軸で鏡像化する。</summary>
+        private static Vector3 MirrorLocalNormal(Vector3 normal, Poly_Ling.Symmetry.SymmetryAxis axis)
+        {
+            switch (axis)
+            {
+                case Poly_Ling.Symmetry.SymmetryAxis.X: return new Vector3(-normal.x, normal.y, normal.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Y: return new Vector3(normal.x, -normal.y, normal.z);
+                case Poly_Ling.Symmetry.SymmetryAxis.Z: return new Vector3(normal.x, normal.y, -normal.z);
+                default: return new Vector3(-normal.x, normal.y, normal.z);
+            }
+        }
+
+
+        /// <summary>
+        /// 実体側インデックスに対応するミラー側インデックスを列挙して result に足す。
+        ///
+        /// 対象は次の2系統。
+        ///   MirrorPair … pair.Real が実体側のとき pair.Mirror
+        ///   ベイクミラー … BakedMirrorSourceIndex が実体側を指すコンテキスト
+        ///
+        /// 可視・ロックはミラー側へ伝播させる必要があるが、
+        /// 姿勢（SyncDerivedMirrorTransforms）と違って自動で追随する経路が無い。
+        /// 呼び出し側で実体側と同じ値を書くために使う。
+        /// </summary>
+        public static void CollectMirrorPeers(ModelContext model, int realIndex, List<int> result)
+        {
+            if (model == null || result == null) return;
+            var list = model.MeshContextList;
+            if (list == null || realIndex < 0 || realIndex >= list.Count) return;
+
+            var realCtx = list[realIndex];
+            if (realCtx == null) return;
+
+            // MirrorPair
+            var pair = model.GetMirrorPair(realCtx);
+            if (pair != null && pair.Real == realCtx && pair.Mirror != null)
+            {
+                int mi = list.IndexOf(pair.Mirror);
+                if (mi >= 0 && !result.Contains(mi)) result.Add(mi);
+            }
+
+            // ベイクミラー
+            for (int i = 0; i < list.Count; i++)
+            {
+                var mc = list[i];
+                if (mc == null || mc.BakedMirrorSourceIndex != realIndex) continue;
+                if (!result.Contains(i)) result.Add(i);
+            }
+        }
+
+        /// <summary>
+        /// 生成ミラー（MirrorGeometryDerived）の頂点を、実体側のローカル頂点から取り直す。
+        ///
+        /// ミラーの実効ワールドは S·H·S で解くので、v_M = S·v_R が
+        /// 「ローカル座標で」成り立っている必要がある。実体側のローカル頂点を
+        /// 書き換えたら（再局所化など）必ずこれを呼んで整合を取ること。
+        ///
+        /// 鏡映の軸・距離は ModelContext の実効ワールド算出と同じ値を使う。
+        /// </summary>
+        /// <returns>取り直したオブジェクト数</returns>
+        public static int RebakeDerivedMirrorVertices(IList<MeshContext> meshContexts)
+        {
+            if (meshContexts == null) return 0;
+
+            int rebaked = 0;
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var mc = meshContexts[i];
+                if (mc == null || !mc.MirrorGeometryDerived) continue;
+
+                int src = mc.BakedMirrorSourceIndex;
+                if (src < 0 || src >= meshContexts.Count) continue;
+
+                var realCtx  = meshContexts[src];
+                var mirrorMo = mc.MeshObject;
+                var realMo   = realCtx?.MeshObject;
+                if (mirrorMo?.Vertices == null || realMo?.Vertices == null) continue;
+                if (mirrorMo.Vertices.Count != realMo.Vertices.Count) continue;
+
+                int   axis = realCtx.MirrorAxis;
+                float dist = realCtx.MirrorDistance;
+
+                for (int v = 0; v < mirrorMo.Vertices.Count; v++)
+                {
+                    var mv = mirrorMo.Vertices[v];
+                    var rv = realMo.Vertices[v];
+                    if (mv == null || rv == null) continue;
+                    mv.Position = MirrorPoint(axis, dist, rv.Position);
+                }
+                mirrorMo.InvalidatePositionCache();
+
+                mc.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
+                mc.ApplyVertexPositionsToMesh();
+
+                rebaked++;
+            }
+
+            return rebaked;
+        }
+
         /// <summary>ミラー軸の面で位置のみを鏡像化する。</summary>
         public static Vector3 MirrorPoint(int mirrorAxis, float mirrorDistance, Vector3 pos)
         {

@@ -21,6 +21,12 @@ namespace Poly_Ling.PrimitiveMesh
         public bool Closed;
         public bool FlipWinding;
 
+        /// <summary>
+        /// フリルの高さ倍率（法線方向成分に掛ける）。$heightScale が無い旧CSVでは 1。
+        /// フリル以外（パイプ・接地）は読み書きするだけで使わない。
+        /// </summary>
+        public float HeightScale = 1f;
+
         /// <summary>自動検索で得た先端（rung には含めない）。無ければ null。</summary>
         public Vector3? StartPoint;
         public Vector3? EndPoint;
@@ -66,6 +72,7 @@ namespace Poly_Ling.PrimitiveMesh
                             w.WriteLine($"$belt={index}");
                             w.WriteLine($"$closed={b.Closed}");
                             w.WriteLine($"$flipWinding={b.FlipWinding}");
+                            w.WriteLine($"$heightScale={b.HeightScale.ToString(CultureInfo.InvariantCulture)}");
                             if (b.StartPoint.HasValue) w.WriteLine($"$startPoint={V3(b.StartPoint.Value)}");
                             if (b.EndPoint.HasValue)   w.WriteLine($"$endPoint={V3(b.EndPoint.Value)}");
                             w.WriteLine(Header);
@@ -131,6 +138,9 @@ namespace Poly_Ling.PrimitiveMesh
                                 break;
                             case "flipwinding":
                                 if (bool.TryParse(val, out bool fw)) current.FlipWinding = fw;
+                                break;
+                            case "heightscale":
+                                if (TryF(val, out float hs)) current.HeightScale = hs;
                                 break;
                             case "startpoint":
                                 if (TryParseV3(val, out Vector3 sp)) current.StartPoint = sp;

@@ -222,6 +222,45 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// UVと法線を1組として検索し、無ければ両方に追加して共通の添字を返す。
+        ///
+        /// 【不変条件】UVs.Count == Normals.Count、および面の
+        /// UVIndices[j] == NormalIndices[j] を保つための唯一の追加口。
+        /// UV と法線を別々に追加すると両者の添字がずれ、展開index空間
+        /// （BuildExpansionMap / GPU展開バッファ / PMXエクスポート）と食い違う。
+        /// </summary>
+        public int GetOrAddUVNormal(Vector2 uv, Vector3 normal, float tolerance = 0.0001f)
+        {
+            EnsureNormalSlots();
+
+            int count = Mathf.Min(UVs.Count, Normals.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (Vector2.Distance(UVs[i], uv) < tolerance &&
+                    Vector3.Distance(Normals[i], normal) < tolerance)
+                    return i;
+            }
+
+            UVs.Add(uv);
+            Normals.Add(normal);
+            return UVs.Count - 1;
+        }
+
+        /// <summary>
+        /// 法線スロット数を UV スロット数へ揃える。
+        /// 不足分は先頭法線（無ければ Vector3.up）で埋め、超過分は切り捨てる。
+        /// UVスロットが無い頂点は判断材料が無いため何もしない。
+        /// </summary>
+        public void EnsureNormalSlots()
+        {
+            if (UVs.Count == 0) return;
+
+            Vector3 fill = Normals.Count > 0 ? Normals[0] : Vector3.up;
+            while (Normals.Count < UVs.Count) Normals.Add(fill);
+            while (Normals.Count > UVs.Count) Normals.RemoveAt(Normals.Count - 1);
+        }
+
+        /// <summary>
         /// ディープコピー（IDも保持）
         /// </summary>
         public Vertex Clone()
@@ -582,12 +621,24 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
+        /// 「ID 未設定」の判定。
+        ///
+        /// 未設定の表現が経路によって 2 種類ある:
+        ///   0  … Vertex/Face の既定値（新規生成・シリアライズ復元の既定）
+        ///   -1 … MQO インポートの初期値（MQOImporter が特殊面から ID を拾えなかった場合）
+        /// 片方だけを未設定扱いにすると、もう片方が「有効な ID」として辞書のキーに
+        /// なり、同値の頂点が大量に潰し合う（先頭 1 個だけが勝つ）事故が起きる。
+        /// 正の値だけを有効とみなすこと。
+        /// </summary>
+        public static bool IsUnsetId(int id) => id <= 0;
+
+        /// <summary>
         /// 頂点IDを登録（外部からインポート時等に使用）
         /// </summary>
         public void RegisterVertexId(int id)
         {
             EnsureIdSetsInitialized();
-            if (id != 0)
+            if (!IsUnsetId(id))
                 _usedVertexIds.Add(id);
         }
 
@@ -597,7 +648,7 @@ namespace Poly_Ling.Data
         public void RegisterFaceId(int id)
         {
             EnsureIdSetsInitialized();
-            if (id != 0)
+            if (!IsUnsetId(id))
                 _usedFaceIds.Add(id);
         }
 
@@ -629,25 +680,26 @@ namespace Poly_Ling.Data
 
             foreach (var v in Vertices)
             {
-                if (v.Id != 0)
+                if (!IsUnsetId(v.Id))
                     _usedVertexIds.Add(v.Id);
             }
             foreach (var f in Faces)
             {
-                if (f.Id != 0)
+                if (!IsUnsetId(f.Id))
                     _usedFaceIds.Add(f.Id);
             }
         }
 
         /// <summary>
-        /// IDが未設定の頂点・面にIDを割り当て
+        /// IDが未設定の頂点・面にIDを割り当て。
+        /// 0 と -1 の両方を未設定として扱う（IsUnsetId 参照）。
         /// </summary>
         public void AssignMissingIds()
         {
             EnsureIdSetsInitialized();
             foreach (var v in Vertices)
             {
-                if (v.Id == 0)
+                if (IsUnsetId(v.Id))
                 {
                     v.Id = GenerateVertexId();
                 }
@@ -658,7 +710,7 @@ namespace Poly_Ling.Data
             }
             foreach (var f in Faces)
             {
-                if (f.Id == 0)
+                if (IsUnsetId(f.Id))
                 {
                     f.Id = GenerateFaceId();
                 }
@@ -880,6 +932,26 @@ namespace Poly_Ling.Data
         public bool IgnorePoseInArmature { get; set; } = false;
 
         /// <summary>
+        /// 頂点法線を保持する（自動再計算を行わない）。
+        /// true の場合、頂点移動 / Undo/Redo / ミラー更新時に
+        /// Mesh.RecalculateNormals() を呼ばず、MeshObject が保持する法線をそのまま使う。
+        /// 髪の房など、隣接オブジェクト間で法線を揃えたメッシュに使用する。
+        /// </summary>
+        public bool PreserveNormals { get; set; } = false;
+
+        /// <summary>
+        /// 法線の自動再計算から除外するセット一覧（パーツ選択辞書と同じ構造）。
+        /// リストに載っているセットが指す要素は、RecalculateNormals /
+        /// RecalculateSmoothNormals の直前に法線を退避し、計算後に書き戻す。
+        ///   - 頂点集合: その頂点を参照する全ての面コーナー
+        ///   - 面集合  : その面の全コーナー
+        ///   - 辺集合  : 両端頂点として扱う
+        ///   - 線集合  : 対象外
+        /// </summary>
+        public List<Poly_Ling.Selection.PartsSelectionSet> NormalRecalcExcludeList { get; set; }
+            = new List<Poly_Ling.Selection.PartsSelectionSet>();
+
+        /// <summary>
         /// ミラー分岐のルートか。
         /// true の場合、ヒエラルキーエクスポート時にこのノード配下を
         /// 実体側とミラー側（MirrorSide を祖先に持つノード）の2本の枝に分割する。
@@ -891,6 +963,14 @@ namespace Poly_Ling.Data
         /// エクスポート時のローカルトランスフォーム
         /// </summary>
         public BoneTransform BoneTransform { get; set; } = new BoneTransform();
+
+        /// <summary>
+        /// ミラー実体化（in-place ベイク）の状態。null = 未実体化。
+        /// 対称面をまたぐ処理のために一時的に反対側を生やしている間だけ保持し、
+        /// 解除で null に戻す。MeshObject に持たせているのは、Undo のスナップショットが
+        /// MeshObject 単位で取られるため（Clone で引き継ぐ）。
+        /// </summary>
+        public Poly_Ling.Tools.MirrorBakeResult MirrorBakeState { get; set; } = null;
 
         // ================================================================
         // 付帯データ（IK / 剛体 / JOINT / SpringBone）— 純POCOデータ契約
@@ -1090,11 +1170,11 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// Vertexオブジェクトを追加（IDが0なら自動割り当て）
+        /// Vertexオブジェクトを追加（IDが未設定なら自動割り当て）
         /// </summary>
         public int AddVertex(Vertex vertex)
         {
-            if (vertex.Id == 0)
+            if (IsUnsetId(vertex.Id))
             {
                 vertex.Id = GenerateVertexId();
             }
@@ -1142,11 +1222,11 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// Faceオブジェクトを追加（IDが0なら自動割り当て）
+        /// Faceオブジェクトを追加（IDが未設定なら自動割り当て）
         /// </summary>
         public int AddFace(Face face)
         {
-            if (face.Id == 0)
+            if (IsUnsetId(face.Id))
             {
                 face.Id = GenerateFaceId();
             }
@@ -1234,6 +1314,24 @@ namespace Poly_Ling.Data
         {
             PLMeshBridge.I.FromUnityMesh(this, mesh, mergeVertices, includeBoneWeights);
         }
+
+        /// <summary>
+        /// 三角形だけを既存の Unity Mesh へ張り直す。面の表示/非表示切替に使う。
+        /// 展開頂点数が変わっている場合は何もせず false を返す。
+        /// </summary>
+        public bool ApplyTrianglesToUnityMesh(Mesh mesh, int materialCount = -1)
+        {
+            return PLMeshBridge.I.ApplyTrianglesInPlace(mesh, this, materialCount);
+        }
+
+        /// <summary>
+        /// 法線だけを既存の Unity Mesh へ反映する。展開頂点数が変わっている場合は
+        /// 何もせず false を返す（呼び出し側でメッシュを作り直すこと）。
+        /// </summary>
+        public bool ApplyNormalsToUnityMesh(Mesh mesh)
+        {
+            return PLMeshBridge.I.ApplyNormalsInPlace(mesh, this);
+        }
         // === ユーティリティ ===
 
         /// <summary>
@@ -1247,47 +1345,209 @@ namespace Poly_Ling.Data
         }
 
         /// <summary>
-        /// 全ての面の法線を自動計算
+        /// 全ての面の法線を自動計算（フラット）。UVスロットを分割する既定動作。
         /// </summary>
         public void RecalculateNormals()
         {
-            // 各頂点の法線をクリア
-            foreach (var vertex in Vertices)
+            RecalculateNormals(splitSlots: true);
+        }
+
+        /// <summary>
+        /// 全ての面の法線を自動計算（フラット）。
+        ///
+        /// splitSlots = true:
+        ///   面コーナーの (UV値, 面法線) の一意な組ごとに UV/法線スロットを割り当て直す。
+        ///   ハードエッジを正しく表現できるが、UVスロット数（＝展開頂点数）が増える。
+        /// splitSlots = false:
+        ///   既存の UV スロット数を維持し、各スロットへ面法線を書き込む。
+        ///   同じスロットを共有する面が複数ある場合は面順で最後の面法線が残る。
+        ///   モーフ関連メッシュ（親子で展開index空間を一致させる必要がある）向け。
+        ///
+        /// いずれも UVs.Count == Normals.Count と UVIndices[j] == NormalIndices[j] を保つ。
+        /// </summary>
+        public void RecalculateNormals(bool splitSlots)
+        {
+            // 除外セットの法線を退避（計算後に書き戻す）
+            var normalBackup = CaptureNormalRecalcExcluded();
+
+            var faceNormals = ComputeFaceNormals();
+
+            if (splitSlots)
+                RebuildSlotsBySplit(faceNormals);
+            else
+                WriteFaceNormalsIntoExistingSlots(faceNormals);
+
+            // 除外セットの法線を復帰
+            RestoreNormalRecalcExcluded(normalBackup);
+        }
+
+        /// <summary>面ごとの面法線。3頂点未満の面は Vector3.up。</summary>
+        private Vector3[] ComputeFaceNormals()
+        {
+            var faceNormals = new Vector3[Faces.Count];
+            for (int fi = 0; fi < Faces.Count; fi++)
             {
-                vertex.Normals.Clear();
+                var face = Faces[fi];
+                if (face.VertexCount < 3)
+                {
+                    faceNormals[fi] = Vector3.up;
+                    continue;
+                }
+                faceNormals[fi] = NormalHelper.CalculateFaceNormal(
+                    Vertices[face.VertexIndices[0]].Position,
+                    Vertices[face.VertexIndices[1]].Position,
+                    Vertices[face.VertexIndices[2]].Position);
+            }
+            return faceNormals;
+        }
+
+        /// <summary>
+        /// (UV値, 面法線) の一意な組ごとにスロットを作り直す。
+        /// 3頂点未満の面（補助線）は既存法線をそのまま持ち込む。
+        /// 面から参照されない頂点は既存スロットを維持する。
+        /// </summary>
+        private void RebuildSlotsBySplit(Vector3[] faceNormals)
+        {
+            int vertCount = Vertices.Count;
+            var oldUVs     = new List<Vector2>[vertCount];
+            var oldNormals = new List<Vector3>[vertCount];
+            var newUVs     = new List<Vector2>[vertCount];
+            var newNormals = new List<Vector3>[vertCount];
+
+            for (int vi = 0; vi < vertCount; vi++)
+            {
+                oldUVs[vi]     = new List<Vector2>(Vertices[vi].UVs);
+                oldNormals[vi] = new List<Vector3>(Vertices[vi].Normals);
+                newUVs[vi]     = new List<Vector2>();
+                newNormals[vi] = new List<Vector3>();
             }
 
-            // 各面ごとに法線を計算
-            foreach (var face in Faces)
+            for (int fi = 0; fi < Faces.Count; fi++)
             {
-                if (face.VertexCount < 3)
-                    continue;
+                var face = Faces[fi];
+                int corners = face.VertexIndices.Count;
 
-                // 面法線を計算
-                Vector3 v0 = Vertices[face.VertexIndices[0]].Position;
-                Vector3 v1 = Vertices[face.VertexIndices[1]].Position;
-                Vector3 v2 = Vertices[face.VertexIndices[2]].Position;
-                Vector3 faceNormal = NormalHelper.CalculateFaceNormal(v0, v1, v2);
-
-                // 各頂点に法線を追加
+                while (face.UVIndices.Count < corners) face.UVIndices.Add(0);
+                while (face.UVIndices.Count > corners) face.UVIndices.RemoveAt(face.UVIndices.Count - 1);
                 face.NormalIndices.Clear();
-                for (int i = 0; i < face.VertexCount; i++)
+
+                for (int j = 0; j < corners; j++)
                 {
-                    var vertex = Vertices[face.VertexIndices[i]];
-                    int nIdx = vertex.GetOrAddNormal(faceNormal);
-                    face.NormalIndices.Add(nIdx);
+                    int vIdx = face.VertexIndices[j];
+                    if (vIdx < 0 || vIdx >= vertCount)
+                    {
+                        face.UVIndices[j] = 0;
+                        face.NormalIndices.Add(0);
+                        continue;
+                    }
+
+                    int oldSlot = face.UVIndices[j];
+
+                    Vector2 uv = Vector2.zero;
+                    var ou = oldUVs[vIdx];
+                    if (oldSlot >= 0 && oldSlot < ou.Count) uv = ou[oldSlot];
+                    else if (ou.Count > 0) uv = ou[0];
+
+                    Vector3 n;
+                    if (face.VertexCount >= 3)
+                    {
+                        n = faceNormals[fi];
+                    }
+                    else
+                    {
+                        var on = oldNormals[vIdx];
+                        n = (oldSlot >= 0 && oldSlot < on.Count) ? on[oldSlot]
+                          : (on.Count > 0 ? on[0] : Vector3.up);
+                    }
+
+                    int slot = FindOrAddSlot(newUVs[vIdx], newNormals[vIdx], uv, n);
+                    face.UVIndices[j] = slot;
+                    face.NormalIndices.Add(slot);
+                }
+            }
+
+            for (int vi = 0; vi < vertCount; vi++)
+            {
+                var vertex = Vertices[vi];
+                if (newUVs[vi].Count == 0)
+                {
+                    vertex.EnsureNormalSlots();
+                    continue;
+                }
+                vertex.UVs     = newUVs[vi];
+                vertex.Normals = newNormals[vi];
+            }
+        }
+
+        /// <summary>(UV値, 法線) の組を検索し、無ければ両リストへ追加して添字を返す。</summary>
+        private static int FindOrAddSlot(
+            List<Vector2> uvs, List<Vector3> normals, Vector2 uv, Vector3 normal)
+        {
+            int count = Mathf.Min(uvs.Count, normals.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (Vector2.Distance(uvs[i], uv) < 0.0001f &&
+                    Vector3.Distance(normals[i], normal) < 0.0001f)
+                    return i;
+            }
+            uvs.Add(uv);
+            normals.Add(normal);
+            return uvs.Count - 1;
+        }
+
+        /// <summary>
+        /// 既存のUVスロット数を維持したまま面法線を書き込む。
+        /// 同一スロットを共有する面が複数ある場合は面順で最後の面法線が残る。
+        /// </summary>
+        private void WriteFaceNormalsIntoExistingSlots(Vector3[] faceNormals)
+        {
+            foreach (var vertex in Vertices)
+                vertex.EnsureNormalSlots();
+
+            for (int fi = 0; fi < Faces.Count; fi++)
+            {
+                var face = Faces[fi];
+                int corners = face.VertexIndices.Count;
+
+                while (face.UVIndices.Count < corners) face.UVIndices.Add(0);
+                while (face.UVIndices.Count > corners) face.UVIndices.RemoveAt(face.UVIndices.Count - 1);
+                face.NormalIndices.Clear();
+
+                for (int j = 0; j < corners; j++)
+                {
+                    int vIdx = face.VertexIndices[j];
+                    if (vIdx < 0 || vIdx >= Vertices.Count)
+                    {
+                        face.UVIndices[j] = 0;
+                        face.NormalIndices.Add(0);
+                        continue;
+                    }
+
+                    var vertex = Vertices[vIdx];
+                    int slot = face.UVIndices[j];
+                    if (slot < 0 || slot >= vertex.Normals.Count) slot = 0;
+
+                    face.UVIndices[j] = slot;
+                    face.NormalIndices.Add(slot);
+
+                    if (face.VertexCount >= 3 && slot < vertex.Normals.Count)
+                        vertex.Normals[slot] = faceNormals[fi];
                 }
             }
         }
 
         /// <summary>
-        /// スムーズ法線を計算（同一頂点の法線を平均化）
+        /// スムーズ法線を計算（同一頂点の法線を平均化）。
+        /// UVスロット数は変えず、全スロットへ同じ平滑法線を書き込む。
+        /// UVs.Count == Normals.Count と UVIndices[j] == NormalIndices[j] を保つ。
         /// </summary>
         public void RecalculateSmoothNormals()
         {
-            // まず面法線を計算
-            var faceNormals = new Dictionary<int, List<Vector3>>();
+            // 除外セットの法線を退避（計算後に書き戻す）
+            var normalBackup = CaptureNormalRecalcExcluded();
 
+            // 頂点ごとに面法線を積算
+            var accum = new Vector3[Vertices.Count];
             foreach (var face in Faces)
             {
                 if (face.VertexCount < 3)
@@ -1300,37 +1560,242 @@ namespace Poly_Ling.Data
 
                 foreach (int vIdx in face.VertexIndices)
                 {
-                    if (!faceNormals.ContainsKey(vIdx))
-                        faceNormals[vIdx] = new List<Vector3>();
-                    faceNormals[vIdx].Add(faceNormal);
+                    if (vIdx >= 0 && vIdx < accum.Length)
+                        accum[vIdx] += faceNormal;
                 }
             }
 
-            // 各頂点に平均法線を設定
-            foreach (var vertex in Vertices)
+            // 全スロットへ書き込む（スロット数は維持）
+            for (int vi = 0; vi < Vertices.Count; vi++)
             {
-                vertex.Normals.Clear();
+                var vertex = Vertices[vi];
+                vertex.EnsureNormalSlots();
+                if (vertex.Normals.Count == 0)
+                    continue;
+
+                Vector3 n = accum[vi].sqrMagnitude > 1e-12f
+                    ? accum[vi].normalized
+                    : vertex.Normals[0];
+
+                for (int slot = 0; slot < vertex.Normals.Count; slot++)
+                    vertex.Normals[slot] = n;
             }
 
-            foreach (var kvp in faceNormals)
-            {
-                var vertex = Vertices[kvp.Key];
-                Vector3 avgNormal = Vector3.zero;
-                foreach (var n in kvp.Value)
-                    avgNormal += n;
-                avgNormal = avgNormal.normalized;
-                vertex.AddNormal(avgNormal);
-            }
-
-            // 面の法線インデックスを更新
+            // 面の法線インデックスをUVサブindexへ合わせる
             foreach (var face in Faces)
             {
+                int corners = face.VertexIndices.Count;
+
+                while (face.UVIndices.Count < corners) face.UVIndices.Add(0);
+                while (face.UVIndices.Count > corners) face.UVIndices.RemoveAt(face.UVIndices.Count - 1);
                 face.NormalIndices.Clear();
-                for (int i = 0; i < face.VertexCount; i++)
+
+                for (int j = 0; j < corners; j++)
                 {
-                    face.NormalIndices.Add(0);
+                    int vIdx = face.VertexIndices[j];
+                    int slotCount = (vIdx >= 0 && vIdx < Vertices.Count)
+                        ? Vertices[vIdx].Normals.Count : 0;
+
+                    int slot = face.UVIndices[j];
+                    if (slot < 0 || slot >= slotCount) slot = 0;
+
+                    face.UVIndices[j] = slot;
+                    face.NormalIndices.Add(slot);
                 }
             }
+
+            // 除外セットの法線を復帰
+            RestoreNormalRecalcExcluded(normalBackup);
+        }
+
+        // ================================================================
+        // 法線の自動再計算 除外セット
+        // ================================================================
+
+        /// <summary>法線退避エントリ（面index / コーナーindex / 法線）。</summary>
+        private struct NormalBackupEntry
+        {
+            public int FaceIndex;
+            public int Corner;
+            public Vector3 Normal;
+        }
+
+        /// <summary>除外セットが空でないか。</summary>
+        public bool HasNormalRecalcExclude
+        {
+            get
+            {
+                if (NormalRecalcExcludeList == null) return false;
+                foreach (var set in NormalRecalcExcludeList)
+                {
+                    if (set == null) continue;
+                    if (set.Vertices.Count > 0 || set.Edges.Count > 0 || set.Faces.Count > 0)
+                        return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 除外セットを「頂点集合（辺は両端頂点）」と「面集合」に分解する。
+        /// </summary>
+        private void CollectNormalRecalcExcludeSets(out HashSet<int> verts, out HashSet<int> faces)
+        {
+            verts = new HashSet<int>();
+            faces = new HashSet<int>();
+            if (NormalRecalcExcludeList == null) return;
+
+            foreach (var set in NormalRecalcExcludeList)
+            {
+                if (set == null) continue;
+
+                foreach (int vi in set.Vertices)
+                    if (vi >= 0 && vi < Vertices.Count) verts.Add(vi);
+
+                foreach (var e in set.Edges)
+                {
+                    if (e.V1 >= 0 && e.V1 < Vertices.Count) verts.Add(e.V1);
+                    if (e.V2 >= 0 && e.V2 < Vertices.Count) verts.Add(e.V2);
+                }
+
+                foreach (int fi in set.Faces)
+                    if (fi >= 0 && fi < Faces.Count) faces.Add(fi);
+            }
+        }
+
+        /// <summary>
+        /// 除外セットが指す頂点インデックス集合。面集合はその構成頂点へ展開する。
+        /// Unity Mesh 側は法線を頂点単位でしか持てないため、その復帰用。
+        /// </summary>
+        public HashSet<int> GetNormalRecalcExcludedVertexIndices()
+        {
+            CollectNormalRecalcExcludeSets(out var verts, out var faces);
+            foreach (int fi in faces)
+            {
+                foreach (int vi in Faces[fi].VertexIndices)
+                    if (vi >= 0 && vi < Vertices.Count) verts.Add(vi);
+            }
+            return verts;
+        }
+
+        /// <summary>
+        /// 除外セットが指すコーナーの法線を退避する。対象が無ければ null。
+        /// </summary>
+        private List<NormalBackupEntry> CaptureNormalRecalcExcluded()
+        {
+            if (NormalRecalcExcludeList == null || NormalRecalcExcludeList.Count == 0) return null;
+
+            CollectNormalRecalcExcludeSets(out var excludedVerts, out var excludedFaces);
+            if (excludedVerts.Count == 0 && excludedFaces.Count == 0) return null;
+
+            var backup = new List<NormalBackupEntry>();
+            for (int fi = 0; fi < Faces.Count; fi++)
+            {
+                var face = Faces[fi];
+                bool faceExcluded = excludedFaces.Contains(fi);
+                int corners = Mathf.Min(face.VertexIndices.Count, face.NormalIndices.Count);
+
+                for (int j = 0; j < corners; j++)
+                {
+                    int vIdx = face.VertexIndices[j];
+                    if (vIdx < 0 || vIdx >= Vertices.Count) continue;
+                    if (!faceExcluded && !excludedVerts.Contains(vIdx)) continue;
+
+                    var normals = Vertices[vIdx].Normals;
+                    int nIdx = face.NormalIndices[j];
+                    if (nIdx < 0 || nIdx >= normals.Count) continue;
+
+                    backup.Add(new NormalBackupEntry
+                    {
+                        FaceIndex = fi,
+                        Corner    = j,
+                        Normal    = normals[nIdx]
+                    });
+                }
+            }
+            return backup.Count > 0 ? backup : null;
+        }
+
+        /// <summary>
+        /// 退避した法線を書き戻す。
+        ///
+        /// UVs.Count == Normals.Count / UVIndices[j] == NormalIndices[j] の不変条件下では、
+        /// コーナーの法線スロットは UVサブindex と同一なので、そのスロットへ値を書くだけでよい。
+        /// 同一スロットを除外コーナーと非除外コーナーが共有する場合は退避値が優先される。
+        /// </summary>
+        private void RestoreNormalRecalcExcluded(List<NormalBackupEntry> backup)
+        {
+            if (backup == null || backup.Count == 0) return;
+
+            foreach (var entry in backup)
+            {
+                if (entry.FaceIndex < 0 || entry.FaceIndex >= Faces.Count) continue;
+                var face = Faces[entry.FaceIndex];
+                if (entry.Corner < 0 || entry.Corner >= face.VertexIndices.Count) continue;
+                if (entry.Corner >= face.UVIndices.Count) continue;
+
+                int vIdx = face.VertexIndices[entry.Corner];
+                if (vIdx < 0 || vIdx >= Vertices.Count) continue;
+
+                var vertex = Vertices[vIdx];
+                int slot = face.UVIndices[entry.Corner];
+                if (slot < 0 || slot >= vertex.Normals.Count) continue;
+
+                vertex.Normals[slot] = entry.Normal;
+                if (entry.Corner < face.NormalIndices.Count)
+                    face.NormalIndices[entry.Corner] = slot;
+            }
+        }
+
+        /// <summary>
+        /// UV/法線スロットの不変条件を検証する。
+        /// </summary>
+        public bool ValidateUVNormalSlots(out string message)
+        {
+            var sb = new System.Text.StringBuilder();
+            int vertexErrors = 0;
+            int faceErrors = 0;
+
+            for (int vi = 0; vi < Vertices.Count; vi++)
+            {
+                var vertex = Vertices[vi];
+                if (vertex.UVs.Count != vertex.Normals.Count)
+                {
+                    if (vertexErrors < 5)
+                        sb.AppendLine($"vertex[{vi}] UVs={vertex.UVs.Count} Normals={vertex.Normals.Count}");
+                    vertexErrors++;
+                }
+            }
+
+            for (int fi = 0; fi < Faces.Count; fi++)
+            {
+                var face = Faces[fi];
+                bool bad = face.UVIndices.Count != face.NormalIndices.Count;
+
+                if (!bad)
+                {
+                    for (int j = 0; j < face.UVIndices.Count; j++)
+                    {
+                        if (face.UVIndices[j] != face.NormalIndices[j]) { bad = true; break; }
+                    }
+                }
+
+                if (bad)
+                {
+                    if (faceErrors < 5)
+                        sb.AppendLine($"face[{fi}] UVIndices/NormalIndices mismatch");
+                    faceErrors++;
+                }
+            }
+
+            if (vertexErrors == 0 && faceErrors == 0)
+            {
+                message = $"[{Name}] OK";
+                return true;
+            }
+
+            message = $"[{Name}] vertexErrors={vertexErrors} faceErrors={faceErrors}\n{sb}";
+            return false;
         }
 
         /// <summary>
@@ -1360,6 +1825,10 @@ namespace Poly_Ling.Data
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
             copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
             copy.IsMirrorBranchRoot   = this.IsMirrorBranchRoot;
+            copy.PreserveNormals      = this.PreserveNormals;
+            copy.MirrorBakeState      = this.MirrorBakeState?.Clone();
+            copy.NormalRecalcExcludeList = this.NormalRecalcExcludeList?.Select(s => s.Clone()).ToList()
+                                           ?? new List<Poly_Ling.Selection.PartsSelectionSet>();
 
             if(this.BoneTransform != null)
             {
@@ -1399,6 +1868,10 @@ namespace Poly_Ling.Data
             copy.HierarchyParentIndex = this.HierarchyParentIndex;
             copy.IgnorePoseInArmature = this.IgnorePoseInArmature;
             copy.IsMirrorBranchRoot   = this.IsMirrorBranchRoot;
+            copy.PreserveNormals      = this.PreserveNormals;
+            copy.MirrorBakeState      = this.MirrorBakeState?.Clone();
+            copy.NormalRecalcExcludeList = this.NormalRecalcExcludeList?.Select(s => s.Clone()).ToList()
+                                           ?? new List<Poly_Ling.Selection.PartsSelectionSet>();
 
             if (this.BoneTransform != null)
             {
@@ -1575,10 +2048,12 @@ namespace Poly_Ling.Data
         /// </summary>
         public Dictionary<(int vIdx, int uvIdx), int> BuildExpansionMap()
         {
+            // face.IsHidden は見ない（MeshBridgeDefault.ToUnityMesh と同じ規則。
+            // 面の非表示で展開頂点数が変わると展開index空間が食い違う）。
             var nonIsolated = new HashSet<int>();
             foreach (var face in Faces)
             {
-                if (face.VertexCount < 3 || face.IsHidden) continue;
+                if (face.VertexCount < 3) continue;
                 foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
             }
 
@@ -1605,10 +2080,12 @@ namespace Poly_Ling.Data
         /// </summary>
         public Dictionary<int, (int vIdx, int uvIdx)> BuildInverseExpansionMap()
         {
+            // face.IsHidden は見ない（MeshBridgeDefault.ToUnityMesh と同じ規則。
+            // 面の非表示で展開頂点数が変わると展開index空間が食い違う）。
             var nonIsolated = new HashSet<int>();
             foreach (var face in Faces)
             {
-                if (face.VertexCount < 3 || face.IsHidden) continue;
+                if (face.VertexCount < 3) continue;
                 foreach (int vi in face.VertexIndices) nonIsolated.Add(vi);
             }
 

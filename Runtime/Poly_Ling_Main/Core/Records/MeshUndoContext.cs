@@ -327,7 +327,22 @@ namespace Poly_Ling.UndoSystem
             // Unity Meshに変換して頂点位置を更新
             var newMesh = MeshObject.ToUnityMeshShared();
             TargetMesh.vertices = newMesh.vertices;
-            TargetMesh.RecalculateNormals();
+            if (MeshObject.PreserveNormals)
+            {
+                TargetMesh.normals = newMesh.normals;   // MeshObject 側の法線を維持
+            }
+            else
+            {
+                TargetMesh.RecalculateNormals();
+
+                // 法線再計算 除外セットの分だけ MeshObject 側の法線へ戻す
+                var recalculated = TargetMesh.normals;
+                if (Poly_Ling.Ops.NormalHelper.RestoreExcludedNormals(
+                        recalculated, newMesh.normals, MeshObject))
+                {
+                    TargetMesh.normals = recalculated;
+                }
+            }
             TargetMesh.RecalculateBounds();
 
             UnityEngine.Object.DestroyImmediate(newMesh);

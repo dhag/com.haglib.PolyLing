@@ -10,6 +10,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
 using Poly_Ling.Data;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Ops
 {
@@ -84,11 +85,71 @@ namespace Poly_Ling.Ops
                 { Index = masterIndex, IsLocked = !ctx.IsLocked });
         }
 
+        /// <summary>
+        /// オブジェクトの編集者（担当者）を設定・解放する。
+        ///
+        /// editorName == "" のとき解放。requesterName が null または空のときは
+        /// 権限チェックを行わない（ローカル・ホスト操作扱い）。
+        /// force が false のとき、他人が担当中のオブジェクトは変更せずスキップする。
+        ///
+        /// objectIds を与えた場合、masterIndices と同じ並びで安定IDを照合し、
+        /// 一致しないものはスキップする（リスト構造がズレている＝古いビューからの要求）。
+        /// </summary>
+        /// <returns>実際に変更した件数</returns>
+        public int SetObjectEditor(
+            int[] masterIndices, string editorName,
+            ulong[] objectIds = null, string requesterName = null, bool force = false)
+        {
+            if (masterIndices == null || masterIndices.Length == 0) return 0;
+            editorName = editorName ?? "";
+
+            bool checkPermission = !force && !string.IsNullOrEmpty(requesterName);
+            var changes = new List<MeshAttributeChange>();
+
+            for (int i = 0; i < masterIndices.Length; i++)
+            {
+                int idx = masterIndices[i];
+                var ctx = GetMeshContext(idx);
+                if (ctx == null) continue;
+
+                // 安定IDの照合（ズレ検出）
+                if (objectIds != null && i < objectIds.Length && objectIds[i] != 0UL &&
+                    ctx.ObjectId != objectIds[i])
+                    continue;
+
+                // 他人が担当中なら触らない
+                if (checkPermission && !ctx.IsEditableBy(requesterName)) continue;
+
+                string current = ctx.EditorName ?? "";
+                if (current == editorName) continue;
+
+                changes.Add(new MeshAttributeChange { Index = idx, EditorName = editorName });
+            }
+
+            if (changes.Count == 0) return 0;
+            return ApplyAttributeChanges(changes) ? changes.Count : 0;
+        }
+
+        /// <summary>指定ユーザーが担当している全オブジェクトを解放する（ホスト側の一括解放用）。</summary>
+        public int ReleaseAllByEditor(string editorName)
+        {
+            if (_model == null || string.IsNullOrEmpty(editorName)) return 0;
+            var indices = new List<int>();
+            for (int i = 0; i < _model.MeshContextCount; i++)
+            {
+                var ctx = _model.GetMeshContext(i);
+                if (ctx != null && ctx.EditorName == editorName) indices.Add(i);
+            }
+            return SetObjectEditor(indices.ToArray(), "", null, null, force: true);
+        }
+
         public bool CycleMirrorType(int masterIndex)
         {
             var ctx = GetMeshContext(masterIndex);
             if (ctx == null || ctx.IsBakedMirror) return false;
-            int next = (ctx.MirrorType + 1) % 4;
+            // なし→分離→結合→なし。3 以上は MeshContext.MirrorType の定義に無く、
+            // MQO の mirror 属性へそのまま書き出されてしまうため作らない。
+            int next = Poly_Ling.View.MirrorViewUtil.NextType(ctx.MirrorType);
             return ApplyAttributeChange(new MeshAttributeChange
                 { Index = masterIndex, MirrorType = next });
         }
@@ -147,15 +208,27 @@ namespace Poly_Ling.Ops
                     parent = _model.GetMeshContext(mc.HierarchyParentIndex);
                 preParentMap[mc] = parent;
             }
+            var preDepthMap = new Dictionary<MeshContext, int>();
+            foreach (var mc in _model.MeshContextList) preDepthMap[mc] = mc.Depth;
 
             // カテゴリのMeshContextマスターインデックス→MeshContext マップ
             var entryMap = new Dictionary<int, ReorderMeshesCommand.ReorderEntry>();
             foreach (var e in entries) entryMap[e.MasterIndex] = e;
 
+            // e.MasterIndex は「並べ替え前」のインデックス。
+            // MeshContextList を差し替えた後にこのインデックスで引くと別のオブジェクトを
+            // 掴むため、差し替え前にここで実体へ解決しておく。
+            var ctxByOldIndex = new Dictionary<int, MeshContext>();
+            for (int i = 0; i < preOrderedList.Count; i++)
+                ctxByOldIndex[i] = preOrderedList[i];
+
+            MeshContext ResolveOld(int oldIndex)
+                => ctxByOldIndex.TryGetValue(oldIndex, out var c) ? c : null;
+
             var categoryContexts = new HashSet<MeshContext>();
             foreach (var e in entries)
             {
-                var ctx = GetMeshContext(e.MasterIndex);
+                var ctx = ResolveOld(e.MasterIndex);
                 if (ctx != null) categoryContexts.Add(ctx);
             }
 
@@ -163,7 +236,7 @@ namespace Poly_Ling.Ops
             var newCategoryOrder = new List<MeshContext>();
             foreach (var e in entries)
             {
-                var ctx = GetMeshContext(e.MasterIndex);
+                var ctx = ResolveOld(e.MasterIndex);
                 if (ctx != null) newCategoryOrder.Add(ctx);
             }
 
@@ -198,14 +271,17 @@ namespace Poly_Ling.Ops
             _model.MeshContextList.AddRange(newOrder);
 
             // Depth/ParentIndex更新
+            // MeshContextList は差し替え済みなので、対象も親も「並べ替え前の
+            // インデックス」から実体を引き、位置だけ新リストから求める。
             foreach (var e in entries)
             {
-                var ctx = GetMeshContext(e.MasterIndex);
+                var ctx = ResolveOld(e.MasterIndex);
                 if (ctx == null) continue;
                 ctx.Depth = e.NewDepth;
                 if (e.NewParentMasterIndex >= 0)
                 {
-                    int parentIdx = _model.MeshContextList.IndexOf(GetMeshContext(e.NewParentMasterIndex));
+                    var parentCtx = ResolveOld(e.NewParentMasterIndex);
+                    int parentIdx = parentCtx != null ? _model.MeshContextList.IndexOf(parentCtx) : -1;
                     ctx.HierarchyParentIndex = parentIdx >= 0 ? parentIdx : -1;
                 }
                 else
@@ -226,8 +302,12 @@ namespace Poly_Ling.Ops
                     parent = _model.GetMeshContext(mc.HierarchyParentIndex);
                 newParentMap[mc] = parent;
             }
+            var newDepthMap = new Dictionary<MeshContext, int>();
+            foreach (var mc in _model.MeshContextList) newDepthMap[mc] = mc.Depth;
 
-            if (!ListsEqual(preOrderedList, _model.MeshContextList) || !MapsEqual(preParentMap, newParentMap))
+            if (!ListsEqual(preOrderedList, _model.MeshContextList)
+             || !MapsEqual(preParentMap, newParentMap)
+             || !DepthMapsEqual(preDepthMap, newDepthMap))
             {
                 if (_undo != null)
                 {
@@ -238,10 +318,12 @@ namespace Poly_Ling.Ops
                         NewOrderedList = new List<MeshContext>(_model.MeshContextList),
                         OldParentMap = preParentMap,
                         NewParentMap = newParentMap,
+                        OldDepthMap  = preDepthMap,
+                        NewDepthMap  = newDepthMap,
                     };
                     {
                         string __dbgDesc = "メッシュ順序変更";
-                        UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                        PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                         _undo.MeshListStack.Record(record, __dbgDesc);
                     }
                     _undo.FocusMeshList();
@@ -390,7 +472,7 @@ namespace Poly_Ling.Ops
             {
                 {
                     string __dbgDesc = "BindPoseにベイク";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     _undo?.MeshListStack.Record(record, __dbgDesc);
                 }
                 _undo?.FocusMeshList();
@@ -432,7 +514,7 @@ namespace Poly_Ling.Ops
                 }
                 {
                     string __dbgDesc = description;
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     _undo.MeshListStack.Record(record, __dbgDesc);
                 }
                 _undo.FocusMeshList();
@@ -513,7 +595,7 @@ namespace Poly_Ling.Ops
                 }
                 {
                     string __dbgDesc = description;
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     _undo.MeshListStack.Record(record, __dbgDesc);
                 }
                 _undo.FocusMeshList();
@@ -548,7 +630,7 @@ namespace Poly_Ling.Ops
             }
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _undo.MeshListStack.Record(record, __dbgDesc);
             }
             _undo.FocusMeshList();
@@ -694,7 +776,7 @@ namespace Poly_Ling.Ops
             var record = new MorphSelectionChangeRecord(oldIndices, newIndices);
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _undo.MeshListStack.Record(record, __dbgDesc);
             }
             _undo.FocusMeshList();
@@ -859,6 +941,7 @@ namespace Poly_Ling.Ops
                 if (change.Name != null) old.Name = ctx.Name;
                 if (change.IgnorePoseInArmature.HasValue) old.IgnorePoseInArmature = ctx.IgnorePoseInArmature;
                 if (change.IsFolding.HasValue) old.IsFolding = ctx.IsFolding;
+                if (change.EditorName != null) old.EditorName = ctx.EditorName ?? "";
                 oldValues.Add(old);
                 if (change.IsVisible.HasValue) ctx.IsVisible = change.IsVisible.Value;
                 if (change.IsLocked.HasValue) ctx.IsLocked = change.IsLocked.Value;
@@ -871,13 +954,14 @@ namespace Poly_Ling.Ops
                         ctx.BoneTransform.Rotation = Vector3.zero;
                 }
                 if (change.IsFolding.HasValue) ctx.IsFolding = change.IsFolding.Value;
+                if (change.EditorName != null) ctx.EditorName = change.EditorName;
             }
             if (_undo != null && oldValues.Count > 0)
             {
                 var record = new MeshAttributesBatchChangeRecord(oldValues, changes);
                 {
                     string __dbgDesc = "属性変更";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     _undo.MeshListStack.Record(record, __dbgDesc);
                 }
             }
@@ -916,7 +1000,7 @@ namespace Poly_Ling.Ops
             }
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _undo.MeshListStack.Record(record, __dbgDesc);
             }
             _undo.FocusMeshList();
@@ -927,7 +1011,7 @@ namespace Poly_Ling.Ops
             if (_undo == null) return;
             {
                 string __dbgDesc = description;
-                UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                 _undo.MeshListStack.Record(record, __dbgDesc);
             }
             _undo.FocusMeshList();
@@ -948,6 +1032,15 @@ namespace Poly_Ling.Ops
             if (a.Count != b.Count) return false;
             foreach (var kvp in a)
                 if (!b.TryGetValue(kvp.Key, out var val) || !ReferenceEquals(kvp.Value, val)) return false;
+            return true;
+        }
+
+        private static bool DepthMapsEqual(Dictionary<MeshContext, int> a, Dictionary<MeshContext, int> b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Count != b.Count) return false;
+            foreach (var kvp in a)
+                if (!b.TryGetValue(kvp.Key, out int val) || kvp.Value != val) return false;
             return true;
         }
     }

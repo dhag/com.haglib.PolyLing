@@ -31,6 +31,9 @@ namespace Poly_Ling.Player
         public void SendProjectHeader()                    => _server?.SendProjectHeader();
         public void SendCapturedImages()                   => _server?.SendCapturedImages();
         public void BroadcastPositions(MeshObject mesh)    => _server?.BroadcastPositions(mesh);
+        /// <summary>対象を明示して位置を配信する（協働編集ではこちらを使う）。</summary>
+        public void BroadcastPositions(MeshContext mc, int modelIndex = -1)
+            => _server?.BroadcastPositions(mc, modelIndex);
         public void ClearCapturedImages()                  => _server?.ClearCapturedImages();
 
         /// <summary>
@@ -54,7 +57,9 @@ namespace Poly_Ling.Player
             int port,
             bool autoStart,
             System.Func<ToolContext> getToolContext,
-            System.Action<PanelCommand> dispatchCommand)
+            System.Action<PanelCommand> dispatchCommand,
+            System.Action requestPanelRefresh = null,
+            string hostUserName = null)
         {
             _server = new RemoteServerCore(getToolContext, port)
             {
@@ -65,7 +70,23 @@ namespace Poly_Ling.Player
                 OnLog           = msg => PlayerLog.Add("Server", StripTimeStamp(msg)),
             };
 
+            // 協働編集: 選択スコープ差し替えからの復帰時にホストUIを再同期する。
+            // 未指定なら OnRepaint にフォールバックする（RemoteServerCore 側で処理）。
+            if (requestPanelRefresh != null)
+                _server.RequestPanelRefresh = requestPanelRefresh;
+
+            // ホスト自身のユーザー名。クライアントと重複しない名前にすること。
+            if (!string.IsNullOrEmpty(hostUserName))
+                _server.HostUserName = hostUserName;
+
             if (autoStart) StartServer();
+        }
+
+        /// <summary>ホストのユーザー名（協働編集の担当者名・選択スロットのキー）。</summary>
+        public string HostUserName
+        {
+            get => _server?.HostUserName ?? "";
+            set { if (_server != null && !string.IsNullOrEmpty(value)) _server.HostUserName = value; }
         }
 
         /// <summary>

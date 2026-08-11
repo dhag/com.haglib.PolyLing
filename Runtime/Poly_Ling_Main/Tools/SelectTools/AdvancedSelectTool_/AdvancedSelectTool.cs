@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Poly_Ling.Selection;
+using Poly_Ling.Symmetry;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
 
 namespace Poly_Ling.Tools
@@ -44,12 +45,45 @@ namespace Poly_Ling.Tools
             set => _settings.AddToSelection = value;
         }
 
+        private int UvNormalCountThreshold
+        {
+            get => _settings.UvNormalCountThreshold;
+            set => _settings.UvNormalCountThreshold = value;
+        }
+
+        private float AxisDistanceThreshold
+        {
+            get => _settings.AxisDistanceThreshold;
+            set => _settings.AxisDistanceThreshold = value;
+        }
+
+        private SymmetryAxis AxisKind
+        {
+            get => _settings.AxisKind;
+            set => _settings.AxisKind = value;
+        }
+
+        private bool LimitToCurrentSelection
+        {
+            get => _settings.LimitToCurrentSelection;
+            set => _settings.LimitToCurrentSelection = value;
+        }
+
         // ================================================================
         // モード別処理
         // ================================================================
 
         private readonly Dictionary<AdvancedSelectMode, IAdvancedSelectMode> _modes;
         private AdvancedSelectContext _ctx = new AdvancedSelectContext();
+
+        /// <summary>
+        /// 直近に受け取った ToolContext。
+        /// エディタ版 DrawSettingsUI() は引数で ToolContext を受け取れないため、
+        /// ボタン実行（属性選択／選択反転）用にここへ保持する。
+        /// ToolManager は _toolContext を 1 個だけ生成して使い回すので参照は安定している。
+        /// Player はハンドラが毎回 ToolContext を組み立てて渡すため、この参照は使わない。
+        /// </summary>
+        private ToolContext _lastToolCtx;
 
         /// <summary>
         /// 現在のプレビューコンテキストを返す。
@@ -62,12 +96,19 @@ namespace Poly_Ling.Tools
             AdvancedSelectMode.Connected,
             AdvancedSelectMode.Belt,
             AdvancedSelectMode.EdgeLoop,
-            AdvancedSelectMode.ShortestPath
+            AdvancedSelectMode.ShortestPath,
+            AdvancedSelectMode.UvNormalCount,
+            AdvancedSelectMode.NearAxis
         };
+
+        /// <summary>クリックではなくボタン実行で動作するモードか。</summary>
+        public static bool IsAttributeMode(AdvancedSelectMode mode)
+            => mode == AdvancedSelectMode.UvNormalCount || mode == AdvancedSelectMode.NearAxis;
 
         /// <summary>ローカライズされたモード名配列を取得</summary>
         private string[] GetLocalizedModeNames() => new string[] {
-            T("Connected"), T("Belt"), T("EdgeLoop"), T("Shortest")
+            T("Connected"), T("Belt"), T("EdgeLoop"), T("Shortest"),
+            T("UvNormalCount"), T("NearAxis")
         };
 
         // ================================================================
@@ -130,6 +171,7 @@ namespace Poly_Ling.Tools
 
         public void OnActivate(ToolContext ctx)
         {
+            _lastToolCtx = ctx;
             Reset();
         }
 
@@ -147,6 +189,92 @@ namespace Poly_Ling.Tools
             _ctx.GpuStartFace   = -1;
             _ctx.GpuStartLine   = -1;
             ResetAllModes();
+        }
+
+        // ================================================================
+        // 属性選択 / 選択反転（クリック非依存。パネルのボタンから呼ぶ）
+        // ================================================================
+
+        /// <summary>
+        /// UvNormalCount / NearAxis モードの選択を実行する。
+        /// 上記以外のモードでは何もせず false を返す。
+        ///
+        /// LimitToCurrentSelection の扱い:
+        ///   OFF … 判定に一致した頂点を AddToSelection に従って追加／削除する。
+        ///   ON かつ AddToSelection=true  … 現在の選択のうち一致しなかった頂点を解除する（絞り込み）。
+        ///   ON かつ AddToSelection=false … 現在の選択のうち一致した頂点を解除する。
+        /// </summary>
+        /// <returns>選択が変化したら true</returns>
+        public bool ExecuteAttributeSelect(ToolContext ctx)
+        {
+            if (ctx?.ActiveMeshObject == null) return false;
+
+            var mesh = ctx.ActiveMeshObject;
+            var current = ctx.SelectionState?.Vertices;
+
+            List<int> hits;
+            switch (Mode)
+            {
+                case AdvancedSelectMode.UvNormalCount:
+                    hits = AttributeSelectOps.SelectByUvNormalCount(
+                        mesh, UvNormalCountThreshold, LimitToCurrentSelection, current);
+                    break;
+
+                case AdvancedSelectMode.NearAxis:
+                    hits = AttributeSelectOps.SelectNearAxisPlane(
+                        mesh, AxisKind, AxisDistanceThreshold, LimitToCurrentSelection, current);
+                    break;
+
+                default:
+                    return false;
+            }
+
+            // 絞り込み: 一致しなかった選択頂点を解除する。
+            // hits は current の部分集合なので追加すべき頂点は無い。
+            if (LimitToCurrentSelection && AddToSelection)
+            {
+                if (current == null || current.Count == 0) return false;
+
+                var hitSet = new HashSet<int>(hits);
+                var drop = new List<int>();
+                foreach (int v in current)
+                {
+                    if (!hitSet.Contains(v)) drop.Add(v);
+                }
+                if (drop.Count == 0) return false;
+
+                SelectionHelper.ApplyVertexSelection(ctx, drop, false);
+                return true;
+            }
+
+            if (hits.Count == 0) return false;
+            SelectionHelper.ApplyVertexSelection(ctx, hits, AddToSelection);
+            return true;
+        }
+
+        /// <summary>
+        /// 現在の選択を反転する。SelectionState.Mode で有効なビットのみ対象。
+        /// </summary>
+        /// <returns>選択が変化したら true</returns>
+        public bool InvertSelection(ToolContext ctx)
+        {
+            if (ctx?.ActiveMeshObject == null) return false;
+
+            var state = ctx.SelectionState;
+            if (state == null) return false;
+
+            bool changed = InvertSelectionOps.Invert(state, ctx.ActiveMeshObject, ctx.TopologyCache);
+            if (!changed) return false;
+
+            // 後方互換の SelectedVertices を同期（頂点モードが有効なときのみ）
+            if (state.Mode.Has(MeshSelectMode.Vertex) && ctx.SelectedVertices != null)
+            {
+                ctx.SelectedVertices.Clear();
+                ctx.SelectedVertices.UnionWith(state.Vertices);
+            }
+
+            ctx.Repaint?.Invoke();
+            return true;
         }
 
         /// <summary>
@@ -181,6 +309,7 @@ namespace Poly_Ling.Tools
 
         private void UpdateContext(ToolContext ctx)
         {
+            _lastToolCtx = ctx;
             _ctx.ToolCtx = ctx;
             _ctx.AddToSelection = AddToSelection;
             _ctx.EdgeLoopThreshold = EdgeLoopThreshold;

@@ -986,6 +986,12 @@ namespace Poly_Ling.Core.Rendering
             // 非選択メッシュマテリアルは VertexDefault をそのまま使う。
             mat.SetColor("_ColorDefault",       isOverlay ? _colorSettings.VertexMeshSelected : _colorSettings.VertexDefault);
             mat.SetColor("_BorderColorDefault", _colorSettings.VertexBorderDefault);
+
+            // 頂点サイズ（スクリーンピクセル）。外部CSV DisplaySettings.csv から取得する。
+            // overlay=選択メッシュ / 非overlay=非選択メッシュ で別キー。
+            mat.SetFloat("_ScreenSpaceSize", DisplaySettings.GetF(
+                isOverlay ? DisplaySettings.KeyVertexScreenSizeSelected
+                          : DisplaySettings.KeyVertexScreenSizeUnselected));
         }
 
         /// <summary>

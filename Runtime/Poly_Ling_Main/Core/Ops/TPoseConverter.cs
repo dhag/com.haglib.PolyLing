@@ -31,10 +31,16 @@ namespace Poly_Ling.Ops
         /// <param name="meshContexts">対象MeshContextリスト</param>
         /// <param name="mapping">Humanoidボーンマッピング（腕ボーンのインデックス解決用）</param>
         /// <param name="backup">バックアップを保存する場合はnon-null。nullならバックアップしない</param>
+        /// <param name="compensateMirrorSides">
+        /// 旧: ミラー側の局所姿勢を書き換える補正の有無。
+        /// ミラーの実効ワールドを ComputeWorldMatrices 側で S·H·S として解決するように
+        /// したため、現在は未使用（互換のため残置）。
+        /// </param>
         public static void ConvertToTPose(
             List<MeshContext> meshContexts,
             HumanoidBoneMapping mapping,
-            TPoseBackup backup = null)
+            TPoseBackup backup = null,
+            bool compensateMirrorSides = true)
         {
             if (meshContexts == null || mapping == null)
                 return;
@@ -43,27 +49,48 @@ namespace Poly_Ling.Ops
             if (backup != null)
                 CaptureBackup(meshContexts, backup);
 
-            // ワールド行列を計算
-            var worldMatrices = ModelContext.CalculateWorldMatrices(meshContexts);
+            // ワールド行列を計算（補正前。ミラー側の補正でデルタを取るのに使う）
+            var worldBefore = ModelContext.CalculateWorldMatrices(meshContexts);
 
             // 左右の腕ボーンの回転を補正
-            ApplyArmRotationCorrection(meshContexts, worldMatrices, mapping, true);   // 左
-            ApplyArmRotationCorrection(meshContexts, worldMatrices, mapping, false);  // 右
+            ApplyArmRotationCorrection(meshContexts, worldBefore, mapping, true);   // 左
+            ApplyArmRotationCorrection(meshContexts, worldBefore, mapping, false);  // 右
 
             // ワールド行列を再計算
-            worldMatrices = ModelContext.CalculateWorldMatrices(meshContexts);
+            var worldMatrices = ModelContext.CalculateWorldMatrices(meshContexts);
+
+            // ミラー側の姿勢補正はここでは行わない。
+            // CalculateWorldMatrices / ComputeWorldMatrices が、ミラー側の実効ワールドを
+            // 常に S·H·S として返すため、階層のどこを回しても鏡像関係は自動で保たれる。
+            _ = compensateMirrorSides;
+
             foreach (var kv in worldMatrices)
             {
                 meshContexts[kv.Key].WorldMatrix = kv.Value;
             }
 
-            // GPU処理で頂点座標をスキニング変換
-            BakeSkinnedVertices(meshContexts);
-
-            // BindPoseを更新
-            foreach (var kv in worldMatrices)
+            // GPU処理で頂点座標をスキニング変換。
+            // スキンウェイトが1つも無いモデル（MeshFilter 相当の階層）では、
+            // 頂点は親子の変換だけで動くので焼き込みは不要。GPU 経路も通さない。
+            if (HasAnySkinWeight(meshContexts))
             {
-                meshContexts[kv.Key].BindPose = kv.Value.inverse;
+                BakeSkinnedVertices(meshContexts);
+            }
+            else
+            {
+                Debug.Log("[TPoseConverter] スキンウェイトが無いため頂点の焼き込みは省略" +
+                          "（階層の姿勢だけを変更）");
+            }
+
+            // BindPose を更新するのはスキンドの場合だけにする。
+            // スキンが無いモデルで全件を WorldMatrix⁻¹ にすると、SkinningMatrix 経路で
+            // 描かれるコンテキスト（ミラー側など）の変換が W·W⁻¹ = 単位 で消える。
+            if (HasAnySkinWeight(meshContexts))
+            {
+                foreach (var kv in worldMatrices)
+                {
+                    meshContexts[kv.Key].BindPose = kv.Value.inverse;
+                }
             }
 
             Debug.Log("[TPoseConverter] T-Pose conversion completed");
@@ -104,6 +131,106 @@ namespace Poly_Ling.Ops
         }
 
         // ================================================================
+        // 診断
+        // ================================================================
+
+        /// <summary>
+        /// Tポーズ変換が実際に何をするかを、変換前に人が読める形で返す。
+        /// 「押しても反応がない」場合にどこで止まるかを一発で切り分けるためのもの。
+        /// </summary>
+        public static string Diagnose(List<MeshContext> meshContexts, HumanoidBoneMapping mapping)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            if (meshContexts == null) return "メッシュリストがありません";
+            if (mapping == null || mapping.IsEmpty) return "マッピングが未設定です";
+
+            sb.AppendLine($"マッピング {mapping.Count} 件 / コンテキスト {meshContexts.Count} 件");
+            sb.AppendLine($"スキンウェイト: {(HasAnySkinWeight(meshContexts) ? "あり" : "なし")}");
+
+            var worldMatrices = ModelContext.CalculateWorldMatrices(meshContexts);
+            sb.AppendLine($"ワールド行列を解決できたコンテキスト: {worldMatrices.Count} / {meshContexts.Count}");
+
+            foreach (bool isLeft in new[] { true, false })
+            {
+                string side = isLeft ? "左" : "右";
+
+                if (!mapping.GetArmBoneIndices(isLeft, out int upper, out int lower))
+                {
+                    sb.AppendLine($"{side}: 腕が未マッピング → 何もしない");
+                    continue;
+                }
+
+                string uName = Name(meshContexts, upper);
+                string lName = Name(meshContexts, lower);
+                sb.AppendLine($"{side}: UpperArm=[{upper}]{uName} / LowerArm=[{lower}]{lName}");
+
+                if (!worldMatrices.TryGetValue(upper, out var uw))
+                {
+                    sb.AppendLine($"{side}: UpperArm のワールド行列が未解決 → 何もしない"
+                                  + BlockReason(meshContexts, upper, worldMatrices));
+                    continue;
+                }
+                if (!worldMatrices.TryGetValue(lower, out var lw))
+                {
+                    sb.AppendLine($"{side}: LowerArm のワールド行列が未解決 → 何もしない"
+                                  + BlockReason(meshContexts, lower, worldMatrices));
+                    continue;
+                }
+
+                Vector3 up  = uw.GetColumn(3);
+                Vector3 lp  = lw.GetColumn(3);
+                Vector3 dir = (lp - up).normalized;
+                Vector3 tgt = isLeft ? Vector3.left : Vector3.right;
+                float   ang = Vector3.Angle(dir, tgt);
+
+                sb.AppendLine($"{side}: 現在の腕方向 {dir} → 目標 {tgt} / 角度 {ang:F1}°");
+                if (ang < 1f) sb.AppendLine($"{side}: 既にTポーズ（1°未満）→ 何もしない");
+                else          sb.AppendLine($"{side}: {ang:F1}° 回します");
+
+                if (up == lp)
+                    sb.AppendLine($"{side}: UpperArm と LowerArm のワールド位置が同一。方向が定まりません");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string Name(List<MeshContext> list, int i)
+            => (i >= 0 && i < list.Count) ? (list[i]?.Name ?? "<null>") : "<範囲外>";
+
+        /// <summary>ワールド行列が解決しない原因を、親をさかのぼって特定する。</summary>
+        private static string BlockReason(
+            List<MeshContext> list, int index, Dictionary<int, Matrix4x4> solved)
+        {
+            if (index < 0 || index >= list.Count) return "（索引が範囲外）";
+
+            int cur = index, safety = list.Count + 1;
+            while (cur >= 0 && cur < list.Count && safety-- > 0)
+            {
+                var ctx = list[cur];
+                if (ctx == null)          return $"（[{cur}] が null）";
+                if (ctx.BoneTransform == null)
+                    return $"（[{cur}]{ctx.Name} の BoneTransform が null。ここで連鎖が切れます）";
+                if (!solved.ContainsKey(cur) && cur != index)
+                    return $"（[{cur}]{ctx.Name} が未解決）";
+                cur = ctx.HierarchyParentIndex;
+            }
+            return "（親の循環参照の可能性）";
+        }
+
+        /// <summary>スキンウェイトを持つ頂点が1つでもあるか。</summary>
+        public static bool HasAnySkinWeight(List<MeshContext> meshContexts)
+        {
+            if (meshContexts == null) return false;
+            foreach (var ctx in meshContexts)
+            {
+                if (ctx?.MeshObject == null) continue;
+                if (ctx.MeshObject.HasBoneWeight) return true;
+            }
+            return false;
+        }
+
+        // ================================================================
         // バックアップ / 復元
         // ================================================================
 
@@ -125,16 +252,23 @@ namespace Poly_Ling.Ops
                 var ctx = meshContexts[i];
                 if (ctx == null) continue;
 
+                // 姿勢は「ボーンかどうか」ではなく BoneTransform の有無で拾う。
+                // ボーンを持たない MeshFilter ツリーでは回転するのはメッシュ自身の
+                // BoneTransform なので、ここで拾わないと「元の姿勢に戻す」が効かない。
+                if (ctx.BoneTransform != null)
+                {
+                    backup.BoneRotations[i] = ctx.BoneTransform.Rotation;
+                    backup.BonePositions[i] = ctx.BoneTransform.Position;
+                    backup.BoneUseLocal[i]  = ctx.BoneTransform.UseLocalTransform;
+                }
+
+                // WorldMatrix / BindPose も同じ理由で全コンテキスト分を持つ
+                // （ConvertToTPose は BindPose を全件書き換えるため）。
+                backup.WorldMatrices[i] = ctx.WorldMatrix;
+                backup.BindPoses[i]     = ctx.BindPose;
+
                 if (ctx.Type == MeshType.Bone)
                 {
-                    if (ctx.BoneTransform != null)
-                    {
-                        backup.BoneRotations[i] = ctx.BoneTransform.Rotation;
-                        backup.BonePositions[i] = ctx.BoneTransform.Position;
-                        backup.BoneUseLocal[i]  = ctx.BoneTransform.UseLocalTransform;
-                    }
-                    backup.WorldMatrices[i] = ctx.WorldMatrix;
-                    backup.BindPoses[i] = ctx.BindPose;
                     backup.BonePoses[i] = ctx.BonePoseData?.Clone();
                 }
                 else if (ctx.MeshObject != null)
@@ -305,6 +439,11 @@ namespace Poly_Ling.Ops
                 Debug.Log($"[TPoseConverter] T-Pose: {sideName} arm correction angle={angle:F1}°, " +
                           $"rotation: {upperArmContext.BoneTransform.Rotation} -> {newLocalRot.eulerAngles}");
                 upperArmContext.BoneTransform.Rotation = newLocalRot.eulerAngles;
+
+                // MeshContext.LocalMatrix は UseLocalTransform が false だと単位を返すため、
+                // 立てておかないと書いた回転が ComputeWorldMatrices で無視される。
+                // ボーンは元から true だが、MeshFilter のオブジェクトは false のことがある。
+                upperArmContext.BoneTransform.UseLocalTransform = true;
             }
         }
 
@@ -370,7 +509,13 @@ namespace Poly_Ling.Ops
                     // GPU 側は自メッシュの context 索引を使う（UnifiedBufferManager_Build.cs:358-362）。
                     // リバインドでは変わらないため、従来通り逆行列でローカルへ戻す（結果は恒等）。
                     // 行列の選択規則は UnifiedBufferManager.UpdateTransformMatrices:1513-1515 と同一。
-                    bool usesWorldMatrixDirect = ctx.Type == MeshType.Mesh && !ctx.MeshObject.HasBoneWeight;
+                    // 分類は UnifiedBufferManager.UpdateTransformMatrices と揃える。
+                    // ミラー側もスキンが無ければ WorldMatrix 直接。
+                    bool usesWorldMatrixDirect =
+                        (ctx.Type == MeshType.Mesh ||
+                         ctx.Type == MeshType.MirrorSide ||
+                         ctx.Type == MeshType.BakedMirror) &&
+                        !ctx.MeshObject.HasBoneWeight;
                     Matrix4x4 unskinnedInv = (usesWorldMatrixDirect ? ctx.WorldMatrix : ctx.SkinningMatrix).inverse;
 
                     var verts = ctx.MeshObject.Vertices;

@@ -385,11 +385,18 @@ namespace Poly_Ling.UI
             return name;
         }
 
+        /// <summary>
+        /// vertexId 形式で書き出せるか。有効な頂点IDが 1 つでもあれば true。
+        /// 未設定は 0 と -1 の 2 種類あるため MeshObject.IsUnsetId で判定する。
+        /// -1 を有効扱いすると、ID の無い MQO 由来メッシュが vertexId 形式で
+        /// 書き出され、読み戻し時にどの頂点にも解決できなくなる。
+        /// </summary>
         private static bool HasValidVertexIds(MeshContext ctx, HashSet<int> indices)
         {
             if (ctx?.MeshObject == null) return false;
             foreach (int idx in indices)
-                if (idx >= 0 && idx < ctx.MeshObject.VertexCount && ctx.MeshObject.Vertices[idx].Id != 0)
+                if (idx >= 0 && idx < ctx.MeshObject.VertexCount
+                    && !MeshObject.IsUnsetId(ctx.MeshObject.Vertices[idx].Id))
                     return true;
             return false;
         }
@@ -408,6 +415,9 @@ namespace Poly_Ling.UI
             for (int i = 0; i < ctx.MeshObject.VertexCount; i++)
             {
                 int id = ctx.MeshObject.Vertices[i].Id;
+                // 未設定ID（0 / -1）はキーにしない。同値の頂点が多数あると
+                // 先頭 1 個だけが引かれ、誤った頂点が選択されるため。
+                if (MeshObject.IsUnsetId(id)) continue;
                 if (!idToIndex.ContainsKey(id)) idToIndex[id] = i;
             }
             foreach (int id in ids)

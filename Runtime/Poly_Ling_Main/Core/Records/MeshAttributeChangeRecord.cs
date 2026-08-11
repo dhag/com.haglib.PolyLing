@@ -126,6 +126,12 @@ namespace Poly_Ling.UndoSystem
         /// <summary>変更後の親マップ</summary>
         public Dictionary<MeshContext, MeshContext> NewParentMap { get; set; }
 
+        /// <summary>変更前の Depth（Drawable/Morph のツリーは Depth から組むため必須）</summary>
+        public Dictionary<MeshContext, int> OldDepthMap { get; set; }
+
+        /// <summary>変更後の Depth</summary>
+        public Dictionary<MeshContext, int> NewDepthMap { get; set; }
+
         /// <summary>変更前の選択MeshContext</summary>
         public MeshContext OldSelectedMeshContext { get; set; }
 
@@ -138,6 +144,8 @@ namespace Poly_Ling.UndoSystem
             NewOrderedList = new List<MeshContext>();
             OldParentMap = new Dictionary<MeshContext, MeshContext>();
             NewParentMap = new Dictionary<MeshContext, MeshContext>();
+            OldDepthMap  = new Dictionary<MeshContext, int>();
+            NewDepthMap  = new Dictionary<MeshContext, int>();
         }
 
         /// <summary>
@@ -145,7 +153,7 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void Undo(ModelContext context)
         {
-            ApplyState(context, OldOrderedList, OldParentMap, OldSelectedMeshContext);
+            ApplyState(context, OldOrderedList, OldParentMap, OldDepthMap, OldSelectedMeshContext);
         }
 
         /// <summary>
@@ -153,7 +161,7 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         public void Redo(ModelContext context)
         {
-            ApplyState(context, NewOrderedList, NewParentMap, NewSelectedMeshContext);
+            ApplyState(context, NewOrderedList, NewParentMap, NewDepthMap, NewSelectedMeshContext);
         }
 
         /// <summary>
@@ -161,6 +169,7 @@ namespace Poly_Ling.UndoSystem
         /// </summary>
         private void ApplyState(ModelContext context, List<MeshContext> orderedList, 
                                Dictionary<MeshContext, MeshContext> parentMap,
+                               Dictionary<MeshContext, int> depthMap,
                                MeshContext selectedMeshContext)
         {
             if (context == null || orderedList == null || orderedList.Count == 0) return;
@@ -181,6 +190,19 @@ namespace Poly_Ling.UndoSystem
                         int parentIndex = parent != null ? context.MeshContextList.IndexOf(parent) : -1;
                         mc.HierarchyParentIndex = parentIndex;
                     }
+                }
+            }
+
+            // 2b. Depth を復元。
+            //     Drawable / Morph のツリーは Depth から組むため、これを戻さないと
+            //     リスト順だけ戻って階層が戻らない。
+            if (depthMap != null)
+            {
+                for (int i = 0; i < context.MeshContextCount; i++)
+                {
+                    var mc = context.GetMeshContext(i);
+                    if (mc != null && depthMap.TryGetValue(mc, out int depth))
+                        mc.Depth = depth;
                 }
             }
 

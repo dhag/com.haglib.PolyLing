@@ -8,6 +8,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Poly_Ling.Tools;
+using Poly_Ling.Context;
+using Poly_Ling.Data;
+using Poly_Ling.Symmetry;
 
 namespace Poly_Ling.Player
 {
@@ -23,6 +26,8 @@ namespace Poly_Ling.Player
         // ================================================================
 
         public Func<AdvancedSelectToolHandler> GetHandler;
+        public Func<ProjectContext>            GetView;
+        public Action<PanelCommand>            SendCommand;
 
         // ================================================================
         // UI 要素
@@ -41,17 +46,42 @@ namespace Poly_Ling.Player
         private Label         _firstVertexLabel;
         private Button        _clearFirstBtn;
 
+        // 属性選択（UV/法線数・軸近傍）
+        private VisualElement _attrGroup;
+        private VisualElement _uvNormalGroup;
+        private IntegerField  _uvNormalThresholdField;
+        private VisualElement _nearAxisGroup;
+        private DropdownField _axisDropdown;
+        private FloatField    _axisThresholdField;
+        private Toggle        _limitToSelectionToggle;
+        private Button        _executeBtn;
+
+        // 反転 / 辞書化
+        private Button        _invertBtn;
+        private TextField     _setNameField;
+
+        private static readonly SymmetryAxis[] AxisValues =
+        {
+            SymmetryAxis.X, SymmetryAxis.Y, SymmetryAxis.Z,
+        };
+
+        private static readonly string[] AxisLabels = { "X", "Y", "Z" };
+
+        private int ModelIndex => GetView?.Invoke()?.CurrentModelIndex ?? 0;
+
         private static readonly AdvancedSelectMode[] ModeValues =
         {
             AdvancedSelectMode.Connected,
             AdvancedSelectMode.Belt,
             AdvancedSelectMode.EdgeLoop,
             AdvancedSelectMode.ShortestPath,
+            AdvancedSelectMode.UvNormalCount,
+            AdvancedSelectMode.NearAxis,
         };
 
         private static readonly string[] ModeLabels =
         {
-            "接続", "ベルト", "辺ループ", "最短",
+            "接続", "ベルト", "辺ループ", "最短", "UV/法線数", "軸近傍",
         };
 
         // ================================================================
@@ -107,6 +137,77 @@ namespace Poly_Ling.Player
             });
             _edgeLoopGroup.Add(_edgeLoopThresholdSlider);
 
+            // ── 属性選択（UV/法線数・軸近傍）─────────────────────────
+            // クリックではなく「実行」ボタンで動作するモード用。
+            _attrGroup = new VisualElement();
+            _root.Add(_attrGroup);
+
+            _uvNormalGroup = new VisualElement();
+            _attrGroup.Add(_uvNormalGroup);
+
+            _uvNormalThresholdField = new IntegerField("データ数しきい値") { value = 0 };
+            _uvNormalThresholdField.style.color = new StyleColor(Color.white);
+            _uvNormalThresholdField.style.marginBottom = 3;
+            _uvNormalThresholdField.tooltip =
+                "頂点の UV/法線スロット数がこの値より大きい頂点を選択します。";
+            _uvNormalThresholdField.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h != null) h.UvNormalCountThreshold = e.newValue;
+            });
+            _uvNormalGroup.Add(_uvNormalThresholdField);
+
+            _nearAxisGroup = new VisualElement();
+            _attrGroup.Add(_nearAxisGroup);
+
+            _axisDropdown = new DropdownField("軸",
+                new List<string>(AxisLabels), 0);
+            _axisDropdown.style.color = new StyleColor(Color.white);
+            _axisDropdown.style.marginBottom = 3;
+            _axisDropdown.tooltip = "X なら YZ 平面（|X|）までの距離を見ます。";
+            _axisDropdown.RegisterValueChangedCallback(e =>
+            {
+                int idx = System.Array.IndexOf(AxisLabels, e.newValue);
+                if (idx < 0) return;
+                var h = GetHandler?.Invoke();
+                if (h != null) h.AxisKind = AxisValues[idx];
+            });
+            _nearAxisGroup.Add(_axisDropdown);
+
+            _axisThresholdField = new FloatField("距離しきい値") { value = 0.00001f };
+            _axisThresholdField.style.color = new StyleColor(Color.white);
+            _axisThresholdField.style.marginBottom = 3;
+            _axisThresholdField.tooltip =
+                "軸に対応する平面までの距離がこの値未満の頂点を選択します。";
+            _axisThresholdField.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h != null) h.AxisDistanceThreshold = e.newValue;
+            });
+            _nearAxisGroup.Add(_axisThresholdField);
+
+            _limitToSelectionToggle = new Toggle("選択中の頂点内から");
+            _limitToSelectionToggle.style.color = new StyleColor(Color.white);
+            _limitToSelectionToggle.style.marginBottom = 3;
+            _limitToSelectionToggle.tooltip =
+                "ON かつ動作=追加 のとき、現在の選択のうち条件に合わない頂点を解除します（絞り込み）。\n"
+                + "ON かつ動作=削除 のとき、条件に合った頂点を選択から外します。";
+            _limitToSelectionToggle.RegisterValueChangedCallback(e =>
+            {
+                var h = GetHandler?.Invoke();
+                if (h != null) h.LimitToCurrentSelection = e.newValue;
+            });
+            _attrGroup.Add(_limitToSelectionToggle);
+
+            _executeBtn = new Button { text = "実行" };
+            _executeBtn.style.marginBottom = 4;
+            _executeBtn.clicked += () =>
+            {
+                GetHandler?.Invoke()?.ExecuteAttributeSelect();
+                Refresh();
+            };
+            _attrGroup.Add(_executeBtn);
+
             // ── 追加/削除 ────────────────────────────────────────────
             var actionLabel = new Label("動作:");
             actionLabel.style.color = new StyleColor(Color.white);
@@ -152,6 +253,40 @@ namespace Poly_Ling.Player
             };
             _root.Add(_clearAllBtn);
 
+            // ── 現在の選択を反転（全モード共通）───────────────────────
+            // 反転対象は SelectionState.Mode で有効な 頂点/辺/面/線 のみ。
+            _invertBtn = new Button { text = "現在の選択を反転" };
+            _invertBtn.style.marginBottom = 4;
+            _invertBtn.tooltip =
+                "有効な選択モード（頂点/辺/面/線）だけを反転します。無効なモードの選択は変更しません。";
+            _invertBtn.clicked += () =>
+            {
+                GetHandler?.Invoke()?.InvertSelection();
+                Refresh();
+            };
+            _root.Add(_invertBtn);
+
+            // ── 現在の選択を辞書化（全モード共通）─────────────────────
+            // PlayerPartsSelectionSetSubPanel と同じ SavePartsSetCommand を送る。
+            var dictRow = new VisualElement();
+            dictRow.style.flexDirection = FlexDirection.Row;
+            dictRow.style.marginBottom  = 4;
+            _root.Add(dictRow);
+
+            _setNameField = new TextField();
+            _setNameField.style.flexGrow = 1;
+            _setNameField.tooltip = "辞書エントリ名（空欄時は自動生成）";
+            dictRow.Add(_setNameField);
+
+            var dictBtn = new Button { text = "辞書化" };
+            dictBtn.style.width = 52;
+            dictBtn.clicked += () =>
+            {
+                SendCommand?.Invoke(
+                    new SavePartsSetCommand(ModelIndex, _setNameField?.value?.Trim() ?? ""));
+            };
+            dictRow.Add(dictBtn);
+
             // ── ShortestPath 始点情報（ShortestPath モード時のみ表示）
             _shortestPathGroup = new VisualElement();
             _root.Add(_shortestPathGroup);
@@ -189,6 +324,15 @@ namespace Poly_Ling.Player
                 modeIdx >= 0 ? ModeLabels[modeIdx] : ModeLabels[0]);
 
             _edgeLoopThresholdSlider?.SetValueWithoutNotify(h.EdgeLoopThreshold);
+
+            _uvNormalThresholdField?.SetValueWithoutNotify(h.UvNormalCountThreshold);
+            _axisThresholdField?.SetValueWithoutNotify(h.AxisDistanceThreshold);
+            _limitToSelectionToggle?.SetValueWithoutNotify(h.LimitToCurrentSelection);
+
+            int axisIdx = System.Array.IndexOf(AxisValues, h.AxisKind);
+            _axisDropdown?.SetValueWithoutNotify(
+                axisIdx >= 0 ? AxisLabels[axisIdx] : AxisLabels[0]);
+
             UpdateModeUI(h.Mode);
             UpdateAddRemoveStyle();
 
@@ -221,6 +365,10 @@ namespace Poly_Ling.Player
                         "エッジをクリックしてエッジループを選択\n・頂点: ループ上の頂点\n・エッジ: ループ上のエッジ\n・面: 隣接する面",
                     AdvancedSelectMode.ShortestPath =>
                         "2つの頂点をクリックして最短経路を選択\n・頂点: 経路上の頂点\n・エッジ: 経路上のエッジ\n・面: 隣接する面",
+                    AdvancedSelectMode.UvNormalCount =>
+                        "UV/法線スロット数がしきい値より大きい頂点を選択\nクリック不要。「実行」ボタンで適用",
+                    AdvancedSelectMode.NearAxis =>
+                        "軸に対応する平面までの距離がしきい値未満の頂点を選択\nクリック不要。「実行」ボタンで適用",
                     _ => "",
                 };
             }
@@ -229,6 +377,17 @@ namespace Poly_Ling.Player
             if (_edgeLoopGroup != null)
                 _edgeLoopGroup.style.display =
                     mode == AdvancedSelectMode.EdgeLoop ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // 属性選択グループ
+            bool isAttr = AdvancedSelectTool.IsAttributeMode(mode);
+            if (_attrGroup != null)
+                _attrGroup.style.display = isAttr ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_uvNormalGroup != null)
+                _uvNormalGroup.style.display =
+                    mode == AdvancedSelectMode.UvNormalCount ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_nearAxisGroup != null)
+                _nearAxisGroup.style.display =
+                    mode == AdvancedSelectMode.NearAxis ? DisplayStyle.Flex : DisplayStyle.None;
 
             // ShortestPath 始点グループ
             if (_shortestPathGroup != null)

@@ -2,13 +2,20 @@
 // オブジェクト全体から梯子状ベルトを自動検出する。
 // Runtime / Editor 共有。Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/ に配置
 //
-// 【検出条件】
-//  開始側: 三角形が、他の三角形とは「1頂点のみ」で接し（辺の共有なし）、
-//          その頂点以外は他の三角形と共有されない。この頂点を開始点とする。
-//          その三角形の「開始点を含まない辺」が四角形と共有されていれば梯子の開始とみなす。
-//  終了側: 四角形の連結を辿った先が三角形で、その三角形が他に何も接していない場合、
-//          四角形に含まれない頂点を終了点とする。
+// 【検出条件】先端の三角形は「四角形と辺を1本だけ共有し、残り2辺が自由辺」で判定する。
+//  開始側: 三角形の3辺のうち、他面と共有しているのがちょうど1本で、その相手が四角形。
+//          その辺を最初の rung、残る1頂点を開始点とする。
+//  終了側: 開始側と同じ条件。四角形を辿った先の三角形が、rung 以外の2辺を共有していなければ
+//          終了とみなし、rung に含まれない頂点を終了点とする。
 //  開始点と終了点が両方そろったものだけを採用する。
+//
+// 【他の三角形は見ない】以前は「他の三角形と1頂点で接すること」を開始条件にしていたが、
+//  ・先端が三角形1枚だけのモデルが検出できない
+//  ・隣り合う rung 辺から2本の梯子が始まる形（先端三角形どうしが頂点を共有する形）が
+//    「2頂点で接する」と判定されて両方落ちる
+//  の2点で誤りだった。開始・終了とも三角形と四角形の辺の関係だけで決める。
+//
+// 【閉じた梯子】辿った先の rung が最初の rung へ戻ったら Closed = true で打ち切る。
 //
 // rung は四角形部分のみ。先端の三角形は rung に含めず、開始点／終了点として保持する
 // （rung 長 0 の縮退 rung を作らないため）。
@@ -53,7 +60,6 @@ namespace Poly_Ling.PrimitiveMesh
             }
 
             var edgeToFaces = BuildEdgeToFaces(mo);
-            var vertToTris  = BuildVertexToTriangles(mo);
 
             int startCandidates = 0;
             int dropped         = 0;
@@ -61,22 +67,12 @@ namespace Poly_Ling.PrimitiveMesh
 
             for (int fi = 0; fi < mo.FaceCount; fi++)
             {
-                var f = mo.Faces[fi];
-                if (f?.VertexIndices == null || f.VertexIndices.Count != 3) continue;
-
-                int apex = FindTriangleApex(mo, edgeToFaces, vertToTris, fi);
-                if (apex < 0) continue;
-
-                // 開始点を含まない辺（対辺）が四角形と共有されているか
-                var opp = OppositeEdgeOfApex(f, apex);
-                if (!opp.IsValid) continue;
-
-                int quad = OtherFace(edgeToFaces, opp, fi);
-                if (quad < 0 || !IsQuad(mo, quad)) continue;
+                if (!IsTriangle(mo, fi)) continue;
+                if (!TryGetTipRung(mo, edgeToFaces, fi, out var rung, out int apex, out int quad)) continue;
 
                 startCandidates++;
 
-                var strip = WalkBelt(mo, edgeToFaces, vertToTris, opp, quad);
+                var strip = WalkBelt(mo, edgeToFaces, rung, quad);
                 if (strip == null) { dropped++; continue; }
 
                 strip.StartPoint = apex;
@@ -93,63 +89,61 @@ namespace Poly_Ling.PrimitiveMesh
         }
 
         // ================================================================
-        // 開始判定
+        // 先端判定（開始・終了で共通）
         // ================================================================
 
         /// <summary>
-        /// 三角形 fi が「他の三角形と1頂点のみで接し、辺は共有しない」条件を満たすなら、
-        /// その頂点（開始点）を返す。満たさなければ -1。
+        /// 三角形 fi が梯子の先端かを判定する。
+        /// 条件は「他面と共有している辺がちょうど1本で、その相手が四角形」。
+        /// 満たすとき rung（共有している辺）、apex（rung に含まれない頂点）、
+        /// quad（相手の四角形）を返す。
+        ///
+        /// 他の三角形との頂点共有は見ない。先端どうしが頂点でつながっていても、
+        /// 隣り合う rung 辺から別々の梯子が始まってもよい。
         /// </summary>
-        private static int FindTriangleApex(MeshObject mo,
-            Dictionary<VertexPair, List<int>> edgeToFaces,
-            Dictionary<int, List<int>> vertToTris, int fi)
+        private static bool TryGetTipRung(MeshObject mo,
+            Dictionary<VertexPair, List<int>> edgeToFaces, int fi,
+            out VertexPair rung, out int apex, out int quad)
         {
+            rung = default; apex = -1; quad = -1;
+
             var verts = mo.Faces[fi].VertexIndices;
 
-            // 三角形どうしの辺共有があれば対象外
+            int sharedCount = 0;
             for (int i = 0; i < 3; i++)
             {
                 var pair = new VertexPair(verts[i], verts[(i + 1) % 3]);
-                if (!pair.IsValid) continue;
-                if (!edgeToFaces.TryGetValue(pair, out var fs)) continue;
-                foreach (int o in fs)
-                    if (o != fi && IsTriangle(mo, o)) return -1;
+                if (!pair.IsValid) return false;
+
+                int other = OtherFace(edgeToFaces, pair, fi);
+                if (other < 0) continue;
+
+                sharedCount++;
+                if (sharedCount > 1) return false;   // 共有辺は1本だけ
+
+                rung = pair;
+                quad = other;
             }
 
-            // 他の三角形と共有している頂点を数える
-            int shared = -1;
+            if (sharedCount != 1) return false;
+            if (!IsQuad(mo, quad)) return false;
+
             for (int i = 0; i < 3; i++)
-            {
-                int v = verts[i];
-                if (!vertToTris.TryGetValue(v, out var tris)) continue;
+                if (verts[i] != rung.V1 && verts[i] != rung.V2) apex = verts[i];
 
-                bool hit = false;
-                foreach (int o in tris) if (o != fi) { hit = true; break; }
-                if (!hit) continue;
-
-                if (shared >= 0) return -1;   // 2頂点以上で接している
-                shared = v;
-            }
-            return shared;
-        }
-
-        /// <summary>三角形の、apex を含まない辺。</summary>
-        private static VertexPair OppositeEdgeOfApex(Face f, int apex)
-        {
-            var v = f.VertexIndices;
-            var a = new List<int>(2);
-            for (int i = 0; i < 3; i++) if (v[i] != apex) a.Add(v[i]);
-            return a.Count == 2 ? new VertexPair(a[0], a[1]) : default;
+            return apex >= 0;
         }
 
         // ================================================================
         // 走査
         // ================================================================
 
-        /// <summary>開始 rung から四角形を辿り、終了三角形まで到達できたら梯子を返す。</summary>
+        /// <summary>
+        /// 開始 rung から四角形を辿り、終了三角形まで到達できたら梯子を返す。
+        /// 最初の rung へ戻ってきた場合は閉じた梯子として打ち切る。
+        /// </summary>
         private static BeltAutoStrip WalkBelt(MeshObject mo,
             Dictionary<VertexPair, List<int>> edgeToFaces,
-            Dictionary<int, List<int>> vertToTris,
             VertexPair startRung, int startQuad)
         {
             var strip = new BeltAutoStrip();
@@ -176,6 +170,14 @@ namespace Poly_Ling.PrimitiveMesh
                 if (oppAnchor < 0) return null;
 
                 strip.Faces.Add(faceIdx);
+
+                // 一周して最初の rung へ戻った。rung を重複させずに閉じる。
+                if (opp.Value == startRung)
+                {
+                    strip.Closed = true;
+                    return strip.RungCount >= 3 ? strip : null;
+                }
+
                 strip.Left.Add(oppAnchor);
                 strip.Right.Add(opp.Value.GetOtherVertex(oppAnchor));
 
@@ -184,9 +186,10 @@ namespace Poly_Ling.PrimitiveMesh
 
                 if (IsTriangle(mo, next))
                 {
-                    // 終了三角形：他に何も接していないこと
-                    int endPoint = EndTrianglePoint(mo, edgeToFaces, vertToTris, next, opp.Value);
-                    if (endPoint < 0) return null;
+                    // 終了三角形。開始側と同じ「共有辺は rung の1本だけ」で判定する。
+                    if (!TryGetTipRung(mo, edgeToFaces, next, out var endRung, out int endPoint, out _))
+                        return null;
+                    if (endRung != opp.Value) return null;
 
                     strip.EndPoint = endPoint;
                     return strip.RungCount >= 2 ? strip : null;
@@ -197,39 +200,6 @@ namespace Poly_Ling.PrimitiveMesh
                 faceIdx = next;
             }
             return null;
-        }
-
-        /// <summary>
-        /// 終了三角形の判定。rung 以外の辺が他面と共有されておらず、
-        /// rung に含まれない頂点が他の三角形と共有されていないこと。
-        /// </summary>
-        private static int EndTrianglePoint(MeshObject mo,
-            Dictionary<VertexPair, List<int>> edgeToFaces,
-            Dictionary<int, List<int>> vertToTris,
-            int triIdx, VertexPair rung)
-        {
-            var verts = mo.Faces[triIdx].VertexIndices;
-
-            for (int i = 0; i < 3; i++)
-            {
-                var pair = new VertexPair(verts[i], verts[(i + 1) % 3]);
-                if (!pair.IsValid) continue;
-                if (pair == rung) continue;
-                if (edgeToFaces.TryGetValue(pair, out var fs) && fs.Count > 1) return -1;
-            }
-
-            int apex = -1;
-            for (int i = 0; i < 3; i++)
-            {
-                if (verts[i] == rung.V1 || verts[i] == rung.V2) continue;
-                apex = verts[i];
-            }
-            if (apex < 0) return -1;
-
-            if (vertToTris.TryGetValue(apex, out var tris))
-                foreach (int o in tris) if (o != triIdx) return -1;
-
-            return apex;
         }
 
         // ================================================================
@@ -256,22 +226,6 @@ namespace Poly_Ling.PrimitiveMesh
                     var key = new VertexPair(v[i], v[(i + 1) % v.Count]);
                     if (!key.IsValid) continue;
                     if (!map.TryGetValue(key, out var list)) { list = new List<int>(); map[key] = list; }
-                    list.Add(fi);
-                }
-            }
-            return map;
-        }
-
-        private static Dictionary<int, List<int>> BuildVertexToTriangles(MeshObject mo)
-        {
-            var map = new Dictionary<int, List<int>>();
-            for (int fi = 0; fi < mo.FaceCount; fi++)
-            {
-                var v = mo.Faces[fi]?.VertexIndices;
-                if (v == null || v.Count != 3) continue;
-                for (int i = 0; i < 3; i++)
-                {
-                    if (!map.TryGetValue(v[i], out var list)) { list = new List<int>(); map[v[i]] = list; }
                     list.Add(fi);
                 }
             }

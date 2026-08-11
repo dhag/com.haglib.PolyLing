@@ -60,6 +60,10 @@ namespace Poly_Ling.UndoSystem
         public bool IsLocked;
         public bool IsFolding;
 
+        // 協働編集（同一オブジェクトの状態保存なのでIDはそのまま持ち回す）
+        public ulong ObjectId;
+        public string EditorName;
+
         // ミラー設定
         public int MirrorType;
         public int MirrorAxis;
@@ -69,6 +73,10 @@ namespace Poly_Ling.UndoSystem
         // ベイクドミラー設定
         public int BakedMirrorSourceIndex;
         public bool HasBakedMirrorChild;
+        /// <summary>ミラー形状が実体側から生成されたものか。落とすと Undo でミラーの扱いが変わる。</summary>
+        public bool MirrorGeometryDerived;
+        /// <summary>切り離したミラー側の ObjectId。落とすと Undo 後に再ミラー化できなくなる。</summary>
+        public ulong DetachedMirrorObjectId;
 
         // ================================================================
         // 選択状態（Phase 1追加）
@@ -131,6 +139,9 @@ namespace Poly_Ling.UndoSystem
                 IsVisible = meshContext.IsVisible,
                 IsLocked = meshContext.IsLocked,
                 IsFolding = meshContext.IsFolding,
+                // 協働編集
+                ObjectId = meshContext.ObjectId,
+                EditorName = meshContext.EditorName,
                 // ミラー設定
                 MirrorType = meshContext.MirrorType,
                 MirrorAxis = meshContext.MirrorAxis,
@@ -139,6 +150,8 @@ namespace Poly_Ling.UndoSystem
                 // ベイクドミラー設定
                 BakedMirrorSourceIndex = meshContext.BakedMirrorSourceIndex,
                 HasBakedMirrorChild = meshContext.HasBakedMirrorChild,
+                MirrorGeometryDerived = meshContext.MirrorGeometryDerived,
+                DetachedMirrorObjectId = meshContext.DetachedMirrorObjectId,
                 // 選択状態（Phase 1追加）
                 Selection = meshContext.CaptureSelection(),
                 // 選択セット（Phase 9追加）
@@ -208,6 +221,9 @@ namespace Poly_Ling.UndoSystem
                 IsVisible = IsVisible,
                 IsLocked = IsLocked,
                 IsFolding = IsFolding,
+                // 協働編集（復元は同一オブジェクトなのでIDを維持する）
+                ObjectId = ObjectId,
+                EditorName = EditorName ?? "",
                 // ミラー設定
                 MirrorType = MirrorType,
                 MirrorAxis = MirrorAxis,
@@ -215,7 +231,9 @@ namespace Poly_Ling.UndoSystem
                 MirrorMaterialOffset = MirrorMaterialOffset,
                 // ベイクドミラー設定
                 BakedMirrorSourceIndex = BakedMirrorSourceIndex,
-                HasBakedMirrorChild = HasBakedMirrorChild
+                HasBakedMirrorChild = HasBakedMirrorChild,
+                MirrorGeometryDerived = MirrorGeometryDerived,
+                DetachedMirrorObjectId = DetachedMirrorObjectId
             };
 
             // 名前を設定（MeshObjectに反映）
@@ -539,6 +557,7 @@ namespace Poly_Ling.UndoSystem
                 if (change.Name != null) meshContext.Name = change.Name;
                 if (change.IgnorePoseInArmature.HasValue) meshContext.IgnorePoseInArmature = change.IgnorePoseInArmature.Value;
                 if (change.IsFolding.HasValue) meshContext.IsFolding = change.IsFolding.Value;
+                if (change.EditorName != null) meshContext.EditorName = change.EditorName;
             }
         }
 
@@ -1111,6 +1130,12 @@ namespace Poly_Ling.UndoSystem
             var dst = new MeshContext
             {
                 Name                   = src.Name,
+                // 同一オブジェクトの状態複写（Undo/Redo 用）なので
+                // 安定IDと担当者はそのまま引き継ぐ。
+                // ※ 複製(Duplicate)は別オブジェクトなのでこの経路を使わないこと。
+                //    ModelContext.Insert が ObjectId==0 に新IDを振る。
+                ObjectId               = src.ObjectId,
+                EditorName             = src.EditorName,
                 MeshObject             = src.MeshObject?.Clone(),
                 BoneTransform          = src.BoneTransform != null ? new BoneTransform(src.BoneTransform) : null,
                 OriginalPositions      = src.OriginalPositions != null ? (Vector3[])src.OriginalPositions.Clone() : null,
@@ -1126,6 +1151,8 @@ namespace Poly_Ling.UndoSystem
                 MirrorMaterialOffset   = src.MirrorMaterialOffset,
                 BakedMirrorSourceIndex = src.BakedMirrorSourceIndex,
                 HasBakedMirrorChild    = src.HasBakedMirrorChild,
+                MirrorGeometryDerived  = src.MirrorGeometryDerived,
+                DetachedMirrorObjectId = src.DetachedMirrorObjectId,
                 MorphParentIndex       = src.MorphParentIndex,
                 ExcludeFromExport      = src.ExcludeFromExport,
                 IgnorePoseInArmature   = src.IgnorePoseInArmature,

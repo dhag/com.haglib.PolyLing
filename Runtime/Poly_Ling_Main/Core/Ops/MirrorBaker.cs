@@ -63,6 +63,15 @@ namespace Poly_Ling.Tools
         /// <summary>境界判定閾値</summary>
         public float Threshold;
 
+        /// <summary>
+        /// 境界とみなす頂点インデックス（0..N-1）。
+        /// null のときは Threshold による距離判定を使う。
+        /// </summary>
+        public int[] BoundaryVertices;
+
+        /// <summary>境界頂点をミラー平面へ射影したか</summary>
+        public bool ProjectBoundaryToPlane;
+
         /// <summary>UV反転フラグ</summary>
         public bool FlipU;
 
@@ -88,6 +97,24 @@ namespace Poly_Ling.Tools
         /// </summary>
         public int[] NewToOriginalIndex;
 
+        /// <summary>元の面数（in-place 実体化時、面 0..OriginalFaceCount-1 が元の面）</summary>
+        public int OriginalFaceCount;
+
+        /// <summary>実体化前の MirrorType（解除時の復元判断用）</summary>
+        public int SavedMirrorType;
+
+        /// <summary>実体化前の MirrorAxis（1:X, 2:Y, 4:Z）</summary>
+        public int SavedMirrorAxis;
+
+        /// <summary>実体化前の MirrorDistance</summary>
+        public float SavedMirrorDistance;
+
+        /// <summary>実体化前の MirrorMaterialOffset</summary>
+        public int SavedMirrorMaterialOffset;
+
+        /// <summary>実体化に使った軸（0:X, 1:Y, 2:Z）</summary>
+        public int BakeAxis;
+
         /// <summary>作成日時</summary>
         public DateTime CreatedAt;
 
@@ -107,11 +134,19 @@ namespace Poly_Ling.Tools
                 PlaneNormal = PlaneNormal,
                 PlaneDistance = PlaneDistance,
                 Threshold = Threshold,
+                BoundaryVertices = BoundaryVertices != null ? (int[])BoundaryVertices.Clone() : null,
+                ProjectBoundaryToPlane = ProjectBoundaryToPlane,
                 FlipU = FlipU,
                 OldToNew = OldToNew != null ? (int[])OldToNew.Clone() : null,
                 NewToOldRepresentative = NewToOldRepresentative != null ? (int[])NewToOldRepresentative.Clone() : null,
                 NewVertexOrigin = NewVertexOrigin != null ? (VertexOrigin[])NewVertexOrigin.Clone() : null,
                 NewToOriginalIndex = NewToOriginalIndex != null ? (int[])NewToOriginalIndex.Clone() : null,
+                OriginalFaceCount = OriginalFaceCount,
+                SavedMirrorType = SavedMirrorType,
+                SavedMirrorAxis = SavedMirrorAxis,
+                SavedMirrorDistance = SavedMirrorDistance,
+                SavedMirrorMaterialOffset = SavedMirrorMaterialOffset,
+                BakeAxis = BakeAxis,
                 CreatedAt = CreatedAt
             };
         }
@@ -199,19 +234,29 @@ namespace Poly_Ling.Tools
         /// <param name="planeOffset">平面オフセット（通常0）</param>
         /// <param name="threshold">境界判定閾値</param>
         /// <param name="flipU">UV U座標を反転するか</param>
+        /// <param name="boundaryVertices">
+        /// 境界とみなす頂点インデックス。null のときは threshold による距離判定を使う。
+        /// </param>
+        /// <param name="projectBoundaryToPlane">
+        /// 境界頂点をミラー平面へ射影するか。距離判定のときは true（平面上に居るので実質無変化）、
+        /// 選択頂点指定のときは false にしないと平面から離れた頂点が寄せられて形が変わる。
+        /// </param>
         /// <returns>ベイク結果（メッシュとメタデータ）</returns>
         public static (MeshObject bakedMesh, MirrorBakeResult result) BakeMirror(
             MeshObject source,
             int axis = 0,
             float planeOffset = 0f,
             float threshold = 0.0001f,
-            bool flipU = false)
+            bool flipU = false,
+            IReadOnlyCollection<int> boundaryVertices = null,
+            bool projectBoundaryToPlane = true)
         {
             // 軸から平面を定義
             Vector3 planeNormal = GetAxisNormal(axis);
             float planeDistance = -planeOffset; // n·x + d = 0 形式
 
-            return BakeMirror(source, planeNormal, planeDistance, threshold, flipU);
+            return BakeMirror(source, planeNormal, planeDistance, threshold, flipU,
+                              boundaryVertices, projectBoundaryToPlane);
         }
 
         /// <summary>
@@ -222,7 +267,9 @@ namespace Poly_Ling.Tools
             Vector3 planeNormal,
             float planeDistance,
             float threshold,
-            bool flipU)
+            bool flipU,
+            IReadOnlyCollection<int> boundaryVertices = null,
+            bool projectBoundaryToPlane = true)
         {
             if (source == null || source.VertexCount == 0)
             {
@@ -257,11 +304,29 @@ namespace Poly_Ling.Tools
             // ================================================================
             var uf = new UnionFind(2 * N);
 
-            // 2-A: 元頂点 i とそのミラー i' が境界付近なら統合
+            // 2-A: 元頂点 i とそのミラー i' を統合するか判定する。
+            //   boundaryVertices が渡されていればその集合を境界とみなす（選択頂点モード）。
+            //   渡されていなければ従来どおり平面からの距離が threshold 未満かで判定する。
+            HashSet<int> boundarySet = null;
+            if (boundaryVertices != null && boundaryVertices.Count > 0)
+            {
+                boundarySet = boundaryVertices as HashSet<int> ?? new HashSet<int>(boundaryVertices);
+            }
+
             for (int i = 0; i < N; i++)
             {
-                float dist = PlaneDist(positions[i], planeNormal, planeDistance);
-                if (Mathf.Abs(dist) < threshold)
+                bool isBoundary;
+                if (boundarySet != null)
+                {
+                    isBoundary = boundarySet.Contains(i);
+                }
+                else
+                {
+                    float dist = PlaneDist(positions[i], planeNormal, planeDistance);
+                    isBoundary = Mathf.Abs(dist) < threshold;
+                }
+
+                if (isBoundary)
                 {
                     uf.Union(i, i + N);
                 }
@@ -298,7 +363,18 @@ namespace Poly_Ling.Tools
             var newOrigin = new VertexOrigin[newVertexCount];
             var newToOriginal = new int[newVertexCount];
 
-            // 各root（代表元）の情報を収集
+            // 各新頂点に「元側／ミラー側のどちらが含まれるか」を1パスで集計する。
+            // （以前は root ごとに 2N 全体を走査していたため O(N^2) だった。結果は同一。）
+            var hasOriginalOf = new bool[newVertexCount];
+            var hasMirroredOf = new bool[newVertexCount];
+
+            for (int v = 0; v < 2 * N; v++)
+            {
+                int newV = oldToNew[v];
+                if (isMirrored[v]) hasMirroredOf[newV] = true;
+                else               hasOriginalOf[newV] = true;
+            }
+
             foreach (var kvp in rootToNew)
             {
                 int root = kvp.Key;
@@ -306,32 +382,10 @@ namespace Poly_Ling.Tools
 
                 newToOldRep[newV] = root;
 
-                // このrootに統合された頂点群を調べる
-                bool hasOriginal = false;
-                bool hasMirrored = false;
-                int firstOriginalIdx = -1;
-
-                for (int v = 0; v < 2 * N; v++)
-                {
-                    if (uf.Find(v) == root)
-                    {
-                        if (isMirrored[v])
-                        {
-                            hasMirrored = true;
-                        }
-                        else
-                        {
-                            hasOriginal = true;
-                            if (firstOriginalIdx < 0)
-                                firstOriginalIdx = v;
-                        }
-                    }
-                }
-
                 // 出自を判定
-                if (hasOriginal && hasMirrored)
+                if (hasOriginalOf[newV] && hasMirroredOf[newV])
                     newOrigin[newV] = VertexOrigin.Merged;
-                else if (hasMirrored)
+                else if (hasMirroredOf[newV])
                     newOrigin[newV] = VertexOrigin.Mirrored;
                 else
                     newOrigin[newV] = VertexOrigin.Original;
@@ -354,13 +408,15 @@ namespace Poly_Ling.Tools
 
                 // 位置
                 Vector3 pos;
-                if (newOrigin[newV] == VertexOrigin.Merged)
+                if (newOrigin[newV] == VertexOrigin.Merged && projectBoundaryToPlane)
                 {
                     // 境界頂点：境界面上に配置（両側の平均的な位置）
                     pos = ProjectToPlane(positions[oldV], planeNormal, planeDistance);
                 }
                 else
                 {
+                    // 射影しない場合は代表元の位置をそのまま使う。
+                    // 選択頂点を境界にしたとき、平面から離れた頂点を寄せて形を変えないため。
                     pos = positions[oldV];
                 }
 
@@ -389,10 +445,16 @@ namespace Poly_Ling.Tools
                     }
                 }
 
-                // 法線をコピー（後で再計算する場合もある）
-                if (srcVertex.Normals.Count > 0)
+                // 法線をコピー（後で再計算する場合もある）。
+                // 【不変条件】UVs.Count == Normals.Count を保つため、UVスロット数へ合わせる。
+                // 以前は Normals[0] の1本しか追加していなかった。
+                int normalSlots = newVertex.UVs.Count > 0 ? newVertex.UVs.Count : srcVertex.Normals.Count;
+                for (int nIdx = 0; nIdx < normalSlots; nIdx++)
                 {
-                    Vector3 normal = srcVertex.Normals[0];
+                    Vector3 normal = nIdx < srcVertex.Normals.Count
+                        ? srcVertex.Normals[nIdx]
+                        : (srcVertex.Normals.Count > 0 ? srcVertex.Normals[0] : Vector3.up);
+
                     if (isMirrored[oldV])
                     {
                         normal = MirrorNormal(normal, planeNormal);
@@ -413,23 +475,41 @@ namespace Poly_Ling.Tools
             // Step 6: 面を生成（インデックスをリマップ）
             // ================================================================
 
-            // 元の面
+            // 元の面。
+            // 【重要】in-place 実体化では元の面インデックスを保存する必要があるため、
+            // ここで面を間引いてはならない。統合は i と i+N の間でしか起こらないので、
+            // 元の面が統合で縮退することはない。
             foreach (var face in source.Faces)
             {
-                var newFace = CreateRemappedFace(face, oldToNew, 0, source);
-                if (IsValidFace(newFace))
-                {
-                    bakedMesh.Faces.Add(newFace);
-                }
+                bakedMesh.Faces.Add(CreateRemappedFace(face, oldToNew, 0, source));
             }
+
+            int originalFaceCount = bakedMesh.Faces.Count;
 
             // ミラー面（頂点順序を反転して法線を逆に）
             foreach (var face in source.Faces)
             {
-                var newFace = CreateRemappedFaceFlipped(face, oldToNew, N, source);
-                if (IsValidFace(newFace))
+                bakedMesh.Faces.Add(CreateRemappedFaceFlipped(face, oldToNew, N, source));
+            }
+
+            // UV/法線サブindex がベイク後頂点のスロット範囲に収まっているか点検する。
+            // 【不変条件】UVIndices[j] == NormalIndices[j] / スロット範囲内。
+            foreach (var face in bakedMesh.Faces)
+            {
+                for (int i = 0; i < face.VertexIndices.Count; i++)
                 {
-                    bakedMesh.Faces.Add(newFace);
+                    while (face.UVIndices.Count <= i)     face.UVIndices.Add(0);
+                    while (face.NormalIndices.Count <= i) face.NormalIndices.Add(0);
+
+                    int vi = face.VertexIndices[i];
+                    int slots = (vi >= 0 && vi < bakedMesh.Vertices.Count)
+                        ? bakedMesh.Vertices[vi].UVs.Count : 0;
+
+                    int idx = face.UVIndices[i];
+                    if (idx < 0 || idx >= slots) idx = 0;
+
+                    face.UVIndices[i]     = idx;
+                    face.NormalIndices[i] = idx;
                 }
             }
 
@@ -446,7 +526,10 @@ namespace Poly_Ling.Tools
                 PlaneNormal = planeNormal,
                 PlaneDistance = planeDistance,
                 Threshold = threshold,
+                BoundaryVertices = boundarySet != null ? boundarySet.ToArray() : null,
+                ProjectBoundaryToPlane = projectBoundaryToPlane,
                 FlipU = flipU,
+                OriginalFaceCount = originalFaceCount,
                 OldToNew = oldToNew,
                 NewToOldRepresentative = newToOldRep,
                 NewVertexOrigin = newOrigin,
@@ -656,20 +739,19 @@ namespace Poly_Ling.Tools
         {
             var face = new Face { MaterialIndex = src.MaterialIndex };
 
-            foreach (int vi in src.VertexIndices)
+            // 元コーナーの UV サブindex を保持したままリマップする。
+            // ベイク後の頂点は元頂点と同じ順序で UV スロットを持つので添字はそのまま使える。
+            // （以前は 0 固定にしていたため UV シームが全滅していた。）
+            for (int i = 0; i < src.VertexIndices.Count; i++)
             {
-                int oldIdx = vi + offset;
-                if (oldIdx >= 0 && oldIdx < oldToNew.Length)
-                {
-                    face.VertexIndices.Add(oldToNew[oldIdx]);
-                }
-            }
+                int oldIdx = src.VertexIndices[i] + offset;
+                if (oldIdx < 0 || oldIdx >= oldToNew.Length) continue;
 
-            // UVインデックス（頂点と同じ位置を参照）
-            for (int i = 0; i < face.VertexIndices.Count; i++)
-            {
-                face.UVIndices.Add(0);
-                face.NormalIndices.Add(0);
+                face.VertexIndices.Add(oldToNew[oldIdx]);
+
+                int uvSubIdx = i < src.UVIndices.Count ? src.UVIndices[i] : 0;
+                face.UVIndices.Add(uvSubIdx);
+                face.NormalIndices.Add(uvSubIdx);
             }
 
             return face;
@@ -680,28 +762,138 @@ namespace Poly_Ling.Tools
         {
             var face = new Face { MaterialIndex = src.MaterialIndex };
 
-            // 逆順で追加（法線反転）
+            // 逆順で追加（法線反転）。UV サブindex も同じコーナーのものを持ち越す。
             for (int i = src.VertexIndices.Count - 1; i >= 0; i--)
             {
-                int vi = src.VertexIndices[i];
-                int oldIdx = vi + offset;
-                if (oldIdx >= 0 && oldIdx < oldToNew.Length)
-                {
-                    face.VertexIndices.Add(oldToNew[oldIdx]);
-                }
-            }
+                int oldIdx = src.VertexIndices[i] + offset;
+                if (oldIdx < 0 || oldIdx >= oldToNew.Length) continue;
 
-            // UVインデックス
-            for (int i = 0; i < face.VertexIndices.Count; i++)
-            {
-                face.UVIndices.Add(0);
-                face.NormalIndices.Add(0);
+                face.VertexIndices.Add(oldToNew[oldIdx]);
+
+                int uvSubIdx = i < src.UVIndices.Count ? src.UVIndices[i] : 0;
+                face.UVIndices.Add(uvSubIdx);
+                face.NormalIndices.Add(uvSubIdx);
             }
 
             return face;
         }
 
+
         /// <summary>有効な面か（同一頂点が複数ないか、3頂点以上か）</summary>
+        // ================================================================
+        // in-place 実体化 / 解除
+        // ================================================================
+
+        /// <summary>
+        /// 選択メッシュそのものへミラーの実体を生やす（in-place）。
+        /// 対称面をまたぐ処理（法線スムージング等）を正しく効かせるための作業用機能で、
+        /// 別オブジェクトは作らない。
+        ///
+        /// 元の頂点インデックス 0..N-1 と元の面インデックス 0..F-1 は保存される。
+        /// （統合は i と i+N の間でしか起こらないため。選択や各種頂点参照がそのまま生きる）
+        /// </summary>
+        /// <returns>解除に必要な情報。失敗時 null。</returns>
+        public static MirrorBakeResult BakeInPlace(
+            MeshObject target,
+            int axis,
+            float planeOffset,
+            float threshold,
+            bool flipU,
+            IReadOnlyCollection<int> boundaryVertices,
+            bool projectBoundaryToPlane)
+        {
+            if (target == null || target.VertexCount == 0) return null;
+
+            var (baked, result) = BakeMirror(
+                target, axis, planeOffset, threshold, flipU,
+                boundaryVertices, projectBoundaryToPlane);
+
+            if (baked == null || result == null) return null;
+
+            result.BakeAxis = axis;
+
+            // 中身だけ差し替える（MeshObject インスタンスは維持）
+            target.Vertices = baked.Vertices;
+            target.Faces    = baked.Faces;
+
+            return result;
+        }
+
+        /// <summary>
+        /// in-place 実体化を解除して半身へ戻す。
+        /// 元頂点 0..N-1 と元面 0..OriginalFaceCount-1 だけを残し、
+        /// mode に従ってどちら側の編集結果を採用するかを決める。
+        /// </summary>
+        /// <returns>成功したら true</returns>
+        public static bool UnbakeInPlace(
+            MeshObject target,
+            MirrorBakeResult result,
+            WriteBackMode mode)
+        {
+            if (target == null || result == null || !result.IsValid) return false;
+
+            int N = result.OriginalVertexCount;
+            if (N <= 0 || target.VertexCount < N) return false;
+
+            var planeNormal = result.PlaneNormal.normalized;
+            float planeDistance = result.PlaneDistance;
+
+            // 採用する座標を決める
+            var finalPos = new Vector3[N];
+            for (int i = 0; i < N; i++)
+            {
+                int newOrig = (i < result.OldToNew.Length) ? result.OldToNew[i] : -1;
+                int newMir  = (i + N < result.OldToNew.Length) ? result.OldToNew[i + N] : -1;
+
+                bool hasOrig = newOrig >= 0 && newOrig < target.VertexCount;
+                bool hasMir  = newMir  >= 0 && newMir  < target.VertexCount;
+
+                // 統合された境界頂点は元とミラーが同一頂点。
+                // ミラー逆変換や平均を掛けると平面の反対側へ飛ぶので、そのまま採用する。
+                if (hasOrig && newOrig == newMir)
+                {
+                    finalPos[i] = target.Vertices[newOrig].Position;
+                    continue;
+                }
+
+                Vector3 posOrig = hasOrig ? target.Vertices[newOrig].Position : Vector3.zero;
+                Vector3 posMir  = hasMir
+                    ? Mirror(target.Vertices[newMir].Position, planeNormal, planeDistance)
+                    : Vector3.zero;
+
+                switch (mode)
+                {
+                    case WriteBackMode.MirroredSideOnly:
+                        finalPos[i] = hasMir ? posMir : posOrig;
+                        break;
+
+                    case WriteBackMode.Average:
+                        if (hasOrig && hasMir)      finalPos[i] = (posOrig + posMir) * 0.5f;
+                        else if (hasMir)            finalPos[i] = posMir;
+                        else                        finalPos[i] = posOrig;
+                        break;
+
+                    default: // OriginalSideOnly
+                        finalPos[i] = hasOrig ? posOrig : posMir;
+                        break;
+                }
+            }
+
+            // 面を元の分だけ残す（ミラー面は破棄）
+            int keepFaces = Mathf.Clamp(result.OriginalFaceCount, 0, target.Faces.Count);
+            if (target.Faces.Count > keepFaces)
+                target.Faces.RemoveRange(keepFaces, target.Faces.Count - keepFaces);
+
+            // 頂点を元の分だけ残す
+            if (target.Vertices.Count > N)
+                target.Vertices.RemoveRange(N, target.Vertices.Count - N);
+
+            for (int i = 0; i < N; i++)
+                target.Vertices[i].Position = finalPos[i];
+
+            return true;
+        }
+
         private static bool IsValidFace(Face face)
         {
             if (face.VertexIndices.Count < 3)

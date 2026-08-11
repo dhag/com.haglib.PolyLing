@@ -359,7 +359,12 @@ namespace Poly_Ling.Player
                 return skinned ? s.PickMeshesSkinned : s.PickMeshesNoSkin;
             }
 
-            // Helper / BakedMirror / MirrorSide は TryPickObject 互換で常に通す
+            // ミラー側は実体側と原点が重なるため既定で除外（TryPickObject と同じ）
+            if (t == Poly_Ling.Data.MeshType.MirrorSide ||
+                t == Poly_Ling.Data.MeshType.BakedMirror)
+                return s.PickMirrorSides;
+
+            // Helper は TryPickObject 互換で常に通す
             return true;
         }
 

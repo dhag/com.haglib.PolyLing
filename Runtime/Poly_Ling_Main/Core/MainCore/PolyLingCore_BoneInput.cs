@@ -7,6 +7,7 @@ using UnityEngine;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Core
 {
@@ -317,7 +318,7 @@ namespace Poly_Ling.Core
             {
                 {
                     string __dbgDesc = "ボーン移動";
-                    UnityEngine.Debug.Log("[UndoDbg] MeshList.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                    PLDiag.UndoRecord("MeshList", __dbgDesc, record);
                     _undoController.MeshListStack.Record(record, __dbgDesc);
                 }
                 _undoController.FocusMeshList();

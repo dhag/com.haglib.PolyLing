@@ -10,6 +10,7 @@ using Poly_Ling.Context;
 using Poly_Ling.Core;
 using Poly_Ling.Tools;
 using Poly_Ling.Selection;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -500,6 +501,7 @@ namespace Poly_Ling.Player
         /// </summary>
         public void EnterTopologyChanged(ProjectContext project)
         {
+            PLDiag.ViewportEnter("EnterTopologyChanged", DiagCaller());
 #pragma warning disable CS0618
             var model = project?.CurrentModel;
             if (_renderer != null && model != null)
@@ -519,10 +521,130 @@ namespace Poly_Ling.Player
             RefreshToolOverlays();
         }
 
+        /// <summary>
+        /// 選択・属性の変更時: GPU バッファは作り直さず、選択反映と再描画だけ行う。
+        ///
+        /// EnterTopologyChanged との違いは RebuildAdapter を呼ばない点のみ。
+        /// RebuildAdapter は UnifiedSystemAdapter を Dispose して作り直し、
+        /// 全メッシュから GPU バッファを再構築するため、選択が変わっただけで
+        /// 呼ぶとリスト操作のたびに全再構築が走る。
+        /// </summary>
+        /// <summary>
+        /// 診断用に呼び出し元を1階層だけ取る。
+        /// EnterTopologyChanged は NotifyPanels 以外（Dispatch など）からも直接呼ばれるため、
+        /// どこから来たかが分からないと再構築の原因を追えない。
+        /// PLDiag が無効なときはスタックトレースを取らない。
+        /// </summary>
+        private static string DiagCaller()
+        {
+            if (!PLDiag.Enabled || !PLDiag.Viewport) return "";
+            var frame = new System.Diagnostics.StackTrace(2, false).GetFrame(0);
+            var method = frame?.GetMethod();
+            if (method == null) return "<unknown>";
+            return (method.DeclaringType?.Name ?? "?") + "." + method.Name;
+        }
+
+        /// <summary>
+        /// カテゴリ 2'': メッシュ属性のみの変更（可視・ロック）。
+        ///
+        /// EnterTopologyChanged と違い RebuildAdapter を呼ばない。
+        /// Hidden / Locked の頂点・線分・面フラグだけを GPU へ書き戻して再描画する。
+        ///
+        /// これが無いと、可視の変更が面（SubmitMeshes が毎フレーム MeshContext を見る）
+        /// にだけ効き、頂点と辺（GPU フラグ）に反映されない。
+        ///
+        /// 契機: 可視性・ロックの変更（ChangeKind.Attributes）。
+        /// </summary>
+        public void EnterMeshAttributesChanged(ProjectContext project)
+        {
+            PLDiag.ViewportEnter("EnterMeshAttributesChanged", DiagCaller());
+#pragma warning disable CS0618
+            var adapter = _renderer?.GetAdapter(0);
+            adapter?.BufferManager?.UpdateAllVisibilityFlags();
+
+            MarkAllSlotsDirty();
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
+        public void EnterSelectionChanged(ProjectContext project)
+        {
+            PLDiag.ViewportEnter("EnterSelectionChanged", DiagCaller());
+#pragma warning disable CS0618
+            var model = project?.CurrentModel;
+            if (_renderer != null && model != null)
+                _renderer.UpdateSelectedDrawableMesh(0, model);
+            MarkAllSlotsDirty();
+            ApplyAllViewportCameraTransforms();
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
+        }
+
         /// <summary>スキンウェイト可視化のターゲットボーン変更時: 色再計算＋全 viewport 再描画。</summary>
         public void EnterWeightTargetChanged(ProjectContext project)
         {
             PresentAll(project);
+        }
+
+        /// <summary>
+        /// カテゴリ 2': 頂点属性のみの変更（ボーンウェイト / UV）。
+        /// 頂点数・面構成・UV スロット数は不変。
+        ///
+        /// EnterTopologyChanged と違い RebuildAdapter を呼ばない。
+        /// 対象メッシュの範囲だけを GPU バッファへ部分転送し、
+        /// GPU スキニングの再計算と全 viewport の再描画準備のみ行う。
+        ///
+        /// 契機: スキンウェイトペイント確定、ウェイト一括操作（Flood / Normalize / Prune）。
+        /// 頂点数・面構成・UV スロット数が変わる操作では使用禁止（EnterTopologyChanged を使うこと）。
+        /// </summary>
+        public void EnterVertexAttributesChanged(
+            ProjectContext project,
+            Poly_Ling.Data.MeshContext mc,
+            bool weights = true,
+            bool uvs = false)
+        {
+            var model = project?.CurrentModel;
+            if (mc?.MeshObject == null || model == null) return;
+
+            var adapter = _renderer?.GetAdapter(0);
+            if (adapter == null || !adapter.IsInitialized) return;
+
+            var bm = adapter.BufferManager;
+            if (bm == null) return;
+
+            // MeshContext → contextIndex → unifiedMeshIndex
+            int ctxIdx = -1;
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                if (ReferenceEquals(model.GetMeshContext(i), mc)) { ctxIdx = i; break; }
+            }
+            if (ctxIdx < 0) return;
+
+            int unifiedIdx = adapter.ContextToUnifiedMeshIndex(ctxIdx);
+            if (unifiedIdx < 0) return;
+
+            if (weights) bm.UpdateBoneWeights(mc.MeshObject, unifiedIdx);
+            if (uvs)     bm.UpdateUVs(mc.MeshObject, unifiedIdx);
+
+#pragma warning disable CS0618
+            // ウェイト変更でスキニング結果が変わるため、GPU 変形と書き戻しをやり直す。
+            if (weights) UpdateTransform();
+            MarkAllSlotsDirty();
+            ApplyAllViewportCameraTransforms();
+            PresentAll(project);
+#pragma warning restore CS0618
+            OnRefreshSelectedFacesOverlay?.Invoke();
+            OnRefreshGizmoOverlay?.Invoke();
+            OnRefreshBoneOverlay?.Invoke();
+            RefreshToolOverlays();
         }
 
         /// <summary>
@@ -944,6 +1066,7 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
             _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
             _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
+            _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
 
             _renderer.SubmitMeshes(project, cam);
             _renderer.SubmitWireframeAndVertices(cam, slot);
@@ -2269,6 +2392,7 @@ namespace Poly_Ling.Player
             _renderer.ShowUnselectedMirror      = ds.ShowUnselectedMirror;
             _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
             _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
+            _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
 
             // adapter の BackfaceCullingEnabled もここで同期する
             // （DispatchCullingForDisplay の引数に使用するため）。

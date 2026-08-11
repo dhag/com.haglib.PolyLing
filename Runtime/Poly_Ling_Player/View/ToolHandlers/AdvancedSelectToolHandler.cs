@@ -8,7 +8,9 @@ using UnityEngine;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.Selection;
+using Poly_Ling.Symmetry;
 using Poly_Ling.UndoSystem;
+using Poly_Ling.Diagnostics;
 
 namespace Poly_Ling.Player
 {
@@ -64,6 +66,37 @@ namespace Poly_Ling.Player
             set { if (_tool.Settings is AdvancedSelectSettings s) s.EdgeLoopThreshold = Mathf.Clamp01(value); }
         }
 
+        /// <summary>UvNormalCount モードのしきい値。この値より大きい頂点を選ぶ。</summary>
+        public int UvNormalCountThreshold
+        {
+            get => ((AdvancedSelectSettings)_tool.Settings)?.UvNormalCountThreshold ?? 0;
+            set { if (_tool.Settings is AdvancedSelectSettings s) s.UvNormalCountThreshold = value; }
+        }
+
+        /// <summary>NearAxis モードのしきい値。軸に対応する平面までの距離がこの値未満の頂点を選ぶ。</summary>
+        public float AxisDistanceThreshold
+        {
+            get => ((AdvancedSelectSettings)_tool.Settings)?.AxisDistanceThreshold ?? 0.00001f;
+            set { if (_tool.Settings is AdvancedSelectSettings s) s.AxisDistanceThreshold = value; }
+        }
+
+        /// <summary>NearAxis モードの軸。X なら |Position.x| を見る。</summary>
+        public SymmetryAxis AxisKind
+        {
+            get => ((AdvancedSelectSettings)_tool.Settings)?.AxisKind ?? SymmetryAxis.X;
+            set { if (_tool.Settings is AdvancedSelectSettings s) s.AxisKind = value; }
+        }
+
+        /// <summary>属性選択を現在の選択頂点の中だけに限定するか。</summary>
+        public bool LimitToCurrentSelection
+        {
+            get => ((AdvancedSelectSettings)_tool.Settings)?.LimitToCurrentSelection ?? false;
+            set { if (_tool.Settings is AdvancedSelectSettings s) s.LimitToCurrentSelection = value; }
+        }
+
+        /// <summary>現在のモードがボタン実行型（クリック不要）か。</summary>
+        public bool IsAttributeMode => AdvancedSelectTool.IsAttributeMode(Mode);
+
         /// <summary>
         /// ShortestPath モードで登録されている始点頂点インデックスを返す。未登録は -1。
         /// エディタ版 ShortestPathSelectMode.DrawModeSettingsUI() の始点表示に対応。
@@ -85,6 +118,44 @@ namespace Poly_Ling.Player
             _selectionOps?.ClearAll();     // SelectionState 全解除 + 描画通知（内部 OnSelectionChanged）
             _tool.Reset();                 // ShortestPath 始点など進行中状態も破棄
             OnSelectionChanged?.Invoke();  // renderer 再通知 + RequestNormal
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// UvNormalCount / NearAxis モードの選択を実行する（パネルの「実行」ボタン）。
+        /// クリック非依存のため GPU ホバーは参照しない。
+        /// </summary>
+        public void ExecuteAttributeSelect()
+        {
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) return;
+
+            var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
+            bool changed = _tool.ExecuteAttributeSelect(ctx);
+            if (changed)
+            {
+                RecordSelectionUndo(ctx, oldSnap);
+                OnSelectionChanged?.Invoke();
+            }
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
+        /// 現在の選択を反転する（パネルの「現在の選択を反転」ボタン）。
+        /// SelectionState.Mode で有効なビットのみ対象。
+        /// </summary>
+        public void InvertSelection()
+        {
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) return;
+
+            var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
+            bool changed = _tool.InvertSelection(ctx);
+            if (changed)
+            {
+                RecordSelectionUndo(ctx, oldSnap);
+                OnSelectionChanged?.Invoke();
+            }
             OnRepaint?.Invoke();
         }
 
@@ -307,7 +378,7 @@ namespace Poly_Ling.Player
             var record = new SelectionChangeRecord(oldSnap, newSnap);
             {
                 string __dbgDesc = "詳細選択";
-                UnityEngine.Debug.Log("[UndoDbg] VertexEdit.Record desc=" + __dbgDesc + " type=" + ((record)?.GetType().Name ?? "<null>"));
+                PLDiag.UndoRecord("VertexEdit", __dbgDesc, record);
                 _undoController.VertexEditStack.Record(record, __dbgDesc);
             }
             _undoController.FocusVertexEdit();

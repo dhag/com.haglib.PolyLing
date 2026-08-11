@@ -328,10 +328,16 @@ namespace Poly_Ling.Core
             bool isMirror = meshContext != null &&
                 (meshContext.Type == MeshType.MirrorSide || meshContext.Type == MeshType.BakedMirror);
 
+            // 面の非表示（Face.IsHidden）を頂点へ展開する。
+            // 可視面と共有している頂点は編集対象として残す必要があるため、
+            // 「その頂点を参照する3頂点以上の面がすべて非表示」のときだけ非表示にする。
+            var vertexVisibleByFace = BuildVertexVisibilityByFace(meshObject);
+
             for (int v = 0; v < meshObject.VertexCount; v++)
             {
                 var vertex = meshObject.Vertices[v];
                 uint globalIdx = vertexOffset + (uint)v;
+                bool vertexVisible = isVisible && vertexVisibleByFace[v];
 
                 _positions[globalIdx] = vertex.Position;
                 // Normalsリストの最初の要素を使用（なければゼロ）
@@ -384,10 +390,45 @@ namespace Poly_Ling.Core
                 // フラグ計算
                 _vertexFlags[globalIdx] = (uint)_flagManager.ComputeVertexFlags(
                     modelIndex, meshIndex, v,
-                    isVisible, isLocked, isMirror);
+                    vertexVisible, isLocked, isMirror);
             }
 
             vertexOffset += (uint)meshObject.VertexCount;
+        }
+
+        /// <summary>
+        /// 面の非表示状態から頂点ごとの可視性を求める。
+        /// 3頂点以上の面に一度も参照されない頂点（孤立点・補助線のみの点）は
+        /// 面による非表示の対象外とし、可視のままにする。
+        /// </summary>
+        private static bool[] BuildVertexVisibilityByFace(MeshObject meshObject)
+        {
+            int count = meshObject.VertexCount;
+            var visible = new bool[count];
+            var referenced = new bool[count];
+
+            for (int f = 0; f < meshObject.FaceCount; f++)
+            {
+                var face = meshObject.Faces[f];
+                if (face == null || face.VertexCount < 3) continue;
+
+                bool faceVisible = !face.IsHidden;
+                for (int i = 0; i < face.VertexCount; i++)
+                {
+                    int vi = face.VertexIndices[i];
+                    if (vi < 0 || vi >= count) continue;
+
+                    referenced[vi] = true;
+                    if (faceVisible) visible[vi] = true;
+                }
+            }
+
+            for (int v = 0; v < count; v++)
+            {
+                if (!referenced[v]) visible[v] = true;
+            }
+
+            return visible;
         }
 
         /// <summary>
@@ -426,6 +467,10 @@ namespace Poly_Ling.Core
                 uint globalFaceIndex = faceBase + (uint)faceIdx;
                 uint faceLineStart = lineOffset;
 
+                // 面の非表示（Face.IsHidden）はその面が登録する線分にだけ効く。
+                // 同じ辺を可視面も持っている場合は可視面側の線分が別途登録される。
+                bool faceVisible = isVisible && !face.IsHidden;
+
                 if (face.VertexCount == 2)
                 {
                     // 補助線
@@ -438,7 +483,7 @@ namespace Poly_Ling.Core
                         V2 = vertexBase + (uint)v2,
                         Flags = (uint)_flagManager.ComputeLineFlags(
                             modelIndex, meshIndex, v1, v2, faceIdx,
-                            true, isVisible, isLocked, isMirror, false),
+                            true, faceVisible, isLocked, isMirror, false),
                         FaceIndex = globalFaceIndex,
                         MeshIndex = (uint)meshIndex,
                         ModelIndex = (uint)modelIndex
@@ -460,7 +505,7 @@ namespace Poly_Ling.Core
                             V2 = vertexBase + (uint)v2,
                             Flags = (uint)_flagManager.ComputeLineFlags(
                                 modelIndex, meshIndex, v1, v2, faceIdx,
-                                false, isVisible, isLocked, isMirror, false),
+                                false, faceVisible, isLocked, isMirror, false),
                             FaceIndex = globalFaceIndex,
                             MeshIndex = (uint)meshIndex,
                             ModelIndex = (uint)modelIndex
@@ -501,6 +546,9 @@ namespace Poly_Ling.Core
                 // 線分情報を取得（BuildLineDataで設定済み）
                 var lineInfo = _faceLineInfos[faceIdx];
 
+                // 面の非表示（Face.IsHidden）を可視性へ反映する。
+                bool faceVisible = isVisible && !face.IsHidden;
+
                 if (face.VertexCount < 3)
                 {
                     // 補助線も面情報として登録（線分情報のため）
@@ -510,7 +558,7 @@ namespace Poly_Ling.Core
                         VertexCount = (uint)face.VertexCount,
                         Flags = (uint)_flagManager.ComputeFaceFlags(
                             modelIndex, meshIndex, faceIdx,
-                            isVisible, isLocked, false),
+                            faceVisible, isLocked, false),
                         MaterialIndex = 0,
                         MeshIndex = (uint)meshIndex,
                         ModelIndex = (uint)modelIndex,
@@ -530,7 +578,7 @@ namespace Poly_Ling.Core
                     VertexCount = (uint)face.VertexCount,
                     Flags = (uint)_flagManager.ComputeFaceFlags(
                         modelIndex, meshIndex, faceIdx,
-                        isVisible, isLocked, false),
+                        faceVisible, isLocked, false),
                     MaterialIndex = (uint)face.MaterialIndex,
                     MeshIndex = (uint)meshIndex,
                     ModelIndex = (uint)modelIndex,
@@ -715,6 +763,110 @@ namespace Poly_Ling.Core
             {
                 _positionBuffer.SetData(_positions, 0, 0, _totalVertexCount);
             }
+        }
+
+        // ============================================================
+        // Level 4.5: 頂点属性の部分更新（トポロジー不変）
+        // ============================================================
+
+        /// <summary>
+        /// ボーンウェイト／ボーンインデックスのみを更新する（トポロジー不変）。
+        /// 頂点数・面構成が変わらないウェイト編集（ペイント / Flood / Normalize / Prune）用。
+        /// 充填規則は BuildVertexData と同一。
+        ///
+        /// 【meshIndex】Unified メッシュインデックス。MeshContextList のインデックスではない。
+        /// 非スキンド頂点の boneIndex には MeshContextList のインデックスを入れる必要があるため、
+        /// UnifiedToContextMeshIndex で逆引きする（UpdateTransformMatrices が
+        /// MeshContextList 順に行列を格納するため）。
+        /// </summary>
+        public void UpdateBoneWeights(MeshObject meshObject, int meshIndex)
+        {
+            if (meshObject == null || meshIndex < 0 || meshIndex >= _meshCount)
+                return;
+            if (_boneWeights == null || _boneIndices == null ||
+                _mirrorBoneWeights == null || _mirrorBoneIndices == null)
+                return;
+
+            var meshInfo = _meshInfos[meshIndex];
+            uint baseOffset = meshInfo.VertexStart;
+            int count = System.Math.Min(meshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
+            if (count <= 0) return;
+
+            int contextIndex = UnifiedToContextMeshIndex(meshIndex);
+            if (contextIndex < 0) return;
+
+            for (int v = 0; v < count; v++)
+            {
+                var vertex = meshObject.Vertices[v];
+                int gi = (int)baseOffset + v;
+
+                if (vertex.HasBoneWeight)
+                {
+                    var bw = vertex.BoneWeight.Value;
+                    _boneWeights[gi] = new Vector4(bw.weight0, bw.weight1, bw.weight2, bw.weight3);
+                    _boneIndices[gi] = new UInt4(
+                        (uint)bw.boneIndex0,
+                        (uint)bw.boneIndex1,
+                        (uint)bw.boneIndex2,
+                        (uint)bw.boneIndex3);
+                }
+                else
+                {
+                    _boneWeights[gi] = new Vector4(1, 0, 0, 0);
+                    _boneIndices[gi] = new UInt4((uint)contextIndex, 0, 0, 0);
+                }
+
+                if (vertex.HasMirrorBoneWeight)
+                {
+                    var mbw = vertex.MirrorBoneWeight.Value;
+                    _mirrorBoneWeights[gi] = new Vector4(mbw.weight0, mbw.weight1, mbw.weight2, mbw.weight3);
+                    _mirrorBoneIndices[gi] = new UInt4(
+                        (uint)mbw.boneIndex0,
+                        (uint)mbw.boneIndex1,
+                        (uint)mbw.boneIndex2,
+                        (uint)mbw.boneIndex3);
+                }
+                else
+                {
+                    _mirrorBoneWeights[gi] = _boneWeights[gi];
+                    _mirrorBoneIndices[gi] = new UInt4((uint)contextIndex, 0, 0, 0);
+                }
+            }
+
+            // 当該メッシュの範囲のみ転送する（全再構築・全アップロードを行わない）。
+            _boneWeightsBuffer?.SetData(_boneWeights, (int)baseOffset, (int)baseOffset, count);
+            _boneIndicesBuffer?.SetData(_boneIndices, (int)baseOffset, (int)baseOffset, count);
+            _mirrorBoneWeightsBuffer?.SetData(_mirrorBoneWeights, (int)baseOffset, (int)baseOffset, count);
+            _mirrorBoneIndicesBuffer?.SetData(_mirrorBoneIndices, (int)baseOffset, (int)baseOffset, count);
+        }
+
+        /// <summary>
+        /// UV のみを更新する（トポロジー不変）。
+        /// _uvs は BuildVertexData と同じく頂点あたり UVs[0] のみを保持する。
+        ///
+        /// 【制約】頂点あたりの UV スロット数が変わらない編集に限る。
+        /// スロット数が変わると BuildExpandedVertexMapping が作る展開対応表
+        /// (_expandedToOriginal) と不整合になるため、その場合は従来どおり
+        /// トポロジー再構築（BuildFromModel）を通すこと。
+        /// </summary>
+        public void UpdateUVs(MeshObject meshObject, int meshIndex)
+        {
+            if (meshObject == null || meshIndex < 0 || meshIndex >= _meshCount)
+                return;
+            if (_uvs == null) return;
+
+            var meshInfo = _meshInfos[meshIndex];
+            uint baseOffset = meshInfo.VertexStart;
+            int count = System.Math.Min(meshObject.VertexCount, (int)(_totalVertexCount - baseOffset));
+            if (count <= 0) return;
+
+            for (int v = 0; v < count; v++)
+            {
+                var vertex = meshObject.Vertices[v];
+                _uvs[(int)baseOffset + v] = vertex.UVs.Count > 0 ? vertex.UVs[0] : Vector2.zero;
+            }
+
+            _uvBuffer?.SetData(_uvs, (int)baseOffset, (int)baseOffset, count);
         }
 
         // ============================================================

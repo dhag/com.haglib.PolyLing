@@ -6,6 +6,8 @@
 using System;
 using UnityEditor;
 using UnityEngine;
+using Poly_Ling.Core;
+using Poly_Ling.Symmetry;
 
 namespace Poly_Ling.Tools
 {
@@ -39,6 +41,31 @@ namespace Poly_Ling.Tools
                 EdgeLoopThreshold = EditorGUILayout.Slider(T("DirectionThreshold"), EdgeLoopThreshold, 0f, 1f); //スライダーの上限下限
             }
 
+            // 属性選択モード（クリック不要。実行ボタンで動作）
+            if (IsAttributeMode(Mode))
+            {
+                if (Mode == AdvancedSelectMode.UvNormalCount)
+                {
+                    UvNormalCountThreshold = EditorGUILayout.IntSlider(
+                        T("UvNormalThreshold"), UvNormalCountThreshold,
+                        0, ParameterLimits.GetI("AdvancedSelect.UvNormalCount.Max"));
+                }
+                else
+                {
+                    AxisKind = (SymmetryAxis)EditorGUILayout.EnumPopup(T("Axis"), AxisKind);
+                    AxisDistanceThreshold = EditorGUILayout.FloatField(
+                        T("AxisDistanceThreshold"), AxisDistanceThreshold);
+                }
+
+                LimitToCurrentSelection = EditorGUILayout.Toggle(
+                    T("LimitToSelection"), LimitToCurrentSelection);
+
+                if (GUILayout.Button(T("Execute")))
+                {
+                    ExecuteAttributeSelect(_lastToolCtx);
+                }
+            }
+
             EditorGUILayout.Space(5);
 
             // 追加/削除モード
@@ -49,6 +76,14 @@ namespace Poly_Ling.Tools
             if (GUILayout.Toggle(!AddToSelection, T("Remove"), EditorStyles.miniButtonRight))
                 AddToSelection = false;
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(5);
+
+            // 選択反転（全モード共通）
+            if (GUILayout.Button(T("InvertSelection")))
+            {
+                InvertSelection(_lastToolCtx);
+            }
         }
     }
 }
