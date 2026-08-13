@@ -23,6 +23,7 @@ using HagLib.NET.Duplex;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
+using Poly_Ling.Serialization.FolderSerializer;
 
 namespace Poly_Ling.Remote
 {
@@ -319,6 +320,77 @@ namespace Poly_Ling.Remote
         // ================================================================
         // 公開送信API
         // ================================================================
+
+        /// <summary>ヒエラルキー書き出しクライアントのタイプ識別子。</summary>
+        public const string HierarchyClientType = "hierarchyExport";
+
+        /// <summary>
+        /// 現在のプロジェクト全体をプロジェクトファイル形式で一時フォルダへ書き出し、
+        /// PLRF 束にして "hierarchyExport" タイプのクライアントへ push する。
+        ///
+        /// 受け手はこれをフォルダへ展開し、ファイルから読んだときと同じ経路で
+        /// Unity ヒエラルキーへ書き出す。
+        /// </summary>
+        public void SendHierarchyBundle()
+        {
+            var project = GetProjectContext();
+            if (project == null) { Log("ヒエラルキー送信: プロジェクトなし"); return; }
+
+            int targets = 0;
+            foreach (var kv in _clientRegistry)
+                if (kv.Value.ClientType == HierarchyClientType) targets++;
+
+            if (targets == 0)
+            {
+                Log("ヒエラルキー送信: 受け手なし（hierarchyExport が未接続）");
+                return;
+            }
+
+            string bundleName = RemoteFileBundle.SanitizeFolderName(project.Name);
+            string sendRoot = Path.Combine(
+                Application.persistentDataPath, "PolyLing", "RemoteSend", bundleName);
+
+            byte[] bundle;
+            try
+            {
+                // 前回の残骸を混ぜないため作り直す。
+                if (Directory.Exists(sendRoot)) Directory.Delete(sendRoot, true);
+                Directory.CreateDirectory(sendRoot);
+
+                if (!CsvProjectSerializer.Export(sendRoot, project))
+                {
+                    Log("ヒエラルキー送信: プロジェクト書き出しに失敗");
+                    return;
+                }
+
+                bundle = RemoteFileBundle.Serialize(
+                    sendRoot, bundleName, RemoteFileBundle.KindProject, out string serErr);
+
+                if (bundle == null)
+                {
+                    Log("ヒエラルキー送信: " + serErr);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("ヒエラルキー送信: 失敗 " + ex.Message);
+                return;
+            }
+
+            // 先に JSON push で概要を通知し、続けてバイナリ本体を送る。
+            var jb = new JsonBuilder();
+            jb.BeginObject();
+            jb.KeyValue("bundleName", bundleName);
+            jb.KeyValue("modelCount", project.ModelCount);
+            jb.KeyValue("byteCount",  bundle.Length);
+            jb.EndObject();
+
+            BroadcastToType(HierarchyClientType, BuildPushMessage("hierarchyBundle", jb.ToString()));
+            BroadcastBinaryToType(HierarchyClientType, bundle);
+
+            Log($"ヒエラルキー送信: {project.ModelCount}モデル {bundle.Length}B → {targets}クライアント");
+        }
 
         public void SendProjectHeader()
         {
@@ -1555,6 +1627,15 @@ namespace Poly_Ling.Remote
             foreach (var kv in _clientRegistry)
                 if (kv.Value.ClientType == clientType)
                     SendToChannel(kv.Key, TypedPayload.FromJson(json), WebSocketFrameKind.Text);
+        }
+
+        /// <summary>指定タイプのクライアントにのみバイナリ push を送る（BroadcastToType のバイナリ版）。</summary>
+        private void BroadcastBinaryToType(string clientType, byte[] data)
+        {
+            if (data == null || _clientRegistry.Count == 0) return;
+            foreach (var kv in _clientRegistry)
+                if (kv.Value.ClientType == clientType)
+                    SendToChannel(kv.Key, TypedPayload.FromBinary(data), WebSocketFrameKind.Binary);
         }
 
         /// <summary>単一チャネルへ送出（SendReply のチャネル分岐と同一方針）。</summary>

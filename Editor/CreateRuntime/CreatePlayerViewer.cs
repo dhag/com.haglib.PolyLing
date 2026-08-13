@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 
+using Poly_Ling.ListClient;
 using Poly_Ling.Player;
 using System;
 using System.IO;
@@ -10,10 +11,69 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
+/// <summary>
+/// ランタイム生成で追加できるコンポーネントの種類。
+/// </summary>
+public enum PolyLingRuntimeObjectKind
+{
+    /// <summary>PolyLing本体（Poly_Ling.Player.PolyLingPlayerViewer）</summary>
+    PlayerViewer = 0,
+
+    /// <summary>モデルリストクライアント（Poly_Ling.ListClient.ModelListClient）</summary>
+    ModelListClient = 1,
+
+    /// <summary>オブジェクトリストクライアント（Poly_Ling.ListClient.MeshListClient）</summary>
+    ObjectListClient = 2,
+
+    /// <summary>マテリアルリストクライアント（Poly_Ling.ListClient.MaterialListClient）</summary>
+    MaterialListClient = 3,
+
+    /// <summary>プローブクライアント（Poly_Ling.ListClient.ProbeClient）</summary>
+    ProbeClient = 4,
+}
+
 public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
 {
     private const string DefaultPanelName = "New Panel Settings";
     private const string DefaultGameObjectName = "PolyLing Player Viewer";
+
+    /*
+     * 種類ごとの既定名。
+     * 既定値を共通にすると、2つ目以降の生成が
+     * 「アセット重複」「同名GameObject」で必ず中止になるため、
+     * 種類ごとに別名を与える。
+     * 配列の並びは PolyLingRuntimeObjectKind の値と一致させること。
+     */
+
+    private static readonly string[] KindDisplayNames =
+    {
+        "PolyLing本体（Player Viewer）",
+        "モデルリストクライアント",
+        "オブジェクトリストクライアント",
+        "マテリアルリストクライアント",
+        "プローブクライアント",
+    };
+
+    private static readonly string[] KindDefaultPanelNames =
+    {
+        DefaultPanelName,
+        "PolyLing Model List Panel Settings",
+        "PolyLing Object List Panel Settings",
+        "PolyLing Material List Panel Settings",
+        "PolyLing Probe Panel Settings",
+    };
+
+    private static readonly string[] KindDefaultGameObjectNames =
+    {
+        DefaultGameObjectName,
+        "PolyLing Model List Client",
+        "PolyLing Object List Client",
+        "PolyLing Material List Client",
+        "PolyLing Probe Client",
+    };
+
+    [SerializeField]
+    private PolyLingRuntimeObjectKind kind = PolyLingRuntimeObjectKind.PlayerViewer;
 
     [SerializeField]
     private string panelName = DefaultPanelName;
@@ -21,13 +81,68 @@ public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
     [SerializeField]
     private string gameObjectName = DefaultGameObjectName;
 
-    [MenuItem("PolyLing/CreateRuntime/Create Player Viewer")]
+    [MenuItem("PolyLing/CreateRuntime/Create Runtime Object")]
     private static void Open()
     {
         var window = GetWindow<PolyLingPlayerViewerSetupWindow>();
-        window.titleContent = new GUIContent("Player Viewer作成");
-        window.minSize = new Vector2(420f, 180f);
+        window.titleContent = new GUIContent("ランタイム生成");
+        window.minSize = new Vector2(420f, 210f);
         window.Show();
+    }
+
+    private static int KindIndex(PolyLingRuntimeObjectKind value)
+    {
+        int index = (int)value;
+
+        if (index < 0 || index >= KindDisplayNames.Length)
+        {
+            return 0;
+        }
+
+        return index;
+    }
+
+    private static string KindDisplayName(PolyLingRuntimeObjectKind value)
+    {
+        return KindDisplayNames[KindIndex(value)];
+    }
+
+    private static string KindDefaultPanelName(PolyLingRuntimeObjectKind value)
+    {
+        return KindDefaultPanelNames[KindIndex(value)];
+    }
+
+    private static string KindDefaultGameObjectName(PolyLingRuntimeObjectKind value)
+    {
+        return KindDefaultGameObjectNames[KindIndex(value)];
+    }
+
+    /// <summary>
+    /// 種類変更に伴って既定名を追従させる。
+    /// 入力欄が「変更前の種類の既定値のまま」のときだけ書き換え、
+    /// ユーザーが手で入れた名前は保持する。
+    /// </summary>
+    private void ApplyKindDefaults(
+        PolyLingRuntimeObjectKind previousKind,
+        PolyLingRuntimeObjectKind nextKind)
+    {
+        if (string.Equals(
+                panelName,
+                KindDefaultPanelName(previousKind),
+                StringComparison.Ordinal))
+        {
+            panelName = KindDefaultPanelName(nextKind);
+        }
+
+        if (string.Equals(
+                gameObjectName,
+                KindDefaultGameObjectName(previousKind),
+                StringComparison.Ordinal))
+        {
+            gameObjectName = KindDefaultGameObjectName(nextKind);
+        }
+
+        GUI.FocusControl(null);
     }
 
     private void OnGUI()
@@ -35,10 +150,26 @@ public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
         EditorGUILayout.Space(10);
 
         EditorGUILayout.LabelField(
-            "PolyLing Player Viewer セットアップ",
+            "PolyLing ランタイム生成",
             EditorStyles.boldLabel);
 
         EditorGUILayout.Space(8);
+
+        int selectedIndex = EditorGUILayout.Popup(
+            "種類",
+            KindIndex(kind),
+            KindDisplayNames);
+
+        var selectedKind = (PolyLingRuntimeObjectKind)selectedIndex;
+
+        if (selectedKind != kind)
+        {
+            PolyLingRuntimeObjectKind previousKind = kind;
+            kind = selectedKind;
+            ApplyKindDefaults(previousKind, selectedKind);
+        }
+
+        EditorGUILayout.Space(4);
 
         panelName = EditorGUILayout.TextField(
             "パネルセッティング名",
@@ -163,7 +294,7 @@ public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
             createdGameObject = new GameObject(gameObjectName);
             Undo.RegisterCreatedObjectUndo(
                 createdGameObject,
-                "Create PolyLing Player Viewer");
+                $"Create {KindDisplayName(kind)}");
 
             // UI Documentを追加してPanel Settingsを割り当てる。
             UIDocument uiDocument =
@@ -171,8 +302,14 @@ public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
 
             uiDocument.panelSettings = panelSettings;
 
-            // PolyLingPlayerViewerを追加する。
-            Undo.AddComponent<PolyLingPlayerViewer>(createdGameObject);
+            /*
+             * 種類に応じた本体コンポーネントを追加する。
+             * リスト系クライアントは ListClientBase / ProbeClient が
+             * UIDocument に PanelSettings が入っていれば
+             * Resources へのフォールバックを行わない。
+             * そのため上で割り当てた PanelSettings がそのまま使われる。
+             */
+            AddMainComponent(createdGameObject);
 
             EditorUtility.SetDirty(uiDocument);
             EditorUtility.SetDirty(createdGameObject);
@@ -189,6 +326,7 @@ public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
             EditorUtility.DisplayDialog(
                 "作成完了",
                 $"以下を作成した。\n\n" +
+                $"種類:\n{KindDisplayName(kind)}\n\n" +
                 $"Panel Settings:\n{assetPath}\n\n" +
                 $"GameObject:\n{gameObjectName}",
                 "OK");
@@ -224,6 +362,36 @@ public sealed class PolyLingPlayerViewerSetupWindow : EditorWindow
                 "作成中にエラーが発生したため、作成内容を取り消した。\n\n" +
                 exception.Message,
                 "OK");
+        }
+    }
+
+    /// <summary>
+    /// 選択された種類に対応する本体コンポーネントを追加する。
+    /// </summary>
+    private void AddMainComponent(GameObject target)
+    {
+        switch (kind)
+        {
+            case PolyLingRuntimeObjectKind.ModelListClient:
+                Undo.AddComponent<ModelListClient>(target);
+                break;
+
+            case PolyLingRuntimeObjectKind.ObjectListClient:
+                Undo.AddComponent<MeshListClient>(target);
+                break;
+
+            case PolyLingRuntimeObjectKind.MaterialListClient:
+                Undo.AddComponent<MaterialListClient>(target);
+                break;
+
+            case PolyLingRuntimeObjectKind.ProbeClient:
+                Undo.AddComponent<ProbeClient>(target);
+                break;
+
+            case PolyLingRuntimeObjectKind.PlayerViewer:
+            default:
+                Undo.AddComponent<PolyLingPlayerViewer>(target);
+                break;
         }
     }
 

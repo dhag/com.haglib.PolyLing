@@ -28,6 +28,7 @@ namespace Poly_Ling.Player
         private Button        _btnStart, _btnStop;
         private Label         _capturedInfo;
         private Button        _btnSendImages, _btnClearImages, _btnSendHeader;
+        private Button        _btnSendHierarchy;
 
         // 表示更新イベントの購読先（多重購読防止）
         private PolyLingPlayerServer _subscribedServer;
@@ -108,6 +109,22 @@ namespace Poly_Ling.Player
 
             root.Add(MakeSep());
 
+            // ── ヒエラルキー書き出しクライアントへ送る ────────────────────
+            root.Add(SecLabel("Hierarchy Export Client"));
+            var hierNote = new Label(
+                "プロジェクト全体をプロジェクトファイル形式で束ねて送ります。\n" +
+                "受け手（エディタ拡張のクライアント）が展開して書き出します。");
+            hierNote.style.fontSize   = 10;
+            hierNote.style.whiteSpace = WhiteSpace.Normal;
+            hierNote.style.marginBottom = 3;
+            root.Add(hierNote);
+
+            _btnSendHierarchy = new Button(OnSendHierarchy) { text = "Send Hierarchy (Project)" };
+            _btnSendHierarchy.style.marginBottom = 4;
+            root.Add(_btnSendHierarchy);
+
+            root.Add(MakeSep());
+
             // ── ログ ──────────────────────────────────────────────────────
             // サーバログは統合ログ（PlayerLog）へ移した。
             // 表示・コピー・保存は「ログ」パネル（PlayerLogSubPanel）が担う。
@@ -167,6 +184,7 @@ namespace Poly_Ling.Player
             _btnSendImages?.SetEnabled(running && hasImages);
             _btnClearImages?.SetEnabled(hasImages);
             _btnSendHeader?.SetEnabled(running);
+            _btnSendHierarchy?.SetEnabled(running);
         }
 
         // ================================================================
@@ -200,6 +218,12 @@ namespace Poly_Ling.Player
         private void OnSendHeader()
         {
             GetServer?.Invoke()?.SendProjectHeader();
+            Refresh();
+        }
+
+        private void OnSendHierarchy()
+        {
+            GetServer?.Invoke()?.SendHierarchyBundle();
             Refresh();
         }
 

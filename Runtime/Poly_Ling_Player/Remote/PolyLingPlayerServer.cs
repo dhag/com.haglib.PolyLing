@@ -29,6 +29,8 @@ namespace Poly_Ling.Player
 
         public List<ImageEntry>          CapturedImages    => _server?.CapturedImages;
         public void SendProjectHeader()                    => _server?.SendProjectHeader();
+        /// <summary>プロジェクト全体を PLRF 束にして "hierarchyExport" クライアントへ push する。</summary>
+        public void SendHierarchyBundle()                  => _server?.SendHierarchyBundle();
         public void SendCapturedImages()                   => _server?.SendCapturedImages();
         public void BroadcastPositions(MeshObject mesh)    => _server?.BroadcastPositions(mesh);
         /// <summary>対象を明示して位置を配信する（協働編集ではこちらを使う）。</summary>

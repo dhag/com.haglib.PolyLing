@@ -206,6 +206,24 @@ namespace Poly_Ling.EditorIO
         }
 
         // ================================================================
+        // 外部エントリ（リモート受信クライアント等）
+        // ================================================================
+
+        /// <summary>
+        /// フォルダを指定して書き出す。ボタン押下と同一経路（LoadAndExport）を通るため、
+        /// オプション・EditorPrefs・単体/一括判定は既存のまま適用される。
+        /// 既にウィンドウが開いていれば、その時点のオプション設定がそのまま使われる。
+        /// </summary>
+        public static void ExportFromFolder(string folderPath)
+        {
+            if (string.IsNullOrEmpty(folderPath)) return;
+
+            var window = GetWindow<HierarchyExportWindow>(true, "Hierarchy Export", true);
+            window._modelFolderPath = folderPath;
+            window.LoadAndExport();
+        }
+
+        // ================================================================
         // ロード → 書き出し
         // ================================================================
 

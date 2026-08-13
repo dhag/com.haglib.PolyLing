@@ -7,7 +7,7 @@ using UnityEngine.UIElements;
 
 namespace Poly_Ling.Player
 {
-    public class PlayerLayoutRoot
+    public partial class PlayerLayoutRoot
     {
         // ================================================================
         // Left ペイン公開要素
@@ -466,6 +466,10 @@ namespace Poly_Ling.Player
             _rootRef = root;
             SetupCrossDragRegion(root);
             SetupLayoutPersistence(root);
+
+            // 分割モード（4画面／横2／縦2／1画面）の初期化。
+            // _crossDragRegion 生成後である必要があるため最後に呼ぶ。
+            SetupViewportSplitMode();
         }
 
         // ================================================================
@@ -519,6 +523,10 @@ namespace Poly_Ling.Player
 
         private void SaveLayout()
         {
+            // 分割モード（4画面以外）中は一時的なサイズのため保存しない。
+            // モードは永続化せず、次回起動は常に4画面から始まる。
+            if (_splitMode != ViewportSplitMode.Four) return;
+
             // resolvedStyle から実寸を取得し、異常値（NaN/0以下）は保存しない。
             if (_leftPaneEl != null)
             {
@@ -686,6 +694,8 @@ namespace Poly_Ling.Player
             _perspPane.RegisterCallback<GeometryChangedEvent>(_ =>
             {
                 if (_crossDragging) return;
+                // 分割モード中は高さをモード側が支配する（相互上書きによる発振防止）。
+                if (_splitMode != ViewportSplitMode.Four) return;
                 float h = _perspPane.resolvedStyle.height;
                 if (float.IsNaN(h) || h <= 0f) return;
                 if (Mathf.Approximately(h, _lastSyncedHeight)) return;
@@ -695,6 +705,8 @@ namespace Poly_Ling.Player
             _topPane.RegisterCallback<GeometryChangedEvent>(_ =>
             {
                 if (_crossDragging) return;
+                // 分割モード中は高さをモード側が支配する（相互上書きによる発振防止）。
+                if (_splitMode != ViewportSplitMode.Four) return;
                 float h = _topPane.resolvedStyle.height;
                 if (float.IsNaN(h) || h <= 0f) return;
                 if (Mathf.Approximately(h, _lastSyncedHeight)) return;
@@ -1071,6 +1083,10 @@ namespace Poly_Ling.Player
             scroll.Add(foOther);
 
             scroll.Add(Separator());
+
+            // 中央4画面の分割モード切替（一時的なサイズ変更のみ・非永続）
+            scroll.Add(Header("画面分割"));
+            scroll.Add(BuildSplitModeGrid());
 
             scroll.Add(Header("Display (P/T/F/S)"));
 
