@@ -11,6 +11,39 @@
 //        ソース rest を用いる）。委譲用の UnityClipDTO ビューはクリップ設定時に一度だけ構築する。
 //
 // ■ 座標変換は新規に足さない。回転補間 = Slerp、位置補間 = Lerp（接線は保持しない）。
+//
+// ■ PositionScale の適用範囲（注意）
+//   PositionScale は boneName トラック（本クラスの ApplyBoneNameTrack）と、
+//   path / humanoid トラック（_clip = UnityClipApplier へ委譲）の両方に同じ値が掛かる。
+//   既定は 1。VMD 由来（PMX 単位）のクリップでは呼び出し側が
+//   EditorState.PmxUnityRatio（既定 0.1）を設定しなければ位置が 10 倍になる。
+//   MotionClipDTO は単位系を持たないため、本クラスでは自動判別できない。
+//
+// ■ 既知の問題（未対応・恒久メモ）
+//   (1) IK 未対応。本クラスには CCDIKSolver.Solve の呼び出しが無い。VMD を読んでも
+//       足ＩＫ・つま先ＩＫ・髪ＩＫは解かれず、IK ボーンのキーは実質無視される
+//       （旧 VMDApplier.ApplyFrame は EnableIK / _ikSolver を持つ）。
+//   (2) 付与親（GrantParentIndex / GrantRate）未評価。PMXDocument には保持されるが、
+//       ポーズ適用側（VMD / Motion / Core）に評価コードが存在しない。
+
+//
+// ================================================================
+// ■ 【重要】軸規約の変更に未追随。動作保証対象外。
+// ----------------------------------------------------------------
+//   PMX 取込のボーン局所軸は以下に変更された（PMXImporter.CalculateBoneModelRotation）:
+//     (1) AxisFlipOps.Basis を両側共役 S·M·S から片側変換 S·M へ
+//     (2) MMD 規約（X = 骨の長手方向）から DCC 標準（Y = 骨の長手方向）へ巡回置換
+//   本ファイルの R^-1·Q·R 変換（R = ctx.BoneModelRotation）はこの変更に
+//   追随していないため、結果は正しくない。
+//
+//   既知の症状:
+//     - 足ＩＫが収束しないフレームがある（左足首 max dist 1.14 / 12 of 50 サンプル）
+//     - 統合経路には IK 自体が無い（MotionClipApplier に Solve 呼び出しなし）
+//     - 付与親（GrantParentIndex / GrantRate）が未評価
+//
+//   修正する場合は、局所軸が「Y = 骨方向」であることを前提に組み直すこと。
+//   旧規約を前提とした つじつま合わせ を足さないこと。
+// ================================================================
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -62,6 +95,16 @@ namespace Poly_Ling.Motion
 
         /// <summary>外部 UnityBone CSV v2（ソース rest）を読み込む。以後 humanoid はリターゲット適用。</summary>
         public int LoadSourceRestCsv(string csvText) => _clip.LoadSourceRestCsv(csvText);
+
+        /// <summary>外部 UnityLimit CSV（マッスル可動域・実測）を委譲先へ読み込む。</summary>
+        public int LoadMuscleLimitCsv(string csvText) => _clip.LoadMuscleLimitCsv(csvText);
+
+        /// <summary>本体ボーンの適用方式（委譲先の設定）。</summary>
+        public UnityClipApplier.BodySource BodyMode
+        {
+            get => _clip.BodyMode;
+            set => _clip.BodyMode = value;
+        }
 
         /// <summary>ソース rest を破棄。</summary>
         public void ClearSourceRest() => _clip.ClearSourceRest();

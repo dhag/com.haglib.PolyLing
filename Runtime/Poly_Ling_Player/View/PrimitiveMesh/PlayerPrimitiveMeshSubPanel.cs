@@ -83,6 +83,17 @@ namespace Poly_Ling.Player
         /// <summary>現在の追加先モード。ギズモ中心の座標系判定に使う。</summary>
         public PrimitiveAddMode CurrentAddMode => _addMode;
 
+        // ---- 配置ギズモのサブモード切替（LiveWireInMainViewport のときだけ UI を出す） ----
+
+        /// <summary>現在の配置ギズモサブモードを返す。未配線なら Move 扱い。</summary>
+        public Func<PrimitivePlaceToolHandler.PlaceGizmoMode> GetPlaceGizmoMode;
+
+        /// <summary>配置ギズモサブモードの切替要求。未配線なら何もしない。</summary>
+        public Action<PrimitivePlaceToolHandler.PlaceGizmoMode> SetPlaceGizmoMode;
+
+        /// <summary>配置ギズモのサブモード切替ボタン（Move / Rotate / Scale の順）。</summary>
+        private Button[] _placeGizmoBtns;
+
         /// <summary>
         /// 外部（配置ギズモ）から TRS を変更した後に呼ぶ。
         /// 数値欄へ書き戻し、プレビューを再生成対象にする。
@@ -97,10 +108,10 @@ namespace Poly_Ling.Player
         // 図形種別
         // ================================================================
 
-        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text }
+        public enum ShapeKind { Cube, Sphere, Cylinder, Capsule, Plane, Pyramid, Revolution, Profile2D, NohMask, Frill, Pipe, PlaceObject, ObjectArray, Text, Bridge }
 
         private static readonly string[] ShapeKeys =
-            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text" };
+            { "Cube","Sphere","Cylinder","Capsule","Plane","Pyramid","Revolution","Profile2D","NohMask","Frill","Pipe","PlaceObject","ObjectArray","Text","Bridge" };
 
         /// <summary>図形カテゴリ（左ペインの「基本図形」/「高度な図形」に対応）。</summary>
         public enum ShapeCategory { Basic, Advanced }
@@ -110,7 +121,7 @@ namespace Poly_Ling.Player
             { ShapeKind.Cube, ShapeKind.Sphere, ShapeKind.Cylinder, ShapeKind.Capsule, ShapeKind.Plane, ShapeKind.Pyramid };
         private static readonly ShapeKind[] AdvancedShapes =
             { ShapeKind.Revolution, ShapeKind.Profile2D, ShapeKind.NohMask, ShapeKind.Frill, ShapeKind.Pipe, ShapeKind.PlaceObject,
-              ShapeKind.ObjectArray, ShapeKind.Text };
+              ShapeKind.ObjectArray, ShapeKind.Text, ShapeKind.Bridge };
 
         // ================================================================
         // パラメータ
@@ -118,6 +129,18 @@ namespace Poly_Ling.Player
 
         private ShapeKind _current = ShapeKind.Cube;
         private ShapeCategory _category = ShapeCategory.Basic;
+
+        // カテゴリ別に「最後に選んだ図形」を保持する。パネルを開き直したときは
+        // カテゴリ先頭ではなくこの値を選び直す。MemoryKey があれば起動をまたいで
+        // PrimitiveShapeMemory（JSON）にも保存する。
+        private ShapeKind _lastBasic    = ShapeKind.Cube;
+        private ShapeKind _lastAdvanced = ShapeKind.Revolution;
+
+        /// <summary>
+        /// 最後に選んだ図形の保存に使うパネル識別子。Build より前に設定する。
+        /// 空のときはファイル保存を行わず、起動中のみの記憶になる。
+        /// </summary>
+        public string MemoryKey { get; set; }
         private CubeMeshGenerator.CubeParams         _cubeP   = CubeMeshGenerator.CubeParams.Default;
         private SphereMeshGenerator.SphereParams     _sphereP = SphereMeshGenerator.SphereParams.Default;
         private CylinderMeshGenerator.CylinderParams _cylP    = CylinderMeshGenerator.CylinderParams.Default;
@@ -168,7 +191,7 @@ namespace Poly_Ling.Player
         // UI
         // ================================================================
 
-        private readonly Button[]  _shapeBtns = new Button[14];
+        private readonly Button[]  _shapeBtns = new Button[15];
         private VisualElement      _shapeGrid;
         private VisualElement      _settingsContainer;
         private VisualElement      _profileEditorContainer;
@@ -363,6 +386,7 @@ namespace Poly_Ling.Player
 
         public void Build(VisualElement parent, Transform sceneRoot)
         {
+            LoadShapeMemory();
             _cubeP.LinkTopBottom = true;
             _sectionEl = parent;
             parent.Clear();
@@ -521,8 +545,29 @@ namespace Poly_Ling.Player
             });
             parent.Add(trsResetRow);
 
-            // 配置ギズモのサブモード切替は左ペイン（PlayerLayoutRoot の
-            // PlaceGizmoMoveBtn / PlaceGizmoRotateBtn / PlaceGizmoScaleBtn）へ移設済み。
+            // 配置ギズモのサブモード切替。GizmoData は矢印 / リング / キューブを
+            // 排他的にしか描画できないため、3種を同時には出さず切り替える。
+            // 配置ギズモを持つのは 3D連携インスタンスだけなので、そちらにのみ出す。
+            if (LiveWireInMainViewport)
+            {
+                parent.Add(SL(T("PlaceGizmo")));
+
+                var placeGizmoRow = new VisualElement();
+                placeGizmoRow.style.flexDirection = FlexDirection.Row;
+                placeGizmoRow.style.marginBottom  = 2;
+
+                _placeGizmoBtns = new Button[3];
+                _placeGizmoBtns[0] = PGB(placeGizmoRow, T("PlaceGizmoMove"),
+                    PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
+                _placeGizmoBtns[1] = PGB(placeGizmoRow, T("PlaceGizmoRotate"),
+                    PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
+                _placeGizmoBtns[2] = PGB(placeGizmoRow, T("PlaceGizmoScale"),
+                    PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
+                _placeGizmoBtns[2].style.marginRight = 0;
+
+                parent.Add(placeGizmoRow);
+                RefreshPlaceGizmoButtons();
+            }
 
             var ignorePoseToggle = new Toggle(T("IgnorePose")) { value = _ignorePoseInArmature };
             ignorePoseToggle.style.color = new StyleColor(Color.white);
@@ -674,6 +719,9 @@ namespace Poly_Ling.Player
         /// </summary>
         private Matrix4x4 LiveWireMatrix()
         {
+            // 穴つなぎのプレビュー頂点はワールド空間で作ってあるので、行列は掛けない。
+            if (_current == ShapeKind.Bridge) return Matrix4x4.identity;
+
             var local = Matrix4x4.Translate(_worldPos);
             if (_addMode != PrimitiveAddMode.AddToExisting) return local;
             var parent = GetAddTargetWorldMatrix?.Invoke() ?? Matrix4x4.identity;
@@ -743,8 +791,33 @@ namespace Poly_Ling.Player
         {
             _category = cat;
             PopulateShapeGrid();
-            var shapes = CurrentCategoryShapes();
-            Select(shapes.Length > 0 ? shapes[0] : ShapeKind.Cube);
+            Select(RememberedShape(cat));
+        }
+
+        /// <summary>
+        /// 指定カテゴリで最後に選んだ図形。記憶値がそのカテゴリに属さない場合は
+        /// カテゴリ先頭へフォールバックする。
+        /// </summary>
+        private ShapeKind RememberedShape(ShapeCategory cat)
+        {
+            var shapes = cat == ShapeCategory.Advanced ? AdvancedShapes : BasicShapes;
+            var kind   = cat == ShapeCategory.Advanced ? _lastAdvanced : _lastBasic;
+            if (System.Array.IndexOf(shapes, kind) >= 0) return kind;
+            return shapes.Length > 0 ? shapes[0] : ShapeKind.Cube;
+        }
+
+        /// <summary>
+        /// 保存済みの「最後に選んだ図形」を読み込む。MemoryKey が空のときは何もしない。
+        /// </summary>
+        private void LoadShapeMemory()
+        {
+            var basic = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.Basic);
+            if (basic.HasValue && System.Array.IndexOf(BasicShapes, basic.Value) >= 0)
+                _lastBasic = basic.Value;
+
+            var adv = PrimitiveShapeMemory.Get(MemoryKey, ShapeCategory.Advanced);
+            if (adv.HasValue && System.Array.IndexOf(AdvancedShapes, adv.Value) >= 0)
+                _lastAdvanced = adv.Value;
         }
 
         /// <summary>指定形状のカテゴリを返す。</summary>
@@ -771,6 +844,13 @@ namespace Poly_Ling.Player
         private void Select(ShapeKind k)
         {
             _current = k;
+
+            // 選んだ図形をカテゴリ別に記憶する（次にパネルを開いたときの復元用）。
+            var cat = CategoryOf(k);
+            if (cat == ShapeCategory.Advanced) _lastAdvanced = k;
+            else                               _lastBasic    = k;
+            PrimitiveShapeMemory.Set(MemoryKey, cat, k);
+
             for (int i = 0; i < _shapeBtns.Length; i++)
             {
                 if (_shapeBtns[i] == null) continue;
@@ -811,6 +891,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.PlaceObject: BuildPlaceObjectUI(_settingsContainer); break;
                 case ShapeKind.ObjectArray: BuildObjectArrayUI(_settingsContainer); break;
                 case ShapeKind.Text:        BuildTextUI(_settingsContainer);        break;
+                case ShapeKind.Bridge:      BuildBridgeUI(_settingsContainer);      break;
                 default:
                     var lbl = new Label(T("NotSupported"));
                     lbl.style.color = new StyleColor(new Color(0.8f, 0.5f, 0.3f));
@@ -3874,6 +3955,10 @@ namespace Poly_Ling.Player
                 case ShapeKind.Text:
                     mo = GenerateTextMesh();
                     break;
+                // 穴つなぎはプレビューだけ MeshObject を作る（座標はワールド空間）。
+                // 実生成は書き込み先の既存頂点を参照するため OnBridgeGenerate へ流す。
+                case ShapeKind.Bridge:
+                    return GenerateBridgeMesh();
                 // 歪み複製は1つのメッシュを返さない（モデルへ直接オブジェクトを挿入する）。
                 // プレビュー / ライブワイヤは出さないので null を返す。
                 case ShapeKind.ObjectArray: return null;
@@ -3912,6 +3997,7 @@ namespace Poly_Ling.Player
                 case ShapeKind.Text:       return _textP.MeshName;
                 // 歪み複製は生成物ごとに複製元名を使うため、ここでは固定名を返す。
                 case ShapeKind.ObjectArray: return "ObjectArray";
+                case ShapeKind.Bridge:     return BridgeMeshName;
                 default:                   return _current.ToString();
             }
         }
@@ -4118,6 +4204,10 @@ namespace Poly_Ling.Player
                     // 歪み複製はモデルへ直接オブジェクトを挿入するため、
                     // OnMeshCreated（単一 MeshObject）経路は通らない。
                     if (_current == ShapeKind.ObjectArray) { InvokeObjectArrayGenerate(); return; }
+
+                    // 穴つなぎは書き込み先の既存頂点を参照する面を足すため、
+                    // OnMeshCreated（単一 MeshObject を新規追加）経路は通らない。
+                    if (_current == ShapeKind.Bridge) { InvokeBridgeGenerate(); return; }
 
                     var mo = Generate(false);
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
@@ -4327,6 +4417,47 @@ namespace Poly_Ling.Player
         {
             var b = new Button(onClick) { text = t }; b.style.flexGrow = 1; b.style.marginRight = 2;
             b.style.height = 18; b.style.fontSize = 9; p.Add(b);
+        }
+
+        /// <summary>配置ギズモのサブモードボタンを1つ作って行へ追加する。</summary>
+        private Button PGB(VisualElement row, string label,
+                           PrimitivePlaceToolHandler.PlaceGizmoMode mode)
+        {
+            var b = new Button(() =>
+            {
+                SetPlaceGizmoMode?.Invoke(mode);
+                RefreshPlaceGizmoButtons();
+            }) { text = label };
+            b.style.flexGrow = 1; b.style.marginRight = 2;
+            b.style.height = 18; b.style.fontSize = 9;
+            row.Add(b);
+            return b;
+        }
+
+        /// <summary>
+        /// 配置ギズモのサブモードボタンの背景色を現在のモードに合わせる。
+        /// ApplyDarkTheme は全 Button を既定色へ戻すため、その後にも呼ぶこと。
+        /// </summary>
+        public void RefreshPlaceGizmoButtons()
+        {
+            if (_placeGizmoBtns == null) return;
+
+            var cur = GetPlaceGizmoMode != null
+                ? GetPlaceGizmoMode()
+                : PrimitivePlaceToolHandler.PlaceGizmoMode.Move;
+
+            var on  = new StyleColor(new Color(0.25f, 0.45f, 0.65f));
+            var off = new StyleColor(new Color(0.25f, 0.25f, 0.25f));
+
+            void Paint(int i, PrimitivePlaceToolHandler.PlaceGizmoMode m)
+            {
+                if (i >= _placeGizmoBtns.Length || _placeGizmoBtns[i] == null) return;
+                _placeGizmoBtns[i].style.backgroundColor = (m == cur) ? on : off;
+            }
+
+            Paint(0, PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
+            Paint(1, PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
+            Paint(2, PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
         }
     }
 }

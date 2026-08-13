@@ -7,15 +7,15 @@
 //   6頂点の八面体。根 = ローカル原点、先端 = +X、環は x = 0.5 の断面。
 //
 // 【前側(+Z)だけ広げている理由】
-//   元のボーン形状は環が ±Z = 0.4 / ±Y = 0.2 で、X軸まわり180°回転に対して
-//   自己対称になる。それだとロール（軸まわりの回転）が 180° の不定性を持ち、
-//   取り込み時に姿勢を一意へ戻せない。
-//   前側 +Z を後側 -Z より広くして対称性を壊すことで、
-//   「軸 = 根→先端」「前 = 環の中で軸から最も遠い点」の2本で姿勢が確定する。
+//   環が前後で同幅だと、長手軸まわり 180 度の回転に対して自己対称になる。
+//   それだとロール（軸まわりの回転）が 180 度の不定性を持ち、取り込み時に
+//   姿勢を一意へ戻せない。前側 +Z を後側 -Z より広くして対称性を壊すことで、
+//   「長手軸 = 根→先端」「前 = 環の重心が軸からずれる向き」の2本で姿勢が確定する。
+//   ±X は対称なので前後の判定には使えない（重心を採ると相殺されて消える）。
 //   頂点の並び順に依存しないので、外部ツールを経由して戻ってきても読める。
 //
 // 【大きさ】
-//   全長（根→先端）を Length とし、Length / UnitTipX を内部単位の倍率にする。
+//   全長（根→先端）を Length とし、Length / UnitTipY を内部単位の倍率にする。
 //   呼び出し側はさらにオブジェクトの拡大率平均を掛ける。
 
 using System.Collections.Generic;
@@ -31,20 +31,28 @@ namespace Poly_Ling.Tools.ObjectPose
         // 形状定数（内部単位）
         // ================================================================
 
-        /// <summary>先端の X 位置。全長の基準。</summary>
-        public const float UnitTipX = 2.5f;
+        // ■ 軸の規約（MeshSceneRenderer.BoneShapeVertices と共通）
+        //     ローカル Y … 最も長い。根(0) → 先端(+Y)。長手方向
+        //     ローカル X … 次に長い。環の左右幅（±で対称）
+        //     ローカル Z … 最も短い。前(+Z)を後(-Z)より広くして非対称にする
+        //
+        //   Z を非対称にする理由: 前後が同幅だと長手軸まわり 180 度の回転で
+        //   形が自己対称になり、ロールの向きが読めなくなる。
 
-        /// <summary>環（断面）の X 位置。</summary>
-        public const float UnitRingX = 0.5f;
+        /// <summary>先端の Y 位置。全長の基準。</summary>
+        public const float UnitTipY = 2.5f;
 
-        /// <summary>前側（+Z）の張り出し。後側より広い＝姿勢の目印。</summary>
-        public const float UnitFrontZ = 0.45f;
+        /// <summary>環（断面）の Y 位置。</summary>
+        public const float UnitRingY = 0.5f;
+
+        /// <summary>左右（±X）の張り出し。長手の次に長い。</summary>
+        public const float UnitSideX = 0.4f;
+
+        /// <summary>前側（+Z）の張り出し。後側より広い＝姿勢の目印。最も短い。</summary>
+        public const float UnitFrontZ = 0.25f;
 
         /// <summary>後側（-Z）の張り出し。</summary>
-        public const float UnitBackZ = 0.25f;
-
-        /// <summary>左右（±Y）の張り出し。</summary>
-        public const float UnitSideY = 0.2f;
+        public const float UnitBackZ = 0.15f;
 
         /// <summary>くさび1個あたりの頂点数。</summary>
         public const int VertexCount = 6;
@@ -52,23 +60,25 @@ namespace Poly_Ling.Tools.ObjectPose
         // 頂点の並び（生成時の順序。読み取りは順序に依存しない）
         public const int IdxRoot  = 0;
         public const int IdxTip   = 1;
-        public const int IdxPosY  = 2;
+        public const int IdxPosX  = 2;
         public const int IdxPosZ  = 3;   // 前（広い）
-        public const int IdxNegY  = 4;
+        public const int IdxNegX  = 4;
         public const int IdxNegZ  = 5;   // 後（狭い）
 
         private static readonly Vector3[] UnitVertices =
         {
-            new Vector3(0f,        0f,          0f),          // 0 根
-            new Vector3(UnitTipX,  0f,          0f),          // 1 先端
-            new Vector3(UnitRingX,  UnitSideY,  0f),          // 2 +Y
-            new Vector3(UnitRingX,  0f,   UnitFrontZ),        // 3 +Z（前・広い）
-            new Vector3(UnitRingX, -UnitSideY,  0f),          // 4 -Y
-            new Vector3(UnitRingX,  0f,  -UnitBackZ),         // 5 -Z（後・狭い）
+            new Vector3( 0f,          0f,         0f),        // 0 根
+            new Vector3( 0f,          UnitTipY,   0f),        // 1 先端（+Y）
+            new Vector3( UnitSideX,   UnitRingY,  0f),        // 2 +X
+            new Vector3( 0f,          UnitRingY,  UnitFrontZ),// 3 +Z（前・広い）
+            new Vector3(-UnitSideX,   UnitRingY,  0f),        // 4 -X
+            new Vector3( 0f,          UnitRingY, -UnitBackZ), // 5 -Z（後・狭い）
         };
 
-        // 環を軸まわりに一周する順序（+Y → +Z → -Y → -Z）
-        private static readonly int[] RingCycle = { IdxPosY, IdxPosZ, IdxNegY, IdxNegZ };
+        // 環を軸（+Y）まわりに一周する順序（+Z → +X → -Z → -X）
+        //   Z × X = Y なので、この順が +Y まわりで右ねじ方向。
+        //   長手を X から Y に変えたため順序も入れ替えている（面の裏返り防止）。
+        private static readonly int[] RingCycle = { IdxPosZ, IdxPosX, IdxNegZ, IdxNegX };
 
         // ================================================================
         // 生成
@@ -85,7 +95,7 @@ namespace Poly_Ling.Tools.ObjectPose
         {
             var mo = new MeshObject(string.IsNullOrEmpty(name) ? "Wedge" : name);
 
-            float k = size / UnitTipX;
+            float k = size / UnitTipY;
 
             var pos = new Vector3[VertexCount];
             for (int i = 0; i < VertexCount; i++)
@@ -126,9 +136,12 @@ namespace Poly_Ling.Tools.ObjectPose
         /// <summary>
         /// くさびの形状から根の位置と姿勢を復元する。頂点の並び順には依存しない。
         ///   1) 最も離れた2点が「根」と「先端」。環寄りの側が根。
-        ///   2) 軸 = 根 → 先端
-        ///   3) 前 = 環のうち軸から最も遠い点の径方向（+Z が最も広いため）
-        ///   4) 上 = cross(前, 軸)
+        ///   2) 長手軸（ローカル +Y） = 根 → 先端
+        ///   3) 前（ローカル +Z） = 環の重心の径方向成分
+        ///      ±X は対称なので「最も遠い点」では前後を特定できない。
+        ///      +Z と -Z の張り出しが非対称であることを利用し、環の重心が
+        ///      軸からずれる向き＝前 とする。
+        ///   4) 姿勢 = LookRotation(前, 長手軸)  … forward=+Z, up=+Y
         /// </summary>
         /// <returns>くさびとして読めたら true</returns>
         public static bool TryReadPose(MeshObject mo, out Vector3 position, out Quaternion rotation)
@@ -184,27 +197,26 @@ namespace Poly_Ling.Tools.ObjectPose
             if (len < 1e-6f) return false;
             axis /= len;
 
-            // 3) 環のうち軸から最も遠い点 = 前（+Z）
-            Vector3 front = Vector3.zero;
-            float bestR = -1f;
-            for (int k = 0; k < pts.Count; k++)
-            {
-                if (k == ia || k == ib) continue;
-                Vector3 d = pts[k] - root;
-                Vector3 r = d - axis * Vector3.Dot(d, axis);
-                float m = r.sqrMagnitude;
-                if (m > bestR) { bestR = m; front = r; }
-            }
-            if (bestR < 1e-12f) return false;
+            // 3) 前（+Z）= 環の重心の径方向成分
+            //    ±X は対称なので相殺され、非対称な Z 側だけが残る。
+            //    UnitFrontZ > UnitBackZ より、残った向きが前になる。
+            Vector3 dRing = ringCenter - root;
+            Vector3 front = dRing - axis * Vector3.Dot(dRing, axis);
+            float frontLen2 = front.sqrMagnitude;
+
+            // 非対称が読み取れないほど小さい場合（潰れた・改変されたくさび）は失敗させる。
+            // 軸長に対する相対量で判定する。
+            float minFront2 = (len * 1e-3f) * (len * 1e-3f);
+            if (frontLen2 < minFront2) return false;
             front.Normalize();
 
-            // 4) 上 = cross(前, 軸)（Unity では cross(z, x) = y）
-            Vector3 up = Vector3.Cross(front, axis);
-            if (up.sqrMagnitude < 1e-12f) return false;
-            up.Normalize();
+            // 軸と直交させる（数値誤差対策）
+            front = (front - axis * Vector3.Dot(front, axis)).normalized;
+            if (front.sqrMagnitude < 1e-12f) return false;
 
+            // 4) forward = 前(+Z), up = 長手(+Y)
             position = root;
-            rotation = Quaternion.LookRotation(front, up);
+            rotation = Quaternion.LookRotation(front, axis);
             return true;
         }
 

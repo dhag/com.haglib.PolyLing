@@ -36,6 +36,12 @@ namespace Poly_Ling.Core
         /// <summary>Perspective ビュー（オルソ切替含む）の注視点距離 下限（拡大限界）</summary>
         public const string KeyCameraZoomDistanceMin = "Camera.ZoomDistanceMin";
 
+        /// <summary>粗動倍率: Shift 押下中の視点操作（回転・パン・ズーム）の速度倍率</summary>
+        public const string KeyCameraSpeedCoarse = "Camera.SpeedCoarse";
+
+        /// <summary>微動倍率: Ctrl 押下中の視点操作（回転・パン・ズーム）の速度倍率</summary>
+        public const string KeyCameraSpeedFine = "Camera.SpeedFine";
+
         // ================================================================
         // 既定値テーブル（key, 既定値, コメント）。ここが唯一の定義元。
         // ================================================================
@@ -50,6 +56,8 @@ namespace Poly_Ling.Core
             // --- Camera（カメラ） ---
             (KeyCameraOrthoSizeMin,     0.001f, "拡大限界: Top/Front/Side の orthographicSize 下限（小さいほど拡大できる）"),
             (KeyCameraZoomDistanceMin,  0.001f, "拡大限界: Perspective の注視点距離 下限（小さいほど拡大できる）"),
+            (KeyCameraSpeedCoarse,      4f,     "粗動倍率: Shift+視点操作（回転・パン・ズーム）の速度倍率"),
+            (KeyCameraSpeedFine,        0.2f,   "微動倍率: Ctrl+視点操作（回転・パン・ズーム）の速度倍率"),
         };
 
         // ================================================================

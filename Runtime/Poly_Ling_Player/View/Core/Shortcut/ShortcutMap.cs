@@ -77,6 +77,11 @@ namespace Poly_Ling.Player
         public const string CmdShapePlaceObject = "shape.placeObject";
         public const string CmdShapeObjectArray = "shape.objectArray";
 
+        // 画面キャプチャ (PNG 保存)。2キー連続で使う。
+        public const string CmdCaptureMain    = "capture.main";
+        public const string CmdCaptureTriView = "capture.triView";
+        public const string CmdCaptureWindow  = "capture.window";
+
         // 単発割当: キー組 → コマンドID
         private readonly Dictionary<ShortcutBinding, string> _map = new();
 
@@ -147,6 +152,13 @@ namespace Poly_Ling.Player
             m.SetSequence(p, NoMod(KeyCode.E), CmdShapePipe);        // P E : Pipe
             m.SetSequence(p, NoMod(KeyCode.O), CmdShapePlaceObject); // P O : PlaceObject (接地)
             m.SetSequence(p, NoMod(KeyCode.B), CmdShapeObjectArray); // P B : ObjectArray (歪み複製)
+
+            // 画面キャプチャ: プレフィックス K を押してから対象キー。
+            //   K M : メイン3D画面 / K T : 3面図を含む / K W : ウインドウ全体
+            var k = NoMod(KeyCode.K);
+            m.SetSequence(k, NoMod(KeyCode.M), CmdCaptureMain);    // K M : メイン3D画面
+            m.SetSequence(k, NoMod(KeyCode.T), CmdCaptureTriView); // K T : 3面図を含む
+            m.SetSequence(k, NoMod(KeyCode.W), CmdCaptureWindow);  // K W : ウインドウ全体
             return m;
         }
 

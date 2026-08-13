@@ -26,6 +26,8 @@ namespace Poly_Ling.Tools
             ["LimitToSelection"] = new() { ["en"] = "Within current selection", ["ja"] = "選択中の頂点内から", ["hi"] = "えらんでるてんのなかから" },
             ["Execute"] = new() { ["en"] = "Execute", ["ja"] = "実行", ["hi"] = "じっこう" },
             ["InvertSelection"] = new() { ["en"] = "Invert Selection", ["ja"] = "現在の選択を反転", ["hi"] = "いまのせんたくをはんてん" },
+            ["BoundaryEdgeGroup"] = new() { ["en"] = "Edge Group", ["ja"] = "エッジ群", ["hi"] = "エッジのかたまり" },
+            ["BoundaryEdgeInSelection"] = new() { ["en"] = "Edge In Sel", ["ja"] = "選択内エッジ", ["hi"] = "えらんだなかのエッジ" },
         };
 
         private static string T(string key) => L.GetFrom(Texts, key);

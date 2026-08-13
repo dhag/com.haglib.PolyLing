@@ -131,7 +131,7 @@ namespace Poly_Ling.Motion
         }
 
         // ------------------------------------------------------------
-        // VMDData → MotionClipDTO（既存の右手系→左手系変換を再利用）
+        // VMDData → MotionClipDTO（既存の軸反転 X・Z 両反転 を再利用）
         // ------------------------------------------------------------
         public static MotionClipDTO FromVMD(VMDData vmd)
         {

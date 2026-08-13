@@ -85,6 +85,10 @@ namespace Poly_Ling.Core
             ("AdvancedSelect.AxisDistance.Min",      0.0f, "高度な選択: 軸平面距離しきい値の下限"),
             ("AdvancedSelect.AxisDistance.Max",      1.0f, "高度な選択: 軸平面距離しきい値の上限"),
 
+            // --- VertexHole（頂点に穴あけ） ---
+            ("VertexHole.Ratio.Min",              0.0f,  "頂点に穴あけ: 位置比率の下限（0=根元）"),
+            ("VertexHole.Ratio.Max",              1.0f,  "頂点に穴あけ: 位置比率の上限（1=選択頂点の位置）"),
+
             // --- SmoothEdges（辺を滑らかに） ---
             ("SmoothEdges.Strength.Min",           0.0f,  "辺を滑らかに: 強度の下限"),
             ("SmoothEdges.Strength.Max",           1.0f,  "辺を滑らかに: 強度の上限"),

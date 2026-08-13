@@ -22,7 +22,7 @@ namespace Poly_Ling.UnityClip
     //   - 補間: キー間は当面線形補間。接線情報は保持しない
     //           （AnimationClip の接線は抽出時に捨てる）。
     //   - 座標系: 値はすべて Unity 左手系。AnimationClip は元から Unity 左手系のため
-    //             座標変換は行わない（VMD のような右手系→左手系変換は不要）。
+    //             座標変換は行わない（VMD のような X・Z 両反転は不要）。
     //   - 時刻: t は秒（Keyframe.time）。丸めなし。
     //
     // ■ clipType

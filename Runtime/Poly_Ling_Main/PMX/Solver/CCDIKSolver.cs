@@ -1,6 +1,18 @@
 // CCDIKSolver.cs
 // CCD法によるIKソルバー（MikuMikuFlex準拠）
 //
+// ■ 既知の問題（未解決・恒久メモ）
+//   VMD 再生時、足ＩＫが収束しないフレームがある。実測（キャッチボール_トマホーク_.vmd、
+//   50 サンプル）では左足首の残差 dist が
+//       min 0.00009 / max 1.14002 / mean 0.13528
+//   で、12 サンプルが dist > 0.1。右足首は max 0.22012 / mean 0.05881 で、
+//   左が右の約 2 倍悪い（左右非対称）。
+//   連続フレームで残差が単調減少する区間（0.20 → 0.075 など）があり、
+//   1 フレーム内で収束しきらず次フレームへ持ち越している疑いがある。
+//   また f=0 では eff が tgt より Y に約 0.02 高い状態で停止する（X・Z は一致）。
+//   角度制限のフレーム変換（下記 ToModelAxis / ToLocalAxis）を入れても f=0 の
+//   残差は変化しなかったため、原因は別にある。要調査。
+//
 // ■ MikuMikuFlexとPolyLingのWorldMatrix構造差
 //
 // MikuMikuFlex:
@@ -20,6 +32,25 @@
 //   effLocal = Inv(link.WorldMatrix).MultiplyPoint3x4(effWorld)
 // となる。同様にlinkのローカル位置は (0,0,0)。
 
+//
+// ================================================================
+// ■ 【重要】軸規約の変更に未追随。動作保証対象外。
+// ----------------------------------------------------------------
+//   PMX 取込のボーン局所軸は以下に変更された（PMXImporter.CalculateBoneModelRotation）:
+//     (1) AxisFlipOps.Basis を両側共役 S·M·S から片側変換 S·M へ
+//     (2) MMD 規約（X = 骨の長手方向）から DCC 標準（Y = 骨の長手方向）へ巡回置換
+//   本ファイルの R^-1·Q·R 変換（R = ctx.BoneModelRotation）はこの変更に
+//   追随していないため、結果は正しくない。
+//
+//   既知の症状:
+//     - 足ＩＫが収束しないフレームがある（左足首 max dist 1.14 / 12 of 50 サンプル）
+//     - 統合経路には IK 自体が無い（MotionClipApplier に Solve 呼び出しなし）
+//     - 付与親（GrantParentIndex / GrantRate）が未評価
+//
+//   修正する場合は、局所軸が「Y = 骨方向」であることを前提に組み直すこと。
+//   旧規約を前提とした つじつま合わせ を足さないこと。
+// ================================================================
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -32,9 +63,19 @@ namespace Poly_Ling.VMD
     {
         /// <summary>
         /// デバッグログの有効/無効。falseなら一切ログを出さない。
-        /// trueの場合、左足ＩＫのフレーム128〜131のみログ出力。
         /// </summary>
         public bool DebugEnabled = false;
+
+        /// <summary>
+        /// デバッグ対象の IK ボーン名（部分一致）。null/空なら全 IK ボーンを対象にする。
+        /// </summary>
+        public string DebugBoneFilter = null;
+
+        /// <summary>
+        /// デバッグ対象のフレーム範囲。既定は全フレーム。
+        /// </summary>
+        public float DebugFrameMin = float.NegativeInfinity;
+        public float DebugFrameMax = float.PositiveInfinity;
 
         /// <summary>
         /// IK解決前に膝リンクへ微小曲げを付与する。
@@ -74,11 +115,14 @@ namespace Poly_Ling.VMD
         {
             var ikBone = model.MeshContextList[ikBoneIndex];
 
-            // デバッグ条件: フラグON かつ 左足ＩＫ かつ フレーム128〜131
+            // デバッグ条件: フラグON かつ 名前フィルタ一致 かつ フレーム範囲内
             bool debugLog = DebugEnabled
-                && ikBone.Name != null
-                && ikBone.Name.Contains("左足ＩＫ")
-                && frameNumber >= 128f && frameNumber <= 131f;
+                && (string.IsNullOrEmpty(DebugBoneFilter)
+                    || (ikBone.Name != null && ikBone.Name.Contains(DebugBoneFilter)))
+                && frameNumber >= DebugFrameMin && frameNumber <= DebugFrameMax;
+
+            if (debugLog)
+                Debug.Log($"[CCDIK BEGIN] frame={frameNumber} IK='{ikBone.Name}' links={ikBone.IKLinks.Count} target={ikBone.IKTargetIndex}");
 
             if (debugLog)
             {
@@ -98,6 +142,11 @@ namespace Poly_Ling.VMD
             // --- 膝の初期微小曲げ ---
             // 角度制限付きリンクがほぼ無回転の場合、微小なX回転を付与して
             // エフェクタ・リンク直線時の回転軸不定を防止する
+            //
+            // ■ フレーム注意
+            //   limitMin/Max・ヒンジ軸 X は MMD 規約（レスト回転 = identity）の
+            //   モデル軸フレームの値。BonePoseData の回転はボーンローカル軸
+            //   フレームなので、R = BoneModelRotation で共役変換して受け渡す。
             if (KneePreBend)
             {
                 bool preBent = false;
@@ -115,7 +164,8 @@ namespace Poly_Ling.VMD
                             linkCtx.BonePoseData = new BonePoseData();
                         // limitMin.xが負（膝のように曲がる方向）なら負方向に微小曲げ
                         float bendAngle = link.LimitMin.x < 0 ? -0.01f : 0.01f;
-                        Quaternion preBendRot = Quaternion.AngleAxis(bendAngle * Mathf.Rad2Deg, Vector3.right) * rot;
+                        Quaternion bendModel = Quaternion.AngleAxis(bendAngle * Mathf.Rad2Deg, Vector3.right);
+                        Quaternion preBendRot = ToLocalAxis(linkCtx, bendModel) * rot;
                         SetBoneRotation(linkCtx, preBendRot);
                         preBent = true;
                     }
@@ -197,12 +247,26 @@ namespace Poly_Ling.VMD
                     Quaternion newRot =  currentRot * rotQ;// にする（CCD適用の掛け順）
 
                     // --- 角度制限 ---
+                    //
+                    // ■ フレーム変換（必須）
+                    //   newRot はボーンローカル軸フレームのデルタ。一方 LimitMin/Max は
+                    //   PMX 由来のモデル軸フレーム値（PMXImporter は AxisFlipOps.AngleLimits で
+                    //   軸反転を掛けるだけで、レスト回転 R の共役は掛けていない）。
+                    //   そのまま clamp すると、例えば膝のヒンジ軸（モデル軸 X）が
+                    //   ローカル軸フレームでは X 成分 0 になり、補正が丸ごと捨てられる。
+                    //   R = BoneModelRotation として q_model = R·q_local·R^-1 に写して
+                    //   clamp し、q_local = R^-1·q_model·R で戻す。
                     if (link.HasLimit)
                     {
-                        Quaternion before = newRot;
-                        newRot = RestrictRotation(newRot, link.LimitMin, link.LimitMax, logThisIt);
+                        Quaternion before      = newRot;
+                        Quaternion beforeModel = ToModelAxis(linkCtx, newRot);
+                        Quaternion afterModel  = RestrictRotation(beforeModel, link.LimitMin, link.LimitMax, logThisIt);
+                        newRot = ToLocalAxis(linkCtx, afterModel);
                         if (logThisIt)
-                            Debug.Log($"[CCDIK it={it}]   restrict before=({before.x:F4},{before.y:F4},{before.z:F4},{before.w:F4}) after=({newRot.x:F4},{newRot.y:F4},{newRot.z:F4},{newRot.w:F4})");
+                        {
+                            Debug.Log($"[CCDIK it={it}]   restrict(model) before=({beforeModel.x:F4},{beforeModel.y:F4},{beforeModel.z:F4},{beforeModel.w:F4}) after=({afterModel.x:F4},{afterModel.y:F4},{afterModel.z:F4},{afterModel.w:F4})");
+                            Debug.Log($"[CCDIK it={it}]   restrict(local) before=({before.x:F4},{before.y:F4},{before.z:F4},{before.w:F4}) after=({newRot.x:F4},{newRot.y:F4},{newRot.z:F4},{newRot.w:F4})");
+                        }
                     }
 
                     // --- BonePoseDataに設定 ---
@@ -274,6 +338,28 @@ namespace Poly_Ling.VMD
         private Vector3 GetWorldPosition(MeshContext ctx)
         {
             return ctx.WorldMatrix.GetColumn(3);
+        }
+
+        /// <summary>
+        /// ボーンローカル軸フレームの回転を、MMD 規約（レスト回転 = identity）の
+        /// モデル軸フレームへ写す。q_model = R · q_local · R^-1（R = BoneModelRotation）。
+        /// R が identity のボーンでは恒等変換。
+        /// </summary>
+        private Quaternion ToModelAxis(MeshContext ctx, Quaternion localRot)
+        {
+            Quaternion r = ctx.BoneModelRotation;
+            if (r == Quaternion.identity) return localRot;
+            return r * localRot * Quaternion.Inverse(r);
+        }
+
+        /// <summary>
+        /// ToModelAxis の逆。q_local = R^-1 · q_model · R。
+        /// </summary>
+        private Quaternion ToLocalAxis(MeshContext ctx, Quaternion modelRot)
+        {
+            Quaternion r = ctx.BoneModelRotation;
+            if (r == Quaternion.identity) return modelRot;
+            return Quaternion.Inverse(r) * modelRot * r;
         }
 
         /// <summary>

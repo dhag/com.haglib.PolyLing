@@ -9,6 +9,7 @@
 //   X 軸  = normalize(Right[i] - Left[i]) を Z と直交化
 //   Y 軸  = Cross(Z, X)
 //   倍率  = rung 長 × userScale（userScale = 1 で従来どおりの等倍）
+//   ロール = Z 軸まわり 90°単位（rollSteps 0〜3）。X/Y を入れ替えるだけなので誤差が出ない。
 //
 // 元オブジェクトの面構成・UV・マテリアルインデックスはそのまま複製する。
 
@@ -28,12 +29,12 @@ namespace Poly_Ling.PlaceObject
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            MeshObject source, string meshName, float userScale = 1f)
+            MeshObject source, string meshName, float userScale = 1f, int rollSteps = 0)
         {
             int n = (left == null || right == null) ? 0 : Mathf.Min(left.Count, right.Count);
             var sources = new MeshObject[n];
             for (int i = 0; i < n; i++) sources[i] = source;
-            return Generate(left, right, beltClosed, flipWinding, sources, meshName, userScale);
+            return Generate(left, right, beltClosed, flipWinding, sources, meshName, userScale, rollSteps);
         }
 
         /// <summary>
@@ -43,7 +44,8 @@ namespace Poly_Ling.PlaceObject
         public static MeshObject Generate(
             IReadOnlyList<Vector3> left, IReadOnlyList<Vector3> right,
             bool beltClosed, bool flipWinding,
-            IReadOnlyList<MeshObject> sourcesPerRung, string meshName, float userScale = 1f)
+            IReadOnlyList<MeshObject> sourcesPerRung, string meshName, float userScale = 1f,
+            int rollSteps = 0)
         {
             var mo = new MeshObject(string.IsNullOrEmpty(meshName) ? "PlaceObject" : meshName);
 
@@ -73,11 +75,33 @@ namespace Poly_Ling.PlaceObject
                 x = x.normalized;
                 Vector3 y = Vector3.Cross(zDir, x);
 
+                ApplyRoll(rollSteps, ref x, ref y);
+
                 AppendInstance(mo, source, center, x, y, zDir, scale * userScale);
             }
 
             mo.RecalculateNormals();
             return mo;
+        }
+
+        /// <summary>
+        /// 配置フレームを Z 軸まわりに 90°単位で回す。
+        /// 元オブジェクトのローカル座標 p を Z 軸で θ 回してから x/y/z へ載せるのと同じになるよう、
+        /// 基底ベクトルの側を回す。90°単位なので入れ替えと符号反転だけで済み、誤差が出ない。
+        ///   0°: (x, y) / 90°: (y, -x) / 180°: (-x, -y) / 270°: (-y, x)
+        /// </summary>
+        private static void ApplyRoll(int rollSteps, ref Vector3 x, ref Vector3 y)
+        {
+            int step = ((rollSteps % 4) + 4) % 4;
+            if (step == 0) return;
+
+            Vector3 ox = x, oy = y;
+            switch (step)
+            {
+                case 1: x =  oy; y = -ox; break;
+                case 2: x = -ox; y = -oy; break;
+                case 3: x = -oy; y =  ox; break;
+            }
         }
 
         // ================================================================

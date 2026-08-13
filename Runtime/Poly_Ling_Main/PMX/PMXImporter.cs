@@ -664,11 +664,32 @@ namespace Poly_Ling.PMX
                 boneWorldPositions[i] = ConvertPosition(document.Bones[i].Position, settings);
             }
 
-            // ボーンのモデル空間回転を計算（ローカル軸から）
+            // ボーンのレスト回転は恒等とする（ローカル軸を合成しない）
+            // ----------------------------------------------------------------
+            // ■ 経緯
+            //   旧実装は CalculateBoneModelRotation で、ローカル軸フラグ(0x0800)の
+            //   有無に関わらず全ボーンに「接続先への方向」から局所軸を合成していた。
+            //   PMX の実データにローカル軸はほぼ入っておらず、入っていても操作ハンドルの
+            //   都合によるもので実体を伴わない。合成した軸は AxisFlipOps.Basis の
+            //   共役変換と組み合わさって規約が食い違い、
+            //     - ローカル X が骨方向の真逆（実測 180.00 度）
+            //     - Unity クリップの dof→軸 対応が成立しない
+            //   といった不具合の温床になっていた。
+            //
+            // ■ 現在の規約
+            //   ボーンの局所座標系 ＝ モデル空間。全ボーン共通。
+            //   BoneTransform.Rotation も恒等になり、BonePoseData のデルタは
+            //   モデル空間の量として素直に解釈できる。
+            //   レスト表示は BindPose = worldMatrix.inverse で相殺されるため不変。
+            //
+            // ■ 捨てた情報
+            //   ローカル軸フラグ(0x0800)由来の軸のみ。
+            //   付与親(GrantParentIndex/GrantRate)・固定軸・IK 角度制限は別系統で、
+            //   ここで捨てているわけではない（付与親と固定軸は未実装）。
             var boneModelRotations = new Quaternion[document.Bones.Count];
             for (int i = 0; i < document.Bones.Count; i++)
             {
-                boneModelRotations[i] = CalculateBoneModelRotation(document.Bones[i], document, i, settings);
+                boneModelRotations[i] = Quaternion.identity;
             }
 
             // 各ボーンをMeshContextに変換
@@ -696,177 +717,15 @@ namespace Poly_Ling.PMX
             result.BoneWorldPositions = boneWorldPositions;
         }
 
-        /// <summary>
-        /// ボーンのモデル空間回転を計算（ローカル軸から）
-        /// </summary>
-        public static Quaternion CalculateBoneModelRotation(PMXBone pmxBone, PMXDocument document, int boneIndex, PMXImportSettings settings)
-        {
-            const int FLAG_LOCAL_AXIS = 0x0800;
-            const int FLAG_IK = 0x0020;
-            bool hasLocalAxis = (pmxBone.Flags & FLAG_LOCAL_AXIS) != 0;
-            bool isIK = (pmxBone.Flags & FLAG_IK) != 0;
-
-            // 全ボーンに対してローカル軸回転を計算する
-            // ローカル軸フラグ(0x0800)の有無に関わらず、デフォルト軸を自動計算する
-            //
-            // 例外: IKボーンはidentityを返す
-            // IKボーンは操作用ハンドルであり、親子関係は操作の便宜上のもの。
-            // VMDの位置・回転はグローバル空間での値として扱う必要がある。
-            // ローカル軸回転を設定するとVMDApplierのR^-1*Q*R変換で
-            // グローバル空間の値がローカル軸空間に誤変換されてしまう。
-            if (isIK)
-            {
-                return Quaternion.identity;
-            }
-
-            Vector3 localX, localZ;
-
-            // デバッグ対象ボーン
-            bool isDebugBone = pmxBone.Name.Contains("腕") || pmxBone.Name.Contains("ひじ") || pmxBone.Name.Contains("手首");
-
-            if (hasLocalAxis)
-            {
-                // ローカル軸が定義されている場合
-                localX = pmxBone.LocalAxisX;
-                localZ = pmxBone.LocalAxisZ;
-
-                if (isDebugBone)
-                {
-                    //Debug.Log($"[PMX AXIS DEBUG] {pmxBone.Name}: hasLocalAxis=true");
-                    //Debug.Log($"[PMX AXIS DEBUG]   PMX LocalAxisX = {localX}");
-                    //Debug.Log($"[PMX AXIS DEBUG]   PMX LocalAxisZ = {localZ}");
-                }
-            }
-            else
-            {
-                // ローカル軸が定義されていない場合、デフォルト軸を計算
-                localX = CalculateDefaultLocalAxisX(pmxBone, document, boneIndex);
-                localZ = Vector3.forward; // PMX座標系でのZ+（前方向）
-
-                // 自動計算結果をボーンに記録
-                pmxBone.LocalAxisX = localX.normalized;
-                pmxBone.LocalAxisZ = localZ;
-                pmxBone.IsLocalAxisAutoCalculated = true;
-
-                if (isDebugBone)
-                {
-                    //Debug.Log($"[PMX AXIS DEBUG] {pmxBone.Name}: hasLocalAxis=false, using default");
-                    //Debug.Log($"[PMX AXIS DEBUG]   Calculated LocalAxisX = {localX}");
-                    //Debug.Log($"[PMX AXIS DEBUG]   Default LocalAxisZ = {localZ}");
-                }
-            }
-
-            // 正規化
-            localX = localX.normalized;
-            localZ = localZ.normalized;
-
-            // 右手系(PMX)のままでY軸を計算: Y = Z × X
-            Vector3 localY = Vector3.Cross(localZ, localX);
-
-            // 数値誤差チェック
-            if (localY.sqrMagnitude < 1e-10f)
-            {
-                // 軸が平行または退化している場合、デフォルトで復元
-                //Debug.LogWarning($"[PMXImporter] Bone '{pmxBone.Name}' has degenerate local axis. Using default.");
-                localY = Vector3.up;
-                localZ = Vector3.Cross(localX, localY).normalized;
-                localY = Vector3.Cross(localZ, localX).normalized;
-            }
-            else
-            {
-                localY = localY.normalized;
-                // Zを直交化
-                Vector3 originalZ = localZ;
-                localZ = Vector3.Cross(localX, localY).normalized;
-
-                if (isDebugBone)
-                {
-                    //Debug.Log($"[PMX AXIS DEBUG]   Computed Y = {localY}");
-                    //Debug.Log($"[PMX AXIS DEBUG]   Original Z = {originalZ}, Recomputed Z = {localZ}");
-                    float zDot = Vector3.Dot(originalZ, localZ);
-                    //Debug.Log($"[PMX AXIS DEBUG]   Z dot product = {zDot:F4} (negative means flipped!)");
-                }
-            }
-
-            // デバッグ: Z反転前のdet
-            if (isDebugBone || pmxBone.Name.Contains("肩"))
-            {
-                float detBefore = Vector3.Dot(localX, Vector3.Cross(localY, localZ));
-                //Debug.Log($"[PMX DET] {pmxBone.Name}: PMX(右手系) det={detBefore:F4}  X=({localX.x:F4},{localX.y:F4},{localX.z:F4}) Y=({localY.x:F4},{localY.y:F4},{localY.z:F4}) Z=({localZ.x:F4},{localZ.y:F4},{localZ.z:F4})");
-            }
-
-            // 座標系変換: 共役変換 R_unity = S * R_pmx * S, S=diag(sx,1,sz)
-            // 規則は AxisFlipOps.Basis に集約（FlipZ 単独時は従来と同一結果）。
-            AxisFlipOps.Basis(settings.Flip, ref localX, ref localY, ref localZ);
-
-            // デバッグ: Z反転後のdet
-            if (isDebugBone || pmxBone.Name.Contains("肩"))
-            {
-                float detAfter = Vector3.Dot(localX, Vector3.Cross(localY, localZ));
-                //Debug.Log($"[PMX DET] {pmxBone.Name}: Unity(左手系) det={detAfter:F4}  X=({localX.x:F4},{localX.y:F4},{localX.z:F4}) Y=({localY.x:F4},{localY.y:F4},{localY.z:F4}) Z=({localZ.x:F4},{localZ.y:F4},{localZ.z:F4})");
-            }
-
-            // 回転行列からQuaternionを生成
-            return CreateRotationFromAxes(localX, localY, localZ);
-        }
-
-        /// <summary>
-        /// ローカル軸が未定義の場合のデフォルトX軸を計算
-        /// </summary>
-        public static Vector3 CalculateDefaultLocalAxisX(PMXBone pmxBone, PMXDocument document, int boneIndex)
-        {
-            // 接続先がある場合、その方向をX軸とする
-            bool connected = (pmxBone.Flags & 0x0001) != 0;
-
-            if (connected && pmxBone.ConnectBoneIndex >= 0 && pmxBone.ConnectBoneIndex < document.Bones.Count)
-            {
-                // 接続先ボーンへの方向
-                var connectBone = document.Bones[pmxBone.ConnectBoneIndex];
-                Vector3 direction = connectBone.Position - pmxBone.Position;
-                if (direction.sqrMagnitude > 1e-10f)
-                {
-                    return direction.normalized;
-                }
-            }
-            else if (pmxBone.ConnectOffset.sqrMagnitude > 1e-10f)
-            {
-                // オフセットが定義されている場合
-                return pmxBone.ConnectOffset.normalized;
-            }
-
-            // 子ボーンを探す
-            for (int i = 0; i < document.Bones.Count; i++)
-            {
-                if (document.Bones[i].ParentIndex == boneIndex)
-                {
-                    Vector3 direction = document.Bones[i].Position - pmxBone.Position;
-                    if (direction.sqrMagnitude > 1e-10f)
-                    {
-                        return direction.normalized;
-                    }
-                }
-            }
-
-            // どれも見つからない場合、PMX座標系のX+
-            return Vector3.right;
-        }
-
-        /// <summary>
-        /// 3つの軸からQuaternionを生成
-        /// </summary>
-        public static Quaternion CreateRotationFromAxes(Vector3 x, Vector3 y, Vector3 z)
-        {
-            var m = new Matrix4x4();
-            m.SetColumn(0, new Vector4(x.x, x.y, x.z, 0f));
-            m.SetColumn(1, new Vector4(y.x, y.y, y.z, 0f));
-            m.SetColumn(2, new Vector4(z.x, z.y, z.z, 0f));
-            m.SetColumn(3, new Vector4(0f, 0f, 0f, 1f));
-
-            // 共役変換 R_unity = S * R_rh * S により det=+1 の正規直交行列が渡されるため
-            // Inverseは不要。m.rotation がそのまま正しい回転を返す。
-            // （旧実装では3軸全Z反転でdet=-1となり、Inverseで補正していたが誤りだった）
-            return m.rotation;
-        }
+        // ================================================================
+        // ローカル軸の合成は廃止した
+        // ----------------------------------------------------------------
+        //   削除したメソッド:
+        //     CalculateBoneModelRotation / CalculateDefaultLocalAxisX / CreateRotationFromAxes
+        //   BoneModelRotation は恒等固定。復活させないこと。
+        //   同等の重複実装が PmxBoneBuilder.cs / PmxBoneImporter.cs にもあったが、
+        //   いずれも外部から未参照のためファイルごと削除した。
+        // ================================================================
 
         // ================================================================
         // Tポーズ変換
@@ -1038,9 +897,9 @@ namespace Poly_Ling.PMX
                         linkIdx = link.BoneIndex;
                     }
 
-                    // 角度制限の座標系変換。軸ごとの角度符号 σ_k = s_k · det(S) に従って
-                    // 符号が反転する軸だけ min/max を入れ替える。
-                    // 規則は AxisFlipOps.AngleLimits に集約（FlipZ 単独時は従来と同一結果）。
+                    // 角度制限の座標系変換。軸反転のみ（det(S) < 0 のとき min/max を入れ替え）。
+                    // ボーンの局所軸は恒等になったため、この値はモデル空間の角度制限として
+                    // 扱う。軸規約の置換は行わない。
                     Vector3 limMin = link.LimitMin;
                     Vector3 limMax = link.LimitMax;
                     AxisFlipOps.AngleLimits(settings.Flip, ref limMin, ref limMax);
@@ -2606,8 +2465,12 @@ namespace Poly_Ling.PMX
 
         /// <summary>
         /// PMXのオイラー角回転（ラジアン）をモデル空間のオイラー角（ラジアン）へ変換する。
-        /// 共役変換 S·R·S を適用する。規則は AxisFlipOps に集約しており、
-        /// ボーン基底変換 CalculateBoneModelRotation（AxisFlipOps.Basis）と同一。
+        ///
+        /// ■ ボーン基底とは別扱いであること（注意）
+        ///   剛体・JOINT の回転は「その物体の姿勢」であり、ボーンの局所軸ラベルでは
+        ///   ないため、共役変換 S·R·S（AxisFlipOps.EulerRad）のままで正しい。
+        ///   ボーン側は局所軸の合成そのものを廃止した（BoneModelRotation は恒等）。
+        ///   こちらは追随させない。両者を同一視した旧コメントは誤りだった。
         /// 入力/出力ともラジアン。
         /// </summary>
         private static Vector3 ConvertEulerRotation(Vector3 pmxEulerRad, PMXImportSettings settings)

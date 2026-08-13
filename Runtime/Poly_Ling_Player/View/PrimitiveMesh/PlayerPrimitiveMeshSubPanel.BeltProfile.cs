@@ -33,7 +33,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// モデル内の描画オブジェクト一覧（表示名, MasterIndex, MeshObject）を返す。
-        /// 接地の配置元で使う。子孫の解決に MasterIndex が要るため、上とは別に持つ。
+        /// 配置の配置元で使う。子孫の解決に MasterIndex が要るため、上とは別に持つ。
         /// </summary>
         public Func<List<(string Label, int MasterIndex, MeshObject Mesh)>> GetDrawableMeshEntryList;
 
@@ -61,7 +61,7 @@ namespace Poly_Ling.Player
 
             /// <summary>
             /// フリルの高さ倍率（断面プロファイル Y ＝ 法線方向成分に掛ける）。既定 1。
-            /// フリル以外（パイプ・接地）では読み書きするだけで使わない。
+            /// フリル以外（パイプ・配置）では読み書きするだけで使わない。
             /// </summary>
             public float HeightScale = 1f;
 
@@ -336,7 +336,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 梯子CSV（フリル／パイプ／接地で共用）
+        // 梯子CSV（フリル／パイプ／配置で共用）
         // ================================================================
 
         /// <summary>BeltSnapshot → CSV用DTO。</summary>
@@ -1734,7 +1734,7 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
-        // 対象オブジェクト複数選択（接地の配置元で使用）
+        // 対象オブジェクト複数選択（配置の配置元で使用）
         // ================================================================
 
         /// <summary>描画オブジェクトの複数選択状態。選択はラベルで保持し、一覧再取得後も復元する。</summary>
@@ -1853,7 +1853,7 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 複数メッシュを1つへ連結する。頂点ローカル座標をそのまま連結する
-        /// （既存の接地が source.Vertices[v].Position を直接使うのと同じ扱いで、BoneTransform は考慮しない）。
+        /// （既存の配置が source.Vertices[v].Position を直接使うのと同じ扱いで、BoneTransform は考慮しない）。
         /// </summary>
         private static MeshObject CombineMeshes(IReadOnlyList<MeshObject> sources, string meshName)
         {

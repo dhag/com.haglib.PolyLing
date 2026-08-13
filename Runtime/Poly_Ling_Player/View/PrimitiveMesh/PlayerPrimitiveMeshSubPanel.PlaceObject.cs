@@ -1,5 +1,5 @@
 // PlayerPrimitiveMeshSubPanel.PlaceObject.cs
-// 図形生成サブパネル：オブジェクト接地（高度な図形）。
+// 図形生成サブパネル：オブジェクト配置（高度な図形）。
 //
 // 【配置元の子孫】チェックしたオブジェクトをルートとみなし、その子孫も配置元に加える。
 //   結合はせず、子孫を1つずつ別の配置元として並べる（GetSubtreeMeshList）。
@@ -132,10 +132,52 @@ namespace Poly_Ling.Player
             BuildBeltCsvUI(c, _placeBelts,
                 "Primitive.PlaceObject.BeltCsv", "place_belt.csv", RefreshPlaceInfo);
 
+            // ── Z ロール（配置フレームの Z 軸まわり、90°単位） ──
+            BuildPlaceRollUI(c);
+
             // ── 梯子の向き ──
             BuildBeltOrientUI(c, _placeOrient);
 
             BuildBeltSplineUI(c, _placeSpline);
+        }
+
+        /// <summary>
+        /// Z 軸まわりのロール（90°単位）。段数 0〜3 のスライダと度数表示。
+        /// SliderInt に刻み幅が無いので段数で持ち、表示だけ度数へ直す。
+        /// </summary>
+        private void BuildPlaceRollUI(VisualElement c)
+        {
+            c.Add(PlayerIoUiKit.Divider());
+            c.Add(PlayerIoUiKit.SectionLabel(T("PlaceRoll")));
+
+            var hint = new Label(T("PlaceRollHint"));
+            hint.style.fontSize     = 10;
+            hint.style.whiteSpace   = WhiteSpace.Normal;
+            hint.style.marginBottom = 2;
+            c.Add(hint);
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.marginBottom  = 3;
+
+            var slider = new SliderInt(0, 3) { value = Mathf.Clamp(_placeP.RollSteps, 0, 3) };
+            slider.style.flexGrow = 1;
+
+            var degLabel = new Label($"{Mathf.Clamp(_placeP.RollSteps, 0, 3) * 90}°");
+            degLabel.style.width          = 40;
+            degLabel.style.unityTextAlign = TextAnchor.MiddleRight;
+
+            slider.RegisterValueChangedCallback(e =>
+            {
+                int step = Mathf.Clamp(e.newValue, 0, 3);
+                _placeP.RollSteps = step;
+                degLabel.text = $"{step * 90}°";
+                D();
+            });
+
+            row.Add(slider);
+            row.Add(degLabel);
+            c.Add(row);
         }
 
         private void RefreshPlaceInfo()
@@ -207,7 +249,7 @@ namespace Poly_Ling.Player
 
                 var part = PlaceObjectMeshGenerator.Generate(
                     b.Left, b.Right, b.Closed, b.FlipWinding,
-                    perRung, _placeP.MeshName, userScale);
+                    perRung, _placeP.MeshName, userScale, _placeP.RollSteps);
                 AppendMesh(mo, part);
             }
             return mo;

@@ -6,6 +6,19 @@
 //
 // 仕様: 値は Unity 左手系のまま・座標変換なし（MotionClipDTO 準拠）。
 //       boneName は VMD 直接適用、path/humanoid は UnityClipApplier 経路（Applier 側で分岐）。
+//
+// ■ PositionScale（重要）
+//   MotionClipApplier.PositionScale の既定は 1。ソースが VMD の場合、値は PMX 単位
+//   （およそ 10cm/unit）なので EditorState.PmxUnityRatio（既定 0.1）を設定しないと
+//   位置が 10 倍になる。UnityClip JSON は既に Unity メートルなので 1 のままが正しい。
+//   ApplySourceDefaults() で _sourceKind に応じて設定する。
+//
+// ■ 既知の問題（未対応・恒久メモ）
+//   (1) 統合経路には IK が無い。MotionClipApplier に CCDIKSolver.Solve の呼び出しが
+//       存在しないため、VMD を読んでも足ＩＫ・つま先ＩＫ・髪ＩＫは一切解かれない。
+//       旧 VMDApplier.ApplyFrame にはある（EnableIK / _ikSolver）。
+//   (2) 付与親（GrantParentIndex / GrantRate）が未評価。PMXDocument には保持されるが
+//       ポーズ適用側に評価コードが無いため、腕捩・手捩などの分散が反映されない。
 
 using System;
 using System.IO;
@@ -330,6 +343,7 @@ namespace Poly_Ling.Player
                 _currentTime = 0f;
                 _maxTime     = ComputeMaxTime(_dto);
                 if (_applier == null) _applier = new MotionClipApplier();
+                ApplySourceDefaults();
                 _applier.SetClip(_dto);
 
                 var model = Model;
@@ -343,6 +357,35 @@ namespace Poly_Ling.Player
                 SetStatus($"読込み失敗: {ex.Message}");
                 UnityEngine.Debug.LogError($"[PlayerMotionClipTestSubPanel] {ex}");
             }
+        }
+
+        // ソース種別に応じて PositionScale の既定値を設定する。
+        //
+        //   0 = VMD          : 値は PMX 単位。EditorState.PmxUnityRatio（既定 0.1）を掛ける。
+        //                      未設定だと位置が 10 倍になる（旧 PlayerVMDTestSubPanel は
+        //                      読込時に同じ設定を行っている）。
+        //   1 = UnityClip    : 値は既に Unity メートル。1 のままが正しい。
+        //   2 = 統合JSON     : 生成元の単位系を DTO から判別できないため 1 を既定とする。
+        //                      VMD 由来の統合 JSON を読む場合は手動で PositionScale を
+        //                      0.1 に変更すること。※ MotionClipDTO に単位系フィールドが
+        //                      無いことが根本原因。将来は DTO 側へ持たせて自動判別する。
+        //
+        // 注意: MotionClipApplier.PositionScale は boneName トラック（自前適用）と
+        //       path/humanoid トラック（UnityClipApplier へ委譲）の両方に同じ値が掛かる。
+        //       混在クリップでは単位系を揃えてから読み込むこと。
+        private void ApplySourceDefaults()
+        {
+            if (_applier == null) return;
+
+            float scale = 1f;
+            if (_sourceKind == 0)
+            {
+                var es = GetUndoController?.Invoke()?.EditorState;
+                scale = es != null ? es.PmxUnityRatio : 0.1f;
+            }
+
+            _applier.PositionScale = scale;
+            _scaleField?.SetValueWithoutNotify(scale);
         }
 
         // ソース種別に応じて読み込み、MotionClipDTO へ変換する。
@@ -418,6 +461,7 @@ namespace Poly_Ling.Player
                 _maxTime = ComputeMaxTime(_dto);
                 _currentTime = Mathf.Clamp(time, 0f, _maxTime);
                 if (_applier == null) _applier = new MotionClipApplier();
+                ApplySourceDefaults();
                 _applier.SetClip(_dto);
                 var model = Model;
                 if (model != null) { _applier.BuildMapping(model); ApplyFrame(); }

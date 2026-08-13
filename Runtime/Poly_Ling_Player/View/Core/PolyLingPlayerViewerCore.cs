@@ -221,11 +221,13 @@ namespace Poly_Ling.Player
         private PlayerMergeVerticesSubPanel       _mergeVerticesSubPanel;
         private MergeVerticesToolHandler          _mergeVerticesHandler;
         private PlayerSplitVerticesSubPanel       _splitVerticesSubPanel;
+        private PlayerVertexHoleSubPanel          _vertexHoleSubPanel;
         // 頂点IDユーティリティ。ID を使う突き合わせ操作の前段で状態を確認・修復する。
         private PlayerVertexIdSubPanel           _vertexIdSubPanel;
         // モデル間頂点データ転送。メッシュのペアを明示して 1 対 1 で転送する。
         private PlayerVertexTransferSubPanel     _vertexTransferSubPanel;
         private SplitVerticesToolHandler          _splitVerticesHandler;
+        private VertexHoleToolHandler             _vertexHoleHandler;
         // 選択削除サブツール。専用サブパネルは持たない (左ペインのボタンと D キーのみ)。
         private DeleteSelectionToolHandler        _deleteSelectionHandler;
         private PlayerAddFaceSubPanel             _addFaceSubPanel;
@@ -262,6 +264,9 @@ namespace Poly_Ling.Player
 
         // 軸 / グリッド平面（4面共通）
         private PlayerGridAxisSubPanel       _gridAxisSubPanel;
+
+        // 画面キャプチャ（PNG 保存）
+        private PlayerCaptureSubPanel        _captureSubPanel;
 
         private PlayerRemoteServerSubPanel   _remoteServerSubPanel;
         private PlayerLogSubPanel            _logSubPanel;
@@ -696,6 +701,7 @@ namespace Poly_Ling.Player
                 _planarizeAlongBonesHandler?.SetProject(ActiveProject);
                 _mergeVerticesHandler?.SetProject(ActiveProject);
                 _splitVerticesHandler?.SetProject(ActiveProject);
+                _vertexHoleHandler?.SetProject(ActiveProject);
                 _addFaceHandler?.SetProject(ActiveProject);
                 _flipFaceHandler?.SetProject(ActiveProject);
                 _rotateHandler?.SetProject(ActiveProject);
@@ -2609,6 +2615,27 @@ namespace Poly_Ling.Player
             };
             _splitVerticesSubPanel.Build(_layoutRoot.SplitVerticesSection);
 
+            _vertexHoleHandler = new VertexHoleToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _vertexHoleHandler.SetProject(ActiveProject);
+            _vertexHoleHandler.SetUndoController(_editOps?.UndoController);
+            _vertexHoleHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _vertexHoleHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _vertexHoleSubPanel = new PlayerVertexHoleSubPanel
+            {
+                GetH = () => _vertexHoleHandler,
+            };
+            _vertexHoleSubPanel.Build(_layoutRoot.VertexHoleSection);
+
             _vertexIdSubPanel = new PlayerVertexIdSubPanel
             {
                 GetView     = () => ActiveProject,
@@ -3209,6 +3236,12 @@ namespace Poly_Ling.Player
                 gs => _viewportManager.EnterDisplaySettingsChanged(gs));
             _gridAxisSubPanel.Build(_layoutRoot.GridAxisSection);
 
+            _captureSubPanel = new PlayerCaptureSubPanel
+            {
+                OnCapture = ExecuteCapture,
+            };
+            _captureSubPanel.Build(_layoutRoot.CaptureSection);
+
             _remoteServerSubPanel = new PlayerRemoteServerSubPanel
             {
                 GetServer = () => _playerServer,
@@ -3283,6 +3316,8 @@ namespace Poly_Ling.Player
             _partialExportSubPanel.Build(_layoutRoot.PartialExportSection);
 
             _primitiveSubPanel = new PlayerPrimitiveMeshSubPanel();
+            // 最後に選んだ図形の保存キー。Build 内で読み込むため Build より前に設定する。
+            _primitiveSubPanel.MemoryKey = "Primitive";
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
             _primitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
             _primitiveSubPanel.GetSelectedMeshObject = () =>
@@ -3312,6 +3347,9 @@ namespace Poly_Ling.Player
                 cam => _viewportManager != null && _viewportManager.IsViewportCamera(cam);
             _livePrimitiveSubPanel.GetAddTargetWorldMatrix =
                 () => ActiveProject?.CurrentModel?.ActiveMeshContext?.WorldMatrix ?? Matrix4x4.identity;
+
+            // 最後に選んだ図形の保存キー。既存インスタンスとは別枠で記憶する。
+            _livePrimitiveSubPanel.MemoryKey = "LivePrimitive";
 
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
             _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
@@ -3354,19 +3392,15 @@ namespace Poly_Ling.Player
                 },
             };
 
+            // 配置ギズモのサブモード切替 UI（サブツール内）。Build 済みのボタンへ
+            // 後から配線する。Build 時点の描画は既定 Move で、実モードとの同期は
+            // PostBuildButtonColors 直後の RepaintPlaceGizmoButtons() で行う。
+            _livePrimitiveSubPanel.GetPlaceGizmoMode = () => _primitivePlaceHandler?.Mode
+                                                          ?? PrimitivePlaceToolHandler.PlaceGizmoMode.Move;
+            _livePrimitiveSubPanel.SetPlaceGizmoMode = m => SetPlaceGizmoMode(m);
+
             _layoutRoot.LivePrimitiveBtn.clicked += ShowLivePrimitivePanel;
             _layoutRoot.LiveAdvancedPrimitiveBtn.clicked += ShowLiveAdvancedPrimitivePanel;
-
-            // 配置ギズモのサブモード切替（左ペイン）。
-            if (_layoutRoot.PlaceGizmoMoveBtn != null)
-                _layoutRoot.PlaceGizmoMoveBtn.clicked +=
-                    () => SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
-            if (_layoutRoot.PlaceGizmoRotateBtn != null)
-                _layoutRoot.PlaceGizmoRotateBtn.clicked +=
-                    () => SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
-            if (_layoutRoot.PlaceGizmoScaleBtn != null)
-                _layoutRoot.PlaceGizmoScaleBtn.clicked +=
-                    () => SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
 
             _mfToSkinnedSubPanel = new MeshFilterToSkinnedSubPanel();
             _mfToSkinnedSubPanel.Build(_layoutRoot.MeshFilterToSkinnedSection);
@@ -3398,6 +3432,8 @@ namespace Poly_Ling.Player
             _layoutRoot.SmoothEdgesBtn.clicked         += ShowSmoothEdgesPanel;
             _layoutRoot.MergeVerticesBtn.clicked       += ShowMergeVerticesPanel;
             _layoutRoot.SplitVerticesBtn.clicked        += ShowSplitVerticesPanel;
+            if (_layoutRoot.VertexHoleBtn != null)
+                _layoutRoot.VertexHoleBtn.clicked       += ShowVertexHolePanel;
             if (_layoutRoot.VertexIdBtn != null)
                 _layoutRoot.VertexIdBtn.clicked          += ShowVertexIdPanel;
             if (_layoutRoot.VertexTransferBtn != null)
@@ -3431,6 +3467,8 @@ namespace Poly_Ling.Player
                 _layoutRoot.GridAxisBtn.clicked     += ShowGridAxisPanel;
             if (_layoutRoot.CameraBtn != null)
                 _layoutRoot.CameraBtn.clicked       += ShowCameraPanel;
+            if (_layoutRoot.CaptureBtn != null)
+                _layoutRoot.CaptureBtn.clicked      += ShowCapturePanel;
             _layoutRoot.FullExportPmxBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.PMX);
             _layoutRoot.FullExportMqoBtn.clicked    += () => ShowExportPanel(PlayerExportSubPanel.Mode.MQO);
             _layoutRoot.ProjectSaveBtn.clicked     += ShowProjectSavePanel;
@@ -3629,7 +3667,7 @@ namespace Poly_Ling.Player
             _layoutRoot.PostBuildButtonColors(_uiRoot);
 
             // PostBuildButtonColors（ApplyDarkTheme）は全 Button を既定色へ戻すため、
-            // 配置ギズモボタンの着色はこの後で行う。
+            // 配置ギズモボタン（サブツール内）の着色はこの後で行う。
             RepaintPlaceGizmoButtons();
 
             WireShortcuts();
@@ -3668,6 +3706,12 @@ namespace Poly_Ling.Player
                 if (ctx != null) _splitVerticesHandler?.Activate(ctx);
                 _splitVerticesSubPanel?.Refresh();
             }));
+            _sectionRefreshPairs.Add((_layoutRoot.VertexHoleSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _vertexHoleHandler?.Activate(ctx);
+                _vertexHoleSubPanel?.Refresh();
+            }));
             _sectionRefreshPairs.Add((_layoutRoot.VertexIdSection,          () => _vertexIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VertexTransferSection,    () => _vertexTransferSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.AddFaceSection,           () => _addFaceSubPanel?.Refresh()));
@@ -3686,6 +3730,7 @@ namespace Poly_Ling.Player
             _sectionRefreshPairs.Add((_layoutRoot.MotionClipTestSection,    () => _motionClipTestSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.RemoteServerSection,      () => _remoteServerSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.LogSection,               () => _logSubPanel?.Refresh()));
+            _sectionRefreshPairs.Add((_layoutRoot.CaptureSection,           () => _captureSubPanel?.Refresh()));
 
             ShowCategory1Panel(InteractionMode.VertexMove);
         }
@@ -3780,6 +3825,14 @@ namespace Poly_Ling.Player
                 () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.PlaceObject));
             _shortcutController.Register(ShortcutMap.CmdShapeObjectArray,
                 () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.ObjectArray));
+
+            // 画面キャプチャ (K M / K T / K W)。
+            _shortcutController.Register(ShortcutMap.CmdCaptureMain,
+                () => ExecuteCapture(CaptureTarget.MainView));
+            _shortcutController.Register(ShortcutMap.CmdCaptureTriView,
+                () => ExecuteCapture(CaptureTarget.TriView));
+            _shortcutController.Register(ShortcutMap.CmdCaptureWindow,
+                () => ExecuteCapture(CaptureTarget.Window));
 
             _shortcutController.Attach(_uiRoot);
         }
@@ -3968,7 +4021,7 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
-        /// 配置ギズモのサブモードを切り替える（左ペインの3ボタンから呼ぶ）。
+        /// 配置ギズモのサブモードを切り替える（サブツール内の3ボタンから呼ぶ）。
         /// パネル表示や InteractionMode は変更しない。
         /// </summary>
         private void SetPlaceGizmoMode(PrimitivePlaceToolHandler.PlaceGizmoMode mode)
@@ -3980,25 +4033,11 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 配置ギズモのサブモードボタンの背景色を現在のモードに合わせる。
-        /// _activePanelBtn / _activeInteractionBtn の系統とは独立に着色する。
+        /// ボタン本体はサブツール（3D連携インスタンス）側が持つ。
         /// </summary>
         private void RepaintPlaceGizmoButtons()
         {
-            if (_layoutRoot == null) return;
-
-            var cur = _primitivePlaceHandler?.Mode
-                   ?? PrimitivePlaceToolHandler.PlaceGizmoMode.Move;
-
-            void Paint(Button b, PrimitivePlaceToolHandler.PlaceGizmoMode m)
-            {
-                if (b == null) return;
-                b.style.backgroundColor = (m == cur)
-                    ? InteractionActiveBtnColor : InactiveBtnColor;
-            }
-
-            Paint(_layoutRoot.PlaceGizmoMoveBtn,   PrimitivePlaceToolHandler.PlaceGizmoMode.Move);
-            Paint(_layoutRoot.PlaceGizmoRotateBtn, PrimitivePlaceToolHandler.PlaceGizmoMode.Rotate);
-            Paint(_layoutRoot.PlaceGizmoScaleBtn,  PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
+            _livePrimitiveSubPanel?.RefreshPlaceGizmoButtons();
         }
 
         /// <summary>
@@ -4498,6 +4537,15 @@ namespace Poly_Ling.Player
             _splitVerticesSubPanel?.Refresh();
         }
 
+        private void ShowVertexHolePanel()
+        {
+            // カテゴリ 2
+            ShowRightPanel(_layoutRoot?.VertexHoleSection, _layoutRoot?.VertexHoleBtn);
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _vertexHoleHandler?.Activate(ctx);
+            _vertexHoleSubPanel?.Refresh();
+        }
+
         private void ShowVertexIdPanel()
         {
             // カテゴリ 2: 3D 操作 (InteractionMode) は維持。
@@ -4571,6 +4619,38 @@ namespace Poly_Ling.Player
             SetInteractionMode(InteractionMode.None);
             ShowRightPanel(_layoutRoot?.GridAxisSection, _layoutRoot?.GridAxisBtn);
             _gridAxisSubPanel?.Refresh();
+        }
+
+        // ================================================================
+        // 画面キャプチャ
+        // ================================================================
+
+        private void ShowCapturePanel()
+        {
+            SetInteractionMode(InteractionMode.None);
+            ShowRightPanel(_layoutRoot?.CaptureSection, _layoutRoot?.CaptureBtn);
+            _captureSubPanel?.Refresh();
+        }
+
+        /// <summary>
+        /// 画面キャプチャを実行する。パネルボタンとショートカットの共通入口。
+        /// ファイル名・保存フォルダはパネル未表示でも効くよう RecentPaths から読む。
+        /// </summary>
+        private void ExecuteCapture(CaptureTarget target)
+        {
+            VisualElement crop = null;
+            switch (target)
+            {
+                case CaptureTarget.MainView: crop = _layoutRoot?.PerspectivePanel; break;
+                case CaptureTarget.TriView:  crop = _layoutRoot?.ViewportArea;     break;
+                case CaptureTarget.Window:   crop = null;                          break;
+            }
+
+            PlayerScreenCapture.Capture(
+                crop,
+                PlayerCaptureSubPanel.GetFolder(),
+                PlayerCaptureSubPanel.GetFileName(),
+                (ok, msg) => _captureSubPanel?.SetStatus(ok ? $"保存しました: {msg}" : $"失敗: {msg}"));
         }
 
         // ================================================================
@@ -4820,6 +4900,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.SmoothEdgesSection);
             Hide(_layoutRoot.MergeVerticesSection);
             Hide(_layoutRoot.SplitVerticesSection);
+            Hide(_layoutRoot.VertexHoleSection);
             Hide(_layoutRoot.VertexIdSection);
             Hide(_layoutRoot.VertexTransferSection);
             Hide(_layoutRoot.AddFaceSection);
@@ -4844,6 +4925,7 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.UnderlaySection);
             Hide(_layoutRoot.GridAxisSection);
             Hide(_layoutRoot.CameraSection);
+            Hide(_layoutRoot.CaptureSection);
             _underlayActive = false;   // 別パネルへ切替時は下絵ドラッグを無効化
         }
 
@@ -5181,6 +5263,7 @@ namespace Poly_Ling.Player
             _planarizeAlongBonesHandler?.SetProject(ActiveProject);
             _mergeVerticesHandler?.SetProject(ActiveProject);
             _splitVerticesHandler?.SetProject(ActiveProject);
+            _vertexHoleHandler?.SetProject(ActiveProject);
             _addFaceHandler?.SetProject(ActiveProject);
             _flipFaceHandler?.SetProject(ActiveProject);
             _rotateHandler?.SetProject(ActiveProject);
@@ -6890,6 +6973,7 @@ namespace Poly_Ling.Player
             _planarizeAlongBonesHandler?.SetProject(ActiveProject);
                 _mergeVerticesHandler?.SetProject(ActiveProject);
                 _splitVerticesHandler?.SetProject(ActiveProject);
+                _vertexHoleHandler?.SetProject(ActiveProject);
                 _addFaceHandler?.SetProject(ActiveProject);
                 _flipFaceHandler?.SetProject(ActiveProject);
                 _rotateHandler?.SetProject(ActiveProject);

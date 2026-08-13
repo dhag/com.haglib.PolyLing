@@ -32,16 +32,44 @@ namespace Poly_Ling.UnityClip
         private const string LayerName = "UnityClip";
 
         // ================================================================
-        // 本体ボーンの適用方式は2種類を実装している（コード切替。public 化しない）:
-        //   (a) UseBakedBones = true  … 拡張Aで焼いた dto.bakedBones
-        //       （HumanBodyBones の localRotation）をそのまま適用する。既定。
-        //   (b) UseBakedBones = false … dto.muscles（生マッスル）から PolyLing 側で
-        //       ローカル回転を近似再構成して適用する（HumanTrait の min/max と DoF を使用）。
-        //       pre/post 回転・sign を省く近似。精度は Unity 実測前提。
-        // 二次骨（dto.bones：袖/髪/スカート等）は、どちらの方式でも常時適用する。
-        // 切替は下記フラグの書き換えで行う。
+        // 本体ボーンの適用方式（「あれば使う・なければそれなり」）
+        // ----------------------------------------------------------------
+        //   (a) BakedBones … dto.bakedBones（HumanBodyBones の localRotation を焼いたもの）
+        //       をそのまま適用する。最も高精度だが、抽出時に Avatar が必要。
+        //       さらに外部 UnityBone CSV（ソース rest）があればレスト補正リターゲットへ。
+        //   (b) Muscle    … dto.muscles（生マッスル）からローカル回転を再構成する。
+        //       Avatar 不要。精度は手持ちデータで段階的に上がる:
+        //         B-1 実測なし … 可動域（度）から Euler 合成する近似。
+        //                        Muscle Referential の pre/post 回転・sign を省く。
+        //         B-2 実測あり … 外部 UnityLimit CSV（LoadMuscleLimitCsv）の
+        //                        Zero / dof毎の -1・+1 実測クォータニオンから
+        //                        軸ごと Slerp して合成する。pre/post・sign を含む。
+        //   二次骨（dto.bones：袖/髪/スカート等）は、どちらの方式でも常時適用する。
+        //
+        // BodyMode = Auto のとき、bakedBones があれば (a)、無ければ (b) を選ぶ。
+        //
+        // ■ 未対応（恒久メモ）
+        //   Muscle 経路にはレスト補正リターゲットが無い。実測値はソースアバターの
+        //   ボーンローカル軸で得た量なので、ターゲットモデルのレスト姿勢が大きく
+        //   異なる場合はその分ずれる。UnityBone CSV の rest を使った整列は今後の課題。
         // ================================================================
-        private const bool UseBakedBones = true;
+
+        /// <summary>本体ボーンの適用方式。</summary>
+        public enum BodySource
+        {
+            /// <summary>bakedBones があれば BakedBones、無ければ Muscle。</summary>
+            Auto = 0,
+            /// <summary>常に bakedBones を使う（無ければ本体ボーンは動かない）。</summary>
+            BakedBones = 1,
+            /// <summary>常に muscles から再構成する。</summary>
+            Muscle = 2
+        }
+
+        /// <summary>本体ボーンの適用方式。既定は Auto。</summary>
+        public BodySource BodyMode { get; set; } = BodySource.Auto;
+
+        /// <summary>直近の ApplyFrame で実際に選ばれた方式（Auto の解決結果）。</summary>
+        public BodySource ResolvedBodyMode { get; private set; } = BodySource.Auto;
 
         // マッピング状態
         private ModelContext _mappedModel;
@@ -56,11 +84,72 @@ namespace Poly_Ling.UnityClip
         /// <summary>ソース rest（バインドポーズ）読込済みなら true＝レスト補正リターゲットが有効。</summary>
         public bool HasSourceRest => _sourceRest != null && _sourceRest.Count > 0;
 
+        // マッスル可動域・実測（外部 UnityLimit CSV v1 由来）。null/空 = 未読込。
+        private class MuscleLimitEntry
+        {
+            public Vector3 Min;                                   // 度（dof 0,1,2 の順）
+            public Vector3 Max;                                   // 度
+            public bool    Measured;                              // 実測列を持つか
+            public Quaternion Zero = Quaternion.identity;         // muscle 全 0 のローカル回転
+            public readonly Quaternion[] MinQ = { Quaternion.identity, Quaternion.identity, Quaternion.identity };
+            public readonly Quaternion[] MaxQ = { Quaternion.identity, Quaternion.identity, Quaternion.identity };
+        }
+        private Dictionary<string, MuscleLimitEntry> _muscleLimits;   // Humanoid 列挙名 → entry
+
+        /// <summary>UnityLimit CSV 読込済みなら true。</summary>
+        public bool HasMuscleLimits => _muscleLimits != null && _muscleLimits.Count > 0;
+
+        /// <summary>実測列を持つ行が1つ以上あるなら true。</summary>
+        public bool HasMuscleMeasured
+        {
+            get
+            {
+                if (_muscleLimits == null) return false;
+                foreach (var kv in _muscleLimits) if (kv.Value != null && kv.Value.Measured) return true;
+                return false;
+            }
+        }
+
         /// <summary>位置スケール（Unity 空間値にそのまま乗算。既定 1）。</summary>
         public float PositionScale { get; set; } = 1f;
 
-        /// <summary>対応表で解決できたトラック数（直近の ApplyFrame 時）。</summary>
+        /// <summary>直近の ApplyFrame で適用できたトラック数（path ＋ 本体ボーンの合計）。</summary>
         public int MatchedTrackCount { get; private set; }
+
+        // ---- 解決状況の内訳（診断用）--------------------------------------
+        // 「何本一致したか」だけでは、どの経路が効いていないのか分からないため
+        // path（二次骨）と本体ボーンを分けて数える。
+
+        /// <summary>直近の ApplyFrame で解決できた clip.bones（Transform パス）トラック数。</summary>
+        public int PathMatchedCount { get; private set; }
+
+        /// <summary>clip.bones のトラック総数。</summary>
+        public int PathTrackCount { get; private set; }
+
+        /// <summary>Muscle 経路で解決できた本体ボーン数。</summary>
+        public int MuscleMatchedCount { get; private set; }
+
+        /// <summary>クリップがマッスルで駆動している本体ボーン数（＝解決対象の母数）。</summary>
+        public int MuscleTargetCount { get; private set; }
+
+        /// <summary>Muscle 経路でモデル側ボーンに解決できなかった Humanoid 名。</summary>
+        public List<string> UnresolvedMuscleBones { get; } = new List<string>();
+
+        /// <summary>解決できなかった clip.bones のパス末尾名。</summary>
+        public List<string> UnresolvedPathTracks { get; } = new List<string>();
+
+        /// <summary>診断ログの有効/無効。内容が変化したときだけ 1 回出力する。</summary>
+        public bool DebugLog { get; set; } = true;
+        private string _lastDiagKey;
+
+        /// <summary>マッスル再構成の内訳ログ（ApplyFrame ごとに出る）。</summary>
+        public bool MuscleDebugLog { get; set; } = true;
+
+        /// <summary>内訳ログの対象 Humanoid 名。空なら出力しない。</summary>
+        public HashSet<string> MuscleDebugBones { get; } = new HashSet<string>
+        {
+            "LeftUpperLeg", "LeftLowerLeg", "RightUpperLeg", "RightLowerLeg", "LeftUpperArm"
+        };
 
         // ================================================================
         // マッピング構築
@@ -117,12 +206,28 @@ namespace Poly_Ling.UnityClip
             int matched = 0;
 
             // 二次骨（袖/髪/スカート等）: どちらの方式でも常時適用
+            PathMatchedCount = 0;
+            PathTrackCount   = clip.bones != null ? clip.bones.Count : 0;
+            UnresolvedPathTracks.Clear();
             if (clip.bones != null)
+            {
                 foreach (var track in clip.bones)
-                    matched += ApplyTrackAt(model, track, timeSec);
+                {
+                    int n = ApplyTrackAt(model, track, timeSec);
+                    matched += n;
+                    if (n > 0) PathMatchedCount++;
+                    else if (track != null) UnresolvedPathTracks.Add(LastSegment(track.path));
+                }
+            }
 
-            // 本体ボーン: (a) 焼いた使用 / (b) 自前実装（近似）
-            if (UseBakedBones)
+            // 本体ボーン: 方式を解決してから適用する
+            bool hasBaked = clip.bakedBones != null && clip.bakedBones.Count > 0;
+            BodySource mode = BodyMode;
+            if (mode == BodySource.Auto)
+                mode = hasBaked ? BodySource.BakedBones : BodySource.Muscle;
+            ResolvedBodyMode = mode;
+
+            if (mode == BodySource.BakedBones)
             {
                 if (HasSourceRest)
                 {
@@ -142,6 +247,7 @@ namespace Poly_Ling.UnityClip
             }
 
             MatchedTrackCount = matched;
+            LogDiagnosticsIfChanged();
             model.ComputeWorldMatrices();
         }
 
@@ -174,13 +280,39 @@ namespace Poly_Ling.UnityClip
             return 1;
         }
 
-        // (b) 自前実装（近似）: dto.muscles から本体ボーンのローカル回転を再構成して適用。
-        //   ※ Muscle Referential の pre/post 回転・sign を省く近似。
-        //     各 DoF 値を可動域で角度化（度）し、dof(0,1,2) を局所軸(X,Y,Z)へ直接対応させて
-        //     Euler 合成する。可動域は per-bone HumanLimit（custom・ラジアン→度）を優先し、
-        //     無ければ HumanTrait.GetMuscleDefaultMin/Max（Unity既定・度）を使う（#5d-2）。
-        //     rest からのデルタとして BonePoseData に載せる（muscle=0 で rest）。
-        //     精度は Unity 実測前提。
+        // (b) muscles から本体ボーンのローカル回転を再構成して適用。
+        //
+        //   B-2 実測あり（UnityLimit CSV の Measured 行）:
+        //     dof 毎に「Zero → ±1 の実測ローカル回転」からデルタ
+        //       full_d = Zero^-1 · Extreme_d
+        //     を作り、Slerp(identity, full_d, |v|) で v 倍したものを 3 dof 合成して d(v) を得る。
+        //     実測値なので Muscle Referential の pre/post 回転・sign を含む。
+        //
+        //     ■ Zero はモデルのレスト姿勢ではない（重要）
+        //       Unity のマッスル 0 は可動域の中央であって、モデルの bind/rest 姿勢とは違う。
+        //       例: ひざは一方向にしか曲がらないため Stretch の範囲 -80〜+80 の中央（0）が
+        //       「80度曲がった位置」、+1 が伸展位になる。実測でも
+        //         LeftLowerLeg  Zero = 87.26deg(-Y) / モデルの RestL = 7.89deg
+        //       と約 79 度ずれ、RestL ≒ MaxQ だった。
+        //
+        //       Unity 側のローカル回転は        L(v) = Zero · d(v)
+        //       PolyLing が入れるのはレスト差分  D    = RestL^-1 · Zero · d(v)
+        //
+        //       RestL は PolyLing 自身が持つレスト・ローカル回転（ctx.BoneTransform）。
+        //       BoneModelRotation が外部 bones.csv の RestW と完全一致することを実測で
+        //       確認済みなので、この補正に外部ファイルは不要。
+        //       d(v) をそのまま入れると Zero→rest 分（ひざで約 79 度）が丸ごと過剰になり、
+        //       ひざが逆に曲がる。
+        //
+        //   B-1 実測なし（従来の近似）:
+        //     各 DoF 値を可動域で角度化（度）し、dof(0,1,2) を局所軸(X,Y,Z)へ直接
+        //     対応させて Euler 合成する。pre/post 回転・sign を省く近似。
+        //     可動域の優先順は
+        //       (1) UnityLimit CSV の Min/Max（ソースアバターの実値・度）
+        //       (2) per-bone HumanLimit（custom・ラジアン→度）
+        //       (3) HumanTrait.GetMuscleDefaultMin/Max（Unity 既定・度）
+        //
+        //   いずれも rest からのデルタとして BonePoseData に載せる（muscle=0 で rest）。
         private int ApplySelfMuscle(ModelContext model, UnityClipDTO clip, float timeSec)
         {
             if (clip.muscles == null || clip.muscles.Count == 0) return 0;
@@ -193,54 +325,179 @@ namespace Poly_Ling.UnityClip
             int boneCount = HumanTrait.BoneCount;
             int matched = 0;
 
+            MuscleMatchedCount = 0;
+            MuscleTargetCount  = 0;
+            UnresolvedMuscleBones.Clear();
+
             for (int bi = 0; bi < boneCount; bi++)
             {
                 string boneName = HumanTrait.BoneName[bi];          // 例 "Left Upper Arm"（空白入り）
                 string key = boneName.Replace(" ", string.Empty);    // 対応表キー "LeftUpperArm"
 
+                // このボーンをクリップが実際に駆動しているか（dof のいずれかにトラックがあるか）。
+                // 駆動していないボーンは母数に入れない（未解決として報告しない）。
+                bool driven = false;
+                for (int dof = 0; dof < 3 && !driven; dof++)
+                {
+                    int mi0 = HumanTrait.MuscleFromBone(bi, dof);
+                    if (mi0 < 0 || muscleNames == null || mi0 >= muscleNames.Length) continue;
+                    if (muscleByName.ContainsKey(muscleNames[mi0])) driven = true;
+                }
+                if (!driven) continue;
+                MuscleTargetCount++;
+
                 int k = _mapping.Get(key);
                 if (k < 0)
                     k = HumanoidBoneMapping.FindBoneByAliases(
                         _boneNames, new List<string> { key, boneName }, fuzzyMatch: true);
-                if (k < 0 || k >= _boneMasterIndices.Count) continue;
+                if (k < 0 || k >= _boneMasterIndices.Count)
+                {
+                    UnresolvedMuscleBones.Add(key);
+                    continue;
+                }
 
                 var ctx = model.MeshContextList[_boneMasterIndices[k]];
-                if (ctx == null) continue;
+                if (ctx == null)
+                {
+                    UnresolvedMuscleBones.Add(key + "(ctx=null)");
+                    continue;
+                }
 
-                // per-bone 可動域（custom のみ・ラジアン）。無ければ null で既定にフォールバック。
+                // 外部 UnityLimit CSV の行（Humanoid 列挙名で引く）。無ければ null。
+                MuscleLimitEntry lim = null;
+                if (_muscleLimits != null) _muscleLimits.TryGetValue(key, out lim);
+                bool measured = lim != null && lim.Measured;
+
+                // per-bone 可動域（custom のみ・ラジアン）。無ければ既定にフォールバック。
                 var hl = ctx.MeshObject?.HumanLimit;
                 bool useCustom = hl != null && !hl.UseDefaultValues;
 
-                Vector3 euler = Vector3.zero;
+                Quaternion delta = Quaternion.identity;   // B-2 用
+                Vector3 euler = Vector3.zero;             // B-1 用
                 bool any = false;
+
+                // 内訳ログ（対象ボーンのみ）
+                bool dbg = MuscleDebugLog && MuscleDebugBones != null && MuscleDebugBones.Contains(key);
+                System.Text.StringBuilder dsb = null;
+                if (dbg)
+                {
+                    dsb = new System.Text.StringBuilder();
+                    dsb.Append("[UnityClipApplier/muscle] ").Append(key)
+                       .Append("  t=").Append(timeSec.ToString("F3"))
+                       .Append("  measured=").Append(measured).Append('\n');
+                    if (lim != null)
+                        dsb.Append("   Zero  ").Append(AxAng(lim.Zero))
+                           .Append("  min(deg)=").Append(lim.Min)
+                           .Append(" max(deg)=").Append(lim.Max).Append('\n');
+                }
+
                 for (int dof = 0; dof < 3; dof++)
                 {
                     int mi = HumanTrait.MuscleFromBone(bi, dof);
-                    if (mi < 0 || muscleNames == null || mi >= muscleNames.Length) continue;
-                    if (!muscleByName.TryGetValue(muscleNames[mi], out var mt)) continue;
+                    if (mi < 0 || muscleNames == null || mi >= muscleNames.Length)
+                    {
+                        if (dbg) dsb.Append("   dof").Append(dof).Append(": マッスル無し\n");
+                        continue;
+                    }
+                    if (!muscleByName.TryGetValue(muscleNames[mi], out var mt))
+                    {
+                        if (dbg) dsb.Append("   dof").Append(dof).Append(": クリップにトラック無し (")
+                                    .Append(muscleNames[mi]).Append(")\n");
+                        continue;
+                    }
 
                     float v = SampleWeight(mt, timeSec);                 // 正規化値 [-1,1]
 
-                    float min, max;
-                    if (useCustom)
+                    if (measured)
                     {
-                        // HumanLimitData はラジアン → 度へ（Quaternion.Euler は度）
-                        min = hl.Min[dof] * Mathf.Rad2Deg;
-                        max = hl.Max[dof] * Mathf.Rad2Deg;
+                        // Zero 基準のデルタを |v| だけ効かせる（v=0 で identity）
+                        Quaternion ext  = v >= 0f ? lim.MaxQ[dof] : lim.MinQ[dof];
+                        Quaternion full = Quaternion.Inverse(lim.Zero) * ext;
+                        Quaternion d    = Quaternion.Slerp(Quaternion.identity, full, Mathf.Min(1f, Mathf.Abs(v)));
+                        delta = delta * d;
+
+                        if (dbg)
+                        {
+                            dsb.Append("   dof").Append(dof).Append(' ').Append(muscleNames[mi])
+                               .Append("  v=").Append(v.ToString("F4"))
+                               .Append("  side=").Append(v >= 0f ? "Max" : "Min").Append('\n');
+                            dsb.Append("      MinQ ").Append(AxAng(lim.MinQ[dof]))
+                               .Append("   MaxQ ").Append(AxAng(lim.MaxQ[dof])).Append('\n');
+                            dsb.Append("      full ").Append(AxAng(full))
+                               .Append("   ->d ").Append(AxAng(d)).Append('\n');
+                        }
                     }
                     else
                     {
-                        min = HumanTrait.GetMuscleDefaultMin(mi);          // 度
-                        max = HumanTrait.GetMuscleDefaultMax(mi);          // 度
-                    }
+                        float min, max;
+                        if (lim != null)
+                        {
+                            // (1) CSV（ソースアバターの実可動域・度）
+                            min = lim.Min[dof];
+                            max = lim.Max[dof];
+                        }
+                        else if (useCustom)
+                        {
+                            // (2) HumanLimitData はラジアン → 度へ（Quaternion.Euler は度）
+                            min = hl.Min[dof] * Mathf.Rad2Deg;
+                            max = hl.Max[dof] * Mathf.Rad2Deg;
+                        }
+                        else
+                        {
+                            // (3) Unity 既定（度）
+                            min = HumanTrait.GetMuscleDefaultMin(mi);
+                            max = HumanTrait.GetMuscleDefaultMax(mi);
+                        }
 
-                    euler[dof] = v >= 0f ? v * max : -v * min;           // v=+1→max, v=-1→min, v=0→0
+                        euler[dof] = v >= 0f ? v * max : -v * min;       // v=+1→max, v=-1→min, v=0→0
+
+                        if (dbg)
+                            dsb.Append("   dof").Append(dof).Append(' ').Append(muscleNames[mi])
+                               .Append("  v=").Append(v.ToString("F4"))
+                               .Append("  range=[").Append(min.ToString("F1")).Append(',').Append(max.ToString("F1"))
+                               .Append("]  euler[").Append(dof).Append("]=").Append(euler[dof].ToString("F2")).Append("deg\n");
+                    }
                     any = true;
                 }
                 if (!any) continue;
 
+                // 実測経路のみ: Zero（マッスル0）とモデルのレスト姿勢の差を打ち消す。
+                //   D = RestL^-1 · Zero · d(v)
+                // Zero == identity のとき、および実測なし（B-1）のときは何もしない。
+                Quaternion zeroFix = Quaternion.identity;
+                if (measured && lim.Zero != Quaternion.identity)
+                {
+                    Quaternion restL = ctx.BoneTransform != null
+                        ? ctx.BoneTransform.RotationQuaternion
+                        : Quaternion.identity;
+                    zeroFix = Quaternion.Inverse(restL) * lim.Zero;
+                    delta   = zeroFix * delta;
+                }
+
+                Quaternion applied = measured ? delta : Quaternion.Euler(euler);
+
+                if (dbg)
+                {
+                    if (measured)
+                    {
+                        Quaternion restL = ctx.BoneTransform != null
+                            ? ctx.BoneTransform.RotationQuaternion
+                            : Quaternion.identity;
+                        dsb.Append("   RestL ").Append(AxAng(restL))
+                           .Append("   RestL^-1*Zero ").Append(AxAng(zeroFix)).Append('\n');
+                    }
+                    dsb.Append("   合成 delta ").Append(AxAng(applied)).Append('\n');
+                    // モデル空間へ写した向き（R = BoneModelRotation）。ボーンがどちらへ回るかの確認用。
+                    Quaternion R = ctx.BoneModelRotation;
+                    Quaternion dWorld = R * applied * Quaternion.Inverse(R);
+                    dsb.Append("   R(BoneModelRotation) ").Append(AxAng(R))
+                       .Append("   モデル空間 ").Append(AxAng(dWorld)).Append('\n');
+                    Debug.Log(dsb.ToString());
+                }
+
                 // rest からのデルタ（位置は変えない）
-                SetDelta(ctx, Vector3.zero, Quaternion.Euler(euler));
+                SetDelta(ctx, Vector3.zero, applied);
+                MuscleMatchedCount++;
                 matched++;
             }
             return matched;
@@ -510,6 +767,139 @@ namespace Poly_Ling.UnityClip
 
         /// <summary>ソース rest（バインドポーズ）を破棄。以後は同一リグ用の従来経路に戻る。</summary>
         public void ClearSourceRest() { _sourceRest = null; }
+
+        // ================================================================
+        // 外部 UnityLimit CSV v1 読込：Humanoid 毎の可動域（度）＋マッスル実測
+        //   列（53列・0起点）:
+        //     0  UnityLimit
+        //     1  Humanoid（HumanBodyBones 列挙名）   2 TraitName   3 BoneName   4 UseDefault
+        //     5- 7 MinX,MinY,MinZ                    8-10 MaxX,MaxY,MaxZ
+        //    11-13 CenX,CenY,CenZ                   14 AxisLength
+        //    15-17 Dof0Muscle,Dof1Muscle,Dof2Muscle
+        //    18-23 Dof0Min,Dof0Max,Dof1Min,Dof1Max,Dof2Min,Dof2Max（HumanTrait 既定・度）
+        //    24    Measured
+        //    25-28 Zero(x,y,z,w)
+        //    29-36 D0Min(xyzw), D0Max(xyzw)
+        //    37-44 D1Min(xyzw), D1Max(xyzw)
+        //    45-52 D2Min(xyzw), D2Max(xyzw)
+        //
+        //   ※ ヘッダ行も 1 列目が "UnityLimit" のため、f[1]=="Humanoid" の行を読み飛ばす。
+        // ================================================================
+        public int LoadMuscleLimitCsv(string csvText)
+        {
+            var dict = new Dictionary<string, MuscleLimitEntry>();
+            if (!string.IsNullOrEmpty(csvText))
+            {
+                var lines = csvText.Split('\n');
+                foreach (var raw in lines)
+                {
+                    string line = raw.TrimEnd('\r');
+                    if (line.Length == 0 || line[0] == ';') continue;      // コメント行
+                    var f = SplitCsvLine(line);
+                    if (f.Count < 25) continue;
+                    if ((f[0] ?? "").Trim() != "UnityLimit") continue;     // データ行のみ
+                    if ((f[1] ?? "").Trim() == "Humanoid") continue;       // ヘッダ行スキップ
+
+                    string hum = (f[1] ?? "").Trim();
+                    if (hum.Length == 0) continue;
+
+                    var e = new MuscleLimitEntry
+                    {
+                        Min = new Vector3(ParseF(f[5]), ParseF(f[6]), ParseF(f[7])),
+                        Max = new Vector3(ParseF(f[8]), ParseF(f[9]), ParseF(f[10]))
+                    };
+
+                    bool measured = string.Equals((f[24] ?? "").Trim(), "true",
+                        System.StringComparison.OrdinalIgnoreCase);
+                    if (measured && f.Count >= 53)
+                    {
+                        e.Measured = true;
+                        e.Zero = ReadQ(f, 25);
+                        for (int dof = 0; dof < 3; dof++)
+                        {
+                            e.MinQ[dof] = ReadQ(f, 29 + dof * 8);
+                            e.MaxQ[dof] = ReadQ(f, 33 + dof * 8);
+                        }
+                    }
+
+                    dict[hum] = e;
+                }
+            }
+            _muscleLimits = dict;
+            return dict.Count;
+        }
+
+        /// <summary>マッスル可動域・実測を破棄。以後は Unity 既定の可動域にフォールバックする。</summary>
+        public void ClearMuscleLimits() { _muscleLimits = null; }
+
+        // ================================================================
+        // 診断ログ
+        //   毎フレーム同じ内容を出すと読めないため、内容が変化したときだけ出す。
+        //   本体ボーンが欠けたまま一部だけデルタが載ると連鎖が崩れて姿勢が破綻するため、
+        //   未解決ボーン名を必ず列挙する。
+        // ================================================================
+        private void LogDiagnosticsIfChanged()
+        {
+            if (!DebugLog) return;
+
+            string key = string.Concat(
+                ResolvedBodyMode.ToString(), "|",
+                PathMatchedCount.ToString(), "/", PathTrackCount.ToString(), "|",
+                MuscleMatchedCount.ToString(), "/", MuscleTargetCount.ToString(), "|",
+                string.Join(",", UnresolvedMuscleBones.ToArray()));
+            if (key == _lastDiagKey) return;
+            _lastDiagKey = key;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("[UnityClipApplier] body=").Append(ResolvedBodyMode)
+              .Append(" limits=").Append(HasMuscleLimits ? (HasMuscleMeasured ? "measured" : "range") : "none")
+              .Append(" sourceRest=").Append(HasSourceRest ? "yes" : "no").Append('\n');
+            sb.Append("  path   : ").Append(PathMatchedCount).Append('/').Append(PathTrackCount).Append('\n');
+            sb.Append("  muscle : ").Append(MuscleMatchedCount).Append('/').Append(MuscleTargetCount).Append('\n');
+
+            if (UnresolvedMuscleBones.Count > 0)
+                sb.Append("  未解決(本体): ").Append(string.Join(", ", UnresolvedMuscleBones.ToArray())).Append('\n');
+
+            if (UnresolvedPathTracks.Count > 0)
+            {
+                int show = UnresolvedPathTracks.Count > 20 ? 20 : UnresolvedPathTracks.Count;
+                var head = UnresolvedPathTracks.GetRange(0, show);
+                sb.Append("  未解決(path): ").Append(string.Join(", ", head.ToArray()));
+                if (UnresolvedPathTracks.Count > show)
+                    sb.Append(" ...他 ").Append(UnresolvedPathTracks.Count - show).Append(" 本");
+                sb.Append('\n');
+            }
+
+            Debug.Log(sb.ToString());
+        }
+
+        // クォータニオンを「軸+角度(度)」の読める形にする（ログ用）。
+        private static string AxAng(Quaternion q)
+        {
+            q = QuatNorm(q);
+            float w = Mathf.Abs(q.w) > 1f ? Mathf.Sign(q.w) : q.w;
+            if (w < 0f) { q = new Quaternion(-q.x, -q.y, -q.z, -q.w); w = -w; }
+            float n = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+            float ang = 2f * Mathf.Atan2(n, w) * Mathf.Rad2Deg;
+            if (n <= 1e-8f) return "(軸なし 0.00deg)";
+            return string.Format("(軸 {0:F3},{1:F3},{2:F3}  {3:F2}deg)", q.x / n, q.y / n, q.z / n, ang);
+        }
+
+        private static Quaternion QuatNorm(Quaternion q)
+        {
+            float n = Mathf.Sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            if (n <= 1e-8f) return Quaternion.identity;
+            return new Quaternion(q.x / n, q.y / n, q.z / n, q.w / n);
+        }
+
+        // 4 連続列を正規化クォータニオンとして読む。ゼロ長なら identity。
+        private static Quaternion ReadQ(List<string> f, int i0)
+        {
+            float x = ParseF(f[i0]), y = ParseF(f[i0 + 1]), z = ParseF(f[i0 + 2]), w = ParseF(f[i0 + 3]);
+            float n = Mathf.Sqrt(x * x + y * y + z * z + w * w);
+            if (n <= 1e-8f) return Quaternion.identity;
+            return new Quaternion(x / n, y / n, z / n, w / n);
+        }
 
         private static float ParseF(string s)
         {

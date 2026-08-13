@@ -319,10 +319,13 @@ namespace Poly_Ling.Player
             // delta は viewport 座標（Y=0 下、上方向が正）。
             float wpp = WorldHeightPerPixel;
 
+            // 粗微動: Shift=粗動 / Ctrl=微動。倍率は DisplaySettings.csv のプリセット値。
+            float speed = CameraSpeedModifier.Factor(mods);
+
             Quaternion rot = ViewRotation();
             // Target を「カメラ右／上」の逆へ動かすとコンテンツがカーソルに追従する。
             Vector3 pan = rot * Vector3.right * delta.x + rot * Vector3.up * delta.y;
-            Target -= pan * wpp;
+            Target -= pan * wpp * speed;
 
             // Phase 1: ドラッグ中はフレーム駆動で transform 反映していたが
             // Tick 廃止に伴い、軽量コールバックで event 駆動化する。
@@ -342,7 +345,11 @@ namespace Poly_Ling.Player
         {
             // 高さ非依存の共有ズームを更新する。実際の orthographicSize は
             // ApplyCameraTransform で各ビューの pixelHeight から算出される。
-            WorldHeightPerPixel *= 1f - scroll * ZoomSensitivity;
+            // 粗微動: Shift=粗動 / Ctrl=微動。倍率は DisplaySettings.csv のプリセット値。
+            // 倍率が大きいと 1-scroll*sens*speed が 0 以下になり符号が反転するため、
+            // 縮尺係数に下限を設ける。
+            float zoomScale = Mathf.Max(0.01f, 1f - scroll * ZoomSensitivity * CameraSpeedModifier.Factor(mods));
+            WorldHeightPerPixel *= zoomScale;
             WorldHeightPerPixel  = Mathf.Max(1e-6f, WorldHeightPerPixel);
             // Phase 1: スクロールは単発イベントのため、フル更新を伴う OnCameraChanged を発火する。
             OnCameraChanged?.Invoke();

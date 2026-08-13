@@ -23,7 +23,7 @@ namespace Poly_Ling.PrimitiveMesh
 
         /// <summary>
         /// フリルの高さ倍率（法線方向成分に掛ける）。$heightScale が無い旧CSVでは 1。
-        /// フリル以外（パイプ・接地）は読み書きするだけで使わない。
+        /// フリル以外（パイプ・配置）は読み書きするだけで使わない。
         /// </summary>
         public float HeightScale = 1f;
 

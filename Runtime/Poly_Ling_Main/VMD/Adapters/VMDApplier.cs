@@ -2,6 +2,25 @@
 // VMDモーションをPolyLingのModelContextに適用するアダプタ
 // ボーンポーズの適用、モーフウェイトの適用、座標系変換を担当
 
+//
+// ================================================================
+// ■ 【重要】軸規約の変更に未追随。動作保証対象外。
+// ----------------------------------------------------------------
+//   PMX 取込のボーン局所軸は以下に変更された（PMXImporter.CalculateBoneModelRotation）:
+//     (1) AxisFlipOps.Basis を両側共役 S·M·S から片側変換 S·M へ
+//     (2) MMD 規約（X = 骨の長手方向）から DCC 標準（Y = 骨の長手方向）へ巡回置換
+//   本ファイルの R^-1·Q·R 変換（R = ctx.BoneModelRotation）はこの変更に
+//   追随していないため、結果は正しくない。
+//
+//   既知の症状:
+//     - 足ＩＫが収束しないフレームがある（左足首 max dist 1.14 / 12 of 50 サンプル）
+//     - 統合経路には IK 自体が無い（MotionClipApplier に Solve 呼び出しなし）
+//     - 付与親（GrantParentIndex / GrantRate）が未評価
+//
+//   修正する場合は、局所軸が「Y = 骨方向」であることを前提に組み直すこと。
+//   旧規約を前提とした つじつま合わせ を足さないこと。
+// ================================================================
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -55,6 +74,11 @@ namespace Poly_Ling.VMD
         public float PositionScale { get; set; } = 1f;
 
         /// <summary>
+        /// デバッグログの有効/無効。ApplyFrame で IK ソルバへも伝播する。
+        /// </summary>
+        public bool DebugLog { get; set; } = true;
+
+        /// <summary>
         /// 未マッチのボーン名リスト（デバッグ用）
         /// </summary>
         public List<string> UnmatchedBoneNames { get; private set; } = new List<string>();
@@ -106,7 +130,8 @@ namespace Poly_Ling.VMD
                 }
             }
 
-            Debug.Log($"[VMDApplier] Mapped {_boneNameToIndex.Count} bones, {_morphNameToIndex.Count} morphs");
+            if (DebugLog)
+                Debug.Log($"[VMDApplier] Mapped {_boneNameToIndex.Count} bones, {_morphNameToIndex.Count} morphs");
         }
 
         /// <summary>
@@ -210,7 +235,7 @@ namespace Poly_Ling.VMD
                 var (position, rotation) = vmd.GetBonePoseAtFrame(boneName, frameNumber);
 
                 // デバッグ出力（変換前）
-                bool isDebugBone = debugBones.Contains(boneName);
+                bool isDebugBone = DebugLog && debugBones.Contains(boneName);
                 if (isDebugBone)
                 {
                     Debug.Log($"[VMD DEBUG] ===== {boneName} (frame {frameNumber}) =====");
@@ -218,26 +243,45 @@ namespace Poly_Ling.VMD
                 }
 
                 // 座標系変換
+                //
+                // ■ 位置・回転の両方に同じ軸反転 S を掛けること（片方だけは不可）。
+                //   取込時に BoneModelRotation は R_unity = S·R_pmx·S へ変換済み
+                //   （PMXImporter.CalculateBoneModelRotation → AxisFlipOps.Basis）。
+                //   後段の Q' = R^-1·Q·R は Q が Unity 空間であることを前提とするため、
+                //   VMD 生値（PMX 空間）のままでは回転軸の X・Z 成分の符号が反転し、
+                //   ひじ等がねじれる。
                 Vector3 convertedPos = position;
                 Quaternion convertedRot = rotation;
                 if (ApplyCoordinateConversion)
                 {
                     convertedPos = CoordinateConverter.ToUnityPosition(position, CoordinateFlip);
+                    convertedRot = CoordinateConverter.ToUnityRotation(rotation, CoordinateFlip);
+                }
+
+                if (isDebugBone)
+                {
+                    Debug.Log($"[VMD DEBUG] AxisFlip: apply={ApplyCoordinateConversion} flipX={CoordinateFlip.FlipX} flipZ={CoordinateFlip.FlipZ} isMirror={CoordinateFlip.IsMirror}");
+                    Debug.Log($"[VMD DEBUG] Rot flip: pmx=({rotation.x:F4},{rotation.y:F4},{rotation.z:F4},{rotation.w:F4}) -> unity=({convertedRot.x:F4},{convertedRot.y:F4},{convertedRot.z:F4},{convertedRot.w:F4})");
+                    Debug.Log($"[VMD DEBUG] Pos flip: pmx={position} -> unity={convertedPos}");
                 }
 
                 // スケール適用（VMDデルタ位置はPMX空間の値なので、Unity空間に合わせる）
                 if (!Mathf.Approximately(PositionScale, 1f))
                 {
                     convertedPos *= PositionScale;
+                    if (isDebugBone)
+                        Debug.Log($"[VMD DEBUG] Pos scaled (x{PositionScale}): {convertedPos}");
                 }
 
-                // ★★★ ローカル軸空間変換 - 削除禁止 ★★★
+                // ★★★ ローカル軸空間変換 ★★★
                 //
                 // ■ 背景
                 // 元ライブラリ(NCSHAGLIB BoneMatrixList)ではボーン行列を以下で計算していた:
                 //   boneMatrix = invBindpose * TRS(vmdTrans, vmdRot) * bindpose
-                // bindposeは平行移動のみでローカル軸回転を含まない。
-                // そのためVMDのQuaternionはグローバル軸空間での回転としてそのまま使えた。
+                //
+                // ※ 旧コメントには「bindposeは平行移動のみでローカル軸回転を含まない」と
+                //   書かれていたが誤り。MMD/PMX はボーンの長手方向を局所 X 軸として扱う
+                //   規約を持つ（他ツールが局所 Y 軸と呼ぶものに相当）。訂正する。
                 //
                 // ■ Unity移植での構造変更
                 // UnityではTransform階層がローカル基準のため、以下の構造になった:
@@ -266,6 +310,13 @@ namespace Poly_Ling.VMD
                     convertedRot = Quaternion.Inverse(modelRot) * convertedRot * modelRot;
                     // 位置: P' = R^-1 * P （グローバル空間のデルタをローカル軸空間に変換）
                     convertedPos = Quaternion.Inverse(modelRot) * convertedPos;
+
+                    if (isDebugBone)
+                        Debug.Log($"[VMD DEBUG] R^-1*Q*R: R=({modelRot.x:F4},{modelRot.y:F4},{modelRot.z:F4},{modelRot.w:F4}) -> Q'=({convertedRot.x:F4},{convertedRot.y:F4},{convertedRot.z:F4},{convertedRot.w:F4})");
+                }
+                else if (isDebugBone)
+                {
+                    Debug.Log($"[VMD DEBUG] R^-1*Q*R: skipped (BoneModelRotation = identity)");
                 }
 
                 if (isDebugBone)
@@ -346,7 +397,12 @@ namespace Poly_Ling.VMD
             // （BonePoseDataレイヤーは使わない）。
             if (EnableIK)
             {
+                _ikSolver.DebugEnabled = DebugLog;
                 _ikSolver.Solve(model, frameNumber);
+            }
+            else if (DebugLog)
+            {
+                Debug.Log($"[VMD DEBUG] IK skipped (EnableIK=false) frame={frameNumber}");
             }
         }
 

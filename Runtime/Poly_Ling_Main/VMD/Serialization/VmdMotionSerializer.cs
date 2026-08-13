@@ -10,17 +10,17 @@ namespace Poly_Ling.VMD.Serialization
     // ================================================================
     // VmdMotionSerializer
     // ----------------------------------------------------------------
-    // VMDData（VMD読み込み結果・右手系・スパースキー）から
+    // VMDData（VMD読み込み結果・左手系/正面 -Z・スパースキー）から
     // MotionDTO（Unity左手系・純POCO）を生成し、JSON 入出力する。
     //
     // 役割分担:
-    //   - 座標系変換(右手系VMD→左手系Unity)・Vector/Quaternion→float[] 変換は
+    //   - 軸反転(VMD 正面 -Z → Unity 正面 +Z)・Vector/Quaternion→float[] 変換は
     //     “この生成側(Unity依存)” に閉じる。MotionDTO 自体は純POCO のまま。
     //   - キーはスパースのまま運ぶ（補間しない／密化しない）。キー間補間は消費側の責務。
     //
     // 移植メモ:
     //   他言語(Python/JS)で同じ JSON を作る場合、必要なのは
-    //   (1) VMDバイナリのキー読み出し、(2) 右手系→左手系変換、(3) 本DTO構造への詰め替え。
+    //   (1) VMDバイナリのキー読み出し、(2) X・Z 両反転(Y軸180°回転)、(3) 本DTO構造への詰め替え。
     //   ここの ToMotionDTO がその参照実装になる。
     // ================================================================
     public static class VmdMotionSerializer
@@ -61,7 +61,7 @@ namespace Poly_Ling.VMD.Serialization
                 {
                     int f = (int)fr.FrameNumber;
 
-                    // 回転: 右手系VMD -> 左手系Unity
+                    // 回転: VMD(正面 -Z) -> Unity(正面 +Z)。X・Z 両反転
                     Quaternion uq = CoordinateConverter.ToUnityRotation(fr.Rotation);
                     track.rot.Add(new RotKeyDTO
                     {
@@ -71,7 +71,7 @@ namespace Poly_Ling.VMD.Serialization
 
                     if (usesPos)
                     {
-                        // 位置: 右手系VMD -> 左手系Unity
+                        // 位置: VMD(正面 -Z) -> Unity(正面 +Z)。X・Z 両反転
                         Vector3 up = CoordinateConverter.ToUnityPosition(fr.Position);
                         track.pos.Add(new PosKeyDTO
                         {

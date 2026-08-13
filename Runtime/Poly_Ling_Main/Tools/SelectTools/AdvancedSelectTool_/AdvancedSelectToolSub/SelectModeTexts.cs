@@ -59,6 +59,22 @@ namespace Poly_Ling.Tools
                 ["ja"] = "要素をクリックして接続領域を選択\n出力: 有効な全モード（頂点/エッジ/面/線）",
                 ["hi"] = "クリックしてつながってるのをぜんぶえらぶ\nしゅつりょく: ぜんぶのモード"
             },
+
+            // ================================================================
+            // BoundaryEdgeSelectMode
+            // ================================================================
+            ["BoundaryEdgeGroupHelp"] = new()
+            {
+                ["en"] = "Click a vertex, edge or face on a boundary.\nSelects every boundary edge of that group and its vertices.\nA boundary edge is used by only one face.",
+                ["ja"] = "エッジ上の頂点・辺、またはエッジに接する面をクリック\n同じグループのエッジ全部と構成頂点を選択します\nエッジ＝1つの面だけが使う辺（穴の縁など）",
+                ["hi"] = "エッジのてん・へん・めんをクリック\nおなじかたまりのエッジとてんをえらびます\nエッジ＝めんが1まいだけのへん"
+            },
+            ["BoundaryEdgeInSelectionHelp"] = new()
+            {
+                ["en"] = "Selects boundary edges whose both endpoints are already selected.\nNo click needed. Press Execute.",
+                ["ja"] = "両端点が選択済みのエッジを選択します\nクリック不要。「実行」ボタンで適用",
+                ["hi"] = "りょうはしがえらばれているエッジをえらびます\nクリックはいりません。「じっこう」をおす"
+            },
         };
 
         // ================================================================

@@ -1,5 +1,5 @@
 // PlaceObjectParams.cs
-// オブジェクト接地の生成パラメータ（Runtime / Editor 共有）
+// オブジェクト配置の生成パラメータ（Runtime / Editor 共有）
 // Runtime/Poly_Ling_Main/Tools/PrimitiveMesh/ に配置
 
 using System;
@@ -18,7 +18,7 @@ namespace Poly_Ling.PlaceObject
     }
 
     /// <summary>
-    /// オブジェクト接地パラメータ。配置元オブジェクトはパネル側が保持する。
+    /// オブジェクト配置パラメータ。配置元オブジェクトはパネル側が保持する。
     /// </summary>
     [Serializable]
     public struct PlaceObjectParams : IEquatable<PlaceObjectParams>
@@ -43,6 +43,12 @@ namespace Poly_Ling.PlaceObject
         /// </summary>
         public bool IncludeChildren;
 
+        /// <summary>
+        /// 配置フレームの Z 軸（rung 法線）まわりのロール。90°単位の段数（0〜3）。
+        /// 0=0°, 1=90°, 2=180°, 3=270°。Z 軸は変えないので rung 法線の向きは保たれる。
+        /// </summary>
+        public int RollSteps;
+
         public static PlaceObjectParams Default => new PlaceObjectParams
         {
             MeshName        = "PlaceObject",
@@ -50,6 +56,7 @@ namespace Poly_Ling.PlaceObject
             RandomSeed      = 0,
             Scale           = 1f,
             IncludeChildren = true,
+            RollSteps       = 0,
         };
 
         public bool Equals(PlaceObjectParams o)
@@ -57,7 +64,8 @@ namespace Poly_Ling.PlaceObject
             && Mode     == o.Mode
             && RandomSeed == o.RandomSeed
             && Scale      == o.Scale
-            && IncludeChildren == o.IncludeChildren;
+            && IncludeChildren == o.IncludeChildren
+            && RollSteps       == o.RollSteps;
 
         public override bool Equals(object obj) => obj is PlaceObjectParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;

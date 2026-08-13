@@ -56,6 +56,10 @@ namespace Poly_Ling.Player
         private Toggle        _limitToSelectionToggle;
         private Button        _executeBtn;
 
+        // エッジ（1面だけが使う辺）選択
+        private VisualElement _boundaryEdgeGroup;
+        private Button        _boundaryEdgeExecuteBtn;
+
         // 反転 / 辞書化
         private Button        _invertBtn;
         private TextField     _setNameField;
@@ -77,11 +81,14 @@ namespace Poly_Ling.Player
             AdvancedSelectMode.ShortestPath,
             AdvancedSelectMode.UvNormalCount,
             AdvancedSelectMode.NearAxis,
+            AdvancedSelectMode.BoundaryEdgeGroup,
+            AdvancedSelectMode.BoundaryEdgeInSelection,
         };
 
         private static readonly string[] ModeLabels =
         {
             "接続", "ベルト", "辺ループ", "最短", "UV/法線数", "軸近傍",
+            "エッジ群", "選択内エッジ",
         };
 
         // ================================================================
@@ -207,6 +214,21 @@ namespace Poly_Ling.Player
                 Refresh();
             };
             _attrGroup.Add(_executeBtn);
+
+            // ── 選択内エッジ（クリック不要・実行ボタン）────────────────
+            _boundaryEdgeGroup = new VisualElement();
+            _root.Add(_boundaryEdgeGroup);
+
+            _boundaryEdgeExecuteBtn = new Button { text = "実行" };
+            _boundaryEdgeExecuteBtn.style.marginBottom = 4;
+            _boundaryEdgeExecuteBtn.tooltip =
+                "両端点が現在の頂点選択に含まれるエッジ（1つの面だけが使う辺）を、動作（追加/削除）に従って辺選択に反映します。";
+            _boundaryEdgeExecuteBtn.clicked += () =>
+            {
+                GetHandler?.Invoke()?.ExecuteBoundaryEdgeInSelection();
+                Refresh();
+            };
+            _boundaryEdgeGroup.Add(_boundaryEdgeExecuteBtn);
 
             // ── 追加/削除 ────────────────────────────────────────────
             var actionLabel = new Label("動作:");
@@ -369,6 +391,10 @@ namespace Poly_Ling.Player
                         "UV/法線スロット数がしきい値より大きい頂点を選択\nクリック不要。「実行」ボタンで適用",
                     AdvancedSelectMode.NearAxis =>
                         "軸に対応する平面までの距離がしきい値未満の頂点を選択\nクリック不要。「実行」ボタンで適用",
+                    AdvancedSelectMode.BoundaryEdgeGroup =>
+                        "エッジ上の頂点・辺、またはエッジに接する面をクリック\n同じグループのエッジ全部と構成頂点を選択します\nエッジ＝1つの面だけが使う辺（穴の縁など）",
+                    AdvancedSelectMode.BoundaryEdgeInSelection =>
+                        "両端点が選択済みのエッジを選択\nクリック不要。「実行」ボタンで適用",
                     _ => "",
                 };
             }
@@ -388,6 +414,12 @@ namespace Poly_Ling.Player
             if (_nearAxisGroup != null)
                 _nearAxisGroup.style.display =
                     mode == AdvancedSelectMode.NearAxis ? DisplayStyle.Flex : DisplayStyle.None;
+
+            // 選択内エッジグループ
+            if (_boundaryEdgeGroup != null)
+                _boundaryEdgeGroup.style.display =
+                    mode == AdvancedSelectMode.BoundaryEdgeInSelection
+                        ? DisplayStyle.Flex : DisplayStyle.None;
 
             // ShortestPath 始点グループ
             if (_shortestPathGroup != null)

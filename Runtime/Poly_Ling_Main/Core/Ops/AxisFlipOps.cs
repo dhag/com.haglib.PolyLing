@@ -157,24 +157,15 @@ namespace Poly_Ling.Ops
 
         // ================================================================
         // 基底ベクトル
+        // ----------------------------------------------------------------
+        //   Basis / MmdAxisToStandard / MmdComponentToStandard は削除した。
+        //   PMX 取込でボーンの局所軸を合成する処理そのものを廃止したため
+        //   （PMXImporter: BoneModelRotation は恒等固定）、呼び出し元が存在しない。
+        //
+        //   Rotation(AxisFlip, Quaternion) は残す。用途がデルタ／演算子の変換
+        //   （VMD のフレーム回転値、MQO の HPB 姿勢）であり、基底のラベル付けでは
+        //   ないため、両側共役 S·q·S のままで正しい。
         // ================================================================
-
-        /// <summary>
-        /// 直交基底（列ベクトル X, Y, Z からなる回転行列 M）に S·M·S を適用する。
-        /// 列 j は S を掛けたうえで s_j 倍する（S·M·S の列 j = s_j · S · M_j）。
-        /// Rotation(AxisFlip, Quaternion) と同一の変換を行列表現で行うもの。
-        /// </summary>
-        public static void Basis(AxisFlip f, ref Vector3 axisX, ref Vector3 axisY, ref Vector3 axisZ)
-        {
-            if (f.IsIdentity) return;
-
-            float sx = f.Sx;
-            float sz = f.Sz;
-
-            axisX = Position(f, axisX) * sx;
-            axisY = Position(f, axisY);
-            axisZ = Position(f, axisZ) * sz;
-        }
 
         // ================================================================
         // 角度制限
@@ -183,33 +174,32 @@ namespace Poly_Ling.Ops
         /// <summary>
         /// オイラー角の角度制限 min/max に軸反転を適用する。
         ///
-        /// 軸 k まわりの回転角は、S·R·S のもとで符号 σ_k = s_k · det(S) が掛かる
-        /// （det(S) = sx · sz）。σ_k が負の軸では min/max が入れ替わる。
-        ///   Z のみ反転 : σ = (-1, -1, +1)  … X,Y が入れ替わり
-        ///   X,Z 両反転 : σ = (-1, +1, -1)  … X,Z が入れ替わり
-        ///   X のみ反転 : σ = (+1, -1, -1)  … Y,Z が入れ替わり
+        /// 局所軸の合成を廃止し、ボーンのレスト回転が恒等になったため、
+        /// 角度制限はモデル空間の値として扱う。軸 k まわりの回転角に掛かる符号は
+        /// σ_k = det(S) = sx · sz で、3 軸とも共通。
+        ///   X,Z 両反転 : det = +1  … 符号反転なし。min/max はそのまま
+        ///   Z のみ反転 : det = -1  … 3 軸とも min/max が入れ替わる
+        ///   X のみ反転 : det = -1  … 同上
+        ///
+        /// 旧実装は両側共役 S·M·S 前提で σ_k = s_k · det(S) としており、
+        /// X と Z だけ入れ替えていた。局所軸の廃止に合わせて作り直したもの。
+        ///
+        /// ■ 未実装（恒久メモ）
+        ///   付与親（GrantParentIndex / GrantRate）と固定軸はポーズ適用側に
+        ///   評価コードが無い。IK 角度制限とは別系統。
         /// </summary>
         public static void AngleLimits(AxisFlip f, ref Vector3 min, ref Vector3 max)
         {
             if (f.IsIdentity) return;
 
             float det = f.Sx * f.Sz;
-            float sigX = f.Sx * det;
-            float sigY = det;
-            float sigZ = f.Sz * det;
+            if (det > 0f) return;   // 符号反転なし
 
             Vector3 srcMin = min;
             Vector3 srcMax = max;
 
-            min = new Vector3(
-                sigX > 0f ? srcMin.x : -srcMax.x,
-                sigY > 0f ? srcMin.y : -srcMax.y,
-                sigZ > 0f ? srcMin.z : -srcMax.z);
-
-            max = new Vector3(
-                sigX > 0f ? srcMax.x : -srcMin.x,
-                sigY > 0f ? srcMax.y : -srcMin.y,
-                sigZ > 0f ? srcMax.z : -srcMin.z);
+            min = -srcMax;
+            max = -srcMin;
         }
     }
 }

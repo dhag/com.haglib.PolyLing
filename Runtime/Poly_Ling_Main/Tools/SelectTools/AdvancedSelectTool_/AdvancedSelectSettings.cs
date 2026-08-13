@@ -24,7 +24,11 @@ namespace Poly_Ling.Tools
         /// <summary>UV/法線スロット数がしきい値より大きい頂点を選択</summary>
         UvNormalCount,
         /// <summary>軸に対応する平面までの距離がしきい値未満の頂点を選択</summary>
-        NearAxis
+        NearAxis,
+        /// <summary>クリックした要素からエッジ（1面だけが使う辺）グループを選択</summary>
+        BoundaryEdgeGroup,
+        /// <summary>現在の選択範囲に収まるエッジを選択</summary>
+        BoundaryEdgeInSelection
     }
 
     /// <summary>

@@ -121,15 +121,6 @@ namespace Poly_Ling.Player
         /// <summary>左ペイン：新図形生成ボタン（新しい高度）。新しい基本と同じ LivePrimitiveSection を開く。</summary>
         public Button LiveAdvancedPrimitiveBtn { get; private set; }
 
-        /// <summary>
-        /// 左ペイン：配置ギズモのサブモード切替ボタン（移動 / 回転 / スケール）。
-        /// PrimitivePlaceToolHandler.Mode を切り替えるだけで、パネル表示や
-        /// InteractionMode には影響しない。
-        /// </summary>
-        public Button PlaceGizmoMoveBtn   { get; private set; }
-        public Button PlaceGizmoRotateBtn { get; private set; }
-        public Button PlaceGizmoScaleBtn  { get; private set; }
-
         /// <summary>左ペイン：ツール切り替えボタン群。</summary>
         public Button ToolVertexMoveBtn  { get; private set; }
         public Button ToolObjectMoveBtn  { get; private set; }
@@ -179,6 +170,18 @@ namespace Poly_Ling.Player
 
         /// <summary>右ペイン：カメラ調整セクション（ScrollView内）。</summary>
         public VisualElement CameraSection { get; private set; }
+
+        /// <summary>左ペイン：キャプチャボタン（その他）。</summary>
+        public Button CaptureBtn { get; private set; }
+
+        /// <summary>右ペイン：キャプチャ設定セクション（ScrollView内）。</summary>
+        public VisualElement CaptureSection { get; private set; }
+
+        /// <summary>
+        /// 4ビューポート（Perspective / Right / Top / Front）を含む中央領域。
+        /// 3面図を含むキャプチャの切り出し範囲に使う。
+        /// </summary>
+        public VisualElement ViewportArea { get; private set; }
 
         /// <summary>右ペイン：ブレンドセクション（ScrollView内）。</summary>
         public VisualElement BlendSection { get; private set; }
@@ -248,6 +251,8 @@ namespace Poly_Ling.Player
         public Button        MergeVerticesBtn           { get; private set; }
         public VisualElement SplitVerticesSection       { get; private set; }
         public Button        SplitVerticesBtn           { get; private set; }
+        public VisualElement VertexHoleSection          { get; private set; }
+        public Button        VertexHoleBtn              { get; private set; }
 
         /// <summary>右ペイン：頂点IDユーティリティ（診断 / 修復）セクション。</summary>
         public VisualElement VertexIdSection            { get; private set; }
@@ -448,6 +453,9 @@ namespace Poly_Ling.Player
             TiltToggleFront = MakeTiltToggle("斜め45");
             _splitTopFront.Add(BuildViewportPane("Front", out frontPanel, out var frontLbl, MakeHeaderRow(TiltToggleFront, FrontFlipBtn)));
             FrontPanel = frontPanel; FrontViewLabel = frontLbl;
+
+            // 4ビューポートを含む中央領域（キャプチャの切り出し範囲）。
+            ViewportArea = _splitCenter;
 
             var rightPaneEl = BuildRightPane();
             _rightPaneEl = rightPaneEl;
@@ -842,24 +850,14 @@ namespace Poly_Ling.Player
 
             // 検証用の新サブツール（メイン3Dウインドウ連携版の入口）。
             // 既存の「基本図形」「高度な図形」とは別インスタンス・別セクション。
-            LivePrimitiveBtn = MakeBtn("新しい基本");
+            LivePrimitiveBtn = MakeBtn("基本図形（3D連携）");
             foPrimitive.Add(LivePrimitiveBtn);
 
-            LiveAdvancedPrimitiveBtn = MakeBtn("新しい高度");
+            LiveAdvancedPrimitiveBtn = MakeBtn("高度な図形（3D連携）");
             foPrimitive.Add(LiveAdvancedPrimitiveBtn);
 
-            // 配置ギズモのサブモード切替。GizmoData は矢印 / リング / キューブを
-            // 排他的にしか描画できないため、3種を同時には出さず切り替える。
-            var placeGizmoRow = new VisualElement();
-            placeGizmoRow.style.flexDirection = FlexDirection.Row;
-            placeGizmoRow.style.marginBottom  = 2;
-            PlaceGizmoMoveBtn   = MakeBtn("配置:移動");     PlaceGizmoMoveBtn.style.flexGrow   = 1; PlaceGizmoMoveBtn.style.marginRight   = 2;
-            PlaceGizmoRotateBtn = MakeBtn("配置:回転");     PlaceGizmoRotateBtn.style.flexGrow = 1; PlaceGizmoRotateBtn.style.marginRight = 2;
-            PlaceGizmoScaleBtn  = MakeBtn("配置:スケール"); PlaceGizmoScaleBtn.style.flexGrow  = 1;
-            placeGizmoRow.Add(PlaceGizmoMoveBtn);
-            placeGizmoRow.Add(PlaceGizmoRotateBtn);
-            placeGizmoRow.Add(PlaceGizmoScaleBtn);
-            foPrimitive.Add(placeGizmoRow);
+            // 配置ギズモのサブモード切替ボタンは
+            // PlayerPrimitiveMeshSubPanel（3D連携インスタンス）の中へ移設済み。
 
             // ── 選択・移動 ─────────────────────────────────────────────
             var foSelectMove = MakeFoldout("選択・移動/回転/拡大縮小", "SelectMove");
@@ -973,8 +971,9 @@ namespace Poly_Ling.Player
             rowVertexId.Add(VertexIdBtn); rowVertexId.Add(VertexTransferBtn); foVertexTopo.Add(rowVertexId);
 
             var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
-            QuadDecimatorBtn = MakeBtn("Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
-            rowQuad.Add(QuadDecimatorBtn); foVertexTopo.Add(rowQuad);
+            QuadDecimatorBtn = MakeBtn("Yet_Quad減面"); QuadDecimatorBtn.style.flexGrow = 1; QuadDecimatorBtn.style.marginRight = 2;
+            VertexHoleBtn    = MakeBtn("穴あけ"); VertexHoleBtn.style.flexGrow = 1;
+            rowQuad.Add(QuadDecimatorBtn); rowQuad.Add(VertexHoleBtn); foVertexTopo.Add(rowQuad);
 
             // ── ボーン・モーフ ─────────────────────────────────────────
             var foBoneMorph = MakeFoldout("ボーン・モーフ", "BoneMorph");
@@ -986,7 +985,7 @@ namespace Poly_Ling.Player
             foBoneMorph.Add(BoneEditorBtn);
 
             var rowTPoseHuman = new VisualElement(); rowTPoseHuman.style.flexDirection = FlexDirection.Row; rowTPoseHuman.style.marginBottom = 2;
-            HumanoidMappingBtn = MakeBtn("ヒューマノイド"); HumanoidMappingBtn.style.flexGrow = 1; HumanoidMappingBtn.style.marginRight = 2;
+            HumanoidMappingBtn = MakeBtn("アバター用ヒューマンマッピング"); HumanoidMappingBtn.style.flexGrow = 1; HumanoidMappingBtn.style.marginRight = 2;
             TPoseBtn          = MakeBtn("Tポーズ変換");   TPoseBtn.style.flexGrow          = 1;
             rowTPoseHuman.Add(HumanoidMappingBtn); rowTPoseHuman.Add(TPoseBtn); foBoneMorph.Add(rowTPoseHuman);
 
@@ -999,8 +998,8 @@ namespace Poly_Ling.Player
 
             ShrinkBtn = MakeBtn("シュリンカー"); foBoneMorph.Add(ShrinkBtn);
 
+            MorphCreateBtn = MakeBtn("モーフ生成・差分から");         foBoneMorph.Add(MorphCreateBtn);
             MorphBtn       = MakeBtn("モーフエクスプレッション編集"); foBoneMorph.Add(MorphBtn);
-            MorphCreateBtn = MakeBtn("差分からモーフ生成");         foBoneMorph.Add(MorphCreateBtn);
 
             ToolSkinWeightPaintBtn = MakeBtn("スキンWペイント");
             foBoneMorph.Add(ToolSkinWeightPaintBtn);
@@ -1054,8 +1053,9 @@ namespace Poly_Ling.Player
             rowMisc3.Add(UnderlayBtn); rowMisc3.Add(GridAxisBtn); rowMisc3.Add(LogBtn); foOther.Add(rowMisc3);
 
             var rowMisc4 = new VisualElement(); rowMisc4.style.flexDirection = FlexDirection.Row; rowMisc4.style.marginBottom = 2;
-            CameraBtn = MakeBtn("カメラ調整"); CameraBtn.style.flexGrow = 1;
-            rowMisc4.Add(CameraBtn); foOther.Add(rowMisc4);
+            CameraBtn  = MakeBtn("カメラ調整"); CameraBtn.style.flexGrow  = 1; CameraBtn.style.marginRight = 2;
+            CaptureBtn = MakeBtn("キャプチャ"); CaptureBtn.style.flexGrow = 1;
+            rowMisc4.Add(CameraBtn); rowMisc4.Add(CaptureBtn); foOther.Add(rowMisc4);
 
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
@@ -1327,6 +1327,7 @@ namespace Poly_Ling.Player
             SmoothEdgesSection         = AddSection(visible: false);
             MergeVerticesSection       = AddSection(visible: false);
             SplitVerticesSection       = AddSection(visible: false);
+            VertexHoleSection          = AddSection(visible: false);
             VertexIdSection            = AddSection(visible: false);
             VertexTransferSection      = AddSection(visible: false);
             AddFaceSection             = AddSection(visible: false);
@@ -1349,6 +1350,7 @@ namespace Poly_Ling.Player
             UnderlaySection            = AddSection(visible: false);
             GridAxisSection            = AddSection(visible: false);
             CameraSection              = AddSection(visible: false);
+            CaptureSection             = AddSection(visible: false);
             RemoteServerSection        = AddSection(visible: false);
             LogSection                 = AddSection(visible: false);
 

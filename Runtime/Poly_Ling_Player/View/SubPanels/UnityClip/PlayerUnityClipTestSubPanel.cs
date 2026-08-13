@@ -2,6 +2,13 @@
 // Unity モーションクリップ（UnityClipDTO JSON）のテスト用 Player サブパネル。
 // PlayerVMDTestSubPanel に倣う。Generic（bones）のみ対応。
 // 仕様: 値は Unity 左手系のまま・座標変換なし（UnityClipDTO 準拠）。
+//
+// ■ 手持ちファイルと精度（あれば使う・なければそれなり）
+//   clip のみ                     … muscles から再構成（Unity 既定可動域・近似）
+//   + UnityLimit CSV              … ソースアバターの実可動域＋マッスル実測で再構成
+//   + UnityBone CSV（bind pose）  … bakedBones があるときのレスト補正リターゲット
+//   clip に bakedBones あり        … 焼いた値をそのまま適用（最も高精度）
+//   方式は UnityClipApplier.BodyMode = Auto が自動選択する。
 
 using System;
 using System.IO;
@@ -38,8 +45,10 @@ namespace Poly_Ling.Player
         private Label         _modelLabel;
         private Label         _fileLabel;
         private Label         _bindPoseLabel;
+        private Label         _limitLabel;
         private TextField     _clipPathField;
         private TextField     _bindPathField;
+        private TextField     _limitPathField;
         private Button        _btnClear, _btnReload;
         private VisualElement _clipSection;
         private Label         _clipInfoLabel;
@@ -52,8 +61,9 @@ namespace Poly_Ling.Player
         private Foldout       _boneListFoldout;
         private Label         _statusLabel;
 
-        private const string ClipPathKey = "UnityClip.Clip.Path";
-        private const string BindPathKey = "UnityClip.Bind.Path";
+        private const string ClipPathKey  = "UnityClip.Clip.Path";
+        private const string BindPathKey  = "UnityClip.Bind.Path";
+        private const string LimitPathKey = "UnityClip.Limit.Path";
 
         private ModelContext Model => GetModel?.Invoke();
         private float FrameRate => _clip != null && _clip.frameRate > 0f ? _clip.frameRate : 30f;
@@ -101,7 +111,7 @@ namespace Poly_Ling.Player
             // ── バインドポーズ行（ソース rest = 外部 UnityBone CSV v2）───────
             //   clip には bind pose が無いため、拡張C の UnityBone CSV v2 を読む。
             //   読込済みなら ApplyFrame が Unity→MMD リターゲット経路になる。
-            root.Add(PlayerIoUiKit.SectionLabel("バインドポーズ CSV（UnityBone v2）"));
+            root.Add(PlayerIoUiKit.SectionLabel("オリジナルモデルのバインドポーズ CSV（UnityBone）"));
             _bindPathField = new TextField();
             _bindPathField.RegisterValueChangedCallback(e => RecentPaths.Set(BindPathKey, e.newValue));
             root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind));
@@ -114,6 +124,22 @@ namespace Poly_Ling.Player
             _bindPoseLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
             _bindPoseLabel.style.marginBottom = 3;
             root.Add(_bindPoseLabel);
+
+            // ── マッスル可動域・実測 CSV（UnityLimit）────────────────────
+            //   読込むと muscles 経路の再構成精度が上がる。無くても動く。
+            root.Add(PlayerIoUiKit.SectionLabel("マッスル可動域・実測 CSV（UnityLimit）"));
+            _limitPathField = new TextField();
+            _limitPathField.RegisterValueChangedCallback(e => RecentPaths.Set(LimitPathKey, e.newValue));
+            root.Add(PlayerIoUiKit.PathRow(_limitPathField, OnBrowseLimit));
+            _limitPathField.SetValueWithoutNotify(RecentPaths.Get(LimitPathKey));
+
+            var btnLimit = PlayerIoUiKit.OpenButton("開く", () => LoadLimits(_limitPathField.value));
+            root.Add(btnLimit);
+            _limitLabel = new Label("(未読込)");
+            _limitLabel.style.fontSize = 10;
+            _limitLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _limitLabel.style.marginBottom = 3;
+            root.Add(_limitLabel);
 
             // ── クリップセクション（ロード後に表示）──────────────────────
             _clipSection = new VisualElement();
@@ -236,17 +262,27 @@ namespace Poly_Ling.Player
             _clipSection.style.display = hasClip ? DisplayStyle.Flex : DisplayStyle.None;
             if (!hasClip) return;
 
-            int trackCount = _clip.bones?.Count ?? 0;
+            int trackCount  = _clip.bones?.Count ?? 0;
+            int muscleCount = _clip.muscles?.Count ?? 0;
+            int bakedCount  = _clip.bakedBones?.Count ?? 0;
             if (_clipInfoLabel != null)
                 _clipInfoLabel.text =
                     $"Clip: {_clip.name}  ({_clip.clipType})\n" +
                     $"Length: {_maxTime:F2}s  (@ {FrameRate:F0}fps)\n" +
-                    $"Bone tracks: {trackCount}";
+                    $"Bone tracks: {trackCount}  Muscles: {muscleCount}  Baked: {bakedCount}\n" +
+                    $"Body: {(_applier != null ? _applier.ResolvedBodyMode.ToString() : "-")}" +
+                    $"{(_applier != null && _applier.HasMuscleMeasured ? " (実測)" : "")}";
 
             if (_clipMatchLabel != null && model != null && _applier != null)
             {
-                float rate = trackCount > 0 ? (float)_applier.MatchedTrackCount / trackCount : 0f;
-                _clipMatchLabel.text = $"Matched: {_applier.MatchedTrackCount}/{trackCount} ({rate:P0})";
+                // path（二次骨）と本体ボーンを分けて出す。合算した率は経路別の欠落を隠すため使わない。
+                int pm = _applier.PathMatchedCount,   pt = _applier.PathTrackCount;
+                int mm = _applier.MuscleMatchedCount, mt = _applier.MuscleTargetCount;
+                var txt = $"Path: {pm}/{pt}   Muscle: {mm}/{mt}";
+                if (_applier.UnresolvedMuscleBones.Count > 0)
+                    txt += "\n未解決(本体): " + string.Join(", ", _applier.UnresolvedMuscleBones.ToArray());
+                _clipMatchLabel.text = txt;
+                _clipMatchLabel.style.whiteSpace = WhiteSpace.Normal;
             }
 
             UpdateSlider();
@@ -349,6 +385,45 @@ namespace Poly_Ling.Player
             catch (Exception ex)
             {
                 SetStatus($"バインドポーズ読込失敗: {ex.Message}");
+                UnityEngine.Debug.LogError($"[PlayerUnityClipTestSubPanel] {ex}");
+            }
+        }
+
+        // 外部 UnityLimit CSV（マッスル可動域・実測）を読む。無くても動作する。
+        private void OnBrowseLimit()
+        {
+            string dir  = string.IsNullOrEmpty(_limitPathField.value)
+                ? "" : Path.GetDirectoryName(_limitPathField.value);
+            string path = PLEditorBridge.I.OpenFilePanel("Open UnityLimit CSV", dir, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+            _limitPathField.value = path;
+            LoadLimits(path);
+        }
+
+        private void LoadLimits(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
+            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
+            try
+            {
+                string text = File.ReadAllText(path);
+                if (_applier == null) _applier = new UnityClipApplier();
+                int n = _applier.LoadMuscleLimitCsv(text);
+
+                if (_limitLabel != null)
+                    _limitLabel.text = n > 0
+                        ? $"✓ {Path.GetFileName(path)} ({n} bones{(_applier.HasMuscleMeasured ? " / 実測あり" : "")})"
+                        : "(0 bones)";
+
+                if (_clip != null) ApplyFrame();
+                SetStatus(n > 0
+                    ? $"マッスル可動域読込: {n} bones"
+                    : "マッスル可動域: 有効な行が見つかりません");
+                RefreshAll();
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"マッスル可動域読込失敗: {ex.Message}");
                 UnityEngine.Debug.LogError($"[PlayerUnityClipTestSubPanel] {ex}");
             }
         }

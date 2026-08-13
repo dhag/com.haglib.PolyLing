@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Poly_Ling.Ops;
 using Poly_Ling.Selection;
 using Poly_Ling.Symmetry;
 using static Poly_Ling.Gizmo.GLGizmoDrawer;
@@ -98,7 +99,9 @@ namespace Poly_Ling.Tools
             AdvancedSelectMode.EdgeLoop,
             AdvancedSelectMode.ShortestPath,
             AdvancedSelectMode.UvNormalCount,
-            AdvancedSelectMode.NearAxis
+            AdvancedSelectMode.NearAxis,
+            AdvancedSelectMode.BoundaryEdgeGroup,
+            AdvancedSelectMode.BoundaryEdgeInSelection
         };
 
         /// <summary>クリックではなくボタン実行で動作するモードか。</summary>
@@ -108,7 +111,8 @@ namespace Poly_Ling.Tools
         /// <summary>ローカライズされたモード名配列を取得</summary>
         private string[] GetLocalizedModeNames() => new string[] {
             T("Connected"), T("Belt"), T("EdgeLoop"), T("Shortest"),
-            T("UvNormalCount"), T("NearAxis")
+            T("UvNormalCount"), T("NearAxis"),
+            T("BoundaryEdgeGroup"), T("BoundaryEdgeInSelection")
         };
 
         // ================================================================
@@ -122,7 +126,8 @@ namespace Poly_Ling.Tools
                 { AdvancedSelectMode.Connected, new ConnectedSelectMode() },
                 { AdvancedSelectMode.Belt, new BeltSelectMode() },
                 { AdvancedSelectMode.EdgeLoop, new EdgeLoopSelectMode() },
-                { AdvancedSelectMode.ShortestPath, new ShortestPathSelectMode() }
+                { AdvancedSelectMode.ShortestPath, new ShortestPathSelectMode() },
+                { AdvancedSelectMode.BoundaryEdgeGroup, new BoundaryEdgeSelectMode() }
             };
         }
 
@@ -249,6 +254,30 @@ namespace Poly_Ling.Tools
 
             if (hits.Count == 0) return false;
             SelectionHelper.ApplyVertexSelection(ctx, hits, AddToSelection);
+            return true;
+        }
+
+        /// <summary>
+        /// BoundaryEdgeInSelection モードの選択を実行する。
+        /// 現在選択中の頂点だけで構成されるエッジ（1面だけが使う辺）を対象にし、
+        /// AddToSelection に従って辺選択を追加／削除する。
+        /// 頂点選択は変更しない（対象辺の端点はすでに選択済みのため）。
+        /// 上記以外のモードでは何もせず false を返す。
+        /// </summary>
+        /// <returns>選択が変化したら true</returns>
+        public bool ExecuteBoundaryEdgeInSelection(ToolContext ctx)
+        {
+            if (Mode != AdvancedSelectMode.BoundaryEdgeInSelection) return false;
+            if (ctx?.ActiveMeshObject == null) return false;
+
+            var selected = ctx.SelectionState?.Vertices;
+            if (selected == null || selected.Count == 0) return false;
+
+            var edges = BoundaryEdgeOps.EdgesWithinSelection(
+                ctx.ActiveMeshObject, new HashSet<int>(selected));
+            if (edges.Count == 0) return false;
+
+            SelectionHelper.ApplyEdgeSelection(ctx, edges, AddToSelection);
             return true;
         }
 

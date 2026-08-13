@@ -82,6 +82,13 @@ namespace Poly_Ling.EditorIO
         private string _meshesDir = "";              // メッシュ .asset 出力先（Assets/...）
         private readonly HashSet<string> _usedMeshNames = new HashSet<string>(); // 同名衝突回避
 
+        // --- Export() が生成した「マスター索引 → Transform」（Export→Avatar 間で共有） ---
+        //   Avatar 割当先を model 側の名前ではなく実際に生成した Transform で引くために持つ。
+        //   MakeUniqueName による改名や可視フィルタでの欠落を取りこぼさないため。
+        //   _exportedMirrorTf はミラー枝側のノード（関節の複製 `名前+` と MirrorSide メッシュ）。
+        private readonly Dictionary<int, Transform> _exportedRealTf   = new Dictionary<int, Transform>();
+        private readonly Dictionary<int, Transform> _exportedMirrorTf = new Dictionary<int, Transform>();
+
         // --- 出力パスに挟むプロジェクト名（空なら挟まない） ---
         //   プロジェクトが特定できた場合に Assets/PolyLing/<プロジェクト名>/<モデル名> とする。
         //   別プロジェクトに同名モデルがあるときの衝突を避けるため。
@@ -976,11 +983,25 @@ namespace Poly_Ling.EditorIO
         }
 
         // model の Humanoid 割当・可動域から Avatar 用 map/limits を構築。
-        //   map    : humanName(HumanTrait.BoneName 形式) → ボーン名
+        //   map    : humanName(HumanTrait.BoneName 形式) → 生成済み GameObject 名
         //   limits : humanName → HumanLimit（度・custom のみ）
         //   ※ model の humanName は HumanBodyBones 列挙形（"LeftUpperArm" 等）なので
         //     HumanTrait.BoneName 形式（指はスペース付き）へ正規化する。
-        private static void BuildAvatarMapsFromModel(
+        //
+        // 【索引で引く理由】
+        //   割当先を ctx.Name で引くと、CreateMeshGameObject の MakeUniqueName による
+        //   改名（"X_skinned" / "X_1"）やミラー枝の接尾辞 "+" を取りこぼす。
+        //   Export() が記録した索引→Transform を引き、実際の GameObject 名を使う。
+        //
+        // 【半身モデルのミラー補完】
+        //   ミラー側コンテキストは頂点を持つメッシュにしか作られない
+        //   （MirrorBranchOps.CreateDerivedMirrorContext が頂点ゼロで null を返す）。
+        //   よって頂点ゼロの関節はミラー側に索引が無く、humanoid.csv には
+        //   実体側（半身）ぶんしか書けない。ミラー側の関節が実体になるのは
+        //   CreateMeshGameObject(mirror:true) だけなので、その対応付けは
+        //   ここで補う。左右名を入れ替えた humanName をミラー側 GO に割り当てる。
+        //   明示割当が既にある場合は常にそちらを優先する（正本はモデル側）。
+        private void BuildAvatarMapsFromModel(
             ModelContext model,
             out Dictionary<string, string> map,
             out Dictionary<string, HumanLimit> limits)
@@ -991,27 +1012,163 @@ namespace Poly_Ling.EditorIO
             var mapping = model?.HumanoidMapping;
             if (mapping == null || mapping.IsEmpty) return;
 
+            // ── 1) 明示割当（モデルが正本）────────────────────────────
+            var mappedIndexByTrait = new Dictionary<string, int>();
+            var missing = new List<string>();
+
             foreach (var kv in mapping.BoneIndexMap)
             {
                 string traitName = ToHumanTraitName(kv.Key);
                 var ctx = model.GetMeshContext(kv.Value);
-                if (ctx == null || string.IsNullOrEmpty(ctx.Name)) continue;
+                if (ctx == null) continue;
 
-                map[traitName] = ctx.Name;
+                // 実体側を優先。MirrorSide メッシュは実体側に居ないのでミラー枝側で引く。
+                Transform tf = null;
+                if (!_exportedRealTf.TryGetValue(kv.Value, out tf))
+                    _exportedMirrorTf.TryGetValue(kv.Value, out tf);
 
-                var hl = ctx.MeshObject?.HumanLimit;
-                if (hl != null && !hl.UseDefaultValues)
+                if (tf == null)
                 {
-                    limits[traitName] = new HumanLimit
-                    {
-                        useDefaultValues = false,
-                        min    = hl.Min * Mathf.Rad2Deg,
-                        max    = hl.Max * Mathf.Rad2Deg,
-                        center = hl.Center * Mathf.Rad2Deg,
-                        axisLength = hl.AxisLength
-                    };
+                    missing.Add($"{traitName} → [{kv.Value}] {ctx.Name}");
+                    continue;
                 }
+
+                map[traitName] = tf.name;
+                mappedIndexByTrait[traitName] = kv.Value;
+
+                var limit = ToHumanLimitDeg(ctx);
+                if (limit.HasValue) limits[traitName] = limit.Value;
             }
+
+            if (missing.Count > 0)
+            {
+                Debug.LogWarning(
+                    "[HierarchyExport] Humanoid 割当先が階層に出力されていない（無視）:\n  " +
+                    string.Join("\n  ", missing) +
+                    "\n（非表示のため「可視メッシュのみ」で除外された可能性があります）");
+            }
+
+            // ── 2) ミラー枝の関節を左右反転して補完 ──────────────────
+            // ミラー枝が1つも展開されていないと補完しようがない。
+            // 分岐ルート未設定（MQO 名の "@@…ミラー分岐ルート" か手動設定）を疑う。
+            if (_exportedMirrorTf.Count == 0 && HasMirrorSideContext(model))
+            {
+                Debug.LogWarning(
+                    "[HierarchyExport] ミラー側コンテキストはあるがミラー枝が展開されていません。" +
+                    "ミラー分岐ルートが未設定の可能性があります（左右の補完は行いません）。");
+            }
+
+            int supplemented = 0;
+            var supplementedLog = new List<string>();
+
+            foreach (var kv in new List<KeyValuePair<string, int>>(mappedIndexByTrait))
+            {
+                string traitName = kv.Key;
+                int    index     = kv.Value;
+
+                // 両表に同じ索引があるノード＝両側に複製された関節。
+                // MirrorSide メッシュはミラー枝側にしか居ないためここに入らない。
+                if (!_exportedRealTf.ContainsKey(index)) continue;
+                if (!_exportedMirrorTf.TryGetValue(index, out var mirrorTf)) continue;
+                if (mirrorTf == null) continue;
+
+                string otherTrait = SwapLeftRightTraitName(traitName);
+                if (string.IsNullOrEmpty(otherTrait))
+                {
+                    // 左右を持たない名前（Spine/Head 等）が両側に複製されている。
+                    // 体幹がミラー枝に入っているモデル構造の誤りなので補完しない。
+                    Debug.LogWarning(
+                        $"[HierarchyExport] '{traitName}' がミラー枝内で両側に複製されています。" +
+                        "左右を持たない Humanoid 名のため補完しません。");
+                    continue;
+                }
+
+                // 明示割当が優先。ただし左右が同じ Transform を指している場合だけは
+                // 例外で、ミラー側へ振り直す（半身の同一関節へ左右両方を当てた入力）。
+                // そのままでは 1 つの Transform が 2 つの Humanoid ボーンを主張して
+                // AvatarBuilder が失敗する。
+                // どちらを動かすかは Right 側に固定して決定論にする
+                // （実体側 ＝ 半身として作られた側を残す）。
+                if (map.TryGetValue(otherTrait, out string existingName))
+                {
+                    if (!string.Equals(existingName, map[traitName], System.StringComparison.Ordinal))
+                        continue;
+                    if (!otherTrait.StartsWith("Right")) continue;
+                }
+
+                // 左右反転はミラー軸が X のときだけ意味を持つ。
+                // 軸の正本は ApplyJointTransform と同じく当該コンテキスト自身。
+                var ctx = model.GetMeshContext(index);
+                int axis = ctx?.MirrorAxis ?? 1;
+                if (axis != 1)
+                {
+                    Debug.LogWarning(
+                        $"[HierarchyExport] '{traitName}' のミラー軸が X ではないため " +
+                        $"(MirrorAxis={axis}) 左右補完をスキップします。");
+                    continue;
+                }
+
+                map[otherTrait] = mirrorTf.name;
+
+                // 可動域は Unity のマッスル空間が左右対称のため、そのまま同値を使う。
+                if (limits.TryGetValue(traitName, out var lim)) limits[otherTrait] = lim;
+
+                supplemented++;
+                supplementedLog.Add($"{otherTrait} → {mirrorTf.name}");
+            }
+
+            if (supplemented > 0)
+            {
+                Debug.Log(
+                    $"[HierarchyExport] 半身モデルのミラー側 {supplemented} 件を補完:\n  " +
+                    string.Join("\n  ", supplementedLog));
+            }
+        }
+
+        // モデルにミラー側コンテキスト（MirrorSide / BakedMirror）が1件でもあるか。
+        private static bool HasMirrorSideContext(ModelContext model)
+        {
+            if (model == null) return false;
+
+            for (int i = 0; i < model.MeshContextCount; i++)
+                if (MirrorBranchOps.IsMirrorSideContext(model.GetMeshContext(i))) return true;
+
+            return false;
+        }
+
+        // MeshContext の per-bone HumanLimit（ラジアン）→ Avatar 用 HumanLimit（度）。
+        // 既定値・未保持なら null。
+        private static HumanLimit? ToHumanLimitDeg(MeshContext ctx)
+        {
+            var hl = ctx?.MeshObject?.HumanLimit;
+            if (hl == null || hl.UseDefaultValues) return null;
+
+            return new HumanLimit
+            {
+                useDefaultValues = false,
+                min    = hl.Min * Mathf.Rad2Deg,
+                max    = hl.Max * Mathf.Rad2Deg,
+                center = hl.Center * Mathf.Rad2Deg,
+                axisLength = hl.AxisLength
+            };
+        }
+
+        // HumanTrait.BoneName 形式の左右を入れ替える。
+        //   "LeftUpperArm" ⇔ "RightUpperArm" / "Left Thumb Proximal" ⇔ "Right Thumb Proximal"
+        // 左右を持たない名前、入れ替え結果が Humanoid 名でない場合は null。
+        private static string SwapLeftRightTraitName(string traitName)
+        {
+            if (string.IsNullOrEmpty(traitName)) return null;
+
+            string swapped;
+            if (traitName.StartsWith("Left"))
+                swapped = "Right" + traitName.Substring("Left".Length);
+            else if (traitName.StartsWith("Right"))
+                swapped = "Left" + traitName.Substring("Right".Length);
+            else
+                return null;
+
+            return System.Array.IndexOf(HumanTrait.BoneName, swapped) >= 0 ? swapped : null;
         }
 
         // HumanBodyBones 列挙形 → HumanTrait.BoneName 形式（解釈できなければそのまま）
@@ -1036,6 +1193,10 @@ namespace Poly_Ling.EditorIO
         {
             Undo.SetCurrentGroupName("PolyLing: Export to Hierarchy");
             int undoGroup = Undo.GetCurrentGroup();
+
+            // 索引→Transform 表は Export 単位。前回分を持ち越さない。
+            _exportedRealTf.Clear();
+            _exportedMirrorTf.Clear();
 
             // ── ルート ────────────────────────────────────────────────
             var rootGo = new GameObject(string.IsNullOrEmpty(model.Name) ? "Model" : model.Name);
@@ -1186,6 +1347,13 @@ namespace Poly_Ling.EditorIO
             // ── 剛体/JOINT 書き出し ──────────────────────────────────
             if (_exportPhysics && !_exportMeshOnly)
                 ExportPhysics(model, rootGo, boneTransformMap);
+
+            // ── 索引→Transform 表を確定（Avatar 割当がこれを引く）───────
+            //   ボーンとメッシュは索引が重ならないため実体側にまとめて入れる。
+            //   ミラー枝側は別表。関節は両表に同じ索引で入る（＝両側に複製された印）。
+            foreach (var kv in boneTransformMap)     _exportedRealTf[kv.Key]   = kv.Value;
+            foreach (var kv in meshTransformByIndex) _exportedRealTf[kv.Key]   = kv.Value;
+            foreach (var kv in mirrorTransformByIndex) _exportedMirrorTf[kv.Key] = kv.Value;
 
             Undo.CollapseUndoOperations(undoGroup);
             return rootGo;

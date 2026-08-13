@@ -141,6 +141,25 @@ namespace Poly_Ling.Player
         }
 
         /// <summary>
+        /// BoundaryEdgeInSelection モードの選択を実行する（パネルの「実行」ボタン）。
+        /// クリック非依存のため GPU ホバーは参照しない。
+        /// </summary>
+        public void ExecuteBoundaryEdgeInSelection()
+        {
+            var ctx = BuildToolContext(default(ModifierKeys), Vector2.zero);
+            if (ctx == null) return;
+
+            var oldSnap = _selectionOps?.SelectionState?.CreateSnapshot();
+            bool changed = _tool.ExecuteBoundaryEdgeInSelection(ctx);
+            if (changed)
+            {
+                RecordSelectionUndo(ctx, oldSnap);
+                OnSelectionChanged?.Invoke();
+            }
+            OnRepaint?.Invoke();
+        }
+
+        /// <summary>
         /// 現在の選択を反転する（パネルの「現在の選択を反転」ボタン）。
         /// SelectionState.Mode で有効なビットのみ対象。
         /// </summary>

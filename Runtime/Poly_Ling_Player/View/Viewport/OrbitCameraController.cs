@@ -260,17 +260,19 @@ namespace Poly_Ling.Player
         private void OnDrag(int btn, Vector2 screenPos, Vector2 delta, ModifierKeys mods)
         {
             bool changed = false;
+            // 粗微動: Shift=粗動 / Ctrl=微動。倍率は DisplaySettings.csv のプリセット値。
+            float speed = CameraSpeedModifier.Factor(mods);
             if (btn == 1 && _isOrbiting)
             {
                 if (mods.Alt)
                 {
                     // Alt＋右ドラッグの左右移動 → カメラのZ軸周り回転（ロール）。
-                    RotZ += delta.x * OrbitSensitivity;
+                    RotZ += delta.x * OrbitSensitivity * speed;
                 }
                 else
                 {
-                    RotY  += delta.x * OrbitSensitivity;
-                    RotX  -= delta.y * OrbitSensitivity;
+                    RotY  += delta.x * OrbitSensitivity * speed;
+                    RotX  -= delta.y * OrbitSensitivity * speed;
                     RotX   = Mathf.Clamp(RotX, -89f, 89f);
                 }
                 changed = true;
@@ -278,7 +280,7 @@ namespace Poly_Ling.Player
             else if (btn == 2 && _isPanning)
             {
                 Quaternion rot      = Quaternion.Euler(RotX, RotY, 0f);
-                float      panScale = Distance * PanSensitivity;
+                float      panScale = Distance * PanSensitivity * speed;
                 Target -= rot * Vector3.right * delta.x * panScale;
                 Target -= rot * Vector3.up    * delta.y * panScale;
                 changed = true;
@@ -304,7 +306,11 @@ namespace Poly_Ling.Player
 
         private void OnScroll(float scroll, ModifierKeys mods)
         {
-            Distance *= 1f - scroll * ZoomSensitivity;
+            // 粗微動: Shift=粗動 / Ctrl=微動。倍率は DisplaySettings.csv のプリセット値。
+            // 倍率が大きいと 1-scroll*sens*speed が 0 以下になり距離の符号が反転するため、
+            // 縮尺係数に下限を設ける。
+            float zoomScale = Mathf.Max(0.01f, 1f - scroll * ZoomSensitivity * CameraSpeedModifier.Factor(mods));
+            Distance *= zoomScale;
             Distance  = Mathf.Clamp(Distance, ZoomMin, ZoomMax);
             // Phase 1: スクロールは単発イベントのため、フル更新（UpdateFrame 含む）を
             // 伴う OnCameraChanged を発火する。

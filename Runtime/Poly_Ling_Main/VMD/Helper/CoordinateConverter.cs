@@ -51,7 +51,7 @@ namespace Poly_Ling.VMD
 
         /// <summary>
         /// PMX/VMD回転 → Unity回転
-        /// 左手系⇔右手系: X,Y成分を反転
+        /// 手系は不変（両者とも左手系）。X,Z 成分を反転（Y軸180°回転）
         /// </summary>
         public static Quaternion ToUnityRotation(Quaternion pmxRotation)
             => ToUnityRotation(pmxRotation, DefaultFlip);

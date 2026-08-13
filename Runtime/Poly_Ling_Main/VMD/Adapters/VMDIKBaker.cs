@@ -3,6 +3,25 @@
 // IKボーンのキーフレーム位置でIK解決を行い、リンクボーンの最終回転をBoneFrameDataとして書き戻す
 // IKボーンのベジェ補間カーブをリンクボーンのキーフレームにそのまま移植する
 
+//
+// ================================================================
+// ■ 【重要】軸規約の変更に未追随。動作保証対象外。
+// ----------------------------------------------------------------
+//   PMX 取込のボーン局所軸は以下に変更された（PMXImporter.CalculateBoneModelRotation）:
+//     (1) AxisFlipOps.Basis を両側共役 S·M·S から片側変換 S·M へ
+//     (2) MMD 規約（X = 骨の長手方向）から DCC 標準（Y = 骨の長手方向）へ巡回置換
+//   本ファイルの R^-1·Q·R 変換（R = ctx.BoneModelRotation）はこの変更に
+//   追随していないため、結果は正しくない。
+//
+//   既知の症状:
+//     - 足ＩＫが収束しないフレームがある（左足首 max dist 1.14 / 12 of 50 サンプル）
+//     - 統合経路には IK 自体が無い（MotionClipApplier に Solve 呼び出しなし）
+//     - 付与親（GrantParentIndex / GrantRate）が未評価
+//
+//   修正する場合は、局所軸が「Y = 骨方向」であることを前提に組み直すこと。
+//   旧規約を前提とした つじつま合わせ を足さないこと。
+// ================================================================
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -127,10 +146,13 @@ namespace Poly_Ling.VMD
                         vmdPos /= applier.PositionScale;
                     }
 
-                    // 座標系逆変換
+                    // 座標系逆変換（順方向 ApplyBonePose と対称。位置・回転の両方に掛ける）
+                    //   AxisFlipOps.Position / Rotation はいずれも自己逆元のため、
+                    //   順方向と同じ AxisFlip をそのまま適用すれば逆変換になる。
                     if (applier.ApplyCoordinateConversion)
                     {
-                        vmdPos = CoordinateConverter.ToPMXPosition(vmdPos);
+                        vmdPos = CoordinateConverter.ToPMXPosition(vmdPos, applier.CoordinateFlip);
+                        vmdRot = CoordinateConverter.ToPMXRotation(vmdRot, applier.CoordinateFlip);
                     }
 
                     // BoneFrameDataを作成し、IKボーンの補間カーブを移植
