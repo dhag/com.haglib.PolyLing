@@ -4,11 +4,14 @@
 // 仕様: 値は Unity 左手系のまま・座標変換なし（UnityClipDTO 準拠）。
 //
 // ■ 手持ちファイルと精度（あれば使う・なければそれなり）
-//   clip のみ                     … muscles から再構成（Unity 既定可動域・近似）
-//   + UnityLimit CSV              … ソースアバターの実可動域＋マッスル実測で再構成
-//   + UnityBone CSV（bind pose）  … bakedBones があるときのレスト補正リターゲット
-//   clip に bakedBones あり        … 焼いた値をそのまま適用（最も高精度）
+//   clip のみ          … muscles から再構成。T ポーズ基準の Unity 定義値
+//                        （CanonMuscleTable）をモデルのレスト枠へ移して使う。
+//   + UnityLimit CSV   … ソースアバターの実可動域＋マッスル実測で再構成（最も高精度）
 //   方式は UnityClipApplier.BodyMode = Auto が自動選択する。
+//
+//   バインドポーズ CSV（UnityBone）の行は削除した。使い道が bakedBones 入りの
+//   クリップに限られ、現行のエクスポータが bakedBones を出さないため。
+//   UnityClipApplier 側の実装は統合モーションパネルが委譲しているため残してある。
 
 using System;
 using System.IO;
@@ -44,12 +47,11 @@ namespace Poly_Ling.Player
         // ── UI 要素 ───────────────────────────────────────────────────────
         private Label         _modelLabel;
         private Label         _fileLabel;
-        private Label         _bindPoseLabel;
         private Label         _limitLabel;
         private TextField     _clipPathField;
-        private TextField     _bindPathField;
         private TextField     _limitPathField;
         private Button        _btnClear, _btnReload;
+        private Button        _btnLimitClear;
         private VisualElement _clipSection;
         private Label         _clipInfoLabel;
         private Label         _clipMatchLabel;
@@ -62,7 +64,6 @@ namespace Poly_Ling.Player
         private Label         _statusLabel;
 
         private const string ClipPathKey  = "UnityClip.Clip.Path";
-        private const string BindPathKey  = "UnityClip.Bind.Path";
         private const string LimitPathKey = "UnityClip.Limit.Path";
 
         private ModelContext Model => GetModel?.Invoke();
@@ -96,7 +97,7 @@ namespace Poly_Ling.Player
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
-            var btnOpen = PlayerIoUiKit.OpenButton("開く", () => LoadClip(_clipPathField.value));
+            var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowseClip);
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear  = new Button(Clear)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
             _btnReload = new Button(Reload) { text = "再読込" }; _btnReload.style.width  = 52;
@@ -108,33 +109,24 @@ namespace Poly_Ling.Player
             _fileLabel.style.marginBottom = 3;
             root.Add(_fileLabel);
 
-            // ── バインドポーズ行（ソース rest = 外部 UnityBone CSV v2）───────
-            //   clip には bind pose が無いため、拡張C の UnityBone CSV v2 を読む。
-            //   読込済みなら ApplyFrame が Unity→MMD リターゲット経路になる。
-            root.Add(PlayerIoUiKit.SectionLabel("オリジナルモデルのバインドポーズ CSV（UnityBone）"));
-            _bindPathField = new TextField();
-            _bindPathField.RegisterValueChangedCallback(e => RecentPaths.Set(BindPathKey, e.newValue));
-            root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind));
-            _bindPathField.SetValueWithoutNotify(RecentPaths.Get(BindPathKey));
-
-            var btnBindPose = PlayerIoUiKit.OpenButton("開く", () => LoadBind(_bindPathField.value));
-            root.Add(btnBindPose);
-            _bindPoseLabel = new Label("(未読込)");
-            _bindPoseLabel.style.fontSize = 10;
-            _bindPoseLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            _bindPoseLabel.style.marginBottom = 3;
-            root.Add(_bindPoseLabel);
-
             // ── マッスル可動域・実測 CSV（UnityLimit）────────────────────
             //   読込むと muscles 経路の再構成精度が上がる。無くても動く。
+            //   別モデルのものを誤って読んだときのために「クリア」を置く。
             root.Add(PlayerIoUiKit.SectionLabel("マッスル可動域・実測 CSV（UnityLimit）"));
             _limitPathField = new TextField();
             _limitPathField.RegisterValueChangedCallback(e => RecentPaths.Set(LimitPathKey, e.newValue));
             root.Add(PlayerIoUiKit.PathRow(_limitPathField, OnBrowseLimit));
             _limitPathField.SetValueWithoutNotify(RecentPaths.Get(LimitPathKey));
 
-            var btnLimit = PlayerIoUiKit.OpenButton("開く", () => LoadLimits(_limitPathField.value));
-            root.Add(btnLimit);
+            var limitRow = new VisualElement();
+            limitRow.style.flexDirection = FlexDirection.Row;
+            limitRow.style.marginBottom  = 3;
+            var btnLimit = PlayerIoUiKit.OpenButton("開く", OnBrowseLimit);
+            btnLimit.style.flexGrow = 1; btnLimit.style.marginRight = 2;
+            _btnLimitClear = new Button(ClearLimits) { text = "クリア" };
+            _btnLimitClear.style.width = 64;
+            limitRow.Add(btnLimit); limitRow.Add(_btnLimitClear);
+            root.Add(limitRow);
             _limitLabel = new Label("(未読込)");
             _limitLabel.style.fontSize = 10;
             _limitLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
@@ -248,14 +240,34 @@ namespace Poly_Ling.Player
         {
             var model = Model;
             if (_modelLabel != null)
-                _modelLabel.text = model != null
-                    ? $"✓ {model.Name}  ({model.Bones.Count()} bones)"
-                    : "(No model loaded)";
+            {
+                if (model == null)
+                {
+                    _modelLabel.text = "(No model loaded)";
+                }
+                else if (_applier == null || _applier.BoneNodeCount == 0)
+                {
+                    _modelLabel.text = $"✓ {model.Name}  ({model.Bones.Count()} bones)";
+                }
+                else
+                {
+                    // MeshFilter ツリーを骨格に使うモデルでは、ボーン数ではなく
+                    // 適用対象のノード内訳（実体／仮想ミラー）を出す。
+                    string kind = _applier.MeshFilterSkeleton ? "MeshFilter骨格" : "ボーン";
+                    _modelLabel.text =
+                        $"✓ {model.Name}  ({kind} 実体 {_applier.RealBoneNodeCount}" +
+                        (_applier.MirrorBoneNodeCount > 0
+                            ? $" / 仮想ミラー {_applier.MirrorBoneNodeCount}"
+                            : string.Empty) + ")";
+                }
+            }
 
             if (_fileLabel != null)
                 _fileLabel.text = string.IsNullOrEmpty(_filePath) ? "(None)" : Path.GetFileName(_filePath);
             if (_btnClear  != null) _btnClear.SetEnabled(_clip != null);
             if (_btnReload != null) _btnReload.SetEnabled(!string.IsNullOrEmpty(_filePath));
+            if (_btnLimitClear != null)
+                _btnLimitClear.SetEnabled(_applier != null && _applier.HasMuscleLimits);
 
             if (_clipSection == null) return;
             bool hasClip = _clip != null;
@@ -279,6 +291,9 @@ namespace Poly_Ling.Player
                 int pm = _applier.PathMatchedCount,   pt = _applier.PathTrackCount;
                 int mm = _applier.MuscleMatchedCount, mt = _applier.MuscleTargetCount;
                 var txt = $"Path: {pm}/{pt}   Muscle: {mm}/{mt}";
+                if (_applier.SupplementedHumanoidNames.Count > 0)
+                    txt += "\n左右補完: " +
+                           string.Join(", ", _applier.SupplementedHumanoidNames.ToArray());
                 if (_applier.UnresolvedMuscleBones.Count > 0)
                     txt += "\n未解決(本体): " + string.Join(", ", _applier.UnresolvedMuscleBones.ToArray());
                 _clipMatchLabel.text = txt;
@@ -297,7 +312,9 @@ namespace Poly_Ling.Player
             var tracks = _clip.bones.Take(50).ToList();
             foreach (var track in tracks)
             {
-                bool matched = Model != null && _applier != null && _applier.ResolveMasterIndex(track.path) >= 0;
+                // 純仮想ミラーノード（実体なし）も解決済みとして扱うため
+                // ResolveMasterIndex ではなく ResolveNode で判定する。
+                bool matched = Model != null && _applier != null && _applier.ResolveNode(track.path) >= 0;
                 int keys = track.keys?.Count ?? 0;
                 var lbl = new Label($"{(matched ? "✓" : "✗")} {track.path} ({keys} keys)");
                 lbl.style.fontSize = 10;
@@ -313,11 +330,10 @@ namespace Poly_Ling.Player
         // 操作
         // ================================================================
 
+        // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseClip()
         {
-            string dir  = string.IsNullOrEmpty(_clipPathField.value)
-                ? "" : Path.GetDirectoryName(_clipPathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("Open Unity Clip", dir, "json");
+            string path = PlayerIoUiKit.AskLoadPath("Open Unity Clip", _clipPathField.value, "json");
             if (string.IsNullOrEmpty(path)) return;
             _clipPathField.value = path;
             LoadClip(path);
@@ -348,53 +364,10 @@ namespace Poly_Ling.Player
             }
         }
 
-        // 外部 UnityBone CSV v2（拡張C）を読み、ソース rest（バインドポーズ）を設定する。
-        // 読込済みなら以後 ApplyFrame が Unity→MMD リターゲット経路になる。
-        private void OnBrowseBind()
-        {
-            string dir  = string.IsNullOrEmpty(_bindPathField.value)
-                ? "" : Path.GetDirectoryName(_bindPathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("Open UnityBone CSV (bind pose)", dir, "csv");
-            if (string.IsNullOrEmpty(path)) return;
-            _bindPathField.value = path;
-            LoadBind(path);
-        }
-
-        private void LoadBind(string path)
-        {
-            if (string.IsNullOrEmpty(path)) { SetStatus("ファイルパスを指定してください"); return; }
-            if (!File.Exists(path))        { SetStatus($"ファイルが見つかりません: {Path.GetFileName(path)}"); return; }
-            try
-            {
-                string text = File.ReadAllText(path);
-                if (_applier == null) _applier = new UnityClipApplier();
-                int n = _applier.LoadSourceRestCsv(text);
-
-                var model = Model;
-                if (model != null) _applier.BuildMapping(model);
-
-                if (_bindPoseLabel != null)
-                    _bindPoseLabel.text = n > 0 ? $"✓ {Path.GetFileName(path)} ({n} bones)" : "(0 bones)";
-
-                if (_clip != null) ApplyFrame();
-                SetStatus(n > 0
-                    ? $"バインドポーズ読込: {n} bones（リターゲット有効）"
-                    : "バインドポーズ: Humanoid 行が見つかりません");
-                RefreshAll();
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"バインドポーズ読込失敗: {ex.Message}");
-                UnityEngine.Debug.LogError($"[PlayerUnityClipTestSubPanel] {ex}");
-            }
-        }
-
         // 外部 UnityLimit CSV（マッスル可動域・実測）を読む。無くても動作する。
         private void OnBrowseLimit()
         {
-            string dir  = string.IsNullOrEmpty(_limitPathField.value)
-                ? "" : Path.GetDirectoryName(_limitPathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("Open UnityLimit CSV", dir, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("Open UnityLimit CSV", _limitPathField.value, "csv");
             if (string.IsNullOrEmpty(path)) return;
             _limitPathField.value = path;
             LoadLimits(path);
@@ -426,6 +399,24 @@ namespace Poly_Ling.Player
                 SetStatus($"マッスル可動域読込失敗: {ex.Message}");
                 UnityEngine.Debug.LogError($"[PlayerUnityClipTestSubPanel] {ex}");
             }
+        }
+
+        // 読み込んだ UnityLimit CSV を破棄して既定（T ポーズ基準の Unity 定義値）へ戻す。
+        // 別モデルの CSV を誤って読んだときの復帰口。パス欄と記憶パスも消す。
+        private void ClearLimits()
+        {
+            if (_applier != null) _applier.ClearMuscleLimits();
+
+            if (_limitPathField != null) _limitPathField.SetValueWithoutNotify(string.Empty);
+            RecentPaths.Set(LimitPathKey, string.Empty);
+            if (_limitLabel != null) _limitLabel.text = "(未読込)";
+
+            // 姿勢は即座に既定へ戻す。読込側と対称にしておかないと、
+            // 画面上はクリアされたのにポーズだけ古い CSV のまま残る。
+            if (_clip != null) ApplyFrame();
+
+            SetStatus("マッスル可動域をクリアしました（既定値を使用）");
+            RefreshAll();
         }
 
         private void Clear()

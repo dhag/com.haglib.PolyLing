@@ -5,8 +5,10 @@
 // Runtime/Poly_Ling_Player/View/Common/ に配置
 
 using System;
+using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.EditorBridge;
 
 namespace Poly_Ling.Player
 {
@@ -102,6 +104,70 @@ namespace Poly_Ling.Player
             v.style.marginBottom    = 6;
             v.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.08f));
             return v;
+        }
+
+        // ================================================================
+        // ファイル選択ダイアログ
+        //
+        // 読込パス欄と保存パス欄を兼ねる画面では、パスが埋まっているときに
+        // 保存ダイアログを省くと、読み込んだファイルを無確認で上書きしてしまう。
+        // 保存は必ず AskSavePath を通し、パス欄の値はダイアログの初期値としてだけ使う。
+        // ================================================================
+
+        /// <summary>
+        /// 保存先を保存ダイアログで確定する。
+        /// 初期フォルダと初期ファイル名は currentPath から取り、空なら defaultName を使う。
+        /// キャンセル時は空文字を返す。
+        /// </summary>
+        public static string AskSavePath(string title, string currentPath, string defaultName, string extension)
+        {
+            string dir  = "";
+            string name = defaultName;
+
+            if (!string.IsNullOrEmpty(currentPath))
+            {
+                try
+                {
+                    string d = Path.GetDirectoryName(currentPath);
+                    if (!string.IsNullOrEmpty(d)) dir = d;
+                    string n = Path.GetFileName(currentPath);
+                    if (!string.IsNullOrEmpty(n)) name = n;
+                }
+                catch (ArgumentException)
+                {
+                    // 不正な文字を含むパスは初期値として使わない。
+                }
+            }
+
+            return PLEditorBridge.I.SaveFilePanel(title, dir, name, extension);
+        }
+
+        /// <summary>
+        /// 読込元をファイル選択ダイアログで確定する。
+        /// 初期フォルダと初期ファイル名は currentPath から取る。キャンセル時は空文字を返す。
+        /// 初期ファイル名が反映されるのは Player 実装のみ（Editor 実装は無視する）。
+        /// </summary>
+        public static string AskLoadPath(string title, string currentPath, string extension)
+        {
+            string dir  = "";
+            string name = "";
+
+            if (!string.IsNullOrEmpty(currentPath))
+            {
+                try
+                {
+                    string d = Path.GetDirectoryName(currentPath);
+                    if (!string.IsNullOrEmpty(d)) dir = d;
+                    string n = Path.GetFileName(currentPath);
+                    if (!string.IsNullOrEmpty(n)) name = n;
+                }
+                catch (ArgumentException)
+                {
+                    // 不正な文字を含むパスは初期値として使わない。
+                }
+            }
+
+            return PLEditorBridge.I.OpenFilePanel(title, dir, name, extension);
         }
 
         /// <summary>縦スペーサ。</summary>

@@ -125,7 +125,7 @@ namespace Poly_Ling.Player
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
-            var btnOpen = PlayerIoUiKit.OpenButton("開く", () => Load(_pathField.value));
+            var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowse);
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear  = new Button(Clear)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
             _btnReload = new Button(Reload) { text = "再読込" }; _btnReload.style.width  = 52;
@@ -144,7 +144,7 @@ namespace Poly_Ling.Player
             root.Add(PlayerIoUiKit.PathRow(_bindPathField, OnBrowseBind));
             _bindPathField.SetValueWithoutNotify(RecentPaths.Get(BindPathKey));
 
-            var btnBindPose = PlayerIoUiKit.OpenButton("開く", () => LoadBind(_bindPathField.value));
+            var btnBindPose = PlayerIoUiKit.OpenButton("開く", OnBrowseBind);
             root.Add(btnBindPose);
             _bindPoseLabel = new Label("(未読込)");
             _bindPoseLabel.style.fontSize = 10;
@@ -320,11 +320,11 @@ namespace Poly_Ling.Player
         // 操作
         // ================================================================
 
+        // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowse()
         {
             string ext  = _sourceKind == 0 ? "vmd" : "json";
-            string dir  = string.IsNullOrEmpty(_pathField.value) ? "" : Path.GetDirectoryName(_pathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("Open Motion", dir, ext);
+            string path = PlayerIoUiKit.AskLoadPath("Open Motion", _pathField.value, ext);
             if (string.IsNullOrEmpty(path)) return;
             _pathField.value = path;
             Load(path);
@@ -405,8 +405,8 @@ namespace Poly_Ling.Player
         // 外部 UnityBone CSV v2（ソース rest）を読み、リターゲット経路を有効化。
         private void OnBrowseBind()
         {
-            string dir  = string.IsNullOrEmpty(_bindPathField.value) ? "" : Path.GetDirectoryName(_bindPathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("Open UnityBone CSV (bind pose)", dir, "csv");
+            string path = PlayerIoUiKit.AskLoadPath(
+                "Open UnityBone CSV (bind pose)", _bindPathField.value, "csv");
             if (string.IsNullOrEmpty(path)) return;
             _bindPathField.value = path;
             LoadBind(path);

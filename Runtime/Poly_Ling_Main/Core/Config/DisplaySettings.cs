@@ -30,6 +30,9 @@ namespace Poly_Ling.Core
         /// <summary>選択メッシュの頂点サイズ（スクリーンピクセル）</summary>
         public const string KeyVertexScreenSizeSelected = "Vertex.ScreenSize.Selected";
 
+        /// <summary>法線表示の線分長（ワールド単位）</summary>
+        public const string KeyNormalLength = "Normal.Length";
+
         /// <summary>Top/Front/Side ビューの orthographicSize 下限（拡大限界）</summary>
         public const string KeyCameraOrthoSizeMin = "Camera.OrthoSizeMin";
 
@@ -52,6 +55,9 @@ namespace Poly_Ling.Core
             // --- Vertex（頂点表示） ---
             (KeyVertexScreenSizeUnselected, 8f, "頂点サイズ: 非選択メッシュ（スクリーンピクセル）"),
             (KeyVertexScreenSizeSelected,   8f, "頂点サイズ: 選択メッシュ（スクリーンピクセル）"),
+
+            // --- Normal（法線表示） ---
+            (KeyNormalLength,           0.03f,  "法線表示: 線分の長さ（ワールド単位・固定長）"),
 
             // --- Camera（カメラ） ---
             (KeyCameraOrthoSizeMin,     0.001f, "拡大限界: Top/Front/Side の orthographicSize 下限（小さいほど拡大できる）"),

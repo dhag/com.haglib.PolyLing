@@ -113,6 +113,18 @@ namespace Poly_Ling.Tools
             return true;
         }
 
+        /// <summary>
+        /// 直前に指定した点を 1 つ取り消す。Backspace / Delete から呼ぶ。
+        /// 1 点も指定されていなければ何もせず false を返す。
+        /// 連続線分モードの開始点（_lastLinePoint）は対象外（既に確定済みの点のため）。
+        /// </summary>
+        public bool RemoveLastPoint()
+        {
+            if (_points.Count == 0) return false;
+            _points.RemoveAt(_points.Count - 1);
+            return true;
+        }
+
         // ================================================================
         // Player オーバーレイ描画用プレビューデータ
         // ================================================================

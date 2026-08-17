@@ -21,7 +21,6 @@ using UIList.UIToolkitExtensions;
 using PlayerIoUiKit        = Poly_Ling.Player.PlayerIoUiKit;
 using RecentPaths          = Poly_Ling.Core.RecentPaths;
 using PartsDictionaryPath  = Poly_Ling.Core.PartsDictionaryPath;
-using PLEditorBridge       = Poly_Ling.EditorBridge.PLEditorBridge;
 using MeshRenameCsvHelper  = Poly_Ling.UI.MeshRenameCsvHelper;
 
 namespace Poly_Ling.MeshListV2
@@ -1533,15 +1532,12 @@ namespace Poly_Ling.MeshListV2
             };
         }
 
+        /// <summary>[...] は読込用。書き出し先は雛形書出ボタン側で保存ダイアログを出す。</summary>
         private void OnRenameBrowse()
         {
             string cur = _renamePathField?.value ?? "";
             if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
-            string dir = System.IO.Path.GetDirectoryName(cur);
-            if (string.IsNullOrEmpty(dir)) dir = PartsDictionaryPath.Resolve();
-            string name = System.IO.Path.GetFileName(cur);
-            if (string.IsNullOrEmpty(name)) name = RenameDefaultFileName();
-            string path = PLEditorBridge.I.SaveFilePanel("名称一括変更 対応表", dir, name, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("名称一括変更 対応表の読込", cur, "csv");
             if (!string.IsNullOrEmpty(path)) _renamePathField.value = path;
         }
 
@@ -1551,9 +1547,15 @@ namespace Poly_Ling.MeshListV2
             var source = RenameSourceList();
             if (source == null || source.Count == 0) { RenameStatus("対象がありません"); return; }
 
-            string path = _renamePathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(path)) path = ResolveRenamePath();
-            if (string.IsNullOrEmpty(path)) { RenameStatus("出力先を指定してください"); return; }
+            // パス欄は読込用。書き出しは毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
+            string cur = _renamePathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
+
+            string path = PlayerIoUiKit.AskSavePath(
+                "名称一括変更 対応表の書き出し", cur, RenameDefaultFileName(), "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            _renamePathField.value = path;
 
             // 既定の受け渡しフォルダを使う場合は作成しておく
             PartsDictionaryPath.ResolveForWrite();
@@ -1577,8 +1579,15 @@ namespace Poly_Ling.MeshListV2
             _renameTargetIndices = null;
             _renameTargetNames   = null;
 
-            string path = _renamePathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(path)) path = ResolveRenamePath();
+            // 読込は必ずダイアログを通す。パス欄の値（無ければ既定の受け渡しファイル）は
+            // 初期フォルダ／初期ファイル名としてだけ使う。
+            string cur = _renamePathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(cur)) cur = ResolveRenamePath();
+
+            string path = PlayerIoUiKit.AskLoadPath("名称一括変更 対応表の読込", cur, "csv");
+            if (string.IsNullOrEmpty(path)) { UpdateRenameButtonStates(); return; }
+
+            _renamePathField.value = path;
 
             var pairs = MeshRenameCsvHelper.LoadPairs(path);
             if (pairs == null) { RenameStatus("読込に失敗しました（ログを参照）"); UpdateRenameButtonStates(); return; }

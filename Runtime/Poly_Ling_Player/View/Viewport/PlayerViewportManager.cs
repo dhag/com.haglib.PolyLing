@@ -705,6 +705,11 @@ namespace Poly_Ling.Player
             {
                 case VerticesMovedPhase.DragBegin:
                     EnterTransformDragging();
+                    // ドラッグ中は法線線分の始点も方向も変わり、位置のみの軽量更新が
+                    // 成立しないため非表示にする。Dragging フェーズは PresentAll を
+                    // 通らない軽量経路があり PrepareNormals が呼ばれないので、
+                    // ここで明示的に抑止する。
+                    _renderer?.SetNormalsSuppressed(true);
                     break;
                 case VerticesMovedPhase.Dragging:
                     if (syncMc != null)
@@ -730,6 +735,9 @@ namespace Poly_Ling.Player
                     break;
                 case VerticesMovedPhase.DragEnd:
                     ExitTransformDragging();
+                    // 抑止を解除する。直後の PresentAll → PrepareNormals が
+                    // Normal モードで法線メッシュを再構築する。
+                    _renderer?.SetNormalsSuppressed(false);
                     // Phase 2a-2g-3 Fix: ドラッグ終了時は全 viewport のカリング再計算が必要。
                     MarkAllSlotsDirty();
                     ApplyAllViewportCameraTransforms();
@@ -1067,10 +1075,12 @@ namespace Poly_Ling.Player
             _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
             _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
             _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
+            _renderer.ShowNormals               = ds.ShowNormals;
 
             _renderer.SubmitMeshes(project, cam);
             _renderer.SubmitWireframeAndVertices(cam, slot);
             _renderer.SubmitBones(project, cam);
+            _renderer.SubmitNormals(project, cam);
             _renderer.SubmitWeightVisualization(project, cam);
         }
 
@@ -2393,6 +2403,7 @@ namespace Poly_Ling.Player
             _renderer.ShowSelectedMeshOrigin    = ds.ShowSelectedMeshOrigin;
             _renderer.ShowUnselectedMeshOrigin  = ds.ShowUnselectedMeshOrigin;
             _renderer.ShowMirrorMeshOrigin      = ds.ShowMirrorMeshOrigin;
+            _renderer.ShowNormals               = ds.ShowNormals;
 
             // adapter の BackfaceCullingEnabled もここで同期する
             // （DispatchCullingForDisplay の引数に使用するため）。
@@ -2411,6 +2422,11 @@ namespace Poly_Ling.Player
             }
 
             // Prepare 系のみ呼び出す。Submit は OnRenderObject / SubmitForCamera で行う。
+            // PrepareNormals は PrepareWireframeAndVertices より前に呼ぶこと。
+            // PrepareWireframeAndVertices は末尾で adapter.ConsumeNormalMode() を呼び
+            // Normal モードを Idle へ降格させるため、後に置くと法線メッシュが
+            // 二度と再構築されなくなる。
+            _renderer.PrepareNormals(project);
             _renderer.PrepareWireframeAndVertices(cam, project, slot);
             _renderer.PrepareBones(project);
             _renderer.PrepareWeightVisualization(project);

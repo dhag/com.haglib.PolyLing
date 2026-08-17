@@ -54,35 +54,38 @@ namespace Poly_Ling.Player
 
         private void BuildFrillUI(VisualElement c)
         {
-            c.Add(SL(T("Frill")));
+            c.Add(ShapeTitle(T("Frill")));
             c.Add(NF(() => _frillP.MeshName, v => _frillP.MeshName = v));
 
-            // ── 基準ベルト（手動取り込み） ──
+            // ── 基準はしご（取り込み〜向きまでを1つのフォールドにまとめる） ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(PlayerIoUiKit.SectionLabel(T("FrillBase")));
+            var baseFold = new Foldout { text = T("FrillBase"), value = true };
+            baseFold.style.marginBottom = 4;
+            var bc = baseFold.contentContainer;
+            c.Add(baseFold);
 
             var hint = new Label(T("FrillBaseHint"));
             hint.style.fontSize     = 10;
             hint.style.whiteSpace   = WhiteSpace.Normal;
             hint.style.marginBottom = 2;
-            c.Add(hint);
+            bc.Add(hint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
             {
                 ImportBeltFromMesh(_frillBelts);
                 RefreshFrillInfo();
             }));
 
             // ── 自動検索 ──
-            BuildMeshSourceRow(c, _frillPick, T("AutoDetectSource"));
+            BuildMeshSourceRow(bc, _frillPick, T("AutoDetectSource"));
 
             var autoHint = new Label(T("AutoDetectHint"));
             autoHint.style.fontSize     = 10;
             autoHint.style.whiteSpace   = WhiteSpace.Normal;
             autoHint.style.marginBottom = 2;
-            c.Add(autoHint);
+            bc.Add(autoHint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
             {
                 AutoDetectBelts(_frillBelts, _frillPick.Current);
                 RefreshFrillInfo();
@@ -93,9 +96,9 @@ namespace Poly_Ling.Player
             ringHint.style.fontSize     = 10;
             ringHint.style.whiteSpace   = WhiteSpace.Normal;
             ringHint.style.marginBottom = 2;
-            c.Add(ringHint);
+            bc.Add(ringHint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("AutoDetectRings"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectRings"), () =>
             {
                 AutoDetectRings(_frillBelts, _frillPick.Current);
                 RefreshFrillInfo();
@@ -105,20 +108,20 @@ namespace Poly_Ling.Player
             _frillInfoLabel.style.fontSize   = 10;
             _frillInfoLabel.style.whiteSpace = WhiteSpace.Normal;
             _frillInfoLabel.style.marginTop  = 2;
-            c.Add(_frillInfoLabel);
+            bc.Add(_frillInfoLabel);
 
-            // ── 梯子ごとの高さ倍率 ──
-            // 全体倍率とは掛け算で合成する。梯子が2本以上あるときだけ出す。
+            // ── はしごごとの高さ倍率 ──
+            // 全体倍率とは掛け算で合成する。はしごが2本以上あるときだけ出す。
             _frillBeltScaleContainer = new VisualElement();
-            c.Add(_frillBeltScaleContainer);
+            bc.Add(_frillBeltScaleContainer);
             RebuildFrillBeltScales();
 
-            // ── 梯子CSV ──
-            BuildBeltCsvUI(c, _frillBelts,
+            // ── はしごCSV ──
+            BuildBeltCsvUI(bc, _frillBelts,
                 "Primitive.Frill.BeltCsv", "frill_belt.csv", RefreshFrillInfo);
 
-            // ── 梯子の向き ──
-            BuildBeltOrientUI(c, _frillOrient);
+            // ── はしごの向き ──
+            BuildBeltOrientUI(bc, _frillOrient);
 
             // ── 共有レールの接続 ──
             c.Add(TR(T("FrillConnect"), () => _frillP.ConnectShared,
@@ -140,6 +143,10 @@ namespace Poly_Ling.Player
             seamHint.style.whiteSpace   = WhiteSpace.Normal;
             seamHint.style.marginBottom = 2;
             c.Add(seamHint);
+
+            // ── 面の向き ──
+            c.Add(TR(T("FlipFaces"), () => _frillP.FlipFaces,
+                v => { _frillP.FlipFaces = v; D(); }));
 
             // ── 高さ倍率（全体） ──
             c.Add(PlayerIoUiKit.Divider());
@@ -179,11 +186,17 @@ namespace Poly_Ling.Player
 
             BuildBeltSplineUI(c, _frillSpline);
 
+            BuildPivotXYZ(c,
+                () => _frillP.Pivot, v => { _frillP.Pivot = v; D(); },
+                -0.5f, 0.5f,
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
+
             BuildBeltProfileEditor(_profileEditorContainer, _frillEdit, T("FrillAxisHint"));
         }
 
         private void RefreshFrillInfo()
         {
+            RefreshCreateButtonState();
             if (_frillInfoLabel != null) _frillInfoLabel.text = BeltsInfoText(_frillBelts);
             RebuildFrillBeltScales();
         }
@@ -262,10 +275,14 @@ namespace Poly_Ling.Player
                 var joined = FrillMeshGenerator.Generate(
                     inputs, _frillEdit.Points, true, _frillP.RungSeam, _frillP.MeshName);
 
-                return ApplySolidify(joined,
+                var solid = ApplySolidify(joined,
                     _frillP.Thickness, _frillP.SegmentsFront, _frillP.SegmentsBack,
                     _frillP.EdgeSizeFront, _frillP.EdgeSizeBack, _frillP.EdgeInward,
                     _frillP.MeshName);
+                if (_frillP.FlipFaces)
+                    Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.FlipFaces(solid);
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.ApplyPivotOffset(solid, _frillP.Pivot);
+                return solid;
             }
 
             var single = new List<FrillBeltInput>(1) { null };
@@ -285,6 +302,9 @@ namespace Poly_Ling.Player
                     _frillP.MeshName);
                 AppendMesh(mo, part);
             }
+            if (_frillP.FlipFaces)
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.FlipFaces(mo);
+            Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.ApplyPivotOffset(mo, _frillP.Pivot);
             return mo;
         }
 

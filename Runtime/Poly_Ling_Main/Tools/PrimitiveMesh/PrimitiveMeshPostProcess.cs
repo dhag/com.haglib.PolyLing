@@ -53,5 +53,98 @@ namespace Poly_Ling.PrimitiveMesh
                 }
             }
         }
+
+        /// <summary>
+        /// メッシュ全体を X について鏡映する（位置・法線を反転し、面の巻き順を戻す）。
+        ///
+        /// 2D 編集面の x をワールド -X へ載せる規約（AuthoringFrame）へ、
+        /// 生成アルゴリズムに手を入れずに合わせるための後処理。
+        /// 入力側のループを反転させる方式は、符号付き面積で内外を判断する処理
+        /// （ベベルのオフセット等）の向きを狂わせるため採らない。
+        /// UV は編集座標のまま保持する（正面ビューの画面座標と一致する）。
+        /// </summary>
+        public static void MirrorX(MeshObject mo)
+        {
+            if (mo == null) return;
+
+            if (mo.Vertices != null)
+            {
+                foreach (var v in mo.Vertices)
+                {
+                    if (v == null) continue;
+                    var p = v.Position; p.x = -p.x; v.Position = p;
+                    if (v.Normals == null) continue;
+                    for (int i = 0; i < v.Normals.Count; i++)
+                    {
+                        var n = v.Normals[i]; n.x = -n.x; v.Normals[i] = n;
+                    }
+                }
+            }
+
+            // 鏡映は巻き順の向きを反転させるので、面を裏返して元の表裏へ戻す。
+            if (mo.Faces != null)
+            {
+                foreach (var f in mo.Faces)
+                    f?.Flip();
+            }
+
+            mo.InvalidatePositionCache();
+        }
+
+        /// <summary>
+        /// AABB サイズを基準にピボットぶん平行移動する。
+        /// 基本図形と同じ規約（ピボット p で頂点を -p * サイズ だけ移動）に合わせる。
+        /// AABB 中心へ寄せる処理は行わない（生成位置が元メッシュに依存する図形を動かさないため）。
+        /// </summary>
+        public static void ApplyPivotOffset(MeshObject mo, Vector3 pivot)
+        {
+            if (mo == null || mo.Vertices == null || mo.Vertices.Count == 0) return;
+            if (pivot == Vector3.zero) return;
+
+            Vector3 min = mo.Vertices[0].Position, max = min;
+            foreach (var v in mo.Vertices)
+            {
+                min = Vector3.Min(min, v.Position);
+                max = Vector3.Max(max, v.Position);
+            }
+            Vector3 size = max - min;
+
+            Vector3 offset = new Vector3(pivot.x * size.x, pivot.y * size.y, pivot.z * size.z);
+            if (offset == Vector3.zero) return;
+
+            foreach (var v in mo.Vertices)
+                v.Position -= offset;
+
+            // Vertex.Position を直接書き換えたので位置キャッシュを無効化する（MeshObject.cs:822）。
+            mo.InvalidatePositionCache();
+        }
+
+        /// <summary>
+        /// メッシュ全体の面を裏返す。全 Face の頂点順を反転し、全頂点の法線を反転する。
+        /// Normals の要素数は変えないため、スロット不変条件（UVs.Count == Normals.Count）は保たれる。
+        /// </summary>
+        public static void FlipFaces(MeshObject mo)
+        {
+            if (mo == null) return;
+
+            if (mo.Faces != null)
+            {
+                foreach (var f in mo.Faces)
+                {
+                    if (f == null) continue;
+                    f.Flip();
+                }
+            }
+
+            if (mo.Vertices != null)
+            {
+                foreach (var v in mo.Vertices)
+                {
+                    if (v?.Normals == null) continue;
+                    for (int i = 0; i < v.Normals.Count; i++)
+                        v.Normals[i] = -v.Normals[i];
+                }
+            }
+        }
     }
 }

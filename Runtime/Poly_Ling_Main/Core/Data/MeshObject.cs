@@ -936,8 +936,14 @@ namespace Poly_Ling.Data
         /// true の場合、頂点移動 / Undo/Redo / ミラー更新時に
         /// Mesh.RecalculateNormals() を呼ばず、MeshObject が保持する法線をそのまま使う。
         /// 髪の房など、隣接オブジェクト間で法線を揃えたメッシュに使用する。
+        ///
+        /// 【既定 true】自動再計算は既定で行わない。
+        /// 左ペインの「法線自動計算」チェック（既定 OFF）が選択メッシュの本フラグを
+        /// 反転して書き込む。保存済みプロジェクトは保存値が読み込まれる
+        /// （CsvMeshSerializer / ModelSerializer）ため、既定値が効くのは
+        /// 新規生成メッシュと、値を持たない経路のみ。
         /// </summary>
-        public bool PreserveNormals { get; set; } = false;
+        public bool PreserveNormals { get; set; } = true;
 
         /// <summary>
         /// 法線の自動再計算から除外するセット一覧（パーツ選択辞書と同じ構造）。

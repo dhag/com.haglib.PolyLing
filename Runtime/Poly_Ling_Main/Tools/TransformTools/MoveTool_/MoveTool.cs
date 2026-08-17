@@ -27,6 +27,17 @@ namespace Poly_Ling.Tools
     /// このツールはToolContext.LastHoverHitResultを優先的に使用して
     /// ホバーとクリックの整合性を保つ。従来のCPU版ヒットテストは
     /// フォールバックとしてのみ使用する。
+    ///
+    /// 【現状、マウス入力の呼び出し元が存在しない】
+    /// OnMouseDown / OnMouseDrag / OnMouseUp は ToolManager.OnMouseDown 等
+    /// （ToolManager.cs）からのみ呼ばれる想定だが、その ToolManager のマウス
+    /// 委譲メソッドを呼ぶコードは Runtime にも Editor にも存在しない。
+    /// また ToolContext を組み立てる PolyLingCore.Initialize に渡される
+    /// PolyLingCoreConfig は PolyLingCoreConfig.CreateStub() のみで、
+    /// WorldToScreenPos / ScreenDeltaToWorldDelta はゼロを返すスタブである。
+    /// Player / EditorWindow の頂点移動は MoveToolHandler が担当している。
+    /// 本ファイルの移動量計算に関する修正は、MoveToolHandler 側と規則を
+    /// 揃えるための整合目的であり、現状の動作は変わらない。
     /// </summary>
     public partial class MoveTool : IEditTool
     {
@@ -268,6 +279,21 @@ namespace Poly_Ling.Tools
                         //   Ctrl+クリック（ドラッグなし）→ 除外選択（PolyLing_InputのHandleClickが処理）
                         //   Ctrl+ドラッグ → 通常の移動（ここで処理。Ctrl状態は見ない）
                         StartMoveFromSelection(ctx);
+
+                        // 押下位置から現在位置までの移動量を取りこぼさずに適用する。
+                        // ここで適用しないと DragThreshold ぶんの移動が捨てられ、
+                        // カーソルと対象の間に恒久的なオフセットが残る。
+                        //
+                        // mousePos は +Y が画面下（ComputeAxisDelta と同系。本メソッドが
+                        // MoveVerticesAlongAxis へ mousePos 差分をそのまま渡していることによる）。
+                        // MoveSelectedVertices は ComputeFreeDelta 経由で +Y が画面上を要求する
+                        // ため Y を反転する。ObjectMoveTool.OnMouseDrag の PendingDrag と同じ扱い。
+                        if (_state == MoveState.MovingVertices)
+                        {
+                            Vector2 totalDelta = mousePos - _mouseDownScreenPos;
+                            totalDelta.y = -totalDelta.y;
+                            MoveSelectedVertices(totalDelta, ctx);
+                        }
                     }
                     ctx.Repaint?.Invoke();
                     return true;
@@ -752,6 +778,9 @@ namespace Poly_Ling.Tools
                 return;
 
             // AxisGizmoで自由移動デルタを計算
+            // AxisGizmo は Center 位置で px↔ワールド換算を実測するため、
+            // ドラッグ中も重心を更新してから同期する。
+            UpdateGizmoCenter(ctx);
             SyncAxisGizmo(ctx);
             Vector3 worldDelta = _axisGizmo.ComputeFreeDelta(screenDelta, ctx);
 
@@ -908,6 +937,9 @@ namespace Poly_Ling.Tools
                 return;
 
             // AxisGizmoで軸拘束デルタを計算
+            // AxisGizmo は Center 位置で px↔ワールド換算を実測するため、
+            // ドラッグ中も重心を更新してから同期する。
+            UpdateGizmoCenter(ctx);
             SyncAxisGizmo(ctx);
             Vector3 worldDeltaFrame = _axisGizmo.ComputeAxisDelta(
                 screenDelta, (AxisGizmo.AxisType)(int)_draggingAxis, ctx);

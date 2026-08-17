@@ -109,7 +109,7 @@ namespace Poly_Ling.Player
             fileSection.Add(fileRow);
 
             // ── Import ボタン（パスフィールド直下）──
-            var importBtn = new Button(OnImportClicked) { text = "開く" };
+            var importBtn = new Button(OnBrowse) { text = "開く" };
             importBtn.style.marginTop    = 2;
             importBtn.style.marginBottom = 4;
             importBtn.style.height       = 28;
@@ -158,15 +158,13 @@ namespace Poly_Ling.Player
         // ファイルブラウズ
         // ================================================================
 
+        // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowse()
         {
             string ext   = _mode == Mode.PMX ? "pmx" : "mqo";
             string title = _mode == Mode.PMX ? "Select PMX File" : "Select MQO File";
-            string dir   = string.IsNullOrEmpty(_pathField.value)
-                ? Application.dataPath
-                : Path.GetDirectoryName(_pathField.value);
 
-            string path = PLEditorBridge.I.OpenFilePanel(title, dir, ext);
+            string path = PlayerIoUiKit.AskLoadPath(title, _pathField.value, ext);
             if (!string.IsNullOrEmpty(path))
             {
                 _pathField.value = path;
@@ -552,8 +550,7 @@ namespace Poly_Ling.Player
 
             var browseBtn = new Button(() =>
             {
-                string dir = string.IsNullOrEmpty(get()) ? Application.dataPath : Path.GetDirectoryName(get());
-                string path = PLEditorBridge.I.OpenFilePanel(label, dir, ext);
+                string path = PlayerIoUiKit.AskLoadPath(label, get(), ext);
                 if (!string.IsNullOrEmpty(path))
                 {
                     set(path);

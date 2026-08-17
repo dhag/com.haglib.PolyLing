@@ -80,7 +80,6 @@ namespace Poly_Ling.NohMask
         public string TrianglesFilePath;
         public float Scale;
         public float DepthScale;
-        public float RotationX, RotationY;
         public int FaceIndex;
         public bool FlipFaces;
 
@@ -109,13 +108,11 @@ namespace Poly_Ling.NohMask
             TrianglesFilePath  = "",
             Scale              = 10f,
             DepthScale         = 1f,
-            RotationX          = 0f,
-            RotationY          = 180f,
             FaceIndex          = 0,
             FlipFaces          = false,
-            FlipX              = true,
+            FlipX              = false,
             FlipY              = false,
-            FlipZ              = true,
+            FlipZ              = false,
             FillHoles          = true,
             RimEnabled         = true,
             RimWidth           = 0.4f,
@@ -127,8 +124,6 @@ namespace Poly_Ling.NohMask
             TrianglesFilePath == o.TrianglesFilePath &&
             Mathf.Approximately(Scale,      o.Scale)      &&
             Mathf.Approximately(DepthScale, o.DepthScale) &&
-            Mathf.Approximately(RotationX,  o.RotationX)  &&
-            Mathf.Approximately(RotationY,  o.RotationY)  &&
             FaceIndex == o.FaceIndex &&
             FlipFaces == o.FlipFaces &&
             FlipX     == o.FlipX     &&
@@ -208,7 +203,16 @@ namespace Poly_Ling.NohMask
             center /= faceData.landmarks.Length;
 
             // 頂点位置を計算（MediaPipe座標系 → Unity座標系）
-            // 変換後に軸反転を適用する。面の巻き順は変更しない（裏表は FlipFaces で手動調整）。
+            //
+            // MediaPipe は右手系（x 右・y 下・z 奥）、Unity は左手系。
+            // 鏡像にせず取り込むには変換全体の行列式が -1 でなければならない
+            // （AuthoringFrame の規約）。したがって基底は
+            //   x -> -(lm.x - cx)   ... 画像の右＝本人の左。正面ビューの画面右は -X なので符号反転
+            //   y -> -(lm.y - cy)   ... 画像は y 下向き
+            //   z -> -(lm.z - cz)   ... MediaPipe は手前が負。顔の前方を +Z へ
+            // の 3 軸反転（行列式 -1）とする。
+            //
+            // Flip* は補正用ではなく、この基底に対する任意の反転オプション。既定はすべて false。
             float sx = p.FlipX ? -1f : 1f;
             float sy = p.FlipY ? -1f : 1f;
             float sz = p.FlipZ ? -1f : 1f;
@@ -217,7 +221,7 @@ namespace Poly_Ling.NohMask
             for (int i = 0; i < faceData.landmarks.Length; i++)
             {
                 var lm = faceData.landmarks[i];
-                float x = (lm.x - center.x) * p.Scale;
+                float x = -(lm.x - center.x) * p.Scale;
                 float y = ((1f - lm.y) - (1f - center.y)) * p.Scale;
                 float z = -(lm.z - center.z) * p.Scale * p.DepthScale;
                 positions[i] = new Vector3(x * sx, y * sy, z * sz);
@@ -228,6 +232,8 @@ namespace Poly_Ling.NohMask
             {
                 var lm = faceData.landmarks[i];
                 Vector2 uv = new Vector2(lm.x, 1f - lm.y);
+                // ここでの法線は仮置き。生成末尾の RecalculateSmoothNormals() で
+                // 形状から求め直される。
                 md.Vertices.Add(new Vertex(positions[i], uv, Vector3.forward));
             }
 
@@ -244,15 +250,16 @@ namespace Poly_Ling.NohMask
                 }
                 if (!valid) continue;
 
+                // 行列式 -1 の取り込みで巻き順の向きが反転するため、基底では逆回りに張る。
+                // FlipFaces はそこからさらに反転させる任意オプション。
                 var vi = new List<int>(tri.Length);
                 if (p.FlipFaces)
                 {
-                    // 反転は頂点順の逆回りで表現する（三角の (i0,i2,i1) をN角へ一般化）。
-                    for (int k = tri.Length - 1; k >= 0; k--) vi.Add(tri[k]);
+                    for (int k = 0; k < tri.Length; k++) vi.Add(tri[k]);
                 }
                 else
                 {
-                    for (int k = 0; k < tri.Length; k++) vi.Add(tri[k]);
+                    for (int k = tri.Length - 1; k >= 0; k--) vi.Add(tri[k]);
                 }
 
                 // UV/法線サブインデックスは従来の AddTriangle と同じく全て 0。

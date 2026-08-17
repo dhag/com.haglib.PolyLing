@@ -203,12 +203,83 @@ namespace Poly_Ling.Tools
         // 移動量計算
         // ================================================================
 
+        // ----------------------------------------------------------------
+        // 【px ↔ ワールド換算の原則】
+        //
+        // 換算係数を定数や画角の再計算で持たない。ctx.WorldToScreenPos に
+        // Center 近傍の 2 点を通して実測する。投影行列そのものを通るため、
+        // 画角・ビューポート高・アスペクト・カメラのロール・奥行き・
+        // 透視／正投影の区別がすべて自動的に反映される。
+        //
+        // 旧実装は次の 2 点で破綻していた。再発させないこと。
+        //   1. 軸ドラッグが worldScale = CameraDistance * 0.001f という
+        //      画角にもビューポート高にも依存しない固定係数を使っていた。
+        //   2. GetAxisScreenDirection が方向を正規化して返すため、
+        //      「ワールド 1 単位が画面上で何 px か」の情報が失われ、
+        //      視線に近い軸ほど短縮ぶんだけ移動量が不足していた。
+        // ----------------------------------------------------------------
+
+        /// <summary>
+        /// Center 位置で worldDir 方向へ動かしたときの「ワールド 1 単位あたりの
+        /// スクリーン px ベクトル」を中心差分で実測する。
+        /// 戻り値の座標系は ctx.WorldToScreenPos 系（Y=0 が上、+Y が画面下）。
+        /// </summary>
+        private Vector2 ScreenPerWorldUnit(ToolContext ctx, Vector3 worldDir, float h)
+        {
+            if (h <= 0f) return Vector2.zero;
+
+            Vector2 a = ctx.WorldToScreenPos(
+                Center - worldDir * h, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+            Vector2 b = ctx.WorldToScreenPos(
+                Center + worldDir * h, ctx.PreviewRect, ctx.CameraPosition, ctx.CameraTarget);
+
+            return (b - a) / (2f * h);
+        }
+
+        /// <summary>
+        /// 視線方向に直交する正規直交基底 u, v と、その px/world ベクトル su, sv を返す。
+        ///
+        /// u, v は視線に直交するので、その平面内を動いても奥行き（clip.w）が変化しない。
+        /// したがって透視投影でも投影が厳密に線形になり、h の取り方に依存せず誤差ゼロで
+        /// 実測できる。正投影ではそもそも奥行き非依存なので同様。
+        /// </summary>
+        private bool TryGetScreenBasis(ToolContext ctx,
+            out Vector3 u, out Vector3 v,
+            out Vector2 su, out Vector2 sv, out float pxPerWorld)
+        {
+            u = v = Vector3.zero;
+            su = sv = Vector2.zero;
+            pxPerWorld = 0f;
+            if (ctx == null || ctx.WorldToScreenPos == null) return false;
+
+            Vector3 fwd = ctx.CameraTarget - ctx.CameraPosition;
+            if (fwd.sqrMagnitude < 1e-12f) return false;
+            fwd.Normalize();
+
+            // fwd と平行になりにくい種ベクトルを選ぶ
+            Vector3 seed = Mathf.Abs(Vector3.Dot(fwd, Vector3.up)) > 0.9f
+                ? Vector3.right : Vector3.up;
+            u = Vector3.Cross(seed, fwd).normalized;
+            v = Vector3.Cross(fwd, u).normalized;
+
+            // 上記のとおり厳密に線形なので h は任意。桁落ちしない大きさを採る。
+            float h = Mathf.Max(1e-4f, ctx.CameraDistance * 0.01f);
+            su = ScreenPerWorldUnit(ctx, u, h);
+            sv = ScreenPerWorldUnit(ctx, v, h);
+
+            pxPerWorld = 0.5f * (su.magnitude + sv.magnitude);
+            return pxPerWorld > 1e-6f;
+        }
+
         /// <summary>
         /// 軸拘束ドラッグ時のフレーム移動量を計算（ワールド座標系）。
         /// DisplayMatrix逆変換適用済み。
         ///
+        /// 軸上の点の画面移動量が、マウス移動量の軸方向成分に一致する量を返す
+        /// （最小二乗解 t = dot(screenDelta, s) / |s|^2、s は px/world ベクトル）。
+        ///
         /// 【引数の座標系に注意】screenDeltaYDown は <b>+Y が画面下</b>の差分。
-        /// 内部で使う GetAxisScreenDirection は ctx.WorldToScreenPos 系（Y=0 が上）なので、
+        /// 内部で使う ScreenPerWorldUnit は ctx.WorldToScreenPos 系（Y=0 が上）なので、
         /// パネルの ToViewportCoord 系（+Y が画面上）の差分をそのまま渡すと Y だけ逆に動く。
         /// ToImgui 済み座標の差分をそのまま渡すか、パネル delta なら Y を反転して渡すこと。
         /// 同クラスの ComputeFreeDelta は逆に <b>+Y が画面上</b>を要求する。
@@ -218,17 +289,24 @@ namespace Poly_Ling.Tools
             if (screenDeltaYDown.sqrMagnitude < 0.001f || axis == AxisType.None || axis == AxisType.Center)
                 return Vector3.zero;
 
-            Vector3 axisDir = GetOrientedAxisDirection(axis);
-            Vector3 screenDir3 = GetAxisScreenDirection(ctx, axisDir);
-            Vector2 axisScreenDir2D = new Vector2(screenDir3.x, screenDir3.y);
-
-            if (axisScreenDir2D.sqrMagnitude < 0.001f)
+            if (!TryGetScreenBasis(ctx, out _, out _, out _, out _, out float pxPerWorld))
                 return Vector3.zero;
 
-            axisScreenDir2D.Normalize();
-            float axisScreenMovement = Vector2.Dot(screenDeltaYDown, axisScreenDir2D);
-            float worldScale = ctx.CameraDistance * 0.001f;
-            Vector3 worldDelta = axisDir * axisScreenMovement * worldScale;
+            Vector3 axisDir = GetOrientedAxisDirection(axis);
+            if (axisDir.sqrMagnitude < 1e-12f) return Vector3.zero;
+
+            // 軸は視線に直交するとは限らないため投影は厳密には線形でない。
+            // 画面上 10px 相当の中心差分で接線を取る（曲率誤差は O((h/depth)^2)）。
+            float h = 10f / pxPerWorld;
+            Vector2 s = ScreenPerWorldUnit(ctx, axisDir, h);
+
+            // 軸が視線とほぼ平行（画面上で潰れている）ときは動かさない。
+            // s.magnitude / pxPerWorld は軸と視線のなす角の sin にあたる。
+            if (s.magnitude < pxPerWorld * 0.05f)
+                return Vector3.zero;
+
+            float t = Vector2.Dot(screenDeltaYDown, s) / s.sqrMagnitude;
+            Vector3 worldDelta = axisDir * t;
 
             if (ctx.DisplayMatrix != Matrix4x4.identity)
                 worldDelta = ctx.DisplayMatrix.inverse.MultiplyVector(worldDelta);
@@ -240,16 +318,32 @@ namespace Poly_Ling.Tools
         /// 自由移動（中央ドラッグ）のフレーム移動量を計算（ワールド座標系）。
         /// DisplayMatrix逆変換適用済み。
         ///
+        /// Center を通る視線直交平面内で、投影がマウス移動量と厳密に一致する
+        /// 移動量を返す（a*su + b*sv = screenDelta を解く）。
+        /// ctx.ScreenDeltaToWorldDelta は使わない。同デリゲートは
+        /// PolyLingCoreConfig.CreateStub でゼロを返す実装しか存在せず、
+        /// また換算距離に注視点までの距離を使うため対象の奥行きと一致しない。
+        ///
         /// 【引数の座標系に注意】screenDeltaYUp は <b>+Y が画面上</b>の差分。
-        /// 内部で呼ぶ ctx.ScreenDeltaToWorldDelta が +y を camera.up へ写すため。
         /// パネルの ToViewportCoord 系の差分はそのまま渡してよい。
         /// 同クラスの ComputeAxisDelta は逆に <b>+Y が画面下</b>を要求する。
         /// </summary>
         public Vector3 ComputeFreeDelta(Vector2 screenDeltaYUp, ToolContext ctx)
         {
-            Vector3 worldDelta = ctx.ScreenDeltaToWorldDelta(
-                screenDeltaYUp, ctx.CameraPosition, ctx.CameraTarget,
-                ctx.CameraDistance, ctx.PreviewRect);
+            if (!TryGetScreenBasis(ctx, out Vector3 u, out Vector3 v,
+                                   out Vector2 su, out Vector2 sv, out _))
+                return Vector3.zero;
+
+            // ScreenPerWorldUnit は Y 下系。引数は Y 上系なので合わせる。
+            Vector2 d = new Vector2(screenDeltaYUp.x, -screenDeltaYUp.y);
+
+            float det = su.x * sv.y - su.y * sv.x;
+            if (Mathf.Abs(det) < 1e-9f) return Vector3.zero;
+
+            float a = (d.x * sv.y - d.y * sv.x) / det;
+            float b = (su.x * d.y - su.y * d.x) / det;
+
+            Vector3 worldDelta = u * a + v * b;
 
             if (ctx.DisplayMatrix != Matrix4x4.identity)
                 worldDelta = ctx.DisplayMatrix.inverse.MultiplyVector(worldDelta);

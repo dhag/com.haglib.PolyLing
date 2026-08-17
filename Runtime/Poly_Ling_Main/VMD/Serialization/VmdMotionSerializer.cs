@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
-using Unity.Plastic.Newtonsoft.Json;
+using Newtonsoft.Json;
 using Poly_Ling.VMD;
 
 namespace Poly_Ling.VMD.Serialization

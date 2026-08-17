@@ -42,6 +42,13 @@ namespace Poly_Ling.Player
         public event Action OnCancelKey;
 
         /// <summary>
+        /// Backspace / Delete キー押下（直前に指定した点の取り消し用）。
+        /// Delete は既定のショートカット割当（選択削除）が root 側で先に消費するため、
+        /// その割当が無い環境でのみここへ届く。
+        /// </summary>
+        public event Action OnUndoPointKey;
+
+        /// <summary>
         /// ポインターがこのパネル（RenderTexture領域）内を移動したときに発火する。
         /// 引数は UIToolkit のパネルローカル座標（Y=0が上）のまま渡す。
         ///
@@ -702,6 +709,11 @@ namespace Poly_Ling.Player
             if (evt.keyCode == KeyCode.Escape)
             {
                 OnCancelKey?.Invoke();
+                evt.StopPropagation();
+            }
+            else if (evt.keyCode == KeyCode.Backspace || evt.keyCode == KeyCode.Delete)
+            {
+                OnUndoPointKey?.Invoke();
                 evt.StopPropagation();
             }
         }

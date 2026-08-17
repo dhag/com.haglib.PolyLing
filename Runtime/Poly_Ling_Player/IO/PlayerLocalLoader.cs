@@ -89,7 +89,7 @@ namespace Poly_Ling.Player
             btnRow.style.flexDirection = FlexDirection.Row;
             btnRow.style.marginBottom  = 4;
 
-            var btnPmx = new Button(() => OnPmxRequested?.Invoke()) { text = "Load PMX" };
+            var btnPmx = new Button(() => OnPmxRequested?.Invoke()) { text = "PMX読み込み" };
             btnPmx.style.flexGrow     = 1;
             btnPmx.style.marginRight  = 2;
             btnPmx.style.fontSize     = 10;
@@ -97,7 +97,7 @@ namespace Poly_Ling.Player
             btnPmx.style.paddingTop   = 0;
             btnPmx.style.paddingBottom = 0;
 
-            var btnMqo = new Button(() => OnMqoRequested?.Invoke()) { text = "Load MQO" };
+            var btnMqo = new Button(() => OnMqoRequested?.Invoke()) { text = "MQO読み込み" };
             btnMqo.style.flexGrow     = 1;
             btnMqo.style.marginLeft   = 2;
             btnMqo.style.fontSize     = 10;

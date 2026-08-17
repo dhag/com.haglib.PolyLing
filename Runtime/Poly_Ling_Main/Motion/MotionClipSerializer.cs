@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
-using Unity.Plastic.Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace Poly_Ling.Motion
 {
@@ -9,7 +9,8 @@ namespace Poly_Ling.Motion
     // ----------------------------------------------------------------
     // MotionClipDTO（純POCO）の JSON 入出力・ファイル入出力を担う。
     // 既存 VmdMotionSerializer / UnityClipSerializer に倣い
-    // Unity.Plastic.Newtonsoft.Json を使用する。
+    // Newtonsoft.Json（com.unity.nuget.newtonsoft-json）を使用する。
+    // エディタ専用の Unity.Plastic.Newtonsoft.Json はプレイヤービルドに含まれないため使わない。
     //
     // 読込時に各トラックのキーを秒（t）昇順へソートする
     // （サンプラは昇順を前提とするため）。

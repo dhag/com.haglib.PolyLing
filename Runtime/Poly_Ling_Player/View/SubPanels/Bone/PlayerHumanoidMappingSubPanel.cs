@@ -98,7 +98,7 @@ namespace Poly_Ling.Player
             // AutoMap / Load CSV ボタン
             var btnRow = new VisualElement(); btnRow.style.flexDirection = FlexDirection.Row; btnRow.style.marginBottom = 6;
             _btnAutoMap = new Button(OnAutoMap)  { text = "Auto Map (PMX)" }; _btnAutoMap.style.flexGrow = 1; _btnAutoMap.style.marginRight = 4;
-            _btnLoadCsv = new Button(OnLoadCSV)  { text = "CSVから読み込み" }; _btnLoadCsv.style.flexGrow = 1;
+            _btnLoadCsv = new Button(OnBrowseCSV) { text = "CSVから読み込み" }; _btnLoadCsv.style.flexGrow = 1;
             btnRow.Add(_btnAutoMap); btnRow.Add(_btnLoadCsv);
             root.Add(btnRow);
 
@@ -154,10 +154,10 @@ namespace Poly_Ling.Player
         }
 
         // ── Operations ───────────────────────────────────────────────────
+        // 「CSVから読み込み」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseCSV()
         {
-            string dir  = string.IsNullOrEmpty(_csvFilePath) ? UnityEngine.Application.dataPath : Path.GetDirectoryName(_csvFilePath);
-            string path = PLEditorBridge.I.OpenFilePanel("Select Bone Mapping CSV", dir, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("Select Bone Mapping CSV", _csvFilePath, "csv");
             if (!string.IsNullOrEmpty(path))
             {
                 _csvFilePath = path;
@@ -188,8 +188,6 @@ namespace Poly_Ling.Player
                     : "一致するボーン名がありませんでした。");
             UpdatePreviewUI();
         }
-
-        private void OnLoadCSV() => LoadCSVMapping();
 
         private void OnApply()
         {

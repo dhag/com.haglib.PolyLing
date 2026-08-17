@@ -152,12 +152,15 @@ namespace Poly_Ling.EditorBridge
         }
 
         public string OpenFilePanel(string title, string directory, string extension)
+            => OpenFilePanel(title, directory, null, extension);
+
+        public string OpenFilePanel(string title, string directory, string defaultName, string extension)
         {
             var ofn = new OpenFileName();
             ofn.lpstrTitle      = title;
             ofn.lpstrFilter     = BuildFilter(extension);
-            ofn.lpstrFile       = new string('\0', 512);
-            ofn.nMaxFile        = ofn.lpstrFile.Length;
+            ofn.lpstrFile       = (defaultName ?? "") + new string('\0', 512);
+            ofn.nMaxFile        = 512;
             ofn.lpstrInitialDir = directory;
             ofn.lpstrDefExt     = FirstExt(extension);
             ofn.Flags           = 0x00080000 | 0x00001000 | 0x00000800 | 0x00000008; // OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
@@ -214,6 +217,7 @@ namespace Poly_Ling.EditorBridge
 
 #else
         public string OpenFilePanel(string title, string directory, string extension) => string.Empty;
+        public string OpenFilePanel(string title, string directory, string defaultName, string extension) => string.Empty;
         public string SaveFilePanel(string title, string directory, string defaultName, string extension) => string.Empty;
         public string SaveFilePanelInProject(string title, string defaultName, string extension, string message) => string.Empty;
         public string OpenFolderPanel(string title, string directory, string defaultName) => string.Empty;

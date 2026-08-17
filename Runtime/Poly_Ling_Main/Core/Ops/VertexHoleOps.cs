@@ -249,6 +249,177 @@ namespace Poly_Ling.Ops
             return true;
         }
 
+
+        // ================================================================
+        // 一括処理（複数頂点）
+        // ================================================================
+
+        /// <summary>一括処理の下調べ結果。パネル表示とボタン活性に使う。</summary>
+        public struct HoleBatchInfo
+        {
+            /// <summary>実行できるか。</summary>
+            public bool CanExecute;
+            /// <summary>実行対象の頂点数。</summary>
+            public int TargetCount;
+            /// <summary>干渉・単独不可で除外した頂点数。</summary>
+            public int SkippedCount;
+            /// <summary>作られる新頂点の合計。</summary>
+            public int NeighborTotal;
+            /// <summary>張り替える面の合計。</summary>
+            public int FaceTotal;
+            /// <summary>実行できない理由（CanExecute==false のときのみ）。</summary>
+            public string Reason;
+        }
+
+        /// <summary>
+        /// 互いに干渉しない頂点だけを選び出す。
+        ///
+        /// 除外の規則:
+        ///   1. 単独で Inspect が通らない頂点。
+        ///   2. 同じ面を共有する選択頂点どうし（その組は全部除外）。
+        ///      隣り合う頂点は必ず同じ面を共有するのでこれに含まれる。
+        ///      面を共有したまま両方に穴を開けると、片方の張り替えが
+        ///      もう片方の削除予定頂点を参照してしまうため。
+        /// </summary>
+        public static List<int> SelectIndependent(
+            MeshObject mo, IEnumerable<int> apexes, out List<int> skipped)
+        {
+            var accepted = new List<int>();
+            skipped      = new List<int>();
+
+            if (mo == null || apexes == null) return accepted;
+
+            // 重複を落としつつ、単独で実行できる頂点だけを候補にする。
+            var candidates = new HashSet<int>();
+            foreach (int a in apexes)
+            {
+                if (a < 0 || a >= mo.Vertices.Count) continue;
+                if (!candidates.Add(a)) continue;
+
+                if (!Inspect(mo, a).CanExecute)
+                {
+                    candidates.Remove(a);
+                    skipped.Add(a);
+                }
+            }
+
+            // 同じ面に2つ以上乗っている候補を落とす。
+            var conflicted = new HashSet<int>();
+            for (int fi = 0; fi < mo.Faces.Count; fi++)
+            {
+                var vidx = mo.Faces[fi].VertexIndices;
+
+                var onFace = new List<int>();
+                for (int j = 0; j < vidx.Count; j++)
+                {
+                    int v = vidx[j];
+                    if (candidates.Contains(v) && !onFace.Contains(v)) onFace.Add(v);
+                }
+
+                if (onFace.Count >= 2)
+                    foreach (int v in onFace) conflicted.Add(v);
+            }
+
+            foreach (int a in candidates)
+            {
+                if (conflicted.Contains(a)) skipped.Add(a);
+                else                        accepted.Add(a);
+            }
+
+            accepted.Sort();
+            skipped.Sort();
+            return accepted;
+        }
+
+        /// <summary>複数頂点ぶんの下調べ。メッシュは変更しない。</summary>
+        public static HoleBatchInfo InspectMany(MeshObject mo, IEnumerable<int> apexes)
+        {
+            var info = new HoleBatchInfo();
+
+            if (mo == null)
+            {
+                info.Reason = "メッシュがありません";
+                return info;
+            }
+
+            var targets = SelectIndependent(mo, apexes, out var skipped);
+
+            info.TargetCount  = targets.Count;
+            info.SkippedCount = skipped.Count;
+
+            foreach (int a in targets)
+            {
+                var one = Inspect(mo, a);
+                info.NeighborTotal += one.NeighborCount;
+                info.FaceTotal     += one.FaceCount;
+            }
+
+            if (targets.Count == 0)
+            {
+                info.Reason = skipped.Count > 0
+                    ? "選択頂点が互いに干渉しているため実行できません"
+                    : "頂点を選択してください";
+                return info;
+            }
+
+            info.CanExecute = true;
+            return info;
+        }
+
+        /// <summary>
+        /// 複数頂点に穴を開ける。互いに干渉する頂点は処理しない。
+        /// 1つでも開けられたら true。
+        ///
+        /// 実行順は「インデックスの降順」。Execute は末尾で apex を削除して
+        /// それより大きいインデックスを詰めるので、降順なら残りの対象がずれない。
+        /// </summary>
+        public static bool ExecuteMany(
+            MeshObject mo, IEnumerable<int> apexes, float ratio,
+            out int createdVertexCount, out int modifiedFaceCount, out int skippedCount,
+            out string reason)
+        {
+            createdVertexCount = 0;
+            modifiedFaceCount  = 0;
+            skippedCount       = 0;
+            reason             = null;
+
+            if (mo == null) { reason = "メッシュがありません"; return false; }
+
+            var targets = SelectIndependent(mo, apexes, out var skipped);
+            skippedCount = skipped.Count;
+
+            if (targets.Count == 0)
+            {
+                reason = skipped.Count > 0
+                    ? "選択頂点が互いに干渉しているため実行できません"
+                    : "頂点を選択してください";
+                return false;
+            }
+
+            int okCount = 0;
+
+            for (int k = targets.Count - 1; k >= 0; k--)
+            {
+                bool ok = Execute(mo, targets[k], ratio,
+                                  out int created, out int modified, out string why);
+                if (!ok)
+                {
+                    skippedCount++;
+                    reason = why;
+                    continue;
+                }
+
+                createdVertexCount += created;
+                modifiedFaceCount  += modified;
+                okCount++;
+            }
+
+            if (okCount == 0) return false;
+
+            reason = null;
+            return true;
+        }
+
         // ================================================================
         // ヘルパー
         // ================================================================

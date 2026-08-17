@@ -1172,6 +1172,16 @@ namespace Poly_Ling.MQO
             var meshObject = new MeshObject();
             meshObject.Type = MeshType.Mesh;  // 明示的に設定
 
+            // MQO は形式として頂点法線を持たず、読み込み時に必ずスムージング角から
+            // 計算する（下の NormalMode 分岐を参照）。保持すべき元の法線が存在しない
+            // ため、自動計算を有効にする（= PreserveNormals を false にする）。
+            //
+            // NormalMode.Unity の場合は ToUnityMesh 側の RecalculateNormals に委ねるが、
+            // そちらは PreserveNormals で gate されている（MeshBridgeDefault ほか）ため、
+            // MeshObject の既定値 true のままだと法線が一切生成されない。
+            // よって NormalMode に依存させず無条件に設定する。
+            meshObject.PreserveNormals = false;
+
             // 頂点変換（IDは後で設定）
             foreach (var mqoVert in mqoObj.Vertices)
             {

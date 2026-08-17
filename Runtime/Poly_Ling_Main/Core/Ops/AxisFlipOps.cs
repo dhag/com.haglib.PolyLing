@@ -176,13 +176,35 @@ namespace Poly_Ling.Ops
         ///
         /// 局所軸の合成を廃止し、ボーンのレスト回転が恒等になったため、
         /// 角度制限はモデル空間の値として扱う。軸 k まわりの回転角に掛かる符号は
-        /// σ_k = det(S) = sx · sz で、3 軸とも共通。
-        ///   X,Z 両反転 : det = +1  … 符号反転なし。min/max はそのまま
-        ///   Z のみ反転 : det = -1  … 3 軸とも min/max が入れ替わる
-        ///   X のみ反転 : det = -1  … 同上
+        /// 3 軸共通ではなく、軸ごとに異なる。
         ///
-        /// 旧実装は両側共役 S·M·S 前提で σ_k = s_k · det(S) としており、
-        /// X と Z だけ入れ替えていた。局所軸の廃止に合わせて作り直したもの。
+        ///   σ_k = det(S) · s_k        s = (Sx, 1, Sz)、det(S) = Sx · Sz
+        ///     PMX → Unity : det=+1, s=(-1, 1,-1) → σ = (-1, +1, -1)
+        ///     MQO → Unity : det=-1, s=(-1, 1, 1) → σ = (+1, -1, -1)
+        ///
+        /// これは本ファイルの Rotation(AxisFlip, Quaternion) の挙動そのものである。
+        /// PMX → Unity では (x, y, z, w) → (-x, y, -z, w) を返すので、+X まわり θ の
+        /// 回転は +X まわり -θ になる（σ_x = -1）。Y 成分は不変（σ_y = +1）。
+        /// σ_k が負の軸は、角度が反転するぶん min/max を入れ替える。
+        ///
+        /// ■ 実測による裏付け（__AちゃんH.pmx / 左ひざ）
+        ///   PMX の制限は min=(-180, 0, 0) / max=(-0.5, 0, 0) deg。
+        ///   Unity 空間の rest 位置は 左ひざ (-0.10172, 0.85640, 0.07202)、
+        ///   左足首 (-0.12301, 0.45728, 0.03599) で、ひざ→足首 = (-0.02129, -0.39912, -0.03603)。
+        ///   ここでひざを X 軸まわりに回すと
+        ///     -10deg → 足首の dZ = +0.06985（足首が前へ出る＝逆折れ）
+        ///     +10deg → 足首の dZ = -0.06876（かかとが後ろへ引ける＝正しい向き）
+        ///   となる。Unity ではひざは X 正方向に曲がるのが正しく、
+        ///   変換後の制限は min.x=+0.5deg / max.x=+180deg でなければならない。
+        ///
+        /// ■ 旧実装の誤り
+        ///   σ_k = det(S) として 3 軸共通に扱い、det > 0 のとき早期 return していた。
+        ///   PMX → Unity は det=+1 なので制限が PMX 空間の値のまま Unity へ入り、
+        ///   IK の clamp がひざを逆側へ押し付けていた。
+        ///
+        /// ■ 注意
+        ///   PMX / MMD の角度制限は軸ごとに独立した値として定義されているため、
+        ///   ここでも軸ごとに変換する。オイラー分解の順序は考慮しない。
         ///
         /// ■ 未実装（恒久メモ）
         ///   付与親（GrantParentIndex / GrantRate）と固定軸はポーズ適用側に
@@ -193,13 +215,20 @@ namespace Poly_Ling.Ops
             if (f.IsIdentity) return;
 
             float det = f.Sx * f.Sz;
-            if (det > 0f) return;   // 符号反転なし
+            Vector3 sigma = new Vector3(det * f.Sx, det, det * f.Sz);
 
             Vector3 srcMin = min;
             Vector3 srcMax = max;
 
-            min = -srcMax;
-            max = -srcMin;
+            min = new Vector3(
+                sigma.x < 0f ? -srcMax.x : srcMin.x,
+                sigma.y < 0f ? -srcMax.y : srcMin.y,
+                sigma.z < 0f ? -srcMax.z : srcMin.z);
+
+            max = new Vector3(
+                sigma.x < 0f ? -srcMin.x : srcMax.x,
+                sigma.y < 0f ? -srcMin.y : srcMax.y,
+                sigma.z < 0f ? -srcMin.z : srcMax.z);
         }
     }
 }

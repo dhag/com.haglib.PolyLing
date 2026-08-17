@@ -61,6 +61,14 @@ namespace Poly_Ling.Frill
         /// <summary>ラウンドの曲率方向を入れ替える</summary>
         public bool  EdgeInward;
 
+        // ── 面の向き ──
+        /// <summary>生成後にメッシュ全体の面を反転する</summary>
+        public bool  FlipFaces;
+
+        // ── ピボット ──
+        /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する</summary>
+        public Vector3 Pivot;
+
         public static FrillParams Default => new FrillParams
         {
             MeshName      = "Frill",
@@ -73,6 +81,8 @@ namespace Poly_Ling.Frill
             EdgeSizeFront = 0.02f,
             EdgeSizeBack  = 0.02f,
             EdgeInward    = false,
+            FlipFaces     = false,
+            Pivot         = Vector3.zero,
         };
 
         public bool Equals(FrillParams o)
@@ -85,7 +95,9 @@ namespace Poly_Ling.Frill
             && SegmentsBack  == o.SegmentsBack
             && Mathf.Approximately(EdgeSizeFront, o.EdgeSizeFront)
             && Mathf.Approximately(EdgeSizeBack,  o.EdgeSizeBack)
-            && EdgeInward == o.EdgeInward;
+            && EdgeInward == o.EdgeInward
+            && FlipFaces  == o.FlipFaces
+            && Pivot      == o.Pivot;
 
         public override bool Equals(object obj) => obj is FrillParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;

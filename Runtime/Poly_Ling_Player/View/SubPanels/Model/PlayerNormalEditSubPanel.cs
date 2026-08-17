@@ -110,6 +110,12 @@ namespace Poly_Ling.Player
                 "対象コーナーの法線をその面の面法線にする（フラット化）。"));
             root.Add(rowRecalc);
 
+            var rowAvgFaces = MkRow();
+            rowAvgFaces.Add(MkBtn("選択面で平均", () => Send(NormalEditCommand.Op.AverageFromFaces),
+                "対象コーナーの面法線だけを頂点ごとに平均して書き込む。"
+                + "選択した面だけを使った頂点法線が得られる。スロット数は変わらない。"));
+            root.Add(rowAvgFaces);
+
             // ── B. スロット操作 ────────────────────────────────────────
             root.Add(SecLabel("スロット"));
             var rowSlot = MkRow();

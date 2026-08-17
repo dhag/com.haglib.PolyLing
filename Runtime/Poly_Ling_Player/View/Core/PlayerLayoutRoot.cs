@@ -77,10 +77,21 @@ namespace Poly_Ling.Player
         public const int VD_SEL_MESH_ORIGIN   = 10;
         public const int VD_UNSEL_MESH_ORIGIN = 11;
         public const int VD_MIRROR_MESH_ORIGIN = 12;
-        public const int VD_COUNT        = 13;
+        public const int VD_NORMAL       = 13;
+        public const int VD_COUNT        = 14;
 
         /// <summary>左ペイン：ラッソ選択トグル。</summary>
         public Toggle LassoToggle { get; private set; }
+
+        /// <summary>
+        /// 左ペイン：法線自動計算トグル。既定 OFF（＝自動計算しない）。
+        /// 選択メッシュの MeshObject.PreserveNormals を反転して書き込む
+        /// （自動計算 ON ＝ PreserveNormals false）。
+        /// </summary>
+        public Toggle AutoRecalcNormalsToggle { get; private set; }
+
+        /// <summary>左ペイン：法線の手動再計算ボタン。対象は選択メッシュ。</summary>
+        public Button RecalcNormalsBtn { get; private set; }
 
         // 選択モード切替（頂点/辺/面/線分・非排他）。SelectionState.Mode を設定する。
         public Toggle SelModeVertexToggle { get; private set; }
@@ -253,6 +264,16 @@ namespace Poly_Ling.Player
         public Button        SplitVerticesBtn           { get; private set; }
         public VisualElement VertexHoleSection          { get; private set; }
         public Button        VertexHoleBtn              { get; private set; }
+        public VisualElement VertexDissolveSection      { get; private set; }
+        public Button        VertexDissolveBtn          { get; private set; }
+        public VisualElement Tri4To1Section             { get; private set; }
+        public Button        Tri4To1Btn                 { get; private set; }
+        public VisualElement FaceMergeSection           { get; private set; }
+        public Button        FaceMergeBtn               { get; private set; }
+        public VisualElement Quad4To1Section            { get; private set; }
+        public Button        Quad4To1Btn                { get; private set; }
+        public VisualElement FaceMergeCollapseSection   { get; private set; }
+        public Button        FaceMergeCollapseBtn       { get; private set; }
 
         /// <summary>右ペイン：頂点IDユーティリティ（診断 / 修復）セクション。</summary>
         public VisualElement VertexIdSection            { get; private set; }
@@ -288,6 +309,7 @@ namespace Poly_Ling.Player
         public Button        EdgeTopologyBtn            { get; private set; }
         public VisualElement KnifeSection               { get; private set; }
         public Button        KnifeBtn                   { get; private set; }
+        public Button        BridgeBtn                  { get; private set; }
         public VisualElement SolidifySection            { get; private set; }
         public Button        SolidifyBtn                { get; private set; }
         public VisualElement MediaPipeSection       { get; private set; }
@@ -466,10 +488,6 @@ namespace Poly_Ling.Player
             _rootRef = root;
             SetupCrossDragRegion(root);
             SetupLayoutPersistence(root);
-
-            // 分割モード（4画面／横2／縦2／1画面）の初期化。
-            // _crossDragRegion 生成後である必要があるため最後に呼ぶ。
-            SetupViewportSplitMode();
         }
 
         // ================================================================
@@ -523,11 +541,8 @@ namespace Poly_Ling.Player
 
         private void SaveLayout()
         {
-            // 分割モード（4画面以外）中は一時的なサイズのため保存しない。
-            // モードは永続化せず、次回起動は常に4画面から始まる。
-            if (_splitMode != ViewportSplitMode.Four) return;
-
             // resolvedStyle から実寸を取得し、異常値（NaN/0以下）は保存しない。
+            // 仕切りを潰した側は 0 になるため、そのまま保存対象外になる。
             if (_leftPaneEl != null)
             {
                 float v = _leftPaneEl.resolvedStyle.width;
@@ -694,8 +709,6 @@ namespace Poly_Ling.Player
             _perspPane.RegisterCallback<GeometryChangedEvent>(_ =>
             {
                 if (_crossDragging) return;
-                // 分割モード中は高さをモード側が支配する（相互上書きによる発振防止）。
-                if (_splitMode != ViewportSplitMode.Four) return;
                 float h = _perspPane.resolvedStyle.height;
                 if (float.IsNaN(h) || h <= 0f) return;
                 if (Mathf.Approximately(h, _lastSyncedHeight)) return;
@@ -705,8 +718,6 @@ namespace Poly_Ling.Player
             _topPane.RegisterCallback<GeometryChangedEvent>(_ =>
             {
                 if (_crossDragging) return;
-                // 分割モード中は高さをモード側が支配する（相互上書きによる発振防止）。
-                if (_splitMode != ViewportSplitMode.Four) return;
                 float h = _topPane.resolvedStyle.height;
                 if (float.IsNaN(h) || h <= 0f) return;
                 if (Mathf.Approximately(h, _lastSyncedHeight)) return;
@@ -801,6 +812,34 @@ namespace Poly_Ling.Player
             LassoToggle.style.marginBottom = 4;
             scroll.Add(LassoToggle);
 
+            // 法線の自動計算（既定 OFF）と手動再計算。対象はどちらも選択メッシュ。
+            var normalRecalcRow = new VisualElement();
+            normalRecalcRow.style.flexDirection = FlexDirection.Row;
+            normalRecalcRow.style.alignItems    = Align.Center;
+            normalRecalcRow.style.marginBottom  = 4;
+
+            AutoRecalcNormalsToggle = new Toggle("法線自動計算") { value = false };
+            AutoRecalcNormalsToggle.style.color       = new StyleColor(Color.white);
+            AutoRecalcNormalsToggle.style.flexGrow    = 0;
+            AutoRecalcNormalsToggle.style.flexShrink  = 0;
+            AutoRecalcNormalsToggle.style.marginRight = 8;
+            // 既定の広い label min-width を解除し、ラベルとチェックの間隔を詰める
+            // （選択モードのトグル群と同じ処理）。
+            if (AutoRecalcNormalsToggle.labelElement != null)
+            {
+                AutoRecalcNormalsToggle.labelElement.style.minWidth    = 0;
+                AutoRecalcNormalsToggle.labelElement.style.flexGrow    = 0;
+                AutoRecalcNormalsToggle.labelElement.style.marginRight = 3;
+            }
+            normalRecalcRow.Add(AutoRecalcNormalsToggle);
+
+            RecalcNormalsBtn = MakeBtn("再計算");
+            RecalcNormalsBtn.style.flexGrow   = 0;
+            RecalcNormalsBtn.style.flexShrink = 0;
+            normalRecalcRow.Add(RecalcNormalsBtn);
+
+            scroll.Add(normalRecalcRow);
+
             scroll.Add(Separator());
 
             LocalLoaderSection = new VisualElement();
@@ -816,38 +855,52 @@ namespace Poly_Ling.Player
             // ── ファイル ───────────────────────────────────────────────
             var foFile = MakeFoldout("ファイル", "File");
 
-            // プロジェクト保存 / 読込は別ボタンにする（押し間違い防止のため 1 行に並べない）。
-            ProjectSaveBtn = MakeBtn("プロジェクト保存");
-            foFile.Add(ProjectSaveBtn);
-            ProjectLoadBtn = MakeBtn("プロジェクト読込");
+            // 読み込み系 → 保存系 → 部分（折りたたみ）の順に並べる。
+            // ボタンのインスタンスと代入先プロパティは変えないので core 側の結線は不変。
+
+            // ── 読み込み ──
+            ProjectLoadBtn = MakeBtn("プロジェクト読み込み");
             foFile.Add(ProjectLoadBtn);
 
-            // Load PMX / Load MQO（旧: foldout の外・上）を「ファイル」の先頭に配置する。
+            // PMX読み込み / MQO読み込み（PlayerLocalLoader.BuildUI が中身を作る）。
             foFile.Add(LocalLoaderSection);
 
-            var pImportRow = new VisualElement();
-            pImportRow.style.flexDirection = FlexDirection.Row;
-            pImportRow.style.marginBottom  = 2;
-            PartialImportPmxBtn = MakeBtn("PMX部分Import"); PartialImportPmxBtn.style.flexGrow = 1; PartialImportPmxBtn.style.marginRight = 2;
-            PartialImportMqoBtn = MakeBtn("MQO部分Import"); PartialImportMqoBtn.style.flexGrow = 1;
-            pImportRow.Add(PartialImportPmxBtn); pImportRow.Add(PartialImportMqoBtn);
-            foFile.Add(pImportRow);
+            foFile.Add(Separator());
 
-            var pExportRow = new VisualElement();
-            pExportRow.style.flexDirection = FlexDirection.Row;
-            pExportRow.style.marginBottom  = 2;
-            PartialExportPmxBtn = MakeBtn("PMX部分Export"); PartialExportPmxBtn.style.flexGrow = 1; PartialExportPmxBtn.style.marginRight = 2;
-            PartialExportMqoBtn = MakeBtn("MQO部分Export"); PartialExportMqoBtn.style.flexGrow = 1;
-            pExportRow.Add(PartialExportPmxBtn); pExportRow.Add(PartialExportMqoBtn);
-            foFile.Add(pExportRow);
+            // ── 保存 ──
+            ProjectSaveBtn = MakeBtn("プロジェクト保存");
+            foFile.Add(ProjectSaveBtn);
 
             var fullExportRow = new VisualElement();
             fullExportRow.style.flexDirection = FlexDirection.Row;
             fullExportRow.style.marginBottom  = 2;
-            FullExportPmxBtn = MakeBtn("PMXフルExport"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
-            FullExportMqoBtn = MakeBtn("MQOフルExport"); FullExportMqoBtn.style.flexGrow = 1;
+            FullExportPmxBtn = MakeBtn("PMX保存"); FullExportPmxBtn.style.flexGrow = 1; FullExportPmxBtn.style.marginRight = 2;
+            FullExportMqoBtn = MakeBtn("MQO保存"); FullExportMqoBtn.style.flexGrow = 1;
             fullExportRow.Add(FullExportPmxBtn); fullExportRow.Add(FullExportMqoBtn);
             foFile.Add(fullExportRow);
+
+            foFile.Add(Separator());
+
+            // ── 部分インポート／エクスポート（既定 折りたたみ） ──
+            var foFilePartial = MakeFoldout("部分インポートエクスポート", "FilePartial");
+
+            var pImportRow = new VisualElement();
+            pImportRow.style.flexDirection = FlexDirection.Row;
+            pImportRow.style.marginBottom  = 2;
+            PartialImportPmxBtn = MakeBtn("PMX部分import"); PartialImportPmxBtn.style.flexGrow = 1; PartialImportPmxBtn.style.marginRight = 2;
+            PartialImportMqoBtn = MakeBtn("MQO部分import"); PartialImportMqoBtn.style.flexGrow = 1;
+            pImportRow.Add(PartialImportPmxBtn); pImportRow.Add(PartialImportMqoBtn);
+            foFilePartial.Add(pImportRow);
+
+            var pExportRow = new VisualElement();
+            pExportRow.style.flexDirection = FlexDirection.Row;
+            pExportRow.style.marginBottom  = 2;
+            PartialExportPmxBtn = MakeBtn("PMX部分export"); PartialExportPmxBtn.style.flexGrow = 1; PartialExportPmxBtn.style.marginRight = 2;
+            PartialExportMqoBtn = MakeBtn("MQO部分export"); PartialExportMqoBtn.style.flexGrow = 1;
+            pExportRow.Add(PartialExportPmxBtn); pExportRow.Add(PartialExportMqoBtn);
+            foFilePartial.Add(pExportRow);
+
+            foFile.Add(foFilePartial);
 
 
             // ── 図形生成 ───────────────────────────────────────────────
@@ -936,8 +989,10 @@ namespace Poly_Ling.Player
 
             var rowEdgeKnife = new VisualElement(); rowEdgeKnife.style.flexDirection = FlexDirection.Row; rowEdgeKnife.style.marginBottom = 2;
             EdgeTopologyBtn = MakeBtn("辺トポロジー"); EdgeTopologyBtn.style.flexGrow = 1; EdgeTopologyBtn.style.marginRight = 2;
-            KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1;
-            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); foTopology.Add(rowEdgeKnife);
+            KnifeBtn        = MakeBtn("ナイフ");       KnifeBtn.style.flexGrow        = 1; KnifeBtn.style.marginRight     = 2;
+            VertexHoleBtn   = MakeBtn("穴あけ");       VertexHoleBtn.style.flexGrow   = 1; VertexHoleBtn.style.marginRight = 2;
+            BridgeBtn       = MakeBtn("ブリッジ");     BridgeBtn.style.flexGrow       = 1;
+            rowEdgeKnife.Add(EdgeTopologyBtn); rowEdgeKnife.Add(KnifeBtn); rowEdgeKnife.Add(VertexHoleBtn); rowEdgeKnife.Add(BridgeBtn); foTopology.Add(rowEdgeKnife);
 
             // 削除系。面削除モードは進入中にボタンがハイライトされる
             // (破壊的モードなので表示は必須)。
@@ -983,9 +1038,8 @@ namespace Poly_Ling.Player
             rowVertexId.Add(VertexIdBtn); rowVertexId.Add(VertexTransferBtn); foVertexTopo.Add(rowVertexId);
 
             var rowQuad = new VisualElement(); rowQuad.style.flexDirection = FlexDirection.Row; rowQuad.style.marginBottom = 2;
-            QuadDecimatorBtn = MakeBtn("Yet_Quad減面"); QuadDecimatorBtn.style.flexGrow = 1; QuadDecimatorBtn.style.marginRight = 2;
-            VertexHoleBtn    = MakeBtn("穴あけ"); VertexHoleBtn.style.flexGrow = 1;
-            rowQuad.Add(QuadDecimatorBtn); rowQuad.Add(VertexHoleBtn); foVertexTopo.Add(rowQuad);
+            QuadDecimatorBtn = MakeBtn("Yet_Quad減面"); QuadDecimatorBtn.style.flexGrow = 1;
+            rowQuad.Add(QuadDecimatorBtn); foVertexTopo.Add(rowQuad);
 
             // ── ボーン・モーフ ─────────────────────────────────────────
             var foBoneMorph = MakeFoldout("ボーン・モーフ", "BoneMorph");
@@ -1069,6 +1123,20 @@ namespace Poly_Ling.Player
             CaptureBtn = MakeBtn("キャプチャ"); CaptureBtn.style.flexGrow = 1;
             rowMisc4.Add(CameraBtn); rowMisc4.Add(CaptureBtn); foOther.Add(rowMisc4);
 
+            // ── 結合 ───────────────────────────────────────────────────
+            var foMerge = MakeFoldout("結合", "Merge");
+
+            var rowMerge = new VisualElement(); rowMerge.style.flexDirection = FlexDirection.Row; rowMerge.style.marginBottom = 2;
+            VertexDissolveBtn = MakeBtn("頂点溶解"); VertexDissolveBtn.style.flexGrow = 1; VertexDissolveBtn.style.marginRight = 2;
+            Tri4To1Btn        = MakeBtn("三角4→1"); Tri4To1Btn.style.flexGrow        = 1; Tri4To1Btn.style.marginRight        = 2;
+            FaceMergeBtn      = MakeBtn("面結合");   FaceMergeBtn.style.flexGrow      = 1;
+            rowMerge.Add(VertexDissolveBtn); rowMerge.Add(Tri4To1Btn); rowMerge.Add(FaceMergeBtn); foMerge.Add(rowMerge);
+
+            var rowMerge2 = new VisualElement(); rowMerge2.style.flexDirection = FlexDirection.Row; rowMerge2.style.marginBottom = 2;
+            Quad4To1Btn          = MakeBtn("四角4→1");   Quad4To1Btn.style.flexGrow          = 1; Quad4To1Btn.style.marginRight = 2;
+            FaceMergeCollapseBtn = MakeBtn("面結合(頂点削除)"); FaceMergeCollapseBtn.style.flexGrow = 1;
+            rowMerge2.Add(Quad4To1Btn); rowMerge2.Add(FaceMergeCollapseBtn); foMerge.Add(rowMerge2);
+
             // ── 左ペイン カテゴリ表示順 ───────────────────────────────
             // サーバと連携（クライアントモード時のみ表示。表示制御は core）を先頭に置く。
             scroll.Add(foRemote);
@@ -1081,10 +1149,11 @@ namespace Poly_Ling.Player
             scroll.Add(foUvMat);
             scroll.Add(foBoneMorph);
             scroll.Add(foOther);
+            scroll.Add(foMerge);
 
             scroll.Add(Separator());
 
-            // 中央4画面の分割モード切替（一時的なサイズ変更のみ・非永続）
+            // 中央4画面の仕切り再配置（押下した瞬間に1回だけ実行）
             scroll.Add(Header("画面分割"));
             scroll.Add(BuildSplitModeGrid());
 
@@ -1102,6 +1171,7 @@ namespace Poly_Ling.Player
                 "選択頂点",  "非選頂点",
                 "選択Bone",  "非選Bone",
                 "選択M原点", "非選M原点", "ミラーM原点",
+                "法線",
             };
             // ViewportDisplaySettings.Default と一致させる
             var itemDefaults = new bool[]
@@ -1119,6 +1189,7 @@ namespace Poly_Ling.Player
                 true,  // 選択M原点
                 true,  // 非選M原点
                 false, // ミラーM原点（実体側と重なるため既定 OFF）
+                false, // 法線（線分数が多いため既定 OFF）
             };
 
             // ヘッダ行
@@ -1344,6 +1415,11 @@ namespace Poly_Ling.Player
             MergeVerticesSection       = AddSection(visible: false);
             SplitVerticesSection       = AddSection(visible: false);
             VertexHoleSection          = AddSection(visible: false);
+            VertexDissolveSection      = AddSection(visible: false);
+            Tri4To1Section             = AddSection(visible: false);
+            FaceMergeSection           = AddSection(visible: false);
+            Quad4To1Section            = AddSection(visible: false);
+            FaceMergeCollapseSection   = AddSection(visible: false);
             VertexIdSection            = AddSection(visible: false);
             VertexTransferSection      = AddSection(visible: false);
             AddFaceSection             = AddSection(visible: false);

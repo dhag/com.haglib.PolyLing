@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEngine;
+using Poly_Ling.Core;
 using Poly_Ling.EditorBridge;
 using UnityEngine.UIElements;
 using Poly_Ling.Context;
@@ -42,7 +43,9 @@ namespace Poly_Ling.Player
         // ボーンを持たないモデル（MeshFilter 相当）用のマッピング読み込み
         private VisualElement _csvSection;
         private Label         _csvStatusLabel;
-        private string        _csvFilePath = "";
+
+        /// <summary>Humanoidマッピング CSV の最近使ったパス。</summary>
+        private const string MappingCsvRecentKey = "TPose.MappingCsv.Path";
 
         public void Build(VisualElement parent)
         {
@@ -283,13 +286,9 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null) { SetCsvStatus("モデルがありません"); return; }
 
-            string dir  = string.IsNullOrEmpty(_csvFilePath)
-                ? UnityEngine.Application.dataPath
-                : Path.GetDirectoryName(_csvFilePath);
-
-            string path = PLEditorBridge.I.OpenFilePanel("Humanoidマッピング CSV の読み込み", dir, "csv");
+            string path = RecentFileDialog.AskLoad(
+                "Humanoidマッピング CSV の読み込み", MappingCsvRecentKey, "csv");
             if (string.IsNullOrEmpty(path)) return;
-            _csvFilePath = path;
 
             List<string> csvLines;
             try

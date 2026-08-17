@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Poly_Ling.Core;
 using Poly_Ling.CSV;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
@@ -16,11 +17,14 @@ namespace Poly_Ling.UI
 {
     public static class MorphCsvIO
     {
+        /// <summary>BlendShapeSync CSV の最近使ったパス（読込・保存で共有）。</summary>
+        private const string CsvRecentKey = "Morph.BlendShapeSyncCsv.Path";
+
         public static (int imported, int overwritten, int unmatched) Import(
             ModelContext model,
             System.Action<string> statusLog)
         {
-            string path = PLEditorBridge.I.OpenFilePanel("BlendShapeSync CSV読込", "", "csv");
+            string path = RecentFileDialog.AskLoad("BlendShapeSync CSV読込", CsvRecentKey, "csv");
             if (string.IsNullOrEmpty(path)) return (0, 0, 0);
 
             var rows = CSVHelper.ParseFile(path);
@@ -95,7 +99,8 @@ namespace Poly_Ling.UI
             if (model == null || model.MorphExpressionCount == 0)
             { statusLog?.Invoke("保存するモーフエクスプレッションがありません"); return; }
 
-            string path = PLEditorBridge.I.SaveFilePanel("BlendShapeSync CSV保存", "", "blendshape_sync.csv", "csv");
+            string path = RecentFileDialog.AskSave(
+                "BlendShapeSync CSV保存", CsvRecentKey, "blendshape_sync.csv", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             try

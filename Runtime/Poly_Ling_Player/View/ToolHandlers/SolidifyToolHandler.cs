@@ -33,19 +33,23 @@ namespace Poly_Ling.Player
 
         /// <summary>
         /// 生成メッシュの追加先。図形生成パネルの OnMeshCreated と同じ形。
-        /// (MeshObject, meshName, worldPosition, ignorePoseInArmature, addMode)
+        /// (MeshObject, meshName, worldPosition, poseRotationEuler, poseScale,
+        ///  ignorePoseInArmature, addMode)
         /// </summary>
-        public Action<MeshObject, string, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
+        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
 
         public SolidifyToolHandler()
         {
             _tool.OnMeshCreated = (mesh, name, addToExisting) =>
             {
                 // 頂点は元メッシュのローカル座標で生成済みなので worldPos は渡さない。
+                // 姿勢（回転 / スケール）も持たせないので既定値を渡す。
                 OnMeshCreated?.Invoke(
                     mesh,
                     name,
                     Vector3.zero,
+                    Vector3.zero,
+                    Vector3.one,
                     false,
                     addToExisting ? PrimitiveAddMode.AddToExisting : PrimitiveAddMode.NewObject);
             };

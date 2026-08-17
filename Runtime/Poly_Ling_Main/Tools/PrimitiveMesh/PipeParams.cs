@@ -32,6 +32,14 @@ namespace Poly_Ling.Pipe
         /// <summary>ラウンドの曲率方向を入れ替える</summary>
         public bool  EdgeInward;
 
+        // ── 面の向き ──
+        /// <summary>生成後にメッシュ全体の面を反転する</summary>
+        public bool  FlipFaces;
+
+        // ── ピボット ──
+        /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する</summary>
+        public Vector3 Pivot;
+
         public static PipeParams Default => new PipeParams
         {
             MeshName      = "Pipe",
@@ -42,6 +50,8 @@ namespace Poly_Ling.Pipe
             EdgeSizeFront = 0.02f,
             EdgeSizeBack  = 0.02f,
             EdgeInward    = false,
+            FlipFaces     = false,
+            Pivot         = Vector3.zero,
         };
 
         public bool Equals(PipeParams o)
@@ -52,7 +62,9 @@ namespace Poly_Ling.Pipe
             && SegmentsBack  == o.SegmentsBack
             && Mathf.Approximately(EdgeSizeFront, o.EdgeSizeFront)
             && Mathf.Approximately(EdgeSizeBack,  o.EdgeSizeBack)
-            && EdgeInward == o.EdgeInward;
+            && EdgeInward == o.EdgeInward
+            && FlipFaces  == o.FlipFaces
+            && Pivot      == o.Pivot;
 
         public override bool Equals(object obj) => obj is PipeParams p && Equals(p);
         public override int GetHashCode() => MeshName?.GetHashCode() ?? 0;

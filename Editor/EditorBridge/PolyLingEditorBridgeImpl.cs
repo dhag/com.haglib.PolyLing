@@ -143,6 +143,10 @@ namespace Poly_Ling.EditorIO
         public string OpenFilePanel(string title, string directory, string extension)
             => EditorUtility.OpenFilePanel(title, directory, extension);
 
+        // EditorUtility.OpenFilePanel に初期ファイル名の引数がないため defaultName は無視する。
+        public string OpenFilePanel(string title, string directory, string defaultName, string extension)
+            => EditorUtility.OpenFilePanel(title, directory, extension);
+
         public string SaveFolderPanel(string title, string directory, string defaultName)
             => EditorUtility.SaveFolderPanel(title, directory, defaultName);
 

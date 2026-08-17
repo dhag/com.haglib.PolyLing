@@ -41,6 +41,8 @@ namespace Poly_Ling.Profile2DExtrude
         public float EdgeSizeFront, EdgeSizeBack;
         public bool EdgeInward;
         public bool SymmetryMode;
+        /// <summary>AABB サイズ基準のピボット。生成後に -Pivot * サイズ だけ平行移動する</summary>
+        public Vector3 Pivot;
         public LoopData[] Loops;
         public int SelectedLoopIndex;
         public int SelectedPointIndex;
@@ -84,6 +86,7 @@ namespace Poly_Ling.Profile2DExtrude
             EdgeSizeBack = 0.1f,
             EdgeInward = false,
             SymmetryMode = false,
+            Pivot = Vector3.zero,
             Loops = null,
             SelectedLoopIndex = 0,
             SelectedPointIndex = -1,
@@ -104,6 +107,7 @@ namespace Poly_Ling.Profile2DExtrude
             if (!Mathf.Approximately(EdgeSizeBack, o.EdgeSizeBack)) return false;
             if (EdgeInward != o.EdgeInward) return false;
             if (SymmetryMode != o.SymmetryMode) return false;
+            if (Pivot != o.Pivot) return false;
             if (SelectedLoopIndex != o.SelectedLoopIndex) return false;
             if (SelectedPointIndex != o.SelectedPointIndex) return false;
             if (!Mathf.Approximately(RotationX, o.RotationX)) return false;
@@ -183,6 +187,7 @@ namespace Poly_Ling.Profile2DExtrude
         public float EdgeSizeFront, EdgeSizeBack;
         public bool EdgeInward;
         public bool SymmetryMode;
+        public Vector3 Pivot;
         public LoopWrapper[] Loops;
         public int SelectedLoopIndex;
         public int SelectedPointIndex;
@@ -211,6 +216,7 @@ namespace Poly_Ling.Profile2DExtrude
             EdgeSizeBack = p.EdgeSizeBack;
             EdgeInward = p.EdgeInward;
             SymmetryMode = p.SymmetryMode;
+            Pivot = p.Pivot;
             SelectedLoopIndex = p.SelectedLoopIndex;
             SelectedPointIndex = p.SelectedPointIndex;
             RotationX = p.RotationX;
@@ -259,6 +265,7 @@ namespace Poly_Ling.Profile2DExtrude
                 EdgeSizeBack = EdgeSizeBack > 0 ? EdgeSizeBack : 0.1f,
                 EdgeInward = EdgeInward,
                 SymmetryMode = SymmetryMode,
+                Pivot = Pivot,
                 Loops = loopData,
                 SelectedLoopIndex = SelectedLoopIndex,
                 SelectedPointIndex = SelectedPointIndex,

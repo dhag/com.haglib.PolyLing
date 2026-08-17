@@ -105,6 +105,9 @@ namespace Poly_Ling.Player
         /// <summary>新規オブジェクトの名前。</summary>
         public string BridgeMeshName => string.IsNullOrWhiteSpace(_bridgeName) ? "Bridge" : _bridgeName;
 
+        /// <summary>種 A・B の両方が取込済みか。生成ボタンの有効判定に使う。</summary>
+        private bool BridgeSeedsReady => _bridgeA.Valid && _bridgeB.Valid;
+
         /// <summary>結果表示欄へ書く。</summary>
         public void SetBridgeStatus(string text)
         {
@@ -216,7 +219,7 @@ namespace Poly_Ling.Player
 
         private void BuildBridgeUI(VisualElement c)
         {
-            c.Add(SL(T("Bridge")));
+            c.Add(ShapeTitle(T("Bridge")));
 
             var hint = new Label(T("BridgeHint"));
             hint.style.fontSize     = 10;
@@ -301,6 +304,8 @@ namespace Poly_Ling.Player
 
         private void RefreshBridgeInfo()
         {
+            RefreshCreateButtonState();
+
             if (_bridgeInfoA != null)
                 _bridgeInfoA.text = _bridgeA.Valid ? _bridgeA.Info
                                                    : (string.IsNullOrEmpty(_bridgeA.Info) ? T("BridgeNotSet") : _bridgeA.Info);

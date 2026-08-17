@@ -1,6 +1,7 @@
 // PlayerLayoutRoot.SplitMode.cs
-// 中央4画面の分割モード（4画面／横2画面／縦2画面／1画面）を
-// 「一時的なサイズ変更」だけで切り替える。PlayerPrefs には保存しない。
+// 中央4画面の仕切り位置を「押下した瞬間に1回だけ」再配置する。
+// モード状態は持たず、PlayerPrefs にも書き込まない。
+// 押下後は人間が仕切りをドラッグした場合と同じ状態になる。
 // Runtime/Poly_Ling_Player/View/Core/ に配置
 
 using UnityEngine;
@@ -9,13 +10,13 @@ using UnityEngine.UIElements;
 namespace Poly_Ling.Player
 {
     /// <summary>
-    /// 中央ビューポート領域の分割モード。
+    /// 中央ビューポート領域の仕切り再配置の種別。
     ///
     /// 中央は入れ子 TwoPaneSplitView で以下の 2×2 構成になっている。
     ///   左列 = Perspective(上) / Side(下)
     ///   右列 = Top(上)         / Front(下)
     ///
-    /// 分割モードは「列選択 {左のみ / 両方 / 右のみ}」×
+    /// 種別は「列選択 {左のみ / 両方 / 右のみ}」×
     /// 「行選択 {上のみ / 両方 / 下のみ}」の直積 9 通りで表現される。
     /// </summary>
     public enum ViewportSplitMode
@@ -43,86 +44,36 @@ namespace Poly_Ling.Player
     public partial class PlayerLayoutRoot
     {
         // ================================================================
-        // 分割モード 状態
-        // ================================================================
-
-        private ViewportSplitMode _splitMode = ViewportSplitMode.Four;
-
-        /// <summary>現在の分割モード。既定は 4画面。</summary>
-        public ViewportSplitMode CurrentSplitMode => _splitMode;
-
-        /// <summary>4画面から離れる直前の右列幅（復帰用）。未取得は -1。</summary>
-        private float _baseRightW = -1f;
-        /// <summary>4画面から離れる直前の上段高さ（復帰用）。未取得は -1。</summary>
-        private float _baseTopH   = -1f;
-
-        private VisualElement _perspSideDragline;
-        private VisualElement _topFrontDragline;
-
-        private Button[]            _splitModeButtons;
-        private ViewportSplitMode[] _splitModeOrder;
-
-        private bool _splitModeReapplyScheduled;
-
-        // 分割モードボタンの選択表示色
-        private static readonly Color SplitModeSelBg   = new Color(0.30f, 0.52f, 0.78f, 1f);
-        private static readonly Color SplitModeSelText = new Color(1f, 1f, 1f, 1f);
-
-        // ================================================================
-        // 初期化（Build の末尾から呼ぶ。_crossDragRegion 生成後であること）
-        // ================================================================
-
-        private void SetupViewportSplitMode()
-        {
-            // これらの split は子に split を持たないため、自身の anchor が取れる。
-            _perspSideDragline = _splitPerspSide?.Q(className: "unity-two-pane-split-view__dragline-anchor");
-            _topFrontDragline  = _splitTopFront ?.Q(className: "unity-two-pane-split-view__dragline-anchor");
-
-            // ウィンドウ／ペイン幅変更に追従してモードを再適用する。
-            // TwoPaneSplitView は自身のサイズ変化時に固定ペイン寸法を内部値へ戻すため、
-            // GeometryChanged 後に再適用しないとモードが崩れる。
-            _splitCenter   ?.RegisterCallback<GeometryChangedEvent>(OnSplitModeGeometryChanged);
-            _splitPerspSide?.RegisterCallback<GeometryChangedEvent>(OnSplitModeGeometryChanged);
-            _splitTopFront ?.RegisterCallback<GeometryChangedEvent>(OnSplitModeGeometryChanged);
-
-            UpdateSplitModeChrome();
-            UpdateSplitModeButtons();
-        }
-
-        // ================================================================
         // 公開 API
         // ================================================================
 
         /// <summary>
-        /// 分割モードを切り替える。サイズの一時変更のみで実現し、
-        /// PlayerPrefs（永続レイアウト）には一切書き込まない。
+        /// 中央の縦横の仕切りを1回だけ再配置する。
+        /// モードとして保持せず、以降は通常どおりドラッグ・ウィンドウ伸縮で動かせる。
+        /// 潰す側は 0、残す側は全幅／全高、両方残す場合は中央（1/2）に置く。
         /// </summary>
-        public void SetViewportSplitMode(ViewportSplitMode mode)
+        public void ApplyViewportSplit(ViewportSplitMode mode)
         {
             if (_splitCenter == null || _splitPerspSide == null || _splitTopFront == null) return;
-            if (_splitMode == mode) return;
 
-            // 4画面から離れる瞬間に、現在の実寸を復帰用として退避する。
-            if (_splitMode == ViewportSplitMode.Four)
-                CaptureSplitModeBase();
+            float cw = _splitCenter.resolvedStyle.width;
+            float ch = _splitCenter.resolvedStyle.height;
+            if (float.IsNaN(cw) || float.IsNaN(ch) || cw <= 0f || ch <= 0f) return;   // レイアウト未確定
 
-            _splitMode = mode;
+            int col = SplitModeCol(mode);
+            int row = SplitModeRow(mode);
 
-            if (mode == ViewportSplitMode.Four)
-            {
-                // 横 → 縦の順で適用する。
-                // TwoPaneSplitView は横幅変更時に縦の固定ペイン高を内部リセットするため、
-                // 縦を後に適用することで上書きが有効になる。
-                ApplyHorizontalSplitWidth(BaseRightW());
-                ApplyVerticalSplitHeight(BaseTopH());
-            }
-            else
-            {
-                ApplySplitModeSizes();
-            }
+            float rightW = (col == 0) ? 0f
+                         : (col == 2) ? cw
+                         :              cw * 0.5f;
 
-            UpdateSplitModeChrome();
-            UpdateSplitModeButtons();
+            float topH   = (row == 0) ? ch
+                         : (row == 2) ? 0f
+                         :              ch * 0.5f;
+
+            // 横 → 縦の順（横幅変更が縦の固定ペイン高を内部リセットするため）。
+            ApplySplitWidthNoMin(rightW);
+            ApplyVerticalSplitHeight(topH);
         }
 
         // ================================================================
@@ -165,72 +116,18 @@ namespace Poly_Ling.Player
             }
         }
 
-        private float BaseRightW()
-        {
-            if (_baseRightW > 0f) return _baseRightW;
-            return Mathf.Max(50f, LoadPref(PrefCenterRight, DefCenterW));
-        }
-
-        private float BaseTopH()
-        {
-            if (_baseTopH > 0f) return _baseTopH;
-            float saved = LoadPref(PrefCenterH, -1f);
-            if (saved > 0f) return Mathf.Max(30f, saved);
-            float ch = _splitCenter != null ? _splitCenter.resolvedStyle.height : 0f;
-            if (!float.IsNaN(ch) && ch > 0f) return Mathf.Max(30f, ch * 0.5f);
-            return 300f;
-        }
-
-        private void CaptureSplitModeBase()
-        {
-            float w = _splitTopFront != null ? _splitTopFront.resolvedStyle.width : float.NaN;
-            if (!float.IsNaN(w) && w > 0f) _baseRightW = w;
-
-            float h = _perspPane != null ? _perspPane.resolvedStyle.height : float.NaN;
-            if (!float.IsNaN(h) && h > 0f) _baseTopH = h;
-        }
-
-        /// <summary>
-        /// 現在のモードに対応するサイズを適用する（4画面以外専用）。
-        /// 横は右列（_splitTopFront）の幅、縦は上段（_perspPane / _topPane）の高さで表現する。
-        /// </summary>
-        private void ApplySplitModeSizes()
-        {
-            if (_splitMode == ViewportSplitMode.Four) return;
-            if (_splitCenter == null) return;
-
-            float cw = _splitCenter.resolvedStyle.width;
-            float ch = _splitCenter.resolvedStyle.height;
-            if (float.IsNaN(cw) || float.IsNaN(ch) || cw <= 0f || ch <= 0f) return;   // レイアウト未確定
-
-            int col = SplitModeCol(_splitMode);
-            int row = SplitModeRow(_splitMode);
-
-            float rightW = (col == 0) ? 0f
-                         : (col == 2) ? cw
-                         :              Mathf.Min(BaseRightW(), cw);
-
-            float topH   = (row == 0) ? ch
-                         : (row == 2) ? 0f
-                         :              Mathf.Min(BaseTopH(), ch);
-
-            // 横 → 縦の順（横幅変更が縦の固定ペイン高を内部リセットするため）。
-            ApplySplitModeHorizontal(rightW);
-            ApplyVerticalSplitHeight(topH);
-        }
-
         /// <summary>
         /// 右列幅を 0 まで許容して設定する。
         /// ApplyHorizontalSplitWidth は Mathf.Max(50f, …) で下限を持つため、
-        /// 列を完全に潰すモード用に下限なし版を用意する。
+        /// 列を完全に潰す再配置用に下限なし版を用意する。
         /// </summary>
-        private void ApplySplitModeHorizontal(float rightW)
+        private void ApplySplitWidthNoMin(float rightW)
         {
             if (rightW < 0f) rightW = 0f;
             _currentRightW = rightW;
             _splitTopFront.style.width = rightW;
             // _currentRightW <= 0 のとき ReapplyHorizontalDragline は早期 return するため、
-            // 0 のときは dragline を右端へ直接寄せる（非表示なので見た目には影響しない）。
+            // 0 のときは dragline を右端へ直接寄せる。
             if (rightW > 0f)
             {
                 ReapplyHorizontalDragline();
@@ -243,47 +140,8 @@ namespace Poly_Ling.Player
             }
         }
 
-        private void OnSplitModeGeometryChanged(GeometryChangedEvent evt)
-        {
-            if (_splitMode == ViewportSplitMode.Four) return;
-            if (_splitModeReapplyScheduled) return;
-            if (_splitCenter == null) return;
-
-            // 再適用がさらに GeometryChanged を誘発するため、
-            // 次フレームに1回だけまとめて実行する。
-            _splitModeReapplyScheduled = true;
-            _splitCenter.schedule.Execute(() =>
-            {
-                _splitModeReapplyScheduled = false;
-                ApplySplitModeSizes();
-            });
-        }
-
         // ================================================================
-        // 付随UI（dragline / クロスドラッグ領域）の表示制御
-        // ================================================================
-
-        private void UpdateSplitModeChrome()
-        {
-            int col = SplitModeCol(_splitMode);
-            int row = SplitModeRow(_splitMode);
-
-            // 潰した軸の区切り線はドラッグでモードを壊すため隠す。
-            SetElementVisible(_centerDraglineAnchor, col == 1);
-            SetElementVisible(_perspSideDragline,    row == 1);
-            SetElementVisible(_topFrontDragline,     row == 1);
-            // クロスドラッグ（4分割交差点）は4画面のときだけ。
-            SetElementVisible(_crossDragRegion, _splitMode == ViewportSplitMode.Four);
-        }
-
-        private static void SetElementVisible(VisualElement ve, bool visible)
-        {
-            if (ve == null) return;
-            ve.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
-        }
-
-        // ================================================================
-        // 左ペインの 3×3 モードグリッド
+        // 左ペインの 3×3 ボタングリッド
         //
         // ボタンの並びがそのまま画面配置と対応する。
         //   行0(上段のみ)：P      ｜ P｜T ｜ T
@@ -311,15 +169,12 @@ namespace Poly_Ling.Player
                 "横2画面：上段（Perspective ｜ Top）",
                 "1画面：Top",
                 "縦2画面：左列（Perspective ／ Side）",
-                "4画面",
+                "4画面（縦横の仕切りを中央へ）",
                 "縦2画面：右列（Top ／ Front）",
                 "1画面：Side",
                 "横2画面：下段（Side ｜ Front）",
                 "1画面：Front",
             };
-
-            _splitModeOrder   = modes;
-            _splitModeButtons = new Button[9];
 
             var wrap = new VisualElement();
             wrap.style.flexDirection = FlexDirection.Column;
@@ -349,36 +204,14 @@ namespace Poly_Ling.Player
                     b.style.paddingBottom = 0;
                     b.style.paddingLeft   = 0;
                     b.style.paddingRight  = 0;
-                    b.clicked += () => SetViewportSplitMode(mode);
+                    b.clicked += () => ApplyViewportSplit(mode);
 
-                    _splitModeButtons[idx] = b;
                     rowEl.Add(b);
                 }
                 wrap.Add(rowEl);
             }
 
             return wrap;
-        }
-
-        private void UpdateSplitModeButtons()
-        {
-            if (_splitModeButtons == null || _splitModeOrder == null) return;
-            for (int i = 0; i < _splitModeButtons.Length; i++)
-            {
-                var b = _splitModeButtons[i];
-                if (b == null) continue;
-                bool on = (_splitModeOrder[i] == _splitMode);
-                if (on)
-                {
-                    b.style.backgroundColor = new StyleColor(SplitModeSelBg);
-                    b.style.color           = new StyleColor(SplitModeSelText);
-                }
-                else
-                {
-                    b.style.backgroundColor = StyleKeyword.Null;
-                    b.style.color           = StyleKeyword.Null;
-                }
-            }
         }
     }
 }

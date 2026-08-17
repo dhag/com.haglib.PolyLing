@@ -48,6 +48,13 @@ namespace Poly_Ling.EditorBridge
         string SaveFilePanel(string title, string directory, string defaultName, string extension);
         string SaveFilePanelInProject(string title, string defaultName, string extension, string message);
         string OpenFilePanel(string title, string directory, string extension);
+
+        /// <summary>
+        /// 初期ファイル名付きの読込ダイアログ。
+        /// defaultName はダイアログのファイル名欄の初期値。
+        /// Editor 実装（EditorUtility.OpenFilePanel）は初期ファイル名を受け取れないため無視される。
+        /// </summary>
+        string OpenFilePanel(string title, string directory, string defaultName, string extension);
         string SaveFolderPanel(string title, string directory, string defaultName);
         string OpenFolderPanel(string title, string directory, string defaultName);
         bool   DisplayDialog(string title, string message, string ok);

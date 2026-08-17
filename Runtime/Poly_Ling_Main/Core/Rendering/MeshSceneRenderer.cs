@@ -40,6 +40,10 @@ namespace Poly_Ling.Core
         // ボーンと同じ形状のラインメッシュを原点へ描く）。
         public bool ShowSelectedMeshOrigin    { get; set; } = true;
         public bool ShowUnselectedMeshOrigin  { get; set; } = true;
+        // 法線表示（頂点スロット単位）。選択メッシュのみ対象。
+        // 1 スロット 1 本の線分を頂点位置から法線方向へ描く。
+        // TransformDragging 中は SetNormalsSuppressed / PrepareNormals が抑止する。
+        public bool ShowNormals               { get; set; } = false;
         // ミラー側（MirrorSide / BakedMirror）の原点マーカー。
         // ミラーは実体側と同じ原点に重なって出るため、既定では描かない。
         // ObjectMoveSettings.PickMirrorSides とセットで運用すること。
@@ -60,6 +64,23 @@ namespace Poly_Ling.Core
 
         private readonly List<UnifiedSystemAdapter> _adapters       = new List<UnifiedSystemAdapter>();
         private readonly Dictionary<(int, int), Mesh> _boneMeshCache= new Dictionary<(int, int), Mesh>();
+
+        // 法線表示用のラインメッシュ（モデル単位で 1 本にまとめる）。
+        // キーはモデルインデックス。選択メッシュが変わっても丸ごと作り直すため、
+        // メッシュ単位でキャッシュを持つ場合のような取り残しが起きない。
+        private readonly Dictionary<int, Mesh> _normalMeshCache = new Dictionary<int, Mesh>();
+
+        // TransformDragging 中は true。SubmitNormals はこのフラグだけを見て提出を止める
+        // （Submit 側で計算・判定を行わないため）。
+        private bool _normalsSuppressed;
+
+        // =====================================================================
+        // 【重要】法線メッシュ構築用キャッシュリスト - 毎回 new しないこと！
+        // UnifiedRenderer の _cachedVertices 等と同じ理由。Clear() して再利用する。
+        // =====================================================================
+        private readonly List<Vector3> _normalVerts   = new List<Vector3>();
+        private readonly List<Color>   _normalColors  = new List<Color>();
+        private readonly List<int>     _normalIndices = new List<int>();
 
         private Material _defaultMaterial;
         private Material _boneMaterial;
@@ -114,6 +135,14 @@ namespace Poly_Ling.Core
         // メッシュ原点マーカー色（ボーン色と区別するため緑系）。
         private static readonly Color MeshOriginColor    = new Color(0.4f, 1.0f, 0.4f, 0.8f);
         private static readonly Color MeshOriginSelColor = new Color(1.0f, 1.0f, 0.3f, 0.9f);
+
+        // 法線線分の色（灰青系）。根元を暗く、先端を明るくして向きが読めるようにする。
+        // Poly_Ling/Bone3D_Overlay は頂点色をそのまま出力するため、線の 2 頂点に
+        // 別の色を入れるだけでグラデーションになり、追加コストは無い。
+        // 既存の 3D 線色（エッジ緑・選択エッジ橙・補助線マゼンタ・ボーン水色・原点緑）
+        // と色相が衝突しない灰青を選ぶ。
+        private static readonly Color NormalRootColor = new Color(0.35f, 0.42f, 0.52f, 0.85f);
+        private static readonly Color NormalTipColor  = new Color(0.62f, 0.74f, 0.88f, 0.95f);
 
         // ================================================================
         // Adapter構築
@@ -632,6 +661,270 @@ namespace Poly_Ling.Core
         }
 
         // ================================================================
+        // 法線描画（頂点スロット単位）
+        //
+        // 【表示単位】
+        //   法線は Vertex.Normals（スロット配列）に入っており、面は
+        //   Face.NormalIndices でどのスロットを使うかを指す。よって同じスロットは
+        //   複数の面から参照される。ここでは (頂点, スロット) 単位で 1 本だけ描く。
+        //   線分の総数は UnifiedBufferManager.TotalExpandedVertexCount と一致する
+        //   （不変条件 UVs.Count == Normals.Count による）。
+        //
+        // 【ワールド化】
+        //   始点は GPU 変換済みのワールド座標（GetDisplayPositions）。
+        //   方向はローカル法線に頂点ごとのスキニング行列の 3x3 を掛けて正規化する。
+        //   行列の組み立て式は UnifiedCompute.compute の TransformVertices と同一。
+        //   非スキン頂点はウェイトが (1,0,0,0) なので行列 1 個の参照に帰着する。
+        //
+        // 【ドラッグ中】
+        //   TransformDragging 中は始点も方向も変わるため位置のみの軽量更新が成立せず、
+        //   非表示にする。ドラッグ終了で Normal モードに戻り再構築される。
+        // ================================================================
+
+        /// <summary>
+        /// 【event 駆動で呼ぶ】法線表示用のラインメッシュを事前構築・更新する。
+        /// 全選択メッシュの全頂点スロットを走査する重い処理。
+        /// Submit と分離されているため、毎フレーム呼ぶのは禁止。
+        ///
+        /// ★★★ 呼び出し順の制約（厳守） ★★★
+        /// PrepareWireframeAndVertices より前に呼ぶこと。
+        /// PrepareWireframeAndVertices は末尾で adapter.ConsumeNormalMode() を呼び
+        /// Normal モードを Idle へ降格させるため、後に呼ぶと AllowMeshRebuild が
+        /// 常に false になり法線メッシュが二度と更新されない。
+        /// ★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void PrepareNormals(ProjectContext project)
+        {
+            if (!ShowNormals) return;
+            if (project == null) return;
+
+            float length = DisplaySettings.GetF(DisplaySettings.KeyNormalLength);
+
+            for (int mi = 0; mi < project.ModelCount && mi < _adapters.Count; mi++)
+            {
+                var adapter = _adapters[mi];
+                if (adapter == null || !adapter.IsInitialized) continue;
+
+                // ドラッグ中は抑止する。キャッシュはそのまま残し、Submit 側で止める。
+                if (adapter.CurrentMode == UpdateMode.TransformDragging)
+                {
+                    _normalsSuppressed = true;
+                    continue;
+                }
+                _normalsSuppressed = false;
+
+                // 再構築が許可されていないモード（Idle / CameraDragging）は
+                // 構築済みメッシュをそのまま使う。頂点は動いていない。
+                if (!adapter.CurrentProfile.AllowMeshRebuild) continue;
+
+                BuildNormalLineMesh(project.Models[mi], mi, adapter, length);
+            }
+        }
+
+        /// <summary>
+        /// 法線表示の抑止を明示的に切り替える。
+        ///
+        /// 【必要な理由】
+        ///   頂点ドラッグの Dragging フェーズは PresentAll を通らない軽量経路
+        ///   （PlayerViewportManager.EnterVerticesMoved の syncMc 経路）を走るため、
+        ///   PrepareNormals が呼ばれず TransformDragging を検知できない。
+        ///   そのままだと古い法線メッシュが提出され続けるので、
+        ///   DragBegin で true、DragEnd で false を明示的に設定する。
+        /// </summary>
+        public void SetNormalsSuppressed(bool suppressed)
+        {
+            _normalsSuppressed = suppressed;
+        }
+
+        /// <summary>
+        /// 1 モデル分の法線ラインメッシュを構築して _normalMeshCache に格納する。
+        /// </summary>
+        private void BuildNormalLineMesh(
+            ModelContext model, int mi, UnifiedSystemAdapter adapter, float length)
+        {
+            if (model == null) return;
+
+            var bufMgr = adapter.BufferManager;
+            if (bufMgr == null) return;
+
+            var positions = bufMgr.GetDisplayPositions();
+            var meshInfos = bufMgr.MeshInfos;
+            var mats      = bufMgr.TransformMatrices;
+            var weights   = bufMgr.BoneWeights;
+            var boneIdx   = bufMgr.BoneIndices;
+            if (positions == null || meshInfos == null) return;
+
+            int totalVerts = bufMgr.TotalVertexCount;
+
+            _normalVerts.Clear();
+            _normalColors.Clear();
+            _normalIndices.Clear();
+
+            var selMeshes = model.SelectedDrawableMeshIndices;
+            if (selMeshes != null)
+            {
+                foreach (int ci in selMeshes)
+                {
+                    if (ci < 0 || ci >= model.MeshContextCount) continue;
+
+                    var ctx = model.GetMeshContext(ci);
+                    if (ctx == null || !ctx.IsVisible) continue;
+
+                    var mo = ctx.MeshObject;
+                    if (mo == null || mo.VertexCount == 0) continue;
+
+                    int unified = bufMgr.ContextToUnifiedMeshIndex(ci);
+                    if (unified < 0 || unified >= meshInfos.Length) continue;
+
+                    int vertStart = (int)meshInfos[unified].VertexStart;
+                    int vertCount = (int)meshInfos[unified].VertexCount;
+
+                    for (int v = 0; v < mo.VertexCount && v < vertCount; v++)
+                    {
+                        var vertex = mo.Vertices[v];
+                        int slotCount = vertex.Normals.Count;
+                        if (slotCount == 0) continue;
+
+                        int gi = vertStart + v;
+                        if (gi < 0 || gi >= totalVerts) continue;
+
+                        Vector3 root = positions[gi];
+
+                        // 頂点ごとのスキニング行列 3x3 を 1 回だけ組み立て、
+                        // その頂点の全スロットで使い回す。
+                        if (!TryBuildSkinBasis(mats, weights, boneIdx, gi,
+                                               out Vector3 bx, out Vector3 by, out Vector3 bz))
+                            continue;
+
+                        for (int s = 0; s < slotCount; s++)
+                        {
+                            Vector3 n = vertex.Normals[s];
+                            Vector3 wn = bx * n.x + by * n.y + bz * n.z;
+
+                            float mag = wn.magnitude;
+                            if (mag < 1e-6f) continue;
+                            wn /= mag;
+
+                            int baseIdx = _normalVerts.Count;
+                            _normalVerts.Add(root);
+                            _normalVerts.Add(root + wn * length);
+                            _normalColors.Add(NormalRootColor);
+                            _normalColors.Add(NormalTipColor);
+                            _normalIndices.Add(baseIdx);
+                            _normalIndices.Add(baseIdx + 1);
+                        }
+                    }
+                }
+            }
+
+            if (!_normalMeshCache.TryGetValue(mi, out var mesh) || mesh == null)
+            {
+                mesh = new Mesh { hideFlags = HideFlags.HideAndDontSave };
+                mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                mesh.name = "PolyLingNormalLines";
+                _normalMeshCache[mi] = mesh;
+            }
+            else
+            {
+                mesh.Clear();
+            }
+
+            mesh.SetVertices(_normalVerts);
+            mesh.SetColors(_normalColors);
+            mesh.SetIndices(_normalIndices, MeshTopology.Lines, 0);
+        }
+
+        /// <summary>
+        /// 指定グローバル頂点のスキニング行列 3x3 を列ベクトルとして返す。
+        /// 式は UnifiedCompute.compute の TransformVertices カーネルと同一
+        /// （4 ボーンのウェイト加重和）。
+        /// </summary>
+        private static bool TryBuildSkinBasis(
+            Matrix4x4[] mats, Vector4[] weights, UInt4[] boneIdx, int gi,
+            out Vector3 bx, out Vector3 by, out Vector3 bz)
+        {
+            bx = Vector3.right; by = Vector3.up; bz = Vector3.forward;
+            if (mats == null || weights == null || boneIdx == null) return false;
+            if (gi >= weights.Length || gi >= boneIdx.Length) return false;
+
+            Vector4 w = weights[gi];
+            UInt4   b = boneIdx[gi];
+
+            // 非スキン頂点（ウェイトが (1,0,0,0)）は加重和を回さず行列 1 個で済ませる。
+            if (w.x >= 0.99999f)
+            {
+                int i0 = (int)b.x;
+                if (i0 < 0 || i0 >= mats.Length) return false;
+                var m = mats[i0];
+                bx = new Vector3(m.m00, m.m10, m.m20);
+                by = new Vector3(m.m01, m.m11, m.m21);
+                bz = new Vector3(m.m02, m.m12, m.m22);
+                return true;
+            }
+
+            bx = Vector3.zero; by = Vector3.zero; bz = Vector3.zero;
+            bool any = false;
+
+            AccumulateSkinBasis(mats, (int)b.x, w.x, ref bx, ref by, ref bz, ref any);
+            AccumulateSkinBasis(mats, (int)b.y, w.y, ref bx, ref by, ref bz, ref any);
+            AccumulateSkinBasis(mats, (int)b.z, w.z, ref bx, ref by, ref bz, ref any);
+            AccumulateSkinBasis(mats, (int)b.w, w.w, ref bx, ref by, ref bz, ref any);
+
+            return any;
+        }
+
+        private static void AccumulateSkinBasis(
+            Matrix4x4[] mats, int index, float weight,
+            ref Vector3 bx, ref Vector3 by, ref Vector3 bz, ref bool any)
+        {
+            if (weight == 0f) return;
+            if (index < 0 || index >= mats.Length) return;
+
+            var m = mats[index];
+            bx.x += m.m00 * weight; bx.y += m.m10 * weight; bx.z += m.m20 * weight;
+            by.x += m.m01 * weight; by.y += m.m11 * weight; by.z += m.m21 * weight;
+            bz.x += m.m02 * weight; bz.y += m.m12 * weight; bz.z += m.m22 * weight;
+            any = true;
+        }
+
+        /// <summary>
+        /// ★★★ 厳守: この関数は Graphics.DrawMesh 提出のみを行う ★★★
+        /// 計算処理（BuildNormalLineMesh 等）は一切禁止。
+        /// 全ての準備は PrepareNormals で完了させておくこと。
+        /// OnRenderObject() から毎フレーム呼ばれる想定。
+        /// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+        /// </summary>
+        public void SubmitNormals(ProjectContext project, Camera cam)
+        {
+            if (!ShowNormals) return;
+            if (_normalsSuppressed) return;
+            if (project == null || cam == null) return;
+
+            // ボーンと同じ overlay マテリアル（ZTest Always、頂点色をそのまま出力）。
+            var mat = GetBoneOverlayMaterial(isSelected: true);
+            if (mat == null) return;
+
+            for (int mi = 0; mi < project.ModelCount; mi++)
+            {
+                if (_normalMeshCache.TryGetValue(mi, out var mesh)
+                    && mesh != null && mesh.vertexCount > 0)
+                {
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, mat, 0, cam);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 【旧 API】法線を描画する。Prepare + Submit を連続呼びする。
+        /// 新規コードは分離して呼ぶこと。
+        /// </summary>
+        public void DrawNormals(ProjectContext project, Camera cam)
+        {
+            PrepareNormals(project);
+            SubmitNormals(project, cam);
+        }
+
+        // ================================================================
         // スキンウェイト可視化描画
         // ================================================================
 
@@ -745,6 +1038,11 @@ namespace Poly_Ling.Core
             foreach (var mesh in _boneMeshCache.Values)
                 if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
             _boneMeshCache.Clear();
+
+            foreach (var mesh in _normalMeshCache.Values)
+                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
+            _normalMeshCache.Clear();
+            _normalsSuppressed = false;
 
             if (_boneMaterial != null)
             {

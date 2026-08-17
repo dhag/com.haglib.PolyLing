@@ -2793,7 +2793,14 @@ namespace Poly_Ling.Player
 
                     if (neTotal > 0)
                     {
-                        bool neRebuild = slotCountMayChange;
+                        // ミラー側の面は選択できないため、実体側の編集結果を写す。
+                        // スロット数が変わる操作でも実体側と 1:1 に張り直される。
+                        // 生成ミラー（MirrorGeometryDerived）のみが対象。
+                        int neMirrored = MirrorBranchOps.RebakeDerivedMirrorNormals(
+                            model.MeshContextList, model.MaterialCount);
+
+                        // ミラー側の UnityMesh を作り直した場合は GPU も再構築が要る。
+                        bool neRebuild = slotCountMayChange || neMirrored > 0;
 
                         // スロット数が変わらない操作でも、Unity Mesh の法線だけは
                         // 差し替える必要がある。差し替えられなければ作り直す。
@@ -5143,6 +5150,11 @@ namespace Poly_Ling.Player
             {
                 case NormalEditCommand.Op.SetFromFaces:
                     return NormalEditOps.SetFromFaces(mo, corners);
+
+                // 面法線だけを平均して1本にする。スロット数は変わらないため
+                // slotCountMayChange には含めない。
+                case NormalEditCommand.Op.AverageFromFaces:
+                    return NormalEditOps.AverageFromFaces(mo, corners, c.WeightMode);
 
                 case NormalEditCommand.Op.Unify:
                     return NormalEditOps.Unify(mo, corners, c.WeightMode);

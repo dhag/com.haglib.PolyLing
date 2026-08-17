@@ -35,6 +35,15 @@ namespace Poly_Ling.Player
         private string     _filePath;
         private bool       _applyCoordinateConversion = false;
 
+        // ── デバッグ設定（VMD 復活手順書 段階 1）──────────────────────────
+        // _applier は LoadVMD で生成されるため、値はここに保持して流し込む。
+        private bool   _enableIK    = false;   // 既定 OFF
+        private bool   _traceEnabled = false;  // 既定 OFF
+        private string _traceBoneList = "センター,下半身,左足,左ひざ,左足首,右足,右ひざ,右足首";
+        private bool   _ignoreAngleLimits = false;  // 既定 OFF（段階 3）
+        private bool   _kneePreBend       = false;  // 既定 OFF
+        private string _ikTraceBoneList = "";       // 空なら全 IK ボーン
+
         // ── UI 要素 ───────────────────────────────────────────────────────
         private Label         _modelLabel;
         private Label         _fileLabel;
@@ -49,6 +58,13 @@ namespace Poly_Ling.Player
         private IntegerField  _frameInput;
         private FloatField    _scaleField;
         private Toggle        _coordToggle;
+        private Toggle        _ikToggle;
+        private Toggle        _traceToggle;
+        private Toggle        _ignoreLimitToggle;
+        private Toggle        _kneePreBendToggle;
+        private TextField     _traceBonesField;
+        private TextField     _ikTraceBonesField;
+        private Button        _btnTraceAll;
         private VisualElement _boneListContainer;
         private VisualElement _morphListContainer;
         private Foldout       _boneListFoldout;
@@ -86,7 +102,7 @@ namespace Poly_Ling.Player
             var opRow = new VisualElement();
             opRow.style.flexDirection = FlexDirection.Row;
             opRow.style.marginBottom  = 3;
-            var btnOpen = PlayerIoUiKit.OpenButton("開く", () => LoadVMD(_vmdPathField.value));
+            var btnOpen = PlayerIoUiKit.OpenButton("開く", OnBrowseVmd);
             btnOpen.style.flexGrow = 1; btnOpen.style.marginRight = 2;
             _btnClear  = new Button(ClearVMD)  { text = "クリア" };  _btnClear.style.width  = 52; _btnClear.style.marginRight = 2;
             _btnReload = new Button(ReloadVMD) { text = "再読込" }; _btnReload.style.width  = 52;
@@ -187,6 +203,101 @@ namespace Poly_Ling.Player
                 if (_vmd != null) ApplyFrame();
             });
             root.Add(_coordToggle);
+
+            // ── IK / トレース ─────────────────────────────────────────────
+            _ikToggle = new Toggle("IK を有効にする") { value = _enableIK };
+            _ikToggle.style.marginBottom = 3;
+            _ikToggle.RegisterValueChangedCallback(e =>
+            {
+                _enableIK = e.newValue;
+                if (_applier != null) _applier.EnableIK = e.newValue;
+                if (_vmd != null) ApplyFrame();
+            });
+            root.Add(_ikToggle);
+
+            _ignoreLimitToggle = new Toggle("角度制限を無視") { value = _ignoreAngleLimits };
+            _ignoreLimitToggle.style.marginBottom = 3;
+            _ignoreLimitToggle.style.marginLeft   = 12;
+            _ignoreLimitToggle.RegisterValueChangedCallback(e =>
+            {
+                _ignoreAngleLimits = e.newValue;
+                if (_applier != null) _applier.IgnoreAngleLimits = e.newValue;
+                if (_vmd != null) ApplyFrame();
+            });
+            root.Add(_ignoreLimitToggle);
+
+            _kneePreBendToggle = new Toggle("ひざ初期屈曲 (KneePreBend)") { value = _kneePreBend };
+            _kneePreBendToggle.style.marginBottom = 3;
+            _kneePreBendToggle.style.marginLeft   = 12;
+            _kneePreBendToggle.tooltip = "角度制限を無視している間は効きません";
+            _kneePreBendToggle.RegisterValueChangedCallback(e =>
+            {
+                _kneePreBend = e.newValue;
+                if (_applier != null) _applier.KneePreBend = e.newValue;
+                if (_vmd != null) ApplyFrame();
+            });
+            root.Add(_kneePreBendToggle);
+
+            _traceToggle = new Toggle("トレース出力") { value = _traceEnabled };
+            _traceToggle.style.marginBottom = 3;
+            _traceToggle.RegisterValueChangedCallback(e =>
+            {
+                _traceEnabled = e.newValue;
+                if (_applier == null) return;
+                if (e.newValue)
+                {
+                    _applier.TraceDirectory = TraceDir();
+                    PushTraceBones();
+                    PushIkTraceBones();
+                    _applier.TraceEnabled = true;
+                    SetStatus(string.IsNullOrEmpty(_applier.TraceDirectory)
+                        ? "トレース出力先が特定できません（VMD 未読込み）"
+                        : $"トレース出力: {Path.Combine(_applier.TraceDirectory, VMDApplier.TraceFileName)}");
+                }
+                else
+                {
+                    _applier.TraceEnabled = false;
+                    _applier.CloseTrace();
+                }
+            });
+            root.Add(_traceToggle);
+
+            var traceBoneRow = new VisualElement();
+            traceBoneRow.style.flexDirection = FlexDirection.Row;
+            traceBoneRow.style.marginBottom  = 3;
+            var traceBoneLbl = new Label("トレース対象");
+            traceBoneLbl.style.width = 90; traceBoneLbl.style.fontSize = 10;
+            traceBoneLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _traceBonesField = new TextField { value = _traceBoneList };
+            _traceBonesField.style.flexGrow = 1;
+            _traceBonesField.RegisterValueChangedCallback(e =>
+            {
+                _traceBoneList = e.newValue;
+                PushTraceBones();
+            });
+            traceBoneRow.Add(traceBoneLbl); traceBoneRow.Add(_traceBonesField);
+            root.Add(traceBoneRow);
+
+            var ikTraceRow = new VisualElement();
+            ikTraceRow.style.flexDirection = FlexDirection.Row;
+            ikTraceRow.style.marginBottom  = 3;
+            var ikTraceLbl = new Label("IK トレース対象");
+            ikTraceLbl.style.width = 90; ikTraceLbl.style.fontSize = 10;
+            ikTraceLbl.style.unityTextAlign = TextAnchor.MiddleLeft;
+            _ikTraceBonesField = new TextField { value = _ikTraceBoneList };
+            _ikTraceBonesField.style.flexGrow = 1;
+            _ikTraceBonesField.tooltip = "空欄なら全 IK ボーン";
+            _ikTraceBonesField.RegisterValueChangedCallback(e =>
+            {
+                _ikTraceBoneList = e.newValue;
+                PushIkTraceBones();
+            });
+            ikTraceRow.Add(ikTraceLbl); ikTraceRow.Add(_ikTraceBonesField);
+            root.Add(ikTraceRow);
+
+            _btnTraceAll = new Button(RunTraceAllFrames) { text = "全フレーム一括トレース" };
+            _btnTraceAll.style.marginBottom = 4;
+            root.Add(_btnTraceAll);
 
             var scaleRow = new VisualElement();
             scaleRow.style.flexDirection = FlexDirection.Row;
@@ -302,11 +413,10 @@ namespace Poly_Ling.Player
         // 操作
         // ================================================================
 
+        // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseVmd()
         {
-            string dir  = string.IsNullOrEmpty(_vmdPathField.value)
-                ? "" : Path.GetDirectoryName(_vmdPathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("Open VMD", dir, "vmd");
+            string path = PlayerIoUiKit.AskLoadPath("Open VMD", _vmdPathField.value, "vmd");
             if (string.IsNullOrEmpty(path)) return;
             _vmdPathField.value = path;
             LoadVMD(path);
@@ -339,6 +449,15 @@ namespace Poly_Ling.Player
                     _coordToggle?.SetValueWithoutNotify(applyConv);
                 }
 
+                // デバッグ設定を流し込む（EnableIK は既定 OFF）
+                _applier.EnableIK          = _enableIK;
+                _applier.IgnoreAngleLimits = _ignoreAngleLimits;
+                _applier.KneePreBend       = _kneePreBend;
+                _applier.TraceDirectory    = TraceDir();
+                PushTraceBones();
+                PushIkTraceBones();
+                _applier.TraceEnabled      = _traceEnabled;
+
                 var model = Model;
                 if (model != null) { _applier.BuildMapping(model); ApplyFrame(); }
 
@@ -355,6 +474,7 @@ namespace Poly_Ling.Player
         private void ClearVMD()
         {
             ResetPose();
+            _applier?.CloseTrace();
             _vmd = null; _filePath = null; _currentFrame = 0;
             SetStatus("クリアしました");
             RefreshAll();
@@ -370,6 +490,13 @@ namespace Poly_Ling.Player
             {
                 _vmd = VMDData.LoadFromFile(path); _filePath = path; _currentFrame = frame;
                 if (_applier == null) _applier = new VMDApplier();
+                _applier.EnableIK          = _enableIK;
+                _applier.IgnoreAngleLimits = _ignoreAngleLimits;
+                _applier.KneePreBend       = _kneePreBend;
+                _applier.TraceDirectory    = TraceDir();
+                PushTraceBones();
+                PushIkTraceBones();
+                _applier.TraceEnabled      = _traceEnabled;
                 var model = Model;
                 if (model != null) { _applier.BuildMapping(model); ApplyFrame(); }
                 RefreshAll();
@@ -390,6 +517,77 @@ namespace Poly_Ling.Player
             if (Model == null || _applier == null) return;
             _applier.ResetAllBones(Model);
             GetToolContext?.Invoke()?.Repaint?.Invoke();
+        }
+
+        // ================================================================
+        // トレース
+        // ================================================================
+
+        /// <summary>トレース CSV の出力フォルダ。VMD ファイルと同じ場所に出す。</summary>
+        private string TraceDir()
+            => string.IsNullOrEmpty(_filePath) ? null : Path.GetDirectoryName(_filePath);
+
+        /// <summary>カンマ区切りのトレース対象ボーン名を applier へ渡す。</summary>
+        private void PushTraceBones()
+        {
+            if (_applier == null) return;
+            var set = new System.Collections.Generic.HashSet<string>();
+            foreach (var raw in (_traceBoneList ?? "").Split(','))
+            {
+                string name = raw.Trim();
+                if (name.Length > 0) set.Add(name);
+            }
+            _applier.TraceBoneNames = set;
+        }
+
+        /// <summary>カンマ区切りの IK トレース対象名を applier へ渡す。空なら全 IK ボーン。</summary>
+        private void PushIkTraceBones()
+        {
+            if (_applier == null) return;
+            var set = new System.Collections.Generic.HashSet<string>();
+            foreach (var raw in (_ikTraceBoneList ?? "").Split(','))
+            {
+                string name = raw.Trim();
+                if (name.Length > 0) set.Add(name);
+            }
+            _applier.TraceIkBoneNames = set;
+        }
+
+        /// <summary>0 〜 MaxFrameNumber を通しでトレースする。完了後は元のフレームへ戻す。</summary>
+        private void RunTraceAllFrames()
+        {
+            if (_vmd == null || Model == null || _applier == null) { SetStatus("VMD を読み込んでください"); return; }
+
+            string dir = TraceDir();
+            if (string.IsNullOrEmpty(dir)) { SetStatus("VMD のフォルダを特定できません"); return; }
+
+            _applier.TraceDirectory = dir;
+            PushTraceBones();
+            PushIkTraceBones();
+
+            float saved = _currentFrame;
+            int   max   = (int)_vmd.MaxFrameNumber;
+            try
+            {
+                _applier.TraceAllFrames(Model, _vmd, 0, max);
+                string outs = _enableIK
+                    ? $"{VMDApplier.TraceFileName} / {CCDIKSolver.TraceFileName} / {CCDIKSolver.SummaryFileName}"
+                    : VMDApplier.TraceFileName;
+                SetStatus($"一括トレース完了 (0-{max}): {dir} → {outs}");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"一括トレース失敗: {ex.Message}");
+                UnityEngine.Debug.LogError($"[PlayerVMDTestSubPanel] {ex}");
+            }
+
+            // 一括出力した CSV を、以降のスライダ操作で上書きしないようトレースを OFF に戻す
+            _traceEnabled = false;
+            _traceToggle?.SetValueWithoutNotify(false);
+            if (_applier != null) { _applier.TraceEnabled = false; _applier.CloseTrace(); }
+
+            _currentFrame = saved;
+            Sync();
         }
 
         private void Sync()

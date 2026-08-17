@@ -1,5 +1,5 @@
 using System.IO;
-using Unity.Plastic.Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace Poly_Ling.UnityClip
 {
@@ -15,8 +15,9 @@ namespace Poly_Ling.UnityClip
     //     Runtime で JSON ファイル読み込みができる。
     //
     // ■ Newtonsoft について（恒久メモ）
-    //   既存 VmdMotionSerializer に倣い Unity.Plastic.Newtonsoft.Json を使用。
-    //   standalone Player ビルドでの可否は VMD 側と同様に別途検証対象。
+    //   Newtonsoft.Json（com.unity.nuget.newtonsoft-json）を使用。
+    //   エディタ専用の Unity.Plastic.Newtonsoft.Json はプレイヤービルドに
+    //   含まれず解決できないため使わない。
     // ================================================================
     public static class UnityClipSerializer
     {

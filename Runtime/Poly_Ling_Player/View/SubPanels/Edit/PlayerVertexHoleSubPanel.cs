@@ -38,8 +38,9 @@ namespace Poly_Ling.Player
 
             _root.Add(Header("Vertex Hole / 頂点に穴あけ"));
             _root.Add(new HelpBox(
-                "選択した1頂点を消して穴を開けます。\n" +
-                "頂点につながる各辺の上に新しい頂点を作り、元の面を張り替えます。",
+                "選択した頂点を消して穴を開けます。\n" +
+                "頂点につながる各辺の上に新しい頂点を作り、元の面を張り替えます。\n" +
+                "複数オブジェクト・複数頂点に対応。同じ面を共有する頂点どうしは干渉するため除外します。",
                 HelpBoxMessageType.Info));
 
             // 位置比率
@@ -104,17 +105,19 @@ namespace Poly_Ling.Player
 
             if (!info.CanExecute)
             {
-                if (_targetLabel != null) _targetLabel.text = $"選択中: {h.SelectedVertexCount} 頂点";
+                if (_targetLabel != null)
+                    _targetLabel.text = $"選択中: {h.SelectedVertexCount} 頂点  /  除外: {info.SkippedCount} 頂点";
                 if (_statusLabel != null) _statusLabel.text = info.Reason ?? "";
                 _holeBtn?.SetEnabled(false);
                 return;
             }
 
             if (_targetLabel != null)
-                _targetLabel.text = $"つながる辺: {info.NeighborCount} 本  /  張り替える面: {info.FaceCount}";
+                _targetLabel.text = $"対象: {info.ObjectCount} オブジェクト / {info.TargetCount} 頂点"
+                                  + (info.SkippedCount > 0 ? $"  （干渉で除外 {info.SkippedCount}）" : "");
 
             if (_statusLabel != null)
-                _statusLabel.text = $"新しい頂点を {info.NeighborCount} 個作ります";
+                _statusLabel.text = $"新しい頂点を {info.NeighborTotal} 個作り、{info.FaceTotal} 面を張り替えます";
 
             _holeBtn?.SetEnabled(true);
         }

@@ -82,7 +82,7 @@ namespace Poly_Ling.Player
             var fileRow = new VisualElement();
             fileRow.style.flexDirection = FlexDirection.Row;
             fileRow.style.marginBottom  = 2;
-            var loadBtn = PlayerIoUiKit.OpenButton("開く", () => LoadFromPath(_pathField.value));
+            var loadBtn = PlayerIoUiKit.OpenButton("開く", OnBrowseFile);
             loadBtn.style.flexGrow = 1; loadBtn.style.marginRight = 2;
             var clearBtn = new Button(OnClearFile) { text = "クリア" };
             clearBtn.style.width = 60;
@@ -224,11 +224,11 @@ namespace Poly_Ling.Player
             _onChanged?.Invoke();
         }
 
+        // 「開く」と [...] の共通処理。パス欄の値をダイアログの初期値にする。
         private void OnBrowseFile()
         {
-            string dir  = string.IsNullOrEmpty(_pathField.value)
-                ? Application.dataPath : Path.GetDirectoryName(_pathField.value);
-            string path = PLEditorBridge.I.OpenFilePanel("下絵画像を選択", dir, "png,jpg,jpeg,tga,bmp");
+            string path = PlayerIoUiKit.AskLoadPath(
+                "下絵画像を選択", _pathField.value, "png,jpg,jpeg,tga,bmp");
             if (string.IsNullOrEmpty(path)) return;
             _pathField.value = path;
             LoadFromPath(path);

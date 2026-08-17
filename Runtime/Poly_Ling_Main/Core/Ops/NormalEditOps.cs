@@ -226,6 +226,63 @@ namespace Poly_Ling.Ops
             return Finish(mesh, changed, mesh.Name);
         }
 
+        /// <summary>
+        /// 対象コーナーの「面法線」だけを頂点ごとに重み付き平均し、その 1 本を
+        /// その頂点の対象コーナー全部へ書く。スロット数は変えない。
+        ///
+        /// 【Unify との違い】
+        ///   Unify は平均の入力が「現在のスロット法線」なので、対象コーナーが
+        ///   同じスロットを共有していると全部が同じ値を読み、平均しても変わらない。
+        ///   本操作は入力を常に面法線にするため、選択した面だけを使った頂点法線が得られる。
+        ///
+        /// 【共有スロットの扱い】
+        ///   書き込み先は既存スロット（WriteNormal のみを使い GetOrAddUVNormal は通さない）。
+        ///   よって対象外の面が同じスロットを参照していれば、その面も同じ値を見ることになる。
+        ///   面ごとに分けたい場合は Break を先に実行すること。
+        /// </summary>
+        public static int AverageFromFaces(
+            MeshObject mesh, IReadOnlyList<FaceCorner> corners, NormalWeightMode weightMode)
+        {
+            if (mesh == null || corners == null) return 0;
+
+            var byVertex = new Dictionary<int, List<FaceCorner>>();
+            foreach (var fc in corners)
+            {
+                int vi = VertexOf(mesh, fc);
+                if (vi < 0) continue;
+                if (!byVertex.TryGetValue(vi, out var list))
+                {
+                    list = new List<FaceCorner>();
+                    byVertex[vi] = list;
+                }
+                list.Add(fc);
+            }
+
+            int changed = 0;
+            foreach (var kvp in byVertex)
+            {
+                Vector3 sum = Vector3.zero;
+                foreach (var fc in kvp.Value)
+                {
+                    var face = mesh.Faces[fc.Face];
+                    Vector3 fn = NormalSmoothingOps.CalculateFaceNormalNewell(mesh, face);
+                    float   w  = NormalSmoothingOps.CornerWeight(mesh, face, fc.Corner, weightMode);
+                    sum += fn * w;
+                }
+
+                if (sum.sqrMagnitude < 1e-12f) continue;
+                Vector3 averaged = sum.normalized;
+
+                foreach (var fc in kvp.Value)
+                {
+                    WriteNormal(mesh, fc, averaged);
+                    changed++;
+                }
+            }
+
+            return Finish(mesh, changed, mesh.Name);
+        }
+
         // ================================================================
         // B. スロット操作
         // ================================================================

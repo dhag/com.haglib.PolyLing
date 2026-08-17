@@ -426,6 +426,32 @@ namespace Poly_Ling.Core
         public uint[] FaceFlags => _faceFlags;
         public uint[] Indices => _indices;
 
+        // ------------------------------------------------------------
+        // 法線表示の CPU mesh 構築で参照するスキニングデータ。
+        //
+        // 【用途】
+        //   MeshSceneRenderer.PrepareNormals が、頂点ごとのスキニング行列を
+        //   UnifiedCompute.compute の TransformVertices カーネルと同じ式で
+        //   組み立て、ローカル法線をワールドへ回すために使う。
+        //     skinMatrix = Σ TransformMatrices[BoneIndices[i][k]] * BoneWeights[i][k]
+        //   非スキン頂点は BoneWeights=(1,0,0,0) / BoneIndices.x=contextIndex が
+        //   入っているため、同じ式で行列 1 個の参照に帰着する。
+        //
+        // 【配列インデックス】
+        //   BoneWeights / BoneIndices はグローバル頂点インデックス。
+        //   TransformMatrices は MeshContextList のインデックス
+        //   （UpdateTransformMatrices が MeshContextList 順に格納する）。
+        // ------------------------------------------------------------
+
+        /// <summary>メッシュコンテキスト順の変換行列（読み取り専用参照）。</summary>
+        public Matrix4x4[] TransformMatrices => _transformMatrices;
+
+        /// <summary>頂点ごとのボーンウェイト（読み取り専用参照）。</summary>
+        public Vector4[] BoneWeights => _boneWeights;
+
+        /// <summary>頂点ごとのボーンインデックス（読み取り専用参照）。</summary>
+        public UInt4[] BoneIndices => _boneIndices;
+
         // ============================================================
         // コンストラクタ
         // ============================================================

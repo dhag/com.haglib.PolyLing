@@ -600,6 +600,11 @@ namespace Poly_Ling.Data
             RecalcByAngle,
             /// <summary>面法線にする（フラット化）</summary>
             SetFromFaces,
+            /// <summary>
+            /// 対象コーナーの面法線だけを頂点ごとに重み付き平均し、その1本を書く。
+            /// スロット数は変えない。選択した面だけを使った頂点法線が得られる。
+            /// </summary>
+            AverageFromFaces,
             /// <summary>統合（頂点上のスロット法線を同一値にする）</summary>
             Unify,
             /// <summary>分離（面ごとに別スロットへ分け、面法線を入れる）</summary>

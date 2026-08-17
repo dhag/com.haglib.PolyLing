@@ -78,6 +78,51 @@ namespace Poly_Ling.VMD
         /// </summary>
         public bool DebugLog { get; set; } = true;
 
+        // ================================================================
+        // トレース出力（vmd_trace.csv）
+        // ================================================================
+
+        /// <summary>
+        /// フレーム単位トレースの出力有無。既定 OFF。
+        /// ON にすると ApplyBonePose のたびに TraceDirectory/vmd_trace.csv へ追記する。
+        /// </summary>
+        public bool TraceEnabled { get; set; } = false;
+
+        /// <summary>
+        /// トレース CSV の出力フォルダ。呼び出し側（パネル）が VMD ファイルのフォルダを渡す。
+        /// 未設定のときはトレースを出さない。
+        /// </summary>
+        public string TraceDirectory { get; set; }
+
+        /// <summary>トレース CSV のファイル名</summary>
+        public const string TraceFileName = "vmd_trace.csv";
+
+        /// <summary>
+        /// トレース対象ボーン名。既定は脚まわり 8 本。
+        /// </summary>
+        public HashSet<string> TraceBoneNames { get; set; } = new HashSet<string>
+        {
+            "センター", "下半身", "左足", "左ひざ", "左足首", "右足", "右ひざ", "右足首"
+        };
+
+        private VMDTraceWriter _trace;
+
+        /// <summary>
+        /// IK の角度制限を無視する。既定 false（VMD 復活手順書 段階 3）。
+        /// CCDIKSolver へ中継する。
+        /// </summary>
+        public bool IgnoreAngleLimits { get; set; } = false;
+
+        /// <summary>
+        /// IK 解決前にひざへ微小曲げを付与する。既定 false。CCDIKSolver へ中継する。
+        /// </summary>
+        public bool KneePreBend { get; set; } = false;
+
+        /// <summary>
+        /// IK トレース対象の IK ボーン名。空なら全 IK ボーン。CCDIKSolver へ中継する。
+        /// </summary>
+        public HashSet<string> TraceIkBoneNames { get; set; } = new HashSet<string>();
+
         /// <summary>
         /// 未マッチのボーン名リスト（デバッグ用）
         /// </summary>
@@ -209,8 +254,8 @@ namespace Poly_Ling.VMD
                 BuildMapping(model);
             }
 
-            // デバッグ対象ボーン
-            var debugBones = new HashSet<string> { "右ひじ", "左ひじ", "右腕", "左腕", "右手首", "左手首" };
+            // トレース出力の準備（TraceEnabled かつ出力先が有効なときだけ開く）
+            bool trace = TraceEnabled && EnsureTraceWriter();
 
             // 各ボーンにポーズを適用
             foreach (var boneName in vmd.BoneNames)
@@ -234,13 +279,10 @@ namespace Poly_Ling.VMD
                 // VMDからポーズを取得（これはデルタ値）
                 var (position, rotation) = vmd.GetBonePoseAtFrame(boneName, frameNumber);
 
-                // デバッグ出力（変換前）
-                bool isDebugBone = DebugLog && debugBones.Contains(boneName);
-                if (isDebugBone)
-                {
-                    Debug.Log($"[VMD DEBUG] ===== {boneName} (frame {frameNumber}) =====");
-                    Debug.Log($"[VMD DEBUG] VMD raw: pos={position}, rot={rotation}, euler={rotation.eulerAngles}");
-                }
+                // トレース対象か（stage ごとに src → cnv の 1 行を出す）
+                bool isTraceBone = trace && TraceBoneNames != null && TraceBoneNames.Contains(boneName);
+                if (isTraceBone)
+                    _trace.Add(frameNumber, boneName, "vmd_raw", position, rotation, position, rotation);
 
                 // 座標系変換
                 //
@@ -250,28 +292,30 @@ namespace Poly_Ling.VMD
                 //   後段の Q' = R^-1·Q·R は Q が Unity 空間であることを前提とするため、
                 //   VMD 生値（PMX 空間）のままでは回転軸の X・Z 成分の符号が反転し、
                 //   ひじ等がねじれる。
-                Vector3 convertedPos = position;
-                Quaternion convertedRot = rotation;
+                Vector3 flipPos = position;
+                Quaternion flipRot = rotation;
                 if (ApplyCoordinateConversion)
                 {
-                    convertedPos = CoordinateConverter.ToUnityPosition(position, CoordinateFlip);
-                    convertedRot = CoordinateConverter.ToUnityRotation(rotation, CoordinateFlip);
+                    flipPos = CoordinateConverter.ToUnityPosition(position, CoordinateFlip);
+                    flipRot = CoordinateConverter.ToUnityRotation(rotation, CoordinateFlip);
                 }
 
-                if (isDebugBone)
-                {
-                    Debug.Log($"[VMD DEBUG] AxisFlip: apply={ApplyCoordinateConversion} flipX={CoordinateFlip.FlipX} flipZ={CoordinateFlip.FlipZ} isMirror={CoordinateFlip.IsMirror}");
-                    Debug.Log($"[VMD DEBUG] Rot flip: pmx=({rotation.x:F4},{rotation.y:F4},{rotation.z:F4},{rotation.w:F4}) -> unity=({convertedRot.x:F4},{convertedRot.y:F4},{convertedRot.z:F4},{convertedRot.w:F4})");
-                    Debug.Log($"[VMD DEBUG] Pos flip: pmx={position} -> unity={convertedPos}");
-                }
+                if (isTraceBone)
+                    _trace.Add(frameNumber, boneName, "after_flip", position, rotation, flipPos, flipRot);
 
                 // スケール適用（VMDデルタ位置はPMX空間の値なので、Unity空間に合わせる）
+                Vector3 scaledPos = flipPos;
+                Quaternion scaledRot = flipRot;
                 if (!Mathf.Approximately(PositionScale, 1f))
                 {
-                    convertedPos *= PositionScale;
-                    if (isDebugBone)
-                        Debug.Log($"[VMD DEBUG] Pos scaled (x{PositionScale}): {convertedPos}");
+                    scaledPos = flipPos * PositionScale;
                 }
+
+                if (isTraceBone)
+                    _trace.Add(frameNumber, boneName, "after_scale", flipPos, flipRot, scaledPos, scaledRot);
+
+                Vector3 convertedPos = scaledPos;
+                Quaternion convertedRot = scaledRot;
 
                 // ★★★ ローカル軸空間変換 ★★★
                 //
@@ -310,46 +354,27 @@ namespace Poly_Ling.VMD
                     convertedRot = Quaternion.Inverse(modelRot) * convertedRot * modelRot;
                     // 位置: P' = R^-1 * P （グローバル空間のデルタをローカル軸空間に変換）
                     convertedPos = Quaternion.Inverse(modelRot) * convertedPos;
-
-                    if (isDebugBone)
-                        Debug.Log($"[VMD DEBUG] R^-1*Q*R: R=({modelRot.x:F4},{modelRot.y:F4},{modelRot.z:F4},{modelRot.w:F4}) -> Q'=({convertedRot.x:F4},{convertedRot.y:F4},{convertedRot.z:F4},{convertedRot.w:F4})");
-                }
-                else if (isDebugBone)
-                {
-                    Debug.Log($"[VMD DEBUG] R^-1*Q*R: skipped (BoneModelRotation = identity)");
                 }
 
-                if (isDebugBone)
-                {
-                    Debug.Log($"[VMD DEBUG] After convert: pos={convertedPos}, rot={convertedRot}, euler={convertedRot.eulerAngles}");
-
-                    // BoneTransformの情報
-                    var bt = ctx.BoneTransform;
-                    if (bt != null)
-                    {
-                        Debug.Log($"[VMD DEBUG] BoneTransform: pos={bt.Position}, rot={bt.Rotation}, useLocal={bt.UseLocalTransform}");
-                        Debug.Log($"[VMD DEBUG] BoneTransform.TransformMatrix:\n{bt.TransformMatrix}");
-                    }
-
-                    // BonePoseDataのデバッグ情報
-                    var bpd = ctx.BonePoseData;
-                    Debug.Log($"[VMD DEBUG] BonePoseData: IsActive={bpd.IsActive}, LayerCount={bpd.LayerCount}");
-                }
+                // BoneModelRotation が恒等で素通りした場合も行は出す（after_scale と同値になる）
+                if (isTraceBone)
+                    _trace.Add(frameNumber, boneName, "after_rest", scaledPos, scaledRot, convertedPos, convertedRot);
 
                 // BonePoseDataの"VMD"レイヤーにデルタを設定
                 ctx.BonePoseData.SetLayer("VMD", convertedPos, convertedRot);
 
-                if (isDebugBone)
-                {
-                    // 設定後の合成結果
-                    Debug.Log($"[VMD DEBUG] After SetLayer: Position={ctx.BonePoseData.Position}, Rotation={ctx.BonePoseData.Rotation.eulerAngles}");
-                    Debug.Log($"[VMD DEBUG] BonePoseData.LocalMatrix:\n{ctx.BonePoseData.LocalMatrix}");
-                    Debug.Log($"[VMD DEBUG] MeshContext.LocalMatrix:\n{ctx.LocalMatrix}");
-                }
+                // applied は他レイヤーも含めた合成結果
+                if (isTraceBone)
+                    _trace.Add(frameNumber, boneName, "applied", convertedPos, convertedRot,
+                               ctx.BonePoseData.Position, ctx.BonePoseData.Rotation);
             }
 
             // ワールド行列を再計算
             model.ComputeWorldMatrices();
+
+            // world 列は再計算後でないと埋まらないので、ここでフラッシュする
+            if (trace)
+                _trace.FlushFrame(name => GetBoneWorldPosition(model, name));
         }
 
         /// <summary>
@@ -398,18 +423,99 @@ namespace Poly_Ling.VMD
             if (EnableIK)
             {
                 _ikSolver.DebugEnabled = DebugLog;
+                PushIkSettings();
                 _ikSolver.Solve(model, frameNumber);
-            }
-            else if (DebugLog)
-            {
-                Debug.Log($"[VMD DEBUG] IK skipped (EnableIK=false) frame={frameNumber}");
             }
         }
 
-        /// <summary>IK有効フラグ</summary>
-        public bool EnableIK { get; set; } = true;
+        /// <summary>IK ソルバへ角度制限フラグとトレース設定を渡す。</summary>
+        private void PushIkSettings()
+        {
+            _ikSolver.IgnoreAngleLimits = IgnoreAngleLimits;
+            _ikSolver.KneePreBend       = KneePreBend;
+            _ikSolver.TraceEnabled      = TraceEnabled;
+            _ikSolver.TraceDirectory    = TraceDirectory;
+            _ikSolver.TraceIkBoneNames  = TraceIkBoneNames;
+        }
+
+        /// <summary>IK有効フラグ。既定 OFF（VMD 復活手順書 段階 1）。</summary>
+        public bool EnableIK { get; set; } = false;
         /// <summary>IKソルバー</summary>
         private CCDIKSolver _ikSolver = new CCDIKSolver();
+
+        // ================================================================
+        // トレース
+        // ================================================================
+
+        /// <summary>
+        /// 指定範囲を通しで適用し、トレース CSV を出力する。
+        /// 呼び出しのたびにファイルを新規作成する（追記ではない）。
+        /// </summary>
+        public void TraceAllFrames(ModelContext model, VMDData vmd, int fromFrame, int toFrame)
+        {
+            if (model == null || vmd == null) return;
+            if (string.IsNullOrEmpty(TraceDirectory)) return;
+
+            bool prevTrace = TraceEnabled;
+            CloseTrace();          // 前回のストリームを閉じ、新規作成させる
+            TraceEnabled = true;
+
+            try
+            {
+                for (int f = fromFrame; f <= toFrame; f++)
+                {
+                    ApplyBonePose(model, vmd, f);   // 内部で 1 フレーム分をフラッシュする
+                    if (EnableIK)
+                    {
+                        _ikSolver.DebugEnabled = false;   // 全フレーム分の Console 出力は出さない
+                        PushIkSettings();
+                        _ikSolver.Solve(model, f);
+                    }
+                }
+            }
+            finally
+            {
+                CloseTrace();
+                TraceEnabled = prevTrace;
+            }
+        }
+
+        /// <summary>トレース CSV（vmd_trace.csv / vmd_ik.csv / vmd_summary.csv）を閉じる。</summary>
+        public void CloseTrace()
+        {
+            _trace?.Close();
+            _ikSolver?.CloseTrace();
+        }
+
+        /// <summary>出力先が有効ならライタを開く。失敗したらトレースを止める。</summary>
+        private bool EnsureTraceWriter()
+        {
+            if (_trace != null && _trace.IsOpen) return true;
+            if (string.IsNullOrEmpty(TraceDirectory)) return false;
+
+            try
+            {
+                if (_trace == null) _trace = new VMDTraceWriter();
+                _trace.Open(System.IO.Path.Combine(TraceDirectory, TraceFileName));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[VMDApplier] トレース出力を開けません: {ex.Message}");
+                TraceEnabled = false;
+                return false;
+            }
+        }
+
+        /// <summary>ボーン名からワールド位置を引く（ComputeWorldMatrices 後に呼ぶこと）。</summary>
+        private Vector3 GetBoneWorldPosition(ModelContext model, string boneName)
+        {
+            if (model == null) return Vector3.zero;
+            if (!_boneNameToIndex.TryGetValue(boneName, out int index)) return Vector3.zero;
+            var ctx = model.MeshContextList[index];
+            if (ctx == null) return Vector3.zero;
+            return ctx.WorldMatrix.GetColumn(3);
+        }
        // ================================================================
         // モーフ適用
         // ================================================================

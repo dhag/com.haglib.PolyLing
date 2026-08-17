@@ -58,6 +58,7 @@ namespace Poly_Ling.EditorIO
         private bool _createArmature    = true;   // ボーン階層（Armature）を生成
         private bool _useBindpose       = true;   // MeshContext.BindPose を bindposes に使用
         private bool _exportVisibleOnly = true;   // 可視メッシュのみ書き出し
+        private bool _includeInvisibleAncestors = true; // 可視ノードの親が不可視なら補完して出力
         private bool _exportMeshOnly    = false;  // ボーンを除外しメッシュのみ
         private bool _exportPhysics     = true;   // 剛体/JOINT を Unity 物理部品として出力
         private bool _saveAsPrefab      = true;   // シーンではなくプレファブとして保存（アセット化）
@@ -93,6 +94,12 @@ namespace Poly_Ling.EditorIO
         //   プロジェクトが特定できた場合に Assets/PolyLing/<プロジェクト名>/<モデル名> とする。
         //   別プロジェクトに同名モデルがあるときの衝突を避けるため。
         private string _prefabProjectFolder = "";
+
+        // --- 結果レポート（コンソールとダイアログの両方へ出す） ---
+        private readonly HierarchyExportReport _report = new HierarchyExportReport();
+
+        // --- 補完で追加した不可視ノードの索引（Transform のみで出力する印） ---
+        private readonly HashSet<int> _supplementedIndices = new HashSet<int>();
 
         [MenuItem("PolyLing/IO/Hierarchy Export (Project File → Hierarchy)")]
         public static void Open()
@@ -144,6 +151,18 @@ namespace Poly_Ling.EditorIO
             _createArmature    = EditorGUILayout.Toggle("Armatureを生成", _createArmature);
             _useBindpose       = EditorGUILayout.Toggle("BindPoseを使用", _useBindpose);
             _exportVisibleOnly = EditorGUILayout.Toggle("可視メッシュのみ", _exportVisibleOnly);
+            using (new EditorGUI.DisabledScope(!_exportVisibleOnly))
+            {
+                _includeInvisibleAncestors = EditorGUILayout.Toggle(
+                    "不可視の親を補完", _includeInvisibleAncestors);
+            }
+            if (_exportVisibleOnly && _includeInvisibleAncestors)
+            {
+                EditorGUILayout.HelpBox(
+                    "可視ノードの親をたどり、不可視の親も Transform のみのノードとして出力します"
+                    + "（隠した形状は出力しません）。切ると子がルート直下へ平坦化されます。",
+                    MessageType.None);
+            }
             _exportMeshOnly    = EditorGUILayout.Toggle("メッシュのみ（ボーン除外）", _exportMeshOnly);
             _exportPhysics     = EditorGUILayout.Toggle("剛体/JOINTを出力", _exportPhysics);
             _saveAsPrefab      = EditorGUILayout.Toggle("プレファブとして保存", _saveAsPrefab);
@@ -275,15 +294,26 @@ namespace Poly_Ling.EditorIO
             }
 
             int ok = 0;
-            var failed = new List<string>();
+            var failed   = new List<string>();
+            var problems = new List<string>();   // 成功したが警告・エラーが出たモデル
 
             _prefabProjectFolder = ResolveProjectFolderName(projectFolder);
             try
             {
                 foreach (string dir in modelFolders)
                 {
-                    if (ExportSingleModel(dir, showDialogOnError: false)) ok++;
-                    else failed.Add(Path.GetFileName(dir));
+                    string name = Path.GetFileName(dir);
+
+                    if (ExportSingleModel(dir, showDialogOnError: false))
+                    {
+                        ok++;
+                        if (_report.HasProblem)
+                            problems.Add($"{name}: {_report.BuildOneLineSummary()}");
+                    }
+                    else
+                    {
+                        failed.Add($"{name}: {_report.BuildOneLineSummary()}");
+                    }
                 }
             }
             finally
@@ -291,24 +321,50 @@ namespace Poly_Ling.EditorIO
                 _prefabProjectFolder = "";
             }
 
-            string msg = $"{modelFolders.Count} 件中 {ok} 件を書き出しました。";
-            if (failed.Count > 0) msg += "\n失敗: " + string.Join(", ", failed);
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"{modelFolders.Count} 件中 {ok} 件を書き出しました。");
 
+            if (failed.Count > 0)
+            {
+                sb.AppendLine().AppendLine($"── 失敗 ({failed.Count}) ──");
+                foreach (string f in failed) sb.AppendLine("・" + f);
+            }
+
+            if (problems.Count > 0)
+            {
+                sb.AppendLine().AppendLine($"── 警告あり ({problems.Count}) ──");
+                foreach (string w in problems) sb.AppendLine("・" + w);
+            }
+
+            if (failed.Count == 0 && problems.Count == 0)
+                sb.AppendLine().Append("警告・エラーはありません。");
+            else
+                sb.AppendLine().Append("詳細はコンソールを確認してください。");
+
+            string msg = sb.ToString();
             Debug.Log("[HierarchyExport] " + msg);
-            EditorUtility.DisplayDialog("一括エクスポート", msg, "OK");
+            EditorUtility.DisplayDialog(
+                failed.Count > 0 ? "一括エクスポート（失敗あり）" : "一括エクスポート", msg, "OK");
         }
 
         /// <summary>モデルフォルダ1件を書き出す。成功したら true。</summary>
+        /// <param name="showDialogOnError">
+        /// 単体書き出しのとき true。失敗時のエラーに加えて、成功時もレポートを出す。
+        /// 一括のときは false（まとめのダイアログを呼び出し側が出す）。
+        /// </param>
         private bool ExportSingleModel(string modelFolder, bool showDialogOnError)
         {
+            // レポートはモデル1件ごとに作り直す。
+            _report.Reset();
+
             // プロジェクトファイル（フォルダ形式）→ ModelContext
             // out パラメータ（EditorState / WorkPlane / 追加エントリ）は本処理では不要のため破棄。
             ModelContext model = CsvModelSerializer.LoadModel(modelFolder, out _, out _, out _);
             if (model == null)
             {
                 string m = "モデルの読み込みに失敗しました（model.csv 不在など）:\n" + modelFolder;
+                _report.Error(m);
                 if (showDialogOnError) EditorUtility.DisplayDialog("エラー", m, "OK");
-                else Debug.LogWarning("[HierarchyExport] " + m);
                 return false;
             }
 
@@ -318,8 +374,9 @@ namespace Poly_Ling.EditorIO
 
             if (_saveAsPrefab)
             {
-                ExportAsPrefab(model);
-                return true;
+                bool prefabOk = ExportAsPrefab(model);
+                if (showDialogOnError) ShowExportReportDialog(model, prefabOk);
+                return prefabOk;
             }
 
             var root = Export(model);
@@ -339,15 +396,37 @@ namespace Poly_Ling.EditorIO
                 UnityEditor.Selection.activeGameObject = root;
                 EditorGUIUtility.PingObject(root);
             }
+            else
+            {
+                _report.Error("ヒエラルキー生成に失敗しました。");
+            }
 
+            if (showDialogOnError) ShowExportReportDialog(model, root != null);
             return root != null;
+        }
+
+        /// <summary>単体書き出しの結果ダイアログ。成功・失敗どちらでもレポートを出す。</summary>
+        private void ShowExportReportDialog(ModelContext model, bool ok)
+        {
+            string modelName = string.IsNullOrEmpty(model?.Name) ? "(名称なし)" : model.Name;
+
+            string title = !ok                 ? "書き出し失敗"
+                         : _report.HasProblem  ? "書き出し完了（警告あり）"
+                                               : "書き出し完了";
+
+            string header = ok
+                ? $"{modelName} を書き出しました。"
+                : $"{modelName} の書き出しに失敗しました。";
+
+            EditorUtility.DisplayDialog(title, _report.BuildDialogText(header), "OK");
         }
 
         // ================================================================
         // プレファブ保存（決定論パス・上書き・アセット化）
         // ================================================================
 
-        private void ExportAsPrefab(ModelContext model)
+        /// <summary>プレファブとして保存する。成功したら true。</summary>
+        private bool ExportAsPrefab(ModelContext model)
         {
             string modelName = SanitizeName(model.Name ?? "Model");
             string outputRoot   = NormalizeOutputRoot(_prefabOutputRoot);
@@ -388,8 +467,8 @@ namespace Poly_Ling.EditorIO
                 root = Export(model);
                 if (root == null)
                 {
-                    EditorUtility.DisplayDialog("エラー", "ヒエラルキー生成に失敗しました。", "OK");
-                    return;
+                    _report.Error("ヒエラルキー生成に失敗しました。");
+                    return false;
                 }
 
                 // Avatar も生成（Humanoid 割当 + 可動域を model から直接）。
@@ -400,19 +479,26 @@ namespace Poly_Ling.EditorIO
                     BuildAvatarMapsFromModel(model, out var avMap, out var avLimits);
                     if (avMap.Count == 0)
                     {
-                        Debug.LogWarning("[HierarchyExport] Humanoid 割当が無いため Avatar 生成をスキップ。");
+                        _report.AvatarResult = "スキップ（Humanoid 割当なし）";
+                        _report.Warn("Humanoid 割当が無いため Avatar 生成をスキップ。");
                     }
                     else if (!ValidateHumanoidBoneNames(root, avMap, out string dupNames))
                     {
-                        Debug.LogWarning(
-                            "[HierarchyExport] Humanoid 割当先のボーン名が階層内で重複しているため " +
+                        _report.AvatarResult = "スキップ（ボーン名重複）";
+                        _report.Warn(
+                            "Humanoid 割当先のボーン名が階層内で重複しているため " +
                             "Avatar 生成をスキップ: " + dupNames);
                     }
                     else
                     {
                         string avatarPath = $"{baseDir}/{modelName}.asset";
                         var avatar = AvatarBuildCore.BuildAndSaveAvatar(root, avMap, avLimits, avatarPath,
-                            m => Debug.Log("[HierarchyExport] " + m));
+                            m => _report.Log(m));
+
+                        _report.AvatarResult = avatar != null
+                            ? $"生成しました（{avMap.Count} ボーン）"
+                            : "生成に失敗";
+                        if (avatar == null) _report.Warn("Avatar の生成に失敗しました。");
 
                         if (_attachAnimator)
                         {
@@ -425,7 +511,7 @@ namespace Poly_Ling.EditorIO
                             }
                             else
                             {
-                                Debug.LogWarning("[HierarchyExport] Avatar 生成に失敗したため Animator を付与しない。");
+                                _report.Warn("Avatar 生成に失敗したため Animator を付与しない。");
                             }
                         }
                     }
@@ -448,7 +534,9 @@ namespace Poly_Ling.EditorIO
 
                 UnityEditor.Selection.activeObject = prefab;
                 EditorGUIUtility.PingObject(prefab);
-                Debug.Log($"[HierarchyExport] プレファブ保存: {prefabPath}（材料アセット {matCount} / テクスチャ {texCount}）");
+                _report.Log($"プレファブ保存: {prefabPath}（材料アセット {matCount} / テクスチャ {texCount}）");
+
+                if (prefab == null) _report.Error("プレファブの保存に失敗しました: " + prefabPath);
 
                 // IK 付帯を attach.csv でプレファブ同居出力（案X: Humanoid/HumanLimit は Avatar が正）
                 if (_writeAttach)
@@ -456,6 +544,8 @@ namespace Poly_Ling.EditorIO
                     AttachSidecarCsv.Write(model, $"{baseDir}/attach.csv");
                     AssetDatabase.Refresh();
                 }
+
+                return prefab != null;
             }
             finally
             {
@@ -740,7 +830,8 @@ namespace Poly_Ling.EditorIO
         /// <summary>
         /// テクスチャ1枚を texturesDir へ書き出し、そのアセットパスを返す。失敗時は null。
         /// </summary>
-        private static string WriteTextureFile(Texture tex, string texturesDir, HashSet<string> usedFileNames)
+        // レポートへ警告を積むためインスタンスメソッド。呼び出し元は ExportTexturesAsAssets のみ。
+        private string WriteTextureFile(Texture tex, string texturesDir, HashSet<string> usedFileNames)
         {
             string sourcePath = AssetDatabase.GetAssetPath(tex);
             bool hasSourceFile = !string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath);
@@ -768,7 +859,7 @@ namespace Poly_Ling.EditorIO
                 byte[] png = EncodePng(tex);
                 if (png == null)
                 {
-                    Debug.LogWarning($"[HierarchyExport] テクスチャを書き出せない: {tex.name}");
+                    _report.Warn($"テクスチャを書き出せない: {tex.name}");
                     return null;
                 }
 
@@ -777,7 +868,7 @@ namespace Poly_Ling.EditorIO
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"[HierarchyExport] テクスチャ書き出しに失敗: {tex.name} → {e.Message}");
+                _report.Warn($"テクスチャ書き出しに失敗: {tex.name} → {e.Message}");
                 return null;
             }
         }
@@ -949,7 +1040,8 @@ namespace Poly_Ling.EditorIO
         /// プロジェクトと判定できない場合は空文字（＝挟まない）。
         /// CsvProjectSerializer.Import は配下の全モデルを読み込むためここでは使わない。
         /// </summary>
-        private static string ResolveProjectFolderName(string projectFolder)
+        // レポートへ警告を積むためインスタンスメソッド。
+        private string ResolveProjectFolderName(string projectFolder)
         {
             if (string.IsNullOrEmpty(projectFolder) || !Directory.Exists(projectFolder))
                 return "";
@@ -969,7 +1061,7 @@ namespace Poly_Ling.EditorIO
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"[HierarchyExport] project.csv の読み取りに失敗: {e.Message}");
+                _report.Warn($"project.csv の読み取りに失敗: {e.Message}");
             }
 
             if (string.IsNullOrWhiteSpace(name))
@@ -1060,8 +1152,8 @@ namespace Poly_Ling.EditorIO
 
             if (missing.Count > 0)
             {
-                Debug.LogWarning(
-                    "[HierarchyExport] Humanoid 割当先が階層に出力されていない（無視）:\n  " +
+                _report.Warn(
+                    "Humanoid 割当先が階層に出力されていない（無視）:\n  " +
                     string.Join("\n  ", missing) +
                     "\n（非表示のため「可視メッシュのみ」で除外された可能性があります）");
             }
@@ -1071,8 +1163,8 @@ namespace Poly_Ling.EditorIO
             // 分岐ルート未設定（MQO 名の "@@…ミラー分岐ルート" か手動設定）を疑う。
             if (_exportedMirrorTf.Count == 0 && HasMirrorSideContext(model))
             {
-                Debug.LogWarning(
-                    "[HierarchyExport] ミラー側コンテキストはあるがミラー枝が展開されていません。" +
+                _report.Warn(
+                    "ミラー側コンテキストはあるがミラー枝が展開されていません。" +
                     "ミラー分岐ルートが未設定の可能性があります（左右の補完は行いません）。");
             }
 
@@ -1095,8 +1187,8 @@ namespace Poly_Ling.EditorIO
                 {
                     // 左右を持たない名前（Spine/Head 等）が両側に複製されている。
                     // 体幹がミラー枝に入っているモデル構造の誤りなので補完しない。
-                    Debug.LogWarning(
-                        $"[HierarchyExport] '{traitName}' がミラー枝内で両側に複製されています。" +
+                    _report.Warn(
+                        $"'{traitName}' がミラー枝内で両側に複製されています。" +
                         "左右を持たない Humanoid 名のため補完しません。");
                     continue;
                 }
@@ -1120,8 +1212,8 @@ namespace Poly_Ling.EditorIO
                 int axis = ctx?.MirrorAxis ?? 1;
                 if (axis != 1)
                 {
-                    Debug.LogWarning(
-                        $"[HierarchyExport] '{traitName}' のミラー軸が X ではないため " +
+                    _report.Warn(
+                        $"'{traitName}' のミラー軸が X ではないため " +
                         $"(MirrorAxis={axis}) 左右補完をスキップします。");
                     continue;
                 }
@@ -1302,8 +1394,16 @@ namespace Poly_Ling.EditorIO
             var meshTransformByIndex   = new Dictionary<int, Transform>();
             var mirrorTransformByIndex = new Dictionary<int, Transform>();
 
-            // ミラー分岐の解析（分岐ルート配下を実体側／ミラー側に振り分ける）
+            // 出力対象の索引集合。可視フィルタと親補完をここで一度に解決する。
+            //   親が出力されないと CreateMeshGameObject の親解決（下の parentIndices 参照）が
+            //   空振りしてルート直下へ平坦化されるため、可視ノードの祖先は補完する。
+
+            // ミラー分岐の解析（分岐ルート配下を実体側／ミラー側に振り分ける）。
+            //   可視性には依存しないので補完より前に出せる。ミラー相方の補完判定に使うため
+            //   「ミラー解析 → 不可視補完 → 生成」の順に固定する。
             var branchSide = MirrorBranchOps.AnalyzeMirrorBranches(model, parentIndices);
+
+            var exportTargets = BuildExportTargets(model, parentIndices, mirrorPeers, branchSide);
 
             for (int i = 0; i < model.MeshContextCount; i++)
             {
@@ -1316,12 +1416,15 @@ namespace Poly_Ling.EditorIO
                     mc.Type != MeshType.MirrorSide &&
                     mc.Type != MeshType.BakedMirror) continue;
                 if (mc.MeshObject == null) continue;
-                if (_exportVisibleOnly && !mc.IsVisible) continue;
+                if (!exportTargets.Contains(i)) continue;
 
-                bool isSkinned = mc.MeshObject.HasBoneWeight && boneTransformMap.Count > 0;
+                bool isSkinned = mc.MeshObject.HasBoneWeight && boneTransformMap.Count > 0
+                              && !_supplementedIndices.Contains(i);
 
                 // 頂点を持たないノードは関節（グループ）として扱い、空の GameObject にする。
-                bool isJoint = mc.MeshObject.Vertices.Count == 0;
+                // 補完で追加した不可視ノードも同じ扱い（Transform のみ・レンダラなし）。
+                bool isJoint = mc.MeshObject.Vertices.Count == 0
+                            || _supplementedIndices.Contains(i);
 
                 Mesh unityMesh = null;
                 if (!isJoint)
@@ -1344,7 +1447,12 @@ namespace Poly_Ling.EditorIO
                 if (!inBranch) side = 0;
 
                 // 関節は両側に複製する。メッシュは所属側のみ。
-                bool makeNormal = !inBranch || isJoint || side == 0;
+                //   ただし補完で追加したミラー側コンテキストは「ミラー枝の親の受け皿」なので
+                //   isJoint でもミラー側だけに出す（実体側へ空ノードを増やさない）。
+                bool supplementedMirrorSide =
+                    _supplementedIndices.Contains(i) && MirrorBranchOps.IsMirrorSideContext(mc);
+
+                bool makeNormal = !supplementedMirrorSide && (!inBranch || isJoint || side == 0);
                 bool makeMirror = inBranch && (isJoint || side == 1);
 
                 if (makeNormal)
@@ -1373,8 +1481,129 @@ namespace Poly_Ling.EditorIO
             foreach (var kv in meshTransformByIndex) _exportedRealTf[kv.Key]   = kv.Value;
             foreach (var kv in mirrorTransformByIndex) _exportedMirrorTf[kv.Key] = kv.Value;
 
+            _report.BoneCount         = boneTransformMap.Count;
+            _report.ExportedNodeCount = meshTransformByIndex.Count + mirrorTransformByIndex.Count;
+            _report.SupplementedAncestorCount = _supplementedIndices.Count;
+
             Undo.CollapseUndoOperations(undoGroup);
             return rootGo;
+        }
+
+        /// <summary>
+        /// 出力対象の索引集合を作る。
+        ///
+        /// ・「可視メッシュのみ」が OFF なら全メッシュ系ノードが対象。
+        /// ・ON のときは可視ノードを起点に parentIndices を親方向へたどり、
+        ///   途中の不可視ノードを補完して対象へ加える（_supplementedIndices に印を付ける）。
+        ///   補完しないと、その子は親 Transform を引けずルート直下へ平坦化される。
+        /// ・補完したノードは Transform のみで出力する（隠した形状は出さない）。
+        /// ・ミラー枝は親をミラー相方で解決する（MirrorBranchOps.TryResolveMirrorParent）。
+        ///   相方が不可視で出力されないと実体側の親へフォールバックしてピボットが
+        ///   実体側基準に落ちるため、親として使う実体側ノードのミラー相方も補完する。
+        /// </summary>
+        private HashSet<int> BuildExportTargets(
+            ModelContext model, int[] parentIndices,
+            MirrorPeerIndex peers, Dictionary<int, int> branchSide)
+        {
+            _supplementedIndices.Clear();
+
+            var targets = new HashSet<int>();
+            if (model == null) return targets;
+
+            // 候補（メッシュ系ノード）と可視ノードを拾う。
+            var candidates = new HashSet<int>();
+            for (int i = 0; i < model.MeshContextCount; i++)
+            {
+                var mc = model.GetMeshContext(i);
+                if (mc == null || mc.MeshObject == null) continue;
+                if (mc.Type != MeshType.Mesh &&
+                    mc.Type != MeshType.MirrorSide &&
+                    mc.Type != MeshType.BakedMirror) continue;
+
+                candidates.Add(i);
+                if (!_exportVisibleOnly || mc.IsVisible) targets.Add(i);
+            }
+
+            if (!_exportVisibleOnly) return targets;
+
+            int skipped = candidates.Count - targets.Count;
+
+            if (_includeInvisibleAncestors)
+            {
+                // 可視ノードそれぞれから親をたどる。既に対象なら打ち切ってよい。
+                var seeds = new List<int>(targets);
+                foreach (int seed in seeds)
+                {
+                    int cur   = ResolveParentIndex(model, parentIndices, seed);
+                    int guard = 0;
+
+                    while (cur >= 0 && guard++ < 4096)
+                    {
+                        if (targets.Contains(cur)) break;
+                        if (!candidates.Contains(cur))
+                        {
+                            // ボーン等はこのループの対象外。親方向の探索も打ち切る。
+                            break;
+                        }
+
+                        targets.Add(cur);
+                        _supplementedIndices.Add(cur);
+
+                        cur = ResolveParentIndex(model, parentIndices, cur);
+                    }
+                }
+
+                // ── 第2段階: ミラー相方の補完 ────────────────────────
+                //   親として使われる実体側ノードのミラー相方が不可視で欠けると、
+                //   TryResolveMirrorParent が実体側へフォールバックしてミラー枝が崩れる。
+                var parentsInUse = new HashSet<int>();
+                foreach (int idx in targets)
+                {
+                    int pi = ResolveParentIndex(model, parentIndices, idx);
+                    if (pi >= 0) parentsInUse.Add(pi);
+                }
+
+                foreach (int pi in parentsInUse)
+                {
+                    if (peers == null) break;
+                    if (!peers.TryGetMirror(pi, out int mirrorIdx)) continue;
+                    if (targets.Contains(mirrorIdx)) continue;
+                    if (!candidates.Contains(mirrorIdx)) continue;
+
+                    // ミラー枝の中にあるものだけを補完する。
+                    if (branchSide == null ||
+                        !branchSide.TryGetValue(mirrorIdx, out int side) ||
+                        side != MirrorBranchOps.SideMirror) continue;
+
+                    targets.Add(mirrorIdx);
+                    _supplementedIndices.Add(mirrorIdx);
+                }
+
+                skipped -= _supplementedIndices.Count;
+
+                if (_supplementedIndices.Count > 0)
+                {
+                    var names = new List<string>();
+                    foreach (int idx in _supplementedIndices)
+                        names.Add(model.GetMeshContext(idx)?.Name ?? $"[{idx}]");
+
+                    _report.Note(
+                        $"不可視の親を {_supplementedIndices.Count} 件補完しました"
+                        + "（Transform のみ）: " + string.Join(", ", names));
+                }
+            }
+
+            _report.SkippedInvisibleCount = skipped < 0 ? 0 : skipped;
+            return targets;
+        }
+
+        /// <summary>Depth 補正済みの親インデックスを引く。範囲外なら HierarchyParentIndex。</summary>
+        private static int ResolveParentIndex(ModelContext model, int[] parentIndices, int index)
+        {
+            if (parentIndices != null && index >= 0 && index < parentIndices.Length)
+                return parentIndices[index];
+
+            return model.GetMeshContext(index)?.HierarchyParentIndex ?? -1;
         }
 
         // ================================================================
@@ -1593,7 +1822,7 @@ namespace Poly_Ling.EditorIO
                 Rigidbody connected = bodyA != null ? bodyB : bodyA;
                 if (host == null)
                 {
-                    Debug.LogWarning($"[ExportPhysics] JOINT '{mc.Name}' の接続剛体が見つからずスキップ。");
+                    _report.Warn($"JOINT '{mc.Name}' の接続剛体が見つからずスキップ。");
                     continue;
                 }
 

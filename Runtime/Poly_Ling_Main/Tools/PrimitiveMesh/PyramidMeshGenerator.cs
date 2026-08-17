@@ -75,7 +75,9 @@ namespace Poly_Ling.PrimitiveMesh
             {
                 int si = md.VertexCount;
                 Vector3 p0 = base3[i], p1 = base3[(i+1) % p.Sides];
-                Vector3 n = NormalHelper.CalculateFaceNormal(p0, p1, apex);
+                // 面は AddTriangle(si, si+2, si+1) = (p0, apex, p1) の順で張る。
+                // 宣言法線も同じ順で求めないと外向きの巻き順に対して内向きになる。
+                Vector3 n = NormalHelper.CalculateFaceNormal(p0, apex, p1);
                 md.Vertices.Add(new Vertex(p0,   new Vector2(0,   0), n));
                 md.Vertices.Add(new Vertex(p1,   new Vector2(1,   0), n));
                 md.Vertices.Add(new Vertex(apex, new Vector2(0.5f,1), n));

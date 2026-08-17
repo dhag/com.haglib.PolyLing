@@ -29,6 +29,8 @@ namespace Poly_Ling.Player
         public bool ShowUnselectedMeshOrigin;
         /// <summary>ミラー側の原点マーカーを描くか。既定 false。</summary>
         public bool ShowMirrorMeshOrigin;
+        /// <summary>法線（頂点スロット単位）を描くか。選択メッシュのみ対象。既定 false。</summary>
+        public bool ShowNormals;
 
         /// <summary>
         /// MeshSceneRenderer のデフォルト値と一致するデフォルト設定を返す。
@@ -49,6 +51,7 @@ namespace Poly_Ling.Player
             ShowSelectedMeshOrigin   = true,
             ShowUnselectedMeshOrigin = true,
             ShowMirrorMeshOrigin     = false,
+            ShowNormals              = false,
         };
 
         /// <summary>
@@ -82,6 +85,7 @@ namespace Poly_Ling.Player
             if (ShowSelectedMeshOrigin)   b |= 1 << 11;
             if (ShowUnselectedMeshOrigin) b |= 1 << 12;
             if (ShowMirrorMeshOrigin)     b |= 1 << 13;
+            if (ShowNormals)              b |= 1 << 14;
             return b;
         }
 
@@ -105,6 +109,8 @@ namespace Poly_Ling.Player
             ShowUnselectedMeshOrigin = (b & (1 << 12)) != 0,
             // 旧データにはビット13が無いので false になる。新既定と一致する。
             ShowMirrorMeshOrigin     = (b & (1 << 13)) != 0,
+            // 旧データにはビット14が無いので false になる。新既定と一致する。
+            ShowNormals              = (b & (1 << 14)) != 0,
         };
     }
 }

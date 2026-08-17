@@ -27,6 +27,7 @@ using Poly_Ling.MeshListV2;
 using Poly_Ling.Tools;
 using Poly_Ling.Tools.ObjectArray;
 using Poly_Ling.Diagnostics;
+using Poly_Ling.Ops;
 
 namespace Poly_Ling.Player
 {
@@ -97,6 +98,14 @@ namespace Poly_Ling.Player
 
         private readonly PlayerViewportManager _viewportManager = new PlayerViewportManager();
         private PlayerLayoutRoot               _layoutRoot;
+
+        // 左ペインの「法線自動計算」トグルを選択状態から書き戻す間だけ true。
+        // SetValueWithoutNotify を使ってもコールバックが走る経路を作らないための保険。
+        private bool _isSyncingNormalRecalcToggle;
+
+        // 左ペインの「再計算」ボタンが使うスムージング角。
+        // 法線編集パネル（PlayerNormalEditSubPanel）の既定値と同じ値にしてある。
+        private const float NormalRecalcDefaultAngleDeg = 59.5f;
         private PlayerImportSubPanel           _importSubPanel;
         private PlayerExportSubPanel           _exportSubPanel;
         // プロジェクト保存 / 読込。押し間違い防止のため別パネル・別セクションに分ける。
@@ -116,8 +125,15 @@ namespace Poly_Ling.Player
         private SelectionState         _selectionState;
         private PlayerSelectionOps     _selectionOps;
         private PlayerVertexInteractor _vertexInteractor;
-        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, Camera }
+        private enum InteractionMode { None, VertexMove, ObjectMove, PivotOffset, Sculpt, AdvancedSelect, SkinWeightPaint, AddFace, EdgeBevel, EdgeExtrude, FaceExtrude, EdgeTopology, Knife, FlipFace, Solidify, Rotate, Scale, SelectOnly, PrimitivePlace, WorkAxis, Deform, Lattice, DeleteFace, VertexDissolve, Tri4To1, FaceMerge, Quad4To1, FaceMergeCollapse, Camera }
         private InteractionMode               _interactionMode = InteractionMode.VertexMove;
+
+        // パネルごとの「ビューポートで選択する」チェックの保存キー。
+        // 他パネルへ広げるときはここへキーを足し、Build 直後に
+        // AttachPanelSelectToggle、Show～Panel を ShowRightPanelSelectable にする。
+        private const string PanelSelectKeyMeshList   = "MeshList";
+        private const string PanelSelectKeyVertexHole = "VertexHole";
+        private const string PanelSelectKeyPrimitive  = "Primitive";
 
         // ================================================================
         // 一時選択サブツール (ショートカット R = 矩形 / G = 投げ縄。左ペインのボタンも同じ)
@@ -222,12 +238,22 @@ namespace Poly_Ling.Player
         private MergeVerticesToolHandler          _mergeVerticesHandler;
         private PlayerSplitVerticesSubPanel       _splitVerticesSubPanel;
         private PlayerVertexHoleSubPanel          _vertexHoleSubPanel;
+        private PlayerVertexDissolveSubPanel      _vertexDissolveSubPanel;
+        private PlayerTri4To1SubPanel             _tri4To1SubPanel;
+        private PlayerFaceMergeSubPanel           _faceMergeSubPanel;
+        private PlayerQuad4To1SubPanel            _quad4To1SubPanel;
+        private PlayerFaceMergeCollapseSubPanel   _faceMergeCollapseSubPanel;
         // 頂点IDユーティリティ。ID を使う突き合わせ操作の前段で状態を確認・修復する。
         private PlayerVertexIdSubPanel           _vertexIdSubPanel;
         // モデル間頂点データ転送。メッシュのペアを明示して 1 対 1 で転送する。
         private PlayerVertexTransferSubPanel     _vertexTransferSubPanel;
         private SplitVerticesToolHandler          _splitVerticesHandler;
         private VertexHoleToolHandler             _vertexHoleHandler;
+        private VertexDissolveToolHandler         _vertexDissolveHandler;
+        private Tri4To1ToolHandler                _tri4To1Handler;
+        private FaceMergeToolHandler              _faceMergeHandler;
+        private Quad4To1ToolHandler               _quad4To1Handler;
+        private FaceMergeCollapseToolHandler      _faceMergeCollapseHandler;
         // 選択削除サブツール。専用サブパネルは持たない (左ペインのボタンと D キーのみ)。
         private DeleteSelectionToolHandler        _deleteSelectionHandler;
         private PlayerAddFaceSubPanel             _addFaceSubPanel;
@@ -367,6 +393,7 @@ namespace Poly_Ling.Player
                         bool needsRebuild = lastRecord is MeshListChangeRecord
                                          || lastRecord is MeshAttributesBatchChangeRecord
                                          || lastRecord is MultiMeshVertexSnapshotRecord
+                                         || lastRecord is MultiMeshTopologySnapshotRecord
                                          || lastRecord is MeshReorderChangeRecord;
                         bool isReorder    = lastRecord is MeshReorderChangeRecord;
                         UnityEngine.Debug.Log(
@@ -584,6 +611,11 @@ namespace Poly_Ling.Player
                             // 戻らない（適用側 ApplyMaterialToFacesCommand と対称の処理）。
                             liveMc.UnityMesh = liveMc.MeshObject.ToUnityMesh(targetModel.MaterialCount);
                             _editOps.UndoController.SyncMeshObjectReference(liveMc.MeshObject, liveMc.UnityMesh);
+                            // ミラー側は実体側から導出される、という原則を Undo 後も保つ。
+                            // スナップショットには実体側しか入っていないため、復元後に
+                            // 法線とスロットを取り直す（位置側の RebakeDerivedMirrorVertices と対称）。
+                            MirrorBranchOps.RebakeDerivedMirrorNormals(
+                                targetModel.MeshContextList, targetModel.MaterialCount);
                             // Phase 2a-2b-2 Batch 3: Undo 適用の GPU 丸ごと再構築は EnterUndoApplied 経由。
                             _viewportManager.EnterUndoApplied(ActiveProject, targetModel);
                             NotifyPanels(ChangeKind.Attributes);
@@ -713,6 +745,11 @@ namespace Poly_Ling.Player
                 _knifeHandler?.SetProject(ActiveProject);
                 _solidifyHandler?.SetProject(ActiveProject);
                 _deleteSelectionHandler?.SetProject(ActiveProject);
+                _vertexDissolveHandler?.SetProject(ActiveProject);
+                _tri4To1Handler?.SetProject(ActiveProject);
+                _faceMergeHandler?.SetProject(ActiveProject);
+                _quad4To1Handler?.SetProject(ActiveProject);
+                _faceMergeCollapseHandler?.SetProject(ActiveProject);
 
                 _editOps?.UndoController.SetModelContext(loadedModel);
                 // 問題 A/B 対応: ProjectStack (モデル切替用 Undo) の Context も同期する。
@@ -1300,6 +1337,22 @@ namespace Poly_Ling.Player
             ConnectCancelKey(_layoutRoot?.TopPanel);
             ConnectCancelKey(_layoutRoot?.FrontPanel);
             ConnectCancelKey(_layoutRoot?.SidePanel);
+
+            // Backspace / Delete による「直前に指定した点」の取り消し（面追加のみ）。
+            void ConnectUndoPointKey(PlayerViewportPanel p)
+            {
+                if (p == null) return;
+                p.OnUndoPointKey += () =>
+                {
+                    if (_interactionMode != InteractionMode.AddFace) return;
+                    if (_addFaceHandler != null && _addFaceHandler.RemoveLastPoint())
+                        _addFaceSubPanel?.Refresh();
+                };
+            }
+            ConnectUndoPointKey(_layoutRoot?.PerspectivePanel);
+            ConnectUndoPointKey(_layoutRoot?.TopPanel);
+            ConnectUndoPointKey(_layoutRoot?.FrontPanel);
+            ConnectUndoPointKey(_layoutRoot?.SidePanel);
 
             // 面追加（四角形）で3点配置済みのとき、右クリックで三角形として確定する。
             // 右ドラッグはカメラ回転だが、OnClick はドラッグ閾値未満のときだけ発火するため競合しない。
@@ -1987,6 +2040,167 @@ namespace Poly_Ling.Player
                 return;
             }
 
+            // ── 頂点溶解 / 三角形4→1 / 面結合 ─────────────────────────────
+            // マウス直下の要素だけを実行可否で色分けする（緑=実行できる、赤=できない）。
+            // 実行できるときは、その操作で消える面の外周も同色で描いて影響範囲を示す。
+            // 候補を全部塗る方式は採らない（内部の頂点・辺はほぼ全部候補になるため）。
+            if ((_interactionMode == InteractionMode.VertexDissolve
+              || _interactionMode == InteractionMode.Tri4To1
+              || _interactionMode == InteractionMode.FaceMerge
+              || _interactionMode == InteractionMode.Quad4To1
+              || _interactionMode == InteractionMode.FaceMergeCollapse) && mo != null)
+            {
+                var points   = new System.Collections.Generic.List<(UnityEngine.Vector2, UnityEngine.Color, float)>();
+                var okColor  = new UnityEngine.Color(0.2f, 1f, 0.35f);
+                var ngColor  = new UnityEngine.Color(1f, 0.3f, 0.25f);
+                var hoverModel = ActiveProject?.CurrentModel;
+
+                // 面の外周を線として積む。
+                void AddFaceOutline(int faceIndex, UnityEngine.Color col)
+                {
+                    if (faceIndex < 0 || faceIndex >= mo.FaceCount) return;
+                    var f = mo.Faces[faceIndex];
+                    int n = f.VertexIndices.Count;
+                    if (n < 2) return;
+                    for (int i = 0; i < n; i++)
+                    {
+                        int va = f.VertexIndices[i];
+                        int vb = f.VertexIndices[(i + 1) % n];
+                        if (va < 0 || va >= mo.VertexCount || vb < 0 || vb >= mo.VertexCount) continue;
+                        lines.Add((toScreen(mo.Vertices[va].Position),
+                                   toScreen(mo.Vertices[vb].Position), col));
+                    }
+                }
+
+                // (v0,v1) を辺として持つ面を列挙する（2頂点の線分は除く）。
+                System.Collections.Generic.List<int> FacesOnEdge(int v0, int v1)
+                {
+                    var result = new System.Collections.Generic.List<int>();
+                    for (int fi = 0; fi < mo.FaceCount; fi++)
+                    {
+                        var f = mo.Faces[fi];
+                        int n = f.VertexIndices.Count;
+                        if (n < 3) continue;
+                        for (int i = 0; i < n; i++)
+                        {
+                            int a = f.VertexIndices[i];
+                            int b = f.VertexIndices[(i + 1) % n];
+                            if ((a == v0 && b == v1) || (a == v1 && b == v0)) { result.Add(fi); break; }
+                        }
+                    }
+                    return result;
+                }
+
+                bool sameMesh(PlayerHoverElement e) =>
+                    hoverModel != null && e.MeshIndex == hoverModel.ActiveMeshIndex;
+
+                if (_interactionMode == InteractionMode.Quad4To1)
+                {
+                    var elem = _viewportManager.GetHoverElement(MeshSelectMode.Vertex, hoverModel);
+                    int v = elem.VertexIndex;
+                    if (elem.Kind == PlayerHoverKind.Vertex && sameMesh(elem)
+                        && v >= 0 && v < mo.VertexCount)
+                    {
+                        var info = Quad4To1Ops.Inspect(mo, v);
+                        var col  = info.CanExecute ? okColor : ngColor;
+
+                        // 実行できるときは、1枚に統合される四角形4枚の外周を描く。
+                        if (info.CanExecute)
+                        {
+                            for (int fi = 0; fi < mo.FaceCount; fi++)
+                                if (mo.Faces[fi].VertexIndices.Contains(v)) AddFaceOutline(fi, col);
+                        }
+                        points.Add((toScreen(mo.Vertices[v].Position), col, 7f));
+                    }
+                }
+                else if (_interactionMode == InteractionMode.FaceMergeCollapse)
+                {
+                    var elem = _viewportManager.GetHoverElement(MeshSelectMode.Edge, hoverModel);
+                    int v0 = elem.EdgeV1, v1 = elem.EdgeV2;
+                    if (elem.Kind == PlayerHoverKind.Edge && sameMesh(elem)
+                        && v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                    {
+                        var info = FaceMergeCollapseOps.Inspect(mo, new VertexPair(v0, v1));
+                        var col  = info.CanExecute ? okColor : ngColor;
+
+                        if (info.CanExecute)
+                            foreach (int g in FacesOnEdge(v0, v1)) AddFaceOutline(g, col);
+
+                        lines.Add((toScreen(mo.Vertices[v0].Position),
+                                   toScreen(mo.Vertices[v1].Position), col));
+                        points.Add((toScreen(mo.Vertices[v0].Position), col, 5f));
+                        points.Add((toScreen(mo.Vertices[v1].Position), col, 5f));
+                    }
+                }
+                else if (_interactionMode == InteractionMode.VertexDissolve)
+                {
+                    var elem = _viewportManager.GetHoverElement(MeshSelectMode.Vertex, hoverModel);
+                    int v = elem.VertexIndex;
+                    if (elem.Kind == PlayerHoverKind.Vertex && sameMesh(elem)
+                        && v >= 0 && v < mo.VertexCount)
+                    {
+                        var info = VertexDissolveOps.Inspect(mo, v);
+                        var col  = info.CanExecute ? okColor : ngColor;
+
+                        // 実行できるときは、1枚に統合される面の外周を描く。
+                        if (info.CanExecute)
+                        {
+                            for (int fi = 0; fi < mo.FaceCount; fi++)
+                                if (mo.Faces[fi].VertexIndices.Contains(v)) AddFaceOutline(fi, col);
+                        }
+                        points.Add((toScreen(mo.Vertices[v].Position), col, 7f));
+                    }
+                }
+                else if (_interactionMode == InteractionMode.Tri4To1)
+                {
+                    var elem = _viewportManager.GetHoverElement(MeshSelectMode.Face, hoverModel);
+                    int fi0  = elem.FaceIndex;
+                    if (elem.Kind == PlayerHoverKind.Face && sameMesh(elem)
+                        && fi0 >= 0 && fi0 < mo.FaceCount)
+                    {
+                        var info = Tri4To1Ops.Inspect(mo, fi0);
+                        var col  = info.CanExecute ? okColor : ngColor;
+
+                        AddFaceOutline(fi0, col);
+
+                        // 実行できるときは、一緒に消える囲みの3枚も描く。
+                        if (info.CanExecute)
+                        {
+                            var f = mo.Faces[fi0];
+                            int n = f.VertexIndices.Count;
+                            for (int i = 0; i < n; i++)
+                            {
+                                var nb = FacesOnEdge(f.VertexIndices[i], f.VertexIndices[(i + 1) % n]);
+                                foreach (int g in nb) if (g != fi0) AddFaceOutline(g, col);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    var elem = _viewportManager.GetHoverElement(MeshSelectMode.Edge, hoverModel);
+                    int v0 = elem.EdgeV1, v1 = elem.EdgeV2;
+                    if (elem.Kind == PlayerHoverKind.Edge && sameMesh(elem)
+                        && v0 >= 0 && v0 < mo.VertexCount && v1 >= 0 && v1 < mo.VertexCount)
+                    {
+                        var info = FaceMergeOps.Inspect(mo, new VertexPair(v0, v1));
+                        var col  = info.CanExecute ? okColor : ngColor;
+
+                        // 実行できるときは、結合される2枚の外周を描く。
+                        if (info.CanExecute)
+                            foreach (int g in FacesOnEdge(v0, v1)) AddFaceOutline(g, col);
+
+                        lines.Add((toScreen(mo.Vertices[v0].Position),
+                                   toScreen(mo.Vertices[v1].Position), col));
+                        points.Add((toScreen(mo.Vertices[v0].Position), col, 5f));
+                        points.Add((toScreen(mo.Vertices[v1].Position), col, 5f));
+                    }
+                }
+
+                panel.UpdateTopoToolOverlay(lines, points);
+                return;
+            }
+
             panel.HideTopoToolOverlay();
         }
 
@@ -2253,6 +2467,7 @@ namespace Poly_Ling.Player
             _meshListSubPanel = new MeshListSubPanel();
             _meshListSubPanel.Build(_layoutRoot.MeshListSection);
             _meshListSubPanel.SetContext(_panelContext);
+            AttachPanelSelectToggle(_layoutRoot.MeshListSection, PanelSelectKeyMeshList);
 
             // ObjectMoveTRSPanel は BoneEditorSubPanel に統合済みのため生成不要
 
@@ -2635,6 +2850,112 @@ namespace Poly_Ling.Player
                 GetH = () => _vertexHoleHandler,
             };
             _vertexHoleSubPanel.Build(_layoutRoot.VertexHoleSection);
+            AttachPanelSelectToggle(_layoutRoot.VertexHoleSection, PanelSelectKeyVertexHole);
+
+            _vertexDissolveHandler = new VertexDissolveToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _vertexDissolveHandler.SetProject(ActiveProject);
+            _vertexDissolveHandler.SetUndoController(_editOps?.UndoController);
+            _vertexDissolveHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _vertexDissolveHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _vertexDissolveSubPanel = new PlayerVertexDissolveSubPanel
+            {
+                GetH = () => _vertexDissolveHandler,
+            };
+            _vertexDissolveSubPanel.Build(_layoutRoot.VertexDissolveSection);
+
+            _tri4To1Handler = new Tri4To1ToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _tri4To1Handler.SetProject(ActiveProject);
+            _tri4To1Handler.SetUndoController(_editOps?.UndoController);
+            _tri4To1Handler.SetCommandQueue(_editOps?.CommandQueue);
+            _tri4To1Handler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _tri4To1SubPanel = new PlayerTri4To1SubPanel
+            {
+                GetH = () => _tri4To1Handler,
+            };
+            _tri4To1SubPanel.Build(_layoutRoot.Tri4To1Section);
+
+            _faceMergeHandler = new FaceMergeToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _faceMergeHandler.SetProject(ActiveProject);
+            _faceMergeHandler.SetUndoController(_editOps?.UndoController);
+            _faceMergeHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _faceMergeHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _faceMergeSubPanel = new PlayerFaceMergeSubPanel
+            {
+                GetH = () => _faceMergeHandler,
+            };
+            _faceMergeSubPanel.Build(_layoutRoot.FaceMergeSection);
+
+            _quad4To1Handler = new Quad4To1ToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _quad4To1Handler.SetProject(ActiveProject);
+            _quad4To1Handler.SetUndoController(_editOps?.UndoController);
+            _quad4To1Handler.SetCommandQueue(_editOps?.CommandQueue);
+            _quad4To1Handler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _quad4To1SubPanel = new PlayerQuad4To1SubPanel
+            {
+                GetH = () => _quad4To1Handler,
+            };
+            _quad4To1SubPanel.Build(_layoutRoot.Quad4To1Section);
+
+            _faceMergeCollapseHandler = new FaceMergeCollapseToolHandler
+            {
+                GetToolContext = () => _viewportManager.GetCurrentToolContext(_activeViewport),
+                OnRepaint      = () => _activePanel?.MarkDirtyRepaint(),
+            };
+            _faceMergeCollapseHandler.SetProject(ActiveProject);
+            _faceMergeCollapseHandler.SetUndoController(_editOps?.UndoController);
+            _faceMergeCollapseHandler.SetCommandQueue(_editOps?.CommandQueue);
+            _faceMergeCollapseHandler.NotifyTopologyChanged = () =>
+                {
+                    var proj = ActiveProject;
+                    if (proj?.CurrentModel == null) return;
+                    _viewportManager.EnterTopologyChanged(proj);
+                    NotifyPanels(ChangeKind.ListStructure);
+                };
+            _faceMergeCollapseSubPanel = new PlayerFaceMergeCollapseSubPanel
+            {
+                GetH = () => _faceMergeCollapseHandler,
+            };
+            _faceMergeCollapseSubPanel.Build(_layoutRoot.FaceMergeCollapseSection);
 
             _vertexIdSubPanel = new PlayerVertexIdSubPanel
             {
@@ -2793,6 +3114,11 @@ namespace Poly_Ling.Player
                     _edgeTopologyHandler?.SetProject(ActiveProject);
                     _knifeHandler?.SetProject(ActiveProject);
                     _deleteSelectionHandler?.SetProject(ActiveProject);
+                    _vertexDissolveHandler?.SetProject(ActiveProject);
+                    _tri4To1Handler?.SetProject(ActiveProject);
+                    _faceMergeHandler?.SetProject(ActiveProject);
+                    _quad4To1Handler?.SetProject(ActiveProject);
+                    _faceMergeCollapseHandler?.SetProject(ActiveProject);
                     RebuildModelList();
                     NotifyPanels(ChangeKind.ListStructure);
                     return true;
@@ -3172,7 +3498,7 @@ namespace Poly_Ling.Player
                     NotifyPanels(ChangeKind.ListStructure);
                 },
                 // 生成メッシュの追加は図形生成と同じ経路に流す（UNDO もそちらで記録される）。
-                OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode),
+                OnMeshCreated = (mo, name, pos, rot, scl, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode),
             };
             _solidifyHandler.SetProject(ActiveProject);
             _solidifyHandler.SetUndoController(_editOps?.UndoController);
@@ -3319,7 +3645,7 @@ namespace Poly_Ling.Player
             // 最後に選んだ図形の保存キー。Build 内で読み込むため Build より前に設定する。
             _primitiveSubPanel.MemoryKey = "Primitive";
             _primitiveSubPanel.Build(_layoutRoot.PrimitiveSection, _sceneRoot);
-            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
+            _primitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode);
             _primitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
             _primitiveSubPanel.GetSelectedFaceIndices = () =>
@@ -3332,6 +3658,9 @@ namespace Poly_Ling.Player
             // 歪み複製（高度な図形）。作業軸を基準に複製＋歪みを行う。
             _primitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
             _primitiveSubPanel.OnObjectArrayGenerate = ExecuteObjectArray;
+            // 穴つなぎ（ブリッジ）。種の取り込みと実生成は Viewer 側が持つ。
+            WireBridgeCallbacks(_primitiveSubPanel);
+            AttachPanelSelectToggle(_layoutRoot.PrimitiveSection, PanelSelectKeyPrimitive);
 
             _layoutRoot.PrimitiveBtn.clicked += ShowPrimitivePanel;
             _layoutRoot.AdvancedPrimitiveBtn.clicked += ShowAdvancedPrimitivePanel;
@@ -3352,7 +3681,7 @@ namespace Poly_Ling.Player
             _livePrimitiveSubPanel.MemoryKey = "LivePrimitive";
 
             _livePrimitiveSubPanel.Build(_layoutRoot.LivePrimitiveSection, _sceneRoot);
-            _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, ign, mode);
+            _livePrimitiveSubPanel.OnMeshCreated = (mo, name, pos, rot, scl, ign, mode) => OnPrimitiveMeshCreated(mo, name, pos, rot, scl, ign, mode);
             _livePrimitiveSubPanel.GetSelectedMeshObject = () =>
                 ActiveProject?.CurrentModel?.ActiveMeshContext?.MeshObject;
             _livePrimitiveSubPanel.GetSelectedFaceIndices = () =>
@@ -3365,6 +3694,8 @@ namespace Poly_Ling.Player
             // 歪み複製（新しい高度）。既存インスタンスとは状態を共有しない。
             _livePrimitiveSubPanel.GetDrawableIndexList  = BuildDrawableIndexList;
             _livePrimitiveSubPanel.OnObjectArrayGenerate = ExecuteObjectArray;
+            // 穴つなぎ（ブリッジ）。既存インスタンスと同じ経路を通す。
+            WireBridgeCallbacks(_livePrimitiveSubPanel);
 
             // 配置ギズモ。モデルには触れず、サブパネルの TRS だけを読み書きする。
             _primitivePlaceHandler = new PrimitivePlaceToolHandler
@@ -3434,6 +3765,16 @@ namespace Poly_Ling.Player
             _layoutRoot.SplitVerticesBtn.clicked        += ShowSplitVerticesPanel;
             if (_layoutRoot.VertexHoleBtn != null)
                 _layoutRoot.VertexHoleBtn.clicked       += ShowVertexHolePanel;
+            if (_layoutRoot.VertexDissolveBtn != null)
+                _layoutRoot.VertexDissolveBtn.clicked   += ShowVertexDissolvePanel;
+            if (_layoutRoot.Tri4To1Btn != null)
+                _layoutRoot.Tri4To1Btn.clicked          += ShowTri4To1Panel;
+            if (_layoutRoot.FaceMergeBtn != null)
+                _layoutRoot.FaceMergeBtn.clicked        += ShowFaceMergePanel;
+            if (_layoutRoot.Quad4To1Btn != null)
+                _layoutRoot.Quad4To1Btn.clicked         += ShowQuad4To1Panel;
+            if (_layoutRoot.FaceMergeCollapseBtn != null)
+                _layoutRoot.FaceMergeCollapseBtn.clicked += ShowFaceMergeCollapsePanel;
             if (_layoutRoot.VertexIdBtn != null)
                 _layoutRoot.VertexIdBtn.clicked          += ShowVertexIdPanel;
             if (_layoutRoot.VertexTransferBtn != null)
@@ -3453,6 +3794,9 @@ namespace Poly_Ling.Player
             _layoutRoot.FaceExtrudeBtn.clicked           += ShowFaceExtrudePanel;
             _layoutRoot.EdgeTopologyBtn.clicked          += ShowEdgeTopologyPanel;
             _layoutRoot.KnifeBtn.clicked                 += ShowKnifePanel;
+            // 穴つなぎ。図形生成パネルを開いて「ブリッジ」を選択する。
+            if (_layoutRoot.BridgeBtn != null)
+                _layoutRoot.BridgeBtn.clicked            += () => ShowPrimitiveShape(PlayerPrimitiveMeshSubPanel.ShapeKind.Bridge);
             _layoutRoot.SolidifyBtn.clicked              += ShowSolidifyPanel;
             _layoutRoot.MediaPipeBtn.clicked        += ShowMediaPipePanel;
             _layoutRoot.VMDTestBtn.clicked          += ShowVMDTestPanel;
@@ -3515,6 +3859,31 @@ namespace Poly_Ling.Player
                         ? ObjectMoveToolHandler.SelectionDragMode.Lasso
                         : ObjectMoveToolHandler.SelectionDragMode.Box;
             });
+
+            // ── 法線 自動計算 / 手動再計算 ──────────────────────────────
+            // 自動計算 ON  = 選択メッシュの PreserveNormals を false にする
+            // 自動計算 OFF = 選択メッシュの PreserveNormals を true  にする
+            // 既定は OFF（MeshObject.PreserveNormals の既定が true）。
+            _layoutRoot.AutoRecalcNormalsToggle.RegisterValueChangedCallback(e =>
+            {
+                if (_isSyncingNormalRecalcToggle) return;
+                var indices = CollectSelectedMeshIndices();
+                if (indices.Length == 0) return;
+                _commandDispatcher?.Dispatch(new SetPreserveNormalsCommand(
+                    ActiveProject?.CurrentModelIndex ?? 0, indices, !e.newValue));
+            });
+
+            // 手動再計算。対象は NormalEditCommand 側で選択メッシュに限定される
+            // （PlayerCommandDispatcher.CollectSelectedMeshContexts）。
+            // 角度は法線編集パネルと同じ既定値を使う。角度を変えて掛けたい場合は
+            // 「法線編集」パネルの「角度で再計算」を使うこと。
+            _layoutRoot.RecalcNormalsBtn.clicked += () =>
+            {
+                _commandDispatcher?.Dispatch(new NormalEditCommand(
+                    ActiveProject?.CurrentModelIndex ?? 0,
+                    NormalEditCommand.Op.RecalcByAngle,
+                    NormalRecalcDefaultAngleDeg));
+            };
 
             // 選択モード切替（頂点/辺/面/線分・非排他）→ 現モデル各メッシュの Selection.Mode に反映。
             _applySelectMode = () =>
@@ -3628,6 +3997,7 @@ namespace Poly_Ling.Player
                                 case PlayerLayoutRoot.VD_SEL_MESH_ORIGIN:   ds.ShowSelectedMeshOrigin   = e.newValue; break;
                                 case PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN: ds.ShowUnselectedMeshOrigin = e.newValue; break;
                                 case PlayerLayoutRoot.VD_MIRROR_MESH_ORIGIN: ds.ShowMirrorMeshOrigin    = e.newValue; break;
+                                case PlayerLayoutRoot.VD_NORMAL:             ds.ShowNormals             = e.newValue; break;
                             }
                             // Phase 2a-2g-3: SetDisplaySettings → EnterDisplaySettingsChanged に集約。
                             _viewportManager.EnterDisplaySettingsChanged(slot, ds);
@@ -3657,6 +4027,7 @@ namespace Poly_Ling.Player
                 SyncTog(PlayerLayoutRoot.VD_SEL_MESH_ORIGIN,   ds.ShowSelectedMeshOrigin);
                 SyncTog(PlayerLayoutRoot.VD_UNSEL_MESH_ORIGIN, ds.ShowUnselectedMeshOrigin);
                 SyncTog(PlayerLayoutRoot.VD_MIRROR_MESH_ORIGIN, ds.ShowMirrorMeshOrigin);
+                SyncTog(PlayerLayoutRoot.VD_NORMAL,             ds.ShowNormals);
                 // Mesh トグルに応じて Mirror トグルの値・有効状態を初期同期する。
                 ApplyMirrorToggleGating(s);
             }
@@ -3711,6 +4082,36 @@ namespace Poly_Ling.Player
                 var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
                 if (ctx != null) _vertexHoleHandler?.Activate(ctx);
                 _vertexHoleSubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.VertexDissolveSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _vertexDissolveHandler?.Activate(ctx);
+                _vertexDissolveSubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.Tri4To1Section, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _tri4To1Handler?.Activate(ctx);
+                _tri4To1SubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.FaceMergeSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _faceMergeHandler?.Activate(ctx);
+                _faceMergeSubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.Quad4To1Section, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _quad4To1Handler?.Activate(ctx);
+                _quad4To1SubPanel?.Refresh();
+            }));
+            _sectionRefreshPairs.Add((_layoutRoot.FaceMergeCollapseSection, () =>
+            {
+                var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+                if (ctx != null) _faceMergeCollapseHandler?.Activate(ctx);
+                _faceMergeCollapseSubPanel?.Refresh();
             }));
             _sectionRefreshPairs.Add((_layoutRoot.VertexIdSection,          () => _vertexIdSubPanel?.Refresh()));
             _sectionRefreshPairs.Add((_layoutRoot.VertexTransferSection,    () => _vertexTransferSubPanel?.Refresh()));
@@ -3778,8 +4179,18 @@ namespace Poly_Ling.Player
                 () => EnterSelectSubTool(false));
             _shortcutController.Register(ShortcutMap.CmdSubToolLassoSelect,
                 () => EnterSelectSubTool(true));
-            _shortcutController.Register(ShortcutMap.CmdSubToolDelete,
-                ExecuteDeleteSelection);
+            // Delete は面追加モードで点が置かれている間だけ「直前の点の取り消し」に使う。
+            // それ以外は従来どおり選択削除。
+            _shortcutController.Register(ShortcutMap.CmdSubToolDelete, () =>
+            {
+                if (_interactionMode == InteractionMode.AddFace &&
+                    _addFaceHandler != null && _addFaceHandler.RemoveLastPoint())
+                {
+                    _addFaceSubPanel?.Refresh();
+                    return;
+                }
+                ExecuteDeleteSelection();
+            });
             // D : 面削除モード。面クリックで即削除。Escape で直前のツールへ戻る。
             _shortcutController.Register(ShortcutMap.CmdToolDeleteFace,
                 EnterDeleteFaceMode);
@@ -3990,16 +4401,18 @@ namespace Poly_Ling.Player
 
         private void ShowPrimitivePanel()
         {
-            // カテゴリ 2: 3D 操作 (InteractionMode) は維持
+            // 選択許可チェック（既定 ON なら SelectOnly で開く）。
             // 基本図形/高度な図形は同一 PrimitiveSection を共有し、グリッドだけカテゴリで切替える。
-            ShowRightPanel(_layoutRoot?.PrimitiveSection, _layoutRoot?.PrimitiveBtn);
+            ShowRightPanelSelectable(
+                _layoutRoot?.PrimitiveSection, _layoutRoot?.PrimitiveBtn, PanelSelectKeyPrimitive);
             _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Basic);
         }
 
         private void ShowAdvancedPrimitivePanel()
         {
             // 基本図形と同じセクションを開き、カテゴリのみ高度な図形へ切り替える。
-            ShowRightPanel(_layoutRoot?.PrimitiveSection, _layoutRoot?.AdvancedPrimitiveBtn);
+            ShowRightPanelSelectable(
+                _layoutRoot?.PrimitiveSection, _layoutRoot?.AdvancedPrimitiveBtn, PanelSelectKeyPrimitive);
             _primitiveSubPanel?.SetCategory(PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced);
         }
 
@@ -4079,9 +4492,10 @@ namespace Poly_Ling.Player
             if (_primitiveSubPanel == null) return;
             bool advanced =
                 _primitiveSubPanel.CategoryOf(k) == PlayerPrimitiveMeshSubPanel.ShapeCategory.Advanced;
-            ShowRightPanel(
+            ShowRightPanelSelectable(
                 _layoutRoot?.PrimitiveSection,
-                advanced ? _layoutRoot?.AdvancedPrimitiveBtn : _layoutRoot?.PrimitiveBtn);
+                advanced ? _layoutRoot?.AdvancedPrimitiveBtn : _layoutRoot?.PrimitiveBtn,
+                PanelSelectKeyPrimitive);
             _primitiveSubPanel.SelectShape(k);
         }
 
@@ -4539,11 +4953,49 @@ namespace Poly_Ling.Player
 
         private void ShowVertexHolePanel()
         {
-            // カテゴリ 2
-            ShowRightPanel(_layoutRoot?.VertexHoleSection, _layoutRoot?.VertexHoleBtn);
+            // 選択許可チェック（既定 ON なら SelectOnly で開く）
+            ShowRightPanelSelectable(
+                _layoutRoot?.VertexHoleSection, _layoutRoot?.VertexHoleBtn, PanelSelectKeyVertexHole);
             var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
             if (ctx != null) _vertexHoleHandler?.Activate(ctx);
             _vertexHoleSubPanel?.Refresh();
+        }
+
+        // カテゴリ 1（3D 操作と右ペインが一体）。頂点／面／辺のクリックで即実行する
+        // 専用モードへ入る。Selection.Mode の固定とフック設定は SetInteractionMode 側。
+        private void ShowVertexDissolvePanel()
+        {
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _vertexDissolveHandler?.Activate(ctx);
+            ShowCategory1Panel(InteractionMode.VertexDissolve);
+        }
+
+        private void ShowTri4To1Panel()
+        {
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _tri4To1Handler?.Activate(ctx);
+            ShowCategory1Panel(InteractionMode.Tri4To1);
+        }
+
+        private void ShowFaceMergePanel()
+        {
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _faceMergeHandler?.Activate(ctx);
+            ShowCategory1Panel(InteractionMode.FaceMerge);
+        }
+
+        private void ShowQuad4To1Panel()
+        {
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _quad4To1Handler?.Activate(ctx);
+            ShowCategory1Panel(InteractionMode.Quad4To1);
+        }
+
+        private void ShowFaceMergeCollapsePanel()
+        {
+            var ctx = _viewportManager.GetCurrentToolContext(_activeViewport);
+            if (ctx != null) _faceMergeCollapseHandler?.Activate(ctx);
+            ShowCategory1Panel(InteractionMode.FaceMergeCollapse);
         }
 
         private void ShowVertexIdPanel()
@@ -4853,9 +5305,9 @@ namespace Poly_Ling.Player
 
         private void ShowMeshListPanel()
         {
-            // カテゴリ 3
-            SetInteractionMode(InteractionMode.None);
-            ShowRightPanel(_layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn);
+            // カテゴリ 3 + 選択許可チェック（既定 ON なら SelectOnly で開く）
+            ShowRightPanelSelectable(
+                _layoutRoot?.MeshListSection, _layoutRoot?.MeshListBtn, PanelSelectKeyMeshList);
         }
 
         private void HideAllRightPanels()
@@ -4901,6 +5353,11 @@ namespace Poly_Ling.Player
             Hide(_layoutRoot.MergeVerticesSection);
             Hide(_layoutRoot.SplitVerticesSection);
             Hide(_layoutRoot.VertexHoleSection);
+            Hide(_layoutRoot.VertexDissolveSection);
+            Hide(_layoutRoot.Tri4To1Section);
+            Hide(_layoutRoot.FaceMergeSection);
+            Hide(_layoutRoot.Quad4To1Section);
+            Hide(_layoutRoot.FaceMergeCollapseSection);
             Hide(_layoutRoot.VertexIdSection);
             Hide(_layoutRoot.VertexTransferSection);
             Hide(_layoutRoot.AddFaceSection);
@@ -4955,6 +5412,7 @@ namespace Poly_Ling.Player
         // 旧 _activeBtn を 2 つに分割
         private Button _activeInteractionBtn;   // InteractionMode を示すボタン
         private Button _activePanelBtn;         // 現在開いている RightPanel を示すボタン
+        private VisualElement _activeRightSection;  // 現在開いている RightPanel のセクション
 
         /// <summary>
         /// InteractionMode に対応するボタンを取得。ない (None / 未割当) なら null。
@@ -5052,7 +5510,33 @@ namespace Poly_Ling.Player
         {
             HideAllRightPanels();
             if (section != null) section.style.display = DisplayStyle.Flex;
+            _activeRightSection = section;
             SetActivePanelButton(panelBtn);
+        }
+
+        /// <summary>
+        /// パネルごとの「ビューポートで選択する」チェックをセクションへ差し込む。
+        /// サブパネルの Build 直後に1回だけ呼ぶ。チェックの変更は、そのパネルを
+        /// 開いている間だけ InteractionMode へ即時反映する。
+        /// </summary>
+        private void AttachPanelSelectToggle(VisualElement section, string key)
+        {
+            PanelSelectToggle.Attach(section, key, on =>
+            {
+                if (section == null || _activeRightSection != section) return;
+                SetInteractionMode(on ? InteractionMode.SelectOnly : InteractionMode.None);
+            });
+        }
+
+        /// <summary>
+        /// カテゴリ3のパネルを、選択許可チェック付きで開く。
+        /// ON なら SelectOnly（移動ギズモなしの選択のみ）、OFF なら None（3D操作無効）。
+        /// </summary>
+        private void ShowRightPanelSelectable(VisualElement section, Button panelBtn, string key)
+        {
+            SetInteractionMode(
+                PanelSelectToggle.IsEnabled(key) ? InteractionMode.SelectOnly : InteractionMode.None);
+            ShowRightPanel(section, panelBtn);
         }
 
         // ================================================================
@@ -5248,8 +5732,351 @@ namespace Poly_Ling.Player
             panel.SetStatus($"{targetMc.Name} へ {pieces.Count} 個ぶんを統合しました");
         }
 
+        // ================================================================
+        // 穴つなぎ（ブリッジ）
+        // ================================================================
+
+        /// <summary>
+        /// 穴つなぎのコールバックを図形生成サブパネルへ配線する。
+        /// 2つのインスタンスとも同じ処理を通す（状態はサブパネル側が個別に持つ）。
+        /// </summary>
+        private void WireBridgeCallbacks(PlayerPrimitiveMeshSubPanel panel)
+        {
+            if (panel == null) return;
+
+            panel.PickBridgeSeed       = PickBridgeSeed;
+            panel.GetMeshObjectAt      = idx =>
+                ActiveProject?.CurrentModel?.GetMeshContext(idx)?.MeshObject;
+            panel.GetMeshNameAt        = idx =>
+                ActiveProject?.CurrentModel?.GetMeshContext(idx)?.Name ?? $"#{idx}";
+            panel.GetMeshWorldMatrixAt = idx =>
+                ActiveProject?.CurrentModel?.GetMeshContext(idx)?.WorldMatrix ?? Matrix4x4.identity;
+            panel.OnBridgeGenerate     = ExecuteBridge;
+        }
+
+        /// <summary>
+        /// 選択中の描画オブジェクトを走査し、「頂点1個 または 辺1本」の種をちょうど1つ拾う。
+        /// 複数ある / ゼロのときは Ok=false と理由を返す。
+        /// </summary>
+        private PlayerPrimitiveMeshSubPanel.BridgeSeedPick PickBridgeSeed()
+        {
+            var result = new PlayerPrimitiveMeshSubPanel.BridgeSeedPick
+            {
+                Ok = false, MeshIndex = -1, Vertex = -1, DirectionHint = -1,
+            };
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { result.Message = "モデルがありません"; return result; }
+
+            int hits = 0;
+            foreach (int idx in model.SelectedDrawableMeshIndices)
+            {
+                var mc  = model.GetMeshContext(idx);
+                var sel = mc?.Selection;
+                if (mc?.MeshObject == null || sel == null) continue;
+
+                foreach (int v in sel.Vertices)
+                {
+                    hits++;
+                    if (hits == 1)
+                    {
+                        result.MeshIndex     = idx;
+                        result.Vertex        = v;
+                        result.DirectionHint = -1;
+                    }
+                }
+
+                foreach (var e in sel.Edges)
+                {
+                    hits++;
+                    if (hits == 1)
+                    {
+                        result.MeshIndex     = idx;
+                        result.Vertex        = e.V1;
+                        result.DirectionHint = e.V2;
+                    }
+                }
+            }
+
+            if (hits == 0) { result.Message = "頂点1個または辺1本を選択してください"; return result; }
+            if (hits > 1)  { result.Message = $"選択が {hits} 個あります。1つだけにしてください"; return result; }
+
+            result.Ok = true;
+            return result;
+        }
+
+        /// <summary>
+        /// 穴つなぎを実行する。書き込み先を決めてから、必要な頂点（位置クローン・中間頂点）を
+        /// 作って面を張る。書き込み先の既存頂点はそのまま参照するので穴の縁に直結する。
+        /// </summary>
+        private void ExecuteBridge(PlayerPrimitiveMeshSubPanel panel)
+        {
+            if (panel == null) return;
+
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) { panel.SetBridgeStatus("モデルがありません"); return; }
+
+            if (!panel.TryBuildBridgePlan(out var plan, out string planMsg))
+            {
+                panel.SetBridgeStatus(planMsg);
+                return;
+            }
+
+            if (panel.BridgeNewObject) ExecuteBridgeNewObject(model, panel, plan);
+            else                       ExecuteBridgeIntoExisting(model, panel, plan);
+        }
+
+        /// <summary>書き込み先＝選択中の描画オブジェクトの先頭。既存頂点をそのまま使う。</summary>
+        private void ExecuteBridgeIntoExisting(
+            ModelContext model, PlayerPrimitiveMeshSubPanel panel,
+            PlayerPrimitiveMeshSubPanel.BridgePlan plan)
+        {
+            int targetIdx = model.FirstMeshIndex;
+            var targetMc  = targetIdx >= 0 ? model.GetMeshContext(targetIdx) : null;
+            if (targetMc?.MeshObject == null)
+            {
+                panel.SetBridgeStatus("書き込み先の描画オブジェクトがありません");
+                return;
+            }
+
+            // UNDO: 変更前スナップショット（図形生成の AddToExisting と同じ経路）
+            MeshObjectSnapshot before = null;
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetMeshObject(targetMc.MeshObject, targetMc.UnityMesh);
+                _editOps.UndoController.MeshUndoContext.ParentModelContext = model;
+                before = _editOps.UndoController.CaptureMeshObjectSnapshot();
+            }
+
+            int added = AppendBridgeInto(
+                targetMc.MeshObject, targetMc.WorldMatrixInverse, plan,
+                plan.SrcMeshA == targetIdx, plan.SrcMeshB == targetIdx,
+                model.GetMeshContext(plan.SrcMeshA)?.MeshObject,
+                model.GetMeshContext(plan.SrcMeshB)?.MeshObject);
+
+            var newUnityMesh = targetMc.MeshObject.ToUnityMesh();
+            newUnityMesh.name      = targetMc.Name;
+            newUnityMesh.hideFlags = HideFlags.HideAndDontSave;
+            if (targetMc.UnityMesh != null) UnityEngine.Object.Destroy(targetMc.UnityMesh);
+            targetMc.UnityMesh = newUnityMesh;
+
+            if (_editOps?.UndoController != null && before != null)
+            {
+                var after = _editOps.UndoController.CaptureMeshObjectSnapshot();
+                _editOps.UndoController.RecordTopologyChange(
+                    before, after, $"Bridge into {targetMc.Name}");
+            }
+
+            model.ComputeWorldMatrices();
+            PrimitiveMeshFinalize(model);
+            panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} / 追加頂点 {added} → {targetMc.Name}");
+        }
+
+        /// <summary>書き込み先＝新規オブジェクト。両側とも位置クローンになる。</summary>
+        private void ExecuteBridgeNewObject(
+            ModelContext model, PlayerPrimitiveMeshSubPanel panel,
+            PlayerPrimitiveMeshSubPanel.BridgePlan plan)
+        {
+            int parentIdx = ResolveBridgeParent(model, plan.SrcMeshA, plan.SrcMeshB);
+            var parentMc  = parentIdx >= 0 ? model.GetMeshContext(parentIdx) : null;
+
+            // ぶら下げ姿勢は恒等（ローカル位置0・回転0）なので、
+            // 新規オブジェクトの WorldMatrix は親の WorldMatrix と一致する。
+            Matrix4x4 worldToLocal = parentMc != null ? parentMc.WorldMatrixInverse : Matrix4x4.identity;
+
+            var mo = new MeshObject(panel.BridgeMeshName);
+
+            AppendBridgeInto(
+                mo, worldToLocal, plan, false, false,
+                model.GetMeshContext(plan.SrcMeshA)?.MeshObject,
+                model.GetMeshContext(plan.SrcMeshB)?.MeshObject);
+
+            var piece = new ObjectArrayPiece
+            {
+                Mesh          = mo,
+                Name          = panel.BridgeMeshName,
+                RelativeDepth = 0,
+                CopyIndex     = 0,
+            };
+
+            var oldSelected = model.CaptureAllSelectedIndices();
+
+            var added = ObjectArrayInserter.InsertAsChildren(
+                model, new List<ObjectArrayPiece> { piece }, parentIdx, model.GenerateUniqueMeshName);
+
+            if (added.Count == 0) { panel.SetBridgeStatus("生成できませんでした"); return; }
+
+            model.ComputeWorldMatrices();
+
+            model.ClearMeshSelection();
+            foreach (var e in added) model.AddToMeshSelection(e.Index);
+            var newSelected = model.CaptureAllSelectedIndices();
+
+            if (_editOps?.UndoController != null)
+            {
+                _editOps.UndoController.SetModelContext(model);
+                _editOps.UndoController.RecordMeshContextsAdd(added, oldSelected, newSelected);
+            }
+
+            PrimitiveMeshFinalize(model);
+            panel.SetBridgeStatus($"面 {plan.Result.Faces.Count} → {added[0].MeshContext.Name}");
+        }
+
+        /// <summary>
+        /// 新規オブジェクトのぶら下げ先。同一オブジェクトならそれ自身、
+        /// 祖先・子孫関係があればルートに近い方、無ければ -1（ルート直下）。
+        /// </summary>
+        private static int ResolveBridgeParent(ModelContext model, int a, int b)
+        {
+            if (model == null || a < 0 || b < 0) return -1;
+            if (a == b) return a;
+            if (IsBridgeAncestor(model, a, b)) return a;
+            if (IsBridgeAncestor(model, b, a)) return b;
+            return -1;
+        }
+
+        /// <summary>ancestor が descendant の祖先か。HierarchyParentIndex を辿る。</summary>
+        private static bool IsBridgeAncestor(ModelContext model, int ancestor, int descendant)
+        {
+            int cur   = descendant;
+            int guard = 0;
+            while (cur >= 0 && guard++ < 4096)
+            {
+                var mc = model.GetMeshContext(cur);
+                if (mc == null) return false;
+                int p = mc.HierarchyParentIndex;
+                if (p == ancestor) return true;
+                cur = p;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 計画にしたがって dst へ頂点と面を足す。戻り値は追加した頂点数。
+        /// reuseA / reuseB が true の側は既存頂点インデックスをそのまま使う（穴の縁に直結）。
+        /// false の側は位置クローンを作る。中間頂点は常に新規。
+        /// </summary>
+        private static int AppendBridgeInto(
+            MeshObject dst, Matrix4x4 worldToLocal,
+            PlayerPrimitiveMeshSubPanel.BridgePlan plan,
+            bool reuseA, bool reuseB,
+            MeshObject srcA, MeshObject srcB)
+        {
+            var r = plan.Result;
+            int addedCount = 0;
+
+            // 符号化ID → dst の頂点インデックス
+            var map = new int[r.InterBase + r.Inter.Count];
+
+            for (int k = 0; k < plan.LoopA.Count; k++)
+            {
+                if (reuseA) { map[k] = plan.LoopA[k]; continue; }
+                map[k] = AddBridgeClone(
+                    dst, worldToLocal.MultiplyPoint3x4(plan.WorldA[k]), srcA, plan.LoopA[k]);
+                addedCount++;
+            }
+
+            for (int k = 0; k < plan.LoopB.Count; k++)
+            {
+                int id = r.ACount + k;
+                if (reuseB) { map[id] = plan.LoopB[k]; continue; }
+                map[id] = AddBridgeClone(
+                    dst, worldToLocal.MultiplyPoint3x4(plan.WorldB[k]), srcB, plan.LoopB[k]);
+                addedCount++;
+            }
+
+            // 中間頂点。位置は分割比で内分し、ウェイトも同じ比で補間する。
+            for (int k = 0; k < r.Inter.Count; k++)
+            {
+                var ip = r.Inter[k];
+                Vector3 world = Vector3.Lerp(plan.WorldA[ip.AIdx], plan.WorldB[ip.BIdx], ip.T);
+
+                var v = new Poly_Ling.Data.Vertex(worldToLocal.MultiplyPoint3x4(world));
+
+                v.BoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(
+                    BridgeSourceWeight(srcA, plan.LoopA, ip.AIdx, false),
+                    BridgeSourceWeight(srcB, plan.LoopB, ip.BIdx, false), ip.T);
+
+                v.MirrorBoneWeight = Poly_Ling.UI.SkinWeightOps.LerpNullable(
+                    BridgeSourceWeight(srcA, plan.LoopA, ip.AIdx, true),
+                    BridgeSourceWeight(srcB, plan.LoopB, ip.BIdx, true), ip.T);
+
+                map[r.InterBase + k] = dst.AddVertex(v);
+                addedCount++;
+            }
+
+            foreach (var f in r.Faces)
+            {
+                var face = new Face();
+                for (int i = 0; i < f.Length; i++) face.VertexIndices.Add(map[f[i]]);
+
+                Vector3 n = BridgeFaceNormal(dst, face.VertexIndices);
+
+                // UV / 法線スロットは同一インデックスで確保する（スロット不変条件）。
+                for (int i = 0; i < face.VertexIndices.Count; i++)
+                {
+                    int slot = dst.Vertices[face.VertexIndices[i]].GetOrAddUVNormal(Vector2.zero, n);
+                    face.UVIndices.Add(slot);
+                    face.NormalIndices.Add(slot);
+                }
+
+                face.MaterialIndex = 0;
+                dst.AddFace(face);
+            }
+
+            return addedCount;
+        }
+
+        /// <summary>元メッシュの頂点位置クローンを dst へ足す。ウェイトは引き継ぐ。</summary>
+        private static int AddBridgeClone(
+            MeshObject dst, Vector3 localPos, MeshObject src, int srcVertexIndex)
+        {
+            var v = new Poly_Ling.Data.Vertex(localPos);
+
+            if (src != null && srcVertexIndex >= 0 && srcVertexIndex < src.Vertices.Count)
+            {
+                var sv = src.Vertices[srcVertexIndex];
+                v.BoneWeight       = sv.BoneWeight;
+                v.MirrorBoneWeight = sv.MirrorBoneWeight;
+            }
+
+            return dst.AddVertex(v);
+        }
+
+        /// <summary>ループ上の頂点のウェイトを取る。取れないときは null。</summary>
+        private static BoneWeight? BridgeSourceWeight(
+            MeshObject src, List<int> loop, int loopIndex, bool mirror)
+        {
+            if (src == null || loop == null) return null;
+            if (loopIndex < 0 || loopIndex >= loop.Count) return null;
+
+            int vi = loop[loopIndex];
+            if (vi < 0 || vi >= src.Vertices.Count) return null;
+
+            return mirror ? src.Vertices[vi].MirrorBoneWeight : src.Vertices[vi].BoneWeight;
+        }
+
+        /// <summary>Newell 法の面法線。退化時は Vector3.up を返す。</summary>
+        private static Vector3 BridgeFaceNormal(MeshObject mo, List<int> indices)
+        {
+            Vector3 n = Vector3.zero;
+            int c = indices.Count;
+
+            for (int i = 0; i < c; i++)
+            {
+                Vector3 p0 = mo.Vertices[indices[i]].Position;
+                Vector3 p1 = mo.Vertices[indices[(i + 1) % c]].Position;
+                n.x += (p0.y - p1.y) * (p0.z + p1.z);
+                n.y += (p0.z - p1.z) * (p0.x + p1.x);
+                n.z += (p0.x - p1.x) * (p0.y + p1.y);
+            }
+
+            return n.sqrMagnitude > 1e-20f ? n.normalized : Vector3.up;
+        }
+
         private void OnPrimitiveMeshCreated(
             MeshObject meshObject, string meshName, Vector3 worldPos,
+            Vector3 poseRotation, Vector3 poseScale,
             bool ignorePoseInArmature, PrimitiveAddMode addMode)
         {
             _localLoader.EnsureProject();
@@ -5275,6 +6102,11 @@ namespace Poly_Ling.Player
             _knifeHandler?.SetProject(ActiveProject);
             _solidifyHandler?.SetProject(ActiveProject);
             _deleteSelectionHandler?.SetProject(ActiveProject);
+            _vertexDissolveHandler?.SetProject(ActiveProject);
+            _tri4To1Handler?.SetProject(ActiveProject);
+            _faceMergeHandler?.SetProject(ActiveProject);
+            _quad4To1Handler?.SetProject(ActiveProject);
+            _faceMergeCollapseHandler?.SetProject(ActiveProject);
 
             var project = ActiveProject;
             if (project == null) return;
@@ -5285,13 +6117,16 @@ namespace Poly_Ling.Player
             switch (addMode)
             {
                 case PrimitiveAddMode.NewObject:
-                    PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                    PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
+                        poseRotation, poseScale, ignorePoseInArmature);
                     break;
                 case PrimitiveAddMode.AddToExisting:
-                    PrimitiveMeshAddToExisting(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                    PrimitiveMeshAddToExisting(project, meshObject, meshName, worldPos,
+                        poseRotation, poseScale, ignorePoseInArmature);
                     break;
                 case PrimitiveAddMode.NewModel:
-                    PrimitiveMeshCreateNewModel(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                    PrimitiveMeshCreateNewModel(project, meshObject, meshName, worldPos,
+                        poseRotation, poseScale, ignorePoseInArmature);
                     break;
             }
         }
@@ -5300,7 +6135,8 @@ namespace Poly_Ling.Player
         /// 図形生成共通: MeshContextを作って返す。
         /// </summary>
         private MeshContext BuildPrimitiveMeshContext(
-            MeshObject meshObject, string meshName, Vector3 worldPos, bool ignorePoseInArmature)
+            MeshObject meshObject, string meshName, Vector3 worldPos,
+            Vector3 poseRotation, Vector3 poseScale, bool ignorePoseInArmature)
         {
             var unityMesh = meshObject.ToUnityMesh();
             unityMesh.name      = meshName;
@@ -5314,10 +6150,16 @@ namespace Poly_Ling.Player
                 IsVisible  = true,
             };
 
-            if (ctx.BoneTransform != null && worldPos != Vector3.zero)
+            // 図形生成側でベイクしなかった回転 / スケールは描画オブジェクトの姿勢に入れる。
+            bool hasPose = worldPos != Vector3.zero
+                        || poseRotation != Vector3.zero
+                        || poseScale != Vector3.one;
+            if (ctx.BoneTransform != null && hasPose)
             {
                 ctx.BoneTransform.UseLocalTransform = true;
                 ctx.BoneTransform.Position = worldPos;
+                ctx.BoneTransform.Rotation = poseRotation;
+                ctx.BoneTransform.Scale    = poseScale;
             }
 
             ctx.IgnorePoseInArmature = ignorePoseInArmature;
@@ -5329,7 +6171,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private void PrimitiveMeshCreateNewObject(
             ProjectContext project, MeshObject meshObject, string meshName,
-            Vector3 worldPos, bool ignorePoseInArmature)
+            Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
+            bool ignorePoseInArmature)
         {
             var model = project.CurrentModel;
             if (model == null) return;
@@ -5337,7 +6180,8 @@ namespace Poly_Ling.Player
             // 既存の描画オブジェクトと名前が衝突しないようにしてから作る。
             meshName = model.GenerateUniqueMeshName(meshName);
 
-            var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos, ignorePoseInArmature);
+            var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
+                poseRotation, poseScale, ignorePoseInArmature);
             ctx.ParentModelContext = model;
 
             var oldSelected = model.CaptureAllSelectedIndices();
@@ -5364,7 +6208,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private void PrimitiveMeshAddToExisting(
             ProjectContext project, MeshObject meshObject, string meshName,
-            Vector3 worldPos, bool ignorePoseInArmature)
+            Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
+            bool ignorePoseInArmature)
         {
             var model  = project.CurrentModel;
             if (model == null) return;
@@ -5373,15 +6218,26 @@ namespace Poly_Ling.Player
             var targetMc = model.ActiveMeshContext;
             if (targetMc == null || targetMc.MeshObject == null)
             {
-                PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos, ignorePoseInArmature);
+                PrimitiveMeshCreateNewObject(project, meshObject, meshName, worldPos,
+                    poseRotation, poseScale, ignorePoseInArmature);
                 return;
             }
 
-            // ワールド位置オフセットを頂点に適用
+            // 既存オブジェクトへのマージでは姿勢を持てないため、
+            // ベイクされずに渡ってきた回転 / スケールはここで頂点へ焼き込む。
             var srcObject = meshObject;
-            if (worldPos != Vector3.zero)
+            bool hasPose = poseRotation != Vector3.zero || poseScale != Vector3.one;
+            if (hasPose)
             {
                 srcObject = meshObject.Clone();
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshTransform.ApplyRotationScale(
+                    srcObject, poseRotation, poseScale);
+            }
+
+            // ワールド位置オフセットを頂点に適用
+            if (worldPos != Vector3.zero)
+            {
+                if (ReferenceEquals(srcObject, meshObject)) srcObject = meshObject.Clone();
                 foreach (var v in srcObject.Vertices)
                     v.Position += worldPos;
             }
@@ -5432,7 +6288,8 @@ namespace Poly_Ling.Player
         /// </summary>
         private void PrimitiveMeshCreateNewModel(
             ProjectContext project, MeshObject meshObject, string meshName,
-            Vector3 worldPos, bool ignorePoseInArmature)
+            Vector3 worldPos, Vector3 poseRotation, Vector3 poseScale,
+            bool ignorePoseInArmature)
         {
             var newModel = project.CreateNewModel(meshName);
             if (newModel == null) return;
@@ -5440,7 +6297,8 @@ namespace Poly_Ling.Player
             // 新規モデルなので通常は衝突しないが、経路を揃えるため同じ一意化を通す。
             meshName = newModel.GenerateUniqueMeshName(meshName);
 
-            var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos, ignorePoseInArmature);
+            var ctx = BuildPrimitiveMeshContext(meshObject, meshName, worldPos,
+                poseRotation, poseScale, ignorePoseInArmature);
             ctx.ParentModelContext = newModel;
 
             var oldSelected = newModel.CaptureAllSelectedIndices();
@@ -5936,6 +6794,31 @@ namespace Poly_Ling.Player
                     btn     = _layoutRoot?.ScaleBtn;
                     refresh = () => _scaleSubPanel?.Refresh();
                     break;
+                case InteractionMode.VertexDissolve:
+                    section = _layoutRoot?.VertexDissolveSection;
+                    btn     = _layoutRoot?.VertexDissolveBtn;
+                    refresh = () => _vertexDissolveSubPanel?.Refresh();
+                    break;
+                case InteractionMode.Tri4To1:
+                    section = _layoutRoot?.Tri4To1Section;
+                    btn     = _layoutRoot?.Tri4To1Btn;
+                    refresh = () => _tri4To1SubPanel?.Refresh();
+                    break;
+                case InteractionMode.FaceMerge:
+                    section = _layoutRoot?.FaceMergeSection;
+                    btn     = _layoutRoot?.FaceMergeBtn;
+                    refresh = () => _faceMergeSubPanel?.Refresh();
+                    break;
+                case InteractionMode.Quad4To1:
+                    section = _layoutRoot?.Quad4To1Section;
+                    btn     = _layoutRoot?.Quad4To1Btn;
+                    refresh = () => _quad4To1SubPanel?.Refresh();
+                    break;
+                case InteractionMode.FaceMergeCollapse:
+                    section = _layoutRoot?.FaceMergeCollapseSection;
+                    btn     = _layoutRoot?.FaceMergeCollapseBtn;
+                    refresh = () => _faceMergeCollapseSubPanel?.Refresh();
+                    break;
             }
 
             ShowRightPanel(section, btn);
@@ -6132,6 +7015,96 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // 結合ツールのクリック実行 (MoveToolHandler.OnLeftClickExtra)
+        //
+        // いずれも面削除モードと同じ方針:
+        //   ・想定外の要素種別は無視する（Selection.Mode で絞ってあるが念のため）
+        //   ・アクティブメッシュ以外は無視する（各 Tool は選択中オブジェクトを
+        //     走査するため、別メッシュの要素をそのまま流すと意図しない箇所が変わる）
+        //   ・修飾キーは無視し、選択をクリックした要素 1 つに差し替えてから実行する
+        // ================================================================
+
+        private void OnVertexDissolveClicked(PlayerHoverElement elem, ModifierKeys mods)
+        {
+            if (elem.Kind != PlayerHoverKind.Vertex) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc?.Selection == null) return;
+            if (elem.MeshIndex != model.ActiveMeshIndex) return;
+
+            mc.Selection.ClearAll();
+            mc.Selection.SelectVertex(elem.VertexIndex, false);
+
+            _vertexDissolveHandler?.TriggerDissolve();
+            _vertexDissolveSubPanel?.Refresh();
+        }
+
+        private void OnTri4To1Clicked(PlayerHoverElement elem, ModifierKeys mods)
+        {
+            if (elem.Kind != PlayerHoverKind.Face) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc?.Selection == null) return;
+            if (elem.MeshIndex != model.ActiveMeshIndex) return;
+
+            mc.Selection.ClearAll();
+            mc.Selection.SelectFace(elem.FaceIndex, false);
+
+            _tri4To1Handler?.TriggerMerge();
+            _tri4To1SubPanel?.Refresh();
+        }
+
+        private void OnFaceMergeClicked(PlayerHoverElement elem, ModifierKeys mods)
+        {
+            if (elem.Kind != PlayerHoverKind.Edge) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc?.Selection == null) return;
+            if (elem.MeshIndex != model.ActiveMeshIndex) return;
+
+            mc.Selection.ClearAll();
+            mc.Selection.SelectEdge(new VertexPair(elem.EdgeV1, elem.EdgeV2), false);
+
+            _faceMergeHandler?.TriggerMerge();
+            _faceMergeSubPanel?.Refresh();
+        }
+
+        private void OnQuad4To1Clicked(PlayerHoverElement elem, ModifierKeys mods)
+        {
+            if (elem.Kind != PlayerHoverKind.Vertex) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc?.Selection == null) return;
+            if (elem.MeshIndex != model.ActiveMeshIndex) return;
+
+            mc.Selection.ClearAll();
+            mc.Selection.SelectVertex(elem.VertexIndex, false);
+
+            _quad4To1Handler?.TriggerMerge();
+            _quad4To1SubPanel?.Refresh();
+        }
+
+        private void OnFaceMergeCollapseClicked(PlayerHoverElement elem, ModifierKeys mods)
+        {
+            if (elem.Kind != PlayerHoverKind.Edge) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var mc    = model?.ActiveMeshContext;
+            if (model == null || mc?.Selection == null) return;
+            if (elem.MeshIndex != model.ActiveMeshIndex) return;
+
+            mc.Selection.ClearAll();
+            mc.Selection.SelectEdge(new VertexPair(elem.EdgeV1, elem.EdgeV2), false);
+
+            _faceMergeCollapseHandler?.TriggerMerge();
+            _faceMergeCollapseSubPanel?.Refresh();
+        }
+
+        // ================================================================
         // SetInteractionMode: 3D 操作モード (ビューポートの入力ハンドラ) のみを切り替える。
         // 右ペイン表示やボタンハイライトには関与しない。
         //
@@ -6218,7 +7191,14 @@ namespace Poly_Ling.Player
                 || (_interactionMode == InteractionMode.Scale       && mode != InteractionMode.Scale)
                 // DeleteFace は OnLeftClickExtra で面クリック削除を発火し、Selection.Mode を
                 // Face に絞る。脱出時のフック解除と All 復元は同じ処理でよい。
-                || (_interactionMode == InteractionMode.DeleteFace  && mode != InteractionMode.DeleteFace);
+                || (_interactionMode == InteractionMode.DeleteFace  && mode != InteractionMode.DeleteFace)
+                // 頂点溶解 / 三角4→1 / 面結合 も OnLeftClickExtra でクリック実行し、
+                // Selection.Mode を絞る。脱出時の処理は面削除と同じでよい。
+                || (_interactionMode == InteractionMode.VertexDissolve && mode != InteractionMode.VertexDissolve)
+                || (_interactionMode == InteractionMode.Tri4To1        && mode != InteractionMode.Tri4To1)
+                || (_interactionMode == InteractionMode.FaceMerge      && mode != InteractionMode.FaceMerge)
+                || (_interactionMode == InteractionMode.Quad4To1          && mode != InteractionMode.Quad4To1)
+                || (_interactionMode == InteractionMode.FaceMergeCollapse && mode != InteractionMode.FaceMergeCollapse);
             if (leavingSharedSelectionTools)
             {
                 if (_moveToolHandler != null)
@@ -6467,6 +7447,68 @@ namespace Poly_Ling.Player
                     _viewportManager?.RegisterActiveToolHandler(null);
                     ApplySelectionModeForInteractionMode(InteractionMode.DeleteFace);
                     break;
+                case InteractionMode.VertexDissolve:
+                    // 頂点溶解モード: 頂点クリックのみ受け付け、その頂点を即溶かす。
+                    // 面削除モードと同じ構成（SelectOnly / SuppressDragSelect /
+                    // OnLeftClickExtra / Selection.Mode 固定）。
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SelectOnly         = true;
+                        _moveToolHandler.SuppressDragSelect = true;
+                        _moveToolHandler.OnLeftClickExtra   = OnVertexDissolveClicked;
+                    }
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.VertexDissolve);
+                    break;
+                case InteractionMode.Tri4To1:
+                    // 三角形4→1モード: 面クリックのみ受け付け、その三角形を即統合する。
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SelectOnly         = true;
+                        _moveToolHandler.SuppressDragSelect = true;
+                        _moveToolHandler.OnLeftClickExtra   = OnTri4To1Clicked;
+                    }
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.Tri4To1);
+                    break;
+                case InteractionMode.FaceMerge:
+                    // 面結合モード: 辺クリックのみ受け付け、その辺を挟む2面を即結合する。
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SelectOnly         = true;
+                        _moveToolHandler.SuppressDragSelect = true;
+                        _moveToolHandler.OnLeftClickExtra   = OnFaceMergeClicked;
+                    }
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.FaceMerge);
+                    break;
+                case InteractionMode.Quad4To1:
+                    // 四角形4→1モード: 頂点クリックのみ受け付け、その頂点を即統合する。
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SelectOnly         = true;
+                        _moveToolHandler.SuppressDragSelect = true;
+                        _moveToolHandler.OnLeftClickExtra   = OnQuad4To1Clicked;
+                    }
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.Quad4To1);
+                    break;
+                case InteractionMode.FaceMergeCollapse:
+                    // 面結合（頂点削除）モード: 辺クリックのみ受け付け、その辺を即結合する。
+                    if (_moveToolHandler != null)
+                    {
+                        _moveToolHandler.SelectOnly         = true;
+                        _moveToolHandler.SuppressDragSelect = true;
+                        _moveToolHandler.OnLeftClickExtra   = OnFaceMergeCollapseClicked;
+                    }
+                    _vertexInteractor?.SetToolHandler(_moveToolHandler);
+                    _viewportManager?.RegisterActiveToolHandler(null);
+                    ApplySelectionModeForInteractionMode(InteractionMode.FaceMergeCollapse);
+                    break;
                 case InteractionMode.EdgeTopology:
                     _vertexInteractor?.SetToolHandler(_edgeTopologyHandler);
                     _viewportManager?.RegisterActiveToolHandler((pos, ctx) => _edgeTopologyHandler?.UpdateHover(pos, ctx));
@@ -6559,6 +7601,11 @@ namespace Poly_Ling.Player
                 case InteractionMode.FlipFace:     firstMc.Selection.Mode = MeshSelectMode.Face; break;
                 case InteractionMode.Solidify:     firstMc.Selection.Mode = MeshSelectMode.Face; break;
                 case InteractionMode.DeleteFace:   firstMc.Selection.Mode = MeshSelectMode.Face; break;
+                case InteractionMode.VertexDissolve: firstMc.Selection.Mode = MeshSelectMode.Vertex; break;
+                case InteractionMode.Tri4To1:        firstMc.Selection.Mode = MeshSelectMode.Face;   break;
+                case InteractionMode.FaceMerge:      firstMc.Selection.Mode = MeshSelectMode.Edge;   break;
+                case InteractionMode.Quad4To1:          firstMc.Selection.Mode = MeshSelectMode.Vertex; break;
+                case InteractionMode.FaceMergeCollapse: firstMc.Selection.Mode = MeshSelectMode.Edge;   break;
                 default:
                     // 他のモードはこの関数の責務ではない
                     break;
@@ -6793,6 +7840,58 @@ namespace Poly_Ling.Player
             }
         }
 
+        /// <summary>
+        /// 左ペインの操作対象となる選択メッシュのインデックス配列を返す。
+        /// 選択が空のときはアクティブメッシュ 1 個へフォールバックする。
+        /// PlayerCommandDispatcher.CollectSelectedMeshContexts と同じ規則。
+        /// </summary>
+        private int[] CollectSelectedMeshIndices()
+        {
+            var model = ActiveProject?.CurrentModel;
+            if (model == null) return System.Array.Empty<int>();
+
+            var sel = model.SelectedDrawableMeshIndices;
+            if (sel != null && sel.Count > 0) return sel.ToArray();
+
+            int active = model.ActiveMeshIndex;
+            if (active >= 0 && active < model.MeshContextCount) return new[] { active };
+
+            return System.Array.Empty<int>();
+        }
+
+        /// <summary>
+        /// 左ペインの「法線自動計算」トグルを選択メッシュの PreserveNormals から書き戻す。
+        /// 対象メッシュが全て PreserveNormals == false のときだけ ON。
+        /// 混在・対象なしは OFF にする。
+        /// </summary>
+        private void SyncNormalRecalcToggle()
+        {
+            var tog = _layoutRoot?.AutoRecalcNormalsToggle;
+            if (tog == null) return;
+
+            var model = ActiveProject?.CurrentModel;
+            var indices = CollectSelectedMeshIndices();
+
+            bool autoOn = false;
+            if (model != null && indices.Length > 0)
+            {
+                autoOn = true;
+                foreach (int idx in indices)
+                {
+                    var mc = model.GetMeshContext(idx);
+                    if (mc?.MeshObject == null || mc.MeshObject.PreserveNormals)
+                    {
+                        autoOn = false;
+                        break;
+                    }
+                }
+            }
+
+            _isSyncingNormalRecalcToggle = true;
+            tog.SetValueWithoutNotify(autoOn);
+            _isSyncingNormalRecalcToggle = false;
+        }
+
         private void NotifyPanels(ChangeKind kind)
         {
             var project = ActiveProject;
@@ -6815,6 +7914,9 @@ namespace Poly_Ling.Player
             // （Selection で作り直すとプレビュー中の状態が失われる）。
             if (kind == ChangeKind.ModelSwitch)
                 _shrinkSubPanel?.SetModel(ActiveProject?.CurrentModel);
+
+            // 左ペインの「法線自動計算」トグルを選択メッシュの状態へ追随させる。
+            SyncNormalRecalcToggle();
 
             foreach (var (section, refresh) in _sectionRefreshPairs)
                 if (section?.style.display == DisplayStyle.Flex) refresh();
@@ -6985,6 +8087,11 @@ namespace Poly_Ling.Player
                 _knifeHandler?.SetProject(ActiveProject);
                 _solidifyHandler?.SetProject(ActiveProject);
                 _deleteSelectionHandler?.SetProject(ActiveProject);
+                _vertexDissolveHandler?.SetProject(ActiveProject);
+                _tri4To1Handler?.SetProject(ActiveProject);
+                _faceMergeHandler?.SetProject(ActiveProject);
+                _quad4To1Handler?.SetProject(ActiveProject);
+                _faceMergeCollapseHandler?.SetProject(ActiveProject);
             // 受信中はフル GPU 再構築を抑止（完了時 EnterSceneReset で1回だけ行う）。
             if (!_suppressRebuildDuringFetch)
             {

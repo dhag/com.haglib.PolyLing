@@ -488,6 +488,14 @@ namespace Poly_Ling.Player
 
                         BeginMove();
                         _state = MoveState.MovingVertices;
+
+                        // 押下位置から現在位置までの移動量を取りこぼさずに適用する。
+                        // ここで適用しないと、ドラッグ開始しきい値（パネル側
+                        // PlayerViewportPanel.DragThreshold と本クラスの DragThreshold）
+                        // ぶんの移動が捨てられ、カーソルと対象の間に恒久的なオフセットが残る。
+                        // _mouseDownPos は OnLeftDragBegin で受け取った押下位置。
+                        if (ctx != null) ApplyFreeDelta(screenPos - _mouseDownPos, ctx);
+
                         OnRepaint?.Invoke();
                     }
                     break;

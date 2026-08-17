@@ -120,7 +120,7 @@ namespace Poly_Ling.Player
             }
             else
             {
-                parent.Add(MakeWideBtn("開く", () => OnLoad?.Invoke(_jsonPathField.value)));
+                parent.Add(MakeWideBtn("開く", OnOpenJson));
             }
 
             // ── 区切り線 ──────────────────────────────────────────────
@@ -148,7 +148,7 @@ namespace Poly_Ling.Player
                 _csvMergeToggle.style.marginBottom = 2;
                 parent.Add(_csvMergeToggle);
 
-                parent.Add(MakeWideBtn("開く", () => OnLoadCsv?.Invoke(_csvPathField.value, _csvMergeToggle.value)));
+                parent.Add(MakeWideBtn("開く", OnOpenCsv));
             }
 
             // ── ステータス ───────────────────────────────────────────
@@ -172,31 +172,68 @@ namespace Poly_Ling.Player
         }
 
         // ================================================================
+        // open（「開く」＝ ダイアログで確定してから読込む）
+        //
+        // パス欄の値をそのまま読み込むと、意図しないファイルを開く事故が起きる。
+        // 読込は必ずダイアログを通し、パス欄の値は初期フォルダ／初期ファイル名
+        // としてだけ使う（保存側の AskSavePath と同じ考え方）。
+        // ================================================================
+
+        private void OnOpenJson()
+        {
+            string path = PlayerIoUiKit.AskLoadPath("プロジェクトを開く", _jsonPathField.value, "mfproj");
+            if (string.IsNullOrEmpty(path)) return;
+            _jsonPathField.value = path;
+            OnLoad?.Invoke(path);
+        }
+
+        private void OnOpenCsv()
+        {
+            string path = PlayerIoUiKit.AskLoadPath(
+                "プロジェクトCSVを開く", _csvPathField.value, CsvProjectSerializer.ProjectFileExtension);
+            if (string.IsNullOrEmpty(path)) return;
+            _csvPathField.value = path;
+            OnLoadCsv?.Invoke(path, _csvMergeToggle != null && _csvMergeToggle.value);
+        }
+
+        // ================================================================
         // browse（[...] = ファイル選択）
         // ================================================================
 
         private void OnBrowseJson()
         {
-            string dir = string.IsNullOrEmpty(_jsonPathField.value)
-                ? Application.dataPath
-                : Path.GetDirectoryName(_jsonPathField.value);
-            string path = IsSave
-                ? PLEditorBridge.I.SaveFilePanel("プロジェクトの保存先", dir, "Project", "mfproj")
-                : PLEditorBridge.I.OpenFilePanel("プロジェクトを開く", dir, "mfproj");
+            string path;
+            if (IsSave)
+            {
+                string dir = string.IsNullOrEmpty(_jsonPathField.value)
+                    ? Application.dataPath
+                    : Path.GetDirectoryName(_jsonPathField.value);
+                path = PLEditorBridge.I.SaveFilePanel("プロジェクトの保存先", dir, "Project", "mfproj");
+            }
+            else
+            {
+                path = PlayerIoUiKit.AskLoadPath("プロジェクトを開く", _jsonPathField.value, "mfproj");
+            }
             if (!string.IsNullOrEmpty(path))
                 _jsonPathField.value = path;
         }
 
         private void OnBrowseCsv()
         {
-            string dir = string.IsNullOrEmpty(_csvPathField.value)
-                ? Application.dataPath
-                : Path.GetDirectoryName(_csvPathField.value);
-            string path = IsSave
-                ? PLEditorBridge.I.SaveFilePanel(
-                      "プロジェクトCSVの保存先", dir, "Project", CsvProjectSerializer.ProjectFileExtension)
-                : PLEditorBridge.I.OpenFilePanel(
-                      "プロジェクトCSVを開く", dir, CsvProjectSerializer.ProjectFileExtension);
+            string path;
+            if (IsSave)
+            {
+                string dir = string.IsNullOrEmpty(_csvPathField.value)
+                    ? Application.dataPath
+                    : Path.GetDirectoryName(_csvPathField.value);
+                path = PLEditorBridge.I.SaveFilePanel(
+                    "プロジェクトCSVの保存先", dir, "Project", CsvProjectSerializer.ProjectFileExtension);
+            }
+            else
+            {
+                path = PlayerIoUiKit.AskLoadPath(
+                    "プロジェクトCSVを開く", _csvPathField.value, CsvProjectSerializer.ProjectFileExtension);
+            }
             if (!string.IsNullOrEmpty(path))
                 _csvPathField.value = path;
         }

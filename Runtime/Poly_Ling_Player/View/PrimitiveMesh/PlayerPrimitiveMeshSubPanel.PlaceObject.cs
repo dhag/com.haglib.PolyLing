@@ -43,7 +43,7 @@ namespace Poly_Ling.Player
 
         private void BuildPlaceObjectUI(VisualElement c)
         {
-            c.Add(SL(T("PlaceObject")));
+            c.Add(ShapeTitle(T("PlaceObject")));
             c.Add(NF(() => _placeP.MeshName, v => _placeP.MeshName = v));
 
             // ── 配置元オブジェクト（複数選択可） ──
@@ -91,32 +91,35 @@ namespace Poly_Ling.Player
                 () => _placeP.Scale <= 0f ? 1f : _placeP.Scale,
                 v  => { _placeP.Scale = v; D(); }));
 
-            // ── 基準ベルト（手動取り込み） ──
+            // ── 基準はしご（取り込み〜向きまでを1つのフォールドにまとめる） ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(PlayerIoUiKit.SectionLabel(T("FrillBase")));
+            var baseFold = new Foldout { text = T("FrillBase"), value = true };
+            baseFold.style.marginBottom = 4;
+            var bc = baseFold.contentContainer;
+            c.Add(baseFold);
 
             var hint = new Label(T("PlaceBaseHint"));
             hint.style.fontSize     = 10;
             hint.style.whiteSpace   = WhiteSpace.Normal;
             hint.style.marginBottom = 2;
-            c.Add(hint);
+            bc.Add(hint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
             {
                 ImportBeltFromMesh(_placeBelts);
                 RefreshPlaceInfo();
             }));
 
             // ── 自動検索 ──
-            BuildMeshSourceRow(c, _placeAutoPick, T("AutoDetectSource"));
+            BuildMeshSourceRow(bc, _placeAutoPick, T("AutoDetectSource"));
 
             var autoHint = new Label(T("AutoDetectHint"));
             autoHint.style.fontSize     = 10;
             autoHint.style.whiteSpace   = WhiteSpace.Normal;
             autoHint.style.marginBottom = 2;
-            c.Add(autoHint);
+            bc.Add(autoHint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
             {
                 AutoDetectBelts(_placeBelts, _placeAutoPick.Current);
                 RefreshPlaceInfo();
@@ -126,17 +129,18 @@ namespace Poly_Ling.Player
             _placeInfoLabel.style.fontSize   = 10;
             _placeInfoLabel.style.whiteSpace = WhiteSpace.Normal;
             _placeInfoLabel.style.marginTop  = 2;
-            c.Add(_placeInfoLabel);
+            bc.Add(_placeInfoLabel);
 
-            // ── 梯子CSV ──
-            BuildBeltCsvUI(c, _placeBelts,
+            // ── はしごCSV ──
+            BuildBeltCsvUI(bc, _placeBelts,
                 "Primitive.PlaceObject.BeltCsv", "place_belt.csv", RefreshPlaceInfo);
 
-            // ── Z ロール（配置フレームの Z 軸まわり、90°単位） ──
-            BuildPlaceRollUI(c);
+            // ── はしごの向き ──
+            BuildBeltOrientUI(bc, _placeOrient);
 
-            // ── 梯子の向き ──
-            BuildBeltOrientUI(c, _placeOrient);
+            // ── Z ロール（配置フレームの Z 軸まわり、90°単位） ──
+            // 配置側のパラメータなので基準はしごのフォールドの外に出す。
+            BuildPlaceRollUI(c);
 
             BuildBeltSplineUI(c, _placeSpline);
         }
@@ -182,6 +186,7 @@ namespace Poly_Ling.Player
 
         private void RefreshPlaceInfo()
         {
+            RefreshCreateButtonState();
             if (_placeInfoLabel != null) _placeInfoLabel.text = BeltsInfoText(_placeBelts);
         }
 

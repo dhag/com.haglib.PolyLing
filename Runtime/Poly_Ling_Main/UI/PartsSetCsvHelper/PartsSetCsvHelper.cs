@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using Poly_Ling.Core;
 using Poly_Ling.EditorBridge;
 using Poly_Ling.Context;
 using Poly_Ling.Data;
@@ -16,6 +17,9 @@ namespace Poly_Ling.UI
     public static class PartsSetCsvHelper
     {
         private enum CSVDataType { Vertex, VertexId, Edge, Face, Line }
+
+        /// <summary>選択辞書 CSV 読込の最近使ったパス。</summary>
+        private const string ImportCsvRecentKey = "PartsSet.ImportCsv.Path";
 
         // ================================================================
         // エクスポート
@@ -132,8 +136,8 @@ namespace Poly_Ling.UI
         public static void ImportSet(MeshContext meshContext)
         {
             if (meshContext == null) return;
-            string filePath = PLEditorBridge.I.OpenFilePanel(
-                "Import Selection Set CSV", Application.dataPath, "csv");
+            string filePath = RecentFileDialog.AskLoad(
+                "Import Selection Set CSV", ImportCsvRecentKey, "csv");
             if (string.IsNullOrEmpty(filePath)) { GUIUtility.ExitGUI(); return; }
 
             var added = ImportSetFromFile(meshContext, filePath);

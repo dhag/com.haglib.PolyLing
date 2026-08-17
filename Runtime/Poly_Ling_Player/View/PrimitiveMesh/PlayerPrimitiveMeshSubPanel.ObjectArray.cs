@@ -19,6 +19,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine.UIElements;
+using static Poly_Ling.Player.PrimitiveMeshTexts;
 
 namespace Poly_Ling.Player
 {
@@ -62,10 +63,12 @@ namespace Poly_Ling.Player
                     GetDrawableList = () =>
                         GetDrawableIndexList?.Invoke() ?? new List<(string, int)>(),
                 };
-                _objArrayPanel.OnGenerate = InvokeObjectArrayGenerate;
+                _objArrayPanel.OnGenerate         = InvokeObjectArrayGenerate;
+                _objArrayPanel.OnSelectionChanged = RefreshCreateButtonState;
                 _objArrayPanel.Build(_objArrayHolder);
             }
 
+            c.Add(ShapeTitle(T("ObjectArray")));
             c.Add(_objArrayHolder);
 
             // 一覧はモデルが変わると古くなるので、開くたびに取り直す。

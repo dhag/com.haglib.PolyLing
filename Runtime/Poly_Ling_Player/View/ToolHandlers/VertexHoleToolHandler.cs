@@ -45,7 +45,8 @@ namespace Poly_Ling.Player
 
         public int SelectedVertexCount => _tool.SelectedVertexCount;
 
-        public VertexHoleOps.HoleInfo Inspect() => _tool.Inspect();
+        /// <summary>対象メッシュ全部を合わせた下調べ結果。</summary>
+        public VertexHoleTool.HoleSummary Inspect() => _tool.Inspect();
 
         public void TriggerHole() => _tool.TriggerHole();
 

@@ -8,7 +8,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using Poly_Ling.EditorBridge;
-using Unity.Plastic.Newtonsoft.Json;
+using Newtonsoft.Json;
 using Poly_Ling.Data;
 using Poly_Ling.Tools;
 using Poly_Ling.Context;

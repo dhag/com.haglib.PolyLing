@@ -43,6 +43,9 @@ namespace Poly_Ling.Player
         /// <summary>生成ボタン。パネルの状態は Params / Deformer / SelectedMasterIndices から読む。</summary>
         public Action OnGenerate;
 
+        /// <summary>複製元のチェック状態が変わったときに呼ばれる（生成ボタンの有効判定用）。</summary>
+        public Action OnSelectionChanged;
+
         /// <summary>
         /// 図形生成パネルへ埋め込むとき true。タイトルと自前の「生成」ボタンを出さない。
         /// 生成は埋め込み先の生成ボタンから OnGenerate を呼ぶ。Build より前に設定する。
@@ -257,6 +260,7 @@ namespace Poly_Ling.Player
 
         private void RefreshSourceCount()
         {
+            OnSelectionChanged?.Invoke();
             if (_srcCountLabel == null) return;
             _srcCountLabel.text = $"複製元 {SelectedMasterIndices().Count} 個";
         }

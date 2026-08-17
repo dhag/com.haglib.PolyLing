@@ -36,7 +36,7 @@ namespace Poly_Ling.Player
 
         private void BuildTextUI(VisualElement c)
         {
-            c.Add(SL(T("Text")));
+            c.Add(ShapeTitle(T("Text")));
             c.Add(NF(() => _textP.MeshName, v => _textP.MeshName = v));
 
             // ── フォント ──
@@ -194,6 +194,7 @@ namespace Poly_Ling.Player
 
         private void RefreshTextInfo()
         {
+            RefreshCreateButtonState();
             if (_textInfoLabel != null) _textInfoLabel.text = TextInfoText();
         }
 

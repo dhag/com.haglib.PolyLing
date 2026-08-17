@@ -80,8 +80,41 @@ namespace Poly_Ling.VMD
         /// <summary>
         /// IK解決前に膝リンクへ微小曲げを付与する。
         /// 直線状態での回転軸不定による膝反転を防止するMMD標準テクニック。
+        /// IgnoreAngleLimits が true のときは角度制限前提の処理なので実行しない。
         /// </summary>
         public bool KneePreBend = false;// true;
+
+        // ================================================================
+        // 角度制限（VMD 復活手順書 段階 2）
+        // ================================================================
+
+        /// <summary>
+        /// 全リンクの角度制限を無視する。既定 false（段階 3）。
+        /// true のとき RestrictRotation を通さず、KneePreBend も実行しない。
+        /// </summary>
+        public bool IgnoreAngleLimits = false;
+
+        // ================================================================
+        // トレース出力（vmd_ik.csv）
+        // ================================================================
+
+        /// <summary>反復トレースの出力有無。既定 OFF。</summary>
+        public bool TraceEnabled = false;
+
+        /// <summary>トレース CSV の出力フォルダ。未設定ならトレースを出さない。</summary>
+        public string TraceDirectory;
+
+        /// <summary>トレース CSV のファイル名</summary>
+        public const string TraceFileName = "vmd_ik.csv";
+
+        /// <summary>サマリ CSV のファイル名</summary>
+        public const string SummaryFileName = "vmd_summary.csv";
+
+        /// <summary>トレース対象の IK ボーン名。空なら全 IK ボーンを対象にする。</summary>
+        public HashSet<string> TraceIkBoneNames = new HashSet<string>();
+
+        private VMDIKTraceWriter _trace;
+        private VMDIKSummaryWriter _summary;
 
         public void Solve(ModelContext model, float frameNumber = -1f)
         {
@@ -98,6 +131,10 @@ namespace Poly_Ling.VMD
 
             model.ComputeWorldMatrices();
 
+            // トレース出力の準備（TraceEnabled かつ出力先が有効なときだけ開く）
+            bool trace = TraceEnabled && EnsureTraceWriter();
+            if (trace) EnsureSummaryWriter();
+
             for (int i = 0; i < model.MeshContextList.Count; i++)
             {
                 var ctx = model.MeshContextList[i];
@@ -107,13 +144,18 @@ namespace Poly_Ling.VMD
                 if (ctx.IKTargetIndex < 0 || ctx.IKTargetIndex >= model.MeshContextList.Count)
                     continue;
 
-                SolveIKBone(model, i, frameNumber);
+                SolveIKBone(model, i, frameNumber, trace);
             }
         }
 
-        private void SolveIKBone(ModelContext model, int ikBoneIndex, float frameNumber)
+        private void SolveIKBone(ModelContext model, int ikBoneIndex, float frameNumber, bool trace)
         {
             var ikBone = model.MeshContextList[ikBoneIndex];
+
+            // トレース対象か（TraceIkBoneNames が空なら全 IK ボーン）
+            bool traceThis = trace
+                && (TraceIkBoneNames == null || TraceIkBoneNames.Count == 0
+                    || (ikBone.Name != null && TraceIkBoneNames.Contains(ikBone.Name)));
 
             // デバッグ条件: フラグON かつ 名前フィルタ一致 かつ フレーム範囲内
             bool debugLog = DebugEnabled
@@ -147,7 +189,7 @@ namespace Poly_Ling.VMD
             //   limitMin/Max・ヒンジ軸 X は MMD 規約（レスト回転 = identity）の
             //   モデル軸フレームの値。BonePoseData の回転はボーンローカル軸
             //   フレームなので、R = BoneModelRotation で共役変換して受け渡す。
-            if (KneePreBend)
+            if (KneePreBend && !IgnoreAngleLimits)
             {
                 bool preBent = false;
                 foreach (var link in ikBone.IKLinks)
@@ -178,6 +220,7 @@ namespace Poly_Ling.VMD
             int effectorIndex0 = ikBone.IKTargetIndex;
             Vector3 targetWorld0 = GetWorldPosition(model.MeshContextList[ikBoneIndex]);
             float bestDist = Vector3.Distance(GetWorldPosition(model.MeshContextList[effectorIndex0]), targetWorld0);
+            float distStart = bestDist;   // ループ開始前の残差（サマリ用）
             int bestIt = -1;
             var bestRotations = new Dictionary<int, Quaternion>();
             foreach (var link0 in ikBone.IKLinks)
@@ -223,15 +266,32 @@ namespace Poly_Ling.VMD
                     float angle = Mathf.Acos(dot);
                     float angleBeforeClamp = angle;
                     angle = Mathf.Min(angle, ikBone.IKLimitAngle);
+
+                    float distBefore = Vector3.Distance(effectorWorld, targetWorld);
+
                     if (angle <= 1.0e-5f)
                     {
                         if (logThisIt) Debug.Log($"[CCDIK it={it}]   SKIP angle={angleBeforeClamp:F6}→{angle:F6} too small");
+                        if (traceThis)
+                        {
+                            Quaternion skipRot = GetBoneRotation(linkCtx);
+                            _trace.Write(frameNumber, ikBone.Name, it, linkCtx.Name,
+                                         effectorWorld, targetWorld, distBefore,
+                                         Vector3.zero, 0f, skipRot, skipRot, false);
+                        }
                         continue;
                     }
 
                     if (rotationAxis.sqrMagnitude < 1e-10f)
                     {
                         if (logThisIt) Debug.Log($"[CCDIK it={it}]   SKIP rotAxis too small");
+                        if (traceThis)
+                        {
+                            Quaternion skipRot = GetBoneRotation(linkCtx);
+                            _trace.Write(frameNumber, ikBone.Name, it, linkCtx.Name,
+                                         effectorWorld, targetWorld, distBefore,
+                                         Vector3.zero, 0f, skipRot, skipRot, false);
+                        }
                         continue;
                     }
                     rotationAxis.Normalize();
@@ -256,17 +316,27 @@ namespace Poly_Ling.VMD
                     //   ローカル軸フレームでは X 成分 0 になり、補正が丸ごと捨てられる。
                     //   R = BoneModelRotation として q_model = R·q_local·R^-1 に写して
                     //   clamp し、q_local = R^-1·q_model·R で戻す。
-                    if (link.HasLimit)
+                    bool clamped = false;
+                    if (link.HasLimit && !IgnoreAngleLimits)
                     {
                         Quaternion before      = newRot;
                         Quaternion beforeModel = ToModelAxis(linkCtx, newRot);
                         Quaternion afterModel  = RestrictRotation(beforeModel, link.LimitMin, link.LimitMax, logThisIt);
                         newRot = ToLocalAxis(linkCtx, afterModel);
+                        clamped = QuaternionChanged(before, newRot);
                         if (logThisIt)
                         {
                             Debug.Log($"[CCDIK it={it}]   restrict(model) before=({beforeModel.x:F4},{beforeModel.y:F4},{beforeModel.z:F4},{beforeModel.w:F4}) after=({afterModel.x:F4},{afterModel.y:F4},{afterModel.z:F4},{afterModel.w:F4})");
                             Debug.Log($"[CCDIK it={it}]   restrict(local) before=({before.x:F4},{before.y:F4},{before.z:F4},{before.w:F4}) after=({newRot.x:F4},{newRot.y:F4},{newRot.z:F4},{newRot.w:F4})");
                         }
+                    }
+
+                    if (traceThis)
+                    {
+                        _trace.Write(frameNumber, ikBone.Name, it, linkCtx.Name,
+                                     effectorWorld, targetWorld, distBefore,
+                                     rotationAxis, angle * Mathf.Rad2Deg,
+                                     currentRot, newRot, clamped);
                     }
 
                     // --- BonePoseDataに設定 ---
@@ -320,6 +390,32 @@ namespace Poly_Ling.VMD
                     Debug.Log($"[CCDIK RESTORE] Restored to bestIt={bestIt} bestDist={bestDist:F6} (finalDist was {finalDist:F6})");
             }
 
+            // --- 最終残差（distEnd）を 1 行出す。iteration=-1 / link="(final)" ---
+            if (traceThis)
+            {
+                Vector3 effEnd = GetWorldPosition(model.MeshContextList[ikBone.IKTargetIndex]);
+                Vector3 tgtEnd = GetWorldPosition(model.MeshContextList[ikBoneIndex]);
+                _trace.Write(frameNumber, ikBone.Name, -1, "(final)",
+                             effEnd, tgtEnd, Vector3.Distance(effEnd, tgtEnd),
+                             Vector3.zero, 0f, Quaternion.identity, Quaternion.identity, false);
+            }
+
+            // --- サマリ 1 行（vmd_summary.csv）---
+            if (traceThis && _summary != null && _summary.IsOpen)
+            {
+                float distEndVal = Vector3.Distance(
+                    GetWorldPosition(model.MeshContextList[effectorIndex0]), targetWorld0);
+
+                bool  hasKnee    = false;
+                float kneeDeg    = 0f;
+                bool  kneeSignOK = false;
+                MeasureLimitedLink(model, ikBone, out hasKnee, out kneeDeg, out kneeSignOK);
+
+                _summary.Write(frameNumber, ikBone.Name, bestIt,
+                               distStart, distEndVal, bestDist,
+                               hasKnee, kneeDeg, kneeSignOK);
+            }
+
             // IK結果ログ
             if (debugLog)
             {
@@ -338,6 +434,101 @@ namespace Poly_Ling.VMD
         private Vector3 GetWorldPosition(MeshContext ctx)
         {
             return ctx.WorldMatrix.GetColumn(3);
+        }
+
+        // =================================================================
+        // トレース
+        // =================================================================
+
+        /// <summary>出力先が有効ならライタを開く。失敗したらトレースを止める。</summary>
+        private bool EnsureTraceWriter()
+        {
+            if (_trace != null && _trace.IsOpen) return true;
+            if (string.IsNullOrEmpty(TraceDirectory)) return false;
+
+            try
+            {
+                if (_trace == null) _trace = new VMDIKTraceWriter();
+                _trace.Open(System.IO.Path.Combine(TraceDirectory, TraceFileName));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[CCDIKSolver] トレース出力を開けません: {ex.Message}");
+                TraceEnabled = false;
+                return false;
+            }
+        }
+
+        /// <summary>サマリ出力先が有効ならライタを開く。</summary>
+        private bool EnsureSummaryWriter()
+        {
+            if (_summary != null && _summary.IsOpen) return true;
+            if (string.IsNullOrEmpty(TraceDirectory)) return false;
+
+            try
+            {
+                if (_summary == null) _summary = new VMDIKSummaryWriter();
+                _summary.Open(System.IO.Path.Combine(TraceDirectory, SummaryFileName));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[CCDIKSolver] サマリ出力を開けません: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>トレース CSV（vmd_ik.csv / vmd_summary.csv）を閉じる。</summary>
+        public void CloseTrace()
+        {
+            _trace?.Close();
+            _summary?.Close();
+        }
+
+        /// <summary>
+        /// 角度制限付きリンクの屈曲角を測る。
+        /// 合成回転を ToModelAxis でモデル軸へ写し（BoneModelRotation は恒等なので素通り）、
+        /// RestrictRotation と同じ SplitRotation で分解した X 成分を返す。
+        /// clamp の判定と必ず同じ分解を使うため、専用の分解は作らない。
+        /// IgnoreAngleLimits が true でも計算する（手順書 §1-4）。
+        /// </summary>
+        private void MeasureLimitedLink(ModelContext model, MeshContext ikBone,
+                                        out bool hasKnee, out float kneeAngleDeg, out bool kneeSignOK)
+        {
+            hasKnee = false;
+            kneeAngleDeg = 0f;
+            kneeSignOK = false;
+
+            foreach (var link in ikBone.IKLinks)
+            {
+                if (!link.HasLimit) continue;
+                if (link.BoneIndex < 0 || link.BoneIndex >= model.MeshContextList.Count) continue;
+
+                var linkCtx = model.MeshContextList[link.BoneIndex];
+                if (linkCtx == null) continue;
+
+                Quaternion modelRot = ToModelAxis(linkCtx, GetBoneRotation(linkCtx));
+                float xRot, yRot, zRot;
+                SplitRotation(modelRot, out xRot, out yRot, out zRot);
+                xRot = NormalizeAngle(xRot, -Mathf.PI, Mathf.PI);
+
+                const float eps = 1.0e-4f;
+                hasKnee      = true;
+                kneeAngleDeg = xRot * Mathf.Rad2Deg;
+                kneeSignOK   = xRot >= link.LimitMin.x - eps && xRot <= link.LimitMax.x + eps;
+                return;   // 制限付きリンクは 1 本だけを対象にする
+            }
+        }
+
+        /// <summary>角度制限で実際にクォータニオンが変化したかを判定する。</summary>
+        private static bool QuaternionChanged(Quaternion a, Quaternion b)
+        {
+            const float eps = 1e-6f;
+            return Mathf.Abs(a.x - b.x) > eps
+                || Mathf.Abs(a.y - b.y) > eps
+                || Mathf.Abs(a.z - b.z) > eps
+                || Mathf.Abs(a.w - b.w) > eps;
         }
 
         /// <summary>
@@ -375,6 +566,24 @@ namespace Poly_Ling.VMD
         /// <summary>
         /// 全体の合成回転を設定（MikuMikuFlexの「ボーン.回転 = newRot」に相当）
         /// IKレイヤーのDeltaRotationを逆算して設定
+        ///
+        /// ■ 掛け順の根拠（実測で確定）
+        ///   BonePoseData.Recalculate（BonePoseData.cs:314）は
+        ///     _blendedRotation = weightedDelta * _blendedRotation;
+        ///   でレイヤーをリスト順に前掛けする。GetOrCreateLayer は末尾追加
+        ///   （BonePoseData.cs:174-185）、ClearLayer は要素を残す（同 240-249）ため、
+        ///   VMD レイヤー（VMDApplier.ApplyBonePose）が先、IK レイヤー（本メソッド）が
+        ///   後で、順序は [VMD, IK] に固定される。したがって
+        ///     total = IK · VMD
+        ///   であり、逆算は
+        ///     IK = total · VMD^-1
+        ///   でなければならない。
+        ///
+        ///   旧実装の IK = VMD^-1 · total を入れると total' = VMD^-1·total·VMD となり、
+        ///   VMD が恒等のときだけ total と一致する。vmd_ik.csv の実測では、
+        ///   左足（VMD デルタ 25.13deg）で次反復の読み戻し値が after ではなく
+        ///   VMD^-1·after·VMD に一致し（ずれ 平均 0.006deg / 対する after とのずれ 平均 5.04deg）、
+        ///   VMD 回転が非恒等なリンクでのみ IK が破綻していた。
         /// </summary>
         private void SetBoneRotation(MeshContext ctx, Quaternion newRot)
         {
@@ -382,8 +591,7 @@ namespace Poly_Ling.VMD
             bpd.IsActive = true;
 
             Quaternion vmdDelta = GetVMDDelta(bpd);
-            //Quaternion ikDelta = newRot * Quaternion.Inverse(vmdDelta);
-            Quaternion ikDelta = Quaternion.Inverse(vmdDelta) * newRot;// を試す（レイヤー逆算の掛け順）
+            Quaternion ikDelta = newRot * Quaternion.Inverse(vmdDelta);
 
             bpd.SetLayerRotation("IK", ikDelta);
         }

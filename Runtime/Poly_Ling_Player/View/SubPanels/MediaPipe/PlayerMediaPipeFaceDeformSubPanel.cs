@@ -137,9 +137,7 @@ namespace Poly_Ling.Player
 
             parent.Add(PlayerIoUiKit.PathRow(field, () =>
             {
-                string cur = field.value;
-                string dir = string.IsNullOrEmpty(cur) ? Application.dataPath : Path.GetDirectoryName(cur);
-                string path = PLEditorBridge.I.OpenFilePanel(dialogTitle, dir, "json");
+                string path = PlayerIoUiKit.AskLoadPath(dialogTitle, field.value, "json");
                 if (!string.IsNullOrEmpty(path)) field.value = path;
             }));
 

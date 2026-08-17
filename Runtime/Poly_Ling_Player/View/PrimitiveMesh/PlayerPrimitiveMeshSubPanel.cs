@@ -43,8 +43,15 @@ namespace Poly_Ling.Player
         /// <summary>現在表示中の名前欄。RebuildSettings のたびに NF が差し替える。</summary>
         private TextField _nameField;
 
-        /// <summary>生成ボタン押下時。(MeshObject, meshName, worldPosition, ignorePoseInArmature, addMode)</summary>
-        public Action<MeshObject, string, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
+        /// <summary>
+        /// 生成ボタン押下時。
+        /// (MeshObject, meshName, worldPosition, poseRotationEuler, poseScale,
+        ///  ignorePoseInArmature, addMode)
+        /// poseRotationEuler / poseScale は「ベイクしなかった」成分。
+        /// 呼出し側が MeshContext.BoneTransform へ設定する。ベイク済みなら
+        /// それぞれ Vector3.zero / Vector3.one が渡る。
+        /// </summary>
+        public Action<MeshObject, string, Vector3, Vector3, Vector3, bool, PrimitiveAddMode> OnMeshCreated;
 
         /// <summary>選択中の描画オブジェクトの MeshObject を返す(なければ null)。取り込み/反映で使用。</summary>
         public Func<MeshObject> GetSelectedMeshObject;
@@ -141,13 +148,34 @@ namespace Poly_Ling.Player
         /// 空のときはファイル保存を行わず、起動中のみの記憶になる。
         /// </summary>
         public string MemoryKey { get; set; }
-        private CubeMeshGenerator.CubeParams         _cubeP   = CubeMeshGenerator.CubeParams.Default;
-        private SphereMeshGenerator.SphereParams     _sphereP = SphereMeshGenerator.SphereParams.Default;
-        private CylinderMeshGenerator.CylinderParams _cylP    = CylinderMeshGenerator.CylinderParams.Default;
-        private CapsuleMeshGenerator.CapsuleParams   _capsP   = CapsuleMeshGenerator.CapsuleParams.Default;
-        private PlaneMeshGenerator.PlaneParams       _planeP  = PlaneMeshGenerator.PlaneParams.Default;
-        private PyramidMeshGenerator.PyramidParams   _pyramidP= PyramidMeshGenerator.PyramidParams.Default;
-        private RevolutionParams                     _revP    = RevolutionParams.Default;
+        /// <summary>
+        /// 図形パラメータの既定ピボット。各図形のピボット「下」ボタンと同じ値。
+        /// 生成側 (*Params.Default) は変更せず、本パネルの初期値としてのみ差し替える。
+        /// </summary>
+        private static readonly Vector3 DefaultPivotBottom = new Vector3(0f, -0.5f, 0f);
+
+        private static CubeMeshGenerator.CubeParams DefaultCubeParams()
+        { var p = CubeMeshGenerator.CubeParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        private static SphereMeshGenerator.SphereParams DefaultSphereParams()
+        { var p = SphereMeshGenerator.SphereParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        private static CylinderMeshGenerator.CylinderParams DefaultCylinderParams()
+        { var p = CylinderMeshGenerator.CylinderParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        private static CapsuleMeshGenerator.CapsuleParams DefaultCapsuleParams()
+        { var p = CapsuleMeshGenerator.CapsuleParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        private static PlaneMeshGenerator.PlaneParams DefaultPlaneParams()
+        { var p = PlaneMeshGenerator.PlaneParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        private static PyramidMeshGenerator.PyramidParams DefaultPyramidParams()
+        { var p = PyramidMeshGenerator.PyramidParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+        private static RevolutionParams DefaultRevolutionParams()
+        { var p = RevolutionParams.Default; p.Pivot = DefaultPivotBottom; return p; }
+
+        private CubeMeshGenerator.CubeParams         _cubeP   = DefaultCubeParams();
+        private SphereMeshGenerator.SphereParams     _sphereP = DefaultSphereParams();
+        private CylinderMeshGenerator.CylinderParams _cylP    = DefaultCylinderParams();
+        private CapsuleMeshGenerator.CapsuleParams   _capsP   = DefaultCapsuleParams();
+        private PlaneMeshGenerator.PlaneParams       _planeP  = DefaultPlaneParams();
+        private PyramidMeshGenerator.PyramidParams   _pyramidP= DefaultPyramidParams();
+        private RevolutionParams                     _revP    = DefaultRevolutionParams();
         private List<Vector2>                        _revProfile = null;
         private Profile2DParams                      _p2dP    = Profile2DParams.Default;
         private List<Loop>                           _p2dLoops = null;
@@ -155,13 +183,44 @@ namespace Poly_Ling.Player
 
         // ワールド生成位置
         private Vector3         _worldPos            = Vector3.zero;
-        private bool            _ignorePoseInArmature = false;
         private PrimitiveAddMode _addMode             = PrimitiveAddMode.NewObject;
         private bool            _mergeDuplicateVertices = true;
 
-        // 生成時の回転(度) / スケール。頂点へ焼き込む（平行移動は従来どおり呼出し側が扱う）。
+        // 生成時の回転(度) / スケール（平行移動は従来どおり呼出し側が扱う）。
+        // ベイク ON = 頂点へ焼き込む / OFF = 描画オブジェクトの姿勢(BoneTransform)へ入れる。
         private Vector3         _rotEuler            = Vector3.zero;
         private Vector3         _scale               = Vector3.one;
+        private bool            _bakeRotation        = false;
+        private bool            _bakeScale           = true;
+
+        // 「既存の描画オブジェクトへ追加」は頂点をマージする経路で姿勢を持てないため、
+        // チェック状態にかかわらず両方を焼き込む。
+        private bool BakeRotationEffective => _bakeRotation || _addMode == PrimitiveAddMode.AddToExisting;
+        private bool BakeScaleEffective    => _bakeScale    || _addMode == PrimitiveAddMode.AddToExisting;
+
+        /// <summary>姿勢フォールド内の「ベイク」チェックボックス（回転・スケール）。</summary>
+        private Toggle _bakeRotToggle;
+        private Toggle _bakeScaleToggle;
+
+        /// <summary>
+        /// 「ベイク」チェックボックスの表示を追加先に合わせる。
+        /// 既存に追加のときは BakeRotationEffective / BakeScaleEffective が無条件に true になり
+        /// 指定が効かないので隠す。位置・回転・スケールの値そのものは既存追加でも有効
+        /// （PolyLingPlayerViewerCore.PrimitiveMeshAddToExisting が頂点へ焼き込む）。
+        /// </summary>
+        private void RefreshBakeToggleVis()
+        {
+            var d = _addMode == PrimitiveAddMode.AddToExisting
+                ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_bakeRotToggle   != null) _bakeRotToggle.style.display   = d;
+            if (_bakeScaleToggle != null) _bakeScaleToggle.style.display = d;
+        }
+
+        /// <summary>ベイクしなかった回転（描画オブジェクトの姿勢へ渡す分）。</summary>
+        private Vector3 PoseRotation => BakeRotationEffective ? Vector3.zero : _rotEuler;
+
+        /// <summary>ベイクしなかったスケール（描画オブジェクトの姿勢へ渡す分）。</summary>
+        private Vector3 PoseScale    => BakeScaleEffective    ? Vector3.one  : _scale;
 
         // TRS 行の FloatField 参照。外部（将来のギズモ）から値を書き戻すために保持する。
         private readonly FloatField[] _posFields = new FloatField[3];
@@ -504,29 +563,56 @@ namespace Poly_Ling.Player
 
             parent.Add(Sep());
 
-            // プロファイル編集コンテナ（回転体/2D押し出し時のみ中身を持つ）
-            _profileEditorContainer = new VisualElement();
-            parent.Add(_profileEditorContainer);
-
             // ワールド生成位置 / 回転 / スケール ほか
             // 平行移動は従来どおり呼出し側 (MeshContext.BoneTransform / 頂点加算) が扱う。
-            // 回転・スケールのみ Generate() 内で頂点へ焼き込む。
-            parent.Add(SL(T("WorldPos")));
-            parent.Add(V3FRef(T("WorldPosX"), T("WorldPosY"), T("WorldPosZ"),
+            // 回転・スケールは「ベイク」チェックが ON の成分だけ Generate() 内で頂点へ焼き込み、
+            // OFF の成分は呼出し側が描画オブジェクトの姿勢 (BoneTransform) へ入れる。
+            // 「描画オブジェクトの姿勢」フォールド（既定は折り畳み）。
+            // 本フォールドは _settingsContainer の外にあり ApplyDarkTheme の適用範囲外のため、
+            // 見出しラベルの色をここで明示する。
+            // 追加先ドロップダウン（姿勢より上に置く。姿勢の効き方が追加先で変わるため）
+            var addModeChoices = new List<string>
+            {
+                T("AddModeNewObj"),
+                T("AddModeExisting"),
+                T("AddModeNewModel"),
+            };
+            var addModeDd = new DropdownField(addModeChoices, 0);
+            addModeDd.label = T("AddMode");
+            addModeDd.style.marginTop    = 4;
+            addModeDd.style.marginBottom = 2;
+            addModeDd.RegisterValueChangedCallback(e =>
+            {
+                _addMode = (PrimitiveAddMode)addModeChoices.IndexOf(e.newValue);
+                RefreshBakeToggleVis();
+            });
+            parent.Add(addModeDd);
+
+            var poseFold = new Foldout { text = T("ObjectPose"), value = false };
+            poseFold.style.marginTop    = 2;
+            poseFold.style.marginBottom = 2;
+            var poseFoldLabel = poseFold.Q<Label>();
+            if (poseFoldLabel != null) poseFoldLabel.style.color = new StyleColor(Color.white);
+            var pose = poseFold.contentContainer;
+
+            pose.Add(SL(T("WorldPos")));
+            pose.Add(V3FRef(T("WorldPosX"), T("WorldPosY"), T("WorldPosZ"),
                 () => _worldPos.x, v => { _worldPos.x = v; D(); },
                 () => _worldPos.y, v => { _worldPos.y = v; D(); },
                 () => _worldPos.z, v => { _worldPos.z = v; D(); },
                 _posFields));
 
-            parent.Add(SL(T("Rotation")));
-            parent.Add(V3FRef(T("RotX"), T("RotY"), T("RotZ"),
+            pose.Add(BakeHeaderRow(T("Rotation"), () => _bakeRotation, v => _bakeRotation = v,
+                out _bakeRotToggle));
+            pose.Add(V3FRef(T("RotX"), T("RotY"), T("RotZ"),
                 () => _rotEuler.x, v => { _rotEuler.x = v; D(); },
                 () => _rotEuler.y, v => { _rotEuler.y = v; D(); },
                 () => _rotEuler.z, v => { _rotEuler.z = v; D(); },
                 _rotFields));
 
-            parent.Add(SL(T("ScaleLabel")));
-            parent.Add(V3FRef(T("ScaleX"), T("ScaleY"), T("ScaleZ"),
+            pose.Add(BakeHeaderRow(T("ScaleLabel"), () => _bakeScale, v => _bakeScale = v,
+                out _bakeScaleToggle));
+            pose.Add(V3FRef(T("ScaleX"), T("ScaleY"), T("ScaleZ"),
                 () => _scale.x, v => { _scale.x = v; D(); },
                 () => _scale.y, v => { _scale.y = v; D(); },
                 () => _scale.z, v => { _scale.z = v; D(); },
@@ -543,14 +629,14 @@ namespace Poly_Ling.Player
                 RefreshTrsFields();
                 D();
             });
-            parent.Add(trsResetRow);
+            pose.Add(trsResetRow);
 
             // 配置ギズモのサブモード切替。GizmoData は矢印 / リング / キューブを
             // 排他的にしか描画できないため、3種を同時には出さず切り替える。
             // 配置ギズモを持つのは 3D連携インスタンスだけなので、そちらにのみ出す。
             if (LiveWireInMainViewport)
             {
-                parent.Add(SL(T("PlaceGizmo")));
+                pose.Add(SL(T("PlaceGizmo")));
 
                 var placeGizmoRow = new VisualElement();
                 placeGizmoRow.style.flexDirection = FlexDirection.Row;
@@ -565,36 +651,25 @@ namespace Poly_Ling.Player
                     PrimitivePlaceToolHandler.PlaceGizmoMode.Scale);
                 _placeGizmoBtns[2].style.marginRight = 0;
 
-                parent.Add(placeGizmoRow);
+                pose.Add(placeGizmoRow);
                 RefreshPlaceGizmoButtons();
             }
 
-            var ignorePoseToggle = new Toggle(T("IgnorePose")) { value = _ignorePoseInArmature };
-            ignorePoseToggle.style.color = new StyleColor(Color.white);
-            ignorePoseToggle.RegisterValueChangedCallback(e => _ignorePoseInArmature = e.newValue);
-            parent.Add(ignorePoseToggle);
+            RefreshBakeToggleVis();
 
             var mergeToggle = new Toggle(T("MergeDuplicates")) { value = _mergeDuplicateVertices };
             mergeToggle.style.color = new StyleColor(Color.white);
             mergeToggle.RegisterValueChangedCallback(e => { _mergeDuplicateVertices = e.newValue; _dirty = true; });
-            parent.Add(mergeToggle);
+            pose.Add(mergeToggle);
 
-            // 追加先ドロップダウン
-            var addModeChoices = new List<string>
-            {
-                T("AddModeNewObj"),
-                T("AddModeExisting"),
-                T("AddModeNewModel"),
-            };
-            var addModeDd = new DropdownField(addModeChoices, 0);
-            addModeDd.label = T("AddMode");
-            addModeDd.style.marginTop    = 4;
-            addModeDd.style.marginBottom = 2;
-            addModeDd.RegisterValueChangedCallback(e =>
-                _addMode = (PrimitiveAddMode)addModeChoices.IndexOf(e.newValue));
-            parent.Add(addModeDd);
+            parent.Add(poseFold);
 
             parent.Add(Sep());
+
+            // プロファイル編集コンテナ（回転体/2D押し出し/フリル/パイプ時のみ中身を持つ）
+            // 並び順は 生成ボタン → 姿勢 → 追加先 → プロファイル編集 → 個別パラメータ → PIVOT。
+            _profileEditorContainer = new VisualElement();
+            parent.Add(_profileEditorContainer);
 
             // 詳細設定コンテナ
             _settingsContainer = new VisualElement();
@@ -902,13 +977,19 @@ namespace Poly_Ling.Player
             PlayerLayoutRoot.ApplyDarkTheme(_settingsContainer);
             if (_profileEditorContainer != null)
                 PlayerLayoutRoot.ApplyDarkTheme(_profileEditorContainer);
+
+            RefreshCreateButtonState();
         }
 
-        private void D() => _dirty = true;
+        private void D()
+        {
+            _dirty = true;
+            RefreshCreateButtonState();
+        }
 
         private void BuildCubeUI(VisualElement c)
         {
-            c.Add(SL(T("Cube")));
+            c.Add(ShapeTitle(T("Cube")));
             c.Add(NF(() => _cubeP.MeshName, v => _cubeP.MeshName = v));
 
             c.Add(TR(T("LinkWHD"), () => _cubeP.LinkWHD, v => { _cubeP.LinkWHD = v; D(); }));
@@ -941,13 +1022,13 @@ namespace Poly_Ling.Player
             BuildPivotXYZ(c,
                 () => _cubeP.Pivot, v => { _cubeP.Pivot = v; D(); },
                 -0.5f, 0.5f,
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
 
         private void BuildSphereUI(VisualElement c)
         {
-            c.Add(SL(T("Sphere")));
+            c.Add(ShapeTitle(T("Sphere")));
             c.Add(NF(() => _sphereP.MeshName, v => _sphereP.MeshName = v));
             c.Add(SR(T("Radius"), 0.05f, 5f, () => _sphereP.Radius, v => { _sphereP.Radius = v; D(); }));
             c.Add(SL(T("Segments")));
@@ -958,13 +1039,13 @@ namespace Poly_Ling.Player
             BuildPivotXYZ(c,
                 () => _sphereP.Pivot, v => { _sphereP.Pivot = v; D(); },
                 -0.5f, 0.5f,
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
 
         private void BuildCylinderUI(VisualElement c)
         {
-            c.Add(SL(T("Cylinder")));
+            c.Add(ShapeTitle(T("Cylinder")));
             c.Add(NF(() => _cylP.MeshName, v => _cylP.MeshName = v));
             c.Add(SL(T("Size")));
             c.Add(SR(T("RadiusTop"),    0f,   5f,   () => _cylP.RadiusTop,    v => { _cylP.RadiusTop    = v; D(); }));
@@ -988,13 +1069,13 @@ namespace Poly_Ling.Player
 
             BuildPivotY(c,
                 () => _cylP.Pivot.y, v => { _cylP.Pivot = new Vector3(0, v, 0); D(); },
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _, out _);
 
         }
 
         private void BuildCapsuleUI(VisualElement c)
         {
-            c.Add(SL(T("Capsule")));
+            c.Add(ShapeTitle(T("Capsule")));
             c.Add(NF(() => _capsP.MeshName, v => _capsP.MeshName = v));
             c.Add(SL(T("Size")));
             c.Add(SR(T("RadiusTop"),    0.1f, 2f,  () => _capsP.RadiusTop,    v => { _capsP.RadiusTop    = v; D(); }));
@@ -1007,7 +1088,8 @@ namespace Poly_Ling.Player
 
             BuildPivotY(c,
                 () => _capsP.Pivot.y, v => { _capsP.Pivot = new Vector3(0, v, 0); D(); },
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out var capsPivotSync);
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0),
+                out var capsPivotSync, out var capsPivotContent);
 
             // 上球・下球の重心ピボット
             var sphereRow = new VisualElement();
@@ -1027,35 +1109,36 @@ namespace Poly_Ling.Player
                 float normalized = _capsP.Height > 0f ? cylBottom / _capsP.Height : 0f;
                 _capsP.Pivot = new Vector3(0, normalized, 0); D(); capsPivotSync?.Invoke();
             });
-            c.Add(sphereRow);
+            capsPivotContent.Add(sphereRow);
 
         }
 
         private void BuildPlaneUI(VisualElement c)
         {
-            c.Add(SL(T("Plane")));
+            c.Add(ShapeTitle(T("Plane")));
             c.Add(NF(() => _planeP.MeshName, v => _planeP.MeshName = v));
             c.Add(SR(T("Width"),  0.1f, 10f, () => _planeP.Width,  v => { _planeP.Width  = v; D(); }));
             c.Add(SR(T("Height"), 0.1f, 10f, () => _planeP.Height, v => { _planeP.Height = v; D(); }));
             c.Add(SL(T("Segments")));
             c.Add(IR(T("Width"),  1, 32, () => _planeP.WidthSegments,  v => { _planeP.WidthSegments  = v; D(); }));
             c.Add(IR(T("Height"), 1, 32, () => _planeP.HeightSegments, v => { _planeP.HeightSegments = v; D(); }));
-            var dd = new DropdownField(new List<string>{"XZ","XY","YZ"}, (int)_planeP.Orientation);
+            var dd = new DropdownField(new List<string>{ T("PlaneXY"), T("PlaneXZ"), T("PlaneYZ") }, (int)_planeP.Orientation);
             dd.label = T("Orientation"); dd.style.marginBottom = 2;
             dd.RegisterValueChangedCallback(e => { _planeP.Orientation = (PlaneOrientation)dd.index; D(); });
             c.Add(dd);
+            c.Add(TR(T("FaceFront"),   () => _planeP.FaceFront,   v => { _planeP.FaceFront   = v; D(); }));
             c.Add(TR(T("DoubleSided"), () => _planeP.DoubleSided, v => { _planeP.DoubleSided = v; D(); }));
 
             BuildPivotXYZ(c,
                 () => _planeP.Pivot, v => { _planeP.Pivot = v; D(); },
                 -0.5f, 0.5f,
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
 
         private void BuildPyramidUI(VisualElement c)
         {
-            c.Add(SL(T("Pyramid")));
+            c.Add(ShapeTitle(T("Pyramid")));
             c.Add(NF(() => _pyramidP.MeshName, v => _pyramidP.MeshName = v));
             c.Add(IR(T("Sides"),      3, 16,     () => _pyramidP.Sides,       v => { _pyramidP.Sides       = v; D(); }));
             c.Add(SR(T("BaseRadius"), 0.1f, 5f,  () => _pyramidP.BaseRadius,  v => { _pyramidP.BaseRadius  = v; D(); }));
@@ -1066,7 +1149,7 @@ namespace Poly_Ling.Player
             BuildPivotXYZ(c,
                 () => _pyramidP.Pivot, v => { _pyramidP.Pivot = v; D(); },
                 -0.5f, 0.5f,
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0));
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
         }
 
@@ -1074,31 +1157,86 @@ namespace Poly_Ling.Player
         // ピボットUIヘルパー
         // ================================================================
 
+        /// <summary>
+        /// 現在のパラメータで生成したメッシュから「重心を原点へ寄せるためのピボット増分」を返す。
+        ///
+        /// 全ジェネレータは「ピボット p で頂点を -p * S だけ平行移動する（S = 形状サイズ）」規約のため、
+        /// 現在の重心 c に対して Δp = c / S を足せば重心が原点へ来る。S は生成メッシュの AABB サイズで測る。
+        /// 姿勢（回転・スケール）は焼き込まずに測るので、姿勢を変えても結果は変わらない。
+        /// 生成できない図形（穴つなぎ・歪み複製など）では null を返す。
+        /// </summary>
+        private Vector3? PivotDeltaToCentroid()
+        {
+            var mo = Generate(true, false);
+            if (mo == null || mo.Vertices == null || mo.Vertices.Count == 0) return null;
+
+            Vector3 min = mo.Vertices[0].Position, max = min, sum = Vector3.zero;
+            foreach (var v in mo.Vertices)
+            {
+                min = Vector3.Min(min, v.Position);
+                max = Vector3.Max(max, v.Position);
+                sum += v.Position;
+            }
+            Vector3 c = sum / mo.Vertices.Count;
+            Vector3 s = max - min;
+
+            return new Vector3(
+                Mathf.Abs(s.x) > 1e-6f ? c.x / s.x : 0f,
+                Mathf.Abs(s.y) > 1e-6f ? c.y / s.y : 0f,
+                Mathf.Abs(s.z) > 1e-6f ? c.z / s.z : 0f);
+        }
+
+        /// <summary>
+        /// 見出し付きの折り畳みセクションを作り、中身を入れるコンテナを返す。
+        /// 3つの2Dプロファイル編集（回転体・2D押し出し・はしご断面）で共用する。
+        /// </summary>
+        private static VisualElement FoldSection(VisualElement parent, string title, bool open)
+        {
+            var f = new Foldout { text = title, value = open };
+            f.style.marginBottom = 4;
+            parent.Add(f);
+            return f.contentContainer;
+        }
+
         private void BuildPivotY(VisualElement c,
             Func<float> getY, Action<float> setY,
             Vector3 bottom, Vector3 center, Vector3 top,
-            out Action sync)
+            out Action sync, out VisualElement content)
         {
-            c.Add(SL(T("PivotOffset")));
-            c.Add(SR(T("PivotY"), -0.5f, 0.5f, getY, setY, out var ySl, out var yNf));
+            var fold = new Foldout { text = T("PivotOffset"), value = false };
+            fold.style.marginBottom = 4;
+            var f = fold.contentContainer;
+            content = f;
+            f.Add(SR(T("PivotY"), -0.5f, 0.5f, getY, setY, out var ySl, out var yNf));
             void SyncY() { float v = getY(); ySl.SetValueWithoutNotify(v); yNf.SetValueWithoutNotify((float)Math.Round(v, 3)); }
             sync = SyncY;
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 4;
             SB(row, T("Bottom"), () => { setY(bottom.y); SyncY(); });
             SB(row, T("Center"), () => { setY(center.y); SyncY(); });
             SB(row, T("Top"),    () => { setY(top.y);    SyncY(); });
-            c.Add(row);
+            SB(row, T("PivotCentroid"), () =>
+            {
+                var d = PivotDeltaToCentroid();
+                if (!d.HasValue) return;
+                setY(getY() + d.Value.y); SyncY();
+            });
+            f.Add(row);
+            c.Add(fold);
         }
 
         private void BuildPivotXYZ(VisualElement c,
             Func<Vector3> get, Action<Vector3> set,
             float min, float max,
-            Vector3 bottom, Vector3 center, Vector3 top)
+            Vector3 bottom, Vector3 center, Vector3 top,
+            out VisualElement content)
         {
-            c.Add(SL(T("PivotOffset")));
-            c.Add(SR(T("PivotX"), min, max, () => get().x, v => { var p = get(); set(new Vector3(v, p.y, p.z)); }, out var xSl, out var xNf));
-            c.Add(SR(T("PivotY"), min, max, () => get().y, v => { var p = get(); set(new Vector3(p.x, v, p.z)); }, out var ySl, out var yNf));
-            c.Add(SR(T("PivotZ"), min, max, () => get().z, v => { var p = get(); set(new Vector3(p.x, p.y, v)); }, out var zSl, out var zNf));
+            var fold = new Foldout { text = T("PivotOffset"), value = false };
+            fold.style.marginBottom = 4;
+            var f = fold.contentContainer;
+            content = f;
+            f.Add(SR(T("PivotX"), min, max, () => get().x, v => { var p = get(); set(new Vector3(v, p.y, p.z)); }, out var xSl, out var xNf));
+            f.Add(SR(T("PivotY"), min, max, () => get().y, v => { var p = get(); set(new Vector3(p.x, v, p.z)); }, out var ySl, out var yNf));
+            f.Add(SR(T("PivotZ"), min, max, () => get().z, v => { var p = get(); set(new Vector3(p.x, p.y, v)); }, out var zSl, out var zNf));
             void SyncXYZ()
             {
                 var p = get();
@@ -1110,7 +1248,14 @@ namespace Poly_Ling.Player
             SB(row, T("Bottom"), () => { set(bottom); SyncXYZ(); });
             SB(row, T("Center"), () => { set(center); SyncXYZ(); });
             SB(row, T("Top"),    () => { set(top);    SyncXYZ(); });
-            c.Add(row);
+            SB(row, T("PivotCentroid"), () =>
+            {
+                var d = PivotDeltaToCentroid();
+                if (!d.HasValue) return;
+                set(get() + d.Value); SyncXYZ();
+            });
+            f.Add(row);
+            c.Add(fold);
         }
 
         // ================================================================
@@ -1130,7 +1275,7 @@ namespace Poly_Ling.Player
             // ドラッグ状態をリセット（タブ切替後の再Build時）
             _revDrag = false; _revDragIdx = -1; _revHoverEI = -1;
 
-            c.Add(SL(T("Revolution")));
+            c.Add(ShapeTitle(T("Revolution")));
             c.Add(NF(() => _revP.MeshName, v => _revP.MeshName = v));
             c.Add(IR(T("RadialSegments"), 3, 64,   () => _revP.RadialSegments, v => { _revP.RadialSegments = v; D(); }));
             c.Add(TR(T("CloseTop"),    () => _revP.CloseTop,    v => { _revP.CloseTop    = v; D(); }));
@@ -1144,10 +1289,6 @@ namespace Poly_Ling.Player
             }
             c.Add(TR(T("FlipY"), () => _revP.FlipY, v => { _revP.FlipY = v; D(); }));
             c.Add(TR(T("FlipZ"), () => _revP.FlipZ, v => { _revP.FlipZ = v; D(); }));
-
-            BuildPivotY(c,
-                () => _revP.Pivot.y, v => { _revP.Pivot = new Vector3(0, v, 0); D(); },
-                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
 
             // ── プリセット ──────────────────────────────────────────────
             c.Add(SL(T("Preset")));
@@ -1194,6 +1335,10 @@ namespace Poly_Ling.Player
                 c.Add(SR(T("CornerRadius"), 0f, 0.5f, () => _revP.PipeOuterCornerRadius,  v => { _revP.PipeOuterCornerRadius  = v; ApplyRevPreset(); }));
                 c.Add(IR(T("CornerSeg"),    1, 16,    () => _revP.PipeOuterCornerSegments, v => { _revP.PipeOuterCornerSegments = v; ApplyRevPreset(); }));
             }
+
+            BuildPivotY(c,
+                () => _revP.Pivot.y, v => { _revP.Pivot = new Vector3(0, v, 0); D(); },
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _, out _);
 
             // ── プロファイルエディタ ──────────────────────────────────────
             var pe = _profileEditorContainer;
@@ -1301,24 +1446,29 @@ namespace Poly_Ling.Player
                 RevCommit("プロファイルリセット");
                 D(); RefreshRevCanvas(); RefreshRevPointUI();
             });
-            SB(btnRow, "ビュー初期化", () =>
+            pe.Add(btnRow);
+
+            // ここから下を1つの大フォールドにまとめ、中の各セクションも個別に折り畳む。
+            pe = FoldSection(pe, T("EditTools"), true);
+
+            // ビュー操作行（3エディタ共通の並び：ビュー初期化 / 投げ縄 / ギズモ）
+            var revViewRow = new VisualElement();
+            revViewRow.style.flexDirection = FlexDirection.Row;
+            revViewRow.style.marginBottom  = 3;
+            SB(revViewRow, T("ResetView"), () =>
             {
                 _revZoom = 1f; _revOffset = Vector2.zero;
                 UpdateRevView(); UpdateRevBgEl(); RefreshRevCanvas();
             });
-            pe.Add(btnRow);
-
-            // 矩形/投げ縄トグル（空領域ドラッグでマーキー選択）
-            var revLassoToggle = new Toggle("投げ縄") { value = _revLassoMode };
-            revLassoToggle.style.marginBottom = 4;
+            var revLassoToggle = new Toggle(T("LassoMode")) { value = _revLassoMode };
+            revLassoToggle.style.marginLeft = 4;
             revLassoToggle.RegisterValueChangedCallback(ev => _revLassoMode = ev.newValue);
-            pe.Add(revLassoToggle);
-
-            // ギズモ表示トグル（既定=非表示）
+            revViewRow.Add(revLassoToggle);
             var revGizmoToggle = new Toggle(T("ShowGizmo")) { value = _revShowGizmo };
-            revGizmoToggle.style.marginBottom = 4;
+            revGizmoToggle.style.marginLeft = 8;
             revGizmoToggle.RegisterValueChangedCallback(ev => { _revShowGizmo = ev.newValue; RefreshRevCanvas(); });
-            pe.Add(revGizmoToggle);
+            revViewRow.Add(revGizmoToggle);
+            pe.Add(revViewRow);
 
             BuildRevAnchorTransformUI(pe);
 
@@ -1416,26 +1566,17 @@ namespace Poly_Ling.Player
             pe.Add(_revPtRow);
 
             // CSV 読み書き
-            pe.Add(PlayerIoUiKit.SectionLabel(T("LoadCSV")));
+            var revCsvFold = FoldSection(pe, T("ProfileCsvSection"), false);
             var csvPathField = new TextField();
             csvPathField.RegisterValueChangedCallback(e => { _revCsvPath = e.newValue; RecentPaths.Set(RevCsvKey, e.newValue); });
-            pe.Add(PlayerIoUiKit.PathRow(csvPathField, () =>
+            // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
+            void LoadRevCsv()
             {
-                string dir  = string.IsNullOrEmpty(_revCsvPath) ? "" : System.IO.Path.GetDirectoryName(_revCsvPath);
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
-                if (!string.IsNullOrEmpty(path)) csvPathField.value = path;
-            }));
-            if (string.IsNullOrEmpty(_revCsvPath)) _revCsvPath = RecentPaths.Get(RevCsvKey);
-            if (!string.IsNullOrEmpty(_revCsvPath)) csvPathField.SetValueWithoutNotify(_revCsvPath);
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), _revCsvPath, "csv");
+                if (string.IsNullOrEmpty(sel)) return;
+                _revCsvPath = sel;
+                csvPathField.value = _revCsvPath;
 
-            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
-            {
-                if (string.IsNullOrEmpty(_revCsvPath))
-                {
-                    _revCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
-                    if (string.IsNullOrEmpty(_revCsvPath)) return;
-                    csvPathField.SetValueWithoutNotify(_revCsvPath);
-                }
                 var result = RevolutionCSVIO.Load(_revCsvPath, _revP);
                 if (result.Success)
                 {
@@ -1460,25 +1601,32 @@ namespace Poly_Ling.Player
                 {
                     Debug.LogWarning($"[Revolution CSV] {result.ErrorMessage}");
                 }
-            }));
-            pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            }
+
+            revCsvFold.Add(PlayerIoUiKit.PathRow(csvPathField, LoadRevCsv));
+            if (string.IsNullOrEmpty(_revCsvPath)) _revCsvPath = RecentPaths.Get(RevCsvKey);
+            if (!string.IsNullOrEmpty(_revCsvPath)) csvPathField.SetValueWithoutNotify(_revCsvPath);
+
+            revCsvFold.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadRevCsv));
+            revCsvFold.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
-                if (string.IsNullOrEmpty(_revCsvPath))
-                {
-                    _revCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(T("SaveCSV"), "", "revolution.csv", "csv");
-                    if (string.IsNullOrEmpty(_revCsvPath)) return;
-                    csvPathField.SetValueWithoutNotify(_revCsvPath);
-                }
+                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
+                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), _revCsvPath, "revolution.csv", "csv");
+                if (string.IsNullOrEmpty(save)) return;
+                _revCsvPath = save;
+                csvPathField.SetValueWithoutNotify(_revCsvPath);
+                RecentPaths.Set(RevCsvKey, _revCsvPath);
+
                 EnsureRevProfile();
                 RevolutionCSVIO.Save(_revCsvPath, _revProfile, _revP);
             }));
 
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
-            pe.Add(SL(T("MeshProfileIO")));
+            var revIoFold = FoldSection(pe, T("MeshProfileIO"), false);
             var ioRow = new VisualElement(); ioRow.style.flexDirection = FlexDirection.Row; ioRow.style.marginBottom = 4;
             SB(ioRow, T("ImportFromMesh"), ImportRevolutionFromMesh);
             SB(ioRow, T("ApplyToMesh"),    ApplyRevolutionToMesh);
-            pe.Add(ioRow);
+            revIoFold.Add(ioRow);
         }
 
         private void ApplyRevPreset()
@@ -1861,12 +2009,12 @@ namespace Poly_Ling.Player
 
         private void BuildRevAnchorTransformUI(VisualElement pe)
         {
-            // 選択の変換
-            pe.Add(SL("選択の変換"));
-            pe.Add(BuildTf2("移動 X/Y",   0f, 0f, out _revTfMoveX,  out _revTfMoveY));
-            pe.Add(BuildTf2("スケール X/Y", 1f, 1f, out _revTfScaleX, out _revTfScaleY));
-            pe.Add(BuildTf1("スケール軸 (°)", 0f, out _revTfScaleAxis));
-            pe.Add(BuildTf1("回転 (°)",    0f, out _revTfRot));
+            // 選択点の移動など
+            var tfFold = FoldSection(pe, T("SelectionTransform"), false);
+            tfFold.Add(BuildTf2("移動 X/Y",   0f, 0f, out _revTfMoveX,  out _revTfMoveY));
+            tfFold.Add(BuildTf2("スケール X/Y", 1f, 1f, out _revTfScaleX, out _revTfScaleY));
+            tfFold.Add(BuildTf1("スケール軸 (°)", 0f, out _revTfScaleAxis));
+            tfFold.Add(BuildTf1("回転 (°)",    0f, out _revTfRot));
             var applyRow = new VisualElement(); applyRow.style.flexDirection = FlexDirection.Row; applyRow.style.marginBottom = 4;
             SB(applyRow, "変換適用", ApplyRevTransform);
             SB(applyRow, "リセット", () =>
@@ -1875,25 +2023,25 @@ namespace Poly_Ling.Player
                 _revTfScaleX.value = 1f; _revTfScaleY.value = 1f; _revTfRot.value = 0f;
                 _revTfScaleAxis.value = 0f;
             });
-            pe.Add(applyRow);
+            tfFold.Add(applyRow);
 
             // マグネット（比例編集）
-            pe.Add(SL("マグネット（比例編集）"));
+            var magFold = FoldSection(pe, T("Magnet"), false);
             var revMagRow = new VisualElement(); revMagRow.style.flexDirection = FlexDirection.Row; revMagRow.style.marginBottom = 2;
             var revMagToggle = new Toggle("有効") { value = _revMagnet.Enabled }; revMagToggle.style.marginRight = 6;
             revMagToggle.RegisterValueChangedCallback(ev => { _revMagnet.Enabled = ev.newValue; RefreshRevCanvas(); });
             var revFalloff = new EnumField(_revMagnet.Falloff); revFalloff.style.flexGrow = 1;
             revFalloff.RegisterValueChangedCallback(ev => _revMagnet.Falloff = (FalloffType)ev.newValue);
             revMagRow.Add(revMagToggle); revMagRow.Add(revFalloff);
-            pe.Add(revMagRow);
-            pe.Add(BuildAnchorRow("半径", 0.05f, 2f, _revMagnet.Radius, out _revMagnetRadius, out _,
+            magFold.Add(revMagRow);
+            magFold.Add(BuildAnchorRow("半径", 0.05f, 2f, _revMagnet.Radius, out _revMagnetRadius, out _,
                 () => false, v => { _revMagnet.Radius = v; RefreshRevCanvas(); }));
 
             // アンカー
-            pe.Add(SL("回転/拡大縮小アンカー"));
+            var anchorFold = FoldSection(pe, T("AnchorSection"), false);
             _revAnchorEnterBtn = new Button(() => SetRevAnchorMode(true)) { text = "アンカー設定" };
             _revAnchorEnterBtn.style.marginBottom = 2;
-            pe.Add(_revAnchorEnterBtn);
+            anchorFold.Add(_revAnchorEnterBtn);
 
             _revAnchorPanel = new VisualElement(); _revAnchorPanel.style.marginBottom = 4;
             {
@@ -1914,7 +2062,7 @@ namespace Poly_Ling.Player
                 _revAnchorPanel.Add(BuildAnchorRow("Y", -1f, 2f, 0f, out _revAnchorYSlider, out _revAnchorYField,
                     () => _revAnchorSuppress, v => SetRevAnchorComponent(false, v)));
             }
-            pe.Add(_revAnchorPanel);
+            anchorFold.Add(_revAnchorPanel);
             RefreshRevAnchorModeUI();
             RefreshRevAnchorFields();
         }
@@ -2234,7 +2382,7 @@ namespace Poly_Ling.Player
             _p2dSel.Clear();
             _p2dSelLoop = Mathf.Clamp(_p2dSelLoop, 0, _p2dLoops.Count - 1);
 
-            c.Add(SL(T("Profile2D")));
+            c.Add(ShapeTitle(T("Profile2D")));
             c.Add(NF(() => _p2dP.MeshName, v => _p2dP.MeshName = v));
 
             var pe = _profileEditorContainer;
@@ -2315,12 +2463,12 @@ namespace Poly_Ling.Player
             AddProfileResizeHandle(pe, _p2dCanvas, RefreshP2dCanvas);
 
             var p2dViewRow = new VisualElement(); p2dViewRow.style.flexDirection = FlexDirection.Row; p2dViewRow.style.marginBottom = 3;
-            SB(p2dViewRow, "ビュー初期化", () =>
+            SB(p2dViewRow, T("ResetView"), () =>
             {
                 _p2dZoom = 1f; _p2dOffset = Vector2.zero;
                 UpdateP2dView(); UpdateP2dBgEl(); RefreshP2dCanvas();
             });
-            var p2dLassoToggle = new Toggle("投げ縄") { value = _p2dLassoMode };
+            var p2dLassoToggle = new Toggle(T("LassoMode")) { value = _p2dLassoMode };
             p2dLassoToggle.style.marginLeft = 4;
             p2dLassoToggle.RegisterValueChangedCallback(ev => _p2dLassoMode = ev.newValue);
             p2dViewRow.Add(p2dLassoToggle);
@@ -2364,6 +2512,9 @@ namespace Poly_Ling.Player
                     SetBgSizeLabel(_p2dBgSizeLabel, null);
                 },
                 out _p2dBgScaleSlider, out _p2dBgSizeLabel);
+
+            // ── ループ（操作ボタン・一覧をまとめる） ──────────────────────
+            var loopFold = FoldSection(pe, T("Loops"), true);
 
             // ── ループ操作ボタン行 ────────────────────────────────────────
             var loopBtnRow = new VisualElement(); loopBtnRow.style.flexDirection = FlexDirection.Row; loopBtnRow.style.marginBottom = 3;
@@ -2436,7 +2587,7 @@ namespace Poly_Ling.Player
                 _p2dSelLoop = Mathf.Clamp(_p2dSelLoop, 0, _p2dLoops.Count - 1);
                 _p2dSel.Clear(); _p2dSelPt = -1; P2dCommit("ループ削除"); D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
-            pe.Add(loopBtnRow);
+            loopFold.Add(loopBtnRow);
 
             // ── ループ操作ボタン行2（全選択 / 複製） ─────────────────────────
             var loopBtnRow2 = new VisualElement(); loopBtnRow2.style.flexDirection = FlexDirection.Row; loopBtnRow2.style.marginBottom = 3;
@@ -2479,10 +2630,9 @@ namespace Poly_Ling.Player
                 P2dCommit("ループ左右反転");
                 D(); RefreshP2dCanvas(); RefreshP2dPointUI();
             });
-            pe.Add(loopBtnRow2);
+            loopFold.Add(loopBtnRow2);
 
             // ── ループ一覧（穴フラグ切替） ─────────────────────────────────
-            pe.Add(SL(T("Loops")));
             for (int i = 0; i < _p2dLoops.Count; i++)
             {
                 int li = i;
@@ -2499,7 +2649,7 @@ namespace Poly_Ling.Player
                 var holeTog = new Toggle(T("IsHole")) { value = _p2dLoops[i].IsHole };
                 holeTog.RegisterValueChangedCallback(e => { _p2dLoops[li].IsHole = e.newValue; D(); RefreshP2dCanvas(); });
                 row.Add(selBtn); row.Add(holeTog);
-                pe.Add(row);
+                loopFold.Add(row);
             }
 
             // ── 選択点スライダー ───────────────────────────────────────────
@@ -2558,26 +2708,17 @@ namespace Poly_Ling.Player
             pe.Add(_p2dPtRow);
 
             // ── CSV ────────────────────────────────────────────────────────
-            pe.Add(PlayerIoUiKit.SectionLabel(T("LoadCSV")));
+            var p2dCsvFold = FoldSection(pe, T("ProfileCsvSection"), false);
             var csvTf = new TextField();
             csvTf.RegisterValueChangedCallback(e => { _p2dCsvPath = e.newValue; RecentPaths.Set(P2dCsvKey, e.newValue); });
-            pe.Add(PlayerIoUiKit.PathRow(csvTf, () =>
+            // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
+            void LoadP2dCsv()
             {
-                string dir  = string.IsNullOrEmpty(_p2dCsvPath) ? "" : System.IO.Path.GetDirectoryName(_p2dCsvPath);
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
-                if (!string.IsNullOrEmpty(path)) csvTf.value = path;
-            }));
-            if (string.IsNullOrEmpty(_p2dCsvPath)) _p2dCsvPath = RecentPaths.Get(P2dCsvKey);
-            if (!string.IsNullOrEmpty(_p2dCsvPath)) csvTf.SetValueWithoutNotify(_p2dCsvPath);
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), _p2dCsvPath, "csv");
+                if (string.IsNullOrEmpty(sel)) return;
+                _p2dCsvPath = sel;
+                csvTf.value = _p2dCsvPath;
 
-            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
-            {
-                if (string.IsNullOrEmpty(_p2dCsvPath))
-                {
-                    _p2dCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
-                    if (string.IsNullOrEmpty(_p2dCsvPath)) return;
-                    csvTf.SetValueWithoutNotify(_p2dCsvPath);
-                }
                 try
                 {
                     var lines = System.IO.File.ReadAllLines(_p2dCsvPath);
@@ -2585,16 +2726,23 @@ namespace Poly_Ling.Player
                     if (loaded != null) { P2dBegin(); _p2dLoops = loaded; _p2dSelLoop = 0; _p2dSel.Clear(); _p2dSelPt = -1; P2dCommit("CSV読込"); D(); RebuildSettings(); }
                 }
                 catch (System.Exception ex) { Debug.LogWarning($"[P2D CSV] {ex.Message}"); }
-            }));
-            pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
+            }
+
+            p2dCsvFold.Add(PlayerIoUiKit.PathRow(csvTf, LoadP2dCsv));
+            if (string.IsNullOrEmpty(_p2dCsvPath)) _p2dCsvPath = RecentPaths.Get(P2dCsvKey);
+            if (!string.IsNullOrEmpty(_p2dCsvPath)) csvTf.SetValueWithoutNotify(_p2dCsvPath);
+
+            p2dCsvFold.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadP2dCsv));
+            p2dCsvFold.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
                 if (_p2dLoops == null) return;
-                if (string.IsNullOrEmpty(_p2dCsvPath))
-                {
-                    _p2dCsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(T("SaveCSV"), "", "profile2d.csv", "csv");
-                    if (string.IsNullOrEmpty(_p2dCsvPath)) return;
-                    csvTf.SetValueWithoutNotify(_p2dCsvPath);
-                }
+
+                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
+                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), _p2dCsvPath, "profile2d.csv", "csv");
+                if (string.IsNullOrEmpty(save)) return;
+                _p2dCsvPath = save;
+                csvTf.SetValueWithoutNotify(_p2dCsvPath);
+                RecentPaths.Set(P2dCsvKey, _p2dCsvPath);
                 try
                 {
                     var sb = new System.Text.StringBuilder();
@@ -2614,11 +2762,11 @@ namespace Poly_Ling.Player
             }));
 
             // ── メッシュ⇄プロファイル ─────────────────────────────────────
-            pe.Add(SL(T("MeshProfileIO")));
+            var p2dIoFold = FoldSection(pe, T("MeshProfileIO"), false);
             var ioRow = new VisualElement(); ioRow.style.flexDirection = FlexDirection.Row; ioRow.style.marginBottom = 4;
             SB(ioRow, T("ImportFromMesh"), ImportProfile2DFromMesh);
             SB(ioRow, T("ApplyToMesh"),    ApplyProfile2DToMesh);
-            pe.Add(ioRow);
+            p2dIoFold.Add(ioRow);
 
             // ── パラメータ ────────────────────────────────────────────────
             c.Add(SL(T("Scale")));
@@ -2641,6 +2789,10 @@ namespace Poly_Ling.Player
             c.Add(_p2dEdgeBackSeg); c.Add(_p2dEdgeBackSize); c.Add(_p2dEdgeInward);
             UpdateP2dEdgeVis();
 
+            BuildPivotXYZ(c,
+                () => _p2dP.Pivot, v => { _p2dP.Pivot = v; D(); },
+                -0.5f, 0.5f,
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
         }
 
         /// <summary>角処理(ベベル)UI の表示を Thickness/Segments に応じて更新する。</summary>
@@ -3051,11 +3203,11 @@ namespace Poly_Ling.Player
 
         private void BuildP2dAnchorTransformUI(VisualElement pe)
         {
-            pe.Add(SL("選択の変換"));
-            pe.Add(BuildTf2("移動 X/Y",   0f, 0f, out _p2dTfMoveX,  out _p2dTfMoveY));
-            pe.Add(BuildTf2("スケール X/Y", 1f, 1f, out _p2dTfScaleX, out _p2dTfScaleY));
-            pe.Add(BuildTf1("スケール軸 (°)", 0f, out _p2dTfScaleAxis));
-            pe.Add(BuildTf1("回転 (°)",    0f, out _p2dTfRot));
+            var tfFold = FoldSection(pe, T("SelectionTransform"), false);
+            tfFold.Add(BuildTf2("移動 X/Y",   0f, 0f, out _p2dTfMoveX,  out _p2dTfMoveY));
+            tfFold.Add(BuildTf2("スケール X/Y", 1f, 1f, out _p2dTfScaleX, out _p2dTfScaleY));
+            tfFold.Add(BuildTf1("スケール軸 (°)", 0f, out _p2dTfScaleAxis));
+            tfFold.Add(BuildTf1("回転 (°)",    0f, out _p2dTfRot));
             var applyRow = new VisualElement(); applyRow.style.flexDirection = FlexDirection.Row; applyRow.style.marginBottom = 4;
             SB(applyRow, "変換適用", ApplyP2dTransform);
             SB(applyRow, "リセット", () =>
@@ -3064,24 +3216,24 @@ namespace Poly_Ling.Player
                 _p2dTfScaleX.value = 1f; _p2dTfScaleY.value = 1f; _p2dTfRot.value = 0f;
                 _p2dTfScaleAxis.value = 0f;
             });
-            pe.Add(applyRow);
+            tfFold.Add(applyRow);
 
             // マグネット（比例編集）
-            pe.Add(SL("マグネット（比例編集）"));
+            var magFold = FoldSection(pe, T("Magnet"), false);
             var p2dMagRow = new VisualElement(); p2dMagRow.style.flexDirection = FlexDirection.Row; p2dMagRow.style.marginBottom = 2;
             var p2dMagToggle = new Toggle("有効") { value = _p2dMagnet.Enabled }; p2dMagToggle.style.marginRight = 6;
             p2dMagToggle.RegisterValueChangedCallback(ev => { _p2dMagnet.Enabled = ev.newValue; RefreshP2dCanvas(); });
             var p2dFalloff = new EnumField(_p2dMagnet.Falloff); p2dFalloff.style.flexGrow = 1;
             p2dFalloff.RegisterValueChangedCallback(ev => _p2dMagnet.Falloff = (FalloffType)ev.newValue);
             p2dMagRow.Add(p2dMagToggle); p2dMagRow.Add(p2dFalloff);
-            pe.Add(p2dMagRow);
-            pe.Add(BuildAnchorRow("半径", 0.05f, 5f, _p2dMagnet.Radius, out _p2dMagnetRadius, out _,
+            magFold.Add(p2dMagRow);
+            magFold.Add(BuildAnchorRow("半径", 0.05f, 5f, _p2dMagnet.Radius, out _p2dMagnetRadius, out _,
                 () => false, v => { _p2dMagnet.Radius = v; RefreshP2dCanvas(); }));
 
-            pe.Add(SL("回転/拡大縮小アンカー"));
+            var anchorFold = FoldSection(pe, T("AnchorSection"), false);
             _p2dAnchorEnterBtn = new Button(() => SetP2dAnchorMode(true)) { text = "アンカー設定" };
             _p2dAnchorEnterBtn.style.marginBottom = 2;
-            pe.Add(_p2dAnchorEnterBtn);
+            anchorFold.Add(_p2dAnchorEnterBtn);
 
             _p2dAnchorPanel = new VisualElement(); _p2dAnchorPanel.style.marginBottom = 4;
             {
@@ -3102,7 +3254,7 @@ namespace Poly_Ling.Player
                 _p2dAnchorPanel.Add(BuildAnchorRow("Y", -5f, 5f, 0f, out _p2dAnchorYSlider, out _p2dAnchorYField,
                     () => _p2dAnchorSuppress, v => SetP2dAnchorComponent(false, v)));
             }
-            pe.Add(_p2dAnchorPanel);
+            anchorFold.Add(_p2dAnchorPanel);
             RefreshP2dAnchorModeUI();
             RefreshP2dAnchorFields();
         }
@@ -3410,7 +3562,13 @@ namespace Poly_Ling.Player
             Action onLoad, Action onClear,
             out Slider scaleSlider, out Label sizeLabel)
         {
-            c.Add(SL(sectionLabel));
+            // 見出しをフォールドのタイトルにして中身を折り畳む（既定は閉じる）。
+            // 回転体・2D押し出し・断面エディタの全てで同じ見え方にする。
+            var bgFold = new Foldout { text = sectionLabel, value = false };
+            bgFold.style.marginBottom = 4;
+            var bgHost = c;
+            c = bgFold.contentContainer;
+            bgHost.Add(bgFold);
 
             // パス入力（loadPMX デザインに統一：[...] 左＋TextField＋RecentPaths）
             string bgKey  = "Primitive.Bg." + sectionLabel;
@@ -3419,22 +3577,20 @@ namespace Poly_Ling.Player
             pathField.SetValueWithoutNotify(bgInit);
             if (!string.IsNullOrEmpty(bgInit)) setPath(bgInit);
             pathField.RegisterValueChangedCallback(e => { setPath(e.newValue); RecentPaths.Set(bgKey, e.newValue); });
-            c.Add(PlayerIoUiKit.PathRow(pathField, () =>
+            // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
+            void LoadBgImage()
             {
-                string dir  = string.IsNullOrEmpty(getPath())
-                    ? UnityEngine.Application.dataPath
-                    : System.IO.Path.GetDirectoryName(getPath());
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Select Image", dir, "png,jpg,jpeg");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    pathField.value = path;
-                    onLoad();
-                }
-            }));
+                string path = PlayerIoUiKit.AskLoadPath("Select Image", getPath(), "png,jpg,jpeg");
+                if (string.IsNullOrEmpty(path)) return;
+                pathField.value = path;
+                onLoad();
+            }
+
+            c.Add(PlayerIoUiKit.PathRow(pathField, LoadBgImage));
 
             // Load / Clear ボタン行
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.marginBottom = 3;
-            SB(row, T("BgLoad"),  onLoad);
+            SB(row, T("BgLoad"),  LoadBgImage);
             SB(row, T("BgClear"), onClear);
             c.Add(row);
 
@@ -3620,7 +3776,7 @@ namespace Poly_Ling.Player
 
         private void BuildNohMaskUI(VisualElement c)
         {
-            c.Add(SL(T("NohMask")));
+            c.Add(ShapeTitle(T("NohMask")));
             c.Add(NF(() => _nohP.MeshName, v => _nohP.MeshName = v));
 
             c.Add(PlayerIoUiKit.SectionLabel(T("Landmarks")));
@@ -3630,8 +3786,7 @@ namespace Poly_Ling.Player
             lmField.RegisterValueChangedCallback(e => { _nohP.LandmarksFilePath = e.newValue; RecentPaths.Set(NohLmKey, e.newValue); D(); });
             c.Add(PlayerIoUiKit.PathRow(lmField, () =>
             {
-                string dir  = string.IsNullOrEmpty(_nohP.LandmarksFilePath) ? "" : System.IO.Path.GetDirectoryName(_nohP.LandmarksFilePath);
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Open Landmarks JSON", dir, "json");
+                string path = PlayerIoUiKit.AskLoadPath("Open Landmarks JSON", _nohP.LandmarksFilePath, "json");
                 if (!string.IsNullOrEmpty(path)) lmField.value = path;
             }));
 
@@ -3642,8 +3797,7 @@ namespace Poly_Ling.Player
             triField.RegisterValueChangedCallback(e => { _nohP.TrianglesFilePath = e.newValue; RecentPaths.Set(NohTriKey, e.newValue); D(); });
             c.Add(PlayerIoUiKit.PathRow(triField, () =>
             {
-                string dir  = string.IsNullOrEmpty(_nohP.TrianglesFilePath) ? "" : System.IO.Path.GetDirectoryName(_nohP.TrianglesFilePath);
-                string path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel("Open Triangles JSON", dir, "json");
+                string path = PlayerIoUiKit.AskLoadPath("Open Triangles JSON", _nohP.TrianglesFilePath, "json");
                 if (!string.IsNullOrEmpty(path)) triField.value = path;
             }));
 
@@ -3908,7 +4062,11 @@ namespace Poly_Ling.Player
         /// 結合は全頂点の二重ループ (O(N^2)) のため、頂点数が多い形状ではプレビュー再生成のたびに停止する。
         /// 生成ボタン経路は false を渡し、従来どおり結合する。
         /// </param>
-        private MeshObject Generate(bool forPreview)
+        /// <param name="applyTransform">
+        /// false のとき回転・スケールを頂点へ焼き込まない。
+        /// ピボットの「重心」ボタンが、姿勢の影響を受けない素の形状で重心を測るために使う。
+        /// </param>
+        private MeshObject Generate(bool forPreview, bool applyTransform = true)
         {
             MeshObject mo;
             switch (_current)
@@ -3939,6 +4097,7 @@ namespace Poly_Ling.Player
                             EdgeInward     = _p2dP.EdgeInward,
                             SymmetryMode   = _p2dP.SymmetryMode,
                         });
+                    Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.ApplyPivotOffset(mo, _p2dP.Pivot);
                     break;
                 case ShapeKind.NohMask:
                     mo = NohMaskMeshGenerator.GenerateFromFiles(_nohP);
@@ -3973,7 +4132,18 @@ namespace Poly_Ling.Player
             // 回転・スケールを頂点へ焼き込む。
             // マージ許容値 (0.001) はローカル空間で評価させたいので、必ずマージの後に行う。
             // 平行移動は焼き込まない (呼出し側の AddMode 別処理が従来どおり _worldPos を扱う)。
-            PrimitiveMeshTransform.ApplyRotationScale(mo, _rotEuler, _scale);
+            // プレビューは見た目を変えないため常に両方を焼き込む。
+            // 実生成はベイク OFF の成分を焼き込まず、呼出し側が姿勢へ入れる。
+            if (!applyTransform)
+                return mo;
+
+            if (forPreview)
+                PrimitiveMeshTransform.ApplyRotationScale(mo, _rotEuler, _scale);
+            else
+                PrimitiveMeshTransform.ApplyRotationScale(
+                    mo,
+                    BakeRotationEffective ? _rotEuler : Vector3.zero,
+                    BakeScaleEffective    ? _scale    : Vector3.one);
 
             return mo;
         }
@@ -4122,7 +4292,7 @@ namespace Poly_Ling.Player
             if (mo == null || mo.FaceCount == 0) { _statusLabel.text = T("NoLinesFound"); return; }
 
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
-            OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, _ignorePoseInArmature, _addMode);
+            OnMeshCreated?.Invoke(mo, _revP.MeshName, _worldPos, Vector3.zero, Vector3.one, false, _addMode);
         }
 
         /// <summary>選択オブジェクトの全2頂点ラインを Profile2D ループへ取り込む。</summary>
@@ -4155,7 +4325,7 @@ namespace Poly_Ling.Player
             if (mo == null || mo.FaceCount == 0) { _statusLabel.text = T("NoLinesFound"); return; }
 
             _statusLabel.text = T("AppliedToMesh", mo.FaceCount);
-            OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, _ignorePoseInArmature, _addMode);
+            OnMeshCreated?.Invoke(mo, _p2dP.MeshName, _worldPos, Vector3.zero, Vector3.one, false, _addMode);
         }
 
         // ================================================================
@@ -4212,7 +4382,7 @@ namespace Poly_Ling.Player
                     var mo = Generate(false);
                     if (mo == null) { _statusLabel.text = "生成失敗"; return; }
                     _statusLabel.text = T("VertsFaces", mo.VertexCount, mo.FaceCount);
-                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, _ignorePoseInArmature, _addMode);
+                    OnMeshCreated?.Invoke(mo, Name(), _worldPos, PoseRotation, PoseScale, false, _addMode);
 
                     // 次の生成に備えて名前欄を非重複候補へ更新する。
                     // AddToExisting は既存オブジェクトへの統合なので新しい名前は要らない。
@@ -4227,8 +4397,72 @@ namespace Poly_Ling.Player
             }) { text = T("Create") };
             btn.style.height = 28; btn.style.marginTop = 6;
             btn.style.unityFontStyleAndWeight = FontStyle.Bold;
-            btn.style.backgroundColor = new StyleColor(new Color(0.22f, 0.48f, 0.22f));
+            _createBtn = btn;
+            RefreshCreateButtonState();
             return btn;
+        }
+
+        // ================================================================
+        // 生成ボタンの有効・無効
+        // ================================================================
+
+        /// <summary>生成ボタン本体。条件が揃うまでグレーアウトさせるため保持する。</summary>
+        private Button _createBtn;
+
+        /// <summary>ベルトを1本でも取り込めているか。フリル／パイプ／接地の共通判定。</summary>
+        private static bool AnyBeltHasData(List<BeltSnapshot> belts)
+        {
+            if (belts == null) return false;
+            foreach (var b in belts)
+                if (b != null && b.HasData) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 現在の図形が「今のまま生成ボタンを押して意味のある結果になる」状態か。
+        /// 条件を持たない図形（基本図形・回転体・2D押し出し・能面）は常に true。
+        /// </summary>
+        private bool CanGenerate()
+        {
+            switch (_current)
+            {
+                // ベルトが1本も無いと空メッシュになる。
+                case ShapeKind.Frill: return AnyBeltHasData(_frillBelts);
+                case ShapeKind.Pipe:  return AnyBeltHasData(_pipeBelts);
+
+                // ベルトに加えて、配置するオブジェクトの選択も要る。
+                case ShapeKind.PlaceObject:
+                    return AnyBeltHasData(_placeBelts)
+                        && _placeSrcPick.CurrentList(_placeP.IncludeChildren, GetSubtreeMeshList).Count > 0;
+
+                // 複製元のチェックが要る。生成先は Viewer 側の結線。
+                case ShapeKind.ObjectArray:
+                    return OnObjectArrayGenerate != null
+                        && _objArrayPanel != null
+                        && _objArrayPanel.SelectedMasterIndices().Count > 0;
+
+                // フォントが開けて、かつ文字列が空でないこと。
+                case ShapeKind.Text:
+                    return !string.IsNullOrWhiteSpace(_textP.Text)
+                        && Poly_Ling.GlyphText.PlyFontLibrary.Open(_textP.FontFamily) != null;
+
+                // 種 A・B の両方が取込済みであること。書き込み先は Viewer 側の結線。
+                case ShapeKind.Bridge:
+                    return OnBridgeGenerate != null && BridgeSeedsReady;
+
+                default: return true;
+            }
+        }
+
+        /// <summary>生成ボタンの有効・無効と配色を現在の条件に合わせる。</summary>
+        private void RefreshCreateButtonState()
+        {
+            if (_createBtn == null) return;
+            bool ok = CanGenerate();
+            _createBtn.SetEnabled(ok);
+            _createBtn.style.backgroundColor = new StyleColor(ok
+                ? new Color(0.22f, 0.48f, 0.22f)
+                : new Color(0.28f, 0.28f, 0.28f));
         }
 
         /// <summary>プロファイル編集キャンバス直下に縦リサイズハンドルを追加する（3Dプレビューと同方式）。</summary>
@@ -4272,6 +4506,61 @@ namespace Poly_Ling.Player
         // ================================================================
         // UIヘルパー
         // ================================================================
+
+        /// <summary>
+        /// 「ベイク」チェックボックスを左に置いた見出し行を作る。
+        /// チェックは生成時の焼き込み先を切り替えるだけで、プレビューには影響しない。
+        /// </summary>
+        private VisualElement BakeHeaderRow(string label, Func<bool> get, Action<bool> set)
+            => BakeHeaderRow(label, get, set, out _);
+
+        /// <param name="bakeToggle">
+        /// 「ベイク」チェックボックス本体。追加先が「既存に追加」のときは
+        /// BakeRotationEffective / BakeScaleEffective が無条件に true になり
+        /// この指定が効かないため、呼び出し側で表示を切り替える。
+        /// </param>
+        private VisualElement BakeHeaderRow(string label, Func<bool> get, Action<bool> set,
+            out Toggle bakeToggle)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems    = Align.Center;
+
+            var bake = new Toggle(T("Bake")) { value = get() };
+            bake.style.color      = new StyleColor(Color.white);
+            bake.style.marginRight = 6;
+            bake.RegisterValueChangedCallback(e => set(e.newValue));
+            row.Add(bake);
+
+            row.Add(SL(label));
+            bakeToggle = bake;
+            return row;
+        }
+
+        /// <summary>
+        /// 図形名の見出し。上に太い区切り線を引き、他のセクション見出し（SL）より
+        /// 大きく太くして、ここから個別パラメータが始まることを分かるようにする。
+        /// </summary>
+        private static VisualElement ShapeTitle(string t)
+        {
+            var box = new VisualElement();
+            box.style.marginTop    = 8;
+            box.style.marginBottom = 4;
+
+            var rule = new VisualElement();
+            rule.style.height          = 2;
+            rule.style.marginBottom    = 4;
+            rule.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.30f));
+            box.Add(rule);
+
+            var l = new Label(t);
+            l.style.fontSize = 14;
+            l.style.unityFontStyleAndWeight = FontStyle.Bold;
+            l.style.color = new StyleColor(new Color(0.75f, 0.88f, 1f));
+            box.Add(l);
+
+            return box;
+        }
 
         private static Label SL(string t, bool bold = false)
         {

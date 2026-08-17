@@ -514,12 +514,21 @@ namespace Poly_Ling.PMX
                     // IKリンク
                     foreach (var link in ctx.IKLinks)
                     {
+                        // 角度制限の座標系変換（Unity → PMX）。
+                        // PMXImporter.ConvertBone と同じ AxisFlipOps.AngleLimits を通す。
+                        // この変換は自己逆元なので、取込と同じ処理がそのまま逆変換になる。
+                        // 通さないと Unity 空間の値がそのまま PMX に書き出され、
+                        // 往復でひざの曲がる向きが反転する。
+                        Vector3 limMin = link.LimitMin;
+                        Vector3 limMax = link.LimitMax;
+                        AxisFlipOps.AngleLimits(settings.Flip, ref limMin, ref limMax);
+
                         var pmxLink = new PMXIKLink
                         {
                             BoneIndex = link.BoneIndex,
                             HasLimit = link.HasLimit,
-                            LimitMin = link.LimitMin,
-                            LimitMax = link.LimitMax
+                            LimitMin = limMin,
+                            LimitMax = limMax
                         };
                         if (link.BoneIndex >= 0 && link.BoneIndex < boneContexts.Count)
                         {

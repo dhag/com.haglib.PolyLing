@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Poly_Ling.Core;
 using Poly_Ling.Data;
 using Poly_Ling.Context;
 using Poly_Ling.UndoSystem;
@@ -769,14 +770,17 @@ namespace Poly_Ling.Player
         /// <summary>回転(°)も書き出し・読み込みの対象にするか。</summary>
         private bool IncludeRotationInCsv => _originIncludeRotToggle?.value ?? false;
 
+        /// <summary>原点CSVの最近使ったパス（書出・読込で共有）。</summary>
+        private const string OriginCsvRecentKey = "BoneEditor.OriginCsv.Path";
+
         /// <summary>全メッシュの原点(位置)を CSV へ書き出す。</summary>
         private void ExportObjectOriginsCsv()
         {
             var model = GetModel?.Invoke();
             if (model == null) return;
 
-            string path = PLEditorBridge.I.SaveFilePanel(
-                "原点CSVの書き出し", "", SanitizeFileName(model.Name) + "_origin", "csv");
+            string path = RecentFileDialog.AskSave(
+                "原点CSVの書き出し", OriginCsvRecentKey, SanitizeFileName(model.Name) + "_origin", "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             bool withRot = IncludeRotationInCsv;
@@ -832,7 +836,7 @@ namespace Poly_Ling.Player
             var model = GetModel?.Invoke();
             if (model == null) return;
 
-            string path = PLEditorBridge.I.OpenFilePanel("原点CSVの読み込み", "", "csv");
+            string path = RecentFileDialog.AskLoad("原点CSVの読み込み", OriginCsvRecentKey, "csv");
             if (string.IsNullOrEmpty(path)) return;
 
             string[] lines;

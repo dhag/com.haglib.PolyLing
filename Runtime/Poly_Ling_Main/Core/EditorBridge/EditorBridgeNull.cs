@@ -126,6 +126,12 @@ namespace Poly_Ling.EditorBridge
             return string.Empty;
         }
 
+        public string OpenFilePanel(string title, string directory, string defaultName, string extension)
+        {
+            Debug.LogWarning($"{Prefix}: ファイル読み込みダイアログは表示できません (title={title})");
+            return string.Empty;
+        }
+
         public string SaveFolderPanel(string title, string directory, string defaultName)
         {
             Debug.LogWarning($"{Prefix}: フォルダ保存ダイアログは表示できません (title={title})");

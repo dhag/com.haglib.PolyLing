@@ -85,8 +85,9 @@ namespace Poly_Ling.Profile2DExtrude
 
                 if (p.Thickness <= 0.001f)
                 {
-                    // 厚みなし：平面のみ
-                    GenerateFlatFaceReindexed(md, transformedLoops, transformedLoops, isHoleFlags, 0f, Vector3.back, false);
+                    // 厚みなし：平面のみ。
+                    // 正面ビューは +Z 側なので、1枚板の表は +Z へ向ける（平面 Orientation=XY と同じ）。
+                    GenerateFlatFaceReindexed(md, transformedLoops, transformedLoops, isHoleFlags, 0f, Vector3.forward, true);
                 }
                 else
                 {
@@ -123,6 +124,11 @@ namespace Poly_Ling.Profile2DExtrude
                         GenerateSideFacesNormal(md, transformedLoops, offsetFrontLoops, offsetBackLoops, isHoleFlags, halfThick, p);
                     }
                 }
+
+                // 編集面の x はワールド -X へ載せる（AuthoringFrame の規約）。
+                // 生成は編集面の x をそのまま +X に置いているので、最後に鏡映して合わせる。
+                // これで正面ビューの画面座標が編集画面の座標と一致する。
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.MirrorX(md);
 
                 return md;
             }

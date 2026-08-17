@@ -57,35 +57,38 @@ namespace Poly_Ling.Player
 
         private void BuildPipeUI(VisualElement c)
         {
-            c.Add(SL(T("Pipe")));
+            c.Add(ShapeTitle(T("Pipe")));
             c.Add(NF(() => _pipeP.MeshName, v => _pipeP.MeshName = v));
 
-            // ── 基準ベルト（手動取り込み） ──
+            // ── 基準はしご（取り込み〜向きまでを1つのフォールドにまとめる） ──
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(PlayerIoUiKit.SectionLabel(T("FrillBase")));
+            var baseFold = new Foldout { text = T("FrillBase"), value = true };
+            baseFold.style.marginBottom = 4;
+            var bc = baseFold.contentContainer;
+            c.Add(baseFold);
 
             var hint = new Label(T("FrillBaseHint"));
             hint.style.fontSize     = 10;
             hint.style.whiteSpace   = WhiteSpace.Normal;
             hint.style.marginBottom = 2;
-            c.Add(hint);
+            bc.Add(hint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("ImportBelt"), () =>
             {
                 ImportBeltFromMesh(_pipeBelts);
                 RefreshPipeInfo();
             }));
 
             // ── 自動検索 ──
-            BuildMeshSourceRow(c, _pipePick, T("AutoDetectSource"));
+            BuildMeshSourceRow(bc, _pipePick, T("AutoDetectSource"));
 
             var autoHint = new Label(T("AutoDetectHint"));
             autoHint.style.fontSize     = 10;
             autoHint.style.whiteSpace   = WhiteSpace.Normal;
             autoHint.style.marginBottom = 2;
-            c.Add(autoHint);
+            bc.Add(autoHint);
 
-            c.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
+            bc.Add(PlayerIoUiKit.WideBtn(T("AutoDetectBelts"), () =>
             {
                 AutoDetectBelts(_pipeBelts, _pipePick.Current);
                 RefreshPipeInfo();
@@ -95,16 +98,19 @@ namespace Poly_Ling.Player
             _pipeInfoLabel.style.fontSize   = 10;
             _pipeInfoLabel.style.whiteSpace = WhiteSpace.Normal;
             _pipeInfoLabel.style.marginTop  = 2;
-            c.Add(_pipeInfoLabel);
+            bc.Add(_pipeInfoLabel);
 
-            // ── 梯子CSV ──
-            BuildBeltCsvUI(c, _pipeBelts,
+            // ── はしごCSV ──
+            BuildBeltCsvUI(bc, _pipeBelts,
                 "Primitive.Pipe.BeltCsv", "pipe_belt.csv", RefreshPipeInfo);
 
-            // ── 梯子の向き ──
-            BuildBeltOrientUI(c, _pipeOrient);
+            // ── はしごの向き ──
+            BuildBeltOrientUI(bc, _pipeOrient);
 
             c.Add(TR(T("PipeCapEnds"), () => _pipeP.CapEnds, v => { _pipeP.CapEnds = v; D(); }));
+
+            // ── 面の向き ──
+            c.Add(TR(T("FlipFaces"), () => _pipeP.FlipFaces, v => { _pipeP.FlipFaces = v; D(); }));
 
             // ── 厚み付け ──
             c.Add(PlayerIoUiKit.Divider());
@@ -133,11 +139,17 @@ namespace Poly_Ling.Player
 
             BuildBeltSplineUI(c, _pipeSpline);
 
+            BuildPivotXYZ(c,
+                () => _pipeP.Pivot, v => { _pipeP.Pivot = v; D(); },
+                -0.5f, 0.5f,
+                new Vector3(0, -0.5f, 0), Vector3.zero, new Vector3(0, 0.5f, 0), out _);
+
             BuildBeltProfileEditor(_profileEditorContainer, _pipeEdit, T("PipeAxisHint"));
         }
 
         private void RefreshPipeInfo()
         {
+            RefreshCreateButtonState();
             if (_pipeInfoLabel != null) _pipeInfoLabel.text = BeltsInfoText(_pipeBelts);
         }
 
@@ -169,6 +181,9 @@ namespace Poly_Ling.Player
                     _pipeP.MeshName);
                 AppendMesh(mo, part);
             }
+            if (_pipeP.FlipFaces)
+                Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.FlipFaces(mo);
+            Poly_Ling.PrimitiveMesh.PrimitiveMeshPostProcess.ApplyPivotOffset(mo, _pipeP.Pivot);
             return mo;
         }
     }

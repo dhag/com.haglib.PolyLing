@@ -261,15 +261,12 @@ namespace Poly_Ling.Player
             return PartsDictionaryPath.ResolveMeshSelSetsFile();
         }
 
+        /// <summary>[...] は読込用。書き出し先はエクスポートボタン側で保存ダイアログを出す。</summary>
         private void OnBrowseDicFile()
         {
             string cur = _dicPathField?.value ?? "";
             if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
-            string dir = System.IO.Path.GetDirectoryName(cur);
-            if (string.IsNullOrEmpty(dir)) dir = PartsDictionaryPath.Resolve();
-            string name = System.IO.Path.GetFileName(cur);
-            if (string.IsNullOrEmpty(name)) name = PartsDictionaryPath.MeshSelSetsFileName;
-            string path = PLEditorBridge.I.SaveFilePanel("辞書ファイル", dir, name, "csv");
+            string path = PlayerIoUiKit.AskLoadPath("辞書ファイルの読込", cur, "csv");
             if (!string.IsNullOrEmpty(path)) _dicPathField.value = path;
         }
 
@@ -281,9 +278,15 @@ namespace Poly_Ling.Player
             int setCount = model.MeshSelectionSets?.Count ?? 0;
             if (setCount == 0) { SetStatus("辞書が空です"); return; }
 
-            string path = _dicPathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(path)) path = ResolveDicPath();
-            if (string.IsNullOrEmpty(path)) { SetStatus("出力先を指定してください"); return; }
+            // パス欄は読込用。書き出しは毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
+            string cur = _dicPathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
+
+            string path = PlayerIoUiKit.AskSavePath(
+                "辞書ファイルの書き出し", cur, PartsDictionaryPath.MeshSelSetsFileName, "csv");
+            if (string.IsNullOrEmpty(path)) return;
+
+            _dicPathField.value = path;
 
             var since = DateTime.Now.AddSeconds(-2);
             SendCmd(new SaveMeshSelSetsCsvCommand(ModelIndex, path));
@@ -298,9 +301,15 @@ namespace Poly_Ling.Player
             var model = CurrentModel;
             if (model == null) { SetStatus("モデルがありません"); return; }
 
-            string path = _dicPathField?.value?.Trim() ?? "";
-            if (string.IsNullOrEmpty(path)) path = ResolveDicPath();
+            // 読込は必ずダイアログを通す。パス欄の値（無ければ既定の辞書ファイル）は
+            // 初期フォルダ／初期ファイル名としてだけ使う。
+            string cur = _dicPathField?.value?.Trim() ?? "";
+            if (string.IsNullOrEmpty(cur)) cur = ResolveDicPath();
+
+            string path = PlayerIoUiKit.AskLoadPath("辞書ファイルの読込", cur, "csv");
             if (string.IsNullOrEmpty(path)) { SetStatus("取り込むファイルを指定してください"); return; }
+
+            _dicPathField.value = path;
             if (!System.IO.File.Exists(path))
             {
                 SetStatus($"ファイルが見つかりません: {System.IO.Path.GetFileName(path)}");

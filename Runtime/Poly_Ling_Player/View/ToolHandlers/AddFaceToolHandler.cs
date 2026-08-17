@@ -114,6 +114,18 @@ namespace Poly_Ling.Player
             return true;
         }
 
+        /// <summary>
+        /// 直前に指定した点を 1 つ取り消す。Backspace / Delete から呼ぶ。
+        /// 1 点も指定されていなければ何もせず false。
+        /// </summary>
+        public bool RemoveLastPoint()
+        {
+            if (!_tool.RemoveLastPoint()) return false;
+            OnPointPlaced?.Invoke();
+            OnRepaint?.Invoke();
+            return true;
+        }
+
         // ================================================================
         // 初期化
         // ================================================================

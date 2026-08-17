@@ -403,22 +403,14 @@ namespace Poly_Ling.Player
                 path = e.newValue;
                 RecentPaths.Set(recentKey, e.newValue);
             });
-            c.Add(PlayerIoUiKit.PathRow(pathField, () =>
+            // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
+            // パス欄の値は初期フォルダ／初期ファイル名としてだけ使い、確定後そのまま読込む。
+            void LoadBeltCsv()
             {
-                string dir  = string.IsNullOrEmpty(path) ? "" : System.IO.Path.GetDirectoryName(path);
-                string sel  = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
-                if (!string.IsNullOrEmpty(sel)) pathField.value = sel;
-            }));
-            if (!string.IsNullOrEmpty(path)) pathField.SetValueWithoutNotify(path);
-
-            c.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
-            {
-                if (string.IsNullOrEmpty(path))
-                {
-                    path = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
-                    if (string.IsNullOrEmpty(path)) return;
-                    pathField.value = path;
-                }
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), path, "csv");
+                if (string.IsNullOrEmpty(sel)) return;
+                pathField.value = sel;
+                path = sel;
 
                 var result = BeltCsvIO.Load(path);
                 if (!result.Success) { SetBeltStatus(result.ErrorMessage); return; }
@@ -433,18 +425,22 @@ namespace Poly_Ling.Player
 
                 onChanged?.Invoke();
                 D();
-            }));
+            }
+
+            c.Add(PlayerIoUiKit.PathRow(pathField, LoadBeltCsv));
+            if (!string.IsNullOrEmpty(path)) pathField.SetValueWithoutNotify(path);
+
+            c.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadBeltCsv));
 
             c.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
                 if (belts.Count == 0) { SetBeltStatus(T("FrillNoBase")); return; }
 
-                if (string.IsNullOrEmpty(path))
-                {
-                    path = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(T("SaveCSV"), "", defaultName, "csv");
-                    if (string.IsNullOrEmpty(path)) return;
-                    pathField.value = path;
-                }
+                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
+                string save = PlayerIoUiKit.AskSavePath(T("SaveCSV"), path, defaultName, "csv");
+                if (string.IsNullOrEmpty(save)) return;
+                path = save;
+                pathField.value = path;
 
                 if (BeltCsvIO.Save(path, BeltsToCsv(belts)))
                 {
@@ -477,7 +473,8 @@ namespace Poly_Ling.Player
         {
             if (pe == null || ed == null) return;
 
-            pe.Add(PlayerIoUiKit.SectionLabel(T("ProfileCsv")));
+            // 3エディタ共通：折り畳みセクションにする（既定 閉）。
+            pe = FoldSection(pe, T("ProfileCsvSection"), false);
 
             if (string.IsNullOrEmpty(ed.CsvPath)) ed.CsvPath = RecentPaths.Get(ed.CsvRecentKey);
 
@@ -487,22 +484,13 @@ namespace Poly_Ling.Player
                 ed.CsvPath = e.newValue;
                 RecentPaths.Set(ed.CsvRecentKey, e.newValue);
             });
-            pe.Add(PlayerIoUiKit.PathRow(pathField, () =>
+            // PMX読込と同じ操作感：[...] も「読込」も必ずダイアログを出す。
+            void LoadProfileCsv()
             {
-                string dir = string.IsNullOrEmpty(ed.CsvPath) ? "" : System.IO.Path.GetDirectoryName(ed.CsvPath);
-                string sel = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), dir, "csv");
-                if (!string.IsNullOrEmpty(sel)) pathField.value = sel;
-            }));
-            if (!string.IsNullOrEmpty(ed.CsvPath)) pathField.SetValueWithoutNotify(ed.CsvPath);
-
-            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), () =>
-            {
-                if (string.IsNullOrEmpty(ed.CsvPath))
-                {
-                    ed.CsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.OpenFilePanel(T("LoadCSV"), "", "csv");
-                    if (string.IsNullOrEmpty(ed.CsvPath)) return;
-                    pathField.value = ed.CsvPath;
-                }
+                string sel = PlayerIoUiKit.AskLoadPath(T("LoadCSV"), ed.CsvPath, "csv");
+                if (string.IsNullOrEmpty(sel)) return;
+                pathField.value = sel;
+                ed.CsvPath = sel;
 
                 var result = ProfilePointsCsvIO.Load(ed.CsvPath, ed.ClosedLoop);
                 if (!result.Success) { SetBeltStatus(result.ErrorMessage); return; }
@@ -514,19 +502,23 @@ namespace Poly_Ling.Player
 
                 SetBeltStatus(T("ImportedPoints", ed.Points.Count));
                 D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
-            }));
+            }
+
+            pe.Add(PlayerIoUiKit.PathRow(pathField, LoadProfileCsv));
+            if (!string.IsNullOrEmpty(ed.CsvPath)) pathField.SetValueWithoutNotify(ed.CsvPath);
+
+            pe.Add(PlayerIoUiKit.WideBtn(T("LoadCSV"), LoadProfileCsv));
 
             pe.Add(PlayerIoUiKit.WideBtn(T("SaveCSV"), () =>
             {
                 EnsureBeltProfile(ed);
 
-                if (string.IsNullOrEmpty(ed.CsvPath))
-                {
-                    ed.CsvPath = Poly_Ling.EditorBridge.PLEditorBridge.I.SaveFilePanel(
-                        T("SaveCSV"), "", ed.CsvDefaultName, "csv");
-                    if (string.IsNullOrEmpty(ed.CsvPath)) return;
-                    pathField.value = ed.CsvPath;
-                }
+                // パス欄は読込用。保存は毎回ダイアログを出し、パス欄の値は初期値としてだけ使う。
+                string save = PlayerIoUiKit.AskSavePath(
+                    T("SaveCSV"), ed.CsvPath, ed.CsvDefaultName, "csv");
+                if (string.IsNullOrEmpty(save)) return;
+                ed.CsvPath = save;
+                pathField.value = ed.CsvPath;
 
                 if (ProfilePointsCsvIO.Save(ed.CsvPath, ed.Points, ed.ClosedLoop))
                     SetBeltStatus(T("ImportedPoints", ed.Points.Count));
@@ -651,29 +643,34 @@ namespace Poly_Ling.Player
                 BeltCommit(ed, "断面リセット");
                 D(); RefreshBeltCanvas(ed); RefreshBeltPointUI(ed);
             });
-            SB(btnRow, T("ResetView"), () =>
+            pe.Add(btnRow);
+
+            // ここから下を1つの大フォールドにまとめ、中の各セクションも個別に折り畳む。
+            pe = FoldSection(pe, T("EditTools"), true);
+
+            // ビュー操作行（3エディタ共通の並び：ビュー初期化 / 投げ縄 / ギズモ）
+            var viewRow = new VisualElement();
+            viewRow.style.flexDirection = FlexDirection.Row;
+            viewRow.style.marginBottom  = 3;
+            SB(viewRow, T("ResetView"), () =>
             {
                 ed.Zoom = 1f; ed.Offset = Vector2.zero;
                 UpdateBeltView(ed); UpdateBeltBgEl(ed); RefreshBeltCanvas(ed);
             });
-            pe.Add(btnRow);
+            var lassoToggle = new Toggle(T("LassoMode")) { value = ed.LassoMode };
+            lassoToggle.style.marginLeft = 4;
+            lassoToggle.RegisterValueChangedCallback(ev => ed.LassoMode = ev.newValue);
+            viewRow.Add(lassoToggle);
+            var gizmoToggle = new Toggle(T("ShowGizmo")) { value = ed.ShowGizmo };
+            gizmoToggle.style.marginLeft = 8;
+            gizmoToggle.RegisterValueChangedCallback(ev => { ed.ShowGizmo = ev.newValue; RefreshBeltCanvas(ed); });
+            viewRow.Add(gizmoToggle);
+            pe.Add(viewRow);
+
+            BuildBeltTransformUI(pe, ed);
 
             // ── 断面プロファイルCSV ───────────────────────────────────────
             BuildBeltProfileCsvUI(pe, ed);
-
-            // 矩形/投げ縄トグル
-            var lassoToggle = new Toggle(T("LassoMode")) { value = ed.LassoMode };
-            lassoToggle.style.marginBottom = 4;
-            lassoToggle.RegisterValueChangedCallback(ev => ed.LassoMode = ev.newValue);
-            pe.Add(lassoToggle);
-
-            // ギズモ表示トグル（既定=非表示）
-            var gizmoToggle = new Toggle(T("ShowGizmo")) { value = ed.ShowGizmo };
-            gizmoToggle.style.marginBottom = 4;
-            gizmoToggle.RegisterValueChangedCallback(ev => { ed.ShowGizmo = ev.newValue; RefreshBeltCanvas(ed); });
-            pe.Add(gizmoToggle);
-
-            BuildBeltTransformUI(pe, ed);
 
             // 下絵
             BuildBgSection(pe,
@@ -778,11 +775,11 @@ namespace Poly_Ling.Player
 
         private void BuildBeltTransformUI(VisualElement pe, BeltProfileEdit ed)
         {
-            pe.Add(SL("選択の変換"));
-            pe.Add(BuildTf2("移動 X/Y",     0f, 0f, out ed.TfMoveX,  out ed.TfMoveY));
-            pe.Add(BuildTf2("スケール X/Y", 1f, 1f, out ed.TfScaleX, out ed.TfScaleY));
-            pe.Add(BuildTf1("スケール軸 (°)", 0f, out ed.TfScaleAxis));
-            pe.Add(BuildTf1("回転 (°)",       0f, out ed.TfRot));
+            var tfFold = FoldSection(pe, T("SelectionTransform"), false);
+            tfFold.Add(BuildTf2("移動 X/Y",     0f, 0f, out ed.TfMoveX,  out ed.TfMoveY));
+            tfFold.Add(BuildTf2("スケール X/Y", 1f, 1f, out ed.TfScaleX, out ed.TfScaleY));
+            tfFold.Add(BuildTf1("スケール軸 (°)", 0f, out ed.TfScaleAxis));
+            tfFold.Add(BuildTf1("回転 (°)",       0f, out ed.TfRot));
 
             var applyRow = new VisualElement(); applyRow.style.flexDirection = FlexDirection.Row; applyRow.style.marginBottom = 4;
             SB(applyRow, "変換適用", () => ApplyBeltTransform(ed));
@@ -792,25 +789,25 @@ namespace Poly_Ling.Player
                 ed.TfScaleX.value = 1f; ed.TfScaleY.value = 1f;
                 ed.TfRot.value = 0f; ed.TfScaleAxis.value = 0f;
             });
-            pe.Add(applyRow);
+            tfFold.Add(applyRow);
 
             // マグネット
-            pe.Add(SL("マグネット（比例編集）"));
+            var magFold = FoldSection(pe, T("Magnet"), false);
             var magRow = new VisualElement(); magRow.style.flexDirection = FlexDirection.Row; magRow.style.marginBottom = 2;
             var magToggle = new Toggle("有効") { value = ed.Magnet.Enabled }; magToggle.style.marginRight = 6;
             magToggle.RegisterValueChangedCallback(ev => { ed.Magnet.Enabled = ev.newValue; RefreshBeltCanvas(ed); });
             var falloff = new EnumField(ed.Magnet.Falloff); falloff.style.flexGrow = 1;
             falloff.RegisterValueChangedCallback(ev => ed.Magnet.Falloff = (FalloffType)ev.newValue);
             magRow.Add(magToggle); magRow.Add(falloff);
-            pe.Add(magRow);
-            pe.Add(BuildAnchorRow("半径", 0.05f, 2f, ed.Magnet.Radius, out _, out _,
+            magFold.Add(magRow);
+            magFold.Add(BuildAnchorRow("半径", 0.05f, 2f, ed.Magnet.Radius, out _, out _,
                 () => false, v => { ed.Magnet.Radius = v; RefreshBeltCanvas(ed); }));
 
             // アンカー
-            pe.Add(SL("回転/拡大縮小アンカー"));
+            var anchorFold = FoldSection(pe, T("AnchorSection"), false);
             ed.AnchorEnterBtn = new Button(() => SetBeltAnchorMode(ed, true)) { text = "アンカー設定" };
             ed.AnchorEnterBtn.style.marginBottom = 2;
-            pe.Add(ed.AnchorEnterBtn);
+            anchorFold.Add(ed.AnchorEnterBtn);
 
             ed.AnchorPanel = new VisualElement(); ed.AnchorPanel.style.marginBottom = 4;
             {
@@ -832,7 +829,7 @@ namespace Poly_Ling.Player
                 ed.AnchorPanel.Add(BuildAnchorRow("Y", -1f, 2f, 0f, out ed.AnchorYSlider, out ed.AnchorYField,
                     () => ed.AnchorSuppress, v => SetBeltAnchorComponent(ed, false, v)));
             }
-            pe.Add(ed.AnchorPanel);
+            anchorFold.Add(ed.AnchorPanel);
             RefreshBeltAnchorModeUI(ed);
             RefreshBeltAnchorFields(ed);
         }
@@ -1549,20 +1546,25 @@ namespace Poly_Ling.Player
         private void BuildBeltSplineUI(VisualElement c, BeltSplineOption opt)
         {
             c.Add(PlayerIoUiKit.Divider());
-            c.Add(PlayerIoUiKit.SectionLabel(T("BeltSpline")));
+
+            // 既定は閉じる。使うときだけ開く項目のため。
+            var fold = new Foldout { text = T("BeltSpline"), value = false };
+            fold.style.marginBottom = 4;
+            var f = fold.contentContainer;
+            c.Add(fold);
 
             var hint = new Label(T("BeltSplineHint"));
             hint.style.fontSize     = 10;
             hint.style.whiteSpace   = WhiteSpace.Normal;
             hint.style.marginBottom = 2;
-            c.Add(hint);
+            f.Add(hint);
 
-            c.Add(TR(T("BeltSplineEnable"), () => opt.Enabled,  v => { opt.Enabled  = v; D(); }));
-            c.Add(IR(T("BeltSplineSegs"), 0, 10, () => opt.Segments,  v => { opt.Segments  = v; D(); }));
-            c.Add(TR(T("BeltSplineUseFirst"), () => opt.UseFirst, v => { opt.UseFirst = v; D(); }));
-            c.Add(TR(T("BeltSplineUseLast"),  () => opt.UseLast,  v => { opt.UseLast  = v; D(); }));
-            c.Add(IR(T("BeltSplineTrimStart"), 0, 10, () => opt.TrimStart, v => { opt.TrimStart = v; D(); }));
-            c.Add(IR(T("BeltSplineTrimEnd"),   0, 10, () => opt.TrimEnd,   v => { opt.TrimEnd   = v; D(); }));
+            f.Add(TR(T("BeltSplineEnable"), () => opt.Enabled,  v => { opt.Enabled  = v; D(); }));
+            f.Add(IR(T("BeltSplineSegs"), 0, 10, () => opt.Segments,  v => { opt.Segments  = v; D(); }));
+            f.Add(TR(T("BeltSplineUseFirst"), () => opt.UseFirst, v => { opt.UseFirst = v; D(); }));
+            f.Add(TR(T("BeltSplineUseLast"),  () => opt.UseLast,  v => { opt.UseLast  = v; D(); }));
+            f.Add(IR(T("BeltSplineTrimStart"), 0, 10, () => opt.TrimStart, v => { opt.TrimStart = v; D(); }));
+            f.Add(IR(T("BeltSplineTrimEnd"),   0, 10, () => opt.TrimEnd,   v => { opt.TrimEnd   = v; D(); }));
         }
 
         /// <summary>

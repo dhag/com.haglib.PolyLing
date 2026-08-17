@@ -651,6 +651,267 @@ namespace Poly_Ling.Ops
             return rebaked;
         }
 
+        /// <summary>
+        /// 生成ミラー（MirrorGeometryDerived）の法線とスロットを、実体側から取り直す。
+        ///
+        /// 【必要な理由】
+        /// RebakeDerivedMirrorVertices は位置しか写さない。実体側の法線を編集しても
+        /// ミラー側は生成時の法線を保持したままになるため、法線編集の後に本関数を呼ぶ。
+        /// ミラー側の面は選択できないので、実体側の結果を反映する以外に手段が無い。
+        ///
+        /// 【スロット（分割法線）の扱い】
+        /// スロットは丸ごと作り直し、実体側と 1:1 の並びに揃える。
+        /// 「角度で再計算」「分離」のようにスロット数が変わる操作の後でも整合が取れる。
+        /// 面のインデックスは CreateDerivedMirrorContext と同じく逆順で張り直す
+        /// （生成時に頂点順を反転しているため）。
+        ///
+        /// 【対象】
+        /// MirrorGeometryDerived = true のみ。false のミラー側（PMX 系）は
+        /// ファイル内に実在する独立メッシュで、実体側と頂点や面の並びが対応する
+        /// 保証が無いため触らない。
+        /// </summary>
+        /// <param name="materialCount">
+        /// UnityMesh を作り直す際のサブメッシュ数。-1 なら MeshObject 側の既定に従う。
+        /// </param>
+        /// <returns>取り直したオブジェクト数</returns>
+        public static int RebakeDerivedMirrorNormals(
+            IList<MeshContext> meshContexts, int materialCount = -1)
+        {
+            if (meshContexts == null) return 0;
+
+            int rebaked = 0;
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var mc = meshContexts[i];
+                if (mc == null || !mc.MirrorGeometryDerived) continue;
+
+                int src = mc.BakedMirrorSourceIndex;
+                if (src < 0 || src >= meshContexts.Count) continue;
+
+                var realCtx  = meshContexts[src];
+                var mirrorMo = mc.MeshObject;
+                var realMo   = realCtx?.MeshObject;
+                if (mirrorMo?.Vertices == null || realMo?.Vertices == null) continue;
+                if (mirrorMo.Vertices.Count != realMo.Vertices.Count) continue;
+                if (mirrorMo.Faces == null || realMo.Faces == null) continue;
+                if (mirrorMo.Faces.Count != realMo.Faces.Count) continue;
+
+                int axis = realCtx.MirrorAxis;
+
+                // --- スロットを実体側と 1:1 で作り直す ---
+                // GetOrAddUVNormal は重複をまとめてしまい実体側と番号がずれるため使わない。
+                // 実体側の並びをそのまま写し、法線だけ軸で反転する。
+                for (int v = 0; v < mirrorMo.Vertices.Count; v++)
+                {
+                    var mv = mirrorMo.Vertices[v];
+                    var rv = realMo.Vertices[v];
+                    if (mv == null || rv == null) continue;
+
+                    mv.UVs.Clear();
+                    mv.Normals.Clear();
+
+                    for (int s = 0; s < rv.UVs.Count; s++)
+                        mv.UVs.Add(rv.UVs[s]);
+
+                    for (int s = 0; s < rv.Normals.Count; s++)
+                        mv.Normals.Add(MirrorNormal(axis, rv.Normals[s]));
+                }
+
+                // --- 面のインデックスを逆順で張り直す ---
+                for (int f = 0; f < mirrorMo.Faces.Count; f++)
+                {
+                    var mf = mirrorMo.Faces[f];
+                    var rf = realMo.Faces[f];
+                    if (mf == null || rf == null) continue;
+
+                    int n = rf.VertexCount;
+                    if (mf.VertexCount != n) continue;
+                    if (rf.UVIndices.Count < n || rf.NormalIndices.Count < n) continue;
+
+                    mf.UVIndices.Clear();
+                    mf.NormalIndices.Clear();
+
+                    for (int j = n - 1; j >= 0; j--)
+                    {
+                        mf.UVIndices.Add(rf.UVIndices[j]);
+                        mf.NormalIndices.Add(rf.NormalIndices[j]);
+                    }
+                }
+
+                // --- UnityMesh へ反映 ---
+                // スロット数が変わっていると法線だけの差し替えが成立しないので作り直す。
+                if (mc.UnityMesh == null || !mirrorMo.ApplyNormalsToUnityMesh(mc.UnityMesh))
+                    mc.UnityMesh = mirrorMo.ToUnityMesh(materialCount);
+
+                rebaked++;
+            }
+
+            return rebaked;
+        }
+
+        /// <summary>
+        /// 生成ミラー（MirrorGeometryDerived）の形状を、実体側から丸ごと作り直す。
+        ///
+        /// 【必要な理由】
+        /// RebakeDerivedMirrorVertices / RebakeDerivedMirrorNormals は
+        /// 「頂点数（と面数）が実体側と一致していること」が前提で、頂点や面が
+        /// 増減する位相変更には対応できない（両関数とも件数不一致で素通りする）。
+        /// 削除を伴うツールを実体側に掛けるとミラー側が古い形状のまま取り残される
+        /// ため、位相を変えたら本関数で作り直す。
+        ///
+        /// 【構築規則】CreateDerivedMirrorContext と同じ。
+        ///   ・位置は MirrorPoint（実体側の MirrorAxis / MirrorDistance）
+        ///   ・UV はそのまま、法線は MirrorNormal で反転
+        ///   ・面は頂点順を反転（法線方向の維持）
+        ///   ・マテリアルは実体側 + MirrorMaterialOffset
+        ///   ・ボーンウェイトはミラー側があればそれ、無ければ実体側
+        ///
+        /// 【対象】MirrorGeometryDerived = true のみ。false のミラー側（PMX 系）は
+        /// ファイル内に実在する独立メッシュで、実体側と並びが対応する保証が無いため
+        /// 触らない。
+        /// </summary>
+        /// <returns>作り直したオブジェクト数</returns>
+        public static int RebuildDerivedMirrorGeometry(IList<MeshContext> meshContexts)
+        {
+            if (meshContexts == null) return 0;
+
+            int rebuilt = 0;
+
+            for (int i = 0; i < meshContexts.Count; i++)
+            {
+                var mc = meshContexts[i];
+                if (mc == null || !mc.MirrorGeometryDerived) continue;
+
+                int src = mc.BakedMirrorSourceIndex;
+                if (src < 0 || src >= meshContexts.Count) continue;
+
+                var realCtx  = meshContexts[src];
+                var realMo   = realCtx?.MeshObject;
+                var mirrorMo = mc.MeshObject;
+                if (realMo?.Vertices == null || mirrorMo == null) continue;
+
+                int   axis      = realCtx.MirrorAxis;
+                float dist      = realCtx.MirrorDistance;
+                int   matOffset = realCtx.MirrorMaterialOffset;
+
+                // --- 頂点を作り直す ---
+                mirrorMo.Vertices.Clear();
+                foreach (var rv in realMo.Vertices)
+                {
+                    if (rv == null) continue;
+
+                    var mv = new Vertex
+                    {
+                        Id       = rv.Id,
+                        Position = MirrorPoint(axis, dist, rv.Position),
+                    };
+
+                    for (int s = 0; s < rv.UVs.Count; s++)
+                        mv.UVs.Add(rv.UVs[s]);
+
+                    for (int s = 0; s < rv.Normals.Count; s++)
+                        mv.Normals.Add(MirrorNormal(axis, rv.Normals[s]));
+
+                    if (rv.HasMirrorBoneWeight)   mv.BoneWeight = rv.MirrorBoneWeight;
+                    else if (rv.HasBoneWeight)    mv.BoneWeight = rv.BoneWeight;
+
+                    mirrorMo.Vertices.Add(mv);
+                }
+
+                // --- 面を作り直す（頂点順を反転） ---
+                mirrorMo.Faces.Clear();
+                foreach (var rf in realMo.Faces)
+                {
+                    if (rf == null) continue;
+
+                    var mf = new Face { MaterialIndex = rf.MaterialIndex + matOffset };
+                    if (rf.IsHidden) mf.SetFlag(FaceFlags.Hidden);
+
+                    int n = rf.VertexIndices.Count;
+                    for (int j = n - 1; j >= 0; j--)
+                    {
+                        mf.VertexIndices.Add(rf.VertexIndices[j]);
+                        mf.UVIndices.Add(j < rf.UVIndices.Count ? rf.UVIndices[j] : 0);
+                        mf.NormalIndices.Add(j < rf.NormalIndices.Count ? rf.NormalIndices[j] : 0);
+                    }
+
+                    mirrorMo.Faces.Add(mf);
+                }
+
+                mirrorMo.InvalidatePositionCache();
+
+                // 消えた頂点・面を指したままの選択を残さない。
+                mc.Selection?.ClearAll();
+
+                mc.UnityMesh        = mirrorMo.ToUnityMesh();
+                mc.OriginalPositions = (Vector3[])mirrorMo.Positions.Clone();
+
+                rebuilt++;
+            }
+
+            return rebuilt;
+        }
+
+        /// <summary>
+        /// ModelContext 版。形状を作り直したうえで MirrorPair を張り直す。
+        /// 位相が変わると MirrorPair の頂点対応表が古くなるため。
+        /// </summary>
+        /// <returns>作り直したオブジェクト数</returns>
+        public static int RebuildDerivedMirrorGeometry(ModelContext model)
+        {
+            if (model?.MeshContextList == null) return 0;
+
+            int rebuilt = RebuildDerivedMirrorGeometry(model.MeshContextList);
+            if (rebuilt == 0) return 0;
+
+            if (model.MirrorPairs != null)
+            {
+                foreach (var pair in model.MirrorPairs)
+                {
+                    if (pair?.Mirror == null || !pair.Mirror.MirrorGeometryDerived) continue;
+                    if (!pair.Build())
+                        Debug.LogWarning($"[Mirror] ペアの張り直しに失敗しました mirror=\"{pair.Mirror.Name}\"");
+                }
+            }
+
+            return rebuilt;
+        }
+
+        /// <summary>
+        /// Undo スナップショットの対象に、実体側とそのミラー側の両方を含めた索引を返す。
+        /// 位相変更ツールはミラー側も作り直すため、片側だけ記録すると Undo で食い違う。
+        /// </summary>
+        public static List<int> CollectMirrorCaptureIndices(
+            ModelContext model, IEnumerable<int> realIndices)
+        {
+            var result = new List<int>();
+            if (model == null || realIndices == null) return result;
+
+            foreach (int idx in realIndices)
+            {
+                if (idx < 0) continue;
+                if (!result.Contains(idx)) result.Add(idx);
+                CollectMirrorPeers(model, idx, result);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// ミラー軸で法線を反転する。軸コードは MirrorPoint と同じ体系
+        /// （2 = Y / 4 = Z / それ以外 = X）。法線は方向なので距離は使わない。
+        /// </summary>
+        public static Vector3 MirrorNormal(int mirrorAxis, Vector3 normal)
+        {
+            switch (mirrorAxis)
+            {
+                case 2:  return new Vector3(normal.x, -normal.y, normal.z);
+                case 4:  return new Vector3(normal.x, normal.y, -normal.z);
+                default: return new Vector3(-normal.x, normal.y, normal.z);
+            }
+        }
+
         /// <summary>ミラー軸の面で位置のみを鏡像化する。</summary>
         public static Vector3 MirrorPoint(int mirrorAxis, float mirrorDistance, Vector3 pos)
         {
